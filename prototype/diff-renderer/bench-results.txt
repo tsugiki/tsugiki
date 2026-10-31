@@ -1,0 +1,42 @@
+{"platform":"Windows/WebView2","variant":"A","dataset":"big","label":"load","files":323,"rows":15266,"git_ms":531.8273999999999,"parse_ms":3.7020999999999997,"highlight_ms":640.7144000000001,"ipc_ms":40.09999990463257,"payloadMB":2.969179,"first_paint_ms":1454.1999998092651,"dom":517,"heapMB":9.726774}
+{"platform":"Windows/WebView2","variant":"A","dataset":"big","label":"scroll 2k","frames":751,"avgFps":75,"p95":13.4,"worst":13.7,"over25":0,"blankFrames":0,"coveredPx":20013}
+{"platform":"Windows/WebView2","variant":"A","dataset":"big","label":"fling 20k","frames":751,"avgFps":75,"p95":13.4,"worst":13.6,"over25":0,"blankFrames":0,"coveredPx":200132}
+{"platform":"Windows/WebView2","variant":"A","dataset":"big","label":"jumps","avg":26.4,"worst":31.6}
+{"platform":"Windows/WebView2","variant":"A","dataset":"big","label":"expand generated","ms":23.7,"dom":1197}
+{"platform":"Windows/WebView2","variant":"A","dataset":"big","label":"fling 20k expanded","frames":751,"avgFps":75,"p95":13.5,"worst":13.6,"over25":0,"blankFrames":0,"coveredPx":200132}
+{"platform":"Windows/WebView2","variant":"A","dataset":"big","label":"chunk ipc","count":0,"avg":0,"p95":0}
+{"platform":"Windows/WebView2","variant":"A","dataset":"huge","label":"load","files":1118,"rows":150279,"git_ms":1089.205,"parse_ms":31.4891,"highlight_ms":4229.6938,"ipc_ms":311.30000019073486,"payloadMB":26.782608,"first_paint_ms":5858.5,"dom":427,"heapMB":36.56313}
+{"platform":"Windows/WebView2","variant":"A","dataset":"huge","label":"scroll 2k","frames":751,"avgFps":75,"p95":13.5,"worst":13.5,"over25":0,"blankFrames":0,"coveredPx":20013}
+{"platform":"Windows/WebView2","variant":"A","dataset":"huge","label":"fling 20k","frames":751,"avgFps":75,"p95":13.5,"worst":13.6,"over25":0,"blankFrames":0,"coveredPx":200128}
+{"platform":"Windows/WebView2","variant":"A","dataset":"huge","label":"jumps","avg":26.5,"worst":28}
+{"platform":"Windows/WebView2","variant":"A","dataset":"huge","label":"expand generated","ms":24.6,"dom":1187}
+{"platform":"Windows/WebView2","variant":"A","dataset":"huge","label":"fling 20k expanded","frames":751,"avgFps":75,"p95":13.4,"worst":13.6,"over25":0,"blankFrames":0,"coveredPx":200128}
+{"platform":"Windows/WebView2","variant":"A","dataset":"huge","label":"chunk ipc","count":0,"avg":0,"p95":0}
+{"platform":"Windows/WebView2","variant":"B","dataset":"big","label":"load","files":323,"rows":15266,"git_ms":422.031,"parse_ms":2.3988,"highlight_ms":587.4135,"ipc_ms":34,"payloadMB":2.969179,"first_paint_ms":1283.4000000953674,"dom":2531,"heapMB":63.356354}
+{"platform":"Windows/WebView2","variant":"B","dataset":"big","label":"scroll 2k","frames":751,"avgFps":75,"p95":13.4,"worst":13.6,"over25":0,"blankFrames":0,"coveredPx":20013}
+{"platform":"Windows/WebView2","variant":"B","dataset":"big","label":"fling 20k","frames":749,"avgFps":75,"p95":13.4,"worst":40,"over25":1,"blankFrames":0,"coveredPx":200132}
+{"platform":"Windows/WebView2","variant":"B","dataset":"big","label":"jumps","avg":28.3,"worst":63.2}
+{"platform":"Windows/WebView2","variant":"B","dataset":"big","label":"expand generated","ms":24.6,"dom":5225}
+{"platform":"Windows/WebView2","variant":"B","dataset":"big","label":"fling 20k expanded","frames":750,"avgFps":75,"p95":13.4,"worst":26.6,"over25":1,"blankFrames":0,"coveredPx":200130}
+{"platform":"Windows/WebView2","variant":"B","dataset":"big","label":"chunk ipc","count":0,"avg":0,"p95":0}
+{"platform":"Windows/WebView2","variant":"B","dataset":"huge","label":"load","files":1118,"rows":150279,"git_ms":1074.6311,"parse_ms":30.131100000000004,"highlight_ms":4243.6086,"ipc_ms":308.59999990463257,"payloadMB":26.782608,"first_paint_ms":5868.900000095367,"dom":7622,"heapMB":41.906217}
+{"platform":"Windows/WebView2","variant":"B","dataset":"huge","label":"scroll 2k","frames":751,"avgFps":75,"p95":13.5,"worst":13.6,"over25":0,"blankFrames":0,"coveredPx":20013}
+{"platform":"Windows/WebView2","variant":"B","dataset":"huge","label":"fling 20k","frames":685,"avgFps":68,"p95":13.5,"worst":852.7,"over25":4,"blankFrames":0,"coveredPx":200130}
+{"platform":"Windows/WebView2","variant":"B","dataset":"huge","label":"jumps","avg":160.9,"worst":912.3}
+{"platform":"Windows/WebView2","variant":"B","dataset":"huge","label":"expand generated","ms":24.3,"dom":7915}
+{"platform":"Windows/WebView2","variant":"B","dataset":"huge","label":"fling 20k expanded","frames":684,"avgFps":68,"p95":13.5,"worst":839.4,"over25":6,"blankFrames":0,"coveredPx":200132}
+{"platform":"Windows/WebView2","variant":"B","dataset":"huge","label":"chunk ipc","count":0,"avg":0,"p95":0}
+{"platform":"Windows/WebView2","variant":"C","dataset":"big","label":"load","files":323,"rows":15266,"git_ms":432.3605,"parse_ms":2.4295,"highlight_ms":0,"ipc_ms":0,"payloadMB":0,"first_paint_ms":640.8999998569489,"dom":517,"heapMB":46.614942}
+{"platform":"Windows/WebView2","variant":"C","dataset":"big","label":"scroll 2k","frames":742,"avgFps":74,"p95":13.4,"worst":106.5,"over25":2,"blankFrames":0,"coveredPx":20013}
+{"platform":"Windows/WebView2","variant":"C","dataset":"big","label":"fling 20k","frames":751,"avgFps":75,"p95":13.5,"worst":13.6,"over25":0,"blankFrames":0,"coveredPx":200130}
+{"platform":"Windows/WebView2","variant":"C","dataset":"big","label":"jumps","avg":27.8,"worst":55.4}
+{"platform":"Windows/WebView2","variant":"C","dataset":"big","label":"expand generated","ms":24.8,"dom":1197}
+{"platform":"Windows/WebView2","variant":"C","dataset":"big","label":"fling 20k expanded","frames":751,"avgFps":75,"p95":13.5,"worst":13.6,"over25":0,"blankFrames":0,"coveredPx":200130}
+{"platform":"Windows/WebView2","variant":"C","dataset":"big","label":"chunk ipc","count":31,"avg":26.548387096774192,"p95":48.700000047683716}
+{"platform":"Windows/WebView2","variant":"C","dataset":"huge","label":"load","files":1118,"rows":150279,"git_ms":1142.5962,"parse_ms":31.203000000000003,"highlight_ms":0,"ipc_ms":0,"payloadMB":0,"first_paint_ms":1397.5,"dom":427,"heapMB":15.781139}
+{"platform":"Windows/WebView2","variant":"C","dataset":"huge","label":"scroll 2k","frames":751,"avgFps":75,"p95":13.4,"worst":13.6,"over25":0,"blankFrames":0,"coveredPx":20013}
+{"platform":"Windows/WebView2","variant":"C","dataset":"huge","label":"fling 20k","frames":751,"avgFps":75,"p95":13.4,"worst":13.5,"over25":0,"blankFrames":0,"coveredPx":200126}
+{"platform":"Windows/WebView2","variant":"C","dataset":"huge","label":"jumps","avg":67,"worst":214.1}
+{"platform":"Windows/WebView2","variant":"C","dataset":"huge","label":"expand generated","ms":20.5,"dom":1174}
+{"platform":"Windows/WebView2","variant":"C","dataset":"huge","label":"fling 20k expanded","frames":751,"avgFps":75,"p95":13.4,"worst":13.6,"over25":0,"blankFrames":0,"coveredPx":200132}
+{"platform":"Windows/WebView2","variant":"C","dataset":"huge","label":"chunk ipc","count":81,"avg":39.98271605703566,"p95":154.60000014305115}

@@ -10,6 +10,10 @@ A review workbench for a CPython core developer: it groups `python/cpython` PRs 
 A GitHub issue in the current **Repository** that one or more PRs fix. In CPython a PR names its Issue with the `gh-NNNNN:` prefix in its title; elsewhere it links it the GitHub way ("Fixes #N"). A PR can fix several Issues and then belongs to each of them.
 _Avoid_: Ticket, bug
 
+**Stacked PR**:
+A PR whose **Target branch** is another PR's branch instead of the default branch; it is stacked on that PR, and a chain of them is a stack. GitHub ignores "Closes #N" on such a PR, but gh-rev still counts the Issues it names.
+_Avoid_: Dependent PR, child PR, chained PR
+
 **Origin PR**:
 A PR against `main` that fixes (part of) an **Issue**; any **Backports** are made from it.
 _Avoid_: Main PR, parent PR, original PR
@@ -27,7 +31,7 @@ A **Backport** opened by a person, or a **Bot backport** that later got extra co
 _Avoid_: Hand backport, conflicted backport
 
 **Target branch**:
-The branch a PR merges into: `main` or a maintenance branch such as `3.14`.
+The branch a PR merges into: the default branch (`main`), a maintenance branch such as `3.14`, or, for a **Stacked PR**, another PR's branch.
 _Avoid_: Base, version
 
 **Needs attention**:

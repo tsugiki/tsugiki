@@ -92,6 +92,7 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 ### In-app review
 
 - The whole PR scrolls as one list, in unified or side-by-side view.
+- Hidden lines around each change can be shown, as on GitHub: 20 more above or below a hunk, the rest of a short gap, or the whole file. They are read from the file at the PR’s head in the mirror, so expanding costs no API call. Line comments stay on lines of the diff.
 - Generated files are collapsed by default and shown with line counts. Whether a file is generated comes from `.gitattributes` on the PR's **Target branch**.
 - Every **NEWS entry** in the PR is rendered at the top. A PR can have several, or none.
 - Comments can cover a single line or a range of lines. They go into the user's GitHub **Pending review**, which is then submitted as Approve, Request changes, or Comment.

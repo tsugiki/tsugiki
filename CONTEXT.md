@@ -1,6 +1,6 @@
 # gh-rev
 
-A review workbench for a CPython core developer who also maintains projects of their own. It is the one place where the user takes in their GitHub work, in place of the email inbox: in each **Repository** it groups PRs under the Issues they fix and tracks what is waiting on the user. A single Issue or PR may still be opened in the browser, but the work happens in gh-rev.
+A review workbench for a CPython core developer who also maintains projects of their own. For the **Repositories** the user adds, it is the one place where they take in their GitHub work, in place of the email inbox: it groups PRs under the Issues they fix and works out from GitHub's data, not from GitHub's notifications, what is waiting on the user. A single Issue or PR may still be opened in the browser, but the work happens in gh-rev.
 
 ## Language
 

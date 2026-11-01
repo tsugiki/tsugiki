@@ -1,0 +1,9 @@
+{
+  "name": "gh-rev-prototype-launcher",
+  "private": true,
+  "description": "PROTOTYPE branch only: runs the diff-renderer prototype from the repo root.",
+  "scripts": {
+    "proto": "npm --prefix prototype/diff-renderer run proto",
+    "proto:release": "npm --prefix prototype/diff-renderer run proto:release"
+  }
+}

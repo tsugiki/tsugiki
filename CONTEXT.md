@@ -31,7 +31,7 @@ The branch a PR merges into: `main` or a maintenance branch such as `3.14`.
 _Avoid_: Base, version
 
 **Needs attention**:
-The state of a PR that still needs action: it is open, or it is waiting on the user's review or re-review. A **Draft PR** only needs attention when it carries a **Review request**.
+The state of a PR that is waiting on the user. It applies when the PR carries a **Review request**, the user's **Review** of it is a **Stale review**, it is an **Own PR** whose CI failed, or it has **New activity** and the user either reviewed it or wrote it. An open PR the user has not reviewed is listed but does not need attention. A colleague's **Draft PR** needs attention only when it carries a Review request.
 _Avoid_: Pending, todo
 
 **Draft PR**:

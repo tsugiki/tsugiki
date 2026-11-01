@@ -13,20 +13,25 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 - Git is driven through the `git` CLI ([ADR 0003](adr/0003-git-cli-over-libgit2-and-gitoxide.md)).
 - The GitHub token comes from `gh auth token`, with a personal access token in settings as the fallback ([ADR 0004](adr/0004-auth-via-gh-cli-token.md)).
 
+### Layout
+
+- The app uses three panes, like a mail client. The left pane lists the Built-in views, the Filters and the Pinned issues. The middle pane shows the Issue trees for whichever of those is selected. The right pane shows the selected PR, with Conversation and Files as tabs. This layout was chosen out of three that were prototyped on branch `prototype/app-shell`.
+
 ### Workbench
 
 - The **Workbench** lists every **Issue** that a **Filter** reaches, every **Pinned issue**, and every Issue with an open PR the user holds a **Review** on. An Issue being closed on GitHub does not remove it.
-- **Filters** are written in raw GitHub search syntax, with `repo:python/cpython` added implicitly.
+- **Filters** are written in raw GitHub search syntax, with `repo:python/cpython` added implicitly. They run with GitHub's advanced search, which is the only mode that understands `OR` and parentheses.
 - **Built-in views**: Stale reviews, New activity, and Review requests.
-- Each Issue lists its **Matched PRs** first, followed by the rest of its tree folded down to what **Needs attention**.
-- An Issue with nothing that Needs attention moves to a "quiet" section at the bottom.
+- Each Issue lists its **Matched PRs** first, followed by its other PRs that are open or that **Need attention**.
+- **Needs attention** means work waiting on the user: a Review request, a Stale review, failed CI on an Own PR, or New activity on a PR the user reviewed or wrote. Unreviewed PRs by colleagues are listed but don't count.
+- An Issue with nothing that Needs attention moves to a "quiet" section at the bottom, unless it is pinned.
 - PRs without a `gh-NNNNN` prefix are grouped under **No issue**.
 - A Pinned issue stays until the user unpins it.
 
 ### Issue tree
 
 - Each **Origin PR** shows its **Backports** beneath it, and every PR shows its state, CI status, and the user's review state.
-- PRs that are fully merged collapse into a single summary line.
+- All of an Issue's fully merged Origin PRs and their Backports collapse into a single summary line.
 - Only Backports that already exist are shown; gh-rev does not try to work out which ones are missing.
 - **Draft PRs** get a badge.
 
@@ -37,7 +42,8 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 - A Review becomes stale only when the PR's diff outside **Generated files** changes. A merge from `main`, or a rebase that leaves the diff the same, does not count. Rebases are detected by comparing patch-ids.
 - A **Bot backport** shares its Origin PR's review state. A **Manual backport** is reviewed on its own.
 - A **Review request** always counts as Needs attention, including on a Bot backport or a Draft PR. A Local mark does not clear it.
-- A Draft PR only Needs attention when it has a Review request. When it becomes ready for review, that counts as **New activity**.
+- A colleague's Draft PR only Needs attention when it has a Review request. When it becomes ready for review, that counts as **New activity**.
+- A Bot backport's Stale review is counted once, on its Origin PR.
 - **Last seen** is recorded per PR and per Issue.
 - **New activity** covers people's commits, comments and reviews, a failed Bot backport, and CI changes on an **Own PR** or on a PR the user holds a Review on. Other bot activity and label changes do not count.
 - An **Alert** fires when CI finishes on an Own PR. Each kind of Alert can be switched off.

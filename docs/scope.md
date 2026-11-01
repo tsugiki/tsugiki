@@ -30,6 +30,10 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
     - The PR view shows Conversation and Files as tabs.
 
     Esc goes from a PR back to its Issue.
+- Links in descriptions and comments are sorted by where they point. gh-rev never navigates its own window to a web page.
+  - An Issue or PR in the current Repository opens in the Detail pane. `Alt+←` / `Alt+→` go back and forward through what was opened.
+  - An Issue or PR anywhere else on GitHub opens in a **Peek** popup that gh-rev renders from the API: title, state, author, description, the last few comments, with Open in browser and, for an added Repository, Open in gh-rev. GitHub can't be embedded in a frame.
+  - Anything else opens in the system browser. `Ctrl`+click sends any link to the browser, and `Ctrl+Shift+G` opens the current Issue or PR on GitHub.
 
 ### Workbench
 
@@ -104,6 +108,8 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 | Open in editor | `Ctrl+Shift+E` |
 | Local mark | `Ctrl+K M` |
 | Pin or unpin | `Ctrl+K P` |
+| Back / forward | `Alt+←` / `Alt+→` |
+| Open on GitHub | `Ctrl+Shift+G` |
 
 - The command palette's quick open finds Issues, PRs, and files in the current PR. `?` lists the keys available in the current view.
 - Keybindings can be remapped in the portable config file.
@@ -129,6 +135,7 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 - LSP-based navigation (clangd, pyright) as a second implementation of symbol lookup.
 - Drafting comments offline, with an outbox that pushes them into the Pending review on reconnect.
 - Export and import of the local database, so marks and Last seen can follow the user between machines.
+- Merging from gh-rev in **Maintained repositories**, including Dependency updates in one go. Until then merging, labels and reviewers stay on GitHub.
 - Linux support, which needs the diff renderer's performance checked on WebKitGTK first.
 
 ## Ruled out

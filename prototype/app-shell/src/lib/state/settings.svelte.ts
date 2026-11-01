@@ -22,7 +22,7 @@ const cfg = $state<{ values: Record<string, Value>; keys: Record<string, string>
 export const secret = $state({ token: "" });
 
 /** Settings UI: open or not, which variant (?variant=), and the section to land on. */
-export const settingsUi = $state<{ open: boolean; variant: string; section: string | null }>({ open: false, variant: "A", section: null });
+export const settingsUi = $state<{ open: boolean; variant: string; section: string | null }>({ open: false, variant: "B", section: null });
 export function openSettings(section: string | null = null) { settingsUi.open = true; settingsUi.section = section; }
 
 /** The whole configuration as the files would hold it. */

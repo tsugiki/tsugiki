@@ -7,6 +7,7 @@
   --good: #1a7f37; --bad: #cf222e; --warn: #9a6700; --merged: #8250df;
   --add-bg: #e6ffec; --del-bg: #ffebe9; --hunk-bg: #ddf4ff;
   --chrome: #2c2c2c; --chrome-fg: #fff;
+  --status-h: 22px;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {

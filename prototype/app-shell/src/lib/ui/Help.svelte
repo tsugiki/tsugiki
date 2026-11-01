@@ -12,7 +12,7 @@
       <table><tbody>
         {#each [...extra, ...KEY_HELP] as [k, d]}<tr><td><kbd>{k}</kbd></td><td>{d}</td></tr>{/each}
       </tbody></table>
-      <p class="muted">On macOS, Cmd replaces Ctrl. Click anywhere to close.</p>
+      <p class="muted">In the Issue list, a coloured bar on the left: needs attention · ★ pinned.<br />On macOS, Cmd replaces Ctrl. Click anywhere to close.</p>
     </div>
   </div>
 {/if}

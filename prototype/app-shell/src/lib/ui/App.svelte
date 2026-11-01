@@ -7,6 +7,9 @@
   import Workspace from "./Workspace.svelte";
   import Settings from "./settings/Settings.svelte";
   import { settingsUi, value } from "$lib/state/settings.svelte";
+  import { status, SCENARIOS } from "$lib/state/status.svelte";
+  import StatusBar from "./StatusBar.svelte";
+  import VariantBar from "./settings/VariantBar.svelte";
 
   let { start = null, startIssue = null, startAuthor = null, startView = null, startPeek = null }: {
     start?: number | null; startIssue?: number | null; startAuthor?: string | null; startView?: string | null; startPeek?: string | null;
@@ -31,15 +34,21 @@
   $effect(() => { app.repo; return () => (first = false); });
 </script>
 
-{#if app.repo == null}<Home />
-{:else}
-  {#key app.repo}
-    <Workspace start={first ? start : null} startIssue={first ? startIssue : null} startAuthor={first ? startAuthor : null} startView={first ? startView : null} startPeek={first ? startPeek : null} />
-  {/key}
-{/if}
+<div class="main">
+  {#if app.repo == null}<Home />
+  {:else}
+    {#key app.repo}
+      <Workspace start={first ? start : null} startIssue={first ? startIssue : null} startAuthor={first ? startAuthor : null} startView={first ? startView : null} startPeek={first ? startPeek : null} />
+    {/key}
+  {/if}
+</div>
+<StatusBar hints={app.repo == null ? "↑ ↓ choose · Enter open · Ctrl+R switch · Ctrl+, settings" : "↑ ↓ move · E archive · M mute · Alt+← back · ? keys"} />
+<!-- PROTOTYPE: the status bar's states that need a backend, simulated. -->
+{#if !settingsUi.open}<VariantBar variants={SCENARIOS} current={status.scenario} onChange={(v) => (status.scenario = v)} bottom={40} prefix="Status" />{/if}
 {#if settingsUi.open}<Settings />{/if}
 {#if showToast}<div class="toast">{toast.text}</div>{/if}
 
 <style>
+  .main { height: calc(100vh - var(--status-h)); overflow: auto; }
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 6px; font-size: 13px; z-index: 90; max-width: 70vw; }
 </style>

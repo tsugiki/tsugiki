@@ -1,5 +1,7 @@
 // PROTOTYPE — throwaway. VS Code-style key handling: "ctrl+shift+p", "f7", "ctrl+k m" (chords), "?".
 // On macOS Cmd counts as Ctrl, as in VS Code.
+import { chord as chordUi } from "./chord.svelte";
+
 export type Bindings = Record<string, (e: KeyboardEvent) => void>;
 
 const typing = (e: KeyboardEvent) => {
@@ -24,15 +26,23 @@ export function keyName(e: KeyboardEvent) {
 export function keymap(get: () => Bindings, whileTyping = ["escape", "ctrl+enter", "ctrl+p", "ctrl+shift+p", "ctrl+r", "ctrl+,"]) {
   let chord: string | null = null;
   let chordAt = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  // The status bar shows the first key of a chord until the second arrives or time runs out.
+  const wait = (c: string | null) => {
+    chord = c;
+    chordUi.pending = c;
+    clearTimeout(timer);
+    if (c) timer = setTimeout(() => wait(null), 1500);
+  };
   return (e: KeyboardEvent) => {
     const k = keyName(e);
     if (!k) return;
     const full = chord && Date.now() - chordAt < 1500 ? `${chord} ${k}` : k;
     const b = get();
     if (typing(e) && !whileTyping.includes(full)) return;
-    if (b[full]) { e.preventDefault(); chord = null; b[full](e); return; }
-    if (Object.keys(b).some((x) => x.startsWith(full + " "))) { e.preventDefault(); chord = full; chordAt = Date.now(); return; }
-    chord = null;
+    if (b[full]) { e.preventDefault(); wait(null); b[full](e); return; }
+    if (Object.keys(b).some((x) => x.startsWith(full + " "))) { e.preventDefault(); wait(full); chordAt = Date.now(); return; }
+    wait(null);
   };
 }
 

@@ -91,6 +91,8 @@
     if (key.startsWith("p:")) openPr(+key.slice(2)); else if (key.startsWith("i:")) openIssue(+key.slice(2));
     queueMicrotask(() => document.querySelector(`[data-key="${selItem}"]`)?.scrollIntoView({ block: "nearest" }));
   }
+  // The status bar (a Pending review) asks for an item in this Repository.
+  $effect(() => { if (app.goto) { const k = app.goto; app.goto = null; select(k); } });
   function go(d: 1 | -1) {
     const k = history[hpos + d];
     if (k) { hpos += d; select(k, false); }
@@ -292,9 +294,6 @@
         <button class="quietbtn" onclick={() => say("Would fetch the next page of older Issues and PRs from GitHub (prototype: the snapshot has the latest page only)")}>Load older…</button>
       {/if}
     </div>
-    <footer class="legend">
-      <span><i class="bar"></i> needs attention</span><span>★ pinned</span><span class="muted">↑ ↓ move · E archive · M mute · Alt+← back</span>
-    </footer>
   </section>
 
   <!-- Clicks are on the links inside; this only routes them. -->
@@ -345,7 +344,7 @@
 <Help bind:open={help} extra={[["↑ ↓", "Move through the Issue list"], ["Enter", "Switch Conversation / Files"]]} />
 
 <style>
-  .a { display: grid; grid-template-columns: 230px 430px 1fr; height: 100vh; }
+  .a { display: grid; grid-template-columns: 230px 430px 1fr; height: 100%; }
   .a.noside { grid-template-columns: 430px 1fr; }
   .left { border-right: 1px solid var(--line); background: var(--panel); padding: 8px; overflow: auto; display: flex; flex-direction: column; gap: 1px; }
   .repohead { display: flex; gap: 4px; align-items: center; padding: 2px 0 2px; }
@@ -403,10 +402,7 @@
   .acts .ic:hover { color: var(--accent); }
   .acts button:not(.ic):not(.pin) { font-size: 11px; padding: 0 6px; }
   .pin { all: unset; cursor: pointer; color: var(--muted); padding: 0 2px; } .pin.on { color: var(--warn); }
-  .bar { display: inline-block; width: 3px; height: 10px; background: var(--accent); vertical-align: middle; }
   .quietbtn { all: unset; display: block; padding: 10px; font-size: 12px; color: var(--muted); cursor: pointer; }
-  .legend { display: flex; gap: 10px; align-items: center; padding: 5px 10px; border-top: 1px solid var(--line); font-size: 11px; color: var(--fg); background: var(--panel); flex-wrap: wrap; }
-  .legend span { display: inline-flex; gap: 4px; align-items: center; }
   .right { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
   .prhead { padding: 10px 16px 0; border-bottom: 1px solid var(--line); }
   .crumb { font-size: 12px; color: var(--muted); }

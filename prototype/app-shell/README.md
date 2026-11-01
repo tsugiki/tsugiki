@@ -143,3 +143,14 @@ Code: `core/settings.ts` (what the settings are, the two files, a small TOML rea
 **Verdict: B**, "easier to handle", with A's Repositories subtree: Repositories in the left column has one entry per Repository (the name; owner/name on hover), each opening that Repository's page, and Repositories itself is an overview with Add repository. A and C stay here as the record.
 
 Pinned issues are not in Settings (the list can be long): they are managed from the Sidebar's Pinned issues, with ★ on each item and `Ctrl+K P`. They are still written to `config.toml`.
+
+## Status bar
+
+A thin line along the bottom of every screen, for what is app-wide and has no other place. It stays when the Sidebar is hidden.
+
+- **Left: sync and connection.** "✓ Synced 2 min ago" (click: refresh now, with progress); background work with a progress meter and "+N" for a list (mirror fetch, a first sync, patch-id checks); **Offline: read-only**, which tints the whole bar; problems that block reading, like an expired token (click: Settings › Account) or a low API rate limit (Settings › Sync).
+- **Right: unsent work, then keys.** "✎ Pending review on #N · 1 comment" for drafts not yet submitted, in any Repository (click: opens the PR in place; several: a list). Then the keys for this screen, or, after the first key of a chord, "(Ctrl+K) was pressed. Waiting for the second key…".
+
+The key hints under the Issue list moved here; the list's legend (bar: needs attention, ★ pinned) moved to the `?` overlay.
+
+Live: Pending reviews (CPython starts with one seeded draft), chords, refresh. Simulated, since there is no backend: syncing, background jobs, offline, token expired, rate limit low. Switch with the floating "Status" bar, or `?status=normal|syncing|jobs|offline|token|rate`.

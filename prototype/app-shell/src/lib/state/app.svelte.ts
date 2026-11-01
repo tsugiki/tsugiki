@@ -27,9 +27,13 @@ function seed(s: (typeof snapshots)[number]): RepoState {
   const at = new Date(new Date(s.takenAt).getTime() - 2 * 86400e3).toISOString();
   for (const p of s.prs) if (p.number % 3 !== 0) seen.set(p.number, at);
   for (const i of s.issues) if (i.number % 3 !== 0) seen.set(-i.number, at);
+  // Simplification: CPython starts with one unsent draft comment, so the status bar has a Pending review to show.
+  const pending = new SvelteMap<number, { path: string; line: number; body: string }[]>();
+  const [dn, dd] = Object.entries(s.details)[0] ?? [];
+  if (s.repo.name === "python/cpython" && dd?.files[0]) pending.set(+dn, [{ path: dd.files[0].path, line: 1, body: "Draft from an earlier session (seeded by the prototype)" }]);
   return {
     localMarks: new SvelteMap(), pins: new SvelteSet(s.pinned), lastSeen: seen, submitted: new SvelteMap(),
-    archived: new SvelteMap(), muted: new SvelteSet(), mutedAuthors: new SvelteSet(), pending: new SvelteMap(), posted: new SvelteMap(),
+    archived: new SvelteMap(), muted: new SvelteSet(), mutedAuthors: new SvelteSet(), pending, posted: new SvelteMap(),
   };
 }
 
@@ -43,7 +47,11 @@ export const boardOf = (name: string): Workbench => repos.get(name)!.wb;
 export const userOf = (name: string) => repos.get(name)!.user;
 
 /** The open Repository, or null for the Home page. A normal launch reopens the last one. */
-export const app = $state<{ repo: string | null; opened: Record<string, string>; select: string | null }>({ repo: REPOS[0] ?? null, opened: {}, select: null });
+export const app = $state<{ repo: string | null; opened: Record<string, string>; select: string | null; goto: string | null }>({ repo: REPOS[0] ?? null, opened: {}, select: null, goto: null });
+/** Open an item ("i:N" or "p:N") in a Repository: in place when it is the open one, else by switching. */
+export function goTo(name: string, key: string) {
+  if (app.repo === name) app.goto = key; else openRepo(name, key);
+}
 /** Open a Repository (null: the Home page), optionally with an item selected ("i:N" or "p:N"). */
 export function openRepo(name: string | null, select: string | null = null) {
   app.repo = name;

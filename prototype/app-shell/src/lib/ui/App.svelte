@@ -10,6 +10,7 @@
   import { status, SCENARIOS, critical } from "$lib/state/status.svelte";
   import StatusBar from "./StatusBar.svelte";
   import VariantBar from "./settings/VariantBar.svelte";
+  import { keyName } from "./keys";
 
   let { start = null, startIssue = null, startAuthor = null, startView = null, startPeek = null }: {
     start?: number | null; startIssue?: number | null; startAuthor?: string | null; startView?: string | null; startPeek?: string | null;
@@ -35,7 +36,13 @@
   // The URL's start-up selection applies to the first Repository shown only.
   let first = $state(true);
   $effect(() => { app.repo; return () => (first = false); });
+  // Keys the app owns, whatever is open (Settings, Home, a text field): the web engine must never
+  // print or reload on them. The views still decide what the key does.
+  const OWNED = ["ctrl+p", "ctrl+shift+p", "ctrl+r", "ctrl+,"];
+  const own = (e: KeyboardEvent) => { if (OWNED.includes(keyName(e) ?? "")) e.preventDefault(); };
 </script>
+
+<svelte:window onkeydowncapture={own} />
 
 <div class="main">
   {#if app.repo == null}<Home />

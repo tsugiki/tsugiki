@@ -19,6 +19,7 @@
     arrowup: () => (sel = Math.max(0, sel - 1)),
     enter: () => openRepo(rows[sel].name),
     "ctrl+shift+p": () => (palette = ">"),
+    "ctrl+p": () => (palette = ""),
     "ctrl+r": () => (palette = ">Repository: "),
   }));
   const chip = (n: number, word: string) => (n ? `${n} ${word}` : "");

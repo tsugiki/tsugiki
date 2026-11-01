@@ -12,7 +12,7 @@ This prototype lives only on the `prototype/app-shell` branch, and none of its c
 | **B**: tree first, drill in | The Workbench is a full-width outline (Issue › Origin PR › Backports) with columns. Enter opens an Issue page (its whole tree) or a PR page. The PR page is one long scroll: header, NEWS entries, conversation, then the diff. Esc goes back, and a breadcrumb shows where you are. |
 | **C**: workspace like VS Code | Activity bar (Workbench, Views, Filters), a sidebar tree (Ctrl+B), editor tabs with one PR or Issue per tab (Ctrl+W, Ctrl+Tab), a bottom panel for Conversation, Pending review and Commits (Ctrl+J), and a status bar. |
 
-Every key from `docs/scope.md` is wired up: `?` lists them, and `Ctrl+P` / `Ctrl+Shift+P` work everywhere. The code is split into layers (see "Layers" below), and the terms come from CONTEXT.md.
+Every key from `docs/scope.md` is wired up: `?` lists them, and `Ctrl+P` / `Ctrl+Shift+P` work everywhere. Keys are named by their physical position when the keyboard layout isn't Latin (Ctrl+P on a Russian layout is still Ctrl+P, as in VS Code), and the keys the app owns (`Ctrl+P`, `Ctrl+Shift+P`, `Ctrl+R`, `Ctrl+,`) never reach WebView2's own Print or Reload, even while Settings is open. For the real app: Tauri 2.12 doesn't expose WebView2's `AreBrowserAcceleratorKeysEnabled` (wry has `with_browser_accelerator_keys`), so either set it through `with_webview` or keep a guard like this one. The code is split into layers (see "Layers" below), and the terms come from CONTEXT.md.
 
 **Data.** `src/lib/data/fixtures/python__cpython.json` is a read-only snapshot of real `python/cpython` data, taken with your `gh` token (the other Repositories: see "Multiple Repositories"). It includes:
 - the Filters

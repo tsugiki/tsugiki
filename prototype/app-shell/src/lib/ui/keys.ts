@@ -9,9 +9,14 @@ const typing = (e: KeyboardEvent) => {
   return !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
 };
 
+// With a non-Latin layout (Russian: Ctrl+P gives e.key "з") keys are named by their physical position,
+// as in VS Code. Otherwise no binding matches and the browser's own Ctrl+P (Print) wins.
+const CODE_KEYS: Record<string, string> = { Comma: ",", Period: ".", Slash: "/", Semicolon: ";", Quote: "'", BracketLeft: "[", BracketRight: "]", Backquote: "`", Minus: "-", Equal: "=", Backslash: "\\" };
+const fromCode = (code: string) => /^Key[A-Z]$/.test(code) ? code[3].toLowerCase() : /^Digit\d$/.test(code) ? code[5] : CODE_KEYS[code];
+
 /** A key press as a binding string: "ctrl+shift+p", "f7", "?". Null for a bare modifier. */
 export function keyName(e: KeyboardEvent) {
-  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase();
+  const k = e.key.length === 1 && /[^\x00-\x7f]/.test(e.key) ? (fromCode(e.code) ?? e.key.toLowerCase()) : e.key.toLowerCase();
   if (["control", "shift", "alt", "meta"].includes(k)) return null;
   const parts = [];
   if (e.ctrlKey || e.metaKey) parts.push("ctrl");

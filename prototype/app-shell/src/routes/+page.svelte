@@ -6,7 +6,7 @@
   //   ?status=normal|syncing|jobs|offline|token|rate picks the simulated status bar state.
   import { page } from "$app/state";
   import App from "$lib/ui/App.svelte";
-  import { replaceState } from "$app/navigation";
+  import { replaceState, afterNavigate } from "$app/navigation";
   import { openRepo, REPOS } from "$lib/state/app.svelte";
   import { settingsUi, openSettings } from "$lib/state/settings.svelte";
   import { status, SCENARIOS } from "$lib/state/status.svelte";
@@ -20,9 +20,12 @@
   if (p.has("settings")) openSettings(p.get("settings") || null);
   if (SCENARIOS.some(([k]) => k === p.get("status"))) status.scenario = p.get("status")!;
 
-  // Keep ?variant= in the URL, so a reload shows the same variant.
+  // Keep ?variant= in the URL, so a reload shows the same variant. Not before the router is up.
+  let ready = $state(false);
+  afterNavigate(() => (ready = true));
   $effect(() => {
     const v = settingsUi.variant;
+    if (!ready) return;
     const url = new URL(location.href);
     if (url.searchParams.get("variant") === v) return;
     url.searchParams.set("variant", v);

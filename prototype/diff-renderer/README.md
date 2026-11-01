@@ -93,4 +93,4 @@ The raw numbers are in [bench-results-macos.txt](bench-results-macos.txt). At 60
 
 ## Text selection (manual check, 2026-11-01)
 
-Selecting across recycled rows works on both platforms. On macOS the selection first took in the line-number gutter as well, because WKWebView ignores unprefixed `user-select: none`. Line numbers are now CSS `::before` content taken from a `data-n` attribute. Generated content is never selected or copied on either engine, so the real renderer should draw its gutter the same way.
+Selecting text in the diff works on both platforms. On macOS the selection took in the line-number gutter as well, because WKWebView ignores unprefixed `user-select: none`. Line numbers are now CSS `::before` content taken from a `data-n` attribute. Generated content is never selected or copied on either engine, so the real renderer should draw its gutter the same way.

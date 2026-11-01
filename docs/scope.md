@@ -33,7 +33,7 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 - Links in descriptions and comments are sorted by where they point. gh-rev never navigates its own window to a web page.
   - An Issue or PR in the current Repository opens in the Detail pane. `Alt+←` / `Alt+→` go back and forward through what was opened.
   - An Issue or PR anywhere else on GitHub opens in a **Peek** popup that gh-rev renders from the API: title, state, author, description, the last few comments, with Open in browser and, for an added Repository, Open in gh-rev. GitHub can't be embedded in a frame.
-  - Anything else opens in the system browser. `Ctrl`+click sends any link to the browser, and `Ctrl+Shift+G` opens the current Issue or PR on GitHub.
+  - Anything else opens in the system browser. `Ctrl`+click sends any link to the browser, and `Ctrl+Shift+G`, or a click on the title in the Detail pane, opens the current Issue or PR on GitHub (Dependency updates: the bot's open PRs there).
 
 ### Workbench
 

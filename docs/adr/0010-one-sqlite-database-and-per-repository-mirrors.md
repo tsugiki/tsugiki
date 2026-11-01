@@ -1,12 +1,14 @@
 # One SQLite database, and a mirror per Repository
 
-Everything Tsugiki keeps about GitHub, and everything the user keeps in Tsugiki, is in one SQLite file, `tsugiki.db`, accessed with `rusqlite` (SQLite bundled into the app). It covers every Repository: the cache (Issues, PRs, reviews, threads and comments with GitHub's `bodyHTML`, CI checks, timeline events, the facts that link Issues, PRs and Backports ([ADR 0011](0011-pr-links-from-github-signals-by-repository-conventions.md)), and per-file patch-ids keyed by commit) and the user's own state (Local marks, Last seen, Archived and Muted items, unsent composer text). Each Repository's mirror is a folder of its own ([ADR 0002](0002-tsugiki-owns-its-git-state.md)):
+Everything Tsugiki keeps about GitHub, and everything the user keeps in Tsugiki, is in one SQLite file, `tsugiki.db`, accessed with `rusqlite` (SQLite bundled into the app). It covers every Repository: the cache (Issues, PRs, reviews, threads and comments with GitHub's `bodyHTML`, CI checks, timeline events, the facts that link Issues, PRs and Backports ([ADR 0011](0011-pr-links-from-github-signals-by-repository-conventions.md)), and per-file patch-ids keyed by commit) and the user's own state (Pinned issues, Muted authors, Local marks, Last seen, Archived and Muted items, unsent composer text; settings stay in TOML files, [ADR 0014](0014-settings-in-toml-files-user-state-in-the-database-and-a-portable-mode.md)). Each Repository's mirror is a folder of its own ([ADR 0002](0002-tsugiki-owns-its-git-state.md)):
 
 ```
 %LOCALAPPDATA%\Tsugiki\              ~/Library/Application Support/Tsugiki/ on macOS
   tsugiki.db
   repos\python__cpython\mirror.git\
 ```
+
+In portable mode all of it lives in a `data` folder next to the program instead ([ADR 0014](0014-settings-in-toml-files-user-state-in-the-database-and-a-portable-mode.md)).
 
 One file is the unit the user moves to another machine. **Export database** writes a consistent snapshot of it with `VACUUM INTO`, and **Import database** replaces the other machine's file with that snapshot, after a confirmation and with a backup kept. The cache travels too, which saves a new machine CPython's first sync of 8 to 10 minutes. The mirrors are cloned again there; with `--reference` that takes under a minute.
 

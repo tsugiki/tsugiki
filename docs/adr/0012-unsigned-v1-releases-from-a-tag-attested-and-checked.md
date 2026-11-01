@@ -4,7 +4,7 @@ Releases are built from a tag in GitHub Actions and attested ([ADR 0005](0005-to
 
 ## Releases
 
-- **What ships.** A Windows x64 NSIS installer for the current user only, so it needs no admin rights. It adds its folder to the user's PATH for `tsg` ([ADR 0007](0007-core-library-and-thin-tauri-app.md)). On macOS, one universal `.dmg` for Apple silicon and Intel.
+- **What ships.** A Windows x64 NSIS installer for the current user only, so it needs no admin rights. It installs into `%LOCALAPPDATA%\Programs\Tsugiki`, apart from the data ([ADR 0014](0014-settings-in-toml-files-user-state-in-the-database-and-a-portable-mode.md)), and adds its folder to the user's PATH for `tsg` ([ADR 0007](0007-core-library-and-thin-tauri-app.md)). A Windows portable `.zip` for portable mode. On macOS, one universal `.dmg` for Apple silicon and Intel.
 - **Signing.** None on Windows, so installing shows SmartScreen's "Windows protected your PC" (More info, Run anyway). On macOS the app is only ad-hoc signed, so the first open needs System Settings › Privacy & Security › Open Anyway. The ad-hoc signature changes with every build, so a personal access token kept in the keychain asks for access again after an update. gh's token isn't stored there and isn't affected.
 - **The workflow**, `release.yml`, runs in this order:
   1. Pushing a tag `vX.Y.Z` on main starts it.

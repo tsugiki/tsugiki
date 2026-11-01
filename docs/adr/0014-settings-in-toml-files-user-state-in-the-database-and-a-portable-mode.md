@@ -1,0 +1,46 @@
+# Settings in TOML files, user state in the database, and a portable mode
+
+What the user configures lives in two TOML files they can read and edit. What the user does while working lives in `tsugiki.db` ([ADR 0010](0010-one-sqlite-database-and-per-repository-mirrors.md)).
+
+- **`settings.toml`** travels between machines: settings, remapped keybindings, and each Repository with its **Conventions** ([ADR 0011](0011-pr-links-from-github-signals-by-repository-conventions.md)) and Filters. Only values that differ from the defaults are written.
+- **`machine.toml`** stays on its machine: the token source, the editor command, paths, the clone each Repository borrows objects from, window places and zoom. It may set `settings_path`, which puts `settings.toml` anywhere, such as a dotfiles repository or a synced folder. That is how the user syncs it.
+- **`tsugiki.db`** holds the user's state with the cache: Pinned issues, Muted authors, Muted and Archived items, Local marks, Last seen, and unsent composer text. These move with Export and Import database.
+- **The keychain** holds a personal access token, which never travels ([ADR 0005](0005-token-stays-in-the-rust-core.md)).
+
+Tsugiki watches both files and applies a hand edit at once. A file that doesn't parse is left untouched, the status bar says which line is wrong, and the last good values stay in force. Tsugiki's own writes go through `toml_edit`, so the user's comments and order survive. Each setting in the Settings dialog is labelled with where it is stored: settings file, this machine, database or keychain.
+
+## Where the files are
+
+```
+installed, Windows
+  %LOCALAPPDATA%\Programs\Tsugiki\tsg.exe       the program
+  %LOCALAPPDATA%\Tsugiki\                       tsugiki.db, machine.toml, repos\
+  %APPDATA%\Tsugiki\settings.toml               roaming, unless settings_path says otherwise
+
+installed, macOS
+  /Applications/Tsugiki.app
+  ~/Library/Application Support/Tsugiki/        settings.toml, machine.toml, tsugiki.db, repos/
+
+portable
+  <folder>\tsg.exe
+  <folder>\data\                                settings.toml, machine.toml, tsugiki.db, repos\
+  (macOS: Tsugiki-portable-data/ next to Tsugiki.app)
+```
+
+**Portable mode** works as in VS Code: when a `data` folder sits next to `tsg.exe`, or a `Tsugiki-portable-data` folder next to `Tsugiki.app`, everything lives there instead. The folder can be carried to another machine, but it shouldn't sit in a syncing folder while Tsugiki runs, for the reason ADR 0010 gives. A personal access token stays in each machine's keychain.
+
+## Considered Options
+
+- **Everything in the database**, with no files: one thing to move, but settings could be changed only in the Settings dialog, and they couldn't be read, diffed or kept in a dotfiles repository.
+- **JSONC files, as VS Code has them.** Familiar, but noisier to write by hand than TOML. **Reading the files only at start-up**, so a hand edit waits for a restart.
+- **Pinned issues and Muted authors in `settings.toml`**, as scope.md first had them. They change as the user works, from the Sidebar and the Issue list, which is state, not configuration. Keeping them in the file would mean rewriting it all the time.
+- **Fixed locations only**, synced by a symlink the user makes, or **all files next to the database**, synced by copying.
+- **Data always beside the program**, with no app-data folders. On macOS nothing may be written inside `Tsugiki.app`, and on Windows the uninstaller would have to tell data from program files.
+- **Keeping Tauri's per-user install folder**, `%LOCALAPPDATA%\Tsugiki`, which is where ADR 0010 put the data. The program and its data would share a folder.
+
+## Consequences
+
+- The per-user NSIS installer ([ADR 0012](0012-unsigned-v1-releases-from-a-tag-attested-and-checked.md)) installs into `%LOCALAPPDATA%\Programs\Tsugiki`, as VS Code's user setup does. Its "Delete app data" box removes `%LOCALAPPDATA%\Tsugiki` and `%APPDATA%\Tsugiki`, not the `io.github.tsugiki` folder Tauri's uninstaller would remove.
+- Releases add a Windows portable `.zip`, attested like the installers.
+- A Repository removed from `settings.toml` by hand keeps its rows in the database, so adding it back restores its pins and marks. Remove repository in Settings deletes them and the mirror, as ADR 0010 says.
+- A missing `settings.toml` at `settings_path` starts from the defaults, and the status bar says so.

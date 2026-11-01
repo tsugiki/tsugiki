@@ -1,0 +1,9 @@
+{
+  "name": "gh-rev-prototype-launcher",
+  "private": true,
+  "description": "PROTOTYPE branch only: runs the app-shell prototype from the repo root.",
+  "scripts": {
+    "proto": "npm --prefix prototype/app-shell run proto",
+    "proto:snapshot": "npm --prefix prototype/app-shell run proto:snapshot"
+  }
+}

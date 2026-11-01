@@ -25,7 +25,7 @@ Tsugiki is being designed. There is no app to install yet. The decisions made so
 - [CONTEXT.md](CONTEXT.md): the glossary. Terms in **bold** are defined there.
 - [docs/scope.md](docs/scope.md): what v1 does, and what it leaves out.
 - [docs/adr](docs/adr/): architecture decisions and why they were made.
-- [docs/issues](docs/issues/): open points to check before building.
+- [Issues](https://github.com/tsugiki/tsugiki/issues): open points to check before building.
 
 It will be a [Tauri](https://tauri.app/) app (Rust with Svelte 5 and TypeScript) for Windows and macOS. Its command-line name is `tsg`.
 

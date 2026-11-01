@@ -1,6 +1,6 @@
 # Tsugiki scope
 
-Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind the architecture are in [docs/adr](adr/). Open points to check or decide before building are filed in [docs/issues](issues/): project tasks, not **Issues** in the glossary sense.
+Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind the architecture are in [docs/adr](adr/). Open points to check or decide before building are filed as [GitHub issues](https://github.com/tsugiki/tsugiki/issues): project tasks, not **Issues** in the glossary sense.
 
 ## v1
 

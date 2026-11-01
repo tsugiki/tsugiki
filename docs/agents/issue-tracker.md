@@ -17,10 +17,6 @@ Infer the repo from `git remote -v` — `gh` does this automatically when run in
 
 In `CONTEXT.md`, **Issue** means a GitHub issue in a Repository that Tsugiki's user reviews, such as `python/cpython`. Issues in tsugiki/tsugiki are project tasks. Keep the two apart in ticket titles and bodies: write **Issue** in bold only for the glossary sense.
 
-## Older open points in `docs/issues/`
-
-Five open points were filed as files in `docs/issues/NNNN-slug.md` before the GitHub repo existed. Treat each file with `Status: open` as an open ticket until it is moved to a GitHub issue; when it is moved, set its `Status:` to closed with a link to the new issue. File new tickets on GitHub, not there.
-
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_

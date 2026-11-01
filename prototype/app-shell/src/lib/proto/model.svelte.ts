@@ -189,7 +189,10 @@ export function issueNode(n: number | null, prsOverride?: Pr[]): IssueNode {
   };
 }
 
-export type Scope = { kind: "all" } | { kind: "filter"; name: string } | { kind: "pinned" } | { kind: "view"; view: View };
+export type Scope =
+  | { kind: "all" } | { kind: "filter"; name: string } | { kind: "pinned" } | { kind: "view"; view: View }
+  /** A temporary Filter, `author:<login>`, opened by clicking a person. Here it only sees the snapshot. */
+  | { kind: "author"; login: string };
 export type View = "requests" | "stale" | "activity";
 export const VIEWS: { key: View; name: string }[] = [
   { key: "requests", name: "Review requests" },
@@ -221,7 +224,10 @@ export function workbench(scope: Scope = { kind: "all" }): { active: IssueNode[]
     for (const p of prs) if (p.state === "OPEN" && p.review !== "unreviewed" && p.issue) want.add(p.issue);
   } else if (scope.kind === "filter") reach(scope.name);
   else if (scope.kind === "pinned") pins.forEach((n) => want.add(n));
-  else {
+  else if (scope.kind === "author") {
+    for (const i of rawIssues.values()) if (i.author === scope.login) want.add(i.number);
+    for (const p of prs) if (p.author === scope.login) (p.issue ? want.add(p.issue) : noIssuePrs.push(p));
+  } else {
     const hit = prs.filter((p) => viewHas(scope.view, p));
     hit.forEach((p) => (p.issue ? want.add(p.issue) : noIssuePrs.push(p)));
   }

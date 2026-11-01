@@ -4,7 +4,7 @@
   import { issueNode, rawIssues, pins, togglePin, ago, type Pr } from "./model.svelte";
   import StateDot from "./StateDot.svelte";
   import PrStatus from "./PrStatus.svelte";
-  let { n, onPr }: { n: number | null; onPr: (n: number) => void } = $props();
+  let { n, onPr, onAuthor }: { n: number | null; onPr: (n: number) => void; onAuthor: (login: string) => void } = $props();
 
   const i = $derived(issueNode(n));
   const raw = $derived(n ? rawIssues.get(n) : undefined);
@@ -22,6 +22,7 @@
   <header>
     <div class="crumb">{n ? `gh-${n}` : "No issue"} · {i.state.toLowerCase()}{#if raw} · opened by {raw.author} {ago(raw.createdAt)} ago{/if}</div>
     <h2>{n ? i.title : "PRs without a gh- prefix"}</h2>
+    {#if raw}<div class="by"><button class="author" onclick={() => onAuthor(raw.author)} title="Show {raw.author}'s Issues and PRs">{raw.author}</button> opened this {ago(raw.createdAt)} ago · {raw.comments} comment{raw.comments === 1 ? "" : "s"}</div>{/if}
     <div class="meta">
       {#each i.labels as l}<span class="label">{l}</span>{/each}
       <span class="muted">{i.open} open of {i.total} PRs{#if i.attention} · <b>{i.attention} need attention</b>{/if}</span>
@@ -71,7 +72,10 @@
 <style>
   .iv { font: 14px/1.5 var(--sans); max-width: 900px; }
   .crumb { font-size: 12px; color: var(--muted); }
-  h2 { margin: 4px 0 6px; font-size: 18px; }
+  h2 { margin: 4px 0 2px; font-size: 18px; }
+  .by { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  .author { all: unset; color: var(--fg); font-weight: 600; cursor: pointer; }
+  .author:hover { color: var(--accent); text-decoration: underline; }
   h3 { font-size: 13px; margin: 18px 0 6px; }
   .meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; }
   .label { border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; font-size: 11.5px; }

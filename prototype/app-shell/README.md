@@ -76,3 +76,8 @@ The user pointed at their Outlook inbox as the reference. The Issue list now beh
 - **Issues no longer unfold in the Issue list.** It holds one item per Issue, like mail, and ↑ ↓ move between Issues.
 - **The Issue view lists the Origin PRs.** Each one with Backports gets a single folded line under it (`› 2 backports: ● 3.15 ● 3.14 (manual)`), which unfolds on click. Clicking a PR opens its PR view, and Esc or the `gh-N` link goes back to the Issue view.
 - **Live reload:** keep the `npm run proto` window open. Frontend edits appear in it within a second, and Rust edits rebuild and restart it. Edits to the model or the snapshot reload the page, which clears in-memory pins, marks and comments.
+
+## Author link (layout A)
+
+- **The Issue view shows the author under the title** ("JelleZijlstra opened this 13d ago · 0 comments"), as well as in the breadcrumb. The PR view header's author is clickable too.
+- **Clicking an author opens a temporary Filter, `author:<login>`, in the Issue list.** It lists that person's Issues and the Issues their PRs fix, grouped like every other scope. In the Sidebar it shows under Filters as *unsaved*, with **Save** (stub) and ✕. It covers what the person authored only; `involves:` would be a separate Filter. In the prototype it can only see the snapshot, where the real app would search GitHub live. `&author=<login>` opens it from the URL.

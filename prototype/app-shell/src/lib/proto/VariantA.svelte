@@ -17,8 +17,9 @@
   import Help from "./Help.svelte";
   import { keymap } from "./keys";
 
-  let { start = null, startIssue = null }: { start?: number | null; startIssue?: number | null } = $props();
-  let scope = $state<Scope>({ kind: "all" });
+  let { start = null, startIssue = null, startAuthor = null }: { start?: number | null; startIssue?: number | null; startAuthor?: string | null } = $props();
+  // svelte-ignore state_referenced_locally
+  let scope = $state<Scope>(startAuthor ? { kind: "author", login: startAuthor } : { kind: "all" });
   // Selection is an Issue ("i:N", N = 0 for No issue) or a PR ("p:N").
   // svelte-ignore state_referenced_locally
   let sel = $state<string | null>(start ? `p:${start}` : startIssue ? `i:${startIssue}` : null);
@@ -45,7 +46,7 @@
   });
   const flat = $derived(visibleIssues.map((i) => i.number ?? 0));
   const scopeName = $derived(
-    scope.kind === "all" ? "Workbench" : scope.kind === "pinned" ? "Pinned issues" : scope.kind === "filter" ? scope.name : VIEWS.find((v) => v.key === (scope as { view: string }).view)!.name);
+    scope.kind === "all" ? "Workbench" : scope.kind === "pinned" ? "Pinned issues" : scope.kind === "filter" ? scope.name : scope.kind === "author" ? `author:${scope.login}` : VIEWS.find((v) => v.key === (scope as { view: string }).view)!.name);
 
   function select(key: string) {
     sel = key;
@@ -59,6 +60,8 @@
     const n = flat[Math.max(0, Math.min(flat.length - 1, i + d))];
     if (n != null) select(`i:${n}`);
   }
+  /** Clicking a person opens a temporary `author:<login>` Filter in the Issue list. */
+  function showAuthor(login: string) { scope = { kind: "author", login }; }
   /** Esc in a PR view goes back to its Issue view. */
   function back() { if (current) select(`i:${current.issue ?? 0}`); }
   const scopeEq = (s: Scope) => JSON.stringify(s) === JSON.stringify(scope);
@@ -110,6 +113,11 @@
       {#each FILTERS as f}
         <button class="nav" title={f.q} class:on={scopeEq({ kind: "filter", name: f.name })} onclick={() => (scope = { kind: "filter", name: f.name })}>{f.name}{@render count(attentionCount({ kind: "filter", name: f.name }))}</button>
       {/each}
+      {#if scope.kind === "author"}
+        {@const login = scope.login}
+        <div class="nav on tmp"><span>author:{login} <i class="muted">unsaved</i></span>
+          <span class="tmpact"><button onclick={() => say(`Would save "author:${login}" as a Filter in your config file (prototype)`)} title="Save as Filter">Save</button><button onclick={() => (scope = { kind: "all" })} title="Close">✕</button></span></div>
+      {/if}
       <div class="sec">Pinned</div>
       <button class="nav" class:on={scopeEq({ kind: "pinned" })} onclick={() => (scope = { kind: "pinned" })}>Pinned issues{@render count(attentionCount({ kind: "pinned" }))}</button>
       <div class="hint">Numbers: Issues that need attention (PRs, for the Built-in views).</div>
@@ -147,12 +155,12 @@
 
   <section class="right">
     {#if selKind === "i"}
-      <div class="scroll"><IssueView n={selNum || null} onPr={(n) => select(`p:${n}`)} /></div>
+      <div class="scroll"><IssueView n={selNum || null} onPr={(n) => select(`p:${n}`)} onAuthor={showAuthor} /></div>
     {:else if current}
       <header class="prhead">
         <div class="crumb">
           {#if current.issue}<button class="link" onclick={() => select(`i:${current.issue}`)}>gh-{current.issue}</button>{:else}No issue{/if}
-          › #{current.number} · {current.author} → <span class="mono">{current.baseRefName}</span>{current.kind === "bot" ? ` · bot backport of #${current.origin}` : current.kind === "manual" ? ` · manual backport of #${current.origin}` : ""} · updated {ago(current.updatedAt)} ago
+          › #{current.number} · <button class="link who" onclick={() => showAuthor(current.author)} title="Show {current.author}'s Issues and PRs">{current.author}</button> → <span class="mono">{current.baseRefName}</span>{current.kind === "bot" ? ` · bot backport of #${current.origin}` : current.kind === "manual" ? ` · manual backport of #${current.origin}` : ""} · updated {ago(current.updatedAt)} ago
         </div>
         <h2>{current.short}</h2>
         <div class="row">
@@ -193,6 +201,10 @@
   .lhead { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 14px; }
   .grow { flex: 1; }
   .sort { all: unset; font-size: 12px; color: var(--muted); cursor: pointer; }
+  .tmp { cursor: default; align-items: center; }
+  .tmpact { display: flex; gap: 4px; }
+  .tmpact button { padding: 0 6px; font-size: 11px; }
+  .who { font-family: var(--sans); color: var(--fg); }
   .hint { font-size: 11px; color: var(--muted); padding: 14px 8px; }
   .issue { border-bottom: 1px solid var(--line); border-left: 3px solid transparent; }
   .issue.att { border-left-color: var(--accent); }

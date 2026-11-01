@@ -19,6 +19,7 @@
   // ?pr=N opens a PR straight away (handy for comparing the same PR across variants).
   const start = $derived(+(page.url.searchParams.get("pr") ?? 0) || null);
   const startIssue = $derived(+(page.url.searchParams.get("issue") ?? 0) || null);
+  const startAuthor = $derived(page.url.searchParams.get("author"));
   const pick = (k: string) => goto(`?variant=${k}${start ? `&pr=${start}` : ""}`, { replaceState: true, keepFocus: true, noScroll: true });
 
   let showToast = $state(false);
@@ -33,7 +34,7 @@
 <svelte:head><title>gh-rev — app shell PROTOTYPE</title></svelte:head>
 
 {#key variant}
-  {#if variant === "B"}<VariantB {start} />{:else if variant === "C"}<VariantC {start} />{:else}<VariantA {start} {startIssue} />{/if}
+  {#if variant === "B"}<VariantB {start} />{:else if variant === "C"}<VariantC {start} />{:else}<VariantA {start} {startIssue} {startAuthor} />{/if}
 {/key}
 {#if showToast}<div class="toast">{toast.text}</div>{/if}
 <Switcher variants={VARIANTS} current={variant} onPick={pick} />

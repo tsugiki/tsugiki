@@ -1,9 +1,9 @@
 <script lang="ts">
   // PROTOTYPE — throwaway. Variant B, "Dialog": a preferences window over the app, a few hand-laid
   // pages instead of one list, and Apply / Cancel. Changes preview live; Cancel (or Esc) puts them back.
-  // Repositories is master–detail: pick one on the left, its settings on the right.
+  // Repositories is a subtree in the left column, one page per Repository (as in A).
   import { settingDef, type SettingDef } from "$lib/core/settings";
-  import { snapshotSettings, restoreSettings, settingsUi } from "$lib/state/settings.svelte";
+  import { snapshotSettings, restoreSettings, settingsUi, repoConfig } from "$lib/state/settings.svelte";
   import { REPOS, wb, say } from "$lib/state/app.svelte";
   import Field from "./Field.svelte";
   import Where from "./Where.svelte";
@@ -14,11 +14,13 @@
 
   const PAGES = ["General", "Account", "Repositories", "Sync", "Keyboard", "Advanced"] as const;
   type Page = (typeof PAGES)[number];
-  const START: Record<string, Page> = { Account: "Account", Sync: "Sync", Review: "General", Appearance: "General", Storage: "Advanced", Keybindings: "Keyboard" };
+  const START: Record<string, Page> = { Account: "Account", Sync: "Sync", Review: "General", Appearance: "General", Storage: "Advanced", Keybindings: "Keyboard", Repositories: "Repositories" };
   // svelte-ignore state_referenced_locally
   let page = $state<Page>(settingsUi.section?.startsWith("repo:") ? "Repositories" : START[settingsUi.section ?? ""] ?? "General");
   // svelte-ignore state_referenced_locally
-  let repo = $state(settingsUi.section?.startsWith("repo:") ? settingsUi.section.slice(5) : REPOS[0]);
+  // The Repository whose page is open; null on the Repositories overview.
+  let repo = $state<string | null>(settingsUi.section?.startsWith("repo:") ? settingsUi.section.slice(5) : null);
+  const go = (p: Page, r: string | null = null) => { page = p; repo = r; files = false; };
   let files = $state(false);
   const before = snapshotSettings();
   const changed = $derived(JSON.stringify(snapshotSettings()) !== JSON.stringify(before));
@@ -42,7 +44,12 @@
     <header><b>Settings</b><span class="grow"></span><button class="x" onclick={cancel} title="Cancel (Esc)">✕</button></header>
     <div class="body">
       <nav>
-        {#each PAGES as p}<button class:on={page === p && !files} onclick={() => { page = p; files = false; }}>{p}</button>{/each}
+        {#each PAGES as p}
+          <button class:on={page === p && !repo && !files} onclick={() => go(p)}>{p}</button>
+          {#if p === "Repositories"}
+            {#each REPOS as r}<button class="sub" class:on={page === p && repo === r && !files} onclick={() => go(p, r)} title={r}>{r.split("/")[1]}</button>{/each}
+          {/if}
+        {/each}
       </nav>
       <section>
         {#if files}
@@ -51,14 +58,22 @@
           <h3>GitHub</h3>
           <p class="status">✓ Signed in as <b>{wb.me}</b></p>
           {@render form([d("auth.source"), d("auth.token")], true)}
+        {:else if page === "Repositories" && repo}
+          <h3 class="mono">{repo}</h3>
+          {#key repo}<RepoForm name={repo} />{/key}
         {:else if page === "Repositories"}
-          <div class="md">
-            <div class="repos">
-              {#each REPOS as r}<button class:on={repo === r} onclick={() => (repo = r)}>{r}</button>{/each}
-              <button class="add" onclick={() => say("Would ask for owner/name, then sync it (prototype)")}>+ Add…</button>
-            </div>
-            <div class="detail">{#key repo}<RepoForm name={repo} />{/key}</div>
+          <h3>Repositories</h3>
+          <div class="repos">
+            {#each REPOS as r}
+              {@const c = repoConfig(r)}
+              <button class="rrow" onclick={() => go("Repositories", r)}>
+                <span class="mono">{r}</span>
+                <span class="help">{c.filters.length} Filters · {c.pinned.length} pinned · {c.mutedAuthors.length} muted authors{c.clone ? " · borrows from a clone" : ""}</span>
+                <span class="go">›</span>
+              </button>
+            {/each}
           </div>
+          <button class="add" onclick={() => say("Would ask for owner/name, then sync it (prototype)")}>+ Add repository…</button>
         {:else if page === "Keyboard"}
           <p class="help">VS Code's keys by default; on macOS Cmd stands for Ctrl. Click a key to change it. <Where where="synced" /></p>
           <KeysTable />
@@ -105,12 +120,16 @@
   .lab { text-align: right; padding-top: 4px; }
   .help { color: var(--muted); font-size: 12px; margin-top: 3px; }
   .status { margin: 0 0 12px; color: var(--good); }
-  .md { display: grid; grid-template-columns: 200px 1fr; gap: 16px; padding-top: 12px; }
-  .repos { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--line); border-radius: 6px; padding: 4px; align-self: start; }
-  .repos button { all: unset; cursor: pointer; padding: 5px 8px; border-radius: 4px; font: 12px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .repos button:hover { background: var(--hover); }
-  .repos button.on { background: var(--sel); }
-  .repos .add { font-family: var(--sans); color: var(--accent); }
+  nav .sub { padding: 4px 10px 4px 22px; font: 12px var(--mono); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  nav .sub.on { color: var(--fg); }
+  .mono { font-family: var(--mono); }
+  .repos { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; margin-bottom: 10px; }
+  .rrow { all: unset; box-sizing: border-box; width: 100%; cursor: pointer; display: grid; grid-template-columns: 1fr auto; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  .rrow:last-child { border-bottom: 0; }
+  .rrow:hover { background: var(--hover); }
+  .rrow .help { grid-column: 1; }
+  .rrow .go { grid-column: 2; grid-row: 1 / 3; align-self: center; color: var(--muted); font-size: 18px; }
+  .add { color: var(--accent); }
   .filesbox { height: 100%; min-height: 440px; padding-top: 10px; }
   footer { display: flex; gap: 8px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line); background: var(--panel); }
   .link { all: unset; cursor: pointer; color: var(--accent); font-size: 12px; }

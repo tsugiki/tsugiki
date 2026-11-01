@@ -139,3 +139,5 @@ What every variant shows is where each setting lives: **synced** (`config.toml`,
 In effect while the prototype runs: Theme, Code font size, Diff view (for the next Repository opened) and Collapse Generated files. The rest is only written to the files. Keybindings can be remapped and conflicts are flagged, but the app keeps its built-in keys. Nothing is written to disk.
 
 Code: `core/settings.ts` (what the settings are, the two files, a small TOML reader for C), `state/settings.svelte.ts`, `ui/settings/` (the variants, plus the shared Field, KeysTable, RepoForm and Files).
+
+**Verdict: B**, "easier to handle", with A's Repositories subtree: Repositories in the left column has one entry per Repository (the name; owner/name on hover), each opening that Repository's page, and Repositories itself is an overview with Add repository. A and C stay here as the record.

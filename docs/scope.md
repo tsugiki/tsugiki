@@ -95,11 +95,12 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 ### In-app review
 
 - The whole PR scrolls as one list, in unified or side-by-side view.
-- Hidden lines around each change can be shown, as on GitHub: 20 more above or below a hunk, the rest of a short gap, or the whole file. They are read from the file at the PR’s head in the mirror, so expanding costs no API call. Line comments stay on lines of the diff.
+- Hidden lines around each change can be shown, as on GitHub: 20 more above or below a hunk, the rest of a short gap, or the whole file. They are read from the file at the PR’s head in the mirror, so expanding costs no API call. New line comments stay on lines of the diff, because GitHub's API accepts them only there; the comment-anywhere of github.com's Files changed page has no public API ([research](https://github.com/tsugiki/tsugiki/blob/research/expanded-line-comments/research/expanded-line-comments.md)). Expanded lines show no + in the gutter, and hovering it says why: reply to a thread there, or comment on the PR.
 - Generated files are collapsed by default and shown with line counts. Whether a file is generated comes from `.gitattributes` on the PR's **Target branch**.
 - Every **NEWS entry** in the PR is rendered at the top. A PR can have several, or none.
-- Comments can cover a single line or a range of lines. They go into the user's GitHub **Pending review**, which is then submitted as Approve, Request changes, or Comment.
+- Comments can cover a single line or a range of lines within one hunk. They go into the user's GitHub **Pending review**, which is then submitted as Approve, Request changes, or Comment.
 - The user can reply to threads, resolve and unresolve them, post `suggestion` blocks, and leave comments on the PR as a whole.
+- A thread someone started on github.com on a line outside every hunk is shown in place: the hidden gap around it opens by itself to show that line with 3 lines either side, marked as outside the diff, and the thread sits under it like any other, placed by its file, line and side. It can be replied to and resolved like any thread, and `F8` reaches it in order. If its line no longer exists at the head, it is an **Outdated thread**.
 - **Outdated threads** are grouped at the top of their file together with the code they were written against. During a re-review, the user's own unresolved Outdated threads are listed first.
 - Symbol peek runs `git grep` against the PR's head commit, or against the base commit for removed lines.
 - "Open in editor" runs `code -g` on the **Review checkout**.

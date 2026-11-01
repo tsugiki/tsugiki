@@ -4,12 +4,13 @@
   // Repositories is a subtree in the left column, one page per Repository (as in A).
   import { settingDef, STATUS_PARTS, type SettingDef } from "$lib/core/settings";
   import { snapshotSettings, restoreSettings, settingsUi, repoConfig } from "$lib/state/settings.svelte";
-  import { REPOS, wb, say } from "$lib/state/app.svelte";
+  import { REPOS, say } from "$lib/state/app.svelte";
   import Field from "./Field.svelte";
   import Where from "./Where.svelte";
   import KeysTable from "./KeysTable.svelte";
   import RepoForm from "./RepoForm.svelte";
   import Files from "./Files.svelte";
+  import Account from "./Account.svelte";
   let { onClose }: { onClose: () => void } = $props();
 
   const PAGES = ["General", "Account", "Repositories", "Sync", "Keyboard", "Advanced"] as const;
@@ -59,9 +60,7 @@
         {#if files}
           <div class="filesbox"><Files /></div>
         {:else if page === "Account"}
-          <h3>GitHub</h3>
-          <p class="status">✓ Signed in as <b>{wb.me}</b></p>
-          {@render form([d("auth.source"), d("auth.token")], true)}
+          <Account />
         {:else if page === "Repositories" && repo}
           <h3 class="mono">{repo}</h3>
           {#key repo}<RepoForm name={repo} />{/key}
@@ -123,7 +122,6 @@
   .form { display: grid; grid-template-columns: 170px 1fr; gap: 10px 14px; }
   .lab { text-align: right; padding-top: 4px; }
   .help { color: var(--muted); font-size: 12px; margin-top: 3px; }
-  .status { margin: 0 0 12px; color: var(--good); }
   nav .sub { padding: 4px 10px 4px 22px; font: 12px var(--mono); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   nav .sub.on { color: var(--fg); }
   .mono { font-family: var(--mono); }

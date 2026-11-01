@@ -6,8 +6,9 @@
   //
   // Each part can be switched off (right-click the bar, or Settings › General › Status bar). Offline and
   // an expired token always show: nothing else would tell the user.
-  import { status, jobs, pendingReviews, refreshNow } from "$lib/state/status.svelte";
-  import { goTo } from "$lib/state/app.svelte";
+  import { status, jobs, pendingReviews, refreshNow, critical } from "$lib/state/status.svelte";
+  import { goTo, app } from "$lib/state/app.svelte";
+  import { access, whyReadOnly } from "$lib/state/account.svelte";
   import { openSettings, value, setValue } from "$lib/state/settings.svelte";
   import { STATUS_PARTS, settingDef } from "$lib/core/settings";
   import { chord } from "./chord.svelte";
@@ -41,6 +42,9 @@
     <span class="seg" title="Details at the right end of the bar">⟳ Syncing…</span>
   {:else if all && on("status_bar.sync")}
     <button class="seg" onclick={refreshNow} title="The Workbench refreshes every {value('sync.workbench_minutes')} min (Settings › Sync). Click to refresh now.">✓ Synced {since}</button>
+  {/if}
+  {#if all && on("status_bar.access") && app.repo && !critical() && access() === "read"}
+    <button class="seg ro" onclick={() => openSettings("Account")} title="gh-rev shows {app.repo} but can't write there: {whyReadOnly()}. Comments can still be written and copied to GitHub. Opens Settings › Account.">🔒 Read-only</button>
   {/if}
   {#if all && on("status_bar.rate_limit") && status.scenario === "rate"}
     <button class="seg warn" onclick={() => openSettings("Sync")} title="GitHub API rate limit. gh-rev refreshes less often until it resets. Opens Settings › Sync.">API: 212 of 5,000 left · resets {clock(status.now + 23 * 60e3)} · refreshing less often</button>

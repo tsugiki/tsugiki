@@ -7,6 +7,8 @@
   import { addComment, my, say } from "$lib/state/app.svelte";
   import { value } from "$lib/state/settings.svelte";
   import { highlightRows } from "./highlight";
+  import { access, tryWrite, whyReadOnly } from "$lib/state/account.svelte";
+  import ReadOnly from "./ReadOnly.svelte";
 
   let { pr, split = false, showNews = true }: { pr: Pr; split?: boolean; showNews?: boolean } = $props();
 
@@ -30,7 +32,8 @@
     if (line != null) composer = { path: f.path, line, body: "" };
   }
   function send() {
-    if (!composer?.body.trim()) return;
+    // Read-only, or GitHub refuses this write: the text stays in the composer.
+    if (!composer?.body.trim() || !tryWrite()) return;
     addComment(pr.number, composer.path, composer.line, composer.body);
     composer = null;
   }
@@ -74,7 +77,7 @@
       <div class="tc"><b>{c.author}</b> <div class="md">{@html c.html}</div></div>
     {/each}
     <div class="tactions"><button onclick={() => say("Reply box: same as a line comment (prototype)")}>Reply</button>
-      <button onclick={() => say(`Would ${t.resolved ? "unresolve" : "resolve"} on GitHub (prototype)`)}>{t.resolved ? "Unresolve" : "Resolve"}</button></div>
+      <button disabled={access() === "read"} title={access() === "read" ? `Read-only: ${whyReadOnly()}` : ""} onclick={() => tryWrite() && say(`Would ${t.resolved ? "unresolve" : "resolve"} on GitHub (prototype)`)}>{t.resolved ? "Unresolve" : "Resolve"}</button></div>
   </div>
 {/snippet}
 
@@ -86,10 +89,11 @@
   {#if composer && composer.path === f.path && composer.line === (r.n ?? r.o)}
     <div class="composer">
       <!-- svelte-ignore a11y_autofocus -->
-      <textarea autofocus bind:value={composer.body} placeholder="Comment on line {composer.line}. Ctrl+Enter adds it to your Pending review, Esc cancels."
+      <textarea autofocus bind:value={composer.body} placeholder={access() === "read" ? `Comment on line ${composer.line}. Read-only: write it here, then copy it to GitHub. Esc cancels.` : `Comment on line ${composer.line}. Ctrl+Enter adds it to your Pending review, Esc cancels.`}
         onkeydown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } if (e.key === "Escape") composer = null; }}></textarea>
-      <div class="cactions"><button onclick={send}>Add to review</button><button onclick={() => (composer = null)}>Cancel</button>
+      <div class="cactions">{#if access() !== "read"}<button onclick={send}>Add to review</button>{/if}<button onclick={() => (composer = null)}>Cancel</button>
         <button onclick={() => composer && (composer.body += "\n```suggestion\n\n```")}>Suggestion</button></div>
+      {#if access() === "read"}<ReadOnly text={composer.body} url="{pr.url}/files" />{/if}
     </div>
   {/if}
 {/snippet}

@@ -168,3 +168,16 @@ Live: Pending reviews (CPython starts with one seeded draft), chords, refresh. S
 History was there (Alt+← / Alt+→) but invisible. A slim bar over the Detail pane now has ‹ and ›, greyed out when there's nothing that way, with the target in the tooltip ("Back to gh-160663 UAF in GC…"). Next to them is the item shown now, which stays visible while a long Issue scrolls. Right-click an arrow for the last dozen items that way, as in a browser; that's the whole "history manager". The mouse's back and forward buttons work too, and they can't take WebView2 off the page. "Go Back" / "Go Forward" are in the command palette.
 
 History records what the Detail pane showed in this Repository: clicking the same item twice adds one entry, and changing scope in the Sidebar adds none. Switching Repository starts fresh.
+
+## Account and Read-only
+
+The question: if a colleague tries gh-rev, can they see what it does with their token, and use a narrower one? Settings › Account (`?settings=Account`) answers it in four parts:
+
+- **Who and where from.** Signed in as whom, with gh's token, a classic one (`ghp_…`) or a fine-grained one (`github_pat_…`).
+- **What this token lets gh-rev do.** Plain words, per Repository where it differs. gh's token gets a warning line for everything gh-rev never uses (push and merge anywhere, private repositories, workflows, gists). A fine-grained token can't be asked what it allows, so the user says ("Reading only", "Reviews and comments on one owner's repositories", "Not sure"), and a refused write corrects it.
+- **What gh-rev does with it.** The rules from ADR 0005: only the core holds it, GitHub hosts only, never stored for gh, keychain for a pasted one, anonymous git fetch, verifiable releases.
+- **Make a narrower token.** Three guides (Read-only, Reviews on one owner's repositories, Classic `public_repo`) with steps, can / can't, the approval caveat, and "Open GitHub's form" with the form filled in through GitHub's URL parameters. A fine-grained token pasted after that is assumed to be the one the guide made.
+
+**Read-only** in the app: the status bar says "🔒 Read-only" on the left (a click opens Account; it can be switched off like the other parts). Comment boxes stay usable and offer "Copy and open on GitHub" instead of sending. Approve / Request changes / Comment are off with the reason in the tooltip, and Resolve too. A Local mark still works, since it never leaves gh-rev. With "Not sure" or a token still waiting for approval, the first refused write keeps the text, says why and makes the Repository Read-only. "Try writing again" on the Account page undoes that once the token has changed on GitHub.
+
+There's no GitHub here: `?token=gh|classic|read|review|pending|unsure`, or the dashed PROTOTYPE select at the bottom of the Account page, pretends a token was pasted and decides what GitHub would refuse.

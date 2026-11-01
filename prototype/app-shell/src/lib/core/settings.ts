@@ -27,7 +27,7 @@ export interface SettingDef {
 
 export const SECTIONS = ["Account", "Sync", "Review", "Appearance", "Status bar", "Storage"] as const;
 /** The status bar's switchable parts, in the order of its right-click menu. */
-export const STATUS_PARTS = ["status_bar.sync", "status_bar.rate_limit", "status_bar.pending_reviews", "status_bar.chord", "status_bar.jobs"];
+export const STATUS_PARTS = ["status_bar.sync", "status_bar.access", "status_bar.rate_limit", "status_bar.pending_reviews", "status_bar.chord", "status_bar.jobs"];
 
 export const SETTINGS: SettingDef[] = [
   { key: "auth.source", section: "Account", label: "GitHub token", where: "machine", default: "gh",
@@ -36,6 +36,12 @@ export const SETTINGS: SettingDef[] = [
   { key: "auth.token", section: "Account", label: "Personal access token", where: "keychain", default: "",
     help: "Used only when the token source is a personal access token. Kept in the OS keychain, never in a file.",
     type: { kind: "secret" } },
+  // GitHub does not tell apps what a fine-grained token allows, so the user says; a refused write corrects it.
+  { key: "auth.fine_allows", section: "Account", label: "This token allows", where: "machine", default: "unsure",
+    help: "Only for a fine-grained token (github_pat_…): GitHub doesn’t tell apps what it allows. Not sure: gh-rev finds out on the first write, and keeps what you were sending.",
+    type: { kind: "enum", options: [["read", "Reading only"], ["write", "Reviews and comments on one owner’s repositories"], ["unsure", "Not sure"]] } },
+  { key: "auth.fine_owner", section: "Account", label: "Owner", where: "machine", default: "",
+    help: "The token’s resource owner: the user or organization its writes are limited to.", type: { kind: "text", mono: true } },
 
   { key: "sync.workbench_minutes", section: "Sync", label: "Workbench refresh", where: "synced", default: 5,
     help: "How often the open Repository's Workbench is refreshed. Each poll fetches only what changed since the last one.",
@@ -77,6 +83,8 @@ export const SETTINGS: SettingDef[] = [
     type: { kind: "bool" } },
   { key: "status_bar.sync", section: "Status bar", label: "Sync status", where: "synced", default: true,
     help: "“✓ Synced 2 min ago” and “Syncing…”; click to refresh.", type: { kind: "bool" } },
+  { key: "status_bar.access", section: "Status bar", label: "Read-only", where: "synced", default: true,
+    help: "“Read-only” when your token can’t write to this Repository; click for the Account page.", type: { kind: "bool" } },
   { key: "status_bar.rate_limit", section: "Status bar", label: "Rate limit warning", where: "synced", default: true,
     help: "When few GitHub API calls are left and gh-rev refreshes less often.", type: { kind: "bool" } },
   { key: "status_bar.pending_reviews", section: "Status bar", label: "Pending reviews", where: "synced", default: true,

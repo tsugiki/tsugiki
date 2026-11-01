@@ -7,6 +7,8 @@
   import { ago } from "./format";
   import StateDot from "./StateDot.svelte";
   import PrStatus from "./PrStatus.svelte";
+  import ReadOnly from "./ReadOnly.svelte";
+  import { access, tryWrite } from "$lib/state/account.svelte";
   let { n, onPr, onAuthor }: { n: number; onPr: (n: number) => void; onAuthor: (login: string) => void } = $props();
 
   const i = $derived(wb.issueNode(n));
@@ -40,7 +42,7 @@
     unfolded = s;
   }
   function send() {
-    if (!draft.trim()) return;
+    if (!draft.trim() || !tryWrite()) return;
     commentOnIssue(n, draft);
     draft = "";
   }
@@ -105,9 +107,10 @@
     <div class="post mine"><div class="who2"><b>{wb.me}</b> <span class="muted">just now · not sent: prototype</span></div><div class="md"><p>{c.body}</p></div></div>
   {/each}
   <div class="compose">
-    <textarea bind:value={draft} placeholder="Comment on {label}. Ctrl+Enter posts it."
+    <textarea bind:value={draft} placeholder={access() === "read" ? `Comment on ${label}. Read-only: write it here, then copy it to GitHub.` : `Comment on ${label}. Ctrl+Enter posts it.`}
       onkeydown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } }}></textarea>
-    <button onclick={send} disabled={!draft.trim()}>Comment</button>
+    {#if access() === "read"}<ReadOnly text={draft} url={raw?.url ?? `https://github.com/${wb.repo.name}/issues/${n}`} />
+    {:else}<button onclick={send} disabled={!draft.trim()}>Comment</button>{/if}
   </div>
 </div>
 

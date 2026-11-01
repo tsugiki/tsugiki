@@ -55,7 +55,7 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 - Hiding, all kept in gh-rev only:
   - **Archive** puts an item away until something new needs attention there.
   - **Mute** hides an item until the user unmutes it.
-  - **Mute author** hides the Issues and Standalone PRs a person or bot opened. Their PRs inside a followed Issue stay listed without needing attention, and an Issue they opened still shows when another PR in it needs attention or a Filter matches it.
+  - **Mute author** hides the Issues and Standalone PRs a person or bot opened, in the current Repository only. Their PRs inside a followed Issue stay listed without needing attention, and an Issue they opened still shows when another PR in it needs attention or a Filter matches it.
   - A Review request or an assignment to the user always shows, even when Muted.
 
 ### Issue tree

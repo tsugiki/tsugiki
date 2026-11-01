@@ -102,7 +102,7 @@ A **Workbench** item the user has hidden until they unmute it, whatever happens 
 _Avoid_: Ignored, blocked
 
 **Muted author**:
-A person or bot whose Issues and **Standalone PRs** the user has hidden from the **Workbench**, usually because their area is outside the user's interest. Their PRs inside an Issue the user follows stay listed but never need attention, and an Issue they opened still shows when another PR in it needs attention or a **Filter** matches it. As with **Muted**, a Review request or an assignment always shows. Kept in gh-rev only.
+A person or bot whose Issues and **Standalone PRs** the user has hidden from one **Repository**'s **Workbench**, usually because their area is outside the user's interest. Their PRs inside an Issue the user follows stay listed but never need attention, and an Issue they opened still shows when another PR in it needs attention or a **Filter** matches it. As with **Muted**, a Review request or an assignment always shows. Kept in gh-rev only.
 _Avoid_: Blocked user, ignored user
 
 ### Reviewing

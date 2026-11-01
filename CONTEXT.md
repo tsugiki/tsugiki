@@ -93,11 +93,11 @@ A **Workbench** item (an Issue, a **Standalone PR** or **Dependency updates**) t
 _Avoid_: Dismissed, done, snoozed
 
 **Muted**:
-A **Workbench** item the user has hidden until they unmute it, whatever happens to it. Kept in gh-rev only.
+A **Workbench** item the user has hidden until they unmute it, whatever happens to it, except a **Review request** or an assignment to the user: someone asking by name always shows. Kept in gh-rev only.
 _Avoid_: Ignored, blocked
 
 **Muted author**:
-A person or bot whose Issues and PRs the user has hidden from the **Workbench**, usually because their area is outside the user's interest. Kept in gh-rev only.
+A person or bot whose Issues and **Standalone PRs** the user has hidden from the **Workbench**, usually because their area is outside the user's interest. Their PRs inside an Issue the user follows stay listed but never need attention, and an Issue they opened still shows when another PR in it needs attention or a **Filter** matches it. As with **Muted**, a Review request or an assignment always shows. Kept in gh-rev only.
 _Avoid_: Blocked user, ignored user
 
 ### Reviewing

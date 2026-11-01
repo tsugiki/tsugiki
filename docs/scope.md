@@ -24,12 +24,16 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
     - the Issue's number and title, with the number of PRs and the time of the last update
     - a preview of what is waiting on the user
 
-    An item that Needs attention is marked the way unread mail is. An Issue's PRs aren't listed here. Any item can be **Archived** or **Muted**, and its author **Muted**.
+    An item that Needs attention is marked the way unread mail is. An Issue's PRs aren't listed here. Any item can be **Archived** or **Muted**, and its author **Muted**. A footer under the list gives the legend and the list's keys (↑ ↓, E, M, `Alt+←`, `?` for all); it can be switched off.
   - **Detail pane** (right): the selected item. That is either an **Issue view** or a **PR view**.
     - The Issue view shows the title and its author, the Origin PRs, the description, and recent comments, with a box to comment. Each Origin PR's Backports are folded into one line that gives their branches and states.
     - The PR view shows Conversation and Files as tabs.
 
     Esc goes from a PR back to its Issue.
+- A **status bar** runs along the bottom of every screen, the Home page included, for what is app-wide and has no other place. It stays when the Sidebar is hidden.
+  - Left, where the eye spends its time: sync status ("Synced 2 min ago", a click refreshes), **Offline: read-only** (which tints the whole bar), and problems that stop gh-rev reading, such as an expired token or a low API rate limit, each opening the Settings page that fixes it.
+  - Right: unsent **Pending reviews** in any Repository (a click opens the PR), the first key of a chord while gh-rev waits for the second, and at the far end background work with its progress (refreshes, mirror fetches, a first sync, patch-id checks), since that is rarely what the user looks for.
+  - Each part can be switched off from the bar's right-click menu or Settings › General, and the whole bar can be hidden ("View: Toggle Status Bar"). Being offline or an expired token still shows: the bar comes back with only that problem, since nothing else would tell the user.
 - Links in descriptions and comments are sorted by where they point. gh-rev never navigates its own window to a web page.
   - An Issue or PR in the current Repository opens in the Detail pane. `Alt+←` / `Alt+→` go back and forward through what was opened.
   - An Issue or PR anywhere else on GitHub opens in a **Peek** popup that gh-rev renders from the API: title, state, author, description, the last few comments, with Open in browser and, for an added Repository, Open in gh-rev. GitHub can't be embedded in a frame.

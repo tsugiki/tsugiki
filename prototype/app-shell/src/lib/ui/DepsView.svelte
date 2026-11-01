@@ -4,7 +4,7 @@
   import type { WorkItem } from "$lib/core/types";
   import { wb, archive, mute, muteAuthor } from "$lib/state/app.svelte";
   import { openInBrowser } from "$lib/platform/shell";
-  import { ago } from "./format";
+  import { ago, depsUrl } from "./format";
   import StateDot from "./StateDot.svelte";
   import PrStatus from "./PrStatus.svelte";
   let { item, onPr }: { item: WorkItem; onPr: (n: number) => void } = $props();
@@ -13,10 +13,10 @@
 
 <div class="dv">
   <div class="crumb">{wb.repo.name} · {item.people.join(", ")}</div>
-  <h2>Dependency updates <span class="muted">({item.prs.length} open)</span></h2>
+  <h2><a class="ghtitle" href={depsUrl(wb.repo.name, item.author)} data-web title="Open on GitHub (Ctrl+Shift+G)">Dependency updates<span class="ext">↗</span></a> <span class="muted">({item.prs.length} open)</span></h2>
   <div class="meta">
     <span class="muted">{ready} ready to merge · {item.prs.filter((p) => p.why === "deps-failed").length} with failed CI</span>
-    <button onclick={() => openInBrowser(`https://github.com/${wb.repo.name}/pulls?q=is%3Apr+is%3Aopen+author%3Aapp%2F${item.author}`)} title="Merging is on GitHub for now">Merge on GitHub</button>
+    <button onclick={() => openInBrowser(depsUrl(wb.repo.name, item.author))} title="Merging is on GitHub for now">Merge on GitHub</button>
     <button onclick={() => archive("deps", "Dependency updates")}>Archive</button>
     <button onclick={() => mute("deps", "Dependency updates")}>Mute</button>
     {#if item.author}<button onclick={() => muteAuthor(item.author!)}>Mute {item.author}</button>{/if}

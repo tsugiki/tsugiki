@@ -49,7 +49,7 @@
 <div class="iv">
   <header>
     <div class="crumb">{label} · {i.state.toLowerCase()}{#if raw} · opened by {raw.author} {ago(raw.createdAt)} ago{/if}</div>
-    <h2>{i.title}</h2>
+    <h2><a class="ghtitle" href={raw?.url ?? `https://github.com/${wb.repo.name}/issues/${n}`} data-web title="Open on GitHub (Ctrl+Shift+G)">{i.title}<span class="ext">↗</span></a></h2>
     {#if raw}<div class="by"><button class="author" onclick={() => onAuthor(raw.author)} title="Show {raw.author}'s Issues and PRs">{raw.author}</button> opened this {ago(raw.createdAt)} ago · {raw.comments} comment{raw.comments === 1 ? "" : "s"}{#if raw.assignees.length} · assigned to {raw.assignees.join(", ")}{/if}</div>{/if}
     <div class="meta">
       {#each i.labels as l}<span class="label">{l}</span>{/each}

@@ -50,3 +50,7 @@ export function ciTip(p: Pr): string {
   const when = p.ciAt ? (p.ci === "PENDING" ? `, last check started ${ago(p.ciAt)} ago` : ` ${ago(p.ciAt)} ago`) : "";
   return `CI ${word[p.ci ?? ""] ?? "unknown"}${when}` + (head ? `\non head ${head.short}, committed ${ago(head.at)} ago${head.merge ? " (merge from main)" : ""}` : "");
 }
+
+/** GitHub's list of a dependency bot's open PRs in a Repository. */
+export const depsUrl = (repo: string, bot: string | null) =>
+  `https://github.com/${repo}/pulls?q=is%3Apr+is%3Aopen${bot ? `+author%3Aapp%2F${bot}` : ""}`;

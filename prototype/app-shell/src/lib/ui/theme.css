@@ -43,3 +43,9 @@ button:disabled { opacity: 0.5; cursor: default; }
   .hljs-title, .hljs-title.function_ { color: #d2a8ff; } .hljs-type, .hljs-built_in { color: #ffa657; }
   .hljs-meta { color: #7ee787; }
 }
+
+/* A Detail pane title opens the item on GitHub; ↗ shows on hover. */
+.ghtitle { color: inherit; text-decoration: none; }
+.ghtitle .ext { font-size: 0.7em; margin-left: 6px; color: var(--accent); opacity: 0; vertical-align: 0.3em; }
+.ghtitle:hover { text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+.ghtitle:hover .ext, .ghtitle:focus-visible .ext { opacity: 1; }

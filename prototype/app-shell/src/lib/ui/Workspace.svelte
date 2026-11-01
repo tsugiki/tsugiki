@@ -9,7 +9,7 @@
   import { linkTarget } from "$lib/core/links";
   import { wb, my, app, REPOS, boardOf, openRepo, openPr, openIssue, togglePin, toggleMark, say, archive, mute, muteAuthor, unhide, unmuteAuthor } from "$lib/state/app.svelte";
   import { openInBrowser } from "$lib/platform/shell";
-  import { ago, waitingText } from "./format";
+  import { ago, waitingText, depsUrl } from "./format";
   import StateDot from "./StateDot.svelte";
   import KindIcon from "./KindIcon.svelte";
   import PrStatus from "./PrStatus.svelte";
@@ -106,7 +106,7 @@
   function githubUrl(): string | null {
     if (current) return current.url;
     if (selKind === "i") return wb.issue(selNum)?.url ?? `https://github.com/${repo.name}/issues/${selNum}`;
-    if (sel === "deps") return `https://github.com/${repo.name}/pulls`;
+    if (sel === "deps") return depsUrl(repo.name, depsItem?.author ?? null);
     return null;
   }
   function openOnGithub() { const u = githubUrl(); if (u) openInBrowser(u); }
@@ -122,7 +122,7 @@
     e.preventDefault();
     if (href.startsWith("#")) return;
     const url = a.href;
-    if (e.ctrlKey || e.metaKey) return openInBrowser(url);
+    if (e.ctrlKey || e.metaKey || a.dataset.web != null) return openInBrowser(url);
     const t = linkTarget(url, repo.name, REPOS);
     if (t.kind === "here") {
       if (wb.raw(t.number)) select(`p:${t.number}`);
@@ -296,9 +296,8 @@
         <div class="crumb">
           {#each current.issues as n, k}{#if k} · {/if}<button class="link" onclick={() => select(`i:${n}`)}>{issueLabel(repo, n)}</button>{/each}{#if !current.issues.length}Standalone PR{/if}
           › #{current.number} · <button class="link who" onclick={() => showAuthor(current.author)} title="Show {current.author}'s Issues and PRs">{current.author}</button> → <span class="mono">{current.baseRefName}</span>{current.kind === "bot" ? ` · bot backport of #${current.origin}` : current.kind === "manual" ? ` · manual backport of #${current.origin}` : ""} · updated {ago(current.updatedAt)} ago
-          · <button class="link" onclick={openOnGithub} title="Ctrl+Shift+G">open on GitHub ↗</button>
         </div>
-        <h2>{current.short}</h2>
+        <h2><a class="ghtitle" href={current.url} data-web title="Open on GitHub (Ctrl+Shift+G)">{current.short}<span class="ext">↗</span></a></h2>
         <div class="row">
           <StateDot pr={current} /><span>{current.isDraft ? "draft" : current.state.toLowerCase()}</span>
           <PrStatus pr={current} />

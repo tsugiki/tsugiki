@@ -128,7 +128,9 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 | Switch Repository | `Ctrl+R`, or the command palette |
 | Archive / Mute the selected item | `E` / `M` |
 | Settings | `Ctrl+,` |
+| Zoom in / out / reset | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
 
+- The webview's own browser shortcuts (Print, Reload, Find, zoom, DevTools) never fire in a release build; Tsugiki's keys win, on any keyboard layout. Zoom is Tsugiki's, kept per machine, and Ctrl+wheel doesn't zoom. On macOS the standard menu stays, with Settings… on `Cmd+,`; a remap onto one of its shortcuts is refused ([ADR 0013](adr/0013-webview2-browser-shortcuts-off-tsugiki-owns-its-keys.md)).
 - The command palette's quick open finds Issues, PRs, and files in the current PR. `?` lists the keys available in the current view.
 - Keybindings can be remapped on the Settings Keyboard page: click a key and press the new one; chords such as `Ctrl+K M` work, and two actions on one key are flagged. Only remapped keys are written to the portable config file.
 

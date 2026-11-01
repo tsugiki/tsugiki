@@ -90,3 +90,7 @@ The raw numbers are in [bench-results-macos.txt](bench-results-macos.txt). At 60
 - **The full length of the huge dataset.** Each scroll benchmark is capped at 10 s, so it covers only the first 200k px of about 3M. The random jumps do sample the whole list.
 - **Text selection across recycled rows.** This needs a manual test.
 - **Displays faster than 75 Hz,** where there would be headroom to measure.
+
+## Text selection (manual check, 2026-11-01)
+
+Selecting across recycled rows works on both platforms. On macOS the selection first took in the line-number gutter as well, because WKWebView ignores unprefixed `user-select: none`. Line numbers are now CSS `::before` content taken from a `data-n` attribute. Generated content is never selected or copied on either engine, so the real renderer should draw its gutter the same way.

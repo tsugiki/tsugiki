@@ -126,7 +126,7 @@
         <div class="r cmt-row" style:top="{it.top}px" data-vi={it.vi} use:measure>{@html it.row.h}</div>
       {:else}
         <div class="r k{it.row.k}" style:top="{it.top}px">
-          <span class="ln">{it.row.o || ""}</span><span class="ln">{it.row.n || ""}</span><span class="code">{@html it.row.h}</span>
+          <span class="ln" data-n={it.row.o || ""}></span><span class="ln" data-n={it.row.n || ""}></span><span class="code">{@html it.row.h}</span>
         </div>
       {/if}
     {/each}

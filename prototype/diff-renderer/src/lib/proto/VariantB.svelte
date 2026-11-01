@@ -30,7 +30,7 @@
     for (let r = f.start + 1; r < f.end; r++) {
       const row = rows[r];
       if (row.k === K.COMMENT) parts.push(`<div class="cmt-row">${row.h}</div>`);
-      else parts.push(`<div class="k${row.k}"><span class="ln">${row.o || ""}</span><span class="ln">${row.n || ""}</span><span class="code">${row.h}</span></div>`);
+      else parts.push(`<div class="k${row.k}"><span class="ln" data-n="${row.o || ""}"></span><span class="ln" data-n="${row.n || ""}"></span><span class="code">${row.h}</span></div>`);
     }
     return parts.join("");
   }

@@ -208,7 +208,12 @@
     padding-right: 8px;
     text-align: right;
     color: var(--muted);
+    -webkit-user-select: none; /* WKWebView ignores the unprefixed property */
     user-select: none;
+  }
+  /* Line numbers as generated content: never selected or copied, on either engine. */
+  :global(.ln::before) {
+    content: attr(data-n);
   }
   :global(.code) {
     padding-left: 8px;

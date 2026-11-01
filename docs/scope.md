@@ -34,6 +34,7 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
   - An Issue or PR in the current Repository opens in the Detail pane. `Alt+←` / `Alt+→` go back and forward through what was opened.
   - An Issue or PR anywhere else on GitHub opens in a **Peek** popup that gh-rev renders from the API: title, state, author, description, the last few comments, with Open in browser and, for an added Repository, Open in gh-rev. GitHub can't be embedded in a frame.
   - Anything else opens in the system browser. `Ctrl`+click sends any link to the browser, and `Ctrl+Shift+G`, or a click on the title in the Detail pane, opens the current Issue or PR on GitHub (Dependency updates: the bot's open PRs there).
+- **Settings** is a dialog over the app, opened with `Ctrl+,`, ⚙ in the Sidebar or on the Home page, or the command palette. Its left column lists the pages (General, Account, Repositories, Sync, Keyboard, Advanced), with each Repository under Repositories as a page of its own. Repositories itself is an overview with Add repository. Changes preview live; Apply keeps them, and Cancel or Esc puts them back. Each setting is labelled with where it is stored (synced, this machine, or the keychain). This was chosen out of three variants prototyped on branch `prototype/app-shell`: a searchable list like VS Code's, this dialog, and editing the config files as text.
 
 ### Workbench
 
@@ -113,9 +114,10 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 | Open on GitHub | `Ctrl+Shift+G` |
 | Switch Repository | `Ctrl+R`, or the command palette |
 | Archive / Mute the selected item | `E` / `M` |
+| Settings | `Ctrl+,` |
 
 - The command palette's quick open finds Issues, PRs, and files in the current PR. `?` lists the keys available in the current view.
-- Keybindings can be remapped in the portable config file.
+- Keybindings can be remapped on the Settings Keyboard page: click a key and press the new one; chords such as `Ctrl+K M` work, and two actions on one key are flagged. Only remapped keys are written to the portable config file.
 
 ### Data and freshness
 
@@ -125,7 +127,7 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
   - Merged and closed PRs are fetched once and then frozen.
   - The user can always refresh by hand.
 - The first sync of a Repository depends on its size. A small one (a few hundred open Issues and PRs at most) loads everything open. A large one like CPython loads the last 30 days of updates plus everything the Filters, pins and Reviews reach, and older Issues on demand. The threshold and the window are settings.
-- Filters, Pinned issues and keybindings are kept in a portable config file that the user syncs themselves. Local marks and Last seen times are kept in a local database.
+- Settings are kept in two files. A portable config file, which the user syncs themselves, holds the settings, remapped keybindings, and each Repository with its Filters, Pinned issues and Muted authors. A file for this machine holds the token source, the editor command, paths, and the clone each Repository borrows objects from. A personal access token goes to the OS keychain. Local marks, Last seen times, and Archived and Muted items are kept in a local database.
 - Offline, gh-rev is read-only: it shows the mirror and the cached GitHub data. Writing anything needs the network.
 
 ## Not in gh-rev

@@ -78,7 +78,7 @@ An unsaved **Filter** every **Repository** has, over all its open Issues and ope
 _Avoid_: Issue browser, backlog
 
 **Built-in view**:
-A **Workbench** list that gh-rev defines from its own states, which GitHub search cannot express: Stale reviews, New activity, Review requests, and Hidden (everything **Archived**, **Muted** or from a **Muted author**, each with a way to bring it back).
+A **Workbench** list that gh-rev defines from its own states, which GitHub search cannot express: Stale reviews, New activity, Review requests, Archived (everything **Archived**) and Muted (everything **Muted**, the **Muted authors**, and what they hide), each item with a way to bring it back.
 _Avoid_: Smart filter, saved view
 
 **Matched PR**:

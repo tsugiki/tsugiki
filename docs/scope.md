@@ -138,6 +138,7 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
   - The user can always refresh by hand.
 - The first sync of a Repository depends on its size. A small one (a few hundred open Issues and PRs at most) loads everything open. A large one like CPython loads the last 30 days of updates plus everything the Filters, pins and Reviews reach, and older Issues on demand. The threshold and the window are settings.
 - Settings are kept in two files. A portable config file, which the user syncs themselves, holds the settings, remapped keybindings, and each Repository with its Filters, Pinned issues and Muted authors. A file for this machine holds the token source, the editor command, paths, and the clone each Repository borrows objects from. A personal access token goes to the OS keychain. Local marks, Last seen times, Archived and Muted items, and text typed into a composer but not yet sent are kept in a local database. Unsent text survives a reload, a crash or a refused write, and is cleared once it is sent ([ADR 0008](adr/0008-view-models-and-invalidation-over-ipc.md)).
+- The local database is one file for all Repositories, holding both the cached GitHub data and the user's own state ([ADR 0010](adr/0010-one-sqlite-database-and-per-repository-mirrors.md)). **Export database** (Settings › Advanced, and the command palette) writes a consistent copy of it anywhere, such as a synced folder. **Import database** on another machine replaces that machine's database after a confirmation, keeping a backup, so Local marks, Last seen, Archived and Muted items and the cache follow the user. The mirrors are cloned again on the new machine.
 - Offline, Tsugiki is **Read-only**: it shows the mirror and the cached GitHub data. Writing anything needs the network.
 - A token that can't write to a Repository makes it Read-only too. The status bar says so on the left and opens the Account page. The composer stays usable: it offers "Copy and open on GitHub" instead of sending, and Submit review is disabled with the reason. With a fine-grained token Tsugiki finds out on the first refused write, keeping the text that was being sent.
 
@@ -150,7 +151,6 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 - An interdiff showing only what changed since the user's last Review, built on `git range-diff`. It will be prototyped before it is built.
 - LSP-based navigation (clangd, pyright) as a second implementation of symbol lookup.
 - Drafting comments offline, with an outbox that pushes them into the Pending review on reconnect.
-- Export and import of the local database, so marks and Last seen can follow the user between machines.
 - Merging from Tsugiki in **Maintained repositories**, including Dependency updates in one go. Until then merging, labels and reviewers stay on GitHub.
 - Linux support, which needs the diff renderer's performance checked on WebKitGTK first.
 - A token per Repository owner, for fine-grained tokens that write to Repositories of several owners.

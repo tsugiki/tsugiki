@@ -34,8 +34,12 @@
   // Selection: an Issue "i:N", a PR "p:N", or "deps". History for Alt+← / Alt+→.
   // svelte-ignore state_referenced_locally
   let sel = $state<string | null>(app.select ?? (start ? `p:${start}` : startIssue ? `i:${startIssue}` : startView === "deps" ? "deps" : null));
-  let history = $state<string[]>([]);
-  let hpos = $state(-1);
+  // svelte-ignore state_referenced_locally
+  let history = $state<string[]>(sel ? [sel] : []);
+  // svelte-ignore state_referenced_locally
+  let hpos = $state(sel ? 0 : -1);
+  /** The recent-items list under ‹ (-1) or › (1), opened by right-click. */
+  let hmenu = $state<-1 | 1 | null>(null);
   let tab = $state<"conv" | "files">("conv");
   let split = $state(value("review.diff_view") === "split");
   let showQuiet = $state(false);
@@ -117,16 +121,28 @@
 
   function select(key: string, push = true) {
     sel = key;
-    if (push) { history = [...history.slice(0, hpos + 1), key]; hpos = history.length - 1; }
+    if (push && history[hpos] !== key) { history = [...history.slice(0, hpos + 1), key]; hpos = history.length - 1; }
     if (key.startsWith("p:")) openPr(+key.slice(2)); else if (key.startsWith("i:")) openIssue(+key.slice(2));
     queueMicrotask(() => document.querySelector(`[data-key="${selItem}"]`)?.scrollIntoView({ block: "nearest" }));
   }
   // The status bar (a Pending review) asks for an item in this Repository.
   $effect(() => { if (app.goto) { const k = app.goto; app.goto = null; select(k); } });
-  function go(d: 1 | -1) {
-    const k = history[hpos + d];
-    if (k) { hpos += d; select(k, false); }
+  function go(d: 1 | -1) { jump(hpos + d); }
+  function jump(i: number) {
+    const k = history[i];
+    if (k) { hpos = i; hmenu = null; select(k, false); }
   }
+  /** "#140836 Fix the frobnicator", for the arrows' tooltips and the recent-items list. */
+  const histTitle = (key: string) => {
+    if (key === "deps") return "Dependency updates";
+    const n = +key.slice(2);
+    const t = key.startsWith("i:") ? wb.issue(n)?.title : wb.pr(n)?.short;
+    return t ? `${itemLabel(key)} ${t}` : itemLabel(key);
+  };
+  const histItems = (d: -1 | 1) => (d < 0 ? history.slice(Math.max(0, hpos - 12), hpos).map((k, j, a) => ({ k, i: hpos - a.length + j })).reverse()
+    : history.slice(hpos + 1, hpos + 13).map((k, j) => ({ k, i: hpos + 1 + j })));
+  // The mouse's back and forward buttons, as in a browser. Prevented on mouseup, where the engine navigates.
+  function mouseNav(e: MouseEvent) { if (e.button === 3 || e.button === 4) { e.preventDefault(); if (e.type === "mouseup") go(e.button === 3 ? -1 : 1); } }
   function move(d: number) {
     const i = flat.indexOf(selItem ?? "");
     const k = flat[Math.max(0, Math.min(flat.length - 1, i + d))];
@@ -182,6 +198,8 @@
     { label: "View: Toggle Key Hints under the Issue List", run: () => setValue("appearance.list_key_hints", !value("appearance.list_key_hints")) },
     { label: "Preferences: Keyboard Shortcuts", run: () => openSettings("Keybindings") },
     { label: `Preferences: Settings for ${repo.name}`, run: () => openSettings(`repo:${repo.name}`) },
+    { label: "Go Back", key: "Alt+←", run: () => go(-1) },
+    { label: "Go Forward", key: "Alt+→", run: () => go(1) },
     { label: "View: Toggle Sidebar", key: "Ctrl+B", run: toggleSidebar },
     { label: "View: Sidebar as Icons", run: () => setSidebar("icons") },
     { label: "View: Full Sidebar", run: () => setSidebar("full") },
@@ -209,7 +227,7 @@
     "ctrl+p": () => (palette = ""),
     "ctrl+r": () => (palette = ">Repository: "),
     "?": () => (help = !help),
-    escape: () => { if (palette != null || help) { palette = null; help = false; } else if (!peek) back(); },
+    escape: () => { if (hmenu != null) hmenu = null; else if (palette != null || help) { palette = null; help = false; } else if (!peek) back(); },
     arrowdown: () => move(1),
     arrowup: () => move(-1),
     "alt+arrowleft": () => go(-1),
@@ -232,7 +250,7 @@
   }));
 </script>
 
-<svelte:window onkeydown={onKey} bind:innerWidth={winW} />
+<svelte:window onkeydown={onKey} bind:innerWidth={winW} onmousedown={mouseNav} onmouseup={mouseNav} onclick={() => (hmenu = null)} />
 
 <div class="a" style="grid-template-columns: {layout.mode === "hidden" ? "" : `${sideW}px `}{listW}px minmax({DETAIL_MIN}px, 1fr)">
   {#if layout.mode === "icons"}
@@ -365,6 +383,22 @@
   <!-- Clicks are on the links inside; this only routes them. -->
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <section class="right" onclick={onLink}>
+    <!-- Back / forward through what this pane showed. Right-click an arrow for the recent items. -->
+    <nav class="hist" aria-label="History">
+      {#snippet arrow(d: -1 | 1)}
+        {@const k = history[hpos + d]}
+        <button class="hb" disabled={!k} onclick={() => go(d)} oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); hmenu = hmenu === d ? null : d; }}
+          title={k ? `${d < 0 ? "Back" : "Forward"} to ${histTitle(k)} (${d < 0 ? "Alt+←" : "Alt+→"}) · right-click for more` : `${d < 0 ? "Back (Alt+←)" : "Forward (Alt+→)"}: nothing there`}>
+          <Icon name={d < 0 ? "collapse" : "expand"} /></button>
+      {/snippet}
+      {@render arrow(-1)}{@render arrow(1)}
+      {#if sel}<span class="here" title={histTitle(sel)}>{histTitle(sel)}</span>{/if}
+      {#if hmenu != null}
+        <div class="hmenu" style="left: {hmenu < 0 ? 6 : 32}px" role="menu" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+          {#each histItems(hmenu) as h (h.i)}<button role="menuitem" onclick={() => jump(h.i)}>{histTitle(h.k)}</button>{/each}
+        </div>
+      {/if}
+    </nav>
     {#if selKind === "i"}
       <div class="scroll"><IssueView n={selNum} onPr={(n) => select(`p:${n}`)} onAuthor={showAuthor} /></div>
     {:else if sel === "deps" && depsItem}
@@ -484,6 +518,14 @@
   .legend span { display: inline-flex; gap: 4px; align-items: center; }
   .quietbtn { all: unset; display: block; padding: 10px; font-size: 12px; color: var(--muted); cursor: pointer; }
   .right { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .hist { position: relative; display: flex; align-items: center; gap: 2px; padding: 3px 8px; border-bottom: 1px solid var(--line); background: var(--panel); flex: none; min-width: 0; }
+  .hb { all: unset; width: 24px; height: 22px; display: grid; place-items: center; border-radius: 4px; cursor: pointer; color: var(--fg); }
+  .hb:hover:not(:disabled) { background: var(--hover); }
+  .hb:disabled { color: var(--muted); opacity: .45; cursor: default; }
+  .here { margin-left: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hmenu { position: absolute; top: 28px; z-index: 20; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 4px 16px rgb(0 0 0 / .18); padding: 4px 0; min-width: 280px; max-width: 520px; }
+  .hmenu button { all: unset; display: block; padding: 4px 12px; font-size: 12.5px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 496px; }
+  .hmenu button:hover { background: var(--hover); }
   .prhead { padding: 10px 16px 0; border-bottom: 1px solid var(--line); }
   .crumb { font-size: 12px; color: var(--muted); }
   .link { all: unset; color: var(--accent); cursor: pointer; font-family: var(--mono); display: inline-flex; gap: 4px; align-items: center; }

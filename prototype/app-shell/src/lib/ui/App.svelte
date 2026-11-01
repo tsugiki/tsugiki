@@ -38,7 +38,7 @@
   $effect(() => { app.repo; return () => (first = false); });
   // Keys the app owns, whatever is open (Settings, Home, a text field): the web engine must never
   // print or reload on them. The views still decide what the key does.
-  const OWNED = ["ctrl+p", "ctrl+shift+p", "ctrl+r", "ctrl+,"];
+  const OWNED = ["ctrl+p", "ctrl+shift+p", "ctrl+r", "ctrl+,", "alt+arrowleft", "alt+arrowright"];
   const own = (e: KeyboardEvent) => { if (OWNED.includes(keyName(e) ?? "")) e.preventDefault(); };
 </script>
 

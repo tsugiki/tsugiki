@@ -162,3 +162,9 @@ Live: Pending reviews (CPython starts with one seeded draft), chords, refresh. S
 - **Drag the edges** between the Sidebar, the Issue list and the Detail pane to resize them; double-click an edge for the default. The Issue list never gets narrower than 320 px, and the Detail pane keeps at least 420 px, so in a narrow window the Issue list gives way first.
 - **The Sidebar has three states:** full, icons only (a 48 px rail), and hidden. Drag it narrower than 120 px, or press « in its header, and it becomes icons: the Repository's initials, Workbench, the Built-in views, Archived, Muted, All issues, Filters and Pinned issues, with counts as badges, and Settings and Home at the bottom. Clicking an icon brings the full Sidebar back (at the width it had) and opens that view. `Ctrl+B` hides the Sidebar and brings it back as it was, full or icons. The palette has "View: Sidebar as Icons", "View: Full Sidebar" and "View: Reset Pane Sizes".
 - Sizes outlive a Repository switch; the real app would keep them per machine, like the window's position, not in `config.toml`.
+
+## Back and forward
+
+History was there (Alt+← / Alt+→) but invisible. A slim bar over the Detail pane now has ‹ and ›, greyed out when there's nothing that way, with the target in the tooltip ("Back to gh-160663 UAF in GC…"). Next to them is the item shown now, which stays visible while a long Issue scrolls. Right-click an arrow for the last dozen items that way, as in a browser; that's the whole "history manager". The mouse's back and forward buttons work too, and they can't take WebView2 off the page. "Go Back" / "Go Forward" are in the command palette.
+
+History records what the Detail pane showed in this Repository: clicking the same item twice adds one entry, and changing scope in the Sidebar adds none. Switching Repository starts fresh.

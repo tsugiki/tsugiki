@@ -42,4 +42,4 @@ npm run proto:snapshot           # refresh the snapshot (needs gh auth; reads .g
 ## Findings so far
 
 - **Filters need `ISSUE_ADVANCED` search.** The user's own search, `sort:updated-desc state:open (author:… OR assignee:…)`, returns 0 results with the GraphQL search type `ISSUE` and 11 with `ISSUE_ADVANCED`. Plain queries return the same results in both modes, so the real app should always use `ISSUE_ADVANCED`.
-- **"Needs attention" as defined counts almost everything.** Any open PR you haven't reviewed needs attention, including every colleague's PR reached by a Filter. On real data, 52 Issues need attention and very few are quiet. See the open question in the hand-over.
+- **"Needs attention" as defined counts almost everything.** Any open PR you haven't reviewed needs attention, including every colleague's PR reached by a Filter. On real data, 57 Issues need attention and very few are quiet. See the open question in the hand-over.

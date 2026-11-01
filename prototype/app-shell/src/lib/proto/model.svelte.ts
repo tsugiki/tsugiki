@@ -22,7 +22,8 @@ export interface RawPr {
 }
 export interface RawIssue {
   number: number; title: string; state: "OPEN" | "CLOSED"; author: string; labels: string[];
-  updatedAt: string; comments: number;
+  createdAt: string; updatedAt: string; comments: number;
+  bodyHTML?: string; thread?: { author: string; html: string; at: string }[];
 }
 export interface Thread {
   resolved: boolean; outdated: boolean; path: string; line: number | null; startLine: number | null; side: string;

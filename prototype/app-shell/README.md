@@ -54,3 +54,10 @@ npm run proto:snapshot           # refresh the snapshot (needs gh auth; reads .g
   - New activity on a PR the user reviewed or authored
 
   Unreviewed colleague PRs are still listed but don't count. On the same snapshot, the count went from 57 Issues needing attention to 16, with 85 quiet. CONTEXT.md and docs/scope.md on `main` carry the new definition.
+
+## Issue list feedback, round 1 (layout A)
+
+1. **The badges said little and took a lot of room.** They are replaced by one state dot (open, draft, merged, closed) and short words that only appear when there is something to say: `requested`, `stale`, `reviewed`, `new`, `CI failed`, `manual`. Unreviewed is the default and shows nothing.
+2. **`via #N` on Bot backports told the user nothing.** It is gone. Bot backports show no review state of their own, and Manual backports are marked `manual`.
+3. **Clicking an Issue (such as gh-159739) should show it.** It now opens in the right pane, with its description, recent comments and the whole PR tree. `&issue=N` opens it from the URL.
+4. **Nobody could tell what the green and blue dots meant.** They are replaced by words, and a legend for the state dot sits at the bottom of the Issue list.

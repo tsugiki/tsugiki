@@ -39,6 +39,9 @@ const PR = `
   commits(last: 1) { totalCount nodes { commit { oid committedDate statusCheckRollup { state } } } }
   comments { totalCount }`;
 const ISSUE = `number title state createdAt updatedAt author { login } labels(first: 10) { nodes { name } } comments { totalCount }`;
+// Description and recent comments only in the per-Issue lookup: inside 100-result searches it times out (HTTP 504).
+const ISSUE_FULL = `number title state createdAt updatedAt bodyHTML author { login } labels(first: 10) { nodes { name } }
+  comments(last: 15) { totalCount nodes { author { login } bodyHTML createdAt } }`;
 
 function search(q, limit = 100) {
   const out = [];
@@ -73,7 +76,8 @@ const flat = (pr) => ({
 });
 const addNode = (n) => {
   if (n.__typename === "PullRequest") prs.set(n.number, flat(n));
-  else if (n.__typename === "Issue") issues.set(n.number, { ...n, author: n.author?.login ?? "ghost", labels: n.labels.nodes.map((l) => l.name), comments: n.comments.totalCount });
+  else if (n.__typename === "Issue") issues.set(n.number, { ...n, author: n.author?.login ?? "ghost", labels: n.labels.nodes.map((l) => l.name), comments: n.comments.totalCount,
+    thread: n.comments.nodes?.map((c) => ({ author: c.author?.login ?? "ghost", html: c.bodyHTML, at: c.createdAt })) });
 };
 const issueOf = (title) => +(/^(?:\[[\d.]+\]\s*)?gh-(\d+)/i.exec(title)?.[1] ?? 0) || null;
 
@@ -95,9 +99,9 @@ const wanted = new Set(PINNED);
 for (const n of issues.keys()) wanted.add(n);
 for (const pr of prs.values()) { const i = issueOf(pr.title); if (i) wanted.add(i); }
 const issueNums = [...wanted].slice(0, MAX_ISSUES);
-for (let i = 0; i < issueNums.length; i += 20) {
-  const chunk = issueNums.slice(i, i + 20);
-  const d = gql(`query { repository(owner: "python", name: "cpython") { ${chunk.map((n) => `i${n}: issueOrPullRequest(number: ${n}) { __typename ... on Issue { ${ISSUE} } }`).join("\n")} } }`);
+for (let i = 0; i < issueNums.length; i += 10) {
+  const chunk = issueNums.slice(i, i + 10);
+  const d = gql(`query { repository(owner: "python", name: "cpython") { ${chunk.map((n) => `i${n}: issueOrPullRequest(number: ${n}) { __typename ... on Issue { ${ISSUE_FULL} } }`).join("\n")} } }`);
   for (const n of chunk) { const node = d.repository[`i${n}`]; if (node?.__typename === "Issue") addNode(node); }
 }
 for (const n of issueNums) {

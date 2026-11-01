@@ -148,8 +148,8 @@ Pinned issues are not in Settings (the list can be long): they are managed from 
 
 A thin line along the bottom of every screen, for what is app-wide and has no other place. It stays when the Sidebar is hidden.
 
-- **Left: sync and connection.** "✓ Synced 2 min ago" (click: refresh now, with progress); background work with a progress meter and "+N" for a list (mirror fetch, a first sync, patch-id checks); **Offline: read-only**, which tints the whole bar; problems that block reading, like an expired token (click: Settings › Account) or a low API rate limit (Settings › Sync).
-- **Right: unsent work, then keys.** "✎ Pending review on #N · 1 comment" for drafts not yet submitted, in any Repository (click: opens the PR in place; several: a list). Then the keys for this screen, or, after the first key of a chord, "(Ctrl+K) was pressed. Waiting for the second key…".
+- **Left, where the eye spends its time: sync, connection and problems.** "✓ Synced 2 min ago" (click: refresh now), "⟳ Syncing…" while it runs; **Offline: read-only**, which tints the whole bar; problems that block reading, like an expired token (click: Settings › Account) or a low API rate limit (Settings › Sync).
+- **Right: unsent work, keys, then background work.** "✎ Pending review on #N · 1 comment" for drafts not yet submitted, in any Repository (click: opens the PR in place; several: a list). Then the keys for this screen, or, after the first key of a chord, "(Ctrl+K) was pressed. Waiting for the second key…". At the far right, since it is rarely what the user looks for: background work with a progress meter and "+N" for a list (refresh, mirror fetch, a first sync, patch-id checks).
 
 The key hints under the Issue list moved here; the list's legend (bar: needs attention, ★ pinned) moved to the `?` overlay.
 

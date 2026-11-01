@@ -1,7 +1,8 @@
 <script lang="ts">
   // PROTOTYPE — throwaway. The status bar: one thin line along the bottom for what is app-wide and has
-  // no other place. Left: sync and connection, background work, problems. Right: unsent Pending
-  // reviews, then a chord in progress or the keys for this screen. It stays when the Sidebar is hidden.
+  // no other place. Left, where the eye spends its time: sync, connection and problems. Right: unsent
+  // Pending reviews, a chord in progress or the keys for this screen, and at the far end background
+  // work. It stays when the Sidebar is hidden.
   import { status, jobs, pendingReviews, refreshNow } from "$lib/state/status.svelte";
   import { goTo } from "$lib/state/app.svelte";
   import { openSettings, value } from "$lib/state/settings.svelte";
@@ -29,12 +30,8 @@
     <button class="seg bad" onclick={() => openSettings("Account")} title="gh-rev can read nothing new until this is fixed. Opens Settings › Account.">✕ GitHub token expired · run <code>gh auth login</code></button>
   {:else if status.scenario === "offline"}
     <button class="seg" onclick={refreshNow} title="Showing the mirror and the cached GitHub data. Writing anything (comments, Reviews) needs the network. Click to try again.">⚠ Offline · read-only · data from {clock(status.lastSync)}</button>
-  {:else if js.length}
-    <button class="seg" onclick={() => (pop = pop === "jobs" ? null : "jobs")} title="Background work">
-      <span class="spin"></span>{js[0].label}
-      <span class="meter"><span style="width: {pct(js[0])}%"></span></span>
-      {#if js.length > 1}<span class="more">+{js.length - 1}</span>{/if}
-    </button>
+  {:else if status.refreshing != null || status.scenario === "syncing"}
+    <span class="seg" title="Details at the right end of the bar">⟳ Syncing…</span>
   {:else}
     <button class="seg" onclick={refreshNow} title="The Workbench refreshes every {value('sync.workbench_minutes')} min (Settings › Sync). Click to refresh now.">✓ Synced {since}</button>
   {/if}
@@ -55,9 +52,17 @@
   {:else}
     <span class="seg hints">{hints}</span>
   {/if}
+  <!-- Background work is rarely what the user looks for, so it sits at the far right. -->
+  {#if js.length}
+    <button class="seg jobs" onclick={() => (pop = pop === "jobs" ? null : "jobs")} title="Background work">
+      <span class="spin"></span>{js[0].label}
+      <span class="meter"><span style="width: {pct(js[0])}%"></span></span>
+      {#if js.length > 1}<span class="more">+{js.length - 1}</span>{/if}
+    </button>
+  {/if}
 
   {#if pop === "jobs"}
-    <div class="pop left">
+    <div class="pop right">
       {#each js as j}<div class="job"><span>{j.label}</span><span class="meter"><span style="width: {pct(j)}%"></span></span><span class="n">{j.unit === "%" ? `${j.done}%` : `${j.done} / ${j.total} ${j.unit}`}</span></div>{/each}
     </div>
   {:else if pop === "pending"}
@@ -88,7 +93,6 @@
   .meter span { display: block; height: 100%; background: var(--accent); }
   .more { font-size: 11px; border: 1px solid var(--line); border-radius: 8px; padding: 0 5px; }
   .pop { position: absolute; bottom: calc(var(--status-h) + 4px); z-index: 70; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 24px rgb(0 0 0 / 0.25); padding: 6px; min-width: 320px; color: var(--fg); }
-  .pop.left { left: 6px; }
   .pop.right { right: 6px; }
   .job { display: grid; grid-template-columns: 1fr 60px auto; gap: 10px; align-items: center; padding: 4px 6px; }
   .pop button { all: unset; cursor: pointer; display: flex; justify-content: space-between; gap: 16px; width: 100%; box-sizing: border-box; padding: 4px 6px; border-radius: 4px; }

@@ -39,6 +39,7 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 
 - The **Workbench** lists every **Issue** that a **Filter** reaches, every **Pinned issue**, and every Issue with an open PR the user holds a **Review** on. An Issue being closed on GitHub does not remove it.
 - **Filters** are written in raw GitHub search syntax, with `repo:` of the current Repository added implicitly. They run with GitHub's advanced search, which is the only mode that understands `OR` and parentheses.
+- Adding a Repository creates starter Filters, ordinary ones the user can edit or delete. A Maintained repository gets "Open Issues" (`is:issue is:open`) and "Open PRs" (`is:pr is:open`); any other gets "Mine" (`is:open author:@me`) and "Involved" (`is:open involves:@me -author:@me`).
 - Clicking a person's name opens a temporary `author:<login>` Filter. It lists their Issues and the Issues their PRs fix. It stays in the Sidebar, marked unsaved, until the user saves it as a Filter or closes it.
 - **All issues** is an unsaved Filter over the Repository's open Issues, newest update first, with a search box that takes GitHub search syntax; Save turns a search into a Filter. From it the user reads, comments on and pins Issues. It shows what changed since the last sync first and loads older Issues only as the user scrolls or searches.
 - The Sidebar shows counts the way a mail client shows unread counts. For the Workbench, the Filters and the Pinned issues, the count is how many Issues Need attention. For the Built-in views, it is how many PRs they hold.

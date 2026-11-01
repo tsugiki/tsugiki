@@ -18,7 +18,7 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 
 - A **Home page** lists the Repositories, each with what waits on the user there (Review requests, Stale reviews, failed CI on Own PRs, Dependency updates ready to merge) and when it was last opened, plus **Add repository**. With no Repositories yet it shows onboarding instead: `gh auth`, the first Repository, an existing clone to borrow objects from. A normal launch reopens the last Repository; the Home page is one step away from the Repository switcher.
 - Inside a Repository the app uses three panes, like a mail client. This layout was chosen out of three that were prototyped on branch `prototype/app-shell`.
-  - **Sidebar** (left): the Repository switcher on top (also `Ctrl+R`, and "Repository: …" in the command palette), then the Workbench, the Built-in views, All issues, the Filters and the Pinned issues. `Ctrl+B` shows or hides it.
+  - **Sidebar** (left): the Repository switcher on top (also `Ctrl+R`, and "Repository: …" in the command palette), then the Workbench, the Built-in views, All issues, the Filters and the Pinned issues. It can be full, icons only, or hidden. Dragged narrow (or with « in its header) it keeps only icons with their counts; clicking an icon brings the full Sidebar back and opens that view. `Ctrl+B` hides it and brings it back as it was.
   - **Issue list** (middle): one item per Issue for whatever is selected in the Sidebar, laid out like mail. **Standalone PRs** and **Dependency updates** are items of their own beside the Issues. Each item shows:
     - the people involved
     - the Issue's number and title, with the number of PRs and the time of the last update
@@ -30,6 +30,8 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
     - The PR view shows Conversation and Files as tabs.
 
     Esc goes from a PR back to its Issue.
+
+    The edges between the panes can be dragged; a double-click puts the default back. The Issue list has a minimum width, and so does the Detail pane, so in a narrow window the Issue list gives way first. Pane sizes and the Sidebar's state belong to the machine, like the window's position, and are not synced.
 - A **status bar** runs along the bottom of every screen, the Home page included, for what is app-wide and has no other place. It stays when the Sidebar is hidden.
   - Left, where the eye spends its time: sync status ("Synced 2 min ago", a click refreshes), **Offline: read-only** (which tints the whole bar), and problems that stop gh-rev reading, such as an expired token or a low API rate limit, each opening the Settings page that fixes it.
   - Right: unsent **Pending reviews** in any Repository (a click opens the PR), the first key of a chord while gh-rev waits for the second, and at the far end background work with its progress (refreshes, mirror fetches, a first sync, patch-id checks), since that is rarely what the user looks for.
@@ -108,7 +110,7 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 | Next / previous change | `F7` / `Shift+F7` |
 | Next / previous comment thread | `F8` / `Shift+F8` |
 | Find in diff | `Ctrl+F` |
-| Toggle sidebar | `Ctrl+B` |
+| Hide / show the Sidebar | `Ctrl+B` |
 | Unified ↔ side-by-side | `Ctrl+Alt+U` |
 | Send comment | `Ctrl+Enter` |
 | Open in editor | `Ctrl+Shift+E` |

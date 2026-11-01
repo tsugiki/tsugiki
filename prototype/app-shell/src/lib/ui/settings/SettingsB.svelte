@@ -27,47 +27,44 @@
   const before = snapshotSettings();
   const changed = $derived(JSON.stringify(snapshotSettings()) !== JSON.stringify(before));
 
-  // Resizing: any edge or corner. It grows about its centre, so an edge follows the pointer and the size
-  // changes by twice the delta. Drag the title bar to move it; double-click it or ⤢ to maximize.
-  // Size and place last the session.
+  // Resizing: any edge or corner, like a window. The edge being dragged follows the pointer and the
+  // opposite one stays put, so the right and bottom edges never move the top-left corner. Drag the title
+  // bar to move it; double-click it or ⤢ to maximize. Size and place last the session.
   let vw = $state(1500), vh = $state(950);
   const W = $derived(dialog.max ? vw - 32 : Math.min(dialog.w, vw - 32));
   const H = $derived(dialog.max ? vh - 32 : Math.min(dialog.h, vh - 32));
-  function resize(dir: string) {
+  // Centred until first moved or resized. The title bar stays reachable if the window shrinks.
+  const X = $derived(dialog.max ? 16 : dialog.x == null ? (vw - W) / 2 : Math.max(80 - W, Math.min(vw - 80, dialog.x)));
+  const Y = $derived(dialog.max ? 16 : dialog.y == null ? (vh - H) / 2 : Math.max(0, Math.min(vh - 40, dialog.y)));
+  const fix = () => { dialog.w = W; dialog.h = H; dialog.x = X; dialog.y = Y; dialog.max = false; };
+  function drag(onMove: (dx: number, dy: number, x0: number, y0: number, w0: number, h0: number) => void) {
     return (e: PointerEvent) => {
+      if (e.button !== 0) return;
       e.preventDefault();
       const el = e.currentTarget as HTMLElement;
       el.setPointerCapture(e.pointerId);
-      const x0 = e.clientX, y0 = e.clientY, w0 = W, h0 = H;
-      if (dialog.max) { dialog.max = false; dialog.x = dialog.y = 0; }
-      const move = (m: PointerEvent) => {
-        const dx = m.clientX - x0, dy = m.clientY - y0;
-        if (dir.includes("e") || dir.includes("w")) dialog.w = Math.max(DIALOG.minW, Math.min(vw - 32, w0 + 2 * (dir.includes("e") ? dx : -dx)));
-        if (dir.includes("s") || dir.includes("n")) dialog.h = Math.max(DIALOG.minH, Math.min(vh - 32, h0 + 2 * (dir.includes("s") ? dy : -dy)));
-      };
+      fix();
+      const px = e.clientX, py = e.clientY, x0 = X, y0 = Y, w0 = W, h0 = H;
+      const move = (m: PointerEvent) => onMove(m.clientX - px, m.clientY - py, x0, y0, w0, h0);
       const up = () => { el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up); };
       el.addEventListener("pointermove", move);
       el.addEventListener("pointerup", up);
     };
   }
-
+  const resize = (dir: string) => drag((dx, dy, x0, y0, w0, h0) => {
+    if (dir.includes("e")) dialog.w = Math.max(DIALOG.minW, Math.min(vw - x0, w0 + dx));
+    if (dir.includes("s")) dialog.h = Math.max(DIALOG.minH, Math.min(vh - y0, h0 + dy));
+    if (dir.includes("w")) { const x = Math.max(0, Math.min(x0 + w0 - DIALOG.minW, x0 + dx)); dialog.x = x; dialog.w = x0 + w0 - x; }
+    if (dir.includes("n")) { const y = Math.max(0, Math.min(y0 + h0 - DIALOG.minH, y0 + dy)); dialog.y = y; dialog.h = y0 + h0 - y; }
+  });
   /** Drag by the title bar. The title bar never leaves the window, so the dialog can always be caught again. */
-  function moveStart(e: PointerEvent) {
-    if (dialog.max || (e.target as HTMLElement).closest("button") || e.button !== 0) return;
-    e.preventDefault();
-    const el = e.currentTarget as HTMLElement;
-    el.setPointerCapture(e.pointerId);
-    const x0 = e.clientX - dialog.x, y0 = e.clientY - dialog.y;
-    const move = (m: PointerEvent) => {
-      const left = (vw - W) / 2, top = (vh - H) / 2;
-      dialog.x = Math.max(80 - W - left, Math.min(vw - 80 - left, m.clientX - x0));
-      dialog.y = Math.max(-top, Math.min(vh - 40 - top, m.clientY - y0));
-    };
-    const up = () => { el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up); };
-    el.addEventListener("pointermove", move);
-    el.addEventListener("pointerup", up);
-  }
-  const toggleMax = () => { dialog.max = !dialog.max; if (dialog.max) dialog.x = dialog.y = 0; };
+  const moveBy = drag((dx, dy, x0, y0, w0) => {
+    dialog.x = Math.max(80 - w0, Math.min(vw - 80, x0 + dx));
+    dialog.y = Math.max(0, Math.min(vh - 40, y0 + dy));
+  });
+  function moveStart(e: PointerEvent) { if (!dialog.max && !(e.target as HTMLElement).closest("button")) moveBy(e); }
+  const toggleMax = () => (dialog.max = !dialog.max);
+  const reset = () => { dialog.w = DIALOG.w; dialog.h = DIALOG.h; dialog.x = dialog.y = null; dialog.max = false; };
 
   function cancel() { restoreSettings(before); onClose(); }
   function apply() { if (changed) say("Settings saved to config.toml and local.toml (prototype: in memory)"); onClose(); }
@@ -88,8 +85,8 @@
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="scrim" onclick={cancel}>
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-  <div class="dlg" role="dialog" aria-label="Settings" tabindex="-1" style="width: {W}px; height: {H}px; translate: {dialog.max ? 0 : dialog.x}px {dialog.max ? 0 : dialog.y}px" onclick={(e) => e.stopPropagation()}>
-    {#each ["n", "s", "e", "w", "ne", "nw", "se", "sw"] as dir}<div class="rz {dir}" onpointerdown={resize(dir)} ondblclick={() => { dialog.w = DIALOG.w; dialog.h = DIALOG.h; dialog.x = dialog.y = 0; dialog.max = false; }} title="Drag to resize; double-click for the default size and place"></div>{/each}
+  <div class="dlg" role="dialog" aria-label="Settings" tabindex="-1" style="left: {X}px; top: {Y}px; width: {W}px; height: {H}px" onclick={(e) => e.stopPropagation()}>
+    {#each ["n", "s", "e", "w", "ne", "nw", "se", "sw"] as dir}<div class="rz {dir}" onpointerdown={resize(dir)} ondblclick={reset} title="Drag to resize; double-click for the default size and place"></div>{/each}
     <header class:movable={!dialog.max} onpointerdown={moveStart} ondblclick={(e) => !(e.target as HTMLElement).closest("button") && toggleMax()}><b>Settings</b><span class="grow"></span>
       <button class="x" onclick={toggleMax} title={dialog.max ? "Restore size" : "Maximize (or double-click the title bar)"}>{dialog.max ? "❐" : "⤢"}</button>
       <button class="x" onclick={cancel} title="Cancel (Esc)">✕</button></header>
@@ -153,8 +150,8 @@
 {/snippet}
 
 <style>
-  .scrim { position: fixed; inset: 0; background: rgb(0 0 0 / 0.35); z-index: 40; display: grid; place-items: center; }
-  .dlg { position: relative; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 12px 40px rgb(0 0 0 / 0.35); display: flex; flex-direction: column; overflow: hidden; font-size: 13px; }
+  .scrim { position: fixed; inset: 0; background: rgb(0 0 0 / 0.35); z-index: 40; }
+  .dlg { position: absolute; box-sizing: border-box; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 12px 40px rgb(0 0 0 / 0.35); display: flex; flex-direction: column; overflow: hidden; font-size: 13px; }
   .rz { position: absolute; z-index: 2; }
   .rz.n, .rz.s { left: 8px; right: 8px; height: 6px; cursor: ns-resize; }
   .rz.e, .rz.w { top: 8px; bottom: 8px; width: 6px; cursor: ew-resize; }

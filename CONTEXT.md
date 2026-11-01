@@ -1,6 +1,6 @@
 # gh-rev
 
-A review workbench for a CPython core developer: it groups `python/cpython` PRs under the Issues they fix and tracks which of those PRs the user still owes a review.
+A review workbench for a CPython core developer who also maintains projects of their own. It is the one place where the user takes in their GitHub work, in place of the email inbox: in each **Repository** it groups PRs under the Issues they fix and tracks what is waiting on the user. A single Issue or PR may still be opened in the browser, but the work happens in gh-rev.
 
 ## Language
 
@@ -35,8 +35,16 @@ The branch a PR merges into: the default branch (`main`), a maintenance branch s
 _Avoid_: Base, version
 
 **Needs attention**:
-The state of a PR that is waiting on the user. It applies when the PR carries a **Review request**, the user's **Review** of it is a **Stale review**, it is an **Own PR** whose CI failed, or it has **New activity** and the user either reviewed it or wrote it. An open PR the user has not reviewed is listed but does not need attention. A colleague's **Draft PR** needs attention only when it carries a Review request.
+The state of a PR that is waiting on the user. It applies when the PR carries a **Review request**, the user's **Review** of it is a **Stale review**, it is an **Own PR** whose CI failed, or it has **New activity** and the user either reviewed it or wrote it. An open PR the user has not reviewed is listed but does not need attention. A colleague's **Draft PR** needs attention only when it carries a Review request. In a **Maintained repository**, every open PR someone else opened also needs attention until the user merges, closes or reviews it; **Dependency updates** need it only when one is ready to merge or its CI failed.
 _Avoid_: Pending, todo
+
+**Maintained repository**:
+A **Repository** the user administers on GitHub, such as their own projects. There the user is the one who lands other people's PRs, not one reviewer among many.
+_Avoid_: Own repo, personal project
+
+**Dependency updates**:
+The open PRs a dependency bot (dependabot) opened in a **Maintained repository**, shown together as one item instead of one item each.
+_Avoid_: Bumps, bot PRs
 
 **Draft PR**:
 A PR its author has marked as not yet ready for review. Its review state is still tracked. When it becomes ready for review, that counts as **New activity**.

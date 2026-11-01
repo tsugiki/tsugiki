@@ -20,3 +20,8 @@ export function setSidebar(mode: SidebarMode) {
   layout.mode = mode;
 }
 export const sidebarWidth = () => (layout.mode === "full" ? layout.sidebar : layout.mode === "icons" ? SIDEBAR.rail : 0);
+
+/** The Settings dialog: moved by its title bar (x, y: offset from the centre), resized from any edge
+ *  between its minimum and the window, or maximized. */
+export const DIALOG = { w: 880, h: 600, minW: 640, minH: 420 };
+export const dialog = $state({ w: DIALOG.w, h: DIALOG.h, x: 0, y: 0, max: false });

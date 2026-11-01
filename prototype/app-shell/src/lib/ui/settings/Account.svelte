@@ -11,6 +11,7 @@
   import Field from "./Field.svelte";
   import Where from "./Where.svelte";
   import { setValue } from "$lib/state/settings.svelte";
+  import { say } from "$lib/state/app.svelte";
 
   const t = $derived(token());
   const can = $derived(capabilities(t, REPOS, refusedNow()));
@@ -29,6 +30,11 @@
     account.template = guide === "read" ? { allows: "read", owner: me() } : guide === "review" ? { allows: "write", owner } : null;
     if (value("auth.source") !== "token") setValue("auth.source", "token");
     openInBrowser(g.url(owner));
+  }
+  let copied = $state(false);
+  async function copyUrl() {
+    try { await navigator.clipboard.writeText(g.url(owner)); copied = true; setTimeout(() => (copied = false), 1500); say("Link copied: paste it into a browser where you're signed in to GitHub"); }
+    catch { say("Couldn't copy the link"); }
   }
   $effect(() => {
     if (account.template && secret.token.startsWith("github_pat_")) {
@@ -87,7 +93,7 @@
   </div>
   {#if g.note?.(owner, owner === me())}<p class="note">⚠ {g.note(owner, owner === me())}</p>{/if}
   <p class="open"><button class="primary" onclick={openForm}>Open GitHub's form ↗</button>
-    <span class="mono url" title={g.url(owner)}>{g.url(owner).replace("https://", "")}</span></p>
+    <button class="url" onclick={copyUrl} title="Copy the link: {g.url(owner)}"><span class="mono">{g.url(owner).replace("https://", "")}</span><span class="cp">{copied ? "✓ Copied" : "⧉ Copy"}</span></button></p>
 </div>
 
 <div class="proto">
@@ -127,7 +133,10 @@
   .cc li { padding: 1px 0; }
   .note { color: var(--warn); font-size: 12.5px; margin: 6px 0; }
   .open { display: flex; gap: 10px; align-items: center; margin: 10px 0 0; min-width: 0; }
-  .url { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; font-size: 11px; }
+  .url { all: unset; cursor: pointer; display: flex; gap: 8px; align-items: center; min-width: 0; color: var(--muted); padding: 3px 6px; border-radius: 4px; border: 1px solid transparent; }
+  .url:hover { border-color: var(--line); color: var(--fg); }
+  .url .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; font-size: 11px; }
+  .url .cp { flex: none; font-size: 11.5px; color: var(--accent); }
   .primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); flex: none; }
   .proto { margin-top: 18px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 6px; font-size: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 </style>

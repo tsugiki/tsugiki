@@ -154,7 +154,7 @@ Tsugiki shows a **Repository** but can't write to GitHub there: when offline, or
 _Avoid_: View-only, guest mode
 
 **Alert**:
-An OS notification that Tsugiki raises, such as when CI finishes on an **Own PR**. The user can turn each kind of Alert off.
+An OS notification that Tsugiki raises for what only the user can unblock: CI finished on an **Own PR**, a **Review request**, a **Review** on an Own PR, a failed **Bot backport** of the user's **Origin PR**. The user can turn each kind of Alert off. A missed Alert is found in the **Workbench**, where its item **Needs attention**.
 _Avoid_: Notification (that word means GitHub's notifications)
 
 **Own PR**:

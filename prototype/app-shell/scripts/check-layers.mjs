@@ -3,8 +3,9 @@
 //   core   plain TypeScript: only core; no Svelte, no DOM
 //   data   where data comes from: core (types) and its own files
 //   state  the user's state, reactive: core, data, svelte
-//   ui     components and presentation: state, core, svelte, highlight.js; never data
-//   routes the entry point: ui and SvelteKit
+//   platform  what the desktop shell does (open a URL): Tauri plugins only
+//   ui     components and presentation: state, core, platform, svelte, highlight.js; never data
+//   routes the entry point: ui, state (to pick the start-up Repository) and SvelteKit
 //
 //   npm run proto:check
 import { readFileSync, readdirSync } from "node:fs";
@@ -16,8 +17,9 @@ const ALLOWED = {
   core: { layers: ["core"], packages: [] },
   data: { layers: ["data", "core"], packages: [] },
   state: { layers: ["state", "core", "data"], packages: ["svelte"] },
-  ui: { layers: ["ui", "state", "core"], packages: ["svelte", "highlight.js"] },
-  routes: { layers: ["routes", "ui"], packages: ["svelte", "$app"] },
+  platform: { layers: ["platform"], packages: ["@tauri-apps"] },
+  ui: { layers: ["ui", "state", "core", "platform"], packages: ["svelte", "highlight.js"] },
+  routes: { layers: ["routes", "ui", "state"], packages: ["svelte", "$app"] },
 };
 // Core must run anywhere (a worker, tests, the Rust port's reference): no browser globals or runes.
 const CORE_BANNED = /\b(document|window|DOMParser|localStorage|fetch)\b|\$(state|derived|effect|props)\b/;

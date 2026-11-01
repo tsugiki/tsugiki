@@ -15,7 +15,11 @@ export const ago = (iso: string | null | undefined) => {
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 export const waitingText = (w: Waiting) =>
-  ({ requested: `review requested on #${w.pr}`, stale: `#${w.pr} changed since your review`, ci: `CI failed on your #${w.pr}`, activity: `new activity on #${w.pr}` })[w.reason];
+  ({
+    requested: `review requested on #${w.pr}`, stale: `#${w.pr} changed since your review`, ci: `CI failed on your #${w.pr}`,
+    activity: `new activity on #${w.pr}`, talk: w.pr ? `new reply on #${w.pr}` : "new reply on the Issue", maintainer: `#${w.pr} waits on you`,
+    "deps-ready": `#${w.pr} ready to merge`, "deps-failed": `CI failed on #${w.pr}`,
+  })[w.reason];
 
 /** Hover text on "stale" and "reviewed": the user's Review, what came after it, and the patch-id verdict. */
 export function reviewTip(p: Pr, r: ReviewInfo | null): string {

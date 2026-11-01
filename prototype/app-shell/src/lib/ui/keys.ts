@@ -50,5 +50,10 @@ export const KEY_HELP: [string, string][] = [
   ["Ctrl+Shift+E", "Open in editor (stub)"],
   ["Ctrl+K M", "Local mark"],
   ["Ctrl+K P", "Pin or unpin Issue"],
+  ["E / M", "Archive / Mute the selected item"],
+  ["Alt+← / Alt+→", "Back / forward"],
+  ["Ctrl+Shift+G", "Open on GitHub"],
+  ["Ctrl+R", "Switch Repository (also in the command palette)"],
+  ["Ctrl+click", "Open a link in the browser"],
   ["?", "This list"],
 ];

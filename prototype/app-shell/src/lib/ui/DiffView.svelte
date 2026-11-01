@@ -4,7 +4,7 @@
   // Click a line number to comment; Ctrl+Enter adds it to the (in-memory) Pending review.
   import { parseDiff, rowOfThread, newsText, type DiffFile, type Row } from "$lib/core/diff";
   import type { Pr, Thread } from "$lib/core/types";
-  import { addComment, pending, say } from "$lib/state/app.svelte";
+  import { addComment, my, say } from "$lib/state/app.svelte";
   import { highlightRows } from "./highlight";
 
   let { pr, split = false, showNews = true }: { pr: Pr; split?: boolean; showNews?: boolean } = $props();
@@ -22,7 +22,7 @@
     expanded = s;
   }
   const threadsAt = (f: DiffFile, i: number) => f.threads.filter((t) => rowOfThread(f, t) === i);
-  const draftsAt = (f: DiffFile, r: Row) => (pending.get(pr.number) ?? []).filter((d) => d.path === f.path && d.line === (r.n ?? r.o));
+  const draftsAt = (f: DiffFile, r: Row) => (my.pending.get(pr.number) ?? []).filter((d) => d.path === f.path && d.line === (r.n ?? r.o));
 
   function startComment(f: DiffFile, r: Row) {
     const line = r.n ?? r.o;

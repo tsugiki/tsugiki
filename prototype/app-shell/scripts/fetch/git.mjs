@@ -1,14 +1,12 @@
 // PROTOTYPE — throwaway. Git side of data fetching and processing (the real app does this in Rust).
-// Uses a throwaway bare mirror, `.proto-mirror` (PROTOTYPE — wipe me), that borrows objects from the
-// user's CPython clone through `objects/info/alternates`: the clone is only read, never written
-// (ADR 0002's --reference bootstrap). PR heads are fetched from GitHub into refs/gh-rev/pr/N.
+// Uses a throwaway bare mirror per repository under `.proto-mirror/` (PROTOTYPE — wipe me). Given a
+// clone, it borrows objects from it through `objects/info/alternates`: the clone is only read, never
+// written (ADR 0002's --reference bootstrap). PR heads are fetched from GitHub into refs/gh-rev/pr/N.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const REMOTE = "https://github.com/python/cpython.git";
-
-export function openMirror(dir, cloneDir) {
+export function openMirror(dir, repo, cloneDir = null) {
   const git = (args, input) =>
     execFileSync("git", ["-C", dir, ...args], { encoding: "utf8", input, maxBuffer: 256 << 20, stdio: ["pipe", "pipe", "pipe"] });
   const tryGit = (args, input) => { try { return git(args, input); } catch { return null; } };
@@ -16,24 +14,29 @@ export function openMirror(dir, cloneDir) {
   if (!existsSync(resolve(dir, "HEAD"))) {
     mkdirSync(dir, { recursive: true });
     execFileSync("git", ["init", "--bare", "-q", dir]);
-    const common = execFileSync("git", ["-C", cloneDir, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" }).trim();
-    writeFileSync(resolve(dir, "objects/info/alternates"), resolve(common, "objects") + "\n");
-    git(["remote", "add", "origin", REMOTE]);
+    if (cloneDir) {
+      const common = execFileSync("git", ["-C", cloneDir, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" }).trim();
+      writeFileSync(resolve(dir, "objects/info/alternates"), resolve(common, "objects") + "\n");
+    }
+    git(["remote", "add", "origin", `https://github.com/${repo}.git`]);
   }
 
   return {
     /** Fetch target branches and PR heads in one go; objects already in the clone aren't downloaded. */
     fetch(branches, prNumbers) {
       const specs = [...branches.map((b) => `+refs/heads/${b}:refs/heads/${b}`), ...prNumbers.map((n) => `+refs/pull/${n}/head:refs/gh-rev/pr/${n}`)];
-      for (let i = 0; i < specs.length; i += 50) git(["fetch", "-q", "--no-tags", "origin", ...specs.slice(i, i + 50)]);
+      // A batch fails as a whole if one ref is gone (a merged Stacked PR's branch); then go one by one.
+      for (let i = 0; i < specs.length; i += 50)
+        if (tryGit(["fetch", "-q", "--no-tags", "origin", ...specs.slice(i, i + 50)]) == null)
+          for (const s of specs.slice(i, i + 50)) tryGit(["fetch", "-q", "--no-tags", "origin", s]);
     },
     has: (oid) => tryGit(["cat-file", "-e", `${oid}^{commit}`]) != null,
     /** A reviewed commit may be gone from the branch after a force-push; GitHub still serves it by SHA. */
     fetchCommit: (oid) => tryGit(["fetch", "-q", "--no-tags", "origin", oid]) != null,
-    /** Paths marked `generated` by .gitattributes on the given branch. */
+    /** Paths marked `generated` by .gitattributes on the given branch (none if the branch is gone). */
     generated(paths, branch) {
       if (!paths.length) return new Set();
-      const out = git(["check-attr", `--source=refs/heads/${branch}`, "--stdin", "generated"], paths.join("\n") + "\n");
+      const out = tryGit(["check-attr", `--source=refs/heads/${branch}`, "--stdin", "generated"], paths.join("\n") + "\n") ?? "";
       return new Set(out.split("\n").filter((l) => l.endsWith(": generated: set")).map((l) => l.slice(0, l.indexOf(": generated:"))));
     },
     /**

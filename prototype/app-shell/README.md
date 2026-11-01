@@ -14,7 +14,7 @@ This prototype lives only on the `prototype/app-shell` branch, and none of its c
 
 Every key from `docs/scope.md` is wired up: `?` lists them, and `Ctrl+P` / `Ctrl+Shift+P` work everywhere. The code is split into layers (see "Layers" below), and the terms come from CONTEXT.md.
 
-**Data.** `src/lib/data/fixture.json` is a read-only snapshot of real `python/cpython` data, taken with your `gh` token. It includes:
+**Data.** `src/lib/data/fixtures/python__cpython.json` is a read-only snapshot of real `python/cpython` data, taken with your `gh` token (the other Repositories: see "Multiple Repositories"). It includes:
 - the Filters
 - your Review requests and the PRs you have reviewed
 - every Issue those reach, plus the Pinned issues gh-159739 and gh-142349, each with its full PR tree
@@ -110,3 +110,18 @@ The user asked for data fetching and processing to be cleanly separated from the
 | Route | `src/routes/` | Reads the URL and mounts `App` | ui |
 
 Core takes the user's state as read-only Map and Set interfaces. When State passes in Svelte's reactive maps, everything derived from core updates as the user acts, and core never imports Svelte. Core returns structured results, such as `ReviewInfo` and `waiting: {pr, reason}`; the wording lives in the UI.
+
+## Multiple Repositories
+
+The design session after the patch-id round settled how gh-rev works across Repositories (CONTEXT.md and docs/scope.md on `main` have the outcome). This round tries it on real snapshots of `python/cpython`, `sergey-miryanov/pep848-sim`, `sergey-miryanov/gcmon` and `sergey-miryanov/gc-scope`.
+
+- **One Repository at a time.** The Sidebar's top line is the Repository; it, `Ctrl+R` and "Repository: …" in the command palette switch. ⌂ goes to the **Home page**, which lists the Repositories with what waits in each (items that need you, review requests, stale reviews, failed CI on yours, PRs to land, dependency updates, new replies) and **Add repository** (stub). `?repo=home` or `?repo=owner/name` opens one from the URL; a normal launch would reopen the last one.
+- **Issues by each Repository's convention.** CPython keeps its `gh-N:` title rule; elsewhere a PR goes under every Issue its "Fixes #N" closes, with "also fixes #N" on the row. A PR that fixes no Issue is a **Standalone PR**, an item of its own; the No issue group is gone.
+- **Stacked PRs.** pep848-sim's #273 → #276 each target the previous PR's branch. The PR view shows the stack, and gh-rev reads their "Closes #N" itself (GitHub ignores it), so #274 sits under #262. On #274 it warns: *Merged into `xml-late-collections-269` after #273 had merged: its commits never reached main.* That is why #277 was needed.
+- **Maintained repositories** (ADMIN on GitHub; all three of the user's): open PRs by others wait on the user ("waits on you"), and dependabot's PRs fold into one **Dependency updates** item that needs attention only when one is ready to merge or its CI failed. gc-scope's nine all have failing CI.
+- **Conversations.** An Issue or PR needs attention when someone else posted since Last seen and the user opened it, is assigned, took part or is mentioned ("new reply"). The Workbench also holds anything that needs attention even when no Filter reaches it; the snapshot adds an `involves:@me` search so such Issues are there.
+- **Hiding**, in memory: **Archive** (E) until something new needs you, **Mute** (M) until unmuted, and **Mute author** per Repository, all listed in the **Hidden** Built-in view with Unhide / Unmute. A Review request or assignment always shows.
+- **All issues** lists open Issues and open PRs, each PR a row of its own ("fixes gh-N", or Standalone PR), told apart by GitHub-style icons coloured by state. Quick filters **Issues** / **PRs** (with counts; at least one stays on, also in the palette) narrow it. A search box (`label:x`, `author:x`, `#123`, words) covers both; "Updated since the last sync" first, Save as Filter (stub). CPython has the latest page of Issues only, with "Load older…" (stub); the small Repositories have everything open. The Issue view has a comment box (not sent). The kind icon is on every list row, not only here.
+- **Links never navigate the app's window.** An Issue or PR in the current Repository opens in the Detail pane, `Alt+←` / `Alt+→` go back and forward; one elsewhere on GitHub opens a **Peek** (cards prefetched by the snapshot), with Open in gh-rev for an added Repository; anything else, or `Ctrl`+click, opens the system browser. `Ctrl+Shift+G` opens the current item on GitHub. `?peek=owner/name/N` opens a Peek from the URL.
+
+Code: the snapshot writes one fixture per Repository (`src/lib/data/fixtures/`), with a git mirror each under `.proto-mirrors/` (only CPython's borrows from a clone). Conventions live in `core/conventions.ts`, link routing in `core/links.ts`, and opening the browser in a new `platform` layer that the UI may use (`npm run proto:check` knows it). `npm run proto:snapshot owner/name` refreshes one Repository.

@@ -15,7 +15,10 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 
 ### Layout
 
-- The app uses three panes, like a mail client. The left pane lists the Built-in views, the Filters and the Pinned issues. The middle pane shows the Issue trees for whichever of those is selected. The right pane shows the selected PR, with Conversation and Files as tabs. This layout was chosen out of three that were prototyped on branch `prototype/app-shell`.
+- The app uses three panes, like a mail client. This layout was chosen out of three that were prototyped on branch `prototype/app-shell`.
+  - **Sidebar** (left): the Workbench, the Built-in views, the Filters and the Pinned issues. `Ctrl+B` shows or hides it.
+  - **Issue list** (middle): the Issue trees for whatever is selected in the Sidebar.
+  - **Detail pane** (right): the selected item. That is either an **Issue view** (the Issue's description, recent comments and whole PR tree) or a **PR view** (Conversation and Files as tabs).
 
 ### Workbench
 
@@ -71,7 +74,7 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 | Next / previous change | `F7` / `Shift+F7` |
 | Next / previous comment thread | `F8` / `Shift+F8` |
 | Find in diff | `Ctrl+F` |
-| Toggle side panel | `Ctrl+B` |
+| Toggle sidebar | `Ctrl+B` |
 | Unified ↔ side-by-side | `Ctrl+Alt+U` |
 | Send comment | `Ctrl+Enter` |
 | Open in editor | `Ctrl+Shift+E` |

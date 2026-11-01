@@ -19,6 +19,9 @@ export interface RawPr {
   labels: string[]; reviewRequests: string[]; assignees: string[];
   reviews: { author: string; state: string; at: string; commit: string }[];
   commitCount: number; ci: Ci; comments: number;
+  /** Open PRs only: the last 30 commits, and when CI last finished on the head. */
+  recentCommits?: { oid: string; short: string; at: string; headline: string; merge: boolean }[];
+  ciAt?: string | null;
 }
 export interface RawIssue {
   number: number; title: string; state: "OPEN" | "CLOSED"; author: string; labels: string[];
@@ -273,6 +276,39 @@ export function submitReview(n: number, state: "APPROVE" | "REQUEST_CHANGES" | "
   const count = pending.get(n)?.length ?? 0;
   pending.delete(n);
   say(`Would submit ${state.toLowerCase().replace("_", " ")} on #${n} with ${count} comment(s). Nothing sent: prototype.`);
+}
+
+/** Hover text for "stale": the user's Review, and what changed since (commits vs. merges from main). */
+export function staleTip(p: Pr): string {
+  const mine = p.reviews.filter((r) => r.author === ME && r.state !== "PENDING").sort((a, b) => a.at.localeCompare(b.at));
+  const last = mine.at(-1);
+  const mark = localMarks.get(p.number);
+  const lines: string[] = [];
+  const at = last?.commit ?? mark;
+  if (last) lines.push(`You reviewed ${ago(last.at)} ago at ${last.commit?.slice(0, 7)}.`);
+  else if (mark) lines.push(`Local mark at ${mark.slice(0, 7)}.`);
+  const commits = p.recentCommits ?? [];
+  const i = commits.findIndex((c) => c.oid === at);
+  if (!commits.length) lines.push(`Head is now ${p.headRefOid.slice(0, 7)}.`);
+  else if (i < 0) lines.push(`That commit is no longer in the PR (force-push or rebase). Head ${p.headRefOid.slice(0, 7)}, committed ${ago(commits.at(-1)!.at)} ago.`);
+  else {
+    const since = commits.slice(i + 1);
+    const merges = since.filter((c) => c.merge).length;
+    const own = since.length - merges;
+    lines.push(`Since then: ${own} new commit${own === 1 ? "" : "s"}, ${merges} merge${merges === 1 ? "" : "s"} from main; last ${ago(since.at(-1)?.at)} ago.`);
+    for (const c of since.slice(-5).reverse()) lines.push(`  ${c.short} ${c.merge ? "[merge] " : ""}${c.headline} (${ago(c.at)} ago)`);
+    if (own === 0 && merges) lines.push("Only merges from main: with the patch-id check this would not be stale.");
+  }
+  return lines.join("\n");
+}
+
+/** Hover text for the CI word: when it finished, on which head commit. */
+export function ciTip(p: Pr): string {
+  const word: Record<string, string> = { SUCCESS: "passed", FAILURE: "failed", ERROR: "errored", PENDING: "running", EXPECTED: "waiting" };
+  const head = p.recentCommits?.at(-1);
+  const when = p.ciAt ? (p.ci === "PENDING" ? `, last check started ${ago(p.ciAt)} ago` : ` ${ago(p.ciAt)} ago`) : "";
+  return `CI ${word[p.ci ?? ""] ?? "unknown"}${when}` + (head ? `
+on head ${head.short}, committed ${ago(head.at)} ago${head.merge ? " (merge from main)" : ""}` : "");
 }
 
 export const ago = (iso: string | null | undefined) => {

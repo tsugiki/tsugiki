@@ -111,6 +111,26 @@ for (const n of issueNums) {
   console.log(`  gh-${n}: ${tree.length} PRs`);
 }
 
+// Recent commits (with merge flag) and CI finish time for open PRs: hover text on "stale" and "CI …".
+// Separate batched pass; adding this to the 100-result searches makes GitHub time out.
+const openNums = [...prs.values()].filter((p) => p.state === "OPEN").map((p) => p.number);
+for (let i = 0; i < openNums.length; i += 10) {
+  const chunk = openNums.slice(i, i + 10);
+  const d = gql(`query { repository(owner: "python", name: "cpython") { ${chunk.map((n) => `p${n}: pullRequest(number: ${n}) {
+    recent: commits(last: 30) { nodes { commit { oid abbreviatedOid committedDate messageHeadline parents { totalCount } } } }
+    head: commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
+      __typename ... on CheckRun { completedAt startedAt } ... on StatusContext { createdAt } } } } } } } }`).join(" ")} } }`);
+  for (const n of chunk) {
+    const r = d.repository[`p${n}`];
+    if (!r) continue;
+    const pr = prs.get(n);
+    pr.recentCommits = r.recent.nodes.map(({ commit: c }) => ({ oid: c.oid, short: c.abbreviatedOid, at: c.committedDate, headline: c.messageHeadline, merge: c.parents.totalCount > 1 }));
+    const times = (r.head.nodes[0]?.commit.statusCheckRollup?.contexts.nodes ?? []).map((x) => x.completedAt ?? x.startedAt ?? x.createdAt).filter(Boolean).sort();
+    pr.ciAt = times.at(-1) ?? null;
+  }
+}
+console.log(`  commits and CI times for ${openNums.length} open PRs`);
+
 // Full conversation + diff for a handful of PRs, so the PR view has real content.
 const pick = new Set();
 const take = (list, k) => list.filter((n) => n.__typename === "PullRequest").slice(0, k).forEach((n) => pick.add(n.number));

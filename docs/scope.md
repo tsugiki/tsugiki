@@ -1,4 +1,4 @@
-# gh-rev scope
+# Tsugiki scope
 
 Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind the architecture are in [docs/adr](adr/). Open points to check or decide before building are filed in [docs/issues](issues/): project tasks, not **Issues** in the glossary sense.
 
@@ -6,13 +6,13 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 
 ### Platform and stack
 
-- gh-rev replaces the email inbox for the **Repositories** the user adds: their GitHub work is taken in there, and a single Issue or PR is opened in the browser only now and then. Repositories that aren't added stay outside gh-rev.
+- Tsugiki replaces the email inbox for the **Repositories** the user adds: their GitHub work is taken in there, and a single Issue or PR is opened in the browser only now and then. Repositories that aren't added stay outside Tsugiki.
 - Any number of Repositories, worked in one at a time: `python/cpython` and the user's own projects. Each has its own Workbench, Filters and Pinned issues. Per-repository conventions (CPython's `gh-NNNNN:` title prefix, `[3.x] … (GH-NNNNN)` Backports and `miss-islington`; elsewhere GitHub's "Fixes #N" links) are kept in one place.
 - A Tauri desktop app with a Svelte 5 + TypeScript frontend, for Windows and macOS ([ADR 0001](adr/0001-standalone-tauri-gui-with-in-app-review.md)).
 - Diffs are drawn by a custom virtualized renderer, with syntax highlighting done in Rust.
-- Code comes from gh-rev's own bare mirror. PRs, reviews, comments and CI come from the GitHub API ([ADR 0002](adr/0002-gh-rev-owns-its-git-state.md)).
+- Code comes from Tsugiki's own bare mirror. PRs, reviews, comments and CI come from the GitHub API ([ADR 0002](adr/0002-tsugiki-owns-its-git-state.md)).
 - Git is driven through the `git` CLI ([ADR 0003](adr/0003-git-cli-over-libgit2-and-gitoxide.md)).
-- The GitHub token comes from `gh auth token` by default. A personal access token is a supported choice: fine-grained read-only to try gh-rev, fine-grained with review rights on one owner's repositories, or classic `public_repo` ([ADR 0004](adr/0004-auth-via-gh-cli-token.md)).
+- The GitHub token comes from `gh auth token` by default. A personal access token is a supported choice: fine-grained read-only to try Tsugiki, fine-grained with review rights on one owner's repositories, or classic `public_repo` ([ADR 0004](adr/0004-auth-via-gh-cli-token.md)).
 - Only the Rust core holds the token and talks to GitHub; the webview never sees it ([ADR 0005](adr/0005-token-stays-in-the-rust-core.md)).
 
 ### Layout
@@ -34,15 +34,15 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 
     The edges between the panes can be dragged; a double-click puts the default back. The Issue list has a minimum width, and so does the Detail pane, so in a narrow window the Issue list gives way first. Pane sizes and the Sidebar's state belong to the machine, like the window's position, and are not synced.
 - A **status bar** runs along the bottom of every screen, the Home page included, for what is app-wide and has no other place. It stays when the Sidebar is hidden.
-  - Left, where the eye spends its time: sync status ("Synced 2 min ago", a click refreshes), **Offline: read-only** (which tints the whole bar), and problems that stop gh-rev reading, such as an expired token or a low API rate limit, each opening the Settings page that fixes it.
-  - Right: unsent **Pending reviews** in any Repository (a click opens the PR), the first key of a chord while gh-rev waits for the second, and at the far end background work with its progress (refreshes, mirror fetches, a first sync, patch-id checks), since that is rarely what the user looks for.
+  - Left, where the eye spends its time: sync status ("Synced 2 min ago", a click refreshes), **Offline: read-only** (which tints the whole bar), and problems that stop Tsugiki reading, such as an expired token or a low API rate limit, each opening the Settings page that fixes it.
+  - Right: unsent **Pending reviews** in any Repository (a click opens the PR), the first key of a chord while Tsugiki waits for the second, and at the far end background work with its progress (refreshes, mirror fetches, a first sync, patch-id checks), since that is rarely what the user looks for.
   - Each part can be switched off from the bar's right-click menu or Settings › General, and the whole bar can be hidden ("View: Toggle Status Bar"). Being offline or an expired token still shows: the bar comes back with only that problem, since nothing else would tell the user.
-- Links in descriptions and comments are sorted by where they point. gh-rev never navigates its own window to a web page.
+- Links in descriptions and comments are sorted by where they point. Tsugiki never navigates its own window to a web page.
   - An Issue or PR in the current Repository opens in the Detail pane. `Alt+←` / `Alt+→` go back and forward through what was opened. A slim bar over the Detail pane shows ‹ and › (greyed out when there's nothing that way, the target in the tooltip) and the title of the item shown. Right-clicking an arrow lists the recent items that way; there is no other history manager. The mouse's back and forward buttons and the command palette (Go Back / Go Forward) do the same. History records only items opened in the Detail pane: switching views in the Sidebar adds nothing, and re-opening the item already shown adds nothing. Each Repository has its own history, which starts fresh when you switch to it.
-  - An Issue or PR anywhere else on GitHub opens in a **Peek** popup that gh-rev renders from the API: title, state, author, description, the last few comments, with Open in browser and, for an added Repository, Open in gh-rev. GitHub can't be embedded in a frame.
+  - An Issue or PR anywhere else on GitHub opens in a **Peek** popup that Tsugiki renders from the API: title, state, author, description, the last few comments, with Open in browser and, for an added Repository, Open in Tsugiki. GitHub can't be embedded in a frame.
   - Anything else opens in the system browser. `Ctrl`+click sends any link to the browser, and `Ctrl+Shift+G`, or a click on the title in the Detail pane, opens the current Issue or PR on GitHub (Dependency updates: the bot's open PRs there).
 - **Settings** is a dialog over the app, opened with `Ctrl+,`, ⚙ in the Sidebar or on the Home page, or the command palette. Its left column lists the pages (General, Account, Repositories, Sync, Keyboard, Advanced), with each Repository under Repositories as a page of its own. Repositories itself is an overview with Add repository. A Repository's page holds its conventions, first sync, the clone to borrow objects from, Filters and Muted authors; Pinned issues are not there, since the list can be long: they are managed from the Sidebar's Pinned issues (★ on an item, `Ctrl+K P`). Changes preview live; Apply keeps them, and Cancel or Esc puts them back. The dialog moves by its title bar, resizes from any edge or corner, and can be maximized; its size and place are kept per machine. Each setting is labelled with where it is stored (synced, this machine, or the keychain).
-  - The **Account** page shows who is signed in, where the token comes from, and what it lets gh-rev do in plain words ("read public repositories", "write reviews and comments", "push to any repository you can push to"), with gh's or a classic token's scopes. It says what gh-rev does with the token (ADR 0005). A guide makes a narrower token: read-only, reviews on one owner's repositories, or classic `public_repo`, each with steps, what it can and can't do, and a link to GitHub's form already filled in. This was chosen out of three variants prototyped on branch `prototype/app-shell`: a searchable list like VS Code's, this dialog, and editing the config files as text.
+  - The **Account** page shows who is signed in, where the token comes from, and what it lets Tsugiki do in plain words ("read public repositories", "write reviews and comments", "push to any repository you can push to"), with gh's or a classic token's scopes. It says what Tsugiki does with the token (ADR 0005). A guide makes a narrower token: read-only, reviews on one owner's repositories, or classic `public_repo`, each with steps, what it can and can't do, and a link to GitHub's form already filled in. This was chosen out of three variants prototyped on branch `prototype/app-shell`: a searchable list like VS Code's, this dialog, and editing the config files as text.
 
 ### Workbench
 
@@ -61,7 +61,7 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 - An Issue with nothing that Needs attention moves to a "quiet" section at the bottom, unless it is pinned.
 - A PR that fixes no Issue is a **Standalone PR**: its own item in the Issue list.
 - A Pinned issue stays until the user unpins it.
-- Hiding, all kept in gh-rev only:
+- Hiding, all kept in Tsugiki only:
   - **Archive** puts an item away until something new needs attention there.
   - **Mute** hides an item until the user unmutes it.
   - **Mute author** hides the Issues and Standalone PRs a person or bot opened, in the current Repository only. Their PRs inside a followed Issue stay listed without needing attention, and an Issue they opened still shows when another PR in it needs attention or a Filter matches it.
@@ -71,10 +71,10 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 
 - Each **Origin PR** shows its **Backports** beneath it, and every PR shows its state, CI status, and the user's review state.
 - All of an Issue's fully merged Origin PRs and their Backports collapse into a single summary line.
-- Only Backports that already exist are shown; gh-rev does not try to work out which ones are missing.
+- Only Backports that already exist are shown; Tsugiki does not try to work out which ones are missing.
 - **Draft PRs** get a badge.
 - A PR that fixes several Issues shows under each of them, with "also fixes #N" on its row.
-- **Stacked PRs**: a PR that targets another PR's branch is stacked on it. Its row and PR view say "stacked on #N", and the PR view lists the whole stack in order. gh-rev reads "Closes #N" from a Stacked PR's description itself, because GitHub ignores it there. When the PR below has merged and a Stacked PR still targets its branch, gh-rev warns that the Stacked PR will not reach the default branch.
+- **Stacked PRs**: a PR that targets another PR's branch is stacked on it. Its row and PR view say "stacked on #N", and the PR view lists the whole stack in order. Tsugiki reads "Closes #N" from a Stacked PR's description itself, because GitHub ignores it there. When the PR below has merged and a Stacked PR still targets its branch, Tsugiki warns that the Stacked PR will not reach the default branch.
 
 ### Review state and activity
 
@@ -137,10 +137,10 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
   - The user can always refresh by hand.
 - The first sync of a Repository depends on its size. A small one (a few hundred open Issues and PRs at most) loads everything open. A large one like CPython loads the last 30 days of updates plus everything the Filters, pins and Reviews reach, and older Issues on demand. The threshold and the window are settings.
 - Settings are kept in two files. A portable config file, which the user syncs themselves, holds the settings, remapped keybindings, and each Repository with its Filters, Pinned issues and Muted authors. A file for this machine holds the token source, the editor command, paths, and the clone each Repository borrows objects from. A personal access token goes to the OS keychain. Local marks, Last seen times, and Archived and Muted items are kept in a local database.
-- Offline, gh-rev is **Read-only**: it shows the mirror and the cached GitHub data. Writing anything needs the network.
-- A token that can't write to a Repository makes it Read-only too. The status bar says so on the left and opens the Account page. The composer stays usable: it offers "Copy and open on GitHub" instead of sending, and Submit review is disabled with the reason. With a fine-grained token gh-rev finds out on the first refused write, keeping the text that was being sent.
+- Offline, Tsugiki is **Read-only**: it shows the mirror and the cached GitHub data. Writing anything needs the network.
+- A token that can't write to a Repository makes it Read-only too. The status bar says so on the left and opens the Account page. The composer stays usable: it offers "Copy and open on GitHub" instead of sending, and Submit review is disabled with the reason. With a fine-grained token Tsugiki finds out on the first refused write, keeping the text that was being sent.
 
-## Not in gh-rev
+## Not in Tsugiki
 
 - Merging, editing labels, and requesting reviewers. These stay on GitHub.
 
@@ -150,7 +150,7 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 - LSP-based navigation (clangd, pyright) as a second implementation of symbol lookup.
 - Drafting comments offline, with an outbox that pushes them into the Pending review on reconnect.
 - Export and import of the local database, so marks and Last seen can follow the user between machines.
-- Merging from gh-rev in **Maintained repositories**, including Dependency updates in one go. Until then merging, labels and reviewers stay on GitHub.
+- Merging from Tsugiki in **Maintained repositories**, including Dependency updates in one go. Until then merging, labels and reviewers stay on GitHub.
 - Linux support, which needs the diff renderer's performance checked on WebKitGTK first.
 - A token per Repository owner, for fine-grained tokens that write to Repositories of several owners.
 - A search box in Settings that finds a setting, a key or a Repository across all pages. Variant A of the Settings prototype (branch `prototype/app-shell`) has one to start from.
@@ -160,5 +160,5 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 - Detecting missing Backports. Version labels on Issues don't reliably show which Backports are wanted.
 - Importing gh-dash configuration.
 - Using GitHub notifications as the baseline for New activity. That baseline is Last seen.
-- Using GitHub notifications to decide what is waiting on the user, or covering repositories the user hasn't added. gh-rev works it out from GitHub's data for the added Repositories only.
+- Using GitHub notifications to decide what is waiting on the user, or covering repositories the user hasn't added. Tsugiki works it out from GitHub's data for the added Repositories only.
 - A combined Workbench across Repositories. Conventions differ, Issue numbers clash, and CPython's volume would bury the rest.

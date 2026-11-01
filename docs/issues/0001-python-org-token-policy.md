@@ -7,7 +7,7 @@ Status: open
 - A fine-grained token whose resource owner is `python` (the "Reviews on one owner's repositories" guide) may need an organization owner's approval. Until approved, GitHub lets it read only.
 - An organization can also block classic personal access tokens, which would stop the `public_repo` guide from writing to `python/cpython`.
 
-The Account page and the docs say "may" for both. gh-rev handles either case: a refused write keeps the text and makes the Repository **Read-only**.
+The Account page and the docs say "may" for both. Tsugiki handles either case: a refused write keeps the text and makes the Repository **Read-only**.
 
 ## To find out
 

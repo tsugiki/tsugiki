@@ -1,6 +1,6 @@
-# gh-rev
+# Tsugiki
 
-A review workbench for a CPython core developer who also maintains projects of their own. For the **Repositories** the user adds, it is the one place where they take in their GitHub work, in place of the email inbox: it groups PRs under the Issues they fix and works out from GitHub's data, not from GitHub's notifications, what is waiting on the user. A single Issue or PR may still be opened in the browser, but the work happens in gh-rev.
+A review workbench for a CPython core developer who also maintains projects of their own. For the **Repositories** the user adds, it is the one place where they take in their GitHub work, in place of the email inbox: it groups PRs under the Issues they fix and works out from GitHub's data, not from GitHub's notifications, what is waiting on the user. A single Issue or PR may still be opened in the browser, but the work happens in Tsugiki.
 
 ## Language
 
@@ -11,7 +11,7 @@ A GitHub issue in the current **Repository** that one or more PRs fix. In CPytho
 _Avoid_: Ticket, bug
 
 **Stacked PR**:
-A PR whose **Target branch** is another PR's branch instead of the default branch; it is stacked on that PR, and a chain of them is a stack. GitHub ignores "Closes #N" on such a PR, but gh-rev still counts the Issues it names.
+A PR whose **Target branch** is another PR's branch instead of the default branch; it is stacked on that PR, and a chain of them is a stack. GitHub ignores "Closes #N" on such a PR, but Tsugiki still counts the Issues it names.
 _Avoid_: Dependent PR, child PR, chained PR
 
 **Origin PR**:
@@ -62,7 +62,7 @@ _Avoid_: Blurb, changelog entry
 ### Workbench
 
 **Repository**:
-A GitHub repository the user works in through gh-rev, such as `python/cpython`. The user works in one Repository at a time and switches between them; each has its own **Workbench**, **Filters** and **Pinned issues**, and nothing is listed across Repositories.
+A GitHub repository the user works in through Tsugiki, such as `python/cpython`. The user works in one Repository at a time and switches between them; each has its own **Workbench**, **Filters** and **Pinned issues**, and nothing is listed across Repositories.
 _Avoid_: Project, workspace, repo list
 
 **Workbench**:
@@ -78,7 +78,7 @@ An unsaved **Filter** every **Repository** has, over all its open Issues and ope
 _Avoid_: Issue browser, backlog
 
 **Built-in view**:
-A **Workbench** list that gh-rev defines from its own states, which GitHub search cannot express: Stale reviews, New activity, Review requests, Archived (everything **Archived**) and Muted (everything **Muted**, the **Muted authors**, and what they hide), each item with a way to bring it back.
+A **Workbench** list that Tsugiki defines from its own states, which GitHub search cannot express: Stale reviews, New activity, Review requests, Archived (everything **Archived**) and Muted (everything **Muted**, the **Muted authors**, and what they hide), each item with a way to bring it back.
 _Avoid_: Smart filter, saved view
 
 **Matched PR**:
@@ -86,7 +86,7 @@ A PR inside an **Issue**'s tree that one of the user's **Filters** matched. It i
 _Avoid_: Hit, result
 
 **Pinned issue**:
-An **Issue** the user has explicitly put on the **Workbench** in gh-rev. It stays there whether or not any **Filter** matches it. This is unrelated to GitHub's own "pin issue" feature on a repository.
+An **Issue** the user has explicitly put on the **Workbench** in Tsugiki. It stays there whether or not any **Filter** matches it. This is unrelated to GitHub's own "pin issue" feature on a repository.
 _Avoid_: Watched issue, starred issue, subscribed issue
 
 **Standalone PR**:
@@ -94,15 +94,15 @@ A PR that fixes no **Issue**, such as a CPython `skip issue` PR or a dependabot 
 _Avoid_: No issue, orphan PR, unlinked PR
 
 **Archived**:
-A **Workbench** item (an Issue, a **Standalone PR** or **Dependency updates**) the user has put away until something new needs their attention there; then it comes back by itself. Like archiving a mail thread. Kept in gh-rev only.
+A **Workbench** item (an Issue, a **Standalone PR** or **Dependency updates**) the user has put away until something new needs their attention there; then it comes back by itself. Like archiving a mail thread. Kept in Tsugiki only.
 _Avoid_: Dismissed, done, snoozed
 
 **Muted**:
-A **Workbench** item the user has hidden until they unmute it, whatever happens to it, except a **Review request** or an assignment to the user: someone asking by name always shows. Kept in gh-rev only.
+A **Workbench** item the user has hidden until they unmute it, whatever happens to it, except a **Review request** or an assignment to the user: someone asking by name always shows. Kept in Tsugiki only.
 _Avoid_: Ignored, blocked
 
 **Muted author**:
-A person or bot whose Issues and **Standalone PRs** the user has hidden from one **Repository**'s **Workbench**, usually because their area is outside the user's interest. Their PRs inside an Issue the user follows stay listed but never need attention, and an Issue they opened still shows when another PR in it needs attention or a **Filter** matches it. As with **Muted**, a Review request or an assignment always shows. Kept in gh-rev only.
+A person or bot whose Issues and **Standalone PRs** the user has hidden from one **Repository**'s **Workbench**, usually because their area is outside the user's interest. Their PRs inside an Issue the user follows stay listed but never need attention, and an Issue they opened still shows when another PR in it needs attention or a **Filter** matches it. As with **Muted**, a Review request or an assignment always shows. Kept in Tsugiki only.
 _Avoid_: Blocked user, ignored user
 
 ### Reviewing
@@ -112,7 +112,7 @@ A record that the user looked at a PR as of a specific commit. It is either a re
 _Avoid_: Approval, LGTM
 
 **Review checkout**:
-A single working tree that gh-rev owns and switches to the head of whichever PR the user is reviewing, so an editor can be opened on it. It is never one of the user's own worktrees.
+A single working tree that Tsugiki owns and switches to the head of whichever PR the user is reviewing, so an editor can be opened on it. It is never one of the user's own worktrees.
 _Avoid_: Sandbox, scratch worktree
 
 **Pending review**:
@@ -120,7 +120,7 @@ The user's unsubmitted GitHub review on a PR, holding their draft comments. It i
 _Avoid_: Draft review, local draft
 
 **Local mark**:
-A **Review** the user records only inside gh-rev, without leaving a trace on GitHub.
+A **Review** the user records only inside Tsugiki, without leaving a trace on GitHub.
 _Avoid_: Bookmark, seen flag
 
 **Review request**:
@@ -142,15 +142,15 @@ A **Review** taken before the PR's own diff changed in files other than **Genera
 _Avoid_: Outdated, dismissed
 
 **Last seen**:
-The moment the user last opened a PR or an **Issue** in gh-rev, or handed a PR off to a review tool. It is tracked per PR and per Issue; opening an Issue's tree does not update its PRs' Last seen.
+The moment the user last opened a PR or an **Issue** in Tsugiki, or handed a PR off to a review tool. It is tracked per PR and per Issue; opening an Issue's tree does not update its PRs' Last seen.
 _Avoid_: Last visited, read
 
 **Read-only**:
-gh-rev shows a **Repository** but can't write to GitHub there: when offline, or when the token can't write to that Repository. Comments and reviews can still be written in the composer and copied to GitHub by hand.
+Tsugiki shows a **Repository** but can't write to GitHub there: when offline, or when the token can't write to that Repository. Comments and reviews can still be written in the composer and copied to GitHub by hand.
 _Avoid_: View-only, guest mode
 
 **Alert**:
-An OS notification that gh-rev raises, such as when CI finishes on an **Own PR**. The user can turn each kind of Alert off.
+An OS notification that Tsugiki raises, such as when CI finishes on an **Own PR**. The user can turn each kind of Alert off.
 _Avoid_: Notification (that word means GitHub's notifications)
 
 **Own PR**:

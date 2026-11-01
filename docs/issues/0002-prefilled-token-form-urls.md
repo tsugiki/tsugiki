@@ -4,9 +4,9 @@ Status: open
 
 The Account page's guides open GitHub's token forms already filled in:
 
-- Read-only: `https://github.com/settings/personal-access-tokens/new?name=gh-rev+(read-only)&description=…&expires_in=90`
-- Reviews: `…/personal-access-tokens/new?name=gh-rev+(reviews)&target_name=<owner>&expires_in=90&pull_requests=write&issues=write&contents=read`
-- Classic: `https://github.com/settings/tokens/new?scopes=public_repo&description=gh-rev`
+- Read-only: `https://github.com/settings/personal-access-tokens/new?name=Tsugiki+(read-only)&description=…&expires_in=90`
+- Reviews: `…/personal-access-tokens/new?name=Tsugiki+(reviews)&target_name=<owner>&expires_in=90&pull_requests=write&issues=write&contents=read`
+- Classic: `https://github.com/settings/tokens/new?scopes=public_repo&description=Tsugiki`
 
 The parameters come from GitHub's documentation ("Managing your personal access tokens": pre-filling fine-grained token details with URL parameters). Nobody has opened these links while signed in.
 

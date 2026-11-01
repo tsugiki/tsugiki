@@ -63,7 +63,7 @@ export default defineConfig(() => ({
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
       // 4. and the throwaway git mirrors the snapshot script keeps
-      ignored: ["**/src-tauri/**", "**/.proto-mirror/**", "**/.proto-mirrors/**"],
+      ignored: ["**/src-tauri/**", "**/.proto-mirrors/**"],
     },
   },
 }));

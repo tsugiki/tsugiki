@@ -1,5 +1,5 @@
 // PROTOTYPE — throwaway. Git side of data fetching and processing (the real app does this in Rust).
-// Uses a throwaway bare mirror per repository under `.proto-mirror/` (PROTOTYPE — wipe me). Given a
+// Uses a throwaway bare mirror per repository under `.proto-mirrors/` (PROTOTYPE — wipe me). Given a
 // clone, it borrows objects from it through `objects/info/alternates`: the clone is only read, never
 // written (ADR 0002's --reference bootstrap). PR heads are fetched from GitHub into refs/gh-rev/pr/N.
 import { execFileSync } from "node:child_process";

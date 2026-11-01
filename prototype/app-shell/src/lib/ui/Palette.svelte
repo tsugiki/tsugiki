@@ -37,11 +37,24 @@
   });
   $effect(() => { hits; sel = 0; });
 
+  // Focus the input whenever the palette opens, caret after any prefilled text (">", ">Repository: ").
+  // On close, focus goes back where it was (a search or comment box), unless something else took it.
+  let input = $state<HTMLInputElement>();
+  const open = $derived(text != null);
+  $effect(() => {
+    if (!open || !input) return;
+    const prev = document.activeElement as HTMLElement | null;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    return () => { if (prev?.isConnected && (document.activeElement === document.body || !document.activeElement)) prev.focus(); };
+  });
+
   function key(e: KeyboardEvent) {
-    if (e.key === "Escape") { text = null; e.preventDefault(); }
+    // The palette owns these keys; the window's keymap must not see them too.
+    if (e.key === "Escape") { text = null; e.preventDefault(); e.stopPropagation(); }
     else if (e.key === "ArrowDown") { sel = Math.min(hits.length - 1, sel + 1); e.preventDefault(); }
     else if (e.key === "ArrowUp") { sel = Math.max(0, sel - 1); e.preventDefault(); }
-    else if (e.key === "Enter" && hits[sel]) { const h = hits[sel]; text = null; h.run(); e.preventDefault(); }
+    else if (e.key === "Enter" && hits[sel]) { const h = hits[sel]; text = null; h.run(); e.preventDefault(); e.stopPropagation(); }
   }
 </script>
 
@@ -50,8 +63,7 @@
   <div class="scrim" onclick={() => (text = null)}>
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
     <div class="pal" onclick={(e) => e.stopPropagation()}>
-      <!-- svelte-ignore a11y_autofocus -->
-      <input autofocus bind:value={text} onkeydown={key} placeholder="Issue, PR number or title, file… (> for commands)" />
+      <input bind:this={input} bind:value={text} onkeydown={key} placeholder="Issue, PR number or title, file… (> for commands)" />
       <ul>
         {#each hits as h, i}
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->

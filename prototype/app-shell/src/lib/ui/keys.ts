@@ -20,7 +20,7 @@ function name(e: KeyboardEvent) {
 }
 
 /** Returns a keydown handler. Keys that work while typing must be listed in `whileTyping`. */
-export function keymap(get: () => Bindings, whileTyping = ["escape", "ctrl+enter"]) {
+export function keymap(get: () => Bindings, whileTyping = ["escape", "ctrl+enter", "ctrl+p", "ctrl+shift+p", "ctrl+r"]) {
   let chord: string | null = null;
   let chordAt = 0;
   return (e: KeyboardEvent) => {

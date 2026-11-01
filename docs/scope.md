@@ -70,7 +70,7 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 
 - A PR's review state is **Unreviewed**, **Reviewed**, or **Stale review**.
 - A **Review** is either a review submitted on GitHub (line comments included) or a **Local mark**.
-- A Review becomes stale only when the PR's diff outside **Generated files** changes. A merge from `main`, or a rebase that leaves the diff the same, does not count. Rebases are detected by comparing patch-ids.
+- A Review becomes stale only when the PR's diff outside **Generated files** changes. A merge from `main`, or a rebase that leaves the diff the same, does not count. Rebases are detected by comparing patch-ids file by file, each side diffed against its merge-base with the Target branch. Every whitespace change counts, trailing spaces included (`git patch-id --verbatim`): indentation matters in Python, and a false "stale" costs only a look. Files whose change is whitespace only are named as such.
 - A **Bot backport** shares its Origin PR's review state. A **Manual backport** is reviewed on its own.
 - A **Review request** always counts as Needs attention, including on a Bot backport or a Draft PR. A Local mark does not clear it.
 - A colleague's Draft PR only Needs attention when it has a Review request. When it becomes ready for review, that counts as **New activity**.

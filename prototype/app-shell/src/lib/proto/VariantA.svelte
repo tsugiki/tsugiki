@@ -3,7 +3,7 @@
   // Sidebar: where to look (Workbench, Built-in views, Filters, Pinned). Issue list: the Issue trees
   // for that. Right pane: the selected Issue (Issue view) or PR (PR view, Conversation and Files tabs).
   import {
-    FILTERS, VIEWS, workbench, viewCount, filterCount, pins, pr as getPr, openPr, openIssue, togglePin, toggleMark, say, ago,
+    FILTERS, VIEWS, workbench, viewCount, attentionCount, pins, pr as getPr, openPr, openIssue, togglePin, toggleMark, say, ago,
     type Scope, type IssueNode, type Pr,
   } from "./model.svelte";
   import StateDot from "./StateDot.svelte";
@@ -44,14 +44,41 @@
     if (i.mergedCount && !unfolded.has(key)) out.push({ fold: key, count: i.mergedCount });
     return out;
   }
-  const visibleIssues = $derived([...wb.active, ...(showQuiet ? wb.quiet : []), ...(wb.noIssue ? [wb.noIssue] : [])]);
-  const flat = $derived(visibleIssues.flatMap((i) => [`i:${i.number ?? 0}`, ...rows(i).filter((r): r is Pr => !("fold" in r)).map((p) => `p:${p.number}`)]));
+  // Issues are folded like mail conversations; selecting one unfolds it, ← → fold and unfold.
+  // svelte-ignore state_referenced_locally
+  let expanded = $state(new Set<number>(start ? [getPr(start)?.issue ?? 0] : startIssue ? [startIssue] : []));
+  let sortBy = $state<"attention" | "updated">("attention");
+  const byUpdated = (a: IssueNode, b: IssueNode) => b.updatedAt.localeCompare(a.updatedAt);
+  const visibleIssues = $derived.by(() => {
+    const active = sortBy === "updated" ? [...wb.active].sort(byUpdated) : wb.active;
+    return [...active, ...(showQuiet ? wb.quiet : []), ...(wb.noIssue ? [wb.noIssue] : [])];
+  });
+  const flat = $derived(visibleIssues.flatMap((i) => [
+    `i:${i.number ?? 0}`,
+    ...(expanded.has(i.number ?? 0) ? rows(i).filter((r): r is Pr => !("fold" in r)).map((p) => `p:${p.number}`) : []),
+  ]));
+  const scopeName = $derived(
+    scope.kind === "all" ? "Workbench" : scope.kind === "pinned" ? "Pinned issues" : scope.kind === "filter" ? scope.name : VIEWS.find((v) => v.key === (scope as { view: string }).view)!.name);
 
+  function fold(n: number, open: boolean) {
+    const s = new Set(expanded);
+    open ? s.add(n) : s.delete(n);
+    expanded = s;
+  }
   function select(key: string) {
     sel = key;
     const n = +key.slice(2);
-    if (key.startsWith("p:")) openPr(n); else openIssue(n || null);
-    document.querySelector(`[data-key="${key}"]`)?.scrollIntoView({ block: "nearest" });
+    if (key.startsWith("p:")) {
+      openPr(n);
+      const i = getPr(n)?.issue ?? 0;
+      if (!expanded.has(i)) fold(i, true);
+    } else { openIssue(n || null); fold(n, true); }
+    queueMicrotask(() => document.querySelector(`[data-key="${key}"]`)?.scrollIntoView({ block: "nearest" }));
+  }
+  function foldSelected(open: boolean) {
+    const n = selKind === "i" ? selNum : current?.issue ?? 0;
+    fold(n, open);
+    if (!open) sel = `i:${n}`;
   }
   function move(d: number) {
     const i = sel == null ? -1 : flat.indexOf(sel);
@@ -76,6 +103,8 @@
     escape: () => { palette = null; help = false; },
     arrowdown: () => move(1),
     arrowup: () => move(-1),
+    arrowleft: () => foldSelected(false),
+    arrowright: () => foldSelected(true),
     enter: () => current && (tab = tab === "conv" ? "files" : "conv"),
     "ctrl+b": () => (side = !side),
     "ctrl+alt+u": () => (split = !split),
@@ -97,33 +126,43 @@
   {#if side}
     <nav class="left">
       <div class="brand">gh-rev</div>
-      <button class="nav" class:on={scopeEq({ kind: "all" })} onclick={() => (scope = { kind: "all" })}>Workbench</button>
+      {#snippet count(n: number)}{#if n}<span class="n">{n}</span>{/if}{/snippet}
+      <button class="nav" class:on={scopeEq({ kind: "all" })} onclick={() => (scope = { kind: "all" })}>Workbench{@render count(attentionCount({ kind: "all" }))}</button>
       <div class="sec">Built-in views</div>
       {#each VIEWS as v}
-        <button class="nav" class:on={scopeEq({ kind: "view", view: v.key })} onclick={() => (scope = { kind: "view", view: v.key })}>{v.name}<span class="n">{viewCount(v.key)}</span></button>
+        <button class="nav" class:on={scopeEq({ kind: "view", view: v.key })} onclick={() => (scope = { kind: "view", view: v.key })}>{v.name}{@render count(viewCount(v.key))}</button>
       {/each}
       <div class="sec">Filters</div>
       {#each FILTERS as f}
-        <button class="nav" title={f.q} class:on={scopeEq({ kind: "filter", name: f.name })} onclick={() => (scope = { kind: "filter", name: f.name })}>{f.name}<span class="n">{filterCount(f.name)}</span></button>
+        <button class="nav" title={f.q} class:on={scopeEq({ kind: "filter", name: f.name })} onclick={() => (scope = { kind: "filter", name: f.name })}>{f.name}{@render count(attentionCount({ kind: "filter", name: f.name }))}</button>
       {/each}
       <div class="sec">Pinned</div>
-      <button class="nav" class:on={scopeEq({ kind: "pinned" })} onclick={() => (scope = { kind: "pinned" })}>Pinned issues<span class="n">{pins.size}</span></button>
+      <button class="nav" class:on={scopeEq({ kind: "pinned" })} onclick={() => (scope = { kind: "pinned" })}>Pinned issues{@render count(attentionCount({ kind: "pinned" }))}</button>
+      <div class="hint">Numbers: Issues that need attention (PRs, for the Built-in views).</div>
     </nav>
   {/if}
 
   <section class="mid">
+    <header class="lhead">
+      <b>{scopeName}</b>
+      <span class="grow"></span>
+      <button class="sort" onclick={() => (sortBy = sortBy === "attention" ? "updated" : "attention")} title="Change sort order">By {sortBy} ⇅</button>
+    </header>
     <div class="list">
       {#each visibleIssues as i (i.number ?? 0)}
         {@const ikey = `i:${i.number ?? 0}`}
-        <div class="issue">
-          <div class="ihead" class:sel={sel === ikey}>
-            <button class="iopen" data-key={ikey} onclick={() => select(ikey)}>
-              <span class="inum">{i.number ? `gh-${i.number}` : "No issue"}</span>
-              <span class="ititle" title={i.title}>{i.number ? i.title : "PRs without a gh- prefix"}</span>
+        {@const open = expanded.has(i.number ?? 0)}
+        <div class="issue" class:att={i.attention > 0}>
+          <div class="item" class:sel={sel === ikey}>
+            <button class="chev" onclick={() => fold(i.number ?? 0, !open)} aria-label={open ? "fold" : "unfold"}>{open ? "⌄" : "›"}</button>
+            <button class="ibody" data-key={ikey} onclick={() => select(ikey)} title={i.reasons.join(" · ")}>
+              <span class="l1">{i.people.join("; ") || "—"}</span>
+              <span class="l2"><span class="ititle"><span class="inum">{i.number ? `gh-${i.number}` : "No issue"}</span> {i.number ? i.title : "PRs without a gh- prefix"}</span><span class="cnt">({i.total})</span><span class="time">{ago(i.updatedAt)}</span></span>
+              <span class="l3">{i.why.length ? i.why.slice(0, 2).join(" · ") + (i.why.length > 2 ? ` · +${i.why.length - 2} more` : "") : `${i.open} open · ${i.mergedCount} merged`}</span>
             </button>
             {#if i.number}<button class="pin" class:on={i.pinned} onclick={() => togglePin(i.number)} title="Pin or unpin (Ctrl+K P)">{i.pinned ? "★" : "☆"}</button>{/if}
           </div>
-          <div class="imeta">{#if i.attention}<b>{i.attention} need attention</b> · {/if}{i.open} open of {i.total} PRs{#if i.reasons.length} · <span class="muted">{i.reasons.join(", ")}</span>{/if}</div>
+          {#if open}
           {#each rows(i) as r}
             {#if "fold" in r}
               <button class="fold" onclick={() => (unfolded = new Set([...unfolded, r.fold]))}>▸ {r.count} merged PRs</button>
@@ -136,6 +175,7 @@
               </button>
             {/if}
           {/each}
+          {/if}
         </div>
       {/each}
       {#if wb.quiet.length}
@@ -144,7 +184,7 @@
     </div>
     <footer class="legend">
       <span><i class="d open"></i>open</span><span><i class="d draft"></i>draft</span><span><i class="d merged"></i>merged</span><span><i class="d closed"></i>closed</span>
-      <span class="muted">· bold rows need attention</span>
+      <span class="muted">· <i class="bar"></i> needs attention</span>
     </footer>
   </section>
 
@@ -193,23 +233,38 @@
   .n { color: var(--muted); font-weight: 400; }
   .mid { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
   .list { flex: 1; overflow: auto; padding-bottom: 60px; }
-  .issue { border-bottom: 1px solid var(--line); padding: 6px 0; }
-  .ihead { display: flex; gap: 6px; align-items: center; padding: 2px 10px; }
-  .ihead.sel { background: var(--sel); }
-  .iopen { all: unset; display: flex; gap: 6px; align-items: baseline; flex: 1; min-width: 0; cursor: pointer; }
-  .iopen:hover .ititle { text-decoration: underline; }
-  .inum { font: 600 12px var(--mono); color: var(--accent); flex: none; }
-  .ititle { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pin { all: unset; cursor: pointer; color: var(--muted); } .pin.on { color: var(--warn); }
-  .imeta { font-size: 11.5px; padding: 0 10px 4px; color: var(--fg); }
+  .lhead { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .grow { flex: 1; }
+  .sort { all: unset; font-size: 12px; color: var(--muted); cursor: pointer; }
+  .hint { font-size: 11px; color: var(--muted); padding: 14px 8px; }
+  .issue { border-bottom: 1px solid var(--line); border-left: 3px solid transparent; }
+  .issue.att { border-left-color: var(--accent); }
+  .item { display: flex; align-items: flex-start; position: relative; }
+  .item.sel { background: var(--sel); }
+  .item:hover { background: var(--hover); } .item.sel:hover { background: var(--sel); }
+  .chev { all: unset; width: 20px; text-align: center; color: var(--muted); cursor: pointer; padding-top: 20px; flex: none; }
+  .ibody { all: unset; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 7px 10px 7px 0; cursor: pointer; }
+  .l1 { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 22px; }
+  .l2 { display: flex; gap: 6px; align-items: baseline; font-size: 13px; }
+  .ititle { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .att .ititle { color: var(--accent); font-weight: 600; }
+  .att .l1 { font-weight: 600; }
+  .cnt { color: var(--muted); font-size: 12px; flex: none; }
+  .time { color: var(--muted); font-size: 12px; flex: none; }
+  .att .time { color: var(--accent); }
+  .l3 { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .inum { font: 12px var(--mono); }
+  .pin { all: unset; cursor: pointer; color: var(--muted); position: absolute; right: 10px; top: 6px; } .pin.on { color: var(--warn); }
+  .bar { display: inline-block; width: 3px; height: 10px; background: var(--accent); vertical-align: middle; }
   .prrow { all: unset; box-sizing: border-box; width: 100%; display: flex; gap: 6px; align-items: center; padding: 3px 10px; font-size: 12.5px; cursor: pointer; font-weight: 600; }
   .prrow:hover { background: var(--hover); } .prrow.sel { background: var(--sel); }
-  .prrow.bp { padding-left: 24px; }
+  .prrow { padding-left: 22px; }
+  .prrow.bp { padding-left: 38px; }
   .prrow.quiet { font-weight: 400; }
   .prrow.quiet .t { color: var(--muted); }
   .tgt { font: 400 11px var(--mono); color: var(--muted); width: 32px; flex: none; }
   .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .fold, .quietbtn { all: unset; display: block; padding: 2px 10px 2px 24px; font-size: 12px; color: var(--muted); cursor: pointer; }
+  .fold, .quietbtn { all: unset; display: block; padding: 2px 10px 4px 38px; font-size: 12px; color: var(--muted); cursor: pointer; }
   .quietbtn { padding: 10px; }
   .legend { display: flex; gap: 10px; align-items: center; padding: 5px 10px; border-top: 1px solid var(--line); font-size: 11px; color: var(--fg); background: var(--panel); flex-wrap: wrap; }
   .legend span { display: inline-flex; gap: 4px; align-items: center; }

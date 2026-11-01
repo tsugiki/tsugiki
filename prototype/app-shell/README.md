@@ -61,3 +61,12 @@ npm run proto:snapshot           # refresh the snapshot (needs gh auth; reads .g
 2. **`via #N` on Bot backports told the user nothing.** It is gone. Bot backports show no review state of their own, and Manual backports are marked `manual`.
 3. **Clicking an Issue (such as gh-159739) should show it.** It now opens in the right pane, with its description, recent comments and the whole PR tree. `&issue=N` opens it from the URL.
 4. **Nobody could tell what the green and blue dots meant.** They are replaced by words, and a legend for the state dot sits at the bottom of the Issue list.
+
+## Issue list feedback, round 2: like a mail client (layout A)
+
+The user pointed at their Outlook inbox as the reference. The Issue list now behaves like that inbox:
+- **Folded like conversations.** Each Issue is one item with a `›` to unfold its PRs. Selecting an Issue, or one of its PRs, unfolds it, and ← → fold and unfold.
+- **Three lines per item.** First the people involved. Then `gh-N` and the title, with the PR count and how long ago it was last updated. Then a preview of what is waiting on the user (`#157178 changed since your review`, `review requested on #140836`), or `5 open · 152 merged` when nothing is.
+- **Like unread mail.** An Issue that needs attention gets an accent bar on the left, an accent-coloured title, and bold people.
+- **A header over the list** with the scope's name and its sort order (by attention, or by last update).
+- **Sidebar numbers count what needs attention,** like unread counts: Issues for the Workbench, Filters and Pinned, and PRs for the Built-in views.

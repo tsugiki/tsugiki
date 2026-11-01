@@ -138,6 +138,8 @@ export interface IssueNode {
   origins: OriginNode[]; matched: Pr[]; attention: number; open: number; total: number;
   /** Origins with anything open, matched or requested; the rest fold into one "merged" line. */
   live: OriginNode[]; merged: OriginNode[]; mergedCount: number;
+  /** For the mail-style row: who is involved, latest update, and what is waiting on the user. */
+  people: string[]; updatedAt: string; why: string[];
   pinned: boolean; reasons: string[]; newActivity: boolean;
 }
 
@@ -173,6 +175,13 @@ export function issueNode(n: number | null, prsOverride?: Pr[]): IssueNode {
   const merged = origins.filter(folds);
   return {
     number: n, title: i?.title ?? (n ? `gh-${n}` : "No issue"), state: i?.state ?? "OPEN", labels: i?.labels ?? [],
+    people: [...new Set([...(i ? [i.author] : []), ...prs.filter((p) => p.author !== BOT).map((p) => p.author)])].slice(0, 3),
+    updatedAt: [i?.updatedAt ?? "", ...prs.map((p) => p.updatedAt)].sort().at(-1) ?? "",
+    why: prs.filter((p) => p.attention).map((p) =>
+      p.requested ? `review requested on #${p.number}` :
+      p.review === "stale" && p.kind !== "bot" ? `#${p.number} changed since your review` :
+      p.own && (p.ci === "FAILURE" || p.ci === "ERROR") ? `CI failed on your #${p.number}` :
+      `new activity on #${p.number}`),
     origins, live: origins.filter((o) => !folds(o)), merged,
     mergedCount: merged.reduce((a, o) => a + (o.pr ? 1 : 0) + o.backports.length, 0), matched: prs.filter((p) => p.matchedBy.length), pinned: !!n && pins.has(n),
     attention: prs.filter((p) => p.attention).length, open: prs.filter((p) => p.state === "OPEN").length,
@@ -233,6 +242,8 @@ export function viewHas(v: View, p: Pr) {
 }
 export const viewCount = (v: View) => allPrs().filter((p) => viewHas(v, p)).length;
 export const filterCount = (name: string) => fx.filters.find((f) => f.name === name)?.matches.length ?? 0;
+/** Like an unread count: how many Issues in a scope need attention. */
+export const attentionCount = (s: Scope) => workbench(s).active.filter((i) => i.attention > 0).length;
 
 // --- actions (memory only) -----------------------------------------------------------------------
 export function openPr(n: number) { lastSeen.set(n, new Date().toISOString()); }

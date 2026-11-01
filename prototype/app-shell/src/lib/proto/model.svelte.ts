@@ -111,9 +111,19 @@ export function pr(n: number): Pr | null {
   const seen = lastSeen.get(n);
   const newActivity = !!seen && p.updatedAt > seen && p.author !== BOT;
   const open = p.state === "OPEN";
-  const attention = open && (!p.isDraft || requested) && (requested || review !== "reviewed" || newActivity);
+  const own = p.author === ME;
+  // Needs attention = waiting on the user (narrowed after trying the prototype): a Review request,
+  // a Stale review, failed CI on an Own PR, or New activity on a PR the user reviewed or authored.
+  // A Bot backport's staleness is carried by its Origin PR, so it isn't counted twice.
+  // Unreviewed colleague PRs are listed but don't need attention; a colleague's Draft PR only via a request.
+  const attention =
+    !(p.isDraft && !own && !requested) &&
+    ((open && requested) ||
+      (open && review === "stale" && kind !== "bot") ||
+      (open && own && (p.ci === "FAILURE" || p.ci === "ERROR")) ||
+      (newActivity && (own || review !== "unreviewed")));
   return {
-    ...p, issue: issueOf(p.title), short: shortTitle(p.title), kind, origin, own: p.author === ME,
+    ...p, issue: issueOf(p.title), short: shortTitle(p.title), kind, origin, own,
     requested, review, reviewVia, newActivity, attention, matchedBy: matchedBy.get(n) ?? [],
     detail: fx.details[String(n)] ?? null,
   };

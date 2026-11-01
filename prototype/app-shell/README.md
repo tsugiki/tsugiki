@@ -43,3 +43,14 @@ npm run proto:snapshot           # refresh the snapshot (needs gh auth; reads .g
 
 - **Filters need `ISSUE_ADVANCED` search.** The user's own search, `sort:updated-desc state:open (author:… OR assignee:…)`, returns 0 results with the GraphQL search type `ISSUE` and 11 with `ISSUE_ADVANCED`. Plain queries return the same results in both modes, so the real app should always use `ISSUE_ADVANCED`.
 - **"Needs attention" as defined counts almost everything.** Any open PR you haven't reviewed needs attention, including every colleague's PR reached by a Filter. On real data, 57 Issues need attention and very few are quiet. See the open question in the hand-over.
+
+## Verdict, 2026-11-01
+
+- **Layout: A, three panes like a mail client.** The left pane holds Built-in views, Filters and Pinned. The middle pane holds the Issue trees for that scope. The right pane holds the selected PR, with Conversation and Files as tabs. B and C are kept here for reference.
+- **Needs attention now means work waiting on the user:**
+  - a Review request
+  - a Stale review (a Bot backport's is carried by its Origin PR)
+  - failed CI on an Own PR
+  - New activity on a PR the user reviewed or authored
+
+  Unreviewed colleague PRs are still listed but don't count. On the same snapshot, the count went from 57 Issues needing attention to 16, with 85 quiet. CONTEXT.md and docs/scope.md on `main` carry the new definition.

@@ -81,6 +81,10 @@ _Avoid_: Query, section
 An unsaved **Filter** every **Repository** has, over all its open Issues and open PRs, most recently updated first. Each PR is its own row there, whether or not it fixes an Issue. The user can show only Issues or only PRs, narrow it by typing a GitHub search, and save the result as a Filter. It is where the user finds an Issue to read, comment on or pin, or a PR to open.
 _Avoid_: Issue browser, backlog
 
+**Peek**:
+A popup that shows an Issue or PR from outside the current **Repository**, rendered from the API, with a way to open it in the browser, or in Tsugiki when its Repository has been added.
+_Avoid_: Preview, quick look
+
 **Built-in view**:
 A **Workbench** list that Tsugiki defines from its own states, which GitHub search cannot express: Stale reviews, New activity, Review requests, Archived (everything **Archived**) and Muted (everything **Muted**, the **Muted authors**, and what they hide), each item with a way to bring it back.
 _Avoid_: Smart filter, saved view
@@ -118,6 +122,10 @@ _Avoid_: Approval, LGTM
 **Review checkout**:
 A single working tree that Tsugiki owns and switches to the head of whichever PR the user is reviewing, so an editor can be opened on it. It is never one of the user's own worktrees.
 _Avoid_: Sandbox, scratch worktree
+
+**Definition peek**:
+An inline view, opened from a symbol in a diff, of where that symbol is defined at the commit the line comes from. **Go to definition** opens the same place in full instead.
+_Avoid_: Symbol peek, Peek (that word is the popup for an Issue or PR)
 
 **Pending review**:
 The user's unsubmitted GitHub review on a PR, holding their draft comments. It is not a **Review** until it is submitted.

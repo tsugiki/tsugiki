@@ -102,8 +102,9 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 - The user can reply to threads, resolve and unresolve them, post `suggestion` blocks, and leave comments on the PR as a whole.
 - A thread someone started on github.com on a line outside every hunk is shown in place: the hidden gap around it opens by itself to show that line with 3 lines either side, marked as outside the diff, and the thread sits under it like any other, placed by its file, line and side. It can be replied to and resolved like any thread, and `F8` reaches it in order. If its line no longer exists at the head, it is an **Outdated thread**.
 - **Outdated threads** are grouped at the top of their file together with the code they were written against. During a re-review, the user's own unresolved Outdated threads are listed first.
-- Symbol peek runs `git grep` against the PR's head commit, or against the base commit for removed lines.
-- "Open in editor" runs `code -g` on the **Review checkout**.
+- **Go to definition** (`F12`) and **Definition peek** (`Alt+F12`) find a symbol's definition with `git grep` at the line's commit: the PR's head, or the base for a removed line. They know Python, C in CPython's style and the reST directives in `Doc/`, and fall back to a whole-word search. A definition in a file the PR changes is shown in the diff; elsewhere, Go to definition opens that file read-only at the same commit in the Detail pane, and `Alt+←` returns to the diff ([ADR 0002](adr/0002-tsugiki-owns-its-git-state.md)).
+- "Open in editor" runs the editor command (`code -g` by default) on the **Review checkout**, moved to the PR's current head. If the user has edited files there, Tsugiki first offers Discard and switch, Copy as patch, or Cancel. Settings › Repositories shows the checkout's size, with Remove checkout.
+- While a Repository's mirror is still being cloned, the diff, the definitions and Open in editor say how far it has got.
 
 ### Keyboard
 
@@ -113,7 +114,7 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 |---|---|
 | Command palette | `Ctrl+Shift+P` |
 | Quick open | `Ctrl+P` |
-| Go to definition / peek definition | `F12` / `Alt+F12` |
+| Go to definition / Definition peek | `F12` / `Alt+F12` |
 | Next / previous change | `F7` / `Shift+F7` |
 | Next / previous comment thread | `F8` / `Shift+F8` |
 | Find in diff | `Ctrl+F` |

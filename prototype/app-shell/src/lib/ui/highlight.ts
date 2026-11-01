@@ -15,3 +15,9 @@ export function highlightRows(f: DiffFile): string[] {
   const language = lang(f.path);
   return f.rows.map((r) => (r.kind === "hunk" || !language ? esc(r.text) : hljs.highlight(r.text, { language, ignoreIllegals: true }).value));
 }
+
+/** HTML for each line of a whole file: lines revealed around the diff's hunks. */
+export function highlightLines(path: string, lines: string[]): string[] {
+  const language = lang(path);
+  return lines.map((t) => (language ? hljs.highlight(t, { language, ignoreIllegals: true }).value : esc(t)));
+}

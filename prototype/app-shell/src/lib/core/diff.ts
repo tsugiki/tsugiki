@@ -51,3 +51,82 @@ export function rowOfThread(f: DiffFile, t: Thread): number {
 }
 
 export const newsText = (f: DiffFile) => f.rows.filter((r) => r.kind === "add").map((r) => r.text).join("\n");
+
+// --- Expanding context, as on GitHub ------------------------------------------------------------
+// The lines between hunks are unchanged, so the head version of the file is all that is needed: a
+// hidden line's old-side number is its new-side number minus the shift at that gap.
+
+/** Lines revealed in a gap: `down` from its top (below the previous hunk), `up` from its bottom. */
+export interface Shown { down: number; up: number }
+/** A gap's control row: the hunk header it stands for (empty after the last hunk) and what's hidden. */
+export interface GapInfo { i: number; hidden: number | null; first: boolean; last: boolean }
+export type ViewRow =
+  | (Row & { x?: true })
+  | { kind: "gap"; o: null; n: null; text: string; gap: GapInfo };
+
+export const EXPAND_STEP = 20;
+
+interface Hunk { at: number; o: number; n: number; oEnd: number; nEnd: number }
+function hunksOf(rows: Row[]): Hunk[] {
+  const out: Hunk[] = [];
+  rows.forEach((r, i) => {
+    if (r.kind === "hunk") {
+      const h = /^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(r.text)!;
+      out.push({ at: i, o: +h[1], n: +h[2], oEnd: +h[1], nEnd: +h[2] });
+    } else {
+      const h = out.at(-1)!;
+      if (r.o != null) h.oEnd = r.o + 1;
+      if (r.n != null) h.nEnd = r.n + 1;
+    }
+  });
+  return out;
+}
+
+/** Gap k precedes hunk k; the last one follows the last hunk. `end` is null while the file isn't loaded. */
+export function gapsOf(f: DiffFile, total: number | null) {
+  const hs = hunksOf(f.rows);
+  return hs.map((h, k) => ({ start: k ? hs[k - 1].nEnd : 1, end: h.n - 1, shift: h.n - h.o }))
+    .concat(hs.length ? [{ start: hs.at(-1)!.nEnd, end: total ?? Infinity, shift: hs.at(-1)!.nEnd - hs.at(-1)!.oEnd }] : []);
+}
+
+/**
+ * The rows to draw: the diff with each gap's revealed lines (marked `x`) and, where lines are still
+ * hidden, a control row. `src` is the file at the PR's head, or null while it loads (or when there is
+ * none: a deleted file).
+ */
+export function withContext(f: DiffFile, src: string[] | null, shown: Record<number, Shown>): ViewRow[] {
+  const hs = hunksOf(f.rows);
+  const gaps = gapsOf(f, src ? src.length : null);
+  const out: ViewRow[] = [];
+  const reveal = (from: number, to: number, shift: number) => {
+    for (let n = from; n <= to && src; n++) out.push({ kind: "ctx", o: n - shift, n, text: src[n - 1] ?? "", x: true });
+  };
+  gaps.forEach((g, k) => {
+    const last = k === hs.length;
+    const size = Number.isFinite(g.end) ? Math.max(0, g.end - g.start + 1) : null;
+    const s = src ? shown[k] ?? { down: 0, up: 0 } : { down: 0, up: 0 };
+    const down = Math.min(s.down, size ?? s.down), up = last ? 0 : Math.min(s.up, (size ?? 0) - down);
+    const hidden = size == null ? null : size - down - up;
+    reveal(g.start, g.start + down - 1, g.shift);
+    const header = last ? "" : f.rows[hs[k].at].text;
+    // A gap that was never there (the first hunk starts at line 1) keeps its header; one opened all
+    // the way merges into the context around it, as on GitHub.
+    if (hidden !== 0 || (size === 0 && !last)) out.push({ kind: "gap", o: null, n: null, text: header, gap: { i: k, hidden, first: k === 0, last } });
+    if (!last) {
+      reveal(g.end - up + 1, g.end, g.shift);
+      for (let i = hs[k].at + 1; i < (hs[k + 1]?.at ?? f.rows.length); i++) out.push(f.rows[i]);
+    }
+  });
+  return out;
+}
+
+/** The threads under each drawn row: a thread sits under its line in the diff, or the last row. */
+export function threadRows(view: ViewRow[], threads: Thread[]): Map<number, Thread[]> {
+  const at = new Map<number, Thread[]>();
+  for (const t of threads) {
+    let i = view.findIndex((r) => r.kind !== "gap" && r.kind !== "hunk" && !("x" in r && r.x) && (t.side === "LEFT" ? r.o === t.line : r.n === t.line));
+    if (i < 0) i = view.length - 1;
+    at.set(i, [...(at.get(i) ?? []), t]);
+  }
+  return at;
+}

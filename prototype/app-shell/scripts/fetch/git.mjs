@@ -30,6 +30,11 @@ export function openMirror(dir, repo, cloneDir = null) {
         if (tryGit(["fetch", "-q", "--no-tags", "origin", ...specs.slice(i, i + 50)]) == null)
           for (const s of specs.slice(i, i + 50)) tryGit(["fetch", "-q", "--no-tags", "origin", s]);
     },
+    /** A file at a commit, or null (no such file, or over 4 MB: not something to read in a diff). */
+    show(oid, path) {
+      const size = +(tryGit(["cat-file", "-s", `${oid}:${path}`]) ?? -1);
+      return size < 0 || size > 4 << 20 ? null : tryGit(["cat-file", "blob", `${oid}:${path}`]);
+    },
     has: (oid) => tryGit(["cat-file", "-e", `${oid}^{commit}`]) != null,
     /** A reviewed commit may be gone from the branch after a force-push; GitHub still serves it by SHA. */
     fetchCommit: (oid) => tryGit(["fetch", "-q", "--no-tags", "origin", oid]) != null,

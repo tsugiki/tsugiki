@@ -132,7 +132,8 @@ function snapshotRepo(cfg) {
   const toCheck = openPrs.filter((p) => { const r = lastReview(p); return r && r.commit !== p.headRefOid; });
   const mirror = openMirror(fileURLToPath(new URL(`../.proto-mirrors/${cfg.name.replace("/", "__")}`, import.meta.url)), cfg.name, cfg.clone ?? null);
   const branches = new Set([...toCheck, ...detailNums.map((n) => prs.get(n))].map((p) => p.baseRefName));
-  mirror.fetch([...branches], toCheck.map((p) => p.number));
+  // PR heads too: the diff view expands context from the file at the PR's head, read from the mirror.
+  mirror.fetch([...branches], [...new Set([...toCheck.map((p) => p.number), ...detailNums])]);
 
   // Patch-id check: is the PR's own diff the same as when the user reviewed it? `reviewDiff: null`
   // means the reviewed commit can't be fetched any more (force-pushed away); the app counts it stale.

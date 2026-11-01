@@ -1,8 +1,9 @@
 <script lang="ts">
   // PROTOTYPE — throwaway. One Repository's settings: conventions, first sync, the clone to borrow
-  // objects from (this machine), Filters, Pinned issues and Muted authors (synced).
+  // objects from (this machine), Filters and Muted authors (synced). Pinned issues are managed from the
+  // Sidebar (Pinned issues, ★, Ctrl+K P), not here: the list can be long.
   import { CONVENTIONS, FIRST_SYNC } from "$lib/core/settings";
-  import { repoConfig, setRepo, unpin, unmuteAuthorIn, removeRepo } from "$lib/state/settings.svelte";
+  import { repoConfig, setRepo, unmuteAuthorIn, removeRepo } from "$lib/state/settings.svelte";
   import Where from "./Where.svelte";
   let { name }: { name: string } = $props();
   const r = $derived(repoConfig(name));
@@ -33,9 +34,6 @@
     </div>
   {/each}
   <button class="add" onclick={() => setRepo(name, { filters: [...r.filters, { name: "New Filter", q: "is:open involves:@me" }] })}>+ Add Filter</button>
-
-  <div class="sub">Pinned issues <Where where="synced" /></div>
-  <div class="chips">{#each r.pinned as n}<span class="chip">#{n}<button onclick={() => unpin(name, n)} title="Unpin">✕</button></span>{:else}<span class="help">None. Ctrl+K P pins the selected Issue.</span>{/each}</div>
 
   <div class="sub">Muted authors <Where where="synced" /></div>
   <div class="chips">{#each r.mutedAuthors as a}<span class="chip">{a}<button onclick={() => unmuteAuthorIn(name, a)} title="Unmute">✕</button></span>{:else}<span class="help">None. "Mute author" in a PR or Issue adds one.</span>{/each}</div>

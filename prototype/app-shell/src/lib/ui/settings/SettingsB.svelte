@@ -68,7 +68,7 @@
               {@const c = repoConfig(r)}
               <button class="rrow" onclick={() => go("Repositories", r)}>
                 <span class="mono">{r}</span>
-                <span class="help">{c.filters.length} Filters · {c.pinned.length} pinned · {c.mutedAuthors.length} muted authors{c.clone ? " · borrows from a clone" : ""}</span>
+                <span class="help">{c.filters.length} Filters · {c.mutedAuthors.length} muted authors{c.clone ? " · borrows from a clone" : ""}</span>
                 <span class="go">›</span>
               </button>
             {/each}

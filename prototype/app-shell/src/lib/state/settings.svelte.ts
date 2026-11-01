@@ -42,7 +42,6 @@ export function resetKey(id: string) { cfg.keys[id] = DEFAULT_KEYS[id]; }
 
 export const repoConfig = (name: string) => config().repos.find((r) => r.name === name)!;
 export function setRepo(name: string, patch: Partial<Own>) { Object.assign(cfg.repos.find((r) => r.name === name)!, patch); }
-export function unpin(name: string, n: number) { userOf(name).pins.delete(n); }
 export function unmuteAuthorIn(name: string, login: string) { userOf(name).mutedAuthors.delete(login); }
 export function removeRepo(name: string) { say(`Would remove ${name} from config.toml and delete its mirror (prototype: kept)`); }
 

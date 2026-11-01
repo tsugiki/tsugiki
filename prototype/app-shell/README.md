@@ -131,7 +131,7 @@ Code: the snapshot writes one fixture per Repository (`src/lib/data/fixtures/`),
 The question: what should Settings look like? Three variants open inside the app: `Ctrl+,`, ⚙ in the Sidebar or on the Home page, or "Preferences: Open Settings" / "Preferences: Keyboard Shortcuts" / "Preferences: Settings for <Repository>" in the command palette. The floating bar (or `←` / `→`) switches variant; `?settings&variant=A|B|C` opens one from the URL (`?settings=Keybindings`, `?settings=repo:owner/name` lands on a section).
 
 - **A, Searchable list.** The whole window, like VS Code's settings editor: one list of every setting with its description, a contents column, a search box over settings, keys and Repositories, a bar on changed settings with reset. Changes apply at once. "Show files" puts the two files beside it.
-- **B, Dialog.** A preferences window over the app with six pages (General, Account, Repositories, Sync, Keyboard, Advanced), labels on the left, radios for choices, Repositories as master–detail. Apply / Cancel; Esc cancels and puts everything back.
+- **B, Dialog.** A preferences window over the app with six pages (General, Account, Repositories, Sync, Keyboard, Advanced), labels on the left, radios for choices. Apply / Cancel; Esc cancels and puts everything back.
 - **C, The files.** No form: `config.toml` and `local.toml` edited as text. On the right, what the line under the cursor means, the problems (each points at its line; valid lines still apply), and everything there is to set. Only the token is a field, because it never goes in a file.
 
 What every variant shows is where each setting lives: **synced** (`config.toml`, which the user syncs: settings, remapped keys, Repositories with their Filters, Pinned issues and Muted authors), **this machine** (`local.toml`: the token source, the editor command, paths, the clone each Repository borrows objects from) or the **keychain** (a personal access token). Pinning or muting in the app shows up in `config.toml` at once.
@@ -141,3 +141,5 @@ In effect while the prototype runs: Theme, Code font size, Diff view (for the ne
 Code: `core/settings.ts` (what the settings are, the two files, a small TOML reader for C), `state/settings.svelte.ts`, `ui/settings/` (the variants, plus the shared Field, KeysTable, RepoForm and Files).
 
 **Verdict: B**, "easier to handle", with A's Repositories subtree: Repositories in the left column has one entry per Repository (the name; owner/name on hover), each opening that Repository's page, and Repositories itself is an overview with Add repository. A and C stay here as the record.
+
+Pinned issues are not in Settings (the list can be long): they are managed from the Sidebar's Pinned issues, with ★ on each item and `Ctrl+K P`. They are still written to `config.toml`.

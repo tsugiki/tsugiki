@@ -17,7 +17,7 @@
   let showFiles = $state(true);
   let list = $state<HTMLElement>();
   const hits = $derived(q.trim() ? searchSettings(q) : SETTINGS);
-  const repos = $derived(REPOS.filter((r) => !q.trim() || "repositories repository filters pinned muted clone conventions".includes(q.toLowerCase().trim()) || r.includes(q.toLowerCase().trim())));
+  const repos = $derived(REPOS.filter((r) => !q.trim() || "repositories repository filters muted clone conventions".includes(q.toLowerCase().trim()) || r.includes(q.toLowerCase().trim())));
   const keysQ = $derived(/^(keys?|shortcuts?|keybindings?)$/i.test(q.trim()) ? "" : q);
   const keysShown = $derived(!keysQ.trim() || ACTIONS.some((a) => `${a.label} ${prettyKey(keyOf(a.id))} ${a.id}`.toLowerCase().includes(keysQ.toLowerCase().trim())));
   const jump = (id: string) => list?.querySelector(`#${CSS.escape(id)}`)?.scrollIntoView({ block: "start" });

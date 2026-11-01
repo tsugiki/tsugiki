@@ -4,6 +4,8 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 
 ## v1
 
+The order in which v1 is built is in [build-order.md](build-order.md).
+
 ### Platform and stack
 
 - Tsugiki replaces the email inbox for the **Repositories** the user adds: their GitHub work is taken in there, and a single Issue or PR is opened in the browser only now and then. Repositories that aren't added stay outside Tsugiki.

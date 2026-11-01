@@ -12,7 +12,7 @@ Releases are built from a tag in GitHub Actions and attested ([ADR 0005](0005-to
   3. The installers are built.
   4. Each installer is attested with `actions/attest-build-provenance` and uploaded to a draft release. Its body is the version's section of `CHANGELOG.md`, and the workflow fails if that section is missing.
   5. A last job downloads every asset of the draft and runs `gh attestation verify <file> --repo tsugiki/tsugiki --signer-workflow tsugiki/tsugiki/.github/workflows/release.yml` ([Verify release attestations in the release workflow before publishing](https://github.com/tsugiki/tsugiki/issues/6)).
-  6. The maintainer runs the macOS checklist on the draft's `.dmg` and publishes the release by hand.
+  6. The maintainer runs the macOS checklist on the draft's `.dmg`, measures the performance budgets in the real window on Windows and macOS ([ADR 0017](0017-performance-budgets-codspeed-gates-prs-the-window-is-measured-before-release.md)), and publishes the release by hand.
 - The repository has GitHub's immutable releases turned on, so a published release's assets and tag can't change.
 - **Update notices.** Tsugiki asks `api.github.com/repos/tsugiki/tsugiki/releases/latest` at start-up and every 6 hours. When that release is newer, the status bar says "Tsugiki 0.3.0 is out", and a click opens the release page in the browser. A switch in Settings turns the check off.
 - **Versions** follow SemVer. 0.x releases are working builds while v1 is built, and 1.0.0 is the release that reaches it. After that, a minor version adds features, a patch fixes bugs, and a major one breaks something larger, such as dropping a platform. A database migration ([ADR 0010](0010-one-sqlite-database-and-per-repository-mirrors.md)) can come in any minor version.

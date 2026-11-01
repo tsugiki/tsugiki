@@ -35,7 +35,8 @@ The branch a PR merges into: the default branch (`main`), a maintenance branch s
 _Avoid_: Base, version
 
 **Needs attention**:
-The state of a PR that is waiting on the user. It applies when the PR carries a **Review request**, the user's **Review** of it is a **Stale review**, it is an **Own PR** whose CI failed, or it has **New activity** and the user either reviewed it or wrote it. An open PR the user has not reviewed is listed but does not need attention. A colleague's **Draft PR** needs attention only when it carries a Review request. In a **Maintained repository**, every open PR someone else opened also needs attention until the user merges, closes or reviews it; **Dependency updates** need it only when one is ready to merge or its CI failed.
+The state of an Issue or PR that is waiting on the user. A PR needs it when it carries a **Review request**, the user's **Review** of it is a **Stale review**, it is an **Own PR** whose CI failed, or it has **New activity** and the user either reviewed it or wrote it. An open PR the user has not reviewed is listed but does not need attention. A colleague's **Draft PR** needs attention only when it carries a Review request. In a **Maintained repository**, every open PR someone else opened also needs attention until the user merges, closes or reviews it; **Dependency updates** need it only when one is ready to merge or its CI failed.
+An Issue, or a PR's conversation, also needs attention when someone else has posted since the user's **Last seen** and the user is in the conversation: they opened it, it is assigned to them, they commented in it, or the new posts mention them. An Issue the user only follows through a **Filter** or a pin shows its New activity but does not need attention.
 _Avoid_: Pending, todo
 
 **Maintained repository**:

@@ -1,7 +1,8 @@
 <script lang="ts">
   // PROTOTYPE — throwaway. Ctrl+P quick open (Issues, PRs, files in the current PR) and
   // Ctrl+Shift+P command palette (type ">" to switch), as in VS Code.
-  import { allPrs, rawIssues, shortTitle } from "./model.svelte";
+  import { shortTitle } from "$lib/core/conventions";
+  import { wb } from "$lib/state/app.svelte";
 
   export interface Command { label: string; key?: string; run: () => void }
   let {
@@ -27,9 +28,9 @@
     const q = text.trim().toLowerCase().replace(/^#|^gh-/, "");
     const out: Hit[] = [];
     for (const f of files) if (!q || f.toLowerCase().includes(q)) out.push({ label: f, hint: "file in this PR", run: () => onFile(f) });
-    for (const i of rawIssues.values())
+    for (const i of wb.issues())
       if (!q || String(i.number).startsWith(q) || i.title.toLowerCase().includes(q)) out.push({ label: `gh-${i.number}  ${i.title}`, hint: "issue", run: () => onIssue(i.number) });
-    for (const p of allPrs())
+    for (const p of wb.allPrs())
       if (!q || String(p.number).startsWith(q) || p.title.toLowerCase().includes(q))
         out.push({ label: `#${p.number}  ${p.baseRefName !== "main" ? `[${p.baseRefName}] ` : ""}${shortTitle(p.title)}`, hint: p.detail ? "PR · has diff" : "PR", run: () => onPr(p.number) });
     return out.slice(0, 60);

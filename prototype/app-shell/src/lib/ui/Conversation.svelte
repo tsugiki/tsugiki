@@ -1,6 +1,7 @@
 <script lang="ts">
   // PROTOTYPE — throwaway. PR description and timeline, from GitHub's pre-rendered bodyHTML.
-  import { ago, type Pr } from "./model.svelte";
+  import type { Pr } from "$lib/core/types";
+  import { ago } from "./format";
   let { pr, commits = true }: { pr: Pr; commits?: boolean } = $props();
 
   type Item = { at: string; kind: "comment" | "review" | "commit"; author: string; html?: string; state?: string; text?: string };

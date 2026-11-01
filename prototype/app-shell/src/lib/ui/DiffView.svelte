@@ -2,12 +2,15 @@
   // PROTOTYPE — throwaway. One continuous scroll over every file of a PR: NEWS entries first,
   // Generated files collapsed last, threads inline, Outdated threads at the top of their file.
   // Click a line number to comment; Ctrl+Enter adds it to the (in-memory) Pending review.
-  import { parseDiff, rowOfThread, newsText, type DiffFile, type Row } from "./diff";
-  import { addComment, pending, say, type Pr, type Thread } from "./model.svelte";
+  import { parseDiff, rowOfThread, newsText, type DiffFile, type Row } from "$lib/core/diff";
+  import type { Pr, Thread } from "$lib/core/types";
+  import { addComment, pending, say } from "$lib/state/app.svelte";
+  import { highlightRows } from "./highlight";
 
   let { pr, split = false, showNews = true }: { pr: Pr; split?: boolean; showNews?: boolean } = $props();
 
   const files = $derived(pr.detail ? parseDiff(pr.detail) : []);
+  const html = $derived(new Map(files.flatMap((f) => { const h = highlightRows(f); return f.rows.map((r, i) => [r, h[i]] as const); })));
   let expanded = $state(new Set<string>());
   let composer = $state<{ path: string; line: number; body: string } | null>(null);
   let root: HTMLElement;
@@ -115,8 +118,8 @@
               {#if p.l?.kind === "hunk"}<div class="row hunk"><span class="code">{p.l.text}</span></div>
               {:else}
                 <div class="srow">
-                  <div class="row {p.l?.kind ?? 'none'}"><button class="ln" data-n={p.l?.o ?? ""} onclick={() => p.l && startComment(f, p.l)} aria-label="comment"></button><span class="code">{@html p.l?.html ?? ""}</span></div>
-                  <div class="row {p.r?.kind ?? 'none'}"><button class="ln" data-n={p.r?.n ?? ""} onclick={() => p.r && startComment(f, p.r)} aria-label="comment"></button><span class="code">{@html p.r?.html ?? ""}</span></div>
+                  <div class="row {p.l?.kind ?? 'none'}"><button class="ln" data-n={p.l?.o ?? ""} onclick={() => p.l && startComment(f, p.l)} aria-label="comment"></button><span class="code">{@html p.l ? html.get(p.l) : ""}</span></div>
+                  <div class="row {p.r?.kind ?? 'none'}"><button class="ln" data-n={p.r?.n ?? ""} onclick={() => p.r && startComment(f, p.r)} aria-label="comment"></button><span class="code">{@html p.r ? html.get(p.r) : ""}</span></div>
                 </div>
                 {@render extras(f, (p.r ?? p.l)!, p.i)}
               {/if}
@@ -126,7 +129,7 @@
               {#if r.kind === "hunk"}<div class="row hunk"><span class="code">{r.text}</span></div>
               {:else}
                 <div class="row {r.kind}">
-                  <button class="ln" data-n={r.o ?? ""} onclick={() => startComment(f, r)} aria-label="comment"></button><button class="ln" data-n={r.n ?? ""} onclick={() => startComment(f, r)} aria-label="comment"></button><span class="sign">{r.kind === "add" ? "+" : r.kind === "del" ? "−" : " "}</span><span class="code">{@html r.html}</span>
+                  <button class="ln" data-n={r.o ?? ""} onclick={() => startComment(f, r)} aria-label="comment"></button><button class="ln" data-n={r.n ?? ""} onclick={() => startComment(f, r)} aria-label="comment"></button><span class="sign">{r.kind === "add" ? "+" : r.kind === "del" ? "−" : " "}</span><span class="code">{@html html.get(r)}</span>
                 </div>
               {/if}
               {@render extras(f, r, i)}

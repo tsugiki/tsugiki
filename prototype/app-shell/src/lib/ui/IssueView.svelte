@@ -1,13 +1,15 @@
 <script lang="ts">
   // PROTOTYPE — throwaway. An Issue in the right pane: description, recent comments, and its whole
   // PR tree (merged ones included), each PR clickable.
-  import { issueNode, rawIssues, pins, togglePin, ago, type Pr } from "./model.svelte";
+  import type { Pr } from "$lib/core/types";
+  import { wb, pins, togglePin } from "$lib/state/app.svelte";
+  import { ago } from "./format";
   import StateDot from "./StateDot.svelte";
   import PrStatus from "./PrStatus.svelte";
   let { n, onPr, onAuthor }: { n: number | null; onPr: (n: number) => void; onAuthor: (login: string) => void } = $props();
 
-  const i = $derived(issueNode(n));
-  const raw = $derived(n ? rawIssues.get(n) : undefined);
+  const i = $derived(wb.issueNode(n));
+  const raw = $derived(n ? wb.issue(n) : undefined);
   let showMerged = $state(false);
 
   // bedevere-bot keeps a "Linked PRs" list at the end of CPython Issue descriptions; on umbrella Issues

@@ -1,6 +1,7 @@
 <script lang="ts">
   // PROTOTYPE — throwaway. Review actions for one PR. Nothing reaches GitHub.
-  import { localMarks, pending, submitReview, toggleMark, type Pr } from "./model.svelte";
+  import type { Pr } from "$lib/core/types";
+  import { localMarks, pending, submitReview, toggleMark } from "$lib/state/app.svelte";
   let { pr, vertical = false }: { pr: Pr; vertical?: boolean } = $props();
   const drafts = $derived(pending.get(pr.number)?.length ?? 0);
   const marked = $derived(localMarks.get(pr.number) === pr.headRefOid);

@@ -1,14 +1,19 @@
-// PROTOTYPE — throwaway. Takes a read-only snapshot of real python/cpython data with your gh token,
-// so the UI variants are judged against real density. Never writes to GitHub.
+// PROTOTYPE — throwaway. Takes a read-only snapshot of real python/cpython data, so the UI is judged
+// against real density. Stands in for the real app's Rust backend: fetching (fetch/github.mjs,
+// fetch/git.mjs) and processing that needs git (Generated files, the patch-id check). Never writes to
+// GitHub or to the CPython clone.
 //
-//   npm run proto:snapshot            (needs `gh auth login`; reads .gitattributes from GHREV_PROTO_REPO)
+//   npm run proto:snapshot     (needs `gh auth login`; borrows objects from the clone at GHREV_PROTO_REPO)
 //
-// Output: src/lib/proto/fixture.json
-import { execFileSync } from "node:child_process";
+// Output: src/lib/data/fixture.json, the only thing the app reads.
 import { writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import * as gh from "./fetch/github.mjs";
+import { openMirror } from "./fetch/git.mjs";
 
-const ME = execFileSync("gh", ["api", "user", "--jq", ".login"], { encoding: "utf8" }).trim();
+const ME = gh.whoami();
 const REPO_DIR = process.env.GHREV_PROTO_REPO ?? "X:/Work/cpython/main";
+const MIRROR_DIR = fileURLToPath(new URL("../.proto-mirror", import.meta.url));
 const PINNED = [159739, 142349];
 // A merged PR that touches Generated files (found via `git log -- Python/generated_cases.c.h`).
 const EXTRA_DETAILS = [158282];
@@ -19,170 +24,81 @@ const FILTERS = [
   { name: "Jelle's open PRs", q: "is:pr is:open author:JelleZijlstra" },
   { name: "Recent typing issues", q: "is:issue is:open label:topic-typing sort:updated-desc" },
 ];
-const REVIEW_REQUESTS = `is:pr is:open review-requested:${ME}`;
-const REVIEWED_BY = `is:pr is:open reviewed-by:${ME}`;
 const MAX_ISSUES = 120;
-
-function gql(query, vars = {}) {
-  const args = ["api", "graphql", "-f", `query=${query}`];
-  for (const [k, v] of Object.entries(vars)) if (v != null) args.push(typeof v === "number" ? "-F" : "-f", `${k}=${v}`);
-  return JSON.parse(execFileSync("gh", args, { encoding: "utf8", maxBuffer: 256 << 20 })).data;
-}
-
-const PR = `
-  number title state isDraft url createdAt updatedAt mergedAt closedAt
-  author { login } baseRefName headRefOid additions deletions changedFiles
-  labels(first: 10) { nodes { name } }
-  reviewRequests(first: 10) { nodes { requestedReviewer { ... on User { login } ... on Team { name } } } }
-  assignees(first: 5) { nodes { login } }
-  reviews(last: 30) { nodes { author { login } state submittedAt commit { oid } } }
-  commits(last: 1) { totalCount nodes { commit { oid committedDate statusCheckRollup { state } } } }
-  comments { totalCount }`;
-const ISSUE = `number title state createdAt updatedAt author { login } labels(first: 10) { nodes { name } } comments { totalCount }`;
-// Description and recent comments only in the per-Issue lookup: inside 100-result searches it times out (HTTP 504).
-const ISSUE_FULL = `number title state createdAt updatedAt bodyHTML author { login } labels(first: 10) { nodes { name } }
-  comments(last: 15) { totalCount nodes { author { login } bodyHTML createdAt } }`;
-
-function search(q, limit = 100) {
-  const out = [];
-  let after = null;
-  while (out.length < limit) {
-    const d = gql(
-      `query($q: String!, $after: String) { search(query: $q, type: ISSUE_ADVANCED, first: 100, after: $after) {
-        pageInfo { hasNextPage endCursor }
-        nodes { __typename ... on PullRequest { ${PR} } ... on Issue { ${ISSUE} } } } }`,
-      { q: `repo:python/cpython ${q}`, after },
-    );
-    out.push(...d.search.nodes);
-    if (!d.search.pageInfo.hasNextPage) break;
-    after = d.search.pageInfo.endCursor;
-  }
-  return out.slice(0, limit);
-}
+// Same rule as src/lib/core/conventions.ts; the backend keeps its own copy (it is Rust in the real app).
+const issueOf = (title) => +(/^(?:\[[\d.]+\]\s*)?gh-(\d+)/i.exec(title)?.[1] ?? 0) || null;
 
 const prs = new Map();
 const issues = new Map();
-const flat = (pr) => ({
-  ...pr,
-  author: pr.author?.login ?? "ghost",
-  labels: pr.labels.nodes.map((l) => l.name),
-  reviewRequests: pr.reviewRequests.nodes.map((n) => n.requestedReviewer?.login ?? n.requestedReviewer?.name).filter(Boolean),
-  assignees: pr.assignees.nodes.map((a) => a.login),
-  reviews: pr.reviews.nodes.map((r) => ({ author: r.author?.login ?? "ghost", state: r.state, at: r.submittedAt, commit: r.commit?.oid })),
-  commitCount: pr.commits.totalCount,
-  headDate: pr.commits.nodes[0]?.commit.committedDate,
-  ci: pr.commits.nodes[0]?.commit.statusCheckRollup?.state ?? null,
-  comments: pr.comments.totalCount,
-});
-const addNode = (n) => {
-  if (n.__typename === "PullRequest") prs.set(n.number, flat(n));
-  else if (n.__typename === "Issue") issues.set(n.number, { ...n, author: n.author?.login ?? "ghost", labels: n.labels.nodes.map((l) => l.name), comments: n.comments.totalCount,
-    thread: n.comments.nodes?.map((c) => ({ author: c.author?.login ?? "ghost", html: c.bodyHTML, at: c.createdAt })) });
-};
-const issueOf = (title) => +(/^(?:\[[\d.]+\]\s*)?gh-(\d+)/i.exec(title)?.[1] ?? 0) || null;
+// First fetch wins: later passes add fields to these objects, so a repeat hit must not replace them.
+const add = (hits) => { for (const h of hits) { const m = h.kind === "pr" ? prs : issues; if (!m.has(h.number)) m.set(h.number, h.value); } return hits; };
 
 console.log(`snapshot as ${ME}`);
 const filters = FILTERS.map((f) => {
-  const nodes = search(f.q, 60);
-  nodes.forEach(addNode);
-  console.log(`  filter "${f.name}": ${nodes.length}`);
-  return { ...f, matches: nodes.map((n) => ({ kind: n.__typename === "Issue" ? "issue" : "pr", number: n.number })) };
+  const hits = add(gh.search(f.q, 60));
+  console.log(`  filter "${f.name}": ${hits.length}`);
+  return { ...f, matches: hits.map(({ kind, number }) => ({ kind, number })) };
 });
-const reviewRequests = search(REVIEW_REQUESTS, 50);
-reviewRequests.forEach(addNode);
-const reviewedBy = search(REVIEWED_BY, 50);
-reviewedBy.forEach(addNode);
+const reviewRequests = add(gh.search(`is:pr is:open review-requested:${ME}`, 50));
+const reviewedBy = add(gh.search(`is:pr is:open reviewed-by:${ME}`, 50));
 console.log(`  review requests: ${reviewRequests.length}, reviewed-by: ${reviewedBy.length}`);
 
 // Every Issue reached by a matched PR, a matched issue, or a pin; then the full PR tree of each.
 const wanted = new Set(PINNED);
 for (const n of issues.keys()) wanted.add(n);
-for (const pr of prs.values()) { const i = issueOf(pr.title); if (i) wanted.add(i); }
+for (const p of prs.values()) { const i = issueOf(p.title); if (i) wanted.add(i); }
 const issueNums = [...wanted].slice(0, MAX_ISSUES);
-for (let i = 0; i < issueNums.length; i += 10) {
-  const chunk = issueNums.slice(i, i + 10);
-  const d = gql(`query { repository(owner: "python", name: "cpython") { ${chunk.map((n) => `i${n}: issueOrPullRequest(number: ${n}) { __typename ... on Issue { ${ISSUE_FULL} } }`).join("\n")} } }`);
-  for (const n of chunk) { const node = d.repository[`i${n}`]; if (node?.__typename === "Issue") addNode(node); }
-}
+for (const i of gh.issues(issueNums)) issues.set(i.number, i);
 for (const n of issueNums) {
   if (!issues.has(n)) continue;
-  const tree = search(`is:pr "gh-${n}" in:title`, n === 159739 ? 200 : 60);
-  tree.forEach(addNode);
+  const tree = add(gh.search(`is:pr "gh-${n}" in:title`, n === 159739 ? 200 : 60));
   console.log(`  gh-${n}: ${tree.length} PRs`);
 }
 
-// Recent commits (with merge flag) and CI finish time for open PRs: hover text on "stale" and "CI …".
-// Separate batched pass; adding this to the 100-result searches makes GitHub time out.
-const openNums = [...prs.values()].filter((p) => p.state === "OPEN").map((p) => p.number);
-for (let i = 0; i < openNums.length; i += 10) {
-  const chunk = openNums.slice(i, i + 10);
-  const d = gql(`query { repository(owner: "python", name: "cpython") { ${chunk.map((n) => `p${n}: pullRequest(number: ${n}) {
-    recent: commits(last: 30) { nodes { commit { oid abbreviatedOid committedDate messageHeadline parents { totalCount } } } }
-    head: commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
-      __typename ... on CheckRun { completedAt startedAt } ... on StatusContext { createdAt } } } } } } } }`).join(" ")} } }`);
-  for (const n of chunk) {
-    const r = d.repository[`p${n}`];
-    if (!r) continue;
-    const pr = prs.get(n);
-    pr.recentCommits = r.recent.nodes.map(({ commit: c }) => ({ oid: c.oid, short: c.abbreviatedOid, at: c.committedDate, headline: c.messageHeadline, merge: c.parents.totalCount > 1 }));
-    const times = (r.head.nodes[0]?.commit.statusCheckRollup?.contexts.nodes ?? []).map((x) => x.completedAt ?? x.startedAt ?? x.createdAt).filter(Boolean).sort();
-    pr.ciAt = times.at(-1) ?? null;
-  }
-}
-console.log(`  commits and CI times for ${openNums.length} open PRs`);
+// Recent commits and CI finish time for open PRs: hover text on "stale", "reviewed" and "CI …".
+const open = [...prs.values()].filter((p) => p.state === "OPEN");
+for (const [n, a] of gh.prActivity(open.map((p) => p.number))) Object.assign(prs.get(n), a);
+console.log(`  commits and CI times for ${open.length} open PRs`);
 
-// Full conversation + diff for a handful of PRs, so the PR view has real content.
+// Full conversation and diff for a handful of PRs, so the PR view has real content.
 const pick = new Set();
-const take = (list, k) => list.filter((n) => n.__typename === "PullRequest").slice(0, k).forEach((n) => pick.add(n.number));
-take(search(`is:pr is:open author:${ME}`, 3), 3);
+const take = (hits, k) => hits.filter((h) => h.kind === "pr").slice(0, k).forEach((h) => pick.add(h.number));
+take(add(gh.search(`is:pr is:open author:${ME}`, 3)), 3);
 take(reviewRequests, 3);
 take(reviewedBy, 2);
 const tree159739 = [...prs.values()].filter((p) => issueOf(p.title) === 159739);
 tree159739.filter((p) => p.state === "OPEN").slice(0, 3).forEach((p) => pick.add(p.number));
-const botMerged = tree159739.find((p) => p.author === "miss-islington" && p.state === "MERGED");
-const originMerged = tree159739.find((p) => p.baseRefName === "main" && p.state === "MERGED");
-if (botMerged) pick.add(botMerged.number);
-if (originMerged) pick.add(originMerged.number);
+for (const p of [tree159739.find((p) => p.author === "miss-islington" && p.state === "MERGED"), tree159739.find((p) => p.baseRefName === "main" && p.state === "MERGED")])
+  if (p) pick.add(p.number);
+for (const n of EXTRA_DETAILS) { prs.set(n, gh.pr(n)); pick.add(n); }
+const detailNums = [...pick].slice(0, 18);
 
-for (const n of EXTRA_DETAILS) {
-  const d = gql(`query($n: Int!) { repository(owner: "python", name: "cpython") { pullRequest(number: $n) { ${PR} } } }`, { n });
-  prs.set(n, flat(d.repository.pullRequest));
-  pick.add(n);
+// --- git: a mirror borrowing the clone's objects --------------------------------------------------
+// Open PRs whose latest Review by the user isn't at the head get the patch-id check.
+const lastReview = (p) => p.reviews.filter((r) => r.author === ME && r.state !== "PENDING" && r.commit).sort((a, b) => a.at.localeCompare(b.at)).at(-1);
+const toCheck = open.filter((p) => { const r = lastReview(p); return r && r.commit !== p.headRefOid; });
+const mirror = openMirror(MIRROR_DIR, REPO_DIR);
+const branches = new Set([...toCheck, ...detailNums.map((n) => prs.get(n))].map((p) => p.baseRefName));
+mirror.fetch([...branches], toCheck.map((p) => p.number));
+console.log(`  mirror: ${branches.size} branches, ${toCheck.length} PR heads`);
+
+// Patch-id check: is the PR's own diff the same as when the user reviewed it? Then merges from the
+// target branch or a plain rebase don't make the Review stale. `reviewDiff: null` means the reviewed
+// commit can't be fetched any more (force-pushed away); the app treats that as stale.
+for (const p of toCheck) {
+  const commit = lastReview(p).commit;
+  if (!mirror.has(commit) && !mirror.fetchCommit(commit)) { p.reviewDiff = null; console.log(`  #${p.number}: reviewed commit ${commit.slice(0, 7)} is gone`); continue; }
+  p.reviewDiff = { commit, ...mirror.diffChange(commit, p.headRefOid, p.baseRefName) };
+  console.log(`  #${p.number}: ${p.reviewDiff.same ? "diff unchanged since review" : `${p.reviewDiff.changed.length} files changed since review`}`);
 }
 
 const details = {};
-for (const number of [...pick].slice(0, 18)) {
-  const d = gql(
-    `query($n: Int!) { repository(owner: "python", name: "cpython") { pullRequest(number: $n) {
-      bodyHTML
-      comments(first: 60) { nodes { author { login } bodyHTML createdAt } }
-      reviews(first: 40) { nodes { author { login } state bodyHTML submittedAt } }
-      reviewThreads(first: 60) { nodes { isResolved isOutdated path line originalLine startLine diffSide
-        comments(first: 20) { nodes { author { login } bodyHTML createdAt } } } }
-      files(first: 100) { nodes { path additions deletions } }
-      commits(first: 100) { nodes { commit { oid abbreviatedOid messageHeadline committedDate author { name } } } } } } }`,
-    { n: number },
-  ).repository.pullRequest;
-  let diff = execFileSync("gh", ["pr", "diff", String(number), "-R", "python/cpython"], { encoding: "utf8", maxBuffer: 256 << 20 });
-  const lines = diff.split("\n");
-  if (lines.length > 6000) diff = lines.slice(0, 6000).join("\n");
-  const paths = d.files.nodes.map((f) => f.path);
-  const attr = execFileSync("git", ["-C", REPO_DIR, "check-attr", "--stdin", "generated"], { input: paths.join("\n") + "\n", encoding: "utf8" });
-  const generated = attr.split("\n").filter((l) => l.endsWith(": generated: set")).map((l) => l.slice(0, l.indexOf(": generated:")));
-  details[number] = {
-    bodyHTML: d.bodyHTML,
-    comments: d.comments.nodes.map((c) => ({ author: c.author?.login ?? "ghost", html: c.bodyHTML, at: c.createdAt })),
-    reviews: d.reviews.nodes.map((r) => ({ author: r.author?.login ?? "ghost", state: r.state, html: r.bodyHTML, at: r.submittedAt })),
-    threads: d.reviewThreads.nodes.map((t) => ({
-      resolved: t.isResolved, outdated: t.isOutdated, path: t.path, line: t.line ?? t.originalLine, startLine: t.startLine, side: t.diffSide,
-      comments: t.comments.nodes.map((c) => ({ author: c.author?.login ?? "ghost", html: c.bodyHTML, at: c.createdAt })),
-    })),
-    files: d.files.nodes.map((f) => ({ ...f, generated: generated.includes(f.path) })),
-    commits: d.commits.nodes.map((c) => ({ oid: c.commit.abbreviatedOid, headline: c.commit.messageHeadline, at: c.commit.committedDate, author: c.commit.author?.name })),
-    diff,
-    truncated: lines.length > 6000,
-  };
-  console.log(`  details #${number}: ${d.files.nodes.length} files, ${lines.length} diff lines`);
+for (const n of detailNums) {
+  const d = gh.prDetail(n);
+  const gen = mirror.generated(d.files.map((f) => f.path), prs.get(n).baseRefName);
+  d.files = d.files.map((f) => ({ ...f, generated: gen.has(f.path) }));
+  details[n] = d;
+  console.log(`  details #${n}: ${d.files.length} files${d.truncated ? ", diff truncated" : ""}`);
 }
 
 const out = {
@@ -190,10 +106,10 @@ const out = {
   takenAt: new Date().toISOString(),
   pinned: PINNED,
   filters,
-  reviewRequests: reviewRequests.map((n) => n.number),
+  reviewRequests: reviewRequests.map((h) => h.number),
   issues: [...issues.values()],
   prs: [...prs.values()],
   details,
 };
-writeFileSync(new URL("../src/lib/proto/fixture.json", import.meta.url), JSON.stringify(out));
-console.log(`wrote fixture: ${out.issues.length} issues, ${out.prs.length} PRs, ${Object.keys(details).length} with details`);
+writeFileSync(new URL("../src/lib/data/fixture.json", import.meta.url), JSON.stringify(out));
+console.log(`wrote fixture: ${out.issues.length} issues, ${out.prs.length} PRs, ${Object.keys(details).length} with details, ${toCheck.length} patch-id checks`);

@@ -1,18 +1,21 @@
 <script lang="ts">
   // PROTOTYPE — throwaway. Compact PR status for the Issue list (replaces PrBadges in variant A):
   // one coloured state dot at the left, then words only for what needs saying.
-  import { staleTip, ciTip, type Pr } from "./model.svelte";
+  import type { Pr } from "$lib/core/types";
+  import { reviewOf } from "$lib/state/app.svelte";
+  import { reviewTip, ciTip } from "./format";
   let { pr }: { pr: Pr } = $props();
 
   // Words appear only when they tell the user something; "unreviewed" is the default and stays silent.
   const words = $derived.by(() => {
     const w: { t: string; cls: string; tip: string }[] = [];
     const open = pr.state === "OPEN";
+    const tip = reviewTip(pr, reviewOf(pr));
     if (pr.requested) w.push({ t: "requested", cls: "req", tip: "You are a requested reviewer or assignee" });
     if (pr.kind === "manual") w.push({ t: "manual", cls: "dim", tip: "Manual backport: reviewed on its own, not via its Origin PR" });
     if (pr.kind !== "bot") {
-      if (pr.review === "stale") w.push({ t: "stale", cls: "bad", tip: staleTip(pr) });
-      else if (pr.review === "reviewed" && open) w.push({ t: "reviewed", cls: "good", tip: "You reviewed the current head" });
+      if (pr.review === "stale") w.push({ t: "stale", cls: "bad", tip });
+      else if (pr.review === "reviewed" && open) w.push({ t: "reviewed", cls: "good", tip });
     }
     if (pr.newActivity) w.push({ t: "new", cls: "acc", tip: "New activity since you last opened it" });
     if (pr.ci === "FAILURE" || pr.ci === "ERROR") { if (open && (pr.own || pr.review !== "unreviewed")) w.push({ t: "CI failed", cls: "bad", tip: ciTip(pr) }); }

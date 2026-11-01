@@ -1,52 +1,38 @@
-// PROTOTYPE — throwaway. Unified diff -> rows, with per-line highlight.js colouring.
-// The real renderer is the one validated on branch prototype/diff-renderer (rows in Rust, syntect);
-// this one only has to look and feel right on small PRs.
-import hljs from "highlight.js/lib/core";
-import c from "highlight.js/lib/languages/c";
-import python from "highlight.js/lib/languages/python";
-import plaintext from "highlight.js/lib/languages/plaintext";
-import type { Detail, Thread } from "./model.svelte";
-
-hljs.registerLanguage("c", c);
-hljs.registerLanguage("python", python);
-hljs.registerLanguage("plaintext", plaintext);
+// PROTOTYPE — throwaway. Core: unified diff -> rows per file, threads placed on rows. Plain text only;
+// syntax highlighting is a UI concern (ui/highlight.ts). The real renderer is the one validated on
+// branch prototype/diff-renderer (rows in Rust, syntect).
+import type { Detail, Thread } from "./types";
 
 export type RowKind = "hunk" | "ctx" | "add" | "del";
-export interface Row { kind: RowKind; o: number | null; n: number | null; html: string; text: string }
+export interface Row { kind: RowKind; o: number | null; n: number | null; text: string }
 export interface DiffFile {
   path: string; adds: number; dels: number; generated: boolean; news: boolean;
   rows: Row[]; threads: Thread[]; outdated: Thread[];
 }
 
-const lang = (path: string) => (/\.(c|h)$/.test(path) ? "c" : /\.py$/.test(path) ? "python" : "plaintext");
-const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
 export function parseDiff(d: Detail): DiffFile[] {
   const files: DiffFile[] = [];
   let f: DiffFile | null = null;
-  let o = 0, n = 0, language = "plaintext";
+  let o = 0, n = 0;
   for (const line of d.diff.split("\n")) {
     if (line.startsWith("diff --git ")) {
       const path = line.slice(line.indexOf(" b/") + 3);
       const meta = d.files.find((x) => x.path === path);
       f = { path, adds: 0, dels: 0, generated: !!meta?.generated, news: path.startsWith("Misc/NEWS.d/"), rows: [], threads: [], outdated: [] };
       files.push(f);
-      language = lang(path);
       continue;
     }
     if (!f || line.startsWith("+++") || line.startsWith("---") || line.startsWith("index ") || /^(new|deleted) file|^similarity|^rename/.test(line)) continue;
     const h = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)/.exec(line);
     if (h) {
       o = +h[1]; n = +h[2];
-      f.rows.push({ kind: "hunk", o: null, n: null, html: esc(line), text: line });
+      f.rows.push({ kind: "hunk", o: null, n: null, text: line });
       continue;
     }
     const sign = line[0], text = line.slice(1);
-    if (sign !== "+" && sign !== "-" && sign !== " ") continue;
-    const html = language === "plaintext" ? esc(text) : hljs.highlight(text, { language, ignoreIllegals: true }).value;
-    if (sign === "+") { f.rows.push({ kind: "add", o: null, n: n++, html, text }); f.adds++; }
-    else if (sign === "-") { f.rows.push({ kind: "del", o: o++, n: null, html, text }); f.dels++; }
-    else f.rows.push({ kind: "ctx", o: o++, n: n++, html, text });
+    if (sign === "+") { f.rows.push({ kind: "add", o: null, n: n++, text }); f.adds++; }
+    else if (sign === "-") { f.rows.push({ kind: "del", o: o++, n: null, text }); f.dels++; }
+    else if (sign === " ") f.rows.push({ kind: "ctx", o: o++, n: n++, text });
   }
   for (const t of d.threads) {
     const file = files.find((x) => x.path === t.path);

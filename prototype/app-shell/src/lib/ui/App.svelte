@@ -1,12 +1,13 @@
 <script lang="ts">
-  // PROTOTYPE — throwaway. Variant A (chosen): three panes, like a mail client.
+  // PROTOTYPE — throwaway. The app: three panes, like a mail client (layout A, chosen over B and C).
   // Sidebar: where to look (Workbench, Built-in views, Filters, Pinned). Issue list: one item per Issue,
   // like mail. Detail pane: the selected Issue (Issue view, with its Origin PRs and folded Backports)
   // or PR (PR view, Conversation and Files tabs). Esc goes from a PR back to its Issue.
-  import {
-    FILTERS, VIEWS, workbench, viewCount, attentionCount, pins, pr as getPr, openPr, openIssue, togglePin, toggleMark, say, ago,
-    type Scope, type IssueNode,
-  } from "./model.svelte";
+  import type { Scope, IssueNode } from "$lib/core/types";
+  import { VIEWS } from "$lib/core/workbench";
+  import { wb, toast, openPr, openIssue, togglePin, toggleMark, say } from "$lib/state/app.svelte";
+  import { ago, waitingText } from "./format";
+  import "./theme.css";
   import StateDot from "./StateDot.svelte";
   import PrStatus from "./PrStatus.svelte";
   import IssueView from "./IssueView.svelte";
@@ -30,8 +31,10 @@
   let palette = $state<string | null>(null);
   let help = $state(false);
   let diff = $state<DiffView>();
+  const FILTERS = wb.filters;
+  const getPr = wb.pr;
 
-  const wb = $derived(workbench(scope));
+  const board = $derived(wb.workbench(scope));
   const selKind = $derived(sel?.slice(0, 1));
   const selNum = $derived(sel ? +sel.slice(2) : 0);
   const current = $derived(selKind === "p" ? getPr(selNum) : null);
@@ -41,8 +44,8 @@
   let sortBy = $state<"attention" | "updated">("attention");
   const byUpdated = (a: IssueNode, b: IssueNode) => b.updatedAt.localeCompare(a.updatedAt);
   const visibleIssues = $derived.by(() => {
-    const active = sortBy === "updated" ? [...wb.active].sort(byUpdated) : wb.active;
-    return [...active, ...(showQuiet ? wb.quiet : []), ...(wb.noIssue ? [wb.noIssue] : [])];
+    const active = sortBy === "updated" ? [...board.active].sort(byUpdated) : board.active;
+    return [...active, ...(showQuiet ? board.quiet : []), ...(board.noIssue ? [board.noIssue] : [])];
   });
   const flat = $derived(visibleIssues.map((i) => i.number ?? 0));
   const scopeName = $derived(
@@ -75,6 +78,14 @@
     ...VIEWS.map((v) => ({ label: `View: ${v.name}`, run: () => (scope = { kind: "view", view: v.key }) })),
     ...FILTERS.map((f) => ({ label: `Filter: ${f.name}`, run: () => (scope = { kind: "filter", name: f.name }) })),
   ]);
+  let showToast = $state(false);
+  $effect(() => {
+    if (!toast.at) return;
+    showToast = true;
+    const t = setTimeout(() => (showToast = false), 3500);
+    return () => clearTimeout(t);
+  });
+
   const onKey = keymap(() => ({
     "ctrl+shift+p": () => (palette = ">"),
     "ctrl+p": () => (palette = ""),
@@ -104,14 +115,14 @@
     <nav class="left">
       <div class="brand">gh-rev</div>
       {#snippet count(n: number)}{#if n}<span class="n">{n}</span>{/if}{/snippet}
-      <button class="nav" class:on={scopeEq({ kind: "all" })} onclick={() => (scope = { kind: "all" })}>Workbench{@render count(attentionCount({ kind: "all" }))}</button>
+      <button class="nav" class:on={scopeEq({ kind: "all" })} onclick={() => (scope = { kind: "all" })}>Workbench{@render count(wb.attentionCount({ kind: "all" }))}</button>
       <div class="sec">Built-in views</div>
       {#each VIEWS as v}
-        <button class="nav" class:on={scopeEq({ kind: "view", view: v.key })} onclick={() => (scope = { kind: "view", view: v.key })}>{v.name}{@render count(viewCount(v.key))}</button>
+        <button class="nav" class:on={scopeEq({ kind: "view", view: v.key })} onclick={() => (scope = { kind: "view", view: v.key })}>{v.name}{@render count(wb.viewCount(v.key))}</button>
       {/each}
       <div class="sec">Filters</div>
       {#each FILTERS as f}
-        <button class="nav" title={f.q} class:on={scopeEq({ kind: "filter", name: f.name })} onclick={() => (scope = { kind: "filter", name: f.name })}>{f.name}{@render count(attentionCount({ kind: "filter", name: f.name }))}</button>
+        <button class="nav" title={f.q} class:on={scopeEq({ kind: "filter", name: f.name })} onclick={() => (scope = { kind: "filter", name: f.name })}>{f.name}{@render count(wb.attentionCount({ kind: "filter", name: f.name }))}</button>
       {/each}
       {#if scope.kind === "author"}
         {@const login = scope.login}
@@ -119,7 +130,7 @@
           <span class="tmpact"><button onclick={() => say(`Would save "author:${login}" as a Filter in your config file (prototype)`)} title="Save as Filter">Save</button><button onclick={() => (scope = { kind: "all" })} title="Close">✕</button></span></div>
       {/if}
       <div class="sec">Pinned</div>
-      <button class="nav" class:on={scopeEq({ kind: "pinned" })} onclick={() => (scope = { kind: "pinned" })}>Pinned issues{@render count(attentionCount({ kind: "pinned" }))}</button>
+      <button class="nav" class:on={scopeEq({ kind: "pinned" })} onclick={() => (scope = { kind: "pinned" })}>Pinned issues{@render count(wb.attentionCount({ kind: "pinned" }))}</button>
       <div class="hint">Numbers: Issues that need attention (PRs, for the Built-in views).</div>
     </nav>
   {/if}
@@ -133,19 +144,20 @@
     <div class="list">
       {#each visibleIssues as i (i.number ?? 0)}
         {@const ikey = `i:${i.number ?? 0}`}
+        {@const why = i.waiting.map(waitingText)}
         <div class="issue" class:att={i.attention > 0}>
           <div class="item" class:sel={currentIssue === i.number || (!i.number && sel === ikey)}>
             <button class="ibody" data-key={ikey} onclick={() => select(ikey)} title={i.reasons.join(" · ")}>
               <span class="l1">{i.people.join("; ") || "—"}</span>
               <span class="l2"><span class="ititle"><span class="inum">{i.number ? `gh-${i.number}` : "No issue"}</span> {i.number ? i.title : "PRs without a gh- prefix"}</span><span class="cnt">({i.total})</span><span class="time">{ago(i.updatedAt)}</span></span>
-              <span class="l3">{i.why.length ? i.why.slice(0, 2).join(" · ") + (i.why.length > 2 ? ` · +${i.why.length - 2} more` : "") : `${i.open} open · ${i.mergedCount} merged`}</span>
+              <span class="l3">{why.length ? why.slice(0, 2).join(" · ") + (why.length > 2 ? ` · +${why.length - 2} more` : "") : `${i.open} open · ${i.mergedCount} merged`}</span>
             </button>
             {#if i.number}<button class="pin" class:on={i.pinned} onclick={() => togglePin(i.number)} title="Pin or unpin (Ctrl+K P)">{i.pinned ? "★" : "☆"}</button>{/if}
           </div>
         </div>
       {/each}
-      {#if wb.quiet.length}
-        <button class="quietbtn" onclick={() => (showQuiet = !showQuiet)}>{showQuiet ? "Hide" : "Show"} {wb.quiet.length} quiet Issues</button>
+      {#if board.quiet.length}
+        <button class="quietbtn" onclick={() => (showQuiet = !showQuiet)}>{showQuiet ? "Hide" : "Show"} {board.quiet.length} quiet Issues</button>
       {/if}
     </div>
     <footer class="legend">
@@ -185,6 +197,7 @@
 </div>
 
 <Palette bind:text={palette} {commands} files={current?.detail?.files.map((f) => f.path) ?? []} onPr={(n) => select(`p:${n}`)} onIssue={(n) => select(`i:${n}`)} onFile={() => (tab = "files")} />
+{#if showToast}<div class="toast">{toast.text}</div>{/if}
 <Help bind:open={help} extra={[["↑ ↓", "Move through Issues and PRs in the Issue list"], ["Enter", "Switch Conversation / Files"]]} />
 
 <style>
@@ -242,4 +255,5 @@
   .placeholder { margin: auto; color: var(--muted); }
   .muted { color: var(--muted); font-weight: 400; }
   .mono { font-family: var(--mono); }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 6px; font-size: 13px; z-index: 90; max-width: 70vw; }
 </style>

@@ -1,6 +1,6 @@
 <script lang="ts">
   // PROTOTYPE — throwaway. PR state as one dot: open, draft (hollow), merged, closed.
-  import type { Pr } from "./model.svelte";
+  import type { Pr } from "$lib/core/types";
   let { pr }: { pr: Pr } = $props();
   const s = $derived(pr.state === "OPEN" ? (pr.isDraft ? "draft" : "open") : pr.state.toLowerCase());
 </script>

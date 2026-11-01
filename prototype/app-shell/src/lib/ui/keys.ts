@@ -55,7 +55,7 @@ export const KEY_HELP: [string, string][] = [
   ["F7 / Shift+F7", "Next / previous change"],
   ["F8 / Shift+F8", "Next / previous comment thread"],
   ["F12 / Alt+F12", "Go to / peek definition (stub)"],
-  ["Ctrl+B", "Toggle sidebar"],
+  ["Ctrl+B", "Hide / show the Sidebar (as it was: full or icons)"],
   ["Ctrl+Alt+U", "Unified ↔ side-by-side"],
   ["Ctrl+Enter", "Send comment (to Pending review)"],
   ["Ctrl+Shift+E", "Open in editor (stub)"],

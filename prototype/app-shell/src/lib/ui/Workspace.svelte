@@ -13,6 +13,8 @@
   import { ago, waitingText, depsUrl } from "./format";
   import StateDot from "./StateDot.svelte";
   import KindIcon from "./KindIcon.svelte";
+  import Icon from "./Icon.svelte";
+  import { layout, SIDEBAR, LIST, DETAIL_MIN, toggleSidebar, setSidebar, sidebarWidth } from "./layout.svelte";
   import PrStatus from "./PrStatus.svelte";
   import IssueView from "./IssueView.svelte";
   import DepsView from "./DepsView.svelte";
@@ -35,7 +37,6 @@
   let history = $state<string[]>([]);
   let hpos = $state(-1);
   let tab = $state<"conv" | "files">("conv");
-  let side = $state(true);
   let split = $state(value("review.diff_view") === "split");
   let showQuiet = $state(false);
   let palette = $state<string | null>(null);
@@ -59,6 +60,35 @@
   const selKind = $derived(sel?.slice(0, 1));
   const selNum = $derived(sel && sel !== "deps" ? +sel.slice(2) : 0);
   const current = $derived(selKind === "p" ? wb.pr(selNum) : null);
+  // Pane sizes. The Issue list gives way so the Detail pane keeps its minimum, but never below its own.
+  let winW = $state(1500);
+  const sideW = $derived(sidebarWidth());
+  const listW = $derived(Math.max(LIST.min, Math.min(layout.list, winW - sideW - DETAIL_MIN)));
+  function drag(which: "sidebar" | "list") {
+    return (e: PointerEvent) => {
+      e.preventDefault();
+      const el = e.currentTarget as HTMLElement;
+      el.setPointerCapture(e.pointerId);
+      const x0 = e.clientX;
+      const w0 = which === "sidebar" ? sideW : listW;
+      // Snapping to icons keeps the width it had, for when the full Sidebar comes back.
+      const keep = layout.sidebar;
+      document.body.classList.add("resizing");
+      const move = (m: PointerEvent) => {
+        const w = w0 + m.clientX - x0;
+        if (which === "list") layout.list = Math.max(LIST.min, Math.min(w, winW - sideW - DETAIL_MIN));
+        else if (w < SIDEBAR.snap) { setSidebar("icons"); layout.sidebar = keep; }
+        else { setSidebar("full"); layout.sidebar = Math.max(SIDEBAR.min, Math.min(SIDEBAR.max, w)); }
+      };
+      const up = () => { el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up); document.body.classList.remove("resizing"); };
+      el.addEventListener("pointermove", move);
+      el.addEventListener("pointerup", up);
+    };
+  }
+  const VIEW_ICON: Record<string, string> = { requests: "eye", stale: "clock", activity: "bell" };
+  /** A rail icon: the full Sidebar comes back, and the Issue list goes where the icon points. */
+  function railGo(s: Scope | null) { setSidebar("full"); if (s) scope = s; }
+
   // Sidebar counts: what the user hid. Muted counts Muted authors too, since they are listed there.
   const archivedCount = $derived(everything.hidden.filter((i) => i.hidden === "archived").length);
   const mutedCount = $derived(everything.hidden.filter((i) => i.hidden === "muted").length + my.mutedAuthors.size);
@@ -152,7 +182,10 @@
     { label: "View: Toggle Key Hints under the Issue List", run: () => setValue("appearance.list_key_hints", !value("appearance.list_key_hints")) },
     { label: "Preferences: Keyboard Shortcuts", run: () => openSettings("Keybindings") },
     { label: `Preferences: Settings for ${repo.name}`, run: () => openSettings(`repo:${repo.name}`) },
-    { label: "Toggle sidebar", key: "Ctrl+B", run: () => (side = !side) },
+    { label: "View: Toggle Sidebar", key: "Ctrl+B", run: toggleSidebar },
+    { label: "View: Sidebar as Icons", run: () => setSidebar("icons") },
+    { label: "View: Full Sidebar", run: () => setSidebar("full") },
+    { label: "View: Reset Pane Sizes", run: () => { layout.sidebar = SIDEBAR.def; layout.list = LIST.def; setSidebar("full"); } },
     { label: "Unified ↔ side-by-side", key: "Ctrl+Alt+U", run: () => (split = !split) },
     { label: "Open on GitHub", key: "Ctrl+Shift+G", run: openOnGithub },
     { label: "Archive selected item", key: "E", run: () => hideSel("archive") },
@@ -185,7 +218,7 @@
     e: () => hideSel("archive"),
     m: () => hideSel("mute"),
     "ctrl+shift+g": openOnGithub,
-    "ctrl+b": () => (side = !side),
+    "ctrl+b": toggleSidebar,
     "ctrl+alt+u": () => (split = !split),
     f7: () => { tab = "files"; diff?.jump("change", 1); },
     "shift+f7": () => { tab = "files"; diff?.jump("change", -1); },
@@ -199,15 +232,37 @@
   }));
 </script>
 
-<svelte:window onkeydown={onKey} />
+<svelte:window onkeydown={onKey} bind:innerWidth={winW} />
 
-<div class="a" class:noside={!side}>
-  {#if side}
+<div class="a" style="grid-template-columns: {layout.mode === "hidden" ? "" : `${sideW}px `}{listW}px minmax({DETAIL_MIN}px, 1fr)">
+  {#if layout.mode === "icons"}
+    <!-- The Sidebar as icons: any of them brings the full Sidebar back and goes where it points. -->
+    <nav class="rail" aria-label="Sidebar">
+      <button class="ri" onclick={() => railGo(null)} title="Show the Sidebar"><Icon name="expand" /></button>
+      <button class="ri repoav" onclick={() => railGo(null)} title="{repo.name}: show the Sidebar">{repo.name.split("/")[1].slice(0, 2)}</button>
+      {#snippet ri(icon: string, title: string, s: Scope, n: number, on: boolean)}
+        <button class="ri" class:on onclick={() => railGo(s)} title="{title}{n ? ` (${n})` : ""}"><Icon name={icon} />{#if n}<span class="badge">{n > 99 ? "99+" : n}</span>{/if}</button>
+      {/snippet}
+      {@render ri("inbox", "Workbench", { kind: "all" }, wb.attentionCount({ kind: "all" }), scopeEq({ kind: "all" }))}
+      <span class="rsep"></span>
+      {#each VIEWS as v}{@render ri(VIEW_ICON[v.key], v.name, { kind: "view", view: v.key }, wb.viewCount(v.key), scopeEq({ kind: "view", view: v.key }))}{/each}
+      {@render ri("archive", "Archived", { kind: "archived" }, 0, scope.kind === "archived")}
+      {@render ri("mute", "Muted", { kind: "muted" }, 0, scope.kind === "muted")}
+      <span class="rsep"></span>
+      {@render ri("issue", "All issues", { kind: "issues", q: "" }, 0, scope.kind === "issues")}
+      <button class="ri" class:on={scope.kind === "filter"} onclick={() => railGo(null)} title="Filters: show the Sidebar"><Icon name="filter" /></button>
+      {@render ri("star", "Pinned issues", { kind: "pinned" }, wb.attentionCount({ kind: "pinned" }), scopeEq({ kind: "pinned" }))}
+      <span class="grow"></span>
+      <button class="ri" onclick={() => openSettings()} title="Settings (Ctrl+,)"><Icon name="gear" /></button>
+      <button class="ri" onclick={() => openRepo(null)} title="Home: all Repositories"><Icon name="home" /></button>
+    </nav>
+  {:else if layout.mode === "full"}
     <nav class="left">
       <div class="repohead">
         <button class="repo" onclick={() => (palette = ">Repository: ")} title="Switch Repository (Ctrl+R)"><span class="rn">{repo.name}</span> ▾</button>
         <button class="home" onclick={() => openSettings()} title="Settings (Ctrl+,)">⚙</button>
         <button class="home" onclick={() => openRepo(null)} title="Home: all Repositories">⌂</button>
+        <button class="home ic" onclick={() => setSidebar("icons")} title="Icons only (or drag the edge narrow)"><Icon name="collapse" /></button>
       </div>
       {#if repo.maintained}<div class="role">maintained by you</div>{/if}
       {#snippet count(n: number)}{#if n}<span class="n">{n}</span>{/if}{/snippet}
@@ -233,6 +288,11 @@
       <div class="hint">Numbers: items that need attention (PRs, for the Built-in views).</div>
     </nav>
   {/if}
+  <!-- Drag to resize; double-click puts the default back. A Sidebar dragged narrow becomes icons. -->
+  {#if layout.mode !== "hidden"}
+    <div class="split" style="left: {sideW}px" onpointerdown={drag("sidebar")} ondblclick={() => { layout.sidebar = SIDEBAR.def; setSidebar("full"); }} title="Drag to resize the Sidebar; narrow it to keep only icons" role="separator" aria-orientation="vertical"></div>
+  {/if}
+  <div class="split" style="left: {sideW + listW}px" onpointerdown={drag("list")} ondblclick={() => (layout.list = LIST.def)} title="Drag to resize the Issue list" role="separator" aria-orientation="vertical"></div>
 
   <section class="mid">
     <header class="lhead">
@@ -350,8 +410,19 @@
 <Help bind:open={help} extra={[["↑ ↓", "Move through the Issue list"], ["Enter", "Switch Conversation / Files"]]} />
 
 <style>
-  .a { display: grid; grid-template-columns: 230px 430px 1fr; height: 100%; }
-  .a.noside { grid-template-columns: 430px 1fr; }
+  .a { display: grid; height: 100%; position: relative; }
+  .split { position: absolute; top: 0; bottom: 0; width: 7px; margin-left: -4px; cursor: col-resize; z-index: 5; }
+  .split:hover { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+  :global(body.resizing) { cursor: col-resize; user-select: none; }
+  .rail { border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0; overflow: hidden auto; min-width: 0; }
+  .ri { all: unset; position: relative; width: 34px; height: 30px; display: grid; place-items: center; border-radius: 6px; cursor: pointer; color: var(--muted); flex: none; }
+  .ri:hover { background: var(--hover); color: var(--fg); }
+  .ri.on { background: var(--sel); color: var(--fg); }
+  .repoav { font: 700 11px var(--mono); text-transform: uppercase; color: var(--fg); border: 1px solid var(--line); width: 30px; height: 26px; margin: 2px 0 4px; box-sizing: border-box; }
+  .badge { position: absolute; top: 0; right: -2px; font: 600 9.5px/13px var(--sans); background: var(--accent); color: var(--on-accent); border-radius: 7px; padding: 0 4px; }
+  .rsep { width: 22px; border-top: 1px solid var(--line); margin: 4px 0; flex: none; }
+  .rail .grow { flex: 1; }
+  .home.ic { display: grid; place-items: center; }
   .left { border-right: 1px solid var(--line); background: var(--panel); padding: 8px; overflow: auto; display: flex; flex-direction: column; gap: 1px; }
   .repohead { display: flex; gap: 4px; align-items: center; padding: 2px 0 2px; }
   .repo { all: unset; flex: 1; min-width: 0; display: flex; gap: 4px; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-weight: 700; font-size: 13px; }

@@ -9,6 +9,24 @@
   const i = $derived(issueNode(n));
   const raw = $derived(n ? rawIssues.get(n) : undefined);
   let showMerged = $state(false);
+
+  // bedevere-bot keeps a "Linked PRs" list at the end of CPython Issue descriptions; on umbrella Issues
+  // it runs to hundreds of entries and repeats the Origin PRs above, so it is folded into <details>.
+  function foldLinkedPrs(html: string): string {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    for (const h of doc.body.querySelectorAll("h1, h2, h3, h4")) {
+      const list = h.nextElementSibling;
+      if (h.textContent?.trim() !== "Linked PRs" || !list || !/^(UL|OL)$/.test(list.tagName)) continue;
+      const details = doc.createElement("details");
+      details.className = "linked";
+      const summary = doc.createElement("summary");
+      summary.textContent = `Linked PRs (${list.children.length})`;
+      details.append(summary, list);
+      h.replaceWith(details);
+    }
+    return doc.body.innerHTML;
+  }
+  const body = $derived(raw?.bodyHTML ? foldLinkedPrs(raw.bodyHTML) : "<p><i>No description.</i></p>");
   // Backports start folded under their Origin PR.
   let unfolded = $state(new Set<number>());
   function toggle(n: number) {
@@ -59,7 +77,7 @@
 
   {#if raw}
     <h3>Description</h3>
-    <div class="post"><div class="md">{@html raw.bodyHTML || "<p><i>No description.</i></p>"}</div></div>
+    <div class="post"><div class="md">{@html body}</div></div>
     {#if raw.thread?.length}
       <h3>Comments <span class="muted">{raw.thread.length < raw.comments ? `(last ${raw.thread.length} of ${raw.comments})` : ""}</span></h3>
       {#each raw.thread as c}
@@ -91,6 +109,9 @@
   .chev { width: 12px; text-align: center; }
   .bp1 { display: inline-flex; gap: 4px; align-items: center; font-family: var(--mono); font-size: 11.5px; }
   .need { color: var(--accent); font-weight: 600; }
+  .md :global(details.linked) { margin: 8px 0; }
+  .md :global(details.linked > summary) { cursor: pointer; font-weight: 600; color: var(--muted); }
+  .md :global(details.linked[open] > summary) { color: var(--fg); }
   .legend { display: flex; gap: 10px; align-items: center; font-size: 11px; margin-top: 6px; color: var(--muted); }
   .legend span { display: inline-flex; gap: 4px; align-items: center; }
   .tgt { font: 11px var(--mono); color: var(--muted); width: 32px; flex: none; }

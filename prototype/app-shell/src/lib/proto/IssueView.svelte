@@ -9,6 +9,13 @@
   const i = $derived(issueNode(n));
   const raw = $derived(n ? rawIssues.get(n) : undefined);
   let showMerged = $state(false);
+  // Backports start folded under their Origin PR.
+  let unfolded = $state(new Set<number>());
+  function toggle(n: number) {
+    const s = new Set(unfolded);
+    s.has(n) ? s.delete(n) : s.add(n);
+    unfolded = s;
+  }
 </script>
 
 <div class="iv">
@@ -22,19 +29,32 @@
     </div>
   </header>
 
-  <h3>PRs</h3>
+  {#snippet row(q: Pr, bp: boolean)}
+    <button class="pr" class:bp class:att={q.attention} onclick={() => onPr(q.number)}>
+      <StateDot pr={q} /><span class="tgt">{q.baseRefName}</span><span class="num">#{q.number}</span>
+      <span class="t">{q.short}</span><span class="who">{q.author}</span><PrStatus pr={q} />
+    </button>
+  {/snippet}
+
+  <h3>Origin PRs</h3>
   <div class="prs">
-    {#each showMerged ? i.origins : i.live as o}
-      {#each [o.pr, ...o.backports].filter(Boolean) as p}
-        {@const q = p as Pr}
-        <button class="pr" class:bp={q.kind === "bot" || q.kind === "manual"} onclick={() => onPr(q.number)}>
-          <StateDot pr={q} /><span class="tgt">{q.baseRefName}</span><span class="num">#{q.number}</span>
-          <span class="t">{q.short}</span><span class="who">{q.author}</span><PrStatus pr={q} />
+    {#each showMerged ? i.origins : i.live as o (o.number)}
+      {#if o.pr}{@render row(o.pr, false)}
+      {:else}<div class="pr missing"><span class="num">#{o.number}</span> <span class="muted">Origin PR not in the snapshot</span></div>{/if}
+      {#if o.backports.length}
+        {@const open = unfolded.has(o.number) || !o.pr}
+        <button class="bps" onclick={() => toggle(o.number)} title={open ? "Fold Backports" : "Unfold Backports"}>
+          <span class="chev">{open ? "⌄" : "›"}</span>
+          {o.backports.length} backport{o.backports.length === 1 ? "" : "s"}:
+          {#each o.backports as b}<span class="bp1"><StateDot pr={b} />{b.baseRefName}{b.kind === "manual" ? " (manual)" : ""}</span>{/each}
+          {#if o.backports.some((b) => b.attention)}<span class="need">· needs attention</span>{/if}
         </button>
-      {/each}
+        {#if open}{#each o.backports as b (b.number)}{@render row(b, true)}{/each}{/if}
+      {/if}
     {/each}
     {#if i.mergedCount}<button class="more" onclick={() => (showMerged = !showMerged)}>{showMerged ? "Hide" : "Show"} {i.mergedCount} merged PRs</button>{/if}
   </div>
+  <div class="legend"><span><StateDot pr={{ state: "OPEN", isDraft: false } as Pr} />open</span><span><StateDot pr={{ state: "OPEN", isDraft: true } as Pr} />draft</span><span><StateDot pr={{ state: "MERGED", isDraft: false } as Pr} />merged</span><span><StateDot pr={{ state: "CLOSED", isDraft: false } as Pr} />closed</span><span class="muted">· bold PRs need attention</span></div>
 
   {#if raw}
     <h3>Description</h3>
@@ -58,7 +78,17 @@
   .prs { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
   .pr { all: unset; box-sizing: border-box; width: 100%; display: flex; gap: 8px; align-items: center; padding: 4px 10px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--line); }
   .pr:hover { background: var(--hover); }
-  .pr.bp { padding-left: 28px; }
+  .pr.bp { padding-left: 34px; background: var(--panel); }
+  .pr.att .t { font-weight: 600; }
+  .pr:not(.att) .t { color: var(--muted); }
+  .pr.missing { cursor: default; }
+  .bps { all: unset; box-sizing: border-box; width: 100%; display: flex; gap: 8px; align-items: center; padding: 2px 10px 4px 18px; font-size: 12px; color: var(--muted); cursor: pointer; border-bottom: 1px solid var(--line); }
+  .bps:hover { background: var(--hover); }
+  .chev { width: 12px; text-align: center; }
+  .bp1 { display: inline-flex; gap: 4px; align-items: center; font-family: var(--mono); font-size: 11.5px; }
+  .need { color: var(--accent); font-weight: 600; }
+  .legend { display: flex; gap: 10px; align-items: center; font-size: 11px; margin-top: 6px; color: var(--muted); }
+  .legend span { display: inline-flex; gap: 4px; align-items: center; }
   .tgt { font: 11px var(--mono); color: var(--muted); width: 32px; flex: none; }
   .num { font: 12px var(--mono); color: var(--accent); flex: none; }
   .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

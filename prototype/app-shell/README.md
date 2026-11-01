@@ -70,3 +70,9 @@ The user pointed at their Outlook inbox as the reference. The Issue list now beh
 - **Like unread mail.** An Issue that needs attention gets an accent bar on the left, an accent-coloured title, and bold people.
 - **A header over the list** with the scope's name and its sort order (by attention, or by last update).
 - **Sidebar numbers count what needs attention,** like unread counts: Issues for the Workbench, Filters and Pinned, and PRs for the Built-in views.
+
+## Issue list feedback, round 3 (layout A)
+
+- **Issues no longer unfold in the Issue list.** It holds one item per Issue, like mail, and ↑ ↓ move between Issues.
+- **The Issue view lists the Origin PRs.** Each one with Backports gets a single folded line under it (`› 2 backports: ● 3.15 ● 3.14 (manual)`), which unfolds on click. Clicking a PR opens its PR view, and Esc or the `gh-N` link goes back to the Issue view.
+- **Live reload:** keep the `npm run proto` window open. Frontend edits appear in it within a second, and Rust edits rebuild and restart it. Edits to the model or the snapshot reload the page, which clears in-memory pins, marks and comments.

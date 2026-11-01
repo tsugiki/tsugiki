@@ -73,6 +73,10 @@ _Avoid_: Dashboard, inbox
 A saved GitHub search the user defines, such as "PRs I opened" or "a colleague's open PRs". It can match Issues directly or match PRs; a matching PR pulls its **Issue** onto the **Workbench**. Clicking a person opens an unsaved Filter for what they authored, which the user can save or close.
 _Avoid_: Query, section
 
+**All issues**:
+An unsaved **Filter** every **Repository** has, over all its open Issues, most recently updated first. The user narrows it by typing a GitHub search and can save the result as a Filter. It is where the user finds an Issue to read, comment on or pin.
+_Avoid_: Issue browser, backlog
+
 **Built-in view**:
 A **Workbench** list that gh-rev defines from its own states, which GitHub search cannot express: Stale reviews, New activity, Review requests, and Hidden (everything **Archived**, **Muted** or from a **Muted author**, each with a way to bring it back).
 _Avoid_: Smart filter, saved view

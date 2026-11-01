@@ -1,0 +1,15 @@
+[package]
+name = "tsugiki-core"
+description = "Tsugiki's core: git, GitHub, the store and the domain rules, with no UI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+specta.workspace = true
+
+[lints]
+workspace = true

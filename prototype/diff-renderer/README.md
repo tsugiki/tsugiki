@@ -23,6 +23,7 @@ Generated files are taken from `.gitattributes` at the head commit and start out
 ## Run
 
 ```sh
+cd prototype/diff-renderer                    # every command below runs from here, not the repo root
 npm install
 # Path to your CPython clone. Defaults to X:/Work/cpython/main.
 export GHREV_PROTO_REPO=~/src/cpython        # PowerShell: $env:GHREV_PROTO_REPO="..."

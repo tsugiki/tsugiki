@@ -17,13 +17,24 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 
 - The app uses three panes, like a mail client. This layout was chosen out of three that were prototyped on branch `prototype/app-shell`.
   - **Sidebar** (left): the Workbench, the Built-in views, the Filters and the Pinned issues. `Ctrl+B` shows or hides it.
-  - **Issue list** (middle): the Issue trees for whatever is selected in the Sidebar.
-  - **Detail pane** (right): the selected item. That is either an **Issue view** (the Issue's description, recent comments and whole PR tree) or a **PR view** (Conversation and Files as tabs).
+  - **Issue list** (middle): one item per Issue for whatever is selected in the Sidebar, laid out like mail. Each item shows:
+    - the people involved
+    - `gh-N` and the title, with the number of PRs and the time of the last update
+    - a preview of what is waiting on the user
+
+    An Issue that Needs attention is marked the way unread mail is. The PRs aren't listed here.
+  - **Detail pane** (right): the selected item. That is either an **Issue view** or a **PR view**.
+    - The Issue view shows the title and its author, the Origin PRs, the description, and recent comments. Each Origin PR's Backports are folded into one line that gives their branches and states.
+    - The PR view shows Conversation and Files as tabs.
+
+    Esc goes from a PR back to its Issue.
 
 ### Workbench
 
 - The **Workbench** lists every **Issue** that a **Filter** reaches, every **Pinned issue**, and every Issue with an open PR the user holds a **Review** on. An Issue being closed on GitHub does not remove it.
 - **Filters** are written in raw GitHub search syntax, with `repo:python/cpython` added implicitly. They run with GitHub's advanced search, which is the only mode that understands `OR` and parentheses.
+- Clicking a person's name opens a temporary `author:<login>` Filter. It lists their Issues and the Issues their PRs fix. It stays in the Sidebar, marked unsaved, until the user saves it as a Filter or closes it.
+- The Sidebar shows counts the way a mail client shows unread counts. For the Workbench, the Filters and the Pinned issues, the count is how many Issues Need attention. For the Built-in views, it is how many PRs they hold.
 - **Built-in views**: Stale reviews, New activity, and Review requests.
 - Each Issue lists its **Matched PRs** first, followed by its other PRs that are open or that **Need attention**.
 - **Needs attention** means work waiting on the user: a Review request, a Stale review, failed CI on an Own PR, or New activity on a PR the user reviewed or wrote. Unreviewed PRs by colleagues are listed but don't count.

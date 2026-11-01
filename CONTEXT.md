@@ -53,7 +53,7 @@ The home list of **Issues** the user is currently following: every Issue that a 
 _Avoid_: Dashboard, inbox
 
 **Filter**:
-A saved GitHub search the user defines, such as "PRs I opened" or "a colleague's open PRs". It can match Issues directly or match PRs; a matching PR pulls its **Issue** onto the **Workbench**.
+A saved GitHub search the user defines, such as "PRs I opened" or "a colleague's open PRs". It can match Issues directly or match PRs; a matching PR pulls its **Issue** onto the **Workbench**. Clicking a person opens an unsaved Filter for what they authored, which the user can save or close.
 _Avoid_: Query, section
 
 **Built-in view**:

@@ -5,6 +5,7 @@
   import { parseDiff, rowOfThread, newsText, type DiffFile, type Row } from "$lib/core/diff";
   import type { Pr, Thread } from "$lib/core/types";
   import { addComment, my, say } from "$lib/state/app.svelte";
+  import { value } from "$lib/state/settings.svelte";
   import { highlightRows } from "./highlight";
 
   let { pr, split = false, showNews = true }: { pr: Pr; split?: boolean; showNews?: boolean } = $props();
@@ -15,7 +16,7 @@
   let composer = $state<{ path: string; line: number; body: string } | null>(null);
   let root: HTMLElement;
 
-  const isOpen = (f: DiffFile) => !f.generated || expanded.has(f.path);
+  const isOpen = (f: DiffFile) => !f.generated || !value("review.collapse_generated") || expanded.has(f.path);
   function toggle(f: DiffFile) {
     const s = new Set(expanded);
     s.has(f.path) ? s.delete(f.path) : s.add(f.path);
@@ -145,7 +146,7 @@
 </div>
 
 <style>
-  .diff { font-family: var(--mono); font-size: 12.5px; }
+  .diff { font-family: var(--mono); font-size: var(--code-size, 12.5px); }
   .empty { padding: 24px; color: var(--muted); font-family: var(--sans); }
   .news { margin: 8px 0 12px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 4px; background: var(--panel); }
   .newshead { font: 600 12px var(--sans); padding: 6px 10px; color: var(--muted); }

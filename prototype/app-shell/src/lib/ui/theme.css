@@ -17,6 +17,14 @@
     --chrome: #181818; --chrome-fg: #fff;
   }
 }
+/* Settings → Theme: Dark, whatever the system says. */
+:root[data-theme="dark"] {
+  --bg: #0d1117; --fg: #e6edf3; --muted: #8d96a0; --line: #30363d; --panel: #161b22;
+  --hover: #1c2129; --sel: #1f3a5f; --accent: #4493f8; --on-accent: #fff;
+  --good: #3fb950; --bad: #f85149; --warn: #d29922; --merged: #ab7df8;
+  --add-bg: #12261e; --del-bg: #25171c; --hunk-bg: #121d2f;
+  --chrome: #181818; --chrome-fg: #fff;
+}
 html, body { margin: 0; height: 100%; overflow: hidden; }
 body { background: var(--bg); color: var(--fg); font: 14px var(--sans); }
 button { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; cursor: pointer; }
@@ -38,11 +46,21 @@ button:disabled { opacity: 0.5; cursor: default; }
 .hljs-type, .hljs-built_in { color: #953800; }
 .hljs-meta { color: #116329; }
 @media (prefers-color-scheme: dark) {
-  .hljs-keyword { color: #ff7b72; } .hljs-string { color: #a5d6ff; }
-  .hljs-comment { color: #8b949e; } .hljs-number, .hljs-literal { color: #79c0ff; }
-  .hljs-title, .hljs-title.function_ { color: #d2a8ff; } .hljs-type, .hljs-built_in { color: #ffa657; }
-  .hljs-meta { color: #7ee787; }
+  :root:not([data-theme="light"]) .hljs-keyword { color: #ff7b72; }
+  :root:not([data-theme="light"]) .hljs-string { color: #a5d6ff; }
+  :root:not([data-theme="light"]) .hljs-comment { color: #8b949e; }
+  :root:not([data-theme="light"]) .hljs-number, :root:not([data-theme="light"]) .hljs-literal { color: #79c0ff; }
+  :root:not([data-theme="light"]) .hljs-title, :root:not([data-theme="light"]) .hljs-title.function_ { color: #d2a8ff; }
+  :root:not([data-theme="light"]) .hljs-type, :root:not([data-theme="light"]) .hljs-built_in { color: #ffa657; }
+  :root:not([data-theme="light"]) .hljs-meta { color: #7ee787; }
 }
+:root[data-theme="dark"] .hljs-keyword { color: #ff7b72; }
+:root[data-theme="dark"] .hljs-string { color: #a5d6ff; }
+:root[data-theme="dark"] .hljs-comment { color: #8b949e; }
+:root[data-theme="dark"] .hljs-number, :root[data-theme="dark"] .hljs-literal { color: #79c0ff; }
+:root[data-theme="dark"] .hljs-title, :root[data-theme="dark"] .hljs-title.function_ { color: #d2a8ff; }
+:root[data-theme="dark"] .hljs-type, :root[data-theme="dark"] .hljs-built_in { color: #ffa657; }
+:root[data-theme="dark"] .hljs-meta { color: #7ee787; }
 
 /* A Detail pane title opens the item on GitHub; ↗ shows on hover. */
 .ghtitle { color: inherit; text-decoration: none; }

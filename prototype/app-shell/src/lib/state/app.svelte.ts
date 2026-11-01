@@ -39,6 +39,8 @@ const repos = new Map(snapshots.map((s) => {
 }));
 export const REPOS = snapshots.map((s) => s.repo.name);
 export const boardOf = (name: string): Workbench => repos.get(name)!.wb;
+/** A Repository's user state, for Settings (its pins and Muted authors are written to config.toml). */
+export const userOf = (name: string) => repos.get(name)!.user;
 
 /** The open Repository, or null for the Home page. A normal launch reopens the last one. */
 export const app = $state<{ repo: string | null; opened: Record<string, string>; select: string | null }>({ repo: REPOS[0] ?? null, opened: {}, select: null });

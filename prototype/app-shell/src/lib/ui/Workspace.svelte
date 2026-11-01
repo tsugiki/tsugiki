@@ -9,6 +9,7 @@
   import { linkTarget } from "$lib/core/links";
   import { wb, my, app, REPOS, boardOf, openRepo, openPr, openIssue, togglePin, toggleMark, say, archive, mute, muteAuthor, unhide, unmuteAuthor } from "$lib/state/app.svelte";
   import { openInBrowser } from "$lib/platform/shell";
+  import { settingsUi, openSettings, value } from "$lib/state/settings.svelte";
   import { ago, waitingText, depsUrl } from "./format";
   import StateDot from "./StateDot.svelte";
   import KindIcon from "./KindIcon.svelte";
@@ -21,7 +22,7 @@
   import Palette from "./Palette.svelte";
   import Peek from "./Peek.svelte";
   import Help from "./Help.svelte";
-  import { keymap } from "./keys";
+  import { keymap, type Bindings } from "./keys";
 
   let { start = null, startIssue = null, startAuthor = null, startView = null, startPeek = null }: {
     start?: number | null; startIssue?: number | null; startAuthor?: string | null; startView?: string | null; startPeek?: string | null;
@@ -35,7 +36,7 @@
   let hpos = $state(-1);
   let tab = $state<"conv" | "files">("conv");
   let side = $state(true);
-  let split = $state(false);
+  let split = $state(value("review.diff_view") === "split");
   let showQuiet = $state(false);
   let palette = $state<string | null>(null);
   let help = $state(false);
@@ -144,6 +145,9 @@
   const commands = $derived([
     ...REPOS.map((r) => ({ label: `Repository: ${r}`, key: r === repo.name ? "current" : undefined, run: () => openRepo(r) })),
     { label: "Home: all Repositories", run: () => openRepo(null) },
+    { label: "Preferences: Open Settings", key: "Ctrl+,", run: () => openSettings() },
+    { label: "Preferences: Keyboard Shortcuts", run: () => openSettings("Keybindings") },
+    { label: `Preferences: Settings for ${repo.name}`, run: () => openSettings(`repo:${repo.name}`) },
     { label: "Toggle sidebar", key: "Ctrl+B", run: () => (side = !side) },
     { label: "Unified ↔ side-by-side", key: "Ctrl+Alt+U", run: () => (split = !split) },
     { label: "Open on GitHub", key: "Ctrl+Shift+G", run: openOnGithub },
@@ -161,7 +165,9 @@
     ...VIEWS.map((v) => ({ label: `View: ${v.name}`, run: () => (scope = { kind: "view", view: v.key }) })),
     ...wb.filters.map((f) => ({ label: `Filter: ${f.name}`, run: () => (scope = { kind: "filter", name: f.name }) })),
   ]);
-  const onKey = keymap(() => ({
+  // While Settings is open, it owns the keyboard.
+  const onKey = keymap(() => settingsUi.open ? ({} as Bindings) : ({
+    "ctrl+,": () => openSettings(),
     "ctrl+shift+p": () => (palette = ">"),
     "ctrl+p": () => (palette = ""),
     "ctrl+r": () => (palette = ">Repository: "),
@@ -196,6 +202,7 @@
     <nav class="left">
       <div class="repohead">
         <button class="repo" onclick={() => (palette = ">Repository: ")} title="Switch Repository (Ctrl+R)"><span class="rn">{repo.name}</span> ▾</button>
+        <button class="home" onclick={() => openSettings()} title="Settings (Ctrl+,)">⚙</button>
         <button class="home" onclick={() => openRepo(null)} title="Home: all Repositories">⌂</button>
       </div>
       {#if repo.maintained}<div class="role">maintained by you</div>{/if}

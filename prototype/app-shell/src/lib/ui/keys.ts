@@ -7,7 +7,8 @@ const typing = (e: KeyboardEvent) => {
   return !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
 };
 
-function name(e: KeyboardEvent) {
+/** A key press as a binding string: "ctrl+shift+p", "f7", "?". Null for a bare modifier. */
+export function keyName(e: KeyboardEvent) {
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase();
   if (["control", "shift", "alt", "meta"].includes(k)) return null;
   const parts = [];
@@ -20,11 +21,11 @@ function name(e: KeyboardEvent) {
 }
 
 /** Returns a keydown handler. Keys that work while typing must be listed in `whileTyping`. */
-export function keymap(get: () => Bindings, whileTyping = ["escape", "ctrl+enter", "ctrl+p", "ctrl+shift+p", "ctrl+r"]) {
+export function keymap(get: () => Bindings, whileTyping = ["escape", "ctrl+enter", "ctrl+p", "ctrl+shift+p", "ctrl+r", "ctrl+,"]) {
   let chord: string | null = null;
   let chordAt = 0;
   return (e: KeyboardEvent) => {
-    const k = name(e);
+    const k = keyName(e);
     if (!k) return;
     const full = chord && Date.now() - chordAt < 1500 ? `${chord} ${k}` : k;
     const b = get();
@@ -57,3 +58,8 @@ export const KEY_HELP: [string, string][] = [
   ["Ctrl+click", "Open a link in the browser"],
   ["?", "This list"],
 ];
+
+const ARROWS: Record<string, string> = { arrowleft: "←", arrowright: "→", arrowup: "↑", arrowdown: "↓" };
+/** "ctrl+shift+p" → "Ctrl+Shift+P", "ctrl+k m" → "Ctrl+K M", "alt+arrowleft" → "Alt+←". */
+export const prettyKey = (k: string) =>
+  k.split(" ").map((c) => c.split("+").map((p) => ARROWS[p] ?? (p.length === 1 ? p.toUpperCase() : p[0].toUpperCase() + p.slice(1))).join("+")).join(" ");

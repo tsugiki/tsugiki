@@ -125,3 +125,17 @@ The design session after the patch-id round settled how gh-rev works across Repo
 - **Links never navigate the app's window.** An Issue or PR in the current Repository opens in the Detail pane, `Alt+←` / `Alt+→` go back and forward; one elsewhere on GitHub opens a **Peek** (cards prefetched by the snapshot), with Open in gh-rev for an added Repository; anything else, or `Ctrl`+click, opens the system browser. `Ctrl+Shift+G`, or a click on the title of an Issue, PR or Dependency updates, opens the current item on GitHub (↗ shows on hover). `?peek=owner/name/N` opens a Peek from the URL.
 
 Code: the snapshot writes one fixture per Repository (`src/lib/data/fixtures/`), with a git mirror each under `.proto-mirrors/` (only CPython's borrows from a clone). Conventions live in `core/conventions.ts`, link routing in `core/links.ts`, and opening the browser in a new `platform` layer that the UI may use (`npm run proto:check` knows it). `npm run proto:snapshot owner/name` refreshes one Repository.
+
+## Settings
+
+The question: what should Settings look like? Three variants open inside the app: `Ctrl+,`, ⚙ in the Sidebar or on the Home page, or "Preferences: Open Settings" / "Preferences: Keyboard Shortcuts" / "Preferences: Settings for <Repository>" in the command palette. The floating bar (or `←` / `→`) switches variant; `?settings&variant=A|B|C` opens one from the URL (`?settings=Keybindings`, `?settings=repo:owner/name` lands on a section).
+
+- **A, Searchable list.** The whole window, like VS Code's settings editor: one list of every setting with its description, a contents column, a search box over settings, keys and Repositories, a bar on changed settings with reset. Changes apply at once. "Show files" puts the two files beside it.
+- **B, Dialog.** A preferences window over the app with six pages (General, Account, Repositories, Sync, Keyboard, Advanced), labels on the left, radios for choices, Repositories as master–detail. Apply / Cancel; Esc cancels and puts everything back.
+- **C, The files.** No form: `config.toml` and `local.toml` edited as text. On the right, what the line under the cursor means, the problems (each points at its line; valid lines still apply), and everything there is to set. Only the token is a field, because it never goes in a file.
+
+What every variant shows is where each setting lives: **synced** (`config.toml`, which the user syncs: settings, remapped keys, Repositories with their Filters, Pinned issues and Muted authors), **this machine** (`local.toml`: the token source, the editor command, paths, the clone each Repository borrows objects from) or the **keychain** (a personal access token). Pinning or muting in the app shows up in `config.toml` at once.
+
+In effect while the prototype runs: Theme, Code font size, Diff view (for the next Repository opened) and Collapse Generated files. The rest is only written to the files. Keybindings can be remapped and conflicts are flagged, but the app keeps its built-in keys. Nothing is written to disk.
+
+Code: `core/settings.ts` (what the settings are, the two files, a small TOML reader for C), `state/settings.svelte.ts`, `ui/settings/` (the variants, plus the shared Field, KeysTable, RepoForm and Files).

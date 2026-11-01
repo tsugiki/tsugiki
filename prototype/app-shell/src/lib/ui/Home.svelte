@@ -4,14 +4,17 @@
   import { REPOS, boardOf, app, openRepo, say } from "$lib/state/app.svelte";
   import { ago } from "./format";
   import Palette from "./Palette.svelte";
-  import { keymap } from "./keys";
+  import { keymap, type Bindings } from "./keys";
+  import { settingsUi, openSettings } from "$lib/state/settings.svelte";
 
   const rows = $derived(REPOS.map((name) => ({ name, b: boardOf(name), s: boardOf(name).summary() })));
   let sel = $state(0);
   let palette = $state<string | null>(null);
 
-  const commands = $derived(REPOS.map((r) => ({ label: `Repository: ${r}`, run: () => openRepo(r) })));
-  const onKey = keymap(() => ({
+  const commands = $derived([...REPOS.map((r) => ({ label: `Repository: ${r}`, run: () => openRepo(r) })),
+    { label: "Preferences: Open Settings", key: "Ctrl+,", run: () => openSettings() }]);
+  const onKey = keymap(() => settingsUi.open ? ({} as Bindings) : ({
+    "ctrl+,": () => openSettings(),
     arrowdown: () => (sel = Math.min(rows.length - 1, sel + 1)),
     arrowup: () => (sel = Math.max(0, sel - 1)),
     enter: () => openRepo(rows[sel].name),
@@ -24,7 +27,7 @@
 <svelte:window onkeydown={onKey} />
 
 <div class="home">
-  <header><b>gh-rev</b><span class="muted">Your Repositories. ↑ ↓ Enter to open · Ctrl+R switches from anywhere.</span></header>
+  <header><b>gh-rev</b><span class="muted">Your Repositories. ↑ ↓ Enter to open · Ctrl+R switches from anywhere.</span><span class="grow"></span><button onclick={() => openSettings()} title="Settings (Ctrl+,)">⚙ Settings</button></header>
   <div class="list">
     {#each rows as r, i (r.name)}
       <button class="repo" class:sel={i === sel} class:att={r.s.attention > 0} onclick={() => openRepo(r.name)} onmouseenter={() => (sel = i)}>
@@ -44,6 +47,7 @@
 <style>
   .home { max-width: 860px; margin: 0 auto; padding: 32px 24px; font: 14px var(--sans); }
   header { display: flex; gap: 12px; align-items: baseline; margin-bottom: 16px; font-size: 18px; }
+  header button { font-size: 13px; }
   header .muted { font-size: 13px; }
   .list { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
   .repo { all: unset; box-sizing: border-box; width: 100%; display: flex; flex-direction: column; gap: 3px; padding: 10px 14px; border-bottom: 1px solid var(--line); border-left: 3px solid transparent; cursor: pointer; }

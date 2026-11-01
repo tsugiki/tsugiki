@@ -18,7 +18,7 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 
 - A **Home page** lists the Repositories, each with what waits on the user there (Review requests, Stale reviews, failed CI on Own PRs, Dependency updates ready to merge) and when it was last opened, plus **Add repository**. With no Repositories yet it shows onboarding instead: `gh auth`, the first Repository, an existing clone to borrow objects from. A normal launch reopens the last Repository; the Home page is one step away from the Repository switcher.
 - Inside a Repository the app uses three panes, like a mail client. This layout was chosen out of three that were prototyped on branch `prototype/app-shell`.
-  - **Sidebar** (left): the Repository switcher on top, then the Workbench, the Built-in views, All issues, the Filters and the Pinned issues. `Ctrl+B` shows or hides it.
+  - **Sidebar** (left): the Repository switcher on top (also `Ctrl+R`, and "Repository: …" in the command palette), then the Workbench, the Built-in views, All issues, the Filters and the Pinned issues. `Ctrl+B` shows or hides it.
   - **Issue list** (middle): one item per Issue for whatever is selected in the Sidebar, laid out like mail. **Standalone PRs** and **Dependency updates** are items of their own beside the Issues. Each item shows:
     - the people involved
     - the Issue's number and title, with the number of PRs and the time of the last update
@@ -111,6 +111,8 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 | Pin or unpin | `Ctrl+K P` |
 | Back / forward | `Alt+←` / `Alt+→` |
 | Open on GitHub | `Ctrl+Shift+G` |
+| Switch Repository | `Ctrl+R`, or the command palette |
+| Archive / Mute the selected item | `E` / `M` |
 
 - The command palette's quick open finds Issues, PRs, and files in the current PR. `?` lists the keys available in the current view.
 - Keybindings can be remapped in the portable config file.

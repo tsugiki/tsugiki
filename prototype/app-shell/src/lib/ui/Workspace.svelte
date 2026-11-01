@@ -1,7 +1,7 @@
 <script lang="ts">
   // PROTOTYPE — throwaway. One open Repository: three panes, like a mail client (layout A).
   // Sidebar: the Repository switcher, then where to look (Workbench, Built-in views, All issues,
-  // Filters, Pinned, Hidden). Issue list: one item per Issue, Standalone PR or Dependency updates, like
+  // Filters, Pinned, Archived, Muted). Issue list: one item per Issue, Standalone PR or Dependency updates, like
   // mail. Detail pane: the selected item. Alt+← / Alt+→ go back and forward; Esc from a PR to its Issue.
   import type { Scope, WorkItem } from "$lib/core/types";
   import { VIEWS } from "$lib/core/workbench";
@@ -27,7 +27,7 @@
     start?: number | null; startIssue?: number | null; startAuthor?: string | null; startView?: string | null; startPeek?: string | null;
   } = $props();
   // svelte-ignore state_referenced_locally
-  let scope = $state<Scope>(startAuthor ? { kind: "author", login: startAuthor } : startView === "issues" ? { kind: "issues", q: "" } : startView === "hidden" ? { kind: "hidden" } : { kind: "all" });
+  let scope = $state<Scope>(startAuthor ? { kind: "author", login: startAuthor } : startView === "issues" ? { kind: "issues", q: "" } : startView === "archived" ? { kind: "archived" } : startView === "muted" ? { kind: "muted" } : { kind: "all" });
   // Selection: an Issue "i:N", a PR "p:N", or "deps". History for Alt+← / Alt+→.
   // svelte-ignore state_referenced_locally
   let sel = $state<string | null>(app.select ?? (start ? `p:${start}` : startIssue ? `i:${startIssue}` : startView === "deps" ? "deps" : null));
@@ -58,6 +58,9 @@
   const selKind = $derived(sel?.slice(0, 1));
   const selNum = $derived(sel && sel !== "deps" ? +sel.slice(2) : 0);
   const current = $derived(selKind === "p" ? wb.pr(selNum) : null);
+  // Sidebar counts: what the user hid. Muted counts Muted authors too, since they are listed there.
+  const archivedCount = $derived(everything.hidden.filter((i) => i.hidden === "archived").length);
+  const mutedCount = $derived(everything.hidden.filter((i) => i.hidden === "muted").length + my.mutedAuthors.size);
   const depsItem = $derived([...everything.active, ...everything.quiet, ...everything.hidden].find((i) => i.kind === "deps") ?? null);
   /** The list item the selection belongs to. */
   // All issues: what changed since the last sync first, then the rest loaded so far.
@@ -78,7 +81,7 @@
   const label = (it: WorkItem) => (it.kind === "issue" ? issueLabel(repo, it.number!) : it.kind === "pr" ? `#${it.number}` : "⇡");
   const scopeName = $derived(
     scope.kind === "all" ? "Workbench" : scope.kind === "pinned" ? "Pinned issues" : scope.kind === "filter" ? scope.name :
-    scope.kind === "author" ? `author:${scope.login}` : scope.kind === "issues" ? "All issues" : scope.kind === "hidden" ? "Hidden" :
+    scope.kind === "author" ? `author:${scope.login}` : scope.kind === "issues" ? "All issues" : scope.kind === "archived" ? "Archived" : scope.kind === "muted" ? "Muted" :
     VIEWS.find((v) => v.key === (scope as { view: string }).view)!.name);
 
   function select(key: string, push = true) {
@@ -153,7 +156,8 @@
     { label: "All issues", run: () => (scope = { kind: "issues", q: "" }) },
     { label: "All issues: show Issues only", run: () => { scope = { kind: "issues", q: "" }; show = { issue: true, pr: false }; } },
     { label: "All issues: show PRs only", run: () => { scope = { kind: "issues", q: "" }; show = { issue: false, pr: true }; } },
-    { label: "Hidden", run: () => (scope = { kind: "hidden" }) },
+    { label: "View: Archived", run: () => (scope = { kind: "archived" }) },
+    { label: "View: Muted", run: () => (scope = { kind: "muted" }) },
     ...VIEWS.map((v) => ({ label: `View: ${v.name}`, run: () => (scope = { kind: "view", view: v.key }) })),
     ...wb.filters.map((f) => ({ label: `Filter: ${f.name}`, run: () => (scope = { kind: "filter", name: f.name }) })),
   ]);
@@ -201,7 +205,8 @@
       {#each VIEWS as v}
         <button class="nav" class:on={scopeEq({ kind: "view", view: v.key })} onclick={() => (scope = { kind: "view", view: v.key })}>{v.name}{@render count(wb.viewCount(v.key))}</button>
       {/each}
-      <button class="nav" class:on={scope.kind === "hidden"} onclick={() => (scope = { kind: "hidden" })}>Hidden{#if everything.hidden.length + my.mutedAuthors.size}<span class="n">{everything.hidden.length + my.mutedAuthors.size}</span>{/if}</button>
+      <button class="nav" class:on={scope.kind === "archived"} onclick={() => (scope = { kind: "archived" })} title="Archived items: each comes back when something new needs you">Archived{@render count(archivedCount)}</button>
+      <button class="nav" class:on={scope.kind === "muted"} onclick={() => (scope = { kind: "muted" })} title="Muted items and Muted authors: they stay hidden until you unmute them">Muted{@render count(mutedCount)}</button>
       <div class="sec">Filters</div>
       <button class="nav" class:on={scope.kind === "issues"} onclick={() => (scope = { kind: "issues", q: "" })} title="Every open Issue and PR loaded so far; type to search">All issues<span class="n">{wb.allIssueCount}{repo.small ? "" : "+"}</span></button>
       {#each wb.filters as f}
@@ -222,7 +227,7 @@
     <header class="lhead">
       <b>{scopeName}</b>
       <span class="grow"></span>
-      {#if scope.kind !== "issues" && scope.kind !== "hidden"}<button class="sort" onclick={() => (sortBy = sortBy === "attention" ? "updated" : "attention")} title="Change sort order">By {sortBy} ⇅</button>{/if}
+      {#if scope.kind !== "issues" && scope.kind !== "archived" && scope.kind !== "muted"}<button class="sort" onclick={() => (sortBy = sortBy === "attention" ? "updated" : "attention")} title="Change sort order">By {sortBy} ⇅</button>{/if}
     </header>
     {#if scope.kind === "issues"}
       {@const q = scope.q}
@@ -236,14 +241,15 @@
       </div>
     {/if}
     <div class="list">
-      {#if scope.kind === "hidden" && my.mutedAuthors.size}
+      {#if scope.kind === "muted" && my.mutedAuthors.size}
         <div class="group">Muted authors in {repo.name}</div>
         {#each [...my.mutedAuthors] as a}<div class="mutedrow"><span>{a}</span><button onclick={() => unmuteAuthor(a)}>Unmute</button></div>{/each}
-        <div class="group">Hidden items</div>
       {/if}
       {#each visible as it, k (it.key)}
         {#if scope.kind === "issues" && (k === 0 || (visible[k - 1].updatedAt > lastSync) !== (it.updatedAt > lastSync))}
           <div class="group">{it.updatedAt > lastSync ? "Updated since the last sync" : "Earlier"}</div>
+        {:else if scope.kind === "muted" && (k === 0 || visible[k - 1].hidden !== it.hidden)}
+          <div class="group">{it.hidden === "muted" ? "Muted items" : "Hidden by a Muted author"}</div>
         {/if}
         {@const why = it.waiting.map(waitingText)}
         <div class="issue" class:att={it.attention > 0} class:deps={it.kind === "deps"}>
@@ -261,7 +267,8 @@
               </span>
             </button>
             <span class="acts">
-              {#if it.hidden}{#if it.hidden !== "author"}<button onclick={() => unhide(it.key)}>Unhide</button>{/if}
+              {#if it.hidden === "author"}<button onclick={() => unmuteAuthor(it.author!)} title="Unmute {it.author} in {repo.name}">Unmute author</button>
+              {:else if it.hidden}<button onclick={() => unhide(it.key)}>{it.hidden === "archived" ? "Unarchive" : "Unmute"}</button>
               {:else}
                 <button class="ic" onclick={() => archive(it.key, label(it))} title="Archive (E): until something new needs you">⤓</button>
                 <button class="ic" onclick={() => mute(it.key, label(it))} title="Mute (M): until you unmute it">🔇</button>
@@ -270,7 +277,7 @@
             </span>
           </div>
         </div>
-      {:else}<div class="empty">{scope.kind === "hidden" ? "Nothing hidden." : "Nothing here."}</div>{/each}
+      {:else}<div class="empty">{scope.kind === "archived" ? "Nothing archived. E archives the selected item." : scope.kind === "muted" ? (my.mutedAuthors.size ? "They hide nothing here right now." : "Nothing muted. M mutes the selected item.") : "Nothing here."}</div>{/each}
       {#if board.quiet.length}
         <button class="quietbtn" onclick={() => (showQuiet = !showQuiet)}>{showQuiet ? "Hide" : "Show"} {board.quiet.length} quiet items</button>
       {/if}

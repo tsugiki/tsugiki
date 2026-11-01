@@ -1,7 +1,7 @@
 <script lang="ts">
   // PROTOTYPE — throwaway. Entry point: reads the URL and hands it to the app. Everything visible is in
   // $lib/ui, which reads $lib/state; core and data stay out of sight of this route.
-  //   ?repo=owner/name (or home) picks the Repository; ?pr=N, ?issue=N, ?author=login, ?view=issues|hidden|deps, ?peek=owner/name/N.
+  //   ?repo=owner/name (or home) picks the Repository; ?pr=N, ?issue=N, ?author=login, ?view=issues|archived|muted|deps, ?peek=owner/name/N.
   import { page } from "$app/state";
   import App from "$lib/ui/App.svelte";
   import { openRepo, REPOS } from "$lib/state/app.svelte";

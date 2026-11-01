@@ -226,7 +226,7 @@ export function createWorkbench(fx: Snapshot, user: UserState) {
         }
       }
     };
-    if (scope.kind === "all" || scope.kind === "hidden") {
+    if (scope.kind === "all" || scope.kind === "archived" || scope.kind === "muted") {
       reach();
       user.pins.forEach((n) => issues.add(n));
       for (const p of prs) if (p.state === "OPEN" && (p.attention || p.review !== "unreviewed")) place(p);
@@ -252,7 +252,10 @@ export function createWorkbench(fx: Snapshot, user: UserState) {
     const byRecent = (a: WorkItem, b: WorkItem) => +b.pinned - +a.pinned || b.attention - a.attention || b.updatedAt.localeCompare(a.updatedAt);
     const shown = items.filter((i) => !i.hidden);
     const hidden = items.filter((i) => i.hidden);
-    if (scope.kind === "hidden") return { active: hidden.sort(byRecent), quiet: [], hidden: [] };
+    if (scope.kind === "archived") return { active: hidden.filter((i) => i.hidden === "archived").sort(byRecent), quiet: [], hidden: [] };
+    // Muted items first, then what a Muted author hides.
+    if (scope.kind === "muted")
+      return { active: hidden.filter((i) => i.hidden !== "archived").sort((a, b) => +(a.hidden === "author") - +(b.hidden === "author") || byRecent(a, b)), quiet: [], hidden: [] };
     return {
       active: shown.filter((i) => i.attention > 0 || i.pinned).sort(byRecent),
       quiet: shown.filter((i) => i.attention === 0 && !i.pinned).sort(byRecent),

@@ -154,7 +154,8 @@ export interface WorkItem {
 export type View = "requests" | "stale" | "activity";
 export type Scope =
   | { kind: "all" } | { kind: "filter"; name: string } | { kind: "pinned" } | { kind: "view"; view: View }
-  | { kind: "hidden" }
+  /** Built-in views of what the user hid: Archived items; Muted items and what Muted authors hide. */
+  | { kind: "archived" } | { kind: "muted" }
   /** All issues: the open Issues and PRs the Repository has loaded, narrowed by a typed search. */
   | { kind: "issues"; q: string }
   /** A temporary Filter, `author:<login>`, opened by clicking a person. Here it only sees the snapshot. */

@@ -1,6 +1,6 @@
 # One SQLite database, and a mirror per Repository
 
-Everything Tsugiki keeps about GitHub, and everything the user keeps in Tsugiki, is in one SQLite file, `tsugiki.db`, accessed with `rusqlite` (SQLite bundled into the app). It covers every Repository: the cache (Issues, PRs, reviews, threads and comments with GitHub's `bodyHTML`, CI checks, timeline events, the links between Issues, PRs and Backports, and per-file patch-ids keyed by commit) and the user's own state (Local marks, Last seen, Archived and Muted items, unsent composer text). Each Repository's mirror is a folder of its own ([ADR 0002](0002-tsugiki-owns-its-git-state.md)):
+Everything Tsugiki keeps about GitHub, and everything the user keeps in Tsugiki, is in one SQLite file, `tsugiki.db`, accessed with `rusqlite` (SQLite bundled into the app). It covers every Repository: the cache (Issues, PRs, reviews, threads and comments with GitHub's `bodyHTML`, CI checks, timeline events, the facts that link Issues, PRs and Backports ([ADR 0011](0011-pr-links-from-github-signals-by-repository-conventions.md)), and per-file patch-ids keyed by commit) and the user's own state (Local marks, Last seen, Archived and Muted items, unsent composer text). Each Repository's mirror is a folder of its own ([ADR 0002](0002-tsugiki-owns-its-git-state.md)):
 
 ```
 %LOCALAPPDATA%\Tsugiki\              ~/Library/Application Support/Tsugiki/ on macOS

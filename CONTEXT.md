@@ -7,7 +7,7 @@ A review workbench for a CPython core developer who also maintains projects of t
 ### Work structure
 
 **Issue**:
-A GitHub issue in the current **Repository** that one or more PRs fix. In CPython a PR names its Issue with the `gh-NNNNN:` prefix in its title; elsewhere it links it the GitHub way ("Fixes #N"). A PR can fix several Issues and then belongs to each of them.
+A GitHub issue in the current **Repository** that one or more PRs fix. In CPython a PR names its Issue with the `gh-NNNNN:` prefix in its title; elsewhere it links it the GitHub way ("Fixes #N"). A PR can fix several Issues and then belongs to each of them. A PR that only mentions an Issue doesn't fix it.
 _Avoid_: Ticket, bug
 
 **Stacked PR**:
@@ -19,20 +19,24 @@ A PR against `main` that fixes (part of) an **Issue**; any **Backports** are mad
 _Avoid_: Main PR, parent PR, original PR
 
 **Backport**:
-A PR that carries an **Origin PR**'s change to a maintenance **Target branch**. It is opened either by `miss-islington` or by hand, and its title carries `(GH-NNNNN)` pointing at its Origin PR.
+A PR that carries an **Origin PR**'s change to a maintenance **Target branch**. It is opened either by `miss-islington` or by hand, and its title carries `(GH-NNNNN)` pointing at its Origin PR; without that, its "cherry picked from" line does. Only a **Repository** whose **Conventions** have Backports has them.
 _Avoid_: Cherry-pick, child PR
 
 **Bot backport**:
-A **Backport** opened by `miss-islington` that contains only the cherry-picked change. It shares its **Origin PR**'s review state instead of having its own.
+A **Backport** opened by `miss-islington` in which every commit is the bot's, apart from merges of the Target branch (GitHub's Update branch). It shares its **Origin PR**'s review state instead of having its own.
 _Avoid_: Auto backport, clean backport
 
 **Manual backport**:
-A **Backport** opened by a person, or a **Bot backport** that later got extra commits. It is reviewed on its own, because its diff can differ from the Origin PR's.
+A **Backport** opened by a person, or a **Bot backport** to which someone else pushed a commit, even an amended cherry-pick. It is reviewed on its own, because its diff can differ from the Origin PR's.
 _Avoid_: Hand backport, conflicted backport
 
 **Target branch**:
 The branch a PR merges into: the default branch (`main`), a maintenance branch such as `3.14`, or, for a **Stacked PR**, another PR's branch.
 _Avoid_: Base, version
+
+**Conventions**:
+How a **Repository**'s PRs name the **Issues** they fix and the **Origin PRs** their **Backports** come from, and which bot opens Bot backports. CPython's: the `gh-NNNNN:` title prefix, `(GH-NNNNN)` Backports and `miss-islington`. Every other Repository starts with GitHub's: "Fixes #N" links and no Backports. The user can edit them per Repository.
+_Avoid_: Rules, repo config, preset
 
 **Needs attention**:
 The state of an Issue or PR that is waiting on the user. A PR needs it when it carries a **Review request**, the user's **Review** of it is a **Stale review**, it is an **Own PR** whose CI failed, or it has **New activity** and the user either reviewed it or wrote it. An open PR the user has not reviewed is listed but does not need attention. A colleague's **Draft PR** needs attention only when it carries a Review request. In a **Maintained repository**, every open PR someone else opened also needs attention until the user merges, closes or reviews it; **Dependency updates** need it only when one is ready to merge or its CI failed.

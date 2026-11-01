@@ -7,7 +7,7 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 ### Platform and stack
 
 - Tsugiki replaces the email inbox for the **Repositories** the user adds: their GitHub work is taken in there, and a single Issue or PR is opened in the browser only now and then. Repositories that aren't added stay outside Tsugiki.
-- Any number of Repositories, worked in one at a time: `python/cpython` and the user's own projects. Each has its own Workbench, Filters and Pinned issues. Per-repository conventions (CPython's `gh-NNNNN:` title prefix, `[3.x] … (GH-NNNNN)` Backports and `miss-islington`; elsewhere GitHub's "Fixes #N" links) are kept in one place.
+- Any number of Repositories, worked in one at a time: `python/cpython` and the user's own projects. Each has its own Workbench, Filters and Pinned issues. Per-repository conventions (CPython's `gh-NNNNN:` title prefix, `[3.x] … (GH-NNNNN)` Backports and `miss-islington`; elsewhere GitHub's "Fixes #N" links) are kept in one place: the Repository's **Conventions**, a preset whose fields can be edited ([ADR 0011](adr/0011-pr-links-from-github-signals-by-repository-conventions.md)).
 - A Tauri desktop app with a Svelte 5 + TypeScript frontend, for Windows and macOS ([ADR 0001](adr/0001-standalone-tauri-gui-with-in-app-review.md)).
 - Diffs are drawn by a custom virtualized renderer, with syntax highlighting done in Rust.
 - Code comes from Tsugiki's own bare mirror. PRs, reviews, comments and CI come from the GitHub API ([ADR 0002](adr/0002-tsugiki-owns-its-git-state.md)).
@@ -73,6 +73,7 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 - Each **Origin PR** shows its **Backports** beneath it, and every PR shows its state, CI status, and the user's review state.
 - All of an Issue's fully merged Origin PRs and their Backports collapse into a single summary line.
 - Only Backports that already exist are shown; Tsugiki does not try to work out which ones are missing.
+- Trees are whole: an Issue's older PRs and Backports, and a Backport's Origin PR, are fetched even when they fall outside the synced window. Links follow GitHub alone; a wrong one is fixed on GitHub, not in Tsugiki ([ADR 0011](adr/0011-pr-links-from-github-signals-by-repository-conventions.md)).
 - **Draft PRs** get a badge.
 - A PR that fixes several Issues shows under each of them, with "also fixes #N" on its row.
 - **Stacked PRs**: a PR that targets another PR's branch is stacked on it. Its row and PR view say "stacked on #N", and the PR view lists the whole stack in order. Tsugiki reads "Closes #N" from a Stacked PR's description itself, because GitHub ignores it there. When the PR below has merged and a Stacked PR still targets its branch, Tsugiki warns that the Stacked PR will not reach the default branch.

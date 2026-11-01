@@ -145,6 +145,10 @@ _Avoid_: Outdated, dismissed
 The moment the user last opened a PR or an **Issue** in gh-rev, or handed a PR off to a review tool. It is tracked per PR and per Issue; opening an Issue's tree does not update its PRs' Last seen.
 _Avoid_: Last visited, read
 
+**Read-only**:
+gh-rev shows a **Repository** but can't write to GitHub there: when offline, or when the token can't write to that Repository. Comments and reviews can still be written in the composer and copied to GitHub by hand.
+_Avoid_: View-only, guest mode
+
 **Alert**:
 An OS notification that gh-rev raises, such as when CI finishes on an **Own PR**. The user can turn each kind of Alert off.
 _Avoid_: Notification (that word means GitHub's notifications)

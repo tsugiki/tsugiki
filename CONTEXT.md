@@ -7,7 +7,7 @@ A review workbench for a CPython core developer: it groups `python/cpython` PRs 
 ### Work structure
 
 **Issue**:
-A CPython GitHub issue (`gh-NNNNN`) that one or more PRs fix. The PRs say so with the `gh-NNNNN:` prefix in their titles.
+A GitHub issue in the current **Repository** that one or more PRs fix. In CPython a PR names its Issue with the `gh-NNNNN:` prefix in its title; elsewhere it links it the GitHub way ("Fixes #N"). A PR can fix several Issues and then belongs to each of them.
 _Avoid_: Ticket, bug
 
 **Origin PR**:
@@ -72,9 +72,9 @@ _Avoid_: Hit, result
 An **Issue** the user has explicitly put on the **Workbench** in gh-rev. It stays there whether or not any **Filter** matches it. This is unrelated to GitHub's own "pin issue" feature on a repository.
 _Avoid_: Watched issue, starred issue, subscribed issue
 
-**No issue**:
-The **Workbench** group for PRs whose titles carry no `gh-NNNNN` prefix (CPython's `skip issue` PRs).
-_Avoid_: Orphans, misc
+**Standalone PR**:
+A PR that fixes no **Issue**, such as a CPython `skip issue` PR or a dependabot bump. It stands on the **Workbench** as an item of its own, beside the Issues, instead of being grouped.
+_Avoid_: No issue, orphan PR, unlinked PR
 
 ### Reviewing
 

@@ -66,8 +66,27 @@ The raw numbers are in [bench-results.txt](bench-results.txt). At 75 Hz one fram
 - **C is the shape to build: rows stay in Rust, files are highlighted lazily, and rows reach JS in chunks.** It loads 4× faster than A on the huge dataset, uses less than half the heap, and scrolls just as smoothly. Its weak spot is the cold jump. When a jump lands in a large file that hasn't been highlighted yet, Rust highlights the whole file before replying, which made the worst jump 214 ms and the p95 chunk fetch 155 ms. Two ways to fix it: highlight per chunk rather than per file, or keep highlighting in a background thread after the first paint.
 - **Eager highlighting doesn't scale.** syntect manages about 35k rows/s, which works out to 4.2 s for the huge dataset.
 
+## Verdict on macOS (WKWebView, 60 Hz display), 2026-11-01
+
+The raw numbers are in [bench-results-macos.txt](bench-results-macos.txt). At 60 Hz one frame is 16.7 ms. WebKit rounds frame timestamps to whole milliseconds, so a p95 of 17 or 18 ms means no frames were dropped. WebKit doesn't report JS heap size, so there is no memory row.
+
+| | A: rows in JS | B: file blocks | C: rows from Rust |
+|---|---|---|---|
+| big: load to first paint | 0.79 s | 0.76 s | **0.16 s** |
+| huge: load to first paint | 3.14 s (2.3 s highlight) | 2.90 s | **0.78 s** |
+| big: fling at 20k px/s, p95 / worst frame | 18 / 36 ms | 17 / 34 ms | 17 / 18 ms |
+| huge: fling at 20k px/s, p95 / worst frame | 18 / 18 ms | **48 / 494 ms**, 32 fps | 17 / 18 ms |
+| huge: 30 random jumps, avg / worst | 33 / 37 ms | 143 / 691 ms | 49 / 117 ms |
+| huge: fling with Generated files expanded | 18 / 22 ms | 48 / 494 ms | 17 / 19 ms |
+| huge: chunk fetch, avg / p95 | n/a | n/a | 20 / 82 ms |
+| blank frames while scrolling | 0 | 0 | 0 |
+
+- **WKWebView matches WebView2.** Both A and C stay smooth at 150k rows, so the macOS question behind ADR 0001 is settled.
+- **C is the only variant that never dropped a frame on either platform.** A lost a couple of frames flinging through `big` on macOS.
+- **B is worse on macOS than on Windows.** Flinging through `huge` runs at half the frame rate.
+- **The cold-jump cost is still there, but smaller:** 117 ms at worst, against 214 ms on Windows, because the Mac highlights about twice as fast.
+
 **Not yet measured:**
-- **WKWebView on macOS.** Run the autobench there to get those numbers.
 - **The full length of the huge dataset.** Each scroll benchmark is capped at 10 s, so it covers only the first 200k px of about 3M. The random jumps do sample the whole list.
 - **Text selection across recycled rows.** This needs a manual test.
 - **Displays faster than 75 Hz,** where there would be headroom to measure.

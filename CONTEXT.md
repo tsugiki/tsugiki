@@ -74,7 +74,7 @@ A saved GitHub search the user defines, such as "PRs I opened" or "a colleague's
 _Avoid_: Query, section
 
 **All issues**:
-An unsaved **Filter** every **Repository** has, over all its open Issues, most recently updated first. The user narrows it by typing a GitHub search and can save the result as a Filter. It is where the user finds an Issue to read, comment on or pin.
+An unsaved **Filter** every **Repository** has, over all its open Issues and open PRs, most recently updated first. Each PR is its own row there, whether or not it fixes an Issue. The user can show only Issues or only PRs, narrow it by typing a GitHub search, and save the result as a Filter. It is where the user finds an Issue to read, comment on or pin, or a PR to open.
 _Avoid_: Issue browser, backlog
 
 **Built-in view**:

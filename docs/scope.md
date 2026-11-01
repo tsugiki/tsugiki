@@ -142,6 +142,7 @@ Terms in **bold** are defined in [CONTEXT.md](../CONTEXT.md). The reasons behind
 - Export and import of the local database, so marks and Last seen can follow the user between machines.
 - Merging from gh-rev in **Maintained repositories**, including Dependency updates in one go. Until then merging, labels and reviewers stay on GitHub.
 - Linux support, which needs the diff renderer's performance checked on WebKitGTK first.
+- A search box in Settings that finds a setting, a key or a Repository across all pages. Variant A of the Settings prototype (branch `prototype/app-shell`) has one to start from.
 
 ## Ruled out
 

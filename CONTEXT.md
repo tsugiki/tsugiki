@@ -73,7 +73,7 @@ A saved GitHub search the user defines, such as "PRs I opened" or "a colleague's
 _Avoid_: Query, section
 
 **Built-in view**:
-A **Workbench** list that gh-rev defines from its own states, which GitHub search cannot express: Stale reviews, New activity, and Review requests.
+A **Workbench** list that gh-rev defines from its own states, which GitHub search cannot express: Stale reviews, New activity, Review requests, and Hidden (everything **Archived**, **Muted** or from a **Muted author**, each with a way to bring it back).
 _Avoid_: Smart filter, saved view
 
 **Matched PR**:
@@ -87,6 +87,18 @@ _Avoid_: Watched issue, starred issue, subscribed issue
 **Standalone PR**:
 A PR that fixes no **Issue**, such as a CPython `skip issue` PR or a dependabot bump. It stands on the **Workbench** as an item of its own, beside the Issues, instead of being grouped.
 _Avoid_: No issue, orphan PR, unlinked PR
+
+**Archived**:
+A **Workbench** item (an Issue, a **Standalone PR** or **Dependency updates**) the user has put away until something new needs their attention there; then it comes back by itself. Like archiving a mail thread. Kept in gh-rev only.
+_Avoid_: Dismissed, done, snoozed
+
+**Muted**:
+A **Workbench** item the user has hidden until they unmute it, whatever happens to it. Kept in gh-rev only.
+_Avoid_: Ignored, blocked
+
+**Muted author**:
+A person or bot whose Issues and PRs the user has hidden from the **Workbench**, usually because their area is outside the user's interest. Kept in gh-rev only.
+_Avoid_: Blocked user, ignored user
 
 ### Reviewing
 

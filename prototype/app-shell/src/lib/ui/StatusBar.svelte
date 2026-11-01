@@ -1,16 +1,23 @@
 <script lang="ts">
   // PROTOTYPE — throwaway. The status bar: one thin line along the bottom for what is app-wide and has
   // no other place. Left, where the eye spends its time: sync, connection and problems. Right: unsent
-  // Pending reviews, a chord in progress or the keys for this screen, and at the far end background
-  // work. It stays when the Sidebar is hidden.
+  // Pending reviews, a chord in progress, and at the far end background work. The keys for the list
+  // are under the Issue list, not here. It stays when the Sidebar is hidden.
+  //
+  // Each part can be switched off (right-click the bar, or Settings › General › Status bar). Offline and
+  // an expired token always show: nothing else would tell the user.
   import { status, jobs, pendingReviews, refreshNow } from "$lib/state/status.svelte";
   import { goTo } from "$lib/state/app.svelte";
-  import { openSettings, value } from "$lib/state/settings.svelte";
+  import { openSettings, value, setValue } from "$lib/state/settings.svelte";
+  import { STATUS_PARTS, settingDef } from "$lib/core/settings";
   import { chord } from "./chord.svelte";
   import { prettyKey } from "./keys";
-  let { hints }: { hints: string } = $props();
 
   let pop = $state<"jobs" | "pending" | null>(null);
+  let menu = $state<{ x: number } | null>(null);
+  const on = (k: string) => value(k) === true;
+  // With the bar switched off it is only here for a problem, so only the problem shows.
+  const all = $derived(on("status_bar.visible"));
   const js = $derived(jobs());
   const pend = $derived(pendingReviews());
   const comments = $derived(pend.reduce((a, p) => a + p.comments, 0));
@@ -23,37 +30,35 @@
   function openPending(p: { repo: string; pr: number }) { pop = null; goTo(p.repo, `p:${p.pr}`); }
 </script>
 
-<svelte:window onkeydown={(e) => { if (e.key === "Escape" && pop) { pop = null; e.stopPropagation(); } }} />
+<svelte:window onkeydown={(e) => { if (e.key === "Escape" && (pop || menu)) { pop = null; menu = null; e.stopPropagation(); } }} onclick={() => (menu = null)} />
 
-<footer class="sb" class:offline={status.scenario === "offline"}>
+<footer class="sb" class:offline={status.scenario === "offline"} oncontextmenu={(e) => { e.preventDefault(); pop = null; menu = { x: Math.min(e.clientX, innerWidth - 280) }; }}>
   {#if status.scenario === "token"}
     <button class="seg bad" onclick={() => openSettings("Account")} title="gh-rev can read nothing new until this is fixed. Opens Settings › Account.">✕ GitHub token expired · run <code>gh auth login</code></button>
   {:else if status.scenario === "offline"}
     <button class="seg" onclick={refreshNow} title="Showing the mirror and the cached GitHub data. Writing anything (comments, Reviews) needs the network. Click to try again.">⚠ Offline · read-only · data from {clock(status.lastSync)}</button>
-  {:else if status.refreshing != null || status.scenario === "syncing"}
+  {:else if all && on("status_bar.sync") && (status.refreshing != null || status.scenario === "syncing")}
     <span class="seg" title="Details at the right end of the bar">⟳ Syncing…</span>
-  {:else}
+  {:else if all && on("status_bar.sync")}
     <button class="seg" onclick={refreshNow} title="The Workbench refreshes every {value('sync.workbench_minutes')} min (Settings › Sync). Click to refresh now.">✓ Synced {since}</button>
   {/if}
-  {#if status.scenario === "rate"}
+  {#if all && on("status_bar.rate_limit") && status.scenario === "rate"}
     <button class="seg warn" onclick={() => openSettings("Sync")} title="GitHub API rate limit. gh-rev refreshes less often until it resets. Opens Settings › Sync.">API: 212 of 5,000 left · resets {clock(status.now + 23 * 60e3)} · refreshing less often</button>
   {/if}
 
   <span class="grow"></span>
 
-  {#if pend.length}
+  {#if all && on("status_bar.pending_reviews") && pend.length}
     <button class="seg pend" onclick={() => (pend.length === 1 ? openPending(pend[0]) : (pop = pop === "pending" ? null : "pending"))}
       title="Draft comments not yet submitted to GitHub. Click to open {pend.length === 1 ? 'the PR' : 'one'}.">
       ✎ {pend.length === 1 ? `Pending review on #${pend[0].pr}` : `${pend.length} pending reviews`} · {comments} {comments === 1 ? "comment" : "comments"}
     </button>
   {/if}
-  {#if chord.pending}
+  {#if all && on("status_bar.chord") && chord.pending}
     <span class="seg chord">({prettyKey(chord.pending)}) was pressed. Waiting for the second key…</span>
-  {:else}
-    <span class="seg hints">{hints}</span>
   {/if}
   <!-- Background work is rarely what the user looks for, so it sits at the far right. -->
-  {#if js.length}
+  {#if all && on("status_bar.jobs") && js.length}
     <button class="seg jobs" onclick={() => (pop = pop === "jobs" ? null : "jobs")} title="Background work">
       <span class="spin"></span>{js[0].label}
       <span class="meter"><span style="width: {pct(js[0])}%"></span></span>
@@ -65,9 +70,21 @@
     <div class="pop right">
       {#each js as j}<div class="job"><span>{j.label}</span><span class="meter"><span style="width: {pct(j)}%"></span></span><span class="n">{j.unit === "%" ? `${j.done}%` : `${j.done} / ${j.total} ${j.unit}`}</span></div>{/each}
     </div>
-  {:else if pop === "pending"}
+  {:else if pop === "pending" && pend.length}
     <div class="pop right">
       {#each pend as p}<button onclick={() => openPending(p)}><span class="mono">{p.repo}#{p.pr}</span><span class="n">{p.comments} {p.comments === 1 ? "comment" : "comments"}</span></button>{/each}
+    </div>
+  {/if}
+  {#if menu}
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+    <div class="pop menu" style="left: {menu.x}px" onclick={(e) => e.stopPropagation()}>
+      {#each STATUS_PARTS as k}
+        <label><input type="checkbox" checked={on(k)} onchange={(e) => setValue(k, e.currentTarget.checked)} /> {settingDef(k)!.label}</label>
+      {/each}
+      <hr />
+      <button onclick={() => { setValue("status_bar.visible", false); menu = null; }}>Hide the status bar</button>
+      <button onclick={() => { menu = null; openSettings("Status bar"); }}>Status bar settings…</button>
+      <p class="n">Offline and an expired token always show.</p>
     </div>
   {/if}
 </footer>
@@ -84,7 +101,6 @@
   .warn { color: var(--warn); }
   .pend { color: var(--accent); }
   .chord { color: var(--fg); background: var(--sel); }
-  .hints { min-width: 0; }
   code { font: 11.5px var(--mono); }
   .grow { flex: 1; }
   .spin { width: 9px; height: 9px; border: 2px solid var(--muted); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
@@ -98,5 +114,10 @@
   .pop button { all: unset; cursor: pointer; display: flex; justify-content: space-between; gap: 16px; width: 100%; box-sizing: border-box; padding: 4px 6px; border-radius: 4px; }
   .pop button:hover { background: var(--hover); }
   .mono { font-family: var(--mono); }
+  .menu { min-width: 260px; }
+  .menu label { display: flex; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 4px; cursor: pointer; }
+  .menu label:hover { background: var(--hover); }
+  .menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+  .menu p { margin: 4px 6px 2px; font-size: 11px; }
   .n { color: var(--muted); }
 </style>

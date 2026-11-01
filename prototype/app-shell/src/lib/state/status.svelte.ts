@@ -28,6 +28,9 @@ export function refreshNow() {
   }, 300);
 }
 
+/** A problem the user must see even with the status bar switched off. */
+export const critical = () => status.scenario === "offline" || status.scenario === "token";
+
 /** The scenario's background jobs, as the Rust side would report them. */
 export function jobs(): Job[] {
   if (status.refreshing != null) return [{ label: `Refreshing ${app.repo ?? "Repositories"}`, done: Math.round(status.refreshing * 40), total: 40, unit: "items" }];

@@ -2,7 +2,7 @@
   // PROTOTYPE — throwaway. Variant B, "Dialog": a preferences window over the app, a few hand-laid
   // pages instead of one list, and Apply / Cancel. Changes preview live; Cancel (or Esc) puts them back.
   // Repositories is a subtree in the left column, one page per Repository (as in A).
-  import { settingDef, type SettingDef } from "$lib/core/settings";
+  import { settingDef, STATUS_PARTS, type SettingDef } from "$lib/core/settings";
   import { snapshotSettings, restoreSettings, settingsUi, repoConfig } from "$lib/state/settings.svelte";
   import { REPOS, wb, say } from "$lib/state/app.svelte";
   import Field from "./Field.svelte";
@@ -14,7 +14,7 @@
 
   const PAGES = ["General", "Account", "Repositories", "Sync", "Keyboard", "Advanced"] as const;
   type Page = (typeof PAGES)[number];
-  const START: Record<string, Page> = { Account: "Account", Sync: "Sync", Review: "General", Appearance: "General", Storage: "Advanced", Keybindings: "Keyboard", Repositories: "Repositories" };
+  const START: Record<string, Page> = { Account: "Account", Sync: "Sync", Review: "General", Appearance: "General", Storage: "Advanced", Keybindings: "Keyboard", Repositories: "Repositories", "Status bar": "General" };
   // svelte-ignore state_referenced_locally
   let page = $state<Page>(settingsUi.section?.startsWith("repo:") ? "Repositories" : START[settingsUi.section ?? ""] ?? "General");
   // svelte-ignore state_referenced_locally
@@ -29,7 +29,11 @@
   function apply() { if (changed) say("Settings saved to config.toml and local.toml (prototype: in memory)"); onClose(); }
   const d = (k: string) => settingDef(k)!;
   const PAGE_FIELDS: Partial<Record<Page, { title: string; keys: string[] }[]>> = {
-    General: [{ title: "Appearance", keys: ["appearance.theme", "appearance.code_font_size"] }, { title: "Review", keys: ["review.diff_view", "review.collapse_generated"] }],
+    General: [
+      { title: "Appearance", keys: ["appearance.theme", "appearance.code_font_size", "appearance.list_key_hints"] },
+      { title: "Status bar", keys: ["status_bar.visible", ...STATUS_PARTS] },
+      { title: "Review", keys: ["review.diff_view", "review.collapse_generated"] },
+    ],
     Sync: [{ title: "Refresh", keys: ["sync.workbench_minutes", "sync.open_item_seconds"] }, { title: "First sync", keys: ["sync.small_repository", "sync.first_sync_days"] }],
     Advanced: [{ title: "Editor", keys: ["review.editor_command"] }, { title: "Storage", keys: ["storage.config_file", "storage.data_dir"] }],
   };

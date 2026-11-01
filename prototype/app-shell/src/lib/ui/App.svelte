@@ -7,7 +7,7 @@
   import Workspace from "./Workspace.svelte";
   import Settings from "./settings/Settings.svelte";
   import { settingsUi, value } from "$lib/state/settings.svelte";
-  import { status, SCENARIOS } from "$lib/state/status.svelte";
+  import { status, SCENARIOS, critical } from "$lib/state/status.svelte";
   import StatusBar from "./StatusBar.svelte";
   import VariantBar from "./settings/VariantBar.svelte";
 
@@ -29,6 +29,9 @@
     if (theme === "system") delete root.dataset.theme; else root.dataset.theme = String(theme);
     root.style.setProperty("--code-size", `${value("appearance.code_font_size")}px`);
   });
+  // The status bar can be switched off; a problem brings it back by itself.
+  const bar = $derived(value("status_bar.visible") === true || critical());
+  $effect(() => document.documentElement.style.setProperty("--status-h", bar ? "22px" : "0px"));
   // The URL's start-up selection applies to the first Repository shown only.
   let first = $state(true);
   $effect(() => { app.repo; return () => (first = false); });
@@ -42,7 +45,7 @@
     {/key}
   {/if}
 </div>
-<StatusBar hints={app.repo == null ? "↑ ↓ choose · Enter open · Ctrl+R switch · Ctrl+, settings" : "↑ ↓ move · E archive · M mute · Alt+← back · ? keys"} />
+{#if bar}<StatusBar />{/if}
 <!-- PROTOTYPE: the status bar's states that need a backend, simulated. -->
 {#if !settingsUi.open}<VariantBar variants={SCENARIOS} current={status.scenario} onChange={(v) => (status.scenario = v)} bottom={40} prefix="Status" />{/if}
 {#if settingsUi.open}<Settings />{/if}

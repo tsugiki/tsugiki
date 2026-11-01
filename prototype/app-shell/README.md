@@ -149,8 +149,10 @@ Pinned issues are not in Settings (the list can be long): they are managed from 
 A thin line along the bottom of every screen, for what is app-wide and has no other place. It stays when the Sidebar is hidden.
 
 - **Left, where the eye spends its time: sync, connection and problems.** "✓ Synced 2 min ago" (click: refresh now), "⟳ Syncing…" while it runs; **Offline: read-only**, which tints the whole bar; problems that block reading, like an expired token (click: Settings › Account) or a low API rate limit (Settings › Sync).
-- **Right: unsent work, keys, then background work.** "✎ Pending review on #N · 1 comment" for drafts not yet submitted, in any Repository (click: opens the PR in place; several: a list). Then the keys for this screen, or, after the first key of a chord, "(Ctrl+K) was pressed. Waiting for the second key…". At the far right, since it is rarely what the user looks for: background work with a progress meter and "+N" for a list (refresh, mirror fetch, a first sync, patch-id checks).
+- **Right: unsent work, a chord, then background work.** "✎ Pending review on #N · 1 comment" for drafts not yet submitted, in any Repository (click: opens the PR in place; several: a list). After the first key of a chord, "(Ctrl+K) was pressed. Waiting for the second key…". At the far right, since it is rarely what the user looks for: background work with a progress meter and "+N" for a list (refresh, mirror fetch, a first sync, patch-id checks).
 
-The key hints under the Issue list moved here; the list's legend (bar: needs attention, ★ pinned) moved to the `?` overlay.
+The key hints and legend stay under the Issue list, where the eye is when they are needed.
+
+**Switching parts off.** Right-click the status bar for a menu of its parts (Sync status, Rate limit warning, Pending reviews, Chord prompt, Background work), "Hide the status bar" and "Status bar settings…"; the same switches are in Settings › General › Status bar, and they are written to `config.toml`. With the bar hidden, being offline or an expired token still brings it back, showing only the problem. "View: Toggle Status Bar" in the palette brings it back by hand. The key hints under the Issue list switch off in Settings › General › Appearance or with "View: Toggle Key Hints under the Issue List".
 
 Live: Pending reviews (CPython starts with one seeded draft), chords, refresh. Simulated, since there is no backend: syncing, background jobs, offline, token expired, rate limit low. Switch with the floating "Status" bar, or `?status=normal|syncing|jobs|offline|token|rate`.

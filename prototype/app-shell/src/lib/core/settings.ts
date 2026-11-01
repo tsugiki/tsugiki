@@ -25,7 +25,9 @@ export interface SettingDef {
   where: Where;
 }
 
-export const SECTIONS = ["Account", "Sync", "Review", "Appearance", "Storage"] as const;
+export const SECTIONS = ["Account", "Sync", "Review", "Appearance", "Status bar", "Storage"] as const;
+/** The status bar's switchable parts, in the order of its right-click menu. */
+export const STATUS_PARTS = ["status_bar.sync", "status_bar.rate_limit", "status_bar.pending_reviews", "status_bar.chord", "status_bar.jobs"];
 
 export const SETTINGS: SettingDef[] = [
   { key: "auth.source", section: "Account", label: "GitHub token", where: "machine", default: "gh",
@@ -64,6 +66,25 @@ export const SETTINGS: SettingDef[] = [
   { key: "appearance.code_font_size", section: "Appearance", label: "Code font size", where: "synced", default: 13,
     help: "For diffs and code blocks.",
     type: { kind: "number", min: 9, max: 22, unit: "px" } },
+
+  { key: "appearance.list_key_hints", section: "Appearance", label: "Key hints under the Issue list", where: "synced", default: true,
+    help: "The legend and the list's keys (↑ ↓ move, E archive, M mute…). ? always lists every key.",
+    type: { kind: "bool" } },
+
+  // The status bar's parts. Offline and an expired token show whatever these say: nothing else would tell.
+  { key: "status_bar.visible", section: "Status bar", label: "Show the status bar", where: "synced", default: true,
+    help: "Off hides it, except that being offline or an expired token still shows, since nothing else would tell you.",
+    type: { kind: "bool" } },
+  { key: "status_bar.sync", section: "Status bar", label: "Sync status", where: "synced", default: true,
+    help: "“✓ Synced 2 min ago” and “Syncing…”; click to refresh.", type: { kind: "bool" } },
+  { key: "status_bar.rate_limit", section: "Status bar", label: "Rate limit warning", where: "synced", default: true,
+    help: "When few GitHub API calls are left and gh-rev refreshes less often.", type: { kind: "bool" } },
+  { key: "status_bar.pending_reviews", section: "Status bar", label: "Pending reviews", where: "synced", default: true,
+    help: "Draft comments not yet submitted, in any Repository.", type: { kind: "bool" } },
+  { key: "status_bar.chord", section: "Status bar", label: "Chord prompt", where: "synced", default: true,
+    help: "“(Ctrl+K) was pressed. Waiting for the second key…”", type: { kind: "bool" } },
+  { key: "status_bar.jobs", section: "Status bar", label: "Background work", where: "synced", default: true,
+    help: "Mirror fetches, first syncs and patch-id checks, with progress.", type: { kind: "bool" } },
 
   { key: "storage.config_file", section: "Storage", label: "Config file", where: "machine", default: "%APPDATA%\\gh-rev\\config.toml",
     help: "Where config.toml lives. Point it into a folder you sync to share Repositories, Filters, pins and keybindings between machines.",

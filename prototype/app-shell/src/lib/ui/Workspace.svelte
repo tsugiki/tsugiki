@@ -9,7 +9,7 @@
   import { linkTarget } from "$lib/core/links";
   import { wb, my, app, REPOS, boardOf, openRepo, openPr, openIssue, togglePin, toggleMark, say, archive, mute, muteAuthor, unhide, unmuteAuthor } from "$lib/state/app.svelte";
   import { openInBrowser } from "$lib/platform/shell";
-  import { settingsUi, openSettings, value } from "$lib/state/settings.svelte";
+  import { settingsUi, openSettings, value, setValue } from "$lib/state/settings.svelte";
   import { ago, waitingText, depsUrl } from "./format";
   import StateDot from "./StateDot.svelte";
   import KindIcon from "./KindIcon.svelte";
@@ -148,6 +148,8 @@
     ...REPOS.map((r) => ({ label: `Repository: ${r}`, key: r === repo.name ? "current" : undefined, run: () => openRepo(r) })),
     { label: "Home: all Repositories", run: () => openRepo(null) },
     { label: "Preferences: Open Settings", key: "Ctrl+,", run: () => openSettings() },
+    { label: "View: Toggle Status Bar", run: () => setValue("status_bar.visible", !value("status_bar.visible")) },
+    { label: "View: Toggle Key Hints under the Issue List", run: () => setValue("appearance.list_key_hints", !value("appearance.list_key_hints")) },
     { label: "Preferences: Keyboard Shortcuts", run: () => openSettings("Keybindings") },
     { label: `Preferences: Settings for ${repo.name}`, run: () => openSettings(`repo:${repo.name}`) },
     { label: "Toggle sidebar", key: "Ctrl+B", run: () => (side = !side) },
@@ -294,6 +296,10 @@
         <button class="quietbtn" onclick={() => say("Would fetch the next page of older Issues and PRs from GitHub (prototype: the snapshot has the latest page only)")}>Load older…</button>
       {/if}
     </div>
+    <!-- The keys for the list, where the eye is when they are needed. -->
+    {#if value("appearance.list_key_hints")}<footer class="legend">
+      <span><i class="bar"></i> needs attention</span><span>★ pinned</span><span class="muted">↑ ↓ move · E archive · M mute · Alt+← back · ? all keys</span>
+    </footer>{/if}
   </section>
 
   <!-- Clicks are on the links inside; this only routes them. -->
@@ -402,6 +408,9 @@
   .acts .ic:hover { color: var(--accent); }
   .acts button:not(.ic):not(.pin) { font-size: 11px; padding: 0 6px; }
   .pin { all: unset; cursor: pointer; color: var(--muted); padding: 0 2px; } .pin.on { color: var(--warn); }
+  .bar { display: inline-block; width: 3px; height: 10px; background: var(--accent); vertical-align: middle; }
+  .legend { display: flex; gap: 10px; align-items: center; padding: 5px 10px; border-top: 1px solid var(--line); font-size: 11px; color: var(--fg); background: var(--panel); flex-wrap: wrap; }
+  .legend span { display: inline-flex; gap: 4px; align-items: center; }
   .quietbtn { all: unset; display: block; padding: 10px; font-size: 12px; color: var(--muted); cursor: pointer; }
   .right { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
   .prhead { padding: 10px 16px 0; border-bottom: 1px solid var(--line); }

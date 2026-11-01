@@ -48,8 +48,12 @@ _Avoid_: Blurb, changelog entry
 
 ### Workbench
 
+**Repository**:
+A GitHub repository the user works in through gh-rev, such as `python/cpython`. The user works in one Repository at a time and switches between them; each has its own **Workbench**, **Filters** and **Pinned issues**, and nothing is listed across Repositories.
+_Avoid_: Project, workspace, repo list
+
 **Workbench**:
-The home list of **Issues** the user is currently following: every Issue that a **Filter** reaches, that is a **Pinned issue**, or that has an open PR the user holds a **Review** on. An Issue being closed on GitHub does not remove it.
+The home list of **Issues** the user is currently following in the current **Repository**: every Issue that a **Filter** reaches, that is a **Pinned issue**, or that has an open PR the user holds a **Review** on. An Issue being closed on GitHub does not remove it.
 _Avoid_: Dashboard, inbox
 
 **Filter**:

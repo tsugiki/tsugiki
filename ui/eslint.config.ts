@@ -11,7 +11,7 @@ import svelteConfig from "./svelte.config.js";
 const src = resolve(import.meta.dirname, "src");
 
 export default defineConfig(
-  globalIgnores([".svelte-kit/", "build/", "src/lib/data/bindings.ts"]),
+  globalIgnores([".svelte-kit/", "build/", "test-results/", "src/lib/data/bindings.ts"]),
   js.configs.recommended,
   ts.configs.recommended,
   svelte.configs.recommended,
@@ -22,7 +22,7 @@ export default defineConfig(
   },
   {
     // Tooling runs in Node; the webview code under src/ doesn't.
-    files: ["*.config.ts", "*.config.js", "eslint/**/*.ts"],
+    files: ["*.config.ts", "*.config.js", "eslint/**/*.ts", "e2e/**/*.ts"],
     languageOptions: { globals: globals.node },
   },
   {

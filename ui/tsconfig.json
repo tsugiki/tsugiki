@@ -19,6 +19,7 @@
     "src/**/*.ts",
     "src/**/*.svelte",
     "eslint/**/*.ts",
+    "e2e/**/*.ts",
     "*.config.ts",
     "*.config.js",
     "../scripts/**/*.ts"

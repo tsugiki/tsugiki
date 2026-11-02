@@ -53,6 +53,16 @@ tester.run("layers/imports", layers.rules.imports, {
       code: `import { range } from "./range"; // no window here\nexport const rows = range(3);`,
     },
     {
+      filename: at("lib/ui/Lazy.ts"),
+      options,
+      code: `const a = await import(name); const b = await import(\`$lib/ui/\${name}\`); const c = await import(1);`,
+    },
+    {
+      filename: at("lib/core/rows.ts"),
+      options,
+      code: `export const n = undeclaredButNotBanned();`,
+    },
+    {
       filename: at("app.d.ts"),
       options,
       code: `import type { Anything } from "anything";`,
@@ -122,6 +132,26 @@ tester.run("layers/imports", layers.rules.imports, {
       options,
       code: `export const x = 1;`,
       errors: [{ message: "not in a known layer (core, data, state, platform, ui, routes)" }],
+    },
+    {
+      // The real config declares the browser's globals, and they resolve differently from undeclared names.
+      filename: at("lib/core/rows.ts"),
+      options,
+      languageOptions: { globals: { document: "readonly", console: "readonly" } },
+      code: `const fetch = () => 1; console.log(document.title, fetch());`,
+      errors: [{ message: "core must not use document" }],
+    },
+    {
+      filename: at("lib"),
+      options,
+      code: `export const x = 1;`,
+      errors: [{ message: "not in a known layer (core, data, state, platform, ui, routes)" }],
+    },
+    {
+      filename: at("lib/ui/About.ts"),
+      options,
+      code: `import "$lib/";`,
+      errors: [{ message: "ui must not import  ($lib/)" }],
     },
     {
       filename: at("lib/helpers.ts"),

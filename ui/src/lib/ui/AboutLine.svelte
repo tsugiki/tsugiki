@@ -5,7 +5,8 @@
 </script>
 
 {#if about}
-  <p>{about.name} {about.version}</p>
+  <!-- One expression: Svelte compiles `{a} {b}` with `?? ""` branches that no test can reach. -->
+  <p>{`${about.name} ${about.version}`}</p>
 {:else if error}
   <p>The core didn't answer: {error}</p>
 {:else}

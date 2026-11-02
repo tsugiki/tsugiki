@@ -1,5 +1,6 @@
 .svelte-kit/
 build/
 test-results/
+coverage/
 node_modules/
 src/lib/data/bindings.ts

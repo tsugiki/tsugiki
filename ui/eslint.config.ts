@@ -5,13 +5,14 @@ import svelte from "eslint-plugin-svelte";
 import { defineConfig, globalIgnores } from "eslint/config";
 import globals from "globals";
 import ts from "typescript-eslint";
+import coverage from "./eslint/coverage.ts";
 import layers from "./eslint/layers.ts";
 import svelteConfig from "./svelte.config.js";
 
 const src = resolve(import.meta.dirname, "src");
 
 export default defineConfig(
-  globalIgnores([".svelte-kit/", "build/", "test-results/", "src/lib/data/bindings.ts"]),
+  globalIgnores([".svelte-kit/", "build/", "test-results/", "coverage/", "src/lib/data/bindings.ts"]),
   js.configs.recommended,
   ts.configs.recommended,
   svelte.configs.recommended,
@@ -35,6 +36,10 @@ export default defineConfig(
         svelteConfig,
       },
     },
+  },
+  {
+    plugins: { coverage },
+    rules: { "coverage/reason": "error" },
   },
   {
     files: ["src/**/*.ts", "src/**/*.svelte"],

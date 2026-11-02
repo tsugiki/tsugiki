@@ -9,6 +9,21 @@ export default defineConfig({
   server: { port: 1420, strictPort: true },
   test: {
     environment: "jsdom",
-    include: ["src/**/*.test.ts", "eslint/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "eslint/**/*.test.ts", "../scripts/**/*.test.ts"],
+    // TypeScript's coverage gate (ADR 0009). `npm run coverage -w ui` turns it on.
+    coverage: {
+      provider: "v8",
+      allowExternal: true,
+      include: ["src/**/*.{ts,svelte}", "eslint/**/*.ts", "../scripts/**/*.ts"],
+      exclude: [
+        // coverage: generated from the Rust commands, and every test mocks it.
+        "src/lib/data/bindings.ts",
+        // coverage: a command line around cargo, with its logic in the files it calls.
+        "../scripts/bindings.ts",
+        "../scripts/rust-coverage.ts",
+      ],
+      thresholds: { 100: true },
+      reporter: ["text"],
+    },
   },
 });

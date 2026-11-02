@@ -12,6 +12,23 @@ The five default roles, each label named after its role: `needs-triage`, `needs-
 
 Single-context: `CONTEXT.md` and `docs/adr/` at the repo root, plus `docs/scope.md` and `docs/build-order.md`. See `docs/agents/domain.md`.
 
+## Rust design rules
+
+Clippy enforces most of our rules, and `Cargo.toml` and `clippy.toml` give the reason for each. No tool can
+check these five, so check them yourself when you write or review Rust:
+
+- **Make invalid states unrepresentable.** Put each field on the enum variant it belongs to. Otherwise each
+  reader has to remember which combinations can't happen, and the compiler can't help them.
+- **Parse at the boundary.** Turn what `gh`, GitHub or the disk gives you into typed values where it enters
+  the core. Code further in then has nothing left to re-check, and a bad answer fails in one place.
+- **No trait with a single implementation.** A test double counts as a second. With only one, the trait adds a
+  layer to read through and hides nothing.
+- **No stringly typed data.** Give a value with a fixed set of choices an enum, and give values a caller could
+  mix up their own types. The compiler then catches the typo or the swapped arguments, and a `String` catches
+  neither.
+- **One clear owner for each piece of data.** Everything else asks the owner or holds a read-only copy. With
+  two owners the copies drift apart, and the UI shows whichever it read last.
+
 ## Writing prose
 
 Check docs, commit messages, issues and PRs with `/stop-slop` before you publish them.

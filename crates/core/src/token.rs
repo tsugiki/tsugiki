@@ -22,6 +22,10 @@ pub struct Token(String);
 
 impl Token {
     /// Asks `gh` for its token.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the cause goes to the local log once #58 adds one"
+    )]
     pub fn from_gh(run: RunGh) -> Result<Self, Error> {
         let refused = || Error::new(ErrorKind::Unauthorized, SIGN_IN);
         let output = run(&["auth", "token", "--hostname", "github.com"]).map_err(|_| refused())?;

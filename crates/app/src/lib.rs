@@ -54,10 +54,10 @@ mod tests {
         let board = Arc::new(StatusBoard::new(Box::new(|_| {})));
         // With no token from gh, `connect` never gets as far as using the network.
         let gh_missing = |_: &[&str]| Err(std::io::Error::from(std::io::ErrorKind::NotFound));
-        connect(&board, Box::new(Https::new()), gh_missing);
+        let _ = connect(&board, Box::new(Https::new()), gh_missing);
 
         let app = mock_app();
-        app.manage(board);
+        let _ = app.manage(board);
         assert!(matches!(
             status(app.state()),
             Status::Problem { problem } if problem.kind == ErrorKind::Unauthorized

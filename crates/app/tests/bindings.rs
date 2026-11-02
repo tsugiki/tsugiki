@@ -15,7 +15,7 @@ fn bindings_are_up_to_date() {
         .export(Typescript::default().header(HEADER), &fresh_path)
         .expect("export bindings");
     let fresh = std::fs::read_to_string(&fresh_path).expect("read fresh bindings");
-    std::fs::remove_file(&fresh_path).ok();
+    std::fs::remove_file(&fresh_path).expect("remove the fresh bindings");
 
     let committed = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ui/src/lib/data/bindings.ts");
     if std::env::var("TSUGIKI_UPDATE_BINDINGS").as_deref() == Ok("1") {

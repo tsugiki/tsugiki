@@ -1,5 +1,10 @@
 //! The limits ADR 0005 sets on what the app can reach. Changing one should be a visible decision.
 
+#![expect(
+    clippy::unwrap_used,
+    reason = "a test fails by panicking, and these helpers sit outside any #[test] function"
+)]
+
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};

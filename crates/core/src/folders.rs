@@ -33,6 +33,11 @@ pub struct Folders {
 }
 
 impl Folders {
+    /// Where `tsugiki.db` is.
+    pub fn database(&self) -> PathBuf {
+        self.data.join("tsugiki.db")
+    }
+
     /// Finds the portable folder next to the program if there is one, and the installed folders if not.
     pub fn find(os: Os, exe: &Path, env: &dyn Fn(&str) -> Option<OsString>) -> Result<Self, Error> {
         if let Some(portable) = portable_folder(os, exe) {

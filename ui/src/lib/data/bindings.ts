@@ -49,6 +49,9 @@ export type Error_Serialize = {
 	message: string,
 } & ErrorKind_Serialize;
 
+/**  A GitHub username. It reaches the UI as a plain string. */
+export type Login = string;
+
 /**  The app's state, shown in the status bar. */
 export type Status = Status_Serialize | Status_Deserialize;
 
@@ -63,15 +66,31 @@ export type StatusChanged_Serialize = Status_Serialize;
 
 /**  The app's state, shown in the status bar. */
 export type Status_Deserialize = 
-/**  Tsugiki hasn't heard from GitHub yet. */
-{ state: "connecting" } | { state: "online"; login: string } | { state: "offline" } | 
+/**  Nobody is known yet, and GitHub hasn't answered. */
+{ state: "connecting" } | 
+/**  GitHub hasn't answered yet, and this is who was signed in last time. */
+{ state: "connecting_as"; last_login: Login } | 
+/**  GitHub confirmed this login just now. */
+{ state: "online"; login: Login } | 
+/**  Nobody is known, and GitHub can't be reached. */
+{ state: "offline" } | 
+/**  GitHub can't be reached, and this is who was signed in last time. */
+{ state: "offline_as"; last_login: Login } | 
 /**  Something stops Tsugiki reading, such as a refused token. */
 { state: "problem"; problem: Error_Deserialize };
 
 /**  The app's state, shown in the status bar. */
 export type Status_Serialize = 
-/**  Tsugiki hasn't heard from GitHub yet. */
-{ state: "connecting" } | { state: "online"; login: string } | { state: "offline" } | 
+/**  Nobody is known yet, and GitHub hasn't answered. */
+{ state: "connecting" } | 
+/**  GitHub hasn't answered yet, and this is who was signed in last time. */
+{ state: "connecting_as"; last_login: Login } | 
+/**  GitHub confirmed this login just now. */
+{ state: "online"; login: Login } | 
+/**  Nobody is known, and GitHub can't be reached. */
+{ state: "offline" } | 
+/**  GitHub can't be reached, and this is who was signed in last time. */
+{ state: "offline_as"; last_login: Login } | 
 /**  Something stops Tsugiki reading, such as a refused token. */
 { state: "problem"; problem: Error_Serialize };
 

@@ -4,9 +4,10 @@ pub mod live;
 pub mod record;
 pub mod replay;
 
-use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use specta::Type;
 
 use crate::error::{Error, ErrorKind};
 use crate::token::Token;
@@ -35,10 +36,25 @@ pub trait Transport: Send + Sync {
     fn post(&self, token: &Token, request: &Request<'_>) -> Result<Reply, Unreachable>;
 }
 
+/// A GitHub username. It reaches the UI as a plain string.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(transparent)]
+pub struct Login(String);
+
+impl Login {
+    pub fn new(login: &str) -> Self {
+        Self(login.to_owned())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// The signed-in user.
 #[derive(Debug, PartialEq, Eq, Deserialize)]
 pub struct Viewer {
-    pub login: String,
+    pub login: Login,
 }
 
 const VIEWER: Request<'static> = Request {
@@ -197,7 +213,7 @@ mod tests {
     fn github_says_who_the_user_is() {
         let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
         let viewer = client(replay::Replayer::new(fixtures)).viewer().unwrap();
-        assert_eq!(viewer.login, "sergey-miryanov");
+        assert_eq!(viewer.login, Login::new("sergey-miryanov"));
     }
 
     #[test]
@@ -206,7 +222,7 @@ mod tests {
         assert_eq!(
             viewer.viewer().unwrap(),
             Viewer {
-                login: "octocat".to_owned()
+                login: Login::new("octocat")
             }
         );
     }

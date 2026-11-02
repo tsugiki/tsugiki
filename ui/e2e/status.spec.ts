@@ -16,6 +16,18 @@ test("the status bar shows Offline without the network", async ({ page }) => {
   await expect(page.getByRole("status")).toHaveText("Offline: read-only");
 });
 
+test("the status bar shows the last login before the core has reached GitHub", async ({ page }) => {
+  await mockCore(page, { status: { state: "connecting_as", last_login: "octocat" } });
+  await page.goto("/");
+  await expect(page.getByRole("status")).toHaveText("octocat · Connecting…");
+});
+
+test("the status bar shows the last login while offline", async ({ page }) => {
+  await mockCore(page, { status: { state: "offline_as", last_login: "octocat" } });
+  await page.goto("/");
+  await expect(page.getByRole("status")).toHaveText("octocat · Offline: read-only");
+});
+
 test("the status bar follows the core's status event", async ({ page }) => {
   await mockCore(page, { status: { state: "connecting" } });
   await page.goto("/");

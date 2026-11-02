@@ -14,20 +14,23 @@ Tsugiki watches both files and applies a hand edit at once. A file that doesn't 
 ```
 installed, Windows
   %LOCALAPPDATA%\Programs\Tsugiki\tsg.exe       the program
-  %LOCALAPPDATA%\Tsugiki\                       tsugiki.db, machine.toml, repos\
-  %APPDATA%\Tsugiki\settings.toml               roaming, unless settings_path says otherwise
+  %LOCALAPPDATA%\tsugiki\                       tsugiki.db, machine.toml, repos\
+  %APPDATA%\tsugiki\settings.toml               roaming, unless settings_path says otherwise
 
 installed, macOS
   /Applications/Tsugiki.app
-  ~/Library/Application Support/Tsugiki/        settings.toml, machine.toml, tsugiki.db, repos/
+  ~/Library/Application Support/tsugiki/        settings.toml, machine.toml, tsugiki.db, repos/
 
 portable
   <folder>\tsg.exe
   <folder>\data\                                settings.toml, machine.toml, tsugiki.db, repos\
-  (macOS: Tsugiki-portable-data/ next to Tsugiki.app)
+  (macOS: tsugiki-portable-data/ next to Tsugiki.app)
 ```
 
-**Portable mode** works as in VS Code: when a `data` folder sits next to `tsg.exe`, or a `Tsugiki-portable-data` folder next to `Tsugiki.app`, everything lives there instead. The folder can be carried to another machine, but it shouldn't sit in a syncing folder while Tsugiki runs, for the reason ADR 0010 gives. A personal access token stays in each machine's keychain.
+**Portable mode** works as in VS Code: when a `data` folder sits next to `tsg.exe`, or a
+`tsugiki-portable-data` folder next to `Tsugiki.app`, everything lives there instead. The folder can be
+carried to another machine, but it shouldn't sit in a syncing folder while Tsugiki runs, for the reason ADR
+0010 gives. A personal access token stays in each machine's keychain.
 
 ## Considered Options
 
@@ -36,11 +39,15 @@ portable
 - **Pinned issues and Muted authors in `settings.toml`**, as scope.md first had them. They change as the user works, from the Sidebar and the Issue list, which is state, not configuration. Keeping them in the file would mean rewriting it all the time.
 - **Fixed locations only**, synced by a symlink the user makes, or **all files next to the database**, synced by copying.
 - **Data always beside the program**, with no app-data folders. On macOS nothing may be written inside `Tsugiki.app`, and on Windows the uninstaller would have to tell data from program files.
-- **Keeping Tauri's per-user install folder**, `%LOCALAPPDATA%\Tsugiki`, which is where ADR 0010 put the data. The program and its data would share a folder.
+- **Keeping Tauri's per-user install folder**, `%LOCALAPPDATA%\tsugiki`, which is where ADR 0010 put the data.
+  The program and its data would share a folder.
 
 ## Consequences
 
-- The per-user NSIS installer ([ADR 0012](0012-unsigned-v1-releases-from-a-tag-attested-and-checked.md)) installs into `%LOCALAPPDATA%\Programs\Tsugiki`, as VS Code's user setup does. Its "Delete app data" box removes `%LOCALAPPDATA%\Tsugiki` and `%APPDATA%\Tsugiki`, not the `io.github.tsugiki` folder Tauri's uninstaller would remove.
+- The per-user NSIS installer ([ADR 0012](0012-unsigned-v1-releases-from-a-tag-attested-and-checked.md))
+  installs into `%LOCALAPPDATA%\Programs\Tsugiki`, as VS Code's user setup does. Its "Delete app data" box
+  removes `%LOCALAPPDATA%\tsugiki` and `%APPDATA%\tsugiki`, not the `io.github.tsugiki` folder Tauri's
+  uninstaller would remove.
 - Releases add a Windows portable `.zip`, attested like the installers.
 - A Repository removed from `settings.toml` by hand keeps its rows in the database, so adding it back restores its pins and marks. Remove repository in Settings deletes them and the mirror, as ADR 0010 says.
 - A missing `settings.toml` at `settings_path` starts from the defaults, and the status bar says so.

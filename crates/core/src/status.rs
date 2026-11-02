@@ -75,6 +75,7 @@ pub struct GitHubAccess {
 
 /// Shows who was signed in last time, reads gh's token, asks GitHub who it belongs to, and shows the result
 /// on `board`. Returns the client when there is a token, even offline, since GitHub may come back.
+#[must_use = "without the client, nothing asks GitHub again"]
 pub fn connect(board: &StatusBoard, store: &Store, access: GitHubAccess) -> Option<GitHub> {
     // The last login only fills the status bar for a moment, so a failed read doesn't stop Tsugiki
     // connecting. `refresh` uses the store next, and shows the problem if the store is still failing.
@@ -268,7 +269,7 @@ mod tests {
     #[test]
     fn signing_in_remembers_the_login() {
         let store = store_remembering("hubot");
-        let _github = connect(&quiet_board(), &store, octocat_answers());
+        assert!(connect(&quiet_board(), &store, octocat_answers()).is_some());
         assert_eq!(store.last_login().unwrap(), Some(Login::new("octocat")));
     }
 
@@ -276,7 +277,7 @@ mod tests {
     fn the_last_login_shows_before_github_answers() {
         let (board, seen) = watched_board();
         let store = store_remembering("hubot");
-        let _github = connect(&board, &store, octocat_answers());
+        assert!(connect(&board, &store, octocat_answers()).is_some());
         assert_eq!(
             *seen.lock().unwrap(),
             [
@@ -291,7 +292,7 @@ mod tests {
     #[test]
     fn nobody_is_shown_before_the_first_answer() {
         let (board, seen) = watched_board();
-        let _github = connect(&board, &empty_store(), octocat_answers());
+        assert!(connect(&board, &empty_store(), octocat_answers()).is_some());
         assert_eq!(*seen.lock().unwrap(), [octocat()]);
     }
 
@@ -331,7 +332,7 @@ mod tests {
     fn a_refused_token_is_a_problem_and_keeps_the_last_login_stored() {
         let board = quiet_board();
         let store = store_remembering("hubot");
-        let _github = connect(&board, &store, answering(401, ""));
+        assert!(connect(&board, &store, answering(401, "")).is_some());
         assert_eq!(problem_kind(board.get()), Some(ErrorKind::Unauthorized));
         assert_eq!(store.last_login().unwrap(), Some(Login::new("hubot")));
     }
@@ -378,7 +379,7 @@ mod tests {
     #[test]
     fn every_change_is_announced() {
         let (board, seen) = watched_board();
-        let _github = connect(&board, &empty_store(), offline());
+        assert!(connect(&board, &empty_store(), offline()).is_some());
         assert_eq!(*seen.lock().unwrap(), [Status::Offline]);
     }
 

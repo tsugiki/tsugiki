@@ -60,7 +60,7 @@ mod tests {
             run_gh: |_| Err(std::io::Error::from(std::io::ErrorKind::NotFound)),
         };
         let store = Store::open(Path::new(":memory:")).unwrap();
-        let _ = connect(&board, &store, access);
+        assert!(connect(&board, &store, access).is_none());
         store.close();
 
         let app = mock_app();

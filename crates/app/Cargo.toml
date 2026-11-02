@@ -18,13 +18,16 @@ path = "src/main.rs"
 tauri-build.workspace = true
 
 [dependencies]
+serde.workspace = true
 specta.workspace = true
 tauri.workspace = true
 tauri-specta.workspace = true
 tsugiki-core.workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
 specta-typescript.workspace = true
+tauri = { workspace = true, features = ["test"] }
 
 [lints]
 workspace = true

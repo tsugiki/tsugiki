@@ -12,12 +12,14 @@ repository = "https://github.com/tsugiki/tsugiki"
 [workspace.dependencies]
 divan = { package = "codspeed-divan-compat", version = "=6.0.0" }
 serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
 specta = { version = "=2.0.0-rc.26", features = ["derive"] }
 specta-typescript = "=0.0.13"
 tauri = "2.12.5"
 tauri-build = "2.7.4"
 tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
 tsugiki-core = { path = "crates/core" }
+ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

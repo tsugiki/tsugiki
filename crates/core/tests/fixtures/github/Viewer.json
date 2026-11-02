@@ -1,0 +1,12 @@
+{
+  "body": {
+    "data": {
+      "viewer": {
+        "login": "sergey-miryanov"
+      }
+    }
+  },
+  "query": "query Viewer { viewer { login } }",
+  "reset": 1793616813,
+  "status": 200
+}

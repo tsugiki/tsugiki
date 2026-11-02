@@ -9,6 +9,7 @@
 
 <p align="center">
   <a href="https://codecov.io/gh/tsugiki/tsugiki"><img alt="codecov" src="https://codecov.io/gh/tsugiki/tsugiki/graph/badge.svg?token=4DS69EB5ML"></a>
+  <a href="https://app.codspeed.io/tsugiki/tsugiki?utm_source=badge"><img alt="CodSpeed" src="https://img.shields.io/endpoint?url=https://app.codspeed.io/badge.json"></a>
 </p>
 
 ---

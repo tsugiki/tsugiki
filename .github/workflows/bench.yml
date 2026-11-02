@@ -1,0 +1,53 @@
+# The benchmarks under CodSpeed's simulation mode (ADR 0017). CodSpeed's own check on the PR
+# fails on a regression. This job needs only Linux, so tsugiki-core must build there.
+name: Benchmarks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # Lets CodSpeed run past commits, to build its first baseline.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Every commit on main gets its own run, because CodSpeed compares a PR with its base commit.
+  group: bench-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  benchmarks:
+    name: benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write # CodSpeed authenticates with GitHub's OIDC, so no secret is needed.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      # install-action has no checksummed manifest for this tool, so it's pinned here instead.
+      - name: Install cargo-codspeed 6.0.0
+        run: |
+          curl -fsSL -o cargo-codspeed https://github.com/CodSpeedHQ/codspeed-rust/releases/download/v6.0.0/cargo-codspeed-x86_64-unknown-linux-musl
+          echo "99b4ada4e00a0b4e153f5fe50f70844898cbd6f77274cbe29e44bf671e5f85d8  cargo-codspeed" | sha256sum --check
+          install -m 755 cargo-codspeed ~/.cargo/bin/cargo-codspeed
+          rm cargo-codspeed
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: npm ci
+      - run: cargo codspeed build -p tsugiki-core
+      - uses: CodSpeedHQ/action@61efe07e57e55bedeab750c434504de272a56e8c # v5.6.1
+        with:
+          mode: simulation
+          run: cargo codspeed run -p tsugiki-core && npm run bench -w ui

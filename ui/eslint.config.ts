@@ -47,7 +47,7 @@ export default defineConfig(
     rules: { "layers/imports": ["error", { src }] },
   },
   {
-    files: ["src/**/*.test.ts"],
+    files: ["src/**/*.test.ts", "src/**/*.bench.ts"],
     rules: { "layers/imports": ["error", { src, extraPackages: ["vitest", "@testing-library/svelte"] }] },
   },
 );

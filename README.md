@@ -7,6 +7,10 @@
 
 <p align="center">A review workbench for CPython core developers, and for the projects they maintain.</p>
 
+<p align="center">
+  <a href="https://codecov.io/gh/tsugiki/tsugiki"><img alt="codecov" src="https://codecov.io/gh/tsugiki/tsugiki/graph/badge.svg?token=4DS69EB5ML"></a>
+</p>
+
 ---
 
 Tsugiki (接ぎ木, *grafting*) is a desktop app for taking in your GitHub work without the email inbox or the slow web UI. The name comes from **Backports**: a fix lands on main and is grafted onto each maintenance branch.

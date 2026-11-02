@@ -11,7 +11,10 @@ Tests are built in layers. Fast ones run on every PR on Windows and macOS. The s
 
 - Rust: 100% of lines and functions with `cargo-llvm-cov` on stable Rust, merged from the Windows and macOS jobs, so code that runs on only one OS is still counted. Branch coverage would need nightly, and [ADR 0007](0007-core-library-and-thin-tauri-app.md) pins stable.
 - TypeScript: 100% of lines, branches, functions and statements, measured by Vitest.
-- Excluded, in one config per language, each with a reason: the generated bindings, and `crates/app`'s Tauri start-up code, which the smoke tests cover instead. Any other exclusion carries a `// coverage: <reason>` comment that review sees.
+- Excluded, in one config per language, each with a reason: the generated bindings, `crates/app`'s Tauri
+  start-up code, which the smoke tests cover instead, and the file holding the core's real network and
+  real `gh`, which tests replace and the release checks exercise. Any other exclusion carries a
+  `// coverage: <reason>` comment that review sees.
 - Codecov shows the same reports on each PR, with the uncovered lines. It only reports: its statuses are informational and a failed upload doesn't fail CI, so an outage there can't block a merge. The gates above decide.
 
 ## Considered Options

@@ -4,15 +4,41 @@ import type { commands } from "../src/lib/data/bindings.ts";
 /** What each command answers. A command left out rejects, as it would if the core failed. */
 export type CoreAnswers = { [C in keyof typeof commands]?: Awaited<ReturnType<(typeof commands)[C]>> };
 
+type Listener = (message: { event: string; id: number; payload: unknown }) => void;
+type MockWindow = { mockEventListeners: Record<string, Listener[]> };
+
 /** Stands in for Tauri's IPC: the page's generated bindings get these answers instead of the core's. */
 export const mockCore = (page: Page, answers: CoreAnswers) =>
   page.addInitScript((answers: Record<string, unknown>) => {
+    const listeners: MockWindow["mockEventListeners"] = {};
+    const callbacks = new Map<number, Listener>();
     Object.assign(window, {
+      mockEventListeners: listeners,
       __TAURI_INTERNALS__: {
-        invoke: async (command: string) => {
+        transformCallback: (callback: Listener) => {
+          const id = callbacks.size + 1;
+          callbacks.set(id, callback);
+          return id;
+        },
+        invoke: async (command: string, args: { event: string; handler: number }) => {
+          if (command === "plugin:event|listen") {
+            (listeners[args.event] ??= []).push(callbacks.get(args.handler) as Listener);
+            return callbacks.size;
+          }
           if (Object.hasOwn(answers, command)) return answers[command];
           throw new Error(`the core has no answer for ${command}`);
         },
       },
     });
   }, answers);
+
+/** Sends an event to the page, as the core would. */
+export const emitFromCore = (page: Page, event: string, payload: unknown) =>
+  page.evaluate(
+    ([event, payload]) => {
+      const name = event as string;
+      const { mockEventListeners } = window as unknown as MockWindow;
+      for (const listener of mockEventListeners[name] ?? []) listener({ event: name, id: 1, payload });
+    },
+    [event, payload],
+  );

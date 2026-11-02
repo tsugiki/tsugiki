@@ -16,6 +16,7 @@
     "test": "npm run vitest && npm run cargo-test && npm run stale-bindings",
     "e2e": "npm run e2e -w ui",
     "bench": "cargo bench -p tsugiki-core && npm run bench -w ui",
+    "record": "cargo run -p tsugiki-core --example record",
     "tauri": "tauri",
     "eslint": "npm run eslint -w ui && eslint scripts eslint.config.ts",
     "prettier": "npm run prettier -w ui && prettier --check scripts .github eslint.config.ts codecov.yml",

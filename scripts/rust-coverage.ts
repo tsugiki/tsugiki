@@ -11,6 +11,8 @@ const EXCLUDED = [
   "crates/app/src/startup\\.rs$",
   // coverage: the binary's entry point only calls the start-up code.
   "crates/app/src/main\\.rs$",
+  // coverage: the real network and the real gh, which tests replace and release checks exercise.
+  "crates/core/src/github/live\\.rs$",
 ];
 
 const measure = (path: string) => {

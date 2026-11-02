@@ -46,7 +46,7 @@ type Options = { src: string; extraPackages?: string[] };
 
 const layerOf = (src: string, file: string) => {
   const parts = relative(src, file).split(sep);
-  return parts[0] === "lib" ? parts[1] : parts[0];
+  return parts[parts[0] === "lib" ? 1 : 0] ?? "";
 };
 
 const imports: Rule.RuleModule = {
@@ -76,7 +76,7 @@ const imports: Rule.RuleModule = {
     const file = context.filename;
     const top = relative(src, file).split(sep)[0];
     if (top !== "lib" && top !== "routes") return {};
-    const from = layerOf(src, file) ?? "";
+    const from = layerOf(src, file);
     const rule = Object.hasOwn(ALLOWED, from) ? ALLOWED[from] : undefined;
     if (!rule) {
       return {
@@ -94,7 +94,7 @@ const imports: Rule.RuleModule = {
         source.type === "Literal"
           ? source.value
           : source.type === "TemplateLiteral" && source.expressions.length === 0
-            ? source.quasis[0]?.value.cooked
+            ? source.quasis[0]!.value.cooked
             : undefined;
       if (typeof spec !== "string") return;
       const node = source as Rule.Node;
@@ -102,7 +102,7 @@ const imports: Rule.RuleModule = {
         const target = spec.startsWith("$lib/")
           ? join(src, "lib", spec.slice(5))
           : resolve(dirname(file), spec);
-        const to = layerOf(src, target) ?? "";
+        const to = layerOf(src, target);
         if (!rule.layers.includes(to)) context.report({ node, messageId: "layer", data: { from, to, spec } });
       } else if (!packages.some((p) => spec === p || spec.startsWith(`${p}/`))) {
         context.report({ node, messageId: "package", data: { from, spec } });

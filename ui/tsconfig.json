@@ -22,6 +22,7 @@
     "e2e/**/*.ts",
     "*.config.ts",
     "*.config.js",
-    "../scripts/**/*.ts"
+    "../scripts/**/*.ts",
+    "../eslint.config.ts"
   ]
 }

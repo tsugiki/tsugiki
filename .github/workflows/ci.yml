@@ -1,4 +1,4 @@
-# The checks of ADR 0009, on every PR and every push to main.
+# The checks of ADR 0009, on every push to main and every PR that changes more than docs.
 # Each is its own job, and a job's name is the npm script it runs, so a PR shows what failed and where.
 name: CI
 
@@ -15,8 +15,35 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Decides whether the checks run. It compares the PR's merge commit with its base, and a rename counts
+  # as both of its paths. Any path it can't read as docs runs the checks, and so does a push to main.
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      docs-only: ${{ steps.diff.outputs.docs-only }}
+    steps:
+      - if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - if: ${{ github.event_name == 'pull_request' }}
+        id: diff
+        run: |
+          paths=$(git diff --no-renames --name-only HEAD^1 HEAD)
+          printf '%s\n' "$paths"
+          if printf '%s\n' "$paths" | grep -qvE '^docs/|\.md$'; then
+            echo "docs-only=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs-only=true" >> "$GITHUB_OUTPUT"
+          fi
+
   rust:
     name: ${{ matrix.check }} (${{ matrix.os }})
+    needs: [changes]
+    if: ${{ needs.changes.outputs.docs-only != 'true' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -39,6 +66,8 @@ jobs:
 
   rust-coverage-measure:
     name: rust-coverage-measure (${{ matrix.os }})
+    needs: [changes]
+    if: ${{ needs.changes.outputs.docs-only != 'true' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -99,6 +128,8 @@ jobs:
 
   ui:
     name: ${{ matrix.check }} (${{ matrix.os }})
+    needs: [changes]
+    if: ${{ needs.changes.outputs.docs-only != 'true' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -128,6 +159,8 @@ jobs:
 
   playwright:
     name: Playwright ${{ matrix.browser }} (${{ matrix.os }})
+    needs: [changes]
+    if: ${{ needs.changes.outputs.docs-only != 'true' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -159,10 +192,17 @@ jobs:
   ci-passed:
     name: CI passed
     if: ${{ always() }}
-    needs: [rust, rust-coverage-gate, ui, playwright]
+    needs: [changes, rust, rust-coverage-gate, ui, playwright]
     runs-on: ubuntu-latest
     steps:
-      - name: Every job succeeded
+      - name: Every job succeeded, or skipped on a docs-only PR
         env:
+          DOCS_ONLY: ${{ needs.changes.outputs.docs-only }}
           RESULTS: ${{ join(needs.*.result, ' ') }}
-        run: for result in $RESULTS; do test "$result" = success; done
+        run: |
+          for result in $RESULTS; do
+            case "$DOCS_ONLY $result" in
+              *" success" | "true skipped") ;;
+              *) echo "A job ended with: $result"; exit 1 ;;
+            esac
+          done

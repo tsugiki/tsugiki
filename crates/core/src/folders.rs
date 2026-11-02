@@ -43,14 +43,14 @@ impl Folders {
         }
         match os {
             Os::Windows => Ok(Self {
-                data: folder_from_env(env, "LOCALAPPDATA")?.join("Tsugiki"),
-                settings: folder_from_env(env, "APPDATA")?.join("Tsugiki"),
+                data: folder_from_env(env, "LOCALAPPDATA")?.join("tsugiki"),
+                settings: folder_from_env(env, "APPDATA")?.join("tsugiki"),
             }),
             Os::MacOs => {
                 let data = folder_from_env(env, "HOME")?
                     .join("Library")
                     .join("Application Support")
-                    .join("Tsugiki");
+                    .join("tsugiki");
                 Ok(Self {
                     settings: data.clone(),
                     data,
@@ -67,7 +67,7 @@ fn portable_folder(os: Os, exe: &Path) -> Option<PathBuf> {
         Os::MacOs => {
             let is_bundle = |path: &&Path| path.extension().is_some_and(|ext| ext == "app");
             let bundle = exe.ancestors().find(is_bundle);
-            (bundle.unwrap_or(exe), "Tsugiki-portable-data")
+            (bundle.unwrap_or(exe), "tsugiki-portable-data")
         }
     };
     let folder = program.parent()?.join(name);
@@ -126,8 +126,8 @@ mod tests {
         let folders = Folders::find(Os::Windows, &exe, &env).unwrap();
         fs::remove_dir_all(root).unwrap();
 
-        assert_eq!(folders.data, local.join("Tsugiki"));
-        assert_eq!(folders.settings, roaming.join("Tsugiki"));
+        assert_eq!(folders.data, local.join("tsugiki"));
+        assert_eq!(folders.settings, roaming.join("tsugiki"));
     }
 
     #[test]
@@ -146,7 +146,7 @@ mod tests {
         let expected = home
             .join("Library")
             .join("Application Support")
-            .join("Tsugiki");
+            .join("tsugiki");
         assert_eq!(folders.data, expected);
         assert_eq!(folders.settings, expected);
     }
@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn a_folder_next_to_the_app_bundle_makes_macos_portable() {
         let root = temp_folder("macos-portable");
-        let portable = root.join("Tsugiki-portable-data");
+        let portable = root.join("tsugiki-portable-data");
         fs::create_dir(&portable).unwrap();
         let exe = root
             .join("Tsugiki.app")
@@ -185,7 +185,7 @@ mod tests {
     #[test]
     fn a_macos_program_outside_a_bundle_looks_next_to_itself() {
         let root = temp_folder("macos-bare");
-        let portable = root.join("Tsugiki-portable-data");
+        let portable = root.join("tsugiki-portable-data");
         fs::create_dir(&portable).unwrap();
 
         let folders = Folders::find(Os::MacOs, &root.join("tsg"), &env_of(&[])).unwrap();
@@ -203,7 +203,7 @@ mod tests {
         let folders = Folders::find(Os::Windows, &root.join("tsg.exe"), &env).unwrap();
         fs::remove_dir_all(&root).unwrap();
 
-        assert_eq!(folders.data, root.join("Tsugiki"));
+        assert_eq!(folders.data, root.join("tsugiki"));
     }
 
     #[test]
@@ -215,7 +215,7 @@ mod tests {
         let macos = Folders::find(Os::MacOs, &root.join("tsg"), &env).unwrap();
         fs::remove_dir(root.join("data")).unwrap();
 
-        fs::create_dir(root.join("Tsugiki-portable-data")).unwrap();
+        fs::create_dir(root.join("tsugiki-portable-data")).unwrap();
         let windows = Folders::find(Os::Windows, &root.join("tsg.exe"), &env).unwrap();
         fs::remove_dir_all(&root).unwrap();
 
@@ -223,9 +223,9 @@ mod tests {
             macos.data,
             root.join("Library")
                 .join("Application Support")
-                .join("Tsugiki")
+                .join("tsugiki")
         );
-        assert_eq!(windows.data, root.join("Tsugiki"));
+        assert_eq!(windows.data, root.join("tsugiki"));
     }
 
     #[test]

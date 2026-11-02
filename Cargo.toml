@@ -1,0 +1,25 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/app"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+repository = "https://github.com/tsugiki/tsugiki"
+
+[workspace.dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+specta = { version = "=2.0.0-rc.26", features = ["derive"] }
+specta-typescript = "=0.0.13"
+tauri = "2.12.5"
+tauri-build = "2.7.4"
+tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
+tsugiki-core = { path = "crates/core" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }

@@ -1,0 +1,23 @@
+{
+  "name": "tsugiki",
+  "private": true,
+  "description": "A review workbench for GitHub",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": ["ui"],
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "bindings": "node scripts/bindings.ts",
+    "check": "npm run check -w ui && cargo clippy --workspace --all-targets -- -D warnings",
+    "lint": "npm run lint -w ui && prettier --check scripts && cargo fmt --all --check",
+    "fmt": "npm run fmt -w ui && prettier --write scripts && cargo fmt --all",
+    "test": "npm run test -w ui && cargo test --workspace",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.4",
+    "@types/node": "24.19.2"
+  }
+}

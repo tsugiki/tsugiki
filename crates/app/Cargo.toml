@@ -1,0 +1,30 @@
+[package]
+name = "tsugiki-app"
+description = "The Tauri desktop app around tsugiki-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "tsugiki_app"
+
+[[bin]]
+name = "tsg"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+specta.workspace = true
+tauri.workspace = true
+tauri-specta.workspace = true
+tsugiki-core.workspace = true
+
+[dev-dependencies]
+specta-typescript.workspace = true
+
+[lints]
+workspace = true

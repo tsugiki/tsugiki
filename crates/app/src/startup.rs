@@ -1,7 +1,6 @@
 //! Opens Tsugiki's window. Measuring this takes a real window, so it is left out of the
 //! coverage gate and the `tauri-driver` smoke tests cover it instead (ADR 0009).
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use tauri::{Manager, RunEvent};
@@ -12,7 +11,7 @@ use tsugiki_core::github::live::{Https, run_gh};
 use tsugiki_core::session::Session;
 use tsugiki_core::status::StatusBoard;
 
-use crate::{StatusChanged, specta_builder};
+use crate::{LatestStatus, StatusChanged, specta_builder};
 
 /// How often Tsugiki asks GitHub whether it is still there, at about one point of the hourly 5,000 each.
 const REFRESH: Duration = Duration::from_secs(60);
@@ -33,19 +32,22 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("Tsugiki failed to start");
     builder.mount_events(&app);
+    assert!(
+        app.manage(LatestStatus::default()),
+        "nothing else manages the latest status"
+    );
     let handle = app.handle().clone();
-    let board = Arc::new(StatusBoard::new(Box::new(move |status| {
+    let board = StatusBoard::new(Box::new(move |status| {
+        // Before the event: a window that starts listening just too late for it then asks `status()`, and has
+        // to get this status.
+        handle.state::<LatestStatus>().set(status);
         #[expect(
             clippy::let_underscore_must_use,
             reason = "a window still loading asks `status()` when it is done; \
                       any other failure goes to the local log once #58 adds one"
         )]
         let _ = StatusChanged(status.clone()).emit(&handle);
-    })));
-    assert!(
-        app.manage(Arc::clone(&board)),
-        "nothing else manages the board"
-    );
+    }));
     let access = GitHubAccess {
         transport: Box::new(Https::new()),
         run_gh,

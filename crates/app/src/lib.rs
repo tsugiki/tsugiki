@@ -1,15 +1,16 @@
-//! The Tauri app around `tsugiki-core`: commands, events and the window, and nothing else (ADR 0007).
+//! The Tauri app around `tsugiki-core`: commands, events, the window and a read-only copy of the core's
+//! status for those commands (ADR 0007).
 
 mod startup;
 
-use std::sync::Arc;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use serde::Serialize;
 use specta::Type;
 pub use startup::run;
 use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
-use tsugiki_core::status::{Status, StatusBoard};
+use tsugiki_core::status::Status;
 
 #[tauri::command]
 #[specta::specta]
@@ -17,11 +18,32 @@ fn about() -> tsugiki_core::About {
     tsugiki_core::about()
 }
 
+/// A read-only copy of the session's status. It lets `status` answer while the session waits on GitHub, since
+/// the window doesn't wait on the network (ADR 0017).
+#[derive(Default)]
+struct LatestStatus(Mutex<Status>);
+
+impl LatestStatus {
+    fn get(&self) -> Status {
+        self.lock().clone()
+    }
+
+    fn set(&self, status: &Status) {
+        self.lock().clone_from(status);
+    }
+
+    /// Only this type holds the lock, and it calls out to nothing while it does, so poisoning should never
+    /// happen. If it does, the status is still whole, because `set` only ever replaces it.
+    fn lock(&self) -> MutexGuard<'_, Status> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
 /// The whole app-wide state, for a window that has just loaded (ADR 0008).
 #[tauri::command]
 #[specta::specta]
-fn status(board: State<'_, Arc<StatusBoard>>) -> Status {
-    board.get()
+fn status(latest: State<'_, LatestStatus>) -> Status {
+    latest.get()
 }
 
 /// Sent whenever the app-wide state changes (ADR 0008).
@@ -38,14 +60,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
     use tauri::Manager;
     use tauri::test::mock_app;
-    use tsugiki_core::error::ErrorKind;
-    use tsugiki_core::github::GitHubAccess;
-    use tsugiki_core::github::live::Https;
-    use tsugiki_core::session::connect;
-    use tsugiki_core::store::Store;
 
     #[test]
     fn about_answers_with_what_the_core_says() {
@@ -53,22 +69,34 @@ mod tests {
     }
 
     #[test]
-    fn status_answers_with_what_the_board_holds() {
-        let board = Arc::new(StatusBoard::new(Box::new(|_| {})));
-        // With no token from gh, `connect` never gets as far as using the network.
-        let access = GitHubAccess {
-            transport: Box::new(Https::new()),
-            run_gh: |_| Err(std::io::Error::from(std::io::ErrorKind::NotFound)),
-        };
-        let store = Store::open(Path::new(":memory:")).unwrap();
-        assert!(connect(&board, &store, access).is_none());
-        store.close();
-
+    fn status_says_connecting_until_the_session_says_otherwise() {
         let app = mock_app();
-        assert!(app.manage(board));
-        assert!(matches!(
-            status(app.state()),
-            Status::Problem { problem } if problem.kind == ErrorKind::Unauthorized
-        ));
+        assert!(app.manage(LatestStatus::default()));
+        assert_eq!(status(app.state()), Status::Connecting);
+    }
+
+    #[test]
+    fn status_answers_with_the_latest_status() {
+        let app = mock_app();
+        assert!(app.manage(LatestStatus::default()));
+        app.state::<LatestStatus>().set(&Status::Offline);
+        assert_eq!(status(app.state()), Status::Offline);
+    }
+
+    #[test]
+    fn a_panic_while_holding_the_lock_doesnt_stop_the_status_working() {
+        let latest = LatestStatus::default();
+        std::thread::scope(|scope| {
+            let holder = scope.spawn(|| {
+                let _guard = latest.0.lock();
+                panic!("a panic while holding the lock");
+            });
+            assert!(holder.join().is_err());
+        });
+        assert!(latest.0.is_poisoned());
+
+        assert_eq!(latest.get(), Status::Connecting);
+        latest.set(&Status::Offline);
+        assert_eq!(latest.get(), Status::Offline);
     }
 }

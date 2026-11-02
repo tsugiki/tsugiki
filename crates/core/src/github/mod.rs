@@ -32,7 +32,7 @@ pub struct Reply {
 pub struct Unreachable;
 
 /// How a request reaches GitHub: the network in the app, recorded answers in tests.
-pub trait Transport: Send + Sync {
+pub trait Transport: Send {
     fn post(&self, token: &Token, request: &Request<'_>) -> Result<Reply, Unreachable>;
 }
 

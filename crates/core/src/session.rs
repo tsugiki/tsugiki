@@ -1,7 +1,6 @@
 //! One run of Tsugiki: opens the database, then keeps the status following GitHub until the app ends.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::Duration;
@@ -18,7 +17,7 @@ const STOPPED_CHECKING: &str = "Tsugiki stopped checking GitHub. Restart Tsugiki
 /// Shows who was signed in last time, reads gh's token, asks GitHub who it belongs to, and shows the result
 /// on `board`. Returns the client when there is a token, even offline, since GitHub may come back.
 #[must_use = "without the client, nothing asks GitHub again"]
-pub fn connect(board: &StatusBoard, store: &Store, access: GitHubAccess) -> Option<GitHub> {
+fn connect(board: &mut StatusBoard, store: &Store, access: GitHubAccess) -> Option<GitHub> {
     // The last login only fills the status bar for a moment, so a failed read doesn't stop Tsugiki
     // connecting. `refresh` uses the store next, and shows the problem if the store is still failing.
     if let Ok(Some(last_login)) = store.last_login() {
@@ -47,7 +46,7 @@ pub struct Session {
 impl Session {
     /// Opens the database and asks GitHub who is signed in, then again every `interval`.
     pub fn start(
-        board: Arc<StatusBoard>,
+        mut board: StatusBoard,
         folders: Result<Folders, Error>,
         access: GitHubAccess,
         interval: Duration,
@@ -61,7 +60,7 @@ impl Session {
         let _ = thread::spawn(move || {
             // `stop` learns the session is over when this goes, however the thread ends.
             let _finishing = finishing;
-            run(&board, folders, access, &refreshes);
+            run(&mut board, folders, access, &refreshes);
         });
         Self { stop, finished }
     }
@@ -107,7 +106,7 @@ impl Refreshes {
 /// Nothing else would show a panic in here: the last status would stay up and look current, so this replaces
 /// it with a problem. It relies on panics unwinding, so `panic = "abort"` would end the app instead (#57).
 fn run(
-    board: &StatusBoard,
+    board: &mut StatusBoard,
     folders: Result<Folders, Error>,
     access: GitHubAccess,
     refreshes: &Refreshes,
@@ -130,7 +129,7 @@ fn run(
 
 /// Connects, then asks GitHub again until told to stop. With no token it returns straight away, and `board`
 /// shows why.
-fn watch(board: &StatusBoard, store: &Store, access: GitHubAccess, refreshes: &Refreshes) {
+fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes: &Refreshes) {
     let Some(github) = connect(board, store, access) else {
         return;
     };
@@ -140,7 +139,7 @@ fn watch(board: &StatusBoard, store: &Store, access: GitHubAccess, refreshes: &R
 }
 
 /// Asks GitHub again, so `board` follows the network going and coming back.
-fn refresh(board: &StatusBoard, store: &Store, github: &GitHub) {
+fn refresh(board: &mut StatusBoard, store: &Store, github: &GitHub) {
     board.set(match github.viewer() {
         Ok(viewer) => match store.remember_login(&viewer.login) {
             Ok(()) => Status::Online {
@@ -165,13 +164,12 @@ mod tests {
     use super::*;
     use crate::github::testing::{Canned, answered, signed_in_gh};
     use crate::github::{Login, Reply, Request, Transport, Unreachable};
-    use crate::status::testing::{quiet_board, watched_board};
+    use crate::status::testing::{announced, quiet_board, showing, watched_board};
+    use std::cell::RefCell;
     use std::collections::VecDeque;
     use std::fs;
     use std::io;
     use std::path::{Path, PathBuf};
-    use std::sync::Mutex;
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc::{RecvError, TryRecvError};
 
     /// A real store that keeps nothing once it closes.
@@ -209,7 +207,7 @@ mod tests {
 
     fn replying(replies: Vec<Result<Reply, Unreachable>>) -> GitHubAccess {
         GitHubAccess {
-            transport: Box::new(Replies(Mutex::new(replies.into()))),
+            transport: Box::new(Replies(RefCell::new(replies.into()))),
             run_gh: signed_in_gh,
         }
     }
@@ -232,25 +230,25 @@ mod tests {
 
     #[test]
     fn signing_in_shows_the_login() {
-        let board = quiet_board();
-        assert!(connect(&board, &empty_store(), octocat_answers()).is_some());
-        assert_eq!(board.get(), octocat());
+        let (mut board, seen) = watched_board();
+        assert!(connect(&mut board, &empty_store(), octocat_answers()).is_some());
+        assert_eq!(showing(&seen), octocat());
     }
 
     #[test]
     fn signing_in_remembers_the_login() {
         let store = store_remembering("hubot");
-        assert!(connect(&quiet_board(), &store, octocat_answers()).is_some());
+        assert!(connect(&mut quiet_board(), &store, octocat_answers()).is_some());
         assert_eq!(store.last_login().unwrap(), Some(Login::new("octocat")));
     }
 
     #[test]
     fn the_last_login_shows_before_github_answers() {
-        let (board, seen) = watched_board();
+        let (mut board, seen) = watched_board();
         let store = store_remembering("hubot");
-        assert!(connect(&board, &store, octocat_answers()).is_some());
+        assert!(connect(&mut board, &store, octocat_answers()).is_some());
         assert_eq!(
-            *seen.lock().unwrap(),
+            announced(&seen),
             [
                 Status::ConnectingAs {
                     last_login: Login::new("hubot")
@@ -262,25 +260,25 @@ mod tests {
 
     #[test]
     fn nobody_is_shown_before_the_first_answer() {
-        let (board, seen) = watched_board();
-        assert!(connect(&board, &empty_store(), octocat_answers()).is_some());
-        assert_eq!(*seen.lock().unwrap(), [octocat()]);
+        let (mut board, seen) = watched_board();
+        assert!(connect(&mut board, &empty_store(), octocat_answers()).is_some());
+        assert_eq!(announced(&seen), [octocat()]);
     }
 
     #[test]
     fn without_the_network_or_a_last_login_the_status_is_offline() {
-        let board = quiet_board();
-        assert!(connect(&board, &empty_store(), offline()).is_some());
-        assert_eq!(board.get(), Status::Offline);
+        let (mut board, seen) = watched_board();
+        assert!(connect(&mut board, &empty_store(), offline()).is_some());
+        assert_eq!(showing(&seen), Status::Offline);
     }
 
     #[test]
     fn without_the_network_the_last_login_still_shows() {
-        let board = quiet_board();
+        let (mut board, seen) = watched_board();
         let store = store_remembering("hubot");
-        assert!(connect(&board, &store, offline()).is_some());
+        assert!(connect(&mut board, &store, offline()).is_some());
         assert_eq!(
-            board.get(),
+            showing(&seen),
             Status::OfflineAs {
                 last_login: Login::new("hubot")
             }
@@ -301,22 +299,22 @@ mod tests {
 
     #[test]
     fn a_refused_token_is_a_problem_and_keeps_the_last_login_stored() {
-        let board = quiet_board();
+        let (mut board, seen) = watched_board();
         let store = store_remembering("hubot");
-        assert!(connect(&board, &store, answering(401, "")).is_some());
-        assert_eq!(problem_kind(board.get()), Some(ErrorKind::Unauthorized));
+        assert!(connect(&mut board, &store, answering(401, "")).is_some());
+        assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Unauthorized));
         assert_eq!(store.last_login().unwrap(), Some(Login::new("hubot")));
     }
 
     #[test]
     fn without_gh_nothing_is_asked_and_the_problem_shows() {
-        let board = quiet_board();
+        let (mut board, seen) = watched_board();
         let access = GitHubAccess {
             transport: Box::new(Canned(Err(Unreachable))),
             run_gh: without_gh,
         };
-        assert!(connect(&board, &empty_store(), access).is_none());
-        assert_eq!(problem_kind(board.get()), Some(ErrorKind::Unauthorized));
+        assert!(connect(&mut board, &empty_store(), access).is_none());
+        assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Unauthorized));
     }
 
     #[test]
@@ -326,37 +324,33 @@ mod tests {
 
     #[test]
     fn a_last_login_that_cant_be_read_doesnt_stop_tsugiki_connecting() {
-        let board = quiet_board();
-        assert!(connect(&board, &Store::stopped(), octocat_answers()).is_some());
-        assert_eq!(problem_kind(board.get()), Some(ErrorKind::Internal));
+        let (mut board, seen) = watched_board();
+        assert!(connect(&mut board, &Store::stopped(), octocat_answers()).is_some());
+        assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
     }
 
     #[test]
     fn a_login_that_cant_be_stored_is_a_problem() {
-        let board = quiet_board();
-        let github = connect(&quiet_board(), &empty_store(), octocat_answers()).unwrap();
-        refresh(&board, &Store::stopped(), &github);
-        assert_eq!(problem_kind(board.get()), Some(ErrorKind::Internal));
+        let (mut board, seen) = watched_board();
+        let github = connect(&mut quiet_board(), &empty_store(), octocat_answers()).unwrap();
+        refresh(&mut board, &Store::stopped(), &github);
+        assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
     }
 
     #[test]
     fn a_last_login_that_cant_be_read_offline_is_a_problem() {
-        let board = quiet_board();
-        let github = connect(&quiet_board(), &empty_store(), offline()).unwrap();
-        refresh(&board, &Store::stopped(), &github);
-        assert_eq!(problem_kind(board.get()), Some(ErrorKind::Internal));
+        let (mut board, seen) = watched_board();
+        let github = connect(&mut quiet_board(), &empty_store(), offline()).unwrap();
+        refresh(&mut board, &Store::stopped(), &github);
+        assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
     }
 
     /// Answers with each reply in turn.
-    struct Replies(Mutex<VecDeque<Result<Reply, Unreachable>>>);
+    struct Replies(RefCell<VecDeque<Result<Reply, Unreachable>>>);
 
     impl Transport for Replies {
-        #[expect(
-            clippy::unwrap_in_result,
-            reason = "too few replies should fail the test"
-        )]
         fn post(&self, _: &Token, _: &Request<'_>) -> Result<Reply, Unreachable> {
-            self.0.lock().unwrap().pop_front().expect("another reply")
+            self.0.borrow_mut().pop_front().expect("another reply")
         }
     }
 
@@ -371,21 +365,21 @@ mod tests {
     #[test]
     fn the_status_follows_the_network_going_and_coming_back() {
         let access = replying(vec![signed_in(), Err(Unreachable), signed_in()]);
-        let board = quiet_board();
+        let (mut board, seen) = watched_board();
         let store = empty_store();
-        let github = connect(&board, &store, access).unwrap();
-        assert_eq!(board.get(), octocat());
+        let github = connect(&mut board, &store, access).unwrap();
+        assert_eq!(showing(&seen), octocat());
 
-        refresh(&board, &store, &github);
+        refresh(&mut board, &store, &github);
         assert_eq!(
-            board.get(),
+            showing(&seen),
             Status::OfflineAs {
                 last_login: Login::new("octocat")
             }
         );
 
-        refresh(&board, &store, &github);
-        assert_eq!(board.get(), octocat());
+        refresh(&mut board, &store, &github);
+        assert_eq!(showing(&seen), octocat());
     }
 
     /// Refreshes told to stop before they began, for a test that shouldn't get as far as a second request.
@@ -396,26 +390,17 @@ mod tests {
         }
     }
 
-    /// A board that passes on each status, so a test can wait for one from another thread.
-    fn passing_board() -> (Arc<StatusBoard>, Receiver<Status>) {
-        let (passed, statuses) = mpsc::channel();
-        let board = StatusBoard::new(Box::new(move |status: &Status| {
-            passed.send(status.clone()).unwrap();
-        }));
-        (Arc::new(board), statuses)
-    }
-
     #[test]
     fn watching_follows_github_until_told_to_stop() {
         // `Replies` panics if it is asked a fourth time, so the third status has to stop the watching.
         let access = replying(vec![signed_in(), Err(Unreachable), signed_in()]);
         let (stop, stopping) = mpsc::channel();
-        let seen = Arc::new(Mutex::new(Vec::new()));
-        let shown = Arc::clone(&seen);
-        let board = StatusBoard::new(Box::new(move |status: &Status| {
-            let mut shown = shown.lock().unwrap();
-            shown.push(status.clone());
-            if shown.len() == 3 {
+        let (passed, seen) = mpsc::channel();
+        let mut shown = 0;
+        let mut board = StatusBoard::new(Box::new(move |status: &Status| {
+            passed.send(status.clone()).unwrap();
+            shown += 1;
+            if shown == 3 {
                 stop.send(()).unwrap();
             }
         }));
@@ -424,12 +409,12 @@ mod tests {
             stopping,
         };
 
-        watch(&board, &empty_store(), access, &refreshes);
+        watch(&mut board, &empty_store(), access, &refreshes);
 
         let offline_as = Status::OfflineAs {
             last_login: Login::new("octocat"),
         };
-        assert_eq!(*seen.lock().unwrap(), [octocat(), offline_as, octocat()]);
+        assert_eq!(announced(&seen), [octocat(), offline_as, octocat()]);
     }
 
     const AN_HOUR: Duration = Duration::from_secs(3600);
@@ -442,7 +427,7 @@ mod tests {
     #[test]
     fn stopping_between_refreshes_closes_the_store() {
         let folders = temp_folders("stop-between");
-        let (board, statuses) = passing_board();
+        let (board, statuses) = watched_board();
         let session = Session::start(board, Ok(folders.clone()), octocat_answers(), AN_HOUR);
         assert_eq!(statuses.recv().unwrap(), octocat());
         let waiting = fs::metadata(wal_of(&folders)).unwrap().len();
@@ -460,7 +445,7 @@ mod tests {
     /// Holds its answer back until the test lets go.
     struct Held {
         asked: Sender<()>,
-        answer: Mutex<Receiver<()>>,
+        answer: Receiver<()>,
     }
 
     impl Transport for Held {
@@ -470,7 +455,7 @@ mod tests {
         )]
         fn post(&self, _: &Token, _: &Request<'_>) -> Result<Reply, Unreachable> {
             self.asked.send(()).unwrap();
-            self.answer.lock().unwrap().recv().unwrap();
+            self.answer.recv().unwrap();
             signed_in()
         }
     }
@@ -483,16 +468,11 @@ mod tests {
         let access = GitHubAccess {
             transport: Box::new(Held {
                 asked,
-                answer: Mutex::new(answering),
+                answer: answering,
             }),
             run_gh: signed_in_gh,
         };
-        let session = Session::start(
-            Arc::new(quiet_board()),
-            Ok(folders.clone()),
-            access,
-            AN_HOUR,
-        );
+        let session = Session::start(quiet_board(), Ok(folders.clone()), access, AN_HOUR);
         request.recv().unwrap();
 
         session.stop(Duration::from_millis(10));
@@ -515,12 +495,7 @@ mod tests {
             transport: Box::new(Canned(Err(Unreachable))),
             run_gh: without_gh,
         };
-        let session = Session::start(
-            Arc::new(quiet_board()),
-            Ok(folders.clone()),
-            access,
-            AN_HOUR,
-        );
+        let session = Session::start(quiet_board(), Ok(folders.clone()), access, AN_HOUR);
         assert_eq!(session.finished.recv(), Err(RecvError));
 
         session.stop(AN_HOUR);
@@ -531,45 +506,63 @@ mod tests {
     #[test]
     fn a_panic_anywhere_in_a_run_says_tsugiki_stopped_checking() {
         // The first announcement panics, on the path that never reaches `watch`.
-        let panicked = AtomicBool::new(false);
-        let board = StatusBoard::new(Box::new(move |_: &Status| {
-            assert!(
-                panicked.swap(true, Ordering::Relaxed),
-                "a panic while starting"
-            );
+        let (passed, seen) = mpsc::channel();
+        let mut announcements = 0;
+        let mut board = StatusBoard::new(Box::new(move |status: &Status| {
+            announcements += 1;
+            assert!(announcements > 1, "a panic while starting");
+            passed.send(status.clone()).unwrap();
         }));
         let lost = Error::new(ErrorKind::Internal, "HOME isn't a full path.");
 
-        run(&board, Err(lost), octocat_answers(), &stopped_refreshes());
+        run(
+            &mut board,
+            Err(lost),
+            octocat_answers(),
+            &stopped_refreshes(),
+        );
 
-        assert_eq!(problem_of(board.get()).unwrap().message, STOPPED_CHECKING);
+        assert_eq!(
+            problem_of(showing(&seen)).unwrap().message,
+            STOPPED_CHECKING
+        );
     }
 
     #[test]
     fn starting_without_gh_keeps_the_problem_that_says_how_to_sign_in() {
         let folders = temp_folders("no-gh");
-        let board = quiet_board();
+        let (mut board, seen) = watched_board();
         let access = GitHubAccess {
             transport: Box::new(Canned(Err(Unreachable))),
             run_gh: without_gh,
         };
 
-        run(&board, Ok(folders.clone()), access, &stopped_refreshes());
+        run(
+            &mut board,
+            Ok(folders.clone()),
+            access,
+            &stopped_refreshes(),
+        );
 
-        assert_eq!(problem_kind(board.get()), Some(ErrorKind::Unauthorized));
+        assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Unauthorized));
         assert!(folders.database().exists());
         fs::remove_dir_all(folders.data).unwrap();
     }
 
     #[test]
     fn folders_that_cant_be_found_show_as_a_problem() {
-        let board = quiet_board();
+        let (mut board, seen) = watched_board();
         let lost = Error::new(ErrorKind::Internal, "HOME isn't a full path.");
 
-        run(&board, Err(lost), octocat_answers(), &stopped_refreshes());
+        run(
+            &mut board,
+            Err(lost),
+            octocat_answers(),
+            &stopped_refreshes(),
+        );
 
         assert_eq!(
-            problem_of(board.get()).unwrap().message,
+            problem_of(showing(&seen)).unwrap().message,
             "HOME isn't a full path."
         );
     }
@@ -581,17 +574,17 @@ mod tests {
         newer.pragma_update(None, "user_version", 9999).unwrap();
         drop(newer);
         let before = fs::read(folders.database()).unwrap();
-        let (board, seen) = watched_board();
+        let (mut board, seen) = watched_board();
 
         run(
-            &board,
+            &mut board,
             Ok(folders.clone()),
             octocat_answers(),
             &stopped_refreshes(),
         );
 
-        assert_eq!(seen.lock().unwrap().len(), 1, "octocat's answer never came");
-        assert!(problem_of(board.get()).unwrap().message.contains("newer"));
+        let [only]: [Status; 1] = announced(&seen).try_into().unwrap();
+        assert!(problem_of(only).unwrap().message.contains("newer"));
         assert_eq!(fs::read(folders.database()).unwrap(), before);
         fs::remove_dir_all(folders.data).unwrap();
     }

@@ -213,7 +213,7 @@ mod tests {
     fn github_says_who_the_user_is() {
         let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
         let viewer = client(replay::Replayer::new(fixtures)).viewer().unwrap();
-        assert_eq!(viewer.login, Login::new("sergey-miryanov"));
+        assert_eq!(viewer.login, Login::new("octocat"));
     }
 
     #[test]

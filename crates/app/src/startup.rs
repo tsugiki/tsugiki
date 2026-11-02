@@ -42,7 +42,10 @@ pub fn run() {
         )]
         let _ = StatusChanged(status.clone()).emit(&handle);
     })));
-    let _ = app.manage(Arc::clone(&board));
+    assert!(
+        app.manage(Arc::clone(&board)),
+        "nothing else manages the board"
+    );
     let access = GitHubAccess {
         transport: Box::new(Https::new()),
         run_gh,

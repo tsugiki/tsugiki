@@ -65,7 +65,7 @@ mod tests {
         store.close();
 
         let app = mock_app();
-        let _ = app.manage(board);
+        assert!(app.manage(board));
         assert!(matches!(
             status(app.state()),
             Status::Problem { problem } if problem.kind == ErrorKind::Unauthorized

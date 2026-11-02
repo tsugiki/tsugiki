@@ -39,7 +39,8 @@ carried to another machine, but it shouldn't sit in a syncing folder while Tsugi
 - **Pinned issues and Muted authors in `settings.toml`**, as scope.md first had them. They change as the user works, from the Sidebar and the Issue list, which is state, not configuration. Keeping them in the file would mean rewriting it all the time.
 - **Fixed locations only**, synced by a symlink the user makes, or **all files next to the database**, synced by copying.
 - **Data always beside the program**, with no app-data folders. On macOS nothing may be written inside `Tsugiki.app`, and on Windows the uninstaller would have to tell data from program files.
-- **Keeping Tauri's per-user install folder**, `%LOCALAPPDATA%\Tsugiki`, which is where ADR 0010 put the data. The program and its data would share a folder.
+- **Keeping Tauri's per-user install folder**, `%LOCALAPPDATA%\tsugiki`, which is where ADR 0010 put the data.
+  The program and its data would share a folder.
 
 ## Consequences
 

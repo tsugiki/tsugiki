@@ -2,8 +2,14 @@
 //! the bytes leaves no trace, where even a read-only connection to a WAL database creates `-wal` and `-shm`
 //! files.
 //!
+//! The header holds the file's schema version. SQLite sets aside one integer there, `user_version`, for the
+//! program using the file, and doesn't use it itself. Tsugiki stores the number of the last migration the
+//! file has run, so 0 means a new file. This number says which tables the file has, and it has nothing to do
+//! with Tsugiki's app version. A number above the last migration this build knows means a newer Tsugiki
+//! changed the tables in ways this build can't read.
+//!
 //! This only sees the header. SQLite reports damage further into the file when Tsugiki reads that part, and a
-//! full check at start-up would take too long on a large database.
+//! full check at start-up would have to read the whole file.
 
 use std::fs::File;
 use std::io::Read;

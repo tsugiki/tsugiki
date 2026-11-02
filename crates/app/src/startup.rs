@@ -6,8 +6,11 @@ use std::time::Duration;
 
 use tauri::Manager;
 use tauri_specta::Event;
+use tsugiki_core::folders::Folders;
+use tsugiki_core::github::GitHubAccess;
 use tsugiki_core::github::live::{Https, run_gh};
-use tsugiki_core::status::{StatusBoard, watch};
+use tsugiki_core::session::start;
+use tsugiki_core::status::StatusBoard;
 
 use crate::{StatusChanged, specta_builder};
 
@@ -35,10 +38,14 @@ pub fn run() {
                 let _ = StatusChanged(status.clone()).emit(&handle);
             })));
             let _ = app.manage(Arc::clone(&board));
-            // The window opens without waiting on gh or the network (ADR 0017). `watch` shows its own
-            // failures on the board, so nothing needs the thread's handle.
+            // The window opens without waiting on the disk, gh or the network (ADR 0017). `start` shows its
+            // own failures on the board, so nothing needs the thread's handle.
             let _ = std::thread::spawn(move || {
-                watch(&board, Box::new(Https::new()), run_gh, REFRESH);
+                let access = GitHubAccess {
+                    transport: Box::new(Https::new()),
+                    run_gh,
+                };
+                start(&board, Folders::current(), access, REFRESH);
             });
             Ok(())
         })

@@ -17,6 +17,18 @@ describe("StatusBar", () => {
     expect(bar().classList.contains("offline")).toBe(true);
   });
 
+  it("shows who it was last time while it connects", () => {
+    render(StatusBar, { status: { state: "connecting_as", last_login: "octocat" } });
+    expect(bar().textContent?.trim()).toBe("octocat · Connecting…");
+    expect(bar().classList.contains("offline")).toBe(false);
+  });
+
+  it("shows who it was last time while offline, and tints the bar", () => {
+    render(StatusBar, { status: { state: "offline_as", last_login: "octocat" } });
+    expect(bar().textContent?.trim()).toBe("octocat · Offline: read-only");
+    expect(bar().classList.contains("offline")).toBe(true);
+  });
+
   it("shows what stops Tsugiki reading, in the core's words", () => {
     const problem = { kind: "unauthorized", message: "Run `gh auth login`." } as const;
     render(StatusBar, { status: { state: "problem", problem } });

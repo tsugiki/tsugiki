@@ -32,6 +32,8 @@ Tests are built in layers. Fast ones run on every PR on Windows and macOS. The s
   `docs/`, and still reports `CI passed`.
 - On those same pushes and PRs, on Linux: `cargo deny` and `cargo machete`. They build nothing, so one OS is
   enough. A weekly run also checks for new advisories, so one still reaches us in a week with no PRs.
-- On every PR, on Linux: the CodSpeed benchmarks and the query-plan check ([ADR 0017](0017-performance-budgets-codspeed-gates-prs-the-window-is-measured-before-release.md)).
+- On every PR, on Linux: the CodSpeed benchmarks
+  ([ADR 0017](0017-performance-budgets-codspeed-gates-prs-the-window-is-measured-before-release.md)). The
+  query-plan check from that ADR is a test in the core, so `cargo test` runs it on Windows and macOS.
 - Before a release (in the release workflow, and runnable by hand): the CPython mirror suite, the `tauri-driver` smoke tests on Windows, a check that live GitHub responses still match the recorded fixtures (read-only), the macOS checklist, and the performance budgets measured in the real window ([ADR 0017](0017-performance-budgets-codspeed-gates-prs-the-window-is-measured-before-release.md)).
 - Code is written to be testable: the clock, the transport, the git runner and paths are passed in, not reached for.

@@ -38,11 +38,14 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
     use tauri::Manager;
     use tauri::test::mock_app;
     use tsugiki_core::error::ErrorKind;
+    use tsugiki_core::github::GitHubAccess;
     use tsugiki_core::github::live::Https;
-    use tsugiki_core::status::connect;
+    use tsugiki_core::session::connect;
+    use tsugiki_core::store::Store;
 
     #[test]
     fn about_answers_with_what_the_core_says() {
@@ -53,8 +56,13 @@ mod tests {
     fn status_answers_with_what_the_board_holds() {
         let board = Arc::new(StatusBoard::new(Box::new(|_| {})));
         // With no token from gh, `connect` never gets as far as using the network.
-        let gh_missing = |_: &[&str]| Err(std::io::Error::from(std::io::ErrorKind::NotFound));
-        let _ = connect(&board, Box::new(Https::new()), gh_missing);
+        let access = GitHubAccess {
+            transport: Box::new(Https::new()),
+            run_gh: |_| Err(std::io::Error::from(std::io::ErrorKind::NotFound)),
+        };
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        assert!(connect(&board, &store, access).is_none());
+        store.close();
 
         let app = mock_app();
         let _ = app.manage(board);

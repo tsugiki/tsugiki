@@ -2,11 +2,11 @@
   "body": {
     "data": {
       "viewer": {
-        "login": "sergey-miryanov"
+        "login": "octocat"
       }
     }
   },
   "query": "query Viewer { viewer { login } }",
-  "reset": 1793616813,
+  "reset": 1793642744,
   "status": 200
 }

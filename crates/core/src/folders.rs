@@ -1,7 +1,8 @@
-//! Where Tsugiki keeps its files (ADR 0014). The program's path and the environment are passed in, so
-//! tests can check both OSes' layouts on either OS.
+//! Where Tsugiki keeps its files (ADR 0014). `find` takes the program's path and the environment, so tests
+//! can check both OSes' layouts on either OS, and `current` passes it the real ones.
 
 use std::ffi::OsString;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, ErrorKind};
@@ -33,6 +34,35 @@ pub struct Folders {
 }
 
 impl Folders {
+    /// Where `tsugiki.db` is.
+    pub fn database(&self) -> PathBuf {
+        self.data.join("tsugiki.db")
+    }
+
+    /// The folders for this program, from its real path and environment.
+    pub fn current() -> Result<Self, Error> {
+        Self::from_exe(std::env::current_exe(), &|variable| {
+            std::env::var_os(variable)
+        })
+    }
+
+    fn from_exe(
+        exe: io::Result<PathBuf>,
+        env: &dyn Fn(&str) -> Option<OsString>,
+    ) -> Result<Self, Error> {
+        #[expect(
+            clippy::map_err_ignore,
+            reason = "the cause goes to the local log once #58 adds one"
+        )]
+        let exe = exe.map_err(|_| {
+            Error::new(
+                ErrorKind::Internal,
+                "Tsugiki can't tell where it is running from.",
+            )
+        })?;
+        Self::find(Os::CURRENT, &exe, env)
+    }
+
     /// Finds the portable folder next to the program if there is one, and the installed folders if not.
     pub fn find(os: Os, exe: &Path, env: &dyn Fn(&str) -> Option<OsString>) -> Result<Self, Error> {
         if let Some(portable) = portable_folder(os, exe) {
@@ -114,6 +144,26 @@ mod tests {
                 .find(|(name, _)| name == wanted)
                 .map(|(_, value)| value.clone())
         }
+    }
+
+    #[test]
+    fn the_current_folders_come_from_this_program_and_its_real_environment() {
+        let folders = Folders::current().unwrap();
+        assert!(folders.database().is_absolute());
+        assert!(folders.settings.is_absolute());
+    }
+
+    #[test]
+    fn a_program_that_cant_tell_where_it_is_says_so() {
+        let lost = Err(std::io::Error::from(std::io::ErrorKind::NotFound));
+
+        let problem = Folders::from_exe(lost, &env_of(&[])).unwrap_err();
+
+        assert_eq!(problem.kind, ErrorKind::Internal);
+        assert_eq!(
+            problem.message,
+            "Tsugiki can't tell where it is running from."
+        );
     }
 
     #[test]

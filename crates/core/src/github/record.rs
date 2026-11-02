@@ -1,4 +1,5 @@
-//! Captures real answers as fixtures for the replayer, with tokens scrubbed (ADR 0009).
+//! Captures real answers as fixtures for the replayer, with tokens scrubbed and the viewer's login replaced
+//! (ADR 0009).
 
 use std::path::PathBuf;
 
@@ -9,6 +10,9 @@ use crate::token::Token;
 
 const PREFIXES: [&str; 6] = ["gho_", "ghp_", "ghs_", "ghu_", "ghr_", "github_pat_"];
 const SCRUBBED: &str = "[token]";
+
+/// Written in place of the viewer's login, so a fixture doesn't depend on who recorded it.
+const STAND_IN_LOGIN: &str = "octocat";
 
 fn is_token_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
@@ -64,9 +68,12 @@ impl Transport for Recorder {
     fn post(&self, token: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
         let reply = self.inner.post(token, request)?;
         let text = scrub(&reply.body, token.expose());
-        let body = serde_json::from_str(&text).unwrap_or(Value::String(text));
+        let mut body = serde_json::from_str(&text).unwrap_or(Value::String(text));
         if reply.status != 200 || body.get("errors").is_some() {
             return Ok(reply);
+        }
+        if let Some(login) = body.pointer_mut("/data/viewer/login") {
+            *login = json!(STAND_IN_LOGIN);
         }
         let recording = json!({
             "query": request.query,
@@ -185,6 +192,20 @@ mod tests {
         assert_eq!(replayed.body, r#"{"data":{"note":"[token]"}}"#);
         assert!(!on_disk.contains("secret-token-value"));
         assert!(on_disk.ends_with('\n'));
+    }
+
+    #[test]
+    fn a_recording_doesnt_keep_who_made_it() {
+        let dir = temp_dir("viewer");
+        let body = r#"{"data":{"viewer":{"login":"whoever-recorded"}}}"#;
+        let recorder = Recorder::new(Box::new(Canned(Ok(reply(body)))), dir.clone());
+
+        let live = recorder.post(&token(), &REQUEST).unwrap();
+        let replayed = Replayer::new(dir.clone()).post(&token(), &REQUEST).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+
+        assert_eq!(live.body, body, "the caller still gets the real answer");
+        assert_eq!(replayed.body, r#"{"data":{"viewer":{"login":"octocat"}}}"#);
     }
 
     #[test]

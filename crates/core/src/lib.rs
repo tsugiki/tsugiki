@@ -3,7 +3,9 @@
 pub mod error;
 pub mod folders;
 pub mod github;
+pub mod session;
 pub mod status;
+pub mod store;
 pub mod token;
 
 use serde::Serialize;

@@ -18,6 +18,8 @@ export default defineConfig({
       exclude: [
         // coverage: generated from the Rust commands, and every test mocks it.
         "src/lib/data/bindings.ts",
+        // coverage: benchmarks run under CodSpeed, not as tests.
+        "src/**/*.bench.ts",
         // coverage: a command line around cargo, with its logic in the files it calls.
         "../scripts/bindings.ts",
         "../scripts/rust-coverage.ts",

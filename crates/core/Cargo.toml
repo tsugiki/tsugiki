@@ -7,9 +7,20 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lib]
+# libtest would reject divan's options when `cargo bench` passes them on.
+bench = false
+
 [dependencies]
 serde.workspace = true
 specta.workspace = true
+
+[dev-dependencies]
+divan.workspace = true
+
+[[bench]]
+name = "about"
+harness = false
 
 [lints]
 workspace = true

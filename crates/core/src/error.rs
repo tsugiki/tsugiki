@@ -5,12 +5,15 @@ use specta::Type;
 
 /// What the UI can do something about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
-#[serde(rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ErrorKind {
     Offline,
     Unauthorized,
     WriteRefused,
-    RateLimited,
+    RateLimited {
+        /// When the limit resets, in seconds since the Unix epoch, if GitHub said.
+        resets_at: Option<u32>,
+    },
     NotFound,
     Conflict,
     Internal,
@@ -19,10 +22,9 @@ pub enum ErrorKind {
 /// A failure in plain words. Details go only to a local log, with tokens scrubbed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct Error {
+    #[serde(flatten)]
     pub kind: ErrorKind,
     pub message: String,
-    /// When a rate limit resets, in seconds since the Unix epoch, if GitHub said.
-    pub resets_at: Option<u32>,
 }
 
 impl Error {
@@ -30,14 +32,6 @@ impl Error {
         Self {
             kind,
             message: message.to_owned(),
-            resets_at: None,
-        }
-    }
-
-    pub fn rate_limited(message: &str, resets_at: Option<u32>) -> Self {
-        Self {
-            resets_at,
-            ..Self::new(ErrorKind::RateLimited, message)
         }
     }
 }
@@ -45,13 +39,14 @@ impl Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn an_error_reaches_the_ui_as_a_kind_and_a_message() {
-        let json = serde_json::to_value(Error::new(ErrorKind::NotFound, "No such Issue.")).unwrap();
+        let error = Error::new(ErrorKind::NotFound, "No such Issue.");
         assert_eq!(
-            json,
-            serde_json::json!({ "kind": "not_found", "message": "No such Issue.", "resets_at": null })
+            serde_json::to_value(error).unwrap(),
+            json!({ "kind": "not_found", "message": "No such Issue." })
         );
     }
 
@@ -61,20 +56,24 @@ mod tests {
             (ErrorKind::Offline, "offline"),
             (ErrorKind::Unauthorized, "unauthorized"),
             (ErrorKind::WriteRefused, "write_refused"),
-            (ErrorKind::RateLimited, "rate_limited"),
+            (ErrorKind::RateLimited { resets_at: None }, "rate_limited"),
             (ErrorKind::NotFound, "not_found"),
             (ErrorKind::Conflict, "conflict"),
             (ErrorKind::Internal, "internal"),
         ];
         for (kind, name) in kinds {
-            assert_eq!(serde_json::to_value(kind).unwrap(), name);
+            assert_eq!(serde_json::to_value(kind).unwrap()["kind"], name);
         }
     }
 
     #[test]
-    fn a_rate_limit_says_when_it_resets() {
-        let error = Error::rate_limited("Wait for the reset.", Some(1_800_000_000));
-        assert_eq!(error.kind, ErrorKind::RateLimited);
-        assert_eq!(error.resets_at, Some(1_800_000_000));
+    fn only_a_rate_limit_says_when_it_resets() {
+        let limited = ErrorKind::RateLimited {
+            resets_at: Some(1_800_000_000),
+        };
+        assert_eq!(
+            serde_json::to_value(Error::new(limited, "Wait.")).unwrap(),
+            json!({ "kind": "rate_limited", "resets_at": 1_800_000_000, "message": "Wait." })
+        );
     }
 }

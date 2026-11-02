@@ -4,14 +4,14 @@
   let { status, error }: { status: Status | undefined; error?: string | undefined } = $props();
 </script>
 
-<footer role="status" class:offline={status?.connection === "offline"}>
+<footer role="status" class:offline={status?.state === "offline"}>
   {#if error}
     Tsugiki can't read its status: {error}
-  {:else if status?.problem}
+  {:else if status?.state === "problem"}
     {status.problem.message}
-  {:else if status?.connection === "offline"}
+  {:else if status?.state === "offline"}
     Offline: read-only
-  {:else if status?.login}
+  {:else if status?.state === "online"}
     {status.login}
   {:else}
     Connecting…

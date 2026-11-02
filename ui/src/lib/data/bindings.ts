@@ -23,32 +23,31 @@ export type About = {
 	version: string,
 };
 
-/**  Whether Tsugiki can reach GitHub. */
-export type Connection = 
-/**  Tsugiki hasn't asked yet, or has no token to ask with. */
-"unknown" | "online" | "offline";
-
 /**  A failure in plain words. Details go only to a local log, with tokens scrubbed. */
 export type Error = Error_Serialize | Error_Deserialize;
 
 /**  What the UI can do something about. */
-export type ErrorKind = "offline" | "unauthorized" | "write_refused" | "rate_limited" | "not_found" | "conflict" | "internal";
+export type ErrorKind = ErrorKind_Serialize | ErrorKind_Deserialize;
+
+/**  What the UI can do something about. */
+export type ErrorKind_Deserialize = { kind: "offline" } | { kind: "unauthorized" } | { kind: "write_refused" } | { kind: "rate_limited"; 
+/**  When the limit resets, in seconds since the Unix epoch, if GitHub said. */
+resets_at?: number | null } | { kind: "not_found" } | { kind: "conflict" } | { kind: "internal" };
+
+/**  What the UI can do something about. */
+export type ErrorKind_Serialize = { kind: "offline" } | { kind: "unauthorized" } | { kind: "write_refused" } | { kind: "rate_limited"; 
+/**  When the limit resets, in seconds since the Unix epoch, if GitHub said. */
+resets_at: number | null } | { kind: "not_found" } | { kind: "conflict" } | { kind: "internal" };
 
 /**  A failure in plain words. Details go only to a local log, with tokens scrubbed. */
 export type Error_Deserialize = {
-	kind: ErrorKind,
 	message: string,
-	/**  When a rate limit resets, in seconds since the Unix epoch, if GitHub said. */
-	resets_at?: number | null,
-};
+} & ErrorKind_Deserialize;
 
 /**  A failure in plain words. Details go only to a local log, with tokens scrubbed. */
 export type Error_Serialize = {
-	kind: ErrorKind,
 	message: string,
-	/**  When a rate limit resets, in seconds since the Unix epoch, if GitHub said. */
-	resets_at: number | null,
-};
+} & ErrorKind_Serialize;
 
 /**  The app's state, shown in the status bar. */
 export type Status = Status_Serialize | Status_Deserialize;
@@ -63,22 +62,18 @@ export type StatusChanged_Deserialize = Status_Deserialize;
 export type StatusChanged_Serialize = Status_Serialize;
 
 /**  The app's state, shown in the status bar. */
-export type Status_Deserialize = {
-	connection: Connection,
-	/**  Who is signed in, once GitHub has said. */
-	login?: string | null,
-	/**  What stops Tsugiki reading, such as a refused token. */
-	problem?: Error_Deserialize | null,
-};
+export type Status_Deserialize = 
+/**  Tsugiki hasn't heard from GitHub yet. */
+{ state: "connecting" } | { state: "online"; login: string } | { state: "offline" } | 
+/**  Something stops Tsugiki reading, such as a refused token. */
+{ state: "problem"; problem: Error_Deserialize };
 
 /**  The app's state, shown in the status bar. */
-export type Status_Serialize = {
-	connection: Connection,
-	/**  Who is signed in, once GitHub has said. */
-	login: string | null,
-	/**  What stops Tsugiki reading, such as a refused token. */
-	problem: Error_Serialize | null,
-};
+export type Status_Serialize = 
+/**  Tsugiki hasn't heard from GitHub yet. */
+{ state: "connecting" } | { state: "online"; login: string } | { state: "offline" } | 
+/**  Something stops Tsugiki reading, such as a refused token. */
+{ state: "problem"; problem: Error_Serialize };
 
 /* Tauri Specta runtime */
 type EventEmit<T> = [T] extends [null] ? () => Promise<void> : (payload: T) => Promise<void>;

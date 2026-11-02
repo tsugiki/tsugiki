@@ -58,7 +58,9 @@ mod tests {
 
         let app = mock_app();
         app.manage(board);
-        let problem = status(app.state()).problem.expect("a problem");
-        assert_eq!(problem.kind, ErrorKind::Unauthorized);
+        assert!(matches!(
+            status(app.state()),
+            Status::Problem { problem } if problem.kind == ErrorKind::Unauthorized
+        ));
     }
 }

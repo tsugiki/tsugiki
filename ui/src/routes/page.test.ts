@@ -5,7 +5,7 @@ import Page from "./+page.svelte";
 vi.mock("$lib/data/bindings", () => ({
   commands: {
     about: async () => ({ name: "Tsugiki", version: "1.2.3" }),
-    status: async () => ({ connection: "online", login: "octocat", problem: null }),
+    status: async () => ({ state: "online", login: "octocat" }),
   },
   events: { statusChanged: { listen: async () => () => {} } },
 }));

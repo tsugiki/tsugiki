@@ -7,8 +7,8 @@ vi.mock("$lib/data/bindings", () => ({
   events: { statusChanged: { listen: vi.fn() } },
 }));
 
-const online: Status = { connection: "online", login: "octocat", problem: null };
-const offline: Status = { connection: "offline", login: null, problem: null };
+const online: Status = { state: "online", login: "octocat" };
+const offline: Status = { state: "offline" };
 
 /** Catches the listener StatusState registers, so a test can send it events as the core would. */
 const catchListener = () => {

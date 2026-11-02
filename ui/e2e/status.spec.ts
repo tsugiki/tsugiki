@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 import { emitFromCore, mockCore } from "./mock-core.ts";
 
-const online = { connection: "online", login: "octocat", problem: null } as const;
-const offline = { connection: "offline", login: null, problem: null } as const;
+const online = { state: "online", login: "octocat" } as const;
+const offline = { state: "offline" } as const;
 
 test("the status bar shows who is signed in", async ({ page }) => {
   await mockCore(page, { status: online });
@@ -17,7 +17,7 @@ test("the status bar shows Offline without the network", async ({ page }) => {
 });
 
 test("the status bar follows the core's status event", async ({ page }) => {
-  await mockCore(page, { status: { connection: "unknown", login: null, problem: null } });
+  await mockCore(page, { status: { state: "connecting" } });
   await page.goto("/");
   await expect(page.getByRole("status")).toHaveText("Connecting…");
   await emitFromCore(page, "status-changed", online);
@@ -25,8 +25,8 @@ test("the status bar follows the core's status event", async ({ page }) => {
 });
 
 test("a refused token shows the core's words", async ({ page }) => {
-  const problem = { kind: "unauthorized", message: "GitHub refused the token.", resets_at: null } as const;
-  await mockCore(page, { status: { connection: "online", login: null, problem } });
+  const problem = { kind: "unauthorized", message: "GitHub refused the token." } as const;
+  await mockCore(page, { status: { state: "problem", problem } });
   await page.goto("/");
   await expect(page.getByRole("status")).toHaveText("GitHub refused the token.");
 });

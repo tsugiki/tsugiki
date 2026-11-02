@@ -9,24 +9,20 @@ use crate::error::{Error, ErrorKind};
 use crate::github::{GitHub, Transport};
 use crate::token::{RunGh, Token};
 
-/// Whether Tsugiki can reach GitHub.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
-#[serde(rename_all = "snake_case")]
-pub enum Connection {
-    /// Tsugiki hasn't asked yet, or has no token to ask with.
-    Unknown,
-    Online,
-    Offline,
-}
-
 /// The app's state, shown in the status bar.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-pub struct Status {
-    pub connection: Connection,
-    /// Who is signed in, once GitHub has said.
-    pub login: Option<String>,
-    /// What stops Tsugiki reading, such as a refused token.
-    pub problem: Option<Error>,
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum Status {
+    /// Tsugiki hasn't heard from GitHub yet.
+    Connecting,
+    Online {
+        login: String,
+    },
+    Offline,
+    /// Something stops Tsugiki reading, such as a refused token.
+    Problem {
+        problem: Error,
+    },
 }
 
 /// Holds the status and announces each change, so the app can pass it on as an event.
@@ -38,11 +34,7 @@ pub struct StatusBoard {
 impl StatusBoard {
     pub fn new(announce: Box<dyn Fn(&Status) + Send + Sync>) -> Self {
         Self {
-            current: Mutex::new(Status {
-                connection: Connection::Unknown,
-                login: None,
-                problem: None,
-            }),
+            current: Mutex::new(Status::Connecting),
             announce,
         }
     }
@@ -71,11 +63,7 @@ pub fn connect(
     let token = match Token::from_gh(run_gh) {
         Ok(token) => token,
         Err(problem) => {
-            board.set(Status {
-                connection: Connection::Unknown,
-                login: None,
-                problem: Some(problem),
-            });
+            board.set(Status::Problem { problem });
             return None;
         }
     };
@@ -87,24 +75,14 @@ pub fn connect(
 /// Asks GitHub again, so `board` follows the network going and coming back.
 pub fn refresh(board: &StatusBoard, github: &GitHub) {
     board.set(match github.viewer() {
-        Ok(viewer) => Status {
-            connection: Connection::Online,
-            login: Some(viewer.login),
-            problem: None,
+        Ok(viewer) => Status::Online {
+            login: viewer.login,
         },
         Err(Error {
             kind: ErrorKind::Offline,
             ..
-        }) => Status {
-            connection: Connection::Offline,
-            login: None,
-            problem: None,
-        },
-        Err(problem) => Status {
-            connection: Connection::Online,
-            login: None,
-            problem: Some(problem),
-        },
+        }) => Status::Offline,
+        Err(problem) => Status::Problem { problem },
     });
 }
 
@@ -126,16 +104,15 @@ mod tests {
         Box::new(Canned(Err(Unreachable)))
     }
 
+    fn octocat() -> Status {
+        Status::Online {
+            login: "octocat".to_owned(),
+        }
+    }
+
     #[test]
     fn nothing_is_known_before_tsugiki_connects() {
-        assert_eq!(
-            quiet_board().get(),
-            Status {
-                connection: Connection::Unknown,
-                login: None,
-                problem: None
-            }
-        );
+        assert_eq!(quiet_board().get(), Status::Connecting);
     }
 
     #[test]
@@ -143,37 +120,28 @@ mod tests {
         let board = quiet_board();
         let reply = answered(200, r#"{"data":{"viewer":{"login":"octocat"}}}"#);
         assert!(connect(&board, Box::new(reply), signed_in_gh).is_some());
-        assert_eq!(
-            board.get(),
-            Status {
-                connection: Connection::Online,
-                login: Some("octocat".to_owned()),
-                problem: None
-            }
-        );
+        assert_eq!(board.get(), octocat());
     }
 
     #[test]
     fn without_the_network_the_status_is_offline() {
         let board = quiet_board();
         assert!(connect(&board, offline(), signed_in_gh).is_some());
-        assert_eq!(
-            board.get(),
-            Status {
-                connection: Connection::Offline,
-                login: None,
-                problem: None
-            }
-        );
+        assert_eq!(board.get(), Status::Offline);
+    }
+
+    fn problem_kind(status: Status) -> Option<ErrorKind> {
+        match status {
+            Status::Problem { problem } => Some(problem.kind),
+            _ => None,
+        }
     }
 
     #[test]
-    fn a_refused_token_is_a_problem_while_online() {
+    fn a_refused_token_is_a_problem() {
         let board = quiet_board();
         connect(&board, Box::new(answered(401, "")), signed_in_gh);
-        let status = board.get();
-        assert_eq!(status.connection, Connection::Online);
-        assert_eq!(status.problem.unwrap().kind, ErrorKind::Unauthorized);
+        assert_eq!(problem_kind(board.get()), Some(ErrorKind::Unauthorized));
     }
 
     #[test]
@@ -181,20 +149,23 @@ mod tests {
         let board = quiet_board();
         let gh_missing: RunGh = |_| Err(io::Error::from(io::ErrorKind::NotFound));
         assert!(connect(&board, offline(), gh_missing).is_none());
-        let status = board.get();
-        assert_eq!(status.connection, Connection::Unknown);
-        assert_eq!(status.problem.unwrap().kind, ErrorKind::Unauthorized);
+        assert_eq!(problem_kind(board.get()), Some(ErrorKind::Unauthorized));
+    }
+
+    #[test]
+    fn a_status_without_a_problem_has_no_problem_kind() {
+        assert_eq!(problem_kind(Status::Offline), None);
     }
 
     #[test]
     fn every_change_is_announced() {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let seen_by_board = Arc::clone(&seen);
-        let board = StatusBoard::new(Box::new(move |status| {
-            seen_by_board.lock().unwrap().push(status.connection);
+        let board = StatusBoard::new(Box::new(move |status: &Status| {
+            seen_by_board.lock().unwrap().push(status.clone());
         }));
         connect(&board, offline(), signed_in_gh);
-        assert_eq!(*seen.lock().unwrap(), [Connection::Offline]);
+        assert_eq!(*seen.lock().unwrap(), [Status::Offline]);
     }
 
     /// Answers with each reply in turn.
@@ -220,14 +191,13 @@ mod tests {
         let transport = Box::new(Replies(Mutex::new(replies.into())));
         let board = quiet_board();
         let github = connect(&board, transport, signed_in_gh).unwrap();
-        assert_eq!(board.get().login.as_deref(), Some("octocat"));
+        assert_eq!(board.get(), octocat());
 
         refresh(&board, &github);
-        assert_eq!(board.get().connection, Connection::Offline);
+        assert_eq!(board.get(), Status::Offline);
 
         refresh(&board, &github);
-        assert_eq!(board.get().connection, Connection::Online);
-        assert_eq!(board.get().login.as_deref(), Some("octocat"));
+        assert_eq!(board.get(), octocat());
     }
 
     #[test]
@@ -243,15 +213,22 @@ mod tests {
     }
 
     #[test]
-    fn the_status_reaches_the_ui_in_snake_case() {
-        let status = Status {
-            connection: Connection::Offline,
-            login: None,
-            problem: None,
-        };
+    fn the_status_reaches_the_ui_tagged_by_its_state() {
         assert_eq!(
-            serde_json::to_value(status).unwrap(),
-            serde_json::json!({ "connection": "offline", "login": null, "problem": null })
+            serde_json::to_value(Status::Offline).unwrap(),
+            serde_json::json!({ "state": "offline" })
+        );
+        assert_eq!(
+            serde_json::to_value(octocat()).unwrap(),
+            serde_json::json!({ "state": "online", "login": "octocat" })
+        );
+        let problem = Error::new(ErrorKind::Unauthorized, "Sign in.");
+        assert_eq!(
+            serde_json::to_value(Status::Problem { problem }).unwrap(),
+            serde_json::json!({
+                "state": "problem",
+                "problem": { "kind": "unauthorized", "message": "Sign in." },
+            })
         );
     }
 }

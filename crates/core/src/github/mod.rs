@@ -95,6 +95,10 @@ fn read<D: DeserializeOwned>(reply: &Reply) -> Result<D, Error> {
     }
 
     let internal = |message: &str| Error::new(ErrorKind::Internal, message);
+    let rate_limited = || {
+        let resets_at = reply.reset;
+        Error::new(ErrorKind::RateLimited { resets_at }, RATE_LIMITED)
+    };
     match reply.status {
         200 => {}
         401 => {
@@ -103,10 +107,8 @@ fn read<D: DeserializeOwned>(reply: &Reply) -> Result<D, Error> {
                 "GitHub refused the token. Run `gh auth login`, and restart Tsugiki.",
             ));
         }
-        429 => return Err(Error::rate_limited(RATE_LIMITED, reply.reset)),
-        403 if reply.body.contains("rate limit") => {
-            return Err(Error::rate_limited(RATE_LIMITED, reply.reset));
-        }
+        429 => return Err(rate_limited()),
+        403 if reply.body.contains("rate limit") => return Err(rate_limited()),
         status => return Err(internal(&format!("GitHub answered with status {status}."))),
     }
 
@@ -115,7 +117,7 @@ fn read<D: DeserializeOwned>(reply: &Reply) -> Result<D, Error> {
     let envelope: Envelope = serde_json::from_str(&reply.body).map_err(|_| internal(UNREADABLE))?;
     if let Some(error) = envelope.errors.first() {
         return Err(if error.kind.as_deref() == Some("RATE_LIMITED") {
-            Error::rate_limited(RATE_LIMITED, reply.reset)
+            rate_limited()
         } else {
             internal(&format!("GitHub said: {}", error.message))
         });
@@ -171,6 +173,10 @@ mod tests {
         GitHub::new(Box::new(transport), token())
     }
 
+    fn limited_until(resets_at: Option<u32>) -> ErrorKind {
+        ErrorKind::RateLimited { resets_at }
+    }
+
     fn error_of(transport: Canned) -> crate::error::Error {
         client(transport).viewer().unwrap_err()
     }
@@ -212,13 +218,12 @@ mod tests {
             reset: Some(1_800_000_000),
             body: r#"{"message":"API rate limit exceeded for user"}"#.to_owned(),
         })));
-        assert_eq!(error.kind, ErrorKind::RateLimited);
-        assert_eq!(error.resets_at, Some(1_800_000_000));
+        assert_eq!(error.kind, limited_until(Some(1_800_000_000)));
     }
 
     #[test]
     fn a_429_is_a_rate_limit() {
-        assert_eq!(error_of(answered(429, "")).kind, ErrorKind::RateLimited);
+        assert_eq!(error_of(answered(429, "")).kind, limited_until(None));
     }
 
     #[test]
@@ -229,8 +234,7 @@ mod tests {
             reset: Some(1_800_000_000),
             body: body.to_owned(),
         })));
-        assert_eq!(error.kind, ErrorKind::RateLimited);
-        assert_eq!(error.resets_at, Some(1_800_000_000));
+        assert_eq!(error.kind, limited_until(Some(1_800_000_000)));
     }
 
     #[test]
@@ -259,7 +263,7 @@ mod tests {
     #[test]
     fn a_null_field_doesnt_hide_the_error_that_explains_it() {
         let body = r#"{"data":{"viewer":null},"errors":[{"type":"RATE_LIMITED","message":"x"}]}"#;
-        assert_eq!(error_of(answered(200, body)).kind, ErrorKind::RateLimited);
+        assert_eq!(error_of(answered(200, body)).kind, limited_until(None));
     }
 
     #[test]

@@ -1,6 +1,9 @@
 //! One run of Tsugiki: opens the database, then keeps the status following GitHub until the app ends.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::Arc;
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::thread;
 use std::time::Duration;
 
 use crate::error::{Error, ErrorKind};
@@ -33,21 +36,86 @@ pub fn connect(board: &StatusBoard, store: &Store, access: GitHubAccess) -> Opti
     Some(github)
 }
 
+/// A run of Tsugiki on its own thread, so the window opens without waiting on the disk, gh or the network
+/// (ADR 0017). It shows its own failures on the board.
+#[must_use = "dropping the session stops it"]
+pub struct Session {
+    stop: Sender<()>,
+    finished: Receiver<()>,
+}
+
+impl Session {
+    /// Opens the database and asks GitHub who is signed in, then again every `interval`.
+    pub fn start(
+        board: Arc<StatusBoard>,
+        folders: Result<Folders, Error>,
+        access: GitHubAccess,
+        interval: Duration,
+    ) -> Self {
+        let (stop, stopping) = mpsc::channel();
+        let (finishing, finished) = mpsc::channel::<()>();
+        let refreshes = Refreshes {
+            every: interval,
+            stopping,
+        };
+        let _ = thread::spawn(move || {
+            // `stop` learns the session is over when this goes, however the thread ends.
+            let _finishing = finishing;
+            run(&board, folders, access, &refreshes);
+        });
+        Self { stop, finished }
+    }
+
+    /// Tells the session to finish, and gives it up to `patience` to close the database.
+    ///
+    /// Between refreshes it closes at once. A request to GitHub, a call to `gh` or a migration can outlast
+    /// `patience`, and then the process ends in the middle of it. SQLite recovers at the next start, as it
+    /// does after a crash.
+    pub fn stop(&self, patience: Duration) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "this fails only if the session has already finished, which is what this asks for"
+        )]
+        let _ = self.stop.send(());
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "running out of patience is the one failure here, and the doc above says why it is safe"
+        )]
+        let _ = self.finished.recv_timeout(patience);
+    }
+}
+
+/// When to ask GitHub again.
+struct Refreshes {
+    every: Duration,
+    stopping: Receiver<()>,
+}
+
+impl Refreshes {
+    /// Waits out the interval, and says whether to refresh. A dropped `Session` stops it too.
+    fn wait_for_next(&self) -> bool {
+        matches!(
+            self.stopping.recv_timeout(self.every),
+            Err(RecvTimeoutError::Timeout)
+        )
+    }
+}
+
 /// Opens the database and watches GitHub. Without a database Tsugiki doesn't ask GitHub anything: `board`
 /// shows why, and a database from a newer Tsugiki stays as it is (ADR 0010).
 ///
 /// Nothing else would show a panic in here: the last status would stay up and look current, so this replaces
 /// it with a problem. It relies on panics unwinding, so `panic = "abort"` would end the app instead (#57).
-pub fn start(
+fn run(
     board: &StatusBoard,
     folders: Result<Folders, Error>,
     access: GitHubAccess,
-    interval: Duration,
+    refreshes: &Refreshes,
 ) {
     let started = catch_unwind(AssertUnwindSafe(|| {
         match folders.and_then(|folders| Store::open(&folders.database())) {
             Ok(store) => {
-                watch(board, &store, access, interval);
+                watch(board, &store, access, refreshes);
                 store.close();
             }
             Err(problem) => board.set(Status::Problem { problem }),
@@ -60,14 +128,13 @@ pub fn start(
     }
 }
 
-/// Connects, then asks GitHub every `interval` for as long as the app runs. Returns only when there is no
-/// token, which `board` then shows.
-fn watch(board: &StatusBoard, store: &Store, access: GitHubAccess, interval: Duration) {
+/// Connects, then asks GitHub again until told to stop. With no token it returns straight away, and `board`
+/// shows why.
+fn watch(board: &StatusBoard, store: &Store, access: GitHubAccess, refreshes: &Refreshes) {
     let Some(github) = connect(board, store, access) else {
         return;
     };
-    loop {
-        std::thread::sleep(interval);
+    while refreshes.wait_for_next() {
         refresh(board, store, &github);
     }
 }
@@ -105,6 +172,7 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::mpsc::{RecvError, TryRecvError};
 
     /// A real store that keeps nothing once it closes.
     fn empty_store() -> Store {
@@ -320,25 +388,148 @@ mod tests {
         assert_eq!(board.get(), octocat());
     }
 
-    #[test]
-    fn watching_follows_github_until_something_stops_it() {
-        // `Replies` panics once it has no replies left.
-        let access = replying(vec![signed_in(), Err(Unreachable), signed_in()]);
-        let (board, seen) = watched_board();
+    /// Refreshes told to stop before they began, for a test that shouldn't get as far as a second request.
+    fn stopped_refreshes() -> Refreshes {
+        Refreshes {
+            every: Duration::ZERO,
+            stopping: mpsc::channel().1,
+        }
+    }
 
-        let watched = catch_unwind(AssertUnwindSafe(|| {
-            watch(&board, &empty_store(), access, Duration::ZERO);
+    /// A board that passes on each status, so a test can wait for one from another thread.
+    fn passing_board() -> (Arc<StatusBoard>, Receiver<Status>) {
+        let (passed, statuses) = mpsc::channel();
+        let board = StatusBoard::new(Box::new(move |status: &Status| {
+            passed.send(status.clone()).unwrap();
         }));
+        (Arc::new(board), statuses)
+    }
 
-        assert!(watched.is_err());
+    #[test]
+    fn watching_follows_github_until_told_to_stop() {
+        // `Replies` panics if it is asked a fourth time, so the third status has to stop the watching.
+        let access = replying(vec![signed_in(), Err(Unreachable), signed_in()]);
+        let (stop, stopping) = mpsc::channel();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let shown = Arc::clone(&seen);
+        let board = StatusBoard::new(Box::new(move |status: &Status| {
+            let mut shown = shown.lock().unwrap();
+            shown.push(status.clone());
+            if shown.len() == 3 {
+                stop.send(()).unwrap();
+            }
+        }));
+        let refreshes = Refreshes {
+            every: Duration::ZERO,
+            stopping,
+        };
+
+        watch(&board, &empty_store(), access, &refreshes);
+
         let offline_as = Status::OfflineAs {
             last_login: Login::new("octocat"),
         };
         assert_eq!(*seen.lock().unwrap(), [octocat(), offline_as, octocat()]);
     }
 
+    const AN_HOUR: Duration = Duration::from_secs(3600);
+    const PLENTY: Duration = Duration::from_secs(10);
+
+    fn wal_of(folders: &Folders) -> PathBuf {
+        folders.data.join("tsugiki.db-wal")
+    }
+
     #[test]
-    fn a_panic_anywhere_in_start_says_tsugiki_stopped_checking() {
+    fn stopping_between_refreshes_closes_the_store() {
+        let folders = temp_folders("stop-between");
+        let (board, statuses) = passing_board();
+        let session = Session::start(board, Ok(folders.clone()), octocat_answers(), AN_HOUR);
+        assert_eq!(statuses.recv().unwrap(), octocat());
+        let waiting = fs::metadata(wal_of(&folders)).unwrap().len();
+        assert!(waiting > 0, "the login is still in the -wal");
+
+        session.stop(PLENTY);
+
+        assert!(!wal_of(&folders).exists(), "closing moved it to the file");
+        let store = Store::open(&folders.database()).unwrap();
+        assert_eq!(store.last_login().unwrap(), Some(Login::new("octocat")));
+        store.close();
+        fs::remove_dir_all(folders.data).unwrap();
+    }
+
+    /// Holds its answer back until the test lets go.
+    struct Held {
+        asked: Sender<()>,
+        answer: Mutex<Receiver<()>>,
+    }
+
+    impl Transport for Held {
+        #[expect(
+            clippy::unwrap_in_result,
+            reason = "a test that lets go of either channel early should fail"
+        )]
+        fn post(&self, _: &Token, _: &Request<'_>) -> Result<Reply, Unreachable> {
+            self.asked.send(()).unwrap();
+            self.answer.lock().unwrap().recv().unwrap();
+            signed_in()
+        }
+    }
+
+    #[test]
+    fn stopping_doesnt_wait_out_a_request_in_progress() {
+        let folders = temp_folders("stop-in-request");
+        let (asked, request) = mpsc::channel();
+        let (answer, answering) = mpsc::channel();
+        let access = GitHubAccess {
+            transport: Box::new(Held {
+                asked,
+                answer: Mutex::new(answering),
+            }),
+            run_gh: signed_in_gh,
+        };
+        let session = Session::start(
+            Arc::new(quiet_board()),
+            Ok(folders.clone()),
+            access,
+            AN_HOUR,
+        );
+        request.recv().unwrap();
+
+        session.stop(Duration::from_millis(10));
+
+        assert_eq!(session.finished.try_recv(), Err(TryRecvError::Empty));
+        answer.send(()).unwrap();
+        let finished = session.finished.recv_timeout(PLENTY);
+        assert_eq!(
+            finished,
+            Err(RecvTimeoutError::Disconnected),
+            "it finishes after all"
+        );
+        fs::remove_dir_all(folders.data).unwrap();
+    }
+
+    #[test]
+    fn stopping_a_session_that_has_already_finished_returns_at_once() {
+        let folders = temp_folders("stop-finished");
+        let access = GitHubAccess {
+            transport: Box::new(Canned(Err(Unreachable))),
+            run_gh: without_gh,
+        };
+        let session = Session::start(
+            Arc::new(quiet_board()),
+            Ok(folders.clone()),
+            access,
+            AN_HOUR,
+        );
+        assert_eq!(session.finished.recv(), Err(RecvError));
+
+        session.stop(AN_HOUR);
+
+        fs::remove_dir_all(folders.data).unwrap();
+    }
+
+    #[test]
+    fn a_panic_anywhere_in_a_run_says_tsugiki_stopped_checking() {
         // The first announcement panics, on the path that never reaches `watch`.
         let panicked = AtomicBool::new(false);
         let board = StatusBoard::new(Box::new(move |_: &Status| {
@@ -349,7 +540,7 @@ mod tests {
         }));
         let lost = Error::new(ErrorKind::Internal, "HOME isn't a full path.");
 
-        start(&board, Err(lost), octocat_answers(), Duration::ZERO);
+        run(&board, Err(lost), octocat_answers(), &stopped_refreshes());
 
         assert_eq!(problem_of(board.get()).unwrap().message, STOPPED_CHECKING);
     }
@@ -363,7 +554,7 @@ mod tests {
             run_gh: without_gh,
         };
 
-        start(&board, Ok(folders.clone()), access, Duration::ZERO);
+        run(&board, Ok(folders.clone()), access, &stopped_refreshes());
 
         assert_eq!(problem_kind(board.get()), Some(ErrorKind::Unauthorized));
         assert!(folders.database().exists());
@@ -375,7 +566,7 @@ mod tests {
         let board = quiet_board();
         let lost = Error::new(ErrorKind::Internal, "HOME isn't a full path.");
 
-        start(&board, Err(lost), octocat_answers(), Duration::ZERO);
+        run(&board, Err(lost), octocat_answers(), &stopped_refreshes());
 
         assert_eq!(
             problem_of(board.get()).unwrap().message,
@@ -392,11 +583,11 @@ mod tests {
         let before = fs::read(folders.database()).unwrap();
         let (board, seen) = watched_board();
 
-        start(
+        run(
             &board,
             Ok(folders.clone()),
             octocat_answers(),
-            Duration::ZERO,
+            &stopped_refreshes(),
         );
 
         assert_eq!(seen.lock().unwrap().len(), 1, "octocat's answer never came");

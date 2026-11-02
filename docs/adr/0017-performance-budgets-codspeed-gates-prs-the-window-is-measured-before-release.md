@@ -32,4 +32,5 @@ The diff prototype ([ADR 0001](0001-standalone-tauri-gui-with-in-app-review.md))
 
 - The benchmark job is the one PR check that runs on Linux. That is safe because `tsugiki-core` doesn't depend on the OS, and [ADR 0009](0009-testing-and-full-coverage.md)'s reason for testing on Windows and macOS was the webviews, which this job doesn't touch.
 - Benchmarks are code like any other: each core view model and hot path gets one, and the coverage rules apply to the helpers that build their data.
+- A benchmark measures a realistic workload, not a single call: a `workbench` query on the CPython-sized database, or highlighting a whole 10k-row diff rather than one line. A very short benchmark is a poor signal even when it repeats exactly, because one extra allocation can pass the threshold and block a PR.
 - The `tsugiki-core` crate must build on Linux, so platform-specific code stays in `crates/app` or behind `cfg` ([ADR 0007](0007-core-library-and-thin-tauri-app.md)).

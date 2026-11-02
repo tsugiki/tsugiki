@@ -23,7 +23,8 @@ export default defineConfig({
         "../scripts/rust-coverage.ts",
       ],
       thresholds: { 100: true },
-      reporter: ["text"],
+      // lcovonly is for Codecov, with paths from the repo root like the Rust report's.
+      reporter: ["text", ["lcovonly", { projectRoot: ".." }]],
     },
   },
 });

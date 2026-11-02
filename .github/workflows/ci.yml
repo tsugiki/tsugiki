@@ -67,6 +67,13 @@ jobs:
           name: rust-coverage-${{ matrix.os }}
           path: target/coverage/lcov.info
           if-no-files-found: error
+      - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: target/coverage/lcov.info
+          disable_search: true
+          flags: rust
+          name: rust-${{ matrix.os }}
 
   # Merges the OSes' reports, so code that runs on only one OS still counts as covered (ADR 0009).
   rust-coverage-gate:
@@ -109,6 +116,15 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run ${{ matrix.check }}
+      # Also when the gate fails: that's when the uncovered lines are worth seeing.
+      - if: ${{ !cancelled() && matrix.check == 'vitest' }}
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ui/coverage/lcov.info
+          disable_search: true
+          flags: typescript
+          name: typescript-${{ matrix.os }}
 
   playwright:
     name: Playwright ${{ matrix.browser }} (${{ matrix.os }})

@@ -1,0 +1,14 @@
+# Codecov shows coverage on each PR. It only reports: CI's own gates decide whether a PR passes (ADR 0009),
+# so these statuses are informational and an outage at Codecov can't block a merge.
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+
+comment:
+  layout: "condensed_header, diff, flags, files"
+  require_changes: false

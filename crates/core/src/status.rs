@@ -1,7 +1,5 @@
 //! App-wide status, owned by the core (ADR 0008). For now: the connection, who is signed in, and problems.
 
-use std::sync::{Mutex, MutexGuard, PoisonError};
-
 use serde::Serialize;
 use specta::Type;
 
@@ -9,10 +7,11 @@ use crate::error::Error;
 use crate::github::Login;
 
 /// The app's state, shown in the status bar.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum Status {
     /// Nobody is known yet, and GitHub hasn't answered.
+    #[default]
     Connecting,
     /// GitHub hasn't answered yet, and this is who was signed in last time.
     ConnectingAs { last_login: Login },
@@ -26,36 +25,25 @@ pub enum Status {
     Problem { problem: Error },
 }
 
-/// Holds the status and announces each change, so the app can pass it on as an event.
+/// Holds the status and announces each change, so the app can pass it on as an event. The session's thread
+/// owns it, so nothing here needs a lock.
 pub struct StatusBoard {
-    current: Mutex<Status>,
-    announce: Box<dyn Fn(&Status) + Send + Sync>,
+    current: Status,
+    announce: Box<dyn FnMut(&Status) + Send>,
 }
 
 impl StatusBoard {
-    pub fn new(announce: Box<dyn Fn(&Status) + Send + Sync>) -> Self {
+    pub fn new(announce: Box<dyn FnMut(&Status) + Send>) -> Self {
         Self {
-            current: Mutex::new(Status::Connecting),
+            current: Status::default(),
             announce,
         }
     }
 
-    pub fn get(&self) -> Status {
-        self.lock().clone()
-    }
-
-    /// Only this file holds the lock, and it calls out to nothing while it does, so poisoning should never
-    /// happen. If it does, the status is still whole, because `set` only ever replaces it.
-    fn lock(&self) -> MutexGuard<'_, Status> {
-        self.current.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    pub(crate) fn set(&self, status: Status) {
-        let mut current = self.lock();
-        if *current != status {
-            current.clone_from(&status);
-            drop(current);
-            (self.announce)(&status);
+    pub(crate) fn set(&mut self, status: Status) {
+        if self.current != status {
+            self.current = status;
+            (self.announce)(&self.current);
         }
     }
 }
@@ -63,65 +51,60 @@ impl StatusBoard {
 #[cfg(test)]
 pub(crate) mod testing {
     use super::*;
-    use std::sync::Arc;
+    use std::sync::mpsc::{self, Receiver};
 
     pub(crate) fn quiet_board() -> StatusBoard {
         StatusBoard::new(Box::new(|_| {}))
     }
 
-    /// A board, and everything it has announced.
-    pub(crate) fn watched_board() -> (StatusBoard, Arc<Mutex<Vec<Status>>>) {
-        let seen = Arc::new(Mutex::new(Vec::new()));
-        let seen_by_board = Arc::clone(&seen);
+    /// A board, and where it sends what it announces, so a test can also wait for a status from another
+    /// thread.
+    pub(crate) fn watched_board() -> (StatusBoard, Receiver<Status>) {
+        let (passed, seen) = mpsc::channel();
         let board = StatusBoard::new(Box::new(move |status: &Status| {
-            seen_by_board.lock().unwrap().push(status.clone());
+            passed.send(status.clone()).unwrap();
         }));
         (board, seen)
+    }
+
+    /// What the board has announced since the last time a test looked.
+    pub(crate) fn announced(seen: &Receiver<Status>) -> Vec<Status> {
+        seen.try_iter().collect()
+    }
+
+    /// The last thing the board announced, which is what the app is showing.
+    pub(crate) fn showing(seen: &Receiver<Status>) -> Status {
+        seen.try_iter().last().unwrap()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::testing::{quiet_board, watched_board};
+    use super::testing::{announced, watched_board};
     use super::*;
     use crate::error::ErrorKind;
 
     #[test]
-    fn a_panic_while_holding_the_lock_doesnt_stop_the_status_working() {
-        let board = quiet_board();
-        std::thread::scope(|scope| {
-            let holder = scope.spawn(|| {
-                let _guard = board.current.lock();
-                panic!("a panic while holding the lock");
-            });
-            assert!(holder.join().is_err());
-        });
-        assert!(board.current.is_poisoned());
-
-        assert_eq!(board.get(), Status::Connecting);
-        board.set(Status::Offline);
-        assert_eq!(board.get(), Status::Offline);
-    }
-
-    #[test]
     fn nothing_is_known_before_tsugiki_connects() {
-        assert_eq!(quiet_board().get(), Status::Connecting);
+        let (mut board, seen) = watched_board();
+        board.set(Status::Connecting);
+        assert!(announced(&seen).is_empty(), "it was connecting already");
     }
 
     #[test]
     fn every_change_is_announced() {
-        let (board, seen) = watched_board();
+        let (mut board, seen) = watched_board();
         board.set(Status::Offline);
         board.set(Status::Connecting);
-        assert_eq!(*seen.lock().unwrap(), [Status::Offline, Status::Connecting]);
+        assert_eq!(announced(&seen), [Status::Offline, Status::Connecting]);
     }
 
     #[test]
     fn a_status_that_didnt_change_isnt_announced() {
-        let (board, seen) = watched_board();
+        let (mut board, seen) = watched_board();
         board.set(Status::Offline);
         board.set(Status::Offline);
-        assert_eq!(seen.lock().unwrap().len(), 1);
+        assert_eq!(announced(&seen).len(), 1);
     }
 
     #[test]

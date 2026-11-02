@@ -9,7 +9,9 @@
     "build": "vite build",
     "prepare": "svelte-kit sync || echo ''",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "lint": "eslint . && prettier --check .",
+    "lint": "npm run eslint && npm run prettier",
+    "eslint": "eslint .",
+    "prettier": "prettier --check .",
     "fmt": "prettier --write .",
     "test": "vitest run",
     "e2e": "playwright test"

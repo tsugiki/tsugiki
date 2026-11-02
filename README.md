@@ -34,6 +34,21 @@ Tsugiki is being designed. There is no app to install yet. The decisions made so
 
 It will be a [Tauri](https://tauri.app/) app (Rust with Svelte 5 and TypeScript) for Windows and macOS. Its command-line name is `tsg`.
 
+## Reporting a bug
+
+Tsugiki keeps a log of why things failed, and attaching it to a bug report helps. It stays on your computer
+unless you send it, and Tsugiki hides your GitHub token in it. It can still name your paths and your login,
+and quote what GitHub sent, so read it before you post it.
+
+| Where Tsugiki runs | The log |
+|---|---|
+| Installed on Windows | `%LOCALAPPDATA%\tsugiki\tsugiki.log` |
+| Installed on macOS | `~/Library/Application Support/tsugiki/tsugiki.log` |
+| Portable on Windows | `data\tsugiki.log`, next to `tsg.exe` |
+| Portable on macOS | `tsugiki-portable-data/tsugiki.log`, next to `Tsugiki.app` |
+
+`tsugiki.log.1`, next to it, holds the older lines.
+
 ## License
 
 [MIT](LICENSE). The wordmark is outlined from [Zen Kaku Gothic New](https://github.com/googlefonts/zen-kakugothic), under the SIL Open Font License 1.1.

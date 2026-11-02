@@ -42,6 +42,9 @@ impl StatusBoard {
 
     pub(crate) fn set(&mut self, status: Status) {
         if self.current != status {
+            if let Status::Problem { problem } = &status {
+                log::error!("The status bar says: {}", problem.message);
+            }
             self.current = status;
             (self.announce)(&self.current);
         }

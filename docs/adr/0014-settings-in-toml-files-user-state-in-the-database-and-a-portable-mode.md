@@ -14,16 +14,16 @@ Tsugiki watches both files and applies a hand edit at once. A file that doesn't 
 ```
 installed, Windows
   %LOCALAPPDATA%\Programs\Tsugiki\tsg.exe       the program
-  %LOCALAPPDATA%\tsugiki\                       tsugiki.db, machine.toml, repos\
+  %LOCALAPPDATA%\tsugiki\                       tsugiki.db, tsugiki.log, machine.toml, repos\
   %APPDATA%\tsugiki\settings.toml               roaming, unless settings_path says otherwise
 
 installed, macOS
   /Applications/Tsugiki.app
-  ~/Library/Application Support/tsugiki/        settings.toml, machine.toml, tsugiki.db, repos/
+  ~/Library/Application Support/tsugiki/        settings.toml, machine.toml, tsugiki.db, tsugiki.log, repos/
 
 portable
   <folder>\tsg.exe
-  <folder>\data\                                settings.toml, machine.toml, tsugiki.db, repos\
+  <folder>\data\                                settings.toml, machine.toml, tsugiki.db, tsugiki.log, repos\
   (macOS: tsugiki-portable-data/ next to Tsugiki.app)
 ```
 

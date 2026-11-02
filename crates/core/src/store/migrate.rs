@@ -110,11 +110,9 @@ fn remove_old_backups(path: &Path, written: &Path) {
         .collect();
     others.sort_unstable_by_key(|(version, _)| Reverse(*version));
     for (_, old) in others.iter().skip(KEPT_OTHER_BACKUPS) {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "see above; the cause goes to the local log once #58 adds one"
-        )]
-        let _ = fs::remove_file(old);
+        if let Err(cause) = fs::remove_file(old) {
+            log::warn!("Tsugiki can't remove {}: {cause}", old.display());
+        }
     }
 }
 

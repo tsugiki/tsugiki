@@ -4,6 +4,7 @@ use std::fmt;
 use std::io;
 
 use crate::error::{Error, ErrorKind};
+use crate::logfile;
 
 const SIGN_IN: &str = "Tsugiki reads your token from the GitHub CLI. Install `gh`, run \
                        `gh auth login`, and restart Tsugiki.";
@@ -22,17 +23,23 @@ pub struct Token(String);
 
 impl Token {
     /// Asks `gh` for its token.
-    #[expect(
-        clippy::map_err_ignore,
-        reason = "the cause goes to the local log once #58 adds one"
-    )]
     pub fn from_gh(run: RunGh) -> Result<Self, Error> {
         let refused = || Error::new(ErrorKind::Unauthorized, SIGN_IN);
-        let output = run(&["auth", "token", "--hostname", "github.com"]).map_err(|_| refused())?;
+        let output = run(&["auth", "token", "--hostname", "github.com"]).map_err(|cause| {
+            log::warn!("Tsugiki can't run gh: {cause}");
+            refused()
+        })?;
         let token = output.stdout.trim();
         if output.success && !token.is_empty() {
+            logfile::hide(token);
             Ok(Self(token.to_owned()))
         } else {
+            let what = if output.success {
+                "printed no token"
+            } else {
+                "failed"
+            };
+            log::warn!("gh {what} when asked for its token");
             Err(refused())
         }
     }

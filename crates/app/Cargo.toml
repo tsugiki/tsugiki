@@ -18,6 +18,7 @@ path = "src/main.rs"
 tauri-build.workspace = true
 
 [dependencies]
+log.workspace = true
 serde.workspace = true
 specta.workspace = true
 tauri.workspace = true

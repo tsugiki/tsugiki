@@ -1,5 +1,5 @@
-//! Captures real answers as fixtures for the replayer, with tokens scrubbed and the recorder's own login
-//! replaced (ADR 0009).
+//! Captures real answers as fixtures for the replayer, with tokens scrubbed and the viewer's login replaced
+//! (ADR 0009).
 
 use std::path::PathBuf;
 
@@ -11,8 +11,8 @@ use crate::token::Token;
 const PREFIXES: [&str; 6] = ["gho_", "ghp_", "ghs_", "ghu_", "ghr_", "github_pat_"];
 const SCRUBBED: &str = "[token]";
 
-/// Stands in for whoever recorded, so a recording reads the same whoever makes it and tests can name a login.
-const RECORDED_LOGIN: &str = "octocat";
+/// Written in place of the viewer's login, so a fixture doesn't depend on who recorded it.
+const STAND_IN_LOGIN: &str = "octocat";
 
 fn is_token_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
@@ -73,7 +73,7 @@ impl Transport for Recorder {
             return Ok(reply);
         }
         if let Some(login) = body.pointer_mut("/data/viewer/login") {
-            *login = json!(RECORDED_LOGIN);
+            *login = json!(STAND_IN_LOGIN);
         }
         let recording = json!({
             "query": request.query,

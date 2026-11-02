@@ -10,7 +10,7 @@ use serde_json::Value;
 use specta::Type;
 
 use crate::error::{Error, ErrorKind};
-use crate::token::Token;
+use crate::token::{RunGh, Token};
 
 /// One GraphQL request. `operation` names the query, and the replayer finds its recording by that name.
 pub struct Request<'a> {
@@ -34,6 +34,12 @@ pub struct Unreachable;
 /// How a request reaches GitHub: the network in the app, recorded answers in tests.
 pub trait Transport: Send + Sync {
     fn post(&self, token: &Token, request: &Request<'_>) -> Result<Reply, Unreachable>;
+}
+
+/// How to reach GitHub: the network and gh in the app, stand-ins in tests.
+pub struct GitHubAccess {
+    pub transport: Box<dyn Transport>,
+    pub run_gh: RunGh,
 }
 
 /// A GitHub username. It reaches the UI as a plain string.

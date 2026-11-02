@@ -42,8 +42,9 @@ mod tests {
     use tauri::Manager;
     use tauri::test::mock_app;
     use tsugiki_core::error::ErrorKind;
+    use tsugiki_core::github::GitHubAccess;
     use tsugiki_core::github::live::Https;
-    use tsugiki_core::status::{GitHubAccess, connect};
+    use tsugiki_core::session::connect;
     use tsugiki_core::store::Store;
 
     #[test]

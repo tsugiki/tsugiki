@@ -7,8 +7,10 @@ use std::time::Duration;
 use tauri::Manager;
 use tauri_specta::Event;
 use tsugiki_core::folders::Folders;
+use tsugiki_core::github::GitHubAccess;
 use tsugiki_core::github::live::{Https, run_gh};
-use tsugiki_core::status::{GitHubAccess, StatusBoard, start};
+use tsugiki_core::session::start;
+use tsugiki_core::status::StatusBoard;
 
 use crate::{StatusChanged, specta_builder};
 

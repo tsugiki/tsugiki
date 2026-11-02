@@ -111,9 +111,10 @@ fn open_with(path: &Path, migrations: &[Migration]) -> Result<Store, Error> {
         .pragma_update(None, "journal_mode", "WAL")
         .map_err(saying(CANT_OPEN))?;
     migrate::run(&mut connection, path, migrations)?;
-    // Tsugiki normally quits without closing the store, which would leave a new version in the `-wal` file,
-    // where `file::check` can't see it. If another connection blocks this, SQLite says so in the row
-    // and not as an error: `migrate` still catches the version, and the next start tries again.
+    // A crash, a force-kill or a quit during a slow request skips closing the store, which would leave a new
+    // version in the `-wal` file, where `file::check` can't see it. If another connection blocks this, SQLite
+    // says so in the row and not as an error: `migrate` still catches the version, and the next start tries
+    // again.
     connection
         .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
         .map_err(saying(CANT_UPDATE))?;
@@ -257,7 +258,7 @@ mod tests {
         let (path, folder) = temp_database("checkpoint");
         open_with(&path, &[V1]).unwrap().close();
 
-        // Tsugiki normally quits without closing the store, so what the header says can't wait for `close`.
+        // A crash or a force-kill skips closing the store, so what the header says can't wait for `close`.
         let store = open_with(&path, &[V1, V2]).unwrap();
         assert_eq!(contents(&path), Contents::Database { version: 2 });
 

@@ -1,6 +1,8 @@
 //! App-wide status, owned by the core (ADR 0008). For now: the connection, who is signed in, and problems.
 
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 use serde::Serialize;
 use specta::Type;
@@ -78,8 +80,35 @@ pub fn connect(
     Some(github)
 }
 
+/// Connects, then asks GitHub every `interval` for as long as the app runs. Returns when there is no
+/// token, which `board` then shows, or after a panic. Nothing else would show a panic: the last status
+/// would stay up and look current, so this replaces it with a problem. It relies on panics unwinding, so
+/// `panic = "abort"` would end the app here instead (#57).
+pub fn watch(
+    board: &StatusBoard,
+    transport: Box<dyn Transport>,
+    run_gh: RunGh,
+    interval: Duration,
+) {
+    let watched = catch_unwind(AssertUnwindSafe(|| {
+        let Some(github) = connect(board, transport, run_gh) else {
+            return;
+        };
+        loop {
+            std::thread::sleep(interval);
+            refresh(board, &github);
+        }
+    }));
+    if watched.is_err() {
+        let message = "Tsugiki stopped checking GitHub. Restart Tsugiki to check again.";
+        board.set(Status::Problem {
+            problem: Error::new(ErrorKind::Internal, message),
+        });
+    }
+}
+
 /// Asks GitHub again, so `board` follows the network going and coming back.
-pub fn refresh(board: &StatusBoard, github: &GitHub) {
+fn refresh(board: &StatusBoard, github: &GitHub) {
     board.set(match github.viewer() {
         Ok(viewer) => Status::Online {
             login: viewer.login,
@@ -226,6 +255,33 @@ mod tests {
 
         refresh(&board, &github);
         assert_eq!(board.get(), octocat());
+    }
+
+    #[test]
+    fn watching_follows_github_until_a_panic_and_then_says_it_stopped() {
+        // `Replies` panics once it has no replies left.
+        let replies = [signed_in(), Err(Unreachable), signed_in()];
+        let transport = Box::new(Replies(Mutex::new(replies.into())));
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let seen_by_board = Arc::clone(&seen);
+        let board = StatusBoard::new(Box::new(move |status: &Status| {
+            seen_by_board.lock().unwrap().push(status.clone());
+        }));
+
+        watch(&board, transport, signed_in_gh, Duration::ZERO);
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen[..3], [octocat(), Status::Offline, octocat()]);
+        assert_eq!(seen.len(), 4);
+        assert_eq!(problem_kind(board.get()), Some(ErrorKind::Internal));
+    }
+
+    #[test]
+    fn watching_without_gh_keeps_the_problem_that_says_how_to_sign_in() {
+        let board = quiet_board();
+        let gh_missing: RunGh = |_| Err(io::Error::from(io::ErrorKind::NotFound));
+        watch(&board, offline(), gh_missing, Duration::ZERO);
+        assert_eq!(problem_kind(board.get()), Some(ErrorKind::Unauthorized));
     }
 
     #[test]

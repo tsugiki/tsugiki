@@ -7,7 +7,7 @@ use std::time::Duration;
 use tauri::Manager;
 use tauri_specta::Event;
 use tsugiki_core::github::live::{Https, run_gh};
-use tsugiki_core::status::{StatusBoard, connect, refresh};
+use tsugiki_core::status::{StatusBoard, watch};
 
 use crate::{StatusChanged, specta_builder};
 
@@ -27,19 +27,18 @@ pub fn run() {
             builder.mount_events(app);
             let handle = app.handle().clone();
             let board = Arc::new(StatusBoard::new(Box::new(move |status| {
-                // A window that misses this asks `status()` when it loads.
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "a window still loading asks `status()` when it is done; \
+                              any other failure goes to the local log once #58 adds one"
+                )]
                 let _ = StatusChanged(status.clone()).emit(&handle);
             })));
             let _ = app.manage(Arc::clone(&board));
-            // The window opens without waiting on gh or the network (ADR 0017).
+            // The window opens without waiting on gh or the network (ADR 0017). `watch` shows its own
+            // failures on the board, so nothing needs the thread's handle.
             let _ = std::thread::spawn(move || {
-                let Some(github) = connect(&board, Box::new(Https::new()), run_gh) else {
-                    return;
-                };
-                loop {
-                    std::thread::sleep(REFRESH);
-                    refresh(&board, &github);
-                }
+                watch(&board, Box::new(Https::new()), run_gh, REFRESH);
             });
             Ok(())
         })

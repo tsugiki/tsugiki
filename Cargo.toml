@@ -44,6 +44,7 @@ unwrap_in_result = "deny" # A function returning `Result` should return this fai
 unwrap_used = "deny" # Panics, and says less than `expect` about why.
 
 # Errors keep what caused them, so the local log can say what failed.
+let_underscore_must_use = "deny" # `let _ =` on a `Result` hides a failure, so it needs a stated reason.
 map_err_ignore = "deny" # Keep the source error, and say why in a reason when it really has no use.
 
 # Numbers and ordering behave the same way on every run.

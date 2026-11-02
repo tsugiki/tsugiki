@@ -125,12 +125,10 @@ mod tests {
             "stale",
             r#"{"query":"old","status":200,"reset":null,"body":{}}"#,
         );
-        let _ = Replayer::new(dir).post(
-            &token(),
-            &Request {
-                operation: "Op",
-                query: "new",
-            },
-        );
+        let request = Request {
+            operation: "Op",
+            query: "new",
+        };
+        let _ = Replayer::new(dir).post(&token(), &request).unwrap();
     }
 }

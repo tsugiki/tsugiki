@@ -15,6 +15,10 @@ use crate::{StatusChanged, specta_builder};
 const REFRESH: Duration = Duration::from_secs(60);
 
 /// Starts Tsugiki's window.
+#[expect(
+    clippy::expect_used,
+    reason = "without a window the user has nowhere to read an error, so a failure ends the program"
+)]
 pub fn run() {
     let builder = specta_builder();
     tauri::Builder::default()
@@ -26,9 +30,9 @@ pub fn run() {
                 // A window that misses this asks `status()` when it loads.
                 let _ = StatusChanged(status.clone()).emit(&handle);
             })));
-            app.manage(Arc::clone(&board));
+            let _ = app.manage(Arc::clone(&board));
             // The window opens without waiting on gh or the network (ADR 0017).
-            std::thread::spawn(move || {
+            let _ = std::thread::spawn(move || {
                 let Some(github) = connect(&board, Box::new(Https::new()), run_gh) else {
                     return;
                 };

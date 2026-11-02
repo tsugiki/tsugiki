@@ -1,6 +1,11 @@
 //! What touches the outside world: the real network and the real `gh`. Tests replace both (ADR 0009),
 //! so this file is left out of the coverage gate, and the release checks exercise it against GitHub.
 
+#![expect(
+    clippy::disallowed_types,
+    reason = "this is the one file clippy.toml lets use the real network and real programs"
+)]
+
 use std::io;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -41,6 +46,10 @@ impl Default for Https {
 }
 
 impl Transport for Https {
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the cause goes to the local log once #58 adds one"
+    )]
     fn post(&self, token: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
         let body = serde_json::json!({ "query": request.query }).to_string();
         let mut response = self
@@ -87,7 +96,7 @@ pub fn run_gh(args: &[&str]) -> io::Result<GhOutput> {
 /// Runs one program, with no console window on Windows, and gives up on it after `TIMEOUT`.
 fn run_program(program: &str, args: &[&str]) -> io::Result<GhOutput> {
     let mut command = Command::new(program);
-    command
+    let _ = command
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -96,7 +105,7 @@ fn run_program(program: &str, args: &[&str]) -> io::Result<GhOutput> {
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        command.creation_flags(CREATE_NO_WINDOW);
+        let _ = command.creation_flags(CREATE_NO_WINDOW);
     }
     let mut child = command.spawn()?;
     let deadline = Instant::now() + TIMEOUT;

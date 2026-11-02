@@ -14,12 +14,13 @@ fn is_token_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
 }
 
-/// The length of the token that `text` starts with, if it does.
-fn token_length(text: &str) -> Option<usize> {
-    let prefix = PREFIXES.iter().find(|prefix| text.starts_with(**prefix))?;
-    let tail = &text[prefix.len()..];
-    let tail_length = tail.find(|c| !is_token_char(c)).unwrap_or(tail.len());
-    (tail_length > 0).then_some(prefix.len() + tail_length)
+/// What follows the token that `text` starts with, if it does.
+fn after_token(text: &str) -> Option<&str> {
+    PREFIXES.iter().find_map(|prefix| {
+        let tail = text.strip_prefix(prefix)?;
+        let after = tail.trim_start_matches(is_token_char);
+        (after.len() < tail.len()).then_some(after)
+    })
 }
 
 /// Removes `token`, and anything else shaped like a GitHub token, wherever it starts: the text is raw
@@ -28,13 +29,15 @@ pub fn scrub(text: &str, token: &str) -> String {
     let text = text.replace(token, SCRUBBED);
     let mut scrubbed = String::with_capacity(text.len());
     let mut rest = text.as_str();
-    while let Some(c) = rest.chars().next() {
-        let (kept, length) = match token_length(rest) {
-            Some(length) => (SCRUBBED, length),
-            None => (&rest[..c.len_utf8()], c.len_utf8()),
-        };
-        scrubbed.push_str(kept);
-        rest = &rest[length..];
+    while !rest.is_empty() {
+        if let Some(after) = after_token(rest) {
+            scrubbed.push_str(SCRUBBED);
+            rest = after;
+        } else {
+            let mut chars = rest.chars();
+            scrubbed.extend(chars.next());
+            rest = chars.as_str();
+        }
     }
     scrubbed
 }
@@ -53,6 +56,11 @@ impl Recorder {
 }
 
 impl Transport for Recorder {
+    #[expect(
+        clippy::expect_used,
+        clippy::unwrap_in_result,
+        reason = "a dev tool: a recording it can't write should stop it, and a failed request isn't one"
+    )]
     fn post(&self, token: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
         let reply = self.inner.post(token, request)?;
         let text = scrub(&reply.body, token.expose());
@@ -183,7 +191,7 @@ mod tests {
     fn a_body_that_isnt_json_is_recorded_as_text() {
         let dir = temp_dir("text");
         let recorder = Recorder::new(Box::new(Canned(Ok(reply("<html>")))), dir.clone());
-        recorder.post(&token(), &REQUEST).unwrap();
+        let _ = recorder.post(&token(), &REQUEST).unwrap();
         let replayed = Replayer::new(dir.clone()).post(&token(), &REQUEST).unwrap();
         std::fs::remove_dir_all(dir).unwrap();
         assert_eq!(replayed.body, "<html>");

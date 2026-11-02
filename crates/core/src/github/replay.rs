@@ -29,6 +29,12 @@ impl Replayer {
 }
 
 impl Transport for Replayer {
+    #[expect(
+        clippy::expect_used,
+        clippy::panic_in_result_fn,
+        clippy::unwrap_in_result,
+        reason = "a test helper: a missing or stale recording should fail the test"
+    )]
     fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
         let path = self.dir.join(format!("{}.json", request.operation));
         let text = std::fs::read_to_string(&path).expect("no recording for this operation");
@@ -37,10 +43,10 @@ impl Transport for Replayer {
             recording.query, request.query,
             "the query changed since {path:?} was recorded: record it again"
         );
-        let body = match recording.body {
-            Value::String(text) => text,
-            json => json.to_string(),
-        };
+        let body = recording
+            .body
+            .as_str()
+            .map_or_else(|| recording.body.to_string(), ToOwned::to_owned);
         Ok(Reply {
             status: recording.status,
             reset: recording.reset,

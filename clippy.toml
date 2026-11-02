@@ -1,0 +1,41 @@
+# Settings for the lints in Cargo.toml. Each one says why it is here, and a test in crates/app/tests/rules.rs
+# fails when one doesn't. Several picks come from easy-peasy-rust (MIT,
+# https://github.com/skatromb/easy-peasy-rust).
+
+# A failing test should stop with a panic, and may print what it found.
+allow-dbg-in-tests = true # Tests may debug.
+allow-expect-in-tests = true # A failed setup step ends the test.
+allow-indexing-slicing-in-tests = true # A wrong index ends the test.
+allow-panic-in-tests = true # That is how a test fails.
+allow-print-in-tests = true # Test output is for whoever runs it.
+allow-unwrap-in-tests = true # A failed setup step ends the test.
+
+# Code stays small enough to read.
+cognitive-complexity-threshold = 12 # About where a function needs splitting, from easy-peasy-rust.
+max-fn-params-bools = 0 # No keyword arguments in Rust, so a bool at the call says nothing.
+max-struct-bools = 1 # Two bools make four states, and a struct rarely has four valid ones.
+too-many-arguments-threshold = 4 # More usually means a missing struct, and methods count `self`.
+
+# Only one file touches the outside world, so tests can replace all of it (ADR 0009).
+disallowed-types = [ # The real network and the real gh stay in crates/core/src/github/live.rs.
+    { path = "std::process::Command", reason = "Run programs in crates/core/src/github/live.rs" },
+    { path = "std::net::TcpStream", reason = "Reach the network in crates/core/src/github/live.rs" },
+    { path = "std::net::UdpSocket", reason = "Reach the network in crates/core/src/github/live.rs" },
+    { path = "ureq::Agent", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },
+    { path = "ureq::RequestExt", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },
+    { path = "ureq::config::Config", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },
+]
+disallowed-methods = [ # ureq's shortcuts reach the network without naming an `Agent`.
+    { path = "ureq::agent", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },
+    { path = "ureq::config::Config::new_agent", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },
+    { path = "ureq::connect", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },
+    { path = "ureq::delete", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },
+    { path = "ureq::get", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },
+    { path = "ureq::head", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },
+    { path = "ureq::options", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },
+    { path = "ureq::patch", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },
+    { path = "ureq::post", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },
+    { path = "ureq::put", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },
+    { path = "ureq::run", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },
+    { path = "ureq::trace", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },
+]

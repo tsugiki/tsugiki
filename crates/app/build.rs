@@ -1,3 +1,9 @@
+#![expect(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "a build script reports a failure by panicking, which stops the build"
+)]
+
 fn main() {
     let mut attributes = tauri_build::Attributes::new();
     if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {

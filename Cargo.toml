@@ -21,8 +21,50 @@ tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
 tsugiki-core = { path = "crates/core" }
 ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
 
+# The rules the gate enforces. Each one says why it is here, and a test in crates/app/tests/rules.rs fails
+# when one doesn't. Several picks come from easy-peasy-rust (MIT,
+# https://github.com/skatromb/easy-peasy-rust).
 [workspace.lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "forbid" # A leaked token can reach python/cpython, and we need no unsafe code of our own.
+unused_results = "deny" # A dropped value is often a dropped failure, so say `let _ =` when it is meant.
 
 [workspace.lints.clippy]
-all = { level = "warn", priority = -1 }
+all = { level = "warn", priority = -1 } # Clippy's default set, which CI turns into errors.
+
+# Failures are returned, so the status bar can say what went wrong and the app stays up.
+expect_used = "deny" # Panics. A failure the user can meet gets an error instead.
+indexing_slicing = "deny" # Panics out of bounds, so use `get`.
+panic = "deny" # Panics.
+panic_in_result_fn = "deny" # A function returning `Result` has already said how it fails.
+string_slice = "deny" # Panics off a `char` boundary, and GitHub's text isn't ASCII.
+todo = "deny" # Unfinished code must not ship.
+unimplemented = "deny" # Unfinished code must not ship.
+unreachable = "deny" # Panics, and GitHub's data can reach a case that looked impossible.
+unwrap_in_result = "deny" # A function returning `Result` should return this failure too.
+unwrap_used = "deny" # Panics, and says less than `expect` about why.
+
+# Errors keep what caused them, so the local log can say what failed.
+map_err_ignore = "deny" # Keep the source error, and say why in a reason when it really has no use.
+
+# Numbers and ordering behave the same way on every run.
+as_conversions = "deny" # `as` truncates silently, so use `From` or `TryFrom`.
+iter_over_hash_type = "deny" # Hash order changes per run, which would make view models flicker.
+
+# Matches and shared data stay honest as the code grows.
+clone_on_ref_ptr = "deny" # `Arc::clone(&x)` shows a shared handle, where `x.clone()` looks like a copy.
+rc_mutex = "deny" # `Rc` is for one thread, where `Mutex` has no job.
+wildcard_enum_match_arm = "deny" # A new variant should break each match that has to handle it.
+
+# Code stays small enough to read.
+cognitive_complexity = "deny" # Hard-to-follow functions hide bugs. The threshold is in clippy.toml.
+fn_params_excessive_bools = "deny" # `f(true, false)` says nothing at the call, so use an enum.
+struct_excessive_bools = "deny" # Several bools allow invalid states, so use an enum.
+
+# Output goes to the UI or the local log, and nowhere a user can't see it.
+dbg_macro = "deny" # A debugging leftover.
+print_stderr = "deny" # A release build on Windows has no console, so this text vanishes.
+print_stdout = "deny" # A release build on Windows has no console, so this text vanishes.
+
+# Exceptions are visible, and go away when they stop being needed.
+allow_attributes = "deny" # `#[expect]` fails once the lint stops firing, and `#[allow]` never does.
+allow_attributes_without_reason = "deny" # Each exception says why.

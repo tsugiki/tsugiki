@@ -71,7 +71,7 @@ impl GitHub {
         let reply = self
             .transport
             .post(&self.token, request)
-            .map_err(|_| Error::new(ErrorKind::Offline, "Tsugiki can't reach GitHub."))?;
+            .map_err(|Unreachable| Error::new(ErrorKind::Offline, "Tsugiki can't reach GitHub."))?;
         read(&reply)
     }
 }
@@ -80,6 +80,10 @@ const RATE_LIMITED: &str =
     "GitHub's rate limit has been reached. Tsugiki can read again after it resets.";
 
 /// Turns an answer into its data, or into the error the UI can act on (ADR 0008).
+#[expect(
+    clippy::map_err_ignore,
+    reason = "the parser's words mean nothing to a user; they go to the local log once #58 adds one"
+)]
 fn read<D: DeserializeOwned>(reply: &Reply) -> Result<D, Error> {
     #[derive(Deserialize)]
     struct Envelope {
@@ -90,8 +94,15 @@ fn read<D: DeserializeOwned>(reply: &Reply) -> Result<D, Error> {
     #[derive(Deserialize)]
     struct GraphqlError {
         #[serde(rename = "type")]
-        kind: Option<String>,
+        kind: Option<GraphqlErrorKind>,
         message: String,
+    }
+    #[derive(Deserialize)]
+    enum GraphqlErrorKind {
+        #[serde(rename = "RATE_LIMITED")]
+        RateLimited,
+        #[serde(other)]
+        Other,
     }
 
     let internal = |message: &str| Error::new(ErrorKind::Internal, message);
@@ -116,10 +127,11 @@ fn read<D: DeserializeOwned>(reply: &Reply) -> Result<D, Error> {
     // The data is read after the errors: a field that failed comes back null, which `D` may not allow.
     let envelope: Envelope = serde_json::from_str(&reply.body).map_err(|_| internal(UNREADABLE))?;
     if let Some(error) = envelope.errors.first() {
-        return Err(if error.kind.as_deref() == Some("RATE_LIMITED") {
-            rate_limited()
-        } else {
-            internal(&format!("GitHub said: {}", error.message))
+        return Err(match error.kind {
+            Some(GraphqlErrorKind::RateLimited) => rate_limited(),
+            Some(GraphqlErrorKind::Other) | None => {
+                internal(&format!("GitHub said: {}", error.message))
+            }
         });
     }
     let data = envelope
@@ -258,6 +270,16 @@ mod tests {
         ));
         assert_eq!(error.kind, ErrorKind::Internal);
         assert_eq!(error.message, "GitHub said: Something broke");
+    }
+
+    #[test]
+    fn a_graphql_error_of_another_type_passes_on_githubs_words() {
+        let error = error_of(answered(
+            200,
+            r#"{"errors":[{"type":"NOT_FOUND","message":"No such thing"}]}"#,
+        ));
+        assert_eq!(error.kind, ErrorKind::Internal);
+        assert_eq!(error.message, "GitHub said: No such thing");
     }
 
     #[test]

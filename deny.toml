@@ -1,0 +1,34 @@
+# What `npm run deny` accepts in the Rust dependencies. A leaked token can reach python/cpython (ADR 0005),
+# so each new crate has to pass this, and each exception says why it is here.
+
+[advisories]
+yanked = "deny" # A yanked version was withdrawn for a reason, so move off it.
+unused-ignored-advisory = "deny" # An ignore goes away once its crate does, like an `#[expect]`.
+ignore = [
+    # Both are reported as unmaintained, with no safe upgrade. Both run only inside proc macros while
+    # building, so neither sees a token or GitHub's data.
+    { id = "RUSTSEC-2024-0436", reason = "paste comes in through specta. Drop this when specta drops paste." },
+    { id = "RUSTSEC-2024-0370", reason = "proc-macro-error comes in through the gtk crates Tauri uses on Linux, which isn't a v1 target (ADR 0001)." },
+]
+
+[licenses]
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception", # Apache's terms, with less asked of code built from it.
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CDLA-Permissive-2.0", # webpki-roots' certificate data, under permissive terms.
+    "ISC",
+    "MIT",
+    "MPL-2.0", # Copyleft per file only, and we don't modify these crates.
+    "Unicode-3.0", # Unicode's data, through ICU and `unicode-ident`.
+    "Zlib",
+]
+
+[bans]
+multiple-versions = "allow" # Tauri's tree holds duplicates we can't remove. They cost size, which #57 weighs.
+
+[sources]
+unknown-registry = "deny" # Only crates.io, so each crate has one public, immutable source.
+unknown-git = "deny" # Git dependencies can change under a branch name, and no advisory database covers them.
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

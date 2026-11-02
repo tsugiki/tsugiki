@@ -1,0 +1,28 @@
+# Reports a new advisory in a week with no PRs. A failed run emails whoever last changed the cron line.
+# GitHub turns schedules off after 60 days without a commit, and says so by email first.
+name: Advisories
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  advisories:
+    name: deny advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
+        with:
+          tool: cargo-deny@0.20.2
+          fallback: none
+      - run: npm run deny -- advisories

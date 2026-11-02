@@ -64,6 +64,34 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm run ${{ matrix.check }}
 
+  # These read Cargo.lock, the manifests and the sources, and build nothing, so one OS is enough. The action
+  # holds each release's checksum, and `fallback: none` stops it installing anything it can't verify.
+  dependencies:
+    name: ${{ matrix.check }}
+    needs: [changes]
+    if: ${{ needs.changes.outputs.docs-only != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - check: deny
+            tool: cargo-deny@0.20.2
+          - check: machete
+            tool: cargo-machete@0.9.2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
+        with:
+          tool: ${{ matrix.tool }}
+          fallback: none
+      - run: npm run ${{ matrix.check }}
+
   rust-coverage-measure:
     name: rust-coverage-measure (${{ matrix.os }})
     needs: [changes]
@@ -192,7 +220,7 @@ jobs:
   ci-passed:
     name: CI passed
     if: ${{ always() }}
-    needs: [changes, rust, rust-coverage-gate, ui, playwright]
+    needs: [changes, rust, dependencies, rust-coverage-gate, ui, playwright]
     runs-on: ubuntu-latest
     steps:
       - name: Every job succeeded, or skipped on a docs-only PR

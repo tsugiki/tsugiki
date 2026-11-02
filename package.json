@@ -28,7 +28,9 @@
     "stale-bindings": "cargo test -p tsugiki-app --test bindings",
     "rust-coverage": "npm run rust-coverage-measure && npm run rust-coverage-gate -- target/coverage/lcov.info",
     "rust-coverage-measure": "node scripts/rust-coverage.ts measure target/coverage/lcov.info",
-    "rust-coverage-gate": "node scripts/rust-coverage.ts gate"
+    "rust-coverage-gate": "node scripts/rust-coverage.ts gate",
+    "deny": "cargo deny --locked check",
+    "machete": "cargo machete"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.12.4",

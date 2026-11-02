@@ -126,7 +126,7 @@ fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::super::file::version_in_header;
+    use super::super::file::{Contents, contents};
     use super::super::open_with;
     use super::super::testing::{
         V1, V2, V3, V3_BROKEN, backups, has_table, temp_database, user_version,
@@ -333,7 +333,7 @@ mod tests {
         // While this stays open its change sits in the `-wal` file, and the header still says version 1.
         let writer = Connection::open(&path).unwrap();
         writer.pragma_update(None, "user_version", 2).unwrap();
-        assert_eq!(version_in_header(&path), Some(1));
+        assert_eq!(contents(&path), Contents::Database { version: 1 });
 
         let problem = open_with(&path, &[V1]).err().unwrap();
 

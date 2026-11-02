@@ -112,7 +112,7 @@ fn open_with(path: &Path, migrations: &[Migration]) -> Result<Store, Error> {
         .map_err(saying(CANT_OPEN))?;
     migrate::run(&mut connection, path, migrations)?;
     // Tsugiki normally quits without closing the store, which would leave a new version in the `-wal` file,
-    // where `version_in_header` can't see it. If another connection blocks this, SQLite says so in the row
+    // where `file::check` can't see it. If another connection blocks this, SQLite says so in the row
     // and not as an error: `migrate` still catches the version, and the next start tries again.
     connection
         .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
@@ -191,7 +191,7 @@ pub(super) mod testing {
 
 #[cfg(test)]
 mod tests {
-    use super::file::version_in_header;
+    use super::file::{Contents, contents};
     use super::testing::{V1, V2, backups, has_table, temp_database, user_version};
     use super::*;
 
@@ -259,7 +259,7 @@ mod tests {
 
         // Tsugiki normally quits without closing the store, so what the header says can't wait for `close`.
         let store = open_with(&path, &[V1, V2]).unwrap();
-        assert_eq!(version_in_header(&path), Some(2));
+        assert_eq!(contents(&path), Contents::Database { version: 2 });
 
         store.close();
         fs::remove_dir_all(folder).unwrap();
@@ -269,7 +269,7 @@ mod tests {
     fn a_new_database_reaches_the_file_while_the_store_is_still_open() {
         let (path, folder) = temp_database("checkpoint-new");
         let store = open_with(&path, &[V1]).unwrap();
-        assert_eq!(version_in_header(&path), Some(1));
+        assert_eq!(contents(&path), Contents::Database { version: 1 });
         store.close();
         fs::remove_dir_all(folder).unwrap();
     }

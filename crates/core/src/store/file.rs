@@ -1,44 +1,73 @@
-//! Looks at the database file before SQLite opens it, so a file Tsugiki won't use stays as it is.
+//! Looks at the database file before SQLite opens it, so a file Tsugiki won't use stays as it is. Reading
+//! the bytes leaves no trace, where even a read-only connection to a WAL database creates `-wal` and `-shm`
+//! files.
+//!
+//! This only sees the header. SQLite reports damage further into the file when Tsugiki reads that part, and a
+//! full check at start-up would take too long on a large database.
 
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::Read;
+use std::ops::Range;
 use std::path::Path;
 
 use super::NEWER;
 use crate::error::{Error, ErrorKind};
 
 /// Where the database header section of SQLite's file format document puts these.
-const SQLITE_SIGNATURE: &[u8; 16] = b"SQLite format 3\0";
-const USER_VERSION_OFFSET: u64 = 60;
+const HEADER_LENGTH: u16 = 100;
+const SIGNATURE: &[u8; 16] = b"SQLite format 3\0";
+const USER_VERSION: Range<usize> = 60..64;
 
-/// Refuses a file that a Tsugiki knowing migrations up to `latest` shouldn't open.
-pub(super) fn check(path: &Path, latest: u32) -> Result<(), Error> {
-    if version_in_header(path).is_some_and(|version| version > latest) {
-        return Err(Error::new(ErrorKind::Internal, NEWER));
-    }
-    Ok(())
+const NOT_A_DATABASE: &str =
+    "Tsugiki's database file is damaged or isn't a database, so Tsugiki won't change it.";
+
+/// What the start of a file says it is.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum Contents {
+    /// Missing, empty or unreadable. SQLite then creates the file, or says why it can't.
+    Nothing,
+    Database {
+        version: u32,
+    },
+    SomethingElse,
 }
 
-/// The `user_version` in a SQLite file's header. Reading the bytes leaves no trace, where even a read-only
-/// connection to a WAL database creates `-wal` and `-shm` files. Any other file has no version to read.
+pub(super) fn contents(path: &Path) -> Contents {
+    let mut header = Vec::new();
+    let read = File::open(path)
+        .and_then(|file| file.take(u64::from(HEADER_LENGTH)).read_to_end(&mut header));
+    if !read.is_ok_and(|length| length > 0) {
+        return Contents::Nothing;
+    }
+    let is_header = header.len() == usize::from(HEADER_LENGTH) && header.starts_with(SIGNATURE);
+    is_header
+        .then(|| header.get(USER_VERSION)?.try_into().ok())
+        .flatten()
+        .map_or(Contents::SomethingElse, |version| Contents::Database {
+            version: u32::from_be_bytes(version),
+        })
+}
+
+/// Refuses a file that a Tsugiki knowing migrations up to `latest` shouldn't open.
 ///
-/// A crash between a migration's commit and its checkpoint leaves a newer version in the WAL only. `migrate`
-/// catches that once the file is open, and closing that connection then moves the WAL into the file.
-pub(super) fn version_in_header(path: &Path) -> Option<u32> {
-    let mut file = File::open(path).ok()?;
-    let mut signature = [0; SQLITE_SIGNATURE.len()];
-    file.read_exact(&mut signature).ok()?;
-    let _position = file.seek(SeekFrom::Start(USER_VERSION_OFFSET)).ok()?;
-    let mut version = [0; 4];
-    file.read_exact(&mut version).ok()?;
-    (signature == *SQLITE_SIGNATURE).then_some(u32::from_be_bytes(version))
+/// A crash between a migration's commit and its checkpoint leaves a newer version in the WAL only, where this
+/// can't see it. `migrate` catches that once the file is open.
+pub(super) fn check(path: &Path, latest: u32) -> Result<(), Error> {
+    match contents(path) {
+        Contents::Database { version } if version > latest => {
+            Err(Error::new(ErrorKind::Internal, NEWER))
+        }
+        Contents::SomethingElse => Err(Error::new(ErrorKind::Internal, NOT_A_DATABASE)),
+        Contents::Nothing | Contents::Database { .. } => Ok(()),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::testing::{V1, V2, backups, temp_database};
     use super::super::{CANT_OPEN, Store, open_with};
-    use crate::error::ErrorKind;
+    use super::*;
+    use std::ffi::OsString;
     use std::fs;
 
     #[test]
@@ -61,29 +90,79 @@ mod tests {
         fs::remove_dir_all(folder).unwrap();
     }
 
+    /// What the folder holds, so a test can see that SQLite never touched the file.
+    fn files_in(folder: &Path) -> Vec<OsString> {
+        fs::read_dir(folder)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect()
+    }
+
     #[test]
-    fn a_file_that_isnt_a_database_is_an_error_and_left_untouched() {
+    fn a_file_that_isnt_a_database_is_refused_and_left_untouched() {
         let (path, folder) = temp_database("not-a-database");
-        let text = "this is not a database, and it is long enough for SQLite to look at".repeat(9);
+        let text = "this is not a database, and it is long enough for a whole header".repeat(9);
         fs::write(&path, &text).unwrap();
 
         let problem = Store::open(&path).err().unwrap();
 
         assert_eq!(problem.kind, ErrorKind::Internal);
-        assert_eq!(problem.message, CANT_OPEN, "plain words, not SQLite's");
+        assert_eq!(problem.message, NOT_A_DATABASE);
         assert_eq!(fs::read_to_string(&path).unwrap(), text);
+        assert_eq!(files_in(&folder), ["tsugiki.db"], "SQLite never opened it");
         fs::remove_dir_all(folder).unwrap();
     }
 
     #[test]
-    fn a_file_too_short_to_be_a_database_is_not_called_newer() {
+    fn a_file_too_short_to_hold_a_header_is_refused_on_every_os() {
         let (path, folder) = temp_database("short");
-        // Not 1 byte: SQLite on Unix reports that size as 0 and treats the file as empty (its ticket #3260).
-        for length in [2, 20] {
+        for length in [1, 2, 20, 99] {
             fs::write(&path, "x".repeat(length)).unwrap();
             let problem = Store::open(&path).err().unwrap();
-            assert!(!problem.message.contains("newer"), "{}", problem.message);
+            assert_eq!(problem.message, NOT_A_DATABASE, "{length} bytes");
+            assert_eq!(fs::read(&path).unwrap().len(), length);
         }
+        fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn the_signature_alone_doesnt_make_a_database() {
+        let (path, folder) = temp_database("signature-only");
+        fs::write(&path, b"SQLite format 3\0 and then it stops").unwrap();
+
+        let problem = Store::open(&path).err().unwrap();
+
+        assert_eq!(problem.message, NOT_A_DATABASE);
+        fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn an_empty_file_counts_as_a_new_database() {
+        let (path, folder) = temp_database("empty");
+        fs::write(&path, "").unwrap();
+        assert_eq!(contents(&path), Contents::Nothing);
+
+        open_with(&path, &[V1]).unwrap().close();
+
+        assert_eq!(contents(&path), Contents::Database { version: 1 });
+        fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn a_missing_file_counts_as_a_new_database() {
+        let (path, folder) = temp_database("missing");
+        assert_eq!(contents(&path), Contents::Nothing);
+        fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn a_folder_in_the_files_place_is_left_for_sqlite_to_refuse() {
+        let (path, folder) = temp_database("folder-in-place");
+        fs::create_dir(&path).unwrap();
+
+        let problem = Store::open(&path).err().unwrap();
+
+        assert_eq!(problem.message, CANT_OPEN);
         fs::remove_dir_all(folder).unwrap();
     }
 }

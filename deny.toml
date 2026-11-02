@@ -26,7 +26,7 @@ allow = [
 ]
 
 [bans]
-multiple-versions = "allow" # Tauri's tree holds duplicates we can't remove. They cost size, which #57 weighs.
+multiple-versions = "allow" # Nearly all come through Tauri, so we can't act on them. They cost size (#57).
 
 [sources]
 unknown-registry = "deny" # Only crates.io, so each crate has one public, immutable source.

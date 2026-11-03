@@ -10,8 +10,9 @@ Tests are built in layers. Fast ones run on every PR on Windows and macOS. The s
   (close to WKWebView): keys and chords, the palette, pane resizing, the Settings dialog. A few smoke tests of
   the real window run on Windows: start, open a PR, Ctrl+P never prints. They press real keys through the OS
   and read the page over the Chrome DevTools Protocol. We dropped `tauri-driver` because its `msedgedriver`
-  session opens a second window on the primary display. WKWebView doesn't speak that protocol, so macOS gets a
-  short manual checklist before each release.
+  session opens a second window on the primary display. They give Tsugiki a made-up token and a local proxy,
+  so the test decides when the status changes and nothing reaches GitHub. WKWebView doesn't speak that
+  protocol, so macOS gets a short manual checklist before each release.
 
 ## Coverage
 

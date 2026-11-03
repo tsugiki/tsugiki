@@ -9,13 +9,17 @@
 // It reads the page over the Chrome DevTools Protocol, on a port that WebView2 opens for this run. We don't
 // use WebDriver because an msedgedriver session opens a second window on the primary display (#76).
 //
+// It needs `gh`, but not your sign-in: it gives Tsugiki a made-up token, and a proxy that decides when
+// "GitHub" stops answering, so the status changes when the test says and nothing reaches GitHub.
+//
 //   npm run smoke
 //
 // Anything after `--` goes to `tauri build`, such as `--config second-display.json`.
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { resolve } from "node:path";
+import { createServer, type AddressInfo, type Socket } from "node:net";
+import { join, resolve } from "node:path";
 import { setTimeout as wait } from "node:timers/promises";
 
 const DEBUG_PORT = 9333;
@@ -76,7 +80,48 @@ foreach ($key in $keys) { [Input]::Send($key, 2) }
 type Session = {
   run: <T>(expression: string) => Promise<T>;
   press: (...keys: number[]) => void;
+  github: FakeGitHub;
 };
+
+type FakeGitHub = {
+  port: number;
+  /** How many requests are waiting for an answer. */
+  held: () => number;
+  /** Drops those requests and any later ones, which Tsugiki reads as being offline. */
+  cutOff: () => void;
+};
+
+/** Listens as Tsugiki's proxy and leaves each request waiting, so Tsugiki stays on "Connecting…". */
+async function startFakeGitHub(): Promise<FakeGitHub> {
+  const held = new Set<Socket>();
+  let cut = false;
+  const server = createServer((socket) => {
+    socket.on("close", () => {
+      held.delete(socket);
+    });
+    socket.on("error", () => {
+      // Without a listener, Tsugiki hanging up when it quits would end this script before its clean-up.
+    });
+    if (cut) {
+      socket.destroy();
+    } else {
+      held.add(socket);
+    }
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  return {
+    port: (server.address() as AddressInfo).port,
+    held: () => held.size,
+    cutOff: () => {
+      cut = true;
+      for (const socket of held) {
+        socket.destroy();
+      }
+      held.clear();
+    },
+  };
+}
 
 type Target = { type: string; url: string; webSocketDebuggerUrl: string };
 
@@ -120,16 +165,18 @@ async function connect(address: string): Promise<WebSocket> {
 /** Runs one expression at a time. The test turns on no protocol events, so the next message is the reply. */
 function evaluate(socket: WebSocket, expression: string): Promise<unknown> {
   return new Promise((answered, failed) => {
+    const replied = new AbortController();
     socket.addEventListener(
       "close",
       () => {
         failed(new Error(`The page's connection closed during: ${expression}`));
       },
-      { once: true },
+      { once: true, signal: replied.signal },
     );
     socket.addEventListener(
       "message",
       (message: MessageEvent<string>) => {
+        replied.abort();
         const reply = JSON.parse(message.data) as Evaluated;
         if (reply.result === undefined || reply.result.exceptionDetails !== undefined) {
           failed(new Error(`${expression}: ${message.data}`));
@@ -144,8 +191,9 @@ function evaluate(socket: WebSocket, expression: string): Promise<unknown> {
   });
 }
 
-function sessionFor(socket: WebSocket, application: string): Session {
+function sessionFor(socket: WebSocket, application: string, github: FakeGitHub): Session {
   return {
+    github,
     run: async <T>(expression: string) => (await evaluate(socket, expression)) as T,
     press: (...keys) => {
       const env = { ...process.env, SMOKE_EXE: application, SMOKE_KEYS: keys.join(",") };
@@ -161,9 +209,67 @@ function sessionFor(socket: WebSocket, application: string): Session {
   };
 }
 
+const STATUS_BAR_TEXT = "document.querySelector('[role=status]')?.textContent.trim() ?? ''";
+
+/** Asks every 250 ms for five seconds, and says whether the answer was ever yes. */
+async function until(condition: () => boolean | Promise<boolean>): Promise<boolean> {
+  for (let tries = 0; tries < 20; tries += 1) {
+    if (await condition()) {
+      return true;
+    }
+    await wait(250);
+  }
+  return false;
+}
+
+/** Waits for the status bar to show `text`, and returns what it shows instead if it doesn't. */
+async function statusBarShows(run: Session["run"], text: string): Promise<string | undefined> {
+  let shown = "";
+  const showed = await until(async () => {
+    shown = await run<string>(STATUS_BAR_TEXT);
+    return shown.includes(text);
+  });
+  return showed ? undefined : `the status bar says "${shown}", and should say "${text}"`;
+}
+
 /** Each check returns what went wrong, or nothing. */
 const CHECKS: Record<string, (session: Session) => Promise<string | undefined>> = {
-  // First, because the checks after it would also pass if no key reached the window at all.
+  // First, because it needs Tsugiki's first request to GitHub still waiting. Without the event the page has
+  // no other way to learn this: it only asks `status()` when it loads, and the settling gives it time to.
+  "a status change reaches the open window": async ({ run, github }) => {
+    try {
+      if (!(await until(() => github.held() > 0))) {
+        const shown = await run<string>(STATUS_BAR_TEXT);
+        return `Tsugiki's request never reached the test's proxy, and the status bar says "${shown}"`;
+      }
+      const problem = await statusBarShows(run, "Connecting…");
+      if (problem !== undefined) {
+        return problem;
+      }
+      github.cutOff();
+      return await statusBarShows(run, "Offline");
+    } finally {
+      // A request left waiting would fail later checks too, and blame the database when the window closes.
+      github.cutOff();
+    }
+  },
+
+  // Tsugiki announced this status before the new page loaded, so only `status()` can give it to the page.
+  "a window that loads later gets the current status": async ({ run }) => {
+    await run("window.smokeOldPage = true; setTimeout(() => location.reload(), 0)");
+    const reloaded = await until(async () => {
+      try {
+        const newPage = "window.smokeOldPage === undefined && document.readyState === 'complete'";
+        return await run<boolean>(newPage);
+      } catch {
+        // The page is between documents, and running out of tries is the failure to report.
+        return false;
+      }
+    });
+    return reloaded ? statusBarShows(run, "Offline") : "the page didn't reload";
+  },
+
+  // Before the other key checks, because they would also pass if no key reached the window at all.
   "Ctrl+Shift+P opens the palette, and Esc closes it": async ({ run, press }) => {
     const paletteIsOpen = "document.querySelector('[role=dialog]') !== null";
     press(CONTROL, SHIFT, P);
@@ -199,16 +305,21 @@ const CHECKS: Record<string, (session: Session) => Promise<string | undefined>> 
   },
 };
 
-async function runChecks(application: string): Promise<number> {
+/** Prints the result, and returns how many failures to count. */
+function report(name: string, problem: string | undefined): number {
+  console.log(problem === undefined ? `ok    ${name}` : `FAIL  ${name}: ${problem}`);
+  return problem === undefined ? 0 : 1;
+}
+
+async function runChecks(application: string, github: FakeGitHub): Promise<number> {
   const socket = await connect(await findPage());
-  const session = sessionFor(socket, application);
+  const session = sessionFor(socket, application, github);
   let failures = 0;
   try {
+    await until(async () => (await session.run<string>("document.readyState")) === "complete");
     await wait(SETTLE_MS);
     for (const [name, check] of Object.entries(CHECKS)) {
-      const problem = await check(session);
-      console.log(problem === undefined ? `ok    ${name}` : `FAIL  ${name}: ${problem}`);
-      failures += problem === undefined ? 0 : 1;
+      failures += report(name, await check(session));
     }
   } finally {
     socket.close();
@@ -216,9 +327,19 @@ async function runChecks(application: string): Promise<number> {
   return failures;
 }
 
+/** SQLite removes the two files when the session closes the database, so they show that it didn't. */
+function whatClosingLeft(folder: string): string | undefined {
+  if (!existsSync(join(folder, "tsugiki.db"))) {
+    return "there's no database to check";
+  }
+  const left = ["tsugiki.db-wal", "tsugiki.db-shm"].filter((name) => existsSync(join(folder, name)));
+  return left.length === 0 ? undefined : `it left ${left.join(" and ")}`;
+}
+
 /** Asks the window to close, as a user would, so the app shuts down its store before the test deletes it. */
 async function close(app: ChildProcess): Promise<void> {
-  if (app.exitCode !== null) {
+  // A process killed by a signal keeps a null `exitCode`, and one that never started has no `pid`.
+  if (app.pid === undefined || app.exitCode !== null || app.signalCode !== null) {
     return;
   }
   spawnSync("taskkill", ["/PID", String(app.pid)], { windowsHide: true });
@@ -227,6 +348,7 @@ async function close(app: ChildProcess): Promise<void> {
   } catch {
     console.error(`Tsugiki didn't close within ${String(CLOSE_MS)} ms, so the test killed it.`);
     app.kill();
+    await once(app, "exit");
   }
 }
 
@@ -250,6 +372,7 @@ if (build.status !== 0) {
   exitWith("The release didn't build.");
 }
 
+const github = await startFakeGitHub();
 mkdirSync(data, { recursive: true });
 const application = resolve("target/release/tsg.exe");
 const app = spawn(application, [], {
@@ -257,6 +380,11 @@ const app = spawn(application, [], {
   env: {
     ...process.env,
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${String(DEBUG_PORT)}`,
+    // `gh auth token` prints this instead of reading your sign-in.
+    GH_TOKEN: "smoke-test-not-a-token",
+    // The first variable the HTTP client looks at, so a proxy of your own can't take the request.
+    ALL_PROXY: `http://127.0.0.1:${String(github.port)}`,
+    NO_PROXY: "",
   },
 });
 // Without a listener a failed start would end the process before the clean-up below, and leave `data`.
@@ -265,7 +393,9 @@ app.on("error", (cause) => {
 });
 let failures: number;
 try {
-  failures = await runChecks(application);
+  failures = await runChecks(application, github);
+  await close(app);
+  failures += report("closing the window closes the database", whatClosingLeft(data));
 } finally {
   await close(app);
   rmSync(data, { recursive: true, maxRetries: 10, retryDelay: 500 });

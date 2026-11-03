@@ -110,6 +110,7 @@ function sessionFor(id: string, application: string): Session {
       const pressed = spawnSync("powershell", ["-NoProfile", "-Command", PRESS_KEYS], {
         env,
         encoding: "utf8",
+        windowsHide: true,
       });
       if (pressed.status !== 0) {
         throw new Error(`The real keys didn't go in: ${pressed.stderr}`);
@@ -195,13 +196,16 @@ if (existsSync(data)) {
 }
 
 const buildCommand = ["npx tauri build --no-bundle", ...process.argv.slice(2)].join(" ");
-const build = spawnSync(buildCommand, { stdio: "inherit", shell: true });
+const build = spawnSync(buildCommand, { stdio: "inherit", shell: true, windowsHide: true });
 if (build.status !== 0) {
   exitWith("The release didn't build.");
 }
 
 mkdirSync(data, { recursive: true });
-const driver = spawn("tauri-driver", ["--native-driver", edgeDriver], { stdio: "ignore" });
+const driver = spawn("tauri-driver", ["--native-driver", edgeDriver], {
+  stdio: "ignore",
+  windowsHide: true,
+});
 // Without a listener a missing tauri-driver would end the process before the clean-up below, and leave `data`.
 driver.on("error", (cause) => {
   console.error(`tauri-driver didn't start: ${cause.message}`);

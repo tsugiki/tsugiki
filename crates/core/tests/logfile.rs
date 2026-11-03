@@ -3,6 +3,7 @@
 
 use std::fs;
 use std::io;
+use std::path::Path;
 use std::time::Duration;
 
 use tsugiki_core::error::{Error, ErrorKind};
@@ -37,10 +38,36 @@ impl Transport for Proxy {
     }
 }
 
+/// A failed run leaves its folder behind, and a later run can get the same process id.
+#[expect(
+    clippy::unwrap_used,
+    reason = "a test fails by panicking, and this helper sits outside any #[test] function"
+)]
+fn clear_after_a_failed_run(folder: &Path) {
+    if folder.exists() {
+        fs::remove_dir_all(folder).unwrap();
+    }
+}
+
+/// A second `tsg` starts the logger and exits, so it must leave the running Tsugiki's log alone.
+#[expect(
+    clippy::unwrap_used,
+    reason = "a test fails by panicking, and this helper sits outside any #[test] function"
+)]
+fn a_run_says_it_started_only_when_told_to(path: &Path) {
+    log::logger().flush();
+    assert!(!path.exists());
+
+    logfile::say_started();
+    log::logger().flush();
+    assert!(fs::read_to_string(path).unwrap().contains("started"));
+}
+
 #[test]
 fn the_log_keeps_causes_and_hides_the_token_in_use() {
-    let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    let folder = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join(format!("../../.temp/logfile-{}", std::process::id()));
+    clear_after_a_failed_run(&folder);
     let path = folder.join("tsugiki.log");
     logfile::start(path.clone());
     logfile::start(folder.join("a second start changes nothing.log"));
@@ -49,7 +76,7 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
         fs::read_to_string(&path).unwrap()
     };
 
-    assert!(read_after_flush().contains("started"));
+    a_run_says_it_started_only_when_told_to(&path);
 
     // The real token's words reach the log with the token hidden.
     let token = Token::from_gh(gh_prints_a_token_of_no_known_shape).unwrap();

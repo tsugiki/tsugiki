@@ -35,7 +35,8 @@ fn user_version(connection: &Connection) -> rusqlite::Result<u32> {
 }
 
 /// Runs the steps this file hasn't had yet, in one transaction, after a backup if it holds anything. Two
-/// Tsugikis could race here until #34 makes it a single instance.
+/// Tsugikis can still race here on macOS, where the single-instance check isn't atomic: it connects to a
+/// socket, then binds it later, so two started together can both go on.
 pub(super) fn run(
     connection: &mut Connection,
     path: &Path,

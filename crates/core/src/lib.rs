@@ -1,8 +1,10 @@
 //! Tsugiki's core: everything the app knows and decides, with no UI (ADR 0007).
 
+pub mod build;
 pub mod error;
 pub mod folders;
 pub mod github;
+pub mod launch;
 pub mod logfile;
 pub mod session;
 pub mod settings;

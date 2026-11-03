@@ -37,8 +37,8 @@ It will be a [Tauri](https://tauri.app/) app (Rust with Svelte 5 and TypeScript)
 ## Reporting a bug
 
 Tsugiki keeps a log of why things failed, and attaching it to a bug report helps. It stays on your computer
-unless you send it, and Tsugiki hides your GitHub token in it. It can still name your paths and your login,
-and quote what GitHub sent, so read it before you post it.
+unless you send it, and Tsugiki hides your GitHub token in it. It can still name your paths, your login and
+the links Tsugiki was asked to open, and quote what GitHub sent, so read it before you post it.
 
 | Where Tsugiki runs | The log |
 |---|---|
@@ -47,7 +47,8 @@ and quote what GitHub sent, so read it before you post it.
 | Portable on Windows | `data\tsugiki.log`, next to `tsg.exe` |
 | Portable on macOS | `tsugiki-portable-data/tsugiki.log`, next to `Tsugiki.app` |
 
-`tsugiki.log.1`, next to it, holds the older lines.
+`tsugiki.log.1`, next to it, holds the older lines. A development build's folder is `tsugiki-dev`, not
+`tsugiki`.
 
 ## License
 

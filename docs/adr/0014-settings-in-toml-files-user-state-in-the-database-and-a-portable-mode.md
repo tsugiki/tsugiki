@@ -32,12 +32,17 @@ portable
   <folder>\tsg.exe
   <folder>\data\                                settings.toml, machine.toml, tsugiki.db, tsugiki.log, repos\
   (macOS: tsugiki-portable-data/ next to Tsugiki.app)
+
+development build, unless portable
+  the installed folders, named tsugiki-dev       (ADR 0016)
 ```
 
 **Portable mode** works as in VS Code: when a `data` folder sits next to `tsg.exe`, or a
 `tsugiki-portable-data` folder next to `Tsugiki.app`, everything lives there instead. The folder can be
 carried to another machine, but it shouldn't sit in a syncing folder while Tsugiki runs, for the reason ADR
-0010 gives. A personal access token stays in each machine's keychain.
+0010 gives. A personal access token stays in each machine's keychain. A portable copy and an installed one
+count as the same program ([ADR 0007](0007-core-library-and-thin-tauri-app.md)), so starting one while the
+other runs brings the running one forward.
 
 ## Considered Options
 

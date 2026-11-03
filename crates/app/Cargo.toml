@@ -20,13 +20,19 @@ tauri-build.workspace = true
 [dependencies]
 log.workspace = true
 serde.workspace = true
+serde_json.workspace = true # `generate_context!` writes code that names it, to hold the plugins' config.
 specta.workspace = true
 tauri.workspace = true
+tauri-plugin-single-instance.workspace = true
 tauri-specta.workspace = true
 tsugiki-core.workspace = true
 
+# A development build writes its scheme to the registry with this. macOS can't register one at run time, and
+# the installers register `tsugiki` from tauri.conf.json without it (ADR 0016).
+[target.'cfg(windows)'.dependencies]
+tauri-plugin-deep-link.workspace = true
+
 [dev-dependencies]
-serde_json.workspace = true
 specta-typescript.workspace = true
 tauri = { workspace = true, features = ["test"] }
 

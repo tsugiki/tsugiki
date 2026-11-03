@@ -49,4 +49,71 @@ describe("StatusBar", () => {
     render(StatusBar, { status: undefined, error: "Error: no IPC" });
     expect(bar().textContent).toContain("Tsugiki can't read its status: Error: no IPC");
   });
+
+  describe("when the settings hide it", () => {
+    const online = { state: "online", login: "octocat" } as const;
+
+    // It stays in the page, empty: screen readers only announce changes in a live region that already exists.
+    const expectEmpty = () => {
+      expect(bar().textContent?.trim()).toBe("");
+      expect(bar().classList.contains("empty")).toBe(true);
+    };
+
+    it("is empty while all is well", () => {
+      render(StatusBar, { status: online, visible: false });
+      expectEmpty();
+    });
+
+    it("stays empty while connecting", () => {
+      render(StatusBar, { status: { state: "connecting" }, visible: false });
+      expectEmpty();
+    });
+
+    it("isn't empty when it has something to say", () => {
+      render(StatusBar, { status: { state: "offline" }, visible: false });
+      expect(bar().classList.contains("empty")).toBe(false);
+    });
+
+    it("comes back to say Tsugiki is offline", () => {
+      render(StatusBar, { status: { state: "offline" }, visible: false });
+      expect(bar().textContent?.trim()).toBe("Offline: read-only");
+    });
+
+    it("comes back to say who it was last time while offline", () => {
+      render(StatusBar, { status: { state: "offline_as", last_login: "octocat" }, visible: false });
+      expect(bar().textContent?.trim()).toBe("octocat · Offline: read-only");
+    });
+
+    it("comes back for a problem", () => {
+      const problem = { kind: "unauthorized", message: "Run `gh auth login`." } as const;
+      render(StatusBar, { status: { state: "problem", problem }, visible: false });
+      expect(bar().textContent?.trim()).toBe("Run `gh auth login`.");
+    });
+
+    it("comes back when it can't read the status", () => {
+      render(StatusBar, { status: undefined, error: "Error: no IPC", visible: false });
+      expect(bar().textContent).toContain("Tsugiki can't read its status");
+    });
+
+    it("comes back with only what is wrong with the settings files", () => {
+      render(StatusBar, { status: online, visible: false, problems: ["settings.toml, line 3: bad"] });
+      expect(bar().textContent?.trim()).toBe("settings.toml, line 3: bad");
+    });
+  });
+
+  describe("what is wrong with the settings files", () => {
+    it("shows beside the status", () => {
+      const status = { state: "online", login: "octocat" } as const;
+      render(StatusBar, { status, problems: ["settings.toml, line 3: bad"] });
+      expect(bar().textContent?.trim()).toBe("octocat · settings.toml, line 3: bad");
+    });
+
+    it("lists each file's problem", () => {
+      const status = { state: "offline" } as const;
+      render(StatusBar, { status, problems: ["machine.toml, line 1: bad", "settings.toml, line 3: bad"] });
+      expect(bar().textContent?.trim()).toBe(
+        "Offline: read-only · machine.toml, line 1: bad · settings.toml, line 3: bad",
+      );
+    });
+  });
 });

@@ -14,7 +14,10 @@ Not for daily use. It proves the pipeline end to end before features land on it.
   [ADR 0017](adr/0017-performance-budgets-codspeed-gates-prs-the-window-is-measured-before-release.md)).
 - The release workflow run on a draft: build, attest, `gh attestation verify`, without publishing ([ADR 0012](adr/0012-unsigned-v1-releases-from-a-tag-attested-and-checked.md), [Verify release attestations in the release workflow before publishing](https://github.com/tsugiki/tsugiki/issues/6)).
 - One path through every layer: the GraphQL transport with its replayer, the store with its first migration ([ADR 0010](adr/0010-one-sqlite-database-and-per-repository-mirrors.md)), one view-model query with generated bindings and the `changed` event ([ADR 0008](adr/0008-view-models-and-invalidation-over-ipc.md)), and a Svelte view that renders it.
-- `tsg` as a single instance, the WebView2 shortcuts off, the page's key guard ([ADR 0013](adr/0013-webview2-browser-shortcuts-off-tsugiki-owns-its-keys.md)), and `settings.toml` and `machine.toml` read and watched ([ADR 0014](adr/0014-settings-in-toml-files-user-state-in-the-database-and-a-portable-mode.md)).
+- `tsg` as a single instance, the WebView2 shortcuts off, the page's key guard ([ADR
+  0013](adr/0013-webview2-browser-shortcuts-off-tsugiki-owns-its-keys.md)), and `settings.toml` and
+  `machine.toml` read at start-up ([ADR
+  0014](adr/0014-settings-in-toml-files-user-state-in-the-database-and-a-portable-mode.md)).
 
 ## 1. Issues inbox
 

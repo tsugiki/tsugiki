@@ -21,6 +21,7 @@ tauri = "2.12.5"
 tauri-build = "2.7.4"
 tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
 time = { version = "0.3.55", features = ["formatting"] }
+toml_edit = { version = "0.25.17", features = ["serde"] }
 tsugiki-core = { path = "crates/core" }
 ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
 

@@ -5,6 +5,7 @@ pub mod folders;
 pub mod github;
 pub mod logfile;
 pub mod session;
+pub mod settings;
 pub mod status;
 pub mod store;
 pub mod token;

@@ -10,6 +10,7 @@ use tsugiki_core::github::GitHubAccess;
 use tsugiki_core::github::live::{Https, run_gh};
 use tsugiki_core::logfile;
 use tsugiki_core::session::Session;
+use tsugiki_core::settings::SettingsFiles;
 use tsugiki_core::status::StatusBoard;
 
 use crate::{LatestStatus, StatusChanged, specta_builder};
@@ -43,6 +44,13 @@ pub fn run() {
         app.manage(LatestStatus::default()),
         "nothing else manages the latest status"
     );
+    // Two small files, read before the window exists so `settings` can always answer. A `settings_path` on a
+    // slow drive would delay the window. Without folders the defaults apply, and the session shows why.
+    let settings = folders
+        .as_ref()
+        .map(|found| SettingsFiles::load(found.clone()).loaded().clone())
+        .unwrap_or_default();
+    assert!(app.manage(settings), "nothing else manages the settings");
     let handle = app.handle().clone();
     let board = StatusBoard::new(Box::new(move |status| {
         // Before the event: a window that starts listening just too late for it then asks `status()`, and has

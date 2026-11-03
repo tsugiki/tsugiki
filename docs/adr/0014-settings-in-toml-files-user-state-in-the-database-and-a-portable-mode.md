@@ -7,7 +7,14 @@ What the user configures lives in two TOML files they can read and edit. What th
 - **`tsugiki.db`** holds the user's state with the cache: Pinned issues, Muted authors, Muted and Archived items, Local marks, Last seen, and unsent composer text. These move with Export and Import database.
 - **The keychain** holds a personal access token, which never travels ([ADR 0005](0005-token-stays-in-the-rust-core.md)).
 
-Tsugiki watches both files and applies a hand edit at once. A file that doesn't parse is left untouched, the status bar says which line is wrong, and the last good values stay in force. Tsugiki's own writes go through `toml_edit`, so the user's comments and order survive. Each setting in the Settings dialog is labelled with where it is stored: settings file, this machine, database or keychain.
+Tsugiki reads both files when it starts and when the Settings dialog opens, and doesn't watch them. The files
+can be edited by hand, but an edit made while Tsugiki runs waits until one of those moments, so a restart is
+the way to apply one before the dialog exists. The dialog's Apply saves and applies what changed in it, with
+no re-read, and Cancel or Esc puts it back. A file that doesn't parse is left untouched, the status bar says
+which line is wrong, and the last good values stay in force. Tsugiki's own writes go through `toml_edit`, so
+the user's comments and order survive; a value back at its default is removed unless the user commented on
+it. Each setting in the Settings dialog is labelled with where it is stored: settings file, this machine,
+database or keychain.
 
 ## Where the files are
 
@@ -35,7 +42,11 @@ carried to another machine, but it shouldn't sit in a syncing folder while Tsugi
 ## Considered Options
 
 - **Everything in the database**, with no files: one thing to move, but settings could be changed only in the Settings dialog, and they couldn't be read, diffed or kept in a dotfiles repository.
-- **JSONC files, as VS Code has them.** Familiar, but noisier to write by hand than TOML. **Reading the files only at start-up**, so a hand edit waits for a restart.
+- **JSONC files, as VS Code has them.** Familiar, but noisier to write by hand than TOML. **Watching both
+  files and applying a hand edit at once.** Handy for someone tuning a setting in an editor, but it needs
+  either a polling thread or the `notify` crate with its handling of editors that replace files and of a
+  missing folder, for edits that are rare while Tsugiki runs. **Reading the files only at start-up**, so a
+  hand edit waits for a restart even with the dialog open.
 - **Pinned issues and Muted authors in `settings.toml`**, as scope.md first had them. They change as the user works, from the Sidebar and the Issue list, which is state, not configuration. Keeping them in the file would mean rewriting it all the time.
 - **Fixed locations only**, synced by a symlink the user makes, or **all files next to the database**, synced by copying.
 - **Data always beside the program**, with no app-data folders. On macOS nothing may be written inside `Tsugiki.app`, and on Windows the uninstaller would have to tell data from program files.
@@ -50,4 +61,5 @@ carried to another machine, but it shouldn't sit in a syncing folder while Tsugi
   uninstaller would remove.
 - Releases add a Windows portable `.zip`, attested like the installers.
 - A Repository removed from `settings.toml` by hand keeps its rows in the database, so adding it back restores its pins and marks. Remove repository in Settings deletes them and the mirror, as ADR 0010 says.
-- A missing `settings.toml` at `settings_path` starts from the defaults, and the status bar says so.
+- A missing `settings.toml` at `settings_path` starts from the defaults, and the status bar says so. If it
+  goes missing while Tsugiki runs, the last good values stay, since it may only be a drive gone for now.

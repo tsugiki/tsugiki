@@ -10,6 +10,7 @@ use specta::Type;
 pub use startup::run;
 use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
+use tsugiki_core::settings::LoadedSettings;
 use tsugiki_core::status::Status;
 
 #[tauri::command]
@@ -46,6 +47,13 @@ fn status(latest: State<'_, LatestStatus>) -> Status {
     latest.get()
 }
 
+/// The settings Tsugiki read when it started, and what was wrong with their files (ADR 0014).
+#[tauri::command]
+#[specta::specta]
+fn settings(loaded: State<'_, LoadedSettings>) -> LoadedSettings {
+    loaded.inner().clone()
+}
+
 /// Sent whenever the app-wide state changes (ADR 0008).
 #[derive(Clone, Serialize, Type, Event)]
 struct StatusChanged(Status);
@@ -53,7 +61,7 @@ struct StatusChanged(Status);
 /// Every command and event the webview can use. The TypeScript bindings are generated from it (ADR 0008).
 pub fn specta_builder() -> Builder<tauri::Wry> {
     Builder::<tauri::Wry>::new()
-        .commands(collect_commands![about, status])
+        .commands(collect_commands![about, status, settings])
         .events(collect_events![StatusChanged])
 }
 
@@ -81,6 +89,17 @@ mod tests {
         assert!(app.manage(LatestStatus::default()));
         app.state::<LatestStatus>().set(&Status::Offline);
         assert_eq!(status(app.state()), Status::Offline);
+    }
+
+    #[test]
+    fn settings_answers_with_what_was_read_at_start() {
+        let app = mock_app();
+        let loaded = LoadedSettings {
+            problems: vec!["settings.toml, line 3: expected a value".to_owned()],
+            ..LoadedSettings::default()
+        };
+        assert!(app.manage(loaded.clone()));
+        assert_eq!(settings(app.state()), loaded);
     }
 
     #[test]

@@ -346,6 +346,22 @@ function whereTheWebviewWrote(folder: string): string | undefined {
   return existsSync(join(folder, "webview")) ? undefined : `${folder} has no webview folder`;
 }
 
+/** WebView2's processes outlive `tsg.exe` by some seconds, and hold files in `webview` until they end. */
+async function removeWhenFree(folder: string): Promise<void> {
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    try {
+      rmSync(folder, { recursive: true });
+      return;
+    } catch (cause) {
+      if (Date.now() > deadline) {
+        throw cause;
+      }
+      await wait(500);
+    }
+  }
+}
+
 /** Asks the window to close, as a user would, so the app shuts down its store before the test deletes it. */
 async function close(app: ChildProcess): Promise<void> {
   // A process killed by a signal keeps a null `exitCode`, and one that never started has no `pid`.
@@ -453,6 +469,6 @@ try {
     console.error(existsSync(log) ? readFileSync(log, "utf8") : "Tsugiki wrote no log.");
   }
   await close(app);
-  rmSync(data, { recursive: true, maxRetries: 10, retryDelay: 500 });
+  await removeWhenFree(data);
 }
 process.exit(failures === 0 ? 0 : 1);

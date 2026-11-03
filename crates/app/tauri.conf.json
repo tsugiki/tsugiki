@@ -10,7 +10,7 @@
     "frontendDist": "../../ui/build"
   },
   "app": {
-    "windows": [{ "label": "main", "title": "Tsugiki", "width": 1280, "height": 800 }],
+    "windows": [{ "label": "main", "title": "Tsugiki", "width": 1280, "height": 800, "create": false }],
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
     }

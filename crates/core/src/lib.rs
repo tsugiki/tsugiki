@@ -50,6 +50,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_backtrace_keeps_the_file_and_line() {
+        // `[profile.dev]` keeps only line tables, and this is what they're for. Only this test's own frame
+        // counts, because libtest's frames have a `lib.rs` of their own, and they keep their lines.
+        let (backtrace, line) = (std::backtrace::Backtrace::force_capture(), line!());
+        let backtrace = backtrace.to_string();
+        let frame = backtrace
+            .split("a_backtrace_keeps_the_file_and_line")
+            .nth(1)
+            .unwrap();
+        assert!(frame.contains(&format!("lib.rs:{line}")), "{backtrace}");
+    }
+
+    #[test]
     fn about_names_the_app_and_its_version() {
         assert_eq!(
             about(),

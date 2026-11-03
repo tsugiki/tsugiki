@@ -23,6 +23,8 @@ export default defineConfig({
         // coverage: a command line around cargo, with its logic in the files it calls.
         "../scripts/bindings.ts",
         "../scripts/rust-coverage.ts",
+        // coverage: drives the real window through tauri-driver, which no unit test can do.
+        "../scripts/smoke.ts",
       ],
       thresholds: { 100: true },
       // lcovonly is for Codecov, with paths from the repo root like the Rust report's.

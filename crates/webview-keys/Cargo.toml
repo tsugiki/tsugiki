@@ -1,0 +1,15 @@
+[package]
+name = "tsugiki-webview-keys"
+description = "Turns off WebView2's browser shortcuts, the one place Tsugiki has unsafe code of its own"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+webview2-com.workspace = true
+windows-core.workspace = true
+
+[lints]
+workspace = true

@@ -11,6 +11,8 @@ const EXCLUDED = [
   "crates/app/src/main\\.rs$",
   // coverage: the real network and the real gh, which tests replace and release checks exercise.
   "crates/core/src/github/live\\.rs$",
+  // coverage: one call on a real webview, which `npm run smoke` shows working.
+  "crates/webview-keys/src/lib\\.rs$",
 ];
 
 mkdirSync("target/coverage", { recursive: true });

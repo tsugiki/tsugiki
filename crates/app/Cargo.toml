@@ -31,6 +31,7 @@ tsugiki-core.workspace = true
 # the installers register `tsugiki` from tauri.conf.json without it (ADR 0016).
 [target.'cfg(windows)'.dependencies]
 tauri-plugin-deep-link.workspace = true
+tsugiki-webview-keys.workspace = true
 
 [dev-dependencies]
 specta-typescript.workspace = true

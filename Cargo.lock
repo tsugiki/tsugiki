@@ -4386,6 +4386,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-specta",
  "tsugiki-core",
+ "tsugiki-webview-keys",
 ]
 
 [[package]]
@@ -4401,6 +4402,14 @@ dependencies = [
  "time",
  "toml_edit 0.25.17+spec-1.1.0",
  "ureq",
+]
+
+[[package]]
+name = "tsugiki-webview-keys"
+version = "0.0.0"
+dependencies = [
+ "webview2-com",
+ "windows-core",
 ]
 
 [[package]]

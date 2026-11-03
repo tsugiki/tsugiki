@@ -63,6 +63,42 @@ fn rust_names_only_github_as_a_host() {
 }
 
 #[test]
+fn core_and_app_forbid_unsafe_code() {
+    for root in [
+        "crates/core/src/lib.rs",
+        "crates/app/src/lib.rs",
+        "crates/app/src/main.rs",
+    ] {
+        let source = fs::read_to_string(repo().join(root)).unwrap();
+        assert!(source.contains("#![forbid(unsafe_code)]"), "{root}");
+    }
+}
+
+/// Lines of Rust that use the `unsafe` keyword, in `dir` and below. Comments don't count, nor does this file,
+/// which has to spell the keyword to look for it.
+fn unsafe_lines(dir: &Path) -> usize {
+    rust_sources(dir)
+        .iter()
+        .filter(|source| source.file_name().is_none_or(|name| name != "security.rs"))
+        .map(|source| fs::read_to_string(source).unwrap())
+        .map(|text| {
+            text.lines()
+                .filter(|line| !line.trim_start().starts_with("//") && line.contains("unsafe "))
+                .count()
+        })
+        .sum()
+}
+
+#[test]
+fn webview_keys_has_the_one_unsafe_block_and_no_other_crate_has_any() {
+    for entry in fs::read_dir(repo().join("crates")).unwrap() {
+        let path = entry.unwrap().path();
+        let expected = usize::from(path.ends_with("webview-keys"));
+        assert_eq!(unsafe_lines(&path), expected, "{}", path.display());
+    }
+}
+
+#[test]
 fn the_webview_has_the_strict_csp() {
     let config = json("crates/app/tauri.conf.json");
     assert_eq!(

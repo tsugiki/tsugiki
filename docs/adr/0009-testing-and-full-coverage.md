@@ -45,15 +45,18 @@ Tests are built in layers. Fast ones run on every PR on Windows and macOS. The s
   as errors, `cargo test`, the stale-bindings check, ESLint, Prettier, `svelte-check`, Vitest, Playwright on
   Chromium and WebKit, and both coverage gates. CI skips them on a PR that changes only Markdown files or
   `docs/`, and still reports `CI passed`.
-- On those same pushes and PRs, on macOS: what can differ there, which is clippy, `cargo test`, Vitest,
-  Playwright on WebKit, and both coverage gates. The others read the source or generate the same output on any
-  OS. GitHub cancels macOS jobs that wait too long for a runner, so each one left out makes a failed run with
-  nothing wrong less likely.
+- On those same pushes and PRs, on macOS: what can differ there, which is clippy, Vitest, Playwright on
+  WebKit, and both coverage gates. Rust's gate runs the tests, so `cargo test` has no job of its own there.
+  The others read the source or generate the same output on any OS. These are steps of one job, which needs
+  one runner. GitHub cancels a macOS job that waits too long for a runner, after 20 minutes on the run we
+  looked at, and `timeout-minutes` doesn't extend that wait. A Free org also gets 5 macOS runners at a time,
+  shared across its runs. The cost is that a failure shows as a step of that job, with no separate check on
+  the PR.
 - On those same pushes and PRs, on Linux: `cargo deny` and `cargo machete`. They build nothing, so one OS is
   enough. A weekly run also checks for new advisories, so one still reaches us in a week with no PRs.
 - On every PR, on Linux: the CodSpeed benchmarks
   ([ADR 0017](0017-performance-budgets-codspeed-gates-prs-the-window-is-measured-before-release.md)). The
-  query-plan check from that ADR is a test in the core, so `cargo test` runs it on Windows and macOS.
+  query-plan check from that ADR is a test in the core, so it runs on Windows and macOS.
 - Before a release (in the release workflow, and runnable by hand): the CPython mirror suite, the smoke tests
   on Windows, a check that live GitHub responses still match the recorded fixtures (read-only), the macOS
   checklist, and the performance budgets measured in the real window

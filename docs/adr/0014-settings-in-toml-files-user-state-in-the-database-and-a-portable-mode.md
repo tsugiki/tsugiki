@@ -8,11 +8,13 @@ What the user configures lives in two TOML files they can read and edit. What th
 - **The keychain** holds a personal access token, which never travels ([ADR 0005](0005-token-stays-in-the-rust-core.md)).
 
 Tsugiki reads both files when it starts and when the Settings dialog opens, and doesn't watch them. The files
-can be edited by hand, but an edit made while Tsugiki runs waits until one of those two moments. A file that
-doesn't parse is left untouched, the status bar says which line is wrong, and the last good values stay in
-force. Tsugiki's own writes go through `toml_edit`, so the user's comments and order survive; a value back at
-its default is removed unless the user commented on it. Each setting in the Settings dialog is labelled with
-where it is stored: settings file, this machine, database or keychain.
+can be edited by hand, but an edit made while Tsugiki runs waits until one of those moments, so a restart is
+the way to apply one before the dialog exists. The dialog's Apply saves and applies what changed in it, with
+no re-read, and Cancel or Esc puts it back. A file that doesn't parse is left untouched, the status bar says
+which line is wrong, and the last good values stay in force. Tsugiki's own writes go through `toml_edit`, so
+the user's comments and order survive; a value back at its default is removed unless the user commented on
+it. Each setting in the Settings dialog is labelled with where it is stored: settings file, this machine,
+database or keychain.
 
 ## Where the files are
 

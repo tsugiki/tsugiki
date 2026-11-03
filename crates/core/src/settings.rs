@@ -1,8 +1,8 @@
 //! What the user configures, in `settings.toml`, which travels, and `machine.toml`, which stays (ADR 0014).
 //!
-//! Tsugiki reads both when it starts and when the Settings window opens. An edit made in between waits for
-//! one of those. A file that can't be used stays as it is, `problems` says why, and the last good values
-//! stay.
+//! Tsugiki reads both when it starts and when the Settings window opens, and an edit made in between waits
+//! for one of those. That window's Apply saves what changed in it. A file that can't be used stays as it is,
+//! `problems` says why, and the last good values stay.
 
 use std::fs;
 use std::io;
@@ -95,7 +95,8 @@ impl SettingsFiles {
         self.loaded.problems = problems;
     }
 
-    /// Saves `settings`, keeping everything else in the file, and reads the files again.
+    /// Saves `settings`, keeping everything else in the file, and reads the files again. The Settings window's
+    /// Apply calls this.
     ///
     /// It works from what the files say now, so an edit made since the last read stays. It refuses while
     /// either file can't be used: a broken `machine.toml` might point somewhere else, and a broken

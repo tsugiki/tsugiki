@@ -21,7 +21,7 @@ database or keychain.
 ```
 installed, Windows
   %LOCALAPPDATA%\Programs\Tsugiki\tsg.exe       the program
-  %LOCALAPPDATA%\tsugiki\                       tsugiki.db, tsugiki.log, machine.toml, repos\
+  %LOCALAPPDATA%\tsugiki\                       tsugiki.db, tsugiki.log, machine.toml, repos\, webview\
   %APPDATA%\tsugiki\settings.toml               roaming, unless settings_path says otherwise
 
 installed, macOS
@@ -30,7 +30,8 @@ installed, macOS
 
 portable
   <folder>\tsg.exe
-  <folder>\data\                                settings.toml, machine.toml, tsugiki.db, tsugiki.log, repos\
+  <folder>\data\                                settings.toml, machine.toml, tsugiki.db, tsugiki.log, repos\,
+                                                webview\
   (macOS: tsugiki-portable-data/ next to Tsugiki.app)
 
 development build, unless portable
@@ -60,11 +61,15 @@ other runs brings the running one forward.
 
 ## Consequences
 
-- The per-user NSIS installer ([ADR 0012](0012-unsigned-v1-releases-from-a-tag-attested-and-checked.md))
-  installs into `%LOCALAPPDATA%\Programs\Tsugiki`, as VS Code's user setup does. Its "Delete app data" box
-  removes `%LOCALAPPDATA%\tsugiki` and `%APPDATA%\tsugiki`, not the `io.github.tsugiki` folder Tauri's
-  uninstaller would remove.
-- Releases add a Windows portable `.zip`, attested like the installers.
+- The per-user NSIS installer, from Stage 4 ([ADR
+  0012](0012-unsigned-v1-releases-from-a-tag-attested-and-checked.md)), installs into
+  `%LOCALAPPDATA%\Programs\Tsugiki`, as VS Code's user setup does. Its "Delete app data" box removes
+  `%LOCALAPPDATA%\tsugiki` and `%APPDATA%\tsugiki`, not the `io.github.tsugiki` folder Tauri's uninstaller
+  would remove.
+- On Windows, `webview\` holds WebView2's profile and cache, so a portable copy leaves nothing behind. On macOS
+  WKWebView picks its own folder, which Tauri can't move, so a portable copy there does leave that.
+- Releases carry a Windows portable `.zip`, attested like everything else. It's all Windows gets until Stage
+  4.
 - A Repository removed from `settings.toml` by hand keeps its rows in the database, so adding it back restores its pins and marks. Remove repository in Settings deletes them and the mirror, as ADR 0010 says.
 - A missing `settings.toml` at `settings_path` starts from the defaults, and the status bar says so. If it
   goes missing while Tsugiki runs, the last good values stay, since it may only be a drive gone for now.

@@ -43,7 +43,7 @@ describe("versionOfTag", () => {
     expect(versionOfTag("v0.2.0", CARGO_TOML)).toBe("0.2.0");
   });
 
-  it("fails when the tag names another version, because the installers would carry Cargo.toml's", () => {
+  it("fails when the tag names another version, because the downloads would carry Cargo.toml's", () => {
     expect(() => versionOfTag("v0.3.0", CARGO_TOML)).toThrow(
       "The tag v0.3.0 doesn't match version 0.2.0 in Cargo.toml.",
     );

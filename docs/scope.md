@@ -18,7 +18,13 @@ The order in which v1 is built is in [build-order.md](build-order.md).
 - `tsg` is the app's executable, and there is one instance of it ([ADR 0007](adr/0007-core-library-and-thin-tauri-app.md)). On its own, `tsg` starts Tsugiki or brings it to the front. `tsg python/cpython#12345`, an Issue or PR URL, or a `tsugiki://` link (what an **Alert** carries), opens that item in the running app, in its Repository if it has been added and in a **Peek** otherwise. The Windows installer, which installs for the current user without admin rights, puts `tsg` on the PATH; on macOS a command in the palette does it, as VS Code does for `code`.
 - The GitHub token comes from `gh auth token` by default. A personal access token is a supported choice: fine-grained read-only to try Tsugiki, fine-grained with review rights on one owner's repositories, or classic `public_repo` ([ADR 0004](adr/0004-auth-via-gh-cli-token.md)).
 - Only the Rust core holds the token and talks to GitHub; the webview never sees it ([ADR 0005](adr/0005-token-stays-in-the-rust-core.md)).
-- Releases are unsigned in v1: a per-user NSIS installer for Windows x64 and a universal `.dmg` for macOS, built from a tag, attested, and checked with `gh attestation verify` before they are published. Tsugiki doesn't update itself. It checks GitHub Releases at start-up and every 6 hours, the status bar says when a new version is out, and a click opens its release page; a Settings switch turns the check off. Versions follow SemVer, 0.x until v1, with notes kept in `CHANGELOG.md` ([ADR 0012](adr/0012-unsigned-v1-releases-from-a-tag-attested-and-checked.md)).
+- Releases are unsigned in v1: a per-user NSIS installer for Windows x64 and a universal `.dmg` for macOS,
+  built from a tag, attested, and checked with `gh attestation verify` before they are published. Until Stage
+  4, Windows gets only the portable `.zip` and the `.dmg` runs only on Apple silicon. Tsugiki doesn't update
+  itself. It checks GitHub Releases at start-up and every 6 hours, the status bar says when a new version is
+  out, and a click opens its release page; a Settings switch turns the check off. Versions follow SemVer, 0.x
+  until v1, with notes kept in `CHANGELOG.md` ([ADR
+  0012](adr/0012-unsigned-v1-releases-from-a-tag-attested-and-checked.md)).
 
 ### Layout
 

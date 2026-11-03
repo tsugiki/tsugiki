@@ -26,6 +26,8 @@ export default defineConfig({
         "../scripts/release-check.ts",
         // coverage: checks the real window with real keys, which no unit test can do.
         "../scripts/smoke.ts",
+        // coverage: zips the real build and starts it, which no unit test can do.
+        "../scripts/portable-zip.ts",
       ],
       thresholds: { 100: true },
       // lcovonly is for Codecov, with paths from the repo root like the Rust report's.

@@ -27,9 +27,9 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-The tag starts the workflow, which takes 16 minutes or longer if runners are busy. It builds the installers,
-attests them and uploads them to a draft release, then downloads the draft's files and checks each
-attestation. Nothing is public until you publish.
+The tag starts the workflow, which takes 16 minutes or longer if runners are busy. It builds the Windows zip
+and the macOS dmg, attests them and uploads them to a draft release, then downloads the draft's files and
+checks each attestation. Nothing is public until you publish.
 
 ## 3. Check the draft
 
@@ -54,9 +54,9 @@ gh workflow run release.yml --repo tsugiki/tsugiki --ref <branch>
 ```
 
 Or use "Run workflow" on the Release workflow in the Actions tab. A rehearsal needs no tag. It checks that
-`CHANGELOG.md` has a section for `Cargo.toml`'s version, runs the smoke test and builds the installers, then
-stops, so it leaves no attestation and no draft. You can download the installers from the run, but they have
-no attestation, so don't hand them to anyone.
+`CHANGELOG.md` has a section for `Cargo.toml`'s version, runs the smoke test and builds the zip and the dmg,
+then stops, so it leaves no attestation and no draft. You can download both from the run, but they have no
+attestation, so don't hand them to anyone.
 
 ## If the workflow fails
 

@@ -1,9 +1,10 @@
 //! Opens Tsugiki's window. Measuring this takes a real window, so it is left out of the
 //! coverage gate and the smoke tests cover it instead (ADR 0009).
 
+use std::path::PathBuf;
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager, RunEvent};
+use tauri::{AppHandle, Manager, RunEvent, WebviewWindowBuilder};
 use tauri_specta::Event;
 use tsugiki_core::build::Build;
 use tsugiki_core::folders::Folders;
@@ -38,11 +39,11 @@ pub fn run() {
     log_panics();
     let builder = specta_builder();
     let mut context = tauri::generate_context!();
-    // The single-instance lock and the webview's data are named after this, so a development build runs
-    // beside an installed Tsugiki.
+    // The single-instance lock is named after this, so a development build runs beside an installed Tsugiki.
     Build::CURRENT
         .identifier()
         .clone_into(&mut context.config_mut().identifier);
+    let webview_data = folders.as_ref().ok().map(Folders::webview);
     // A second `tsg` gives its command line to the first and exits inside `build`, before it has a window, a
     // session or anything to log. It has to be the first plugin for that.
     let tauri_builder = tauri::Builder::default()
@@ -50,7 +51,8 @@ pub fn run() {
             launch::open_command_line(Build::CURRENT, &argv);
             bring_forward(app);
         }))
-        .setup(|app| {
+        .setup(move |app| {
+            open_window(app.handle(), webview_data)?;
             turn_off_browser_keys(app.handle());
             Ok(())
         })
@@ -107,6 +109,23 @@ pub fn run() {
     });
 }
 
+/// Opens the window `tauri.conf.json` describes, keeping the webview's data with Tsugiki's so a portable copy
+/// stays in its folder (ADR 0014). The file can't say this itself, because it takes only a path inside
+/// Tauri's folder. Without `webview_data` the webview uses Tauri's folder, and the session shows why there
+/// are none.
+fn open_window(app: &AppHandle, webview_data: Option<PathBuf>) -> tauri::Result<()> {
+    let Some(config) = app.config().app.windows.first() else {
+        return Err(tauri::Error::WindowNotFound);
+    };
+    let window = WebviewWindowBuilder::from_config(app, config)?;
+    let window = match webview_data {
+        Some(folder) => window.data_directory(folder),
+        None => window,
+    };
+    // Tauri keeps the window, and `get_webview_window` finds it again.
+    window.build().map(drop)
+}
+
 /// Brings the window to the front of the user's desk, for a second `tsg` or a link. Before the window exists
 /// there's nothing to do, because it opens in front anyway.
 fn bring_forward(app: &AppHandle) {
@@ -119,7 +138,7 @@ fn bring_forward(app: &AppHandle) {
 }
 
 /// Stops a release's webview seeing Print, Reload and the rest, so Tsugiki's keys reach Tsugiki (ADR 0013). A
-/// development build keeps them, for DevTools. The window exists by now, because `setup` runs after it opens.
+/// development build keeps them, for DevTools. The window exists by now, because `open_window` ran first.
 #[cfg(windows)]
 fn turn_off_browser_keys(app: &AppHandle) {
     if Build::CURRENT != Build::Release {

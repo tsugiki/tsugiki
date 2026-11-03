@@ -36,7 +36,7 @@ It will be a [Tauri](https://tauri.app/) app (Rust with Svelte 5 and TypeScript)
 
 ## Checking a download
 
-Tsugiki's installers aren't code-signed, so Windows and macOS warn you when you open one. What shows where a
+Tsugiki's downloads aren't code-signed, so Windows and macOS warn you when you open one. What shows where a
 file came from is its attestation: a public record, made when the file was built, that ties the file's exact
 bytes to Tsugiki's release workflow and the commit it ran on. To check a file you downloaded, use the
 [GitHub CLI](https://cli.github.com/):

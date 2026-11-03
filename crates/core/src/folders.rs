@@ -28,7 +28,7 @@ impl Os {
 /// The folders Tsugiki's files live in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Folders {
-    /// Holds `tsugiki.db`, `tsugiki.log`, `machine.toml` and `repos`.
+    /// Holds `tsugiki.db`, `tsugiki.log`, `machine.toml`, `repos` and `webview`.
     pub data: PathBuf,
     /// Holds `settings.toml`, unless `settings_path` in `machine.toml` says otherwise.
     pub settings: PathBuf,
@@ -43,6 +43,11 @@ impl Folders {
     /// Where the log is. The file before it is `tsugiki.log.1`, next to it.
     pub fn log(&self) -> PathBuf {
         self.data.join("tsugiki.log")
+    }
+
+    /// Where the webview on Windows keeps its profile and cache, so a portable copy stays in its folder.
+    pub fn webview(&self) -> PathBuf {
+        self.data.join("webview")
     }
 
     /// Where `machine.toml` is.
@@ -174,6 +179,15 @@ mod tests {
             settings: PathBuf::from("settings"),
         };
         assert_eq!(folders.log(), Path::new("data").join("tsugiki.log"));
+    }
+
+    #[test]
+    fn the_webview_keeps_its_data_with_ours_so_a_portable_copy_stays_in_its_folder() {
+        let folders = Folders {
+            data: PathBuf::from("data"),
+            settings: PathBuf::from("settings"),
+        };
+        assert_eq!(folders.webview(), Path::new("data").join("webview"));
     }
 
     #[test]

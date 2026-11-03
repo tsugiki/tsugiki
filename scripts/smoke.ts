@@ -6,18 +6,18 @@
 // shortcuts: with those on and the guard gone, they still didn't open Print. Only keys from the OS can show
 // the bug.
 //
-// It reads the page over the Chrome DevTools Protocol, on a port that WebView2 opens for this run. We don't
-// use WebDriver because an msedgedriver session opens a second window on the primary display (#76).
+// It reads the page over the Chrome DevTools Protocol, on a port only this test's build opens. We don't use
+// WebDriver because an msedgedriver session opens a second window on the primary display (#76).
 //
 // It needs `gh`, but not your sign-in: it gives Tsugiki a made-up token, and a proxy that decides when
 // "GitHub" stops answering, so the status changes when the test says and nothing reaches GitHub.
 //
 //   npm run smoke
 //
-// Anything after `--` goes to `tauri build`, such as `--config second-display.json`.
+// `npm run smoke -- --at 3520,80` opens the window at that place, such as on another display.
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type AddressInfo, type Socket } from "node:net";
 import { join, resolve } from "node:path";
 import { setTimeout as wait } from "node:timers/promises";
@@ -27,6 +27,8 @@ const DEBUG_PORT = 9333;
 const APP_ADDRESS = "http://tauri.localhost/";
 const SETTLE_MS = 2000;
 const CLOSE_MS = 10_000;
+const BUILD_CONFIG = ".temp/smoke-config.json";
+const TAURI_BROWSER_ARGS = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
 
 // Windows' virtual-key codes, which name physical keys whatever the keyboard layout is.
 const CONTROL = 0x11;
@@ -359,6 +361,39 @@ function exitWith(message: string): never {
   process.exit(1);
 }
 
+/** Where `--at x,y` puts the window, if it's on the command line. */
+function windowPlace(): { x: number; y: number } | undefined {
+  const [flag, place] = process.argv.slice(2);
+  if (flag === undefined) {
+    return undefined;
+  }
+  const [x, y] = (place ?? "").split(",").map(Number);
+  if (flag !== "--at" || x === undefined || y === undefined || Number.isNaN(x) || Number.isNaN(y)) {
+    exitWith("The only option is --at x,y.");
+  }
+  return { x, y };
+}
+
+/**
+ * Writes the app's window settings with the debugging port on, for this build only, and returns the path.
+ * WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS needs no build setting, but WebView2 ignored it on a GitHub runner.
+ * The setting replaces Tauri's default arguments, so this repeats them.
+ */
+function writeBuildConfig(): string {
+  const appConfig = JSON.parse(readFileSync("crates/app/tauri.conf.json", "utf8")) as {
+    app: { windows: Record<string, unknown>[] };
+  };
+  const additionalBrowserArgs = `--remote-debugging-port=${String(DEBUG_PORT)} ${TAURI_BROWSER_ARGS}`;
+  const windows = appConfig.app.windows.map((window) => ({
+    ...window,
+    ...windowPlace(),
+    additionalBrowserArgs,
+  }));
+  mkdirSync(".temp", { recursive: true });
+  writeFileSync(BUILD_CONFIG, JSON.stringify({ app: { windows } }));
+  return BUILD_CONFIG;
+}
+
 if (process.platform !== "win32") {
   exitWith("The smoke test runs on Windows: WKWebView doesn't speak the DevTools Protocol (ADR 0009).");
 }
@@ -368,7 +403,7 @@ if (existsSync(data)) {
   exitWith(`${data} already exists, and the test deletes it afterwards, so look at it first.`);
 }
 
-const buildCommand = ["npx tauri build --no-bundle", ...process.argv.slice(2)].join(" ");
+const buildCommand = `npx tauri build --no-bundle --config ${writeBuildConfig()}`;
 const build = spawnSync(buildCommand, { stdio: "inherit", shell: true, windowsHide: true });
 if (build.status !== 0) {
   exitWith("The release didn't build.");
@@ -381,7 +416,6 @@ const app = spawn(application, [], {
   stdio: "ignore",
   env: {
     ...process.env,
-    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${String(DEBUG_PORT)}`,
     // `gh auth token` prints this instead of reading your sign-in.
     GH_TOKEN: "smoke-test-not-a-token",
     // The first variable the HTTP client looks at, so a proxy of your own can't take the request.

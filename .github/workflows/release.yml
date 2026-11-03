@@ -38,6 +38,7 @@ jobs:
           path: release-notes.md
           if-no-files-found: error
 
+  # It builds its own release with a debugging port open, so the installers below are separate builds.
   smoke:
     name: npm run smoke
     needs: [check]

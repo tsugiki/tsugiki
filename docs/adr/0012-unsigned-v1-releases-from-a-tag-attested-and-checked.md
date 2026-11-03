@@ -8,7 +8,8 @@ Releases are built from a tag in GitHub Actions and attested ([ADR 0005](0005-to
 - **Signing.** None on Windows, so installing shows SmartScreen's "Windows protected your PC" (More info, Run anyway). On macOS the app is only ad-hoc signed, so the first open needs System Settings › Privacy & Security › Open Anyway. The ad-hoc signature changes with every build, so a personal access token kept in the keychain asks for access again after an update. gh's token isn't stored there and isn't affected.
 - **The workflow**, `release.yml`, runs in this order:
   1. Pushing a tag `vX.Y.Z` on main starts it.
-  2. The pre-release suites of [ADR 0009](0009-testing-and-full-coverage.md) run: the CPython mirror suite, the `tauri-driver` smoke tests and the live-fixture check.
+  2. The pre-release suites of [ADR 0009](0009-testing-and-full-coverage.md) run: the CPython mirror suite,
+     the Windows smoke tests and the live-fixture check.
   3. The installers are built.
   4. Each installer is attested with `actions/attest-build-provenance` and uploaded to a draft release. Its body is the version's section of `CHANGELOG.md`, and the workflow fails if that section is missing.
   5. A last job downloads every asset of the draft and runs `gh attestation verify <file> --repo tsugiki/tsugiki --signer-workflow tsugiki/tsugiki/.github/workflows/release.yml` ([Verify release attestations in the release workflow before publishing](https://github.com/tsugiki/tsugiki/issues/6)).

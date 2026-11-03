@@ -1,5 +1,5 @@
 //! Opens Tsugiki's window. Measuring this takes a real window, so it is left out of the
-//! coverage gate and the `tauri-driver` smoke tests cover it instead (ADR 0009).
+//! coverage gate and the smoke tests cover it instead (ADR 0009).
 
 use std::time::Duration;
 

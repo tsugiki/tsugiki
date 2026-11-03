@@ -19,9 +19,13 @@ const fileIn = (coverage: Coverage, path: string) => {
 
 // One function, whichever build it came from: a mangled name differs between OSes by its leading
 // underscores, and between a crate's test build and the build others depend on by its crate hash.
+// A hash's length moves the offsets that back-references like `B3_` hold, so those lose their offsets too.
 // The name stays in the key, because two closures can start on one line.
 const functionKey = (line: string, name: string) =>
-  `${line} ${name.replace(/^_+/, "").replace(/Cs[0-9a-zA-Z]+_/g, "")}`;
+  `${line} ${name
+    .replace(/^_+/, "")
+    .replace(/Cs[0-9a-zA-Z]+_/g, "")
+    .replace(/B[0-9a-zA-Z]*_/g, "B_")}`;
 
 const parseLcov = (text: string): Coverage => {
   const coverage: Coverage = new Map();

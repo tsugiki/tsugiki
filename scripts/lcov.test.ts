@@ -65,6 +65,14 @@ describe("one report", () => {
     expect(check(text)).toEqual([]);
   });
 
+  it("counts a generic function as one when its two builds' crate hashes differ in length", () => {
+    // From a real report: the shorter hash moves what `Result`'s path points back at, from `BY_` to `BX_`.
+    const dep = "_RINvMNtCsa66rCdMECK7_12tsugiki_core5storeNtB3_5Store4callINtNtBY_6result6ResultEEB5_";
+    const test = "_RINvMNtCssScWlLHOsg_12tsugiki_core5storeNtB3_5Store4callINtNtBX_6result6ResultEEB5_";
+    const text = report("a.rs", [`FN:76,${dep}`, `FN:76,${test}`, `FNDA:0,${dep}`, `FNDA:29,${test}`]);
+    expect(check(text)).toEqual([]);
+  });
+
   it("doesn't let a closure hide another that starts on the same line", () => {
     const text = report("a.rs", ["FN:5,_RNCa0", "FN:5,_RNCa1", "FNDA:3,_RNCa0", "FNDA:0,_RNCa1"]);
     expect(check(text)).toEqual(["a.rs: functions at 5"]);

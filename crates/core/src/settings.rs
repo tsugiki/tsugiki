@@ -95,8 +95,8 @@ impl SettingsFiles {
         self.loaded.problems = problems;
     }
 
-    /// Saves `settings`, keeping everything else in the file, and reads the files again. The Settings window's
-    /// Apply calls this.
+    /// Saves `settings`, keeping everything else in the file, and reads the files again. The Settings
+    /// window's Apply calls this.
     ///
     /// It works from what the files say now, so an edit made since the last read stays. It refuses while
     /// either file can't be used: a broken `machine.toml` might point somewhere else, and a broken

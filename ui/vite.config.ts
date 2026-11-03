@@ -23,6 +23,7 @@ export default defineConfig({
         // coverage: a command line around cargo, with its logic in the files it calls.
         "../scripts/bindings.ts",
         "../scripts/rust-coverage.ts",
+        "../scripts/release-check.ts",
         // coverage: checks the real window with real keys, which no unit test can do.
         "../scripts/smoke.ts",
       ],

@@ -34,6 +34,20 @@ Tsugiki is being designed. There is no app to install yet. The decisions made so
 
 It will be a [Tauri](https://tauri.app/) app (Rust with Svelte 5 and TypeScript) for Windows and macOS. Its command-line name is `tsg`.
 
+## Checking a download
+
+Tsugiki's installers aren't code-signed, so Windows and macOS warn you when you open one. What shows where a
+file came from is its attestation: a public record, made when the file was built, that ties the file's exact
+bytes to Tsugiki's release workflow and the commit it ran on. To check a file you downloaded, use the
+[GitHub CLI](https://cli.github.com/):
+
+```
+gh attestation verify <file> --repo tsugiki/tsugiki --signer-workflow tsugiki/tsugiki/.github/workflows/release.yml
+```
+
+If this fails, the file isn't the one Tsugiki's workflow built, so don't run it, and please open an issue. A
+pass tells you where the file came from. It doesn't tell you the code is free of bugs.
+
 ## Reporting a bug
 
 Tsugiki keeps a log of why things failed, and attaching it to a bug report helps. It stays on your computer

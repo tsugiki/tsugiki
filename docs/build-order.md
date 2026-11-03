@@ -69,4 +69,4 @@ The first daily-usable release. It replaces the Issues part of the email inbox; 
 - Every budget met in the real window on Windows and macOS ([ADR 0017](adr/0017-performance-budgets-codspeed-gates-prs-the-window-is-measured-before-release.md)).
 - The release checklists run: the macOS checklist with its Alert checks, the Windows smoke tests, the CPython
   mirror suite.
-- The README with install notes for SmartScreen and Open Anyway, and how to check a download with `gh attestation verify`.
+- The README with install notes for SmartScreen and Open Anyway.

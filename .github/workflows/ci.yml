@@ -1,7 +1,7 @@
 # The checks of ADR 0009, on every push to main and every PR that changes more than docs.
 # Each is its own job, and a job's name is the npm script it runs, so a PR shows what failed and where.
-# macOS runs only what can differ there, because GitHub cancels macOS jobs that wait too long for a runner, and
-# the more jobs a run has, the likelier that gets (ADR 0009).
+# macOS runs only what can differ there, because GitHub cancels macOS jobs that wait too long for a runner,
+# and the more jobs a run has, the likelier that gets (ADR 0009).
 name: CI
 
 on:

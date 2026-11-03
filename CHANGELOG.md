@@ -1,10 +1,11 @@
 # Changelog
 
-Release notes for Tsugiki. Keep "Unreleased" current as changes land, and rename it to the version when you
-tag it. The release workflow uses that version's section as the release's body, and fails without it
+Release notes for Tsugiki. Keep "WIP" current as changes land, and rename it to
+`## Version X.Y.Z (YYYY-MM-DD)` in the PR that sets the version. The release workflow uses that section as the
+release's body, and fails without it
 ([ADR 0012](docs/adr/0012-unsigned-v1-releases-from-a-tag-attested-and-checked.md)).
 
-## Unreleased
+## WIP
 
 ### Added
 

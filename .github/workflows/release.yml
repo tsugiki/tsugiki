@@ -2,6 +2,10 @@
 # uploads them to a draft release, then checks the draft's files the way a user would. Publishing stays a
 # person's job, after the checks in ADR 0012.
 #
+# Starting it from the Actions tab is a rehearsal of the branch you pick: the checks, the smoke test and the
+# builds run, and nothing gets attested or uploaded to a release. Rehearse a change to this file before
+# merging it, because a real run's attestations stay in a public log for good.
+#
 # No job restores a cache: anything a pull request's run saved could otherwise end up in an installer.
 name: Release
 
@@ -9,13 +13,14 @@ on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
 
 # Each job asks for its own, out of contents: write, id-token: write and attestations: write (ADR 0012).
 permissions: {}
 
 jobs:
   check:
-    name: check the tag
+    name: check the version
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -26,12 +31,17 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: The tag is on main
+        if: ${{ github.event_name == 'push' }}
         run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
       - name: The tag matches Cargo.toml, and CHANGELOG.md has its section
+        if: ${{ github.event_name == 'push' }}
         run: node scripts/release-check.ts "$GITHUB_REF_NAME" > release-notes.md
+      - name: CHANGELOG.md has a section for Cargo.toml's version
+        if: ${{ github.event_name != 'push' }}
+        run: node scripts/release-check.ts > release-notes.md
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-notes
@@ -90,10 +100,12 @@ jobs:
           if-no-files-found: error
 
   # Apart from the builds, so the install and build scripts they run never hold the right to attest. It comes
-  # after the last step that changes the files: signing would have to come first (#6).
+  # after the last step that changes the files: signing would have to come first (#6). A rehearsal stops
+  # here: the jobs after this one need it, so they skip with it.
   attest:
     name: attest the installers
     needs: [build]
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

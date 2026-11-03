@@ -10,8 +10,11 @@ In a PR to main:
 
 1. Set `version` in `[workspace.package]` in `Cargo.toml`, and run `cargo check` so `Cargo.lock` follows. The
    release builds use `--locked`, and they fail if it doesn't.
-2. Rename `## Unreleased` in `CHANGELOG.md` to `## X.Y.Z`, with no date or other text on that line, and start
-   a new `## Unreleased` above it. ADR 0012 says what the section needs.
+2. Rename `## WIP` in `CHANGELOG.md` to `## Version X.Y.Z (YYYY-MM-DD)`, with today's date, and start a new
+   `## WIP` above it. ADR 0012 says what the section needs.
+
+`just release-check` prints the notes the release will carry. CI's `release-check` job fails the PR if
+`CHANGELOG.md` has no section for that version, and the `deny` job fails it if `Cargo.lock` didn't follow.
 
 ## 2. Tag it
 
@@ -41,6 +44,19 @@ The workflow can't do these, so you do them on the draft's files:
 
 Publish the draft on GitHub's release page. This can't be taken back: immutable releases stop anyone changing
 a published release's files or tag, so to fix a bad release, make a new version.
+
+## Rehearsing
+
+To try the workflow without a release, for example after you change it, run it on a branch:
+
+```
+gh workflow run release.yml --repo tsugiki/tsugiki --ref <branch>
+```
+
+Or use "Run workflow" on the Release workflow in the Actions tab. A rehearsal needs no tag. It checks that
+`CHANGELOG.md` has a section for `Cargo.toml`'s version, runs the smoke test and builds the installers, then
+stops, so it leaves no attestation and no draft. You can download the installers from the run, but they have
+no attestation, so don't hand them to anyone.
 
 ## If the workflow fails
 

@@ -1,5 +1,6 @@
-// Checks a tag against Cargo.toml and CHANGELOG.md, and prints the release notes. `node scripts/release-check.ts
-// v1.2.3`. The release workflow runs it first, so a bad tag fails before anything is built (ADR 0012).
+// Checks a tag against Cargo.toml and CHANGELOG.md, and prints the release notes:
+// `node scripts/release-check.ts v1.2.3`. The release workflow runs it first, so a bad tag fails before
+// anything is built (ADR 0012).
 import { readFileSync } from "node:fs";
 
 import { notesFor, versionOfTag } from "./release-notes.ts";

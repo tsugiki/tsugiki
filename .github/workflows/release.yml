@@ -65,8 +65,6 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
-      id-token: write
-      attestations: write
     strategy:
       matrix:
         include:
@@ -84,20 +82,36 @@ jobs:
       - name: Install the Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install
       - run: npm ci
-      - run: npx tauri build
-      # After the last step that changes the files. Signing would have to come before this (#6).
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: ${{ matrix.installers }}
+      - run: npx tauri build -- --locked
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: installer-${{ matrix.os }}
           path: ${{ matrix.installers }}
           if-no-files-found: error
 
+  # Apart from the builds, so the install and build scripts they run never hold the right to attest. It comes
+  # after the last step that changes the files: signing would have to come first (#6).
+  attest:
+    name: attest the installers
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: installer-*
+          merge-multiple: true
+          path: installers
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: installers/*
+
   draft:
     name: upload to a draft release
-    needs: [build]
+    needs: [attest]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -111,6 +125,15 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-notes
+      # GitHub would take a second draft for the tag, and the job after this could then check the wrong one.
+      - name: No release has this tag yet
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo tsugiki/tsugiki > /dev/null 2>&1; then
+            echo "A release for $GITHUB_REF_NAME exists already. Delete the draft, then run this again."
+            exit 1
+          fi
       - name: Create the draft
         env:
           GH_TOKEN: ${{ github.token }}

@@ -145,6 +145,7 @@ async function findPage(): Promise<string> {
       seen = `the port lists ${JSON.stringify(targets.map((t) => `${t.type} ${t.url}`))}`;
     } catch {
       // The port isn't open yet, and running out of tries is the failure to report.
+      seen = "the port never answered";
     }
     await wait(250);
   }
@@ -363,31 +364,30 @@ function exitWith(message: string): never {
 
 /** Where `--at x,y` puts the window, if it's on the command line. */
 function windowPlace(): { x: number; y: number } | undefined {
-  const [flag, place] = process.argv.slice(2);
+  const [flag, place, ...others] = process.argv.slice(2);
   if (flag === undefined) {
     return undefined;
   }
-  const [x, y] = (place ?? "").split(",").map(Number);
-  if (flag !== "--at" || x === undefined || y === undefined || Number.isNaN(x) || Number.isNaN(y)) {
-    exitWith("The only option is --at x,y.");
+  const numbers = flag === "--at" && others.length === 0 ? /^(-?\d+),(-?\d+)$/.exec(place ?? "") : null;
+  if (numbers === null) {
+    exitWith("The only option is --at x,y, in whole numbers.");
   }
-  return { x, y };
+  return { x: Number(numbers[1]), y: Number(numbers[2]) };
 }
 
 /**
  * Writes the app's window settings with the debugging port on, for this build only, and returns the path.
  * WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS needs no build setting, but WebView2 ignored it on a GitHub runner.
- * The setting replaces Tauri's default arguments, so this repeats them.
+ * The setting replaces Tauri's default arguments, so without the app's own this repeats those.
  */
 function writeBuildConfig(): string {
   const appConfig = JSON.parse(readFileSync("crates/app/tauri.conf.json", "utf8")) as {
-    app: { windows: Record<string, unknown>[] };
+    app: { windows: ({ additionalBrowserArgs?: string } & Record<string, unknown>)[] };
   };
-  const additionalBrowserArgs = `--remote-debugging-port=${String(DEBUG_PORT)} ${TAURI_BROWSER_ARGS}`;
   const windows = appConfig.app.windows.map((window) => ({
     ...window,
     ...windowPlace(),
-    additionalBrowserArgs,
+    additionalBrowserArgs: `--remote-debugging-port=${String(DEBUG_PORT)} ${window.additionalBrowserArgs ?? TAURI_BROWSER_ARGS}`,
   }));
   mkdirSync(".temp", { recursive: true });
   writeFileSync(BUILD_CONFIG, JSON.stringify({ app: { windows } }));
@@ -403,7 +403,14 @@ if (existsSync(data)) {
   exitWith(`${data} already exists, and the test deletes it afterwards, so look at it first.`);
 }
 
-const buildCommand = `npx tauri build --no-bundle --config ${writeBuildConfig()}`;
+// This build opens an unguarded debugging port, and without `data` it would use the real data and sign-in, so
+// it mustn't outlive the test. Stopping the test with Ctrl+C skips this: delete the file by hand then.
+const application = resolve("target/release/tsg.exe");
+process.on("exit", () => {
+  rmSync(application, { force: true, maxRetries: 10, retryDelay: 500 });
+});
+
+const buildCommand = `npx tauri build --no-bundle --config ${writeBuildConfig()} -- --locked`;
 const build = spawnSync(buildCommand, { stdio: "inherit", shell: true, windowsHide: true });
 if (build.status !== 0) {
   exitWith("The release didn't build.");
@@ -411,7 +418,6 @@ if (build.status !== 0) {
 
 const github = await startFakeGitHub();
 mkdirSync(data, { recursive: true });
-const application = resolve("target/release/tsg.exe");
 const app = spawn(application, [], {
   stdio: "ignore",
   env: {
@@ -427,18 +433,19 @@ const app = spawn(application, [], {
 app.on("error", (cause) => {
   console.error(`Tsugiki didn't start: ${cause.message}`);
 });
-let failures: number;
+// A check that throws counts as a failure too.
+let failures = 1;
 try {
   failures = await runChecks(application, github);
   await close(app);
   failures += report("closing the window closes the database", whatClosingLeft(data));
-} catch (cause) {
-  // The clean-up below deletes the log, which may say why.
-  const log = join(data, "tsugiki.log");
-  console.error(`Tsugiki's exit code so far: ${String(app.exitCode)}`);
-  console.error(existsSync(log) ? readFileSync(log, "utf8") : "Tsugiki wrote no log.");
-  throw cause;
 } finally {
+  if (failures > 0) {
+    // The clean-up below deletes the log, which may say why.
+    const log = join(data, "tsugiki.log");
+    console.error(`Tsugiki's exit code so far: ${String(app.exitCode)}`);
+    console.error(existsSync(log) ? readFileSync(log, "utf8") : "Tsugiki wrote no log.");
+  }
   await close(app);
   rmSync(data, { recursive: true, maxRetries: 10, retryDelay: 500 });
 }

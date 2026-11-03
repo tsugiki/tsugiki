@@ -147,7 +147,16 @@ The order in which v1 is built is in [build-order.md](build-order.md).
   - The user can always refresh by hand.
 - The first sync of a Repository depends on its size ([ADR 0015](adr/0015-github-sync-serial-graphql-in-tiers-the-users-work-first.md)). A small one (up to 500 open Issues and PRs) loads everything open, plus what closed in the last 30 days. A large one like CPython loads the last 30 days of updates; the threshold and the window are settings. Either way it loads what waits on the user first (Review requests, PRs with the user's Review, Own PRs, assignments, then the Filters), so the Workbench is right in about a minute, then the window newest first, then whole Issue trees. The status bar shows its progress. An interrupted sync resumes where it stopped. Widening the window loads only the added days; narrowing it deletes nothing.
 - Older items come on demand: opening one fetches it and keeps it, a search in All issues also runs on GitHub, and All issues ends with "Load 30 more days".
-- Settings are kept in two TOML files, which can be edited by hand while Tsugiki runs ([ADR 0014](adr/0014-settings-in-toml-files-user-state-in-the-database-and-a-portable-mode.md)). `settings.toml` travels: settings, remapped keybindings, and each Repository with its Conventions and Filters; the user syncs it by pointing `settings_path` at a dotfiles repository or a synced folder. `machine.toml` stays: the token source, the editor command, paths, the clone each Repository borrows objects from, window places and zoom. A personal access token goes to the OS keychain. Pinned issues, Muted authors, Muted and Archived items, Local marks, Last seen times, and text typed into a composer but not yet sent are kept in the local database. Unsent text survives a reload, a crash or a refused write, and is cleared once it is sent ([ADR 0008](adr/0008-view-models-and-invalidation-over-ipc.md)).
+- Settings are kept in two TOML files, which Tsugiki reads when it starts and when the Settings dialog opens,
+  so a hand edit takes effect at the next of those ([ADR
+  0014](adr/0014-settings-in-toml-files-user-state-in-the-database-and-a-portable-mode.md)). `settings.toml`
+  travels: settings, remapped keybindings, and each Repository with its Conventions and Filters; the user
+  syncs it by pointing `settings_path` at a dotfiles repository or a synced folder. `machine.toml` stays: the
+  token source, the editor command, paths, the clone each Repository borrows objects from, window places and
+  zoom. A personal access token goes to the OS keychain. Pinned issues, Muted authors, Muted and Archived
+  items, Local marks, Last seen times, and text typed into a composer but not yet sent are kept in the local
+  database. Unsent text survives a reload, a crash or a refused write, and is cleared once it is sent ([ADR
+  0008](adr/0008-view-models-and-invalidation-over-ipc.md)).
 - A portable mode works as VS Code's: with a `data` folder next to `tsg.exe` (or `tsugiki-portable-data` next
   to Tsugiki.app), the files, the database and the mirrors all live there. Releases include a Windows portable
   `.zip`.

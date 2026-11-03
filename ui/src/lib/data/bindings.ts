@@ -9,6 +9,8 @@ export const commands = {
 	about: () => __TAURI_INVOKE<About>("about"),
 	/**  The whole app-wide state, for a window that has just loaded (ADR 0008). */
 	status: () => __TAURI_INVOKE<Status_Serialize>("status"),
+	/**  The settings Tsugiki read when it started, and what was wrong with their files (ADR 0014). */
+	settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
 };
 
 /** Events */
@@ -49,11 +51,51 @@ export type Error_Serialize = {
 	message: string,
 } & ErrorKind_Serialize;
 
+/**  The settings in force, and what is wrong with the files they came from, in words for the status bar. */
+export type LoadedSettings = LoadedSettings_Serialize | LoadedSettings_Deserialize;
+
+/**  The settings in force, and what is wrong with the files they came from, in words for the status bar. */
+export type LoadedSettings_Deserialize = {
+	settings: Settings_Deserialize,
+	problems: string[],
+};
+
+/**  The settings in force, and what is wrong with the files they came from, in words for the status bar. */
+export type LoadedSettings_Serialize = {
+	settings: Settings_Serialize,
+	problems: string[],
+};
+
 /**  A GitHub username. It reaches the UI as a plain string. */
 export type Login = string;
 
+/**  What `settings.toml` holds. A value the file leaves out takes its default. */
+export type Settings = Settings_Serialize | Settings_Deserialize;
+
+/**  What `settings.toml` holds. A value the file leaves out takes its default. */
+export type Settings_Deserialize = {
+	status_bar?: StatusBarSettings_Deserialize,
+};
+
+/**  What `settings.toml` holds. A value the file leaves out takes its default. */
+export type Settings_Serialize = {
+	status_bar: StatusBarSettings_Serialize,
+};
+
 /**  The app's state, shown in the status bar. */
 export type Status = Status_Serialize | Status_Deserialize;
+
+export type StatusBarSettings = StatusBarSettings_Serialize | StatusBarSettings_Deserialize;
+
+export type StatusBarSettings_Deserialize = {
+	/**  Being offline or a problem still shows when this is off, since nothing else would say so. */
+	visible?: boolean,
+};
+
+export type StatusBarSettings_Serialize = {
+	/**  Being offline or a problem still shows when this is off, since nothing else would say so. */
+	visible: boolean,
+};
 
 /**  Sent whenever the app-wide state changes (ADR 0008). */
 export type StatusChanged = StatusChanged_Serialize | StatusChanged_Deserialize;

@@ -44,6 +44,16 @@ impl Folders {
         self.data.join("tsugiki.log")
     }
 
+    /// Where `machine.toml` is.
+    pub fn machine_file(&self) -> PathBuf {
+        self.data.join("machine.toml")
+    }
+
+    /// Where `settings.toml` is, unless `settings_path` in `machine.toml` says otherwise.
+    pub fn settings_file(&self) -> PathBuf {
+        self.settings.join("settings.toml")
+    }
+
     /// The folders for this program, from its real path and environment.
     pub fn current() -> Result<Self, Error> {
         Self::from_exe(std::env::current_exe(), &|variable| {

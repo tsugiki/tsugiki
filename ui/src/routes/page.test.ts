@@ -6,6 +6,7 @@ vi.mock("$lib/data/bindings", () => ({
   commands: {
     about: async () => ({ name: "Tsugiki", version: "1.2.3" }),
     status: async () => ({ state: "online", login: "octocat" }),
+    settings: async () => ({ settings: { status_bar: { visible: true } }, problems: [] }),
   },
   events: { statusChanged: { listen: async () => () => {} } },
 }));

@@ -41,10 +41,14 @@ Tests are built in layers. Fast ones run on every PR on Windows and macOS. The s
 
 ## Consequences
 
-- On every push to main and every PR that changes more than docs, on Windows and macOS: rustfmt, clippy
-  with warnings as errors, `cargo test`, the stale-bindings check, ESLint, Prettier, `svelte-check`,
-  Vitest, Playwright, and both coverage gates. CI skips them on a PR that changes only Markdown files or
+- On every push to main and every PR that changes more than docs, on Windows: rustfmt, clippy with warnings
+  as errors, `cargo test`, the stale-bindings check, ESLint, Prettier, `svelte-check`, Vitest, Playwright on
+  Chromium and WebKit, and both coverage gates. CI skips them on a PR that changes only Markdown files or
   `docs/`, and still reports `CI passed`.
+- On those same pushes and PRs, on macOS: what can differ there, which is clippy, `cargo test`, Vitest,
+  Playwright on WebKit, and both coverage gates. The others read the source or generate the same output on any
+  OS. GitHub cancels macOS jobs that wait too long for a runner, so each one left out makes a failed run with
+  nothing wrong less likely.
 - On those same pushes and PRs, on Linux: `cargo deny` and `cargo machete`. They build nothing, so one OS is
   enough. A weekly run also checks for new advisories, so one still reaches us in a week with no PRs.
 - On every PR, on Linux: the CodSpeed benchmarks

@@ -1,5 +1,7 @@
 # The checks of ADR 0009, on every push to main and every PR that changes more than docs.
 # Each is its own job, and a job's name is the npm script it runs, so a PR shows what failed and where.
+# macOS runs only what can differ there, because GitHub cancels macOS jobs that wait too long for a runner, and
+# the more jobs a run has, the likelier that gets (ADR 0009).
 name: CI
 
 on:
@@ -51,6 +53,9 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest]
         check: [rustfmt, clippy, cargo-test, stale-bindings]
+        exclude:
+          - { os: macos-latest, check: rustfmt }
+          - { os: macos-latest, check: stale-bindings }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -156,6 +161,10 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest]
         check: [eslint, prettier, svelte-check, vitest]
+        exclude:
+          - { os: macos-latest, check: eslint }
+          - { os: macos-latest, check: prettier }
+          - { os: macos-latest, check: svelte-check }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -187,6 +196,9 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest]
         browser: [chromium, webkit]
+        exclude:
+          # macOS's window is WebKit.
+          - { os: macos-latest, browser: chromium }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

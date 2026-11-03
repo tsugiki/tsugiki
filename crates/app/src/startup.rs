@@ -3,11 +3,13 @@
 
 use std::time::Duration;
 
-use tauri::{Manager, RunEvent};
+use tauri::{AppHandle, Manager, RunEvent};
 use tauri_specta::Event;
+use tsugiki_core::build::Build;
 use tsugiki_core::folders::Folders;
 use tsugiki_core::github::GitHubAccess;
 use tsugiki_core::github::live::{Https, run_gh};
+use tsugiki_core::launch;
 use tsugiki_core::logfile;
 use tsugiki_core::session::Session;
 use tsugiki_core::settings::SettingsFiles;
@@ -35,10 +37,29 @@ pub fn run() {
     }
     log_panics();
     let builder = specta_builder();
-    let app = tauri::Builder::default()
-        .invoke_handler(builder.invoke_handler())
-        .build(tauri::generate_context!())
+    let mut context = tauri::generate_context!();
+    // The single-instance lock and the webview's data are named after this, so a development build runs
+    // beside an installed Tsugiki.
+    Build::CURRENT
+        .identifier()
+        .clone_into(&mut context.config_mut().identifier);
+    // A second `tsg` gives its command line to the first and exits inside `build`, before it has a window, a
+    // session or anything to log. It has to be the first plugin for that.
+    let tauri_builder = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _| {
+            launch::open_command_line(Build::CURRENT, &argv);
+            bring_forward(app);
+        }))
+        .invoke_handler(builder.invoke_handler());
+    #[cfg(all(windows, debug_assertions))]
+    let tauri_builder = tauri_builder.plugin(tauri_plugin_deep_link::init());
+    let app = tauri_builder
+        .build(context)
         .expect("Tsugiki failed to start");
+    logfile::say_started();
+    #[cfg(all(windows, debug_assertions))]
+    register_development_scheme(app.handle());
+    launch::open_command_line(Build::CURRENT, &launch::command_line());
     builder.mount_events(&app);
     assert!(
         app.manage(LatestStatus::default()),
@@ -66,12 +87,42 @@ pub fn run() {
         run_gh,
     };
     let session = Session::start(board, folders, access, REFRESH);
-    app.run(move |_, event| {
+    app.run(move |_app, event| {
         if let RunEvent::Exit = event {
             session.stop(QUIT_PATIENCE);
             log::logger().flush();
         }
+        // On macOS the OS hands a link to the running app rather than starting a second `tsg`.
+        #[cfg(target_os = "macos")]
+        if let RunEvent::Opened { urls } = event {
+            for url in urls {
+                launch::open(Build::CURRENT, url.as_str());
+            }
+            bring_forward(_app);
+        }
     });
+}
+
+/// Brings the window to the front of the user's desk, for a second `tsg` or a link. Before the window exists
+/// there's nothing to do, because it opens in front anyway.
+fn bring_forward(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let steps = [window.unminimize(), window.show(), window.set_focus()];
+        for cause in steps.into_iter().filter_map(Result::err) {
+            log::warn!("Tsugiki can't bring its window forward: {cause}");
+        }
+    }
+}
+
+/// Points `tsugiki-dev://` links at this program, in the user's own part of the registry. The installers
+/// register `tsugiki` themselves, and writing it here would take the installed copy's links (ADR 0016).
+#[cfg(all(windows, debug_assertions))]
+fn register_development_scheme(app: &AppHandle) {
+    use tauri_plugin_deep_link::DeepLinkExt;
+
+    if let Err(cause) = app.deep_link().register(Build::CURRENT.scheme()) {
+        log::warn!("Tsugiki can't register its development links: {cause}");
+    }
 }
 
 /// A panic prints to a console a released app doesn't have, so its message and place also go to the log.

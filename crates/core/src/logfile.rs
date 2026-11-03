@@ -158,8 +158,13 @@ pub fn start(path: PathBuf) {
     let logger = LOGGER.get_or_init(|| Logger::start(path));
     if log::set_logger(logger).is_ok() {
         log::set_max_level(LevelFilter::Info);
-        log::info!("Tsugiki {} started", env!("CARGO_PKG_VERSION"));
     }
+}
+
+/// Marks where a run begins in the log. A second `tsg` starts the logger too, for its panics, but it hands
+/// over to the first and exits without calling this.
+pub fn say_started() {
+    log::info!("Tsugiki {} started", env!("CARGO_PKG_VERSION"));
 }
 
 /// Keeps `secret` out of the file, whatever its shape, for lines sent after this. It does nothing before

@@ -9,6 +9,10 @@ ignore = [
     # building, so neither sees a token or GitHub's data.
     { id = "RUSTSEC-2024-0436", reason = "paste comes in through specta. Drop this when specta drops paste." },
     { id = "RUSTSEC-2024-0370", reason = "proc-macro-error comes in through the gtk crates Tauri uses on Linux, which isn't a v1 target (ADR 0001)." },
+    # The single-instance plugin talks D-Bus through zbus on Linux only, so neither v1 program builds these.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant comes in through zbus, on Linux only. Drop this when the plugin moves to zbus 6." },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names comes in through zbus, on Linux only. Drop this when the plugin moves to zbus 6." },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive comes in through zbus, on Linux only. Drop this when the plugin moves to zbus 6." },
 ]
 
 [licenses]
@@ -23,6 +27,11 @@ allow = [
     "MPL-2.0", # Copyleft per file only, and we don't modify these crates.
     "Unicode-3.0", # Unicode's data, through ICU and `unicode-ident`.
     "Zlib",
+]
+exceptions = [
+    # Public domain. It comes in through rust-ini, which the deep-link plugin uses on Linux only, so neither
+    # v1 program builds it.
+    { crate = "tiny-keccak", allow = ["CC0-1.0"] },
 ]
 
 [bans]

@@ -4,7 +4,12 @@ An **Alert** is an OS notification for something only the user can unblock. Ever
 
 - **Windows.** Tsugiki builds its toasts itself on the `windows` crate, with AppUserModelID `io.github.tsugiki`. A toast's `launch` is the link, with `activationType="protocol"`, so a click makes Windows run `tsg` with it. `tsg` passes the link to the running instance, or starts Tsugiki ([ADR 0007](0007-core-library-and-thin-tauri-app.md)). This works from Notification Center too, and needs no COM activator. The toast's `Tag` is the PR and its `Group` the kind of Alert, so a newer Alert for a PR replaces the older one, and opening the PR in Tsugiki removes its toast. The per-user installer ([ADR 0012](0012-unsigned-v1-releases-from-a-tag-attested-and-checked.md)) writes the Start menu shortcut with the AppUserModelID and registers the `tsugiki` scheme, through the deep-link plugin's `desktop.schemes`. Without the shortcut, Windows shows no toasts.
 - **macOS.** `tauri-plugin-notification` is enough for v1. It needs no Developer ID signing, and the link comes back through its click callback while Tsugiki runs, from a banner or from Notification Center. In v1 an Alert can't replace an older one, and a click on an Alert after a restart opens nothing.
-- **Development builds** use a `tsugiki-dev` scheme, so they don't take over the installed copy's links.
+- **Development builds** use a `tsugiki-dev` scheme, so they don't take over the installed copy's links. On
+  Windows a development build registers it each time it starts, in the user's own part of the registry, and
+  the keys stay until someone removes them. macOS can't register a scheme at run time, so there a development
+  build gets `tsugiki-dev` links only as `tsg <link>`. Development builds also have their own identifier,
+  `io.github.tsugiki.dev`, and their own `tsugiki-dev` data folders, so one runs beside the installed copy
+  without sharing its single-instance lock or its database.
 
 ## Which Alerts, and when
 

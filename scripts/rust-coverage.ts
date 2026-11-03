@@ -5,7 +5,7 @@ import { mkdirSync } from "node:fs";
 
 // Stable Rust can't exclude a single function, so an exclusion is a whole file.
 const EXCLUDED = [
-  // coverage: Tauri's start-up needs a real window, and the tauri-driver smoke tests cover it.
+  // coverage: Tauri's start-up needs a real window, and the smoke tests cover it.
   "crates/app/src/startup\\.rs$",
   // coverage: the binary's entry point only calls the start-up code.
   "crates/app/src/main\\.rs$",

@@ -17,7 +17,7 @@
 // Anything after `--` goes to `tauri build`, such as `--config second-display.json`.
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type AddressInfo, type Socket } from "node:net";
 import { join, resolve } from "node:path";
 import { setTimeout as wait } from "node:timers/promises";
@@ -131,7 +131,8 @@ type Evaluated = {
 };
 
 async function findPage(): Promise<string> {
-  for (let tries = 0; tries < 80; tries += 1) {
+  let seen = "the port never answered";
+  for (let tries = 0; tries < 240; tries += 1) {
     try {
       const reply = await fetch(`http://127.0.0.1:${String(DEBUG_PORT)}/json/list`);
       const targets = (await reply.json()) as Target[];
@@ -139,12 +140,13 @@ async function findPage(): Promise<string> {
       if (page !== undefined) {
         return page.webSocketDebuggerUrl;
       }
+      seen = `the port lists ${JSON.stringify(targets.map((t) => `${t.type} ${t.url}`))}`;
     } catch {
       // The port isn't open yet, and running out of tries is the failure to report.
     }
     await wait(250);
   }
-  throw new Error(`Tsugiki's page didn't appear on port ${String(DEBUG_PORT)}. Is a released Tsugiki open?`);
+  throw new Error(`Tsugiki's page didn't appear, and ${seen}. Is a released Tsugiki open?`);
 }
 
 async function connect(address: string): Promise<WebSocket> {
@@ -396,6 +398,12 @@ try {
   failures = await runChecks(application, github);
   await close(app);
   failures += report("closing the window closes the database", whatClosingLeft(data));
+} catch (cause) {
+  // The clean-up below deletes the log, which may say why.
+  const log = join(data, "tsugiki.log");
+  console.error(`Tsugiki's exit code so far: ${String(app.exitCode)}`);
+  console.error(existsSync(log) ? readFileSync(log, "utf8") : "Tsugiki wrote no log.");
+  throw cause;
 } finally {
   await close(app);
   rmSync(data, { recursive: true, maxRetries: 10, retryDelay: 500 });

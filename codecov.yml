@@ -2,8 +2,8 @@
 # so these statuses are informational and an outage at Codecov can't block a merge.
 
 # Codecov can't tell how many uploads a commit will get, so it would report from the first ones. CI sends
-# four: `vitest` and `rust-coverage-measure` on Windows and macOS. Change this when those matrices change in
-# ci.yml. A cancelled upload means no report until a rerun sends it.
+# four: `vitest` and `rust-coverage` on Windows and macOS. Change this when those matrices change in ci.yml.
+# A cancelled upload means no report until a rerun sends it.
 codecov:
   notify:
     after_n_builds: 4

@@ -1,9 +1,7 @@
-// Rust's coverage gate (ADR 0009): `measure <lcov>` runs the tests on this OS, and `gate <lcov>...` merges
-// the OSes' reports and fails below 100% of lines and functions.
+// Rust's coverage gate (ADR 0009): runs the tests on this OS and fails below 100% of lines and functions.
+// It leaves the report at target/coverage/lcov.info, for Codecov.
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
-import { checkReports, relativeLcov } from "./lcov.ts";
+import { mkdirSync } from "node:fs";
 
 // Stable Rust can't exclude a single function, so an exclusion is a whole file.
 const EXCLUDED = [
@@ -15,37 +13,26 @@ const EXCLUDED = [
   "crates/core/src/github/live\\.rs$",
 ];
 
-const measure = (path: string) => {
-  mkdirSync(dirname(path), { recursive: true });
-  const ignore = EXCLUDED.join("|").replaceAll("/", "[/\\\\]");
-  const args = [
-    "llvm-cov",
-    "--workspace",
-    "--lcov",
-    "--output-path",
-    path,
-    "--ignore-filename-regex",
-    ignore,
-  ];
-  const result = spawnSync("cargo", args, { stdio: "inherit" });
-  if (result.error) console.error(result.error.message);
-  if (result.status !== 0) process.exit(result.status ?? 1);
-  writeFileSync(path, relativeLcov(readFileSync(path, "utf8"), process.cwd()));
-};
-
-const gate = (paths: string[]) => {
-  const gaps = checkReports(paths.map((path) => ({ path, text: readFileSync(path, "utf8") })));
-  if (gaps.length > 0) {
-    console.error(`Rust coverage is below 100%:\n${gaps.join("\n")}`);
-    process.exit(1);
-  }
-  console.log(`Rust coverage is 100%, from ${paths.length} report(s).`);
-};
-
-const [command, ...paths] = process.argv.slice(2);
-if (command === "measure" && paths[0]) measure(paths[0]);
-else if (command === "gate" && paths.length > 0) gate(paths);
-else {
-  console.error("usage: rust-coverage.ts measure <lcov> | gate <lcov>...");
-  process.exit(2);
+mkdirSync("target/coverage", { recursive: true });
+const ignore = EXCLUDED.join("|").replaceAll("/", "[/\\\\]");
+const args = [
+  "llvm-cov",
+  "--workspace",
+  "--lcov",
+  "--output-path",
+  "target/coverage/lcov.info",
+  "--ignore-filename-regex",
+  ignore,
+  "--fail-under-lines",
+  "100",
+  "--fail-under-functions",
+  "100",
+  "--show-missing-lines",
+];
+const result = spawnSync("cargo", args, { stdio: "inherit" });
+if (result.error) console.error(result.error.message);
+if (result.status !== 0) {
+  // A closure that never ran can sit on a covered line, and then cargo-llvm-cov fails without saying why.
+  console.error("A test failed, or coverage is below 100%. `cargo llvm-cov report --html` shows any gap.");
 }
+process.exit(result.status ?? 1);

@@ -9,7 +9,10 @@ Tests are built in layers. Fast ones run on every PR on Windows and macOS. The s
 
 ## Coverage
 
-- Rust: 100% of lines and functions with `cargo-llvm-cov` on stable Rust, merged from the Windows and macOS jobs, so code that runs on only one OS is still counted. Branch coverage would need nightly, and [ADR 0007](0007-core-library-and-thin-tauri-app.md) pins stable.
+- Rust: 100% of lines and functions with `cargo-llvm-cov` on stable Rust, checked on Windows and on macOS
+  separately. Code behind `#[cfg(windows)]` isn't in macOS's build, so it only counts on Windows. Code built
+  on both has to be reached on both, or be excluded. Branch coverage would need nightly, and
+  [ADR 0007](0007-core-library-and-thin-tauri-app.md) pins stable.
 - TypeScript: 100% of lines, branches, functions and statements, measured by Vitest.
 - Excluded, in one config per language, each with a reason: the generated bindings, `crates/app`'s Tauri
   start-up code, which the smoke tests cover instead, and the file holding the core's real network and
@@ -23,6 +26,10 @@ Tests are built in layers. Fast ones run on every PR on Windows and macOS. The s
 - **Checked-in fixture repositories.** Quicker to set up per test, but opaque binary blobs that are hard to change.
 - **Running the CPython and live-GitHub suites on every PR.** They would catch drift sooner, but every PR would clone about 800 MB and spend the user's rate limit.
 - **Linux-only PR checks.** Fast, but Linux isn't a v1 target, and WebView2 or WKWebView breakage would surface only at release.
+- **Merging the Windows and macOS reports before the check.** Code built on both OSes but reached on one would
+  pass. `cargo-llvm-cov` can't merge reports from two machines, so we had our own script, which matched
+  functions by mangled name. It failed a PR over code that PR's tests did reach, because a crate hash's
+  length changes the rest of the name.
 
 ## Consequences
 

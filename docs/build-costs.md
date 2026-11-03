@@ -76,9 +76,9 @@ order didn't follow the settings. So we timed the Windows build locally, with `C
 
 `cargo codspeed build` and `cargo bench` use the `bench` profile, which inherits `[profile.release]`, and
 `cargo-codspeed` adds `-Cstrip=none -Cdebuginfo=2`. So benchmarks use `codegen-units = 1`, as we ship, and
-CodSpeed keeps its symbols. CodSpeed reported no change at #57, against a base built with Cargo's defaults, but
-its two benchmarks are small. A realistic one may shift when `[profile.release]` changes, so read that PR's
-report with this in mind.
+CodSpeed keeps its symbols. CodSpeed reported no change at #57, against a base built with Cargo's defaults,
+but its two benchmarks are small. A realistic one may shift when `[profile.release]` changes, so read that
+PR's report with this in mind.
 
 ## Disk
 

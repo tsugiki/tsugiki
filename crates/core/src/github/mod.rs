@@ -102,10 +102,6 @@ const RATE_LIMITED: &str =
     "GitHub's rate limit has been reached. Tsugiki can read again after it resets.";
 
 /// Turns an answer into its data, or into the error the UI can act on (ADR 0008).
-#[expect(
-    clippy::map_err_ignore,
-    reason = "the parser's words mean nothing to a user; they go to the local log once #58 adds one"
-)]
 fn read<D: DeserializeOwned>(reply: &Reply) -> Result<D, Error> {
     #[derive(Deserialize)]
     struct Envelope {
@@ -132,6 +128,13 @@ fn read<D: DeserializeOwned>(reply: &Reply) -> Result<D, Error> {
         let resets_at = reply.reset;
         Error::new(ErrorKind::RateLimited { resets_at }, RATE_LIMITED)
     };
+    if reply.status != 200 {
+        log::warn!(
+            "GitHub answered with status {}: {}",
+            reply.status,
+            reply.body
+        );
+    }
     match reply.status {
         200 => {}
         401 => {
@@ -145,9 +148,13 @@ fn read<D: DeserializeOwned>(reply: &Reply) -> Result<D, Error> {
         status => return Err(internal(&format!("GitHub answered with status {status}."))),
     }
 
-    const UNREADABLE: &str = "GitHub sent an answer Tsugiki can't read.";
+    // The parser's words mean nothing to a user, so they only go to the log.
+    let unreadable = |cause: serde_json::Error| {
+        log::error!("GitHub's answer didn't parse: {cause}");
+        internal("GitHub sent an answer Tsugiki can't read.")
+    };
     // The data is read after the errors: a field that failed comes back null, which `D` may not allow.
-    let envelope: Envelope = serde_json::from_str(&reply.body).map_err(|_| internal(UNREADABLE))?;
+    let envelope: Envelope = serde_json::from_str(&reply.body).map_err(unreadable)?;
     if let Some(error) = envelope.errors.first() {
         return Err(match error.kind {
             Some(GraphqlErrorKind::RateLimited) => rate_limited(),
@@ -159,7 +166,7 @@ fn read<D: DeserializeOwned>(reply: &Reply) -> Result<D, Error> {
     let data = envelope
         .data
         .ok_or_else(|| internal("GitHub sent an answer with no data."))?;
-    serde_json::from_value(data).map_err(|_| internal(UNREADABLE))
+    serde_json::from_value(data).map_err(unreadable)
 }
 
 /// What the core's tests share.

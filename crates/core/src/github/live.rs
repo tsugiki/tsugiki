@@ -46,10 +46,6 @@ impl Default for Https {
 }
 
 impl Transport for Https {
-    #[expect(
-        clippy::map_err_ignore,
-        reason = "the cause goes to the local log once #58 adds one"
-    )]
     fn post(&self, token: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
         let body = serde_json::json!({ "query": request.query }).to_string();
         let mut response = self
@@ -58,7 +54,7 @@ impl Transport for Https {
             .header("Authorization", format!("Bearer {}", token.expose()))
             .content_type("application/json")
             .send(body)
-            .map_err(|_| Unreachable)?;
+            .map_err(unreachable)?;
         let reset = response
             .headers()
             .get("x-ratelimit-reset")
@@ -66,10 +62,7 @@ impl Transport for Https {
         Ok(Reply {
             status: response.status().as_u16(),
             reset,
-            body: response
-                .body_mut()
-                .read_to_string()
-                .map_err(|_| Unreachable)?,
+            body: response.body_mut().read_to_string().map_err(unreachable)?,
         })
     }
 }
@@ -91,6 +84,13 @@ pub fn run_gh(args: &[&str]) -> io::Result<GhOutput> {
         }
     }
     outcome
+}
+
+/// The status bar only says GitHub can't be reached, so this is the one place the reason shows: a proxy that
+/// inspects TLS, for example.
+fn unreachable(cause: ureq::Error) -> Unreachable {
+    log::warn!("A request to GitHub failed: {cause}");
+    Unreachable
 }
 
 /// Runs one program, with no console window on Windows, and gives up on it after `TIMEOUT`.

@@ -38,4 +38,6 @@ disallowed-methods = [ # ureq's shortcuts reach the network without naming an `A
     { path = "ureq::put", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },
     { path = "ureq::run", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },
     { path = "ureq::trace", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },
+    # A failed run's files stay in sight in `.temp`, not lost among the system's.
+    { path = "std::env::temp_dir", reason = "Put a test's files in .temp at the repo root" },
 ]

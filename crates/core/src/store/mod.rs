@@ -5,6 +5,7 @@
 mod file;
 mod migrate;
 
+use std::fmt::Display;
 use std::fs;
 use std::path::Path;
 use std::sync::mpsc::{self, Sender};
@@ -128,10 +129,12 @@ fn open_with(path: &Path, migrations: &[Migration]) -> Result<Store, Error> {
     Ok(Store { jobs, thread })
 }
 
-/// Turns a failure into words a user can read (`Error`). SQLite's or the OS's reason goes to the local log
-/// once #58 adds one.
-fn saying<E>(message: &'static str) -> impl FnOnce(E) -> Error {
-    move |_cause| Error::new(ErrorKind::Internal, message)
+/// Turns a failure into words a user can read (`Error`). SQLite's or the OS's reason goes to the log.
+fn saying<E: Display>(message: &'static str) -> impl FnOnce(E) -> Error {
+    move |cause| {
+        log::error!("{message}: {cause}");
+        Error::new(ErrorKind::Internal, message)
+    }
 }
 
 #[cfg(test)]
@@ -159,8 +162,7 @@ pub(super) mod testing {
 
     /// The path of a database in a new temp folder, and that folder.
     pub(super) fn temp_database(name: &str) -> (PathBuf, PathBuf) {
-        let folder =
-            std::env::temp_dir().join(format!("tsugiki-store-{name}-{}", std::process::id()));
+        let folder = crate::testing::temp_path(&format!("store-{name}"));
         fs::create_dir_all(&folder).unwrap();
         (folder.join("tsugiki.db"), folder)
     }

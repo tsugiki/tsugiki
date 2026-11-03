@@ -27,7 +27,7 @@ impl Os {
 /// The folders Tsugiki's files live in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Folders {
-    /// Holds `tsugiki.db`, `machine.toml` and `repos`.
+    /// Holds `tsugiki.db`, `tsugiki.log`, `machine.toml` and `repos`.
     pub data: PathBuf,
     /// Holds `settings.toml`, unless `settings_path` in `machine.toml` says otherwise.
     pub settings: PathBuf,
@@ -37,6 +37,11 @@ impl Folders {
     /// Where `tsugiki.db` is.
     pub fn database(&self) -> PathBuf {
         self.data.join("tsugiki.db")
+    }
+
+    /// Where the log is. The file before it is `tsugiki.log.1`, next to it.
+    pub fn log(&self) -> PathBuf {
+        self.data.join("tsugiki.log")
     }
 
     /// The folders for this program, from its real path and environment.
@@ -52,7 +57,7 @@ impl Folders {
     ) -> Result<Self, Error> {
         #[expect(
             clippy::map_err_ignore,
-            reason = "the cause goes to the local log once #58 adds one"
+            reason = "the log lives in the folder this is looking for, so it has nowhere to go"
         )]
         let exe = exe.map_err(|_| {
             Error::new(
@@ -124,10 +129,9 @@ mod tests {
     use super::*;
     use std::fs;
 
-    /// A new folder under the system's temp folder, with a path that is absolute on this OS.
+    /// A new folder under `.temp`, with a path that is absolute on this OS.
     fn temp_folder(name: &str) -> PathBuf {
-        let folder =
-            std::env::temp_dir().join(format!("tsugiki-folders-{name}-{}", std::process::id()));
+        let folder = crate::testing::temp_path(&format!("folders-{name}"));
         fs::create_dir_all(&folder).unwrap();
         folder
     }
@@ -144,6 +148,15 @@ mod tests {
                 .find(|(name, _)| name == wanted)
                 .map(|(_, value)| value.clone())
         }
+    }
+
+    #[test]
+    fn the_log_sits_beside_the_database() {
+        let folders = Folders {
+            data: PathBuf::from("data"),
+            settings: PathBuf::from("settings"),
+        };
+        assert_eq!(folders.log(), Path::new("data").join("tsugiki.log"));
     }
 
     #[test]

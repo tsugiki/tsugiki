@@ -219,8 +219,7 @@ mod tests {
     }
 
     fn temp_folders(name: &str) -> Folders {
-        let folder: PathBuf =
-            std::env::temp_dir().join(format!("tsugiki-session-{name}-{}", std::process::id()));
+        let folder = crate::testing::temp_path(&format!("session-{name}"));
         fs::create_dir_all(&folder).unwrap();
         Folders {
             data: folder.clone(),

@@ -3,6 +3,7 @@
 pub mod error;
 pub mod folders;
 pub mod github;
+pub mod logfile;
 pub mod session;
 pub mod status;
 pub mod store;
@@ -22,6 +23,20 @@ pub fn about() -> About {
     About {
         name: "Tsugiki".to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
+    }
+}
+
+/// What the core's tests share.
+#[cfg(test)]
+pub(crate) mod testing {
+    use std::path::{Path, PathBuf};
+
+    /// A path for this test run under the repo's ignored `.temp` folder. `.temp` exists by the time this
+    /// returns; the path itself doesn't.
+    pub(crate) fn temp_path(name: &str) -> PathBuf {
+        let temp = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.temp");
+        std::fs::create_dir_all(&temp).unwrap();
+        temp.join(format!("{name}-{}", std::process::id()))
     }
 }
 

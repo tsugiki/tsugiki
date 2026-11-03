@@ -24,9 +24,9 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-The tag starts the workflow, which takes 16 minutes or longer if runners are busy. It builds the installers, attests them and uploads
-them to a draft release, then downloads the draft's files and checks each attestation. Nothing is public until
-you publish.
+The tag starts the workflow, which takes 16 minutes or longer if runners are busy. It builds the installers,
+attests them and uploads them to a draft release, then downloads the draft's files and checks each
+attestation. Nothing is public until you publish.
 
 ## 3. Check the draft
 

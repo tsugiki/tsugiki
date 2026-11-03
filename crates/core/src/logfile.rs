@@ -176,8 +176,7 @@ mod tests {
 
     /// A logger with its own folder, so tests don't share the process's one logger.
     fn temp_logger(name: &str) -> (Logger, PathBuf) {
-        let folder =
-            std::env::temp_dir().join(format!("tsugiki-log-{name}-{}", std::process::id()));
+        let folder = crate::testing::temp_path(&format!("log-{name}"));
         let logger = Logger::start(folder.join("tsugiki.log"));
         (logger, folder)
     }
@@ -379,8 +378,7 @@ mod tests {
 
     #[test]
     fn a_folder_it_cant_create_loses_the_lines_and_nothing_else() {
-        let blocker =
-            std::env::temp_dir().join(format!("tsugiki-log-blocker-{}", std::process::id()));
+        let blocker = crate::testing::temp_path("log-blocker");
         fs::write(&blocker, "a file where the folder should be").unwrap();
         let logger = Logger::start(blocker.join("tsugiki.log"));
 

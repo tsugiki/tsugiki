@@ -26,6 +26,20 @@ pub fn about() -> About {
     }
 }
 
+/// What the core's tests share.
+#[cfg(test)]
+pub(crate) mod testing {
+    use std::path::{Path, PathBuf};
+
+    /// A path for this test run under the repo's ignored `.temp` folder. `.temp` exists by the time this
+    /// returns; the path itself doesn't.
+    pub(crate) fn temp_path(name: &str) -> PathBuf {
+        let temp = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.temp");
+        std::fs::create_dir_all(&temp).unwrap();
+        temp.join(format!("{name}-{}", std::process::id()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

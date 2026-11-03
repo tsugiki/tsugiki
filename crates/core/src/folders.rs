@@ -129,10 +129,9 @@ mod tests {
     use super::*;
     use std::fs;
 
-    /// A new folder under the system's temp folder, with a path that is absolute on this OS.
+    /// A new folder under `.temp`, with a path that is absolute on this OS.
     fn temp_folder(name: &str) -> PathBuf {
-        let folder =
-            std::env::temp_dir().join(format!("tsugiki-folders-{name}-{}", std::process::id()));
+        let folder = crate::testing::temp_path(&format!("folders-{name}"));
         fs::create_dir_all(&folder).unwrap();
         folder
     }

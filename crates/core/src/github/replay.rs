@@ -62,8 +62,7 @@ mod tests {
     use crate::token::{GhOutput, Token};
 
     fn fixture(name: &str, contents: &str) -> std::path::PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("tsugiki-replay-{name}-{}", std::process::id()));
+        let dir = crate::testing::temp_path(&format!("replay-{name}"));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("Op.json"), contents).unwrap();
         dir
@@ -119,7 +118,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "record it again")]
     fn a_changed_query_needs_a_new_recording() {
         let dir = fixture(
             "stale",
@@ -129,6 +127,15 @@ mod tests {
             operation: "Op",
             query: "new",
         };
-        let _ = Replayer::new(dir).post(&token(), &request).unwrap();
+        let replayer = Replayer::new(dir.clone());
+        let token = token();
+        // Caught rather than `should_panic`, so the test can still remove its folder.
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            replayer.post(&token, &request)
+        }))
+        .unwrap_err();
+        std::fs::remove_dir_all(dir).unwrap();
+        let message = panic.downcast_ref::<String>().unwrap();
+        assert!(message.contains("record it again"), "{message}");
     }
 }

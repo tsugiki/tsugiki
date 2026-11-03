@@ -39,7 +39,8 @@ impl Transport for Proxy {
 
 #[test]
 fn the_log_keeps_causes_and_hides_the_token_in_use() {
-    let folder = std::env::temp_dir().join(format!("tsugiki-logfile-{}", std::process::id()));
+    let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join(format!("../../.temp/logfile-{}", std::process::id()));
     let path = folder.join("tsugiki.log");
     logfile::start(path.clone());
     logfile::start(folder.join("a second start changes nothing.log"));

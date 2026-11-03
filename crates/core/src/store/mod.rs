@@ -162,8 +162,7 @@ pub(super) mod testing {
 
     /// The path of a database in a new temp folder, and that folder.
     pub(super) fn temp_database(name: &str) -> (PathBuf, PathBuf) {
-        let folder =
-            std::env::temp_dir().join(format!("tsugiki-store-{name}-{}", std::process::id()));
+        let folder = crate::testing::temp_path(&format!("store-{name}"));
         fs::create_dir_all(&folder).unwrap();
         (folder.join("tsugiki.db"), folder)
     }

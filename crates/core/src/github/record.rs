@@ -114,7 +114,7 @@ mod tests {
     }
 
     fn temp_dir(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("tsugiki-record-{name}-{}", std::process::id()))
+        crate::testing::temp_path(&format!("record-{name}"))
     }
 
     fn reply(body: &str) -> Reply {

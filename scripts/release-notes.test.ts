@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { notesFor, versionOfTag } from "./release-notes.ts";
+import { notesFor, notesOfWorkspace, versionOfTag } from "./release-notes.ts";
 
 const CARGO_TOML = `[workspace]
 members = ["crates/core"]
@@ -15,13 +15,13 @@ serde = { version = "1.0.0" }
 
 const CHANGELOG = `# Changelog
 
-## Unreleased
+## WIP
 
 ### Added
 
 - Something not released yet.
 
-## 0.2.0
+## Version 0.2.0 (2026-12-01)
 
 ### Added
 
@@ -31,7 +31,7 @@ const CHANGELOG = `# Changelog
 
 - A bug.
 
-## 0.1.0
+## Version 0.1.0 (2026-11-20)
 
 ### Added
 
@@ -71,17 +71,66 @@ describe("notesFor", () => {
     expect(notesFor(CHANGELOG, "0.1.0")).toBe("### Added\n\n- The first thing.");
   });
 
-  it("fails when the changelog has no section for the version", () => {
-    expect(() => notesFor(CHANGELOG, "0.3.0")).toThrow("CHANGELOG.md has no section for 0.3.0");
+  it("fails when the changelog has no section for the version, and says what the heading looks like", () => {
+    expect(() => notesFor(CHANGELOG, "0.3.0")).toThrow(
+      'CHANGELOG.md has no section "## Version 0.3.0 (YYYY-MM-DD)".',
+    );
   });
 
   it("doesn't take a section whose heading only starts with the version", () => {
-    expect(() => notesFor("## 0.1.01\n\n- Later.\n", "0.1.0")).toThrow("no section for 0.1.0");
+    expect(() => notesFor("## Version 0.1.01 (2026-11-20)\n\n- Later.\n", "0.1.0")).toThrow("no section");
+  });
+
+  it("doesn't take a heading without a date", () => {
+    expect(() => notesFor("## Version 0.1.0\n\n- First.\n", "0.1.0")).toThrow("no section");
   });
 
   it("fails when the version's section is empty", () => {
-    expect(() => notesFor("## 0.2.0\n\n## 0.1.0\n\n- First.\n", "0.2.0")).toThrow(
-      "section for 0.2.0 is empty",
+    expect(() =>
+      notesFor("## Version 0.2.0 (2026-12-01)\n\n## Version 0.1.0 (2026-11-20)\n\n- First.\n", "0.2.0"),
+    ).toThrow("CHANGELOG.md's section for 0.2.0 is empty.");
+  });
+
+  it("fails when two sections name the version, whatever their dates", () => {
+    expect(() =>
+      notesFor(
+        "## Version 0.1.0 (2026-12-01)\n\n- Second.\n\n## Version 0.1.0 (2026-11-20)\n\n- First.\n",
+        "0.1.0",
+      ),
+    ).toThrow("CHANGELOG.md has 2 sections for 0.1.0.");
+  });
+});
+
+describe("notesOfWorkspace", () => {
+  it("gives the section of the version Cargo.toml says", () => {
+    expect(notesOfWorkspace(CARGO_TOML, CHANGELOG)).toBe(
+      "### Added\n\n- The second thing.\n\n### Fixed\n\n- A bug.",
     );
+  });
+
+  it("fails when a bumped version has no section yet", () => {
+    expect(() => notesOfWorkspace(CARGO_TOML, "## WIP\n\n- Something.\n")).toThrow(
+      'CHANGELOG.md has no section "## Version 0.2.0 (YYYY-MM-DD)".',
+    );
+  });
+
+  it("fails when Cargo.toml doesn't say the workspace's version", () => {
+    expect(() => notesOfWorkspace("[workspace]\n", CHANGELOG)).toThrow(
+      "Cargo.toml has no version in [workspace.package].",
+    );
+  });
+
+  describe("before the first release, at version 0.0.0", () => {
+    const UNRELEASED = '[workspace.package]\nversion = "0.0.0"\n';
+
+    it("gives the WIP section", () => {
+      expect(notesOfWorkspace(UNRELEASED, CHANGELOG)).toBe("### Added\n\n- Something not released yet.");
+    });
+
+    it("fails without a WIP section", () => {
+      expect(() => notesOfWorkspace(UNRELEASED, "# Changelog\n")).toThrow(
+        'CHANGELOG.md has no section "## WIP".',
+      );
+    });
   });
 });

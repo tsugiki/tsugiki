@@ -15,10 +15,14 @@ Releases are built from a tag in GitHub Actions and attested ([ADR 0005](0005-to
   4. Each installer is attested with `actions/attest-build-provenance` and uploaded to a draft release. Its body is the version's section of `CHANGELOG.md`, and the workflow fails if that section is missing.
   5. A last job downloads every asset of the draft and runs `gh attestation verify <file> --repo tsugiki/tsugiki --signer-workflow tsugiki/tsugiki/.github/workflows/release.yml` ([Verify release attestations in the release workflow before publishing](https://github.com/tsugiki/tsugiki/issues/6)).
   6. The maintainer runs the macOS checklist on the draft's `.dmg`, measures the performance budgets in the real window on Windows and macOS ([ADR 0017](0017-performance-budgets-codspeed-gates-prs-the-window-is-measured-before-release.md)), and publishes the release by hand.
+- **Before a tag.** CI fails a PR when `CHANGELOG.md` has no section for the version in `Cargo.toml`, so a
+  mistake shows before anyone tags it. To try the workflow itself, the maintainer starts it from the Actions
+  tab on any branch. That rehearsal runs the checks, the smoke test and the builds, then stops: it makes no
+  tag, no attestation and no release.
 - The repository has GitHub's immutable releases turned on, so a published release's assets and tag can't change.
 - **Update notices.** Tsugiki asks `api.github.com/repos/tsugiki/tsugiki/releases/latest` at start-up and every 6 hours. When that release is newer, the status bar says "Tsugiki 0.3.0 is out", and a click opens the release page in the browser. A switch in Settings turns the check off.
 - **Versions** follow SemVer. 0.x releases are working builds while v1 is built, and 1.0.0 is the release that reaches it. After that, a minor version adds features, a patch fixes bugs, and a major one breaks something larger, such as dropping a platform. A database migration ([ADR 0010](0010-one-sqlite-database-and-per-repository-mirrors.md)) can come in any minor version.
-- **Release notes** live in `CHANGELOG.md`. Its "Unreleased" section is kept current as changes land and is renamed to the version when it is tagged. A version's section has Added, Changed and Fixed in the glossary's words. It has a Database part when a migration runs, saying that older versions can't open the file and whether the cache is synced again. It ends with the first-install steps for SmartScreen and Open Anyway.
+- **Release notes** live in `CHANGELOG.md`. Its "WIP" section is kept current as changes land, and the PR that sets the version renames it to `## Version X.Y.Z (YYYY-MM-DD)`. A version's section has Added, Changed and Fixed in the glossary's words. It has a Database part when a migration runs, saying that older versions can't open the file and whether the cache is synced again. It ends with the first-install steps for SmartScreen and Open Anyway.
 
 ## Considered Options
 
@@ -27,6 +31,7 @@ Releases are built from a tag in GitHub Actions and attested ([ADR 0005](0005-to
 - **Tauri's updater**, checking for, downloading and installing a signed update in the app. It would need its own signing key, kept safe for as long as Tsugiki ships, since a lost key strands every installed copy. It would also need `release-assets.githubusercontent.com`, a host ADR 0005 doesn't allow. Downloading in the background and installing on quit was weighed as part of it.
 - **An MSI installed for all users**, friendlier to managed machines, but every update needs an admin. **Apple silicon only**, a smaller download, but no Intel Macs.
 - **Starting the release from the Actions tab**, with the workflow making the tag, or **publishing automatically** once verification passes. The first means a tag the maintainer didn't push; the second skips the macOS checklist.
+- **Checking the changelog only on PRs from `release/...` branches.** A PR from any other branch would skip the check and say nothing.
 - **CalVer**, which says how old a build is but not what changed. **Starting at 1.0.0**, with no working builds before v1. **Notes written in the draft**, or **generated from commits** with git-cliff, which would need a commit-message style Tsugiki doesn't use.
 
 ## Consequences

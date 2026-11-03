@@ -28,6 +28,7 @@
     "stale-bindings": "cargo test -p tsugiki-app --test bindings",
     "rust-coverage": "node scripts/rust-coverage.ts",
     "smoke": "node scripts/smoke.ts",
+    "release-check": "node scripts/release-check.ts",
     "deny": "cargo deny --locked check",
     "machete": "cargo machete"
   },

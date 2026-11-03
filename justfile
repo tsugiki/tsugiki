@@ -28,6 +28,10 @@ dev:
 build:
     npm run build
 
+# Zip the portable copy from the build `npx tauri build --no-bundle` made
+portable-zip:
+    node scripts/portable-zip.ts
+
 # Format everything
 fmt:
     npm run fmt

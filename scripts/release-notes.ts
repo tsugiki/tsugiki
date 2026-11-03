@@ -16,7 +16,7 @@ function sectionsOf(text: string, isHeading: (line: string) => boolean, nextHead
   });
 }
 
-function workspaceVersion(cargoToml: string): string {
+export function workspaceVersion(cargoToml: string): string {
   const version = sectionsOf(cargoToml, (line) => line === "[workspace.package]", "[")
     .flat()
     .map((line) => /^version = "(.+)"$/.exec(line)?.[1])

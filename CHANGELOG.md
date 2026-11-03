@@ -12,3 +12,4 @@ release's body, and fails without it
 - A window that follows whether GitHub can be reached and who is signed in.
 - `tsg` runs one Tsugiki and passes `tsugiki://` links and other arguments to it.
 - Tsugiki's keys reach Tsugiki: Print, Reload and the other browser shortcuts stay off.
+- A portable `.zip` for Windows and a `.dmg` for Apple silicon Macs. An installer comes later, with Alerts.

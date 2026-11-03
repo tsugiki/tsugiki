@@ -50,6 +50,10 @@ pub fn run() {
             launch::open_command_line(Build::CURRENT, &argv);
             bring_forward(app);
         }))
+        .setup(|app| {
+            turn_off_browser_keys(app.handle());
+            Ok(())
+        })
         .invoke_handler(builder.invoke_handler());
     #[cfg(all(windows, debug_assertions))]
     let tauri_builder = tauri_builder.plugin(tauri_plugin_deep_link::init());
@@ -113,6 +117,31 @@ fn bring_forward(app: &AppHandle) {
         }
     }
 }
+
+/// Stops a release's webview seeing Print, Reload and the rest, so Tsugiki's keys reach Tsugiki (ADR 0013). A
+/// development build keeps them, for DevTools. The window exists by now, because `setup` runs after it opens.
+#[cfg(windows)]
+fn turn_off_browser_keys(app: &AppHandle) {
+    if Build::CURRENT != Build::Release {
+        return;
+    }
+    let Some(window) = app.get_webview_window("main") else {
+        log::error!("Tsugiki has no window to turn the browser's shortcuts off in");
+        return;
+    };
+    let turned_off = window.with_webview(|webview| {
+        if let Err(cause) = tsugiki_webview_keys::turn_off(&webview.controller()) {
+            log::error!("Tsugiki can't turn the browser's shortcuts off: {cause}");
+        }
+    });
+    if let Err(cause) = turned_off {
+        log::error!("Tsugiki can't reach the webview to turn its shortcuts off: {cause}");
+    }
+}
+
+/// WKWebView has no browser shortcuts to turn off (ADR 0013).
+#[cfg(not(windows))]
+fn turn_off_browser_keys(_: &AppHandle) {}
 
 /// Points `tsugiki-dev://` links at this program, in the user's own part of the registry. The installers
 /// register `tsugiki` themselves, and writing it here would take the installed copy's links (ADR 0016).

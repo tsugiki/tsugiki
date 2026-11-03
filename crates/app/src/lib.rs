@@ -1,6 +1,8 @@
 //! The Tauri app around `tsugiki-core`: commands, events, the window and a read-only copy of the core's
 //! status for those commands (ADR 0007).
 
+#![forbid(unsafe_code)]
+
 mod startup;
 
 use std::sync::{Mutex, MutexGuard, PoisonError};

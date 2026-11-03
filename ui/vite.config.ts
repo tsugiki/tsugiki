@@ -23,10 +23,11 @@ export default defineConfig({
         // coverage: a command line around cargo, with its logic in the files it calls.
         "../scripts/bindings.ts",
         "../scripts/rust-coverage.ts",
-        "../scripts/portable-zip.ts",
         "../scripts/release-check.ts",
         // coverage: checks the real window with real keys, which no unit test can do.
         "../scripts/smoke.ts",
+        // coverage: zips the real build and starts it, which no unit test can do.
+        "../scripts/portable-zip.ts",
       ],
       thresholds: { 100: true },
       // lcovonly is for Codecov, with paths from the repo root like the Rust report's.

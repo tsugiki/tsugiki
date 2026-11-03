@@ -13,7 +13,11 @@ Releases are built from a tag in GitHub Actions and attested ([ADR 0005](0005-to
   `%LOCALAPPDATA%\Programs\Tsugiki`, apart from the data, and adds its folder to the user's PATH for `tsg`
   ([ADR 0007](0007-core-library-and-thin-tauri-app.md)). The zip stays for portable mode, and the `.dmg` becomes
   universal, for Apple silicon and Intel ([#81](https://github.com/tsugiki/tsugiki/issues/81)).
-- **Signing.** None on Windows, so running `tsg.exe` or the installer shows SmartScreen's "Windows protected your PC" (More info, Run anyway). On macOS the app is only ad-hoc signed, so the first open needs System Settings › Privacy & Security › Open Anyway. The ad-hoc signature changes with every build, so a personal access token kept in the keychain asks for access again after an update. gh's token isn't stored there and isn't affected.
+- **Signing.** None on Windows, so running `tsg.exe` or the installer shows SmartScreen's "Windows protected
+  your PC" (More info, Run anyway). On macOS the app is only ad-hoc signed, so the first open needs System
+  Settings › Privacy & Security › Open Anyway. The ad-hoc signature changes with every build, so a personal
+  access token kept in the keychain asks for access again after an update. gh's token isn't stored there and
+  isn't affected.
 - **The workflow**, `release.yml`, runs in this order:
   1. Pushing a tag `vX.Y.Z` on main starts it.
   2. The pre-release suites of [ADR 0009](0009-testing-and-full-coverage.md) run: the CPython mirror suite,
@@ -38,7 +42,10 @@ Releases are built from a tag in GitHub Actions and attested ([ADR 0005](0005-to
 - **Windows signing.** SignPath Foundation signs open-source projects for free, but the publisher reads "SignPath Foundation". Azure Artifact Signing is cheap but takes individual developers only in the USA and Canada. An OV certificate costs about $150–300 a year, its key must live on hardware or in a cloud service, and SmartScreen still warns until reputation builds. None is worth it while Tsugiki's users are the maintainer and a few colleagues.
 - **Developer ID signing and notarization** with the maintainer's existing Apple Developer membership. It would remove the Gatekeeper block and the keychain prompt after updates, and costs nothing extra. It is put off, not rejected.
 - **Tauri's updater**, checking for, downloading and installing a signed update in the app. It would need its own signing key, kept safe for as long as Tsugiki ships, since a lost key strands every installed copy. It would also need `release-assets.githubusercontent.com`, a host ADR 0005 doesn't allow. Downloading in the background and installing on quit was weighed as part of it.
-- **An installer from the first release.** Tauri's default NSIS build installs elsewhere, doesn't add `tsg` to PATH, and its Delete app data box targets the wrong folder. Fixing that takes custom hooks and a test before anything needs an installer, and anyone who installed the default would keep a copy the real installer doesn't match.
+- **An installer from the first release.** Tauri's default NSIS build installs elsewhere, doesn't add `tsg` to
+  PATH, and its Delete app data box targets the wrong folder. Fixing that takes custom hooks and a test before
+  anything needs an installer, and anyone who installed the default would keep a copy the real installer
+  doesn't match.
 - **An MSI installed for all users**, friendlier to managed machines, but every update needs an admin. **Apple silicon only**, a smaller download, but no Intel Macs.
 - **Starting the release from the Actions tab**, with the workflow making the tag, or **publishing automatically** once verification passes. The first means a tag the maintainer didn't push; the second skips the macOS checklist.
 - **Checking the changelog only on PRs from `release/...` branches.** A PR from any other branch would skip the check and say nothing.
@@ -46,7 +53,8 @@ Releases are built from a tag in GitHub Actions and attested ([ADR 0005](0005-to
 
 ## Consequences
 
-- A zip's `data` folder doesn't move to the installed folders by itself. The cache syncs again, and copying `tsugiki.db` across keeps the user's state, as Import database does from Stage 5.
+- A zip's `data` folder doesn't move to the installed folders by itself. The cache syncs again, and copying
+  `tsugiki.db` across keeps the user's state, as Import database does from Stage 5.
 - No signing secrets and no updater key exist in v1. The release workflow needs only `contents: write`, `id-token: write` and `attestations: write`.
 - The README and each release note explain the SmartScreen and Open Anyway steps, and how to check a download with `gh attestation verify`.
 - Moving to notarization, Windows signing or in-app updates later changes only the workflow's build step and the update notice. Signing must still run before attestation, as the attestation ticket says.

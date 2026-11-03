@@ -60,11 +60,13 @@ other runs brings the running one forward.
 
 ## Consequences
 
-- The per-user NSIS installer, from Stage 4
-  ([ADR 0012](0012-unsigned-v1-releases-from-a-tag-attested-and-checked.md)), installs into `%LOCALAPPDATA%\Programs\Tsugiki`, as VS Code's user setup does. Its "Delete app data" box
-  removes `%LOCALAPPDATA%\tsugiki` and `%APPDATA%\tsugiki`, not the `io.github.tsugiki` folder Tauri's
-  uninstaller would remove.
-- Releases carry a Windows portable `.zip`, attested like everything else. It's all Windows gets until Stage 4.
+- The per-user NSIS installer, from Stage 4 ([ADR
+  0012](0012-unsigned-v1-releases-from-a-tag-attested-and-checked.md)), installs into
+  `%LOCALAPPDATA%\Programs\Tsugiki`, as VS Code's user setup does. Its "Delete app data" box removes
+  `%LOCALAPPDATA%\tsugiki` and `%APPDATA%\tsugiki`, not the `io.github.tsugiki` folder Tauri's uninstaller
+  would remove.
+- Releases carry a Windows portable `.zip`, attested like everything else. It's all Windows gets until Stage
+  4.
 - A Repository removed from `settings.toml` by hand keeps its rows in the database, so adding it back restores its pins and marks. Remove repository in Settings deletes them and the mirror, as ADR 0010 says.
 - A missing `settings.toml` at `settings_path` starts from the defaults, and the status bar says so. If it
   goes missing while Tsugiki runs, the last good values stay, since it may only be a drive gone for now.

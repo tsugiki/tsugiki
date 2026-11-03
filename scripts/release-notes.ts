@@ -49,7 +49,7 @@ function notesUnder(
   return notes;
 }
 
-/** The version `tag` releases. The installers take theirs from Cargo.toml, so the two have to agree. */
+/** The version `tag` releases. The downloads take theirs from Cargo.toml, so the two have to agree. */
 export function versionOfTag(tag: string, cargoToml: string): string {
   const version = workspaceVersion(cargoToml);
   if (tag !== `v${version}`) {

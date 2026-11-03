@@ -24,12 +24,12 @@ install:
 dev:
     npm run dev
 
-# Build the installers for this computer
+# Build what a release ships for this computer: `tsg.exe` on Windows, the dmg on macOS
 build:
     npm run build
 
-# Zip the portable copy from the build `npx tauri build --no-bundle` made
-portable-zip:
+# Build for Windows and zip the portable copy
+portable-zip: build
     node scripts/portable-zip.ts
 
 # Format everything

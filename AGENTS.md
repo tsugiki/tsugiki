@@ -12,6 +12,12 @@ The five default roles, each label named after its role: `needs-triage`, `needs-
 
 Single-context: `CONTEXT.md` and `docs/adr/` at the repo root, plus `docs/scope.md` and `docs/build-order.md`. See `docs/agents/domain.md`.
 
+## Commands
+
+Use [`just`](https://github.com/casey/just), and the `justfile` says how to install it. `just check` runs
+every check CI runs, one at a time on a few cores, because someone is working on this computer while it runs.
+`just` lists the rest. `just smoke` opens a window and presses real keys, so ask before you run it.
+
 ## Rust design rules
 
 Clippy enforces most of our rules, and `Cargo.toml` and `clippy.toml` give the reason for each. No tool can

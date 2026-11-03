@@ -13,8 +13,8 @@ In a PR to main:
 2. Rename `## WIP` in `CHANGELOG.md` to `## Version X.Y.Z (YYYY-MM-DD)`, with today's date, and start a new
    `## WIP` above it. ADR 0012 says what the section needs.
 
-CI's `release-check` job fails the PR if `CHANGELOG.md` has no section for that version, and the `deny` job
-fails it if `Cargo.lock` didn't follow.
+`just release-check` prints the notes the release will carry. CI's `release-check` job fails the PR if
+`CHANGELOG.md` has no section for that version, and the `deny` job fails it if `Cargo.lock` didn't follow.
 
 ## 2. Tag it
 

@@ -2,8 +2,8 @@
   "body": {
     "data": {
       "rateLimit": {
-        "remaining": 4962,
-        "resetAt": "2026-11-04T17:17:59Z"
+        "remaining": 4929,
+        "resetAt": "2026-11-04T18:18:45Z"
       },
       "repository": {
         "i112564": {
@@ -208,6 +208,6 @@
     }
   },
   "query": "query FetchIssues($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { i112564: issueOrPullRequest(number: 112564) { __typename ... on Issue { number title updatedAt author { login } } } i128942: issueOrPullRequest(number: 128942) { __typename ... on Issue { number title updatedAt author { login } } } i138864: issueOrPullRequest(number: 138864) { __typename ... on Issue { number title updatedAt author { login } } } i139778: issueOrPullRequest(number: 139778) { __typename ... on Issue { number title updatedAt author { login } } } i140256: issueOrPullRequest(number: 140256) { __typename ... on Issue { number title updatedAt author { login } } } i140328: issueOrPullRequest(number: 140328) { __typename ... on Issue { number title updatedAt author { login } } } i140798: issueOrPullRequest(number: 140798) { __typename ... on Issue { number title updatedAt author { login } } } i140928: issueOrPullRequest(number: 140928) { __typename ... on Issue { number title updatedAt author { login } } } i141594: issueOrPullRequest(number: 141594) { __typename ... on Issue { number title updatedAt author { login } } } i148937: issueOrPullRequest(number: 148937) { __typename ... on Issue { number title updatedAt author { login } } } i149532: issueOrPullRequest(number: 149532) { __typename ... on Issue { number title updatedAt author { login } } } i151763: issueOrPullRequest(number: 151763) { __typename ... on Issue { number title updatedAt author { login } } } i151815: issueOrPullRequest(number: 151815) { __typename ... on Issue { number title updatedAt author { login } } } i151862: issueOrPullRequest(number: 151862) { __typename ... on Issue { number title updatedAt author { login } } } i152125: issueOrPullRequest(number: 152125) { __typename ... on Issue { number title updatedAt author { login } } } i153058: issueOrPullRequest(number: 153058) { __typename ... on Issue { number title updatedAt author { login } } } i155176: issueOrPullRequest(number: 155176) { __typename ... on Issue { number title updatedAt author { login } } } i155181: issueOrPullRequest(number: 155181) { __typename ... on Issue { number title updatedAt author { login } } } i155728: issueOrPullRequest(number: 155728) { __typename ... on Issue { number title updatedAt author { login } } } i156425: issueOrPullRequest(number: 156425) { __typename ... on Issue { number title updatedAt author { login } } } i159101: issueOrPullRequest(number: 159101) { __typename ... on Issue { number title updatedAt author { login } } } i160663: issueOrPullRequest(number: 160663) { __typename ... on Issue { number title updatedAt author { login } } } } rateLimit { remaining resetAt } }",
-  "reset": 1793812679,
+  "reset": 1793816325,
   "status": 200
 }

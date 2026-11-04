@@ -5,8 +5,8 @@ use rusqlite::ToSql;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
 use time::OffsetDateTime;
 
-use crate::github::Login;
 use crate::github::pull_requests::{CiState, PrState, ReviewState};
+use crate::github::{CommitSha, Login};
 use crate::repository::RepositoryName;
 
 /// A time in a column, as seconds since the Unix epoch.
@@ -35,6 +35,20 @@ impl ToSql for Login {
 impl FromSql for Login {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         value.as_str().map(Self::new)
+    }
+}
+
+impl ToSql for CommitSha {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        self.as_str().to_sql()
+    }
+}
+
+impl FromSql for CommitSha {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        let text = value.as_str()?;
+        Self::parse(text)
+            .ok_or_else(|| FromSqlError::Other(format!("{text} isn't a commit's SHA").into()))
     }
 }
 
@@ -133,6 +147,16 @@ mod tests {
                 "DISMISSED"
             ]
         );
+    }
+
+    #[test]
+    fn a_commit_sha_column_refuses_text_that_isnt_one() {
+        let refused = Connection::open_in_memory().unwrap().query_row(
+            "SELECT 'not a commit' AS value",
+            [],
+            |row| row.get::<_, CommitSha>("value"),
+        );
+        assert!(refused.is_err());
     }
 
     #[test]

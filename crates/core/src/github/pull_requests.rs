@@ -8,7 +8,7 @@ use serde_json::json;
 use specta::Type;
 use time::OffsetDateTime;
 
-use super::{BAD_GATEWAY, GitHub, Login, Request, Unreachable, read};
+use super::{BAD_GATEWAY, CommitSha, GitHub, Login, Request, Unreachable, read};
 use crate::error::Error;
 use crate::repository::RepositoryName;
 
@@ -41,17 +41,58 @@ fn search_query(operation: &str) -> String {
 }
 
 /// The Workbench works out from these lists why a PR is the user's, so a list cut short would hide a PR the
-/// searches found. GitHub returns at most 100 at a time, and it limits a PR to 10 assignees.
-const FETCH_PULL_REQUESTS: &str = "query FetchPullRequests($ids: [ID!]!) { nodes(ids: $ids) { \
-                                   ... on PullRequest { number title state isDraft updatedAt baseRefName body \
+/// searches found. GitHub returns at most 100 at a time, and it limits a PR to 10 assignees. `lastCommit`
+/// asks for CI on its own, because CI rollups are slow and `commits` can run to 100.
+const PULL_REQUEST_FIELDS: &str = "number title state isDraft updatedAt baseRefName body \
+                                   mergeCommit { oid } \
                                    repository { nameWithOwner defaultBranchRef { name } } \
                                    closingIssuesReferences(first: 100) { nodes { number \
                                    repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } \
                                    reviewRequests(first: 100) { nodes { requestedReviewer { \
                                    ... on User { login } ... on Bot { login } } } } \
                                    latestReviews(first: 100) { nodes { author { login } state } } \
-                                   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } } \
-                                   rateLimit { remaining resetAt } }";
+                                   lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } \
+                                   commits(first: 100) { totalCount nodes { commit { message \
+                                   parents { totalCount } committer { user { login } } } } }";
+
+/// The text of a fetch of PRs by ID.
+fn fetch_by_ids_query(operation: PrFetch) -> String {
+    format!(
+        "query {}($ids: [ID!]!) {{ nodes(ids: $ids) {{ ... on PullRequest {{ {PULL_REQUEST_FIELDS} }} }} \
+         rateLimit {{ remaining resetAt }} }}",
+        operation.name()
+    )
+}
+
+/// The text of a fetch of one PR by its number.
+fn fetch_by_number_query() -> String {
+    format!(
+        "query {FETCH_ORIGIN}($owner: String!, $name: String!, $number: Int!) {{ \
+         repository(owner: $owner, name: $name) {{ pullRequest(number: $number) {{ {PULL_REQUEST_FIELDS} }} }} \
+         rateLimit {{ remaining resetAt }} }}"
+    )
+}
+
+/// Names the fetch of a Backport's Origin PR by number, and so its recording.
+const FETCH_ORIGIN: &str = "FetchOriginPullRequest";
+
+/// The reason for a fetch by ID. Each has its own recording, because a recording holds one answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrFetch {
+    /// The PRs the user's searches found.
+    Work,
+    /// The PRs an Issue's cross-references list.
+    Tree,
+}
+
+impl PrFetch {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Work => "FetchPullRequests",
+            Self::Tree => "FetchTreePullRequests",
+        }
+    }
+}
 
 /// GitHub's ID for an item, which a fetch asks for it by.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -82,6 +123,14 @@ pub struct FetchedBatch {
     pub pull_requests: Vec<PullRequestFacts>,
     /// The number of IDs it asked for, which is fewer than offered after a retry.
     pub asked_for: usize,
+    pub rate_limit: RateLimit,
+}
+
+/// One Origin PR fetched by number.
+#[derive(Debug, PartialEq, Eq)]
+pub struct FetchedOrigin {
+    /// Nothing, when that number names an Issue or nothing.
+    pub pull_request: Option<PullRequestFacts>,
     pub rate_limit: RateLimit,
 }
 
@@ -139,9 +188,57 @@ pub struct PullRequestFacts {
     pub assignees: Vec<Login>,
     /// The Issues in this Repository that GitHub says this PR closes.
     pub closing_issues: Vec<u32>,
-    /// The description of a PR that doesn't target the default branch. GitHub ignores closing keywords
-    /// there, so Tsugiki reads them itself (ADR 0011). A PR on the default branch has none to read.
-    pub off_default_description: Option<String>,
+    /// The commit a merged PR became. GitHub gives one only for a merged PR.
+    pub merge_commit: Option<CommitSha>,
+    /// The facts the link rules read on a PR that doesn't target the default branch (ADR 0011).
+    pub off_default: Option<OffDefault>,
+}
+
+/// The facts only a PR off the default branch needs, for the link rules (ADR 0011).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OffDefault {
+    /// GitHub ignores closing keywords here, so Tsugiki reads them itself.
+    pub description: String,
+    /// The commits its description or its commits name in a `(cherry picked from commit <sha>)` line.
+    pub cherry_picked_from: Vec<CommitSha>,
+    /// The committer of each commit that isn't a merge. `None` for one with no GitHub account or a
+    /// commit past the ones Tsugiki reads.
+    pub committers: Vec<Option<Login>>,
+}
+
+impl PullRequestFacts {
+    /// True when a sync needn't fetch this PR again, because it has merged or closed (ADR 0011). A merged PR
+    /// with no merge commit came from a Tsugiki that kept none, so a fetch still has facts to bring.
+    pub fn is_frozen(&self) -> bool {
+        match self.state {
+            PrState::Open => false,
+            PrState::Closed => true,
+            PrState::Merged => self.merge_commit.is_some(),
+        }
+    }
+}
+
+#[cfg(test)]
+impl OffDefault {
+    /// Facts off the default branch with `description` and nothing else.
+    pub(crate) fn described(description: &str) -> Self {
+        Self {
+            description: description.to_owned(),
+            cherry_picked_from: vec![],
+            committers: vec![],
+        }
+    }
+}
+
+/// The SHAs named in each `(cherry picked from commit <sha>)` line of `text`.
+fn cherry_picks(text: &str) -> impl Iterator<Item = CommitSha> + '_ {
+    text.lines().filter_map(|line| {
+        let sha = line
+            .trim()
+            .strip_prefix("(cherry picked from commit ")?
+            .strip_suffix(')')?;
+        CommitSha::parse(sha)
+    })
 }
 
 #[derive(Deserialize)]
@@ -174,14 +271,50 @@ struct LatestReviewWire {
 }
 
 #[derive(Deserialize)]
+struct LastCommitNode {
+    commit: LastCommitWire,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LastCommitWire {
+    status_check_rollup: Option<RollupWire>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CommitsWire {
+    total_count: usize,
+    nodes: Vec<Option<CommitNode>>,
+}
+
+#[derive(Deserialize)]
 struct CommitNode {
     commit: CommitWire,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct CommitWire {
-    status_check_rollup: Option<RollupWire>,
+    message: String,
+    parents: CountWire,
+    committer: Option<GitActorWire>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CountWire {
+    total_count: usize,
+}
+
+/// `user` is nothing for a committer with no GitHub account, as for the merge GitHub's Update branch makes.
+#[derive(Deserialize)]
+struct GitActorWire {
+    user: Option<Person>,
+}
+
+#[derive(Deserialize)]
+struct MergeCommitWire {
+    oid: String,
 }
 
 #[derive(Deserialize)]
@@ -225,13 +358,49 @@ struct PullRequestWire {
     updated_at: OffsetDateTime,
     base_ref_name: String,
     body: String,
+    merge_commit: Option<MergeCommitWire>,
     repository: RepositoryWire,
     closing_issues_references: Nodes<ClosingReference>,
     author: Option<Person>,
     assignees: Nodes<Person>,
     review_requests: Nodes<ReviewRequestWire>,
     latest_reviews: Nodes<LatestReviewWire>,
-    commits: Nodes<CommitNode>,
+    last_commit: Nodes<LastCommitNode>,
+    commits: CommitsWire,
+}
+
+impl CommitsWire {
+    /// The facts of a PR off the default branch with this `description` and these commits.
+    fn off_default(self, description: String) -> OffDefault {
+        let commits: Vec<CommitWire> = self
+            .nodes
+            .into_iter()
+            .flatten()
+            .map(|node| node.commit)
+            .collect();
+        let unread = self.total_count.saturating_sub(commits.len());
+        let mut cherry_picked_from: Vec<CommitSha> = cherry_picks(&description).collect();
+        let named = commits
+            .iter()
+            .flat_map(|commit| cherry_picks(&commit.message));
+        for sha in named {
+            if !cherry_picked_from.contains(&sha) {
+                cherry_picked_from.push(sha);
+            }
+        }
+        let mut committers: Vec<Option<Login>> = commits
+            .into_iter()
+            .filter(|commit| commit.parents.total_count < 2)
+            .map(|commit| Some(commit.committer?.user?.login))
+            .collect();
+        // A commit Tsugiki didn't read could be anyone's.
+        committers.extend((unread > 0).then_some(None));
+        OffDefault {
+            description,
+            cherry_picked_from,
+            committers,
+        }
+    }
 }
 
 impl From<PullRequestWire> for PullRequestFacts {
@@ -257,7 +426,7 @@ impl From<PullRequestWire> for PullRequestFacts {
             })
             .collect();
         let ci = wire
-            .commits
+            .last_commit
             .nodes
             .into_iter()
             .flatten()
@@ -298,7 +467,11 @@ impl From<PullRequestWire> for PullRequestFacts {
             latest_reviews,
             assignees,
             closing_issues,
-            off_default_description: (!on_default).then_some(wire.body),
+            merge_commit: wire
+                .merge_commit
+                .filter(|_| wire.state == PrState::Merged)
+                .and_then(|commit| CommitSha::parse(&commit.oid)),
+            off_default: (!on_default).then(|| wire.commits.off_default(wire.body)),
         }
     }
 }
@@ -356,18 +529,24 @@ impl GitHub {
 
     /// The first `size` of `ids`, or half that after a 502 or no answer. The answer leaves out an ID GitHub
     /// no longer knows.
-    pub fn fetch_pull_requests(&self, ids: &[NodeId], size: usize) -> Result<FetchedBatch, Error> {
+    pub fn fetch_pull_requests(
+        &self,
+        why: PrFetch,
+        ids: &[NodeId],
+        size: usize,
+    ) -> Result<FetchedBatch, Error> {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Data {
             nodes: Vec<Option<PullRequestWire>>,
             rate_limit: RateLimit,
         }
+        let query = fetch_by_ids_query(why);
         let (data, asked_for): (Data, usize) = self.query_at_size(size.min(ids.len()), |size| {
             let asked: Vec<&str> = ids.iter().take(size).map(|id| id.0.as_str()).collect();
             Request {
-                operation: "FetchPullRequests",
-                query: FETCH_PULL_REQUESTS.into(),
+                operation: why.name(),
+                query: query.as_str().into(),
                 variables: json!({ "ids": asked }),
             }
         })?;
@@ -379,6 +558,39 @@ impl GitHub {
                 .map(PullRequestFacts::from)
                 .collect(),
             asked_for,
+            rate_limit: data.rate_limit,
+        })
+    }
+
+    /// The PR with this `number`, if `repository` has one: a Backport's Origin PR can be any number, so one
+    /// request asks for one PR (ADR 0011).
+    pub fn fetch_origin_pull_request(
+        &self,
+        repository: &RepositoryName,
+        number: u32,
+    ) -> Result<FetchedOrigin, Error> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Holder {
+            pull_request: Option<PullRequestWire>,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Data {
+            repository: Holder,
+            rate_limit: RateLimit,
+        }
+        let data: Data = self.query(&Request {
+            operation: FETCH_ORIGIN,
+            query: fetch_by_number_query().into(),
+            variables: json!({
+                "owner": repository.owner(),
+                "name": repository.name(),
+                "number": number,
+            }),
+        })?;
+        Ok(FetchedOrigin {
+            pull_request: data.repository.pull_request.map(PullRequestFacts::from),
             rate_limit: data.rate_limit,
         })
     }
@@ -475,8 +687,185 @@ mod tests {
                 { "author": { "login": "some-assignee" }, "state": "CHANGES_REQUESTED" },
                 { "author": null, "state": "APPROVED" },
             ] },
-            "commits": { "nodes": [{ "commit": { "statusCheckRollup": { "state": "FAILURE" } } }] },
+            "lastCommit": { "nodes": [{ "commit": { "statusCheckRollup": { "state": "FAILURE" } } }] },
+            "mergeCommit": null,
+            "commits": { "totalCount": 0, "nodes": [] },
         })
+    }
+
+    /// A commit as a fetch answers with it.
+    fn commit_json(committer: Value, parents: u32, message: &str) -> Value {
+        json!({ "commit": {
+            "message": message,
+            "parents": { "totalCount": parents },
+            "committer": committer,
+        } })
+    }
+
+    fn by_user(login: &str) -> Value {
+        json!({ "user": { "login": login } })
+    }
+
+    /// The facts Tsugiki keeps of `pr` when it comes back from a fetch.
+    fn read_back(pr: &Value) -> PullRequestFacts {
+        let (script, _asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([pr])))]);
+        let batch = github(script)
+            .fetch_pull_requests(PrFetch::Work, &ids(&["a"]), 25)
+            .unwrap();
+        batch.pull_requests.into_iter().next().unwrap()
+    }
+
+    fn off_default_with(body: &str, total: u32, commits: Vec<Value>) -> OffDefault {
+        let mut pr = pr_json();
+        pr["baseRefName"] = json!("3.14");
+        pr["body"] = json!(body);
+        pr["commits"] = json!({ "totalCount": total, "nodes": commits });
+        read_back(&pr).off_default.unwrap()
+    }
+
+    fn sha(text: &str) -> CommitSha {
+        CommitSha::parse(text).unwrap()
+    }
+
+    #[test]
+    fn a_backports_committers_leave_out_merges() {
+        let facts = off_default_with(
+            "",
+            4,
+            vec![
+                commit_json(by_user("miss-islington"), 1, ""),
+                commit_json(json!({ "user": null }), 2, "Merge branch '3.14'"),
+                commit_json(by_user("some-author"), 0, ""),
+                commit_json(json!({ "user": null }), 1, ""),
+            ],
+        );
+        assert_eq!(
+            facts.committers,
+            [
+                Some(Login::new("miss-islington")),
+                Some(Login::new("some-author")),
+                None,
+            ]
+        );
+    }
+
+    #[test]
+    fn a_commit_with_no_committer_is_nobodys() {
+        let facts = off_default_with("", 1, vec![commit_json(Value::Null, 1, "")]);
+        assert_eq!(facts.committers, [None]);
+    }
+
+    #[test]
+    fn commits_past_the_ones_read_count_as_nobodys() {
+        let facts = off_default_with("", 150, vec![commit_json(by_user("miss-islington"), 1, "")]);
+        assert_eq!(facts.committers, [Some(Login::new("miss-islington")), None]);
+    }
+
+    #[test]
+    fn a_null_commit_is_a_commit_tsugiki_didnt_read() {
+        let facts = off_default_with("", 1, vec![Value::Null]);
+        assert_eq!(facts.committers, [None]);
+    }
+
+    #[test]
+    fn cherry_pick_lines_come_from_the_description_and_the_commits_once_each() {
+        let line = |text: &str| format!("Text\r\n(cherry picked from commit {text})\r\nMore");
+        let facts = off_default_with(
+            &line("AAAAAAA"),
+            2,
+            vec![
+                commit_json(by_user("some-author"), 1, &line("bbbbbbb")),
+                commit_json(by_user("some-author"), 1, &line("aaaaaaa")),
+            ],
+        );
+        assert_eq!(facts.cherry_picked_from, [sha("aaaaaaa"), sha("bbbbbbb")]);
+    }
+
+    #[test]
+    fn a_line_that_only_looks_like_a_cherry_pick_names_nothing() {
+        for text in [
+            "cherry picked from commit aaaaaaa",
+            "(cherry picked from commit aaaaaaa",
+            "(cherry picked from commit xyz1234)",
+            "(cherry picked from commit aaa)",
+            "See (cherry picked from commit aaaaaaa)",
+        ] {
+            let facts = off_default_with(text, 0, vec![]);
+            assert_eq!(facts.cherry_picked_from, [], "{text}");
+        }
+    }
+
+    #[test]
+    fn a_pr_on_the_default_branch_keeps_nothing_of_its_commits() {
+        let mut pr = pr_json();
+        pr["commits"] = json!({
+            "totalCount": 1,
+            "nodes": [commit_json(by_user("some-author"), 1, "(cherry picked from commit aaaaaaa)")],
+        });
+        assert_eq!(read_back(&pr).off_default, None);
+    }
+
+    #[test]
+    fn only_a_merged_pr_has_a_merge_commit() {
+        let in_state = |state: &str, oid: &str| {
+            let mut pr = pr_json();
+            pr["state"] = json!(state);
+            pr["mergeCommit"] = json!({ "oid": oid });
+            read_back(&pr).merge_commit
+        };
+        let whole = "0123456789abcdef0123456789abcdef01234567";
+        assert_eq!(in_state("MERGED", whole), Some(sha(whole)));
+        assert_eq!(in_state("CLOSED", whole), None);
+        assert_eq!(in_state("MERGED", "not a sha"), None);
+    }
+
+    #[test]
+    fn an_origin_fetched_by_number_comes_back_with_its_facts() {
+        let body = format!(
+            r#"{{"data":{{"repository":{{"pullRequest":{}}},{RATE}}}}}"#,
+            pr_json()
+        );
+        let (script, asked) = Scripted::new(vec![reply_ok(&body)]);
+
+        let fetched = github(script)
+            .fetch_origin_pull_request(&cpython(), 140_124)
+            .unwrap();
+
+        assert_eq!(fetched.pull_request.unwrap().number, 140_124);
+        assert_eq!(fetched.rate_limit.remaining, 4000);
+        let (operation, variables) = asked.recv().unwrap();
+        assert_eq!(operation, "FetchOriginPullRequest");
+        assert_eq!(
+            variables,
+            json!({ "owner": "python", "name": "cpython", "number": 140_124 })
+        );
+    }
+
+    #[test]
+    fn an_origin_number_that_names_no_pr_comes_back_empty() {
+        let body = format!(
+            r#"{{"data":{{"repository":{{"pullRequest":null}},{RATE}}},"errors":[{{"type":"NOT_FOUND",
+                "message":"gone","path":["repository","pullRequest"]}}]}}"#
+        );
+        let (script, _asked) = Scripted::new(vec![reply_ok(&body)]);
+
+        let fetched = github(script)
+            .fetch_origin_pull_request(&cpython(), 9)
+            .unwrap();
+
+        assert_eq!(fetched.pull_request, None);
+    }
+
+    #[test]
+    fn a_tree_fetch_has_its_own_recording() {
+        let (script, asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([])))]);
+        drop(
+            github(script)
+                .fetch_pull_requests(PrFetch::Tree, &ids(&["a"]), 25)
+                .unwrap(),
+        );
+        assert_eq!(asked.recv().unwrap().0, "FetchTreePullRequests");
+        assert!(fetch_by_ids_query(PrFetch::Tree).starts_with("query FetchTreePullRequests("));
     }
 
     fn fetch_body(nodes: &serde_json::Value) -> String {
@@ -535,7 +924,10 @@ mod tests {
             recording["query"].as_str().unwrap().to_owned()
         };
         assert_eq!(recorded("SearchOwnPrs"), search_query("SearchOwnPrs"));
-        assert_eq!(recorded("FetchPullRequests"), FETCH_PULL_REQUESTS);
+        assert_eq!(
+            recorded("FetchPullRequests"),
+            fetch_by_ids_query(PrFetch::Work)
+        );
     }
 
     #[test]
@@ -550,7 +942,7 @@ mod tests {
         let (script, _asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([pr_json()])))]);
 
         let batch = github(script)
-            .fetch_pull_requests(&ids(&["a"]), 25)
+            .fetch_pull_requests(PrFetch::Work, &ids(&["a"]), 25)
             .unwrap();
 
         assert_eq!(batch.pull_requests.len(), 1);
@@ -573,7 +965,8 @@ mod tests {
                 }],
                 assignees: vec![Login::new("some-reviewer")],
                 closing_issues: vec![7],
-                off_default_description: None,
+                merge_commit: None,
+                off_default: None,
             }
         );
     }
@@ -585,9 +978,12 @@ mod tests {
         pr["repository"]["defaultBranchRef"] = default_branch;
         let (script, _asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([pr])))]);
         let batch = github(script)
-            .fetch_pull_requests(&ids(&["a"]), 25)
+            .fetch_pull_requests(PrFetch::Work, &ids(&["a"]), 25)
             .unwrap();
-        batch.pull_requests[0].off_default_description.clone()
+        batch.pull_requests[0]
+            .off_default
+            .as_ref()
+            .map(|off_default| off_default.description.clone())
     }
 
     #[test]
@@ -605,11 +1001,11 @@ mod tests {
     fn a_pr_with_no_checks_and_no_author_says_so() {
         let mut pr = pr_json();
         pr["author"] = json!(null);
-        pr["commits"] = json!({ "nodes": [{ "commit": { "statusCheckRollup": null } }] });
+        pr["lastCommit"] = json!({ "nodes": [{ "commit": { "statusCheckRollup": null } }] });
         let (script, _asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([pr])))]);
 
         let batch = github(script)
-            .fetch_pull_requests(&ids(&["a"]), 25)
+            .fetch_pull_requests(PrFetch::Work, &ids(&["a"]), 25)
             .unwrap();
 
         assert_eq!(batch.pull_requests.len(), 1);
@@ -623,7 +1019,7 @@ mod tests {
         let (script, _asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([null])))]);
 
         let batch = github(script)
-            .fetch_pull_requests(&ids(&["gone"]), 25)
+            .fetch_pull_requests(PrFetch::Work, &ids(&["gone"]), 25)
             .unwrap();
 
         assert_eq!(batch.pull_requests, []);
@@ -638,7 +1034,7 @@ mod tests {
         let (script, _asked) = Scripted::new(vec![reply_ok(body)]);
 
         let batch = github(script)
-            .fetch_pull_requests(&ids(&["gone"]), 25)
+            .fetch_pull_requests(PrFetch::Work, &ids(&["gone"]), 25)
             .unwrap();
 
         assert_eq!(batch.pull_requests, []);
@@ -653,7 +1049,7 @@ mod tests {
         let (script, _asked) = Scripted::new(vec![reply_ok(body)]);
 
         let refused = github(script)
-            .fetch_pull_requests(&ids(&["gone", "theirs"]), 25)
+            .fetch_pull_requests(PrFetch::Work, &ids(&["gone", "theirs"]), 25)
             .unwrap_err();
 
         assert_eq!(refused.message, "GitHub said: Not yours");
@@ -675,12 +1071,14 @@ mod tests {
             "assignees": { "nodes": [null, { "login": "octocat" }] },
             "reviewRequests": { "nodes": [null] },
             "latestReviews": { "nodes": [null] },
-            "commits": { "nodes": [null] },
+            "lastCommit": { "nodes": [null] },
+            "mergeCommit": null,
+            "commits": { "totalCount": 0, "nodes": [] },
         });
         let (script, _asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([node])))]);
 
         let batch = github(script)
-            .fetch_pull_requests(&ids(&["a"]), 25)
+            .fetch_pull_requests(PrFetch::Work, &ids(&["a"]), 25)
             .unwrap();
 
         let facts = &batch.pull_requests[0];
@@ -713,7 +1111,7 @@ mod tests {
         let (script, asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([])))]);
 
         let batch = github(script)
-            .fetch_pull_requests(&thirty_ids(), 25)
+            .fetch_pull_requests(PrFetch::Work, &thirty_ids(), 25)
             .unwrap();
 
         assert_eq!(batch.asked_for, 25);
@@ -730,7 +1128,7 @@ mod tests {
         ]);
 
         let batch = github(script)
-            .fetch_pull_requests(&thirty_ids(), 25)
+            .fetch_pull_requests(PrFetch::Work, &thirty_ids(), 25)
             .unwrap();
 
         assert_eq!(batch.asked_for, 13);
@@ -758,7 +1156,7 @@ mod tests {
         let (script, _asked) = Scripted::new(vec![bad_gateway(), Err(Unreachable)]);
 
         let refused = github(script)
-            .fetch_pull_requests(&ids(&["a"]), 25)
+            .fetch_pull_requests(PrFetch::Work, &ids(&["a"]), 25)
             .unwrap_err();
 
         assert_eq!(refused.kind, ErrorKind::Offline);
@@ -773,7 +1171,7 @@ mod tests {
         })]);
 
         let refused = github(script)
-            .fetch_pull_requests(&ids(&["a"]), 25)
+            .fetch_pull_requests(PrFetch::Work, &ids(&["a"]), 25)
             .unwrap_err();
 
         assert_eq!(refused.kind, ErrorKind::Unauthorized);

@@ -18,6 +18,129 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-1"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-1"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-1"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-1"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-1"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-1"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-1"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-1"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-1"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 9
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "SUCCESS"
                   }
@@ -25,10 +148,10 @@
               }
             ]
           },
-          "isDraft": false,
           "latestReviews": {
             "nodes": []
           },
+          "mergeCommit": null,
           "number": 160662,
           "repository": {
             "defaultBranchRef": {
@@ -65,6 +188,181 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-2"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-2"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-2"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-2"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-2"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-2"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-2"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-2"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-2"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-2"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-2"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-2"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-2"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 13
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "SUCCESS"
                   }
@@ -72,10 +370,10 @@
               }
             ]
           },
-          "isDraft": false,
           "latestReviews": {
             "nodes": []
           },
+          "mergeCommit": null,
           "number": 140836,
           "repository": {
             "defaultBranchRef": {
@@ -127,6 +425,62 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-1"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-1"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-1"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              }
+            ],
+            "totalCount": 4
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "SUCCESS"
                   }
@@ -134,7 +488,6 @@
               }
             ]
           },
-          "isDraft": false,
           "latestReviews": {
             "nodes": [
               {
@@ -145,6 +498,7 @@
               }
             ]
           },
+          "mergeCommit": null,
           "number": 160667,
           "repository": {
             "defaultBranchRef": {
@@ -175,6 +529,73 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              }
+            ],
+            "totalCount": 5
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "SUCCESS"
                   }
@@ -182,7 +603,6 @@
               }
             ]
           },
-          "isDraft": false,
           "latestReviews": {
             "nodes": [
               {
@@ -193,6 +613,7 @@
               }
             ]
           },
+          "mergeCommit": null,
           "number": 159888,
           "repository": {
             "defaultBranchRef": {
@@ -229,6 +650,164 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              }
+            ],
+            "totalCount": 12
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "FAILURE"
                   }
@@ -236,7 +815,6 @@
               }
             ]
           },
-          "isDraft": false,
           "latestReviews": {
             "nodes": [
               {
@@ -253,6 +831,7 @@
               }
             ]
           },
+          "mergeCommit": null,
           "number": 157178,
           "repository": {
             "defaultBranchRef": {
@@ -294,6 +873,101 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              }
+            ],
+            "totalCount": 7
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "SUCCESS"
                   }
@@ -301,7 +975,6 @@
               }
             ]
           },
-          "isDraft": false,
           "latestReviews": {
             "nodes": [
               {
@@ -318,6 +991,7 @@
               }
             ]
           },
+          "mergeCommit": null,
           "number": 156423,
           "repository": {
             "defaultBranchRef": {
@@ -354,6 +1028,112 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              }
+            ],
+            "totalCount": 8
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "SUCCESS"
                   }
@@ -361,7 +1141,6 @@
               }
             ]
           },
-          "isDraft": false,
           "latestReviews": {
             "nodes": [
               {
@@ -372,6 +1151,7 @@
               }
             ]
           },
+          "mergeCommit": null,
           "number": 156419,
           "repository": {
             "defaultBranchRef": {
@@ -418,6 +1198,25 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-12"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 1
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "SUCCESS"
                   }
@@ -425,7 +1224,6 @@
               }
             ]
           },
-          "isDraft": false,
           "latestReviews": {
             "nodes": [
               {
@@ -442,6 +1240,7 @@
               }
             ]
           },
+          "mergeCommit": null,
           "number": 155182,
           "repository": {
             "defaultBranchRef": {
@@ -478,6 +1277,51 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-12"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-12"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-12"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 3
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "FAILURE"
                   }
@@ -485,7 +1329,6 @@
               }
             ]
           },
-          "isDraft": false,
           "latestReviews": {
             "nodes": [
               {
@@ -508,6 +1351,7 @@
               }
             ]
           },
+          "mergeCommit": null,
           "number": 155178,
           "repository": {
             "defaultBranchRef": {
@@ -551,6 +1395,112 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-17"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-17"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-17"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-17"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-17"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-17"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 8
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "FAILURE"
                   }
@@ -558,7 +1508,6 @@
               }
             ]
           },
-          "isDraft": false,
           "latestReviews": {
             "nodes": [
               {
@@ -575,6 +1524,7 @@
               }
             ]
           },
+          "mergeCommit": null,
           "number": 154019,
           "repository": {
             "defaultBranchRef": {
@@ -605,6 +1555,64 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-12"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-12"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-12"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-12"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 4
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "SUCCESS"
                   }
@@ -612,7 +1620,6 @@
               }
             ]
           },
-          "isDraft": false,
           "latestReviews": {
             "nodes": [
               {
@@ -629,6 +1636,7 @@
               }
             ]
           },
+          "mergeCommit": null,
           "number": 153059,
           "repository": {
             "defaultBranchRef": {
@@ -665,6 +1673,51 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-21"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-21"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-21"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 3
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "FAILURE"
                   }
@@ -672,7 +1725,6 @@
               }
             ]
           },
-          "isDraft": false,
           "latestReviews": {
             "nodes": [
               {
@@ -683,6 +1735,7 @@
               }
             ]
           },
+          "mergeCommit": null,
           "number": 151863,
           "repository": {
             "defaultBranchRef": {
@@ -724,6 +1777,38 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-23"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-23"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 2
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "SUCCESS"
                   }
@@ -731,7 +1816,6 @@
               }
             ]
           },
-          "isDraft": false,
           "latestReviews": {
             "nodes": [
               {
@@ -748,6 +1832,7 @@
               }
             ]
           },
+          "mergeCommit": null,
           "number": 151821,
           "repository": {
             "defaultBranchRef": {
@@ -784,6 +1869,25 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-16"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 1
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "SUCCESS"
                   }
@@ -791,7 +1895,6 @@
               }
             ]
           },
-          "isDraft": false,
           "latestReviews": {
             "nodes": [
               {
@@ -808,6 +1911,7 @@
               }
             ]
           },
+          "mergeCommit": null,
           "number": 149533,
           "repository": {
             "defaultBranchRef": {
@@ -844,6 +1948,116 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-28"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-28"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-28"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-28"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-28"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-28"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-28"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-28"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              }
+            ],
+            "totalCount": 8
+          },
+          "isDraft": true,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "SUCCESS"
                   }
@@ -851,7 +2065,6 @@
               }
             ]
           },
-          "isDraft": true,
           "latestReviews": {
             "nodes": [
               {
@@ -868,6 +2081,7 @@
               }
             ]
           },
+          "mergeCommit": null,
           "number": 148940,
           "repository": {
             "defaultBranchRef": {
@@ -898,6 +2112,816 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 62
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "SUCCESS"
                   }
@@ -905,7 +2929,6 @@
               }
             ]
           },
-          "isDraft": false,
           "latestReviews": {
             "nodes": [
               {
@@ -940,6 +2963,7 @@
               }
             ]
           },
+          "mergeCommit": null,
           "number": 141595,
           "repository": {
             "defaultBranchRef": {
@@ -996,6 +3020,101 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-29"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 7
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "SUCCESS"
                   }
@@ -1003,7 +3122,6 @@
               }
             ]
           },
-          "isDraft": false,
           "latestReviews": {
             "nodes": [
               {
@@ -1014,6 +3132,7 @@
               }
             ]
           },
+          "mergeCommit": null,
           "number": 140968,
           "repository": {
             "defaultBranchRef": {
@@ -1067,6 +3186,363 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-34"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 27
+          },
+          "isDraft": true,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "FAILURE"
                   }
@@ -1074,7 +3550,6 @@
               }
             ]
           },
-          "isDraft": true,
           "latestReviews": {
             "nodes": [
               {
@@ -1085,6 +3560,7 @@
               }
             ]
           },
+          "mergeCommit": null,
           "number": 140688,
           "repository": {
             "defaultBranchRef": {
@@ -1128,6 +3604,110 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-35"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-35"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-35"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-35"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-35"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              }
+            ],
+            "totalCount": 8
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "SUCCESS"
                   }
@@ -1135,7 +3715,6 @@
               }
             ]
           },
-          "isDraft": false,
           "latestReviews": {
             "nodes": [
               {
@@ -1152,6 +3731,7 @@
               }
             ]
           },
+          "mergeCommit": null,
           "number": 140258,
           "repository": {
             "defaultBranchRef": {
@@ -1182,6 +3762,62 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-2"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-2"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-2"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              }
+            ],
+            "totalCount": 4
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "SUCCESS"
                   }
@@ -1189,7 +3825,6 @@
               }
             ]
           },
-          "isDraft": false,
           "latestReviews": {
             "nodes": [
               {
@@ -1200,6 +3835,7 @@
               }
             ]
           },
+          "mergeCommit": null,
           "number": 139779,
           "repository": {
             "defaultBranchRef": {
@@ -1241,6 +3877,86 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-16"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-16"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-16"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-16"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              }
+            ],
+            "totalCount": 6
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "SUCCESS"
                   }
@@ -1248,7 +3964,6 @@
               }
             ]
           },
-          "isDraft": false,
           "latestReviews": {
             "nodes": [
               {
@@ -1277,6 +3992,7 @@
               }
             ]
           },
+          "mergeCommit": null,
           "number": 138865,
           "repository": {
             "defaultBranchRef": {
@@ -1323,6 +4039,1069 @@
             "nodes": [
               {
                 "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-40"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-39"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              }
+            ],
+            "totalCount": 85
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
                   "statusCheckRollup": {
                     "state": "SUCCESS"
                   }
@@ -1330,7 +5109,6 @@
               }
             ]
           },
-          "isDraft": false,
           "latestReviews": {
             "nodes": [
               {
@@ -1359,6 +5137,7 @@
               }
             ]
           },
+          "mergeCommit": null,
           "number": 130771,
           "repository": {
             "defaultBranchRef": {
@@ -1396,12 +5175,12 @@
         }
       ],
       "rateLimit": {
-        "remaining": 4991,
-        "resetAt": "2026-11-04T17:45:05Z"
+        "remaining": 4930,
+        "resetAt": "2026-11-04T18:18:45Z"
       }
     }
   },
-  "query": "query FetchPullRequests($ids: [ID!]!) { nodes(ids: $ids) { ... on PullRequest { number title state isDraft updatedAt baseRefName body repository { nameWithOwner defaultBranchRef { name } } closingIssuesReferences(first: 100) { nodes { number repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } } rateLimit { remaining resetAt } }",
-  "reset": 1793814305,
+  "query": "query FetchPullRequests($ids: [ID!]!) { nodes(ids: $ids) { ... on PullRequest { number title state isDraft updatedAt baseRefName body mergeCommit { oid } repository { nameWithOwner defaultBranchRef { name } } closingIssuesReferences(first: 100) { nodes { number repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } commits(first: 100) { totalCount nodes { commit { message parents { totalCount } committer { user { login } } } } } } } rateLimit { remaining resetAt } }",
+  "reset": 1793816325,
   "status": 200
 }

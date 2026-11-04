@@ -1,0 +1,380 @@
+{
+  "body": {
+    "data": {
+      "rateLimit": {
+        "remaining": 4916,
+        "resetAt": "2026-11-04T18:18:45Z"
+      },
+      "repository": {
+        "issue": {
+          "timelineItems": {
+            "nodes": [
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7opRYh",
+                  "number": 151779,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7orl9R",
+                  "number": 151798,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7o3C3P",
+                  "number": 151843,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7pAk8P",
+                  "number": 151902,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7pSEyY",
+                  "number": 151931,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7phn5X",
+                  "number": 151968,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7psd-R",
+                  "number": 152013,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7p1KZj",
+                  "number": 152034,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qFqRr",
+                  "number": 152069,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qFqZg",
+                  "number": 152070,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qL-fF",
+                  "number": 152094,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qL-os",
+                  "number": 152095,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qL-xb",
+                  "number": 152096,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qOtDl",
+                  "number": 152110,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qTxlr",
+                  "number": 152131,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qbyQa",
+                  "number": 152155,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qcNre",
+                  "number": 152158,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qcN1M",
+                  "number": 152159,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qcN-V",
+                  "number": 152160,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qc1BM",
+                  "number": 152164,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qc8-U",
+                  "number": 152165,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7s6Zrw",
+                  "number": 152836,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7s6Zzx",
+                  "number": 152837,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7s7TRk",
+                  "number": 152840,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7wfdCW",
+                  "number": 153548,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7zX_mq",
+                  "number": 154019,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c72fVzh",
+                  "number": 154714,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c72fV1L",
+                  "number": 154715,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c72fV4H",
+                  "number": 154717,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              }
+            ],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": "Y3Vyc29yOnYyOpPPAAABnuQLmZACqjc1ODQxNjI3MzI="
+            }
+          }
+        }
+      }
+    }
+  },
+  "query": "query FetchCrossReferences($owner: String!, $name: String!, $number: Int!, $last: Int!, $before: String) { repository(owner: $owner, name: $name) { issue(number: $number) { timelineItems(last: $last, before: $before, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } rateLimit { remaining resetAt } }",
+  "reset": 1793816325,
+  "status": 200
+}

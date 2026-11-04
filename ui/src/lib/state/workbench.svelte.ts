@@ -3,17 +3,23 @@
 import {
   commands,
   events,
+  type BackportKind,
+  type BackportRow_Serialize,
   type CiState,
   type IssueItem_Serialize,
+  type PrState,
+  type TreeEntry_Serialize,
   type WorkbenchItem_Serialize,
   type WorkbenchRow_Serialize,
   type WorkReason,
 } from "$lib/data/bindings";
 
+export type BackportRow = BackportRow_Serialize;
 export type IssueItem = IssueItem_Serialize;
+export type TreeEntry = TreeEntry_Serialize;
 export type WorkbenchItem = WorkbenchItem_Serialize;
 export type WorkbenchRow = WorkbenchRow_Serialize;
-export type { CiState, WorkReason };
+export type { BackportKind, CiState, PrState, WorkReason };
 
 export class WorkbenchState {
   items = $state<WorkbenchItem[]>();

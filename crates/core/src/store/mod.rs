@@ -71,6 +71,18 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
+    /// The merged and closed PRs of `repository`, which a sync doesn't fetch again (ADR 0011).
+    pub fn frozen_pull_requests(
+        &self,
+        repository: &RepositoryName,
+    ) -> Result<Vec<PullRequestFacts>, Error> {
+        let repository = repository.clone();
+        let read = self.call(move |connection| pull_requests::read_all(connection, &repository))?;
+        let mut found = read.map_err(saying(CANT_READ))?;
+        found.retain(PullRequestFacts::is_frozen);
+        Ok(found)
+    }
+
     /// Stores `issues` of `repository` in one transaction (ADR 0010).
     pub fn save_issues(
         &self,
@@ -147,7 +159,7 @@ fn read_work_facts(
     let transaction = connection.transaction()?;
     Ok(WorkFacts {
         viewer: read_last_login(&transaction)?,
-        pull_requests: pull_requests::read_open(&transaction, repository)?,
+        pull_requests: pull_requests::read_all(&transaction, repository)?,
         issues: issues::read_all(&transaction, repository)?,
     })
 }
@@ -344,7 +356,8 @@ mod tests {
     use super::file::{Contents, contents};
     use super::testing::{V1, V2, backups, has_table, temp_database, user_version};
     use super::*;
-    use crate::github::pull_requests::{CiState, LatestReview, PrState, ReviewState};
+    use crate::github::CommitSha;
+    use crate::github::pull_requests::{CiState, LatestReview, OffDefault, PrState, ReviewState};
     use rusqlite::trace::{TraceEvent, TraceEventCodes};
     use time::OffsetDateTime;
 
@@ -497,7 +510,12 @@ mod tests {
             }],
             assignees: vec![Login::new("some-assignee")],
             closing_issues: vec![7],
-            off_default_description: None,
+            merge_commit: CommitSha::parse("0123abc"),
+            off_default: Some(OffDefault {
+                description: String::new(),
+                cherry_picked_from: CommitSha::parse("0123abc").into_iter().collect(),
+                committers: vec![Some(viewer.clone())],
+            }),
         };
         let issue = IssueFacts {
             number: 1,
@@ -553,9 +571,11 @@ mod tests {
             "latest_reviews",
             "assignees",
             "closing_references",
+            "cherry_picks",
+            "committers",
             "issues",
         ];
-        assert_eq!(tables.map(reads), [true; 7]);
+        assert_eq!(tables.map(reads), [true; 9]);
     }
 
     #[test]

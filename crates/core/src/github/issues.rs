@@ -1,5 +1,6 @@
 //! The Issues that PRs name, fetched by number, since GitHub has no search for a list of numbers. A number
-//! can turn out to be a PR or to name nothing, and then Tsugiki keeps nothing for it (ADR 0011).
+//! can turn out to be a PR or to name nothing, and then Tsugiki keeps nothing for it (ADR 0011). An Issue's
+//! cross-references list the PRs that may belong in its tree.
 
 use std::collections::BTreeMap;
 
@@ -7,7 +8,7 @@ use serde::Deserialize;
 use serde_json::json;
 use time::OffsetDateTime;
 
-use super::pull_requests::{Person, RateLimit};
+use super::pull_requests::{NodeId, PageRequest, Person, RateLimit};
 use super::{GitHub, Login, Request};
 use crate::error::Error;
 use crate::repository::RepositoryName;
@@ -80,7 +81,132 @@ fn fetch_issues_query(numbers: &[u32]) -> String {
     )
 }
 
+/// A PR that mentions an Issue. Only the link rules can say whether it belongs in the Issue's tree.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ListedPr {
+    pub id: NodeId,
+    pub number: u32,
+}
+
+/// One page of an Issue's cross-references, the newest PR first.
+#[derive(Debug, PartialEq, Eq)]
+pub struct CrossReferences {
+    /// Only PRs of this Repository: a PR elsewhere can't fix this Issue (ADR 0011).
+    pub listed: Vec<ListedPr>,
+    /// The next page's cursor, which holds older events, if there is one.
+    pub next: Option<String>,
+    pub rate_limit: RateLimit,
+}
+
+/// GitHub lists events oldest first, so `last` and `before` read them from the newest (ADR 0011).
+const FETCH_CROSS_REFERENCES: &str = "query FetchCrossReferences($owner: String!, $name: String!, $number: Int!, $last: Int!, $before: String) { \
+     repository(owner: $owner, name: $name) { issue(number: $number) { \
+     timelineItems(last: $last, before: $before, itemTypes: [CROSS_REFERENCED_EVENT]) { \
+     pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename \
+     ... on PullRequest { id number repository { nameWithOwner } } } } } } } } \
+     rateLimit { remaining resetAt } }";
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NamedRepository {
+    name_with_owner: RepositoryName,
+}
+
+#[derive(Deserialize)]
+struct SourcePr {
+    #[serde(flatten)]
+    listed: ListedPr,
+    repository: NamedRepository,
+}
+
+/// The Issue or PR that mentioned the Issue.
+#[derive(Deserialize)]
+#[serde(tag = "__typename")]
+enum Source {
+    PullRequest(SourcePr),
+    Issue,
+}
+
+#[derive(Deserialize)]
+struct CrossReferenceEvent {
+    source: Source,
+}
+
 impl GitHub {
+    /// One page of the cross-references of Issue `number`, or half that page after a 502 or no answer. An
+    /// Issue GitHub no longer has here, as after a transfer, has none.
+    pub fn fetch_cross_references(
+        &self,
+        repository: &RepositoryName,
+        number: u32,
+        page: PageRequest<'_>,
+    ) -> Result<CrossReferences, Error> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct PageInfo {
+            has_previous_page: bool,
+            start_cursor: Option<String>,
+        }
+        #[derive(Deserialize)]
+        struct Timeline {
+            #[serde(rename = "pageInfo")]
+            page_info: PageInfo,
+            nodes: Vec<Option<CrossReferenceEvent>>,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Issue {
+            timeline_items: Timeline,
+        }
+        #[derive(Deserialize)]
+        struct Holder {
+            issue: Option<Issue>,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Data {
+            repository: Holder,
+            rate_limit: RateLimit,
+        }
+        let (data, _): (Data, usize) = self.query_at_size(page.size, |last| Request {
+            operation: "FetchCrossReferences",
+            query: FETCH_CROSS_REFERENCES.into(),
+            variables: json!({
+                "owner": repository.owner(),
+                "name": repository.name(),
+                "number": number,
+                "last": last,
+                "before": page.after,
+            }),
+        })?;
+        let Some(issue) = data.repository.issue else {
+            return Ok(CrossReferences {
+                listed: Vec::new(),
+                next: None,
+                rate_limit: data.rate_limit,
+            });
+        };
+        let timeline = issue.timeline_items;
+        let info = timeline.page_info;
+        let listed = timeline
+            .nodes
+            .into_iter()
+            .rev()
+            .flatten()
+            .filter_map(|event| match event.source {
+                Source::PullRequest(pr) if pr.repository.name_with_owner.is_same(repository) => {
+                    Some(pr.listed)
+                }
+                Source::PullRequest(_) | Source::Issue => None,
+            })
+            .collect();
+        Ok(CrossReferences {
+            listed,
+            next: info.start_cursor.filter(|_| info.has_previous_page),
+            rate_limit: data.rate_limit,
+        })
+    }
+
     /// The first `size` of `numbers`, or half that after a 502 or no answer. `numbers` holds at least one.
     pub fn fetch_issues(
         &self,
@@ -154,6 +280,131 @@ mod tests {
             "updatedAt": "2026-11-04T10:00:00Z",
             "author": { "login": "some-author" },
         })
+    }
+
+    fn event(source: &Value) -> Value {
+        json!({ "source": source })
+    }
+
+    fn pr_source(number: u32, repository: &str) -> Value {
+        json!({
+            "__typename": "PullRequest",
+            "id": format!("id{number}"),
+            "number": number,
+            "repository": { "nameWithOwner": repository },
+        })
+    }
+
+    fn timeline(nodes: &[Value], previous: Option<&str>) -> Result<Reply, Unreachable> {
+        let issue = json!({ "timelineItems": {
+            "pageInfo": { "hasPreviousPage": previous.is_some(), "startCursor": previous.or(Some("start")) },
+            "nodes": nodes,
+        } });
+        answer(&json!({ "issue": issue }))
+    }
+
+    fn page(after: Option<&str>) -> PageRequest<'_> {
+        PageRequest { size: 50, after }
+    }
+
+    fn listed_numbers(found: &CrossReferences) -> Vec<u32> {
+        found.listed.iter().map(|pr| pr.number).collect()
+    }
+
+    #[test]
+    fn cross_references_list_this_repositorys_prs_newest_first() {
+        let reply = timeline(
+            &[
+                event(&pr_source(1, "python/cpython")),
+                event(&json!({ "__typename": "Issue" })),
+                Value::Null,
+                event(&pr_source(2, "python/peps")),
+                event(&pr_source(3, "Python/CPython")),
+            ],
+            None,
+        );
+        let (script, asked) = Scripted::new(vec![reply]);
+
+        let found = github(script)
+            .fetch_cross_references(&cpython(), 7, page(Some("older")))
+            .unwrap();
+
+        assert_eq!(listed_numbers(&found), [3, 1]);
+        assert_eq!(found.next, None);
+        assert_eq!(found.rate_limit.remaining, 4000);
+        let (operation, variables) = asked.recv().unwrap();
+        assert_eq!(operation, "FetchCrossReferences");
+        assert_eq!(
+            variables,
+            json!({
+                "owner": "python",
+                "name": "cpython",
+                "number": 7,
+                "last": 50,
+                "before": "older",
+            })
+        );
+    }
+
+    #[test]
+    fn cross_references_say_where_the_older_ones_start() {
+        let reply = timeline(&[event(&pr_source(1, "python/cpython"))], Some("older"));
+        let (script, _asked) = Scripted::new(vec![reply]);
+
+        let found = github(script)
+            .fetch_cross_references(&cpython(), 7, page(None))
+            .unwrap();
+
+        assert_eq!(found.next.as_deref(), Some("older"));
+    }
+
+    #[test]
+    fn an_issue_github_no_longer_has_has_no_cross_references() {
+        let body = format!(
+            r#"{{"data":{{"repository":{{"issue":null}},{RATE}}},"errors":[{{"type":"NOT_FOUND",
+                "message":"gone","path":["repository","issue"]}}]}}"#
+        );
+        let (script, _asked) = Scripted::new(vec![reply_ok(&body)]);
+
+        let found = github(script)
+            .fetch_cross_references(&cpython(), 7, page(None))
+            .unwrap();
+
+        assert_eq!(listed_numbers(&found), [0_u32; 0]);
+        assert_eq!(found.next, None);
+    }
+
+    #[test]
+    fn a_page_of_cross_references_github_cant_answer_is_asked_for_at_half_size() {
+        let bad_gateway = Ok(Reply {
+            status: 502,
+            reset: None,
+            body: "Bad Gateway".to_owned(),
+        });
+        let (script, asked) = Scripted::new(vec![bad_gateway, timeline(&[], None)]);
+
+        drop(
+            github(script)
+                .fetch_cross_references(&cpython(), 7, page(None))
+                .unwrap(),
+        );
+
+        let lasts: Vec<Value> = asked
+            .try_iter()
+            .map(|(_, sent)| sent["last"].clone())
+            .collect();
+        assert_eq!(lasts, [json!(50), json!(25)]);
+    }
+
+    #[test]
+    fn a_page_of_cross_references_that_fails_twice_is_the_failure() {
+        let (script, _asked) = Scripted::new(vec![Err(Unreachable), Err(Unreachable)]);
+
+        let refused = github(script)
+            .fetch_cross_references(&cpython(), 7, page(None))
+            .unwrap_err();
+
+        assert_eq!(refused.kind, ErrorKind::Offline);
     }
 
     #[test]

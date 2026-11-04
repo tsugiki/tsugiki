@@ -59,6 +59,31 @@ pub(crate) fn gh_number(word: &str) -> Option<u32> {
         .flatten()
 }
 
+/// A commit's SHA in lower case, whole or cut short as a person wrote it.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct CommitSha(String);
+
+impl CommitSha {
+    /// Git's shortest default abbreviation, and the length of a whole SHA-1.
+    const LENGTHS: std::ops::RangeInclusive<usize> = 7..=40;
+
+    /// The SHA that `text` spells, if it spells one.
+    pub fn parse(text: &str) -> Option<Self> {
+        let is_sha =
+            Self::LENGTHS.contains(&text.len()) && text.chars().all(|c| c.is_ascii_hexdigit());
+        is_sha.then(|| Self(text.to_ascii_lowercase()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// True when `shorter` is this SHA or the start of it.
+    pub fn starts_with(&self, shorter: &Self) -> bool {
+        self.0.starts_with(&shorter.0)
+    }
+}
+
 /// How a request reaches GitHub: the network in the app, recorded answers in tests.
 pub trait Transport: Send {
     fn post(&self, token: &Token, request: &Request<'_>) -> Result<Reply, Unreachable>;

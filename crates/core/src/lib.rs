@@ -8,6 +8,7 @@ pub mod folders;
 pub mod github;
 pub mod launch;
 pub mod logfile;
+pub mod repository;
 pub mod session;
 pub mod settings;
 pub mod status;

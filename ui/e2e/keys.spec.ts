@@ -2,7 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { type CoreAnswers, mockCore } from "./mock-core.ts";
 
 const core: CoreAnswers = {
-  settings: { settings: { status_bar: { visible: true } }, problems: [] },
+  settings: { settings: { status_bar: { visible: true }, repositories: [] }, problems: [] },
   status: { state: "online", login: "octocat" },
 };
 

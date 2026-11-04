@@ -12,7 +12,7 @@ fn bindings_are_up_to_date() {
     let temp = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.temp");
     std::fs::create_dir_all(&temp).expect("create .temp");
     let fresh_path = temp.join(format!("bindings-{}.ts", std::process::id()));
-    tsugiki_app::specta_builder()
+    tsugiki_app::specta_builder::<tauri::Wry>()
         .export(Typescript::default().header(HEADER), &fresh_path)
         .expect("export bindings");
     let fresh = std::fs::read_to_string(&fresh_path).expect("read fresh bindings");

@@ -3,21 +3,25 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+use time::OffsetDateTime;
 
 use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
 use crate::github::{GitHub, GitHubAccess};
+use crate::repository::{RepositoryCheck, RepositoryName};
 use crate::status::{Status, StatusBoard};
 use crate::store::Store;
+use crate::token::Token;
 
 // `run` catches a panic in its thread, to keep the window up and say that checking stopped. Tests unwind
 // whatever the release profile says, so only this line can catch the setting (docs/build-costs.md).
 #[cfg(panic = "abort")]
 compile_error!("`session::run` catches panics, so Tsugiki can't build with `panic = \"abort\"`");
-use crate::token::Token;
 
 const STOPPED_CHECKING: &str = "Tsugiki stopped checking GitHub. Restart Tsugiki to check again.";
+const NOT_CONNECTED: &str = "Tsugiki isn't connected to GitHub. The status bar says why.";
 
 /// Shows who was signed in last time, reads gh's token, asks GitHub who it belongs to, and shows the result
 /// on `board`. Returns the client when there is a token, even offline, since GitHub may come back.
@@ -44,8 +48,36 @@ fn connect(board: &mut StatusBoard, store: &Store, access: GitHubAccess) -> Opti
 /// (ADR 0017). It shows its own failures on the board.
 #[must_use = "dropping the session stops it"]
 pub struct Session {
-    stop: Sender<()>,
+    messages: Sender<Message>,
     finished: Receiver<()>,
+}
+
+/// What others ask of the session's thread, which alone holds the token and the client.
+enum Message {
+    Stop,
+    Check {
+        name: RepositoryName,
+        reply: Sender<Result<RepositoryCheck, Error>>,
+    },
+}
+
+/// Asks the session about Repositories, from any thread. It waits for what the session is doing first, which
+/// at the start can be `gh` or a slow request, so don't call it from the thread that draws the window.
+pub struct RepositoryChecks {
+    messages: Sender<Message>,
+}
+
+impl RepositoryChecks {
+    /// What adding `name` would load, or why GitHub won't say. A session that has ended has already shown why
+    /// on the status bar: no token, or no database.
+    pub fn check(&self, name: RepositoryName) -> Result<RepositoryCheck, Error> {
+        let (reply, answer) = mpsc::channel();
+        self.messages
+            .send(Message::Check { name, reply })
+            .ok()
+            .and_then(|()| answer.recv().ok())
+            .unwrap_or_else(|| Err(Error::new(ErrorKind::Offline, NOT_CONNECTED)))
+    }
 }
 
 impl Session {
@@ -56,18 +88,25 @@ impl Session {
         access: GitHubAccess,
         interval: Duration,
     ) -> Self {
-        let (stop, stopping) = mpsc::channel();
+        let (messages, incoming) = mpsc::channel();
         let (finishing, finished) = mpsc::channel::<()>();
         let refreshes = Refreshes {
             every: interval,
-            stopping,
+            incoming,
         };
         let _ = thread::spawn(move || {
             // `stop` learns the session is over when this goes, however the thread ends.
             let _finishing = finishing;
             run(&mut board, folders, access, &refreshes);
         });
-        Self { stop, finished }
+        Self { messages, finished }
+    }
+
+    /// A way to ask the session about Repositories. While one exists, only `stop` ends the session.
+    pub fn repository_checks(&self) -> RepositoryChecks {
+        RepositoryChecks {
+            messages: self.messages.clone(),
+        }
     }
 
     /// Tells the session to finish, and gives it up to `patience` to close the database.
@@ -80,7 +119,7 @@ impl Session {
             clippy::let_underscore_must_use,
             reason = "this fails only if the session has already finished, which is what this asks for"
         )]
-        let _ = self.stop.send(());
+        let _ = self.messages.send(Message::Stop);
         #[expect(
             clippy::let_underscore_must_use,
             reason = "running out of patience is the one failure here, and the doc above says why it is safe"
@@ -92,16 +131,31 @@ impl Session {
 /// When to ask GitHub again.
 struct Refreshes {
     every: Duration,
-    stopping: Receiver<()>,
+    incoming: Receiver<Message>,
 }
 
 impl Refreshes {
-    /// Waits out the interval, and says whether to refresh. A dropped `Session` stops it too.
-    fn wait_for_next(&self) -> bool {
-        matches!(
-            self.stopping.recv_timeout(self.every),
-            Err(RecvTimeoutError::Timeout)
-        )
+    /// Waits out the interval, answering what's asked meanwhile, and says whether to refresh. A dropped
+    /// `Session` stops it too.
+    fn wait_for_next(&self, github: &GitHub) -> bool {
+        let next = Instant::now() + self.every;
+        loop {
+            match self
+                .incoming
+                .recv_timeout(next.saturating_duration_since(Instant::now()))
+            {
+                Ok(Message::Check { name, reply }) => {
+                    let today = OffsetDateTime::now_utc().date();
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "this fails only if the caller has gone, and it waits for this answer"
+                    )]
+                    let _ = reply.send(github.check_repository(&name, today));
+                }
+                Ok(Message::Stop) | Err(RecvTimeoutError::Disconnected) => return false,
+                Err(RecvTimeoutError::Timeout) => return true,
+            }
+        }
     }
 }
 
@@ -138,7 +192,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
     let Some(github) = connect(board, store, access) else {
         return;
     };
-    while refreshes.wait_for_next() {
+    while refreshes.wait_for_next(&github) {
         refresh(board, store, &github);
     }
 }
@@ -175,6 +229,7 @@ mod tests {
     use std::fs;
     use std::io;
     use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc::{RecvError, TryRecvError};
 
     /// A real store that keeps nothing once it closes.
@@ -390,7 +445,7 @@ mod tests {
     fn stopped_refreshes() -> Refreshes {
         Refreshes {
             every: Duration::ZERO,
-            stopping: mpsc::channel().1,
+            incoming: mpsc::channel().1,
         }
     }
 
@@ -398,19 +453,19 @@ mod tests {
     fn watching_follows_github_until_told_to_stop() {
         // `Replies` panics if it is asked a fourth time, so the third status has to stop the watching.
         let access = replying(vec![signed_in(), Err(Unreachable), signed_in()]);
-        let (stop, stopping) = mpsc::channel();
+        let (stop, incoming) = mpsc::channel();
         let (passed, seen) = mpsc::channel();
         let mut shown = 0;
         let mut board = StatusBoard::new(Box::new(move |status: &Status| {
             passed.send(status.clone()).unwrap();
             shown += 1;
             if shown == 3 {
-                stop.send(()).unwrap();
+                stop.send(Message::Stop).unwrap();
             }
         }));
         let refreshes = Refreshes {
             every: Duration::ZERO,
-            stopping,
+            incoming,
         };
 
         watch(&mut board, &empty_store(), access, &refreshes);
@@ -423,6 +478,95 @@ mod tests {
 
     const AN_HOUR: Duration = Duration::from_secs(3600);
     const PLENTY: Duration = Duration::from_secs(10);
+
+    const GCMON: &str = r#"{"data":{"repository":{"nameWithOwner":"sergey-miryanov/gcmon",
+        "issues":{"totalCount":10},"pullRequests":{"totalCount":3}},
+        "updated":{"issueCount":43},"closed":{"issueCount":35}}}"#;
+
+    fn gcmon() -> RepositoryName {
+        RepositoryName::parse("sergey-miryanov/gcmon").unwrap()
+    }
+
+    #[test]
+    fn a_session_answers_a_check_between_refreshes() {
+        // `Replies` panics if it is asked a third time, so the check can't bring a refresh with it.
+        let gcmon_reply = Reply {
+            status: 200,
+            reset: None,
+            body: GCMON.to_owned(),
+        };
+        let access = replying(vec![signed_in(), Ok(gcmon_reply)]);
+        let folders = temp_folders("check");
+        let session = Session::start(quiet_board(), Ok(folders.clone()), access, AN_HOUR);
+
+        let check = session.repository_checks().check(gcmon()).unwrap();
+        session.stop(PLENTY);
+        fs::remove_dir_all(folders.data).unwrap();
+
+        assert_eq!((check.open_issues, check.open_prs), (10, 3));
+    }
+
+    #[test]
+    fn a_check_github_cant_answer_says_why() {
+        let folders = temp_folders("check-offline");
+        let session = Session::start(quiet_board(), Ok(folders.clone()), offline(), AN_HOUR);
+
+        let problem = session.repository_checks().check(gcmon()).unwrap_err();
+        session.stop(PLENTY);
+        fs::remove_dir_all(folders.data).unwrap();
+
+        assert_eq!(problem.kind, ErrorKind::Offline);
+        assert_eq!(problem.message, "Tsugiki can't reach GitHub.");
+    }
+
+    #[test]
+    fn a_session_that_has_ended_says_so_to_a_check() {
+        let access = GitHubAccess {
+            transport: Box::new(answered(200, GCMON)),
+            run_gh: without_gh,
+        };
+        let folders = temp_folders("check-ended");
+        let session = Session::start(quiet_board(), Ok(folders.clone()), access, AN_HOUR);
+
+        let problem = session.repository_checks().check(gcmon()).unwrap_err();
+        session.stop(PLENTY);
+        fs::remove_dir_all(folders.data).unwrap();
+
+        assert_eq!(problem.kind, ErrorKind::Offline);
+        assert_eq!(problem.message, NOT_CONNECTED);
+    }
+
+    #[test]
+    fn checks_dont_put_off_the_next_refresh() {
+        let (messages, incoming) = mpsc::channel();
+        let checks = RepositoryChecks { messages };
+        let refreshes = Refreshes {
+            every: Duration::from_millis(100),
+            incoming,
+        };
+        let github = GitHub::new(
+            Box::new(answered(200, GCMON)),
+            crate::github::testing::token(),
+        );
+        let started = Instant::now();
+        let refreshed = AtomicBool::new(false);
+
+        thread::scope(|scope| {
+            // Stops by itself, so a timer that starts over with each check fails rather than hangs.
+            let _asking = scope.spawn(|| {
+                while !refreshed.load(Ordering::Relaxed) && started.elapsed() < PLENTY {
+                    drop(checks.check(gcmon()));
+                }
+                drop(checks.messages.send(Message::Stop));
+            });
+            assert!(refreshes.wait_for_next(&github));
+            refreshed.store(true, Ordering::Relaxed);
+            // Answers the checks still on their way, until the message that stops it.
+            while refreshes.wait_for_next(&github) {}
+        });
+
+        assert!(started.elapsed() < PLENTY);
+    }
 
     fn wal_of(folders: &Folders) -> PathBuf {
         folders.data.join("tsugiki.db-wal")

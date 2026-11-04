@@ -47,7 +47,8 @@ impl Default for Https {
 
 impl Transport for Https {
     fn post(&self, token: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
-        let body = serde_json::json!({ "query": request.query }).to_string();
+        let body = serde_json::json!({ "query": request.query, "variables": request.variables })
+            .to_string();
         let mut response = self
             .agent
             .post(ENDPOINT)

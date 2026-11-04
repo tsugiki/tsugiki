@@ -9,8 +9,14 @@ export const commands = {
 	about: () => __TAURI_INVOKE<About>("about"),
 	/**  The whole app-wide state, for a window that has just loaded (ADR 0008). */
 	status: () => __TAURI_INVOKE<Status_Serialize>("status"),
-	/**  The settings Tsugiki read when it started, and what was wrong with their files (ADR 0014). */
+	/**  The settings Tsugiki last read, and what was wrong with their files (ADR 0014). */
 	settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
+	/**  What the window opens on. */
+	home: () => __TAURI_INVOKE<Home_Serialize>("home"),
+	/**  What adding the Repository the user typed would load. */
+	checkRepository: (input: string) => typedError<RepositoryCheck_Serialize, Error_Serialize>(__TAURI_INVOKE("check_repository", { input })),
+	/**  Adds a Repository the user has seen the check for, and says what the window opens on now. */
+	addRepository: (name: string) => typedError<Home_Serialize, Error_Serialize>(__TAURI_INVOKE("add_repository", { name })),
 };
 
 /** Events */
@@ -24,6 +30,12 @@ export type About = {
 	name: string,
 	version: string,
 };
+
+/**
+ *  How a Repository's PRs name their Issues and Backports (ADR 0011). The rules that read this arrive with
+ *  the links.
+ */
+export type Conventions = "cpython" | "github";
 
 /**  A failure in plain words. Details go only to a local log, with tokens scrubbed. */
 export type Error = Error_Serialize | Error_Deserialize;
@@ -51,6 +63,23 @@ export type Error_Serialize = {
 	message: string,
 } & ErrorKind_Serialize;
 
+/**  What the window opens on. */
+export type Home = Home_Serialize | Home_Deserialize;
+
+/**  What the window opens on. */
+export type Home_Deserialize = 
+/**  No Repositories yet. */
+{ screen: "onboarding"; token: TokenSource } | 
+/**  The last Repository the user had open. */
+{ screen: "repository"; repository: RepositorySettings_Deserialize };
+
+/**  What the window opens on. */
+export type Home_Serialize = 
+/**  No Repositories yet. */
+{ screen: "onboarding"; token: TokenSource } | 
+/**  The last Repository the user had open. */
+{ screen: "repository"; repository: RepositorySettings_Serialize };
+
 /**  The settings in force, and what is wrong with the files they came from, in words for the status bar. */
 export type LoadedSettings = LoadedSettings_Serialize | LoadedSettings_Deserialize;
 
@@ -69,17 +98,85 @@ export type LoadedSettings_Serialize = {
 /**  A GitHub username. It reaches the UI as a plain string. */
 export type Login = string;
 
+/**  What the add dialog shows before the user decides. */
+export type RepositoryCheck = RepositoryCheck_Serialize | RepositoryCheck_Deserialize;
+
+/**  What the add dialog shows before the user decides. */
+export type RepositoryCheck_Deserialize = {
+	repository: RepositorySettings_Deserialize,
+	open_issues: number,
+	open_prs: number,
+	size: RepositorySize,
+	window_days: number,
+	/**  How many Issues and PRs the first sync loads. */
+	first_sync_items: number,
+	first_sync_seconds: number,
+	first_sync_points: number,
+};
+
+/**  What the add dialog shows before the user decides. */
+export type RepositoryCheck_Serialize = {
+	repository: RepositorySettings_Serialize,
+	open_issues: number,
+	open_prs: number,
+	size: RepositorySize,
+	window_days: number,
+	/**  How many Issues and PRs the first sync loads. */
+	first_sync_items: number,
+	first_sync_seconds: number,
+	first_sync_points: number,
+};
+
+/**  A Repository added by hand may leave its Conventions out, and then gets what adding it would give it. */
+export type RepositoryInFile = RepositoryInFile_Serialize | RepositoryInFile_Deserialize;
+
+/**  A Repository added by hand may leave its Conventions out, and then gets what adding it would give it. */
+export type RepositoryInFile_Deserialize = {
+	name: RepositoryName,
+	conventions?: Conventions | null,
+};
+
+/**  A Repository added by hand may leave its Conventions out, and then gets what adding it would give it. */
+export type RepositoryInFile_Serialize = {
+	name: RepositoryName,
+	conventions: Conventions | null,
+};
+
+/**  A Repository's `owner/name`, in the only form that reaches GitHub. It reaches the UI as a plain string. */
+export type RepositoryName = string;
+
+/**  A Repository the user added, as `settings.toml` holds it. */
+export type RepositorySettings = RepositorySettings_Serialize | RepositorySettings_Deserialize;
+
+/**  A Repository the user added, as `settings.toml` holds it. */
+export type RepositorySettings_Deserialize = RepositoryInFile_Deserialize;
+
+/**  A Repository the user added, as `settings.toml` holds it. */
+export type RepositorySettings_Serialize = {
+	name: RepositoryName,
+	conventions: Conventions,
+};
+
+/**  Which first sync a Repository gets (ADR 0015). */
+export type RepositorySize = 
+/**  Everything open, plus what closed in the window. */
+"small" | 
+/**  What was updated in the window. */
+"large";
+
 /**  What `settings.toml` holds. A value the file leaves out takes its default. */
 export type Settings = Settings_Serialize | Settings_Deserialize;
 
 /**  What `settings.toml` holds. A value the file leaves out takes its default. */
 export type Settings_Deserialize = {
 	status_bar?: StatusBarSettings_Deserialize,
+	repositories?: RepositorySettings_Deserialize[],
 };
 
 /**  What `settings.toml` holds. A value the file leaves out takes its default. */
 export type Settings_Serialize = {
 	status_bar: StatusBarSettings_Serialize,
+	repositories: RepositorySettings_Serialize[],
 };
 
 /**  The app's state, shown in the status bar. */
@@ -136,7 +233,19 @@ export type Status_Serialize =
 /**  Something stops Tsugiki reading, such as a refused token. */
 { state: "problem"; problem: Error_Serialize };
 
+/**  Where the token comes from. A personal access token joins this with the Account page (ADR 0004). */
+export type TokenSource = "gh";
+
 /* Tauri Specta runtime */
+async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {
+    try {
+        return { status: "ok", data: await result };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        return { status: "error", error: e as any };
+    }
+}
+
 type EventEmit<T> = [T] extends [null] ? () => Promise<void> : (payload: T) => Promise<void>;
 
 type EventEmitTo<T> = [T] extends [null] ? (target: __TAURI_EVENT.EventTarget | string) => Promise<void> : (target: __TAURI_EVENT.EventTarget | string, payload: T) => Promise<void>;

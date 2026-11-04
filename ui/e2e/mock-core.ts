@@ -25,8 +25,13 @@ export const mockCore = (page: Page, answers: CoreAnswers) =>
             (listeners[args.event] ??= []).push(callbacks.get(args.handler) as Listener);
             return callbacks.size;
           }
-          if (Object.hasOwn(answers, command)) return answers[command];
-          throw new Error(`the core has no answer for ${command}`);
+          // The bindings name commands in camelCase, and the core in snake_case.
+          const name = command.replace(/_(.)/g, (_, letter: string) => letter.toUpperCase());
+          if (!Object.hasOwn(answers, name)) throw new Error(`the core has no answer for ${command}`);
+          // A command that can fail answers as its binding does, and the binding expects the core's own form.
+          const answer = answers[name] as { status?: string; data?: unknown; error?: unknown };
+          if (answer.status === "error") throw answer.error;
+          return answer.status === "ok" ? answer.data : answer;
         },
       },
     });

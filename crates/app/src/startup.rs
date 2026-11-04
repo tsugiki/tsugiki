@@ -16,7 +16,7 @@ use tsugiki_core::session::Session;
 use tsugiki_core::settings::SettingsFiles;
 use tsugiki_core::status::StatusBoard;
 
-use crate::{LatestStatus, StatusChanged, specta_builder};
+use crate::{LatestStatus, OwnedSettings, StatusChanged, specta_builder};
 
 /// How often Tsugiki asks GitHub whether it is still there, at about one point of the hourly 5,000 each.
 const REFRESH: Duration = Duration::from_secs(60);
@@ -71,13 +71,17 @@ pub fn run() {
         app.manage(LatestStatus::default()),
         "nothing else manages the latest status"
     );
-    // Two small files, read before the window exists so `settings` can always answer. A `settings_path` on a
-    // slow drive would delay the window. Without folders the defaults apply, and the session shows why.
+    // Two small files, read before the window exists so `settings` and `home` can always answer. A
+    // `settings_path` on a slow drive would delay the window. Without folders the defaults apply, and the
+    // session shows why.
     let settings = folders
         .as_ref()
-        .map(|found| SettingsFiles::load(found.clone()).loaded().clone())
-        .unwrap_or_default();
-    assert!(app.manage(settings), "nothing else manages the settings");
+        .ok()
+        .map(|found| SettingsFiles::load(found.clone()));
+    assert!(
+        app.manage(OwnedSettings::new(settings)),
+        "nothing else manages the settings"
+    );
     let handle = app.handle().clone();
     let board = StatusBoard::new(Box::new(move |status| {
         // Before the event: a window that starts listening just too late for it then asks `status()`, and has
@@ -93,6 +97,10 @@ pub fn run() {
         run_gh,
     };
     let session = Session::start(board, folders, access, REFRESH);
+    assert!(
+        app.manage(session.repository_checks()),
+        "nothing else manages the checks"
+    );
     app.run(move |_app, event| {
         if let RunEvent::Exit = event {
             session.stop(QUIT_PATIENCE);

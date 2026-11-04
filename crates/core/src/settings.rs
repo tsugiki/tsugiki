@@ -11,16 +11,21 @@ use std::path::{Path, PathBuf};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use toml_edit::{DocumentMut, Item, Key, RawString, Table, TableLike, Value};
+use toml_edit::{ArrayOfTables, DocumentMut, Item, Key, RawString, Table, TableLike, Value};
 
 use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
+use crate::repository::{Home, RepositoryName, RepositorySettings};
+
+const REPOSITORIES: &str = "repositories";
+const LAST_REPOSITORY: &str = "last_repository";
 
 /// What `settings.toml` holds. A value the file leaves out takes its default.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(default)]
 pub struct Settings {
     pub status_bar: StatusBarSettings,
+    pub repositories: Vec<RepositorySettings>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -50,6 +55,9 @@ struct Machine {
     /// Where `settings.toml` is, if not in its usual folder. A relative path starts at `machine.toml`'s
     /// folder.
     settings_path: Option<PathBuf>,
+    /// The Repository the window last showed. It stays on this machine and is read with the settings, so a
+    /// normal launch knows what to reopen before the window exists.
+    last_repository: Option<RepositoryName>,
 }
 
 /// The two files and what was last read from them.
@@ -102,32 +110,132 @@ impl SettingsFiles {
     /// either file can't be used: a broken `machine.toml` might point somewhere else, and a broken
     /// `settings.toml` might hold work the user hasn't finished.
     pub fn write(&mut self, settings: &Settings) -> Result<(), Error> {
-        let machine =
-            read_machine(&self.folders.machine_file()).map_err(|problem| refused(&problem))?;
+        let machine = self.machine_to_edit()?;
         let path = settings_file(&self.folders, &machine);
-        let text = read_text(&path)
-            .map_err(|problem| refused(&problem))?
-            .unwrap_or_default();
-        let mut document = toml_edit::de::from_str::<Settings>(&text)
-            .and_then(|_| {
-                text.parse::<DocumentMut>()
-                    .map_err(toml_edit::de::Error::from)
-            })
-            .map_err(|cause| refused(&located(&path, &text, &cause)))?;
+        let mut edit = TomlEdit::<Settings>::open(&path)?;
         merge(
-            document.as_table_mut(),
-            as_document(settings).as_table(),
-            as_document(&Settings::default()).as_table(),
+            edit.document.as_table_mut(),
+            without_repositories(as_document(settings)).as_table(),
+            without_repositories(as_document(&Settings::default())).as_table(),
         );
-        let merged = in_the_files_style(document.to_string(), &text);
-        if merged != text {
-            save(&path, &merged).map_err(|cause| {
-                refused(&format!("Tsugiki can't save {}: {cause}", path.display()))
-            })?;
-        }
+        edit.save()?;
         self.reload();
         Ok(())
     }
+
+    /// What the window opens on: the last Repository if the settings still hold it, or else the first.
+    pub fn home(&self) -> Home {
+        let repositories = &self.loaded.settings.repositories;
+        let last = self
+            .machine
+            .as_ref()
+            .and_then(|machine| machine.last_repository.as_ref())
+            .and_then(|last| repositories.iter().find(|one| one.name.is_same(last)));
+        match last.or_else(|| repositories.first()) {
+            Some(repository) => Home::Repository {
+                repository: repository.clone(),
+            },
+            None => Home::default(),
+        }
+    }
+
+    /// Adds `name` to the settings, unless they hold it already, and makes it what the window opens on.
+    ///
+    /// Like `write`, it works from what the files say now and refuses while either can't be used. It saves
+    /// `machine.toml` first: if that fails, nothing has changed. If `settings.toml` then fails, the name
+    /// there holds nothing, and `home` passes over it.
+    pub fn add_repository(&mut self, name: &RepositoryName) -> Result<Home, Error> {
+        let machine = self.machine_to_edit()?;
+        let path = settings_file(&self.folders, &machine);
+        let mut edit = TomlEdit::<Settings>::open(&path)?;
+        let held = edit
+            .values
+            .repositories
+            .iter()
+            .any(|one| one.name.is_same(name));
+        if !held {
+            edit.append(&RepositorySettings::new(name.clone()));
+        }
+        remember_last_repository(&self.folders.machine_file(), name)?;
+        edit.save()?;
+        self.reload();
+        Ok(self.home())
+    }
+
+    fn machine_to_edit(&self) -> Result<Machine, Error> {
+        read_machine(&self.folders.machine_file()).map_err(|problem| refused(&problem))
+    }
+}
+
+/// A settings file as it says now, open for changes that keep the user's comments and order.
+struct TomlEdit<'a, T> {
+    path: &'a Path,
+    before: String,
+    values: T,
+    document: DocumentMut,
+}
+
+impl<'a, T: DeserializeOwned> TomlEdit<'a, T> {
+    fn open(path: &'a Path) -> Result<Self, Error> {
+        let before = read_text(path)
+            .map_err(|problem| refused(&problem))?
+            .unwrap_or_default();
+        let parsed = toml_edit::de::from_str::<T>(&before).and_then(|values| {
+            let document = before.parse::<DocumentMut>()?;
+            Ok((values, document))
+        });
+        let (values, document) =
+            parsed.map_err(|cause| refused(&located(path, &before, &cause)))?;
+        Ok(Self {
+            path,
+            before,
+            values,
+            document,
+        })
+    }
+
+    fn save(self) -> Result<(), Error> {
+        let merged = in_the_files_style(self.document.to_string(), &self.before);
+        if merged == self.before {
+            return Ok(());
+        }
+        save(self.path, &merged).map_err(|cause| {
+            refused(&format!(
+                "Tsugiki can't save {}: {cause}",
+                self.path.display()
+            ))
+        })
+    }
+}
+
+impl TomlEdit<'_, Settings> {
+    /// Adds a Repository after the others, in the form the file already uses for them.
+    fn append(&mut self, repository: &RepositorySettings) {
+        let table = as_document(repository).as_table().clone();
+        let repositories = self
+            .document
+            .entry(REPOSITORIES)
+            .or_insert_with(|| Item::ArrayOfTables(ArrayOfTables::new()));
+        if let Some(tables) = repositories.as_array_of_tables_mut() {
+            tables.push(table);
+        } else if let Some(written_inline) = repositories.as_array_mut() {
+            written_inline.push(table.into_inline_table());
+        }
+    }
+}
+
+/// `write` saves what the Settings window changes, and that window doesn't edit the Repository list. Merging
+/// the list would replace the file's tables, and the user's comments on them.
+fn without_repositories(mut document: DocumentMut) -> DocumentMut {
+    drop(document.remove(REPOSITORIES));
+    document
+}
+
+fn remember_last_repository(path: &Path, name: &RepositoryName) -> Result<(), Error> {
+    let mut edit = TomlEdit::<Machine>::open(path)?;
+    let wanted = toml_edit::value(name.to_string());
+    merge_value(edit.document.as_table_mut(), LAST_REPOSITORY, &wanted, None);
+    edit.save()
 }
 
 fn refused(problem: &str) -> Error {
@@ -139,8 +247,8 @@ fn refused(problem: &str) -> Error {
     clippy::expect_used,
     reason = "these structs hold only tables and plain values, which TOML can always write"
 )]
-fn as_document(settings: &Settings) -> DocumentMut {
-    toml_edit::ser::to_document(settings).expect("settings are always TOML")
+fn as_document<T: Serialize>(value: &T) -> DocumentMut {
+    toml_edit::ser::to_document(value).expect("settings are always TOML")
 }
 
 /// Makes `file` say what `wanted` says, writing only what differs from `defaults`.
@@ -318,10 +426,25 @@ fn located(path: &Path, text: &str, cause: &toml_edit::de::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::repository::Conventions;
 
     const HIDDEN: Settings = Settings {
         status_bar: StatusBarSettings { visible: false },
+        repositories: Vec::new(),
     };
+
+    fn repository(text: &str) -> RepositoryName {
+        RepositoryName::parse(text).unwrap()
+    }
+
+    fn opened(name: &str, conventions: Conventions) -> Home {
+        Home::Repository {
+            repository: RepositorySettings {
+                name: repository(name),
+                conventions,
+            },
+        }
+    }
 
     /// Separate data and settings folders, as an installed Tsugiki on Windows has, and the folder around
     /// them.
@@ -874,6 +997,296 @@ alpha = \"x\"
 
         assert_eq!(files.loaded().settings, Settings::default());
         assert_eq!(files.loaded().problems.len(), 1);
+    }
+
+    #[test]
+    fn with_no_repositories_the_window_opens_on_onboarding() {
+        let (folders, root) = temp_folders("home-none");
+        let files = SettingsFiles::load(folders);
+        fs::remove_dir_all(root).unwrap();
+        assert_eq!(files.home(), Home::default());
+    }
+
+    #[test]
+    fn adding_a_repository_saves_it_with_its_conventions() {
+        let (folders, root) = temp_folders("add");
+        let mut files = SettingsFiles::load(folders.clone());
+
+        let home = files.add_repository(&repository("python/cpython")).unwrap();
+        let text = fs::read_to_string(folders.settings_file()).unwrap();
+        fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(home, opened("python/cpython", Conventions::Cpython));
+        assert_eq!(
+            text,
+            "[[repositories]]\nname = \"python/cpython\"\nconventions = \"cpython\"\n"
+        );
+        assert_eq!(files.loaded().settings.repositories.len(), 1);
+    }
+
+    #[test]
+    fn another_repository_goes_after_the_others_and_keeps_the_users_words() {
+        let (folders, root) = temp_folders("add-second");
+        let before = "\
+# Mine.
+[[repositories]]
+name = \"python/cpython\" # The big one.
+conventions = \"cpython\"
+
+# The bar.
+[status_bar]
+visible = false
+";
+        fs::write(folders.settings_file(), before).unwrap();
+        let mut files = SettingsFiles::load(folders.clone());
+
+        let home = files
+            .add_repository(&repository("sergey-miryanov/gcmon"))
+            .unwrap();
+        let after = fs::read_to_string(folders.settings_file()).unwrap();
+        fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(home, opened("sergey-miryanov/gcmon", Conventions::Github));
+        assert_eq!(
+            after,
+            "\
+# Mine.
+[[repositories]]
+name = \"python/cpython\" # The big one.
+conventions = \"cpython\"
+
+[[repositories]]
+name = \"sergey-miryanov/gcmon\"
+conventions = \"github\"
+
+# The bar.
+[status_bar]
+visible = false
+"
+        );
+    }
+
+    #[test]
+    fn a_list_written_inline_stays_inline() {
+        let (folders, root) = temp_folders("add-inline");
+        fs::write(
+            folders.settings_file(),
+            "repositories = [{ name = \"a/b\" }]\n",
+        )
+        .unwrap();
+        let mut files = SettingsFiles::load(folders.clone());
+
+        drop(files.add_repository(&repository("c/d")).unwrap());
+        let names: Vec<_> = files
+            .loaded()
+            .settings
+            .repositories
+            .iter()
+            .map(|one| one.name.to_string())
+            .collect();
+        let after = fs::read_to_string(folders.settings_file()).unwrap();
+        fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(names, ["a/b", "c/d"]);
+        assert!(after.starts_with("repositories = [{"), "{after}");
+    }
+
+    #[test]
+    fn adding_a_repository_twice_keeps_one_and_opens_it() {
+        let (folders, root) = temp_folders("add-twice");
+        let mut files = SettingsFiles::load(folders.clone());
+        drop(files.add_repository(&repository("python/cpython")).unwrap());
+        drop(files.add_repository(&repository("a/b")).unwrap());
+        let before = fs::read_to_string(folders.settings_file()).unwrap();
+
+        let home = files.add_repository(&repository("Python/CPython")).unwrap();
+        let after = fs::read_to_string(folders.settings_file()).unwrap();
+        fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(after, before);
+        assert_eq!(home, opened("python/cpython", Conventions::Cpython));
+    }
+
+    #[test]
+    fn a_normal_launch_reopens_the_last_repository() {
+        let (folders, root) = temp_folders("reopen");
+        let mut files = SettingsFiles::load(folders.clone());
+        drop(files.add_repository(&repository("a/first")).unwrap());
+        drop(files.add_repository(&repository("a/second")).unwrap());
+
+        let reopened = SettingsFiles::load(folders).home();
+        fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(reopened, opened("a/second", Conventions::Github));
+    }
+
+    #[test]
+    fn a_last_repository_the_settings_no_longer_hold_gives_way_to_the_first() {
+        let (folders, root) = temp_folders("reopen-gone");
+        fs::write(
+            folders.settings_file(),
+            "[[repositories]]\nname = \"a/first\"\n[[repositories]]\nname = \"a/second\"\n",
+        )
+        .unwrap();
+        fs::write(folders.machine_file(), "last_repository = \"a/gone\"\n").unwrap();
+
+        let home = SettingsFiles::load(folders).home();
+        fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(home, opened("a/first", Conventions::Github));
+    }
+
+    #[test]
+    fn the_last_repository_stays_on_this_machine_beside_what_the_user_wrote() {
+        let (folders, root) = temp_folders("machine-last");
+        fs::write(
+            folders.machine_file(),
+            "# This laptop.\nlast_repository = \"a/old\" # Mine.\neditor = \"code\"\n",
+        )
+        .unwrap();
+        let mut files = SettingsFiles::load(folders.clone());
+
+        drop(files.add_repository(&repository("a/new")).unwrap());
+        let machine = fs::read_to_string(folders.machine_file()).unwrap();
+        let settings = fs::read_to_string(folders.settings_file()).unwrap();
+        fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(
+            machine,
+            "# This laptop.\nlast_repository = \"a/new\" # Mine.\neditor = \"code\"\n"
+        );
+        assert!(!settings.contains(LAST_REPOSITORY), "{settings}");
+    }
+
+    #[test]
+    fn adding_follows_settings_path() {
+        let (folders, root) = temp_folders("add-moved");
+        let moved = root.join("dotfiles.toml");
+        point_at(&folders, &moved);
+        let mut files = SettingsFiles::load(folders.clone());
+
+        drop(files.add_repository(&repository("a/b")).unwrap());
+        let text = fs::read_to_string(&moved).unwrap();
+        let machine = fs::read_to_string(folders.machine_file()).unwrap();
+        fs::remove_dir_all(root).unwrap();
+
+        assert!(text.contains("a/b"), "{text}");
+        assert!(machine.contains("settings_path"), "{machine}");
+        assert!(machine.contains("last_repository = \"a/b\""), "{machine}");
+    }
+
+    #[test]
+    fn adding_refuses_while_either_file_cant_be_used() {
+        for (name, settings, machine, named) in [
+            ("add-settings", "[status_bar\n", "", "settings.toml, line 1"),
+            (
+                "add-machine",
+                "",
+                "settings_path =\n",
+                "machine.toml, line 1",
+            ),
+        ] {
+            let (folders, root) = temp_folders(name);
+            fs::write(folders.settings_file(), settings).unwrap();
+            fs::write(folders.machine_file(), machine).unwrap();
+            let mut files = SettingsFiles::load(folders.clone());
+
+            let refused = files.add_repository(&repository("a/b")).unwrap_err();
+            let after = fs::read_to_string(folders.settings_file()).unwrap();
+            fs::remove_dir_all(root).unwrap();
+
+            assert_eq!(after, settings);
+            assert!(refused.message.contains(named), "{}", refused.message);
+        }
+    }
+
+    #[test]
+    #[expect(
+        clippy::permissions_set_readonly_false,
+        reason = "the test's own file, made writable again only so it can be removed"
+    )]
+    fn an_add_that_cant_save_machine_toml_says_so_and_adds_nothing() {
+        let (folders, root) = temp_folders("add-machine-readonly");
+        let file = folders.machine_file();
+        fs::write(&file, "mine = 1\n").unwrap();
+        let mut permissions = fs::metadata(&file).unwrap().permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(&file, permissions.clone()).unwrap();
+        let mut files = SettingsFiles::load(folders.clone());
+
+        let refused = files.add_repository(&repository("a/b")).unwrap_err();
+        let added = folders.settings_file().exists();
+        permissions.set_readonly(false);
+        fs::set_permissions(&file, permissions).unwrap();
+        fs::remove_dir_all(root).unwrap();
+
+        assert!(
+            refused.message.contains("machine.toml"),
+            "{}",
+            refused.message
+        );
+        assert!(!added);
+        assert_eq!(files.home(), Home::default());
+    }
+
+    #[test]
+    fn a_settings_file_that_cant_be_read_refuses_the_add() {
+        let (folders, root) = temp_folders("add-unreadable");
+        fs::create_dir(folders.settings_file()).unwrap();
+        let mut files = SettingsFiles::load(folders.clone());
+
+        let refused = files.add_repository(&repository("a/b")).unwrap_err();
+        fs::remove_dir_all(root).unwrap();
+
+        assert!(
+            refused.message.contains("settings.toml"),
+            "{}",
+            refused.message
+        );
+    }
+
+    #[test]
+    fn a_name_that_isnt_one_is_a_problem_named_with_its_line() {
+        let (folders, root) = temp_folders("bad-name");
+        fs::write(
+            folders.settings_file(),
+            "\n[[repositories]]\nname = \"nonsense\"\n",
+        )
+        .unwrap();
+        let files = SettingsFiles::load(folders.clone());
+        let in_settings = only_problem(&files);
+        fs::write(folders.settings_file(), "").unwrap();
+        fs::write(folders.machine_file(), "\nlast_repository = \"nonsense\"\n").unwrap();
+        let files = SettingsFiles::load(folders);
+        let in_machine = only_problem(&files);
+        fs::remove_dir_all(root).unwrap();
+
+        assert!(
+            in_settings.contains("settings.toml, line 3"),
+            "{in_settings}"
+        );
+        assert!(in_machine.contains("machine.toml, line 2"), "{in_machine}");
+    }
+
+    #[test]
+    fn saving_settings_leaves_the_repositories_and_the_comments_on_them() {
+        let before = "\
+# Mine.
+[[repositories]]
+name = \"python/cpython\" # The big one.
+";
+        let (folders, root) = temp_folders("save-repositories");
+        fs::write(folders.settings_file(), before).unwrap();
+        let mut files = SettingsFiles::load(folders.clone());
+
+        files.write(&HIDDEN).unwrap();
+        let after = fs::read_to_string(folders.settings_file()).unwrap();
+        let held = files.loaded().settings.repositories.len();
+        fs::remove_dir_all(root).unwrap();
+
+        assert!(after.starts_with(before), "{after}");
+        assert!(after.ends_with("visible = false\n"), "{after}");
+        assert_eq!(held, 1);
     }
 
     #[test]

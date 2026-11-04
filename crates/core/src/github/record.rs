@@ -101,6 +101,7 @@ mod tests {
     const REQUEST: Request<'static> = Request {
         operation: "Op",
         query: "query Op { a }",
+        variables: serde_json::Value::Null,
     };
 
     fn token() -> Token {

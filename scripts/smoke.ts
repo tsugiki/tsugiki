@@ -258,6 +258,9 @@ async function statusBarShows(run: Session["run"], text: string): Promise<string
   return showed ? undefined : `the status bar says "${shown}", and should say "${text}"`;
 }
 
+const clickButton = (name: string): string =>
+  `[...document.querySelectorAll('button')].find((button) => button.textContent === '${name}').click()`;
+
 /** Each check returns what went wrong, or nothing. */
 const CHECKS: Record<string, (session: Session) => Promise<string | undefined>> = {
   // First, because it needs Tsugiki's first request to GitHub still waiting. Without the event the page has
@@ -334,6 +337,45 @@ const CHECKS: Record<string, (session: Session) => Promise<string | undefined>> 
     const same = await run<boolean>("window.smokeSameLoad ?? false");
     return same === true ? undefined : "the page reloaded";
   },
+
+  // Near the end, because the next check leaves a Repository in the settings. The proxy has cut GitHub off by
+  // now, so the dialog's answer has been to the session's thread and back, and only a failure can come back.
+  "the add dialog asks the session": async ({ run }) => {
+    await run(clickButton("Add repository"));
+    await wait(SETTLE_MS);
+    await run(`{
+      const input = document.querySelector('[role=dialog] input');
+      input.value = 'python/cpython';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }`);
+    await run(clickButton("Check"));
+    const wanted = "Tsugiki can't reach GitHub.";
+    let shown = "";
+    const answered = await until(async () => {
+      shown = await run<string>("document.querySelector('[role=alert]')?.textContent ?? ''");
+      return shown === wanted;
+    });
+    await run(clickButton("Cancel"));
+    return answered ? undefined : `the dialog says "${shown}", and should say "${wanted}"`;
+  },
+
+  // The dialog's Add needs an answer from GitHub, so this asks the core what that button asks it.
+  "a Repository added is saved, and the window opens on it": async ({ run }) => {
+    await run("window.__TAURI_INTERNALS__.invoke('add_repository', { name: 'python/cpython' })");
+    await wait(SETTLE_MS);
+    await run("setTimeout(() => location.reload(), 0)");
+    let shown = "";
+    const opened = await until(async () => {
+      try {
+        shown = await run<string>("document.querySelector('h1')?.textContent ?? ''");
+      } catch {
+        // The page is between documents, and running out of tries is the failure to report.
+        return false;
+      }
+      return shown === "python/cpython";
+    });
+    return opened ? undefined : `the window's heading says "${shown}"`;
+  },
 };
 
 /** Prints the result, and returns how many failures to count. */
@@ -370,6 +412,16 @@ function whatClosingLeft(folder: string): string | undefined {
   }
   const left = ["tsugiki.db-wal", "tsugiki.db-shm"].filter((name) => existsSync(join(folder, name)));
   return left.length === 0 ? undefined : `it left ${left.join(" and ")}`;
+}
+
+/** The settings hold the Repository with its Conventions, and this machine remembers it was open. */
+function whatAddingLeft(folder: string): string | undefined {
+  const settings = readFileSync(join(folder, "settings.toml"), "utf8");
+  const machine = readFileSync(join(folder, "machine.toml"), "utf8");
+  if (!settings.includes('name = "python/cpython"') || !settings.includes('conventions = "cpython"')) {
+    return `settings.toml says: ${settings}`;
+  }
+  return machine.includes('last_repository = "python/cpython"') ? undefined : `machine.toml says: ${machine}`;
 }
 
 /** A portable copy keeps everything in its folder (ADR 0014), and the webview's data is the part Tauri wouldn't. */
@@ -493,6 +545,7 @@ try {
   failures = await runChecks(application, github, secondsRunning);
   await close(app);
   failures += report("closing the window closes the database", whatClosingLeft(data));
+  failures += report("the Repository reached both files", whatAddingLeft(data));
   failures += report("the webview keeps its data in the portable folder", whereTheWebviewWrote(data));
 } finally {
   if (failures > 0) {

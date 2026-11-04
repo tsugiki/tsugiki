@@ -5,6 +5,7 @@
 
 mod slow_commands;
 mod startup;
+mod wiring;
 
 use serde::Serialize;
 use specta::Type;
@@ -109,7 +110,6 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
 mod tests {
     use super::*;
     use std::path::Path;
-    use std::sync::mpsc::{Receiver, channel as mpsc_channel};
     use std::time::Duration;
     use tauri::Manager;
     use tauri::test::mock_app;
@@ -118,16 +118,13 @@ mod tests {
     use tsugiki_core::folders::Folders;
     use tsugiki_core::github::GitHubAccess;
     use tsugiki_core::github::live::{Https, run_gh};
-    use tsugiki_core::github::replay::Replayer;
     use tsugiki_core::latest::channel;
     use tsugiki_core::repository::RepositorySettings;
     use tsugiki_core::session::Session;
     use tsugiki_core::settings::SettingsFiles;
     use tsugiki_core::status::StatusBoard;
-    use tsugiki_core::token::GhOutput;
-    use tsugiki_core::workbench::WorkReason;
 
-    fn temp_folders(name: &str) -> (Folders, std::path::PathBuf) {
+    pub(crate) fn temp_folders(name: &str) -> (Folders, std::path::PathBuf) {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../.temp/app-{name}"));
         drop(std::fs::remove_dir_all(&root));
         std::fs::create_dir_all(&root).unwrap();
@@ -138,7 +135,7 @@ mod tests {
         (folders, root)
     }
 
-    fn cpython() -> Home {
+    pub(crate) fn cpython() -> Home {
         Home::Repository {
             repository: RepositorySettings {
                 name: RepositoryName::parse("python/cpython").unwrap(),
@@ -185,7 +182,7 @@ mod tests {
         assert_eq!(settings(app.state()).problems.len(), 1);
     }
 
-    fn no_folders() -> Error {
+    pub(crate) fn no_folders() -> Error {
         Error::new(ErrorKind::Internal, "no folders in this test")
     }
 
@@ -231,150 +228,6 @@ mod tests {
         };
         let board = StatusBoard::new(Box::new(|_| {}));
         Session::start(board, Err(no_folders()), access, Duration::from_secs(3600))
-    }
-
-    /// What the webview gets back for `command`, through Tauri's own handling of its arguments and threads.
-    fn through_ipc(command: &str, arguments: serde_json::Value) -> serde_json::Value {
-        let session = ended_session();
-        let app = tauri::test::mock_builder()
-            .invoke_handler(specta_builder().invoke_handler())
-            .manage(session.requests())
-            .manage(session.reader())
-            .manage(SettingsOwner::start(Err(no_folders())))
-            .build(tauri::test::mock_context(tauri::test::noop_assets()))
-            .unwrap();
-        let webview = tauri::WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::default())
-            .build()
-            .unwrap();
-        tauri::test::get_ipc_response(
-            &webview,
-            tauri::webview::InvokeRequest {
-                cmd: command.to_owned(),
-                callback: tauri::ipc::CallbackFn(0),
-                error: tauri::ipc::CallbackFn(1),
-                url: webview.url().unwrap(),
-                body: tauri::ipc::InvokeBody::Json(arguments),
-                headers: tauri::http::HeaderMap::default(),
-                invoke_key: tauri::test::INVOKE_KEY.to_owned(),
-            },
-        )
-        .unwrap_err()
-    }
-
-    #[test]
-    fn the_webview_can_ask_for_a_check_and_gets_the_failure_in_the_cores_form() {
-        let answer = through_ipc("check_repository", serde_json::json!({ "input": "a/b" }));
-        assert_eq!(answer["kind"], "offline");
-        assert!(
-            answer["message"]
-                .as_str()
-                .unwrap()
-                .contains("isn't connected")
-        );
-    }
-
-    #[test]
-    fn the_webview_can_ask_for_an_add_and_gets_the_failure_in_the_cores_form() {
-        let answer = through_ipc("add_repository", serde_json::json!({ "name": "a/b" }));
-        assert_eq!(answer["kind"], "internal");
-        assert_eq!(answer["message"], no_folders().message);
-    }
-
-    #[test]
-    fn the_webview_can_ask_for_a_workbench_and_gets_the_failure_in_the_cores_form() {
-        let answer = through_ipc("workbench", serde_json::json!({ "repository": "a/b" }));
-        assert_eq!(answer["kind"], "internal");
-    }
-
-    fn signed_in_gh(_: &[&str]) -> std::io::Result<GhOutput> {
-        Ok(GhOutput {
-            success: true,
-            stdout: "gho_example".to_owned(),
-        })
-    }
-
-    /// A session that answers from the recordings of real GitHub, and says when a Workbench changes.
-    fn recorded_session(folders: Folders) -> (Session, Receiver<RepositoryName>) {
-        let recordings =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/tests/fixtures/github");
-        let access = GitHubAccess {
-            transport: Box::new(Replayer::new(recordings)),
-            run_gh: signed_in_gh,
-        };
-        let (changed, changes) = mpsc_channel();
-        let board = StatusBoard::new(Box::new(|_| {})).with_workbench_changes(Box::new(
-            move |repository: &RepositoryName| drop(changed.send(repository.clone())),
-        ));
-        let session = Session::start(board, Ok(folders), access, Duration::from_secs(3600));
-        (session, changes)
-    }
-
-    /// Waits for the session to save what it found, and returns the Workbench after that.
-    fn workbench_after_sync(session: &Session, changes: &Receiver<RepositoryName>) -> Workbench {
-        let name = changes.recv_timeout(Duration::from_secs(60)).unwrap();
-        assert_eq!(name, RepositoryName::parse("python/cpython").unwrap());
-        read_workbench("python/cpython", &session.reader()).unwrap()
-    }
-
-    /// The recordings hold 22 PRs of real CPython work, and 4 of them are the recording user's own.
-    fn assert_is_the_recorded_work(workbench: &Workbench) {
-        assert_eq!(workbench.rows.len(), 22);
-        let own = workbench
-            .rows
-            .iter()
-            .filter(|row| row.reasons.contains(&WorkReason::OwnPr));
-        assert_eq!(own.count(), 4);
-        assert!(
-            workbench
-                .rows
-                .iter()
-                .any(|row| row.reasons.contains(&WorkReason::ReviewRequest))
-        );
-    }
-
-    #[test]
-    fn adding_a_repository_brings_in_what_waits_on_the_user() {
-        let (folders, root) = temp_folders("first-sync");
-        let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
-        let (session, changes) = recorded_session(folders);
-
-        let added = add_named_repository("python/cpython", &owner, &session.requests());
-        let workbench = workbench_after_sync(&session, &changes);
-        session.stop(Duration::from_secs(10));
-        drop(session);
-        std::fs::remove_dir_all(root).unwrap();
-
-        assert_eq!(added.unwrap(), cpython());
-        assert_is_the_recorded_work(&workbench);
-    }
-
-    #[test]
-    fn the_app_syncs_the_repository_it_reopens() {
-        let (folders, root) = temp_folders("reopen");
-        let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
-        drop(owner.add_repository(RepositoryName::parse("python/cpython").unwrap()));
-        let (session, changes) = recorded_session(folders);
-
-        sync_home(&owner.view().home, &session.requests());
-        let workbench = workbench_after_sync(&session, &changes);
-        session.stop(Duration::from_secs(10));
-        drop(session);
-        std::fs::remove_dir_all(root).unwrap();
-
-        assert_is_the_recorded_work(&workbench);
-    }
-
-    #[test]
-    fn with_no_repository_the_app_has_nothing_to_sync() {
-        let (folders, root) = temp_folders("nothing-to-sync");
-        let (session, changes) = recorded_session(folders);
-
-        sync_home(&Home::default(), &session.requests());
-        session.stop(Duration::from_secs(10));
-        drop(session);
-        std::fs::remove_dir_all(root).unwrap();
-
-        assert!(changes.try_recv().is_err());
     }
 
     #[test]

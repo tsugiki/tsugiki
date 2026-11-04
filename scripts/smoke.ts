@@ -259,18 +259,11 @@ async function statusBarShows(run: Session["run"], text: string): Promise<string
   return showed ? undefined : `the status bar says "${shown}", and should say "${text}"`;
 }
 
-const clickButton = (name: string): string =>
-  `[...document.querySelectorAll('button')].find((button) => button.textContent === '${name}').click()`;
-
 /** Each check returns what went wrong, or nothing. */
 const CHECKS: Record<string, (session: Session) => Promise<string | undefined>> = {
   // First, because it needs Tsugiki's first request to GitHub still waiting. Without the event the page has
   // no other way to learn this: it only asks `status()` when it loads, and the settling gives it time to.
-  "a status change reaches the open window, and an add doesn't wait for GitHub": async ({
-    run,
-    github,
-    secondsRunning,
-  }) => {
+  "a status change reaches the open window": async ({ run, github, secondsRunning }) => {
     try {
       if (!(await until(() => github.held() > 0, FIRST_REQUEST_MS))) {
         const shown = await run<string>(STATUS_BAR_TEXT);
@@ -285,34 +278,12 @@ const CHECKS: Record<string, (session: Session) => Promise<string | undefined>> 
       if (problem !== undefined) {
         return problem;
       }
-      // GitHub still hasn't answered. The add goes to the settings' own thread, so it answers anyway.
-      await run(`void window.__TAURI_INTERNALS__
-        .invoke('add_repository', { name: 'python/cpython' })
-        .then((home) => { window.smokeAdded = home.screen; })`);
-      if (!(await until(() => run<boolean>("window.smokeAdded === 'repository'")))) {
-        return "adding a Repository waited for GitHub, or failed";
-      }
       github.cutOff();
       return await statusBarShows(run, "Offline");
     } finally {
       // A request left waiting would fail later checks too, and blame the database when the window closes.
       github.cutOff();
     }
-  },
-
-  // Tsugiki announced this status before the new page loaded, so only `status()` can give it to the page.
-  "a window that loads later gets the current status": async ({ run }) => {
-    await run("window.smokeOldPage = true; setTimeout(() => location.reload(), 0)");
-    const reloaded = await until(async () => {
-      try {
-        const newPage = "window.smokeOldPage === undefined && document.readyState === 'complete'";
-        return await run<boolean>(newPage);
-      } catch {
-        // The page is between documents, and running out of tries is the failure to report.
-        return false;
-      }
-    });
-    return reloaded ? statusBarShows(run, "Offline") : "the page didn't reload";
   },
 
   // Before the other key checks, because they would also pass if no key reached the window at all.
@@ -348,33 +319,6 @@ const CHECKS: Record<string, (session: Session) => Promise<string | undefined>> 
     await wait(SETTLE_MS);
     const same = await run<boolean>("window.smokeSameLoad ?? false");
     return same === true ? undefined : "the page reloaded";
-  },
-
-  // The proxy has cut GitHub off by now, so the dialog's answer has been to the session's thread and back,
-  // and only a failure can come back.
-  "the add dialog asks the session": async ({ run }) => {
-    await run(clickButton("Add repository"));
-    await wait(SETTLE_MS);
-    await run(`{
-      const input = document.querySelector('[role=dialog] input');
-      input.value = 'python/cpython';
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    }`);
-    await run(clickButton("Check"));
-    const wanted = "Tsugiki can't reach GitHub.";
-    let shown = "";
-    const answered = await until(async () => {
-      shown = await run<string>("document.querySelector('[role=alert]')?.textContent ?? ''");
-      return shown === wanted;
-    });
-    await run(clickButton("Cancel"));
-    return answered ? undefined : `the dialog says "${shown}", and should say "${wanted}"`;
-  },
-
-  // The first check added this Repository, and the second reloaded the page.
-  "a window that loads later opens on the Repository added": async ({ run }) => {
-    const shown = await run<string>("document.querySelector('h1')?.textContent ?? ''");
-    return shown === "python/cpython" ? undefined : `the window's heading says "${shown}"`;
   },
 };
 
@@ -412,16 +356,6 @@ function whatClosingLeft(folder: string): string | undefined {
   }
   const left = ["tsugiki.db-wal", "tsugiki.db-shm"].filter((name) => existsSync(join(folder, name)));
   return left.length === 0 ? undefined : `it left ${left.join(" and ")}`;
-}
-
-/** The settings hold the Repository with its Conventions, and this machine remembers it was open. */
-function whatAddingLeft(folder: string): string | undefined {
-  const settings = readFileSync(join(folder, "settings.toml"), "utf8");
-  const machine = readFileSync(join(folder, "machine.toml"), "utf8");
-  if (!settings.includes('name = "python/cpython"') || !settings.includes('conventions = "cpython"')) {
-    return `settings.toml says: ${settings}`;
-  }
-  return machine.includes('last_repository = "python/cpython"') ? undefined : `machine.toml says: ${machine}`;
 }
 
 /** A portable copy keeps everything in its folder (ADR 0014), and the webview's data is the part Tauri wouldn't. */
@@ -545,7 +479,6 @@ try {
   failures = await runChecks(application, github, secondsRunning);
   await close(app);
   failures += report("closing the window closes the database", whatClosingLeft(data));
-  failures += report("the Repository reached both files", whatAddingLeft(data));
   failures += report("the webview keeps its data in the portable folder", whereTheWebviewWrote(data));
 } finally {
   if (failures > 0) {

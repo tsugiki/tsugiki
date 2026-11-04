@@ -1,23 +1,19 @@
-//! Opens Tsugiki's window. Measuring this takes a real window, so it is left out of the
-//! coverage gate and the smoke tests cover it instead (ADR 0009).
+//! Opens Tsugiki's real window, and calls `wiring.rs` for the rest. Measuring this takes that window, so the
+//! coverage gate leaves it out and the smoke tests cover it (ADR 0009).
 
 use std::path::PathBuf;
 use std::time::Duration;
 
 use tauri::{AppHandle, Manager, RunEvent, WebviewWindowBuilder};
-use tauri_specta::Event;
 use tsugiki_core::build::Build;
 use tsugiki_core::folders::Folders;
 use tsugiki_core::github::GitHubAccess;
 use tsugiki_core::github::live::{Https, run_gh};
-use tsugiki_core::latest;
 use tsugiki_core::launch;
 use tsugiki_core::logfile;
-use tsugiki_core::session::Session;
-use tsugiki_core::settings::{SettingsFiles, SettingsOwner};
-use tsugiki_core::status::{Status, StatusBoard};
 
-use crate::{StatusChanged, WorkbenchChanged, specta_builder, sync_home};
+use crate::specta_builder;
+use crate::wiring::connect_core;
 
 /// How often Tsugiki asks GitHub whether it is still there, at about one point of the hourly 5,000 each.
 const REFRESH: Duration = Duration::from_secs(60);
@@ -68,54 +64,11 @@ pub fn run() {
     register_development_scheme(app.handle());
     launch::open_command_line(Build::CURRENT, &launch::command_line());
     builder.mount_events(&app);
-    let (mut latest_status, status_reader) = latest::channel(Status::default());
-    assert!(
-        app.manage(status_reader),
-        "nothing else manages the latest status"
-    );
-    // Two small files, read before the window exists so `settings` and `home` can always answer. A
-    // `settings_path` on a slow drive would delay the window. Without folders the defaults apply, and the
-    // session shows why. A thread of their own owns the files from here, so saving doesn't wait on GitHub.
-    let settings = folders.clone().map(SettingsFiles::load);
-    let settings = SettingsOwner::start(settings);
-    let handle = app.handle().clone();
-    let board = StatusBoard::new(Box::new(move |status| {
-        // Before the event: a window that starts listening just too late for it then asks `status()`, and has
-        // to get this status.
-        latest_status.set(status);
-        // A window still loading asks `status()` when it is done, so it doesn't need this event.
-        if let Err(cause) = StatusChanged(status.clone()).emit(&handle) {
-            log::warn!("Tsugiki can't tell the window about a new status: {cause}");
-        }
-    }));
-    let handle = app.handle().clone();
-    let board = board.with_workbench_changes(Box::new(move |repository| {
-        let changed = WorkbenchChanged {
-            repository: repository.clone(),
-        };
-        if let Err(cause) = changed.emit(&handle) {
-            log::warn!("Tsugiki can't tell the window about a new Workbench: {cause}");
-        }
-    }));
     let access = GitHubAccess {
         transport: Box::new(Https::new()),
         run_gh,
     };
-    let session = Session::start(board, folders, access, REFRESH);
-    let requests = session.requests();
-    sync_home(&settings.view().home, &requests);
-    assert!(
-        app.manage(settings),
-        "nothing else manages the settings' owner"
-    );
-    assert!(
-        app.manage(requests),
-        "nothing else manages the session's requests"
-    );
-    assert!(
-        app.manage(session.reader()),
-        "nothing else manages the database's reader"
-    );
+    let session = connect_core(app.handle(), folders, access, REFRESH);
     app.run(move |_app, event| {
         if let RunEvent::Exit = event {
             session.stop(QUIT_PATIENCE);

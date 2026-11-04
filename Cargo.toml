@@ -78,3 +78,16 @@ print_stdout = "deny" # A release build on Windows has no console, so this text 
 # Exceptions are visible, and go away when they stop being needed.
 allow_attributes = "deny" # `#[expect]` fails once the lint stops firing, and `#[allow]` never does.
 allow_attributes_without_reason = "deny" # Each exception says why.
+
+# Debug builds and tests, which `docs/build-costs.md` measures.
+[profile.dev]
+debug = "line-tables-only" # A panic's backtrace keeps file and line. A debugger loses local variables.
+
+[profile.dev.package."*"]
+debug = false # Most of the debug info is theirs, and nobody here steps through a dependency.
+
+# What a release ships. `docs/build-costs.md` has the measurements, and says why `lto` and `panic = "abort"`
+# aren't here.
+[profile.release]
+codegen-units = 1 # A smaller download, for a longer build.
+strip = true # A smaller dmg. A panic's message and place reach the log without symbols.

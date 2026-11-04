@@ -10,6 +10,11 @@ use crate::folders::Folders;
 use crate::github::{GitHub, GitHubAccess};
 use crate::status::{Status, StatusBoard};
 use crate::store::Store;
+
+// `run` catches a panic in its thread, to keep the window up and say that checking stopped. Tests unwind
+// whatever the release profile says, so only this line can catch the setting (docs/build-costs.md).
+#[cfg(panic = "abort")]
+compile_error!("`session::run` catches panics, so Tsugiki can't build with `panic = \"abort\"`");
 use crate::token::Token;
 
 const STOPPED_CHECKING: &str = "Tsugiki stopped checking GitHub. Restart Tsugiki to check again.";

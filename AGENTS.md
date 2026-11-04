@@ -18,6 +18,13 @@ Use [`just`](https://github.com/casey/just), and the `justfile` says how to inst
 every check CI runs, one at a time on a few cores, because someone is working on this computer while it runs.
 `just` lists the rest. `just smoke` opens a window and presses real keys, so ask before you run it.
 
+## Where tests go
+
+Put a test inside its crate, in `core` where you can. Each file in a crate's `tests/` folder builds its own
+binary, and one that uses `tsugiki_app` also links Tauri and WebView2. If more than about 10 files in
+`crates/app/tests/` use it, move those into one `tests/app/main.rs` binary. `docs/build-costs.md` has the
+numbers.
+
 ## Rust design rules
 
 Clippy enforces most of our rules, and `Cargo.toml` and `clippy.toml` give the reason for each. No tool can

@@ -6,3 +6,5 @@ node_modules/
 /ui/test-results/
 /ui/coverage/
 /crates/app/gen/
+/prototype/
+/1.png

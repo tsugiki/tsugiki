@@ -6,6 +6,7 @@ pub mod build;
 pub mod error;
 pub mod folders;
 pub mod github;
+pub mod latest;
 pub mod launch;
 pub mod logfile;
 pub mod repository;

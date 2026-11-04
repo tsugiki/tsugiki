@@ -7,6 +7,7 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::mpsc::{self, Sender};
 use std::thread;
 
@@ -17,6 +18,7 @@ use toml_edit::{ArrayOfTables, DocumentMut, Item, Key, RawString, Table, TableLi
 
 use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
+use crate::latest::Latest;
 use crate::repository::{Home, RepositoryName, RepositorySettings};
 
 const REPOSITORIES: &str = "repositories";
@@ -192,6 +194,7 @@ impl SettingsFiles {
 #[derive(Clone)]
 pub struct SettingsOwner {
     additions: Sender<Addition>,
+    view: Arc<Latest<SettingsView>>,
 }
 
 struct Addition {
@@ -200,8 +203,11 @@ struct Addition {
 }
 
 impl SettingsOwner {
-    /// Take a `SettingsFiles::view` first: from here on only this thread can read `files`.
+    /// From here on only this thread can read `files`, and `view` answers from its copy.
     pub fn start(mut files: Result<SettingsFiles, Error>) -> Self {
+        let first = files.as_ref().map(SettingsFiles::view).unwrap_or_default();
+        let view = Arc::new(Latest::new(first));
+        let copy = Arc::clone(&view);
         let (additions, incoming) = mpsc::channel::<Addition>();
         let _ = thread::spawn(move || {
             for Addition { name, reply } in incoming {
@@ -209,6 +215,11 @@ impl SettingsOwner {
                     Ok(files) => files.add_repository(&name).map(|_| files.view()),
                     Err(problem) => Err(problem.clone()),
                 };
+                // Before the answer, so whoever asked finds the addition in `view`. Additions come through
+                // here one at a time, so an older one can't replace a newer one.
+                if let Ok(saved) = &saved {
+                    copy.set(saved);
+                }
                 #[expect(
                     clippy::let_underscore_must_use,
                     reason = "this fails only if the caller has gone, and it waits for this answer"
@@ -216,7 +227,12 @@ impl SettingsOwner {
                 let _ = reply.send(saved);
             }
         });
-        Self { additions }
+        Self { additions, view }
+    }
+
+    /// What the settings said after the last addition saved. This never waits on a file.
+    pub fn view(&self) -> SettingsView {
+        self.view.get()
     }
 
     /// Adds `name` to the settings, and answers with what they say now.
@@ -1103,9 +1119,72 @@ alpha = \"x\"
     }
 
     #[test]
+    fn the_owner_answers_with_what_the_files_said_when_it_started() {
+        let (folders, root) = temp_folders("owner-started");
+        fs::write(folders.settings_file(), "[status_bar\n").unwrap();
+
+        let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
+        fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(owner.view().loaded.problems.len(), 1);
+        assert_eq!(owner.view().home, Home::default());
+    }
+
+    #[test]
+    fn without_folders_the_owner_answers_with_the_defaults() {
+        let lost = Error::new(ErrorKind::Internal, "HOME isn't a full path.");
+
+        let owner = SettingsOwner::start(Err(lost));
+
+        assert_eq!(owner.view(), SettingsView::default());
+    }
+
+    #[test]
+    fn an_addition_is_in_the_view_by_the_time_the_owner_answers() {
+        let (folders, root) = temp_folders("owner-view");
+        let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
+
+        let saved = owner.add_repository(repository("python/cpython")).unwrap();
+        fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(owner.view(), saved);
+    }
+
+    #[test]
+    fn an_addition_that_fails_leaves_the_view_alone() {
+        let (folders, root) = temp_folders("owner-view-refused");
+        fs::write(folders.settings_file(), "[status_bar\n").unwrap();
+        let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
+        let before = owner.view();
+
+        let refused = owner.add_repository(repository("a/b"));
+        fs::remove_dir_all(root).unwrap();
+
+        assert!(refused.is_err());
+        assert_eq!(owner.view(), before);
+    }
+
+    #[test]
+    fn additions_that_overlap_all_reach_the_view() {
+        let (folders, root) = temp_folders("owner-overlap");
+        let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
+
+        thread::scope(|scope| {
+            for name in ["a/one", "a/two", "a/three", "a/four"] {
+                let owner = owner.clone();
+                let _ = scope.spawn(move || owner.add_repository(repository(name)).unwrap());
+            }
+        });
+        fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(owner.view().loaded.settings.repositories.len(), 4);
+    }
+
+    #[test]
     fn an_owner_whose_thread_has_gone_says_so() {
         let owner = SettingsOwner {
             additions: mpsc::channel().0,
+            view: Arc::default(),
         };
 
         let refused = owner.add_repository(repository("a/b")).unwrap_err();

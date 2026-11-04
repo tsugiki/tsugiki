@@ -16,8 +16,6 @@ use tsugiki_core::repository::{Home, RepositoryCheck};
 use tsugiki_core::session::RepositoryChecks;
 use tsugiki_core::settings::SettingsOwner;
 
-use crate::LatestSettings;
-
 /// What adding the Repository the user typed would load. A check can wait out a stuck request to GitHub, so
 /// it waits on a thread meant for blocking, and leaves the threads that answer the window's other commands
 /// free.
@@ -43,10 +41,6 @@ pub(crate) async fn check_repository(
 /// a small file and never on GitHub.
 #[tauri::command(async)]
 #[specta::specta]
-pub(crate) fn add_repository(
-    name: &str,
-    owner: State<'_, SettingsOwner>,
-    latest: State<'_, LatestSettings>,
-) -> Result<Home, Error> {
-    crate::add_named_repository(name, &owner, &latest)
+pub(crate) fn add_repository(name: &str, owner: State<'_, SettingsOwner>) -> Result<Home, Error> {
+    crate::add_named_repository(name, &owner)
 }

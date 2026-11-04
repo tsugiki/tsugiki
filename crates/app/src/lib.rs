@@ -6,17 +6,16 @@
 mod slow_commands;
 mod startup;
 
-use std::sync::{Mutex, MutexGuard, PoisonError};
-
 use serde::Serialize;
 use specta::Type;
 pub use startup::run;
 use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
 use tsugiki_core::error::Error;
+use tsugiki_core::latest::Latest;
 use tsugiki_core::repository::{Home, RepositoryCheck, RepositoryName};
 use tsugiki_core::session::RepositoryChecks;
-use tsugiki_core::settings::{LoadedSettings, SettingsOwner, SettingsView};
+use tsugiki_core::settings::{LoadedSettings, SettingsOwner};
 use tsugiki_core::status::Status;
 
 #[tauri::command]
@@ -25,33 +24,7 @@ fn about() -> tsugiki_core::About {
     tsugiki_core::about()
 }
 
-/// A read-only copy of what another thread owns. It lets commands answer while that thread waits on GitHub
-/// or a disk, since the window waits on neither (ADR 0017).
-#[derive(Default)]
-struct Latest<T>(Mutex<T>);
-
-impl<T: Clone> Latest<T> {
-    fn new(value: T) -> Self {
-        Self(Mutex::new(value))
-    }
-
-    fn get(&self) -> T {
-        self.lock().clone()
-    }
-
-    fn set(&self, value: &T) {
-        self.lock().clone_from(value);
-    }
-
-    /// Only this type holds the lock, and it calls out to nothing while it does, so poisoning should never
-    /// happen. If it does, the value is still whole, because `set` only ever replaces it.
-    fn lock(&self) -> MutexGuard<'_, T> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-}
-
 type LatestStatus = Latest<Status>;
-type LatestSettings = Latest<SettingsView>;
 
 /// The whole app-wide state, for a window that has just loaded (ADR 0008).
 #[tauri::command]
@@ -63,15 +36,15 @@ fn status(latest: State<'_, LatestStatus>) -> Status {
 /// The settings Tsugiki last read, and what was wrong with their files (ADR 0014).
 #[tauri::command]
 #[specta::specta]
-fn settings(latest: State<'_, LatestSettings>) -> LoadedSettings {
-    latest.get().loaded
+fn settings(owner: State<'_, SettingsOwner>) -> LoadedSettings {
+    owner.view().loaded
 }
 
 /// What the window opens on.
 #[tauri::command]
 #[specta::specta]
-fn home(latest: State<'_, LatestSettings>) -> Home {
-    latest.get().home
+fn home(owner: State<'_, SettingsOwner>) -> Home {
+    owner.view().home
 }
 
 fn check_typed_repository(
@@ -81,14 +54,8 @@ fn check_typed_repository(
     checks.check(RepositoryName::parse(input)?)
 }
 
-fn add_named_repository(
-    name: &str,
-    owner: &SettingsOwner,
-    latest: &LatestSettings,
-) -> Result<Home, Error> {
-    let saved = owner.add_repository(RepositoryName::parse(name)?)?;
-    latest.set(&saved);
-    Ok(saved.home)
+fn add_named_repository(name: &str, owner: &SettingsOwner) -> Result<Home, Error> {
+    Ok(owner.add_repository(RepositoryName::parse(name)?)?.home)
 }
 
 /// Sent whenever the app-wide state changes (ADR 0008).
@@ -166,19 +133,19 @@ mod tests {
     }
 
     #[test]
-    fn settings_and_home_answer_with_the_latest_copy() {
+    fn settings_says_what_was_wrong_with_the_files() {
+        let (folders, root) = temp_folders("problems");
+        std::fs::write(
+            folders.settings_file(),
+            "[status_bar
+",
+        )
+        .unwrap();
         let app = mock_app();
-        let view = SettingsView {
-            loaded: LoadedSettings {
-                problems: vec!["settings.toml, line 3: expected a value".to_owned()],
-                ..LoadedSettings::default()
-            },
-            home: cpython(),
-        };
-        assert!(app.manage(LatestSettings::new(view.clone())));
+        assert!(app.manage(SettingsOwner::start(Ok(SettingsFiles::load(folders)))));
+        std::fs::remove_dir_all(root).unwrap();
 
-        assert_eq!(settings(app.state()), view.loaded);
-        assert_eq!(home(app.state()), view.home);
+        assert_eq!(settings(app.state()).problems.len(), 1);
     }
 
     fn no_folders() -> Error {
@@ -188,12 +155,11 @@ mod tests {
     #[test]
     fn a_repository_added_is_what_the_window_opens_on() {
         let (folders, root) = temp_folders("add");
-        let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
         let app = mock_app();
-        assert!(app.manage(LatestSettings::default()));
+        assert!(app.manage(SettingsOwner::start(Ok(SettingsFiles::load(folders)))));
         assert_eq!(home(app.state()), Home::default());
 
-        let added = add_named_repository("https://github.com/python/cpython", &owner, &app.state());
+        let added = add_named_repository("https://github.com/python/cpython", &app.state());
         let after = home(app.state());
         std::fs::remove_dir_all(root).unwrap();
 
@@ -202,26 +168,11 @@ mod tests {
     }
 
     #[test]
-    fn an_add_that_fails_leaves_the_copy_alone() {
-        let owner = SettingsOwner::start(Err(no_folders()));
-        let latest = LatestSettings::new(SettingsView {
-            home: cpython(),
-            ..SettingsView::default()
-        });
-
-        let refused = add_named_repository("a/b", &owner, &latest).unwrap_err();
-
-        assert_eq!(refused.message, no_folders().message);
-        assert_eq!(latest.get().home, cpython());
-    }
-
-    #[test]
     fn a_name_that_isnt_one_is_refused_before_anything_else_happens() {
         let owner = SettingsOwner::start(Err(no_folders()));
         let session = ended_session();
-        let latest = LatestSettings::default();
 
-        let adding = add_named_repository("nonsense", &owner, &latest).unwrap_err();
+        let adding = add_named_repository("nonsense", &owner).unwrap_err();
         let checking =
             check_typed_repository("nonsense", &session.repository_checks()).unwrap_err();
 
@@ -244,7 +195,6 @@ mod tests {
         let session = ended_session();
         let app = tauri::test::mock_builder()
             .invoke_handler(specta_builder().invoke_handler())
-            .manage(LatestSettings::default())
             .manage(session.repository_checks())
             .manage(SettingsOwner::start(Err(no_folders())))
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
@@ -296,22 +246,5 @@ mod tests {
 
         assert_eq!(answer.kind, ErrorKind::Offline);
         assert!(answer.message.contains("isn't connected"), "{answer:?}");
-    }
-
-    #[test]
-    fn a_panic_while_holding_the_lock_doesnt_stop_the_status_working() {
-        let latest = LatestStatus::default();
-        std::thread::scope(|scope| {
-            let holder = scope.spawn(|| {
-                let _guard = latest.0.lock();
-                panic!("a panic while holding the lock");
-            });
-            assert!(holder.join().is_err());
-        });
-        assert!(latest.0.is_poisoned());
-
-        assert_eq!(latest.get(), Status::Connecting);
-        latest.set(&Status::Offline);
-        assert_eq!(latest.get(), Status::Offline);
     }
 }

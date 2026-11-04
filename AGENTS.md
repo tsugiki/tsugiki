@@ -16,7 +16,12 @@ Single-context: `CONTEXT.md` and `docs/adr/` at the repo root, plus `docs/scope.
 
 Use [`just`](https://github.com/casey/just), and the `justfile` says how to install it. `just check` runs
 every check CI runs, one at a time on a few cores, because someone is working on this computer while it runs.
-`just` lists the rest. `just smoke` opens a window and presses real keys, so ask before you run it.
+`just` lists the rest.
+
+`just smoke` opens a window and presses real keys, so ask before each run, and before each release rehearsal
+on CI. It runs before a release. In a PR, run it only when the PR changes `crates/app/src/startup.rs`,
+`crates/webview-keys`, the Tauri config or the Tauri version. Test everything else without a window:
+`wiring.rs` drives the commands and events on Tauri's mock runtime.
 
 ## Where tests go
 

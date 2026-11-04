@@ -67,7 +67,7 @@ mod tests {
     fn cpython_has_a_backport_bot_and_github_has_none() {
         let bot = Login::new("Miss-Islington");
         assert!(Conventions::Cpython.is_backport_bot(&bot));
-        assert!(!Conventions::Cpython.is_backport_bot(&Login::new("vstinner")));
+        assert!(!Conventions::Cpython.is_backport_bot(&Login::new("some-author")));
         assert!(!Conventions::Github.is_backport_bot(&bot));
     }
 }

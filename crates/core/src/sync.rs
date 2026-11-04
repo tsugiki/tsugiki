@@ -417,7 +417,7 @@ mod tests {
                     "number": number,
                     "title": format!("Issue {number}"),
                     "updatedAt": "2026-11-04T10:00:00Z",
-                    "author": { "login": "vstinner" },
+                    "author": { "login": "some-author" },
                 });
                 (format!("i{number}"), issue)
             })

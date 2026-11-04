@@ -152,7 +152,7 @@ mod tests {
             "number": number,
             "title": format!("Issue {number}"),
             "updatedAt": "2026-11-04T10:00:00Z",
-            "author": { "login": "vstinner" },
+            "author": { "login": "some-author" },
         })
     }
 
@@ -168,7 +168,7 @@ mod tests {
             [IssueFacts {
                 number: 7,
                 title: "Issue 7".to_owned(),
-                author: Some(Login::new("vstinner")),
+                author: Some(Login::new("some-author")),
                 updated_at: OffsetDateTime::parse("2026-11-04T10:00:00Z", &Rfc3339).unwrap(),
             }]
         );

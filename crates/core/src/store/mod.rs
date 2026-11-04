@@ -481,12 +481,12 @@ mod tests {
                 "INSERT INTO viewer (id, login) VALUES (1, 'octocat');
                  INSERT INTO pull_requests
                      (repository, number, title, state, is_draft, author, target_branch, ci, updated_at)
-                 VALUES ('python/cpython', 1, 'gh-1: Fix it', 'OPEN', 0, 'vstinner', 'main', 'SUCCESS', 7);
+                 VALUES ('python/cpython', 1, 'gh-1: Fix it', 'OPEN', 0, 'some-author', 'main', 'SUCCESS', 7);
                  INSERT INTO closing_references VALUES ('python/cpython', 1, 7);
-                 INSERT INTO issues VALUES ('python/cpython', 1, 'It broke', 'vstinner', 7);
+                 INSERT INTO issues VALUES ('python/cpython', 1, 'It broke', 'some-author', 7);
                  INSERT INTO review_requests VALUES ('python/cpython', 1, 'octocat');
-                 INSERT INTO latest_reviews VALUES ('python/cpython', 1, 'hugovk', 'APPROVED');
-                 INSERT INTO assignees VALUES ('python/cpython', 1, 'pablogsal');",
+                 INSERT INTO latest_reviews VALUES ('python/cpython', 1, 'some-reviewer', 'APPROVED');
+                 INSERT INTO assignees VALUES ('python/cpython', 1, 'some-assignee');",
             )
             .unwrap();
         let (seen, statements) = mpsc::channel();

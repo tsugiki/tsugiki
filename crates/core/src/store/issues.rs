@@ -93,7 +93,7 @@ mod tests {
         IssueFacts {
             number,
             title: format!("Issue {number}"),
-            author: Some(Login::new("vstinner")),
+            author: Some(Login::new("some-author")),
             updated_at: OffsetDateTime::from_unix_timestamp(7).unwrap(),
         }
     }

@@ -204,7 +204,7 @@ mod tests {
     }
 
     fn someone() -> Login {
-        Login::new("vstinner")
+        Login::new("some-author")
     }
 
     /// A PR that has nothing to do with the viewer.
@@ -345,7 +345,7 @@ mod tests {
         IssueFacts {
             number,
             title: format!("Issue {number}"),
-            author: Some(Login::new("hugovk")),
+            author: Some(Login::new("issue-author")),
             updated_at: at(1),
         }
     }
@@ -488,10 +488,10 @@ mod tests {
 
     #[test]
     fn an_issues_people_are_its_author_then_its_prs_authors_once_each() {
-        let hugo = PullRequestFacts {
+        let issue_author = PullRequestFacts {
             number: 11,
             title: "gh-1: Fix it".to_owned(),
-            author: Some(Login::new("HugoVK")),
+            author: Some(Login::new("Issue-Author")),
             ..stranger()
         };
         let bot = PullRequestFacts {
@@ -506,8 +506,11 @@ mod tests {
             author: None,
             ..stranger()
         };
-        let found = workbench(vec![fixing(10, 1), hugo, bot, gone], vec![issue(1)]);
-        assert_eq!(first_issue(&found).people, [Login::new("hugovk"), me()],);
+        let found = workbench(vec![fixing(10, 1), issue_author, bot, gone], vec![issue(1)]);
+        assert_eq!(
+            first_issue(&found).people,
+            [Login::new("issue-author"), me()],
+        );
     }
 
     #[test]

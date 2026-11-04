@@ -383,16 +383,16 @@ mod tests {
             title: format!("gh-{number}: Fix it"),
             state: PrState::Open,
             is_draft: false,
-            author: Some(Login::new("vstinner")),
+            author: Some(Login::new("some-author")),
             target_branch: "main".to_owned(),
             ci: Some(CiState::Success),
             updated_at: OffsetDateTime::from_unix_timestamp(1).unwrap(),
             review_requests: vec![Login::new("Octocat")],
             latest_reviews: vec![LatestReview {
-                author: Login::new("hugovk"),
+                author: Login::new("some-reviewer"),
                 state: ReviewState::Approved,
             }],
-            assignees: vec![Login::new("pablogsal")],
+            assignees: vec![Login::new("some-assignee")],
             closing_issues: vec![7, 8],
             off_default_description: Some("Fixes #9".to_owned()),
         }
@@ -557,7 +557,7 @@ mod tests {
                 "SELECT count(*) AS found FROM pull_requests
                  WHERE repository = 'python/cpython' COLLATE BINARY AND number = 1
                    AND title = 'gh-1: Fix it' AND state = 'OPEN' AND is_draft = 0
-                   AND author = 'vstinner' AND target_branch = 'main' AND ci = 'SUCCESS'
+                   AND author = 'some-author' AND target_branch = 'main' AND ci = 'SUCCESS'
                    AND updated_at = 7 AND off_default_description = 'Fixes #9'",
             ),
             count(
@@ -570,13 +570,13 @@ mod tests {
                 &store,
                 "SELECT count(*) AS found FROM latest_reviews
                  WHERE repository = 'python/cpython' COLLATE BINARY AND number = 1
-                   AND login = 'hugovk' COLLATE BINARY AND state = 'APPROVED'",
+                   AND login = 'some-reviewer' COLLATE BINARY AND state = 'APPROVED'",
             ),
             count(
                 &store,
                 "SELECT count(*) AS found FROM assignees
                  WHERE repository = 'python/cpython' COLLATE BINARY AND number = 1
-                   AND login = 'pablogsal' COLLATE BINARY",
+                   AND login = 'some-assignee' COLLATE BINARY",
             ),
             count(
                 &store,
@@ -599,11 +599,11 @@ mod tests {
                 connection.execute_batch(
                     "INSERT INTO pull_requests
                          (repository, number, title, state, is_draft, author, target_branch, ci, updated_at)
-                     VALUES ('python/cpython', 1, 'gh-1: Fix it', 'OPEN', 0, 'vstinner', 'main', 'SUCCESS',
+                     VALUES ('python/cpython', 1, 'gh-1: Fix it', 'OPEN', 0, 'some-author', 'main', 'SUCCESS',
                              7);
                      INSERT INTO review_requests VALUES ('python/cpython', 1, 'Octocat');
-                     INSERT INTO latest_reviews VALUES ('python/cpython', 1, 'hugovk', 'APPROVED');
-                     INSERT INTO assignees VALUES ('python/cpython', 1, 'pablogsal');",
+                     INSERT INTO latest_reviews VALUES ('python/cpython', 1, 'some-reviewer', 'APPROVED');
+                     INSERT INTO assignees VALUES ('python/cpython', 1, 'some-assignee');",
                 )
             })
             .unwrap()
@@ -627,7 +627,7 @@ mod tests {
         let (store, open, reader, _path, folder) = opened("pr-casing");
         store.remember_login(&Login::new("OctoCat")).unwrap();
         let twice = PullRequestFacts {
-            review_requests: vec![Login::new("HugoVK"), Login::new("hugovk")],
+            review_requests: vec![Login::new("Some-Reviewer"), Login::new("some-reviewer")],
             ..facts(1)
         };
 
@@ -646,7 +646,7 @@ mod tests {
             .flat_map(|pr| &pr.review_requests)
             .map(Login::as_str)
             .collect();
-        assert_eq!(requested, ["HugoVK"]);
+        assert_eq!(requested, ["Some-Reviewer"]);
         assert_eq!(viewer.as_str(), "OctoCat");
     }
 

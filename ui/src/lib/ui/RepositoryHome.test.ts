@@ -16,7 +16,7 @@ vi.mock("$lib/data/bindings", () => ({
 const row = {
   number: 160662,
   title: "gh-112564: Fix UAF for gc debug print",
-  author: "johng",
+  author: "some-author",
   is_draft: false,
   target_branch: "main",
   ci: "SUCCESS",
@@ -28,7 +28,7 @@ const issue = {
   kind: "issue",
   number: 112564,
   title: "GIL drop during collection",
-  people: ["olutra", "johng"],
+  people: ["issue-author", "some-author"],
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [row],
 };
@@ -67,7 +67,9 @@ it("lists a Standalone PR with the time it changed", async () => {
 
   expect(core.workbench).toHaveBeenCalledWith("python/cpython");
   expect(within(item).getByText("#160662 gh-112564: Fix UAF for gc debug print")).toBeTruthy();
-  expect(within(item).getByText("Review request · johng · into main · CI passed · 3h ago")).toBeTruthy();
+  expect(
+    within(item).getByText("Review request · some-author · into main · CI passed · 3h ago"),
+  ).toBeTruthy();
 });
 
 it("moves a time on while the window stays open", async () => {
@@ -76,11 +78,11 @@ it("moves a time on while the window stays open", async () => {
   vi.setSystemTime("2026-11-04T13:00:00Z");
   core.workbench.mockResolvedValue({ status: "ok", data: { items: [issue] } });
   const { unmount } = render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
-  await screen.findByText("olutra, johng · 1 PR · 3h ago");
+  await screen.findByText("issue-author, some-author · 1 PR · 3h ago");
 
   await vi.advanceTimersByTimeAsync(60 * 60_000);
 
-  expect(screen.getByText("olutra, johng · 1 PR · 4h ago")).toBeTruthy();
+  expect(screen.getByText("issue-author, some-author · 1 PR · 4h ago")).toBeTruthy();
   unmount();
   expect(vi.getTimerCount()).toBe(0);
 });
@@ -93,12 +95,12 @@ it("lists an Issue with its PRs under it", async () => {
   const [item, pullRequest] = await screen.findAllByRole("listitem");
 
   expect(within(item as HTMLElement).getByText("#112564 GIL drop during collection")).toBeTruthy();
-  expect(within(item as HTMLElement).getByText("olutra, johng · 1 PR · 3h ago")).toBeTruthy();
+  expect(within(item as HTMLElement).getByText("issue-author, some-author · 1 PR · 3h ago")).toBeTruthy();
   expect(
     within(pullRequest as HTMLElement).getByText("#160662 gh-112564: Fix UAF for gc debug print"),
   ).toBeTruthy();
   expect(
-    within(pullRequest as HTMLElement).getByText("Review request · johng · into main · CI passed"),
+    within(pullRequest as HTMLElement).getByText("Review request · some-author · into main · CI passed"),
   ).toBeTruthy();
 });
 

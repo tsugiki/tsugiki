@@ -11,7 +11,7 @@ const cpython = { screen: "repository", repository } as const;
 const reviewRow: WorkbenchRow = {
   number: 160662,
   title: "gh-112564: Fix UAF for gc debug print",
-  author: "johng",
+  author: "some-author",
   is_draft: false,
   target_branch: "main",
   ci: "SUCCESS",
@@ -23,7 +23,7 @@ const review: WorkbenchItem = {
   kind: "issue",
   number: 112564,
   title: "GIL drop during collection",
-  people: ["olutra", "johng"],
+  people: ["issue-author", "some-author"],
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [reviewRow],
 };
@@ -47,9 +47,9 @@ test("the Workbench lists what waits on the user", async ({ page }) => {
   const rows = page.getByRole("listitem");
   await expect(rows).toHaveCount(3);
   await expect(rows.nth(0)).toContainText("#112564 GIL drop during collection");
-  await expect(rows.nth(0)).toContainText("olutra, johng · 1 PR · ");
+  await expect(rows.nth(0)).toContainText("issue-author, some-author · 1 PR · ");
   await expect(rows.nth(1)).toContainText("#160662 gh-112564: Fix UAF for gc debug print");
-  await expect(rows.nth(1)).toContainText("Review request · johng · into main · CI passed");
+  await expect(rows.nth(1)).toContainText("Review request · some-author · into main · CI passed");
   await expect(rows.nth(2)).toContainText("Own PR · octocat · into 3.14 · Draft · CI failed · ");
 });
 

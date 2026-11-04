@@ -1,5 +1,6 @@
 <script lang="ts">
   import { WorkbenchState, type BackportRow } from "$lib/state/workbench.svelte";
+  import Sidebar from "./Sidebar.svelte";
   import { details, headline, issueDetails, standaloneDetails } from "./workbench-row";
 
   const MINUTE = 60_000;
@@ -42,46 +43,64 @@
   {/if}
 {/snippet}
 
-<section>
-  <h1>{name}</h1>
-  <button onclick={onadd}>Add repository</button>
-  {#if workbench.error}
-    <!-- One expression: Svelte compiles `{a} {b}` with `?? ""` branches that no test can reach. -->
-    <p role="alert">{`Tsugiki can't read this Workbench: ${workbench.error}`}</p>
-  {/if}
-  {#if workbench.items?.length === 0}
-    <p>Nothing here yet. The first sync lists what waits on you as it finds it.</p>
-  {:else if workbench.items}
-    <ul>
-      {#each workbench.items as item (item.number)}
-        <li>
-          <span>{headline(item)}</span>
-          {#if item.kind === "issue"}
-            <small>{issueDetails(item, now)}</small>
-            <ul class="pull-requests">
-              {#each item.pull_requests as entry (entry.number)}
-                <li>
-                  <span>{headline(entry)}</span>
-                  <small>{details(entry)}</small>
-                  {#if entry.kind === "pr"}
-                    {@render backports(entry.backports)}
-                  {/if}
-                </li>
-              {/each}
-            </ul>
-          {:else}
-            <small>{standaloneDetails(item, now)}</small>
-            {#if item.kind === "standalone_pr"}
-              {@render backports(item.backports)}
+<div class="home">
+  <Sidebar
+    count={workbench.count}
+    filters={workbench.filters}
+    selected={workbench.selected}
+    onselect={(query) => void workbench.select(query)}
+  />
+  <section>
+    <h1>{name}</h1>
+    <button onclick={onadd}>Add repository</button>
+    {#if workbench.error}
+      <!-- One expression: Svelte compiles `{a} {b}` with `?? ""` branches that no test can reach. -->
+      <p role="alert">{`Tsugiki can't read this Workbench: ${workbench.error}`}</p>
+    {/if}
+    {#if workbench.items?.length === 0 && workbench.selected !== null}
+      <p>
+        Nothing in this Filter yet. If a sync has run, check its query in settings.toml: GitHub finds nothing
+        for a search it can't read.
+      </p>
+    {:else if workbench.items?.length === 0}
+      <p>Nothing here yet. The first sync lists what waits on you as it finds it.</p>
+    {:else if workbench.items}
+      <ul>
+        {#each workbench.items as item (item.number)}
+          <li>
+            <span>{headline(item)}</span>
+            {#if item.kind === "issue"}
+              <small>{issueDetails(item, now)}</small>
+              <ul class="pull-requests">
+                {#each item.pull_requests as entry (entry.number)}
+                  <li>
+                    <span>{headline(entry)}</span>
+                    <small>{details(entry)}</small>
+                    {#if entry.kind === "pr"}
+                      {@render backports(entry.backports)}
+                    {/if}
+                  </li>
+                {/each}
+              </ul>
+            {:else}
+              <small>{standaloneDetails(item, now)}</small>
+              {#if item.kind === "standalone_pr"}
+                {@render backports(item.backports)}
+              {/if}
             {/if}
-          {/if}
-        </li>
-      {/each}
-    </ul>
-  {/if}
-</section>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </section>
+</div>
 
 <style>
+  .home {
+    display: flex;
+    gap: 16px;
+  }
+
   h1 {
     font-size: 16px;
   }

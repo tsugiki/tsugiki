@@ -1,11 +1,13 @@
 import { expect, test } from "@playwright/test";
 import type {
+  Filter,
   WorkbenchItem_Serialize as WorkbenchItem,
   WorkbenchRow_Serialize as WorkbenchRow,
 } from "../src/lib/data/bindings.ts";
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
 
-const repository = { name: "python/cpython", conventions: "cpython" } as const;
+const mine = { name: "Mine", query: "is:open author:@me", count: 1, problem: null };
+const repository = { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] } as const;
 const cpython = { screen: "repository", repository } as const;
 
 const reviewRow: WorkbenchRow = {
@@ -60,7 +62,10 @@ const own: WorkbenchItem = {
 };
 
 test("the Workbench lists what waits on the user", async ({ page }) => {
-  await mockCore(page, { home: cpython, workbench: { status: "ok", data: { items: [review, own] } } });
+  await mockCore(page, {
+    home: cpython,
+    workbench: { status: "ok", data: { items: [review, own], count: 2, filters: [] } },
+  });
   await page.goto("/");
 
   const rows = page.getByRole("listitem");
@@ -74,16 +79,36 @@ test("the Workbench lists what waits on the user", async ({ page }) => {
 });
 
 test("the first sync's rows appear as the core saves them", async ({ page }) => {
-  await mockCore(page, { home: cpython, workbench: { status: "ok", data: { items: [] } } });
+  await mockCore(page, {
+    home: cpython,
+    workbench: { status: "ok", data: { items: [], count: 0, filters: [] } },
+  });
   await page.goto("/");
   await expect(page.getByText(/Nothing here yet/)).toBeVisible();
 
-  await changeAnswer(page, "workbench", { status: "ok", data: { items: [own] } });
+  await changeAnswer(page, "workbench", { status: "ok", data: { items: [own], count: 1, filters: [] } });
   await emitFromCore(page, "workbench-changed", { repository: "tsugiki/tsugiki" });
   await emitFromCore(page, "workbench-changed", { repository: repository.name });
 
   await expect(page.getByRole("listitem")).toHaveCount(1);
   await expect(page.getByText(/Nothing here yet/)).toBeHidden();
+});
+
+test("the Sidebar lists the Filters, and selecting one shows its Issues", async ({ page }) => {
+  const whole = { items: [review, own], count: 2, filters: [mine] };
+  await mockCore(page, { home: cpython, workbench: { status: "ok", data: whole } });
+  await page.goto("/");
+
+  const sidebar = page.getByRole("navigation", { name: "Sidebar" });
+  await expect(sidebar.getByRole("button", { name: "Workbench 2" })).toHaveAttribute("aria-current", "true");
+  await expect(page.getByRole("listitem")).toHaveCount(4);
+
+  await changeAnswer(page, "workbench", { status: "ok", data: { ...whole, items: [own] } });
+  await sidebar.getByRole("button", { name: "Mine 1" }).click();
+
+  await expect(page.getByRole("listitem")).toHaveCount(1);
+  await expect(page.getByRole("listitem")).toContainText("#157178 GH-156425: Clear GC frame on early return");
+  await expect(sidebar.getByRole("button", { name: "Mine 1" })).toHaveAttribute("aria-current", "true");
 });
 
 test("the Workbench says why it can't read", async ({ page }) => {

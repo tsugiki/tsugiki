@@ -7,7 +7,7 @@ const core = vi.hoisted(() => ({ checkRepository: vi.fn(), addRepository: vi.fn(
 vi.mock("$lib/data/bindings", () => ({ commands: core }));
 
 const check: RepositoryCheck = {
-  repository: { name: "sergey-miryanov/gcmon", conventions: "github" },
+  repository: { name: "sergey-miryanov/gcmon", conventions: "github", filters: [] },
   open_issues: 10,
   open_prs: 3,
   size: "small",
@@ -15,6 +15,7 @@ const check: RepositoryCheck = {
   first_sync_items: 48,
   first_sync_seconds: 5,
   first_sync_points: 12,
+  access: "other",
 };
 
 const home = { screen: "repository", repository: check.repository } as const;

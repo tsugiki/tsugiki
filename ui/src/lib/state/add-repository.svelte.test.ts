@@ -5,7 +5,7 @@ import { AddRepositoryState } from "./add-repository.svelte";
 vi.mock("$lib/data/bindings", () => ({ commands: { checkRepository: vi.fn(), addRepository: vi.fn() } }));
 
 const check: RepositoryCheck_Serialize = {
-  repository: { name: "Sergey-Miryanov/gcmon", conventions: "github" },
+  repository: { name: "Sergey-Miryanov/gcmon", conventions: "github", filters: [] },
   open_issues: 10,
   open_prs: 3,
   size: "small",
@@ -13,6 +13,7 @@ const check: RepositoryCheck_Serialize = {
   first_sync_items: 48,
   first_sync_seconds: 5,
   first_sync_points: 12,
+  access: "maintained",
 };
 
 const notFound = { kind: "not_found", message: "GitHub has no Repository named a/b." } as const;
@@ -86,7 +87,7 @@ it("adds by the name GitHub gave and returns what the window opens on", async ()
   expect(state.step).toEqual({ step: "adding", check });
 
   expect(await adding).toEqual(home);
-  expect(commands.addRepository).toHaveBeenCalledWith("Sergey-Miryanov/gcmon");
+  expect(commands.addRepository).toHaveBeenCalledWith("Sergey-Miryanov/gcmon", "maintained");
 });
 
 it("says why an add failed", async () => {

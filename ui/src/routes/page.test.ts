@@ -23,11 +23,11 @@ vi.mock("$lib/data/bindings", () => ({
 }));
 
 const onboarding = { screen: "onboarding", token: "gh" } as const;
-const gcmon = { name: "sergey-miryanov/gcmon", conventions: "github" } as const;
+const gcmon = { name: "sergey-miryanov/gcmon", conventions: "github", filters: [] } as const;
 
 beforeEach(() => {
   core.home.mockResolvedValue(onboarding);
-  core.workbench.mockResolvedValue({ status: "ok", data: { items: [] } });
+  core.workbench.mockResolvedValue({ status: "ok", data: { items: [], count: 0, filters: [] } });
   core.settings.mockResolvedValue({
     settings: { status_bar: { visible: true }, repositories: [] },
     problems: [],
@@ -69,6 +69,7 @@ it("adds a Repository from onboarding and then shows it", async () => {
       first_sync_items: 48,
       first_sync_seconds: 5,
       first_sync_points: 12,
+      access: "other",
     },
   });
   render(Page);

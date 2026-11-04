@@ -5,10 +5,12 @@
 
 mod columns;
 mod file;
+mod filters;
 mod issues;
 mod migrate;
 mod pull_requests;
 
+use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::fs;
 use std::path::Path;
@@ -19,10 +21,12 @@ use std::thread::{self, JoinHandle};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, named_params};
 
 use crate::error::{Error, ErrorKind};
+use crate::filters::FilterQuery;
 use crate::github::Login;
 use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::PullRequestFacts;
 use crate::repository::RepositoryName;
+pub use filters::FilterResults;
 use migrate::{MIGRATIONS, Migration};
 
 const CANT_OPEN: &str = "Tsugiki can't open its database";
@@ -71,16 +75,74 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// The merged and closed PRs of `repository`, which a sync doesn't fetch again (ADR 0011).
-    pub fn frozen_pull_requests(
+    /// Each PR Tsugiki has of `repository`, for a sync to see what it's missing.
+    pub fn pull_requests(
         &self,
         repository: &RepositoryName,
     ) -> Result<Vec<PullRequestFacts>, Error> {
         let repository = repository.clone();
         let read = self.call(move |connection| pull_requests::read_all(connection, &repository))?;
-        let mut found = read.map_err(saying(CANT_READ))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    /// The merged and closed PRs of `repository`, which a sync doesn't fetch again (ADR 0011).
+    pub fn frozen_pull_requests(
+        &self,
+        repository: &RepositoryName,
+    ) -> Result<Vec<PullRequestFacts>, Error> {
+        let mut found = self.pull_requests(repository)?;
         found.retain(PullRequestFacts::is_frozen);
         Ok(found)
+    }
+
+    /// Each Issue Tsugiki has of `repository`, for a sync to see what it's missing.
+    pub fn issues(&self, repository: &RepositoryName) -> Result<Vec<IssueFacts>, Error> {
+        let repository = repository.clone();
+        let read = self.call(move |connection| issues::read_all(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    /// Replaces what the search `query` found in `repository`, in one transaction (ADR 0010).
+    pub fn save_filter_results(
+        &self,
+        repository: &RepositoryName,
+        query: &FilterQuery,
+        results: FilterResults,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let query = query.clone();
+        let saved =
+            self.call(move |connection| filters::save(connection, &repository, &query, &results))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Says what stopped the search `query`, and leaves what it last found.
+    pub fn save_filter_problem(
+        &self,
+        repository: &RepositoryName,
+        query: &FilterQuery,
+        problem: &str,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let query = query.clone();
+        let problem = problem.to_owned();
+        let save = move |connection: &mut Connection| {
+            filters::save_problem(connection, &repository, &query, &problem)
+        };
+        let saved = self.call(save)?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Removes the results of each search of `repository` outside `keep`, which the user has edited away.
+    pub fn keep_only_filters(
+        &self,
+        repository: &RepositoryName,
+        keep: Vec<FilterQuery>,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved =
+            self.call(move |connection| filters::keep_only(connection, &repository, &keep))?;
+        saved.map_err(saying(CANT_WRITE))
     }
 
     /// Stores `issues` of `repository` in one transaction (ADR 0010).
@@ -130,6 +192,8 @@ pub struct WorkFacts {
     pub viewer: Option<Login>,
     pub pull_requests: Vec<PullRequestFacts>,
     pub issues: Vec<IssueFacts>,
+    /// Each search of this Repository, with its last results.
+    pub filters: BTreeMap<FilterQuery, FilterResults>,
 }
 
 fn read_last_login(connection: &Connection) -> rusqlite::Result<Option<Login>> {
@@ -161,6 +225,7 @@ fn read_work_facts(
         viewer: read_last_login(&transaction)?,
         pull_requests: pull_requests::read_all(&transaction, repository)?,
         issues: issues::read_all(&transaction, repository)?,
+        filters: filters::read_all(&transaction, repository)?,
     })
 }
 
@@ -526,6 +591,12 @@ mod tests {
         write_last_login(connection, &viewer).unwrap();
         pull_requests::save(connection, &cpython, &[pull_request]).unwrap();
         issues::save(connection, &cpython, &[issue]).unwrap();
+        let query: FilterQuery = "is:open".to_owned().try_into().unwrap();
+        let results = FilterResults {
+            numbers: [1].into(),
+            problem: Some("It was cut off".to_owned()),
+        };
+        filters::save(connection, &cpython, &query, &results).unwrap();
         let (seen, statements) = mpsc::channel();
         let trace = move |event: TraceEvent<'_>| {
             if let TraceEvent::Stmt(_, sql) = event {
@@ -574,8 +645,10 @@ mod tests {
             "cherry_picks",
             "committers",
             "issues",
+            "filter_matches",
+            "filter_problems",
         ];
-        assert_eq!(tables.map(reads), [true; 9]);
+        assert_eq!(tables.map(reads), [true; 11]);
     }
 
     #[test]

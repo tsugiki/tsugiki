@@ -1,8 +1,9 @@
 import { expect, test } from "@playwright/test";
+import type { Filter } from "../src/lib/data/bindings.ts";
 import { mockCore } from "./mock-core.ts";
 
 const check = {
-  repository: { name: "python/cpython", conventions: "cpython" },
+  repository: { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] },
   open_issues: 6935,
   open_prs: 2308,
   size: "large",
@@ -10,6 +11,7 @@ const check = {
   first_sync_items: 4754,
   first_sync_seconds: 546,
   first_sync_points: 223,
+  access: "other",
 } as const;
 
 const cpython = { screen: "repository", repository: check.repository } as const;
@@ -20,7 +22,7 @@ test("adding the first Repository goes from onboarding to the Repository", async
     home: onboarding,
     checkRepository: { status: "ok", data: check },
     addRepository: { status: "ok", data: cpython },
-    workbench: { status: "ok", data: { items: [] } },
+    workbench: { status: "ok", data: { items: [], count: 0, filters: [] } },
   });
   await page.goto("/");
   await expect(page.getByText("Your token comes from the GitHub CLI")).toBeVisible();
@@ -62,7 +64,10 @@ test("a Repository GitHub doesn't have is named in the dialog, and Esc leaves on
 });
 
 test("a normal launch opens on the Repository the core names", async ({ page }) => {
-  await mockCore(page, { home: cpython, workbench: { status: "ok", data: { items: [] } } });
+  await mockCore(page, {
+    home: cpython,
+    workbench: { status: "ok", data: { items: [], count: 0, filters: [] } },
+  });
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "python/cpython" })).toBeVisible();
   await expect(page.getByText("Your token comes from")).toBeHidden();

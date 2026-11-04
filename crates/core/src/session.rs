@@ -10,7 +10,7 @@ use time::OffsetDateTime;
 use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
 use crate::github::{GitHub, GitHubAccess};
-use crate::repository::{RepositoryCheck, RepositoryName};
+use crate::repository::{RepositoryCheck, RepositoryName, RepositorySettings};
 use crate::status::{Status, StatusBoard};
 use crate::store::{self, OpenReader, ReaderToOpen, Store, StoreReader};
 use crate::sync::Syncs;
@@ -62,7 +62,7 @@ enum Message {
         reply: Sender<Result<RepositoryCheck, Error>>,
     },
     Sync {
-        name: RepositoryName,
+        repository: RepositorySettings,
     },
 }
 
@@ -74,10 +74,11 @@ pub struct SessionRequests {
 }
 
 impl SessionRequests {
-    /// Asks the session to load the user's work in `name`, and returns at once. A session with no token or no
-    /// database has already shown why on the status bar, so this reports no failure.
-    pub fn sync(&self, name: RepositoryName) {
-        drop(self.messages.send(Message::Sync { name }));
+    /// Asks the session to load the user's work and the Filters of `repository`, and returns at once. A
+    /// session with no token or no database has already shown why on the status bar, so this reports no
+    /// failure.
+    pub fn sync(&self, repository: RepositorySettings) {
+        drop(self.messages.send(Message::Sync { repository }));
     }
 
     /// Asks GitHub what adding `name` would load. A session with no token or no database answers with an
@@ -186,7 +187,7 @@ impl Refreshes {
                 .incoming
                 .recv_timeout(wake.saturating_duration_since(Instant::now()))
             {
-                Ok(Message::Sync { name }) => syncs.add(name),
+                Ok(Message::Sync { repository }) => syncs.add(repository),
                 Ok(Message::Check { name, reply }) => {
                     let today = OffsetDateTime::now_utc().date();
                     #[expect(
@@ -302,6 +303,7 @@ fn status_after(problem: Error, store: &Store) -> Status {
         | ErrorKind::RateLimited { .. }
         | ErrorKind::NotFound
         | ErrorKind::Conflict
+        | ErrorKind::QueryRefused
         | ErrorKind::Internal => Status::Problem { problem },
     }
 }
@@ -311,7 +313,6 @@ mod tests {
     use super::*;
     use crate::github::testing::{Canned, Scripted, answered, reply_ok, signed_in_gh};
     use crate::github::{Login, Reply, Request, Transport, Unreachable};
-    use crate::repository::RepositorySettings;
     use crate::status::testing::{announced, quiet_board, showing, watched_board, workbench_board};
     use crate::workbench::{Workbench, WorkbenchItem};
     use std::cell::RefCell;
@@ -583,6 +584,14 @@ mod tests {
         RepositoryName::parse("sergey-miryanov/gcmon").unwrap()
     }
 
+    /// A Repository with no Filters, so a sync asks for what these tests script.
+    fn plain_gcmon() -> RepositorySettings {
+        RepositorySettings {
+            filters: Vec::new(),
+            ..RepositorySettings::new(gcmon())
+        }
+    }
+
     #[test]
     fn a_session_answers_a_check_between_refreshes() {
         // `Replies` panics if it is asked a third time, so the check can't bring a refresh with it.
@@ -727,9 +736,9 @@ mod tests {
         let session = Session::start(board, Ok(folders.clone()), access, AN_HOUR);
         let reader = session.reader();
 
-        session.requests().sync(gcmon());
+        session.requests().sync(plain_gcmon());
         let changed = changes.recv().unwrap();
-        let workbench = Workbench::read(&reader, &RepositorySettings::new(gcmon())).unwrap();
+        let workbench = Workbench::read(&reader, &plain_gcmon(), None).unwrap();
         session.stop(PLENTY);
         fs::remove_dir_all(folders.data).unwrap();
 
@@ -753,7 +762,7 @@ mod tests {
             crate::github::testing::token(),
         );
         let mut syncs = Syncs::default();
-        syncs.add(gcmon());
+        syncs.add(plain_gcmon());
         let refresh_at = Instant::now() + AN_HOUR;
 
         let answer = thread::scope(|scope| {
@@ -782,7 +791,7 @@ mod tests {
         let requests = SessionRequests {
             messages: messages.clone(),
         };
-        requests.sync(gcmon());
+        requests.sync(plain_gcmon());
         let (passed, seen) = mpsc::channel();
         let mut shown = 0;
         let mut board = StatusBoard::new(Box::new(move |status: &Status| {
@@ -843,9 +852,9 @@ mod tests {
         );
         let reader = session.reader();
 
-        session.requests().sync(gcmon());
+        session.requests().sync(plain_gcmon());
         drop(changes.recv().unwrap());
-        let workbench = Workbench::read(&reader, &RepositorySettings::new(gcmon())).unwrap();
+        let workbench = Workbench::read(&reader, &plain_gcmon(), None).unwrap();
         session.stop(PLENTY);
         fs::remove_dir_all(folders.data).unwrap();
 
@@ -862,7 +871,7 @@ mod tests {
         let session = Session::start(quiet_board(), Ok(folders.clone()), access, AN_HOUR);
         let requests = session.requests();
 
-        requests.sync(gcmon());
+        requests.sync(plain_gcmon());
         let checked = requests.check(gcmon());
         let facts = session.reader().work_facts(&gcmon());
         session.stop(PLENTY);
@@ -889,7 +898,7 @@ mod tests {
         let (messages, incoming) = mpsc::channel();
         drop(incoming);
 
-        SessionRequests { messages }.sync(gcmon());
+        SessionRequests { messages }.sync(plain_gcmon());
     }
 
     #[test]

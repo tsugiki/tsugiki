@@ -5,6 +5,7 @@ use rusqlite::ToSql;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
 use time::OffsetDateTime;
 
+use crate::filters::FilterQuery;
 use crate::github::pull_requests::{CiState, PrState, ReviewState};
 use crate::github::{CommitSha, Login};
 use crate::repository::RepositoryName;
@@ -35,6 +36,19 @@ impl ToSql for Login {
 impl FromSql for Login {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         value.as_str().map(Self::new)
+    }
+}
+
+impl ToSql for FilterQuery {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        self.as_str().to_sql()
+    }
+}
+
+impl FromSql for FilterQuery {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        Self::try_from(value.as_str()?.to_owned())
+            .map_err(|problem| FromSqlError::Other(problem.into()))
     }
 }
 
@@ -156,6 +170,19 @@ mod tests {
             [],
             |row| row.get::<_, CommitSha>("value"),
         );
+        assert!(refused.is_err());
+    }
+
+    #[test]
+    fn a_filter_query_reads_back_as_itself_and_refuses_a_blank() {
+        let query = FilterQuery::try_from("is:open".to_owned()).unwrap();
+        assert_eq!(stored_texts(&[query]), ["is:open"]);
+        let refused =
+            Connection::open_in_memory()
+                .unwrap()
+                .query_row("SELECT '  ' AS value", [], |row| {
+                    row.get::<_, FilterQuery>("value")
+                });
         assert!(refused.is_err());
     }
 

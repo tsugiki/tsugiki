@@ -13,8 +13,9 @@ pub use startup::run;
 use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
 use tsugiki_core::error::Error;
+use tsugiki_core::filters::FilterQuery;
 use tsugiki_core::latest::LatestReader;
-use tsugiki_core::repository::{Home, RepositoryCheck, RepositoryName};
+use tsugiki_core::repository::{Home, RepositoryAccess, RepositoryCheck, RepositoryName};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{LoadedSettings, SettingsOwner};
 use tsugiki_core::status::Status;
@@ -60,10 +61,13 @@ fn check_typed_repository(
 /// Adds the Repository and starts its first sync (ADR 0015).
 fn add_named_repository(
     name: &str,
+    access: RepositoryAccess,
     owner: &SettingsOwner,
     requests: &SessionRequests,
 ) -> Result<Home, Error> {
-    let home = owner.add_repository(RepositoryName::parse(name)?)?.home;
+    let home = owner
+        .add_repository(RepositoryName::parse(name)?, access)?
+        .home;
     sync_home(&home, requests);
     Ok(home)
 }
@@ -72,19 +76,20 @@ fn add_named_repository(
 /// window recognises the changes.
 fn sync_home(home: &Home, requests: &SessionRequests) {
     match home {
-        Home::Repository { repository } => requests.sync(repository.name.clone()),
+        Home::Repository { repository } => requests.sync(repository.clone()),
         Home::Onboarding { .. } => {}
     }
 }
 
 fn read_workbench(
     repository: &str,
+    selected: Option<&FilterQuery>,
     owner: &SettingsOwner,
     reader: &StoreReader,
 ) -> Result<Workbench, Error> {
     let name = RepositoryName::parse(repository)?;
     let repository = owner.view().loaded.settings.repository(name);
-    Workbench::read(reader, &repository)
+    Workbench::read(reader, &repository, selected)
 }
 
 /// Sent whenever the app-wide state changes (ADR 0008).
@@ -121,6 +126,7 @@ mod tests {
     use tauri::test::mock_app;
     use tsugiki_core::conventions::Conventions;
     use tsugiki_core::error::ErrorKind;
+    use tsugiki_core::filters::Filter;
     use tsugiki_core::folders::Folders;
     use tsugiki_core::github::GitHubAccess;
     use tsugiki_core::github::live::{Https, run_gh};
@@ -146,6 +152,7 @@ mod tests {
             repository: RepositorySettings {
                 name: RepositoryName::parse("python/cpython").unwrap(),
                 conventions: Conventions::Cpython,
+                filters: Filter::starters(RepositoryAccess::Other),
             },
         }
     }
@@ -202,6 +209,7 @@ mod tests {
         let session = ended_session();
         let added = add_named_repository(
             "https://github.com/python/cpython",
+            RepositoryAccess::Other,
             &app.state(),
             &session.requests(),
         );
@@ -217,9 +225,15 @@ mod tests {
         let owner = SettingsOwner::start(Err(no_folders()));
         let session = ended_session();
 
-        let adding = add_named_repository("nonsense", &owner, &session.requests()).unwrap_err();
+        let adding = add_named_repository(
+            "nonsense",
+            RepositoryAccess::Other,
+            &owner,
+            &session.requests(),
+        )
+        .unwrap_err();
         let checking = check_typed_repository("nonsense", &session.requests()).unwrap_err();
-        let reading = read_workbench("nonsense", &owner, &session.reader()).unwrap_err();
+        let reading = read_workbench("nonsense", None, &owner, &session.reader()).unwrap_err();
 
         assert_eq!(adding.kind, ErrorKind::NotFound);
         assert_eq!(checking.kind, ErrorKind::NotFound);

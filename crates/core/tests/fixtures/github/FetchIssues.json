@@ -2,8 +2,8 @@
   "body": {
     "data": {
       "rateLimit": {
-        "remaining": 4929,
-        "resetAt": "2026-11-04T18:18:45Z"
+        "remaining": 4962,
+        "resetAt": "2026-11-04T20:36:48Z"
       },
       "repository": {
         "i112564": {
@@ -27,11 +27,20 @@
         "i138864": {
           "__typename": "Issue",
           "author": {
-            "login": "user-16"
+            "login": "user-17"
           },
           "number": 138864,
           "title": "`case ...:` generates unclear `SyntaxError` message",
           "updatedAt": "2025-10-04T12:57:44Z"
+        },
+        "i139389": {
+          "__typename": "Issue",
+          "author": {
+            "login": "octocat"
+          },
+          "number": 139389,
+          "title": "Do not track immutable tuples in PyTuple_Pack",
+          "updatedAt": "2025-10-19T20:59:53Z"
         },
         "i139778": {
           "__typename": "Issue",
@@ -87,10 +96,19 @@
           "title": "JIT x Free-Threading",
           "updatedAt": "2026-01-10T00:04:36Z"
         },
+        "i145970": {
+          "__typename": "Issue",
+          "author": {
+            "login": "octocat"
+          },
+          "number": 145970,
+          "title": "Remote debugger should be checked only if interpreter paused on STW",
+          "updatedAt": "2026-03-15T10:50:56Z"
+        },
         "i148937": {
           "__typename": "Issue",
           "author": {
-            "login": "user-28"
+            "login": "user-6"
           },
           "number": 148937,
           "title": "GC in 3.14t can defer too much, resulting in high memory use",
@@ -99,7 +117,7 @@
         "i149532": {
           "__typename": "Issue",
           "author": {
-            "login": "user-16"
+            "login": "user-17"
           },
           "number": 149532,
           "title": "Remove `bool.__invert__` for 3.16",
@@ -126,7 +144,7 @@
         "i151862": {
           "__typename": "Issue",
           "author": {
-            "login": "user-21"
+            "login": "user-22"
           },
           "number": 151862,
           "title": "concurrent.interpreters: crash (NULL dereference) when an unpickled AttributeError has a non-string arg",
@@ -144,7 +162,7 @@
         "i153058": {
           "__typename": "Issue",
           "author": {
-            "login": "user-12"
+            "login": "user-13"
           },
           "number": 153058,
           "title": "weakrefobject.c: binary, ternary, or comparison operations ref leak with dead proxy",
@@ -153,7 +171,7 @@
         "i155176": {
           "__typename": "Issue",
           "author": {
-            "login": "user-12"
+            "login": "user-13"
           },
           "number": 155176,
           "title": "Don't track frozendicts whose contents can never be tracked by the GC",
@@ -162,7 +180,7 @@
         "i155181": {
           "__typename": "Issue",
           "author": {
-            "login": "user-12"
+            "login": "user-13"
           },
           "number": 155181,
           "title": "frozenset() created from a set literal is not untracked by the GC",
@@ -171,7 +189,7 @@
         "i155728": {
           "__typename": "Issue",
           "author": {
-            "login": "user-9"
+            "login": "user-10"
           },
           "number": 155728,
           "title": "test_track_literals depends on a garbage collection",
@@ -207,7 +225,7 @@
       }
     }
   },
-  "query": "query FetchIssues($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { i112564: issueOrPullRequest(number: 112564) { __typename ... on Issue { number title updatedAt author { login } } } i128942: issueOrPullRequest(number: 128942) { __typename ... on Issue { number title updatedAt author { login } } } i138864: issueOrPullRequest(number: 138864) { __typename ... on Issue { number title updatedAt author { login } } } i139778: issueOrPullRequest(number: 139778) { __typename ... on Issue { number title updatedAt author { login } } } i140256: issueOrPullRequest(number: 140256) { __typename ... on Issue { number title updatedAt author { login } } } i140328: issueOrPullRequest(number: 140328) { __typename ... on Issue { number title updatedAt author { login } } } i140798: issueOrPullRequest(number: 140798) { __typename ... on Issue { number title updatedAt author { login } } } i140928: issueOrPullRequest(number: 140928) { __typename ... on Issue { number title updatedAt author { login } } } i141594: issueOrPullRequest(number: 141594) { __typename ... on Issue { number title updatedAt author { login } } } i148937: issueOrPullRequest(number: 148937) { __typename ... on Issue { number title updatedAt author { login } } } i149532: issueOrPullRequest(number: 149532) { __typename ... on Issue { number title updatedAt author { login } } } i151763: issueOrPullRequest(number: 151763) { __typename ... on Issue { number title updatedAt author { login } } } i151815: issueOrPullRequest(number: 151815) { __typename ... on Issue { number title updatedAt author { login } } } i151862: issueOrPullRequest(number: 151862) { __typename ... on Issue { number title updatedAt author { login } } } i152125: issueOrPullRequest(number: 152125) { __typename ... on Issue { number title updatedAt author { login } } } i153058: issueOrPullRequest(number: 153058) { __typename ... on Issue { number title updatedAt author { login } } } i155176: issueOrPullRequest(number: 155176) { __typename ... on Issue { number title updatedAt author { login } } } i155181: issueOrPullRequest(number: 155181) { __typename ... on Issue { number title updatedAt author { login } } } i155728: issueOrPullRequest(number: 155728) { __typename ... on Issue { number title updatedAt author { login } } } i156425: issueOrPullRequest(number: 156425) { __typename ... on Issue { number title updatedAt author { login } } } i159101: issueOrPullRequest(number: 159101) { __typename ... on Issue { number title updatedAt author { login } } } i160663: issueOrPullRequest(number: 160663) { __typename ... on Issue { number title updatedAt author { login } } } } rateLimit { remaining resetAt } }",
-  "reset": 1793816325,
+  "query": "query FetchIssues($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { i112564: issueOrPullRequest(number: 112564) { __typename ... on Issue { number title updatedAt author { login } } } i128942: issueOrPullRequest(number: 128942) { __typename ... on Issue { number title updatedAt author { login } } } i138864: issueOrPullRequest(number: 138864) { __typename ... on Issue { number title updatedAt author { login } } } i139389: issueOrPullRequest(number: 139389) { __typename ... on Issue { number title updatedAt author { login } } } i139778: issueOrPullRequest(number: 139778) { __typename ... on Issue { number title updatedAt author { login } } } i140256: issueOrPullRequest(number: 140256) { __typename ... on Issue { number title updatedAt author { login } } } i140328: issueOrPullRequest(number: 140328) { __typename ... on Issue { number title updatedAt author { login } } } i140798: issueOrPullRequest(number: 140798) { __typename ... on Issue { number title updatedAt author { login } } } i140928: issueOrPullRequest(number: 140928) { __typename ... on Issue { number title updatedAt author { login } } } i141594: issueOrPullRequest(number: 141594) { __typename ... on Issue { number title updatedAt author { login } } } i145970: issueOrPullRequest(number: 145970) { __typename ... on Issue { number title updatedAt author { login } } } i148937: issueOrPullRequest(number: 148937) { __typename ... on Issue { number title updatedAt author { login } } } i149532: issueOrPullRequest(number: 149532) { __typename ... on Issue { number title updatedAt author { login } } } i151763: issueOrPullRequest(number: 151763) { __typename ... on Issue { number title updatedAt author { login } } } i151815: issueOrPullRequest(number: 151815) { __typename ... on Issue { number title updatedAt author { login } } } i151862: issueOrPullRequest(number: 151862) { __typename ... on Issue { number title updatedAt author { login } } } i152125: issueOrPullRequest(number: 152125) { __typename ... on Issue { number title updatedAt author { login } } } i153058: issueOrPullRequest(number: 153058) { __typename ... on Issue { number title updatedAt author { login } } } i155176: issueOrPullRequest(number: 155176) { __typename ... on Issue { number title updatedAt author { login } } } i155181: issueOrPullRequest(number: 155181) { __typename ... on Issue { number title updatedAt author { login } } } i155728: issueOrPullRequest(number: 155728) { __typename ... on Issue { number title updatedAt author { login } } } i156425: issueOrPullRequest(number: 156425) { __typename ... on Issue { number title updatedAt author { login } } } i159101: issueOrPullRequest(number: 159101) { __typename ... on Issue { number title updatedAt author { login } } } i160663: issueOrPullRequest(number: 160663) { __typename ... on Issue { number title updatedAt author { login } } } } rateLimit { remaining resetAt } }",
+  "reset": 1793824608,
   "status": 200
 }

@@ -58,7 +58,7 @@ export class AddRepositoryState {
   /** Adds what was checked, by the name GitHub gave, and returns what the window opens on now. */
   async add(check: RepositoryCheck): Promise<Home | undefined> {
     this.step = { step: "adding", check };
-    const answer = await ask(commands.addRepository(check.repository.name));
+    const answer = await ask(commands.addRepository(check.repository.name, check.access));
     if (answer.status === "ok") {
       return answer.data;
     }

@@ -10,15 +10,17 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use time::OffsetDateTime;
 use tsugiki_core::error::Error;
-
+use tsugiki_core::filters::Filter;
 use tsugiki_core::github::GitHub;
+use tsugiki_core::github::filters::{FilterHitKind, FilterSearch};
 use tsugiki_core::github::issues::ListedPr;
 use tsugiki_core::github::live::{Https, run_gh};
 use tsugiki_core::github::pull_requests::{NodeId, PageRequest, PrFetch};
 use tsugiki_core::github::record::Recorder;
 use tsugiki_core::links::{possible_numbers, possible_origin};
-use tsugiki_core::repository::RepositoryName;
+use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
 use tsugiki_core::sync::{FETCH_BATCH, SEARCH_PAGE, WORK_SEARCHES};
 use tsugiki_core::token::Token;
 
@@ -47,6 +49,9 @@ fn main() {
 /// those Issues' trees. Each recording holds one answer, so more pages would only keep the last.
 fn record_first_sync(github: &GitHub, scout: &GitHub) {
     let repository = RepositoryName::parse(WORK_REPOSITORY).expect("a Repository's name");
+    let _checked = github
+        .check_repository(&repository, OffsetDateTime::now_utc().date())
+        .expect("check the Repository");
     let mut ids = Vec::new();
     let first_page = PageRequest {
         size: SEARCH_PAGE,
@@ -63,11 +68,12 @@ fn record_first_sync(github: &GitHub, scout: &GitHub) {
             }
         }
     }
+    let mut named = BTreeSet::new();
+    record_a_filter(github, &repository, &mut ids, &mut named);
     let batch = github
         .fetch_pull_requests(PrFetch::Work, &ids, FETCH_BATCH)
         .expect("fetch the user's PRs");
     println!("{} PRs in the batch", batch.pull_requests.len());
-    let mut named = BTreeSet::new();
     for pull_request in &batch.pull_requests {
         named.extend(possible_numbers(pull_request, &repository));
     }
@@ -93,6 +99,36 @@ fn record_first_sync(github: &GitHub, scout: &GitHub) {
         return;
     };
     record_a_tree(github, &repository, issue, &work).expect("record an Issue's tree");
+}
+
+/// The first page of the first starter Filter. Each Filter replays this one answer.
+fn record_a_filter(
+    github: &GitHub,
+    repository: &RepositoryName,
+    ids: &mut Vec<NodeId>,
+    named: &mut BTreeSet<u32>,
+) {
+    let starters = Filter::starters(RepositoryAccess::Other);
+    let starter = starters.first().expect("a starter Filter");
+    let search = FilterSearch {
+        query: &starter.query,
+        created: None,
+        page: ONLY_PAGE,
+    };
+    let page = github
+        .search_filter(repository, &search)
+        .expect("search a starter Filter");
+    println!("{} items of {} in a Filter", page.hits.len(), page.total);
+    for hit in page.hits {
+        match hit.kind {
+            FilterHitKind::Issue => drop(named.insert(hit.number)),
+            FilterHitKind::PullRequest(id) => {
+                if !ids.contains(&id) {
+                    ids.push(id);
+                }
+            }
+        }
+    }
 }
 
 /// The first Issue whose cross-references fit on one page and list a Backport. Replay answers every Issue

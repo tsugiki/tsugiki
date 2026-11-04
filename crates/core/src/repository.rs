@@ -7,6 +7,7 @@ use specta::Type;
 
 use crate::conventions::Conventions;
 use crate::error::{Error, ErrorKind};
+use crate::filters::Filter;
 
 const BAD_NAME: &str = "Write the Repository as owner/name, such as python/cpython.";
 const GITHUB_PREFIXES: [&str; 2] = ["https://github.com/", "github.com/"];
@@ -97,20 +98,43 @@ fn is_name(name: &str) -> bool {
 pub struct RepositorySettings {
     pub name: RepositoryName,
     pub conventions: Conventions,
+    pub filters: Vec<Filter>,
+}
+
+/// The user's standing in a Repository, as far as adding it needs to know.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RepositoryAccess {
+    /// The user administers it on GitHub.
+    Maintained,
+    Other,
 }
 
 impl RepositorySettings {
-    pub fn new(name: RepositoryName) -> Self {
+    /// The settings adding `name` gives it, for a user with this `access`.
+    pub fn added(name: RepositoryName, access: RepositoryAccess) -> Self {
         let conventions = Conventions::for_repository(&name);
-        Self { name, conventions }
+        Self {
+            name,
+            conventions,
+            filters: Filter::starters(access),
+        }
+    }
+
+    /// A Repository Tsugiki knows nothing else about.
+    pub fn new(name: RepositoryName) -> Self {
+        Self::added(name, RepositoryAccess::Other)
     }
 }
 
-/// A Repository added by hand may leave its Conventions out, and then gets what adding it would give it.
+/// A Repository added by hand may leave its Conventions and its Filters out. Then it gets what adding it
+/// would give it, as far as the file can say: only GitHub knows if the user administers it. `filters = []`
+/// means no Filters.
 #[derive(Deserialize, Type)]
 struct RepositoryInFile {
     name: RepositoryName,
     conventions: Option<Conventions>,
+    filters: Option<Vec<Filter>>,
 }
 
 impl From<RepositoryInFile> for RepositorySettings {
@@ -118,9 +142,13 @@ impl From<RepositoryInFile> for RepositorySettings {
         let conventions = file
             .conventions
             .unwrap_or_else(|| Conventions::for_repository(&file.name));
+        let filters = file
+            .filters
+            .unwrap_or_else(|| Filter::starters(RepositoryAccess::Other));
         Self {
             name: file.name,
             conventions,
+            filters,
         }
     }
 }
@@ -185,6 +213,7 @@ pub struct RepositoryCounts {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct RepositoryCheck {
     pub repository: RepositorySettings,
+    pub access: RepositoryAccess,
     pub open_issues: u32,
     pub open_prs: u32,
     pub size: RepositorySize,
@@ -196,7 +225,7 @@ pub struct RepositoryCheck {
 }
 
 impl RepositoryCheck {
-    pub fn new(name: RepositoryName, counts: RepositoryCounts) -> Self {
+    pub fn new(name: RepositoryName, counts: RepositoryCounts, access: RepositoryAccess) -> Self {
         let open = counts.open_issues.saturating_add(counts.open_prs);
         let (size, items) = if open <= SMALL_UP_TO {
             (
@@ -207,7 +236,8 @@ impl RepositoryCheck {
             (RepositorySize::Large, counts.updated_in_window)
         };
         Self {
-            repository: RepositorySettings::new(name),
+            repository: RepositorySettings::added(name, access),
+            access,
             open_issues: counts.open_issues,
             open_prs: counts.open_prs,
             size,
@@ -334,7 +364,8 @@ mod tests {
 
     #[test]
     fn up_to_500_open_is_small_and_loads_those_and_what_closed_lately() {
-        let check = RepositoryCheck::new(name("sergey-miryanov/gcmon"), FEW);
+        let check =
+            RepositoryCheck::new(name("sergey-miryanov/gcmon"), FEW, RepositoryAccess::Other);
         assert_eq!(check.size, RepositorySize::Small);
         assert_eq!(check.open_issues, 10);
         assert_eq!(check.open_prs, 3);
@@ -346,7 +377,7 @@ mod tests {
             open_prs: 100,
             ..FEW
         };
-        let check = RepositoryCheck::new(name("a/b"), at_the_limit);
+        let check = RepositoryCheck::new(name("a/b"), at_the_limit, RepositoryAccess::Other);
         assert_eq!(check.size, RepositorySize::Small);
         assert_eq!(check.first_sync_items, 535);
     }
@@ -358,7 +389,7 @@ mod tests {
             open_prs: 100,
             ..FEW
         };
-        let check = RepositoryCheck::new(name("a/b"), just_over);
+        let check = RepositoryCheck::new(name("a/b"), just_over, RepositoryAccess::Other);
         assert_eq!(check.size, RepositorySize::Large);
         assert_eq!(check.first_sync_items, 43);
     }
@@ -372,7 +403,7 @@ mod tests {
             updated_in_window: 4715,
             closed_in_window: 2506,
         };
-        let check = RepositoryCheck::new(name("python/cpython"), cpython);
+        let check = RepositoryCheck::new(name("python/cpython"), cpython, RepositoryAccess::Other);
         assert_eq!(check.repository.conventions, Conventions::Cpython);
         assert!((210..=230).contains(&check.first_sync_points), "{check:?}");
         assert!((480..=600).contains(&check.first_sync_seconds), "{check:?}");

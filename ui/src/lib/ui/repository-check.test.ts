@@ -3,7 +3,7 @@ import type { RepositoryCheck } from "$lib/state/add-repository.svelte";
 import { describeCheck } from "./repository-check";
 
 const gcmon: RepositoryCheck = {
-  repository: { name: "sergey-miryanov/gcmon", conventions: "github" },
+  repository: { name: "sergey-miryanov/gcmon", conventions: "github", filters: [] },
   open_issues: 10,
   open_prs: 3,
   size: "small",
@@ -11,10 +11,11 @@ const gcmon: RepositoryCheck = {
   first_sync_items: 48,
   first_sync_seconds: 5,
   first_sync_points: 12,
+  access: "other",
 };
 
 const cpython: RepositoryCheck = {
-  repository: { name: "python/cpython", conventions: "cpython" },
+  repository: { name: "python/cpython", conventions: "cpython", filters: [] },
   open_issues: 6935,
   open_prs: 2308,
   size: "large",
@@ -22,6 +23,7 @@ const cpython: RepositoryCheck = {
   first_sync_items: 4754,
   first_sync_seconds: 546,
   first_sync_points: 223,
+  access: "other",
 };
 
 it("describes a small Repository", () => {

@@ -1,5 +1,6 @@
 //! Tsugiki's GitHub client. It talks through a [`Transport`], so tests replay recorded answers (ADR 0009).
 
+pub mod filters;
 pub mod issues;
 pub mod live;
 pub mod pull_requests;
@@ -15,7 +16,9 @@ use specta::Type;
 use time::{Date, Duration};
 
 use crate::error::{Error, ErrorKind};
-use crate::repository::{RepositoryCheck, RepositoryCounts, RepositoryName, WINDOW_DAYS};
+use crate::repository::{
+    RepositoryAccess, RepositoryCheck, RepositoryCounts, RepositoryName, WINDOW_DAYS,
+};
 use crate::token::{RunGh, Token};
 
 /// One GraphQL request. `operation` names the query, and the replayer finds its recording by that name.
@@ -132,7 +135,7 @@ const VIEWER: Request<'static> = Request {
 };
 
 const CHECK_REPOSITORY: &str = "query CheckRepository($owner: String!, $name: String!, $updated: String!, \
-                                $closed: String!) { repository(owner: $owner, name: $name) { nameWithOwner \
+                                $closed: String!) { repository(owner: $owner, name: $name) { nameWithOwner viewerPermission \
                                 issues(states: OPEN) { totalCount } pullRequests(states: OPEN) { totalCount } } \
                                 updated: search(query: $updated, type: ISSUE_ADVANCED, first: 0) { issueCount } \
                                 closed: search(query: $closed, type: ISSUE_ADVANCED, first: 0) { issueCount } }";
@@ -185,8 +188,16 @@ impl GitHub {
         #[serde(rename_all = "camelCase")]
         struct Repository {
             name_with_owner: RepositoryName,
+            viewer_permission: Option<Permission>,
             issues: Total,
             pull_requests: Total,
+        }
+        #[derive(Deserialize)]
+        enum Permission {
+            #[serde(rename = "ADMIN")]
+            Admin,
+            #[serde(other)]
+            Lower,
         }
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -226,8 +237,13 @@ impl GitHub {
             | ErrorKind::WriteRefused
             | ErrorKind::RateLimited { .. }
             | ErrorKind::Conflict
+            | ErrorKind::QueryRefused
             | ErrorKind::Internal => problem,
         })?;
+        let access = match data.repository.viewer_permission {
+            Some(Permission::Admin) => RepositoryAccess::Maintained,
+            Some(Permission::Lower) | None => RepositoryAccess::Other,
+        };
         Ok(RepositoryCheck::new(
             data.repository.name_with_owner,
             RepositoryCounts {
@@ -236,6 +252,7 @@ impl GitHub {
                 updated_in_window: data.updated.issue_count,
                 closed_in_window: data.closed.issue_count,
             },
+            access,
         ))
     }
 
@@ -326,9 +343,10 @@ fn read<D: DeserializeOwned>(reply: &Reply) -> Result<D, Error> {
                 ErrorKind::NotFound,
                 &format!("GitHub said: {}", error.message),
             ),
-            Some(GraphqlErrorKind::Other) | None => {
-                internal(&format!("GitHub said: {}", error.message))
-            }
+            Some(GraphqlErrorKind::Other) | None => Error::new(
+                ErrorKind::QueryRefused,
+                &format!("GitHub said: {}", error.message),
+            ),
         });
     }
     let data = envelope
@@ -414,6 +432,7 @@ mod tests {
     use super::testing::{Canned, answered, token};
     use super::*;
     use crate::conventions::Conventions;
+    use crate::filters::Filter;
     use crate::repository::RepositorySize;
     use std::path::Path;
 
@@ -515,7 +534,7 @@ mod tests {
             200,
             r#"{"errors":[{"message":"Something broke"}]}"#,
         ));
-        assert_eq!(error.kind, ErrorKind::Internal);
+        assert_eq!(error.kind, ErrorKind::QueryRefused);
         assert_eq!(error.message, "GitHub said: Something broke");
     }
 
@@ -525,7 +544,7 @@ mod tests {
             200,
             r#"{"errors":[{"type":"FORBIDDEN","message":"No such thing"}]}"#,
         ));
-        assert_eq!(error.kind, ErrorKind::Internal);
+        assert_eq!(error.kind, ErrorKind::QueryRefused);
         assert_eq!(error.message, "GitHub said: No such thing");
     }
 
@@ -569,9 +588,10 @@ mod tests {
             .unwrap();
         assert_eq!(check.repository.name, name("python/cpython"));
         assert_eq!(check.repository.conventions, Conventions::Cpython);
-        assert_eq!((check.open_issues, check.open_prs), (6936, 2308));
+        assert_eq!(check.access, RepositoryAccess::Other);
+        assert_eq!((check.open_issues, check.open_prs), (6937, 2313));
         assert_eq!(check.size, RepositorySize::Large);
-        assert_eq!(check.first_sync_items, 4755);
+        assert_eq!(check.first_sync_items, 4824);
     }
 
     #[test]
@@ -601,6 +621,35 @@ mod tests {
         assert_eq!(check.repository.name.to_string(), "Sergey-Miryanov/GCMon");
         assert_eq!(check.size, RepositorySize::Small);
         assert_eq!(check.first_sync_items, 48);
+    }
+
+    fn checked_with_permission(permission: &str) -> RepositoryCheck {
+        let body = format!(
+            r#"{{"data":{{"repository":{{"nameWithOwner":"a/b","viewerPermission":{permission},
+            "issues":{{"totalCount":1}},"pullRequests":{{"totalCount":1}}}},
+            "updated":{{"issueCount":1}},"closed":{{"issueCount":1}}}}}}"#
+        );
+        client(answered(200, &body))
+            .check_repository(&name("a/b"), the_day())
+            .unwrap()
+    }
+
+    #[test]
+    fn a_repository_the_user_administers_is_maintained_and_starts_with_everything_open() {
+        let check = checked_with_permission(r#""ADMIN""#);
+        assert_eq!(check.access, RepositoryAccess::Maintained);
+        assert_eq!(
+            check.repository.filters,
+            Filter::starters(RepositoryAccess::Maintained)
+        );
+    }
+
+    #[test]
+    fn writing_to_a_repository_doesnt_make_it_maintained() {
+        for permission in [r#""WRITE""#, r#""MAINTAIN""#, "null"] {
+            let check = checked_with_permission(permission);
+            assert_eq!(check.access, RepositoryAccess::Other, "{permission}");
+        }
     }
 
     /// Answers as GitHub did for `mitsuhiko/flask`, which became `pallets/flask`: the Repository follows the

@@ -188,6 +188,24 @@ mod tests {
     }
 
     #[test]
+    fn a_backport_names_what_its_title_and_its_live_keywords_name() {
+        let description = "(cherry picked from commit 0123abc)\r\n\r\n\
+            Co-authored-by: some-author <some-author@example.com>\r\n\r\n\
+            <!-- gh-issue-number: gh-2 -->\r\n\
+            * Issue: gh-2\r\n\
+            <!-- /gh-issue-number -->\r\n\r\n\
+            Fixes gh-3.\r\n\r\n\
+            ```\r\nFixes gh-4\r\n```\r\n\
+            See gh-5 and `closes gh-6`.";
+        let facts = PullRequestFacts {
+            target_branch: "3.14".to_owned(),
+            off_default_description: Some(description.to_owned()),
+            ..titled("[3.14] gh-1: Fix it (GH-9)")
+        };
+        assert_eq!(numbers(&facts, &cpython()), [1, 3]);
+    }
+
+    #[test]
     fn a_description_counts_only_where_github_ignores_its_keywords() {
         assert_eq!(numbers(&titled("Fix it"), &cpython()), [0_u32; 0]);
         assert_eq!(in_description("Fixes #5"), [5]);

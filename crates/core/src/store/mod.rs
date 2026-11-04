@@ -458,9 +458,19 @@ mod tests {
         scans
     }
 
-    /// Each statement the reads a screen waits on run, as SQLite traces them. SQLite traces a statement when
-    /// it starts, so a table with no rows still shows its query.
+    /// Each statement the reads a screen waits on run, as SQLite traces them. One row in each table makes a
+    /// query inside a loop over rows run too. A query behind a condition these rows don't meet stays unseen.
     fn view_statements(connection: &mut Connection) -> Vec<String> {
+        connection
+            .execute_batch(
+                "INSERT INTO viewer (id, login) VALUES (1, 'octocat');
+                 INSERT INTO pull_requests VALUES ('python/cpython', 1, 'gh-1: Fix it', 'OPEN', 0,
+                                                   'vstinner', 'main', 'SUCCESS', 7);
+                 INSERT INTO review_requests VALUES ('python/cpython', 1, 'octocat');
+                 INSERT INTO latest_reviews VALUES ('python/cpython', 1, 'hugovk', 'APPROVED');
+                 INSERT INTO assignees VALUES ('python/cpython', 1, 'pablogsal');",
+            )
+            .unwrap();
         let (seen, statements) = mpsc::channel();
         let trace = move |event: TraceEvent<'_>| {
             if let TraceEvent::Stmt(_, sql) = event {
@@ -470,7 +480,8 @@ mod tests {
         let codes = TraceEventCodes::SQLITE_TRACE_STMT;
         connection.trace_v2(codes, Some(trace)).unwrap();
         let cpython = RepositoryName::parse("python/cpython").unwrap();
-        drop(read_work_facts(connection, &cpython).unwrap());
+        let read = read_work_facts(connection, &cpython).unwrap();
+        assert_eq!(read.pull_requests.len(), 1);
         let no_trace = None::<fn(TraceEvent<'_>)>;
         connection.trace_v2(codes, no_trace).unwrap();
         statements.try_iter().collect()

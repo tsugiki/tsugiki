@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use rusqlite::{Connection, Statement, named_params};
 
 use crate::github::Login;
-use crate::github::pull_requests::{LatestReview, PullRequest, PullRequestFacts};
+use crate::github::pull_requests::{LatestReview, PrState, PullRequest, PullRequestFacts};
 use crate::repository::RepositoryName;
 
 pub(super) const SCHEMA: &str = "
@@ -268,10 +268,11 @@ pub(super) fn read_open(
     let mut assigned = assignees(connection, repository)?;
     let query = "SELECT number, title, state, is_draft, author, target_branch, ci
                  FROM pull_requests
-                 WHERE repository = :repository AND state = 'OPEN'
+                 WHERE repository = :repository AND state = :state
                  ORDER BY updated_at DESC, number DESC";
     let mut statement = connection.prepare(query)?;
-    let mut rows = statement.query(named_params! { ":repository": repository })?;
+    let values = named_params! { ":repository": repository, ":state": PrState::Open };
+    let mut rows = statement.query(values)?;
     let mut found = Vec::new();
     while let Some(row) = rows.next()? {
         let number: u32 = row.get("number")?;

@@ -10,13 +10,14 @@ use tsugiki_core::build::Build;
 use tsugiki_core::folders::Folders;
 use tsugiki_core::github::GitHubAccess;
 use tsugiki_core::github::live::{Https, run_gh};
+use tsugiki_core::latest;
 use tsugiki_core::launch;
 use tsugiki_core::logfile;
 use tsugiki_core::session::Session;
 use tsugiki_core::settings::{SettingsFiles, SettingsOwner};
-use tsugiki_core::status::StatusBoard;
+use tsugiki_core::status::{Status, StatusBoard};
 
-use crate::{LatestStatus, StatusChanged, specta_builder};
+use crate::{StatusChanged, specta_builder};
 
 /// How often Tsugiki asks GitHub whether it is still there, at about one point of the hourly 5,000 each.
 const REFRESH: Duration = Duration::from_secs(60);
@@ -67,8 +68,9 @@ pub fn run() {
     register_development_scheme(app.handle());
     launch::open_command_line(Build::CURRENT, &launch::command_line());
     builder.mount_events(&app);
+    let (mut latest_status, status_reader) = latest::channel(Status::default());
     assert!(
-        app.manage(LatestStatus::default()),
+        app.manage(status_reader),
         "nothing else manages the latest status"
     );
     // Two small files, read before the window exists so `settings` and `home` can always answer. A
@@ -83,7 +85,7 @@ pub fn run() {
     let board = StatusBoard::new(Box::new(move |status| {
         // Before the event: a window that starts listening just too late for it then asks `status()`, and has
         // to get this status.
-        handle.state::<LatestStatus>().set(status);
+        latest_status.set(status);
         // A window still loading asks `status()` when it is done, so it doesn't need this event.
         if let Err(cause) = StatusChanged(status.clone()).emit(&handle) {
             log::warn!("Tsugiki can't tell the window about a new status: {cause}");

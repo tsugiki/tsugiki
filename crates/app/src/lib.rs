@@ -12,7 +12,7 @@ pub use startup::run;
 use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
 use tsugiki_core::error::Error;
-use tsugiki_core::latest::Latest;
+use tsugiki_core::latest::LatestReader;
 use tsugiki_core::repository::{Home, RepositoryCheck, RepositoryName};
 use tsugiki_core::session::RepositoryChecks;
 use tsugiki_core::settings::{LoadedSettings, SettingsOwner};
@@ -24,7 +24,7 @@ fn about() -> tsugiki_core::About {
     tsugiki_core::about()
 }
 
-type LatestStatus = Latest<Status>;
+type LatestStatus = LatestReader<Status>;
 
 /// The whole app-wide state, for a window that has just loaded (ADR 0008).
 #[tauri::command]
@@ -88,6 +88,7 @@ mod tests {
     use tsugiki_core::folders::Folders;
     use tsugiki_core::github::GitHubAccess;
     use tsugiki_core::github::live::{Https, run_gh};
+    use tsugiki_core::latest::channel;
     use tsugiki_core::repository::RepositorySettings;
     use tsugiki_core::session::Session;
     use tsugiki_core::settings::SettingsFiles;
@@ -121,15 +122,17 @@ mod tests {
     #[test]
     fn status_says_connecting_until_the_session_says_otherwise() {
         let app = mock_app();
-        assert!(app.manage(LatestStatus::default()));
+        let (_writer, reader) = channel(Status::default());
+        assert!(app.manage(reader));
         assert_eq!(status(app.state()), Status::Connecting);
     }
 
     #[test]
     fn status_answers_with_the_latest_status() {
         let app = mock_app();
-        assert!(app.manage(LatestStatus::default()));
-        app.state::<LatestStatus>().set(&Status::Offline);
+        let (mut writer, reader) = channel(Status::default());
+        assert!(app.manage(reader));
+        writer.set(&Status::Offline);
         assert_eq!(status(app.state()), Status::Offline);
     }
 

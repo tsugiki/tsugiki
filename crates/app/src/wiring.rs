@@ -318,13 +318,20 @@ mod tests {
             items.iter().all(|item| item["kind"] == "issue"),
             "{items:?}"
         );
-        let rows: Vec<&Value> = items
+        let entries: Vec<&Value> = items
             .iter()
             .flat_map(|item| item["pull_requests"].as_array().unwrap())
             .collect();
-        assert_eq!(rows.len(), 23);
+        let rows: Vec<&Value> = entries
+            .iter()
+            .flat_map(|entry| {
+                let beneath = entry["backports"].as_array().into_iter().flatten();
+                std::iter::once(*entry).chain(beneath)
+            })
+            .collect();
         let under_154019 = rows.iter().filter(|row| row["number"] == 154_019);
         assert_eq!(under_154019.count(), 2);
+        assert_the_recorded_tree_has_its_backports(&entries);
         let with_reason = |reason: &str| {
             rows.iter()
                 .filter(|row| row["reasons"].as_array().unwrap().contains(&json!(reason)))
@@ -334,9 +341,28 @@ mod tests {
         assert!(with_reason("review_request") > 0);
     }
 
-    /// Waits for the session to save the PRs it found and then their Issues, and returns the Workbench after.
+    /// One Issue's tree comes back from real GitHub: a merged Origin PR with the bot's Backports and one a
+    /// person opened beneath it.
+    fn assert_the_recorded_tree_has_its_backports(entries: &[&Value]) {
+        let origin = entries
+            .iter()
+            .find(|entry| entry["number"] == 151_968)
+            .unwrap();
+        assert_eq!(origin["kind"], "pr");
+        assert_eq!(origin["state"], "MERGED");
+        let kind_of = |number: u32| {
+            let backports = origin["backports"].as_array().unwrap();
+            let found = backports.iter().find(|row| row["number"] == number);
+            found.unwrap()["backport"].clone()
+        };
+        assert_eq!(kind_of(152_837), "bot");
+        assert_eq!(kind_of(152_840), "manual");
+    }
+
+    /// Waits for the session to save the PRs it found, their Issues, one Issue's tree and the Origin PR that
+    /// tree was missing, and returns the Workbench after.
     fn workbench_after_sync(wired: &Wired) -> Value {
-        for _ in ["PRs", "Issues"] {
+        for _ in ["PRs", "Issues", "tree", "Origin PR"] {
             let changed = wired.workbenches.recv_timeout(PLENTY).unwrap();
             assert_eq!(changed, json!({ "repository": CPYTHON }));
         }

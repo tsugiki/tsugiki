@@ -1,8 +1,8 @@
 //! The Workbench's view model (ADR 0008), worked out from stored facts when the window asks (ADR 0010). Each
-//! item is an Issue with the PRs that fix it, or a Standalone PR (ADR 0011).
+//! item is an Issue with the PRs that fix it and their Backports, or a PR outside any Issue (ADR 0011).
 
 use std::cmp::Reverse;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 use specta::Type;
@@ -12,8 +12,8 @@ use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::github::Login;
 use crate::github::issues::IssueFacts;
-use crate::github::pull_requests::{CiState, PullRequestFacts, ReviewState};
-use crate::links::fixed_numbers;
+use crate::github::pull_requests::{CiState, PrState, PullRequestFacts, ReviewState};
+use crate::links::{BackportKind, BackportLink, MergeCommits, backport_of, fixed_numbers};
 use crate::repository::RepositorySettings;
 use crate::store::{StoreReader, WorkFacts};
 
@@ -34,17 +34,59 @@ pub struct WorkbenchRow {
     pub number: u32,
     pub title: String,
     pub author: Option<Login>,
+    pub state: PrState,
     pub is_draft: bool,
     pub target_branch: String,
     pub ci: Option<CiState>,
     #[serde(with = "time::serde::rfc3339")]
     #[specta(type = String)]
     pub updated_at: OffsetDateTime,
-    /// Empty for a PR under an Issue that another PR put on the Workbench.
+    /// Empty for a PR that another PR put on the Workbench, and for one no longer open.
     pub reasons: Vec<WorkReason>,
 }
 
-/// An Issue on the Workbench, with each open PR Tsugiki knows that fixes it.
+/// A Backport's line of the list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct BackportRow {
+    #[serde(flatten)]
+    pub row: WorkbenchRow,
+    pub backport: BackportKind,
+}
+
+/// A PR with its Backports beneath it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct PrTree {
+    #[serde(flatten)]
+    pub row: WorkbenchRow,
+    pub backports: Vec<BackportRow>,
+}
+
+/// A line directly under an Issue.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TreeEntry {
+    Pr(PrTree),
+    /// A Backport whose Origin PR Tsugiki can't show: that number names no PR, or a Backport.
+    Backport(BackportRow),
+}
+
+impl TreeEntry {
+    fn rows(&self) -> Vec<&WorkbenchRow> {
+        match self {
+            Self::Pr(tree) => tree.rows(),
+            Self::Backport(backport) => vec![&backport.row],
+        }
+    }
+}
+
+impl PrTree {
+    fn rows(&self) -> Vec<&WorkbenchRow> {
+        let beneath = self.backports.iter().map(|backport| &backport.row);
+        std::iter::once(&self.row).chain(beneath).collect()
+    }
+}
+
+/// An Issue on the Workbench, with its tree: each PR Tsugiki knows that fixes it, whatever its state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct IssueItem {
     pub number: u32,
@@ -55,7 +97,7 @@ pub struct IssueItem {
     #[serde(with = "time::serde::rfc3339")]
     #[specta(type = String)]
     pub updated_at: OffsetDateTime,
-    pub pull_requests: Vec<WorkbenchRow>,
+    pub pull_requests: Vec<TreeEntry>,
 }
 
 /// A top-level entry of the list.
@@ -63,14 +105,18 @@ pub struct IssueItem {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WorkbenchItem {
     Issue(IssueItem),
-    StandalonePr(WorkbenchRow),
+    /// A PR that fixes no Issue, with its Backports.
+    StandalonePr(PrTree),
+    /// A Backport with no Issue and no Origin PR to sit under.
+    StandaloneBackport(BackportRow),
 }
 
 impl WorkbenchItem {
     fn updated_at_and_number(&self) -> (OffsetDateTime, u32) {
         match self {
             Self::Issue(issue) => (issue.updated_at, issue.number),
-            Self::StandalonePr(row) => (row.updated_at, row.number),
+            Self::StandalonePr(tree) => (tree.row.updated_at, tree.row.number),
+            Self::StandaloneBackport(backport) => (backport.row.updated_at, backport.row.number),
         }
     }
 }
@@ -93,47 +139,190 @@ impl Workbench {
         let Some(viewer) = facts.viewer else {
             return Self { items: Vec::new() };
         };
-        let mut issues: BTreeMap<u32, (IssueFacts, Vec<WorkbenchRow>)> = facts
+        let linked = link(facts.pull_requests, &facts.issues, repository, &viewer);
+        let mut issues: BTreeMap<u32, (IssueFacts, Vec<TreeEntry>)> = facts
             .issues
             .into_iter()
             .map(|issue| (issue.number, (issue, Vec::new())))
             .collect();
         let mut items = Vec::new();
-        for facts in facts.pull_requests {
-            let fixed = fixed_numbers(&facts, repository);
-            let row = row(facts, &viewer);
-            // Only a number the sync fetched as an Issue links, so a PR's number or a typo doesn't.
-            let under: Vec<_> = issues
-                .iter_mut()
-                .filter(|(number, _)| fixed.contains(number))
-                .collect();
-            if under.is_empty() && !row.reasons.is_empty() {
-                items.push(WorkbenchItem::StandalonePr(row));
-            } else {
-                for (_, (_, rows)) in under {
-                    rows.push(row.clone());
+        for top in plant(linked) {
+            if top.issues.is_empty() {
+                items.extend(standalone(top));
+                continue;
+            }
+            for number in &top.issues {
+                if let Some((_, entries)) = issues.get_mut(number) {
+                    entries.push(top.entry_under(*number));
                 }
             }
         }
         items.extend(
             issues
                 .into_values()
-                .filter(|(_, rows)| rows.iter().any(|row| !row.reasons.is_empty()))
-                .map(|(issue, rows)| issue_item(issue, rows, repository.conventions)),
+                .filter(|(_, entries)| entries.iter().any(|entry| any_reason(&entry.rows())))
+                .map(|(issue, entries)| issue_item(issue, entries, repository.conventions)),
         );
         items.sort_by_key(|item| Reverse(item.updated_at_and_number()));
         Self { items }
     }
 }
 
+/// A PR with what the link rules say about it.
+struct Linked {
+    row: WorkbenchRow,
+    /// The Issues it fixes. Only a number the sync fetched as an Issue counts, so a PR's number or a typo
+    /// doesn't.
+    issues: BTreeSet<u32>,
+    backport: Option<BackportLink>,
+}
+
+fn link(
+    pull_requests: Vec<PullRequestFacts>,
+    issues: &[IssueFacts],
+    repository: &RepositorySettings,
+    viewer: &Login,
+) -> Vec<Linked> {
+    let merges = MergeCommits::of(&pull_requests);
+    let known: BTreeSet<u32> = issues.iter().map(|issue| issue.number).collect();
+    pull_requests
+        .into_iter()
+        .map(|facts| {
+            let fixed = fixed_numbers(&facts, repository);
+            Linked {
+                issues: fixed.intersection(&known).copied().collect(),
+                backport: backport_of(&facts, repository.conventions, &merges),
+                row: row(facts, viewer),
+            }
+        })
+        .collect()
+}
+
+/// A Backport beneath its Origin PR.
+struct Beneath {
+    row: BackportRow,
+    issues: BTreeSet<u32>,
+}
+
+/// The two shapes of a tree's top line.
+enum Shape {
+    Pr {
+        beneath: Vec<Beneath>,
+    },
+    /// A Backport with no Origin PR to sit under.
+    Backport(BackportKind),
+}
+
+/// A line that sits directly under an Issue or on its own.
+struct Top {
+    row: WorkbenchRow,
+    shape: Shape,
+    /// Each Issue it shows under: its own, and those of the Backports beneath it (ADR 0011).
+    issues: BTreeSet<u32>,
+}
+
+impl Top {
+    /// A Backport shows under an Issue it fixes. One that fixes none follows its Origin PR.
+    fn entry_under(&self, issue: u32) -> TreeEntry {
+        let row = self.row.clone();
+        match &self.shape {
+            Shape::Backport(backport) => TreeEntry::Backport(BackportRow {
+                row,
+                backport: *backport,
+            }),
+            Shape::Pr { beneath } => TreeEntry::Pr(PrTree {
+                row,
+                backports: beneath
+                    .iter()
+                    .filter(|below| below.issues.is_empty() || below.issues.contains(&issue))
+                    .map(|below| below.row.clone())
+                    .collect(),
+            }),
+        }
+    }
+}
+
+/// Puts each Backport beneath its Origin PR when Tsugiki has that PR and it isn't a Backport too, which keeps
+/// a tree two levels deep. The order of `linked` stays within each level.
+fn plant(linked: Vec<Linked>) -> Vec<Top> {
+    let origins: BTreeSet<u32> = linked
+        .iter()
+        .filter(|pr| pr.backport.is_none())
+        .map(|pr| pr.row.number)
+        .collect();
+    let mut beneath: BTreeMap<u32, Vec<Beneath>> = BTreeMap::new();
+    let mut tops = Vec::new();
+    for pr in linked {
+        match pr.backport {
+            Some(link) if origins.contains(&link.origin) => {
+                beneath.entry(link.origin).or_default().push(Beneath {
+                    row: BackportRow {
+                        row: pr.row,
+                        backport: link.kind,
+                    },
+                    issues: pr.issues,
+                });
+            }
+            _ => tops.push(Top {
+                row: pr.row,
+                shape: pr.backport.map_or_else(
+                    || Shape::Pr {
+                        beneath: Vec::new(),
+                    },
+                    |link| Shape::Backport(link.kind),
+                ),
+                issues: pr.issues,
+            }),
+        }
+    }
+    for top in &mut tops {
+        if let Shape::Pr { beneath: place } = &mut top.shape
+            && let Some(below) = beneath.remove(&top.row.number)
+        {
+            top.issues
+                .extend(below.iter().flat_map(|b| b.issues.iter().copied()));
+            *place = below;
+        }
+    }
+    tops
+}
+
+/// The item for a line with no Issue, if any PR in it is the user's. Nothing beneath it fixes an Issue, or
+/// the line would show under that Issue.
+fn standalone(top: Top) -> Option<WorkbenchItem> {
+    match top.shape {
+        Shape::Backport(backport) => {
+            let wanted = any_reason(&[&top.row]);
+            let row = top.row;
+            wanted.then_some(WorkbenchItem::StandaloneBackport(BackportRow {
+                row,
+                backport,
+            }))
+        }
+        Shape::Pr { beneath } => {
+            let tree = PrTree {
+                row: top.row,
+                backports: beneath.into_iter().map(|below| below.row).collect(),
+            };
+            let wanted = any_reason(&tree.rows());
+            wanted.then_some(WorkbenchItem::StandalonePr(tree))
+        }
+    }
+}
+
+fn any_reason(rows: &[&WorkbenchRow]) -> bool {
+    rows.iter().any(|row| !row.reasons.is_empty())
+}
+
 fn issue_item(
     issue: IssueFacts,
-    pull_requests: Vec<WorkbenchRow>,
+    pull_requests: Vec<TreeEntry>,
     conventions: Conventions,
 ) -> WorkbenchItem {
     let people = people(&issue, &pull_requests, conventions);
     let updated_at = pull_requests
         .iter()
+        .flat_map(TreeEntry::rows)
         .map(|row| row.updated_at)
         .fold(issue.updated_at, Ord::max);
     WorkbenchItem::Issue(IssueItem {
@@ -145,12 +334,11 @@ fn issue_item(
     })
 }
 
-fn people(
-    issue: &IssueFacts,
-    pull_requests: &[WorkbenchRow],
-    conventions: Conventions,
-) -> Vec<Login> {
-    let authors = pull_requests.iter().filter_map(|row| row.author.as_ref());
+fn people(issue: &IssueFacts, pull_requests: &[TreeEntry], conventions: Conventions) -> Vec<Login> {
+    let authors = pull_requests
+        .iter()
+        .flat_map(TreeEntry::rows)
+        .filter_map(|row| row.author.as_ref());
     let mut people: Vec<Login> = Vec::new();
     for author in issue.author.iter().chain(authors) {
         if !conventions.is_backport_bot(author) && !people.contains(author) {
@@ -167,6 +355,7 @@ fn row(facts: PullRequestFacts, viewer: &Login) -> WorkbenchRow {
         number: facts.number,
         title: facts.title,
         author: facts.author,
+        state: facts.state,
         is_draft: facts.is_draft,
         target_branch: facts.target_branch,
         ci: facts.ci,
@@ -175,7 +364,11 @@ fn row(facts: PullRequestFacts, viewer: &Login) -> WorkbenchRow {
     }
 }
 
+/// A PR that has merged or closed waits on nobody, so it keeps no Issue on the Workbench.
 fn reasons(facts: &PullRequestFacts, viewer: &Login) -> Vec<WorkReason> {
+    if facts.state != PrState::Open {
+        return Vec::new();
+    }
     let asked = facts.review_requests.contains(viewer) || facts.assignees.contains(viewer);
     let own = facts.author.as_ref() == Some(viewer);
     // A pending Review is a draft only its author can see, so it isn't one yet.
@@ -196,7 +389,8 @@ fn reasons(facts: &PullRequestFacts, viewer: &Login) -> Vec<WorkReason> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::github::pull_requests::{LatestReview, PrState};
+    use crate::github::CommitSha;
+    use crate::github::pull_requests::{LatestReview, OffDefault};
     use crate::repository::RepositoryName;
 
     fn me() -> Login {
@@ -222,7 +416,8 @@ mod tests {
             latest_reviews: vec![],
             assignees: vec![],
             closing_issues: vec![],
-            off_default_description: None,
+            merge_commit: None,
+            off_default: None,
         }
     }
 
@@ -384,10 +579,16 @@ mod tests {
             .iter()
             .map(|item| match item {
                 WorkbenchItem::Issue(issue) => {
-                    let numbers = issue.pull_requests.iter().map(|row| row.number);
-                    ("issue", issue.number, numbers.collect())
+                    let rows = issue.pull_requests.iter().flat_map(TreeEntry::rows);
+                    ("issue", issue.number, rows.map(|row| row.number).collect())
                 }
-                WorkbenchItem::StandalonePr(row) => ("standalone", row.number, vec![]),
+                WorkbenchItem::StandalonePr(tree) => {
+                    let beneath = tree.backports.iter().map(|below| below.row.number);
+                    ("standalone", tree.row.number, beneath.collect())
+                }
+                WorkbenchItem::StandaloneBackport(backport) => {
+                    ("standalone backport", backport.row.number, vec![])
+                }
             })
             .collect()
     }
@@ -395,7 +596,7 @@ mod tests {
     fn first_issue(workbench: &Workbench) -> &IssueItem {
         let issues = workbench.items.iter().filter_map(|item| match item {
             WorkbenchItem::Issue(issue) => Some(issue),
-            WorkbenchItem::StandalonePr(_) => None,
+            WorkbenchItem::StandalonePr(_) | WorkbenchItem::StandaloneBackport(_) => None,
         });
         let mut issues = issues;
         issues.next().unwrap()
@@ -579,15 +780,19 @@ mod tests {
         );
         assert_eq!(
             found.items,
-            [WorkbenchItem::StandalonePr(WorkbenchRow {
-                number: 3,
-                title: "PR 3".to_owned(),
-                author: Some(me()),
-                is_draft: true,
-                target_branch: "main".to_owned(),
-                ci: Some(CiState::Pending),
-                updated_at: at(3),
-                reasons: vec![WorkReason::OwnPr],
+            [WorkbenchItem::StandalonePr(PrTree {
+                row: WorkbenchRow {
+                    number: 3,
+                    title: "PR 3".to_owned(),
+                    author: Some(me()),
+                    state: PrState::Open,
+                    is_draft: true,
+                    target_branch: "main".to_owned(),
+                    ci: Some(CiState::Pending),
+                    updated_at: at(3),
+                    reasons: vec![WorkReason::OwnPr],
+                },
+                backports: vec![],
             })]
         );
     }
@@ -601,7 +806,339 @@ mod tests {
         assert_eq!(sent["items"][0]["updated_at"], "1970-01-01T00:00:01Z");
         assert_eq!(sent["items"][1]["kind"], "issue");
         assert_eq!(sent["items"][1]["updated_at"], "1970-01-01T00:00:01Z");
+        assert_eq!(sent["items"][1]["pull_requests"][0]["kind"], "pr");
         assert_eq!(sent["items"][1]["pull_requests"][0]["number"], 4);
+    }
+
+    #[test]
+    fn the_window_gets_a_backports_kind_beside_its_row() {
+        let found = workbench(
+            vec![
+                fixing(4, 1),
+                backport(5, "[3.14] gh-1: Fix it (GH-4)", vec![]),
+                backport(6, "[3.13] gh-1: Fix it (GH-99)", vec![]),
+            ],
+            vec![issue(1)],
+        );
+        let sent = serde_json::to_value(&found).unwrap();
+        let entries = &sent["items"][0]["pull_requests"];
+        assert_eq!(entries[0]["backports"][0]["number"], 5);
+        assert_eq!(entries[0]["backports"][0]["backport"], "manual");
+        assert_eq!(entries[1]["kind"], "backport");
+        assert_eq!(entries[1]["number"], 6);
+        assert_eq!(entries[1]["backport"], "manual");
+    }
+
+    const BOT: &str = "miss-islington";
+
+    /// A PR on 3.14 by someone else, titled `title` and committed by `committers`.
+    fn backport(number: u32, title: &str, committers: Vec<Option<Login>>) -> PullRequestFacts {
+        PullRequestFacts {
+            number,
+            title: title.to_owned(),
+            target_branch: "3.14".to_owned(),
+            off_default: Some(OffDefault {
+                description: String::new(),
+                cherry_picked_from: vec![],
+                committers,
+            }),
+            ..stranger()
+        }
+    }
+
+    fn bots_backport(number: u32, title: &str) -> PullRequestFacts {
+        PullRequestFacts {
+            author: Some(Login::new(BOT)),
+            ..backport(number, title, vec![Some(Login::new(BOT))])
+        }
+    }
+
+    fn own(facts: PullRequestFacts) -> PullRequestFacts {
+        PullRequestFacts {
+            author: Some(me()),
+            ..facts
+        }
+    }
+
+    /// The first Issue's lines, as each PR's number with the numbers beneath it.
+    fn tree_of(workbench: &Workbench) -> Vec<(u32, Vec<u32>)> {
+        first_issue(workbench)
+            .pull_requests
+            .iter()
+            .map(|entry| match entry {
+                TreeEntry::Pr(tree) => (
+                    tree.row.number,
+                    tree.backports
+                        .iter()
+                        .map(|below| below.row.number)
+                        .collect(),
+                ),
+                TreeEntry::Backport(backport) => (backport.row.number, vec![]),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_backport_sits_under_its_origin_pr_with_its_kind() {
+        let found = workbench(
+            vec![
+                fixing(10, 1),
+                bots_backport(11, "[3.14] gh-1: Fix it (GH-10)"),
+                backport(12, "[3.13] gh-1: Fix it (GH-10)", vec![]),
+                bots_backport(13, "[3.12] gh-1: Fix it (GH-99)"),
+            ],
+            vec![issue(1)],
+        );
+        assert_eq!(tree_of(&found), [(10, vec![11, 12]), (13, vec![])]);
+        let kinds: Vec<_> = first_issue(&found)
+            .pull_requests
+            .iter()
+            .flat_map(|entry| match entry {
+                TreeEntry::Pr(tree) => tree.backports.clone(),
+                TreeEntry::Backport(backport) => vec![backport.clone()],
+            })
+            .map(|row| row.backport)
+            .collect();
+        assert_eq!(
+            kinds,
+            [BackportKind::Bot, BackportKind::Manual, BackportKind::Bot]
+        );
+    }
+
+    #[test]
+    fn a_backport_under_a_cherry_pick_line_finds_its_origin_pr() {
+        let sha = CommitSha::parse("0123abc").unwrap();
+        let origin = PullRequestFacts {
+            state: PrState::Merged,
+            merge_commit: Some(sha.clone()),
+            ..fixing(10, 1)
+        };
+        let by_hand = PullRequestFacts {
+            off_default: Some(OffDefault {
+                description: String::new(),
+                cherry_picked_from: vec![sha],
+                committers: vec![],
+            }),
+            ..own(backport(11, "gh-1: Fix it on 3.14", vec![]))
+        };
+        let found = workbench(vec![origin, by_hand], vec![issue(1)]);
+        assert_eq!(tree_of(&found), [(10, vec![11])]);
+    }
+
+    #[test]
+    fn a_backport_of_another_issues_pr_brings_that_pr_under_its_own_issue() {
+        let origin = fixing(10, 1);
+        let found = workbench(
+            vec![origin, backport(11, "[3.14] gh-2: Fix it (GH-10)", vec![])],
+            vec![issue(1), issue(2)],
+        );
+        assert_eq!(
+            outline(&found),
+            [("issue", 2, vec![10, 11]), ("issue", 1, vec![10])]
+        );
+    }
+
+    #[test]
+    fn a_backport_that_fixes_no_issue_follows_its_origin_pr() {
+        let both = PullRequestFacts {
+            closing_issues: vec![2],
+            ..fixing(10, 1)
+        };
+        let found = workbench(
+            vec![both, backport(11, "[3.14] Fix it (GH-10)", vec![])],
+            vec![issue(1), issue(2)],
+        );
+        assert_eq!(
+            outline(&found),
+            [("issue", 2, vec![10, 11]), ("issue", 1, vec![10, 11])]
+        );
+    }
+
+    #[test]
+    fn a_backport_whose_origin_pr_is_missing_stands_in_the_issue_by_itself() {
+        let found = workbench(
+            vec![
+                fixing(10, 1),
+                backport(11, "[3.14] gh-1: Fix it (GH-99)", vec![]),
+            ],
+            vec![issue(1)],
+        );
+        assert_eq!(tree_of(&found), [(10, vec![]), (11, vec![])]);
+    }
+
+    #[test]
+    fn a_backport_of_a_backport_stands_by_itself_so_a_tree_stays_two_levels() {
+        let found = workbench(
+            vec![
+                fixing(10, 1),
+                backport(11, "[3.14] gh-1: Fix it (GH-10)", vec![]),
+                backport(12, "[3.13] gh-1: Fix it (GH-11)", vec![]),
+            ],
+            vec![issue(1)],
+        );
+        assert_eq!(tree_of(&found), [(10, vec![11]), (12, vec![])]);
+    }
+
+    #[test]
+    fn a_pr_with_no_issue_keeps_its_backports_beneath_it() {
+        let found = workbench(
+            vec![mine(10), backport(11, "[3.14] Fix it (GH-10)", vec![])],
+            vec![],
+        );
+        assert_eq!(outline(&found), [("standalone", 10, vec![11])]);
+    }
+
+    #[test]
+    fn a_users_backport_lists_an_origin_pr_that_is_not_the_users() {
+        let found = workbench(
+            vec![
+                PullRequestFacts {
+                    number: 10,
+                    title: "Fix it".to_owned(),
+                    ..stranger()
+                },
+                own(backport(11, "[3.14] Fix it (GH-10)", vec![])),
+            ],
+            vec![],
+        );
+        assert_eq!(outline(&found), [("standalone", 10, vec![11])]);
+    }
+
+    #[test]
+    fn a_users_backport_with_no_origin_pr_and_no_issue_stands_by_itself() {
+        let found = workbench(
+            vec![own(backport(11, "[3.14] Fix it (GH-10)", vec![]))],
+            vec![],
+        );
+        assert_eq!(outline(&found), [("standalone backport", 11, vec![])]);
+    }
+
+    #[test]
+    fn a_backport_standing_by_itself_takes_its_place_by_its_time() {
+        let later = PullRequestFacts {
+            updated_at: at(9),
+            ..own(backport(11, "[3.14] Fix it (GH-10)", vec![]))
+        };
+        let found = workbench(vec![mine(20), later], vec![]);
+        assert_eq!(
+            outline(&found),
+            [
+                ("standalone backport", 11, vec![]),
+                ("standalone", 20, vec![])
+            ]
+        );
+    }
+
+    #[test]
+    fn someone_elses_backport_with_no_origin_pr_and_no_issue_isnt_listed() {
+        let found = workbench(vec![backport(11, "[3.14] Fix it (GH-10)", vec![])], vec![]);
+        assert_eq!(outline(&found), []);
+    }
+
+    #[test]
+    fn a_review_request_on_a_backport_lists_its_issue() {
+        let requested = PullRequestFacts {
+            review_requests: vec![me()],
+            ..backport(11, "[3.14] gh-1: Fix it (GH-99)", vec![])
+        };
+        let found = workbench(vec![requested], vec![issue(1)]);
+        assert_eq!(outline(&found), [("issue", 1, vec![11])]);
+    }
+
+    #[test]
+    fn a_tree_holds_merged_and_closed_prs_and_says_which_they_are() {
+        let in_state = |number, state| PullRequestFacts {
+            number,
+            state,
+            title: "gh-1: Fix it".to_owned(),
+            ..stranger()
+        };
+        let found = workbench(
+            vec![
+                fixing(10, 1),
+                in_state(11, PrState::Merged),
+                in_state(12, PrState::Closed),
+            ],
+            vec![issue(1)],
+        );
+        let states: Vec<_> = first_issue(&found)
+            .pull_requests
+            .iter()
+            .flat_map(TreeEntry::rows)
+            .map(|row| row.state)
+            .collect();
+        assert_eq!(states, [PrState::Open, PrState::Merged, PrState::Closed]);
+    }
+
+    #[test]
+    fn a_merged_pr_of_the_users_keeps_no_issue_on_the_workbench() {
+        let merged = PullRequestFacts {
+            state: PrState::Merged,
+            ..fixing(10, 1)
+        };
+        assert_eq!(reasons_for(&merged), []);
+        assert_eq!(outline(&workbench(vec![merged], vec![issue(1)])), []);
+    }
+
+    #[test]
+    fn an_open_backport_keeps_its_merged_origin_prs_issue_on_the_workbench() {
+        let merged = PullRequestFacts {
+            state: PrState::Merged,
+            ..fixing(10, 1)
+        };
+        let found = workbench(
+            vec![
+                merged,
+                own(backport(11, "[3.14] gh-1: Fix it (GH-10)", vec![])),
+            ],
+            vec![issue(1)],
+        );
+        assert_eq!(tree_of(&found), [(10, vec![11])]);
+    }
+
+    #[test]
+    fn an_issues_people_and_time_count_its_backports() {
+        let later = PullRequestFacts {
+            updated_at: at(7),
+            author: Some(Login::new("some-backporter")),
+            ..backport(11, "[3.14] gh-1: Fix it (GH-10)", vec![])
+        };
+        let found = workbench(
+            vec![
+                fixing(10, 1),
+                later,
+                bots_backport(12, "[3.13] gh-1: Fix it (GH-10)"),
+            ],
+            vec![issue(1)],
+        );
+        let item = first_issue(&found);
+        assert_eq!(item.updated_at, at(7));
+        assert_eq!(
+            item.people,
+            [
+                Login::new("issue-author"),
+                me(),
+                Login::new("some-backporter")
+            ]
+        );
+    }
+
+    #[test]
+    fn under_githubs_conventions_a_pr_on_a_branch_is_an_ordinary_pr() {
+        let github = RepositorySettings {
+            conventions: Conventions::Github,
+            ..cpython()
+        };
+        let facts = WorkFacts {
+            viewer: Some(me()),
+            pull_requests: vec![mine(10), own(backport(11, "[3.14] Fix it (GH-10)", vec![]))],
+            issues: vec![],
+        };
+        let found = Workbench::from_facts(facts, &github);
+        assert_eq!(
+            outline(&found),
+            [("standalone", 11, vec![]), ("standalone", 10, vec![])]
+        );
     }
 
     #[test]

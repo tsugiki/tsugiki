@@ -701,7 +701,9 @@ mod tests {
             "assignees": { "nodes": [] },
             "reviewRequests": { "nodes": [] },
             "latestReviews": { "nodes": [] },
-            "commits": { "nodes": [] },
+            "lastCommit": { "nodes": [] },
+            "mergeCommit": null,
+            "commits": { "totalCount": 0, "nodes": [] },
         });
         reply_ok(&format!(r#"{{"data":{{"nodes":[{node}],{WORK_RATE}}}}}"#))
     }
@@ -733,7 +735,7 @@ mod tests {
 
         assert_eq!(changed, gcmon());
         assert!(
-            matches!(&workbench.items[..], [WorkbenchItem::StandalonePr(row)] if row.number == 7),
+            matches!(&workbench.items[..], [WorkbenchItem::StandalonePr(tree)] if tree.row.number == 7),
             "{workbench:?}"
         );
     }

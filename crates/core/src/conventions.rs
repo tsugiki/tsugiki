@@ -7,7 +7,8 @@ use crate::github::{Login, gh_number};
 use crate::repository::RepositoryName;
 
 const CPYTHON: &str = "python/cpython";
-const CPYTHON_BACKPORT_BOT: &str = "miss-islington";
+/// `pub` because the recorder keeps this login, which the rules have to recognise in a recording.
+pub const CPYTHON_BACKPORT_BOT: &str = "miss-islington";
 
 /// How a Repository's PRs name their Issues and Backports (ADR 0011). `links.rs` reads this.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -45,8 +46,31 @@ impl Conventions {
             .collect()
     }
 
-    /// True for a bot that opens PRs on someone's behalf. The Workbench leaves its name out of an Issue's
-    /// people.
+    /// True when this Repository's PRs can be Backports.
+    pub fn has_backports(self) -> bool {
+        match self {
+            Self::Cpython => true,
+            Self::Github => false,
+        }
+    }
+
+    /// The Origin PR that `title` names with these Conventions' Backport marker.
+    pub fn origin_in_title(self, title: &str) -> Option<u32> {
+        match self {
+            Self::Cpython => cpython_title_origin(title),
+            Self::Github => None,
+        }
+    }
+
+    /// The Origin PR that `title` could name under any Conventions.
+    pub fn origin_in_title_under_any(title: &str) -> Option<u32> {
+        Self::ALL
+            .iter()
+            .find_map(|conventions| conventions.origin_in_title(title))
+    }
+
+    /// True for a bot that opens Backports. A Backport it wrote is a Bot backport, and the Workbench leaves
+    /// its name out of an Issue's people.
     pub fn is_backport_bot(self, login: &Login) -> bool {
         match self {
             Self::Cpython => login == &Login::new(CPYTHON_BACKPORT_BOT),
@@ -72,6 +96,13 @@ fn cpython_title_issues(title: &str) -> Vec<u32> {
         .map(gh_number)
         .collect();
     numbers.unwrap_or_default()
+}
+
+/// The last `(GH-N)` in a title such as `[3.14] gh-1: Fix it (GH-9)`.
+fn cpython_title_origin(title: &str) -> Option<u32> {
+    title
+        .rsplit('(')
+        .find_map(|piece| gh_number(piece.split_once(')')?.0))
 }
 
 #[cfg(test)]
@@ -133,6 +164,46 @@ mod tests {
             Conventions::issues_in_title_under_any("gh-123: Fix it"),
             [123]
         );
+    }
+
+    #[test]
+    fn a_cpython_title_names_its_origin_pr_with_its_marker() {
+        for (title, expected) in [
+            ("[3.14] gh-1: Fix it (GH-9)", Some(9)),
+            ("[3.14] Doc: Fix it (gh-9)", Some(9)),
+            ("[3.14] gh-1: Fix it (GH-9) and more", Some(9)),
+            ("[3.14] gh-1: Revert (GH-8) (GH-9)", Some(9)),
+            ("[3.14] gh-1: Fix it (GH-9) (see notes)", Some(9)),
+            ("[3.14] gh-1: Fix it", None),
+            ("[3.14] gh-1: Fix it GH-9", None),
+            ("[3.14] gh-1: Fix it (#9)", None),
+            ("[3.14] gh-1: Fix it (GH-)", None),
+            ("[3.14] gh-1: Fix it (GH-9", None),
+            ("Fix it", None),
+        ] {
+            assert_eq!(
+                Conventions::Cpython.origin_in_title(title),
+                expected,
+                "{title}"
+            );
+        }
+    }
+
+    #[test]
+    fn githubs_conventions_have_no_backports() {
+        let title = "[3.14] gh-1: Fix it (GH-9)";
+        assert_eq!(Conventions::Github.origin_in_title(title), None);
+        assert!(!Conventions::Github.has_backports());
+        assert!(Conventions::Cpython.has_backports());
+    }
+
+    #[test]
+    fn a_title_could_name_the_origin_any_conventions_read_in_it() {
+        assert_eq!(
+            Conventions::origin_in_title_under_any("[3.14] gh-1: Fix it (GH-9)"),
+            Some(9)
+        );
+        assert_eq!(Conventions::origin_in_title_under_any("Fix it"), None);
     }
 
     #[test]

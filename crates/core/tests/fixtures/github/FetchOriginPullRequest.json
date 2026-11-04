@@ -1,0 +1,123 @@
+{
+  "body": {
+    "data": {
+      "rateLimit": {
+        "remaining": 4913,
+        "resetAt": "2026-11-04T18:18:45Z"
+      },
+      "repository": {
+        "pullRequest": {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "user-50"
+          },
+          "baseRefName": "main",
+          "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, ",
+          "closingIssuesReferences": {
+            "nodes": []
+          },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-50"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-50"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-50"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-50"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 4
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "user-54"
+                },
+                "state": "APPROVED"
+              }
+            ]
+          },
+          "mergeCommit": {
+            "oid": "ce8b81fff4094bd0cfb0c57193135bfc904c0ca2"
+          },
+          "number": 151779,
+          "repository": {
+            "defaultBranchRef": {
+              "name": "main"
+            },
+            "nameWithOwner": "python/cpython"
+          },
+          "reviewRequests": {
+            "nodes": []
+          },
+          "state": "MERGED",
+          "title": "gh-151763: Fix NULL deref in `os._path_normpath()`",
+          "updatedAt": "2026-06-24T16:10:40Z"
+        }
+      }
+    }
+  },
+  "query": "query FetchOriginPullRequest($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { number title state isDraft updatedAt baseRefName body mergeCommit { oid } repository { nameWithOwner defaultBranchRef { name } } closingIssuesReferences(first: 100) { nodes { number repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } commits(first: 100) { totalCount nodes { commit { message parents { totalCount } committer { user { login } } } } } } } rateLimit { remaining resetAt } }",
+  "reset": 1793816325,
+  "status": 200
+}

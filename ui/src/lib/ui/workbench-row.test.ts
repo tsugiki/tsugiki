@@ -6,6 +6,7 @@ const row: WorkbenchRow = {
   number: 160662,
   title: "gh-112564: Fix UAF for gc debug print",
   author: "some-author",
+  state: "OPEN",
   is_draft: false,
   target_branch: "main",
   ci: "SUCCESS",
@@ -18,7 +19,10 @@ const issue: IssueItem = {
   title: "GIL drop during collection",
   people: ["issue-author", "some-author"],
   updated_at: "2026-11-04T10:00:00Z",
-  pull_requests: [row, { ...row, number: 160663 }],
+  pull_requests: [
+    { kind: "pr", ...row, backports: [] },
+    { kind: "pr", ...row, number: 160663, backports: [] },
+  ],
 };
 
 const threeHoursLater = new Date("2026-11-04T13:00:00Z");
@@ -28,27 +32,29 @@ it("starts with the PR's number and title", () => {
 });
 
 it("says why the PR is here, who wrote it, where it goes and how CI went", () => {
-  expect(details(row)).toBe("Review request · some-author · into main · CI passed");
+  expect(details(row)).toBe("Review request · some-author · into main · Open · CI passed");
 });
 
 it("lists every reason", () => {
   expect(details({ ...row, reasons: ["review_request", "own_pr", "reviewed"] })).toBe(
-    "Review request · Own PR · Reviewed · some-author · into main · CI passed",
+    "Review request · Own PR · Reviewed · some-author · into main · Open · CI passed",
   );
 });
 
 it("says when a PR is a draft", () => {
   expect(details({ ...row, is_draft: true })).toBe(
-    "Review request · some-author · into main · Draft · CI passed",
+    "Review request · some-author · into main · Open · Draft · CI passed",
   );
 });
 
 it("leaves CI out of a PR that has none", () => {
-  expect(details({ ...row, ci: null })).toBe("Review request · some-author · into main");
+  expect(details({ ...row, ci: null })).toBe("Review request · some-author · into main · Open");
 });
 
 it("names a PR whose author's account has gone", () => {
-  expect(details({ ...row, author: null })).toBe("Review request · deleted user · into main · CI passed");
+  expect(details({ ...row, author: null })).toBe(
+    "Review request · deleted user · into main · Open · CI passed",
+  );
 });
 
 it.each([
@@ -57,12 +63,12 @@ it.each([
   ["FAILURE", "CI failed"],
   ["PENDING", "CI running"],
 ] as const)("says what %s means", (ci, words) => {
-  expect(details({ ...row, ci })).toBe(`Review request · some-author · into main · ${words}`);
+  expect(details({ ...row, ci })).toBe(`Review request · some-author · into main · Open · ${words}`);
 });
 
 it("sends each PR into its own branch", () => {
   expect(details({ ...row, target_branch: "3.14" })).toBe(
-    "Review request · some-author · into 3.14 · CI passed",
+    "Review request · some-author · into 3.14 · Open · CI passed",
   );
 });
 
@@ -82,6 +88,31 @@ it("reads a time ahead of this computer's clock as now", () => {
   expect(ago("2026-11-04T10:00:00Z", new Date("2026-11-04T09:00:00Z"))).toBe("just now");
 });
 
+it("says what state a PR is in", () => {
+  expect(details({ ...row, state: "MERGED" })).toContain("· Merged ·");
+  expect(details({ ...row, state: "CLOSED" })).toContain("· Closed ·");
+});
+
+it("names a Backport's kind", () => {
+  expect(details({ ...row, reasons: [], backport: "bot" })).toBe(
+    "Bot backport · some-author · into main · Open · CI passed",
+  );
+  expect(details({ ...row, reasons: [], backport: "manual" })).toBe(
+    "Manual backport · some-author · into main · Open · CI passed",
+  );
+});
+
+it("counts each Backport and each PR in an Issue's tree", () => {
+  const tree: IssueItem = {
+    ...issue,
+    pull_requests: [
+      { kind: "pr", ...row, backports: [{ ...row, number: 2, backport: "bot" }] },
+      { kind: "backport", ...row, number: 3, backport: "manual" },
+    ],
+  };
+  expect(issueDetails(tree, threeHoursLater)).toBe("issue-author, some-author · 3 PRs · 3h ago");
+});
+
 it("starts an Issue with its number and title", () => {
   expect(headline(issue)).toBe("#112564 GIL drop during collection");
 });
@@ -91,9 +122,9 @@ it("says who an Issue involves, how many PRs fix it and when it changed", () => 
 });
 
 it("counts one PR in the singular", () => {
-  expect(issueDetails({ ...issue, pull_requests: [row] }, threeHoursLater)).toBe(
-    "issue-author, some-author · 1 PR · 3h ago",
-  );
+  expect(
+    issueDetails({ ...issue, pull_requests: [{ kind: "pr", ...row, backports: [] }] }, threeHoursLater),
+  ).toBe("issue-author, some-author · 1 PR · 3h ago");
 });
 
 it("leaves people out of an Issue whose people have all gone", () => {
@@ -102,6 +133,6 @@ it("leaves people out of an Issue whose people have all gone", () => {
 
 it("says when a Standalone PR changed", () => {
   expect(standaloneDetails(row, threeHoursLater)).toBe(
-    "Review request · some-author · into main · CI passed · 3h ago",
+    "Review request · some-author · into main · Open · CI passed · 3h ago",
   );
 });

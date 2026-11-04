@@ -1,10 +1,29 @@
 // The Workbench's words for what the core says about an Issue or a PR.
-import type { CiState, IssueItem, WorkbenchRow, WorkReason } from "$lib/state/workbench.svelte";
+import type {
+  BackportKind,
+  CiState,
+  IssueItem,
+  PrState,
+  TreeEntry,
+  WorkbenchRow,
+  WorkReason,
+} from "$lib/state/workbench.svelte";
 
 const REASONS: Record<WorkReason, string> = {
   review_request: "Review request",
   own_pr: "Own PR",
   reviewed: "Reviewed",
+};
+
+const STATES: Record<PrState, string> = {
+  OPEN: "Open",
+  CLOSED: "Closed",
+  MERGED: "Merged",
+};
+
+const BACKPORTS: Record<BackportKind, string> = {
+  bot: "Bot backport",
+  manual: "Manual backport",
 };
 
 const CI: Record<CiState, string> = {
@@ -31,9 +50,12 @@ export function ago(updatedAt: string, now: Date): string {
 /** An Issue's or a PR's first line. */
 export const headline = (item: { number: number; title: string }) => `#${String(item.number)} ${item.title}`;
 
-/** An Issue's second line: who is involved, how many PRs fix it and when it last changed. */
+/** The lines an entry of an Issue's tree takes: the PR and the Backports beneath it. */
+const rowsIn = (entry: TreeEntry) => (entry.kind === "pr" ? 1 + entry.backports.length : 1);
+
+/** An Issue's second line: who is involved, how many PRs its tree holds and when it last changed. */
 export function issueDetails(issue: IssueItem, now: Date): string {
-  const count = issue.pull_requests.length;
+  const count = issue.pull_requests.reduce((total, entry) => total + rowsIn(entry), 0);
   return [
     ...(issue.people.length > 0 ? [issue.people.join(", ")] : []),
     count === 1 ? "1 PR" : `${String(count)} PRs`,
@@ -46,11 +68,13 @@ export const standaloneDetails = (row: WorkbenchRow, now: Date) =>
   `${details(row)} · ${ago(row.updated_at, now)}`;
 
 /** A PR's second line, with only the facts this PR has. */
-export function details(row: WorkbenchRow): string {
+export function details(row: WorkbenchRow & { backport?: BackportKind }): string {
   const parts = [
     ...row.reasons.map((reason) => REASONS[reason]),
+    ...(row.backport ? [BACKPORTS[row.backport]] : []),
     row.author ?? "deleted user",
     `into ${row.target_branch}`,
+    STATES[row.state],
     ...(row.is_draft ? ["Draft"] : []),
     ...(row.ci ? [CI[row.ci]] : []),
   ];

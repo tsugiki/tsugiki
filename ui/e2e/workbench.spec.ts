@@ -12,6 +12,7 @@ const reviewRow: WorkbenchRow = {
   number: 160662,
   title: "gh-112564: Fix UAF for gc debug print",
   author: "some-author",
+  state: "OPEN",
   is_draft: false,
   target_branch: "main",
   ci: "SUCCESS",
@@ -25,7 +26,23 @@ const review: WorkbenchItem = {
   title: "GIL drop during collection",
   people: ["issue-author", "some-author"],
   updated_at: "2026-11-04T10:00:00Z",
-  pull_requests: [reviewRow],
+  pull_requests: [
+    {
+      kind: "pr",
+      ...reviewRow,
+      backports: [
+        {
+          ...reviewRow,
+          number: 160700,
+          title: "[3.14] gh-112564: Fix UAF for gc debug print (GH-160662)",
+          state: "MERGED",
+          target_branch: "3.14",
+          reasons: [],
+          backport: "bot",
+        },
+      ],
+    },
+  ],
 };
 
 const own: WorkbenchItem = {
@@ -33,11 +50,13 @@ const own: WorkbenchItem = {
   number: 157178,
   title: "GH-156425: Clear GC frame on early return",
   author: "octocat",
+  state: "OPEN",
   is_draft: true,
   target_branch: "3.14",
   ci: "FAILURE",
   updated_at: "2026-11-04T09:00:00Z",
   reasons: ["own_pr"],
+  backports: [],
 };
 
 test("the Workbench lists what waits on the user", async ({ page }) => {
@@ -45,12 +64,13 @@ test("the Workbench lists what waits on the user", async ({ page }) => {
   await page.goto("/");
 
   const rows = page.getByRole("listitem");
-  await expect(rows).toHaveCount(3);
+  await expect(rows).toHaveCount(4);
   await expect(rows.nth(0)).toContainText("#112564 GIL drop during collection");
-  await expect(rows.nth(0)).toContainText("issue-author, some-author · 1 PR · ");
+  await expect(rows.nth(0)).toContainText("issue-author, some-author · 2 PRs · ");
   await expect(rows.nth(1)).toContainText("#160662 gh-112564: Fix UAF for gc debug print");
-  await expect(rows.nth(1)).toContainText("Review request · some-author · into main · CI passed");
-  await expect(rows.nth(2)).toContainText("Own PR · octocat · into 3.14 · Draft · CI failed · ");
+  await expect(rows.nth(1)).toContainText("Review request · some-author · into main · Open · CI passed");
+  await expect(rows.nth(2)).toContainText("Bot backport · some-author · into 3.14 · Merged · CI passed");
+  await expect(rows.nth(3)).toContainText("Own PR · octocat · into 3.14 · Open · Draft · CI failed · ");
 });
 
 test("the first sync's rows appear as the core saves them", async ({ page }) => {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { WorkbenchState } from "$lib/state/workbench.svelte";
+  import { WorkbenchState, type BackportRow } from "$lib/state/workbench.svelte";
   import { details, headline, issueDetails, standaloneDetails } from "./workbench-row";
 
   const MINUTE = 60_000;
@@ -29,6 +29,19 @@
   });
 </script>
 
+{#snippet backports(rows: BackportRow[])}
+  {#if rows.length > 0}
+    <ul class="pull-requests">
+      {#each rows as row (row.number)}
+        <li>
+          <span>{headline(row)}</span>
+          <small>{details(row)}</small>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+{/snippet}
+
 <section>
   <h1>{name}</h1>
   <button onclick={onadd}>Add repository</button>
@@ -46,15 +59,21 @@
           {#if item.kind === "issue"}
             <small>{issueDetails(item, now)}</small>
             <ul class="pull-requests">
-              {#each item.pull_requests as row (row.number)}
+              {#each item.pull_requests as entry (entry.number)}
                 <li>
-                  <span>{headline(row)}</span>
-                  <small>{details(row)}</small>
+                  <span>{headline(entry)}</span>
+                  <small>{details(entry)}</small>
+                  {#if entry.kind === "pr"}
+                    {@render backports(entry.backports)}
+                  {/if}
                 </li>
               {/each}
             </ul>
           {:else}
             <small>{standaloneDetails(item, now)}</small>
+            {#if item.kind === "standalone_pr"}
+              {@render backports(item.backports)}
+            {/if}
           {/if}
         </li>
       {/each}

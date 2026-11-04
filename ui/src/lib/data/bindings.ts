@@ -41,6 +41,26 @@ export type About = {
 	version: string,
 };
 
+/**  A Backport's kind: it shares its Origin PR's review state, or it gets a review of its own. */
+export type BackportKind = 
+/**  A backport bot opened it and committed every commit but merges. */
+"bot" | 
+/**  A person opened it, or someone else pushed to it. */
+"manual";
+
+/**  A Backport's line of the list. */
+export type BackportRow = BackportRow_Serialize | BackportRow_Deserialize;
+
+/**  A Backport's line of the list. */
+export type BackportRow_Deserialize = {
+	backport: BackportKind,
+} & WorkbenchRow_Deserialize;
+
+/**  A Backport's line of the list. */
+export type BackportRow_Serialize = {
+	backport: BackportKind,
+} & WorkbenchRow_Serialize;
+
 /**  A commit's CI, as GitHub rolls its checks up. */
 export type CiState = "EXPECTED" | "ERROR" | "FAILURE" | "PENDING" | "SUCCESS";
 
@@ -90,10 +110,10 @@ export type Home_Serialize =
 /**  The last Repository the user had open. */
 { screen: "repository"; repository: RepositorySettings_Serialize };
 
-/**  An Issue on the Workbench, with each open PR Tsugiki knows that fixes it. */
+/**  An Issue on the Workbench, with its tree: each PR Tsugiki knows that fixes it, whatever its state. */
 export type IssueItem = IssueItem_Serialize | IssueItem_Deserialize;
 
-/**  An Issue on the Workbench, with each open PR Tsugiki knows that fixes it. */
+/**  An Issue on the Workbench, with its tree: each PR Tsugiki knows that fixes it, whatever its state. */
 export type IssueItem_Deserialize = {
 	number: number,
 	title: string,
@@ -101,10 +121,10 @@ export type IssueItem_Deserialize = {
 	people: Login[],
 	/**  The latest update of the Issue and its PRs. */
 	updated_at: string,
-	pull_requests: WorkbenchRow_Deserialize[],
+	pull_requests: TreeEntry_Deserialize[],
 };
 
-/**  An Issue on the Workbench, with each open PR Tsugiki knows that fixes it. */
+/**  An Issue on the Workbench, with its tree: each PR Tsugiki knows that fixes it, whatever its state. */
 export type IssueItem_Serialize = {
 	number: number,
 	title: string,
@@ -112,7 +132,7 @@ export type IssueItem_Serialize = {
 	people: Login[],
 	/**  The latest update of the Issue and its PRs. */
 	updated_at: string,
-	pull_requests: WorkbenchRow_Serialize[],
+	pull_requests: TreeEntry_Serialize[],
 };
 
 /**  The settings in force, and what is wrong with the files they came from, in words for the status bar. */
@@ -132,6 +152,21 @@ export type LoadedSettings_Serialize = {
 
 /**  A GitHub username. It reaches the UI as a plain string, in GitHub's casing. */
 export type Login = string;
+
+export type PrState = "OPEN" | "CLOSED" | "MERGED";
+
+/**  A PR with its Backports beneath it. */
+export type PrTree = PrTree_Serialize | PrTree_Deserialize;
+
+/**  A PR with its Backports beneath it. */
+export type PrTree_Deserialize = {
+	backports: BackportRow_Deserialize[],
+} & WorkbenchRow_Deserialize;
+
+/**  A PR with its Backports beneath it. */
+export type PrTree_Serialize = {
+	backports: BackportRow_Serialize[],
+} & WorkbenchRow_Serialize;
 
 /**  What the add dialog shows before the user decides. */
 export type RepositoryCheck = RepositoryCheck_Serialize | RepositoryCheck_Deserialize;
@@ -271,6 +306,27 @@ export type Status_Serialize =
 /**  Where the token comes from. A personal access token joins this with the Account page (ADR 0004). */
 export type TokenSource = "gh";
 
+/**  A line directly under an Issue. */
+export type TreeEntry = TreeEntry_Serialize | TreeEntry_Deserialize;
+
+/**  A line directly under an Issue. */
+export type TreeEntry_Deserialize = {
+	kind: "pr",
+} & PrTree_Deserialize | 
+/**  A Backport whose Origin PR Tsugiki can't show: that number names no PR, or a Backport. */
+{
+	kind: "backport",
+} & BackportRow_Deserialize;
+
+/**  A line directly under an Issue. */
+export type TreeEntry_Serialize = {
+	kind: "pr",
+} & PrTree_Serialize | 
+/**  A Backport whose Origin PR Tsugiki can't show: that number names no PR, or a Backport. */
+{
+	kind: "backport",
+} & BackportRow_Serialize;
+
 /**  The reason a PR is on the user's Workbench. */
 export type WorkReason = 
 /**  The user is a requested reviewer or an assignee. */
@@ -292,16 +348,28 @@ export type WorkbenchItem = WorkbenchItem_Serialize | WorkbenchItem_Deserialize;
 /**  A top-level entry of the list. */
 export type WorkbenchItem_Deserialize = {
 	kind: "issue",
-} & IssueItem_Deserialize | {
+} & IssueItem_Deserialize | 
+/**  A PR that fixes no Issue, with its Backports. */
+{
 	kind: "standalone_pr",
-} & WorkbenchRow_Deserialize;
+} & PrTree_Deserialize | 
+/**  A Backport with no Issue and no Origin PR to sit under. */
+{
+	kind: "standalone_backport",
+} & BackportRow_Deserialize;
 
 /**  A top-level entry of the list. */
 export type WorkbenchItem_Serialize = {
 	kind: "issue",
-} & IssueItem_Serialize | {
+} & IssueItem_Serialize | 
+/**  A PR that fixes no Issue, with its Backports. */
+{
 	kind: "standalone_pr",
-} & WorkbenchRow_Serialize;
+} & PrTree_Serialize | 
+/**  A Backport with no Issue and no Origin PR to sit under. */
+{
+	kind: "standalone_backport",
+} & BackportRow_Serialize;
 
 /**  A PR's line of the list. */
 export type WorkbenchRow = WorkbenchRow_Serialize | WorkbenchRow_Deserialize;
@@ -311,11 +379,12 @@ export type WorkbenchRow_Deserialize = {
 	number: number,
 	title: string,
 	author?: Login | null,
+	state: PrState,
 	is_draft: boolean,
 	target_branch: string,
 	ci?: CiState | null,
 	updated_at: string,
-	/**  Empty for a PR under an Issue that another PR put on the Workbench. */
+	/**  Empty for a PR that another PR put on the Workbench, and for one no longer open. */
 	reasons: WorkReason[],
 };
 
@@ -324,11 +393,12 @@ export type WorkbenchRow_Serialize = {
 	number: number,
 	title: string,
 	author: Login | null,
+	state: PrState,
 	is_draft: boolean,
 	target_branch: string,
 	ci: CiState | null,
 	updated_at: string,
-	/**  Empty for a PR under an Issue that another PR put on the Workbench. */
+	/**  Empty for a PR that another PR put on the Workbench, and for one no longer open. */
 	reasons: WorkReason[],
 };
 

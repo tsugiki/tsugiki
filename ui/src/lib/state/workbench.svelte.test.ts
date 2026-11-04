@@ -12,11 +12,13 @@ const item = (number: number): WorkbenchItem => ({
   number,
   title: `PR ${String(number)}`,
   author: "octocat",
+  state: "OPEN",
   is_draft: false,
   target_branch: "main",
   ci: "SUCCESS",
   updated_at: "2026-11-04T10:00:00Z",
   reasons: ["own_pr"],
+  backports: [],
 });
 
 const answer = (...numbers: number[]) => ({

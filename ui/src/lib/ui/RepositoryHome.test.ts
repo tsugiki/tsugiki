@@ -17,6 +17,7 @@ const row = {
   number: 160662,
   title: "gh-112564: Fix UAF for gc debug print",
   author: "some-author",
+  state: "OPEN",
   is_draft: false,
   target_branch: "main",
   ci: "SUCCESS",
@@ -30,7 +31,7 @@ const issue = {
   title: "GIL drop during collection",
   people: ["issue-author", "some-author"],
   updated_at: "2026-11-04T10:00:00Z",
-  pull_requests: [row],
+  pull_requests: [{ kind: "pr", ...row, backports: [] }],
 };
 
 beforeEach(() => {
@@ -59,7 +60,7 @@ it("lists a Standalone PR with the time it changed", async () => {
   vi.setSystemTime("2026-11-04T13:00:00Z");
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [{ kind: "standalone_pr", ...row }] },
+    data: { items: [{ kind: "standalone_pr", ...row, backports: [] }] },
   });
   render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
 
@@ -68,7 +69,7 @@ it("lists a Standalone PR with the time it changed", async () => {
   expect(core.workbench).toHaveBeenCalledWith("python/cpython");
   expect(within(item).getByText("#160662 gh-112564: Fix UAF for gc debug print")).toBeTruthy();
   expect(
-    within(item).getByText("Review request · some-author · into main · CI passed · 3h ago"),
+    within(item).getByText("Review request · some-author · into main · Open · CI passed · 3h ago"),
   ).toBeTruthy();
 });
 
@@ -100,7 +101,9 @@ it("lists an Issue with its PRs under it", async () => {
     within(pullRequest as HTMLElement).getByText("#160662 gh-112564: Fix UAF for gc debug print"),
   ).toBeTruthy();
   expect(
-    within(pullRequest as HTMLElement).getByText("Review request · some-author · into main · CI passed"),
+    within(pullRequest as HTMLElement).getByText(
+      "Review request · some-author · into main · Open · CI passed",
+    ),
   ).toBeTruthy();
 });
 
@@ -135,4 +138,53 @@ it("stops listening when it goes", async () => {
   await screen.findByText(/Nothing here yet/);
   unmount();
   expect(core.stopListening).toHaveBeenCalledOnce();
+});
+
+const answering = (...items: unknown[]) => {
+  core.workbench.mockResolvedValue({ status: "ok", data: { items } });
+};
+
+const backportRow = {
+  ...row,
+  number: 160700,
+  title: "[3.14] gh-112564: Fix UAF for gc debug print (GH-160662)",
+  target_branch: "3.14",
+  reasons: [],
+  backport: "bot",
+};
+
+it("lists an Origin PR's Backports beneath it in the Issue", async () => {
+  answering({ ...issue, pull_requests: [{ kind: "pr", ...row, backports: [backportRow] }] });
+  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+
+  const origin = (await screen.findByText(/^#160662 /)).closest("li") as HTMLElement;
+
+  const beneath = within(origin)
+    .getByText(/^#160700 /)
+    .closest("li") as HTMLElement;
+  expect(within(beneath).getByText("Bot backport · some-author · into 3.14 · Open · CI passed")).toBeTruthy();
+});
+
+it("lists a Backport with no Origin PR directly under its Issue", async () => {
+  answering({ ...issue, pull_requests: [{ kind: "backport", ...backportRow }] });
+  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+
+  expect(await screen.findByText("Bot backport · some-author · into 3.14 · Open · CI passed")).toBeTruthy();
+});
+
+it("lists a Standalone PR's Backports beneath it", async () => {
+  answering({ kind: "standalone_pr", ...row, backports: [backportRow] });
+  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+
+  const origin = (await screen.findByText(/^#160662 /)).closest("li") as HTMLElement;
+
+  expect(within(origin).getByText(/^#160700 /)).toBeTruthy();
+});
+
+it("lists a Backport with no Issue and no Origin PR by itself", async () => {
+  answering({ kind: "standalone_backport", ...backportRow });
+  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+
+  expect(await screen.findByText(/^#160700 /)).toBeTruthy();
+  expect(screen.getAllByRole("listitem")).toHaveLength(1);
 });

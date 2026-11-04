@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use serde_json::{Value, json};
 
 use super::{Reply, Request, Transport, Unreachable};
+use crate::conventions::CPYTHON_BACKPORT_BOT;
 use crate::token::Token;
 
 const PREFIXES: [&str; 6] = ["gho_", "ghp_", "ghs_", "ghu_", "ghr_", "github_pat_"];
@@ -17,6 +18,13 @@ const SCRUBBED: &str = "[token]";
 const VIEWER_STAND_IN: &str = "octocat";
 /// Stands in for a description nothing reads, with the line breaks GitHub's own answers have.
 const FILLER: &str = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\n";
+/// The markers of a line of a description that names a person, with their email.
+const PEOPLE_LINES: [&str; 2] = ["co-authored-by:", "signed-off-by:"];
+/// The one owner a recording's Repository names stay under. An answer also names other Repositories, such
+/// as a fork that mentions an Issue, whose owner is a person.
+const RECORDED_OWNER: &str = "python";
+/// The start of the one line Tsugiki reads in a commit message.
+const CHERRY_PICK: &str = "(cherry picked from commit ";
 /// The fields of an answer that people write, where a login can sit inside the text.
 const PROSE_FIELDS: [&str; 2] = ["title", "body"];
 
@@ -52,22 +60,50 @@ pub fn scrub(text: &str, token: &str) -> String {
     scrubbed
 }
 
-/// Puts filler of the same length in the description of each PR on its default branch. Tsugiki reads a
-/// description only off that branch (ADR 0011), so the words would add nothing but text that can name people,
-/// and the length keeps a recording as large as GitHub's answer.
-fn fill_unread_descriptions(body: &mut Value) {
-    let Some(Value::Array(nodes)) = body.pointer_mut("/data/nodes") else {
-        return;
-    };
-    for node in nodes {
-        let base = node.pointer("/baseRefName");
-        let on_default =
-            base.is_some() && base == node.pointer("/repository/defaultBranchRef/name");
-        if on_default && let Some(Value::String(description)) = node.get_mut("body") {
-            let length = description.chars().count();
-            *description = FILLER.chars().cycle().take(length).collect();
+/// Keeps a recording to what Tsugiki reads, because the rest can name people. A description on the default
+/// branch becomes filler of the same length (ADR 0011), and the length keeps a recording as large as GitHub's
+/// answer. A description off that branch loses the lines that credit a person, and a commit message keeps
+/// only its cherry-pick lines.
+fn keep_only_what_is_read(body: &mut Value) {
+    if let Some(Value::Array(nodes)) = body.pointer_mut("/data/nodes") {
+        nodes.iter_mut().for_each(keep_what_a_pr_reads);
+    }
+    if let Some(node) = body.pointer_mut("/data/repository/pullRequest") {
+        keep_what_a_pr_reads(node);
+    }
+}
+
+fn keep_what_a_pr_reads(node: &mut Value) {
+    let base = node.pointer("/baseRefName");
+    let on_default = base.is_some() && base == node.pointer("/repository/defaultBranchRef/name");
+    if let Some(Value::String(description)) = node.get_mut("body") {
+        *description = if on_default {
+            FILLER
+                .chars()
+                .cycle()
+                .take(description.chars().count())
+                .collect()
+        } else {
+            without_lines(description, |line| {
+                let line = line.to_ascii_lowercase();
+                PEOPLE_LINES.iter().any(|marker| line.contains(marker))
+            })
+        };
+    }
+    if let Some(Value::Array(commits)) = node.pointer_mut("/commits/nodes") {
+        for commit in commits {
+            if let Some(Value::String(message)) = commit.pointer_mut("/commit/message") {
+                *message = without_lines(message, |line| !line.starts_with(CHERRY_PICK));
+            }
         }
     }
+}
+
+/// `text` without the lines `unwanted` picks, with its line breaks kept.
+fn without_lines(text: &str, unwanted: impl Fn(&str) -> bool) -> String {
+    text.split_inclusive('\n')
+        .filter(|line| !unwanted(line.trim_start()))
+        .collect()
 }
 
 /// True for a character a GitHub login can hold.
@@ -77,9 +113,18 @@ fn is_login_char(c: char) -> bool {
 
 /// The logins a run of recordings has met, in lower case, and the stand-in for each. One person keeps one
 /// stand-in across recordings, so a PR's author and the same person's Issue still match.
-#[derive(Default)]
 struct StandIns {
     by_login: BTreeMap<String, String>,
+}
+
+impl Default for StandIns {
+    /// The backport bot stays as it is, because the Backport rules have to recognise it in a recording.
+    fn default() -> Self {
+        let bot = CPYTHON_BACKPORT_BOT.to_owned();
+        Self {
+            by_login: BTreeMap::from([(bot.clone(), bot)]),
+        }
+    }
 }
 
 impl StandIns {
@@ -92,7 +137,8 @@ impl StandIns {
 
     /// The stand-in for `login`, a new one the first time.
     fn for_login(&mut self, login: &str) -> String {
-        let next = format!("user-{}", self.by_login.len());
+        // The bot's entry takes no number.
+        let next = format!("user-{}", self.by_login.len().saturating_sub(1));
         self.by_login
             .entry(login.to_ascii_lowercase())
             .or_insert(next)
@@ -142,16 +188,30 @@ impl StandIns {
             }
             Value::Object(fields) => {
                 for (name, field) in fields.iter_mut() {
-                    if PROSE_FIELDS.contains(&name.as_str())
-                        && let Value::String(text) = &mut *field
+                    if let Value::String(text) = &mut *field
+                        && PROSE_FIELDS.contains(&name.as_str())
                     {
                         *text = self.in_prose(text);
+                    } else if let Value::String(text) = &mut *field
+                        && name == "nameWithOwner"
+                    {
+                        *text = self.in_repository_name(text);
                     } else {
                         self.replace_in_strings(field);
                     }
                 }
             }
             Value::Null | Value::Bool(_) | Value::Number(_) => {}
+        }
+    }
+
+    /// `name` with an owner other than the recorded one replaced, because that owner is a person's login.
+    fn in_repository_name(&mut self, name: &str) -> String {
+        match name.split_once('/') {
+            Some((owner, rest)) if !owner.eq_ignore_ascii_case(RECORDED_OWNER) => {
+                format!("{}/{rest}", self.for_login(owner))
+            }
+            _ => name.to_owned(),
         }
     }
 
@@ -214,7 +274,7 @@ impl Transport for Recorder {
         if reply.status != 200 || body.get("errors").is_some() {
             return Ok(reply);
         }
-        fill_unread_descriptions(&mut body);
+        keep_only_what_is_read(&mut body);
         let mut stand_ins = self.stand_ins.borrow_mut();
         if let Some(login) = body.pointer("/data/viewer/login").and_then(Value::as_str) {
             stand_ins.add_viewer(login);
@@ -476,6 +536,116 @@ mod tests {
             live.body.contains("Fixes #5"),
             "the caller still gets the real answer"
         );
+    }
+
+    /// The part of `node`, answered at `pointer`, that a recording keeps.
+    fn recorded_pr(name: &str, answer: &Value) -> Value {
+        let dir = temp_dir(name);
+        let recorder = Recorder::new(
+            Box::new(Canned(Ok(reply(&answer.to_string())))),
+            dir.clone(),
+        );
+        drop(recorder.post(&token(), &REQUEST).unwrap());
+        let replayed = Replayer::new(dir.clone()).post(&token(), &REQUEST).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+        serde_json::from_str(&replayed.body).unwrap()
+    }
+
+    fn pr_off_default(body: &str, message: &str) -> Value {
+        json!({
+            "baseRefName": "3.14",
+            "body": body,
+            "repository": { "defaultBranchRef": { "name": "main" } },
+            "commits": { "nodes": [
+                { "commit": { "message": message, "committer": { "user": { "login": "miss-islington" } } } },
+                null,
+                { "commit": {} },
+            ] },
+        })
+    }
+
+    #[test]
+    fn a_recording_keeps_a_read_description_without_the_lines_that_credit_people() {
+        let body = "(cherry picked from commit 0123abc)\r\n\r\nco-authored-by: A Person <a@example.com>\r\n> Co-Authored-By: B <b@example.com>\r\nSigned-off-by: C <c@example.com>\r\nFixes #5\r\n";
+        let found = recorded_pr(
+            "co-authors",
+            &json!({ "data": { "nodes": [pr_off_default(body, "")] } }),
+        );
+        assert_eq!(
+            found["data"]["nodes"][0]["body"],
+            "(cherry picked from commit 0123abc)\r\n\r\nFixes #5\r\n"
+        );
+    }
+
+    #[test]
+    fn a_recording_keeps_only_the_cherry_pick_lines_of_a_commit_message() {
+        let message = "gh-1: Fix it\n\n(cherry picked from commit 0123abc)\n\nCo-authored-by: A Person <a@example.com>";
+        let found = recorded_pr(
+            "messages",
+            &json!({ "data": { "nodes": [pr_off_default("", message)] } }),
+        );
+        let commits = &found["data"]["nodes"][0]["commits"]["nodes"];
+        assert_eq!(
+            commits[0]["commit"]["message"],
+            "(cherry picked from commit 0123abc)\n"
+        );
+        assert_eq!(commits[1], Value::Null);
+    }
+
+    #[test]
+    fn a_recording_treats_an_origin_fetched_by_number_like_any_pr() {
+        let on_default = json!({
+            "baseRefName": "main",
+            "body": "Fixes #5",
+            "repository": { "defaultBranchRef": { "name": "main" } },
+        });
+        let found = recorded_pr(
+            "by-number",
+            &json!({ "data": { "repository": { "pullRequest": on_default } } }),
+        );
+        assert_eq!(
+            found["data"]["repository"]["pullRequest"]["body"],
+            "Lorem ip"
+        );
+    }
+
+    #[test]
+    fn a_recording_with_no_pr_in_it_stays_as_it_was() {
+        let answer = json!({ "data": { "repository": { "pullRequest": null } } });
+        assert_eq!(recorded_pr("no-pr", &answer), answer);
+    }
+
+    #[test]
+    fn a_recording_keeps_only_the_recorded_owner_in_a_repository_name() {
+        let answer = json!({ "data": { "repository": { "issue": { "nodes": [
+            { "source": { "repository": { "nameWithOwner": "python/cpython" } } },
+            { "source": { "repository": { "nameWithOwner": "Python/peps" } } },
+            { "source": { "repository": { "nameWithOwner": "some-person/cpython" } } },
+            { "source": { "repository": { "nameWithOwner": "no-slash" } } },
+        ] } } } });
+        let found = recorded_pr("repositories", &answer);
+        let named = |at: usize| {
+            found["data"]["repository"]["issue"]["nodes"][at]["source"]["repository"]
+                ["nameWithOwner"]
+                .clone()
+        };
+        assert_eq!(named(0), "python/cpython");
+        assert_eq!(named(1), "Python/peps");
+        assert_eq!(named(2), "user-0/cpython");
+        assert_eq!(named(3), "no-slash");
+    }
+
+    #[test]
+    fn the_backport_bot_keeps_its_login_in_a_recording() {
+        let answer = json!({ "data": { "nodes": [
+            { "author": { "login": "Miss-Islington" }, "title": "by miss-islington" },
+            { "author": { "login": "some-author" } },
+        ] } });
+        let found = recorded_pr("bot", &answer);
+        let nodes = &found["data"]["nodes"];
+        assert_eq!(nodes[0]["author"]["login"], "miss-islington");
+        assert_eq!(nodes[0]["title"], "by miss-islington");
+        assert_ne!(nodes[1]["author"]["login"], "some-author");
     }
 
     #[test]

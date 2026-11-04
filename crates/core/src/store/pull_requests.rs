@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 use rusqlite::{Connection, Statement, named_params};
 
-use crate::github::Login;
-use crate::github::pull_requests::{LatestReview, PrState, PullRequestFacts};
+use crate::github::pull_requests::{LatestReview, OffDefault, PullRequestFacts};
+use crate::github::{CommitSha, Login};
 use crate::repository::RepositoryName;
 
 use super::columns::UnixTime;
@@ -58,6 +58,26 @@ pub(super) const LINK_FACTS: &str = "
     ) WITHOUT ROWID;
 ";
 
+/// The facts the Backport rules read (ADR 0011). A PR stored before this has none, so it isn't a Bot
+/// backport until the next sync fetches it. A merged one isn't frozen until then either, because it has no
+/// merge commit.
+pub(super) const BACKPORT_FACTS: &str = "
+    ALTER TABLE pull_requests ADD COLUMN merge_commit TEXT;
+    CREATE TABLE cherry_picks (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        number INTEGER NOT NULL,
+        sha TEXT NOT NULL,
+        PRIMARY KEY (repository, number, sha)
+    ) WITHOUT ROWID;
+    CREATE TABLE committers (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        number INTEGER NOT NULL,
+        position INTEGER NOT NULL,
+        login TEXT,
+        PRIMARY KEY (repository, number, position)
+    ) WITHOUT ROWID;
+";
+
 /// Stores `pull_requests` in one transaction, each replacing what Tsugiki knew about it (ADR 0010).
 pub(super) fn save(
     connection: &mut Connection,
@@ -82,6 +102,11 @@ fn replace(
     forget_latest_reviews(connection, repository, number)?;
     forget_assignees(connection, repository, number)?;
     forget_closing_references(connection, repository, number)?;
+    forget_cherry_picks(connection, repository, number)?;
+    forget_committers(connection, repository, number)?;
+    if let Some(off_default) = &facts.off_default {
+        save_off_default(connection, repository, number, off_default)?;
+    }
     for login in &facts.review_requests {
         save_review_request(connection, repository, number, login)?;
     }
@@ -106,9 +131,9 @@ fn save_pull_request(
         .execute(
             "INSERT INTO pull_requests
                  (repository, number, title, state, is_draft, author, target_branch, ci, updated_at,
-                  off_default_description)
+                  off_default_description, merge_commit)
              VALUES (:repository, :number, :title, :state, :is_draft, :author, :target_branch, :ci,
-                     :updated_at, :off_default_description)
+                     :updated_at, :off_default_description, :merge_commit)
              ON CONFLICT (repository, number) DO UPDATE SET
                  title = excluded.title,
                  state = excluded.state,
@@ -117,7 +142,8 @@ fn save_pull_request(
                  target_branch = excluded.target_branch,
                  ci = excluded.ci,
                  updated_at = excluded.updated_at,
-                 off_default_description = excluded.off_default_description",
+                 off_default_description = excluded.off_default_description,
+                 merge_commit = excluded.merge_commit",
             named_params! {
                 ":repository": repository,
                 ":number": facts.number,
@@ -128,7 +154,8 @@ fn save_pull_request(
                 ":target_branch": facts.target_branch,
                 ":ci": facts.ci,
                 ":updated_at": facts.updated_at.unix_timestamp(),
-                ":off_default_description": facts.off_default_description,
+                ":off_default_description": facts.off_default.as_ref().map(|off| &off.description),
+                ":merge_commit": facts.merge_commit,
             },
         )
         .map(drop)
@@ -182,6 +209,70 @@ fn forget_closing_references(
         .execute(
             "DELETE FROM closing_references WHERE repository = :repository AND number = :number",
             named_params! { ":repository": repository, ":number": number },
+        )
+        .map(drop)
+}
+
+fn forget_cherry_picks(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "DELETE FROM cherry_picks WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": number },
+        )
+        .map(drop)
+}
+
+fn forget_committers(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "DELETE FROM committers WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": number },
+        )
+        .map(drop)
+}
+
+fn save_off_default(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+    off_default: &OffDefault,
+) -> rusqlite::Result<()> {
+    for sha in &off_default.cherry_picked_from {
+        save_cherry_pick(connection, repository, number, sha)?;
+    }
+    for (position, login) in (0_u32..).zip(&off_default.committers) {
+        let query = "INSERT INTO committers (repository, number, position, login)
+                     VALUES (:repository, :number, :position, :login)";
+        let values = named_params! {
+            ":repository": repository,
+            ":number": number,
+            ":position": position,
+            ":login": login,
+        };
+        connection.execute(query, values).map(drop)?;
+    }
+    Ok(())
+}
+
+fn save_cherry_pick(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+    sha: &CommitSha,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO cherry_picks (repository, number, sha)
+             VALUES (:repository, :number, :sha)",
+            named_params! { ":repository": repository, ":number": number, ":sha": sha },
         )
         .map(drop)
 }
@@ -322,8 +413,42 @@ fn closing_references(
     Ok(found)
 }
 
-/// The open PRs of `repository`, the latest update first.
-pub(super) fn read_open(
+/// Each PR's cherry-picked commits.
+fn cherry_picks(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<BTreeMap<u32, Vec<CommitSha>>> {
+    let mut found: BTreeMap<u32, Vec<CommitSha>> = BTreeMap::new();
+    let query = "SELECT number, sha FROM cherry_picks WHERE repository = :repository";
+    let mut statement = connection.prepare(query)?;
+    let mut rows = statement.query(named_params! { ":repository": repository })?;
+    while let Some(row) = rows.next()? {
+        let sha = row.get("sha")?;
+        found.entry(row.get("number")?).or_default().push(sha);
+    }
+    Ok(found)
+}
+
+/// Each PR's committers, in the order of its commits.
+fn committers(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<BTreeMap<u32, Vec<Option<Login>>>> {
+    let mut found: BTreeMap<u32, Vec<Option<Login>>> = BTreeMap::new();
+    let query = "SELECT number, login FROM committers
+                 WHERE repository = :repository
+                 ORDER BY number, position";
+    let mut statement = connection.prepare(query)?;
+    let mut rows = statement.query(named_params! { ":repository": repository })?;
+    while let Some(row) = rows.next()? {
+        let login = row.get("login")?;
+        found.entry(row.get("number")?).or_default().push(login);
+    }
+    Ok(found)
+}
+
+/// Every PR of `repository`, whatever its state, the latest update first.
+pub(super) fn read_all(
     connection: &Connection,
     repository: &RepositoryName,
 ) -> rusqlite::Result<Vec<PullRequestFacts>> {
@@ -331,18 +456,20 @@ pub(super) fn read_open(
     let mut reviews = latest_reviews(connection, repository)?;
     let mut assigned = assignees(connection, repository)?;
     let mut closing = closing_references(connection, repository)?;
+    let mut picks = cherry_picks(connection, repository)?;
+    let mut committed = committers(connection, repository)?;
     let query = "SELECT number, title, state, is_draft, author, target_branch, ci, updated_at,
-                        off_default_description
+                        off_default_description, merge_commit
                  FROM pull_requests
-                 WHERE repository = :repository AND state = :state
+                 WHERE repository = :repository
                  ORDER BY updated_at DESC, number DESC";
     let mut statement = connection.prepare(query)?;
-    let values = named_params! { ":repository": repository, ":state": PrState::Open };
-    let mut rows = statement.query(values)?;
+    let mut rows = statement.query(named_params! { ":repository": repository })?;
     let mut found = Vec::new();
     while let Some(row) = rows.next()? {
         let number: u32 = row.get("number")?;
         let UnixTime(updated_at) = row.get("updated_at")?;
+        let description: Option<String> = row.get("off_default_description")?;
         found.push(PullRequestFacts {
             number,
             title: row.get("title")?,
@@ -356,7 +483,12 @@ pub(super) fn read_open(
             latest_reviews: reviews.remove(&number).unwrap_or_default(),
             assignees: assigned.remove(&number).unwrap_or_default(),
             closing_issues: closing.remove(&number).unwrap_or_default(),
-            off_default_description: row.get("off_default_description")?,
+            merge_commit: row.get("merge_commit")?,
+            off_default: description.map(|description| OffDefault {
+                description,
+                cherry_picked_from: picks.remove(&number).unwrap_or_default(),
+                committers: committed.remove(&number).unwrap_or_default(),
+            }),
         });
     }
     Ok(found)
@@ -367,7 +499,8 @@ mod tests {
     use super::super::testing::temp_database;
     use super::super::*;
     use crate::error::ErrorKind;
-    use crate::github::pull_requests::{CiState, LatestReview, PrState, ReviewState};
+    use crate::github::CommitSha;
+    use crate::github::pull_requests::{CiState, LatestReview, OffDefault, PrState, ReviewState};
     use crate::repository::RepositoryName;
     use std::fs;
     use std::path::PathBuf;
@@ -394,7 +527,8 @@ mod tests {
             }],
             assignees: vec![Login::new("some-assignee")],
             closing_issues: vec![7, 8],
-            off_default_description: Some("Fixes #9".to_owned()),
+            merge_commit: None,
+            off_default: Some(OffDefault::described("Fixes #9")),
         }
     }
 
@@ -447,7 +581,8 @@ mod tests {
             latest_reviews: vec![],
             assignees: vec![],
             closing_issues: vec![],
-            off_default_description: None,
+            merge_commit: None,
+            off_default: None,
             ..facts(2)
         };
 
@@ -462,6 +597,112 @@ mod tests {
         assert_eq!(read.pull_requests, [sparse]);
     }
 
+    fn sha(text: &str) -> CommitSha {
+        CommitSha::parse(text).unwrap()
+    }
+
+    #[test]
+    fn a_backports_facts_read_back_the_same() {
+        let (store, open, reader, _path, folder) = opened("pr-backport");
+        let backport = PullRequestFacts {
+            off_default: Some(OffDefault {
+                description: "(cherry picked from commit 0123abc)".to_owned(),
+                cherry_picked_from: vec![sha("0123abc")],
+                committers: vec![Some(Login::new("miss-islington")), None],
+            }),
+            ..facts(5)
+        };
+        let origin = PullRequestFacts {
+            state: PrState::Merged,
+            merge_commit: Some(sha("0123abcdef")),
+            off_default: None,
+            ..facts(6)
+        };
+
+        store
+            .save_pull_requests(
+                &cpython(),
+                vec![at(2, backport.clone()), at(1, origin.clone())],
+            )
+            .unwrap();
+        let read = reader.work_facts(&cpython()).unwrap();
+        open.close();
+        store.close();
+        fs::remove_dir_all(folder).unwrap();
+
+        assert_eq!(read.pull_requests, [at(2, backport), at(1, origin)]);
+    }
+
+    #[test]
+    fn saving_a_backport_again_replaces_its_commits() {
+        let (store, open, reader, _path, folder) = opened("pr-backport-again");
+        let first = PullRequestFacts {
+            off_default: Some(OffDefault {
+                description: String::new(),
+                cherry_picked_from: vec![sha("0123abc")],
+                committers: vec![Some(Login::new("miss-islington")), None],
+            }),
+            ..facts(5)
+        };
+        let again = PullRequestFacts {
+            off_default: Some(OffDefault {
+                description: String::new(),
+                cherry_picked_from: vec![],
+                committers: vec![Some(Login::new("some-author"))],
+            }),
+            ..first.clone()
+        };
+
+        store.save_pull_requests(&cpython(), vec![first]).unwrap();
+        store
+            .save_pull_requests(&cpython(), vec![again.clone()])
+            .unwrap();
+        let read = reader.work_facts(&cpython()).unwrap();
+        open.close();
+        store.close();
+        fs::remove_dir_all(folder).unwrap();
+
+        assert_eq!(read.pull_requests, [again]);
+    }
+
+    #[test]
+    fn merged_and_closed_prs_are_frozen_and_open_ones_are_not() {
+        let (store, open, _reader, _path, folder) = opened("pr-frozen");
+        let in_state = |number, state| PullRequestFacts {
+            state,
+            ..facts(number)
+        };
+        let merged = |number| PullRequestFacts {
+            merge_commit: Some(sha("0123abc")),
+            ..in_state(number, PrState::Merged)
+        };
+        store
+            .save_pull_requests(
+                &cpython(),
+                vec![
+                    in_state(1, PrState::Open),
+                    merged(2),
+                    in_state(3, PrState::Closed),
+                    // An earlier Tsugiki kept no merge commit, so this one has more to bring.
+                    in_state(5, PrState::Merged),
+                ],
+            )
+            .unwrap();
+        let elsewhere = RepositoryName::parse("sergey-miryanov/gcmon").unwrap();
+        store
+            .save_pull_requests(&elsewhere, vec![merged(4)])
+            .unwrap();
+
+        let frozen = store.frozen_pull_requests(&cpython()).unwrap();
+        open.close();
+        store.close();
+        fs::remove_dir_all(folder).unwrap();
+
+        let mut numbers: Vec<u32> = frozen.iter().map(|pr| pr.number).collect();
+        numbers.sort_unstable();
+        assert_eq!(numbers, [2, 3]);
+    }
+
     #[test]
     fn saving_a_pr_again_replaces_what_was_known() {
         let (store, open, reader, _path, folder) = opened("pr-replace");
@@ -474,7 +715,8 @@ mod tests {
             latest_reviews: vec![],
             assignees: vec![],
             closing_issues: vec![],
-            off_default_description: None,
+            merge_commit: None,
+            off_default: None,
             ..at(2, facts(1))
         };
 
@@ -490,7 +732,7 @@ mod tests {
     }
 
     #[test]
-    fn only_open_prs_are_read_and_the_latest_update_comes_first() {
+    fn every_pr_is_read_whatever_its_state_and_the_latest_update_comes_first() {
         let (store, open, reader, _path, folder) = opened("pr-order");
         let merged = PullRequestFacts {
             state: PrState::Merged,
@@ -513,7 +755,7 @@ mod tests {
         store.close();
         fs::remove_dir_all(folder).unwrap();
 
-        assert_eq!(found, [2, 4, 1]);
+        assert_eq!(found, [3, 2, 4, 1]);
     }
 
     #[test]
@@ -616,7 +858,8 @@ mod tests {
 
         let earlier = PullRequestFacts {
             closing_issues: vec![],
-            off_default_description: None,
+            merge_commit: None,
+            off_default: None,
             ..at(7, facts(1))
         };
         assert_eq!(read.pull_requests, [earlier]);

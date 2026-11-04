@@ -97,7 +97,9 @@ mod tests {
     use crate::github::pull_requests::{PrState, PullRequestFacts};
     use crate::store::{FilterProblem, WorkFacts};
     use crate::workbench::Workbench;
-    use crate::workbench::tests::{backport, cpython, fixing, issue, me, mine, outline, stranger};
+    use crate::workbench::testing::{
+        backport, cpython, fixing, issue, me, mine, outline, stranger,
+    };
 
     fn query(text: &str) -> FilterQuery {
         text.to_owned().try_into().unwrap()

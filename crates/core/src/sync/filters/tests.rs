@@ -4,7 +4,7 @@ use crate::github::testing::reply_ok;
 use crate::github::{Reply, Request, Transport, Unreachable};
 use crate::repository::RepositorySettings;
 use crate::sync::Syncs;
-use crate::sync::tests::{
+use crate::sync::testing::{
     FEW, Harness, LOTS, cpython, cross_references, fetched, fetched_nodes, issues,
     no_cross_references, nothing, pr_node, run_to_the_end, searches_finding,
 };

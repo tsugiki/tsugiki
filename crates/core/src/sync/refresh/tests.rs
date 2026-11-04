@@ -6,7 +6,7 @@ use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport,
 use crate::repository::{RepositoryName, RepositorySettings};
 use crate::status::Change;
 use crate::store::{FilterProblem, WorkFacts};
-use crate::sync::tests::{
+use crate::sync::testing::{
     FEW, Harness, LOTS, cpython, cross_references, fetched_nodes, issues, no_cross_references,
     pr_node,
 };

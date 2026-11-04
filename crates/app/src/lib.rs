@@ -83,6 +83,7 @@ mod tests {
     use std::time::Duration;
     use tauri::Manager;
     use tauri::test::mock_app;
+    use tsugiki_core::conventions::Conventions;
     use tsugiki_core::error::ErrorKind;
     use tsugiki_core::folders::Folders;
     use tsugiki_core::github::GitHubAccess;

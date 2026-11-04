@@ -17,7 +17,15 @@ use crate::token::{GhOutput, Token};
 
 /// The only address the core sends requests to (ADR 0005).
 const ENDPOINT: &str = "https://api.github.com/graphql";
-const TIMEOUT: Duration = Duration::from_secs(30);
+/// How long one request gets, from connecting to its last byte. GitHub ends a GraphQL query itself after
+/// 10 s, so this leaves 5 s for the network, and it strikes when the network or a proxy has stopped
+/// answering. Nobody has measured the 5 s. On a link too slow for it Tsugiki says Offline, and the next
+/// refresh tries again. `npm run smoke` needs a request to wait at its proxy until the page is ready, so a
+/// much shorter limit would fail its first check.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+/// How long `gh` gets. It's longer than a request's limit because without a token the session ends, and
+/// nothing asks `gh` again until Tsugiki restarts.
+const GH_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// GitHub over HTTPS. It follows no redirects, so a request can't end up on another host.
 pub struct Https {
@@ -30,7 +38,7 @@ impl Https {
             .https_only(true)
             .max_redirects(0)
             .http_status_as_error(false)
-            .timeout_global(Some(TIMEOUT))
+            .timeout_global(Some(REQUEST_TIMEOUT))
             .user_agent(concat!("tsugiki/", env!("CARGO_PKG_VERSION")))
             .build();
         Self {
@@ -94,7 +102,7 @@ fn unreachable(cause: ureq::Error) -> Unreachable {
     Unreachable
 }
 
-/// Runs one program, with no console window on Windows, and gives up on it after `TIMEOUT`.
+/// Runs one program, with no console window on Windows, and gives up on it after `GH_TIMEOUT`.
 fn run_program(program: &str, args: &[&str]) -> io::Result<GhOutput> {
     let mut command = Command::new(program);
     let _ = command
@@ -109,7 +117,7 @@ fn run_program(program: &str, args: &[&str]) -> io::Result<GhOutput> {
         let _ = command.creation_flags(CREATE_NO_WINDOW);
     }
     let mut child = command.spawn()?;
-    let deadline = Instant::now() + TIMEOUT;
+    let deadline = Instant::now() + GH_TIMEOUT;
     while child.try_wait()?.is_none() {
         if Instant::now() >= deadline {
             child.kill()?;

@@ -5,10 +5,10 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+use crate::conventions::Conventions;
 use crate::error::{Error, ErrorKind};
 
 const BAD_NAME: &str = "Write the Repository as owner/name, such as python/cpython.";
-const CPYTHON: &str = "python/cpython";
 const GITHUB_PREFIXES: [&str; 2] = ["https://github.com/", "github.com/"];
 const MAX_OWNER_LENGTH: usize = 39;
 const MAX_NAME_LENGTH: usize = 100;
@@ -89,26 +89,6 @@ fn is_name(name: &str) -> bool {
         && name.len() <= MAX_NAME_LENGTH
         && !matches!(name, "." | "..")
         && name.chars().all(allowed)
-}
-
-/// How a Repository's PRs name their Issues and Backports (ADR 0011). The rules that read this arrive with
-/// the links.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "snake_case")]
-pub enum Conventions {
-    Cpython,
-    Github,
-}
-
-impl Conventions {
-    /// `python/cpython` starts with CPython's, and every other Repository with GitHub's.
-    pub fn for_repository(name: &RepositoryName) -> Self {
-        if name.to_string().eq_ignore_ascii_case(CPYTHON) {
-            Self::Cpython
-        } else {
-            Self::Github
-        }
-    }
 }
 
 /// A Repository the user added, as `settings.toml` holds it.
@@ -333,22 +313,6 @@ mod tests {
         );
         let problem = serde_json::from_str::<RepositoryName>(r#""nonsense""#).unwrap_err();
         assert!(problem.to_string().contains(BAD_NAME), "{problem}");
-    }
-
-    #[test]
-    fn cpython_gets_its_conventions_and_others_get_githubs() {
-        for cpython in ["python/cpython", "Python/CPython"] {
-            assert_eq!(
-                RepositorySettings::new(name(cpython)).conventions,
-                Conventions::Cpython
-            );
-        }
-        for other in ["sergey-miryanov/gcmon", "python/peps", "someone/cpython"] {
-            assert_eq!(
-                RepositorySettings::new(name(other)).conventions,
-                Conventions::Github
-            );
-        }
     }
 
     #[test]

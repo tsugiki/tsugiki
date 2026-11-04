@@ -39,6 +39,26 @@ pub struct Reply {
 #[derive(Debug, Clone, Copy)]
 pub struct Unreachable;
 
+/// The number `digits` spell. GitHub's numbers are GraphQL `Int`s, 32 bits and signed, and it refuses a whole
+/// query over one that doesn't fit.
+pub(crate) fn issue_number(digits: &str) -> Option<u32> {
+    digits
+        .chars()
+        .all(|c| c.is_ascii_digit())
+        .then(|| digits.parse::<i32>().ok())
+        .flatten()
+        .and_then(|number| u32::try_from(number).ok())
+}
+
+/// The number in `gh-N`, whatever its case.
+pub(crate) fn gh_number(word: &str) -> Option<u32> {
+    let digits = word.get(3..)?;
+    word.get(..3)?
+        .eq_ignore_ascii_case("gh-")
+        .then(|| issue_number(digits))
+        .flatten()
+}
+
 /// How a request reaches GitHub: the network in the app, recorded answers in tests.
 pub trait Transport: Send {
     fn post(&self, token: &Token, request: &Request<'_>) -> Result<Reply, Unreachable>;

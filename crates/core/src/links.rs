@@ -4,7 +4,9 @@
 
 use std::collections::BTreeSet;
 
+use crate::conventions::Conventions;
 use crate::github::pull_requests::PullRequestFacts;
+use crate::github::{gh_number, issue_number};
 use crate::repository::{RepositoryName, RepositorySettings};
 
 /// GitHub's closing keywords, in each form it accepts.
@@ -16,12 +18,9 @@ const GITHUB_URL: &str = "https://github.com/";
 /// The numbers `facts` names as fixed under `repository`'s Conventions. All signals add up, with no order of
 /// trust (ADR 0011).
 pub fn fixed_numbers(facts: &PullRequestFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
-    let in_title = if repository.conventions.names_issues_in_titles() {
-        title_issues(&facts.title)
-    } else {
-        Vec::new()
-    };
-    in_title
+    repository
+        .conventions
+        .issues_in_title(&facts.title)
         .into_iter()
         .chain(signals_of_every_convention(facts, &repository.name))
         .collect()
@@ -30,7 +29,7 @@ pub fn fixed_numbers(facts: &PullRequestFacts, repository: &RepositorySettings) 
 /// The numbers `facts` could name under any Conventions. A sync fetches all of these, so changing a
 /// Repository's Conventions re-groups its Workbench with no re-sync (ADR 0011).
 pub fn possible_numbers(facts: &PullRequestFacts, repository: &RepositoryName) -> BTreeSet<u32> {
-    title_issues(&facts.title)
+    Conventions::issues_in_title_under_any(&facts.title)
         .into_iter()
         .chain(signals_of_every_convention(facts, repository))
         .collect()
@@ -43,25 +42,6 @@ fn signals_of_every_convention(facts: &PullRequestFacts, repository: &Repository
         .map_or_else(Vec::new, |text| closing_keywords(text, repository));
     let closing = facts.closing_issues.iter().copied();
     closing.chain(in_description).collect()
-}
-
-/// The Issues in a title such as `gh-1: Fix it`, `gh-1, gh-2: Fix both` or `[3.14] gh-1: Fix it (GH-9)`.
-/// Anything else before the colon means the title has no prefix.
-fn title_issues(title: &str) -> Vec<u32> {
-    let Some((head, _)) = title.split_once(':') else {
-        return Vec::new();
-    };
-    let head = head.trim_start();
-    let names = head
-        .strip_prefix('[')
-        .and_then(|rest| rest.split_once(']'))
-        .map_or(head, |(_, after)| after);
-    let numbers: Option<Vec<u32>> = names
-        .split([',', ' '])
-        .filter(|name| !name.is_empty())
-        .map(gh_number)
-        .collect();
-    numbers.unwrap_or_default()
 }
 
 /// The numbers a closing keyword names in `text`, leaving out the parts GitHub doesn't read as text:
@@ -125,39 +105,18 @@ fn named_issue(word: &str, repository: &RepositoryName) -> Option<u32> {
     if let Some(path) = word.strip_prefix(GITHUB_URL) {
         let (named, rest) = path.split_once("/issues/")?;
         let (digits, _) = rest.split_once('#').unwrap_or((rest, ""));
-        return here(named).then(|| number(digits)).flatten();
+        return here(named).then(|| issue_number(digits)).flatten();
     }
     match word.split_once('#') {
-        Some(("", digits)) => number(digits),
-        Some((named, digits)) => here(named).then(|| number(digits)).flatten(),
+        Some(("", digits)) => issue_number(digits),
+        Some((named, digits)) => here(named).then(|| issue_number(digits)).flatten(),
         None => gh_number(word),
     }
-}
-
-/// The number in `gh-N`, whatever its case.
-fn gh_number(word: &str) -> Option<u32> {
-    let digits = word.get(3..)?;
-    word.get(..3)?
-        .eq_ignore_ascii_case("gh-")
-        .then(|| number(digits))
-        .flatten()
-}
-
-/// The number `digits` spell. GitHub's numbers are GraphQL `Int`s, 32 bits and signed, and it refuses a whole
-/// query over one that doesn't fit.
-fn number(digits: &str) -> Option<u32> {
-    digits
-        .chars()
-        .all(|c| c.is_ascii_digit())
-        .then(|| digits.parse::<i32>().ok())
-        .flatten()
-        .and_then(|number| u32::try_from(number).ok())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::conventions::Conventions;
     use crate::github::pull_requests::PrState;
     use time::OffsetDateTime;
 
@@ -201,29 +160,6 @@ mod tests {
             ..titled("Fix it")
         };
         numbers(&facts, &cpython())
-    }
-
-    #[test]
-    fn a_cpython_title_names_its_issue_with_its_prefix() {
-        for (title, expected) in [
-            ("gh-123: Fix it", vec![123]),
-            ("GH-123: Fix it", vec![123]),
-            ("[3.14] gh-123: Fix it (GH-456)", vec![123]),
-            ("gh-123, gh-456: Fix both", vec![123, 456]),
-            ("gh-123 gh-456: Fix both", vec![123, 456]),
-            ("[3.14] gh-123, GH-456: Fix both", vec![123, 456]),
-            ("gh-123, see gh-456: Fix it", vec![]),
-            (": Fix it", vec![]),
-            ("Fix it", vec![]),
-            ("Fix: gh-123 again", vec![]),
-            ("see gh-123: it broke", vec![]),
-            ("gh-: Fix it", vec![]),
-            ("gh-12x: Fix it", vec![]),
-            ("gé: Fix it", vec![]),
-            ("[3.14 gh-123: Fix it", vec![]),
-        ] {
-            assert_eq!(numbers(&titled(title), &cpython()), expected, "{title}");
-        }
     }
 
     #[test]

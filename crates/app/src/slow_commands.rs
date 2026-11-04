@@ -56,7 +56,8 @@ pub(crate) fn add_repository(
 #[specta::specta]
 pub(crate) fn workbench(
     repository: &str,
+    owner: State<'_, SettingsOwner>,
     reader: State<'_, StoreReader>,
 ) -> Result<Workbench, Error> {
-    crate::read_workbench(repository, &reader)
+    crate::read_workbench(repository, &owner, &reader)
 }

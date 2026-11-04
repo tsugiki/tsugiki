@@ -44,10 +44,7 @@ export type About = {
 /**  A commit's CI, as GitHub rolls its checks up. */
 export type CiState = "EXPECTED" | "ERROR" | "FAILURE" | "PENDING" | "SUCCESS";
 
-/**
- *  How a Repository's PRs name their Issues and Backports (ADR 0011). The rules that read this arrive with
- *  the links.
- */
+/**  How a Repository's PRs name their Issues and Backports (ADR 0011). `links.rs` reads this. */
 export type Conventions = "cpython" | "github";
 
 /**  A failure in plain words. Details go only to a local log, with tokens scrubbed. */
@@ -92,6 +89,31 @@ export type Home_Serialize =
 { screen: "onboarding"; token: TokenSource } | 
 /**  The last Repository the user had open. */
 { screen: "repository"; repository: RepositorySettings_Serialize };
+
+/**  An Issue on the Workbench, with each open PR Tsugiki knows that fixes it. */
+export type IssueItem = IssueItem_Serialize | IssueItem_Deserialize;
+
+/**  An Issue on the Workbench, with each open PR Tsugiki knows that fixes it. */
+export type IssueItem_Deserialize = {
+	number: number,
+	title: string,
+	/**  The Issue's author, then the PRs' authors, with each person once and no backport bot. */
+	people: Login[],
+	/**  The latest update of the Issue and its PRs. */
+	updated_at: string,
+	pull_requests: WorkbenchRow_Deserialize[],
+};
+
+/**  An Issue on the Workbench, with each open PR Tsugiki knows that fixes it. */
+export type IssueItem_Serialize = {
+	number: number,
+	title: string,
+	/**  The Issue's author, then the PRs' authors, with each person once and no backport bot. */
+	people: Login[],
+	/**  The latest update of the Issue and its PRs. */
+	updated_at: string,
+	pull_requests: WorkbenchRow_Serialize[],
+};
 
 /**  The settings in force, and what is wrong with the files they came from, in words for the status bar. */
 export type LoadedSettings = LoadedSettings_Serialize | LoadedSettings_Deserialize;
@@ -256,7 +278,7 @@ export type WorkReason =
 /**  The user has submitted a Review. */
 "reviewed";
 
-/**  The rows of a Repository's Workbench, the latest update first. */
+/**  The items of a Repository's Workbench, the latest update first. */
 export type Workbench = Workbench_Serialize | Workbench_Deserialize;
 
 /**  Sent when a Repository's stored facts change, so a window showing its Workbench asks again (ADR 0008). */
@@ -264,10 +286,27 @@ export type WorkbenchChanged = {
 	repository: RepositoryName,
 };
 
-/**  One line of the list. */
+/**  A top-level entry of the list. */
+export type WorkbenchItem = WorkbenchItem_Serialize | WorkbenchItem_Deserialize;
+
+/**  A top-level entry of the list. */
+export type WorkbenchItem_Deserialize = {
+	kind: "issue",
+} & IssueItem_Deserialize | {
+	kind: "standalone_pr",
+} & WorkbenchRow_Deserialize;
+
+/**  A top-level entry of the list. */
+export type WorkbenchItem_Serialize = {
+	kind: "issue",
+} & IssueItem_Serialize | {
+	kind: "standalone_pr",
+} & WorkbenchRow_Serialize;
+
+/**  A PR's line of the list. */
 export type WorkbenchRow = WorkbenchRow_Serialize | WorkbenchRow_Deserialize;
 
-/**  One line of the list. */
+/**  A PR's line of the list. */
 export type WorkbenchRow_Deserialize = {
 	number: number,
 	title: string,
@@ -275,10 +314,12 @@ export type WorkbenchRow_Deserialize = {
 	is_draft: boolean,
 	target_branch: string,
 	ci?: CiState | null,
+	updated_at: string,
+	/**  Empty for a PR under an Issue that another PR put on the Workbench. */
 	reasons: WorkReason[],
 };
 
-/**  One line of the list. */
+/**  A PR's line of the list. */
 export type WorkbenchRow_Serialize = {
 	number: number,
 	title: string,
@@ -286,17 +327,19 @@ export type WorkbenchRow_Serialize = {
 	is_draft: boolean,
 	target_branch: string,
 	ci: CiState | null,
+	updated_at: string,
+	/**  Empty for a PR under an Issue that another PR put on the Workbench. */
 	reasons: WorkReason[],
 };
 
-/**  The rows of a Repository's Workbench, the latest update first. */
+/**  The items of a Repository's Workbench, the latest update first. */
 export type Workbench_Deserialize = {
-	rows: WorkbenchRow_Deserialize[],
+	items: WorkbenchItem_Deserialize[],
 };
 
-/**  The rows of a Repository's Workbench, the latest update first. */
+/**  The items of a Repository's Workbench, the latest update first. */
 export type Workbench_Serialize = {
-	rows: WorkbenchRow_Serialize[],
+	items: WorkbenchItem_Serialize[],
 };
 
 /* Tauri Specta runtime */

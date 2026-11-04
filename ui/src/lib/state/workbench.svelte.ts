@@ -4,15 +4,19 @@ import {
   commands,
   events,
   type CiState,
+  type IssueItem_Serialize,
+  type WorkbenchItem_Serialize,
   type WorkbenchRow_Serialize,
   type WorkReason,
 } from "$lib/data/bindings";
 
+export type IssueItem = IssueItem_Serialize;
+export type WorkbenchItem = WorkbenchItem_Serialize;
 export type WorkbenchRow = WorkbenchRow_Serialize;
 export type { CiState, WorkReason };
 
 export class WorkbenchState {
-  rows = $state<WorkbenchRow[]>();
+  items = $state<WorkbenchItem[]>();
   error = $state<string>();
   #repository: string;
   #lastQuestion = 0;
@@ -35,7 +39,7 @@ export class WorkbenchState {
       }
       this.#stopListening = stopListening;
     } catch (e) {
-      // With no listener the rows would go stale, and the next good answer would clear this error.
+      // With no listener the items would go stale, and the next good answer would clear this error.
       this.error = String(e);
       return;
     }
@@ -57,7 +61,7 @@ export class WorkbenchState {
     // A newer question reads newer facts, so this drops an older answer that arrives late.
     if (question !== this.#lastQuestion) return;
     if (answer.status === "ok") {
-      this.rows = answer.data.rows;
+      this.items = answer.data.items;
       this.error = undefined;
     } else {
       this.error = answer.error.message;

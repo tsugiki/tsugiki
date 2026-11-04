@@ -1,25 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands, events } from "$lib/data/bindings";
-import { WorkbenchState, type WorkbenchRow } from "./workbench.svelte";
+import { WorkbenchState, type WorkbenchItem } from "./workbench.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
   commands: { workbench: vi.fn() },
   events: { workbenchChanged: { listen: vi.fn() } },
 }));
 
-const row = (number: number): WorkbenchRow => ({
+const item = (number: number): WorkbenchItem => ({
+  kind: "standalone_pr",
   number,
   title: `PR ${String(number)}`,
   author: "octocat",
   is_draft: false,
   target_branch: "main",
   ci: "SUCCESS",
+  updated_at: "2026-11-04T10:00:00Z",
   reasons: ["own_pr"],
 });
 
 const answer = (...numbers: number[]) => ({
   status: "ok" as const,
-  data: { rows: numbers.map(row) },
+  data: { items: numbers.map(item) },
 });
 
 const refused = { status: "error" as const, error: { kind: "internal" as const, message: "no database" } };
@@ -37,7 +39,7 @@ const catchListener = () => {
   return { stop, send };
 };
 
-const numbers = (state: WorkbenchState) => state.rows?.map((r) => r.number);
+const numbers = (state: WorkbenchState) => state.items?.map((i) => i.number);
 
 describe("WorkbenchState", () => {
   beforeEach(() => {
@@ -48,7 +50,7 @@ describe("WorkbenchState", () => {
     catchListener();
     vi.mocked(commands.workbench).mockResolvedValue(answer(2, 1));
     const state = new WorkbenchState("python/cpython");
-    expect(state.rows).toBeUndefined();
+    expect(state.items).toBeUndefined();
     await state.load();
     expect(commands.workbench).toHaveBeenCalledWith("python/cpython");
     expect(numbers(state)).toEqual([2, 1]);
@@ -108,7 +110,7 @@ describe("WorkbenchState", () => {
     expect(numbers(state)).toEqual([2]);
   });
 
-  it("says why the core refused, and keeps the rows it has", async () => {
+  it("says why the core refused, and keeps the items it has", async () => {
     const { send } = catchListener();
     vi.mocked(commands.workbench).mockResolvedValueOnce(answer(1));
     const state = new WorkbenchState("python/cpython");
@@ -147,7 +149,7 @@ describe("WorkbenchState", () => {
     expect(state.error).toBe("Error: the core is gone");
   });
 
-  it("says so when it can't listen, since its rows would never change", async () => {
+  it("says so when it can't listen, since its items would never change", async () => {
     vi.mocked(events.workbenchChanged.listen).mockRejectedValue(new Error("no events"));
     const state = new WorkbenchState("python/cpython");
     await state.load();

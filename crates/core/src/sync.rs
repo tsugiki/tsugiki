@@ -3,7 +3,7 @@
 //! `github::pull_requests` does the asking, and this decides what to ask for, how much at a time and when to
 //! pause.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 use std::time::{Duration, Instant};
 
 use time::OffsetDateTime;
@@ -11,6 +11,7 @@ use time::OffsetDateTime;
 use crate::error::{Error, ErrorKind};
 use crate::github::GitHub;
 use crate::github::pull_requests::{NodeId, PageRequest, PrSearch, RateLimit};
+use crate::links::possible_numbers;
 use crate::repository::RepositoryName;
 use crate::store::Store;
 
@@ -65,7 +66,11 @@ enum Phase {
     },
     Fetching {
         ids: Vec<NodeId>,
+        /// The numbers the PRs fetched so far could name.
+        named: BTreeSet<u32>,
     },
+    /// A PR shows as a Standalone PR until the batch with its Issue is saved.
+    FetchingIssues { numbers: Vec<u32> },
 }
 
 /// The result of one step.
@@ -99,6 +104,7 @@ impl UserWorkSync {
                 let Some((search, rest)) = searches.split_first() else {
                     self.phase = Phase::Fetching {
                         ids: std::mem::take(found),
+                        named: BTreeSet::new(),
                     };
                     return Ok(Step::Searched { pause_until: None });
                 };
@@ -120,13 +126,30 @@ impl UserWorkSync {
                     pause_until: pause_until(page.rate_limit),
                 })
             }
-            Phase::Fetching { ids } => {
+            Phase::Fetching { ids, named } => {
                 if ids.is_empty() {
-                    return Ok(Step::Finished);
+                    self.phase = Phase::FetchingIssues {
+                        numbers: std::mem::take(named).into_iter().collect(),
+                    };
+                    return Ok(Step::Searched { pause_until: None });
                 }
                 let batch = github.fetch_pull_requests(ids, FETCH_BATCH)?;
+                for pull_request in &batch.pull_requests {
+                    named.extend(possible_numbers(pull_request, &self.repository));
+                }
                 store.save_pull_requests(&self.repository, batch.pull_requests)?;
                 drop(ids.drain(..batch.asked_for));
+                Ok(Step::Saved {
+                    pause_until: pause_until(batch.rate_limit),
+                })
+            }
+            Phase::FetchingIssues { numbers } => {
+                if numbers.is_empty() {
+                    return Ok(Step::Finished);
+                }
+                let batch = github.fetch_issues(&self.repository, numbers, FETCH_BATCH)?;
+                store.save_issues(&self.repository, batch.issues)?;
+                drop(numbers.drain(..batch.asked_for));
                 Ok(Step::Saved {
                     pause_until: pause_until(batch.rate_limit),
                 })
@@ -279,16 +302,35 @@ mod tests {
     }
 
     fn fetched(numbers: &[u32], rate: &str) -> Result<Reply, Unreachable> {
+        fetched_titled(numbers, rate, |number| format!("PR {number}"))
+    }
+
+    /// An answer to a fetch of PRs, each of whose titles names the Issue with the same number.
+    fn fetched_naming_issues(numbers: &[u32], rate: &str) -> Result<Reply, Unreachable> {
+        fetched_titled(numbers, rate, |number| format!("gh-{number}: Fix it"))
+    }
+
+    fn fetched_titled(
+        numbers: &[u32],
+        rate: &str,
+        title: impl Fn(u32) -> String,
+    ) -> Result<Reply, Unreachable> {
         let nodes: Vec<Value> = numbers
             .iter()
             .map(|number| {
                 json!({
                     "number": number,
-                    "title": format!("PR {number}"),
+                    "title": title(*number),
                     "state": "OPEN",
                     "isDraft": false,
                     "updatedAt": "2026-11-04T10:00:00Z",
                     "baseRefName": "main",
+                    "body": "",
+                    "repository": {
+                        "nameWithOwner": "python/cpython",
+                        "defaultBranchRef": { "name": "main" },
+                    },
+                    "closingIssuesReferences": { "nodes": [] },
                     "author": { "login": "octocat" },
                     "assignees": { "nodes": [] },
                     "reviewRequests": { "nodes": [] },
@@ -364,6 +406,116 @@ mod tests {
 
     fn nothing(rate: &str) -> Result<Reply, Unreachable> {
         found(&[], None, rate)
+    }
+
+    fn issues(numbers: &[u32], rate: &str) -> Result<Reply, Unreachable> {
+        let fields: serde_json::Map<String, Value> = numbers
+            .iter()
+            .map(|number| {
+                let issue = json!({
+                    "__typename": "Issue",
+                    "number": number,
+                    "title": format!("Issue {number}"),
+                    "updatedAt": "2026-11-04T10:00:00Z",
+                    "author": { "login": "vstinner" },
+                });
+                (format!("i{number}"), issue)
+            })
+            .collect();
+        reply_ok(&format!(
+            r#"{{"data":{{"repository":{},{rate}}}}}"#,
+            Value::Object(fields)
+        ))
+    }
+
+    /// The replies up to and including the search that finds `ids`.
+    fn searches_finding(ids: &[&str]) -> Vec<Result<Reply, Unreachable>> {
+        vec![
+            found(ids, None, LOTS),
+            nothing(LOTS),
+            nothing(LOTS),
+            nothing(LOTS),
+        ]
+    }
+
+    #[test]
+    fn a_sync_fetches_the_issues_its_prs_name_after_the_prs() {
+        let mut replies = searches_finding(&["a", "b"]);
+        replies.push(fetched_naming_issues(&[1, 2], LOTS));
+        replies.push(issues(&[1, 2], LOTS));
+        let harness = Harness::new("issues", replies);
+        let mut syncs = Syncs::default();
+        syncs.add(cpython());
+
+        let changed = run_to_the_end(&mut syncs, &harness);
+
+        let asked: Vec<String> = harness.operations();
+        assert_eq!(asked[4..], ["FetchPullRequests", "FetchIssues"]);
+        let facts = harness.reader.work_facts(&cpython()).unwrap();
+        let stored: Vec<u32> = facts.issues.iter().map(|issue| issue.number).collect();
+        assert_eq!(stored, [1, 2]);
+        assert_eq!(changed, [cpython(), cpython()]);
+        harness.finish();
+    }
+
+    #[test]
+    fn a_sync_with_no_named_issues_asks_for_none() {
+        let mut replies = searches_finding(&["a"]);
+        replies.push(fetched(&[1], LOTS));
+        let harness = Harness::new("no-issues", replies);
+        let mut syncs = Syncs::default();
+        syncs.add(cpython());
+
+        drop(run_to_the_end(&mut syncs, &harness));
+
+        assert_eq!(harness.operations().len(), 5);
+        harness.finish();
+    }
+
+    #[test]
+    fn a_sync_fetches_a_titles_issue_whatever_the_conventions_of_its_repository() {
+        let mut replies = searches_finding(&["a"]);
+        replies.push(fetched_naming_issues(&[1], LOTS));
+        replies.push(issues(&[1], LOTS));
+        let harness = Harness::new("conventions", replies);
+        let mut syncs = Syncs::default();
+        syncs.add(RepositoryName::parse("python/peps").unwrap());
+
+        drop(run_to_the_end(&mut syncs, &harness));
+
+        assert_eq!(
+            harness.operations()[4..],
+            ["FetchPullRequests", "FetchIssues"]
+        );
+        harness.finish();
+    }
+
+    #[test]
+    fn a_fetch_of_issues_goes_batch_by_batch_and_pauses_below_the_floor() {
+        let ids: Vec<u32> = (1..=30).collect();
+        let mut replies = searches_finding(&["a"]);
+        replies.push(fetched_naming_issues(&ids, LOTS));
+        replies.push(issues(&[1], FEW));
+        replies.push(issues(&[2], LOTS));
+        let harness = Harness::new("issue-batches", replies);
+        let mut syncs = Syncs::default();
+        syncs.add(cpython());
+        let before = Instant::now();
+
+        // Four searches, the move to fetching, the PRs, the move to Issues and the first batch of them.
+        for _ in 0..8 {
+            drop(syncs.step(&harness.github, &harness.store).unwrap());
+        }
+        let ready = syncs.ready_at().unwrap();
+        assert!(ready > before + Duration::from_secs(3000), "{ready:?}");
+        drop(syncs.step(&harness.github, &harness.store).unwrap());
+        // The two batches have taken all 30 numbers, so this step ends the sync.
+        assert_eq!(syncs.step(&harness.github, &harness.store).unwrap(), None);
+        assert_eq!(syncs.ready_at(), None);
+
+        let facts = harness.reader.work_facts(&cpython()).unwrap();
+        assert_eq!(facts.issues.len(), 2);
+        harness.finish();
     }
 
     #[test]
@@ -681,8 +833,9 @@ mod tests {
         assert_eq!(syncs.step(&harness.github, &harness.store).unwrap(), None);
         syncs.add(RepositoryName::parse("python/peps").unwrap());
 
-        // The newer sync's four searches, its move to fetching and its end, then the older sync's next page.
-        for _ in 0..7 {
+        // The newer sync's four searches, its moves to each fetch and its end, then the older sync's next
+        // page.
+        for _ in 0..8 {
             assert_eq!(syncs.step(&harness.github, &harness.store).unwrap(), None);
         }
 

@@ -43,8 +43,10 @@ fn search_query(operation: &str) -> String {
 /// The Workbench works out from these lists why a PR is the user's, so a list cut short would hide a PR the
 /// searches found. GitHub returns at most 100 at a time, and it limits a PR to 10 assignees.
 const FETCH_PULL_REQUESTS: &str = "query FetchPullRequests($ids: [ID!]!) { nodes(ids: $ids) { \
-                                   ... on PullRequest { number title state isDraft updatedAt baseRefName \
-                                   author { login } assignees(first: 20) { nodes { login } } \
+                                   ... on PullRequest { number title state isDraft updatedAt baseRefName body \
+                                   repository { nameWithOwner defaultBranchRef { name } } \
+                                   closingIssuesReferences(first: 100) { nodes { number \
+                                   repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } \
                                    reviewRequests(first: 100) { nodes { requestedReviewer { \
                                    ... on User { login } ... on Bot { login } } } } \
                                    latestReviews(first: 100) { nodes { author { login } state } } \
@@ -77,7 +79,7 @@ pub struct SearchPage {
 /// One batch of fetched PRs.
 #[derive(Debug, PartialEq, Eq)]
 pub struct FetchedBatch {
-    pub pull_requests: Vec<PullRequest>,
+    pub pull_requests: Vec<PullRequestFacts>,
     /// The number of IDs it asked for, which is fewer than offered after a retry.
     pub asked_for: usize,
     pub rate_limit: RateLimit,
@@ -131,16 +133,15 @@ pub struct PullRequestFacts {
     pub target_branch: String,
     /// Nothing, when the last commit has no checks.
     pub ci: Option<CiState>,
+    pub updated_at: OffsetDateTime,
     pub review_requests: Vec<Login>,
     pub latest_reviews: Vec<LatestReview>,
     pub assignees: Vec<Login>,
-}
-
-/// A PR as a fetch returns it. The time only orders rows, so it stays out of the facts a screen reads.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PullRequest {
-    pub updated_at: OffsetDateTime,
-    pub facts: PullRequestFacts,
+    /// The Issues in this Repository that GitHub says this PR closes.
+    pub closing_issues: Vec<u32>,
+    /// The description of a PR that doesn't target the default branch. GitHub ignores closing keywords
+    /// there, so Tsugiki reads them itself (ADR 0011). A PR on the default branch has none to read.
+    pub off_default_description: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -150,8 +151,8 @@ struct Nodes<T> {
 }
 
 #[derive(Deserialize)]
-struct Person {
-    login: Login,
+pub(super) struct Person {
+    pub(super) login: Login,
 }
 
 #[derive(Deserialize)]
@@ -190,6 +191,31 @@ struct RollupWire {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct RepositoryWire {
+    name_with_owner: RepositoryName,
+    /// An empty Repository has no default branch, and then it has no PRs either.
+    default_branch_ref: Option<BranchWire>,
+}
+
+#[derive(Deserialize)]
+struct BranchWire {
+    name: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClosingReferenceRepository {
+    name_with_owner: RepositoryName,
+}
+
+#[derive(Deserialize)]
+struct ClosingReference {
+    number: u32,
+    repository: ClosingReferenceRepository,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct PullRequestWire {
     number: u32,
     title: String,
@@ -198,6 +224,9 @@ struct PullRequestWire {
     #[serde(with = "time::serde::rfc3339")]
     updated_at: OffsetDateTime,
     base_ref_name: String,
+    body: String,
+    repository: RepositoryWire,
+    closing_issues_references: Nodes<ClosingReference>,
     author: Option<Person>,
     assignees: Nodes<Person>,
     review_requests: Nodes<ReviewRequestWire>,
@@ -205,7 +234,7 @@ struct PullRequestWire {
     commits: Nodes<CommitNode>,
 }
 
-impl From<PullRequestWire> for PullRequest {
+impl From<PullRequestWire> for PullRequestFacts {
     fn from(wire: PullRequestWire) -> Self {
         let review_requests = wire
             .review_requests
@@ -242,20 +271,34 @@ impl From<PullRequestWire> for PullRequest {
             .flatten()
             .map(|person| person.login)
             .collect();
+        let here = wire.repository.name_with_owner;
+        // A reference to another Repository's Issue can't put this PR under an Issue here (ADR 0011).
+        let closing_issues = wire
+            .closing_issues_references
+            .nodes
+            .into_iter()
+            .flatten()
+            .filter(|reference| reference.repository.name_with_owner.is_same(&here))
+            .map(|reference| reference.number)
+            .collect();
+        let on_default = wire
+            .repository
+            .default_branch_ref
+            .is_none_or(|branch| branch.name == wire.base_ref_name);
         Self {
+            number: wire.number,
+            title: wire.title,
+            state: wire.state,
+            is_draft: wire.is_draft,
+            author: wire.author.map(|person| person.login),
+            target_branch: wire.base_ref_name,
+            ci,
             updated_at: wire.updated_at,
-            facts: PullRequestFacts {
-                number: wire.number,
-                title: wire.title,
-                state: wire.state,
-                is_draft: wire.is_draft,
-                author: wire.author.map(|person| person.login),
-                target_branch: wire.base_ref_name,
-                ci,
-                review_requests,
-                latest_reviews,
-                assignees,
-            },
+            review_requests,
+            latest_reviews,
+            assignees,
+            closing_issues,
+            off_default_description: (!on_default).then_some(wire.body),
         }
     }
 }
@@ -294,7 +337,7 @@ impl GitHub {
         let query = search_query(search.operation);
         let (data, _): (Data, usize) = self.query_at_size(page.size, |first| Request {
             operation: search.operation,
-            query: &query,
+            query: query.as_str().into(),
             variables: json!({ "query": text, "first": first, "after": page.after }),
         })?;
         let info = data.search.page_info;
@@ -324,7 +367,7 @@ impl GitHub {
             let asked: Vec<&str> = ids.iter().take(size).map(|id| id.0.as_str()).collect();
             Request {
                 operation: "FetchPullRequests",
-                query: FETCH_PULL_REQUESTS,
+                query: FETCH_PULL_REQUESTS.into(),
                 variables: json!({ "ids": asked }),
             }
         })?;
@@ -333,7 +376,7 @@ impl GitHub {
                 .nodes
                 .into_iter()
                 .flatten()
-                .map(PullRequest::from)
+                .map(PullRequestFacts::from)
                 .collect(),
             asked_for,
             rate_limit: data.rate_limit,
@@ -342,7 +385,7 @@ impl GitHub {
 
     /// Asks for `size` items, and after a 502 or no answer asks once more for half as many (ADR 0015). Says
     /// how many the answer is for.
-    fn query_at_size<'a, D: DeserializeOwned>(
+    pub(super) fn query_at_size<'a, D: DeserializeOwned>(
         &self,
         size: usize,
         request: impl Fn(usize) -> Request<'a>,
@@ -364,6 +407,8 @@ mod tests {
     use crate::error::ErrorKind;
     use crate::github::Reply;
     use crate::github::testing::{Scripted, reply_ok, token};
+    use serde_json::Value;
+    use time::format_description::well_known::Rfc3339;
 
     const RATE: &str = r#""rateLimit":{"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
 
@@ -412,6 +457,13 @@ mod tests {
             "isDraft": true,
             "updatedAt": "2026-11-04T10:00:00Z",
             "baseRefName": "main",
+            "body": "Fixes #2",
+            "repository": { "nameWithOwner": "python/cpython", "defaultBranchRef": { "name": "main" } },
+            "closingIssuesReferences": { "nodes": [
+                { "number": 7, "repository": { "nameWithOwner": "Python/CPython" } },
+                { "number": 8, "repository": { "nameWithOwner": "python/peps" } },
+                null,
+            ] },
             "author": { "login": "vstinner" },
             "assignees": { "nodes": [{ "login": "hugovk" }] },
             "reviewRequests": { "nodes": [
@@ -504,7 +556,7 @@ mod tests {
         assert_eq!(batch.pull_requests.len(), 1);
         let pr = &batch.pull_requests[0];
         assert_eq!(
-            pr.facts,
+            *pr,
             PullRequestFacts {
                 number: 140_124,
                 title: "gh-1: Fix it".to_owned(),
@@ -513,14 +565,40 @@ mod tests {
                 author: Some(Login::new("vstinner")),
                 target_branch: "main".to_owned(),
                 ci: Some(CiState::Failure),
+                updated_at: OffsetDateTime::parse("2026-11-04T10:00:00Z", &Rfc3339).unwrap(),
                 review_requests: vec![Login::new("octocat")],
                 latest_reviews: vec![LatestReview {
                     author: Login::new("pablogsal"),
                     state: ReviewState::ChangesRequested,
                 }],
                 assignees: vec![Login::new("hugovk")],
+                closing_issues: vec![7],
+                off_default_description: None,
             }
         );
+    }
+
+    /// The description Tsugiki keeps for a PR on `branch`, in a Repository with `default_branch`.
+    fn kept_description(branch: &str, default_branch: Value) -> Option<String> {
+        let mut pr = pr_json();
+        pr["baseRefName"] = json!(branch);
+        pr["repository"]["defaultBranchRef"] = default_branch;
+        let (script, _asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([pr])))]);
+        let batch = github(script)
+            .fetch_pull_requests(&ids(&["a"]), 25)
+            .unwrap();
+        batch.pull_requests[0].off_default_description.clone()
+    }
+
+    #[test]
+    fn only_a_pr_off_the_default_branch_keeps_its_description() {
+        let main = || json!({ "name": "main" });
+        assert_eq!(kept_description("main", main()), None);
+        assert_eq!(
+            kept_description("3.14", main()).as_deref(),
+            Some("Fixes #2")
+        );
+        assert_eq!(kept_description("3.14", Value::Null), None);
     }
 
     #[test]
@@ -536,8 +614,8 @@ mod tests {
 
         assert_eq!(batch.pull_requests.len(), 1);
         let pr = &batch.pull_requests[0];
-        assert_eq!(pr.facts.author, None);
-        assert_eq!(pr.facts.ci, None);
+        assert_eq!(pr.author, None);
+        assert_eq!(pr.ci, None);
     }
 
     #[test]
@@ -590,6 +668,9 @@ mod tests {
             "isDraft": false,
             "updatedAt": "2026-11-04T10:00:00Z",
             "baseRefName": "main",
+            "body": "",
+            "repository": { "nameWithOwner": "python/cpython", "defaultBranchRef": { "name": "main" } },
+            "closingIssuesReferences": { "nodes": [null] },
             "author": null,
             "assignees": { "nodes": [null, { "login": "octocat" }] },
             "reviewRequests": { "nodes": [null] },
@@ -602,7 +683,7 @@ mod tests {
             .fetch_pull_requests(&ids(&["a"]), 25)
             .unwrap();
 
-        let facts = &batch.pull_requests[0].facts;
+        let facts = &batch.pull_requests[0];
         assert_eq!(facts.assignees, [Login::new("octocat")]);
         assert_eq!(facts.review_requests, []);
         assert_eq!(facts.latest_reviews, []);

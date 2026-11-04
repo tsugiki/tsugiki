@@ -3,12 +3,13 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+use crate::github::Login;
 use crate::repository::RepositoryName;
 
 const CPYTHON: &str = "python/cpython";
+const CPYTHON_BACKPORT_BOT: &str = "miss-islington";
 
-/// How a Repository's PRs name their Issues and Backports (ADR 0011). The rules that read this arrive with
-/// the links.
+/// How a Repository's PRs name their Issues and Backports (ADR 0011). `links.rs` reads this.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum Conventions {
@@ -23,6 +24,23 @@ impl Conventions {
             Self::Cpython
         } else {
             Self::Github
+        }
+    }
+
+    /// CPython's PRs name their Issue with a `gh-NNNNN:` prefix, and GitHub's convention has no prefix.
+    pub const fn names_issues_in_titles(self) -> bool {
+        match self {
+            Self::Cpython => true,
+            Self::Github => false,
+        }
+    }
+
+    /// True for a bot that opens PRs on someone's behalf. The Workbench leaves its name out of an Issue's
+    /// people.
+    pub fn is_backport_bot(self, login: &Login) -> bool {
+        match self {
+            Self::Cpython => login == &Login::new(CPYTHON_BACKPORT_BOT),
+            Self::Github => false,
         }
     }
 }
@@ -43,5 +61,13 @@ mod tests {
         for other in ["sergey-miryanov/gcmon", "python/peps", "someone/cpython"] {
             assert_eq!(for_name(other), Conventions::Github);
         }
+    }
+
+    #[test]
+    fn cpython_has_a_backport_bot_and_github_has_none() {
+        let bot = Login::new("Miss-Islington");
+        assert!(Conventions::Cpython.is_backport_bot(&bot));
+        assert!(!Conventions::Cpython.is_backport_bot(&Login::new("vstinner")));
+        assert!(!Conventions::Github.is_backport_bot(&bot));
     }
 }

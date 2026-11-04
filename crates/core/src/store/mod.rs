@@ -5,6 +5,7 @@
 
 mod columns;
 mod file;
+mod issues;
 mod migrate;
 mod pull_requests;
 
@@ -19,7 +20,8 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, named_params};
 
 use crate::error::{Error, ErrorKind};
 use crate::github::Login;
-use crate::github::pull_requests::{PullRequest, PullRequestFacts};
+use crate::github::issues::IssueFacts;
+use crate::github::pull_requests::PullRequestFacts;
 use crate::repository::RepositoryName;
 use migrate::{MIGRATIONS, Migration};
 
@@ -61,11 +63,22 @@ impl Store {
     pub fn save_pull_requests(
         &self,
         repository: &RepositoryName,
-        pull_requests: Vec<PullRequest>,
+        pull_requests: Vec<PullRequestFacts>,
     ) -> Result<(), Error> {
         let repository = repository.clone();
         let saved = self
             .call(move |connection| pull_requests::save(connection, &repository, &pull_requests))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Stores `issues` of `repository` in one transaction (ADR 0010).
+    pub fn save_issues(
+        &self,
+        repository: &RepositoryName,
+        issues: Vec<IssueFacts>,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| issues::save(connection, &repository, &issues))?;
         saved.map_err(saying(CANT_WRITE))
     }
 
@@ -104,6 +117,7 @@ pub struct WorkFacts {
     /// The user signed in when Tsugiki last reached GitHub, if it ever has.
     pub viewer: Option<Login>,
     pub pull_requests: Vec<PullRequestFacts>,
+    pub issues: Vec<IssueFacts>,
 }
 
 fn read_last_login(connection: &Connection) -> rusqlite::Result<Option<Login>> {
@@ -134,6 +148,7 @@ fn read_work_facts(
     Ok(WorkFacts {
         viewer: read_last_login(&transaction)?,
         pull_requests: pull_requests::read_open(&transaction, repository)?,
+        issues: issues::read_all(&transaction, repository)?,
     })
 }
 
@@ -464,8 +479,11 @@ mod tests {
         connection
             .execute_batch(
                 "INSERT INTO viewer (id, login) VALUES (1, 'octocat');
-                 INSERT INTO pull_requests VALUES ('python/cpython', 1, 'gh-1: Fix it', 'OPEN', 0,
-                                                   'vstinner', 'main', 'SUCCESS', 7);
+                 INSERT INTO pull_requests
+                     (repository, number, title, state, is_draft, author, target_branch, ci, updated_at)
+                 VALUES ('python/cpython', 1, 'gh-1: Fix it', 'OPEN', 0, 'vstinner', 'main', 'SUCCESS', 7);
+                 INSERT INTO closing_references VALUES ('python/cpython', 1, 7);
+                 INSERT INTO issues VALUES ('python/cpython', 1, 'It broke', 'vstinner', 7);
                  INSERT INTO review_requests VALUES ('python/cpython', 1, 'octocat');
                  INSERT INTO latest_reviews VALUES ('python/cpython', 1, 'hugovk', 'APPROVED');
                  INSERT INTO assignees VALUES ('python/cpython', 1, 'pablogsal');",
@@ -516,8 +534,10 @@ mod tests {
             "review_requests",
             "latest_reviews",
             "assignees",
+            "closing_references",
+            "issues",
         ];
-        assert_eq!(tables.map(reads), [true; 5]);
+        assert_eq!(tables.map(reads), [true; 7]);
     }
 
     #[test]

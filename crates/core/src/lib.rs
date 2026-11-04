@@ -9,6 +9,7 @@ pub mod folders;
 pub mod github;
 pub mod latest;
 pub mod launch;
+pub mod links;
 pub mod logfile;
 pub mod repository;
 pub mod session;

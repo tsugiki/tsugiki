@@ -48,8 +48,8 @@ pub fn scrub(text: &str, token: &str) -> String {
 }
 
 /// Puts the stand-in wherever a whole string is `login`, whatever its case. A login inside a longer string
-/// stays: replacing part of a string could change a node's id, and only a PR's title could name someone that
-/// way.
+/// stays: replacing part of a string could change a node's id. A PR's title or description can name someone
+/// that way, so read those before you commit a recording.
 fn replace_login(value: &mut Value, login: &str) {
     match value {
         Value::String(text) if text.eq_ignore_ascii_case(login) => {
@@ -135,7 +135,7 @@ mod tests {
 
     const REQUEST: Request<'static> = Request {
         operation: "Op",
-        query: "query Op { a }",
+        query: std::borrow::Cow::Borrowed("query Op { a }"),
         variables: serde_json::Value::Null,
     };
 

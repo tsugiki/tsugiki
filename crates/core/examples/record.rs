@@ -7,12 +7,14 @@
     reason = "a developer's command line: a failure should stop it and say why in the terminal"
 )]
 
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use tsugiki_core::github::GitHub;
 use tsugiki_core::github::live::{Https, run_gh};
 use tsugiki_core::github::pull_requests::PageRequest;
 use tsugiki_core::github::record::Recorder;
+use tsugiki_core::links::possible_numbers;
 use tsugiki_core::repository::RepositoryName;
 use tsugiki_core::sync::{FETCH_BATCH, SEARCH_PAGE, WORK_SEARCHES};
 use tsugiki_core::token::Token;
@@ -30,8 +32,8 @@ fn main() {
     println!("Recorded to {}", fixtures.display());
 }
 
-/// One page of each search, and one batch of what they found. Each recording holds one answer, so more pages
-/// would only keep the last.
+/// One page of each search, one batch of what they found, and one batch of the Issues those PRs name. Each
+/// recording holds one answer, so more pages would only keep the last.
 fn record_first_sync(github: &GitHub) {
     let repository = RepositoryName::parse(WORK_REPOSITORY).expect("a Repository's name");
     let mut ids = Vec::new();
@@ -54,4 +56,21 @@ fn record_first_sync(github: &GitHub) {
         .fetch_pull_requests(&ids, FETCH_BATCH)
         .expect("fetch the user's PRs");
     println!("{} PRs in the batch", batch.pull_requests.len());
+    let mut named = BTreeSet::new();
+    for pull_request in &batch.pull_requests {
+        named.extend(possible_numbers(pull_request, &repository));
+    }
+    let numbers: Vec<u32> = named.into_iter().collect();
+    if numbers.is_empty() {
+        println!("Those PRs name no Issues, so FetchIssues.json stays as it was");
+        return;
+    }
+    let issues = github
+        .fetch_issues(&repository, &numbers, FETCH_BATCH)
+        .expect("fetch the Issues the PRs name");
+    println!(
+        "{} Issues of {} numbers asked for",
+        issues.issues.len(),
+        issues.asked_for
+    );
 }

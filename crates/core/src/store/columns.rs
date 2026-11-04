@@ -3,10 +3,22 @@
 
 use rusqlite::ToSql;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
+use time::OffsetDateTime;
 
 use crate::github::Login;
 use crate::github::pull_requests::{CiState, PrState, ReviewState};
 use crate::repository::RepositoryName;
+
+/// A time in a column, as seconds since the Unix epoch.
+pub(super) struct UnixTime(pub(super) OffsetDateTime);
+
+impl FromSql for UnixTime {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        OffsetDateTime::from_unix_timestamp(value.as_i64()?)
+            .map(Self)
+            .map_err(|cause| FromSqlError::Other(Box::new(cause)))
+    }
+}
 
 impl ToSql for RepositoryName {
     fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {

@@ -1,6 +1,10 @@
 //! The Workbench's view model (ADR 0008), worked out from stored facts when the window asks (ADR 0010). Each
 //! item is an Issue with the PRs that fix it and their Backports, or a PR outside any Issue (ADR 0011).
 
+mod filters;
+
+pub use filters::FilterLine;
+
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -10,13 +14,14 @@ use time::OffsetDateTime;
 
 use crate::conventions::Conventions;
 use crate::error::Error;
-use crate::filters::{Filter, FilterName, FilterQuery};
+use crate::filters::FilterQuery;
 use crate::github::Login;
 use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::{CiState, PrState, PullRequestFacts, ReviewState};
 use crate::links::{BackportKind, BackportLink, MergeCommits, backport_of, fixed_numbers};
 use crate::repository::RepositorySettings;
-use crate::store::{FilterResults, StoreReader, WorkFacts};
+use crate::store::{StoreReader, WorkFacts};
+use filters::FilterFacts;
 
 /// The reason a PR is on the user's Workbench.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
@@ -132,26 +137,6 @@ impl WorkbenchItem {
             Self::StandaloneBackport(backport) => vec![&backport.row],
         }
     }
-
-    /// True when a search found this item: the Issue itself, or any PR in its tree (a Matched PR).
-    fn is_reached_by(&self, numbers: &BTreeSet<u32>) -> bool {
-        let issue = match self {
-            Self::Issue(issue) => numbers.contains(&issue.number),
-            Self::StandalonePr(_) | Self::StandaloneBackport(_) => false,
-        };
-        issue || self.rows().iter().any(|row| numbers.contains(&row.number))
-    }
-}
-
-/// A Filter's line of the Sidebar.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-pub struct FilterLine {
-    pub name: FilterName,
-    pub query: FilterQuery,
-    /// How many items it holds, until Needs attention exists to count instead.
-    pub count: u32,
-    /// The words for the failure that stopped its last search from being whole.
-    pub problem: Option<String>,
 }
 
 /// A Repository's Workbench or one of its Filters, with what the Sidebar shows beside it.
@@ -182,39 +167,13 @@ impl Workbench {
         repository: &RepositorySettings,
         selected: Option<&FilterQuery>,
     ) -> Self {
-        let results = std::mem::take(&mut facts.filters);
-        let nothing = FilterResults::default();
-        let found: Vec<(&Filter, &FilterResults)> = repository
-            .filters
-            .iter()
-            .map(|filter| (filter, results.get(&filter.query).unwrap_or(&nothing)))
-            .collect();
-        let matched: BTreeSet<u32> = found
-            .iter()
-            .flat_map(|(_, results)| results.numbers.iter().copied())
-            .collect();
-        let selected = selected.map(|query| {
-            found
-                .iter()
-                .find(|(filter, _)| filter.query == *query)
-                .map_or(&nothing.numbers, |(_, results)| &results.numbers)
-        });
+        let filters = FilterFacts::new(repository, std::mem::take(&mut facts.filters));
+        let matched = filters.matched();
+        let selected = selected.map(|query| filters.numbers_of(query));
         let candidates = candidates(facts, repository, selected.unwrap_or(&matched));
         let on_workbench =
             |item: &&WorkbenchItem| any_reason(&item.rows()) || item.is_reached_by(&matched);
-        let filters = found
-            .iter()
-            .map(|(filter, results)| FilterLine {
-                name: filter.name.clone(),
-                query: filter.query.clone(),
-                count: count_of(
-                    candidates
-                        .iter()
-                        .filter(|item| item.is_reached_by(&results.numbers)),
-                ),
-                problem: results.problem.clone(),
-            })
-            .collect();
+        let lines = filters.lines(&candidates);
         let count = count_of(candidates.iter().filter(on_workbench));
         let mut items: Vec<WorkbenchItem> = candidates
             .iter()
@@ -228,7 +187,7 @@ impl Workbench {
         Self {
             items,
             count,
-            filters,
+            filters: lines,
         }
     }
 }
@@ -489,16 +448,16 @@ mod tests {
     use crate::github::pull_requests::{LatestReview, OffDefault};
     use crate::repository::RepositoryName;
 
-    fn me() -> Login {
+    pub(super) fn me() -> Login {
         Login::new("octocat")
     }
 
-    fn someone() -> Login {
+    pub(super) fn someone() -> Login {
         Login::new("some-author")
     }
 
     /// A PR that has nothing to do with the viewer.
-    fn stranger() -> PullRequestFacts {
+    pub(super) fn stranger() -> PullRequestFacts {
         PullRequestFacts {
             number: 1,
             title: "gh-1: Fix it".to_owned(),
@@ -624,15 +583,15 @@ mod tests {
         );
     }
 
-    fn at(seconds: i64) -> OffsetDateTime {
+    pub(super) fn at(seconds: i64) -> OffsetDateTime {
         OffsetDateTime::from_unix_timestamp(seconds).unwrap()
     }
 
-    fn cpython() -> RepositorySettings {
+    pub(super) fn cpython() -> RepositorySettings {
         RepositorySettings::new(RepositoryName::parse("python/cpython").unwrap())
     }
 
-    fn issue(number: u32) -> IssueFacts {
+    pub(super) fn issue(number: u32) -> IssueFacts {
         IssueFacts {
             number,
             title: format!("Issue {number}"),
@@ -642,7 +601,7 @@ mod tests {
     }
 
     /// The user's PR, whose title names no Issue.
-    fn mine(number: u32) -> PullRequestFacts {
+    pub(super) fn mine(number: u32) -> PullRequestFacts {
         PullRequestFacts {
             number,
             title: format!("PR {number}"),
@@ -652,7 +611,7 @@ mod tests {
     }
 
     /// The user's PR, whose title names `issue`.
-    fn fixing(number: u32, issue: u32) -> PullRequestFacts {
+    pub(super) fn fixing(number: u32, issue: u32) -> PullRequestFacts {
         PullRequestFacts {
             title: format!("gh-{issue}: Fix it"),
             ..mine(number)
@@ -670,7 +629,7 @@ mod tests {
     }
 
     /// Each item as its kind and number, with an Issue's PRs after it.
-    fn outline(workbench: &Workbench) -> Vec<(&'static str, u32, Vec<u32>)> {
+    pub(super) fn outline(workbench: &Workbench) -> Vec<(&'static str, u32, Vec<u32>)> {
         workbench
             .items
             .iter()
@@ -690,7 +649,7 @@ mod tests {
             .collect()
     }
 
-    fn first_issue(workbench: &Workbench) -> &IssueItem {
+    pub(super) fn first_issue(workbench: &Workbench) -> &IssueItem {
         let issues = workbench.items.iter().filter_map(|item| match item {
             WorkbenchItem::Issue(issue) => Some(issue),
             WorkbenchItem::StandalonePr(_) | WorkbenchItem::StandaloneBackport(_) => None,
@@ -930,7 +889,11 @@ mod tests {
     const BOT: &str = "miss-islington";
 
     /// A PR on 3.14 by someone else, titled `title` and committed by `committers`.
-    fn backport(number: u32, title: &str, committers: Vec<Option<Login>>) -> PullRequestFacts {
+    pub(super) fn backport(
+        number: u32,
+        title: &str,
+        committers: Vec<Option<Login>>,
+    ) -> PullRequestFacts {
         PullRequestFacts {
             number,
             title: title.to_owned(),
@@ -944,7 +907,7 @@ mod tests {
         }
     }
 
-    fn bots_backport(number: u32, title: &str) -> PullRequestFacts {
+    pub(super) fn bots_backport(number: u32, title: &str) -> PullRequestFacts {
         PullRequestFacts {
             author: Some(Login::new(BOT)),
             ..backport(number, title, vec![Some(Login::new(BOT))])
@@ -959,7 +922,7 @@ mod tests {
     }
 
     /// The first Issue's lines, as each PR's number with the numbers beneath it.
-    fn tree_of(workbench: &Workbench) -> Vec<(u32, Vec<u32>)> {
+    pub(super) fn tree_of(workbench: &Workbench) -> Vec<(u32, Vec<u32>)> {
         first_issue(workbench)
             .pull_requests
             .iter()
@@ -1253,233 +1216,5 @@ mod tests {
             None,
         );
         assert_eq!(found.items, []);
-    }
-
-    fn query(text: &str) -> FilterQuery {
-        text.to_owned().try_into().unwrap()
-    }
-
-    /// A Repository whose Filters are each named after their search.
-    fn with_filters(queries: &[&str]) -> RepositorySettings {
-        RepositorySettings {
-            filters: queries
-                .iter()
-                .map(|text| Filter {
-                    name: format!("Named {text}").try_into().unwrap(),
-                    query: query(text),
-                })
-                .collect(),
-            ..cpython()
-        }
-    }
-
-    fn found_by(numbers: &[u32]) -> FilterResults {
-        FilterResults {
-            numbers: numbers.iter().copied().collect(),
-            problem: None,
-        }
-    }
-
-    /// PRs #10 by someone else, fixing Issue 1; #20 by someone else, fixing nothing; and Issue 2 with no PR.
-    fn nobodys_work(filters: &[(&str, FilterResults)]) -> WorkFacts {
-        WorkFacts {
-            viewer: Some(me()),
-            pull_requests: vec![
-                PullRequestFacts {
-                    number: 10,
-                    ..stranger()
-                },
-                PullRequestFacts {
-                    number: 20,
-                    title: "PR 20".to_owned(),
-                    ..stranger()
-                },
-            ],
-            issues: vec![issue(1), issue(2)],
-            filters: filters
-                .iter()
-                .map(|(text, results)| (query(text), results.clone()))
-                .collect(),
-        }
-    }
-
-    #[test]
-    fn nothing_a_filter_found_means_nothing_of_someone_elses_is_listed() {
-        let found = Workbench::from_facts(nobodys_work(&[]), &with_filters(&["a"]), None);
-        assert_eq!(found.items, []);
-        assert_eq!(found.count, 0);
-        assert_eq!(found.filters[0].count, 0);
-    }
-
-    #[test]
-    fn the_workbench_lists_an_issue_a_filter_found_with_its_tree() {
-        let facts = nobodys_work(&[("a", found_by(&[1]))]);
-        let found = Workbench::from_facts(facts, &with_filters(&["a"]), None);
-        assert_eq!(outline(&found), [("issue", 1, vec![10])]);
-        assert_eq!(found.count, 1);
-    }
-
-    #[test]
-    fn the_workbench_lists_an_issue_with_no_prs_that_a_filter_found() {
-        let facts = nobodys_work(&[("a", found_by(&[2]))]);
-        let found = Workbench::from_facts(facts, &with_filters(&["a"]), None);
-        assert_eq!(outline(&found), [("issue", 2, vec![])]);
-    }
-
-    #[test]
-    fn a_pr_a_filter_found_pulls_its_issue_onto_the_workbench() {
-        let facts = nobodys_work(&[("a", found_by(&[10]))]);
-        let found = Workbench::from_facts(facts, &with_filters(&["a"]), None);
-        assert_eq!(outline(&found), [("issue", 1, vec![10])]);
-    }
-
-    #[test]
-    fn a_pr_a_filter_found_that_fixes_no_issue_stands_by_itself() {
-        let facts = nobodys_work(&[("a", found_by(&[20]))]);
-        let found = Workbench::from_facts(facts, &with_filters(&["a"]), None);
-        assert_eq!(outline(&found), [("standalone", 20, vec![])]);
-    }
-
-    #[test]
-    fn a_closed_pr_a_filter_found_stays_with_its_issue() {
-        let mut facts = nobodys_work(&[("a", found_by(&[10]))]);
-        facts.pull_requests[0].state = PrState::Closed;
-        let found = Workbench::from_facts(facts, &with_filters(&["a"]), None);
-        assert_eq!(outline(&found), [("issue", 1, vec![10])]);
-    }
-
-    #[test]
-    fn a_filter_found_backport_brings_its_whole_tree() {
-        let mut facts = nobodys_work(&[("a", found_by(&[30]))]);
-        facts
-            .pull_requests
-            .push(backport(30, "[3.14] Fix it (GH-20)", vec![]));
-        let found = Workbench::from_facts(facts, &with_filters(&["a"]), None);
-        assert_eq!(outline(&found), [("standalone", 20, vec![30])]);
-    }
-
-    #[test]
-    fn a_lone_backport_a_filter_found_stands_by_itself() {
-        let mut facts = nobodys_work(&[("a", found_by(&[30]))]);
-        facts
-            .pull_requests
-            .push(backport(30, "[3.14] Fix it (GH-99)", vec![]));
-        let found = Workbench::from_facts(facts, &with_filters(&["a"]), None);
-        assert_eq!(outline(&found), [("standalone backport", 30, vec![])]);
-    }
-
-    #[test]
-    fn a_matched_pr_comes_first_in_its_issues_tree() {
-        let facts = WorkFacts {
-            viewer: Some(me()),
-            pull_requests: vec![fixing(10, 1), fixing(11, 1), fixing(12, 1)],
-            issues: vec![issue(1)],
-            filters: BTreeMap::from([(query("a"), found_by(&[12]))]),
-        };
-        let found = Workbench::from_facts(facts, &with_filters(&["a"]), None);
-        assert_eq!(outline(&found), [("issue", 1, vec![12, 10, 11])]);
-    }
-
-    #[test]
-    fn a_selected_filters_own_pr_comes_first_in_its_issues_tree() {
-        let facts = WorkFacts {
-            viewer: Some(me()),
-            pull_requests: vec![fixing(10, 1), fixing(11, 1)],
-            issues: vec![issue(1)],
-            filters: BTreeMap::from([(query("a"), found_by(&[10])), (query("b"), found_by(&[11]))]),
-        };
-        let selected = query("b");
-        let found = Workbench::from_facts(facts, &with_filters(&["a", "b"]), Some(&selected));
-        assert_eq!(outline(&found), [("issue", 1, vec![11, 10])]);
-    }
-
-    #[test]
-    fn selecting_a_filter_shows_only_what_it_found_even_if_its_not_the_users() {
-        let facts = WorkFacts {
-            pull_requests: vec![
-                mine(40),
-                PullRequestFacts {
-                    number: 20,
-                    title: "PR 20".to_owned(),
-                    ..stranger()
-                },
-            ],
-            ..nobodys_work(&[("a", found_by(&[1])), ("b", found_by(&[20]))])
-        };
-        let repository = with_filters(&["a", "b"]);
-
-        let selected = query("b");
-        let found = Workbench::from_facts(facts, &repository, Some(&selected));
-
-        assert_eq!(outline(&found), [("standalone", 20, vec![])]);
-    }
-
-    #[test]
-    fn a_selected_search_no_filter_holds_shows_nothing() {
-        let facts = nobodys_work(&[("gone", found_by(&[1]))]);
-        let selected = query("gone");
-        let found = Workbench::from_facts(facts, &with_filters(&["a"]), Some(&selected));
-        assert_eq!(found.items, []);
-    }
-
-    #[test]
-    fn the_sidebar_counts_each_filter_and_the_workbench_whatever_is_selected() {
-        let facts = WorkFacts {
-            pull_requests: vec![
-                mine(40),
-                PullRequestFacts {
-                    number: 10,
-                    ..stranger()
-                },
-            ],
-            ..nobodys_work(&[("a", found_by(&[1, 2, 10])), ("b", found_by(&[2]))])
-        };
-        let selected = query("b");
-        let found = Workbench::from_facts(facts, &with_filters(&["a", "b"]), Some(&selected));
-
-        // Issue 1 once, however many of its rows the Filter found.
-        let counts: Vec<u32> = found.filters.iter().map(|line| line.count).collect();
-        assert_eq!(counts, [2, 1]);
-        // Those two Issues, and the user's own PR.
-        assert_eq!(found.count, 3);
-        assert_eq!(outline(&found), [("issue", 2, vec![])]);
-    }
-
-    #[test]
-    fn the_sidebar_lists_the_filters_as_the_settings_do_with_their_problems() {
-        let cut_off = FilterResults {
-            numbers: BTreeSet::new(),
-            problem: Some("It was cut off".to_owned()),
-        };
-        let facts = nobodys_work(&[("b", cut_off), ("gone", found_by(&[1]))]);
-        let found = Workbench::from_facts(facts, &with_filters(&["b", "a"]), None);
-
-        let lines: Vec<(String, String, Option<String>)> = found
-            .filters
-            .into_iter()
-            .map(|line| (line.name.into(), line.query.into(), line.problem))
-            .collect();
-        assert_eq!(
-            lines,
-            [
-                (
-                    "Named b".to_owned(),
-                    "b".to_owned(),
-                    Some("It was cut off".to_owned())
-                ),
-                ("Named a".to_owned(), "a".to_owned(), None),
-            ]
-        );
-        // The results of a search the user has edited away reach nothing.
-        assert_eq!(found.items, []);
-    }
-
-    #[test]
-    fn before_anyone_signs_in_the_sidebar_still_lists_the_filters() {
-        let mut facts = nobodys_work(&[("a", found_by(&[1]))]);
-        facts.viewer = None;
-        let found = Workbench::from_facts(facts, &with_filters(&["a"]), None);
-        assert_eq!(found.filters.len(), 1);
-        assert_eq!(found.filters[0].count, 0);
     }
 }

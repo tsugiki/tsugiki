@@ -1,8 +1,9 @@
-//! Captures real answers as fixtures for the replayer, with tokens scrubbed and the viewer's login replaced
+//! Captures real answers as fixtures for the replayer, with tokens scrubbed and each person's login replaced
 //! wherever an answer names them (ADR 0009).
 
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::OnceLock;
 
 use serde_json::{Value, json};
 
@@ -13,7 +14,9 @@ const PREFIXES: [&str; 6] = ["gho_", "ghp_", "ghs_", "ghu_", "ghr_", "github_pat
 const SCRUBBED: &str = "[token]";
 
 /// Written in place of the viewer's login, so a fixture doesn't depend on who recorded it.
-const STAND_IN_LOGIN: &str = "octocat";
+const VIEWER_STAND_IN: &str = "octocat";
+/// The fields of an answer that people write, where a login can sit inside the text.
+const PROSE_FIELDS: [&str; 2] = ["title", "body"];
 
 fn is_token_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
@@ -47,25 +50,130 @@ pub fn scrub(text: &str, token: &str) -> String {
     scrubbed
 }
 
-/// Puts the stand-in wherever a whole string is `login`, whatever its case. A login inside a longer string
-/// stays: replacing part of a string could change a node's id. A PR's title or description can name someone
-/// that way, so read those before you commit a recording.
-fn replace_login(value: &mut Value, login: &str) {
-    match value {
-        Value::String(text) if text.eq_ignore_ascii_case(login) => {
-            STAND_IN_LOGIN.clone_into(text);
+/// Empties the description of each PR on its default branch. Tsugiki reads a description only off that branch
+/// (ADR 0011), so here it would add nothing but text that can name people.
+fn blank_unread_descriptions(body: &mut Value) {
+    let Some(Value::Array(nodes)) = body.pointer_mut("/data/nodes") else {
+        return;
+    };
+    for node in nodes {
+        let base = node.pointer("/baseRefName");
+        let on_default =
+            base.is_some() && base == node.pointer("/repository/defaultBranchRef/name");
+        if on_default && let Some(description) = node.get_mut("body") {
+            *description = Value::String(String::new());
         }
-        Value::Array(items) => {
-            for item in items {
-                replace_login(item, login);
+    }
+}
+
+/// True for a character a GitHub login can hold.
+fn is_login_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '-'
+}
+
+/// The logins a run of recordings has met, in lower case, and the stand-in for each. One person keeps one
+/// stand-in across recordings, so a PR's author and the same person's Issue still match.
+#[derive(Default)]
+struct StandIns {
+    by_login: BTreeMap<String, String>,
+}
+
+impl StandIns {
+    fn add_viewer(&mut self, login: &str) {
+        drop(
+            self.by_login
+                .insert(login.to_ascii_lowercase(), VIEWER_STAND_IN.to_owned()),
+        );
+    }
+
+    /// The stand-in for `login`, a new one the first time.
+    fn for_login(&mut self, login: &str) -> String {
+        let next = format!("user-{}", self.by_login.len());
+        self.by_login
+            .entry(login.to_ascii_lowercase())
+            .or_insert(next)
+            .clone()
+    }
+
+    fn known(&self, word: &str) -> Option<&String> {
+        self.by_login.get(&word.to_ascii_lowercase())
+    }
+
+    /// Replaces each `login` field, so the next pass knows everyone this answer names.
+    fn replace_logins(&mut self, value: &mut Value) {
+        match value {
+            Value::Array(items) => {
+                for item in items {
+                    self.replace_logins(item);
+                }
             }
-        }
-        Value::Object(fields) => {
-            for field in fields.values_mut() {
-                replace_login(field, login);
+            Value::Object(fields) => {
+                for (name, field) in fields.iter_mut() {
+                    if name == "login"
+                        && let Value::String(login) = &mut *field
+                    {
+                        *login = self.for_login(login);
+                    } else {
+                        self.replace_logins(field);
+                    }
+                }
             }
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
         }
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+
+    /// Replaces known logins in `value`'s other strings. Elsewhere only a whole string counts, because
+    /// replacing part of one could change a node's id.
+    fn replace_in_strings(&mut self, value: &mut Value) {
+        match value {
+            Value::String(text) => {
+                if let Some(stand_in) = self.known(text) {
+                    text.clone_from(stand_in);
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    self.replace_in_strings(item);
+                }
+            }
+            Value::Object(fields) => {
+                for (name, field) in fields.iter_mut() {
+                    if PROSE_FIELDS.contains(&name.as_str())
+                        && let Value::String(text) = &mut *field
+                    {
+                        *text = self.in_prose(text);
+                    } else {
+                        self.replace_in_strings(field);
+                    }
+                }
+            }
+            Value::Null | Value::Bool(_) | Value::Number(_) => {}
+        }
+    }
+
+    /// `text` with each known login and each `@mention` replaced. A word with `@` right after another word
+    /// is an email's domain, which names nobody. A real name written out in `text` stays, so read a new
+    /// recording before you commit it.
+    fn in_prose(&mut self, text: &str) -> String {
+        let mut replaced = String::with_capacity(text.len());
+        let mut rest = text;
+        while let Some(start) = rest.find(is_login_char) {
+            let (before, tail) = rest.split_at(start);
+            let end = tail.find(|c| !is_login_char(c)).unwrap_or(tail.len());
+            let (word, after) = tail.split_at(end);
+            replaced.push_str(before);
+            let is_mention = before
+                .strip_suffix('@')
+                .is_some_and(|head| !head.is_empty() || replaced.len() == before.len());
+            if is_mention {
+                replaced.push_str(&self.for_login(word));
+            } else {
+                replaced.push_str(self.known(word).map_or(word, String::as_str));
+            }
+            rest = after;
+        }
+        replaced.push_str(rest);
+        replaced
     }
 }
 
@@ -74,9 +182,9 @@ fn replace_login(value: &mut Value, login: &str) {
 pub struct Recorder {
     inner: Box<dyn Transport>,
     dir: PathBuf,
-    /// The first answer that says who the viewer is sets this. Later answers name them as an author or a
-    /// reviewer, with nothing to show that it's them.
-    viewer: OnceLock<String>,
+    /// Later answers name the viewer as an author or a reviewer, with nothing to show that it's them, so
+    /// the answer that says who they are adds them here.
+    stand_ins: RefCell<StandIns>,
 }
 
 impl Recorder {
@@ -84,7 +192,7 @@ impl Recorder {
         Self {
             inner,
             dir,
-            viewer: OnceLock::new(),
+            stand_ins: RefCell::default(),
         }
     }
 }
@@ -102,14 +210,13 @@ impl Transport for Recorder {
         if reply.status != 200 || body.get("errors").is_some() {
             return Ok(reply);
         }
-        let named = body.pointer("/data/viewer/login").and_then(Value::as_str);
-        let viewer = named
-            .map(|login| self.viewer.get_or_init(|| login.to_owned()))
-            .or(self.viewer.get())
-            .cloned();
-        if let Some(login) = viewer {
-            replace_login(&mut body, &login);
+        blank_unread_descriptions(&mut body);
+        let mut stand_ins = self.stand_ins.borrow_mut();
+        if let Some(login) = body.pointer("/data/viewer/login").and_then(Value::as_str) {
+            stand_ins.add_viewer(login);
         }
+        stand_ins.replace_logins(&mut body);
+        stand_ins.replace_in_strings(&mut body);
         let recording = json!({
             "query": request.query,
             "status": reply.status,
@@ -277,7 +384,7 @@ mod tests {
     }
 
     #[test]
-    fn a_recording_keeps_everyone_else_and_longer_strings() {
+    fn a_recording_gives_everyone_else_a_stand_in_and_keeps_longer_strings() {
         let body = recorded(
             "others",
             [
@@ -287,12 +394,12 @@ mod tests {
         );
         assert_eq!(
             body,
-            r#"{"data":{"author":{"login":"bobcat"},"id":"PR_bob"}}"#
+            r#"{"data":{"author":{"login":"user-1"},"id":"PR_bob"}}"#
         );
     }
 
     #[test]
-    fn a_recording_before_anyone_says_who_the_viewer_is_stays_as_it_came() {
+    fn a_login_met_before_anyone_says_who_the_viewer_is_gets_a_stand_in_too() {
         let body = recorded(
             "unknown",
             [
@@ -300,7 +407,86 @@ mod tests {
                 r#"{"data":{"author":{"login":"bob"}}}"#,
             ],
         );
-        assert_eq!(body, r#"{"data":{"author":{"login":"bob"}}}"#);
+        assert_eq!(body, r#"{"data":{"author":{"login":"user-0"}}}"#);
+    }
+
+    #[test]
+    fn one_person_keeps_one_stand_in_across_recordings_whatever_the_case() {
+        let body = recorded(
+            "same",
+            [
+                r#"{"data":{"author":{"login":"Some-Author"}}}"#,
+                r#"{"data":{"a":{"login":"someone-else"},"b":{"login":"some-author"}}}"#,
+            ],
+        );
+        assert_eq!(
+            body,
+            r#"{"data":{"a":{"login":"user-1"},"b":{"login":"user-0"}}}"#
+        );
+    }
+
+    #[test]
+    fn a_recording_replaces_logins_and_mentions_inside_prose() {
+        let body = recorded(
+            "prose",
+            [
+                r#"{"data":{"viewer":{"login":"recorder"}}}"#,
+                r#"{"data":{"author":{"login":"some-author"},
+                    "body":"Thanks @Some-Author and @stranger, cc RECORDER and tsugi木: some-author@example.com",
+                    "title":"@recorder not-some-author"}}"#,
+            ],
+        );
+        let body: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(
+            body["data"]["body"],
+            "Thanks @user-1 and @user-2, cc octocat and tsugi木: user-1@example.com"
+        );
+        assert_eq!(body["data"]["title"], "@octocat not-some-author");
+    }
+
+    #[test]
+    fn a_recording_keeps_a_description_only_off_the_default_branch() {
+        let dir = temp_dir("descriptions");
+        let on = |base: &str| {
+            json!({
+                "baseRefName": base,
+                "body": "Fixes #5",
+                "repository": { "defaultBranchRef": { "name": "main" } },
+            })
+        };
+        let nodes = json!({ "data": { "nodes": [null, on("main"), on("3.14"), { "body": "x" }] } });
+        let answer = reply(&nodes.to_string());
+        let recorder = Recorder::new(Box::new(Canned(Ok(answer))), dir.clone());
+
+        let live = recorder.post(&token(), &REQUEST).unwrap();
+        let replayed = Replayer::new(dir.clone()).post(&token(), &REQUEST).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+
+        let body: Value = serde_json::from_str(&replayed.body).unwrap();
+        let bodies = |at: usize| body["data"]["nodes"][at]["body"].clone();
+        assert_eq!(bodies(0), Value::Null);
+        assert_eq!(bodies(1), "");
+        assert_eq!(bodies(2), "Fixes #5");
+        assert_eq!(bodies(3), "x");
+        assert!(
+            live.body.contains("Fixes #5"),
+            "the caller still gets the real answer"
+        );
+    }
+
+    #[test]
+    fn a_whole_string_that_is_a_known_login_gets_its_stand_in_in_any_field() {
+        let body = recorded(
+            "whole",
+            [
+                r#"{"data":{"viewer":{"login":"recorder"}}}"#,
+                r#"{"data":{"owner":"Recorder","other":"recorder and more"}}"#,
+            ],
+        );
+        assert_eq!(
+            body,
+            r#"{"data":{"other":"recorder and more","owner":"octocat"}}"#
+        );
     }
 
     #[test]

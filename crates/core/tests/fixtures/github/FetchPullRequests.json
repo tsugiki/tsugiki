@@ -7,10 +7,10 @@
             "nodes": []
           },
           "author": {
-            "login": "johng"
+            "login": "user-1"
           },
           "baseRefName": "main",
-          "body": "In both uncollectable and collectables we would\r\niterate through gc items using `GC_NEXT(gc)`.\r\nHowever in the case the current item was cleaned\r\nduring iteration this would reuslt in UAF when\r\nfetching the next step in the loop.\r\n\r\nThe fix is to move each item to a temporary `seen` list \r\nbefore printing it, and always take the next\r\nitem from the head of the original list, so the\r\nloop never reads from a freed item. This takes\r\na similar approach to `finalize_garbage()`.\r\n\r\n<!--\r\nThanks for your contribution!\r\nPlease read this comment in its entirety. It's quite important.\r\n\r\n# Pull Request title\r\n\r\nIt should be in the following format:\r\n\r\n```\r\ngh-NNNNNN: Summary of the changes made\r\n```\r\n\r\nWhere: gh-NNNNNN refers to the GitHub issue number.\r\n\r\nMost PRs will require an issue number. Trivial changes, like fixing a typo, do not need an issue.\r\n\r\n# Backport Pull Request title\r\n\r\nIf this is a backport PR (PR made against branches other than `main`),\r\nplease ensure that the PR title is in the following format:\r\n\r\n```\r\n[X.Y] <title from the original PR> (GH-NNNNNN)\r\n```\r\n\r\nWhere: [X.Y] is the branch name, for example: [3.13].\r\n\r\nGH-NNNNNN refers to the PR number from `main`.\r\n\r\n-->\r\n\r\n\r\n<!-- gh-issue-number: gh-112564 -->\r\n* Issue: gh-112564\r\n<!-- /gh-issue-number -->\r\n",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -54,10 +54,10 @@
             "nodes": []
           },
           "author": {
-            "login": "efimov-mikhail"
+            "login": "user-2"
           },
           "baseRefName": "main",
-          "body": "<!--\r\nThanks for your contribution!\r\nPlease read this comment in its entirety. It's quite important.\r\n\r\n# Pull Request title\r\n\r\nIt should be in the following format:\r\n\r\n```\r\ngh-NNNNNN: Summary of the changes made\r\n```\r\n\r\nWhere: gh-NNNNNN refers to the GitHub issue number.\r\n\r\nMost PRs will require an issue number. Trivial changes, like fixing a typo, do not need an issue.\r\n\r\n# Backport Pull Request title\r\n\r\nIf this is a backport PR (PR made against branches other than `main`),\r\nplease ensure that the PR title is in the following format:\r\n\r\n```\r\n[X.Y] <title from the original PR> (GH-NNNNNN)\r\n```\r\n\r\nWhere: [X.Y] is the branch name, for example: [3.13].\r\n\r\nGH-NNNNNN refers to the PR number from `main`.\r\n\r\n-->\r\n\n\n<!-- gh-issue-number: gh-140798 -->\n* Issue: gh-140798\n<!-- /gh-issue-number -->\n",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -87,7 +87,7 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "vstinner"
+                  "login": "user-3"
                 }
               },
               {
@@ -97,12 +97,12 @@
               },
               {
                 "requestedReviewer": {
-                  "login": "colesbury"
+                  "login": "user-4"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "mpage"
+                  "login": "user-5"
                 }
               }
             ]
@@ -116,10 +116,10 @@
             "nodes": []
           },
           "author": {
-            "login": "johng"
+            "login": "user-1"
           },
           "baseRefName": "main",
-          "body": "Callback can free an object resulting in UAF if we have relied on the object for visiting the next item in the chain.\r\n\r\nFix is to use `finalize_garbage` approach of walking the object gc generation list directly maintaing and moving it into a tempoary list before calling callback\r\n\r\n<!--\r\nThanks for your contribution!\r\nPlease read this comment in its entirety. It's quite important.\r\n\r\n# Pull Request title\r\n\r\nIt should be in the following format:\r\n\r\n```\r\ngh-NNNNNN: Summary of the changes made\r\n```\r\n\r\nWhere: gh-NNNNNN refers to the GitHub issue number.\r\n\r\nMost PRs will require an issue number. Trivial changes, like fixing a typo, do not need an issue.\r\n\r\n# Backport Pull Request title\r\n\r\nIf this is a backport PR (PR made against branches other than `main`),\r\nplease ensure that the PR title is in the following format:\r\n\r\n```\r\n[X.Y] <title from the original PR> (GH-NNNNNN)\r\n```\r\n\r\nWhere: [X.Y] is the branch name, for example: [3.13].\r\n\r\nGH-NNNNNN refers to the PR number from `main`.\r\n\r\n-->\r\n\r\n\r\n<!-- gh-issue-number: gh-160663 -->\r\n* Issue: gh-160663\r\n<!-- /gh-issue-number -->\r\n",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -167,7 +167,7 @@
             "login": "octocat"
           },
           "baseRefName": "main",
-          "body": "There are two issues to address.\n\nFirst, we fix the UAF in `PyObject_CallFinalizer`. We set the `FINALIZED` flag before calling `tp_finalize`, so we don't need to call `_PyType_IS_GC` again. Both `gc.c` and `gc_free_threading.c` do the same.\n\nSecond, after calling `PyObject_CallFinalizerFromDealloc`, we extract the type of `self` again to get the updated type, and the rest works correctly. We do the same for `tp_del` later in the code.\n\n\n\n\n\n<!-- gh-issue-number: gh-159101 -->\n* Issue: gh-159101\n<!-- /gh-issue-number -->\n",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -187,7 +187,7 @@
             "nodes": [
               {
                 "author": {
-                  "login": "ZeroIntensity"
+                  "login": "user-6"
                 },
                 "state": "APPROVED"
               }
@@ -204,7 +204,7 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "markshannon"
+                  "login": "user-7"
                 }
               }
             ]
@@ -221,7 +221,7 @@
             "login": "octocat"
           },
           "baseRefName": "main",
-          "body": "<!--\r\nThanks for your contribution!\r\nPlease read this comment in its entirety. It's quite important.\r\n\r\n# Pull Request title\r\n\r\nIt should be in the following format:\r\n\r\n```\r\ngh-NNNNNN: Summary of the changes made\r\n```\r\n\r\nWhere: gh-NNNNNN refers to the GitHub issue number.\r\n\r\nMost PRs will require an issue number. Trivial changes, like fixing a typo, do not need an issue.\r\n\r\n# Backport Pull Request title\r\n\r\nIf this is a backport PR (PR made against branches other than `main`),\r\nplease ensure that the PR title is in the following format:\r\n\r\n```\r\n[X.Y] <title from the original PR> (GH-NNNNNN)\r\n```\r\n\r\nWhere: [X.Y] is the branch name, for example: [3.13].\r\n\r\nGH-NNNNNN refers to the PR number from `main`.\r\n\r\n-->\r\n\n\n<!-- gh-issue-number: gh-156425 -->\n* Issue: gh-156425\n<!-- /gh-issue-number -->\n",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -241,13 +241,13 @@
             "nodes": [
               {
                 "author": {
-                  "login": "vstinner"
+                  "login": "user-3"
                 },
                 "state": "COMMENTED"
               },
               {
                 "author": {
-                  "login": "pablogsal"
+                  "login": "user-8"
                 },
                 "state": "APPROVED"
               }
@@ -264,12 +264,12 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "markshannon"
+                  "login": "user-7"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "ZeroIntensity"
+                  "login": "user-6"
                 }
               }
             ]
@@ -286,7 +286,7 @@
             "login": "octocat"
           },
           "baseRefName": "main",
-          "body": "<!--\r\nThanks for your contribution!\r\nPlease read this comment in its entirety. It's quite important.\r\n\r\n# Pull Request title\r\n\r\nIt should be in the following format:\r\n\r\n```\r\ngh-NNNNNN: Summary of the changes made\r\n```\r\n\r\nWhere: gh-NNNNNN refers to the GitHub issue number.\r\n\r\nMost PRs will require an issue number. Trivial changes, like fixing a typo, do not need an issue.\r\n\r\n# Backport Pull Request title\r\n\r\nIf this is a backport PR (PR made against branches other than `main`),\r\nplease ensure that the PR title is in the following format:\r\n\r\n```\r\n[X.Y] <title from the original PR> (GH-NNNNNN)\r\n```\r\n\r\nWhere: [X.Y] is the branch name, for example: [3.13].\r\n\r\nGH-NNNNNN refers to the PR number from `main`.\r\n\r\n-->\r\n\n\n<!-- gh-issue-number: gh-155728 -->\n* Issue: gh-155728\n<!-- /gh-issue-number -->\n",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -306,13 +306,13 @@
             "nodes": [
               {
                 "author": {
-                  "login": "markshannon"
+                  "login": "user-7"
                 },
                 "state": "COMMENTED"
               },
               {
                 "author": {
-                  "login": "efimov-mikhail"
+                  "login": "user-2"
                 },
                 "state": "APPROVED"
               }
@@ -329,7 +329,7 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "serhiy-storchaka"
+                  "login": "user-9"
                 }
               }
             ]
@@ -346,7 +346,7 @@
             "login": "octocat"
           },
           "baseRefName": "main",
-          "body": "<!--\r\nThanks for your contribution!\r\nPlease read this comment in its entirety. It's quite important.\r\n\r\n# Pull Request title\r\n\r\nIt should be in the following format:\r\n\r\n```\r\ngh-NNNNNN: Summary of the changes made\r\n```\r\n\r\nWhere: gh-NNNNNN refers to the GitHub issue number.\r\n\r\nMost PRs will require an issue number. Trivial changes, like fixing a typo, do not need an issue.\r\n\r\n# Backport Pull Request title\r\n\r\nIf this is a backport PR (PR made against branches other than `main`),\r\nplease ensure that the PR title is in the following format:\r\n\r\n```\r\n[X.Y] <title from the original PR> (GH-NNNNNN)\r\n```\r\n\r\nWhere: [X.Y] is the branch name, for example: [3.13].\r\n\r\nGH-NNNNNN refers to the PR number from `main`.\r\n\r\n-->\r\n\n\n<!-- gh-issue-number: gh-155728 -->\n* Issue: gh-155728\n<!-- /gh-issue-number -->\n",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -366,7 +366,7 @@
             "nodes": [
               {
                 "author": {
-                  "login": "efimov-mikhail"
+                  "login": "user-2"
                 },
                 "state": "APPROVED"
               }
@@ -383,17 +383,17 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "markshannon"
+                  "login": "user-7"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "iritkatriel"
+                  "login": "user-10"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "Eclips4"
+                  "login": "user-11"
                 }
               }
             ]
@@ -407,10 +407,10 @@
             "nodes": []
           },
           "author": {
-            "login": "aisk"
+            "login": "user-12"
           },
           "baseRefName": "main",
-          "body": "\n\n<!-- gh-issue-number: gh-155181 -->\n* Issue: gh-155181\n<!-- /gh-issue-number -->\n",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -436,7 +436,7 @@
               },
               {
                 "author": {
-                  "login": "corona10"
+                  "login": "user-13"
                 },
                 "state": "APPROVED"
               }
@@ -453,7 +453,7 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "rhettinger"
+                  "login": "user-14"
                 }
               }
             ]
@@ -467,10 +467,10 @@
             "nodes": []
           },
           "author": {
-            "login": "aisk"
+            "login": "user-12"
           },
           "baseRefName": "main",
-          "body": "\n\n<!-- gh-issue-number: gh-155176 -->\n* Issue: gh-155176\n<!-- /gh-issue-number -->\n",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -496,13 +496,13 @@
               },
               {
                 "author": {
-                  "login": "methane"
+                  "login": "user-15"
                 },
                 "state": "COMMENTED"
               },
               {
                 "author": {
-                  "login": "sobolevn"
+                  "login": "user-16"
                 },
                 "state": "COMMENTED"
               }
@@ -519,7 +519,7 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "markshannon"
+                  "login": "user-7"
                 }
               }
             ]
@@ -533,10 +533,10 @@
             "nodes": []
           },
           "author": {
-            "login": "Abhi210"
+            "login": "user-17"
           },
           "baseRefName": "main",
-          "body": "<!--\r\nThanks for your contribution!\r\nPlease read this comment in its entirety. It's quite important.\r\n\r\n# Pull Request title\r\n\r\nIt should be in the following format:\r\n\r\n```\r\ngh-NNNNNN: Summary of the changes made\r\n```\r\n\r\nWhere: gh-NNNNNN refers to the GitHub issue number.\r\n\r\nMost PRs will require an issue number. Trivial changes, like fixing a typo, do not need an issue.\r\n\r\n# Backport Pull Request title\r\n\r\nIf this is a backport PR (PR made against branches other than `main`),\r\nplease ensure that the PR title is in the following format:\r\n\r\n```\r\n[X.Y] <title from the original PR> (GH-NNNNNN)\r\n```\r\n\r\nWhere: [X.Y] is the branch name, for example: [3.13].\r\n\r\nGH-NNNNNN refers to the PR number from `main`.\r\n\r\n-->\r\n\r\nFixes gh-152125 (one of the OOM-injection fuzzing findings tracked under the gh-151763 umbrella).",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": [
               {
@@ -563,7 +563,7 @@
             "nodes": [
               {
                 "author": {
-                  "login": "IvyXu420"
+                  "login": "user-18"
                 },
                 "state": "COMMENTED"
               },
@@ -594,10 +594,10 @@
             "nodes": []
           },
           "author": {
-            "login": "aisk"
+            "login": "user-12"
           },
           "baseRefName": "main",
-          "body": "<!--\r\nThanks for your contribution!\r\nPlease read this comment in its entirety. It's quite important.\r\n\r\n# Pull Request title\r\n\r\nIt should be in the following format:\r\n\r\n```\r\ngh-NNNNNN: Summary of the changes made\r\n```\r\n\r\nWhere: gh-NNNNNN refers to the GitHub issue number.\r\n\r\nMost PRs will require an issue number. Trivial changes, like fixing a typo, do not need an issue.\r\n\r\n# Backport Pull Request title\r\n\r\nIf this is a backport PR (PR made against branches other than `main`),\r\nplease ensure that the PR title is in the following format:\r\n\r\n```\r\n[X.Y] <title from the original PR> (GH-NNNNNN)\r\n```\r\n\r\nWhere: [X.Y] is the branch name, for example: [3.13].\r\n\r\nGH-NNNNNN refers to the PR number from `main`.\r\n\r\n-->\r\n\n\n<!-- gh-issue-number: gh-153058 -->\n* Issue: gh-153058\n<!-- /gh-issue-number -->\n",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -623,7 +623,7 @@
               },
               {
                 "author": {
-                  "login": "prakashsellathurai"
+                  "login": "user-19"
                 },
                 "state": "COMMENTED"
               }
@@ -640,7 +640,7 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "kumaraditya303"
+                  "login": "user-20"
                 }
               }
             ]
@@ -654,10 +654,10 @@
             "nodes": []
           },
           "author": {
-            "login": "tonghuaroot"
+            "login": "user-21"
           },
           "baseRefName": "main",
-          "body": "`Python/crossinterp.c`'s `check_missing___main___attr()` passed the result of `PyUnicode_AsUTF8()` straight to `strncmp()` without a `NULL` check. `msgobj` is `args[0]` of an `AttributeError` raised on the receive side of the cross-interpreter pickle fallback (a `concurrent.interpreters` queue or channel). When `args[0]` is not a `str` (`AttributeError(42)`, `AttributeError(b'x')`, `AttributeError(None)`) or is a `str` with lone surrogates (`AttributeError('\\ud800')`), `PyUnicode_AsUTF8()` returns `NULL` and `strncmp(NULL, ...)` crashes the interpreter.\n\nThis adds a `NULL` guard matching the checked sibling helper `_copy_string_obj_raw()`. Because `PyUnicode_AsUTF8` sets an exception on failure and the function asserts `!PyErr_Occurred()` on entry, the guard clears it, `Py_DECREF(msgobj)` (mirroring the success-path decref), and returns 0 (not a missing-`__main__` attribute), so the failure degrades to the normal `NotShareableError`.\n\nA regression test is added in `Lib/test/test_interpreters/test_queues.py` covering all four `args[0]` shapes (`42`, `b'x'`, `None`, `'\\ud800'` — the surrogate case is a distinct branch: `args[0]` is unicode but fails UTF-8 encoding), plus a positive control with normal `str` args (including the genuine missing-`__main__`-attribute message shape) to lock in the non-`NULL` `strncmp()` path. Without the fix the test crashes; with it the queue raises `NotShareableError`.\n\nThis fixes the `check_missing___main___attr()` crash reached through the queue/channel receive path. A separate crash on the `Interpreter.call()` result-preserve path is reported independently.\n\n\n<!-- gh-issue-number: gh-151862 -->\n* Issue: gh-151862\n<!-- /gh-issue-number -->\n",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -694,12 +694,12 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "ericsnowcurrently"
+                  "login": "user-22"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "serhiy-storchaka"
+                  "login": "user-9"
                 }
               }
             ]
@@ -713,10 +713,10 @@
             "nodes": []
           },
           "author": {
-            "login": "timurmamedov1"
+            "login": "user-23"
           },
           "baseRefName": "main",
-          "body": "`template_iter()` allocates a `templateiterobject` with `PyObject_GC_New` (which does not zero memory), but only assigns `stringsiter` and `interpolationsiter` after both `PyObject_GetIter` calls succeed. If either call fails, `Py_DECREF(iter)` runs `templateiter_clear`, which calls `Py_CLEAR` on uninitialized pointers, causing a segfault.\n\nFix: initialize both fields to `NULL` immediately after allocation so `Py_CLEAR` is safe on the error paths.\n\n<!-- gh-issue-number: gh-151815 -->\n* Issue: gh-151815\n<!-- /gh-issue-number -->",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -736,7 +736,7 @@
             "nodes": [
               {
                 "author": {
-                  "login": "copilot-pull-request-reviewer"
+                  "login": "user-24"
                 },
                 "state": "COMMENTED"
               },
@@ -759,7 +759,7 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "lysnikolaou"
+                  "login": "user-25"
                 }
               }
             ]
@@ -773,10 +773,10 @@
             "nodes": []
           },
           "author": {
-            "login": "sobolevn"
+            "login": "user-16"
           },
           "baseRefName": "main",
-          "body": "Refs https://github.com/python/cpython/issues/82012\r\n\r\nCC @hauntsaninja, @JelleZijlstra, @gvanrossum who reviewed https://github.com/python/cpython/pull/103487\n\n<!-- gh-issue-number: gh-149532 -->\n* Issue: gh-149532\n<!-- /gh-issue-number -->\n",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -796,7 +796,7 @@
             "nodes": [
               {
                 "author": {
-                  "login": "johnslavik"
+                  "login": "user-26"
                 },
                 "state": "COMMENTED"
               },
@@ -819,7 +819,7 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "AA-Turner"
+                  "login": "user-27"
                 }
               }
             ]
@@ -833,10 +833,10 @@
             "nodes": []
           },
           "author": {
-            "login": "nascheme"
+            "login": "user-28"
           },
           "baseRefName": "main",
-          "body": "Asking the OS for the process memory usage doesn't work well given how mimalloc works.  It does not promptly return memory to the OS and so the memory doesn't drop after cyclic trash is freed.\r\n\r\nInstead of asking the OS, use mimalloc APIs to compute how much memory is being used by all mimalloc arenas.  We need to stop-the-world to do this but usually we can avoid doing a collection.  So, from a performance perspective, this is worth it.\r\n\r\nTim Peters has a GC stress tester that quickly shows the issue, linked below.  Before this fix, when I run this, the process RSS quickly goes up to 1 GB.  After the fix, the RSS stays at about 100 MB.  For comparision, the 3.13 GC keeps RSS at about 200 MB.\r\n\r\n[tim-gc-test.py](https://github.com/user-attachments/files/27028621/tim-gc-test.py)\r\n\r\n[Benchmark results](https://github.com/facebookexperimental/free-threading-benchmarking/tree/main/results/bm-20260430-3.15.0a8+-819a848-NOGIL)\r\n\r\n<!-- gh-issue-number: gh-148937 -->\r\n* Issue: gh-148937\r\n<!-- /gh-issue-number -->\r\n",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -862,7 +862,7 @@
               },
               {
                 "author": {
-                  "login": "colesbury"
+                  "login": "user-4"
                 },
                 "state": "COMMENTED"
               }
@@ -887,10 +887,10 @@
             "nodes": []
           },
           "author": {
-            "login": "Fidget-Spinner"
+            "login": "user-29"
           },
           "baseRefName": "main",
-          "body": "This PR gives the JIT free-threading support. It is only on for single-threaded code, and turns off automatically on multi-threaded code. All JIT features are turned on, including the optimizer. **All tests pass on my system, including TSAN as of https://github.com/python/cpython/pull/141595/commits/527aac16fda441fb689c2782ef2ff3af3fb4d860 usng the FT suppression file, except for the usual spurious race conditions already in existing CPython.**\r\n\r\nBenchmark results are good. Overall speedup of 5% faster on FT+JIT vs just FT for x86-64 https://github.com/facebookexperimental/free-threading-benchmarking/blob/main/results/bm-20260110-3.15.0a3%2B-5d987e8-JIT%2CNOGIL/bm-20260110-vultr-x86_64-Fidget%252dSpinner-jit_ft-3.15.0a3%2B-5d987e8-vs-base.md\r\n\r\n**9-10%** speedup for macOS AArch64 for FT+JIT vs FT https://github.com/facebookexperimental/free-threading-benchmarking/blob/main/results/bm-20260110-3.15.0a3%2B-5d987e8-JIT%2CNOGIL/bm-20260110-macm4pro-arm64-Fidget%252dSpinner-jit_ft-3.15.0a3%2B-5d987e8-vs-base.md\r\n\r\nDesign:\r\nCreation of >1 threads cause global invalidation of all executors and disables JIT. Once we drop to 1 thread, JIT is re-enabled.\r\n\r\nTwo versions of stencils are required --- one for max single threaded perf, one for multi-threaded safety. This just implements the first part (max single threaded perf) stencils.\r\n\r\nAll with FT+PGO+LTO=thin+TC+JIT + `pyperf system tune`:\r\n```\r\nMean +- std dev: [nogil-float-lock] 69.9 ms +- 1.5 ms -> [nogil-float-nolock] 54.9 ms +- 0.8 ms: 1.27x faster\r\nMean +- std dev: [nogil-nbody-lock] 139 ms +- 1 ms -> [nogil-nbody-nolock] 115 ms +- 3 ms: 1.21x faster\r\nMean +- std dev: [nogil-richards-lock] 37.3 ms +- 0.4 ms -> [nogil-richards-nolock] 35.8 ms +- 0.3 ms: 1.04x faster \r\nMean +- std dev: [nogil-deltablue-lock] 3.50 ms +- 0.15 ms -> [nogil-deltablue-nolock] 3.36 ms +- 0.14 ms: 1.04x faster\r\n```\r\nThis is on a platform where locking/atomics are somewhat slow (i7-12700h). I removed the lock removal code for this PR to reduce the diff.\r\n\r\n<!-- gh-issue-number: gh-141594 -->\r\n* Issue: gh-141594\r\n<!-- /gh-issue-number -->\r\n",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -916,25 +916,25 @@
               },
               {
                 "author": {
-                  "login": "corona10"
+                  "login": "user-13"
                 },
                 "state": "COMMENTED"
               },
               {
                 "author": {
-                  "login": "efimov-mikhail"
+                  "login": "user-2"
                 },
                 "state": "COMMENTED"
               },
               {
                 "author": {
-                  "login": "tomasr8"
+                  "login": "user-30"
                 },
                 "state": "COMMENTED"
               },
               {
                 "author": {
-                  "login": "markshannon"
+                  "login": "user-7"
                 },
                 "state": "COMMENTED"
               }
@@ -951,27 +951,27 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "ericsnowcurrently"
+                  "login": "user-22"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "ZeroIntensity"
+                  "login": "user-6"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "brandtbucher"
+                  "login": "user-31"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "savannahostrowski"
+                  "login": "user-32"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "diegorusso"
+                  "login": "user-33"
                 }
               }
             ]
@@ -985,10 +985,10 @@
             "nodes": []
           },
           "author": {
-            "login": "Fidget-Spinner"
+            "login": "user-29"
           },
           "baseRefName": "main",
-          "body": "This PR promotes constant propagated objects into a pool. Storing them there. We already see this affecting the optimizations in the test suite, as more things are constant propagated away!\r\n\r\nThis sets up the infrastructure to promote more things in the future should we feel like it (e.g. function, code objects).\n\n<!-- gh-issue-number: gh-140928 -->\n* Issue: gh-140928\n<!-- /gh-issue-number -->\n",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -1025,17 +1025,17 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "markshannon"
+                  "login": "user-7"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "tomasr8"
+                  "login": "user-30"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "savannahostrowski"
+                  "login": "user-32"
                 }
               }
             ]
@@ -1049,10 +1049,10 @@
             "nodes": []
           },
           "author": {
-            "login": "albertedwardson"
+            "login": "user-34"
           },
           "baseRefName": "main",
-          "body": "<!--\r\nThanks for your contribution!\r\nPlease read this comment in its entirety. It's quite important.\r\n\r\n# Pull Request title\r\n\r\nIt should be in the following format:\r\n\r\n```\r\ngh-NNNNNN: Summary of the changes made\r\n```\r\n\r\nWhere: gh-NNNNNN refers to the GitHub issue number.\r\n\r\nMost PRs will require an issue number. Trivial changes, like fixing a typo, do not need an issue.\r\n\r\n# Backport Pull Request title\r\n\r\nIf this is a backport PR (PR made against branches other than `main`),\r\nplease ensure that the PR title is in the following format:\r\n\r\n```\r\n[X.Y] <title from the original PR> (GH-NNNNNN)\r\n```\r\n\r\nWhere: [X.Y] is the branch name, for example: [3.13].\r\n\r\nGH-NNNNNN refers to the PR number from `main`.\r\n\r\n-->\r\n\r\ncloses #140328\r\n\r\n`intern_constants()` previously only interned string constants when `should_intern_string()` returned true, leaving equal strings duplicated even if an interned instance already existed. This change first checks the global and per-interpreter interned string tables and reuses an existing interned string when available. This applies only to string constants that come from the codeobjects; dynamically created strings are unaffected and are still created as new objects.\r\n\r\nThis makes string interning behavior more consistent: once a string is interned, subsequent equal constants can reuse the canonical object. It may slightly reduce memory usage and improves interaction with `sys.intern()`.\r\n\r\nThe change adds a small lookup cost when loading code objects, which may affect `eval()`, `exec()`, modules loading and similar operations.\r\n\r\nI haven't run `pyperformance` yet, but I plan to provide a benchmark run once I have access to an appropriate runner. Given the limited scope of the change, I expect both the performance impact and memory savings to be relatively small but measurable.\r\n\r\n<!-- gh-issue-number: gh-140328 -->\r\n* Issue: gh-140328\r\n<!-- /gh-issue-number -->\r\n",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": [
               {
@@ -1096,7 +1096,7 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "markshannon"
+                  "login": "user-7"
                 }
               }
             ]
@@ -1110,10 +1110,10 @@
             "nodes": []
           },
           "author": {
-            "login": "davep"
+            "login": "user-35"
           },
           "baseRefName": "main",
-          "body": "Closes #140256.\r\n\r\n<!--\r\nThanks for your contribution!\r\nPlease read this comment in its entirety. It's quite important.\r\n\r\n# Pull Request title\r\n\r\nIt should be in the following format:\r\n\r\n```\r\ngh-NNNNNN: Summary of the changes made\r\n```\r\n\r\nWhere: gh-NNNNNN refers to the GitHub issue number.\r\n\r\nMost PRs will require an issue number. Trivial changes, like fixing a typo, do not need an issue.\r\n\r\n# Backport Pull Request title\r\n\r\nIf this is a backport PR (PR made against branches other than `main`),\r\nplease ensure that the PR title is in the following format:\r\n\r\n```\r\n[X.Y] <title from the original PR> (GH-NNNNNN)\r\n```\r\n\r\nWhere: [X.Y] is the branch name, for example: [3.13].\r\n\r\nGH-NNNNNN refers to the PR number from `main`.\r\n\r\n-->\r\n\n\n<!-- gh-issue-number: gh-140256 -->\n* Issue: gh-140256\n<!-- /gh-issue-number -->\n",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": [
               {
@@ -1146,7 +1146,7 @@
               },
               {
                 "author": {
-                  "login": "Junior-Stalin"
+                  "login": "user-36"
                 },
                 "state": "APPROVED"
               }
@@ -1171,10 +1171,10 @@
             "nodes": []
           },
           "author": {
-            "login": "efimov-mikhail"
+            "login": "user-2"
           },
           "baseRefName": "main",
-          "body": "<!--\r\nThanks for your contribution!\r\nPlease read this comment in its entirety. It's quite important.\r\n\r\n# Pull Request title\r\n\r\nIt should be in the following format:\r\n\r\n```\r\ngh-NNNNNN: Summary of the changes made\r\n```\r\n\r\nWhere: gh-NNNNNN refers to the GitHub issue number.\r\n\r\nMost PRs will require an issue number. Trivial changes, like fixing a typo, do not need an issue.\r\n\r\n# Backport Pull Request title\r\n\r\nIf this is a backport PR (PR made against branches other than `main`),\r\nplease ensure that the PR title is in the following format:\r\n\r\n```\r\n[X.Y] <title from the original PR> (GH-NNNNNN)\r\n```\r\n\r\nWhere: [X.Y] is the branch name, for example: [3.13].\r\n\r\nGH-NNNNNN refers to the PR number from `main`.\r\n\r\n-->\r\n\n\n<!-- gh-issue-number: gh-139778 -->\n* Issue: gh-139778\n<!-- /gh-issue-number -->\n",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -1211,12 +1211,12 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "markshannon"
+                  "login": "user-7"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "ericsnowcurrently"
+                  "login": "user-22"
                 }
               }
             ]
@@ -1230,10 +1230,10 @@
             "nodes": []
           },
           "author": {
-            "login": "sobolevn"
+            "login": "user-16"
           },
           "baseRefName": "main",
-          "body": "<img width=\"788\" height=\"533\" alt=\"Снимок экрана 2025-09-13 в 12 53 17\" src=\"https://github.com/user-attachments/assets/06308103-316a-4d63-ac5a-cea62cb14a7d\" />\r\n\r\nIn my opinion this makes already awesome python error messages (thanks, @pablogsal!) even cooler. \r\n\r\nMaybe there are some hidden things that I've missed? I would be happy to fix them :)\r\nIn case this complicates our parser quite a bit - feel free to close.\n\n<!-- gh-issue-number: gh-138864 -->\n* Issue: gh-138864\n<!-- /gh-issue-number -->\n",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -1259,19 +1259,19 @@
               },
               {
                 "author": {
-                  "login": "efimov-mikhail"
+                  "login": "user-2"
                 },
                 "state": "COMMENTED"
               },
               {
                 "author": {
-                  "login": "ilovelinux"
+                  "login": "user-37"
                 },
                 "state": "COMMENTED"
               },
               {
                 "author": {
-                  "login": "terryjreedy"
+                  "login": "user-38"
                 },
                 "state": "COMMENTED"
               }
@@ -1288,17 +1288,17 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "pablogsal"
+                  "login": "user-8"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "lysnikolaou"
+                  "login": "user-25"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "iritkatriel"
+                  "login": "user-10"
                 }
               }
             ]
@@ -1312,10 +1312,10 @@
             "nodes": []
           },
           "author": {
-            "login": "tom-pytel"
+            "login": "user-39"
           },
           "baseRefName": "main",
-          "body": "I added lock-free single element reads and writes by mostly copying the `list` object's homework. TL;DR: pyperformance scimark seems to be back to about what it was without the free-thread safe stuff (pending confirmation of course). Tried a few other things but the list strategy seems good enough (except for the negative index thing I mentioned in #130744, if that is an issue).\r\n\r\nTimings, the relevant ones are \"OLD\" - non free-thread safe arraymodule, \"SLOW\" - the previous slower PR and the last two \"LFREERW\".\r\n```\r\n### scimark_fft ###\r\nWITHGIL: Mean +- std dev: 200 ms +- 6 ms\r\nOLD:     Mean +- std dev: 238 ms +- 7 ms\r\nSLOW:    Mean +- std dev: 274 ms +- 4 ms\r\nITEMFIX: Mean +- std dev: 272 ms +- 14 ms\r\nNOLOCK:  Mean +- std dev: 240 ms +- 4 ms\r\nTEST1:   Mean +- std dev: 267 ms +- 4 ms\r\nTEST2:   Mean +- std dev: 255 ms +- 6 ms\r\nLFREERD: Mean +- std dev: 256 ms +- 7 ms   # left in standard Py_SIZE() in getarrayitem\r\nLFREERD: Mean +- std dev: 262 ms +- 7 ms   # atomic read of size in getarrayitem\r\nLFREERD: Mean +- std dev: 270 ms +- 7 ms   # build and run again\r\nLFREERD: Mean +- std dev: 255 ms +- 10 ms  # orthodox\r\nLFREERD: Mean +- std dev: 259 ms +- 8 ms   # build and run again\r\nLFREERW: Mean +- std dev: 239 ms +- 7 ms   # lockfree write single element\r\nLFREERW: Mean +- std dev: 242 ms +- 6 ms   # build and run again\r\nSTATICL: Mean +- std dev: 223 ms +- 6 ms   # statically linked\r\nSTATICL: Mean +- std dev: 223 ms +- 5 ms   # build and run again\r\nCLEANUP: Mean +- std dev: 224 ms +- 5 ms   # including atomic get/set\r\nAMEMCPY: Mean +- std dev: 226 ms +- 6 ms   # atomic item copy on resize (instead of memcpy)\r\nAMEMCPY: Mean +- std dev: 222 ms +- 5 ms   # build and run again\r\nLOCKWR:  Mean +- std dev: 226 ms +- 4 ms   # locked writes again, but much better with static linking\r\nLOCKWR:  Mean +- std dev: 226 ms +- 5 ms   # build and run again\r\nAMCAGG:  Mean +- std dev: 222 ms +- 7 ms   # aggregate memcpy (just using best build)\r\n\r\n### scimark_lu ###\r\nWITHGIL: Mean +- std dev: 64.6 ms +- 1.9 ms\r\nOLD:     Mean +- std dev: 89.0 ms +- 2.1 ms\r\nSLOW:    Mean +- std dev: 95.4 ms +- 3.1 ms\r\nITEMFIX: Mean +- std dev: 92.0 ms +- 2.1 ms\r\nNOLOCK:  Mean +- std dev: 88.5 ms +- 2.5 ms\r\nTEST1:   Mean +- std dev: 89.7 ms +- 2.1 ms\r\nTEST2:   Mean +- std dev: 90.5 ms +- 2.4 ms\r\nLFREERD: Mean +- std dev: 89.9 ms +- 2.7 ms\r\nLFREERD: Mean +- std dev: 90.9 ms +- 2.6 ms\r\nLFREERD: Mean +- std dev: 93.4 ms +- 4.0 ms\r\nLFREERD: Mean +- std dev: 91.9 ms +- 3.7 ms\r\nLFREERD: Mean +- std dev: 91.0 ms +- 5.0 ms\r\nLFREERW: Mean +- std dev: 89.2 ms +- 2.8 ms\r\nLFREERW: Mean +- std dev: 88.8 ms +- 2.5 ms\r\nSTATICL: Mean +- std dev: 86.9 ms +- 1.9 ms\r\nSTATICL: Mean +- std dev: 87.1 ms +- 2.2 ms\r\nCLEANUP: Mean +- std dev: 88.9 ms +- 2.5 ms\r\nAMEMCPY: Mean +- std dev: 87.9 ms +- 1.9 ms\r\nAMEMCPY: Mean +- std dev: 88.7 ms +- 4.8 ms\r\nLOCKWR:  Mean +- std dev: 88.0 ms +- 2.4 ms\r\nLOCKWR:  Mean +- std dev: 88.5 ms +- 3.5 ms\r\nAMCAGG:  Mean +- std dev: 88.5 ms +- 3.5 ms\r\n\r\n### scimark_monte_carlo ###\r\nWITHGIL: Mean +- std dev: 40.1 ms +- 2.3 ms\r\nOLD:     Mean +- std dev: 53.4 ms +- 1.0 ms\r\nSLOW:    Mean +- std dev: 56.8 ms +- 1.4 ms\r\nITEMFIX: Mean +- std dev: 55.9 ms +- 0.7 ms\r\nNOLOCK:  Mean +- std dev: 54.4 ms +- 1.3 ms\r\nTEST1:   Mean +- std dev: 54.1 ms +- 0.6 ms\r\nTEST2:   Mean +- std dev: 54.1 ms +- 0.6 ms\r\nLFREERD: Mean +- std dev: 54.3 ms +- 0.9 ms\r\nLFREERD: Mean +- std dev: 55.9 ms +- 0.9 ms\r\nLFREERD: Mean +- std dev: 55.4 ms +- 1.1 ms\r\nLFREERD: Mean +- std dev: 55.4 ms +- 1.1 ms\r\nLFREERD: Mean +- std dev: 55.2 ms +- 1.5 ms\r\nLFREERW: Mean +- std dev: 53.2 ms +- 1.1 ms\r\nLFREERW: Mean +- std dev: 53.9 ms +- 1.5 ms\r\nSTATICL: Mean +- std dev: 55.0 ms +- 1.9 ms\r\nSTATICL: Mean +- std dev: 53.3 ms +- 1.0 ms\r\nCLEANUP: Mean +- std dev: 52.6 ms +- 0.5 ms\r\nAMEMCPY: Mean +- std dev: 53.3 ms +- 0.6 ms\r\nAMEMCPY: Mean +- std dev: 53.4 ms +- 1.2 ms\r\nLOCKWR:  Mean +- std dev: 55.4 ms +- 4.0 ms\r\nLOCKWR:  Mean +- std dev: 54.8 ms +- 1.8 ms\r\nAMCAGG:  Mean +- std dev: 53.1 ms +- 1.0 ms\r\n\r\n### scimark_sor ###\r\nWITHGIL: Mean +- std dev: 70.3 ms +- 3.3 ms\r\nOLD:     Mean +- std dev: 98.1 ms +- 1.8 ms\r\nSLOW:    Mean +- std dev: 99.9 ms +- 1.1 ms\r\nITEMFIX: Mean +- std dev:  100 ms +- 1 ms\r\nNOLOCK:  Mean +- std dev: 97.3 ms +- 1.4 ms\r\nTEST1:   Mean +- std dev: 97.5 ms +- 0.7 ms\r\nTEST2:   Mean +- std dev: 98.5 ms +- 1.5 ms\r\nLFREERD: Mean +- std dev: 97.0 ms +- 2.0 ms\r\nLFREERD: Mean +- std dev: 98.2 ms +- 1.4 ms\r\nLFREERD: Mean +- std dev: 98.4 ms +- 2.7 ms\r\nLFREERD: Mean +- std dev: 97.6 ms +- 1.5 ms\r\nLFREERD: Mean +- std dev: 97.9 ms +- 1.8 ms\r\nLFREERW: Mean +- std dev: 97.2 ms +- 1.6 ms\r\nLFREERW: Mean +- std dev: 96.9 ms +- 2.0 ms\r\nSTATICL: Mean +- std dev: 97.8 ms +- 1.9 ms\r\nSTATICL: Mean +- std dev: 97.2 ms +- 1.7 ms\r\nCLEANUP: Mean +- std dev: 97.7 ms +- 1.2 ms\r\nAMEMCPY: Mean +- std dev: 96.0 ms +- 2.0 ms\r\nAMEMCPY: Mean +- std dev: 96.4 ms +- 1.5 ms\r\nLOCKWR:  Mean +- std dev: 97.7 ms +- 1.5 ms\r\nLOCKWR:  Mean +- std dev: 96.8 ms +- 2.5 ms\r\nAMCAGG:  Mean +- std dev: 95.6 ms +- 0.5 ms\r\n\r\n### scimark_sparse_mat_mult ###\r\nWITHGIL: Mean +- std dev: 2.89 ms +- 0.11 ms\r\nOLD:     Mean +- std dev: 3.94 ms +- 0.15 ms\r\nSLOW:    Mean +- std dev: 4.68 ms +- 0.07 ms\r\nITEMFIX: Mean +- std dev: 4.34 ms +- 0.07 ms\r\nNOLOCK:  Mean +- std dev: 3.94 ms +- 0.58 ms\r\nTEST1:   Mean +- std dev: 3.99 ms +- 0.12 ms\r\nTEST2:   Mean +- std dev: 3.80 ms +- 0.12 ms\r\nLFREERD: Mean +- std dev: 3.84 ms +- 0.17 ms\r\nLFREERD: Mean +- std dev: 3.83 ms +- 0.15 ms\r\nLFREERD: Mean +- std dev: 3.94 ms +- 0.12 ms\r\nLFREERD: Mean +- std dev: 3.74 ms +- 0.12 ms\r\nLFREERD: Mean +- std dev: 3.83 ms +- 0.19 ms\r\nLFREERW: Mean +- std dev: 3.84 ms +- 0.19 ms\r\nLFREERW: Mean +- std dev: 3.87 ms +- 0.17 ms\r\nSTATICL: Mean +- std dev: 3.37 ms +- 0.08 ms\r\nSTATICL: Mean +- std dev: 3.49 ms +- 0.12 ms\r\nCLEANUP: Mean +- std dev: 3.45 ms +- 0.14 ms\r\nAMEMCPY: Mean +- std dev: 3.44 ms +- 0.13 ms\r\nAMEMCPY: Mean +- std dev: 3.46 ms +- 0.14 ms\r\nLOCKWR:  Mean +- std dev: 3.52 ms +- 0.47 ms\r\nLOCKWR:  Mean +- std dev: 3.44 ms +- 0.10 ms\r\nAMCAGG:  Mean +- std dev: 3.38 ms +- 0.09 ms\r\n```\r\n\r\n\r\n<!-- gh-issue-number: gh-128942 -->\r\n* Issue: gh-128942\r\n<!-- /gh-issue-number -->\r\n",
+          "body": "",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -1341,19 +1341,19 @@
               },
               {
                 "author": {
-                  "login": "encukou"
+                  "login": "user-40"
                 },
                 "state": "COMMENTED"
               },
               {
                 "author": {
-                  "login": "colesbury"
+                  "login": "user-4"
                 },
                 "state": "COMMENTED"
               },
               {
                 "author": {
-                  "login": "ZeroIntensity"
+                  "login": "user-6"
                 },
                 "state": "COMMENTED"
               }
@@ -1370,22 +1370,22 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "ericsnowcurrently"
+                  "login": "user-22"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "kumaraditya303"
+                  "login": "user-20"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "erlend-aasland"
+                  "login": "user-41"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "AA-Turner"
+                  "login": "user-27"
                 }
               }
             ]
@@ -1396,7 +1396,7 @@
         }
       ],
       "rateLimit": {
-        "remaining": 4995,
+        "remaining": 4971,
         "resetAt": "2026-11-04T17:17:59Z"
       }
     }

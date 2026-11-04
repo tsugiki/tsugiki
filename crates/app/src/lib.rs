@@ -13,13 +13,11 @@ use specta::Type;
 pub use startup::run;
 use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
-use tsugiki_core::error::{Error, ErrorKind};
+use tsugiki_core::error::Error;
 use tsugiki_core::repository::{Home, RepositoryCheck, RepositoryName};
 use tsugiki_core::session::RepositoryChecks;
-use tsugiki_core::settings::{LoadedSettings, SettingsFiles};
+use tsugiki_core::settings::{LoadedSettings, SettingsOwner, SettingsView};
 use tsugiki_core::status::Status;
-
-const NO_FOLDERS: &str = "Tsugiki has no folder to save its settings in. The status bar says why.";
 
 #[tauri::command]
 #[specta::specta]
@@ -27,26 +25,33 @@ fn about() -> tsugiki_core::About {
     tsugiki_core::about()
 }
 
-/// A read-only copy of the session's status. It lets `status` answer while the session waits on GitHub, since
-/// the window doesn't wait on the network (ADR 0017).
+/// A read-only copy of what another thread owns. It lets commands answer while that thread waits on GitHub
+/// or a disk, since the window waits on neither (ADR 0017).
 #[derive(Default)]
-struct LatestStatus(Mutex<Status>);
+struct Latest<T>(Mutex<T>);
 
-impl LatestStatus {
-    fn get(&self) -> Status {
+impl<T: Clone> Latest<T> {
+    fn new(value: T) -> Self {
+        Self(Mutex::new(value))
+    }
+
+    fn get(&self) -> T {
         self.lock().clone()
     }
 
-    fn set(&self, status: &Status) {
-        self.lock().clone_from(status);
+    fn set(&self, value: &T) {
+        self.lock().clone_from(value);
     }
 
     /// Only this type holds the lock, and it calls out to nothing while it does, so poisoning should never
-    /// happen. If it does, the status is still whole, because `set` only ever replaces it.
-    fn lock(&self) -> MutexGuard<'_, Status> {
+    /// happen. If it does, the value is still whole, because `set` only ever replaces it.
+    fn lock(&self) -> MutexGuard<'_, T> {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
+
+type LatestStatus = Latest<Status>;
+type LatestSettings = Latest<SettingsView>;
 
 /// The whole app-wide state, for a window that has just loaded (ADR 0008).
 #[tauri::command]
@@ -55,42 +60,18 @@ fn status(latest: State<'_, LatestStatus>) -> Status {
     latest.get()
 }
 
-/// The settings files, which own what they say. `None` means Tsugiki found no folders: the defaults apply,
-/// and the session shows why.
-struct OwnedSettings(Mutex<Option<SettingsFiles>>);
-
-impl OwnedSettings {
-    fn new(files: Option<SettingsFiles>) -> Self {
-        Self(Mutex::new(files))
-    }
-
-    /// Only this type holds the lock. A panic while saving would leave the files to say what they say, and
-    /// the next read or save works from those.
-    fn lock(&self) -> MutexGuard<'_, Option<SettingsFiles>> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-}
-
 /// The settings Tsugiki last read, and what was wrong with their files (ADR 0014).
 #[tauri::command]
 #[specta::specta]
-fn settings(owned: State<'_, OwnedSettings>) -> LoadedSettings {
-    owned
-        .lock()
-        .as_ref()
-        .map(|files| files.loaded().clone())
-        .unwrap_or_default()
+fn settings(latest: State<'_, LatestSettings>) -> LoadedSettings {
+    latest.get().loaded
 }
 
 /// What the window opens on.
 #[tauri::command]
 #[specta::specta]
-fn home(owned: State<'_, OwnedSettings>) -> Home {
-    owned
-        .lock()
-        .as_ref()
-        .map(SettingsFiles::home)
-        .unwrap_or_default()
+fn home(latest: State<'_, LatestSettings>) -> Home {
+    latest.get().home
 }
 
 fn check_typed_repository(
@@ -100,13 +81,14 @@ fn check_typed_repository(
     checks.check(RepositoryName::parse(input)?)
 }
 
-fn add_named_repository(name: &str, owned: &OwnedSettings) -> Result<Home, Error> {
-    let name = RepositoryName::parse(name)?;
-    owned
-        .lock()
-        .as_mut()
-        .ok_or_else(|| Error::new(ErrorKind::Internal, NO_FOLDERS))?
-        .add_repository(&name)
+fn add_named_repository(
+    name: &str,
+    owner: &SettingsOwner,
+    latest: &LatestSettings,
+) -> Result<Home, Error> {
+    let saved = owner.add_repository(RepositoryName::parse(name)?)?;
+    latest.set(&saved);
+    Ok(saved.home)
 }
 
 /// Sent whenever the app-wide state changes (ADR 0008).
@@ -134,11 +116,13 @@ mod tests {
     use std::time::Duration;
     use tauri::Manager;
     use tauri::test::mock_app;
+    use tsugiki_core::error::ErrorKind;
     use tsugiki_core::folders::Folders;
     use tsugiki_core::github::GitHubAccess;
     use tsugiki_core::github::live::{Https, run_gh};
     use tsugiki_core::repository::{Conventions, RepositorySettings};
     use tsugiki_core::session::Session;
+    use tsugiki_core::settings::SettingsFiles;
     use tsugiki_core::status::StatusBoard;
 
     fn temp_folders(name: &str) -> (Folders, std::path::PathBuf) {
@@ -182,37 +166,34 @@ mod tests {
     }
 
     #[test]
-    fn settings_answers_with_what_the_files_said() {
-        let (folders, root) = temp_folders("settings");
-        std::fs::write(folders.settings_file(), "[status_bar\n").unwrap();
+    fn settings_and_home_answer_with_the_latest_copy() {
         let app = mock_app();
-        assert!(app.manage(OwnedSettings::new(Some(SettingsFiles::load(folders)))));
+        let view = SettingsView {
+            loaded: LoadedSettings {
+                problems: vec!["settings.toml, line 3: expected a value".to_owned()],
+                ..LoadedSettings::default()
+            },
+            home: cpython(),
+        };
+        assert!(app.manage(LatestSettings::new(view.clone())));
 
-        let loaded = settings(app.state());
-        std::fs::remove_dir_all(root).unwrap();
-
-        assert_eq!(loaded.problems.len(), 1);
+        assert_eq!(settings(app.state()), view.loaded);
+        assert_eq!(home(app.state()), view.home);
     }
 
-    #[test]
-    fn without_folders_the_window_opens_on_the_defaults_and_adding_says_why_not() {
-        let app = mock_app();
-        assert!(app.manage(OwnedSettings::new(None)));
-
-        assert_eq!(settings(app.state()), LoadedSettings::default());
-        assert_eq!(home(app.state()), Home::default());
-        let refused = add_named_repository("python/cpython", &app.state()).unwrap_err();
-        assert_eq!(refused.message, NO_FOLDERS);
+    fn no_folders() -> Error {
+        Error::new(ErrorKind::Internal, "no folders in this test")
     }
 
     #[test]
     fn a_repository_added_is_what_the_window_opens_on() {
         let (folders, root) = temp_folders("add");
+        let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
         let app = mock_app();
-        assert!(app.manage(OwnedSettings::new(Some(SettingsFiles::load(folders)))));
+        assert!(app.manage(LatestSettings::default()));
         assert_eq!(home(app.state()), Home::default());
 
-        let added = add_named_repository("https://github.com/python/cpython", &app.state());
+        let added = add_named_repository("https://github.com/python/cpython", &owner, &app.state());
         let after = home(app.state());
         std::fs::remove_dir_all(root).unwrap();
 
@@ -221,14 +202,28 @@ mod tests {
     }
 
     #[test]
-    fn a_name_that_isnt_one_is_refused_before_anything_else_happens() {
-        let app = mock_app();
-        assert!(app.manage(OwnedSettings::new(None)));
-        let session = ended_session();
-        assert!(app.manage(session.repository_checks()));
+    fn an_add_that_fails_leaves_the_copy_alone() {
+        let owner = SettingsOwner::start(Err(no_folders()));
+        let latest = LatestSettings::new(SettingsView {
+            home: cpython(),
+            ..SettingsView::default()
+        });
 
-        let adding = add_named_repository("nonsense", &app.state()).unwrap_err();
-        let checking = check_typed_repository("nonsense", &app.state()).unwrap_err();
+        let refused = add_named_repository("a/b", &owner, &latest).unwrap_err();
+
+        assert_eq!(refused.message, no_folders().message);
+        assert_eq!(latest.get().home, cpython());
+    }
+
+    #[test]
+    fn a_name_that_isnt_one_is_refused_before_anything_else_happens() {
+        let owner = SettingsOwner::start(Err(no_folders()));
+        let session = ended_session();
+        let latest = LatestSettings::default();
+
+        let adding = add_named_repository("nonsense", &owner, &latest).unwrap_err();
+        let checking =
+            check_typed_repository("nonsense", &session.repository_checks()).unwrap_err();
 
         assert_eq!(adding.kind, ErrorKind::NotFound);
         assert_eq!(checking.kind, ErrorKind::NotFound);
@@ -240,9 +235,8 @@ mod tests {
             transport: Box::new(Https::new()),
             run_gh,
         };
-        let no_folders = Err(Error::new(ErrorKind::Internal, "no folders in this test"));
         let board = StatusBoard::new(Box::new(|_| {}));
-        Session::start(board, no_folders, access, Duration::from_secs(3600))
+        Session::start(board, Err(no_folders()), access, Duration::from_secs(3600))
     }
 
     /// What the webview gets back for `command`, through Tauri's own handling of its arguments and threads.
@@ -250,8 +244,9 @@ mod tests {
         let session = ended_session();
         let app = tauri::test::mock_builder()
             .invoke_handler(specta_builder().invoke_handler())
-            .manage(OwnedSettings::new(None))
+            .manage(LatestSettings::default())
             .manage(session.repository_checks())
+            .manage(SettingsOwner::start(Err(no_folders())))
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .unwrap();
         let webview = tauri::WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::default())
@@ -288,16 +283,15 @@ mod tests {
     fn the_webview_can_ask_for_an_add_and_gets_the_failure_in_the_cores_form() {
         let answer = through_ipc("add_repository", serde_json::json!({ "name": "a/b" }));
         assert_eq!(answer["kind"], "internal");
-        assert_eq!(answer["message"], NO_FOLDERS);
+        assert_eq!(answer["message"], no_folders().message);
     }
 
     #[test]
     fn a_check_goes_to_the_session() {
-        let app = mock_app();
         let session = ended_session();
-        assert!(app.manage(session.repository_checks()));
 
-        let answer = check_typed_repository("python/cpython", &app.state()).unwrap_err();
+        let answer =
+            check_typed_repository("python/cpython", &session.repository_checks()).unwrap_err();
         session.stop(Duration::from_secs(10));
 
         assert_eq!(answer.kind, ErrorKind::Offline);

@@ -265,7 +265,11 @@ const clickButton = (name: string): string =>
 const CHECKS: Record<string, (session: Session) => Promise<string | undefined>> = {
   // First, because it needs Tsugiki's first request to GitHub still waiting. Without the event the page has
   // no other way to learn this: it only asks `status()` when it loads, and the settling gives it time to.
-  "a status change reaches the open window": async ({ run, github, secondsRunning }) => {
+  "a status change reaches the open window, and an add doesn't wait for GitHub": async ({
+    run,
+    github,
+    secondsRunning,
+  }) => {
     try {
       if (!(await until(() => github.held() > 0, FIRST_REQUEST_MS))) {
         const shown = await run<string>(STATUS_BAR_TEXT);
@@ -279,6 +283,13 @@ const CHECKS: Record<string, (session: Session) => Promise<string | undefined>> 
       const problem = await statusBarShows(run, "Connecting…");
       if (problem !== undefined) {
         return problem;
+      }
+      // GitHub still hasn't answered. The add goes to the settings' own thread, so it answers anyway.
+      await run(`void window.__TAURI_INTERNALS__
+        .invoke('add_repository', { name: 'python/cpython' })
+        .then((home) => { window.smokeAdded = home.screen; })`);
+      if (!(await until(() => run<boolean>("window.smokeAdded === 'repository'")))) {
+        return "adding a Repository waited for GitHub, or failed";
       }
       github.cutOff();
       return await statusBarShows(run, "Offline");
@@ -338,8 +349,8 @@ const CHECKS: Record<string, (session: Session) => Promise<string | undefined>> 
     return same === true ? undefined : "the page reloaded";
   },
 
-  // Near the end, because the next check leaves a Repository in the settings. The proxy has cut GitHub off by
-  // now, so the dialog's answer has been to the session's thread and back, and only a failure can come back.
+  // The proxy has cut GitHub off by now, so the dialog's answer has been to the session's thread and back,
+  // and only a failure can come back.
   "the add dialog asks the session": async ({ run }) => {
     await run(clickButton("Add repository"));
     await wait(SETTLE_MS);
@@ -359,22 +370,10 @@ const CHECKS: Record<string, (session: Session) => Promise<string | undefined>> 
     return answered ? undefined : `the dialog says "${shown}", and should say "${wanted}"`;
   },
 
-  // The dialog's Add needs an answer from GitHub, so this asks the core what that button asks it.
-  "a Repository added is saved, and the window opens on it": async ({ run }) => {
-    await run("window.__TAURI_INTERNALS__.invoke('add_repository', { name: 'python/cpython' })");
-    await wait(SETTLE_MS);
-    await run("setTimeout(() => location.reload(), 0)");
-    let shown = "";
-    const opened = await until(async () => {
-      try {
-        shown = await run<string>("document.querySelector('h1')?.textContent ?? ''");
-      } catch {
-        // The page is between documents, and running out of tries is the failure to report.
-        return false;
-      }
-      return shown === "python/cpython";
-    });
-    return opened ? undefined : `the window's heading says "${shown}"`;
+  // The first check added this Repository, and the second reloaded the page.
+  "a window that loads later opens on the Repository added": async ({ run }) => {
+    const shown = await run<string>("document.querySelector('h1')?.textContent ?? ''");
+    return shown === "python/cpython" ? undefined : `the window's heading says "${shown}"`;
   },
 };
 

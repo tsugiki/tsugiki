@@ -7,6 +7,8 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Sender};
+use std::thread;
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -19,6 +21,8 @@ use crate::repository::{Home, RepositoryName, RepositorySettings};
 
 const REPOSITORIES: &str = "repositories";
 const LAST_REPOSITORY: &str = "last_repository";
+const STOPPED_SAVING: &str =
+    "Tsugiki stopped saving its settings. Restart Tsugiki to save them again.";
 
 /// What `settings.toml` holds. A value the file leaves out takes its default.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -46,6 +50,13 @@ impl Default for StatusBarSettings {
 pub struct LoadedSettings {
     pub settings: Settings,
     pub problems: Vec<String>,
+}
+
+/// What the rest of Tsugiki may hold a copy of, so it can answer without waiting on the files or their owner.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SettingsView {
+    pub loaded: LoadedSettings,
+    pub home: Home,
 }
 
 /// What `machine.toml` holds, as far as this file needs it.
@@ -82,6 +93,13 @@ impl SettingsFiles {
 
     pub fn loaded(&self) -> &LoadedSettings {
         &self.loaded
+    }
+
+    pub fn view(&self) -> SettingsView {
+        SettingsView {
+            loaded: self.loaded.clone(),
+            home: self.home(),
+        }
     }
 
     /// Reads both files again, for the Settings window to call as it opens.
@@ -164,6 +182,51 @@ impl SettingsFiles {
 
     fn machine_to_edit(&self) -> Result<Machine, Error> {
         read_machine(&self.folders.machine_file()).map_err(|problem| refused(&problem))
+    }
+}
+
+/// The thread that owns the settings files, so saving never waits on GitHub and GitHub never waits on a slow
+/// drive. Without folders it has nothing to save to, and each add answers with that problem.
+///
+/// Ending the process while it writes can leave a file cut short, as it could on any thread.
+#[derive(Clone)]
+pub struct SettingsOwner {
+    additions: Sender<Addition>,
+}
+
+struct Addition {
+    name: RepositoryName,
+    reply: Sender<Result<SettingsView, Error>>,
+}
+
+impl SettingsOwner {
+    /// Take a `SettingsFiles::view` first: from here on only this thread can read `files`.
+    pub fn start(mut files: Result<SettingsFiles, Error>) -> Self {
+        let (additions, incoming) = mpsc::channel::<Addition>();
+        let _ = thread::spawn(move || {
+            for Addition { name, reply } in incoming {
+                let saved = match &mut files {
+                    Ok(files) => files.add_repository(&name).map(|_| files.view()),
+                    Err(problem) => Err(problem.clone()),
+                };
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "this fails only if the caller has gone, and it waits for this answer"
+                )]
+                let _ = reply.send(saved);
+            }
+        });
+        Self { additions }
+    }
+
+    /// Adds `name` to the settings, and answers with what they say now.
+    pub fn add_repository(&self, name: RepositoryName) -> Result<SettingsView, Error> {
+        let (reply, answer) = mpsc::channel();
+        self.additions
+            .send(Addition { name, reply })
+            .ok()
+            .and_then(|()| answer.recv().ok())
+            .unwrap_or_else(|| Err(Error::new(ErrorKind::Internal, STOPPED_SAVING)))
     }
 }
 
@@ -997,6 +1060,57 @@ alpha = \"x\"
 
         assert_eq!(files.loaded().settings, Settings::default());
         assert_eq!(files.loaded().problems.len(), 1);
+    }
+
+    #[test]
+    fn the_owner_saves_an_addition_and_answers_with_what_the_files_say() {
+        let (folders, root) = temp_folders("owner");
+        let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+
+        let saved = owner.add_repository(repository("python/cpython")).unwrap();
+        let text = fs::read_to_string(folders.settings_file()).unwrap();
+        fs::remove_dir_all(root).unwrap();
+
+        assert!(text.contains("python/cpython"), "{text}");
+        assert_eq!(saved.home, opened("python/cpython", Conventions::Cpython));
+        assert_eq!(saved.loaded.settings.repositories.len(), 1);
+    }
+
+    #[test]
+    fn the_owner_passes_on_why_a_file_refused_an_addition() {
+        let (folders, root) = temp_folders("owner-refused");
+        fs::write(folders.settings_file(), "[status_bar\n").unwrap();
+        let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
+
+        let refused = owner.add_repository(repository("a/b")).unwrap_err();
+        fs::remove_dir_all(root).unwrap();
+
+        assert!(
+            refused.message.contains("settings.toml"),
+            "{}",
+            refused.message
+        );
+    }
+
+    #[test]
+    fn without_folders_the_owner_says_what_went_wrong_with_them() {
+        let lost = Error::new(ErrorKind::Internal, "HOME isn't a full path.");
+        let owner = SettingsOwner::start(Err(lost));
+
+        let refused = owner.add_repository(repository("a/b")).unwrap_err();
+
+        assert_eq!(refused.message, "HOME isn't a full path.");
+    }
+
+    #[test]
+    fn an_owner_whose_thread_has_gone_says_so() {
+        let owner = SettingsOwner {
+            additions: mpsc::channel().0,
+        };
+
+        let refused = owner.add_repository(repository("a/b")).unwrap_err();
+
+        assert_eq!(refused.message, STOPPED_SAVING);
     }
 
     #[test]

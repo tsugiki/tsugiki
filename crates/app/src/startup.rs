@@ -13,10 +13,10 @@ use tsugiki_core::github::live::{Https, run_gh};
 use tsugiki_core::launch;
 use tsugiki_core::logfile;
 use tsugiki_core::session::Session;
-use tsugiki_core::settings::SettingsFiles;
+use tsugiki_core::settings::{SettingsFiles, SettingsOwner};
 use tsugiki_core::status::StatusBoard;
 
-use crate::{LatestStatus, OwnedSettings, StatusChanged, specta_builder};
+use crate::{LatestSettings, LatestStatus, StatusChanged, specta_builder};
 
 /// How often Tsugiki asks GitHub whether it is still there, at about one point of the hourly 5,000 each.
 const REFRESH: Duration = Duration::from_secs(60);
@@ -73,14 +73,20 @@ pub fn run() {
     );
     // Two small files, read before the window exists so `settings` and `home` can always answer. A
     // `settings_path` on a slow drive would delay the window. Without folders the defaults apply, and the
-    // session shows why.
-    let settings = folders
+    // session shows why. A thread of their own owns the files from here, so saving doesn't wait on GitHub,
+    // and the app keeps a copy to answer from.
+    let settings = folders.clone().map(SettingsFiles::load);
+    let view = settings
         .as_ref()
-        .ok()
-        .map(|found| SettingsFiles::load(found.clone()));
+        .map(SettingsFiles::view)
+        .unwrap_or_default();
     assert!(
-        app.manage(OwnedSettings::new(settings)),
+        app.manage(LatestSettings::new(view)),
         "nothing else manages the settings"
+    );
+    assert!(
+        app.manage(SettingsOwner::start(settings)),
+        "nothing else manages the settings' owner"
     );
     let handle = app.handle().clone();
     let board = StatusBoard::new(Box::new(move |status| {

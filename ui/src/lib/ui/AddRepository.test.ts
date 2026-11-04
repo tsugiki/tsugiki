@@ -58,6 +58,15 @@ it("waits for GitHub with its button off", async () => {
   expect(button("Check").disabled).toBe(true);
 });
 
+it("can be left while GitHub hasn't answered", async () => {
+  core.checkRepository.mockReturnValue(new Promise(() => {}));
+  const onclose = vi.fn();
+  render(AddRepository, { onclose, onadded: () => {} });
+  await fireEvent.click(button("Check"));
+  await fireEvent.click(button("Cancel"));
+  expect(onclose).toHaveBeenCalledOnce();
+});
+
 it("says what's wrong and lets the user try again", async () => {
   const error = { kind: "offline", message: "Tsugiki can't reach GitHub." } as const;
   core.checkRepository.mockResolvedValue({ status: "error", error });

@@ -13,9 +13,16 @@ export const commands = {
 	settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
 	/**  What the window opens on. */
 	home: () => __TAURI_INVOKE<Home_Serialize>("home"),
-	/**  What adding the Repository the user typed would load. */
+	/**
+	 *  What adding the Repository the user typed would load. A check can wait out a stuck request to GitHub, so
+	 *  it waits on a thread meant for blocking, and leaves the threads that answer the window's other commands
+	 *  free.
+	 */
 	checkRepository: (input: string) => typedError<RepositoryCheck_Serialize, Error_Serialize>(__TAURI_INVOKE("check_repository", { input })),
-	/**  Adds a Repository the user has seen the check for, and says what the window opens on now. */
+	/**
+	 *  Adds a Repository the user has seen the check for, and says what the window opens on now. This waits on
+	 *  a small file and never on GitHub.
+	 */
 	addRepository: (name: string) => typedError<Home_Serialize, Error_Serialize>(__TAURI_INVOKE("add_repository", { name })),
 };
 

@@ -63,6 +63,7 @@ enum Message {
 
 /// Asks the session about Repositories, from any thread. It waits for what the session is doing first, which
 /// at the start can be `gh` or a slow request, so don't call it from the thread that draws the window.
+#[derive(Clone)]
 pub struct RepositoryChecks {
     messages: Sender<Message>,
 }

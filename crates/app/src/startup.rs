@@ -1,5 +1,5 @@
-//! Opens Tsugiki's real window, and calls `wiring.rs` for the rest. Measuring this takes that window, so it
-//! is left out of the coverage gate and the smoke tests cover it instead (ADR 0009).
+//! Opens Tsugiki's real window, and calls `wiring.rs` for the rest. Measuring this takes that window, so the
+//! coverage gate leaves it out and the smoke tests cover it (ADR 0009).
 
 use std::path::PathBuf;
 use std::time::Duration;

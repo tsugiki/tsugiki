@@ -1,6 +1,5 @@
-//! What the window's commands ask and the events it hears, set up on any Tauri runtime. `startup.rs` calls
-//! this on the real one. The tests here call it on Tauri's mock one, so they check this wiring without a
-//! window.
+//! The window's commands and events, set up on any Tauri runtime. `startup.rs` calls this on the real one.
+//! The tests here call it on Tauri's mock one, so they check this wiring without a window.
 
 use std::time::Duration;
 
@@ -33,8 +32,8 @@ pub(crate) fn connect_core<R: Runtime>(
     let status_handle = app.clone();
     let workbench_handle = app.clone();
     let board = StatusBoard::new(Box::new(move |status| {
-        // Before the event: a window that starts listening just too late for it then asks `status()`, and has
-        // to get this status.
+        // Before the event: a window that starts listening too late for it then asks `status()`, and has to
+        // get this status.
         latest_status.set(status);
         // A window still loading asks `status()` when it is done, so it doesn't need this event.
         log_if_unsent(StatusChanged(status.clone()).emit(&status_handle));
@@ -85,7 +84,7 @@ mod tests {
         })
     }
 
-    /// What real GitHub answered, recorded for the core's fixtures.
+    /// Real GitHub's answers, recorded for the core's fixtures.
     fn recordings() -> GitHubAccess {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/tests/fixtures/github");
         GitHubAccess {
@@ -110,7 +109,7 @@ mod tests {
     }
 
     /// Says when a request arrives, then holds it until the test lets go. A regression then shows up as
-    /// a slow test, and doesn't hang the suite.
+    /// a slow test that still ends.
     struct StuckGitHub {
         arrived: Sender<()>,
         released: Receiver<()>,
@@ -158,8 +157,7 @@ mod tests {
             }
         }
 
-        /// What the webview gets back for `command`, through Tauri's own handling of its arguments and
-        /// threads.
+        /// The webview's answer to `command`, through Tauri's own handling of its arguments and threads.
         #[expect(
             clippy::unwrap_in_result,
             reason = "the `Result` is the command's answer, and anything else should fail the test"

@@ -505,7 +505,7 @@ fn located(path: &Path, text: &str, cause: &toml_edit::de::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repository::Conventions;
+    use crate::conventions::Conventions;
 
     const HIDDEN: Settings = Settings {
         status_bar: StatusBarSettings { visible: false },

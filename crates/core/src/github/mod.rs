@@ -306,7 +306,8 @@ pub(crate) mod testing {
 mod tests {
     use super::testing::{Canned, answered, token};
     use super::*;
-    use crate::repository::{Conventions, RepositorySize};
+    use crate::conventions::Conventions;
+    use crate::repository::RepositorySize;
     use std::path::Path;
 
     fn client(transport: impl Transport + 'static) -> GitHub {

@@ -23,6 +23,7 @@ ureq.workspace = true
 
 [dev-dependencies]
 divan.workspace = true
+rusqlite = { workspace = true, features = ["trace"] } # The store's plan check traces each query.
 
 [[bench]]
 name = "about"

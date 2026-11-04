@@ -31,12 +31,6 @@ const NEWER: &str = "A newer version of Tsugiki wrote this database, so this ver
                      Update Tsugiki to read it.";
 const STOPPED: &str = "Tsugiki's database stopped working. Restart Tsugiki to open it again.";
 
-// Add each query a screen waits on to `VIEW_QUERIES` in the tests, which check its plan (ADR 0017).
-const LAST_LOGIN: &str = "SELECT login FROM viewer WHERE id = 1";
-const REMEMBER_LOGIN: &str = "INSERT INTO viewer (id, login) VALUES (1, :login)
-                              ON CONFLICT (id) DO UPDATE SET login = excluded.login
-                              WHERE login <> excluded.login";
-
 type Job = Box<dyn FnOnce(&mut Connection) + Send>;
 
 /// The open database.
@@ -53,20 +47,14 @@ impl Store {
 
     /// The user signed in when Tsugiki last reached GitHub, if it ever has.
     pub fn last_login(&self) -> Result<Option<Login>, Error> {
-        let found = self.call(|connection| {
-            connection
-                .query_row(LAST_LOGIN, [], |row| row.get::<_, Login>("login"))
-                .optional()
-        })?;
+        let found = self.call(|connection| read_last_login(connection))?;
         found.map_err(saying(CANT_READ))
     }
 
     pub fn remember_login(&self, login: &Login) -> Result<(), Error> {
         let login = login.clone();
-        let written = self.call(move |connection| {
-            connection.execute(REMEMBER_LOGIN, named_params! { ":login": login })
-        })?;
-        written.map(drop).map_err(saying(CANT_WRITE))
+        let written = self.call(move |connection| write_last_login(connection, &login))?;
+        written.map_err(saying(CANT_WRITE))
     }
 
     /// Stores `pull_requests` of `repository` in one transaction (ADR 0010).
@@ -118,6 +106,37 @@ pub struct WorkFacts {
     pub pull_requests: Vec<PullRequestFacts>,
 }
 
+fn read_last_login(connection: &Connection) -> rusqlite::Result<Option<Login>> {
+    connection
+        .query_row("SELECT login FROM viewer WHERE id = 1", [], |row| {
+            row.get("login")
+        })
+        .optional()
+}
+
+fn write_last_login(connection: &Connection, login: &Login) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "INSERT INTO viewer (id, login) VALUES (1, :login)
+             ON CONFLICT (id) DO UPDATE SET login = excluded.login
+             WHERE login <> excluded.login",
+            named_params! { ":login": login },
+        )
+        .map(drop)
+}
+
+// Add each read a screen waits on to `view_statements` in the tests, which check its plans (ADR 0017).
+fn read_work_facts(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<WorkFacts> {
+    let transaction = connection.transaction()?;
+    Ok(WorkFacts {
+        viewer: read_last_login(&transaction)?,
+        pull_requests: pull_requests::read_open(&transaction, repository)?,
+    })
+}
+
 /// Asks the read-only connection, from any thread. A question asked before the database opens waits for it.
 #[derive(Clone)]
 pub struct StoreReader {
@@ -128,16 +147,7 @@ impl StoreReader {
     /// The facts behind the Workbench of `repository`.
     pub fn work_facts(&self, repository: &RepositoryName) -> Result<WorkFacts, Error> {
         let repository = repository.clone();
-        let read = self.call(move |connection| {
-            let transaction = connection.transaction()?;
-            let viewer = transaction
-                .query_row(LAST_LOGIN, [], |row| row.get("login"))
-                .optional()?;
-            Ok::<_, rusqlite::Error>(WorkFacts {
-                viewer,
-                pull_requests: pull_requests::read_open(&transaction, &repository)?,
-            })
-        })?;
+        let read = self.call(move |connection| read_work_facts(connection, &repository))?;
         read.map_err(saying(CANT_READ))
     }
 
@@ -319,6 +329,7 @@ mod tests {
     use super::file::{Contents, contents};
     use super::testing::{V1, V2, backups, has_table, temp_database, user_version};
     use super::*;
+    use rusqlite::trace::{TraceEvent, TraceEventCodes};
 
     #[test]
     fn a_new_database_gets_the_whole_schema_and_no_backup() {
@@ -424,15 +435,6 @@ mod tests {
         assert_eq!(after.unwrap_err(), stopped);
     }
 
-    /// The queries screens wait on, which the plan check below runs.
-    const VIEW_QUERIES: [&str; 5] = [
-        LAST_LOGIN,
-        pull_requests::VIEW_QUERIES[0],
-        pull_requests::VIEW_QUERIES[1],
-        pull_requests::VIEW_QUERIES[2],
-        pull_requests::VIEW_QUERIES[3],
-    ];
-
     /// Tables that stay a few rows long, so reading all of them is fine. Any other table counts as large,
     /// so a new one is checked until someone says otherwise.
     const SMALL_TABLES: [&str; 1] = ["viewer"];
@@ -456,15 +458,55 @@ mod tests {
         scans
     }
 
-    #[test]
-    fn no_view_query_scans_a_large_table() {
+    /// Each statement the reads a screen waits on run, as SQLite traces them. SQLite traces a statement when
+    /// it starts, so a table with no rows still shows its query.
+    fn view_statements(connection: &mut Connection) -> Vec<String> {
+        let (seen, statements) = mpsc::channel();
+        let trace = move |event: TraceEvent<'_>| {
+            if let TraceEvent::Stmt(_, sql) = event {
+                seen.send(sql.to_owned()).unwrap();
+            }
+        };
+        let codes = TraceEventCodes::SQLITE_TRACE_STMT;
+        connection.trace_v2(codes, Some(trace)).unwrap();
+        let cpython = RepositoryName::parse("python/cpython").unwrap();
+        drop(read_work_facts(connection, &cpython).unwrap());
+        let no_trace = None::<fn(TraceEvent<'_>)>;
+        connection.trace_v2(codes, no_trace).unwrap();
+        statements.try_iter().collect()
+    }
+
+    fn migrated() -> Connection {
         let connection = Connection::open_in_memory().unwrap();
         for step in MIGRATIONS {
             connection.execute_batch(step.sql).unwrap();
         }
-        for query in VIEW_QUERIES {
-            assert_eq!(full_scans(&connection, query), [""; 0], "{query}");
+        connection
+    }
+
+    #[test]
+    fn no_view_query_scans_a_large_table() {
+        let mut connection = migrated();
+        for sql in view_statements(&mut connection) {
+            assert_eq!(full_scans(&connection, &sql), [""; 0], "{sql}");
         }
+    }
+
+    #[test]
+    fn the_plan_check_sees_each_table_a_view_reads() {
+        let statements = view_statements(&mut migrated());
+        let reads = |table: &str| {
+            let from = format!("FROM {table}");
+            statements.iter().any(|sql| sql.contains(&from))
+        };
+        let tables = [
+            "viewer",
+            "pull_requests",
+            "review_requests",
+            "latest_reviews",
+            "assignees",
+        ];
+        assert_eq!(tables.map(reads), [true; 5]);
     }
 
     #[test]

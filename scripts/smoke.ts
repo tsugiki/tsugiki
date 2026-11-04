@@ -27,6 +27,10 @@ const DEBUG_PORT = 9333;
 const APP_ADDRESS = "http://tauri.localhost/";
 const SETTLE_MS = 2000;
 const CLOSE_MS = 10_000;
+// Tsugiki runs `gh auth token` before its first request and gives `gh` 30 s (`TIMEOUT` in live.rs). One run's
+// request took 18 s to arrive, cause unknown (#86). This wait starts once the page is ready, so a `gh` that
+// times out still fails the check.
+const FIRST_REQUEST_MS = 35_000;
 const BUILD_CONFIG = ".temp/smoke-config.json";
 const TAURI_BROWSER_ARGS = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
 
@@ -83,12 +87,15 @@ type Session = {
   run: <T>(expression: string) => Promise<T>;
   press: (...keys: number[]) => void;
   github: FakeGitHub;
+  secondsRunning: () => number;
 };
 
 type FakeGitHub = {
   port: number;
   /** How many requests are waiting for an answer. */
   held: () => number;
+  /** How many requests have arrived since the test started. */
+  requests: () => number;
   /** Drops those requests and any later ones, which Tsugiki reads as being offline. */
   cutOff: () => void;
 };
@@ -97,7 +104,9 @@ type FakeGitHub = {
 async function startFakeGitHub(): Promise<FakeGitHub> {
   const held = new Set<Socket>();
   let cut = false;
+  let requests = 0;
   const server = createServer((socket) => {
+    requests += 1;
     socket.on("close", () => {
       held.delete(socket);
     });
@@ -115,6 +124,7 @@ async function startFakeGitHub(): Promise<FakeGitHub> {
   return {
     port: (server.address() as AddressInfo).port,
     held: () => held.size,
+    requests: () => requests,
     cutOff: () => {
       cut = true;
       for (const socket of held) {
@@ -170,6 +180,11 @@ async function connect(address: string): Promise<WebSocket> {
 /** Runs one expression at a time. The test turns on no protocol events, so the next message is the reply. */
 function evaluate(socket: WebSocket, expression: string): Promise<unknown> {
   return new Promise((answered, failed) => {
+    // Sending on a closed socket does nothing, and no reply or `close` event would ever end this wait.
+    if (socket.readyState !== WebSocket.OPEN) {
+      failed(new Error(`The page's connection had closed before: ${expression}`));
+      return;
+    }
     const replied = new AbortController();
     socket.addEventListener(
       "close",
@@ -196,9 +211,15 @@ function evaluate(socket: WebSocket, expression: string): Promise<unknown> {
   });
 }
 
-function sessionFor(socket: WebSocket, application: string, github: FakeGitHub): Session {
+function sessionFor(
+  socket: WebSocket,
+  application: string,
+  github: FakeGitHub,
+  secondsRunning: () => number,
+): Session {
   return {
     github,
+    secondsRunning,
     run: async <T>(expression: string) => (await evaluate(socket, expression)) as T,
     press: (...keys) => {
       const env = { ...process.env, SMOKE_EXE: application, SMOKE_KEYS: keys.join(",") };
@@ -216,9 +237,9 @@ function sessionFor(socket: WebSocket, application: string, github: FakeGitHub):
 
 const STATUS_BAR_TEXT = "document.querySelector('[role=status]')?.textContent.trim() ?? ''";
 
-/** Asks every 250 ms for five seconds, and says whether the answer was ever yes. */
-async function until(condition: () => boolean | Promise<boolean>): Promise<boolean> {
-  for (let tries = 0; tries < 20; tries += 1) {
+/** Asks every 250 ms, for five seconds unless told otherwise, and says whether the answer was ever yes. */
+async function until(condition: () => boolean | Promise<boolean>, patienceMs = 5000): Promise<boolean> {
+  for (let tries = 0; tries < patienceMs / 250; tries += 1) {
     if (await condition()) {
       return true;
     }
@@ -241,12 +262,17 @@ async function statusBarShows(run: Session["run"], text: string): Promise<string
 const CHECKS: Record<string, (session: Session) => Promise<string | undefined>> = {
   // First, because it needs Tsugiki's first request to GitHub still waiting. Without the event the page has
   // no other way to learn this: it only asks `status()` when it loads, and the settling gives it time to.
-  "a status change reaches the open window": async ({ run, github }) => {
+  "a status change reaches the open window": async ({ run, github, secondsRunning }) => {
     try {
-      if (!(await until(() => github.held() > 0))) {
+      if (!(await until(() => github.held() > 0, FIRST_REQUEST_MS))) {
         const shown = await run<string>(STATUS_BAR_TEXT);
-        return `Tsugiki's request never reached the test's proxy, and the status bar says "${shown}"`;
+        const running = String(secondsRunning());
+        const requests = String(github.requests());
+        return `after ${running} s, no request is waiting at the test's proxy, which has seen ${requests}, and the status bar says "${shown}"`;
       }
+      console.log(
+        `Tsugiki's first request is waiting at the proxy, ${String(secondsRunning())} s after it started`,
+      );
       const problem = await statusBarShows(run, "Connecting…");
       if (problem !== undefined) {
         return problem;
@@ -316,9 +342,14 @@ function report(name: string, problem: string | undefined): number {
   return problem === undefined ? 0 : 1;
 }
 
-async function runChecks(application: string, github: FakeGitHub): Promise<number> {
+async function runChecks(
+  application: string,
+  github: FakeGitHub,
+  secondsRunning: () => number,
+): Promise<number> {
   const socket = await connect(await findPage());
-  const session = sessionFor(socket, application, github);
+  console.log(`The page answered ${String(secondsRunning())} s after Tsugiki started`);
+  const session = sessionFor(socket, application, github, secondsRunning);
   let failures = 0;
   try {
     await until(async () => (await session.run<string>("document.readyState")) === "complete");
@@ -439,6 +470,8 @@ if (build.status !== 0) {
 
 const github = await startFakeGitHub();
 mkdirSync(data, { recursive: true });
+const started = Date.now();
+const secondsRunning = (): number => Math.round((Date.now() - started) / 1000);
 const app = spawn(application, [], {
   stdio: "ignore",
   env: {
@@ -457,7 +490,7 @@ app.on("error", (cause) => {
 // A check that throws counts as a failure too.
 let failures = 1;
 try {
-  failures = await runChecks(application, github);
+  failures = await runChecks(application, github, secondsRunning);
   await close(app);
   failures += report("closing the window closes the database", whatClosingLeft(data));
   failures += report("the webview keeps its data in the portable folder", whereTheWebviewWrote(data));

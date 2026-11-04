@@ -660,9 +660,11 @@ mod tests {
         let (release, released) = mpsc::channel::<()>();
         let job: Job = Box::new(move |connection| {
             let transaction = connection.transaction().unwrap();
-            let _ = transaction
-                .execute("UPDATE pull_requests SET title = 'unfinished'", [])
-                .unwrap();
+            let unfinished = PullRequestFacts {
+                title: "unfinished".to_owned(),
+                ..facts(1)
+            };
+            super::replace(&transaction, &cpython(), &unfinished).unwrap();
             started.send(()).unwrap();
             released.recv().unwrap();
             transaction.commit().unwrap();
@@ -684,7 +686,7 @@ mod tests {
         let (store, open, reader, _path, folder) = opened("pr-read-only");
 
         let written = reader
-            .call(|connection| connection.execute("DELETE FROM viewer", []))
+            .call(|connection| write_last_login(connection, &Login::new("octocat")))
             .unwrap();
         open.close();
         store.close();

@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 pub mod build;
+pub mod conventions;
 pub mod error;
 pub mod folders;
 pub mod github;

@@ -83,11 +83,12 @@ mod tests {
     use std::time::Duration;
     use tauri::Manager;
     use tauri::test::mock_app;
+    use tsugiki_core::conventions::Conventions;
     use tsugiki_core::error::ErrorKind;
     use tsugiki_core::folders::Folders;
     use tsugiki_core::github::GitHubAccess;
     use tsugiki_core::github::live::{Https, run_gh};
-    use tsugiki_core::repository::{Conventions, RepositorySettings};
+    use tsugiki_core::repository::RepositorySettings;
     use tsugiki_core::session::Session;
     use tsugiki_core::settings::SettingsFiles;
     use tsugiki_core::status::StatusBoard;

@@ -1,0 +1,139 @@
+//! The conversions between Tsugiki's types and the store's columns, in one place, so queries work in those
+//! types.
+
+use rusqlite::ToSql;
+use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
+
+use crate::github::Login;
+use crate::github::pull_requests::{CiState, PrState, ReviewState};
+use crate::repository::RepositoryName;
+
+impl ToSql for RepositoryName {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::from(self.to_string()))
+    }
+}
+
+impl ToSql for Login {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        self.as_str().to_sql()
+    }
+}
+
+impl FromSql for Login {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        value.as_str().map(Self::new)
+    }
+}
+
+/// A fieldless enum of GitHub's as text, spelled as GitHub spells it. The `match` makes a new variant name
+/// its text, and a test pins each text, because existing databases hold them.
+macro_rules! text_column {
+    ($name:ident { $($variant:ident => $text:literal),+ $(,)? }) => {
+        impl ToSql for $name {
+            fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+                Ok(ToSqlOutput::from(match self { $(Self::$variant => $text),+ }))
+            }
+        }
+
+        impl FromSql for $name {
+            fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+                match value.as_str()? {
+                    $($text => Ok(Self::$variant),)+
+                    other => Err(FromSqlError::Other(
+                        format!("{} has no {other}", stringify!($name)).into(),
+                    )),
+                }
+            }
+        }
+
+        #[cfg(test)]
+        impl $name {
+            const ALL: &[Self] = &[$(Self::$variant),+];
+        }
+    };
+}
+
+text_column!(PrState {
+    Open => "OPEN",
+    Closed => "CLOSED",
+    Merged => "MERGED",
+});
+
+text_column!(CiState {
+    Expected => "EXPECTED",
+    Error => "ERROR",
+    Failure => "FAILURE",
+    Pending => "PENDING",
+    Success => "SUCCESS",
+});
+
+text_column!(ReviewState {
+    Pending => "PENDING",
+    Commented => "COMMENTED",
+    Approved => "APPROVED",
+    ChangesRequested => "CHANGES_REQUESTED",
+    Dismissed => "DISMISSED",
+});
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::{Connection, named_params};
+    use std::fmt::Debug;
+
+    /// The text `value` leaves in a column, and the value that reads back from there.
+    fn through_a_column<T: ToSql + FromSql>(value: &T) -> (String, T) {
+        Connection::open_in_memory()
+            .unwrap()
+            .query_row(
+                "SELECT :value AS value",
+                named_params! {":value": value},
+                |row| Ok((row.get("value")?, row.get("value")?)),
+            )
+            .unwrap()
+    }
+
+    /// The text each of `all` leaves in a column, once it has read back as itself.
+    fn stored_texts<T: ToSql + FromSql + Debug + PartialEq>(all: &[T]) -> Vec<String> {
+        let through = |value| {
+            let (text, read) = through_a_column(value);
+            assert_eq!(&read, value);
+            text
+        };
+        all.iter().map(through).collect()
+    }
+
+    #[test]
+    fn each_state_keeps_the_text_earlier_versions_stored() {
+        assert_eq!(stored_texts(PrState::ALL), ["OPEN", "CLOSED", "MERGED"]);
+        assert_eq!(
+            stored_texts(CiState::ALL),
+            ["EXPECTED", "ERROR", "FAILURE", "PENDING", "SUCCESS"]
+        );
+        assert_eq!(
+            stored_texts(ReviewState::ALL),
+            [
+                "PENDING",
+                "COMMENTED",
+                "APPROVED",
+                "CHANGES_REQUESTED",
+                "DISMISSED"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_repository_goes_in_as_the_user_wrote_it() {
+        let name = RepositoryName::parse("Python/CPython").unwrap();
+        let found: String = Connection::open_in_memory()
+            .unwrap()
+            .query_row(
+                "SELECT :name AS name",
+                named_params! {":name": name},
+                |row| row.get("name"),
+            )
+            .unwrap();
+        assert_eq!(found, "Python/CPython");
+    }
+}

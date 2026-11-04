@@ -3,6 +3,7 @@
 //! a thread that runs its jobs in turn, so a caller waits only for the jobs ahead of its own on that
 //! connection.
 
+mod columns;
 mod file;
 mod migrate;
 mod pull_requests;
@@ -14,7 +15,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Weak};
 use std::thread::{self, JoinHandle};
 
-use rusqlite::{Connection, OpenFlags, OptionalExtension};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, named_params};
 
 use crate::error::{Error, ErrorKind};
 use crate::github::Login;
@@ -32,7 +33,7 @@ const STOPPED: &str = "Tsugiki's database stopped working. Restart Tsugiki to op
 
 // Add each query a screen waits on to `VIEW_QUERIES` in the tests, which check its plan (ADR 0017).
 const LAST_LOGIN: &str = "SELECT login FROM viewer WHERE id = 1";
-const REMEMBER_LOGIN: &str = "INSERT INTO viewer (id, login) VALUES (1, ?1)
+const REMEMBER_LOGIN: &str = "INSERT INTO viewer (id, login) VALUES (1, :login)
                               ON CONFLICT (id) DO UPDATE SET login = excluded.login
                               WHERE login <> excluded.login";
 
@@ -54,16 +55,17 @@ impl Store {
     pub fn last_login(&self) -> Result<Option<Login>, Error> {
         let found = self.call(|connection| {
             connection
-                .query_row(LAST_LOGIN, [], |row| row.get::<_, String>(0))
+                .query_row(LAST_LOGIN, [], |row| row.get::<_, Login>("login"))
                 .optional()
         })?;
-        let found = found.map_err(saying(CANT_READ))?;
-        Ok(found.as_deref().map(Login::new))
+        found.map_err(saying(CANT_READ))
     }
 
     pub fn remember_login(&self, login: &Login) -> Result<(), Error> {
-        let login = login.as_str().to_owned();
-        let written = self.call(move |connection| connection.execute(REMEMBER_LOGIN, [login]))?;
+        let login = login.clone();
+        let written = self.call(move |connection| {
+            connection.execute(REMEMBER_LOGIN, named_params! { ":login": login })
+        })?;
         written.map(drop).map_err(saying(CANT_WRITE))
     }
 
@@ -73,7 +75,7 @@ impl Store {
         repository: &RepositoryName,
         pull_requests: Vec<PullRequest>,
     ) -> Result<(), Error> {
-        let repository = repository.to_string();
+        let repository = repository.clone();
         let saved = self
             .call(move |connection| pull_requests::save(connection, &repository, &pull_requests))?;
         saved.map_err(saying(CANT_WRITE))
@@ -125,14 +127,14 @@ pub struct StoreReader {
 impl StoreReader {
     /// The facts behind the Workbench of `repository`.
     pub fn work_facts(&self, repository: &RepositoryName) -> Result<WorkFacts, Error> {
-        let repository = repository.to_string();
+        let repository = repository.clone();
         let read = self.call(move |connection| {
             let transaction = connection.transaction()?;
             let viewer = transaction
-                .query_row(LAST_LOGIN, [], |row| row.get::<_, String>(0))
+                .query_row(LAST_LOGIN, [], |row| row.get("login"))
                 .optional()?;
             Ok::<_, rusqlite::Error>(WorkFacts {
-                viewer: viewer.as_deref().map(Login::new),
+                viewer,
                 pull_requests: pull_requests::read_open(&transaction, &repository)?,
             })
         })?;
@@ -290,7 +292,7 @@ pub(super) mod testing {
     pub(super) fn user_version(path: &Path) -> u32 {
         Connection::open(path)
             .unwrap()
-            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .pragma_query_value(None, "user_version", |row| row.get("user_version"))
             .unwrap()
     }
 
@@ -346,7 +348,7 @@ mod tests {
 
         let mode: String = Connection::open(&path)
             .unwrap()
-            .pragma_query_value(None, "journal_mode", |row| row.get(0))
+            .pragma_query_value(None, "journal_mode", |row| row.get("journal_mode"))
             .unwrap();
         fs::remove_dir_all(folder).unwrap();
         assert_eq!(mode, "wal");
@@ -476,13 +478,13 @@ mod tests {
             )
             .unwrap();
 
-        let no_index = "SELECT title FROM issues WHERE title = ?1";
+        let no_index = "SELECT title FROM issues WHERE title = :title";
         let whole_index = "SELECT author FROM issues";
         assert_eq!(full_scans(&connection, no_index), ["issues"]);
         assert_eq!(full_scans(&connection, whole_index), ["issues"]);
 
-        let by_key = "SELECT title FROM issues WHERE id = ?1";
-        let by_index = "SELECT title FROM issues WHERE author = ?1";
+        let by_key = "SELECT title FROM issues WHERE id = :id";
+        let by_index = "SELECT title FROM issues WHERE author = :author";
         let small = "SELECT login FROM viewer";
         assert_eq!(full_scans(&connection, by_key), [""; 0]);
         assert_eq!(full_scans(&connection, by_index), [""; 0]);

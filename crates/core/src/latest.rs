@@ -1,35 +1,45 @@
-//! A copy of what one thread owns, for other threads to read.
+//! A value that one thread writes and other threads read.
 
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
-/// A read-only copy of what another thread owns. It lets commands answer while that thread waits on GitHub
-/// or a disk, since the window waits on neither (ADR 0017).
+/// Starts a value with one writer and any number of readers. Readers can answer while the writer's thread
+/// waits on GitHub or a disk, since the window waits on neither (ADR 0017).
 ///
-/// Each function takes the lock, does its one action and lets go, and no guard leaves this type. So nobody
+/// Give the writer to the thread that owns the value. It can't be cloned, so the compiler holds that thread
+/// to being the only one that writes. Clone the reader for everyone else.
+///
+/// Each function takes the lock, does its one action and lets go, and no guard leaves these types. So nobody
 /// can hold two of these at once, in any order, or hold one while waiting on something else.
 ///
 /// A panic while holding the lock can only come from `T`'s `clone`, and `set` only ever replaces the value,
-/// so these read through a poisoned lock.
-#[derive(Default)]
-pub struct Latest<T>(Mutex<T>);
+/// so both sides read through a poisoned lock.
+pub fn channel<T>(first: T) -> (LatestWriter<T>, LatestReader<T>) {
+    let shared = Arc::new(Mutex::new(first));
+    (LatestWriter(Arc::clone(&shared)), LatestReader(shared))
+}
 
-impl<T: Clone> Latest<T> {
-    pub fn new(value: T) -> Self {
-        Self(Mutex::new(value))
+/// The one side that can change the value.
+pub struct LatestWriter<T>(Arc<Mutex<T>>);
+
+impl<T: Clone> LatestWriter<T> {
+    pub fn set(&mut self, value: &T) {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone_from(value);
     }
+}
 
+/// A read-only view of the value, which keeps the last value after the writer has gone.
+#[derive(Clone)]
+pub struct LatestReader<T>(Arc<Mutex<T>>);
+
+impl<T: Clone> LatestReader<T> {
     pub fn get(&self) -> T {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
-    }
-
-    pub fn set(&self, value: &T) {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone_from(value);
     }
 }
 
@@ -38,34 +48,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_answers_with_what_was_set_last() {
-        let latest = Latest::new(1);
-        assert_eq!(latest.get(), 1);
-
-        latest.set(&2);
-
-        assert_eq!(latest.get(), 2);
+    fn a_reader_starts_on_the_first_value() {
+        let (_writer, reader) = channel(1);
+        assert_eq!(reader.get(), 1);
     }
 
     #[test]
-    fn it_starts_on_the_default_value() {
-        assert_eq!(Latest::<u32>::default().get(), 0);
+    fn every_reader_sees_what_the_writer_set_last() {
+        let (mut writer, reader) = channel(1);
+        let another = reader.clone();
+
+        writer.set(&2);
+
+        assert_eq!(reader.get(), 2);
+        assert_eq!(another.get(), 2);
+    }
+
+    #[test]
+    fn a_reader_keeps_the_last_value_after_the_writer_has_gone() {
+        let (mut writer, reader) = channel(1);
+        writer.set(&2);
+
+        drop(writer);
+
+        assert_eq!(reader.get(), 2);
     }
 
     #[test]
     fn a_panic_while_holding_the_lock_doesnt_stop_it_working() {
-        let latest = Latest::new(1);
+        let (mut writer, reader) = channel(1);
         std::thread::scope(|scope| {
             let holder = scope.spawn(|| {
-                let _guard = latest.0.lock();
+                let _guard = reader.0.lock();
                 panic!("a panic while holding the lock");
             });
             assert!(holder.join().is_err());
         });
-        assert!(latest.0.is_poisoned());
+        assert!(reader.0.is_poisoned());
 
-        assert_eq!(latest.get(), 1);
-        latest.set(&2);
-        assert_eq!(latest.get(), 2);
+        assert_eq!(reader.get(), 1);
+        writer.set(&2);
+        assert_eq!(reader.get(), 2);
     }
 }

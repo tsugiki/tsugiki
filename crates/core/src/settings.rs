@@ -7,7 +7,6 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::mpsc::{self, Sender};
 use std::thread;
 
@@ -18,7 +17,7 @@ use toml_edit::{ArrayOfTables, DocumentMut, Item, Key, RawString, Table, TableLi
 
 use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
-use crate::latest::Latest;
+use crate::latest::{self, LatestReader};
 use crate::repository::{Home, RepositoryName, RepositorySettings};
 
 const REPOSITORIES: &str = "repositories";
@@ -194,7 +193,7 @@ impl SettingsFiles {
 #[derive(Clone)]
 pub struct SettingsOwner {
     additions: Sender<Addition>,
-    view: Arc<Latest<SettingsView>>,
+    view: LatestReader<SettingsView>,
 }
 
 struct Addition {
@@ -206,8 +205,7 @@ impl SettingsOwner {
     /// From here on only this thread can read `files`, and `view` answers from its copy.
     pub fn start(mut files: Result<SettingsFiles, Error>) -> Self {
         let first = files.as_ref().map(SettingsFiles::view).unwrap_or_default();
-        let view = Arc::new(Latest::new(first));
-        let copy = Arc::clone(&view);
+        let (mut writer, view) = latest::channel(first);
         let (additions, incoming) = mpsc::channel::<Addition>();
         let _ = thread::spawn(move || {
             for Addition { name, reply } in incoming {
@@ -218,7 +216,7 @@ impl SettingsOwner {
                 // Before the answer, so whoever asked finds the addition in `view`. Additions come through
                 // here one at a time, so an older one can't replace a newer one.
                 if let Ok(saved) = &saved {
-                    copy.set(saved);
+                    writer.set(saved);
                 }
                 #[expect(
                     clippy::let_underscore_must_use,
@@ -1184,7 +1182,7 @@ alpha = \"x\"
     fn an_owner_whose_thread_has_gone_says_so() {
         let owner = SettingsOwner {
             additions: mpsc::channel().0,
-            view: Arc::default(),
+            view: latest::channel(SettingsView::default()).1,
         };
 
         let refused = owner.add_repository(repository("a/b")).unwrap_err();

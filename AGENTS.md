@@ -28,7 +28,7 @@ numbers.
 ## Rust design rules
 
 Clippy enforces most of our rules, and `Cargo.toml` and `clippy.toml` give the reason for each. No tool can
-check these five, so check them yourself when you write or review Rust:
+check these six, so check them yourself when you write or review Rust:
 
 - **Make invalid states unrepresentable.** Put each field on the enum variant it belongs to. Otherwise each
   reader has to remember which combinations can't happen, and the compiler can't help them.
@@ -41,6 +41,10 @@ check these five, so check them yourself when you write or review Rust:
   neither.
 - **One clear owner for each piece of data.** Everything else asks the owner or holds a read-only copy. With
   two owners the copies drift apart, and the UI shows whichever it read last.
+- **One writer, many readers.** When threads share data, one thread writes it. The others read a copy through
+  `latest::channel`, or send that thread a message asking for a change. Hold a lock only inside the type it
+  guards, for one action, and never hand out a guard. Nobody can then take two locks in different orders, or
+  hold one while waiting on GitHub or a disk. Prefer this in new code and when you refactor old code.
 
 ## Writing prose
 

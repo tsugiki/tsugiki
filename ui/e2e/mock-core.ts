@@ -1,7 +1,8 @@
 import type { Page } from "@playwright/test";
 import type { commands } from "../src/lib/data/bindings.ts";
 
-/** What each command answers. A command left out rejects, as it would if the core failed. */
+/** What each command answers. A command left out rejects, as it would if the core failed, except for the two
+ * every page asks: a Repository isn't open yet, and a refresh has nothing to say. */
 export type CoreAnswers = { [C in keyof typeof commands]?: Awaited<ReturnType<(typeof commands)[C]>> };
 
 type Listener = (message: { event: string; id: number; payload: unknown }) => void;
@@ -9,7 +10,8 @@ type MockWindow = { mockEventListeners: Record<string, Listener[]>; mockAnswers:
 
 /** Stands in for Tauri's IPC: the page's generated bindings get these answers instead of the core's. */
 export const mockCore = (page: Page, answers: CoreAnswers) =>
-  page.addInitScript((answers: Record<string, unknown>) => {
+  page.addInitScript((given: Record<string, unknown>) => {
+    const answers = { lastSync: null, refresh: null, ...given };
     const listeners: MockWindow["mockEventListeners"] = {};
     const callbacks = new Map<number, Listener>();
     Object.assign(window, {
@@ -30,9 +32,13 @@ export const mockCore = (page: Page, answers: CoreAnswers) =>
           const name = command.replace(/_(.)/g, (_, letter: string) => letter.toUpperCase());
           if (!Object.hasOwn(answers, name)) throw new Error(`the core has no answer for ${command}`);
           // A command that can fail answers as its binding does, and the binding expects the core's own form.
-          const answer = answers[name] as { status?: string; data?: unknown; error?: unknown };
-          if (answer.status === "error") throw answer.error;
-          return answer.status === "ok" ? answer.data : answer;
+          const answer = (answers as Record<string, unknown>)[name] as {
+            status?: string;
+            data?: unknown;
+            error?: unknown;
+          } | null;
+          if (answer?.status === "error") throw answer.error;
+          return answer?.status === "ok" ? answer.data : answer;
         },
       },
     });

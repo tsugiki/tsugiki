@@ -9,11 +9,15 @@ use tsugiki_core::error::Error;
 use tsugiki_core::folders::Folders;
 use tsugiki_core::github::GitHubAccess;
 use tsugiki_core::latest;
-use tsugiki_core::session::Session;
+use tsugiki_core::session::{Intervals, Session};
 use tsugiki_core::settings::{SettingsFiles, SettingsOwner};
 use tsugiki_core::status::{Status, StatusBoard};
 
-use crate::{StatusChanged, WorkbenchChanged, sync_home};
+use crate::{Changed, LastSyncChanged, StatusChanged, sync_home};
+
+/// How often the open Repository refreshes: a refresh costs a few points, and this is about 60 points an
+/// hour, out of 5,000 (ADR 0015).
+const REPOSITORY_REFRESH: Duration = Duration::from_secs(180);
 
 /// Reads the settings, starts the session and gives the commands what they ask. Events need `mount_events` to
 /// have run on `app`.
@@ -25,12 +29,18 @@ pub(crate) fn connect_core<R: Runtime>(
 ) -> Session {
     let (mut latest_status, status_reader) = latest::channel(Status::default());
     assert!(app.manage(status_reader), "only this manages the status");
+    let (mut latest_sync, last_sync_reader) = latest::channel(None);
+    assert!(
+        app.manage(last_sync_reader),
+        "only this manages the last sync"
+    );
     // Two small files, read before the window exists so `settings` and `home` can always answer. A
     // `settings_path` on a slow drive would delay the window. Without folders the defaults apply, and the
     // session shows why. A thread of their own owns the files from here, so saving doesn't wait on GitHub.
     let settings = SettingsOwner::start(folders.clone().map(SettingsFiles::load));
     let status_handle = app.clone();
-    let workbench_handle = app.clone();
+    let changes_handle = app.clone();
+    let last_sync_handle = app.clone();
     let board = StatusBoard::new(Box::new(move |status| {
         // Before the event: a window that starts listening too late for it then asks `status()`, and has to
         // get this status.
@@ -38,11 +48,19 @@ pub(crate) fn connect_core<R: Runtime>(
         // A window still loading asks `status()` when it is done, so it doesn't need this event.
         log_if_unsent(StatusChanged(status.clone()).emit(&status_handle));
     }))
-    .with_workbench_changes(Box::new(move |repository| {
-        let repository = repository.clone();
-        log_if_unsent(WorkbenchChanged { repository }.emit(&workbench_handle));
+    .with_changes(Box::new(move |change| {
+        log_if_unsent(Changed(change.clone()).emit(&changes_handle));
+    }))
+    .with_last_syncs(Box::new(move |last_sync| {
+        // Before the event, for the reason the status gives above.
+        latest_sync.set(&Some(last_sync.clone()));
+        log_if_unsent(LastSyncChanged(last_sync.clone()).emit(&last_sync_handle));
     }));
-    let session = Session::start(board, folders, access, refresh);
+    let intervals = Intervals {
+        status: refresh,
+        repository: REPOSITORY_REFRESH,
+    };
+    let session = Session::start(board, folders, access, intervals);
     let requests = session.requests();
     sync_home(&settings.view().home, &requests);
     assert!(app.manage(settings), "only this manages the settings");
@@ -130,6 +148,7 @@ mod tests {
         webview: WebviewWindow<MockRuntime>,
         statuses: Receiver<Value>,
         workbenches: Receiver<Value>,
+        last_syncs: Receiver<Value>,
         _app: App<MockRuntime>,
     }
 
@@ -142,7 +161,8 @@ mod tests {
                 .unwrap();
             builder.mount_events(&app);
             let statuses = hear(&app, "status-changed");
-            let workbenches = hear(&app, "workbench-changed");
+            let workbenches = hear(&app, "changed");
+            let last_syncs = hear(&app, "last-sync-changed");
             let session = connect_core(app.handle(), folders, access, Duration::from_secs(3600));
             let webview =
                 tauri::WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::default())
@@ -153,6 +173,7 @@ mod tests {
                 webview,
                 statuses,
                 workbenches,
+                last_syncs,
                 _app: app,
             }
         }
@@ -372,7 +393,7 @@ mod tests {
     fn workbench_after_sync(wired: &Wired) -> Value {
         for _ in ["Filter", "Filter", "PRs", "Issues", "tree", "Origin PR"] {
             let changed = wired.workbenches.recv_timeout(PLENTY).unwrap();
-            assert_eq!(changed, json!({ "repository": CPYTHON }));
+            assert_eq!(changed["repository"], CPYTHON);
         }
         wired.ask("workbench", the_whole_workbench()).unwrap()
     }
@@ -458,6 +479,105 @@ mod tests {
 
         assert_eq!(added["repository"]["filters"][0]["name"], "Open Issues");
         assert!(settings.contains(r#"name = "Open PRs""#), "{settings}");
+    }
+
+    /// Answers a refresh in which Issue `number` got a new title, and says what it was asked.
+    struct Refreshing {
+        number: u64,
+        asked: Sender<String>,
+    }
+
+    impl Transport for Refreshing {
+        fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
+            drop(self.asked.send(request.operation.to_owned()));
+            let rate = json!({ "remaining": 4000, "resetAt": "2999-01-01T00:00:00Z" });
+            let page = |nodes: Value| json!({ "pageInfo": { "hasNextPage": false, "endCursor": null }, "nodes": nodes });
+            let data = match request.operation {
+                "Viewer" => json!({ "viewer": { "login": "octocat" } }),
+                "RefreshRepository" => json!({
+                    "repository": {
+                        "openIssues": { "totalCount": 9000 },
+                        "openPrs": { "totalCount": 0 },
+                        "issues": page(json!([{
+                            "number": self.number,
+                            "title": "A new title",
+                            "updatedAt": "2999-01-01T00:00:00Z",
+                            "author": null,
+                        }])),
+                        "pullRequests": page(json!([])),
+                    },
+                    "rateLimit": rate,
+                }),
+                "FetchCrossReferences" => {
+                    json!({ "repository": { "issue": null }, "rateLimit": rate })
+                }
+                _ => json!({ "repository": {}, "rateLimit": rate }),
+            };
+            Ok(Reply {
+                status: 200,
+                reset: None,
+                body: json!({ "data": data }).to_string(),
+            })
+        }
+    }
+
+    fn wait_for(asked: &Receiver<String>, operation: &str) {
+        while asked.recv_timeout(PLENTY).unwrap() != operation {}
+    }
+
+    /// The first thing the first item of a Workbench says about itself.
+    fn first_issue(workbench: &Value) -> &Value {
+        &workbench["items"][0]
+    }
+
+    #[test]
+    fn a_later_start_refreshes_shows_the_change_and_a_click_asks_again() {
+        let (folders, root) = temp_folders("wired-refresh");
+        let wired = Wired::start(Ok(folders.clone()), recordings());
+        let _ = wired.ask("add_repository", add_cpython()).unwrap();
+        let workbench = workbench_after_sync(&wired);
+        let never = wired.last_syncs.recv_timeout(PLENTY).unwrap();
+        let first = wired.last_syncs.recv_timeout(PLENTY).unwrap();
+        drop(wired.stop());
+        let number = first_issue(&workbench)["number"].as_u64().unwrap();
+
+        let (asked, questions) = channel();
+        let access = GitHubAccess {
+            transport: Box::new(Refreshing { number, asked }),
+            run_gh: signed_in_gh,
+        };
+        let reopened = Wired::start(Ok(folders), access);
+        let shown = reopened.last_syncs.recv_timeout(PLENTY).unwrap();
+        let changed = reopened.workbenches.recv_timeout(PLENTY).unwrap();
+        let after = reopened.ask("workbench", the_whole_workbench()).unwrap();
+        let refreshed = reopened.last_syncs.recv_timeout(PLENTY).unwrap();
+        let asked_for_it = reopened.ask("last_sync", json!({})).unwrap();
+        wait_for(&questions, "RefreshRepository");
+        let clicked = reopened.ask("refresh", json!({}));
+        wait_for(&questions, "RefreshRepository");
+        drop(reopened.stop());
+        std::fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(never, json!({ "repository": CPYTHON, "at": null }));
+        assert_eq!(first["repository"], CPYTHON);
+        assert_eq!(shown, first, "a later start says when the last sync was");
+        assert_eq!(changed, json!({ "repository": CPYTHON, "items": [number] }));
+        assert_eq!(first_issue(&after)["title"], "A new title");
+        assert!(refreshed["at"].is_string(), "{refreshed}");
+        assert_eq!(asked_for_it, refreshed);
+        assert_eq!(clicked.unwrap(), Value::Null);
+    }
+
+    #[test]
+    fn a_window_that_loads_before_the_core_knows_hears_no_last_sync() {
+        let wired = Wired::start(Err(no_folders()), no_network());
+
+        let asked = wired.ask("last_sync", json!({}));
+        let clicked = wired.ask("refresh", json!({}));
+        drop(wired.stop());
+
+        assert_eq!(asked.unwrap(), Value::Null);
+        assert_eq!(clicked.unwrap(), Value::Null);
     }
 
     #[test]

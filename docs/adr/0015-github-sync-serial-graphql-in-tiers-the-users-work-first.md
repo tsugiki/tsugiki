@@ -25,7 +25,19 @@ Each page is committed with its cursor ([ADR 0010](0010-one-sqlite-database-and-
 
 ## Afterwards
 
-- **Workbench refresh**, every few minutes: one request for Issues updated since the last poll, the newest PRs (paging only while all are newer), each Filter narrowed by `updated:>=`, and a probe of the tracked open PRs (Own PRs, PRs with the user's Review, Review requests) for CI and reviews. CI finishing doesn't change a PR's `updatedAt`, so this probe is the only way to see it. Small Repositories first ask REST with `If-None-Match` and skip the rest on a `304`.
+- **Workbench refresh**, every few minutes for the open Repository: one request for Issues updated since the
+  last poll, the newest PRs (paging only while all are newer), each Filter narrowed by `updated:>=`, and a
+  probe of the tracked open PRs (Own PRs, PRs with the user's Review, Review requests) for CI and reviews. CI
+  finishing doesn't change a PR's `updatedAt`, so this probe is the only way to see it. The request lists
+  changed PRs by ID, and a batch then fetches only those Tsugiki holds an older copy of, so a quiet refresh
+  costs a few points. Small Repositories first ask REST with `If-None-Match` and skip that request on a `304`.
+  The probe still runs, because a `304` says nothing about CI.
+- **A later launch** runs the same refresh from the stored last poll time. A Filter with no stored results,
+  such as one just edited in `settings.toml`, still gets its whole search. Trees are read only for Issues the
+  refresh found changed or newly reached.
+- **Each poll looks back two minutes further than the last one**, because GitHub's search can lag behind what
+  it changed. A Filter member whose change is at least two minutes old, and that the narrowed search didn't
+  return, has stopped matching. A newer change waits for the next refresh, whose window still holds it.
 - **An open Issue or PR** is fetched when opened and about once a minute while on screen. **Merged and closed PRs** are fetched once and frozen; their open Backports stay live.
 - **Older items on demand.** Opening one, by a link, a `tsg` URL or "also fixes #N", fetches it and its tree, and it stays cached. A search typed in All issues also runs on GitHub, and results the cache lacks are added. All issues ends with "Load 30 more days", which walks further back once without changing the window.
 - **Window changes.** Widening it walks only the added days. Narrowing it deletes nothing. Items that leave the window stay cached and come back through the refresh when updated; nothing is pruned.

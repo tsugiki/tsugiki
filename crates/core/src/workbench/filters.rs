@@ -66,7 +66,10 @@ impl<'a> FilterFacts<'a> {
                 name: filter.name.clone(),
                 query: filter.query.clone(),
                 count: count_of(reached),
-                problem: results.problem.clone(),
+                problem: results
+                    .problem
+                    .as_ref()
+                    .map(|problem| problem.words().to_owned()),
             }
         };
         self.filters.iter().map(line).collect()
@@ -92,7 +95,7 @@ impl WorkbenchItem {
 mod tests {
     use super::*;
     use crate::github::pull_requests::{PrState, PullRequestFacts};
-    use crate::store::WorkFacts;
+    use crate::store::{FilterProblem, WorkFacts};
     use crate::workbench::Workbench;
     use crate::workbench::tests::{backport, cpython, fixing, issue, me, mine, outline, stranger};
 
@@ -290,7 +293,7 @@ mod tests {
     fn the_sidebar_lists_the_filters_as_the_settings_do_with_their_problems() {
         let cut_off = FilterResults {
             numbers: BTreeSet::new(),
-            problem: Some("It was cut off".to_owned()),
+            problem: Some(FilterProblem::Refused("It was cut off".to_owned())),
         };
         let facts = nobodys_work(&[("b", cut_off), ("gone", found_by(&[1]))]);
         let found = Workbench::from_facts(facts, &with_filters(&["b", "a"]), None);

@@ -1,5 +1,5 @@
 //! Finding and fetching PRs on GitHub, and what comes back in the form the rest of Tsugiki reads. What to
-//! look for, how much to ask for and when to pause are Tsugiki's choices, and `sync.rs` makes them
+//! look for, how much to ask for and when to pause are Tsugiki's choices, and `sync` makes them
 //! (ADR 0015).
 
 use serde::de::DeserializeOwned;
@@ -83,6 +83,8 @@ pub enum PrFetch {
     Work,
     /// The PRs an Issue's cross-references list.
     Tree,
+    /// The PRs a refresh found changed.
+    Changed,
 }
 
 impl PrFetch {
@@ -90,6 +92,7 @@ impl PrFetch {
         match self {
             Self::Work => "FetchPullRequests",
             Self::Tree => "FetchTreePullRequests",
+            Self::Changed => "FetchChangedPullRequests",
         }
     }
 }
@@ -248,7 +251,7 @@ fn cherry_picks(text: &str) -> impl Iterator<Item = CommitSha> + '_ {
 }
 
 #[derive(Deserialize)]
-struct Nodes<T> {
+pub(super) struct Nodes<T> {
     /// GitHub's schema allows a null for anything in a list, such as an item the token can't see.
     nodes: Vec<Option<T>>,
 }
@@ -260,7 +263,7 @@ pub(super) struct Person {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ReviewRequestWire {
+pub(super) struct ReviewRequestWire {
     requested_reviewer: Option<ReviewerWire>,
 }
 
@@ -271,13 +274,13 @@ struct ReviewerWire {
 }
 
 #[derive(Deserialize)]
-struct LatestReviewWire {
+pub(super) struct LatestReviewWire {
     author: Option<Person>,
     state: ReviewState,
 }
 
 #[derive(Deserialize)]
-struct LastCommitNode {
+pub(super) struct LastCommitNode {
     commit: LastCommitWire,
 }
 
@@ -409,46 +412,58 @@ impl CommitsWire {
     }
 }
 
+/// The people a PR asks for a Review. A team has no login, and the Workbench goes by the user's own.
+pub(super) fn requested_logins(requests: Nodes<ReviewRequestWire>) -> Vec<Login> {
+    let requests = requests.nodes.into_iter().flatten();
+    let mut logins: Vec<Login> = requests
+        .filter_map(|request| request.requested_reviewer?.login)
+        .collect();
+    logins.sort_by_cached_key(store_order);
+    logins
+}
+
+/// The order the store reads logins back in, so facts from GitHub and from the store compare equal.
+fn store_order(login: &Login) -> String {
+    login.as_str().to_ascii_lowercase()
+}
+
+pub(super) fn reviews_of(reviews: Nodes<LatestReviewWire>) -> Vec<LatestReview> {
+    let reviews = reviews.nodes.into_iter().flatten();
+    let mut latest: Vec<LatestReview> = reviews
+        .filter_map(|review| {
+            let author = review.author?.login;
+            Some(LatestReview {
+                author,
+                state: review.state,
+            })
+        })
+        .collect();
+    latest.sort_by_cached_key(|review| store_order(&review.author));
+    latest
+}
+
+pub(super) fn ci_of(last_commit: Nodes<LastCommitNode>) -> Option<CiState> {
+    let mut commits = last_commit.nodes.into_iter().flatten();
+    let rollup = commits.next()?.commit.status_check_rollup?;
+    Some(rollup.state)
+}
+
 impl From<PullRequestWire> for PullRequestFacts {
     fn from(wire: PullRequestWire) -> Self {
-        let review_requests = wire
-            .review_requests
-            .nodes
-            .into_iter()
-            .flatten()
-            .filter_map(|request| request.requested_reviewer?.login)
-            .collect();
-        let latest_reviews = wire
-            .latest_reviews
-            .nodes
-            .into_iter()
-            .flatten()
-            .filter_map(|review| {
-                let author = review.author?.login;
-                Some(LatestReview {
-                    author,
-                    state: review.state,
-                })
-            })
-            .collect();
-        let ci = wire
-            .last_commit
-            .nodes
-            .into_iter()
-            .flatten()
-            .next()
-            .and_then(|node| node.commit.status_check_rollup)
-            .map(|rollup| rollup.state);
-        let assignees = wire
+        let review_requests = requested_logins(wire.review_requests);
+        let latest_reviews = reviews_of(wire.latest_reviews);
+        let ci = ci_of(wire.last_commit);
+        let mut assignees: Vec<Login> = wire
             .assignees
             .nodes
             .into_iter()
             .flatten()
             .map(|person| person.login)
             .collect();
+        assignees.sort_by_cached_key(store_order);
         let here = wire.repository.name_with_owner;
         // A reference to another Repository's Issue can't put this PR under an Issue here (ADR 0011).
-        let closing_issues = wire
+        let mut closing_issues: Vec<u32> = wire
             .closing_issues_references
             .nodes
             .into_iter()
@@ -456,6 +471,7 @@ impl From<PullRequestWire> for PullRequestFacts {
             .filter(|reference| reference.repository.name_with_owner.is_same(&here))
             .map(|reference| reference.number)
             .collect();
+        closing_issues.sort_unstable();
         let on_default = wire
             .repository
             .default_branch_ref

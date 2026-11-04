@@ -42,7 +42,9 @@ export class WorkbenchState {
   /** Listens before it asks, so it hears a change that lands in between. */
   async load() {
     try {
-      const stopListening = await events.workbenchChanged.listen(({ payload }) => {
+      // The list can gain an item it doesn't hold yet, so any change in this Repository asks again, whichever
+      // items it names.
+      const stopListening = await events.changed.listen(({ payload }) => {
         if (payload.repository === this.#repository) void this.#ask();
       });
       if (this.#stopped) {

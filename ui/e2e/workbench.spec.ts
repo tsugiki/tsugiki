@@ -87,8 +87,8 @@ test("the first sync's rows appear as the core saves them", async ({ page }) => 
   await expect(page.getByText(/Nothing here yet/)).toBeVisible();
 
   await changeAnswer(page, "workbench", { status: "ok", data: { items: [own], count: 1, filters: [] } });
-  await emitFromCore(page, "workbench-changed", { repository: "tsugiki/tsugiki" });
-  await emitFromCore(page, "workbench-changed", { repository: repository.name });
+  await emitFromCore(page, "changed", { repository: "tsugiki/tsugiki", items: [1] });
+  await emitFromCore(page, "changed", { repository: repository.name, items: [1] });
 
   await expect(page.getByRole("listitem")).toHaveCount(1);
   await expect(page.getByText(/Nothing here yet/)).toBeHidden();
@@ -109,6 +109,48 @@ test("the Sidebar lists the Filters, and selecting one shows its Issues", async 
   await expect(page.getByRole("listitem")).toHaveCount(1);
   await expect(page.getByRole("listitem")).toContainText("#157178 GH-156425: Clear GC frame on early return");
   await expect(sidebar.getByRole("button", { name: "Mine 1" })).toHaveAttribute("aria-current", "true");
+});
+
+test("a change keeps the selected Filter and the place the user had scrolled to", async ({ page }) => {
+  const many = Array.from({ length: 80 }, (_, at) => ({ ...own, number: 1000 + at }));
+  const whole = { items: many, count: 80, filters: [mine] };
+  await page.setViewportSize({ width: 800, height: 400 });
+  await mockCore(page, { home: cpython, workbench: { status: "ok", data: whole } });
+  await page.goto("/");
+
+  const sidebar = page.getByRole("navigation", { name: "Sidebar" });
+  await sidebar.getByRole("button", { name: "Mine 1" }).click();
+  await expect(page.getByRole("listitem").first()).toBeVisible();
+  await page.evaluate(() => {
+    window.scrollTo(0, 600);
+  });
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(600);
+
+  const fresher = many.map((item, at) => (at === 5 ? { ...item, title: "A title that changed" } : item));
+  await changeAnswer(page, "workbench", { status: "ok", data: { ...whole, items: fresher } });
+  await emitFromCore(page, "changed", { repository: repository.name, items: [1005] });
+
+  await expect(page.getByText("A title that changed")).toBeAttached();
+  expect(await page.evaluate(() => window.scrollY)).toBe(600);
+  await expect(sidebar.getByRole("button", { name: "Mine 1" })).toHaveAttribute("aria-current", "true");
+});
+
+test("the status bar says when the Repository last synced, and a click asks again", async ({ page }) => {
+  await mockCore(page, {
+    home: cpython,
+    workbench: { status: "ok", data: { items: [], count: 0, filters: [] } },
+    status: { state: "online", login: "octocat" },
+    lastSync: { repository: repository.name, at: null },
+  });
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Not synced yet" }).click();
+  await emitFromCore(page, "last-sync-changed", {
+    repository: repository.name,
+    at: new Date().toISOString(),
+  });
+
+  await expect(page.getByRole("button", { name: "Synced just now" })).toBeVisible();
 });
 
 test("the Workbench says why it can't read", async ({ page }) => {

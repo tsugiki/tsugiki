@@ -1,0 +1,212 @@
+{
+  "body": {
+    "data": {
+      "f0": {
+        "issueCount": 1,
+        "nodes": [
+          {
+            "__typename": "PullRequest",
+            "id": "PR_kwDOBN0Z8c8AAAABJlTcBw",
+            "number": 159888,
+            "repository": {
+              "nameWithOwner": "python/cpython"
+            },
+            "updatedAt": "2026-11-04T19:32:13Z"
+          }
+        ],
+        "pageInfo": {
+          "endCursor": "Y3Vyc29yOjE=",
+          "hasNextPage": false
+        }
+      },
+      "f1": {
+        "issueCount": 2,
+        "nodes": [
+          {
+            "__typename": "PullRequest",
+            "id": "PR_kwDOBN0Z8c8AAAABKlmbmA",
+            "number": 160667,
+            "repository": {
+              "nameWithOwner": "python/cpython"
+            },
+            "updatedAt": "2026-11-04T19:21:23Z"
+          },
+          {
+            "__typename": "PullRequest",
+            "id": "PR_kwDOBN0Z8c8AAAABKlAJ0A",
+            "number": 160662,
+            "repository": {
+              "nameWithOwner": "python/cpython"
+            },
+            "updatedAt": "2026-11-04T19:27:01Z"
+          }
+        ],
+        "pageInfo": {
+          "endCursor": "Y3Vyc29yOjI=",
+          "hasNextPage": false
+        }
+      },
+      "rateLimit": {
+        "remaining": 4997,
+        "resetAt": "2026-11-04T22:46:14Z"
+      },
+      "repository": {
+        "issues": {
+          "nodes": [
+            {
+              "author": {
+                "login": "user-1"
+              },
+              "number": 161185,
+              "title": "[C API] Py_CLEAR(), Py_SETREF() and Py_XSETREF() memcpy() implementation is not safe with strict aliasing",
+              "updatedAt": "2026-11-04T21:37:23Z"
+            },
+            {
+              "author": {
+                "login": "user-1"
+              },
+              "number": 161354,
+              "title": "test_ast: test_nodes_have_inline_values() fails when test_ast is run twice",
+              "updatedAt": "2026-11-04T21:33:26Z"
+            },
+            {
+              "author": {
+                "login": "user-2"
+              },
+              "number": 161323,
+              "title": "tarfile: Windows same-drive drive-relative symlink not caught by data filter",
+              "updatedAt": "2026-11-04T21:25:20Z"
+            },
+            {
+              "author": {
+                "login": "user-3"
+              },
+              "number": 161317,
+              "title": "configparser: write() silently drops leading whitespace from multiline values on round-trip",
+              "updatedAt": "2026-11-04T21:22:53Z"
+            },
+            {
+              "author": {
+                "login": "user-4"
+              },
+              "number": 161229,
+              "title": "`__lazy_import__: globals=None` signature differs from explicit None behavior",
+              "updatedAt": "2026-11-04T21:14:13Z"
+            },
+            {
+              "author": {
+                "login": "user-5"
+              },
+              "number": 151464,
+              "title": "Tokenizer produces token '<>', missing in the language grammar (regardless on __future__.barry_as_FLUFL settings)",
+              "updatedAt": "2026-11-04T21:02:29Z"
+            },
+            {
+              "author": {
+                "login": "user-1"
+              },
+              "number": 161353,
+              "title": "test_tcl leaked [1, 1, 1] handles on AMD64 Windows Server 2025 Refleaks 3.x",
+              "updatedAt": "2026-11-04T20:58:32Z"
+            },
+            {
+              "author": {
+                "login": "user-6"
+              },
+              "number": 161288,
+              "title": "perf trampoline segfaults on UBSan builds",
+              "updatedAt": "2026-11-04T20:15:52Z"
+            },
+            {
+              "author": {
+                "login": "user-1"
+              },
+              "number": 161336,
+              "title": "test_imaplib failed with ConnectionRefusedError on AMD64 FreeBSD Refleaks 3.15 buildbot",
+              "updatedAt": "2026-11-04T19:58:13Z"
+            },
+            {
+              "author": {
+                "login": "user-7"
+              },
+              "number": 159434,
+              "title": "Function `__annotations__` can cache a stale result from `__annotate__`",
+              "updatedAt": "2026-11-04T19:41:14Z"
+            }
+          ],
+          "pageInfo": {
+            "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0wNFQxOTo0MToxNFrPAAAAAVzuFNk=",
+            "hasNextPage": true
+          }
+        },
+        "openIssues": {
+          "totalCount": 6937
+        },
+        "openPrs": {
+          "totalCount": 2315
+        },
+        "pullRequests": {
+          "nodes": [
+            {
+              "id": "PR_kwDOBN0Z8c8AAAABM6u_wg",
+              "number": 161359,
+              "updatedAt": "2026-11-04T21:42:18Z"
+            },
+            {
+              "id": "PR_kwDOBN0Z8c8AAAABMUmAmA",
+              "number": 161186,
+              "updatedAt": "2026-11-04T21:38:23Z"
+            },
+            {
+              "id": "PR_kwDOBN0Z8c8AAAABM6u2cw",
+              "number": 161357,
+              "updatedAt": "2026-11-04T21:37:51Z"
+            },
+            {
+              "id": "PR_kwDOBN0Z8c8AAAABM64azw",
+              "number": 161360,
+              "updatedAt": "2026-11-04T21:37:27Z"
+            },
+            {
+              "id": "PR_kwDOBN0Z8c8AAAABM6u7FQ",
+              "number": 161358,
+              "updatedAt": "2026-11-04T21:35:37Z"
+            },
+            {
+              "id": "PR_kwDOBN0Z8c8AAAABKesw_A",
+              "number": 160616,
+              "updatedAt": "2026-11-04T21:35:21Z"
+            },
+            {
+              "id": "PR_kwDOBN0Z8c8AAAABM6urMA",
+              "number": 161355,
+              "updatedAt": "2026-11-04T21:29:40Z"
+            },
+            {
+              "id": "PR_kwDOBN0Z8c8AAAABM3sDcQ",
+              "number": 161334,
+              "updatedAt": "2026-11-04T21:25:25Z"
+            },
+            {
+              "id": "PR_kwDOBN0Z8c8AAAABM6uxwQ",
+              "number": 161356,
+              "updatedAt": "2026-11-04T21:25:01Z"
+            },
+            {
+              "id": "PR_kwDOBN0Z8c8AAAABM40AdA",
+              "number": 161337,
+              "updatedAt": "2026-11-04T21:23:01Z"
+            }
+          ],
+          "pageInfo": {
+            "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0wNFQyMToyMzowMVrPAAAAATONAHQ=",
+            "hasNextPage": true
+          }
+        }
+      }
+    }
+  },
+  "query": "query RefreshRepository($owner: String!, $name: String!, $since: DateTime!, $issues: Int!, $issuesAfter: String, $prs: Int!, $prsAfter: String, $first: Int!, $filter0: String!, $filter1: String!) { repository(owner: $owner, name: $name) { openIssues: issues(states: OPEN) { totalCount } openPrs: pullRequests(states: OPEN) { totalCount } issues(first: $issues, after: $issuesAfter, filterBy: { since: $since }, orderBy: { field: UPDATED_AT, direction: DESC }) { pageInfo { hasNextPage endCursor } nodes { number title updatedAt author { login } } } pullRequests(first: $prs, after: $prsAfter, orderBy: { field: UPDATED_AT, direction: DESC }) { pageInfo { hasNextPage endCursor } nodes { id number updatedAt } } } f0: search(query: $filter0, type: ISSUE_ADVANCED, first: $first) { issueCount pageInfo { hasNextPage endCursor } nodes { __typename ... on Issue { number updatedAt repository { nameWithOwner } } ... on PullRequest { id number updatedAt repository { nameWithOwner } } } } f1: search(query: $filter1, type: ISSUE_ADVANCED, first: $first) { issueCount pageInfo { hasNextPage endCursor } nodes { __typename ... on Issue { number updatedAt repository { nameWithOwner } } ... on PullRequest { id number updatedAt repository { nameWithOwner } } } } rateLimit { remaining resetAt } }",
+  "reset": 1793832374,
+  "status": 200
+}

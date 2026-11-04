@@ -1,6 +1,6 @@
 //! Each Filter's last results (ADR 0015). Tsugiki stores the items themselves as facts, so these rows say
 //! which numbers belong to which search. A search the user has edited starts with nothing, and a sync removes
-//! what's left of the old one.
+//! what's left of the old one. A refresh asks GitHub only about what changed, and merges the answer.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -25,13 +25,57 @@ pub(super) const SCHEMA: &str = "
     ) WITHOUT ROWID;
 ";
 
+/// The searches that have finished at least once, so a search that found nothing has a row too, and a refresh
+/// can tell it from one that hasn't run yet.
+pub(super) const SEARCHES: &str = "
+    CREATE TABLE filter_searches (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        query TEXT NOT NULL,
+        cut_off INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (repository, query)
+    ) WITHOUT ROWID;
+";
+
+const CUT_OFF: &str = "GitHub lists at most 1,000 results for one search, and over 1,000 items here were \
+                       created on one day, so this Filter may be missing some.";
+
+/// What stopped a Filter's last search from being whole.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FilterProblem {
+    /// More results than GitHub lists fell on one day, so the search read as far as GitHub goes.
+    CutOff,
+    /// GitHub refused the search, in these words.
+    Refused(String),
+}
+
+impl FilterProblem {
+    /// The Sidebar's words for this.
+    pub fn words(&self) -> &str {
+        match self {
+            Self::CutOff => CUT_OFF,
+            Self::Refused(words) => words,
+        }
+    }
+}
+
 /// A Filter's results as the last sync left them.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FilterResults {
     /// The Issues and PRs it found, which share GitHub's one list of numbers.
     pub numbers: BTreeSet<u32>,
-    /// The Sidebar's words for the failure that stopped the last search from being whole.
-    pub problem: Option<String>,
+    pub problem: Option<FilterProblem>,
+}
+
+/// What a search narrowed to recent updates says about a Filter (ADR 0015).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NarrowedResults {
+    /// Each item updated in that time, whatever the Filter thinks of it.
+    pub changed: BTreeSet<u32>,
+    /// The items the search found. A changed item outside this has stopped matching, unless `cut_off` says
+    /// the search may have missed it.
+    pub found: BTreeSet<u32>,
+    /// GitHub wouldn't list all of them. Without this, a problem stays as it is.
+    pub cut_off: bool,
 }
 
 /// Replaces what `query` found, in one transaction (ADR 0010).
@@ -43,17 +87,98 @@ pub(super) fn save(
 ) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
     forget(&transaction, repository, query)?;
+    mark_searched(&transaction, repository, query)?;
     for number in &results.numbers {
-        let _inserted = transaction.execute(
+        add_match(&transaction, repository, query, *number)?;
+    }
+    match &results.problem {
+        Some(FilterProblem::CutOff) => mark_cut_off(&transaction, repository, query)?,
+        Some(FilterProblem::Refused(words)) => {
+            save_problem(&transaction, repository, query, words)?
+        }
+        None => {}
+    }
+    transaction.commit()
+}
+
+/// Applies what a narrowed search said to what `query` found, in one transaction (ADR 0010). Answers with the
+/// numbers that joined or left the Filter.
+pub(super) fn merge(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+    query: &FilterQuery,
+    narrowed: &NarrowedResults,
+) -> rusqlite::Result<BTreeSet<u32>> {
+    let transaction = connection.transaction()?;
+    let before = read_all(&transaction, repository)?
+        .remove(query)
+        .unwrap_or_default()
+        .numbers;
+    let joined: Vec<u32> = narrowed.found.difference(&before).copied().collect();
+    let left: Vec<u32> = before
+        .intersection(&narrowed.changed)
+        .filter(|number| !narrowed.cut_off && !narrowed.found.contains(number))
+        .copied()
+        .collect();
+    mark_searched(&transaction, repository, query)?;
+    for number in &joined {
+        add_match(&transaction, repository, query, *number)?;
+    }
+    for number in &left {
+        let params =
+            named_params! { ":repository": repository, ":query": query, ":number": number };
+        let _removed = transaction.execute(
+            "DELETE FROM filter_matches
+             WHERE repository = :repository AND query = :query AND number = :number",
+            params,
+        )?;
+    }
+    if narrowed.cut_off {
+        mark_cut_off(&transaction, repository, query)?;
+    }
+    transaction.commit()?;
+    Ok(joined.into_iter().chain(left).collect())
+}
+
+fn mark_searched(
+    connection: &Connection,
+    repository: &RepositoryName,
+    query: &FilterQuery,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO filter_searches (repository, query) VALUES (:repository, :query)",
+            named_params! { ":repository": repository, ":query": query },
+        )
+        .map(drop)
+}
+
+fn mark_cut_off(
+    connection: &Connection,
+    repository: &RepositoryName,
+    query: &FilterQuery,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "UPDATE filter_searches SET cut_off = 1 WHERE repository = :repository AND query = :query",
+            named_params! { ":repository": repository, ":query": query },
+        )
+        .map(drop)
+}
+
+fn add_match(
+    connection: &Connection,
+    repository: &RepositoryName,
+    query: &FilterQuery,
+    number: u32,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
             "INSERT INTO filter_matches (repository, query, number)
              VALUES (:repository, :query, :number)",
             named_params! { ":repository": repository, ":query": query, ":number": number },
-        )?;
-    }
-    if let Some(problem) = &results.problem {
-        save_problem(&transaction, repository, query, problem)?;
-    }
-    transaction.commit()
+        )
+        .map(drop)
 }
 
 /// Says what stopped a search, and leaves what it last found.
@@ -81,6 +206,7 @@ fn forget(
     for sql in [
         "DELETE FROM filter_matches WHERE repository = :repository AND query = :query",
         "DELETE FROM filter_problems WHERE repository = :repository AND query = :query",
+        "DELETE FROM filter_searches WHERE repository = :repository AND query = :query",
     ] {
         let params = named_params! { ":repository": repository, ":query": query };
         let _removed = connection.execute(sql, params)?;
@@ -108,6 +234,13 @@ pub(super) fn read_all(
     repository: &RepositoryName,
 ) -> rusqlite::Result<BTreeMap<FilterQuery, FilterResults>> {
     let mut found: BTreeMap<FilterQuery, FilterResults> = BTreeMap::new();
+    let mut searches = connection
+        .prepare("SELECT query, cut_off FROM filter_searches WHERE repository = :repository")?;
+    let rows = searches.query_map(named_params! { ":repository": repository }, search_in)?;
+    for row in rows {
+        let (query, cut_off) = row?;
+        found.entry(query).or_default().problem = cut_off.then_some(FilterProblem::CutOff);
+    }
     let mut matches = connection
         .prepare("SELECT query, number FROM filter_matches WHERE repository = :repository")?;
     let rows = matches.query_map(named_params! { ":repository": repository }, match_in)?;
@@ -120,9 +253,13 @@ pub(super) fn read_all(
     let rows = problems.query_map(named_params! { ":repository": repository }, problem_in)?;
     for row in rows {
         let (query, problem) = row?;
-        found.entry(query).or_default().problem = Some(problem);
+        found.entry(query).or_default().problem = Some(FilterProblem::Refused(problem));
     }
     Ok(found)
+}
+
+fn search_in(row: &Row<'_>) -> rusqlite::Result<(FilterQuery, bool)> {
+    Ok((row.get("query")?, row.get("cut_off")?))
 }
 
 fn match_in(row: &Row<'_>) -> rusqlite::Result<(FilterQuery, u32)> {
@@ -233,7 +370,7 @@ mod tests {
             during[&query("a")],
             FilterResults {
                 numbers: BTreeSet::from([1]),
-                problem: Some("It failed again".to_owned()),
+                problem: Some(FilterProblem::Refused("It failed again".to_owned())),
             }
         );
         assert_eq!(after[&query("a")], found(&[2]));
@@ -244,7 +381,7 @@ mod tests {
         let (store, open, reader, _path, folder) = opened("filter-cut-off");
         let cut_off = FilterResults {
             numbers: BTreeSet::from([1]),
-            problem: Some("It was cut off".to_owned()),
+            problem: Some(FilterProblem::Refused("It was cut off".to_owned())),
         };
         store
             .save_filter_results(&cpython(), &query("a"), cut_off.clone())
@@ -280,6 +417,109 @@ mod tests {
         fs::remove_dir_all(folder).unwrap();
 
         assert_eq!(read, BTreeMap::from([(query("kept"), found(&[2]))]));
+    }
+
+    #[test]
+    fn a_search_that_found_nothing_counts_as_searched() {
+        let (store, open, reader, _path, folder) = opened("filter-found-nothing");
+        store
+            .save_filter_results(&cpython(), &query("a"), found(&[]))
+            .unwrap();
+
+        let read = reader.work_facts(&cpython()).unwrap().filters;
+        open.close();
+        store.close();
+        fs::remove_dir_all(folder).unwrap();
+
+        assert_eq!(read, BTreeMap::from([(query("a"), found(&[]))]));
+    }
+
+    #[test]
+    fn a_search_the_user_edited_away_stops_counting_as_searched() {
+        let (store, open, reader, _path, folder) = opened("filter-edited-empty");
+        store
+            .save_filter_results(&cpython(), &query("a"), found(&[]))
+            .unwrap();
+
+        store.keep_only_filters(&cpython(), Vec::new()).unwrap();
+        let read = reader.work_facts(&cpython()).unwrap().filters;
+        open.close();
+        store.close();
+        fs::remove_dir_all(folder).unwrap();
+
+        assert_eq!(read, BTreeMap::new());
+    }
+
+    fn narrowed(changed: &[u32], found: &[u32]) -> NarrowedResults {
+        NarrowedResults {
+            changed: changed.iter().copied().collect(),
+            found: found.iter().copied().collect(),
+            cut_off: false,
+        }
+    }
+
+    #[test]
+    fn a_narrowed_search_keeps_what_didnt_change_and_says_what_moved() {
+        let (store, open, reader, _path, folder) = opened("filter-merge");
+        store
+            .save_filter_results(&cpython(), &query("a"), found(&[1, 2, 3]))
+            .unwrap();
+
+        // 1 stopped matching, 2 still matches, 3 didn't change, 4 and 5 joined.
+        let moved = store
+            .merge_filter_results(&cpython(), &query("a"), narrowed(&[1, 2, 4, 9], &[2, 4, 5]))
+            .unwrap();
+        let read = reader.work_facts(&cpython()).unwrap().filters;
+        open.close();
+        store.close();
+        fs::remove_dir_all(folder).unwrap();
+
+        assert_eq!(moved, BTreeSet::from([1, 4, 5]));
+        assert_eq!(read[&query("a")], found(&[2, 3, 4, 5]));
+    }
+
+    #[test]
+    fn a_narrowed_search_keeps_a_problem_it_has_nothing_to_say_about() {
+        let (store, open, reader, _path, folder) = opened("filter-merge-problem");
+        let cut_off_before = FilterResults {
+            numbers: BTreeSet::from([1]),
+            problem: Some(FilterProblem::Refused("Cut off".to_owned())),
+        };
+        store
+            .save_filter_results(&cpython(), &query("kept"), cut_off_before)
+            .unwrap();
+
+        let quiet = store
+            .merge_filter_results(&cpython(), &query("kept"), narrowed(&[], &[]))
+            .unwrap();
+        // A search GitHub cut off may have missed 1, so 1 stays.
+        let was_there = found(&[1]);
+        store
+            .save_filter_results(&cpython(), &query("new"), was_there)
+            .unwrap();
+        let cut_off = NarrowedResults {
+            cut_off: true,
+            ..narrowed(&[1], &[2])
+        };
+        let joined = store
+            .merge_filter_results(&cpython(), &query("new"), cut_off)
+            .unwrap();
+        let read = reader.work_facts(&cpython()).unwrap().filters;
+        open.close();
+        store.close();
+        fs::remove_dir_all(folder).unwrap();
+
+        assert_eq!(quiet, BTreeSet::new());
+        assert_eq!(joined, BTreeSet::from([2]));
+        assert_eq!(
+            read[&query("kept")]
+                .problem
+                .as_ref()
+                .map(FilterProblem::words),
+            Some("Cut off")
+        );
+        assert_eq!(read[&query("new")].problem, Some(FilterProblem::CutOff));
+        assert_eq!(read[&query("new")].numbers, BTreeSet::from([1, 2]));
     }
 
     #[test]

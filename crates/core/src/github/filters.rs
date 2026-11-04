@@ -7,6 +7,7 @@ use serde_json::json;
 use time::{Date, Duration, OffsetDateTime};
 
 use super::pull_requests::{NodeId, PageRequest, RateLimit};
+use super::refresh::github_time;
 use super::{GitHub, Request};
 use crate::error::Error;
 use crate::filters::FilterQuery;
@@ -14,12 +15,19 @@ use crate::repository::RepositoryName;
 
 /// Names the search, and so its recording: one recording answers each Filter.
 const SEARCH_FILTER: &str = "SearchFilter";
-const SEARCH_FILTER_QUERY: &str = "query SearchFilter($query: String!, $first: Int!, $after: String) { \
-     search(query: $query, type: ISSUE_ADVANCED, first: $first, after: $after) { \
-     issueCount pageInfo { hasNextPage endCursor } nodes { __typename \
+/// What a search reads about each item it finds.
+pub(super) const FOUND_FIELDS: &str = "__typename \
      ... on Issue { number updatedAt repository { nameWithOwner } } \
-     ... on PullRequest { id number updatedAt repository { nameWithOwner } } } } \
-     rateLimit { remaining resetAt } }";
+     ... on PullRequest { id number updatedAt repository { nameWithOwner } }";
+
+fn search_filter_query() -> String {
+    format!(
+        "query {SEARCH_FILTER}($query: String!, $first: Int!, $after: String) {{ \
+         search(query: $query, type: ISSUE_ADVANCED, first: $first, after: $after) {{ \
+         issueCount pageInfo {{ hasNextPage endCursor }} nodes {{ {FOUND_FIELDS} }} }} \
+         rateLimit {{ remaining resetAt }} }}"
+    )
+}
 
 /// The days from `from` to `to`, both included.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,19 +70,23 @@ impl CreatedRange {
 pub struct FilterSearch<'a> {
     pub query: &'a FilterQuery,
     pub created: Option<CreatedRange>,
+    /// Keeps only what changed since this time, for a refresh.
+    pub since: Option<OffsetDateTime>,
     pub page: PageRequest<'a>,
 }
 
 impl FilterSearch<'_> {
     /// The search GitHub runs. The brackets keep the user's `OR` inside this Repository (ADR 0015).
-    fn text(&self, repository: &RepositoryName) -> String {
+    pub(super) fn text(&self, repository: &RepositoryName) -> String {
         let query = self.query.as_str();
-        match self.created {
-            Some(CreatedRange { from, to }) => {
-                format!("repo:{repository} ({query}) created:{from}..{to}")
-            }
-            None => format!("repo:{repository} ({query})"),
+        let mut text = format!("repo:{repository} ({query})");
+        if let Some(CreatedRange { from, to }) = self.created {
+            text.push_str(&format!(" created:{from}..{to}"));
         }
+        if let Some(since) = self.since {
+            text.push_str(&format!(" updated:>={}", github_time(since)));
+        }
+        text
     }
 }
 
@@ -152,6 +164,41 @@ impl Found {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PageInfo {
+    has_next_page: bool,
+    end_cursor: Option<String>,
+}
+
+/// GitHub's answer to one search.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct SearchWire {
+    issue_count: u32,
+    page_info: PageInfo,
+    nodes: Vec<Option<Found>>,
+}
+
+impl SearchWire {
+    pub(super) fn into_page(
+        self,
+        repository: &RepositoryName,
+        rate_limit: RateLimit,
+    ) -> FilterPage {
+        let info = self.page_info;
+        let found = self.nodes.into_iter().flatten();
+        FilterPage {
+            total: self.issue_count,
+            hits: found
+                .filter_map(|found| found.into_hit(repository))
+                .collect(),
+            next: info.end_cursor.filter(|_| info.has_next_page),
+            rate_limit,
+        }
+    }
+}
+
 impl GitHub {
     /// One page of a Filter's search in `repository`, or half that page after a 502 or no answer.
     pub fn search_filter(
@@ -161,40 +208,19 @@ impl GitHub {
     ) -> Result<FilterPage, Error> {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
-        struct PageInfo {
-            has_next_page: bool,
-            end_cursor: Option<String>,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Search {
-            issue_count: u32,
-            page_info: PageInfo,
-            nodes: Vec<Option<Found>>,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
         struct Data {
-            search: Search,
+            search: SearchWire,
             rate_limit: RateLimit,
         }
         let text = search.text(repository);
         let page = search.page;
+        let query = search_filter_query();
         let (data, _): (Data, usize) = self.query_at_size(page.size, |first| Request {
             operation: SEARCH_FILTER,
-            query: SEARCH_FILTER_QUERY.into(),
+            query: query.as_str().into(),
             variables: json!({ "query": text, "first": first, "after": page.after }),
         })?;
-        let info = data.search.page_info;
-        let found = data.search.nodes.into_iter().flatten();
-        Ok(FilterPage {
-            total: data.search.issue_count,
-            hits: found
-                .filter_map(|found| found.into_hit(repository))
-                .collect(),
-            next: info.end_cursor.filter(|_| info.has_next_page),
-            rate_limit: data.rate_limit,
-        })
+        Ok(data.search.into_page(repository, data.rate_limit))
     }
 }
 
@@ -233,6 +259,7 @@ mod tests {
         FilterSearch {
             query,
             created,
+            since: None,
             page: PageRequest {
                 size: 50,
                 after: None,

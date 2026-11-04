@@ -2,8 +2,8 @@
   "body": {
     "data": {
       "rateLimit": {
-        "remaining": 4943,
-        "resetAt": "2026-11-04T20:36:48Z"
+        "remaining": 4971,
+        "resetAt": "2026-11-04T22:46:14Z"
       },
       "repository": {
         "issue": {
@@ -375,6 +375,6 @@
     }
   },
   "query": "query FetchCrossReferences($owner: String!, $name: String!, $number: Int!, $last: Int!, $before: String) { repository(owner: $owner, name: $name) { issue(number: $number) { timelineItems(last: $last, before: $before, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } rateLimit { remaining resetAt } }",
-  "reset": 1793824608,
+  "reset": 1793832374,
   "status": 200
 }

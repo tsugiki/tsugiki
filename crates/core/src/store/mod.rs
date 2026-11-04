@@ -9,8 +9,9 @@ mod filters;
 mod issues;
 mod migrate;
 mod pull_requests;
+mod sync_state;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
 use std::fs;
 use std::path::Path;
@@ -26,8 +27,9 @@ use crate::github::Login;
 use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::PullRequestFacts;
 use crate::repository::RepositoryName;
-pub use filters::FilterResults;
+pub use filters::{FilterProblem, FilterResults, NarrowedResults};
 use migrate::{MIGRATIONS, Migration};
+pub use sync_state::{ChangeCheck, SyncState};
 
 const CANT_OPEN: &str = "Tsugiki can't open its database";
 const CANT_READ: &str = "Tsugiki can't read its database";
@@ -114,6 +116,58 @@ impl Store {
         let saved =
             self.call(move |connection| filters::save(connection, &repository, &query, &results))?;
         saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Applies a narrowed search to what `query` found in `repository`, in one transaction (ADR 0010).
+    /// Answers with the numbers that joined or left the Filter.
+    pub fn merge_filter_results(
+        &self,
+        repository: &RepositoryName,
+        query: &FilterQuery,
+        narrowed: NarrowedResults,
+    ) -> Result<BTreeSet<u32>, Error> {
+        let repository = repository.clone();
+        let query = query.clone();
+        let merge = move |connection: &mut Connection| {
+            filters::merge(connection, &repository, &query, &narrowed)
+        };
+        let merged = self.call(merge)?;
+        merged.map_err(saying(CANT_WRITE))
+    }
+
+    /// Each search of `repository` that has run, with its results, for a refresh to see how to ask again.
+    pub fn filter_results(
+        &self,
+        repository: &RepositoryName,
+    ) -> Result<BTreeMap<FilterQuery, FilterResults>, Error> {
+        let repository = repository.clone();
+        let read = self.call(move |connection| filters::read_all(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    /// The last sync of `repository` that finished, if one has.
+    pub fn sync_state(&self, repository: &RepositoryName) -> Result<Option<SyncState>, Error> {
+        let repository = repository.clone();
+        let read = self.call(move |connection| sync_state::read(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    pub fn save_sync_state(
+        &self,
+        repository: &RepositoryName,
+        state: SyncState,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved =
+            self.call(move |connection| sync_state::save(connection, &repository, &state))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn forget_sync_state(&self, repository: &RepositoryName) -> Result<(), Error> {
+        let repository = repository.clone();
+        let forgot = self.call(move |connection| sync_state::forget(connection, &repository))?;
+        forgot.map_err(saying(CANT_WRITE))
     }
 
     /// Says what stopped the search `query`, and leaves what it last found.
@@ -594,7 +648,7 @@ mod tests {
         let query: FilterQuery = "is:open".to_owned().try_into().unwrap();
         let results = FilterResults {
             numbers: [1].into(),
-            problem: Some("It was cut off".to_owned()),
+            problem: Some(FilterProblem::Refused("It was cut off".to_owned())),
         };
         filters::save(connection, &cpython, &query, &results).unwrap();
         let (seen, statements) = mpsc::channel();

@@ -18,7 +18,7 @@ use tsugiki_core::latest::LatestReader;
 use tsugiki_core::repository::{Home, RepositoryAccess, RepositoryCheck, RepositoryName};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{LoadedSettings, SettingsOwner};
-use tsugiki_core::status::Status;
+use tsugiki_core::status::{Change, LastSync, Status};
 use tsugiki_core::store::StoreReader;
 use tsugiki_core::workbench::Workbench;
 
@@ -35,6 +35,23 @@ type LatestStatus = LatestReader<Status>;
 #[specta::specta]
 fn status(latest: State<'_, LatestStatus>) -> Status {
     latest.get()
+}
+
+type LatestLastSync = LatestReader<Option<LastSync>>;
+
+/// When the open Repository last finished a sync, for a window that has just loaded. A window asking before
+/// the core knows gets nothing, and the core's event then tells it.
+#[tauri::command]
+#[specta::specta]
+fn last_sync(latest: State<'_, LatestLastSync>) -> Option<LastSync> {
+    latest.get()
+}
+
+/// Refreshes the open Repository now, and returns at once.
+#[tauri::command]
+#[specta::specta]
+fn refresh(requests: State<'_, SessionRequests>) {
+    requests.refresh();
 }
 
 /// The settings Tsugiki last read, and what was wrong with their files (ADR 0014).
@@ -96,11 +113,13 @@ fn read_workbench(
 #[derive(Clone, Serialize, Type, Event)]
 struct StatusChanged(Status);
 
-/// Sent when a Repository's stored facts change, so a window showing its Workbench asks again (ADR 0008).
+/// Sent when a Repository's stored facts change, so each screen showing them asks again (ADR 0008).
 #[derive(Clone, Serialize, Type, Event)]
-struct WorkbenchChanged {
-    repository: RepositoryName,
-}
+struct Changed(Change);
+
+/// Sent when the open Repository's last sync changes, so the status bar can say.
+#[derive(Clone, Serialize, Type, Event)]
+struct LastSyncChanged(LastSync);
 
 /// Every command and event the webview can use. The TypeScript bindings are generated from it (ADR 0008).
 pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
@@ -108,13 +127,15 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
         .commands(collect_commands![
             about,
             status,
+            last_sync,
+            refresh,
             settings,
             home,
             slow_commands::check_repository,
             slow_commands::add_repository,
             slow_commands::workbench
         ])
-        .events(collect_events![StatusChanged, WorkbenchChanged])
+        .events(collect_events![StatusChanged, Changed, LastSyncChanged])
 }
 
 #[cfg(test)]
@@ -132,7 +153,7 @@ mod tests {
     use tsugiki_core::github::live::{Https, run_gh};
     use tsugiki_core::latest::channel;
     use tsugiki_core::repository::RepositorySettings;
-    use tsugiki_core::session::Session;
+    use tsugiki_core::session::{Intervals, Session};
     use tsugiki_core::settings::SettingsFiles;
     use tsugiki_core::status::StatusBoard;
 
@@ -247,7 +268,12 @@ mod tests {
             run_gh,
         };
         let board = StatusBoard::new(Box::new(|_| {}));
-        Session::start(board, Err(no_folders()), access, Duration::from_secs(3600))
+        let hourly = Duration::from_secs(3600);
+        let intervals = Intervals {
+            status: hourly,
+            repository: hourly,
+        };
+        Session::start(board, Err(no_folders()), access, intervals)
     }
 
     #[test]

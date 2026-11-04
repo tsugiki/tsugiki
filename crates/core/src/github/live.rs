@@ -12,11 +12,12 @@ use std::time::{Duration, Instant};
 
 use ureq::Agent;
 
-use super::{Reply, Request, Transport, Unreachable};
+use super::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::token::{GhOutput, Token};
 
 /// The only address the core sends requests to (ADR 0005).
 const ENDPOINT: &str = "https://api.github.com/graphql";
+const REST_ROOT: &str = "https://api.github.com";
 /// How long one request gets, from connecting to its last byte. GitHub ends a GraphQL query itself after
 /// 10 s, so this leaves 5 s for the network, and it strikes when the network or a proxy has stopped
 /// answering. Nobody has measured the 5 s. On a link too slow for it Tsugiki says Offline, and the next
@@ -72,6 +73,30 @@ impl Transport for Https {
             status: response.status().as_u16(),
             reset,
             body: response.body_mut().read_to_string().map_err(unreachable)?,
+        })
+    }
+
+    fn get(
+        &self,
+        token: &Token,
+        request: &ConditionalGet<'_>,
+    ) -> Result<ConditionalReply, Unreachable> {
+        let mut asking = self
+            .agent
+            .get(format!("{REST_ROOT}{}", request.path))
+            .header("Authorization", format!("Bearer {}", token.expose()))
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28");
+        if let Some(etag) = request.etag {
+            asking = asking.header("If-None-Match", etag);
+        }
+        let response = asking.call().map_err(unreachable)?;
+        let etag = response.headers().get("etag");
+        Ok(ConditionalReply {
+            status: response.status().as_u16(),
+            etag: etag
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_owned),
         })
     }
 }

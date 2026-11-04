@@ -179,7 +179,7 @@ impl Default for Home {
 }
 
 /// Up to this many open Issues and PRs loads everything open, and more loads a window (ADR 0015).
-const SMALL_UP_TO: u32 = 500;
+pub(crate) const SMALL_UP_TO: u32 = 500;
 /// How far back the first sync looks, in days (ADR 0015).
 pub const WINDOW_DAYS: u8 = 30;
 

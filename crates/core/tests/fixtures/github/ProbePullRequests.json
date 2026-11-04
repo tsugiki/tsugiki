@@ -1,0 +1,295 @@
+{
+  "body": {
+    "data": {
+      "rateLimit": {
+        "remaining": 4995,
+        "resetAt": "2026-11-04T22:46:14Z"
+      },
+      "repository": {
+        "p160616": {
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "user-12"
+                },
+                "state": "APPROVED"
+              }
+            ]
+          },
+          "number": 160616,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "user-13"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "user-14"
+                }
+              }
+            ]
+          }
+        },
+        "p161186": {
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "user-9"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "user-10"
+                },
+                "state": "APPROVED"
+              }
+            ]
+          },
+          "number": 161186,
+          "reviewRequests": {
+            "nodes": []
+          }
+        },
+        "p161334": {
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "user-8"
+                },
+                "state": "APPROVED"
+              }
+            ]
+          },
+          "number": 161334,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "user-15"
+                }
+              }
+            ]
+          }
+        },
+        "p161337": {
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": []
+          },
+          "number": 161337,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "user-16"
+                }
+              }
+            ]
+          }
+        },
+        "p161355": {
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "PENDING"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": []
+          },
+          "number": 161355,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "user-8"
+                }
+              }
+            ]
+          }
+        },
+        "p161356": {
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "PENDING"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": []
+          },
+          "number": 161356,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "user-8"
+                }
+              }
+            ]
+          }
+        },
+        "p161357": {
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": []
+          },
+          "number": 161357,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "user-8"
+                }
+              }
+            ]
+          }
+        },
+        "p161358": {
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "PENDING"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": []
+          },
+          "number": 161358,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "user-8"
+                }
+              }
+            ]
+          }
+        },
+        "p161359": {
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": []
+          },
+          "number": 161359,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "user-8"
+                }
+              }
+            ]
+          }
+        },
+        "p161360": {
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "PENDING"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": []
+          },
+          "number": 161360,
+          "reviewRequests": {
+            "nodes": []
+          }
+        }
+      }
+    }
+  },
+  "query": "query ProbePullRequests($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { p161359: pullRequest(number: 161359) { number reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } p161186: pullRequest(number: 161186) { number reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } p161357: pullRequest(number: 161357) { number reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } p161360: pullRequest(number: 161360) { number reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } p161358: pullRequest(number: 161358) { number reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } p160616: pullRequest(number: 160616) { number reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } p161355: pullRequest(number: 161355) { number reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } p161334: pullRequest(number: 161334) { number reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } p161356: pullRequest(number: 161356) { number reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } p161337: pullRequest(number: 161337) { number reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } } rateLimit { remaining resetAt } }",
+  "reset": 1793832374,
+  "status": 200
+}

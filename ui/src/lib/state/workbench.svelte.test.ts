@@ -4,7 +4,7 @@ import { WorkbenchState, type WorkbenchItem } from "./workbench.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
   commands: { workbench: vi.fn() },
-  events: { workbenchChanged: { listen: vi.fn() } },
+  events: { changed: { listen: vi.fn() } },
 }));
 
 const item = (number: number): WorkbenchItem => ({
@@ -34,9 +34,9 @@ const refused = { status: "error" as const, error: { kind: "internal" as const, 
 const catchListener = () => {
   const stop = vi.fn();
   const send = vi.fn();
-  vi.mocked(events.workbenchChanged.listen).mockImplementation(async (callback) => {
+  vi.mocked(events.changed.listen).mockImplementation(async (callback) => {
     send.mockImplementation((repository: string) => {
-      callback({ event: "workbench-changed", id: 1, payload: { repository } });
+      callback({ event: "changed", id: 1, payload: { repository, items: [] } });
     });
     return stop;
   });
@@ -119,7 +119,7 @@ describe("WorkbenchState", () => {
     catchListener();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     await new WorkbenchState("python/cpython").load();
-    const listened = vi.mocked(events.workbenchChanged.listen).mock.invocationCallOrder[0];
+    const listened = vi.mocked(events.changed.listen).mock.invocationCallOrder[0];
     const asked = vi.mocked(commands.workbench).mock.invocationCallOrder[0];
     expect(listened).toBeLessThan(asked as number);
   });
@@ -208,7 +208,7 @@ describe("WorkbenchState", () => {
   });
 
   it("says so when it can't listen, since its items would never change", async () => {
-    vi.mocked(events.workbenchChanged.listen).mockRejectedValue(new Error("no events"));
+    vi.mocked(events.changed.listen).mockRejectedValue(new Error("no events"));
     const state = new WorkbenchState("python/cpython");
     await state.load();
     expect(state.error).toBe("Error: no events");

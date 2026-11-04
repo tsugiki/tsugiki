@@ -11,9 +11,9 @@ use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
 use crate::github::{GitHub, GitHubAccess};
 use crate::repository::{RepositoryCheck, RepositoryName, RepositorySettings};
-use crate::status::{Status, StatusBoard};
+use crate::status::{LastSync, Status, StatusBoard};
 use crate::store::{self, OpenReader, ReaderToOpen, Store, StoreReader};
-use crate::sync::Syncs;
+use crate::sync::{Progress, Syncs};
 use crate::token::Token;
 
 // `run` catches a panic in its thread, to keep the window up and say that checking stopped. Tests unwind
@@ -64,6 +64,7 @@ enum Message {
     Sync {
         repository: RepositorySettings,
     },
+    Refresh,
 }
 
 /// Asks the session about Repositories, from any thread. A check waits for what the session is doing first,
@@ -81,6 +82,12 @@ impl SessionRequests {
         drop(self.messages.send(Message::Sync { repository }));
     }
 
+    /// Asks the session to refresh the open Repository now, and returns at once. A sync already under way
+    /// covers this.
+    pub fn refresh(&self) {
+        drop(self.messages.send(Message::Refresh));
+    }
+
     /// Asks GitHub what adding `name` would load. A session with no token or no database answers with an
     /// error, and has already shown why on the status bar.
     pub fn check(&self, name: RepositoryName) -> Result<RepositoryCheck, Error> {
@@ -93,20 +100,29 @@ impl SessionRequests {
     }
 }
 
+/// How often a session asks GitHub again.
+#[derive(Debug, Clone, Copy)]
+pub struct Intervals {
+    /// Asking who is signed in, so the status follows the network going and coming back.
+    pub status: Duration,
+    /// Refreshing the open Repository (ADR 0015).
+    pub repository: Duration,
+}
+
 impl Session {
-    /// Opens the database and asks GitHub who is signed in, then again every `interval`.
+    /// Opens the database and asks GitHub who is signed in, then keeps asking at `intervals`.
     pub fn start(
         mut board: StatusBoard,
         folders: Result<Folders, Error>,
         access: GitHubAccess,
-        interval: Duration,
+        intervals: Intervals,
     ) -> Self {
         let (messages, incoming) = mpsc::channel();
         let (finishing, finished) = mpsc::channel::<()>();
         let (to_open, reader) = store::reader();
         let database = Database { folders, to_open };
         let refreshes = Refreshes {
-            every: interval,
+            intervals,
             incoming,
         };
         let _ = thread::spawn(move || {
@@ -154,14 +170,37 @@ impl Session {
 
 /// When to ask GitHub again.
 struct Refreshes {
-    every: Duration,
+    intervals: Intervals,
     incoming: Receiver<Message>,
+}
+
+/// When the next of each kind of question is due.
+#[derive(Debug, Clone, Copy)]
+struct Due {
+    status: Instant,
+    repository: Instant,
+}
+
+impl Due {
+    fn starting_at(now: Instant, intervals: Intervals) -> Self {
+        Self {
+            status: now + intervals.status,
+            repository: now + intervals.repository,
+        }
+    }
 }
 
 /// The session thread's next move.
 #[derive(Debug, PartialEq, Eq)]
 enum Turn {
+    /// Time to ask who is signed in.
     Refresh,
+    /// Time to refresh the open Repository.
+    RefreshRepository,
+    /// The user asked to refresh the open Repository.
+    RefreshNow,
+    /// The window opened this Repository, so it needs to know when its last sync was.
+    Opened(RepositoryName),
     SyncStep,
     Stop,
 }
@@ -173,21 +212,29 @@ impl Refreshes {
         while let Ok(message) = self.incoming.recv() {
             match message {
                 Message::Stop => return,
-                Message::Check { .. } | Message::Sync { .. } => {}
+                Message::Check { .. } | Message::Sync { .. } | Message::Refresh => {}
             }
         }
     }
 
     /// Waits for the next refresh or the next step of a sync, answering what's asked meanwhile, so a step
     /// doesn't keep anyone waiting for longer than one request. A dropped `Session` stops it too.
-    fn next_turn(&self, github: &GitHub, syncs: &mut Syncs, refresh_at: Instant) -> Turn {
+    fn next_turn(&self, github: &GitHub, syncs: &mut Syncs, due: Due) -> Turn {
+        let next_refresh = due.status.min(due.repository);
         loop {
-            let wake = syncs.ready_at().map_or(refresh_at, |at| at.min(refresh_at));
+            let wake = syncs
+                .ready_at()
+                .map_or(next_refresh, |at| at.min(next_refresh));
             match self
                 .incoming
                 .recv_timeout(wake.saturating_duration_since(Instant::now()))
             {
-                Ok(Message::Sync { repository }) => syncs.add(repository),
+                Ok(Message::Sync { repository }) => {
+                    let opened = repository.name.clone();
+                    syncs.add(repository);
+                    return Turn::Opened(opened);
+                }
+                Ok(Message::Refresh) => return Turn::RefreshNow,
                 Ok(Message::Check { name, reply }) => {
                     let today = OffsetDateTime::now_utc().date();
                     #[expect(
@@ -197,8 +244,11 @@ impl Refreshes {
                     let _ = reply.send(github.check_repository(&name, today));
                 }
                 Ok(Message::Stop) | Err(RecvTimeoutError::Disconnected) => return Turn::Stop,
-                Err(RecvTimeoutError::Timeout) if Instant::now() >= refresh_at => {
+                Err(RecvTimeoutError::Timeout) if Instant::now() >= due.status => {
                     return Turn::Refresh;
+                }
+                Err(RecvTimeoutError::Timeout) if Instant::now() >= due.repository => {
+                    return Turn::RefreshRepository;
                 }
                 Err(RecvTimeoutError::Timeout) => return Turn::SyncStep,
             }
@@ -251,29 +301,51 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
         return;
     };
     let mut syncs = Syncs::default();
-    let mut refresh_at = Instant::now() + refreshes.every;
+    let intervals = refreshes.intervals;
+    let mut due = Due::starting_at(Instant::now(), intervals);
     loop {
-        match refreshes.next_turn(&github, &mut syncs, refresh_at) {
+        match refreshes.next_turn(&github, &mut syncs, due) {
             Turn::Stop => return,
             Turn::Refresh => {
                 refresh(board, store, &github);
-                refresh_at = Instant::now() + refreshes.every;
+                due.status = Instant::now() + intervals.status;
             }
+            Turn::RefreshRepository => {
+                syncs.refresh_open(store);
+                due.repository = Instant::now() + intervals.repository;
+            }
+            Turn::RefreshNow => {
+                syncs.refresh_now();
+                due.repository = Instant::now() + intervals.repository;
+            }
+            Turn::Opened(repository) => show_last_sync(board, store, repository),
             // A Workbench lists nothing until Tsugiki knows who the user is, and no event tells the window
             // when it learns that. So a sync waits for it, and its first save then shows the rows.
             Turn::SyncStep if !matches!(store.last_login(), Ok(Some(_))) => {
-                syncs.wait_until(refresh_at);
+                syncs.wait_until(due.status);
             }
             Turn::SyncStep => match syncs.step(&github, store) {
-                Ok(Some(repository)) => board.workbench_changed(&repository),
+                Ok(Some(Progress::Changed(change))) => board.changed(&change),
+                Ok(Some(Progress::Finished(last_sync))) => board.last_sync(&last_sync),
                 Ok(None) => {}
                 // The next refresh shows whether GitHub is back, and the sync carries on from there.
                 Err(problem) => {
-                    syncs.after_failure(&problem, refresh_at);
+                    syncs.after_failure(&problem, due.status);
                     board.set(status_after(problem, store));
                 }
             },
         }
+    }
+}
+
+/// Tells the window when `repository` last finished a sync, so the status bar can say.
+fn show_last_sync(board: &mut StatusBoard, store: &Store, repository: RepositoryName) {
+    match store.sync_state(&repository) {
+        Ok(state) => board.last_sync(&LastSync {
+            repository,
+            at: state.map(|state| state.finished_at),
+        }),
+        Err(problem) => board.set(Status::Problem { problem }),
     }
 }
 
@@ -313,7 +385,9 @@ mod tests {
     use super::*;
     use crate::github::testing::{Canned, Scripted, answered, reply_ok, signed_in_gh};
     use crate::github::{Login, Reply, Request, Transport, Unreachable};
-    use crate::status::testing::{announced, quiet_board, showing, watched_board, workbench_board};
+    use crate::status::Change;
+    use crate::status::testing::{announced, changes_board, quiet_board, showing, watched_board};
+    use crate::store::{ChangeCheck, SyncState};
     use crate::workbench::{Workbench, WorkbenchItem};
     use std::cell::RefCell;
     use std::collections::VecDeque;
@@ -541,7 +615,10 @@ mod tests {
     /// Refreshes told to stop before they began, for a test that shouldn't get as far as a second request.
     fn stopped_refreshes() -> Refreshes {
         Refreshes {
-            every: Duration::ZERO,
+            intervals: Intervals {
+                status: Duration::ZERO,
+                repository: AN_HOUR,
+            },
             incoming: mpsc::channel().1,
         }
     }
@@ -561,7 +638,10 @@ mod tests {
             }
         }));
         let refreshes = Refreshes {
-            every: Duration::ZERO,
+            intervals: Intervals {
+                status: Duration::ZERO,
+                repository: AN_HOUR,
+            },
             incoming,
         };
 
@@ -574,6 +654,10 @@ mod tests {
     }
 
     const AN_HOUR: Duration = Duration::from_secs(3600);
+    const HOURLY: Intervals = Intervals {
+        status: AN_HOUR,
+        repository: AN_HOUR,
+    };
     const PLENTY: Duration = Duration::from_secs(10);
 
     const GCMON: &str = r#"{"data":{"repository":{"nameWithOwner":"sergey-miryanov/gcmon",
@@ -602,7 +686,7 @@ mod tests {
         };
         let access = replying(vec![signed_in(), Ok(gcmon_reply)]);
         let folders = temp_folders("check");
-        let session = Session::start(quiet_board(), Ok(folders.clone()), access, AN_HOUR);
+        let session = Session::start(quiet_board(), Ok(folders.clone()), access, HOURLY);
 
         let check = session.requests().check(gcmon()).unwrap();
         session.stop(PLENTY);
@@ -614,7 +698,7 @@ mod tests {
     #[test]
     fn a_check_github_cant_answer_says_why() {
         let folders = temp_folders("check-offline");
-        let session = Session::start(quiet_board(), Ok(folders.clone()), offline(), AN_HOUR);
+        let session = Session::start(quiet_board(), Ok(folders.clone()), offline(), HOURLY);
 
         let problem = session.requests().check(gcmon()).unwrap_err();
         session.stop(PLENTY);
@@ -631,7 +715,7 @@ mod tests {
             run_gh: without_gh,
         };
         let folders = temp_folders("check-ended");
-        let session = Session::start(quiet_board(), Ok(folders.clone()), access, AN_HOUR);
+        let session = Session::start(quiet_board(), Ok(folders.clone()), access, HOURLY);
 
         let problem = session.requests().check(gcmon()).unwrap_err();
         session.stop(PLENTY);
@@ -646,7 +730,10 @@ mod tests {
         let (messages, incoming) = mpsc::channel();
         let checks = SessionRequests { messages };
         let refreshes = Refreshes {
-            every: Duration::from_millis(100),
+            intervals: Intervals {
+                status: Duration::from_millis(100),
+                repository: AN_HOUR,
+            },
             incoming,
         };
         let github = GitHub::new(
@@ -654,7 +741,7 @@ mod tests {
             crate::github::testing::token(),
         );
         let started = Instant::now();
-        let refresh_at = started + refreshes.every;
+        let due = Due::starting_at(started, refreshes.intervals);
         let mut syncs = Syncs::default();
         let refreshed = AtomicBool::new(false);
 
@@ -666,13 +753,10 @@ mod tests {
                 }
                 drop(checks.messages.send(Message::Stop));
             });
-            assert_eq!(
-                refreshes.next_turn(&github, &mut syncs, refresh_at),
-                Turn::Refresh
-            );
+            assert_eq!(refreshes.next_turn(&github, &mut syncs, due), Turn::Refresh);
             refreshed.store(true, Ordering::Relaxed);
             // Answers the checks still on their way, until the message that stops it.
-            while refreshes.next_turn(&github, &mut syncs, refresh_at) != Turn::Stop {}
+            while refreshes.next_turn(&github, &mut syncs, due) != Turn::Stop {}
         });
 
         assert!(started.elapsed() < PLENTY);
@@ -732,8 +816,8 @@ mod tests {
             run_gh: signed_in_gh,
         };
         let folders = temp_folders("sync");
-        let (board, changes) = workbench_board();
-        let session = Session::start(board, Ok(folders.clone()), access, AN_HOUR);
+        let (board, changes) = changes_board();
+        let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
         let reader = session.reader();
 
         session.requests().sync(plain_gcmon());
@@ -742,7 +826,13 @@ mod tests {
         session.stop(PLENTY);
         fs::remove_dir_all(folders.data).unwrap();
 
-        assert_eq!(changed, gcmon());
+        assert_eq!(
+            changed,
+            Change {
+                repository: gcmon(),
+                items: vec![7],
+            }
+        );
         assert!(
             matches!(&workbench.items[..], [WorkbenchItem::StandalonePr(tree)] if tree.row.number == 7),
             "{workbench:?}"
@@ -754,7 +844,7 @@ mod tests {
         let (messages, incoming) = mpsc::channel();
         let checks = SessionRequests { messages };
         let refreshes = Refreshes {
-            every: AN_HOUR,
+            intervals: HOURLY,
             incoming,
         };
         let github = GitHub::new(
@@ -763,13 +853,13 @@ mod tests {
         );
         let mut syncs = Syncs::default();
         syncs.add(plain_gcmon());
-        let refresh_at = Instant::now() + AN_HOUR;
+        let due = Due::starting_at(Instant::now(), HOURLY);
 
         let answer = thread::scope(|scope| {
             let asking = scope.spawn(|| checks.check(gcmon()));
             // A step can run only after the session answers the check, or this would hang.
             while !asking.is_finished() {
-                let turn = refreshes.next_turn(&github, &mut syncs, refresh_at);
+                let turn = refreshes.next_turn(&github, &mut syncs, due);
                 assert_eq!(turn, Turn::SyncStep);
             }
             asking.join().unwrap()
@@ -802,7 +892,10 @@ mod tests {
             }
         }));
         let refreshes = Refreshes {
-            every: Duration::from_millis(50),
+            intervals: Intervals {
+                status: Duration::from_millis(50),
+                repository: AN_HOUR,
+            },
             incoming,
         };
 
@@ -843,12 +936,15 @@ mod tests {
             run_gh: signed_in_gh,
         };
         let folders = temp_folders("late-viewer");
-        let (board, changes) = workbench_board();
+        let (board, changes) = changes_board();
         let session = Session::start(
             board,
             Ok(folders.clone()),
             access,
-            Duration::from_millis(50),
+            Intervals {
+                status: Duration::from_millis(50),
+                repository: AN_HOUR,
+            },
         );
         let reader = session.reader();
 
@@ -868,7 +964,7 @@ mod tests {
             run_gh: without_gh,
         };
         let folders = temp_folders("no-token");
-        let session = Session::start(quiet_board(), Ok(folders.clone()), access, AN_HOUR);
+        let session = Session::start(quiet_board(), Ok(folders.clone()), access, HOURLY);
         let requests = session.requests();
 
         requests.sync(plain_gcmon());
@@ -885,7 +981,7 @@ mod tests {
     fn a_session_with_no_token_ends_when_it_can_no_longer_be_asked_anything() {
         let (messages, incoming) = mpsc::channel();
         let refreshes = Refreshes {
-            every: AN_HOUR,
+            intervals: HOURLY,
             incoming,
         };
         drop(messages);
@@ -894,17 +990,188 @@ mod tests {
     }
 
     #[test]
-    fn a_session_that_has_ended_ignores_a_sync() {
+    fn a_session_that_has_ended_ignores_a_sync_and_a_refresh() {
         let (messages, incoming) = mpsc::channel();
         drop(incoming);
+        let requests = SessionRequests { messages };
 
-        SessionRequests { messages }.sync(plain_gcmon());
+        requests.sync(plain_gcmon());
+        requests.refresh();
+    }
+
+    /// Answers every question with a Repository that has nothing new, and says which it was asked.
+    struct QuietRepository {
+        asked: Sender<String>,
+    }
+
+    impl Transport for QuietRepository {
+        fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
+            drop(self.asked.send(request.operation.to_owned()));
+            let body = match request.operation {
+                "Viewer" => r#"{"data":{"viewer":{"login":"octocat"}}}"#.to_owned(),
+                _ => format!(
+                    r#"{{"data":{{"repository":{{
+                        "openIssues":{{"totalCount":900}},"openPrs":{{"totalCount":0}},
+                        "issues":{{"pageInfo":{{"hasNextPage":false,"endCursor":null}},"nodes":[]}},
+                        "pullRequests":{{"pageInfo":{{"hasNextPage":false,"endCursor":null}},"nodes":[]}}
+                    }},{WORK_RATE}}}}}"#
+                ),
+            };
+            Ok(Reply {
+                status: 200,
+                reset: None,
+                body,
+            })
+        }
+    }
+
+    /// A store that says `gcmon` finished a sync, in `folders`.
+    fn after_a_finished_sync(folders: &Folders) -> OffsetDateTime {
+        let at = OffsetDateTime::from_unix_timestamp(1_000_000_000).unwrap();
+        let store = Store::open(&folders.database()).unwrap();
+        let state = SyncState {
+            started_at: at,
+            finished_at: at,
+            check: ChangeCheck::Skipped,
+            refresh_under_way: false,
+        };
+        store.save_sync_state(&gcmon(), state).unwrap();
+        store.close();
+        at
+    }
+
+    fn quiet_repository() -> (GitHubAccess, Receiver<String>) {
+        let (asked, seen) = mpsc::channel();
+        let access = GitHubAccess {
+            transport: Box::new(QuietRepository { asked }),
+            run_gh: signed_in_gh,
+        };
+        (access, seen)
+    }
+
+    /// A board that passes on what it says about last syncs.
+    fn last_sync_board() -> (StatusBoard, Receiver<LastSync>) {
+        let (passed, seen) = mpsc::channel();
+        let board = quiet_board().with_last_syncs(Box::new(move |last_sync: &LastSync| {
+            passed.send(last_sync.clone()).unwrap();
+        }));
+        (board, seen)
+    }
+
+    fn wait_for(seen: &Receiver<String>, operation: &str) {
+        while seen.recv_timeout(PLENTY).unwrap() != operation {}
+    }
+
+    #[test]
+    fn opening_a_repository_shows_its_last_sync_and_refreshes_it() {
+        let folders = temp_folders("opened");
+        let at = after_a_finished_sync(&folders);
+        let (access, asked) = quiet_repository();
+        let (board, last_syncs) = last_sync_board();
+        let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
+
+        session.requests().sync(plain_gcmon());
+        let shown = last_syncs.recv_timeout(PLENTY).unwrap();
+        wait_for(&asked, "RefreshRepository");
+        let after = last_syncs.recv_timeout(PLENTY).unwrap();
+        session.stop(PLENTY);
+        fs::remove_dir_all(folders.data).unwrap();
+
+        assert_eq!(
+            shown,
+            LastSync {
+                repository: gcmon(),
+                at: Some(at),
+            }
+        );
+        assert!(after.at > Some(at));
+    }
+
+    #[test]
+    fn opening_a_repository_that_never_synced_says_so() {
+        let folders = temp_folders("opened-new");
+        let (access, _asked) = quiet_repository();
+        let (board, last_syncs) = last_sync_board();
+        let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
+
+        session.requests().sync(plain_gcmon());
+        let shown = last_syncs.recv_timeout(PLENTY).unwrap();
+        session.stop(PLENTY);
+        fs::remove_dir_all(folders.data).unwrap();
+
+        assert_eq!(
+            shown,
+            LastSync {
+                repository: gcmon(),
+                at: None,
+            }
+        );
+    }
+
+    #[test]
+    fn a_store_that_cant_say_when_it_last_synced_shows_the_problem() {
+        let (mut board, seen) = watched_board();
+
+        show_last_sync(&mut board, &Store::stopped(), gcmon());
+
+        assert!(matches!(showing(&seen), Status::Problem { .. }));
+    }
+
+    #[test]
+    fn a_click_refreshes_the_open_repository_again() {
+        let folders = temp_folders("click");
+        let _at = after_a_finished_sync(&folders);
+        let (access, asked) = quiet_repository();
+        let (board, last_syncs) = last_sync_board();
+        let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
+
+        session.requests().sync(plain_gcmon());
+        wait_for(&asked, "RefreshRepository");
+        // Once when the window opened it, and once when that refresh finished. A click during a refresh
+        // adds nothing, because that refresh is reading what the click asks for.
+        let _opened = last_syncs.recv_timeout(PLENTY).unwrap();
+        let _finished = last_syncs.recv_timeout(PLENTY).unwrap();
+        session.requests().refresh();
+        wait_for(&asked, "RefreshRepository");
+        session.stop(PLENTY);
+        fs::remove_dir_all(folders.data).unwrap();
+    }
+
+    #[test]
+    fn the_timer_refreshes_the_open_repository_again() {
+        let folders = temp_folders("timer");
+        let _at = after_a_finished_sync(&folders);
+        let (access, asked) = quiet_repository();
+        let every_moment = Intervals {
+            status: AN_HOUR,
+            repository: Duration::from_millis(10),
+        };
+        let session = Session::start(quiet_board(), Ok(folders.clone()), access, every_moment);
+
+        session.requests().sync(plain_gcmon());
+        wait_for(&asked, "RefreshRepository");
+        wait_for(&asked, "RefreshRepository");
+        session.stop(PLENTY);
+        fs::remove_dir_all(folders.data).unwrap();
+    }
+
+    #[test]
+    fn a_session_with_no_token_ignores_a_refresh_until_it_stops() {
+        let (messages, incoming) = mpsc::channel();
+        let refreshes = Refreshes {
+            intervals: HOURLY,
+            incoming,
+        };
+        messages.send(Message::Refresh).unwrap();
+        messages.send(Message::Stop).unwrap();
+
+        refreshes.wait_for_stop();
     }
 
     #[test]
     fn a_reader_answers_once_the_session_has_opened_the_database() {
         let folders = temp_folders("reader");
-        let session = Session::start(quiet_board(), Ok(folders.clone()), offline(), AN_HOUR);
+        let session = Session::start(quiet_board(), Ok(folders.clone()), offline(), HOURLY);
 
         let facts = session.reader().work_facts(&gcmon());
         session.stop(PLENTY);
@@ -916,7 +1183,7 @@ mod tests {
     #[test]
     fn a_session_with_no_database_answers_its_readers_with_that() {
         let lost = Error::new(ErrorKind::Internal, "HOME isn't a full path.");
-        let session = Session::start(quiet_board(), Err(lost), offline(), AN_HOUR);
+        let session = Session::start(quiet_board(), Err(lost), offline(), HOURLY);
 
         let refused = session.reader().work_facts(&gcmon());
         session.stop(PLENTY);
@@ -932,7 +1199,7 @@ mod tests {
     fn stopping_between_refreshes_closes_the_store() {
         let folders = temp_folders("stop-between");
         let (board, statuses) = watched_board();
-        let session = Session::start(board, Ok(folders.clone()), octocat_answers(), AN_HOUR);
+        let session = Session::start(board, Ok(folders.clone()), octocat_answers(), HOURLY);
         assert_eq!(statuses.recv().unwrap(), octocat());
         let waiting = fs::metadata(wal_of(&folders)).unwrap().len();
         assert!(waiting > 0, "the login is still in the -wal");
@@ -976,7 +1243,7 @@ mod tests {
             }),
             run_gh: signed_in_gh,
         };
-        let session = Session::start(quiet_board(), Ok(folders.clone()), access, AN_HOUR);
+        let session = Session::start(quiet_board(), Ok(folders.clone()), access, HOURLY);
         request.recv().unwrap();
 
         session.stop(Duration::from_millis(10));
@@ -995,7 +1262,7 @@ mod tests {
     #[test]
     fn stopping_a_session_that_has_already_finished_returns_at_once() {
         let lost = Error::new(ErrorKind::Internal, "HOME isn't a full path.");
-        let session = Session::start(quiet_board(), Err(lost), offline(), AN_HOUR);
+        let session = Session::start(quiet_board(), Err(lost), offline(), HOURLY);
         assert_eq!(session.finished.recv(), Err(RecvError));
 
         session.stop(AN_HOUR);

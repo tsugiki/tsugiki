@@ -35,7 +35,7 @@ pub struct FetchedIssues {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct IssueWire {
+pub(super) struct IssueWire {
     number: u32,
     title: String,
     #[serde(with = "time::serde::rfc3339")]

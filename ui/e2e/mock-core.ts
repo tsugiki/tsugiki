@@ -5,7 +5,7 @@ import type { commands } from "../src/lib/data/bindings.ts";
 export type CoreAnswers = { [C in keyof typeof commands]?: Awaited<ReturnType<(typeof commands)[C]>> };
 
 type Listener = (message: { event: string; id: number; payload: unknown }) => void;
-type MockWindow = { mockEventListeners: Record<string, Listener[]> };
+type MockWindow = { mockEventListeners: Record<string, Listener[]>; mockAnswers: Record<string, unknown> };
 
 /** Stands in for Tauri's IPC: the page's generated bindings get these answers instead of the core's. */
 export const mockCore = (page: Page, answers: CoreAnswers) =>
@@ -14,6 +14,7 @@ export const mockCore = (page: Page, answers: CoreAnswers) =>
     const callbacks = new Map<number, Listener>();
     Object.assign(window, {
       mockEventListeners: listeners,
+      mockAnswers: answers,
       __TAURI_INTERNALS__: {
         transformCallback: (callback: Listener) => {
           const id = callbacks.size + 1;
@@ -36,6 +37,15 @@ export const mockCore = (page: Page, answers: CoreAnswers) =>
       },
     });
   }, answers);
+
+/** Changes what a command answers from now on, as the core's facts would. */
+export const changeAnswer = <C extends keyof CoreAnswers>(page: Page, command: C, answer: CoreAnswers[C]) =>
+  page.evaluate(
+    ([command, answer]) => {
+      (window as unknown as MockWindow).mockAnswers[command as string] = answer;
+    },
+    [command, answer] as const,
+  );
 
 /** Sends an event to the page, as the core would. */
 export const emitFromCore = (page: Page, event: string, payload: unknown) =>

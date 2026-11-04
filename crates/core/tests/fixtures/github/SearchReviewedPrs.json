@@ -1,0 +1,87 @@
+{
+  "body": {
+    "data": {
+      "rateLimit": {
+        "remaining": 4988,
+        "resetAt": "2026-11-04T12:11:45Z"
+      },
+      "search": {
+        "nodes": [
+          {
+            "id": "PR_kwDOBN0Z8c8AAAABKlmbmA"
+          },
+          {
+            "id": "PR_kwDOBN0Z8c8AAAABKlAJ0A"
+          },
+          {
+            "id": "PR_kwDOBN0Z8c8AAAABJlTcBw"
+          },
+          {
+            "id": "PR_kwDOBN0Z8c8AAAABCrEnGw"
+          },
+          {
+            "id": "PR_kwDOBN0Z8c8AAAABBFycKA"
+          },
+          {
+            "id": "PR_kwDOBN0Z8c8AAAABBFqH8Q"
+          },
+          {
+            "id": "PR_kwDOBN0Z8c76pWaW"
+          },
+          {
+            "id": "PR_kwDOBN0Z8c76nXvD"
+          },
+          {
+            "id": "PR_kwDOBN0Z8c7zX_mq"
+          },
+          {
+            "id": "PR_kwDOBN0Z8c7t-HMP"
+          },
+          {
+            "id": "PR_kwDOBN0Z8c7o5Nka"
+          },
+          {
+            "id": "PR_kwDOBN0Z8c7oxm8k"
+          },
+          {
+            "id": "PR_kwDOBN0Z8c7ZZi4V"
+          },
+          {
+            "id": "PR_kwDOBN0Z8c7VI7xT"
+          },
+          {
+            "id": "PR_kwDOBN0Z8c6zoQal"
+          },
+          {
+            "id": "PR_kwDOBN0Z8c6xRsf5"
+          },
+          {
+            "id": "PR_kwDOBN0Z8c6w2Nb7"
+          },
+          {
+            "id": "PR_kwDOBN0Z8c6v_FZ1"
+          },
+          {
+            "id": "PR_kwDOBN0Z8c6uVSv0"
+          },
+          {
+            "id": "PR_kwDOBN0Z8c6stbnX"
+          },
+          {
+            "id": "PR_kwDOBN0Z8c6oYjfX"
+          },
+          {
+            "id": "PR_kwDOBN0Z8c6NEz5c"
+          }
+        ],
+        "pageInfo": {
+          "endCursor": "Y3Vyc29yOjIy",
+          "hasNextPage": false
+        }
+      }
+    }
+  },
+  "query": "query SearchReviewedPrs($query: String!, $first: Int!, $after: String) { search(query: $query, type: ISSUE_ADVANCED, first: $first, after: $after) { pageInfo { hasNextPage endCursor } nodes { ... on PullRequest { id } } } rateLimit { remaining resetAt } }",
+  "reset": 1793794305,
+  "status": 200
+}

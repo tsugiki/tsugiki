@@ -1,7 +1,8 @@
 //! Captures real answers as fixtures for the replayer, with tokens scrubbed and the viewer's login replaced
-//! (ADR 0009).
+//! wherever an answer names them (ADR 0009).
 
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use serde_json::{Value, json};
 
@@ -46,16 +47,45 @@ pub fn scrub(text: &str, token: &str) -> String {
     scrubbed
 }
 
+/// Puts the stand-in wherever a whole string is `login`, whatever its case. A login inside a longer string
+/// stays: replacing part of a string could change a node's id, and only a PR's title could name someone that
+/// way.
+fn replace_login(value: &mut Value, login: &str) {
+    match value {
+        Value::String(text) if text.eq_ignore_ascii_case(login) => {
+            STAND_IN_LOGIN.clone_into(text);
+        }
+        Value::Array(items) => {
+            for item in items {
+                replace_login(item, login);
+            }
+        }
+        Value::Object(fields) => {
+            for field in fields.values_mut() {
+                replace_login(field, login);
+            }
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+}
+
 /// Passes requests on to `inner`, and writes each good answer to `<dir>/<operation>.json`. A failure
 /// keeps the recording that is there.
 pub struct Recorder {
     inner: Box<dyn Transport>,
     dir: PathBuf,
+    /// The first answer that says who the viewer is sets this. Later answers name them as an author or a
+    /// reviewer, with nothing to show that it's them.
+    viewer: OnceLock<String>,
 }
 
 impl Recorder {
     pub fn new(inner: Box<dyn Transport>, dir: PathBuf) -> Self {
-        Self { inner, dir }
+        Self {
+            inner,
+            dir,
+            viewer: OnceLock::new(),
+        }
     }
 }
 
@@ -72,8 +102,13 @@ impl Transport for Recorder {
         if reply.status != 200 || body.get("errors").is_some() {
             return Ok(reply);
         }
-        if let Some(login) = body.pointer_mut("/data/viewer/login") {
-            *login = json!(STAND_IN_LOGIN);
+        let named = body.pointer("/data/viewer/login").and_then(Value::as_str);
+        let viewer = named
+            .map(|login| self.viewer.get_or_init(|| login.to_owned()))
+            .or(self.viewer.get())
+            .cloned();
+        if let Some(login) = viewer {
+            replace_login(&mut body, &login);
         }
         let recording = json!({
             "query": request.query,
@@ -207,6 +242,65 @@ mod tests {
 
         assert_eq!(live.body, body, "the caller still gets the real answer");
         assert_eq!(replayed.body, r#"{"data":{"viewer":{"login":"octocat"}}}"#);
+    }
+
+    /// Answers one request with each of `bodies`, in order, through one recorder, and returns what it wrote.
+    fn recorded(name: &str, bodies: [&str; 2]) -> String {
+        let dir = temp_dir(name);
+        let replies = bodies
+            .into_iter()
+            .map(crate::github::testing::reply_ok)
+            .collect();
+        let (scripted, _requests) = crate::github::testing::Scripted::new(replies);
+        let recorder = Recorder::new(Box::new(scripted), dir.clone());
+        for _ in bodies {
+            let _ = recorder.post(&token(), &REQUEST).unwrap();
+        }
+        let replayed = Replayer::new(dir.clone()).post(&token(), &REQUEST).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+        replayed.body
+    }
+
+    #[test]
+    fn a_later_recording_doesnt_keep_who_made_it_either() {
+        let body = recorded(
+            "later",
+            [
+                r#"{"data":{"viewer":{"login":"Whoever-Recorded"}}}"#,
+                r#"{"data":{"nodes":[{"author":{"login":"whoever-recorded"},"n":1,"none":null,"ok":true}]}}"#,
+            ],
+        );
+        assert_eq!(
+            body,
+            r#"{"data":{"nodes":[{"author":{"login":"octocat"},"n":1,"none":null,"ok":true}]}}"#
+        );
+    }
+
+    #[test]
+    fn a_recording_keeps_everyone_else_and_longer_strings() {
+        let body = recorded(
+            "others",
+            [
+                r#"{"data":{"viewer":{"login":"bob"}}}"#,
+                r#"{"data":{"author":{"login":"bobcat"},"id":"PR_bob"}}"#,
+            ],
+        );
+        assert_eq!(
+            body,
+            r#"{"data":{"author":{"login":"bobcat"},"id":"PR_bob"}}"#
+        );
+    }
+
+    #[test]
+    fn a_recording_before_anyone_says_who_the_viewer_is_stays_as_it_came() {
+        let body = recorded(
+            "unknown",
+            [
+                r#"{"data":{"a":"b"}}"#,
+                r#"{"data":{"author":{"login":"bob"}}}"#,
+            ],
+        );
+        assert_eq!(body, r#"{"data":{"author":{"login":"bob"}}}"#);
     }
 
     #[test]

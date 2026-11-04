@@ -17,7 +17,7 @@ use tsugiki_core::session::Session;
 use tsugiki_core::settings::{SettingsFiles, SettingsOwner};
 use tsugiki_core::status::{Status, StatusBoard};
 
-use crate::{StatusChanged, specta_builder};
+use crate::{StatusChanged, WorkbenchChanged, specta_builder, sync_home};
 
 /// How often Tsugiki asks GitHub whether it is still there, at about one point of the hourly 5,000 each.
 const REFRESH: Duration = Duration::from_secs(60);
@@ -77,10 +77,7 @@ pub fn run() {
     // `settings_path` on a slow drive would delay the window. Without folders the defaults apply, and the
     // session shows why. A thread of their own owns the files from here, so saving doesn't wait on GitHub.
     let settings = folders.clone().map(SettingsFiles::load);
-    assert!(
-        app.manage(SettingsOwner::start(settings)),
-        "nothing else manages the settings' owner"
-    );
+    let settings = SettingsOwner::start(settings);
     let handle = app.handle().clone();
     let board = StatusBoard::new(Box::new(move |status| {
         // Before the event: a window that starts listening just too late for it then asks `status()`, and has
@@ -91,14 +88,33 @@ pub fn run() {
             log::warn!("Tsugiki can't tell the window about a new status: {cause}");
         }
     }));
+    let handle = app.handle().clone();
+    let board = board.with_workbench_changes(Box::new(move |repository| {
+        let changed = WorkbenchChanged {
+            repository: repository.clone(),
+        };
+        if let Err(cause) = changed.emit(&handle) {
+            log::warn!("Tsugiki can't tell the window about a new Workbench: {cause}");
+        }
+    }));
     let access = GitHubAccess {
         transport: Box::new(Https::new()),
         run_gh,
     };
     let session = Session::start(board, folders, access, REFRESH);
+    let requests = session.requests();
+    sync_home(&settings.view().home, &requests);
     assert!(
-        app.manage(session.repository_checks()),
-        "nothing else manages the checks"
+        app.manage(settings),
+        "nothing else manages the settings' owner"
+    );
+    assert!(
+        app.manage(requests),
+        "nothing else manages the session's requests"
+    );
+    assert!(
+        app.manage(session.reader()),
+        "nothing else manages the database's reader"
     );
     app.run(move |_app, event| {
         if let RunEvent::Exit = event {

@@ -1,6 +1,7 @@
 //! Tsugiki's GitHub client. It talks through a [`Transport`], so tests replay recorded answers (ADR 0009).
 
 pub mod live;
+pub mod pull_requests;
 pub mod record;
 pub mod replay;
 
@@ -46,10 +47,19 @@ pub struct GitHubAccess {
     pub run_gh: RunGh,
 }
 
-/// A GitHub username. It reaches the UI as a plain string.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+/// A GitHub username. It reaches the UI as a plain string, in GitHub's casing.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(transparent)]
 pub struct Login(String);
+
+/// GitHub logins ignore case, so `Octocat` and `octocat` are one user, and "is this me?" has one answer.
+impl PartialEq for Login {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq_ignore_ascii_case(&other.0)
+    }
+}
+
+impl Eq for Login {}
 
 impl Login {
     pub fn new(login: &str) -> Self {
@@ -190,6 +200,9 @@ impl GitHub {
     }
 }
 
+/// The status GitHub answers with when a query ran out of its 10 seconds (ADR 0015).
+const BAD_GATEWAY: u16 = 502;
+
 const RATE_LIMITED: &str =
     "GitHub's rate limit has been reached. Tsugiki can read again after it resets.";
 
@@ -206,6 +219,8 @@ fn read<D: DeserializeOwned>(reply: &Reply) -> Result<D, Error> {
         #[serde(rename = "type")]
         kind: Option<GraphqlErrorKind>,
         message: String,
+        #[serde(default)]
+        path: Vec<Value>,
     }
     #[derive(Deserialize)]
     enum GraphqlErrorKind {
@@ -249,7 +264,12 @@ fn read<D: DeserializeOwned>(reply: &Reply) -> Result<D, Error> {
     };
     // The data is read after the errors: a field that failed comes back null, which `D` may not allow.
     let envelope: Envelope = serde_json::from_str(&reply.body).map_err(unreadable)?;
-    if let Some(error) = envelope.errors.first() {
+    // `nodes(ids:)` answers null for an ID GitHub no longer knows, and adds this error. The others are still good.
+    let gone_node = |error: &&GraphqlError| {
+        matches!(error.kind, Some(GraphqlErrorKind::NotFound))
+            && error.path.first().and_then(Value::as_str) == Some("nodes")
+    };
+    if let Some(error) = envelope.errors.iter().find(|error| !gone_node(error)) {
         return Err(match error.kind {
             Some(GraphqlErrorKind::RateLimited) => rate_limited(),
             Some(GraphqlErrorKind::NotFound) => Error::new(
@@ -290,6 +310,43 @@ pub(crate) mod testing {
         }))
     }
 
+    /// Answers from a list, in order, and records each operation and its variables for the test.
+    pub(crate) struct Scripted {
+        replies: std::cell::RefCell<std::collections::VecDeque<Result<Reply, Unreachable>>>,
+        asked: std::sync::mpsc::Sender<(String, Value)>,
+    }
+
+    impl Scripted {
+        pub(crate) fn new(
+            replies: Vec<Result<Reply, Unreachable>>,
+        ) -> (Self, std::sync::mpsc::Receiver<(String, Value)>) {
+            let (asked, seen) = std::sync::mpsc::channel();
+            let replies = std::cell::RefCell::new(replies.into());
+            (Self { replies, asked }, seen)
+        }
+    }
+
+    impl Transport for Scripted {
+        fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
+            drop(
+                self.asked
+                    .send((request.operation.to_owned(), request.variables.clone())),
+            );
+            self.replies
+                .borrow_mut()
+                .pop_front()
+                .unwrap_or(Err(Unreachable))
+        }
+    }
+
+    pub(crate) fn reply_ok(body: &str) -> Result<Reply, Unreachable> {
+        Ok(Reply {
+            status: 200,
+            reset: None,
+            body: body.to_owned(),
+        })
+    }
+
     pub(crate) fn signed_in_gh(_: &[&str]) -> std::io::Result<GhOutput> {
         Ok(GhOutput {
             success: true,
@@ -320,6 +377,17 @@ mod tests {
 
     fn error_of(transport: Canned) -> crate::error::Error {
         client(transport).viewer().unwrap_err()
+    }
+
+    #[test]
+    fn a_login_is_the_same_user_whatever_its_case() {
+        assert_eq!(Login::new("Octocat"), Login::new("octocat"));
+        assert_ne!(Login::new("octocat"), Login::new("octodog"));
+    }
+
+    #[test]
+    fn a_login_keeps_githubs_casing_for_display() {
+        assert_eq!(Login::new("Octocat").as_str(), "Octocat");
     }
 
     #[test]

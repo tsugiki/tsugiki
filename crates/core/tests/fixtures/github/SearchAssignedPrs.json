@@ -1,0 +1,20 @@
+{
+  "body": {
+    "data": {
+      "rateLimit": {
+        "remaining": 4987,
+        "resetAt": "2026-11-04T12:11:45Z"
+      },
+      "search": {
+        "nodes": [],
+        "pageInfo": {
+          "endCursor": null,
+          "hasNextPage": false
+        }
+      }
+    }
+  },
+  "query": "query SearchAssignedPrs($query: String!, $first: Int!, $after: String) { search(query: $query, type: ISSUE_ADVANCED, first: $first, after: $after) { pageInfo { hasNextPage endCursor } nodes { ... on PullRequest { id } } } rateLimit { remaining resetAt } }",
+  "reset": 1793794305,
+  "status": 200
+}

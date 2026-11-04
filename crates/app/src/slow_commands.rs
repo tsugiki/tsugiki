@@ -13,8 +13,10 @@ use tauri::State;
 use tauri::async_runtime::spawn_blocking;
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::repository::{Home, RepositoryCheck};
-use tsugiki_core::session::RepositoryChecks;
+use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::SettingsOwner;
+use tsugiki_core::store::StoreReader;
+use tsugiki_core::workbench::Workbench;
 
 /// What adding the Repository the user typed would load. A check can wait out a stuck request to GitHub, so
 /// it waits on a thread meant for blocking, and leaves the threads that answer the window's other commands
@@ -23,10 +25,10 @@ use tsugiki_core::settings::SettingsOwner;
 #[specta::specta]
 pub(crate) async fn check_repository(
     input: String,
-    checks: State<'_, RepositoryChecks>,
+    requests: State<'_, SessionRequests>,
 ) -> Result<RepositoryCheck, Error> {
-    let checks = checks.inner().clone();
-    spawn_blocking(move || crate::check_typed_repository(&input, &checks))
+    let requests = requests.inner().clone();
+    spawn_blocking(move || crate::check_typed_repository(&input, &requests))
         .await
         .unwrap_or_else(|cause| {
             log::error!("A check of a Repository stopped: {cause}");
@@ -37,10 +39,24 @@ pub(crate) async fn check_repository(
         })
 }
 
-/// Adds a Repository the user has seen the check for, and says what the window opens on now. This waits on
-/// a small file and never on GitHub.
+/// Adds a Repository the user has seen the check for, starts its first sync, and says what the window opens
+/// on now. This waits on a small file and never on GitHub.
 #[tauri::command(async)]
 #[specta::specta]
-pub(crate) fn add_repository(name: &str, owner: State<'_, SettingsOwner>) -> Result<Home, Error> {
-    crate::add_named_repository(name, &owner)
+pub(crate) fn add_repository(
+    name: &str,
+    owner: State<'_, SettingsOwner>,
+    requests: State<'_, SessionRequests>,
+) -> Result<Home, Error> {
+    crate::add_named_repository(name, &owner, &requests)
+}
+
+/// The rows of a Repository's Workbench. This waits on the database and never on GitHub (ADR 0018).
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn workbench(
+    repository: &str,
+    reader: State<'_, StoreReader>,
+) -> Result<Workbench, Error> {
+    crate::read_workbench(repository, &reader)
 }

@@ -20,10 +20,16 @@ pub(super) struct Migration {
     pub(super) sql: &'static str,
 }
 
-pub(super) const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    sql: "CREATE TABLE viewer (id INTEGER PRIMARY KEY CHECK (id = 1), login TEXT NOT NULL);",
-}];
+pub(super) const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        sql: "CREATE TABLE viewer (id INTEGER PRIMARY KEY CHECK (id = 1), login TEXT NOT NULL);",
+    },
+    Migration {
+        version: 2,
+        sql: super::pull_requests::SCHEMA,
+    },
+];
 
 /// The version a file has after all of `migrations`.
 pub(super) fn latest(migrations: &[Migration]) -> u32 {

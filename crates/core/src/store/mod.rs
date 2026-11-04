@@ -1,20 +1,25 @@
-//! What Tsugiki learns, kept in one SQLite file (ADR 0010). One thread owns the connection and runs each job
-//! in turn, so a caller waits for the jobs ahead of its own. Screens mustn't wait on a sync (ADR 0010), so
-//! the sync has to write outside this queue when it arrives.
+//! Tsugiki keeps what it learns in one SQLite file (ADR 0010). `Store` is the one writer, and `StoreReader`
+//! is a read-only connection for screens, so a screen never waits on a sync (ADR 0018). Each connection has
+//! a thread that runs its jobs in turn, so a caller waits only for the jobs ahead of its own on that
+//! connection.
 
 mod file;
 mod migrate;
+mod pull_requests;
 
 use std::fmt::Display;
 use std::fs;
 use std::path::Path;
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Weak};
 use std::thread::{self, JoinHandle};
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
 use crate::error::{Error, ErrorKind};
 use crate::github::Login;
+use crate::github::pull_requests::{PullRequest, PullRequestFacts};
+use crate::repository::RepositoryName;
 use migrate::{MIGRATIONS, Migration};
 
 const CANT_OPEN: &str = "Tsugiki can't open its database";
@@ -45,7 +50,7 @@ impl Store {
         open_with(path, MIGRATIONS)
     }
 
-    /// Who was signed in when Tsugiki last reached GitHub, if it ever has.
+    /// The user signed in when Tsugiki last reached GitHub, if it ever has.
     pub fn last_login(&self) -> Result<Option<Login>, Error> {
         let found = self.call(|connection| {
             connection
@@ -60,6 +65,18 @@ impl Store {
         let login = login.as_str().to_owned();
         let written = self.call(move |connection| connection.execute(REMEMBER_LOGIN, [login]))?;
         written.map(drop).map_err(saying(CANT_WRITE))
+    }
+
+    /// Stores `pull_requests` of `repository` in one transaction (ADR 0010).
+    pub fn save_pull_requests(
+        &self,
+        repository: &RepositoryName,
+        pull_requests: Vec<PullRequest>,
+    ) -> Result<(), Error> {
+        let repository = repository.to_string();
+        let saved = self
+            .call(move |connection| pull_requests::save(connection, &repository, &pull_requests))?;
+        saved.map_err(saying(CANT_WRITE))
     }
 
     /// Finishes what was asked for and closes the file.
@@ -77,19 +94,7 @@ impl Store {
         &self,
         work: impl FnOnce(&mut Connection) -> T + Send + 'static,
     ) -> Result<T, Error> {
-        let (reply, answer) = mpsc::channel();
-        let job = Box::new(move |connection: &mut Connection| {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "this fails only if the caller has gone, and it waits for this answer"
-            )]
-            let _ = reply.send(work(connection));
-        });
-        self.jobs
-            .send(job)
-            .ok()
-            .and_then(|()| answer.recv().ok())
-            .ok_or_else(|| Error::new(ErrorKind::Internal, STOPPED))
+        ask(&self.jobs, work)
     }
 
     /// A store whose thread has gone, as it would be after a panic there.
@@ -101,6 +106,121 @@ impl Store {
             thread: std::thread::spawn(|| {}),
         }
     }
+}
+
+/// The facts a screen needs to work out the Workbench, read at one moment.
+#[derive(Debug, PartialEq, Eq)]
+pub struct WorkFacts {
+    /// The user signed in when Tsugiki last reached GitHub, if it ever has.
+    pub viewer: Option<Login>,
+    pub pull_requests: Vec<PullRequestFacts>,
+}
+
+/// Asks the read-only connection, from any thread. A question asked before the database opens waits for it.
+#[derive(Clone)]
+pub struct StoreReader {
+    jobs: Weak<Sender<Job>>,
+}
+
+impl StoreReader {
+    /// The facts behind the Workbench of `repository`.
+    pub fn work_facts(&self, repository: &RepositoryName) -> Result<WorkFacts, Error> {
+        let repository = repository.to_string();
+        let read = self.call(move |connection| {
+            let transaction = connection.transaction()?;
+            let viewer = transaction
+                .query_row(LAST_LOGIN, [], |row| row.get::<_, String>(0))
+                .optional()?;
+            Ok::<_, rusqlite::Error>(WorkFacts {
+                viewer: viewer.as_deref().map(Login::new),
+                pull_requests: pull_requests::read_open(&transaction, &repository)?,
+            })
+        })?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    fn call<T: Send + 'static>(
+        &self,
+        work: impl FnOnce(&mut Connection) -> T + Send + 'static,
+    ) -> Result<T, Error> {
+        let stopped = || Error::new(ErrorKind::Internal, STOPPED);
+        ask(&*self.jobs.upgrade().ok_or_else(stopped)?, work)
+    }
+}
+
+/// The read-only connection before the database is ready for it. Dropping this answers what's waiting.
+#[must_use = "dropping this tells every reader that the database stopped"]
+pub struct ReaderToOpen {
+    jobs: Arc<Sender<Job>>,
+    queue: Receiver<Job>,
+}
+
+/// The read-only connection, on its thread. Only this keeps the thread going, so the app's readers can't keep
+/// the file open once the session ends.
+#[must_use = "dropping this leaves the connection open until the process ends"]
+pub struct OpenReader {
+    jobs: Arc<Sender<Job>>,
+    thread: JoinHandle<()>,
+}
+
+/// A way to ask the read-only connection, and what opens it when `Store::open` has made the file current.
+pub fn reader() -> (ReaderToOpen, StoreReader) {
+    let (jobs, queue) = mpsc::channel::<Job>();
+    let jobs = Arc::new(jobs);
+    let reader = StoreReader {
+        jobs: Arc::downgrade(&jobs),
+    };
+    (ReaderToOpen { jobs, queue }, reader)
+}
+
+impl ReaderToOpen {
+    /// Opens `path` read-only, on a thread of its own.
+    pub fn open(self, path: &Path) -> Result<OpenReader, Error> {
+        let mut connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(saying(CANT_OPEN))?;
+        let queue = self.queue;
+        let thread = thread::spawn(move || {
+            for job in queue {
+                job(&mut connection);
+            }
+        });
+        Ok(OpenReader {
+            jobs: self.jobs,
+            thread,
+        })
+    }
+}
+
+impl OpenReader {
+    /// Finishes the jobs it has and closes the connection. Close this before `Store`: the last connection
+    /// to close removes the `-wal` and `-shm` files.
+    pub fn close(self) {
+        drop(self.jobs);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a thread that panicked has closed the file too, and `call` has already said so"
+        )]
+        let _ = self.thread.join();
+    }
+}
+
+/// Runs `work` on the thread that owns a connection, and waits for its answer.
+fn ask<T: Send + 'static>(
+    jobs: &Sender<Job>,
+    work: impl FnOnce(&mut Connection) -> T + Send + 'static,
+) -> Result<T, Error> {
+    let (reply, answer) = mpsc::channel();
+    let job = Box::new(move |connection: &mut Connection| {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "this fails only if the caller has gone, and it waits for this answer"
+        )]
+        let _ = reply.send(work(connection));
+    });
+    jobs.send(job)
+        .ok()
+        .and_then(|()| answer.recv().ok())
+        .ok_or_else(|| Error::new(ErrorKind::Internal, STOPPED))
 }
 
 fn open_with(path: &Path, migrations: &[Migration]) -> Result<Store, Error> {
@@ -303,7 +423,13 @@ mod tests {
     }
 
     /// The queries screens wait on, which the plan check below runs.
-    const VIEW_QUERIES: [&str; 1] = [LAST_LOGIN];
+    const VIEW_QUERIES: [&str; 5] = [
+        LAST_LOGIN,
+        pull_requests::VIEW_QUERIES[0],
+        pull_requests::VIEW_QUERIES[1],
+        pull_requests::VIEW_QUERIES[2],
+        pull_requests::VIEW_QUERIES[3],
+    ];
 
     /// Tables that stay a few rows long, so reading all of them is fine. Any other table counts as large,
     /// so a new one is checked until someone says otherwise.

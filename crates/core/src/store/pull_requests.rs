@@ -84,8 +84,8 @@ pub(super) const VIEW_QUERIES: [&str; 4] = [
     ASSIGNEES,
 ];
 
-/// How a fieldless enum of GitHub's reads in a column, which is how GitHub spells it. Such an enum always
-/// serializes to a string, and if one ever didn't, the column's `NOT NULL` would refuse the row.
+/// The text of a fieldless enum of GitHub's in a column, spelled as GitHub spells it. Serde writes such an
+/// enum as a string, and if one ever didn't, the column's `NOT NULL` would refuse the row.
 fn text_of<T: Serialize>(value: &T) -> Option<String> {
     serde_json::to_value(value)
         .ok()

@@ -1,6 +1,6 @@
-//! What Tsugiki learns, kept in one SQLite file (ADR 0010). `Store` is the one writer, and `StoreReader` is a
-//! read-only connection for screens, so a screen never waits on a sync (ADR 0018). Each connection has a
-//! thread that runs its jobs in turn, so a caller waits only for the jobs ahead of its own on that
+//! Tsugiki keeps what it learns in one SQLite file (ADR 0010). `Store` is the one writer, and `StoreReader`
+//! is a read-only connection for screens, so a screen never waits on a sync (ADR 0018). Each connection has
+//! a thread that runs its jobs in turn, so a caller waits only for the jobs ahead of its own on that
 //! connection.
 
 mod file;
@@ -50,7 +50,7 @@ impl Store {
         open_with(path, MIGRATIONS)
     }
 
-    /// Who was signed in when Tsugiki last reached GitHub, if it ever has.
+    /// The user signed in when Tsugiki last reached GitHub, if it ever has.
     pub fn last_login(&self) -> Result<Option<Login>, Error> {
         let found = self.call(|connection| {
             connection
@@ -108,10 +108,10 @@ impl Store {
     }
 }
 
-/// What a screen needs to work out the Workbench, read at one moment.
+/// The facts a screen needs to work out the Workbench, read at one moment.
 #[derive(Debug, PartialEq, Eq)]
 pub struct WorkFacts {
-    /// Who was signed in when Tsugiki last reached GitHub, if it ever has.
+    /// The user signed in when Tsugiki last reached GitHub, if it ever has.
     pub viewer: Option<Login>,
     pub pull_requests: Vec<PullRequestFacts>,
 }
@@ -123,7 +123,7 @@ pub struct StoreReader {
 }
 
 impl StoreReader {
-    /// What the Workbench of `repository` is made from.
+    /// The facts behind the Workbench of `repository`.
     pub fn work_facts(&self, repository: &RepositoryName) -> Result<WorkFacts, Error> {
         let repository = repository.to_string();
         let read = self.call(move |connection| {
@@ -192,7 +192,7 @@ impl ReaderToOpen {
 }
 
 impl OpenReader {
-    /// Finishes what was asked for and closes the connection. Close this before `Store`: the last connection
+    /// Finishes the jobs it has and closes the connection. Close this before `Store`: the last connection
     /// to close removes the `-wal` and `-shm` files.
     pub fn close(self) {
         drop(self.jobs);

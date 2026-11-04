@@ -74,7 +74,7 @@ pub(crate) mod testing {
     use super::*;
     use std::sync::mpsc::{self, Receiver};
 
-    /// A board that passes on what changed on a Workbench, and nothing about the status.
+    /// A board that passes on Workbench changes and drops status changes.
     pub(crate) fn workbench_board() -> (StatusBoard, Receiver<RepositoryName>) {
         let (passed, seen) = mpsc::channel();
         let board = StatusBoard::new(Box::new(|_| {})).with_workbench_changes(Box::new(

@@ -15,11 +15,11 @@ use crate::repository::RepositoryName;
 use crate::store::Store;
 
 /// Below this many points left, a sync waits for the reset, because the hourly 5,000 are also the user's
-/// other tools'. Nobody has measured what those tools need, and GitHub's `remaining` is approximate.
+/// other tools'. We haven't measured what those tools need, and GitHub's `remaining` is approximate.
 const RATE_LIMIT_FLOOR: u32 = 500;
-/// How many IDs one search page asks for (ADR 0015).
+/// The number of IDs one search page asks for (ADR 0015).
 pub const SEARCH_PAGE: usize = 50;
-/// How many PRs one fetch asks for: fewer than a search's, because CI rollups are slow (ADR 0015).
+/// The number of PRs one fetch asks for: fewer than a search's, because CI rollups are slow (ADR 0015).
 pub const FETCH_BATCH: usize = 25;
 
 /// The user's own items in the order a first sync loads them (ADR 0015). Assigned Issues come with Issues
@@ -46,12 +46,12 @@ pub const WORK_SEARCHES: [PrSearch; 4] = [
 /// The rate limit resets every hour, so a longer pause can only come from a clock that's wrong.
 const LONGEST_PAUSE: Duration = Duration::from_secs(3600);
 
-/// How many times in a row a step can fail for any reason but the network or the rate limit, with one try at
-/// each refresh. GitHub's own outages give the same errors as a Repository that has gone, so this lets one
+/// A step can fail this many times in a row for any reason but the network or the rate limit, with one try
+/// at each refresh. GitHub's own outages give the same errors as a Repository that has gone, so this lets one
 /// pass before the sync gives way to the next. Asking for that Repository again, or restarting, tries again.
 const TRIES: u8 = 10;
 
-/// How far one Repository's sync has got.
+/// The progress of one Repository's sync.
 struct UserWorkSync {
     repository: RepositoryName,
     phase: Phase,
@@ -68,7 +68,7 @@ enum Phase {
     },
 }
 
-/// What one step did.
+/// The result of one step.
 enum Step {
     Searched { pause_until: Option<OffsetDateTime> },
     Saved { pause_until: Option<OffsetDateTime> },
@@ -135,8 +135,8 @@ impl UserWorkSync {
     }
 }
 
-/// The syncs still to run, one at a time. The one asked for last goes first, because that's the Repository
-/// the window has just opened (ADR 0015), and the others keep their progress behind it.
+/// The syncs still to run, one at a time. The one asked for last goes first, because the window has that
+/// Repository open (ADR 0015), and the others keep their progress behind it.
 #[derive(Default)]
 pub struct Syncs {
     queue: VecDeque<UserWorkSync>,
@@ -157,7 +157,7 @@ impl Syncs {
         self.failures = 0;
     }
 
-    /// When the next step can run, if there is one.
+    /// The time the next step can run, if there is one.
     pub fn ready_at(&self) -> Option<Instant> {
         self.queue
             .front()
@@ -234,7 +234,7 @@ impl Syncs {
     }
 }
 
-/// When to ask again, if the points left are below the floor.
+/// The time to ask again, if the points left are below the floor.
 fn pause_until(limit: RateLimit) -> Option<OffsetDateTime> {
     (limit.remaining < RATE_LIMIT_FLOOR).then_some(limit.reset_at)
 }
@@ -243,7 +243,7 @@ fn until_instant(until: OffsetDateTime) -> Instant {
     Instant::now() + pause_for(until, OffsetDateTime::now_utc())
 }
 
-/// How long to wait from `now` for `until`, which comes from GitHub's clock.
+/// The wait from `now` to `until`, which comes from GitHub's clock.
 fn pause_for(until: OffsetDateTime, now: OffsetDateTime) -> Duration {
     Duration::try_from(until - now)
         .unwrap_or(Duration::ZERO)

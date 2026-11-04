@@ -23,7 +23,7 @@ export class WorkbenchState {
     this.#repository = repository;
   }
 
-  /** Listens before it asks, so a change that lands in between isn't lost. */
+  /** Listens before it asks, so it hears a change that lands in between. */
   async load() {
     try {
       const stopListening = await events.workbenchChanged.listen(({ payload }) => {
@@ -35,7 +35,7 @@ export class WorkbenchState {
       }
       this.#stopListening = stopListening;
     } catch (e) {
-      // Rows now would never change, and the next good answer would clear this.
+      // With no listener the rows would go stale, and the next good answer would clear this error.
       this.error = String(e);
       return;
     }
@@ -54,7 +54,7 @@ export class WorkbenchState {
       status: "error" as const,
       error: { message: String(e) },
     }));
-    // A newer question knows more, so an older answer that arrives late has nothing to add.
+    // A newer question reads newer facts, so this drops an older answer that arrives late.
     if (question !== this.#lastQuestion) return;
     if (answer.status === "ok") {
       this.rows = answer.data.rows;

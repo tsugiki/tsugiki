@@ -12,7 +12,7 @@ use super::{BAD_GATEWAY, GitHub, Login, Request, Unreachable, read};
 use crate::error::Error;
 use crate::repository::RepositoryName;
 
-/// What a search for PRs looks for.
+/// One search for PRs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PrSearch {
     /// Names the request, so each search has its own recording.
@@ -21,12 +21,12 @@ pub struct PrSearch {
     pub qualifiers: &'static str,
 }
 
-/// Which page of a search to ask for.
+/// The page of a search to ask for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageRequest<'a> {
-    /// How many IDs to ask for.
+    /// The number of IDs to ask for.
     pub size: usize,
-    /// Where the last page said the next one starts.
+    /// The cursor the last page gave for the next one.
     pub after: Option<&'a str>,
 }
 
@@ -56,7 +56,7 @@ const FETCH_PULL_REQUESTS: &str = "query FetchPullRequests($ids: [ID!]!) { nodes
 #[serde(transparent)]
 pub struct NodeId(String);
 
-/// What GitHub says about the points left.
+/// GitHub's count of the points left.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RateLimit {
@@ -69,7 +69,7 @@ pub struct RateLimit {
 #[derive(Debug, PartialEq, Eq)]
 pub struct SearchPage {
     pub ids: Vec<NodeId>,
-    /// Where the next page starts, if there is one.
+    /// The next page's cursor, if there is one.
     pub next: Option<String>,
     pub rate_limit: RateLimit,
 }
@@ -78,7 +78,7 @@ pub struct SearchPage {
 #[derive(Debug, PartialEq, Eq)]
 pub struct FetchedBatch {
     pub pull_requests: Vec<PullRequest>,
-    /// How many of the IDs it asked for, which is fewer than offered after a retry.
+    /// The number of IDs it asked for, which is fewer than offered after a retry.
     pub asked_for: usize,
     pub rate_limit: RateLimit,
 }
@@ -119,14 +119,14 @@ pub struct LatestReview {
     pub state: ReviewState,
 }
 
-/// What Tsugiki keeps about a PR, as GitHub reports it (ADR 0010).
+/// The facts Tsugiki keeps about a PR, as GitHub reports them (ADR 0010).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PullRequestFacts {
     pub number: u32,
     pub title: String,
     pub state: PrState,
     pub is_draft: bool,
-    /// Nobody, when the account has been deleted.
+    /// Nobody, when the account no longer exists.
     pub author: Option<Login>,
     pub target_branch: String,
     /// Nothing, when the last commit has no checks.
@@ -311,8 +311,8 @@ impl GitHub {
         })
     }
 
-    /// The first `size` of `ids`, or half that after a 502 or no answer. An ID GitHub no longer knows answers
-    /// with nothing.
+    /// The first `size` of `ids`, or half that after a 502 or no answer. The answer leaves out an ID GitHub
+    /// no longer knows.
     pub fn fetch_pull_requests(&self, ids: &[NodeId], size: usize) -> Result<FetchedBatch, Error> {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]

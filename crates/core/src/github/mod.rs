@@ -310,7 +310,7 @@ pub(crate) mod testing {
         }))
     }
 
-    /// Answers from a list, in order, and tells the test what it was asked: each operation and its variables.
+    /// Answers from a list, in order, and records each operation and its variables for the test.
     pub(crate) struct Scripted {
         replies: std::cell::RefCell<std::collections::VecDeque<Result<Reply, Unreachable>>>,
         asked: std::sync::mpsc::Sender<(String, Value)>,

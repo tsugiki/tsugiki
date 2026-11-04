@@ -24,7 +24,7 @@ export const commands = {
 	 *  on now. This waits on a small file and never on GitHub.
 	 */
 	addRepository: (name: string) => typedError<Home_Serialize, Error_Serialize>(__TAURI_INVOKE("add_repository", { name })),
-	/**  What the Workbench of a Repository lists. This waits on the database and never on GitHub (ADR 0018). */
+	/**  The rows of a Repository's Workbench. This waits on the database and never on GitHub (ADR 0018). */
 	workbench: (repository: string) => typedError<Workbench_Serialize, Error_Serialize>(__TAURI_INVOKE("workbench", { repository })),
 };
 
@@ -249,14 +249,14 @@ export type Status_Serialize =
 /**  Where the token comes from. A personal access token joins this with the Account page (ADR 0004). */
 export type TokenSource = "gh";
 
-/**  Why a PR is on the user's Workbench. */
+/**  The reason a PR is on the user's Workbench. */
 export type WorkReason = 
 /**  The user is a requested reviewer or an assignee. */
 "review_request" | "own_pr" | 
 /**  The user has submitted a Review. */
 "reviewed";
 
-/**  What the Workbench of a Repository shows, the latest update first. */
+/**  The rows of a Repository's Workbench, the latest update first. */
 export type Workbench = Workbench_Serialize | Workbench_Deserialize;
 
 /**  Sent when a Repository's stored facts change, so a window showing its Workbench asks again (ADR 0008). */
@@ -289,12 +289,12 @@ export type WorkbenchRow_Serialize = {
 	reasons: WorkReason[],
 };
 
-/**  What the Workbench of a Repository shows, the latest update first. */
+/**  The rows of a Repository's Workbench, the latest update first. */
 export type Workbench_Deserialize = {
 	rows: WorkbenchRow_Deserialize[],
 };
 
-/**  What the Workbench of a Repository shows, the latest update first. */
+/**  The rows of a Repository's Workbench, the latest update first. */
 export type Workbench_Serialize = {
 	rows: WorkbenchRow_Serialize[],
 };

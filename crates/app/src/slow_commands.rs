@@ -51,7 +51,7 @@ pub(crate) fn add_repository(
     crate::add_named_repository(name, &owner, &requests)
 }
 
-/// What the Workbench of a Repository lists. This waits on the database and never on GitHub (ADR 0018).
+/// The rows of a Repository's Workbench. This waits on the database and never on GitHub (ADR 0018).
 #[tauri::command(async)]
 #[specta::specta]
 pub(crate) fn workbench(

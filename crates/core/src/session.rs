@@ -75,13 +75,13 @@ pub struct SessionRequests {
 
 impl SessionRequests {
     /// Asks the session to load the user's work in `name`, and returns at once. A session with no token or no
-    /// database has already shown why on the status bar, so that failure has nothing to add.
+    /// database has already shown why on the status bar, so this reports no failure.
     pub fn sync(&self, name: RepositoryName) {
         drop(self.messages.send(Message::Sync { name }));
     }
 
-    /// What adding `name` would load, or why GitHub won't say. A session with no token or no database has
-    /// already shown why on the status bar.
+    /// Asks GitHub what adding `name` would load. A session with no token or no database answers with an
+    /// error, and has already shown why on the status bar.
     pub fn check(&self, name: RepositoryName) -> Result<RepositoryCheck, Error> {
         let (reply, answer) = mpsc::channel();
         self.messages
@@ -157,7 +157,7 @@ struct Refreshes {
     incoming: Receiver<Message>,
 }
 
-/// What the session's thread does next.
+/// The session thread's next move.
 #[derive(Debug, PartialEq, Eq)]
 enum Turn {
     Refresh,
@@ -166,8 +166,8 @@ enum Turn {
 }
 
 impl Refreshes {
-    /// Waits to be told to stop, for a session with nothing to ask GitHub with. A check dropped here tells the
-    /// one asking that the session isn't connected.
+    /// Waits for a stop message, for a session with nothing to ask GitHub with. A check dropped here tells
+    /// the one asking that the session isn't connected.
     fn wait_for_stop(&self) {
         while let Ok(message) = self.incoming.recv() {
             match message {
@@ -205,7 +205,7 @@ impl Refreshes {
     }
 }
 
-/// What the session opens when it starts.
+/// The database a session opens when it starts.
 struct Database {
     folders: Result<Folders, Error>,
     to_open: ReaderToOpen,
@@ -242,7 +242,7 @@ fn run(board: &mut StatusBoard, database: Database, access: GitHubAccess, refres
     }
 }
 
-/// Connects, then asks GitHub again and runs what syncs it's asked for, until told to stop. With no token
+/// Connects, then refreshes and runs the syncs the app asks for, until the app stops it. With no token
 /// `board` shows why, and the database stays open until then, so the window can read what's stored.
 fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes: &Refreshes) {
     let Some(github) = connect(board, store, access) else {
@@ -258,8 +258,8 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                 refresh(board, store, &github);
                 refresh_at = Instant::now() + refreshes.every;
             }
-            // A Workbench lists nothing until Tsugiki knows who the user is, and nothing tells the window when
-            // it learns that. So a sync waits for it, and its first save then shows the rows.
+            // A Workbench lists nothing until Tsugiki knows who the user is, and no event tells the window
+            // when it learns that. So a sync waits for it, and its first save then shows the rows.
             Turn::SyncStep if !matches!(store.last_login(), Ok(Some(_))) => {
                 syncs.wait_until(refresh_at);
             }
@@ -289,7 +289,7 @@ fn refresh(board: &mut StatusBoard, store: &Store, github: &GitHub) {
     });
 }
 
-/// What the status bar says after GitHub didn't answer as it should.
+/// The status bar's words after GitHub didn't answer as it should.
 fn status_after(problem: Error, store: &Store) -> Status {
     match problem.kind {
         ErrorKind::Offline => match store.last_login() {
@@ -530,7 +530,7 @@ mod tests {
         assert_eq!(showing(&seen), octocat());
     }
 
-    /// What `run` opens, with no reader waiting for it.
+    /// The `Database` for `run`, with no reader waiting for it.
     fn database(folders: Result<Folders, Error>) -> Database {
         let (to_open, _reader) = store::reader();
         Database { folders, to_open }
@@ -747,7 +747,7 @@ mod tests {
 
         let answer = thread::scope(|scope| {
             let asking = scope.spawn(|| checks.check(gcmon()));
-            // A step can run only once the check has been answered, or this would hang.
+            // A step can run only after the session answers the check, or this would hang.
             while !asking.is_finished() {
                 let turn = refreshes.next_turn(&github, &mut syncs, refresh_at);
                 assert_eq!(turn, Turn::SyncStep);
@@ -760,7 +760,7 @@ mod tests {
 
     #[test]
     fn a_sync_github_cant_answer_shows_offline_and_waits_for_the_next_refresh() {
-        // `Replies` panics if it is asked again after the fourth, so the sync can't run ahead of the refresh.
+        // `Replies` panics at a fifth question, so the sync can't run ahead of the refresh.
         let access = replying(vec![
             signed_in(),
             Err(Unreachable),

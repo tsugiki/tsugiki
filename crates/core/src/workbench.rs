@@ -10,7 +10,7 @@ use crate::github::pull_requests::{CiState, PullRequestFacts, ReviewState};
 use crate::repository::RepositoryName;
 use crate::store::{StoreReader, WorkFacts};
 
-/// Why a PR is on the user's Workbench.
+/// The reason a PR is on the user's Workbench.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkReason {
@@ -33,7 +33,7 @@ pub struct WorkbenchRow {
     pub reasons: Vec<WorkReason>,
 }
 
-/// What the Workbench of a Repository shows, the latest update first.
+/// The rows of a Repository's Workbench, the latest update first.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct Workbench {
     pub rows: Vec<WorkbenchRow>,
@@ -45,7 +45,7 @@ impl Workbench {
         Ok(Self::from_facts(reader.work_facts(repository)?))
     }
 
-    /// Nobody has signed in yet if there is no viewer, and then nothing is the user's.
+    /// No viewer means nobody has signed in yet, so no PR is the user's.
     fn from_facts(facts: WorkFacts) -> Self {
         let rows = facts.viewer.map_or_else(Vec::new, |viewer| {
             facts

@@ -27,9 +27,10 @@ const DEBUG_PORT = 9333;
 const APP_ADDRESS = "http://tauri.localhost/";
 const SETTLE_MS = 2000;
 const CLOSE_MS = 10_000;
-// Tsugiki runs `gh auth token` before its first request and gives `gh` 30 s (`TIMEOUT` in live.rs). One run's
-// request took 18 s to arrive, cause unknown (#86). This wait starts once the page is ready, so a `gh` that
-// times out still fails the check.
+// Tsugiki runs `gh auth token` before its first request and gives `gh` 30 s (`GH_TIMEOUT` in live.rs). One
+// run's request took 18 s to arrive, cause unknown (#86). This wait starts once the page is ready, so a `gh`
+// that times out still fails the check. A request waits at the proxy for 15 s at most (`REQUEST_TIMEOUT`),
+// so one that arrives more than 15 s before the page is ready fails it too.
 const FIRST_REQUEST_MS = 35_000;
 const BUILD_CONFIG = ".temp/smoke-config.json";
 const TAURI_BROWSER_ARGS = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";

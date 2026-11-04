@@ -1,0 +1,180 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { commands, events } from "$lib/data/bindings";
+import { WorkbenchState, type WorkbenchRow } from "./workbench.svelte";
+
+vi.mock("$lib/data/bindings", () => ({
+  commands: { workbench: vi.fn() },
+  events: { workbenchChanged: { listen: vi.fn() } },
+}));
+
+const row = (number: number): WorkbenchRow => ({
+  number,
+  title: `PR ${String(number)}`,
+  author: "octocat",
+  is_draft: false,
+  target_branch: "main",
+  ci: "SUCCESS",
+  reasons: ["own_pr"],
+});
+
+const answer = (...numbers: number[]) => ({
+  status: "ok" as const,
+  data: { rows: numbers.map(row) },
+});
+
+const refused = { status: "error" as const, error: { kind: "internal" as const, message: "no database" } };
+
+/** Catches the listener the state registers, so a test can say a Repository changed as the core would. */
+const catchListener = () => {
+  const stop = vi.fn();
+  const send = vi.fn();
+  vi.mocked(events.workbenchChanged.listen).mockImplementation(async (callback) => {
+    send.mockImplementation((repository: string) => {
+      callback({ event: "workbench-changed", id: 1, payload: { repository } });
+    });
+    return stop;
+  });
+  return { stop, send };
+};
+
+const numbers = (state: WorkbenchState) => state.rows?.map((r) => r.number);
+
+describe("WorkbenchState", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("holds what the core lists for its Repository", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer(2, 1));
+    const state = new WorkbenchState("python/cpython");
+    expect(state.rows).toBeUndefined();
+    await state.load();
+    expect(commands.workbench).toHaveBeenCalledWith("python/cpython");
+    expect(numbers(state)).toEqual([2, 1]);
+    expect(state.error).toBeUndefined();
+  });
+
+  it("listens before it asks, so no change is lost in between", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    await new WorkbenchState("python/cpython").load();
+    const listened = vi.mocked(events.workbenchChanged.listen).mock.invocationCallOrder[0];
+    const asked = vi.mocked(commands.workbench).mock.invocationCallOrder[0];
+    expect(listened).toBeLessThan(asked as number);
+  });
+
+  it("asks again when its Repository changes", async () => {
+    const { send } = catchListener();
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(1));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(2, 1));
+    send("python/cpython");
+
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([2, 1]);
+    });
+  });
+
+  it("doesn't ask when another Repository changes", async () => {
+    const { send } = catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer(1));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    send("tsugiki/tsugiki");
+    expect(commands.workbench).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the newest answer when an older one arrives after it", async () => {
+    const { send } = catchListener();
+    const first = Promise.withResolvers<ReturnType<typeof answer>>();
+    vi.mocked(commands.workbench).mockReturnValueOnce(first.promise);
+    const state = new WorkbenchState("python/cpython");
+    const loading = state.load();
+    await vi.waitFor(() => {
+      expect(commands.workbench).toHaveBeenCalledOnce();
+    });
+
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(2));
+    send("python/cpython");
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([2]);
+    });
+
+    first.resolve(answer(1));
+    await loading;
+    expect(numbers(state)).toEqual([2]);
+  });
+
+  it("says why the core refused, and keeps the rows it has", async () => {
+    const { send } = catchListener();
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(1));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    vi.mocked(commands.workbench).mockResolvedValueOnce(refused);
+    send("python/cpython");
+
+    await vi.waitFor(() => {
+      expect(state.error).toBe("no database");
+    });
+    expect(numbers(state)).toEqual([1]);
+  });
+
+  it("forgets a refusal when the next answer arrives", async () => {
+    const { send } = catchListener();
+    vi.mocked(commands.workbench).mockResolvedValueOnce(refused);
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    expect(state.error).toBe("no database");
+
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(1));
+    send("python/cpython");
+
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([1]);
+    });
+    expect(state.error).toBeUndefined();
+  });
+
+  it("says so when a question breaks", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockRejectedValue(new Error("the core is gone"));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    expect(state.error).toBe("Error: the core is gone");
+  });
+
+  it("says so when it can't listen, since its rows would never change", async () => {
+    vi.mocked(events.workbenchChanged.listen).mockRejectedValue(new Error("no events"));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    expect(state.error).toBe("Error: no events");
+    expect(commands.workbench).not.toHaveBeenCalled();
+  });
+
+  it("stops listening when stopped", async () => {
+    const { stop } = catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    state.stop();
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it("stops listening and asks nothing if stopped before it could listen", async () => {
+    const { stop } = catchListener();
+    const state = new WorkbenchState("python/cpython");
+    const loading = state.load();
+    state.stop();
+    await loading;
+    expect(stop).toHaveBeenCalledOnce();
+    expect(commands.workbench).not.toHaveBeenCalled();
+  });
+
+  it("has nothing to stop if it never loaded", () => {
+    new WorkbenchState("python/cpython").stop();
+  });
+});

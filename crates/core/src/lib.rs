@@ -15,7 +15,9 @@ pub mod session;
 pub mod settings;
 pub mod status;
 pub mod store;
+pub mod sync;
 pub mod token;
+pub mod workbench;
 
 use serde::Serialize;
 use specta::Type;

@@ -7,6 +7,7 @@ const core = vi.hoisted(() => ({
   home: vi.fn(),
   checkRepository: vi.fn(),
   addRepository: vi.fn(),
+  workbench: vi.fn(),
 }));
 
 vi.mock("$lib/data/bindings", () => ({
@@ -15,7 +16,10 @@ vi.mock("$lib/data/bindings", () => ({
     status: async () => ({ state: "online", login: "octocat" }),
     ...core,
   },
-  events: { statusChanged: { listen: async () => () => {} } },
+  events: {
+    statusChanged: { listen: async () => () => {} },
+    workbenchChanged: { listen: async () => () => {} },
+  },
 }));
 
 const onboarding = { screen: "onboarding", token: "gh" } as const;
@@ -23,6 +27,7 @@ const gcmon = { name: "sergey-miryanov/gcmon", conventions: "github" } as const;
 
 beforeEach(() => {
   core.home.mockResolvedValue(onboarding);
+  core.workbench.mockResolvedValue({ status: "ok", data: { rows: [] } });
   core.settings.mockResolvedValue({
     settings: { status_bar: { visible: true }, repositories: [] },
     problems: [],
@@ -71,7 +76,7 @@ it("adds a Repository from onboarding and then shows it", async () => {
   await fireEvent.click(screen.getByRole("button", { name: "Check" }));
   await fireEvent.click(await screen.findByRole("button", { name: "Add" }));
 
-  await screen.findByText(/Workbench opens here/);
+  await screen.findByText(/Nothing here yet/);
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.getByRole("heading", { name: gcmon.name })).toBeTruthy();
   expect(core.settings).toHaveBeenCalledTimes(2);

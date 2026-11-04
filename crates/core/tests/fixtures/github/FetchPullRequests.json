@@ -1,0 +1,1166 @@
+{
+  "body": {
+    "data": {
+      "nodes": [
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "johng"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": false,
+          "latestReviews": {
+            "nodes": []
+          },
+          "number": 160662,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "octocat"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "gh-112564: Fix UAF for gc debug print",
+          "updatedAt": "2026-10-31T08:03:04Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "efimov-mikhail"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": false,
+          "latestReviews": {
+            "nodes": []
+          },
+          "number": 140836,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "vstinner"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "octocat"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "colesbury"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "mpage"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "gh-140798: Fix memory leak with `threading.local` when finalizer resurrects `threading_local_key`",
+          "updatedAt": "2026-09-04T00:16:14Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "johng"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": false,
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "octocat"
+                },
+                "state": "APPROVED"
+              }
+            ]
+          },
+          "number": 160667,
+          "reviewRequests": {
+            "nodes": []
+          },
+          "state": "OPEN",
+          "title": "gh-160663: Fix UAF in `visit_generation`",
+          "updatedAt": "2026-10-30T21:08:29Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "octocat"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": false,
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "ZeroIntensity"
+                },
+                "state": "APPROVED"
+              }
+            ]
+          },
+          "number": 159888,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "markshannon"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "GH-159101: Fix UAF when tp_finalize changes the base class",
+          "updatedAt": "2026-10-26T06:31:36Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "octocat"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": false,
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "vstinner"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "pablogsal"
+                },
+                "state": "APPROVED"
+              }
+            ]
+          },
+          "number": 157178,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "markshannon"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "ZeroIntensity"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "GH-156425: Clear GC frame on early return",
+          "updatedAt": "2026-10-18T12:48:53Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "octocat"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": false,
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "markshannon"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "efimov-mikhail"
+                },
+                "state": "APPROVED"
+              }
+            ]
+          },
+          "number": 156423,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "serhiy-storchaka"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "GH-155728: Untrack tuples while unmarshalling ",
+          "updatedAt": "2026-10-20T20:37:03Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "octocat"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": false,
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "efimov-mikhail"
+                },
+                "state": "APPROVED"
+              }
+            ]
+          },
+          "number": 156419,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "markshannon"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "iritkatriel"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "Eclips4"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "GH-155728: Untrack const tuples",
+          "updatedAt": "2026-10-27T15:05:03Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "aisk"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": false,
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "octocat"
+                },
+                "state": "APPROVED"
+              },
+              {
+                "author": {
+                  "login": "corona10"
+                },
+                "state": "APPROVED"
+              }
+            ]
+          },
+          "number": 155182,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "rhettinger"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "gh-155181: Untrack frozensets created from set literals when possible",
+          "updatedAt": "2026-08-10T16:07:35Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "aisk"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": false,
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "octocat"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "methane"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "sobolevn"
+                },
+                "state": "COMMENTED"
+              }
+            ]
+          },
+          "number": 155178,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "markshannon"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "gh-155176: Don't track frozendicts whose contents can never be tracked by the GC",
+          "updatedAt": "2026-10-22T17:17:03Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "Abhi210"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": false,
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "IvyXu420"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "octocat"
+                },
+                "state": "APPROVED"
+              }
+            ]
+          },
+          "number": 154019,
+          "reviewRequests": {
+            "nodes": []
+          },
+          "state": "OPEN",
+          "title": "gh-151763: Fix crash in PyList_New() on allocation failure under low memory",
+          "updatedAt": "2026-10-24T08:59:35Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "aisk"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": false,
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "octocat"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "prakashsellathurai"
+                },
+                "state": "COMMENTED"
+              }
+            ]
+          },
+          "number": 153059,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "kumaraditya303"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "gh-153058: Fix weakref proxy ref leak",
+          "updatedAt": "2026-10-12T00:20:51Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "tonghuaroot"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": false,
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "octocat"
+                },
+                "state": "COMMENTED"
+              }
+            ]
+          },
+          "number": 151863,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "ericsnowcurrently"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "serhiy-storchaka"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "gh-151862: Fix NULL deref on non-str AttributeError when unpickling",
+          "updatedAt": "2026-08-16T15:32:48Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "timurmamedov1"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": false,
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "copilot-pull-request-reviewer"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "octocat"
+                },
+                "state": "APPROVED"
+              }
+            ]
+          },
+          "number": 151821,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "lysnikolaou"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "gh-151815: Fix segfault in template_iter on allocation failure",
+          "updatedAt": "2026-10-18T00:16:55Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "sobolevn"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": false,
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "johnslavik"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "octocat"
+                },
+                "state": "APPROVED"
+              }
+            ]
+          },
+          "number": 149533,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "AA-Turner"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "gh-149532: Remove `bool.__invert__` magic method",
+          "updatedAt": "2026-08-10T06:26:52Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "nascheme"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": true,
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "octocat"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "colesbury"
+                },
+                "state": "COMMENTED"
+              }
+            ]
+          },
+          "number": 148940,
+          "reviewRequests": {
+            "nodes": []
+          },
+          "state": "OPEN",
+          "title": "GH-148937: fix for free-threaded GC (RSS based defer)",
+          "updatedAt": "2026-10-04T18:46:52Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "Fidget-Spinner"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": false,
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "octocat"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "corona10"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "efimov-mikhail"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "tomasr8"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "markshannon"
+                },
+                "state": "COMMENTED"
+              }
+            ]
+          },
+          "number": 141595,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "ericsnowcurrently"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "ZeroIntensity"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "brandtbucher"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "savannahostrowski"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "diegorusso"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "gh-141594: A free-threaded JIT (Part 1)",
+          "updatedAt": "2026-09-15T18:07:11Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "Fidget-Spinner"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": false,
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "octocat"
+                },
+                "state": "COMMENTED"
+              }
+            ]
+          },
+          "number": 140968,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "markshannon"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "tomasr8"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "savannahostrowski"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "gh-140928: Add a constant pool to all executors; Contant propagate using the pool",
+          "updatedAt": "2026-05-16T12:19:20Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "albertedwardson"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": true,
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "octocat"
+                },
+                "state": "COMMENTED"
+              }
+            ]
+          },
+          "number": 140688,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "markshannon"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "gh-140328: Use interned versions of string constants if they're already present",
+          "updatedAt": "2026-10-26T13:32:49Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "davep"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": false,
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "octocat"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "Junior-Stalin"
+                },
+                "state": "APPROVED"
+              }
+            ]
+          },
+          "number": 140258,
+          "reviewRequests": {
+            "nodes": []
+          },
+          "state": "OPEN",
+          "title": "gh-140256: Populate `argrepr` for `LOAD_SMALL_INT`",
+          "updatedAt": "2026-05-01T00:32:22Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "efimov-mikhail"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": false,
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "octocat"
+                },
+                "state": "APPROVED"
+              }
+            ]
+          },
+          "number": 139779,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "markshannon"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "ericsnowcurrently"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "gh-139778: Assertion fix in `code_returns_only_none`",
+          "updatedAt": "2026-09-04T00:15:56Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "sobolevn"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": false,
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "octocat"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "efimov-mikhail"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "ilovelinux"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "terryjreedy"
+                },
+                "state": "COMMENTED"
+              }
+            ]
+          },
+          "number": 138865,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "pablogsal"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "lysnikolaou"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "iritkatriel"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "gh-138864: Improve `SyntaxError` message for `case` with expression",
+          "updatedAt": "2026-04-29T06:49:14Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "tom-pytel"
+          },
+          "baseRefName": "main",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "isDraft": false,
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "octocat"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "encukou"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "colesbury"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "ZeroIntensity"
+                },
+                "state": "COMMENTED"
+              }
+            ]
+          },
+          "number": 130771,
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "ericsnowcurrently"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "kumaraditya303"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "erlend-aasland"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "AA-Turner"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "gh-128942: make arraymodule.c free-thread safe (lock-free)",
+          "updatedAt": "2026-07-14T18:22:30Z"
+        }
+      ],
+      "rateLimit": {
+        "remaining": 4986,
+        "resetAt": "2026-11-04T12:11:45Z"
+      }
+    }
+  },
+  "query": "query FetchPullRequests($ids: [ID!]!) { nodes(ids: $ids) { ... on PullRequest { number title state isDraft updatedAt baseRefName author { login } assignees(first: 20) { nodes { login } } reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } } rateLimit { remaining resetAt } }",
+  "reset": 1793794305,
+  "status": 200
+}

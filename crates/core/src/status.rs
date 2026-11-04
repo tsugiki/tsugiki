@@ -5,6 +5,7 @@ use specta::Type;
 
 use crate::error::Error;
 use crate::github::Login;
+use crate::repository::RepositoryName;
 
 /// The app's state, shown in the status bar.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Type)]
@@ -25,11 +26,13 @@ pub enum Status {
     Problem { problem: Error },
 }
 
-/// Holds the status and announces each change, so the app can pass it on as an event. The session's thread
+/// Holds the status and announces each change, so the app can pass it on as an event. It also announces when
+/// a Repository's stored facts change, so an open Workbench can ask again (ADR 0008). The session's thread
 /// owns it, so nothing here needs a lock.
 pub struct StatusBoard {
     current: Status,
     announce: Box<dyn FnMut(&Status) + Send>,
+    announce_workbench: Box<dyn FnMut(&RepositoryName) + Send>,
 }
 
 impl StatusBoard {
@@ -37,7 +40,22 @@ impl StatusBoard {
         Self {
             current: Status::default(),
             announce,
+            announce_workbench: Box::new(|_| {}),
         }
+    }
+
+    /// Also tells `announce` when a Repository's stored facts change.
+    #[must_use]
+    pub fn with_workbench_changes(
+        mut self,
+        announce: Box<dyn FnMut(&RepositoryName) + Send>,
+    ) -> Self {
+        self.announce_workbench = announce;
+        self
+    }
+
+    pub(crate) fn workbench_changed(&mut self, repository: &RepositoryName) {
+        (self.announce_workbench)(repository);
     }
 
     pub(crate) fn set(&mut self, status: Status) {
@@ -55,6 +73,17 @@ impl StatusBoard {
 pub(crate) mod testing {
     use super::*;
     use std::sync::mpsc::{self, Receiver};
+
+    /// A board that passes on what changed on a Workbench, and nothing about the status.
+    pub(crate) fn workbench_board() -> (StatusBoard, Receiver<RepositoryName>) {
+        let (passed, seen) = mpsc::channel();
+        let board = StatusBoard::new(Box::new(|_| {})).with_workbench_changes(Box::new(
+            move |repository: &RepositoryName| {
+                passed.send(repository.clone()).unwrap();
+            },
+        ));
+        (board, seen)
+    }
 
     pub(crate) fn quiet_board() -> StatusBoard {
         StatusBoard::new(Box::new(|_| {}))
@@ -86,6 +115,16 @@ mod tests {
     use super::testing::{announced, watched_board};
     use super::*;
     use crate::error::ErrorKind;
+
+    #[test]
+    fn a_changed_workbench_with_nobody_listening_isnt_a_new_status() {
+        let (mut board, seen) = watched_board();
+        let cpython = RepositoryName::parse("python/cpython").unwrap();
+
+        board.workbench_changed(&cpython);
+
+        assert!(announced(&seen).is_empty());
+    }
 
     #[test]
     fn nothing_is_known_before_tsugiki_connects() {

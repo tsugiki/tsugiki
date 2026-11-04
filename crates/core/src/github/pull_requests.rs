@@ -1,4 +1,6 @@
-//! Pull requests as GitHub reports them, and the queries that find and fetch the user's work (ADR 0015).
+//! Finding and fetching PRs on GitHub, and what comes back in the form the rest of Tsugiki reads. What to
+//! look for, how much to ask for and when to pause are Tsugiki's choices, and `sync.rs` makes them
+//! (ADR 0015).
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -10,60 +12,33 @@ use super::{BAD_GATEWAY, GitHub, Login, Request, Unreachable, read};
 use crate::error::Error;
 use crate::repository::RepositoryName;
 
-/// Below this many points left, a sync waits for the reset, because the hourly 5,000 are also the user's
-/// other tools'. Nobody has measured what those tools need, and GitHub's `remaining` is approximate.
-const RATE_LIMIT_FLOOR: u32 = 500;
-/// How many IDs one search page asks for (ADR 0015).
-const SEARCH_PAGE: usize = 50;
-/// How many PRs one fetch asks for: fewer than a search's, because CI rollups are slow (ADR 0015).
-const FETCH_BATCH: usize = 25;
-
-/// The query text of a search for IDs. Each search is its own operation, so each has its own recording.
-macro_rules! id_search {
-    ($operation:literal) => {
-        concat!(
-            "query ",
-            $operation,
-            "($query: String!, $first: Int!, $after: String) { ",
-            "search(query: $query, type: ISSUE_ADVANCED, first: $first, after: $after) { ",
-            "pageInfo { hasNextPage endCursor } nodes { ... on PullRequest { id } } } ",
-            "rateLimit { remaining resetAt } }"
-        )
-    };
-}
-
-/// One of the searches that find what waits on the user.
+/// What a search for PRs looks for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WorkSearch {
-    operation: &'static str,
-    query: &'static str,
-    qualifiers: &'static str,
+pub struct PrSearch {
+    /// Names the request, so each search has its own recording.
+    pub operation: &'static str,
+    /// GitHub's search words, without the Repository.
+    pub qualifiers: &'static str,
 }
 
-/// The user's own items in the order a first sync loads them (ADR 0015). Assigned Issues come with Issues
-/// themselves, so these all find PRs. A team's Review request doesn't name the user, so it doesn't count.
-pub const WORK_SEARCHES: [WorkSearch; 4] = [
-    WorkSearch {
-        operation: "SearchReviewRequests",
-        query: id_search!("SearchReviewRequests"),
-        qualifiers: "is:pr is:open user-review-requested:@me",
-    },
-    WorkSearch {
-        operation: "SearchReviewedPrs",
-        query: id_search!("SearchReviewedPrs"),
-        qualifiers: "is:pr is:open reviewed-by:@me",
-    },
-    WorkSearch {
-        operation: "SearchOwnPrs",
-        query: id_search!("SearchOwnPrs"),
-        qualifiers: "is:pr is:open author:@me",
-    },
-    WorkSearch {
-        operation: "SearchAssignedPrs",
-        query: id_search!("SearchAssignedPrs"),
-        qualifiers: "is:pr is:open assignee:@me",
-    },
-];
+/// Which page of a search to ask for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageRequest<'a> {
+    /// How many IDs to ask for.
+    pub size: usize,
+    /// Where the last page said the next one starts.
+    pub after: Option<&'a str>,
+}
+
+/// The text of a search for PR IDs, by GitHub's advanced search.
+fn search_query(operation: &str) -> String {
+    format!(
+        "query {operation}($query: String!, $first: Int!, $after: String) {{ \
+         search(query: $query, type: ISSUE_ADVANCED, first: $first, after: $after) {{ \
+         pageInfo {{ hasNextPage endCursor }} nodes {{ ... on PullRequest {{ id }} }} }} \
+         rateLimit {{ remaining resetAt }} }}"
+    )
+}
 
 /// The Workbench works out from these lists why a PR is the user's, so a list cut short would hide a PR the
 /// searches found. GitHub returns at most 100 at a time, and it limits a PR to 10 assignees.
@@ -85,16 +60,9 @@ pub struct NodeId(String);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RateLimit {
-    remaining: u32,
+    pub remaining: u32,
     #[serde(with = "time::serde::rfc3339")]
-    reset_at: OffsetDateTime,
-}
-
-impl RateLimit {
-    /// When to ask again, if the points left are below the floor.
-    pub fn pause_until(&self) -> Option<OffsetDateTime> {
-        (self.remaining < RATE_LIMIT_FLOOR).then_some(self.reset_at)
-    }
+    pub reset_at: OffsetDateTime,
 }
 
 /// One page of a search.
@@ -293,12 +261,12 @@ impl From<PullRequestWire> for PullRequest {
 }
 
 impl GitHub {
-    /// One page of `search` in `repository`, after `cursor`.
-    pub fn search_work(
+    /// One page of `search` in `repository`, or half that page after a 502 or no answer.
+    pub fn search_pull_requests(
         &self,
-        search: &WorkSearch,
+        search: &PrSearch,
         repository: &RepositoryName,
-        cursor: Option<&str>,
+        page: PageRequest<'_>,
     ) -> Result<SearchPage, Error> {
         #[derive(Deserialize)]
         struct Found {
@@ -323,10 +291,11 @@ impl GitHub {
             rate_limit: RateLimit,
         }
         let text = format!("repo:{repository} {}", search.qualifiers);
-        let (data, _): (Data, usize) = self.query_at_size(SEARCH_PAGE, |first| Request {
+        let query = search_query(search.operation);
+        let (data, _): (Data, usize) = self.query_at_size(page.size, |first| Request {
             operation: search.operation,
-            query: search.query,
-            variables: json!({ "query": text, "first": first, "after": cursor }),
+            query: &query,
+            variables: json!({ "query": text, "first": first, "after": page.after }),
         })?;
         let info = data.search.page_info;
         Ok(SearchPage {
@@ -342,24 +311,23 @@ impl GitHub {
         })
     }
 
-    /// The first `FETCH_BATCH` of `ids`, or half that after a 502 or no answer. An ID GitHub no longer knows
-    /// answers with nothing.
-    pub fn fetch_pull_requests(&self, ids: &[NodeId]) -> Result<FetchedBatch, Error> {
+    /// The first `size` of `ids`, or half that after a 502 or no answer. An ID GitHub no longer knows answers
+    /// with nothing.
+    pub fn fetch_pull_requests(&self, ids: &[NodeId], size: usize) -> Result<FetchedBatch, Error> {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Data {
             nodes: Vec<Option<PullRequestWire>>,
             rate_limit: RateLimit,
         }
-        let (data, asked_for): (Data, usize) =
-            self.query_at_size(FETCH_BATCH.min(ids.len()), |size| {
-                let asked: Vec<&str> = ids.iter().take(size).map(|id| id.0.as_str()).collect();
-                Request {
-                    operation: "FetchPullRequests",
-                    query: FETCH_PULL_REQUESTS,
-                    variables: json!({ "ids": asked }),
-                }
-            })?;
+        let (data, asked_for): (Data, usize) = self.query_at_size(size.min(ids.len()), |size| {
+            let asked: Vec<&str> = ids.iter().take(size).map(|id| id.0.as_str()).collect();
+            Request {
+                operation: "FetchPullRequests",
+                query: FETCH_PULL_REQUESTS,
+                variables: json!({ "ids": asked }),
+            }
+        })?;
         Ok(FetchedBatch {
             pull_requests: data
                 .nodes
@@ -399,8 +367,17 @@ mod tests {
 
     const RATE: &str = r#""rateLimit":{"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
 
+    const MINE: PrSearch = PrSearch {
+        operation: "SearchMine",
+        qualifiers: "is:pr author:@me",
+    };
+
     fn cpython() -> RepositoryName {
         RepositoryName::parse("python/cpython").unwrap()
+    }
+
+    fn page(after: Option<&str>) -> PageRequest<'_> {
+        PageRequest { size: 50, after }
     }
 
     fn github(script: Scripted) -> GitHub {
@@ -467,17 +444,17 @@ mod tests {
         let (script, asked) = Scripted::new(vec![reply_ok(&search_body(&["a", "b"], Some("c1")))]);
 
         let page = github(script)
-            .search_work(&WORK_SEARCHES[0], &cpython(), Some("c0"))
+            .search_pull_requests(&MINE, &cpython(), page(Some("c0")))
             .unwrap();
 
         assert_eq!(page.ids, ids(&["a", "b"]));
         assert_eq!(page.next.as_deref(), Some("c1"));
         let (operation, variables) = asked.recv().unwrap();
-        assert_eq!(operation, "SearchReviewRequests");
+        assert_eq!(operation, "SearchMine");
         assert_eq!(
             variables,
             json!({
-                "query": "repo:python/cpython is:pr is:open user-review-requested:@me",
+                "query": "repo:python/cpython is:pr author:@me",
                 "first": 50,
                 "after": "c0",
             })
@@ -490,25 +467,39 @@ mod tests {
         let (script, _asked) = Scripted::new(vec![reply_ok(&body)]);
 
         let page = github(script)
-            .search_work(&WORK_SEARCHES[1], &cpython(), None)
+            .search_pull_requests(&MINE, &cpython(), page(None))
             .unwrap();
 
         assert_eq!(page.next, None);
     }
 
     #[test]
-    fn every_search_opts_into_advanced_search() {
-        for search in WORK_SEARCHES {
-            assert!(search.query.contains("type: ISSUE_ADVANCED"), "{search:?}");
-            assert!(search.query.contains(search.operation), "{search:?}");
-        }
+    fn the_recordings_hold_the_queries_the_client_sends() {
+        let recorded = |operation: &str| -> String {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("tests/fixtures/github/{operation}.json"));
+            let text = std::fs::read_to_string(path).unwrap();
+            let recording: serde_json::Value = serde_json::from_str(&text).unwrap();
+            recording["query"].as_str().unwrap().to_owned()
+        };
+        assert_eq!(recorded("SearchOwnPrs"), search_query("SearchOwnPrs"));
+        assert_eq!(recorded("FetchPullRequests"), FETCH_PULL_REQUESTS);
+    }
+
+    #[test]
+    fn a_search_opts_into_advanced_search_under_its_own_name() {
+        let query = search_query("SearchMine");
+        assert!(query.starts_with("query SearchMine("), "{query}");
+        assert!(query.contains("type: ISSUE_ADVANCED"), "{query}");
     }
 
     #[test]
     fn a_fetched_pr_is_read_into_its_facts() {
         let (script, _asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([pr_json()])))]);
 
-        let batch = github(script).fetch_pull_requests(&ids(&["a"])).unwrap();
+        let batch = github(script)
+            .fetch_pull_requests(&ids(&["a"]), 25)
+            .unwrap();
 
         assert_eq!(batch.pull_requests.len(), 1);
         let pr = &batch.pull_requests[0];
@@ -539,7 +530,9 @@ mod tests {
         pr["commits"] = json!({ "nodes": [{ "commit": { "statusCheckRollup": null } }] });
         let (script, _asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([pr])))]);
 
-        let batch = github(script).fetch_pull_requests(&ids(&["a"])).unwrap();
+        let batch = github(script)
+            .fetch_pull_requests(&ids(&["a"]), 25)
+            .unwrap();
 
         assert_eq!(batch.pull_requests.len(), 1);
         let pr = &batch.pull_requests[0];
@@ -551,7 +544,9 @@ mod tests {
     fn an_id_github_no_longer_knows_is_left_out() {
         let (script, _asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([null])))]);
 
-        let batch = github(script).fetch_pull_requests(&ids(&["gone"])).unwrap();
+        let batch = github(script)
+            .fetch_pull_requests(&ids(&["gone"]), 25)
+            .unwrap();
 
         assert_eq!(batch.pull_requests, []);
         assert_eq!(batch.asked_for, 1);
@@ -564,7 +559,9 @@ mod tests {
             "errors":[{"type":"NOT_FOUND","path":["nodes",0],"message":"Could not resolve to a node"}]}"#;
         let (script, _asked) = Scripted::new(vec![reply_ok(body)]);
 
-        let batch = github(script).fetch_pull_requests(&ids(&["gone"])).unwrap();
+        let batch = github(script)
+            .fetch_pull_requests(&ids(&["gone"]), 25)
+            .unwrap();
 
         assert_eq!(batch.pull_requests, []);
         assert_eq!(batch.asked_for, 1);
@@ -578,7 +575,7 @@ mod tests {
         let (script, _asked) = Scripted::new(vec![reply_ok(body)]);
 
         let refused = github(script)
-            .fetch_pull_requests(&ids(&["gone", "theirs"]))
+            .fetch_pull_requests(&ids(&["gone", "theirs"]), 25)
             .unwrap_err();
 
         assert_eq!(refused.message, "GitHub said: Not yours");
@@ -601,7 +598,9 @@ mod tests {
         });
         let (script, _asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([node])))]);
 
-        let batch = github(script).fetch_pull_requests(&ids(&["a"])).unwrap();
+        let batch = github(script)
+            .fetch_pull_requests(&ids(&["a"]), 25)
+            .unwrap();
 
         let facts = &batch.pull_requests[0].facts;
         assert_eq!(facts.assignees, [Login::new("octocat")]);
@@ -622,11 +621,7 @@ mod tests {
         let (script, _asked) = Scripted::new(vec![reply_ok(&body.to_string())]);
 
         let page = github(script)
-            .search_work(
-                &WORK_SEARCHES[0],
-                &RepositoryName::parse("a/b").unwrap(),
-                None,
-            )
+            .search_pull_requests(&MINE, &cpython(), page(None))
             .unwrap();
 
         assert_eq!(page.ids, ids(&["a"]));
@@ -636,7 +631,9 @@ mod tests {
     fn a_fetch_asks_for_one_batch_at_a_time() {
         let (script, asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([])))]);
 
-        let batch = github(script).fetch_pull_requests(&thirty_ids()).unwrap();
+        let batch = github(script)
+            .fetch_pull_requests(&thirty_ids(), 25)
+            .unwrap();
 
         assert_eq!(batch.asked_for, 25);
         let (operation, variables) = asked.recv().unwrap();
@@ -651,7 +648,9 @@ mod tests {
             reply_ok(&fetch_body(&json!([pr_json()]))),
         ]);
 
-        let batch = github(script).fetch_pull_requests(&thirty_ids()).unwrap();
+        let batch = github(script)
+            .fetch_pull_requests(&thirty_ids(), 25)
+            .unwrap();
 
         assert_eq!(batch.asked_for, 13);
         assert_eq!(batch.pull_requests.len(), 1);
@@ -665,7 +664,7 @@ mod tests {
             Scripted::new(vec![Err(Unreachable), reply_ok(&search_body(&["a"], None))]);
 
         let page = github(script)
-            .search_work(&WORK_SEARCHES[2], &cpython(), None)
+            .search_pull_requests(&MINE, &cpython(), page(None))
             .unwrap();
 
         assert_eq!(page.ids, ids(&["a"]));
@@ -678,7 +677,7 @@ mod tests {
         let (script, _asked) = Scripted::new(vec![bad_gateway(), Err(Unreachable)]);
 
         let refused = github(script)
-            .fetch_pull_requests(&ids(&["a"]))
+            .fetch_pull_requests(&ids(&["a"]), 25)
             .unwrap_err();
 
         assert_eq!(refused.kind, ErrorKind::Offline);
@@ -693,26 +692,11 @@ mod tests {
         })]);
 
         let refused = github(script)
-            .fetch_pull_requests(&ids(&["a"]))
+            .fetch_pull_requests(&ids(&["a"]), 25)
             .unwrap_err();
 
         assert_eq!(refused.kind, ErrorKind::Unauthorized);
         drop(asked.recv().unwrap());
         assert!(asked.try_recv().is_err());
-    }
-
-    #[test]
-    fn a_sync_pauses_only_below_the_floor() {
-        let reset_at = OffsetDateTime::UNIX_EPOCH;
-        let at_the_floor = RateLimit {
-            remaining: RATE_LIMIT_FLOOR,
-            reset_at,
-        };
-        let below = RateLimit {
-            remaining: RATE_LIMIT_FLOOR - 1,
-            reset_at,
-        };
-        assert_eq!(at_the_floor.pause_until(), None);
-        assert_eq!(below.pause_until(), Some(reset_at));
     }
 }

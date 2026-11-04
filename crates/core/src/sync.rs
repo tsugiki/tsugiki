@@ -1,5 +1,7 @@
 //! A first sync's first phase: the user's own work, found by search and fetched in batches (ADR 0015). One
 //! `step` is one request, so the session can answer what else it's asked between them.
+//! `github::pull_requests` does the asking, and this decides what to ask for, how much at a time and when to
+//! pause.
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -8,9 +10,38 @@ use time::OffsetDateTime;
 
 use crate::error::{Error, ErrorKind};
 use crate::github::GitHub;
-use crate::github::pull_requests::{NodeId, WORK_SEARCHES, WorkSearch};
+use crate::github::pull_requests::{NodeId, PageRequest, PrSearch, RateLimit};
 use crate::repository::RepositoryName;
 use crate::store::Store;
+
+/// Below this many points left, a sync waits for the reset, because the hourly 5,000 are also the user's
+/// other tools'. Nobody has measured what those tools need, and GitHub's `remaining` is approximate.
+const RATE_LIMIT_FLOOR: u32 = 500;
+/// How many IDs one search page asks for (ADR 0015).
+pub const SEARCH_PAGE: usize = 50;
+/// How many PRs one fetch asks for: fewer than a search's, because CI rollups are slow (ADR 0015).
+pub const FETCH_BATCH: usize = 25;
+
+/// The user's own items in the order a first sync loads them (ADR 0015). Assigned Issues come with Issues
+/// themselves, so these all find PRs. A team's Review request doesn't name the user, so it doesn't count.
+pub const WORK_SEARCHES: [PrSearch; 4] = [
+    PrSearch {
+        operation: "SearchReviewRequests",
+        qualifiers: "is:pr is:open user-review-requested:@me",
+    },
+    PrSearch {
+        operation: "SearchReviewedPrs",
+        qualifiers: "is:pr is:open reviewed-by:@me",
+    },
+    PrSearch {
+        operation: "SearchOwnPrs",
+        qualifiers: "is:pr is:open author:@me",
+    },
+    PrSearch {
+        operation: "SearchAssignedPrs",
+        qualifiers: "is:pr is:open assignee:@me",
+    },
+];
 
 /// The rate limit resets every hour, so a longer pause can only come from a clock that's wrong.
 const LONGEST_PAUSE: Duration = Duration::from_secs(3600);
@@ -28,7 +59,7 @@ struct UserWorkSync {
 
 enum Phase {
     Searching {
-        searches: &'static [WorkSearch],
+        searches: &'static [PrSearch],
         cursor: Option<String>,
         found: Vec<NodeId>,
     },
@@ -71,7 +102,11 @@ impl UserWorkSync {
                     };
                     return Ok(Step::Searched { pause_until: None });
                 };
-                let page = github.search_work(search, &self.repository, cursor.as_deref())?;
+                let asked = PageRequest {
+                    size: SEARCH_PAGE,
+                    after: cursor.as_deref(),
+                };
+                let page = github.search_pull_requests(search, &self.repository, asked)?;
                 for id in page.ids {
                     if !found.contains(&id) {
                         found.push(id);
@@ -82,26 +117,26 @@ impl UserWorkSync {
                     *searches = rest;
                 }
                 Ok(Step::Searched {
-                    pause_until: page.rate_limit.pause_until(),
+                    pause_until: pause_until(page.rate_limit),
                 })
             }
             Phase::Fetching { ids } => {
                 if ids.is_empty() {
                     return Ok(Step::Finished);
                 }
-                let batch = github.fetch_pull_requests(ids)?;
+                let batch = github.fetch_pull_requests(ids, FETCH_BATCH)?;
                 store.save_pull_requests(&self.repository, batch.pull_requests)?;
                 drop(ids.drain(..batch.asked_for));
                 Ok(Step::Saved {
-                    pause_until: batch.rate_limit.pause_until(),
+                    pause_until: pause_until(batch.rate_limit),
                 })
             }
         }
     }
 }
 
-/// The syncs still to run, one at a time. The one asked for last goes first, because that's the Repository the
-/// window has just opened (ADR 0015), and the others keep their progress behind it.
+/// The syncs still to run, one at a time. The one asked for last goes first, because that's the Repository
+/// the window has just opened (ADR 0015), and the others keep their progress behind it.
 #[derive(Default)]
 pub struct Syncs {
     queue: VecDeque<UserWorkSync>,
@@ -197,6 +232,11 @@ impl Syncs {
             }
         }
     }
+}
+
+/// When to ask again, if the points left are below the floor.
+fn pause_until(limit: RateLimit) -> Option<OffsetDateTime> {
+    (limit.remaining < RATE_LIMIT_FLOOR).then_some(limit.reset_at)
 }
 
 fn until_instant(until: OffsetDateTime) -> Instant {
@@ -536,6 +576,62 @@ mod tests {
         drop(run_to_the_end(&mut syncs, &harness));
 
         assert_eq!(harness.operations().len(), 4);
+        harness.finish();
+    }
+
+    #[test]
+    fn a_sync_pauses_only_below_the_floor() {
+        let reset_at = OffsetDateTime::UNIX_EPOCH;
+        let at_the_floor = RateLimit {
+            remaining: RATE_LIMIT_FLOOR,
+            reset_at,
+        };
+        let below = RateLimit {
+            remaining: RATE_LIMIT_FLOOR - 1,
+            reset_at,
+        };
+        assert_eq!(pause_until(at_the_floor), None);
+        assert_eq!(pause_until(below), Some(reset_at));
+    }
+
+    #[test]
+    fn every_search_finds_open_prs() {
+        for search in WORK_SEARCHES {
+            assert!(
+                search.qualifiers.starts_with("is:pr is:open "),
+                "{search:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_sync_asks_for_pages_of_50_and_batches_of_25() {
+        let names: Vec<String> = (0..30).map(|n| format!("id{n}")).collect();
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        let harness = Harness::new(
+            "sizes",
+            vec![
+                found(&names, None, LOTS),
+                nothing(LOTS),
+                nothing(LOTS),
+                nothing(LOTS),
+                fetched(&[1], LOTS),
+                fetched(&[2], LOTS),
+            ],
+        );
+        let mut syncs = Syncs::default();
+        syncs.add(cpython());
+
+        drop(run_to_the_end(&mut syncs, &harness));
+
+        let asked: Vec<(String, Value)> = harness.asked.try_iter().collect();
+        assert_eq!(asked[0].1["first"], 50);
+        assert_eq!(
+            asked[0].1["query"],
+            "repo:python/cpython is:pr is:open user-review-requested:@me"
+        );
+        assert_eq!(asked[4].1["ids"].as_array().unwrap().len(), 25);
+        assert_eq!(asked[5].1["ids"].as_array().unwrap().len(), 5);
         harness.finish();
     }
 

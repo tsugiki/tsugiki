@@ -11,9 +11,10 @@ use std::path::Path;
 
 use tsugiki_core::github::GitHub;
 use tsugiki_core::github::live::{Https, run_gh};
-use tsugiki_core::github::pull_requests::WORK_SEARCHES;
+use tsugiki_core::github::pull_requests::PageRequest;
 use tsugiki_core::github::record::Recorder;
 use tsugiki_core::repository::RepositoryName;
+use tsugiki_core::sync::{FETCH_BATCH, SEARCH_PAGE, WORK_SEARCHES};
 use tsugiki_core::token::Token;
 
 /// The Repository the first sync's recordings come from, which every signed-in user can read.
@@ -34,9 +35,13 @@ fn main() {
 fn record_first_sync(github: &GitHub) {
     let repository = RepositoryName::parse(WORK_REPOSITORY).expect("a Repository's name");
     let mut ids = Vec::new();
+    let first_page = PageRequest {
+        size: SEARCH_PAGE,
+        after: None,
+    };
     for search in &WORK_SEARCHES {
         let page = github
-            .search_work(search, &repository, None)
+            .search_pull_requests(search, &repository, first_page)
             .expect("search for the user's work");
         println!("{} IDs on the first page of a search", page.ids.len());
         for id in page.ids {
@@ -46,7 +51,7 @@ fn record_first_sync(github: &GitHub) {
         }
     }
     let batch = github
-        .fetch_pull_requests(&ids)
+        .fetch_pull_requests(&ids, FETCH_BATCH)
         .expect("fetch the user's PRs");
     println!("{} PRs in the batch", batch.pull_requests.len());
 }

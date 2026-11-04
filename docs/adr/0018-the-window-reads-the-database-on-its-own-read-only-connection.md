@@ -28,5 +28,5 @@ ends. Closing both connections on quit removes the `-wal` file.
 - Reads run one at a time on the reader's thread, so a slow view delays the next one. A pool can replace the
   thread behind the same type if a measurement asks for it.
 - Commands that read are `#[tauri::command(async)]`, so they wait away from the thread that draws the window.
-- The window can read just before a save it then hears about. It asks again after each event and keeps the
-  newest answer, so it ends on the latest facts.
+- The window can read before a save it then hears about. It asks again after each event and keeps the newest
+  answer, so it ends on the latest facts.

@@ -3,8 +3,8 @@ import { emitFromCore, mockCore } from "./mock-core.ts";
 
 const online = { state: "online", login: "octocat" } as const;
 const offline = { state: "offline" } as const;
-const defaults = { settings: { status_bar: { visible: true } }, problems: [] };
-const hidden = { settings: { status_bar: { visible: false } }, problems: [] };
+const defaults = { settings: { status_bar: { visible: true }, repositories: [] }, problems: [] };
+const hidden = { settings: { status_bar: { visible: false }, repositories: [] }, problems: [] };
 
 test("the status bar shows who is signed in", async ({ page }) => {
   await mockCore(page, { settings: defaults, status: online });

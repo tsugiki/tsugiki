@@ -6,16 +6,20 @@ pub mod replay;
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 use specta::Type;
+use time::{Date, Duration};
 
 use crate::error::{Error, ErrorKind};
+use crate::repository::{RepositoryCheck, RepositoryCounts, RepositoryName, WINDOW_DAYS};
 use crate::token::{RunGh, Token};
 
 /// One GraphQL request. `operation` names the query, and the replayer finds its recording by that name.
 pub struct Request<'a> {
     pub operation: &'a str,
     pub query: &'a str,
+    /// What the query's `$` names stand for, so what a user typed can't change the query.
+    pub variables: Value,
 }
 
 /// What GitHub answered.
@@ -66,7 +70,14 @@ pub struct Viewer {
 const VIEWER: Request<'static> = Request {
     operation: "Viewer",
     query: "query Viewer { viewer { login } }",
+    variables: Value::Null,
 };
+
+const CHECK_REPOSITORY: &str = "query CheckRepository($owner: String!, $name: String!, $updated: String!, \
+                                $closed: String!) { repository(owner: $owner, name: $name) { nameWithOwner \
+                                issues(states: OPEN) { totalCount } pullRequests(states: OPEN) { totalCount } } \
+                                updated: search(query: $updated, type: ISSUE_ADVANCED, first: 0) { issueCount } \
+                                closed: search(query: $closed, type: ISSUE_ADVANCED, first: 0) { issueCount } }";
 
 /// A GraphQL client that holds the token, so no caller has to.
 pub struct GitHub {
@@ -87,6 +98,87 @@ impl GitHub {
         }
         let data: Data = self.query(&VIEWER)?;
         Ok(data.viewer)
+    }
+
+    /// Asks GitHub, in one query, whether `name` exists and how much adding it would load (ADR 0015). The
+    /// answer carries the name as GitHub spells it, which follows a rename and fixes the case.
+    ///
+    /// A search doesn't follow a rename, and counts nothing under the old name, so that case takes a second
+    /// query with the new one.
+    pub fn check_repository(
+        &self,
+        name: &RepositoryName,
+        today: Date,
+    ) -> Result<RepositoryCheck, Error> {
+        let check = self.count_repository(name, today)?;
+        if check.repository.name.is_same(name) {
+            Ok(check)
+        } else {
+            self.count_repository(&check.repository.name, today)
+        }
+    }
+
+    fn count_repository(
+        &self,
+        name: &RepositoryName,
+        today: Date,
+    ) -> Result<RepositoryCheck, Error> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Repository {
+            name_with_owner: RepositoryName,
+            issues: Total,
+            pull_requests: Total,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Total {
+            total_count: u32,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Found {
+            issue_count: u32,
+        }
+        #[derive(Deserialize)]
+        struct Data {
+            repository: Repository,
+            updated: Found,
+            closed: Found,
+        }
+
+        let since = today.saturating_sub(Duration::days(i64::from(WINDOW_DAYS)));
+        let request = Request {
+            operation: "CheckRepository",
+            query: CHECK_REPOSITORY,
+            variables: json!({
+                "owner": name.owner(),
+                "name": name.name(),
+                "updated": format!("repo:{name} updated:>={since}"),
+                "closed": format!("repo:{name} is:closed closed:>={since}"),
+            }),
+        };
+        let data: Data = self.query(&request).map_err(|problem| match problem.kind {
+            ErrorKind::NotFound => Error::new(
+                ErrorKind::NotFound,
+                &format!("GitHub has no Repository named {name}, or your token can't see it."),
+            ),
+            ErrorKind::Offline
+            | ErrorKind::Unauthorized
+            | ErrorKind::WriteRefused
+            | ErrorKind::RateLimited { .. }
+            | ErrorKind::Conflict
+            | ErrorKind::Internal => problem,
+        })?;
+        Ok(RepositoryCheck::new(
+            data.repository.name_with_owner,
+            RepositoryCounts {
+                open_issues: data.repository.issues.total_count,
+                open_prs: data.repository.pull_requests.total_count,
+                updated_in_window: data.updated.issue_count,
+                closed_in_window: data.closed.issue_count,
+            },
+        ))
     }
 
     fn query<D: DeserializeOwned>(&self, request: &Request<'_>) -> Result<D, Error> {
@@ -119,6 +211,8 @@ fn read<D: DeserializeOwned>(reply: &Reply) -> Result<D, Error> {
     enum GraphqlErrorKind {
         #[serde(rename = "RATE_LIMITED")]
         RateLimited,
+        #[serde(rename = "NOT_FOUND")]
+        NotFound,
         #[serde(other)]
         Other,
     }
@@ -158,6 +252,10 @@ fn read<D: DeserializeOwned>(reply: &Reply) -> Result<D, Error> {
     if let Some(error) = envelope.errors.first() {
         return Err(match error.kind {
             Some(GraphqlErrorKind::RateLimited) => rate_limited(),
+            Some(GraphqlErrorKind::NotFound) => Error::new(
+                ErrorKind::NotFound,
+                &format!("GitHub said: {}", error.message),
+            ),
             Some(GraphqlErrorKind::Other) | None => {
                 internal(&format!("GitHub said: {}", error.message))
             }
@@ -208,6 +306,7 @@ pub(crate) mod testing {
 mod tests {
     use super::testing::{Canned, answered, token};
     use super::*;
+    use crate::repository::{Conventions, RepositorySize};
     use std::path::Path;
 
     fn client(transport: impl Transport + 'static) -> GitHub {
@@ -305,10 +404,146 @@ mod tests {
     fn a_graphql_error_of_another_type_passes_on_githubs_words() {
         let error = error_of(answered(
             200,
-            r#"{"errors":[{"type":"NOT_FOUND","message":"No such thing"}]}"#,
+            r#"{"errors":[{"type":"FORBIDDEN","message":"No such thing"}]}"#,
         ));
         assert_eq!(error.kind, ErrorKind::Internal);
         assert_eq!(error.message, "GitHub said: No such thing");
+    }
+
+    #[test]
+    fn a_graphql_not_found_is_not_found() {
+        let error = error_of(answered(
+            200,
+            r#"{"errors":[{"type":"NOT_FOUND","message":"No such thing"}]}"#,
+        ));
+        assert_eq!(error.kind, ErrorKind::NotFound);
+        assert_eq!(error.message, "GitHub said: No such thing");
+    }
+
+    fn the_day() -> Date {
+        Date::from_calendar_date(2026, time::Month::November, 4).unwrap()
+    }
+
+    fn name(text: &str) -> RepositoryName {
+        RepositoryName::parse(text).unwrap()
+    }
+
+    /// Holds on to what it was asked, so a test can read the variables a query went out with.
+    struct Asked(std::sync::mpsc::Sender<Value>);
+
+    impl Transport for Asked {
+        #[expect(
+            clippy::unwrap_in_result,
+            reason = "the `Err` here stands for GitHub, and a closed channel is the test's own mistake"
+        )]
+        fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
+            self.0.send(request.variables.clone()).unwrap();
+            Err(Unreachable)
+        }
+    }
+
+    #[test]
+    fn checking_a_repository_reads_a_recorded_answer() {
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
+        let check = client(replay::Replayer::new(fixtures))
+            .check_repository(&name("python/cpython"), the_day())
+            .unwrap();
+        assert_eq!(check.repository.name, name("python/cpython"));
+        assert_eq!(check.repository.conventions, Conventions::Cpython);
+        assert_eq!((check.open_issues, check.open_prs), (6936, 2308));
+        assert_eq!(check.size, RepositorySize::Large);
+        assert_eq!(check.first_sync_items, 4755);
+    }
+
+    #[test]
+    fn a_check_asks_about_the_last_30_days_and_keeps_the_name_out_of_the_query() {
+        let (asked, seen) = std::sync::mpsc::channel();
+        drop(client(Asked(asked)).check_repository(&name("a-b/c.d"), the_day()));
+        assert_eq!(
+            seen.recv().unwrap(),
+            json!({
+                "owner": "a-b",
+                "name": "c.d",
+                "updated": "repo:a-b/c.d updated:>=2026-10-05",
+                "closed": "repo:a-b/c.d is:closed closed:>=2026-10-05",
+            })
+        );
+        assert!(!CHECK_REPOSITORY.contains("a-b"));
+    }
+
+    #[test]
+    fn a_check_gives_the_name_as_github_spells_it() {
+        let body = r#"{"data":{"repository":{"nameWithOwner":"Sergey-Miryanov/GCMon",
+            "issues":{"totalCount":10},"pullRequests":{"totalCount":3}},
+            "updated":{"issueCount":43},"closed":{"issueCount":35}}}"#;
+        let check = client(answered(200, body))
+            .check_repository(&name("sergey-miryanov/gcmon"), the_day())
+            .unwrap();
+        assert_eq!(check.repository.name.to_string(), "Sergey-Miryanov/GCMon");
+        assert_eq!(check.size, RepositorySize::Small);
+        assert_eq!(check.first_sync_items, 48);
+    }
+
+    /// Answers as GitHub did for `mitsuhiko/flask`, which became `pallets/flask`: the Repository follows the
+    /// rename and the searches find nothing under the old name.
+    struct Renamed;
+
+    impl Transport for Renamed {
+        fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
+            let found = if request.variables["owner"] == "pallets" {
+                13
+            } else {
+                0
+            };
+            let body = json!({"data": {
+                "repository": {
+                    "nameWithOwner": "pallets/flask",
+                    "issues": {"totalCount": 1},
+                    "pullRequests": {"totalCount": 3},
+                },
+                "updated": {"issueCount": found},
+                "closed": {"issueCount": found},
+            }});
+            Ok(Reply {
+                status: 200,
+                reset: None,
+                body: body.to_string(),
+            })
+        }
+    }
+
+    #[test]
+    fn a_renamed_repository_is_counted_under_its_new_name() {
+        let check = client(Renamed)
+            .check_repository(&name("mitsuhiko/flask"), the_day())
+            .unwrap();
+        assert_eq!(check.repository.name, name("pallets/flask"));
+        assert_eq!(check.first_sync_items, 17);
+    }
+
+    #[test]
+    fn a_repository_github_doesnt_have_says_which_and_why_it_might_be_hidden() {
+        // GitHub's own answer for a name it doesn't know, which also holds the searches' counts.
+        let body = r#"{"data":{"repository":null,"updated":{"issueCount":0},"closed":{"issueCount":0}},
+            "errors":[{"type":"NOT_FOUND","path":["repository"],
+            "message":"Could not resolve to a Repository with the name 'python/no-such'."}]}"#;
+        let error = client(answered(200, body))
+            .check_repository(&name("python/no-such"), the_day())
+            .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::NotFound);
+        assert_eq!(
+            error.message,
+            "GitHub has no Repository named python/no-such, or your token can't see it."
+        );
+    }
+
+    #[test]
+    fn a_check_that_fails_for_another_reason_says_that_reason() {
+        let error = client(Canned(Err(Unreachable)))
+            .check_repository(&name("a/b"), the_day())
+            .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Offline);
+        assert_eq!(error.message, "Tsugiki can't reach GitHub.");
     }
 
     #[test]

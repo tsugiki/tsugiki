@@ -1,16 +1,8 @@
 <script lang="ts">
   // The command palette's shell: it opens, takes the focus and closes. Commands come with what they command.
-  let { onclose }: { onclose: () => void } = $props();
+  import { takeFocus } from "./focus";
 
-  function takeFocus(input: HTMLInputElement) {
-    const previous = document.activeElement;
-    input.focus();
-    return () => {
-      if (previous instanceof HTMLElement) {
-        previous.focus();
-      }
-    };
-  }
+  let { onclose }: { onclose: () => void } = $props();
 
   function closeOnEscape(e: KeyboardEvent) {
     if (e.key === "Escape") {

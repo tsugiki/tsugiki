@@ -9,6 +9,9 @@ const EXCLUDED = [
   "crates/app/src/startup\\.rs$",
   // coverage: the binary's entry point only calls the start-up code.
   "crates/app/src/main\\.rs$",
+  // coverage: thin async commands. The report calls the block Tauri's macro writes unrun, and IPC tests
+  // run it.
+  "crates/app/src/slow_commands\\.rs$",
   // coverage: the real network and the real gh, which tests replace and release checks exercise.
   "crates/core/src/github/live\\.rs$",
   // coverage: one call on a real webview, which `npm run smoke` shows working.

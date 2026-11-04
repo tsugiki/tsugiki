@@ -90,6 +90,7 @@ mod tests {
                 &Request {
                     operation: "Op",
                     query: "q",
+                    variables: serde_json::Value::Null,
                 },
             )
             .unwrap();
@@ -110,6 +111,7 @@ mod tests {
                 &Request {
                     operation: "Op",
                     query: "q",
+                    variables: serde_json::Value::Null,
                 },
             )
             .unwrap();
@@ -126,6 +128,7 @@ mod tests {
         let request = Request {
             operation: "Op",
             query: "new",
+            variables: serde_json::Value::Null,
         };
         let replayer = Replayer::new(dir.clone());
         let token = token();

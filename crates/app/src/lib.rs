@@ -89,7 +89,7 @@ mod tests {
     use tsugiki_core::github::GitHubAccess;
     use tsugiki_core::github::live::{Https, run_gh};
     use tsugiki_core::latest::channel;
-    use tsugiki_core::repository::{Conventions, RepositorySettings};
+    use tsugiki_core::repository::RepositorySettings;
     use tsugiki_core::session::Session;
     use tsugiki_core::settings::SettingsFiles;
     use tsugiki_core::status::StatusBoard;

@@ -14,11 +14,14 @@ vi.mock("$lib/data/bindings", () => ({
   commands: {
     about: async () => ({ name: "Tsugiki", version: "1.2.3" }),
     status: async () => ({ state: "online", login: "octocat" }),
+    lastSync: async () => ({ repository: "sergey-miryanov/gcmon", at: null }),
+    refresh: async () => null,
     ...core,
   },
   events: {
     statusChanged: { listen: async () => () => {} },
-    workbenchChanged: { listen: async () => () => {} },
+    lastSyncChanged: { listen: async () => () => {} },
+    changed: { listen: async () => () => {} },
   },
 }));
 
@@ -36,6 +39,12 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+it("says when the Repository last synced, and a click asks again", async () => {
+  render(Page);
+  await fireEvent.click(await screen.findByRole("button", { name: "Not synced yet" }));
+  expect(await screen.findByRole("button", { name: "Not synced yet" })).toBeTruthy();
 });
 
 it("opens on onboarding with no Repositories", async () => {

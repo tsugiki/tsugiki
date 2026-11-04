@@ -9,6 +9,13 @@ export const commands = {
 	about: () => __TAURI_INVOKE<About>("about"),
 	/**  The whole app-wide state, for a window that has just loaded (ADR 0008). */
 	status: () => __TAURI_INVOKE<Status_Serialize>("status"),
+	/**
+	 *  When the open Repository last finished a sync, for a window that has just loaded. A window asking before
+	 *  the core knows gets nothing, and the core's event then tells it.
+	 */
+	lastSync: () => __TAURI_INVOKE<LastSync_Serialize | null>("last_sync"),
+	/**  Refreshes the open Repository now, and returns at once. */
+	refresh: () => __TAURI_INVOKE<void>("refresh"),
 	/**  The settings Tsugiki last read, and what was wrong with their files (ADR 0014). */
 	settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
 	/**  What the window opens on. */
@@ -33,8 +40,9 @@ export const commands = {
 
 /** Events */
 export const events = {
+	changed: makeEvent<Changed, Changed>("changed"),
+	lastSyncChanged: makeEvent<LastSyncChanged_Serialize, LastSyncChanged_Deserialize>("last-sync-changed"),
 	statusChanged: makeEvent<StatusChanged_Serialize, StatusChanged_Deserialize>("status-changed"),
-	workbenchChanged: makeEvent<WorkbenchChanged, WorkbenchChanged>("workbench-changed"),
 };
 
 /* Types */
@@ -63,6 +71,16 @@ export type BackportRow_Deserialize = {
 export type BackportRow_Serialize = {
 	backport: BackportKind,
 } & WorkbenchRow_Serialize;
+
+/**  What a sync changed in a Repository's stored facts (ADR 0008). */
+export type Change = {
+	repository: RepositoryName,
+	/**  The Issues and PRs it touched. A change to something else about the Repository names none. */
+	items: number[],
+};
+
+/**  Sent when a Repository's stored facts change, so each screen showing them asks again (ADR 0008). */
+export type Changed = Change;
 
 /**  A commit's CI, as GitHub rolls its checks up. */
 export type CiState = "EXPECTED" | "ERROR" | "FAILURE" | "PENDING" | "SUCCESS";
@@ -179,6 +197,32 @@ export type IssueItem_Serialize = {
 	/**  The latest update of the Issue and its PRs. */
 	updated_at: string,
 	pull_requests: TreeEntry_Serialize[],
+};
+
+/**  When the open Repository last finished a sync. */
+export type LastSync = LastSync_Serialize | LastSync_Deserialize;
+
+/**  Sent when the open Repository's last sync changes, so the status bar can say. */
+export type LastSyncChanged = LastSyncChanged_Serialize | LastSyncChanged_Deserialize;
+
+/**  Sent when the open Repository's last sync changes, so the status bar can say. */
+export type LastSyncChanged_Deserialize = LastSync_Deserialize;
+
+/**  Sent when the open Repository's last sync changes, so the status bar can say. */
+export type LastSyncChanged_Serialize = LastSync_Serialize;
+
+/**  When the open Repository last finished a sync. */
+export type LastSync_Deserialize = {
+	repository: RepositoryName,
+	/**  Nothing, until its first sync finishes. */
+	at: string | null,
+};
+
+/**  When the open Repository last finished a sync. */
+export type LastSync_Serialize = {
+	repository: RepositoryName,
+	/**  Nothing, until its first sync finishes. */
+	at: string | null,
 };
 
 /**  The settings in force, and what is wrong with the files they came from, in words for the status bar. */
@@ -404,11 +448,6 @@ export type WorkReason =
 
 /**  A Repository's Workbench or one of its Filters, with what the Sidebar shows beside it. */
 export type Workbench = Workbench_Serialize | Workbench_Deserialize;
-
-/**  Sent when a Repository's stored facts change, so a window showing its Workbench asks again (ADR 0008). */
-export type WorkbenchChanged = {
-	repository: RepositoryName,
-};
 
 /**  A top-level entry of the list. */
 export type WorkbenchItem = WorkbenchItem_Serialize | WorkbenchItem_Deserialize;

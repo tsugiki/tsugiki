@@ -1,9 +1,10 @@
 //! A first sync: the user's own work and each Filter, found by search and fetched in batches, then the whole
-//! tree of each Issue they reach (ADR 0011, ADR 0015). One `step` is one request, so the session can answer
-//! what else it's asked between them. `github` does the asking, and this decides what to ask for, how much at
-//! a time and when to pause.
+//! tree of each Issue they reach (ADR 0011, ADR 0015). A Repository that has finished one refreshes instead,
+//! which `refresh` handles. One `step` is one request, so the session can answer what else it's asked between
+//! them. `github` does the asking, and this decides what to ask for, how much at a time and when to pause.
 
 mod filters;
+mod refresh;
 
 use std::collections::{BTreeSet, VecDeque};
 use std::time::{Duration, Instant};
@@ -19,8 +20,10 @@ use crate::github::pull_requests::{
 };
 use crate::links::{possible_numbers, possible_origin};
 use crate::repository::{RepositoryName, RepositorySettings};
-use crate::store::Store;
+use crate::status::{Change, LastSync};
+use crate::store::{ChangeCheck, Store, SyncState};
 use filters::{FilterWalk, walk_filters};
+use refresh::{Changed, Poll, Probing};
 
 /// Below this many points left, a sync waits for the reset, because the hourly 5,000 are also the user's
 /// other tools'. We haven't measured what those tools need, and GitHub's `remaining` is approximate.
@@ -57,6 +60,8 @@ const LONGEST_PAUSE: Duration = Duration::from_secs(3600);
 /// A step can fail this many times in a row for any reason but the network or the rate limit, with one try
 /// at each refresh. GitHub's own outages give the same errors as a Repository that has gone, so this lets one
 /// pass before the sync gives way to the next. Asking for that Repository again, or restarting, tries again.
+/// The timer also tries a Repository that has finished a sync, since a refresh costs a few points. A first
+/// sync costs thousands, so it waits for the user.
 const TRIES: u8 = 10;
 
 /// The progress of one Repository's sync.
@@ -67,9 +72,21 @@ struct UserWorkSync {
     phase: Phase,
     /// The PRs this run has asked GitHub for, so it asks for each once.
     fetched: BTreeSet<u32>,
+    /// When this sync began: what changes after this waits for the next one.
+    started_at: OffsetDateTime,
+    /// How the next refresh can learn that nothing changed, as far as this one knows.
+    check: ChangeCheck,
 }
 
 enum Phase {
+    /// The store hasn't said yet whether this Repository has finished a sync.
+    Starting,
+    /// A refresh asks whether anything moved.
+    CheckingList(Poll),
+    /// A refresh lists what moved.
+    Polling(Poll),
+    FetchingChanged(Changed),
+    Probing(Probing),
     Searching {
         searches: &'static [PrSearch],
         cursor: Option<String>,
@@ -118,9 +135,38 @@ struct Leads {
 
 /// The result of one step.
 enum Step {
-    Searched { pause_until: Option<OffsetDateTime> },
-    Saved { pause_until: Option<OffsetDateTime> },
+    Searched {
+        pause_until: Option<OffsetDateTime>,
+    },
+    /// The store changed, and a screen showing it needs to ask again. `touched` names the Issues and PRs.
+    Saved {
+        touched: Vec<u32>,
+        pause_until: Option<OffsetDateTime>,
+    },
     Finished,
+}
+
+impl Step {
+    /// A refresh often finds its answers match what Tsugiki holds, and then no screen needs to ask again.
+    fn saved_if_any(touched: Vec<u32>, pause_until: Option<OffsetDateTime>) -> Self {
+        if touched.is_empty() {
+            Self::Searched { pause_until }
+        } else {
+            Self::Saved {
+                touched,
+                pause_until,
+            }
+        }
+    }
+}
+
+/// What a step of the queue did that the rest of the app can see.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Progress {
+    /// Stored facts changed.
+    Changed(Change),
+    /// The open Repository's sync finished.
+    Finished(LastSync),
 }
 
 /// The clients and the Repository a sync's phases work with.
@@ -147,12 +193,10 @@ impl UserWorkSync {
         Self {
             repository: repository.name,
             filters,
-            phase: Phase::Searching {
-                searches: &WORK_SEARCHES,
-                cursor: None,
-                found: Vec::new(),
-            },
+            phase: Phase::Starting,
             fetched: BTreeSet::new(),
+            started_at: OffsetDateTime::now_utc(),
+            check: ChangeCheck::Skipped,
         }
     }
 
@@ -167,6 +211,20 @@ impl UserWorkSync {
         };
         let fetched = &mut self.fetched;
         let (step, next) = match &mut self.phase {
+            // Asking the store is no request to GitHub, so this goes straight on to the first one.
+            Phase::Starting => {
+                self.phase =
+                    refresh::first_phase(&link, &mut self.check)?.unwrap_or(Phase::Searching {
+                        searches: &WORK_SEARCHES,
+                        cursor: None,
+                        found: Vec::new(),
+                    });
+                return self.step(github, store);
+            }
+            Phase::CheckingList(poll) => refresh::check_list(&link, poll, &self.check)?,
+            Phase::Polling(poll) => refresh::poll(&link, poll, &mut self.check)?,
+            Phase::FetchingChanged(changed) => refresh::fetch_changed(&link, changed, fetched)?,
+            Phase::Probing(probing) => refresh::probe(&link, probing)?,
             Phase::Searching {
                 searches,
                 cursor,
@@ -184,6 +242,24 @@ impl UserWorkSync {
             self.phase = next;
         }
         Ok(step)
+    }
+
+    /// Saves that this sync finished, and says when. The store keeps whole seconds, so the window hears what
+    /// a later start reads back.
+    fn finish(&self, store: &Store) -> Result<LastSync, Error> {
+        let now = OffsetDateTime::now_utc();
+        let finished_at = now.replace_nanosecond(0).unwrap_or(now);
+        let state = SyncState {
+            started_at: self.started_at,
+            finished_at,
+            check: self.check.clone(),
+            refresh_under_way: false,
+        };
+        store.save_sync_state(&self.repository, state)?;
+        Ok(LastSync {
+            repository: self.repository.clone(),
+            at: Some(finished_at),
+        })
     }
 }
 
@@ -241,9 +317,14 @@ fn fetch(
         leads.learn_from(pull_request, link.repository);
         fetched.extend([pull_request.number]);
     }
+    let touched = batch.pull_requests.iter().map(|pr| pr.number).collect();
     drop(ids.drain(..batch.asked_for));
     let pause_until = pause_until(batch.rate_limit);
-    Ok((Step::Saved { pause_until }, None))
+    let step = Step::Saved {
+        touched,
+        pause_until,
+    };
+    Ok((step, None))
 }
 
 impl Leads {
@@ -284,7 +365,7 @@ fn fetch_origin(
                     numbers: named.into_iter().collect(),
                 })
             }
-            PrFetch::Tree => None,
+            PrFetch::Tree | PrFetch::Changed => None,
         };
         let step = if next.is_some() {
             NO_PAUSE
@@ -302,7 +383,10 @@ fn fetch_origin(
         link.store
             .save_pull_requests(link.repository, vec![pull_request])?;
         leads.named.extend(named);
-        Step::Saved { pause_until }
+        Step::Saved {
+            touched: vec![number],
+            pause_until,
+        }
     } else {
         Step::Searched { pause_until }
     };
@@ -330,10 +414,14 @@ fn fetch_issues(
     let numbered = batch.issues.iter().map(|issue| issue.number);
     let found: Vec<u32> = numbered.collect();
     link.store.save_issues(link.repository, batch.issues)?;
-    shown.extend(found);
+    shown.extend(found.iter().copied());
     drop(numbers.drain(..batch.asked_for));
     let pause_until = pause_until(batch.rate_limit);
-    Ok((Step::Saved { pause_until }, None))
+    let step = Step::Saved {
+        touched: found,
+        pause_until,
+    };
+    Ok((step, None))
 }
 
 fn read_cross_references(
@@ -390,18 +478,38 @@ fn not_yet_fetched(
         .collect()
 }
 
+/// Why the next step waits, and until when.
+#[derive(Clone, Copy)]
+enum Hold {
+    /// Until the next look at GitHub after a failure. The user can ask sooner.
+    Retry(Instant),
+    /// Until GitHub's points come back, which asking sooner would only waste.
+    Points(Instant),
+}
+
+impl Hold {
+    fn until(self) -> Instant {
+        match self {
+            Self::Retry(at) | Self::Points(at) => at,
+        }
+    }
+}
+
 /// The syncs still to run, one at a time. The one asked for last goes first, because the window has that
 /// Repository open (ADR 0015), and the others keep their progress behind it.
 #[derive(Default)]
 pub struct Syncs {
     queue: VecDeque<UserWorkSync>,
-    not_before: Option<Instant>,
+    not_before: Option<Hold>,
     failures: u8,
+    /// The Repository the window has open, which alone keeps refreshing.
+    open: Option<RepositorySettings>,
 }
 
 impl Syncs {
     /// Puts a sync of `repository` first, carrying on from where it got if one is already queued.
     pub fn add(&mut self, repository: RepositorySettings) {
+        self.open = Some(repository.clone());
         let queued = self
             .queue
             .iter()
@@ -412,16 +520,43 @@ impl Syncs {
         self.failures = 0;
     }
 
+    /// Queues the timer's refresh of the open Repository, unless a sync of it is under way or waiting. A
+    /// store that can't answer queues nothing, because the sync couldn't save, and the status says why.
+    pub fn refresh_open(&mut self, store: &Store) {
+        let Some(open) = &self.open else {
+            return;
+        };
+        let has_synced = matches!(store.sync_state(&open.name), Ok(Some(_)));
+        let queued = self
+            .queue
+            .iter()
+            .any(|sync| sync.repository.is_same(&open.name));
+        if has_synced && !queued {
+            self.queue.push_back(UserWorkSync::new(open.clone()));
+        }
+    }
+
+    /// Answers the user's click: the open Repository goes first, and stops waiting for the next look at
+    /// GitHub. A wait for GitHub's points stays.
+    pub fn refresh_now(&mut self) {
+        if let Some(open) = self.open.clone() {
+            self.add(open);
+        }
+        if let Some(Hold::Retry(_)) = self.not_before {
+            self.not_before = None;
+        }
+    }
+
     /// The time the next step can run, if there is one.
     pub fn ready_at(&self) -> Option<Instant> {
         self.queue
             .front()
-            .map(|_| self.not_before.unwrap_or_else(Instant::now))
+            .map(|_| self.not_before.map_or_else(Instant::now, Hold::until))
     }
 
     /// Holds the next step back until `at`.
     pub fn wait_until(&mut self, at: Instant) {
-        self.not_before = Some(at);
+        self.not_before = Some(Hold::Retry(at));
     }
 
     /// Holds the next step back after `problem`, at least until `next_refresh`, and stops a sync that keeps
@@ -430,9 +565,12 @@ impl Syncs {
         self.not_before = Some(match problem.kind {
             ErrorKind::RateLimited {
                 resets_at: Some(resets_at),
-            } => OffsetDateTime::from_unix_timestamp(i64::from(resets_at))
-                .map_or(next_refresh, |at| until_instant(at).max(next_refresh)),
-            ErrorKind::Offline | ErrorKind::RateLimited { resets_at: None } => next_refresh,
+            } => Hold::Points(
+                OffsetDateTime::from_unix_timestamp(i64::from(resets_at))
+                    .map_or(next_refresh, |at| until_instant(at).max(next_refresh)),
+            ),
+            ErrorKind::RateLimited { resets_at: None } => Hold::Points(next_refresh),
+            ErrorKind::Offline => Hold::Retry(next_refresh),
             ErrorKind::Unauthorized
             | ErrorKind::WriteRefused
             | ErrorKind::NotFound
@@ -440,7 +578,7 @@ impl Syncs {
             | ErrorKind::QueryRefused
             | ErrorKind::Internal => {
                 self.count_failure(problem);
-                next_refresh
+                Hold::Retry(next_refresh)
             }
         });
     }
@@ -459,13 +597,9 @@ impl Syncs {
         }
     }
 
-    /// Runs one step of the first sync in the queue. Answers with the Repository whose stored facts changed,
-    /// if they did.
-    pub fn step(
-        &mut self,
-        github: &GitHub,
-        store: &Store,
-    ) -> Result<Option<RepositoryName>, Error> {
+    /// Runs one step of the first sync in the queue. Answers with what changed for the rest of the app, if
+    /// anything did.
+    pub fn step(&mut self, github: &GitHub, store: &Store) -> Result<Option<Progress>, Error> {
         let Some(sync) = self.queue.front_mut() else {
             return Ok(None);
         };
@@ -474,17 +608,28 @@ impl Syncs {
         self.failures = 0;
         match step {
             Step::Searched { pause_until } => {
-                self.not_before = pause_until.map(until_instant);
+                self.not_before = pause_until.map(until_instant).map(Hold::Points);
                 Ok(None)
             }
-            Step::Saved { pause_until } => {
-                let saved = sync.repository.clone();
-                self.not_before = pause_until.map(until_instant);
-                Ok(Some(saved))
+            Step::Saved {
+                touched,
+                pause_until,
+            } => {
+                let change = Change {
+                    repository: sync.repository.clone(),
+                    items: touched,
+                };
+                self.not_before = pause_until.map(until_instant).map(Hold::Points);
+                Ok(Some(Progress::Changed(change)))
             }
             Step::Finished => {
+                let finished = sync.finish(store)?;
+                let is_open = self
+                    .open
+                    .as_ref()
+                    .is_some_and(|open| open.name.is_same(&finished.repository));
                 drop(self.queue.pop_front());
-                Ok(None)
+                Ok(is_open.then_some(Progress::Finished(finished)))
             }
         }
     }
@@ -639,6 +784,11 @@ mod tests {
                 .collect()
         }
 
+        /// Makes the next sync a whole one, as a first sync that was interrupted leaves it.
+        pub(super) fn forget_the_last_sync(&self) {
+            self.store.forget_sync_state(&cpython()).unwrap();
+        }
+
         pub(super) fn finish(self) {
             self.open.close();
             self.store.close();
@@ -650,9 +800,19 @@ mod tests {
     pub(super) fn run_to_the_end(syncs: &mut Syncs, harness: &Harness) -> Vec<RepositoryName> {
         let mut changed = Vec::new();
         while syncs.ready_at().is_some() {
-            changed.extend(syncs.step(&harness.github, &harness.store).unwrap());
+            changed.extend(announced(
+                syncs.step(&harness.github, &harness.store).unwrap(),
+            ));
         }
         changed
+    }
+
+    /// The Repository a step says changed, if it says one did.
+    pub(super) fn announced(progress: Option<Progress>) -> Option<RepositoryName> {
+        match progress? {
+            Progress::Changed(change) => Some(change.repository),
+            Progress::Finished(_) => None,
+        }
     }
 
     pub(super) fn nothing(rate: &str) -> Result<Reply, Unreachable> {
@@ -869,6 +1029,7 @@ mod tests {
         drop(run_to_the_end(&mut syncs, &harness));
         drop(harness.operations());
 
+        harness.forget_the_last_sync();
         syncs.add(plain(cpython()));
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -974,6 +1135,7 @@ mod tests {
 
         let origins_in_each_sync: Vec<usize> = (0..3)
             .map(|_| {
+                harness.forget_the_last_sync();
                 syncs.add(plain(cpython()));
                 drop(run_to_the_end(&mut syncs, &harness));
                 harness
@@ -1011,6 +1173,7 @@ mod tests {
         drop(run_to_the_end(&mut syncs, &harness));
         drop(harness.operations());
 
+        harness.forget_the_last_sync();
         syncs.add(plain(cpython()));
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -1500,7 +1663,8 @@ mod tests {
         // The newer sync's four searches, its seven moves from phase to phase and its end, then the older
         // sync's next page.
         for _ in 0..13 {
-            assert_eq!(syncs.step(&harness.github, &harness.store).unwrap(), None);
+            let progress = syncs.step(&harness.github, &harness.store).unwrap();
+            assert_eq!(announced(progress), None);
         }
 
         let asked: Vec<(String, Value)> = harness.asked.try_iter().collect();
@@ -1516,6 +1680,134 @@ mod tests {
 
     fn soon() -> Instant {
         Instant::now() + Duration::from_secs(60)
+    }
+
+    #[test]
+    fn with_nothing_open_a_refresh_queues_nothing() {
+        let harness = Harness::new("refresh-nothing", Vec::new());
+        let mut syncs = Syncs::default();
+        syncs.refresh_open(&harness.store);
+        syncs.refresh_now();
+        assert_eq!(syncs.ready_at(), None);
+        harness.finish();
+    }
+
+    #[test]
+    fn the_timer_leaves_a_first_sync_that_gave_up_and_a_click_starts_it_again() {
+        let harness = Harness::new("gave-up", Vec::new());
+        let mut syncs = Syncs::default();
+        syncs.add(plain(cpython()));
+        for _ in 0..TRIES {
+            syncs.after_failure(&broken(), soon());
+        }
+        assert_eq!(syncs.ready_at(), None);
+
+        syncs.refresh_open(&harness.store);
+        assert_eq!(syncs.ready_at(), None);
+
+        syncs.refresh_now();
+        assert_eq!(syncs.queue.len(), 1);
+        harness.finish();
+    }
+
+    #[test]
+    fn a_click_ends_a_wait_for_the_network_and_keeps_a_wait_for_points() {
+        let later = Instant::now() + Duration::from_secs(3600);
+        let offline = Error::new(ErrorKind::Offline, "No network.");
+        let spent = Error::new(ErrorKind::RateLimited { resets_at: None }, "No points.");
+        let mut syncs = Syncs::default();
+        syncs.add(plain(cpython()));
+
+        syncs.after_failure(&offline, later);
+        syncs.refresh_now();
+        assert!(syncs.ready_at().unwrap() < later);
+
+        syncs.after_failure(&spent, later);
+        syncs.refresh_now();
+        assert_eq!(syncs.ready_at(), Some(later));
+    }
+
+    #[test]
+    fn the_last_sync_says_when_it_finished_and_the_next_asks_from_when_it_started() {
+        let harness = Harness::new("finish-time", searches_finding(&[]));
+        let mut syncs = Syncs::default();
+        syncs.add(plain(cpython()));
+        let began = OffsetDateTime::now_utc() - time::Duration::hours(1);
+        syncs.queue.front_mut().unwrap().started_at = began;
+
+        let mut finished = None;
+        while syncs.ready_at().is_some() {
+            if let Some(Progress::Finished(last_sync)) =
+                syncs.step(&harness.github, &harness.store).unwrap()
+            {
+                finished = last_sync.at;
+            }
+        }
+
+        let state = harness.store.sync_state(&cpython()).unwrap().unwrap();
+        assert_eq!(finished, Some(state.finished_at));
+        assert_eq!(state.started_at.unix_timestamp(), began.unix_timestamp());
+        assert!(state.finished_at > began + time::Duration::minutes(59));
+        harness.finish();
+    }
+
+    #[test]
+    fn a_refresh_of_the_open_repository_joins_the_queue_once() {
+        let harness = Harness::new("refresh-open", searches_finding(&[]));
+        let mut syncs = Syncs::default();
+        syncs.add(plain(cpython()));
+        drop(run_to_the_end(&mut syncs, &harness));
+        let operations = harness.operations().len();
+        assert_eq!(operations, 4, "one sync's four searches");
+
+        syncs.refresh_open(&harness.store);
+        syncs.refresh_open(&harness.store);
+
+        assert_eq!(syncs.queue.len(), 1);
+        harness.finish();
+    }
+
+    #[test]
+    fn a_refresh_goes_behind_a_sync_of_another_repository() {
+        let peps = RepositoryName::parse("python/peps").unwrap();
+        let mut replies = searches_finding(&[]);
+        replies.extend(searches_finding(&[]));
+        let harness = Harness::new("refresh-behind", replies);
+        let mut syncs = Syncs::default();
+        syncs.add(plain(cpython()));
+        drop(run_to_the_end(&mut syncs, &harness));
+        syncs.add(plain(peps.clone()));
+        syncs.add(plain(cpython()));
+        syncs.queue.retain(|sync| sync.repository == peps);
+        drop(syncs.step(&harness.github, &harness.store).unwrap());
+
+        syncs.refresh_open(&harness.store);
+
+        assert_eq!(syncs.queue.len(), 2);
+        assert_eq!(syncs.queue.front().unwrap().repository, peps);
+        harness.finish();
+    }
+
+    #[test]
+    fn only_the_open_repository_says_its_sync_finished() {
+        let peps = RepositoryName::parse("python/peps").unwrap();
+        let mut replies = searches_finding(&[]);
+        replies.extend(searches_finding(&[]));
+        let harness = Harness::new("finished", replies);
+        let mut syncs = Syncs::default();
+        syncs.add(plain(peps));
+        syncs.add(plain(cpython()));
+
+        let mut finished = Vec::new();
+        while syncs.ready_at().is_some() {
+            let progress = syncs.step(&harness.github, &harness.store).unwrap();
+            if let Some(Progress::Finished(last_sync)) = progress {
+                finished.push(last_sync.repository);
+            }
+        }
+
+        assert_eq!(finished, [cpython()]);
+        harness.finish();
     }
 
     fn broken() -> Error {

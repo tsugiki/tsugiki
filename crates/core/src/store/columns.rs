@@ -7,6 +7,7 @@ use time::OffsetDateTime;
 
 use crate::filters::FilterQuery;
 use crate::github::pull_requests::{CiState, PrState, ReviewState};
+use crate::github::refresh::Etag;
 use crate::github::{CommitSha, Login};
 use crate::repository::RepositoryName;
 
@@ -49,6 +50,18 @@ impl FromSql for FilterQuery {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         Self::try_from(value.as_str()?.to_owned())
             .map_err(|problem| FromSqlError::Other(problem.into()))
+    }
+}
+
+impl ToSql for Etag {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        self.as_str().to_sql()
+    }
+}
+
+impl FromSql for Etag {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        value.as_str().map(Self::new)
     }
 }
 

@@ -5,6 +5,7 @@ pub mod issues;
 pub mod live;
 pub mod pull_requests;
 pub mod record;
+pub mod refresh;
 pub mod replay;
 
 use std::borrow::Cow;
@@ -36,6 +37,22 @@ pub struct Reply {
     /// The `x-ratelimit-reset` header, in seconds since the Unix epoch.
     pub reset: Option<u32>,
     pub body: String,
+}
+
+/// A REST request that can answer "not modified", which a refresh asks first (ADR 0015).
+pub struct ConditionalGet<'a> {
+    /// The path on GitHub's API, from its first `/`.
+    pub path: &'a str,
+    /// The tag of the last answer, sent as `If-None-Match`.
+    pub etag: Option<&'a str>,
+}
+
+/// What GitHub answered to a [`ConditionalGet`]. A refresh reads these two and drops the body.
+#[derive(Debug, Clone)]
+pub struct ConditionalReply {
+    pub status: u16,
+    /// The `ETag` header.
+    pub etag: Option<String>,
 }
 
 /// GitHub couldn't be reached at all.
@@ -90,6 +107,16 @@ impl CommitSha {
 /// How a request reaches GitHub: the network in the app, recorded answers in tests.
 pub trait Transport: Send {
     fn post(&self, token: &Token, request: &Request<'_>) -> Result<Reply, Unreachable>;
+
+    /// Recordings hold GraphQL answers only (ADR 0009). A transport with no REST counts as unreachable here,
+    /// and a refresh then asks by GraphQL.
+    fn get(
+        &self,
+        _token: &Token,
+        _request: &ConditionalGet<'_>,
+    ) -> Result<ConditionalReply, Unreachable> {
+        Err(Unreachable)
+    }
 }
 
 /// How to reach GitHub: the network and gh in the app, stand-ins in tests.
@@ -589,9 +616,9 @@ mod tests {
         assert_eq!(check.repository.name, name("python/cpython"));
         assert_eq!(check.repository.conventions, Conventions::Cpython);
         assert_eq!(check.access, RepositoryAccess::Other);
-        assert_eq!((check.open_issues, check.open_prs), (6937, 2313));
+        assert_eq!((check.open_issues, check.open_prs), (6937, 2315));
         assert_eq!(check.size, RepositorySize::Large);
-        assert_eq!(check.first_sync_items, 4824);
+        assert_eq!(check.first_sync_items, 4838);
     }
 
     #[test]

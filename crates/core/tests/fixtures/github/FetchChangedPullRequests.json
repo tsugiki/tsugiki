@@ -1,0 +1,824 @@
+{
+  "body": {
+    "data": {
+      "nodes": [
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "miss-islington"
+          },
+          "baseRefName": "3.11",
+          "body": "* gh-161323: Refuse drive-relative paths in tarfile extraction filters\n\nOn Windows, os.path.join() does not put a name such as 'C:foo' below a\ndestination that has no drive, so the 'tar' and 'data' filters now refuse\nnames and link targets with a drive, after normalization.\nFixes CVE-2026-107784.\n\nreported by Girish Konda\n\nANT-2026-RSL1F4AT\n(cherry picked from commit e4c751ba63d41660332db162ff7836e933631858)\n\n",
+          "closingIssuesReferences": {
+            "nodes": []
+          },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "miss-islington"
+                    }
+                  },
+                  "message": "(cherry picked from commit e4c751ba63d41660332db162ff7836e933631858)\n",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 1
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": []
+          },
+          "mergeCommit": null,
+          "number": 161359,
+          "repository": {
+            "defaultBranchRef": {
+              "name": "main"
+            },
+            "nameWithOwner": "python/cpython"
+          },
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "user-8"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "[3.11] gh-161323: Refuse drive-relative paths in tarfile extraction filters (GH-161334)",
+          "updatedAt": "2026-11-04T21:42:18Z"
+        },
+        {
+          "assignees": {
+            "nodes": [
+              {
+                "login": "user-1"
+              }
+            ]
+          },
+          "author": {
+            "login": "user-1"
+          },
+          "baseRefName": "main",
+          "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.",
+          "closingIssuesReferences": {
+            "nodes": []
+          },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-1"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-1"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-1"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-1"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-1"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 5
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "user-9"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "user-10"
+                },
+                "state": "APPROVED"
+              }
+            ]
+          },
+          "mergeCommit": {
+            "oid": "f8e65ee35d05cc47e1e02e716c934b8acaa9b5bd"
+          },
+          "number": 161186,
+          "repository": {
+            "defaultBranchRef": {
+              "name": "main"
+            },
+            "nameWithOwner": "python/cpython"
+          },
+          "reviewRequests": {
+            "nodes": []
+          },
+          "state": "MERGED",
+          "title": "gh-161185: Fix strict aliasing issue in Py_SETREF() macros family",
+          "updatedAt": "2026-11-04T21:38:23Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "miss-islington"
+          },
+          "baseRefName": "3.13",
+          "body": "* gh-161323: Refuse drive-relative paths in tarfile extraction filters\n\nOn Windows, os.path.join() does not put a name such as 'C:foo' below a\ndestination that has no drive, so the 'tar' and 'data' filters now refuse\nnames and link targets with a drive, after normalization.\nFixes CVE-2026-107784.\n\nreported by Girish Konda\n\nANT-2026-RSL1F4AT\n(cherry picked from commit e4c751ba63d41660332db162ff7836e933631858)\n\n",
+          "closingIssuesReferences": {
+            "nodes": []
+          },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "miss-islington"
+                    }
+                  },
+                  "message": "(cherry picked from commit e4c751ba63d41660332db162ff7836e933631858)\n",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 1
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": []
+          },
+          "mergeCommit": null,
+          "number": 161357,
+          "repository": {
+            "defaultBranchRef": {
+              "name": "main"
+            },
+            "nameWithOwner": "python/cpython"
+          },
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "user-8"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "[3.13] gh-161323: Refuse drive-relative paths in tarfile extraction filters (GH-161334)",
+          "updatedAt": "2026-11-04T21:37:51Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "user-1"
+          },
+          "baseRefName": "3.15",
+          "body": "Py_SETREF(), Py_XSETREF() and Py_CLEAR() now use memcpy() to set _tmp_old_dst/_tmp_old_op to fix a strict aliasing issue.\n\nPy_SETREF(), Py_XSETREF() and Py_CLEAR() now also cast _tmp_old_dst/_tmp_old_op to PyObject* when calling Py_DECREF()/Py_XDECREF() to avoid compiler warnings with the limited C API.\n\nAdd the _Py_TESTCEXT_NO_TYPEOF macro to undefine the _Py_TYPEOF macro.\n\n\n(cherry picked from commit f8e65ee35d05cc47e1e02e716c934b8acaa9b5bd)\n\n<!--\nThanks for your contribution!\nPlease read this comment in its entirety. It's quite important.\n\n# Pull Request title\n\nIt should be in the following format:\n\n```\ngh-NNNNNN: Summary of the changes made\n```\n\nWhere: gh-NNNNNN refers to the GitHub issue number.\n\nMost PRs will require an issue number. Trivial changes, like fixing a typo, do not need an issue.\n\n# Backport Pull Request title\n\nIf this is a backport PR (PR made against branches other than `main`),\nplease ensure that the PR title is in the following format:\n\n```\n[X.Y] <title from the original PR> (GH-NNNNNN)\n```\n\nWhere: [X.Y] is the branch name, for example: [3.13].\n\nGH-NNNNNN refers to the PR number from `main`.\n\n-->\n\n\n<!-- gh-issue-number: gh-161185 -->\n* Issue: gh-161185\n<!-- /gh-issue-number -->\n",
+          "closingIssuesReferences": {
+            "nodes": []
+          },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-1"
+                    }
+                  },
+                  "message": "(cherry picked from commit f8e65ee35d05cc47e1e02e716c934b8acaa9b5bd)",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 1
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "PENDING"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": []
+          },
+          "mergeCommit": null,
+          "number": 161360,
+          "repository": {
+            "defaultBranchRef": {
+              "name": "main"
+            },
+            "nameWithOwner": "python/cpython"
+          },
+          "reviewRequests": {
+            "nodes": []
+          },
+          "state": "OPEN",
+          "title": "[3.15] gh-161185: Fix strict aliasing issue in Py_SETREF() macros family (#161186)",
+          "updatedAt": "2026-11-04T21:37:27Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "miss-islington"
+          },
+          "baseRefName": "3.12",
+          "body": "* gh-161323: Refuse drive-relative paths in tarfile extraction filters\n\nOn Windows, os.path.join() does not put a name such as 'C:foo' below a\ndestination that has no drive, so the 'tar' and 'data' filters now refuse\nnames and link targets with a drive, after normalization.\nFixes CVE-2026-107784.\n\nreported by Girish Konda\n\nANT-2026-RSL1F4AT\n(cherry picked from commit e4c751ba63d41660332db162ff7836e933631858)\n\n",
+          "closingIssuesReferences": {
+            "nodes": []
+          },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "miss-islington"
+                    }
+                  },
+                  "message": "(cherry picked from commit e4c751ba63d41660332db162ff7836e933631858)\n",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 1
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "PENDING"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": []
+          },
+          "mergeCommit": null,
+          "number": 161358,
+          "repository": {
+            "defaultBranchRef": {
+              "name": "main"
+            },
+            "nameWithOwner": "python/cpython"
+          },
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "user-8"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "[3.12] gh-161323: Refuse drive-relative paths in tarfile extraction filters (GH-161334)",
+          "updatedAt": "2026-11-04T21:35:37Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "user-11"
+          },
+          "baseRefName": "main",
+          "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.",
+          "closingIssuesReferences": {
+            "nodes": []
+          },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-11"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-11"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 2
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "user-12"
+                },
+                "state": "APPROVED"
+              }
+            ]
+          },
+          "mergeCommit": {
+            "oid": "aa0e4109a8681cbe6fb65e4072b0058e02adaef9"
+          },
+          "number": 160616,
+          "repository": {
+            "defaultBranchRef": {
+              "name": "main"
+            },
+            "nameWithOwner": "python/cpython"
+          },
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "user-13"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "user-14"
+                }
+              }
+            ]
+          },
+          "state": "MERGED",
+          "title": "gh-153568: Use a managed dict for AST nodes",
+          "updatedAt": "2026-11-04T21:35:21Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "miss-islington"
+          },
+          "baseRefName": "3.15",
+          "body": "* gh-161323: Refuse drive-relative paths in tarfile extraction filters\n\nOn Windows, os.path.join() does not put a name such as 'C:foo' below a\ndestination that has no drive, so the 'tar' and 'data' filters now refuse\nnames and link targets with a drive, after normalization.\nFixes CVE-2026-107784.\n\nreported by Girish Konda\n\nANT-2026-RSL1F4AT\n(cherry picked from commit e4c751ba63d41660332db162ff7836e933631858)\n\n",
+          "closingIssuesReferences": {
+            "nodes": []
+          },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "miss-islington"
+                    }
+                  },
+                  "message": "(cherry picked from commit e4c751ba63d41660332db162ff7836e933631858)\n",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 1
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "PENDING"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": []
+          },
+          "mergeCommit": null,
+          "number": 161355,
+          "repository": {
+            "defaultBranchRef": {
+              "name": "main"
+            },
+            "nameWithOwner": "python/cpython"
+          },
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "user-8"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "[3.15] gh-161323: Refuse drive-relative paths in tarfile extraction filters (GH-161334)",
+          "updatedAt": "2026-11-04T21:29:40Z"
+        },
+        {
+          "assignees": {
+            "nodes": [
+              {
+                "login": "user-2"
+              }
+            ]
+          },
+          "author": {
+            "login": "user-2"
+          },
+          "baseRefName": "main",
+          "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipi",
+          "closingIssuesReferences": {
+            "nodes": []
+          },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-2"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-2"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-2"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-2"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              }
+            ],
+            "totalCount": 5
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "user-8"
+                },
+                "state": "APPROVED"
+              }
+            ]
+          },
+          "mergeCommit": {
+            "oid": "e4c751ba63d41660332db162ff7836e933631858"
+          },
+          "number": 161334,
+          "repository": {
+            "defaultBranchRef": {
+              "name": "main"
+            },
+            "nameWithOwner": "python/cpython"
+          },
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "user-15"
+                }
+              }
+            ]
+          },
+          "state": "MERGED",
+          "title": "gh-161323: Refuse drive-relative paths in tarfile extraction filters",
+          "updatedAt": "2026-11-04T21:25:25Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "miss-islington"
+          },
+          "baseRefName": "3.14",
+          "body": "* gh-161323: Refuse drive-relative paths in tarfile extraction filters\n\nOn Windows, os.path.join() does not put a name such as 'C:foo' below a\ndestination that has no drive, so the 'tar' and 'data' filters now refuse\nnames and link targets with a drive, after normalization.\nFixes CVE-2026-107784.\n\nreported by Girish Konda\n\nANT-2026-RSL1F4AT\n(cherry picked from commit e4c751ba63d41660332db162ff7836e933631858)\n\n",
+          "closingIssuesReferences": {
+            "nodes": []
+          },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "miss-islington"
+                    }
+                  },
+                  "message": "(cherry picked from commit e4c751ba63d41660332db162ff7836e933631858)\n",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 1
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "PENDING"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": []
+          },
+          "mergeCommit": null,
+          "number": 161356,
+          "repository": {
+            "defaultBranchRef": {
+              "name": "main"
+            },
+            "nameWithOwner": "python/cpython"
+          },
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "user-8"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "title": "[3.14] gh-161323: Refuse drive-relative paths in tarfile extraction filters (GH-161334)",
+          "updatedAt": "2026-11-04T21:25:01Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "user-3"
+          },
+          "baseRefName": "main",
+          "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adi",
+          "closingIssuesReferences": {
+            "nodes": []
+          },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-3"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 1
+          },
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": []
+          },
+          "mergeCommit": null,
+          "number": 161337,
+          "repository": {
+            "defaultBranchRef": {
+              "name": "main"
+            },
+            "nameWithOwner": "python/cpython"
+          },
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "user-16"
+                }
+              }
+            ]
+          },
+          "state": "CLOSED",
+          "title": "gh-161317: configparser.write() raises InvalidWriteError for multiline values with leading whitespace",
+          "updatedAt": "2026-11-04T21:23:01Z"
+        }
+      ],
+      "rateLimit": {
+        "remaining": 4996,
+        "resetAt": "2026-11-04T22:46:14Z"
+      }
+    }
+  },
+  "query": "query FetchChangedPullRequests($ids: [ID!]!) { nodes(ids: $ids) { ... on PullRequest { number title state isDraft updatedAt baseRefName body mergeCommit { oid } repository { nameWithOwner defaultBranchRef { name } } closingIssuesReferences(first: 100) { nodes { number repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } commits(first: 100) { totalCount nodes { commit { message parents { totalCount } committer { user { login } } } } } } } rateLimit { remaining resetAt } }",
+  "reset": 1793832374,
+  "status": 200
+}

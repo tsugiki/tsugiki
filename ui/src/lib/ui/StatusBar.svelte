@@ -1,17 +1,35 @@
 <script lang="ts">
-  import type { Status } from "$lib/state/status.svelte";
+  import type { LastSync, Status } from "$lib/state/status.svelte";
+  import { syncedWords } from "./synced";
+
+  const MINUTE = 60_000;
 
   let {
     status,
     error,
     visible = true,
     problems = [],
+    lastSync = null,
+    onrefresh = () => {},
   }: {
     status: Status | undefined;
     error?: string | undefined;
     visible?: boolean;
     problems?: string[];
+    lastSync?: LastSync | null;
+    onrefresh?: () => void;
   } = $props();
+
+  // "Synced 2 min ago" has to move on by itself between syncs.
+  let now = $state(new Date());
+  $effect(() => {
+    const ticking = setInterval(() => {
+      now = new Date();
+    }, MINUTE);
+    return () => {
+      clearInterval(ticking);
+    };
+  });
 
   const offline = $derived(status?.state === "offline" || status?.state === "offline_as");
   // Hiding the bar can't hide these: nothing else would tell the user.
@@ -20,7 +38,12 @@
 </script>
 
 <!-- Always in the page, because screen readers only announce changes in a live region that already exists. -->
-<footer role="status" class:offline class:empty={!showStatus && !listedProblems}>
+<footer
+  role="status"
+  class:offline
+  class:empty={!showStatus && !listedProblems}
+  class:beside-sync={lastSync !== null && showStatus}
+>
   {#if showStatus}
     {#if error}
       Tsugiki can't read its status: {error}
@@ -40,6 +63,10 @@
   {/if}
   <span>{showStatus && listedProblems ? `· ${listedProblems}` : listedProblems}</span>
 </footer>
+<!-- Outside the live region, or a screen reader would read this out each minute. -->
+{#if lastSync !== null && showStatus}
+  <button class:offline onclick={onrefresh}>{syncedWords(lastSync.at, now)}</button>
+{/if}
 
 <style>
   footer {
@@ -49,6 +76,22 @@
     font-size: 12px;
     background: #e8e8e8;
     color: #222;
+  }
+
+  .beside-sync {
+    padding-right: 11em;
+  }
+
+  button {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    padding: 2px 8px;
+    border: none;
+    font-size: 12px;
+    background: #e8e8e8;
+    color: #222;
+    cursor: pointer;
   }
 
   .offline {

@@ -9,7 +9,7 @@ use std::time::Duration;
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::github::{GitHub, GitHubAccess, Reply, Request, Transport, Unreachable};
 use tsugiki_core::logfile;
-use tsugiki_core::session::Session;
+use tsugiki_core::session::{Intervals, Session};
 use tsugiki_core::status::StatusBoard;
 use tsugiki_core::store::Store;
 use tsugiki_core::token::{GhOutput, Token};
@@ -120,7 +120,10 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
             transport: Box::new(Proxy),
             run_gh: gh_is_missing,
         },
-        Duration::from_secs(3600),
+        Intervals {
+            status: Duration::from_secs(3600),
+            repository: Duration::from_secs(3600),
+        },
     );
     session.stop(Duration::from_secs(10));
     let file = read_after_flush();

@@ -3,8 +3,8 @@ import { commands, events } from "$lib/data/bindings";
 import { StatusState, type Status } from "./status.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
-  commands: { status: vi.fn() },
-  events: { statusChanged: { listen: vi.fn() } },
+  commands: { status: vi.fn(), lastSync: vi.fn(), refresh: vi.fn() },
+  events: { statusChanged: { listen: vi.fn() }, lastSyncChanged: { listen: vi.fn() } },
 }));
 
 const online: Status = { state: "online", login: "octocat" };
@@ -21,6 +21,73 @@ const catchListener = () => {
   });
   return listener;
 };
+
+const synced = { repository: "python/cpython", at: "2026-11-05T12:00:00Z" };
+
+/** Catches the listener for the last sync, as `catchListener` does for the status. */
+const catchLastSync = () => {
+  const listener = vi.fn();
+  vi.mocked(events.lastSyncChanged.listen).mockImplementation(async (callback) => {
+    listener.mockImplementation((payload: typeof synced) => {
+      callback({ event: "last-sync-changed", id: 1, payload });
+    });
+    return () => {};
+  });
+  return listener;
+};
+
+describe("StatusState's last sync", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    catchListener();
+    vi.mocked(commands.status).mockResolvedValue(online);
+  });
+
+  it("holds what the core says when the window loads", async () => {
+    catchLastSync();
+    vi.mocked(commands.lastSync).mockResolvedValue(synced);
+    const state = new StatusState();
+    expect(state.lastSync).toBeNull();
+    await state.load();
+    expect(state.lastSync).toEqual(synced);
+  });
+
+  it("follows the core's events", async () => {
+    const send = catchLastSync();
+    vi.mocked(commands.lastSync).mockResolvedValue(null);
+    const state = new StatusState();
+    await state.load();
+    expect(state.lastSync).toBeNull();
+    send(synced);
+    expect(state.lastSync).toEqual(synced);
+  });
+
+  it("keeps an event that arrives while it is still asking", async () => {
+    const send = catchLastSync();
+    vi.mocked(commands.lastSync).mockImplementation(async () => {
+      send(synced);
+      return { repository: "python/cpython", at: null };
+    });
+    const state = new StatusState();
+    await state.load();
+    expect(state.lastSync).toEqual(synced);
+  });
+
+  it("asks the core to refresh", async () => {
+    vi.mocked(commands.refresh).mockResolvedValue(undefined);
+    const state = new StatusState();
+    await state.refresh();
+    expect(commands.refresh).toHaveBeenCalledOnce();
+    expect(state.error).toBeUndefined();
+  });
+
+  it("says when it can't ask", async () => {
+    vi.mocked(commands.refresh).mockRejectedValue(new Error("no IPC"));
+    const state = new StatusState();
+    await state.refresh();
+    expect(state.error).toBe("Error: no IPC");
+  });
+});
 
 describe("StatusState", () => {
   beforeEach(() => {

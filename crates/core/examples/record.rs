@@ -3,6 +3,7 @@
 
 #![expect(
     clippy::expect_used,
+    clippy::panic,
     clippy::print_stdout,
     reason = "a developer's command line: a failure should stop it and say why in the terminal"
 )]
@@ -10,7 +11,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 use tsugiki_core::error::Error;
 use tsugiki_core::filters::Filter;
 use tsugiki_core::github::GitHub;
@@ -19,6 +20,7 @@ use tsugiki_core::github::issues::ListedPr;
 use tsugiki_core::github::live::{Https, run_gh};
 use tsugiki_core::github::pull_requests::{NodeId, PageRequest, PrFetch};
 use tsugiki_core::github::record::Recorder;
+use tsugiki_core::github::refresh::{ListCheck, ListPlace, PollRequest};
 use tsugiki_core::links::{possible_numbers, possible_origin};
 use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
 use tsugiki_core::sync::{FETCH_BATCH, SEARCH_PAGE, WORK_SEARCHES};
@@ -26,6 +28,12 @@ use tsugiki_core::token::Token;
 
 /// The Repository the first sync's recordings come from, which every signed-in user can read.
 const WORK_REPOSITORY: &str = "python/cpython";
+/// Tsugiki's own Repository, which proves the REST check on real GitHub. Recordings hold GraphQL only.
+const CHECKED_REPOSITORY: &str = "tsugiki/tsugiki";
+/// How far back the refresh's recordings look, far enough that CPython has something to list.
+const REFRESH_WINDOW: Duration = Duration::days(1);
+/// A recording's page of a refresh, kept short because each answer goes in the repo.
+const REFRESH_PAGE: usize = 10;
 const ONLY_PAGE: PageRequest<'static> = PageRequest {
     size: SEARCH_PAGE,
     after: None,
@@ -41,8 +49,68 @@ fn main() {
     let recorder = Recorder::new(Box::new(Https::new()), fixtures.clone());
     let github = GitHub::new(Box::new(recorder), token);
     let _ = github.viewer().expect("ask GitHub who the user is");
+    let repository = RepositoryName::parse(WORK_REPOSITORY).expect("a Repository's name");
+    record_a_refresh(&github, &repository);
     record_first_sync(&github, &scout);
+    check_a_list(&scout);
     println!("Recorded to {}", fixtures.display());
+}
+
+/// Asks for the list's tag and asks again with it, which real GitHub answers with a 304.
+fn check_a_list(scout: &GitHub) {
+    let repository = RepositoryName::parse(CHECKED_REPOSITORY).expect("a Repository's name");
+    let ListCheck::Moved(Some(tag)) = scout.check_list(&repository, None) else {
+        panic!("GitHub gave {CHECKED_REPOSITORY}'s list no tag");
+    };
+    assert_eq!(scout.check_list(&repository, Some(&tag)), ListCheck::Same);
+    println!("A list check with its tag answered 304");
+}
+
+/// One poll with both starter Filters, a fetch of what it found changed, and a probe of those PRs.
+fn record_a_refresh(github: &GitHub, repository: &RepositoryName) {
+    let starters = Filter::starters(RepositoryAccess::Other);
+    let filters: Vec<_> = starters.into_iter().map(|filter| filter.query).collect();
+    let start = ListPlace::Next(None);
+    // A later page carries no searches, and GitHub refuses a query with a variable it doesn't use. The poll
+    // below overwrites this recording.
+    let no_searches = PollRequest {
+        since: OffsetDateTime::now_utc() - REFRESH_WINDOW,
+        issues: &start,
+        pull_requests: &start,
+        filters: &[],
+        size: REFRESH_PAGE,
+    };
+    let _proved = github
+        .poll_repository(repository, &no_searches)
+        .expect("poll with no searches");
+    let asked = PollRequest {
+        since: OffsetDateTime::now_utc() - REFRESH_WINDOW,
+        issues: &start,
+        pull_requests: &start,
+        filters: &filters,
+        size: REFRESH_PAGE,
+    };
+    let poll = github
+        .poll_repository(repository, &asked)
+        .expect("poll the Repository");
+    println!(
+        "A poll found {} Issues and {} PRs",
+        poll.issues.len(),
+        poll.pull_requests.len()
+    );
+    let ids: Vec<NodeId> = poll.pull_requests.iter().map(|pr| pr.id.clone()).collect();
+    let numbers: Vec<u32> = poll.pull_requests.iter().map(|pr| pr.number).collect();
+    let changed = github
+        .fetch_pull_requests(PrFetch::Changed, &ids, REFRESH_PAGE)
+        .expect("fetch what changed");
+    println!(
+        "{} PRs in the batch of changes",
+        changed.pull_requests.len()
+    );
+    let probed = github
+        .probe_pull_requests(repository, &numbers, REFRESH_PAGE)
+        .expect("probe those PRs");
+    println!("{} PRs probed", probed.probes.len());
 }
 
 /// One page of each search, one batch of what they found, one batch of the Issues those PRs name, and one of
@@ -113,6 +181,7 @@ fn record_a_filter(
     let search = FilterSearch {
         query: &starter.query,
         created: None,
+        since: None,
         page: ONLY_PAGE,
     };
     let page = github

@@ -55,6 +55,8 @@
   error={status.error}
   visible={settings.statusBarVisible}
   problems={settings.problems}
+  lastSync={status.lastSync}
+  onrefresh={() => void status.refresh()}
 />
 {#if addOpen}
   <AddRepository

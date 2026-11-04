@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 use specta::Type;
+use time::OffsetDateTime;
 
 use crate::error::Error;
 use crate::github::Login;
@@ -26,13 +27,32 @@ pub enum Status {
     Problem { problem: Error },
 }
 
+/// What a sync changed in a Repository's stored facts (ADR 0008).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct Change {
+    pub repository: RepositoryName,
+    /// The Issues and PRs it touched. A change to something else about the Repository names none.
+    pub items: Vec<u32>,
+}
+
+/// When the open Repository last finished a sync.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct LastSync {
+    pub repository: RepositoryName,
+    /// Nothing, until its first sync finishes.
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[specta(type = Option<String>)]
+    pub at: Option<OffsetDateTime>,
+}
+
 /// Holds the status and announces each change, so the app can pass it on as an event. It also announces when
-/// a Repository's stored facts change, so an open Workbench can ask again (ADR 0008). The session's thread
-/// owns it, so nothing here needs a lock.
+/// a Repository's stored facts change, so an open screen can ask again, and when a sync of the open
+/// Repository finishes (ADR 0008). The session's thread owns it, so nothing here needs a lock.
 pub struct StatusBoard {
     current: Status,
     announce: Box<dyn FnMut(&Status) + Send>,
-    announce_workbench: Box<dyn FnMut(&RepositoryName) + Send>,
+    announce_change: Box<dyn FnMut(&Change) + Send>,
+    announce_last_sync: Box<dyn FnMut(&LastSync) + Send>,
 }
 
 impl StatusBoard {
@@ -40,22 +60,31 @@ impl StatusBoard {
         Self {
             current: Status::default(),
             announce,
-            announce_workbench: Box::new(|_| {}),
+            announce_change: Box::new(|_| {}),
+            announce_last_sync: Box::new(|_| {}),
         }
     }
 
     /// Also tells `announce` when a Repository's stored facts change.
     #[must_use]
-    pub fn with_workbench_changes(
-        mut self,
-        announce: Box<dyn FnMut(&RepositoryName) + Send>,
-    ) -> Self {
-        self.announce_workbench = announce;
+    pub fn with_changes(mut self, announce: Box<dyn FnMut(&Change) + Send>) -> Self {
+        self.announce_change = announce;
         self
     }
 
-    pub(crate) fn workbench_changed(&mut self, repository: &RepositoryName) {
-        (self.announce_workbench)(repository);
+    /// Also tells `announce` what the open Repository's last sync was.
+    #[must_use]
+    pub fn with_last_syncs(mut self, announce: Box<dyn FnMut(&LastSync) + Send>) -> Self {
+        self.announce_last_sync = announce;
+        self
+    }
+
+    pub(crate) fn changed(&mut self, change: &Change) {
+        (self.announce_change)(change);
+    }
+
+    pub(crate) fn last_sync(&mut self, last_sync: &LastSync) {
+        (self.announce_last_sync)(last_sync);
     }
 
     pub(crate) fn set(&mut self, status: Status) {
@@ -74,14 +103,13 @@ pub(crate) mod testing {
     use super::*;
     use std::sync::mpsc::{self, Receiver};
 
-    /// A board that passes on Workbench changes and drops status changes.
-    pub(crate) fn workbench_board() -> (StatusBoard, Receiver<RepositoryName>) {
+    /// A board that passes on changes to stored facts and drops status changes.
+    pub(crate) fn changes_board() -> (StatusBoard, Receiver<Change>) {
         let (passed, seen) = mpsc::channel();
-        let board = StatusBoard::new(Box::new(|_| {})).with_workbench_changes(Box::new(
-            move |repository: &RepositoryName| {
-                passed.send(repository.clone()).unwrap();
-            },
-        ));
+        let board =
+            StatusBoard::new(Box::new(|_| {})).with_changes(Box::new(move |change: &Change| {
+                passed.send(change.clone()).unwrap();
+            }));
         (board, seen)
     }
 
@@ -117,13 +145,43 @@ mod tests {
     use crate::error::ErrorKind;
 
     #[test]
-    fn a_changed_workbench_with_nobody_listening_isnt_a_new_status() {
+    fn a_change_or_a_last_sync_with_nobody_listening_isnt_a_new_status() {
         let (mut board, seen) = watched_board();
-        let cpython = RepositoryName::parse("python/cpython").unwrap();
+        let repository = RepositoryName::parse("python/cpython").unwrap();
 
-        board.workbench_changed(&cpython);
+        board.changed(&Change {
+            repository: repository.clone(),
+            items: Vec::new(),
+        });
+        board.last_sync(&LastSync {
+            repository,
+            at: None,
+        });
 
         assert!(announced(&seen).is_empty());
+    }
+
+    #[test]
+    fn a_last_sync_reaches_the_ui_as_a_time_or_as_nothing() {
+        let repository = RepositoryName::parse("python/cpython").unwrap();
+        let at = OffsetDateTime::from_unix_timestamp(1_000_000_000).unwrap();
+        let never = LastSync {
+            repository: repository.clone(),
+            at: None,
+        };
+        let once = LastSync {
+            repository,
+            at: Some(at),
+        };
+
+        assert_eq!(
+            serde_json::to_value(never).unwrap()["at"],
+            serde_json::Value::Null
+        );
+        assert_eq!(
+            serde_json::to_value(once).unwrap()["at"],
+            "2001-09-09T01:46:40Z"
+        );
     }
 
     #[test]

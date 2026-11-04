@@ -10,7 +10,7 @@ const core = vi.hoisted(() => ({
 
 vi.mock("$lib/data/bindings", () => ({
   commands: { workbench: core.workbench },
-  events: { workbenchChanged: { listen: core.listen } },
+  events: { changed: { listen: core.listen } },
 }));
 
 const row = {

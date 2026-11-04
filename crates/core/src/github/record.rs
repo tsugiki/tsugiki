@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use serde_json::{Value, json};
 
-use super::{Reply, Request, Transport, Unreachable};
+use super::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::conventions::CPYTHON_BACKPORT_BOT;
 use crate::token::Token;
 
@@ -262,6 +262,15 @@ impl Recorder {
 }
 
 impl Transport for Recorder {
+    /// Passes the request on and records nothing, because recordings hold GraphQL only (ADR 0009).
+    fn get(
+        &self,
+        token: &Token,
+        request: &ConditionalGet<'_>,
+    ) -> Result<ConditionalReply, Unreachable> {
+        self.inner.get(token, request)
+    }
+
     #[expect(
         clippy::expect_used,
         clippy::unwrap_in_result,
@@ -399,6 +408,22 @@ mod tests {
         assert_eq!(replayed.body, r#"{"data":{"note":"[token]"}}"#);
         assert!(!on_disk.contains("secret-token-value"));
         assert!(on_disk.ends_with('\n'));
+    }
+
+    #[test]
+    fn a_list_check_passes_through_and_records_nothing() {
+        let dir = temp_dir("list-check");
+        let recorder = Recorder::new(Box::new(Canned(Ok(reply("{}")))), dir.clone());
+        let asked = ConditionalGet {
+            path: "/repos/python/cpython/issues",
+            etag: None,
+        };
+
+        let answer = recorder.get(&token(), &asked);
+
+        assert!(answer.is_err(), "`Canned` has no REST to pass on");
+        assert!(!dir.join("Op.json").exists());
+        drop(std::fs::remove_dir_all(dir));
     }
 
     #[test]

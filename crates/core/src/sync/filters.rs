@@ -1,6 +1,6 @@
 //! A sync's walk through the Filters' searches (ADR 0015). It reads each search whole, or through ranges of
 //! days when GitHub won't list it whole, and saves what the search found. It then asks for what Tsugiki
-//! lacks.
+//! lacks. A refresh narrows a search to what changed, and merges the answer.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -11,17 +11,25 @@ use crate::error::{Error, ErrorKind};
 use crate::filters::FilterQuery;
 use crate::github::filters::{CreatedRange, FilterHit, FilterHitKind, FilterSearch};
 use crate::github::pull_requests::{NodeId, PageRequest, PrFetch, PullRequestFacts};
-use crate::store::FilterResults;
+use crate::repository::RepositoryName;
+use crate::store::{FilterProblem, FilterResults, NarrowedResults};
 
 /// The most results GitHub lists for one search (ADR 0015).
 const SEARCH_CAP: u32 = 1000;
-const CUT_OFF: &str = "GitHub lists at most 1,000 results for one search, and over 1,000 items here were \
-                       created on one day, so this Filter may be missing some.";
+
+/// One search of a walk.
+#[derive(Clone)]
+struct WalkedSearch {
+    query: FilterQuery,
+    /// Keeps only what changed since this time. Without it, the search replaces the Filter's results.
+    since: Option<OffsetDateTime>,
+}
 
 /// The Filters' searches, one at a time, with what they've found.
+#[derive(Default)]
 pub(super) struct FilterWalk {
     /// The searches still to finish. The first is the one under way.
-    left: VecDeque<FilterQuery>,
+    left: VecDeque<WalkedSearch>,
     /// The parts of that search still to read. The last is the one under way.
     slices: Vec<Slice>,
     cursor: Option<String>,
@@ -32,6 +40,29 @@ pub(super) struct FilterWalk {
     hits: BTreeMap<u32, FilterHit>,
     /// The PRs the user's own searches found, which a sync always fetches.
     work: Vec<NodeId>,
+    /// What a refresh found before this walk began.
+    leads: Leads,
+    /// Each item a refresh found updated, which a narrowed search can say has stopped matching.
+    changed: BTreeSet<u32>,
+}
+
+/// What a refresh hands to its walk.
+#[derive(Default)]
+pub(super) struct RefreshWalk {
+    /// The searches to run whole.
+    pub(super) whole: Vec<FilterQuery>,
+    /// The searches to narrow to `since`.
+    pub(super) narrowed: Vec<FilterQuery>,
+    pub(super) since: Option<OffsetDateTime>,
+    pub(super) changed: BTreeSet<u32>,
+    /// What the refresh's poll found for the searches that don't walk.
+    pub(super) hits: BTreeMap<u32, FilterHit>,
+}
+
+/// True when a refresh can narrow this search: it has finished once, and GitHub didn't refuse it last time.
+/// A search GitHub cuts off stays narrowed, because a whole read would hit the same limit.
+pub(super) fn can_narrow(stored: Option<&FilterResults>) -> bool {
+    stored.is_some_and(|results| !matches!(results.problem, Some(FilterProblem::Refused(_))))
 }
 
 /// A part of a search GitHub can list whole.
@@ -60,27 +91,68 @@ impl Slice {
 impl FilterWalk {
     pub(super) fn new(queries: &[FilterQuery], work: Vec<NodeId>) -> Self {
         Self {
-            left: queries.iter().cloned().collect(),
+            left: queries
+                .iter()
+                .cloned()
+                .map(|query| WalkedSearch { query, since: None })
+                .collect(),
             slices: vec![Slice::Whole],
-            cursor: None,
-            current: BTreeSet::new(),
-            cut_off: false,
-            hits: BTreeMap::new(),
             work,
+            ..Self::default()
         }
+    }
+
+    /// The walk at the end of a refresh. The searches to run whole go first, as they have nothing to show.
+    pub(super) fn of_refresh(plan: RefreshWalk) -> Self {
+        let RefreshWalk {
+            whole,
+            narrowed,
+            since,
+            changed,
+            hits,
+        } = plan;
+        let whole = whole
+            .into_iter()
+            .map(|query| WalkedSearch { query, since: None });
+        let narrowed = narrowed
+            .into_iter()
+            .map(|query| WalkedSearch { query, since });
+        Self {
+            left: whole.chain(narrowed).collect(),
+            slices: vec![Slice::Whole],
+            hits,
+            changed,
+            ..Self::default()
+        }
+    }
+
+    /// The Issues a refresh changed, whose trees this sync reads.
+    pub(super) fn hold_issues(&mut self, issues: BTreeSet<u32>) {
+        self.leads.held_issues.extend(issues);
+    }
+
+    /// Follows what a refresh's fetch of the user's own PR points at.
+    pub(super) fn learn_from(
+        &mut self,
+        pull_request: &PullRequestFacts,
+        repository: &RepositoryName,
+    ) {
+        self.leads.learn_from(pull_request, repository);
     }
 }
 
 /// Reads the next page of the search under way, or moves on from the last of them. One Filter that GitHub
 /// won't answer keeps what it last found and says why, and stops nothing else (ADR 0015).
 pub(super) fn walk_filters(link: &Link<'_>, walk: &mut FilterWalk) -> Result<Moved, Error> {
-    let (Some(query), Some(slice)) = (walk.left.front().cloned(), walk.slices.last().copied())
+    let (Some(search), Some(slice)) = (walk.left.front().cloned(), walk.slices.last().copied())
     else {
         return Ok((NO_PAUSE, Some(fetch_what_is_missing(link, walk)?)));
     };
+    let query = &search.query;
     let asked = FilterSearch {
-        query: &query,
+        query,
         created: slice.created(),
+        since: search.since,
         page: PageRequest {
             size: SEARCH_PAGE,
             after: walk.cursor.as_deref(),
@@ -91,9 +163,12 @@ pub(super) fn walk_filters(link: &Link<'_>, walk: &mut FilterWalk) -> Result<Mov
         Err(problem) if blames_the_search(&problem) => {
             log::warn!("GitHub wouldn't search {query:?}: {}", problem.message);
             link.store
-                .save_filter_problem(link.repository, &query, &problem.message)?;
+                .save_filter_problem(link.repository, query, &problem.message)?;
             walk.start_the_next_search();
-            let saved = Step::Saved { pause_until: None };
+            let saved = Step::Saved {
+                touched: Vec::new(),
+                pause_until: None,
+            };
             return Ok((saved, None));
         }
         Err(problem) => return Err(problem),
@@ -119,19 +194,44 @@ pub(super) fn walk_filters(link: &Link<'_>, walk: &mut FilterWalk) -> Result<Mov
     if !walk.slices.is_empty() {
         return Ok((Step::Searched { pause_until }, None));
     }
-    let results = FilterResults {
-        numbers: std::mem::take(&mut walk.current),
-        problem: walk.cut_off.then(|| CUT_OFF.to_owned()),
+    let numbers = std::mem::take(&mut walk.current);
+    let step = if search.since.is_some() {
+        let narrowed = NarrowedResults {
+            changed: walk.changed.clone(),
+            found: numbers,
+            cut_off: walk.cut_off,
+        };
+        let moved = link
+            .store
+            .merge_filter_results(link.repository, query, narrowed)?;
+        let touched: Vec<u32> = moved.into_iter().collect();
+        // The Sidebar shows the problem, so a cut-off search counts as a change even with no number in it.
+        if walk.cut_off {
+            Step::Saved {
+                touched,
+                pause_until,
+            }
+        } else {
+            Step::saved_if_any(touched, pause_until)
+        }
+    } else {
+        let touched = numbers.iter().copied().collect();
+        let problem = walk.cut_off.then_some(FilterProblem::CutOff);
+        let results = FilterResults { numbers, problem };
+        link.store
+            .save_filter_results(link.repository, query, results)?;
+        Step::Saved {
+            touched,
+            pause_until,
+        }
     };
-    link.store
-        .save_filter_results(link.repository, &query, results)?;
     walk.start_the_next_search();
-    Ok((Step::Saved { pause_until }, None))
+    Ok((step, None))
 }
 
 /// True when GitHub refused this search, which the next Filter's search wouldn't run into. An outage, no
 /// network, a refused token or no points left would stop that search too, so the sync tries this one again.
-fn blames_the_search(problem: &Error) -> bool {
+pub(super) fn blames_the_search(problem: &Error) -> bool {
     match problem.kind {
         ErrorKind::NotFound | ErrorKind::QueryRefused => true,
         ErrorKind::Offline
@@ -168,7 +268,7 @@ fn fetch_what_is_missing(link: &Link<'_>, walk: &mut FilterWalk) -> Result<Phase
         .collect();
     let mut ids = std::mem::take(&mut walk.work);
     let mut asking: BTreeSet<NodeId> = ids.iter().cloned().collect();
-    let mut leads = Leads::default();
+    let mut leads = std::mem::take(&mut walk.leads);
     for hit in std::mem::take(&mut walk.hits).into_values() {
         match hit.kind {
             FilterHitKind::Issue => {
@@ -282,6 +382,7 @@ mod tests {
             .filters
             .get(&filter_query(query))
             .and_then(|results| results.problem.clone())
+            .map(|problem| problem.words().to_owned())
     }
 
     #[test]
@@ -431,6 +532,7 @@ mod tests {
         drop(run_to_the_end(&mut syncs, &harness));
         drop(harness.operations());
 
+        harness.forget_the_last_sync();
         syncs.add(filtering(&["a"]));
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -463,6 +565,7 @@ mod tests {
         drop(run_to_the_end(&mut syncs, &harness));
         drop(harness.operations());
 
+        harness.forget_the_last_sync();
         syncs.add(filtering(&["a"]));
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -500,6 +603,7 @@ mod tests {
         syncs.add(filtering(&["a"]));
         drop(run_to_the_end(&mut syncs, &harness));
 
+        harness.forget_the_last_sync();
         syncs.add(filtering(&["a"]));
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -542,6 +646,7 @@ mod tests {
         drop(run_to_the_end(&mut syncs, &harness));
         drop(harness.operations());
 
+        harness.forget_the_last_sync();
         syncs.add(filtering(&["a"]));
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -586,6 +691,7 @@ mod tests {
         syncs.add(filtering(&["old"]));
         drop(run_to_the_end(&mut syncs, &harness));
 
+        harness.forget_the_last_sync();
         syncs.add(filtering(&["new"]));
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -611,6 +717,7 @@ mod tests {
         syncs.add(filtering(&["a"]));
         drop(run_to_the_end(&mut syncs, &harness));
 
+        harness.forget_the_last_sync();
         syncs.add(filtering(&["a", "b"]));
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -797,6 +904,60 @@ mod tests {
     }
 
     #[test]
+    fn a_narrowed_search_github_cuts_off_removes_nothing_and_counts_as_a_change() {
+        let (asked, _seen) = std::sync::mpsc::channel();
+        let harness = walking(
+            "filter-narrow-crowded",
+            ByCreated {
+                items: vec![(9, "2019-06-07")],
+                crowded_day: Some("2019-06-07"),
+                asked,
+            },
+        );
+        let held = FilterResults {
+            numbers: BTreeSet::from([8, 9]),
+            problem: None,
+        };
+        let search = filter_query("a");
+        harness
+            .store
+            .save_filter_results(&cpython(), &search, held)
+            .unwrap();
+        let mut walk = FilterWalk::of_refresh(RefreshWalk {
+            narrowed: vec![search],
+            since: Some(OffsetDateTime::UNIX_EPOCH),
+            changed: BTreeSet::from([8]),
+            ..RefreshWalk::default()
+        });
+        let repository = cpython();
+        let link = Link {
+            github: &harness.github,
+            store: &harness.store,
+            repository: &repository,
+            filters: &[],
+        };
+
+        let mut said_nothing_new = false;
+        loop {
+            let (step, next) = walk_filters(&link, &mut walk).unwrap();
+            if let Step::Saved { touched, .. } = step {
+                said_nothing_new = touched.is_empty();
+            }
+            if next.is_some() {
+                break;
+            }
+        }
+
+        assert!(said_nothing_new);
+        assert_eq!(found_by(&harness, "a"), [8, 9]);
+        assert_eq!(
+            filter_problem(&harness, "a").as_deref(),
+            Some(FilterProblem::CutOff.words())
+        );
+        harness.finish();
+    }
+
+    #[test]
     fn one_day_over_the_cap_is_read_as_far_as_github_lists_and_the_filter_says_so() {
         let (asked, _seen) = std::sync::mpsc::channel();
         let harness = walking(
@@ -813,7 +974,10 @@ mod tests {
         drop(run_to_the_end(&mut syncs, &harness));
 
         assert_eq!(found_by(&harness, "a"), [1, 2]);
-        assert_eq!(filter_problem(&harness, "a").as_deref(), Some(CUT_OFF));
+        assert_eq!(
+            filter_problem(&harness, "a").as_deref(),
+            Some(FilterProblem::CutOff.words())
+        );
         harness.finish();
     }
 }

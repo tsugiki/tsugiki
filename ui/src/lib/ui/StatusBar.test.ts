@@ -1,8 +1,69 @@
-import { render, screen } from "@testing-library/svelte";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/svelte";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import StatusBar from "./StatusBar.svelte";
 
 const bar = () => screen.getByRole("status");
+
+describe("StatusBar's last sync", () => {
+  const online = { state: "online", login: "octocat" } as const;
+  const repository = "python/cpython";
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("shows nothing before the core has a Repository open", () => {
+    render(StatusBar, { status: online });
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("says when the Repository last synced, outside the live region", () => {
+    vi.useFakeTimers({ now: new Date("2026-11-05T12:02:00Z") });
+    const lastSync = { repository, at: "2026-11-05T12:00:00Z" };
+    render(StatusBar, { status: online, lastSync });
+    expect(screen.getByRole("button").textContent).toBe("Synced 2 min ago");
+    expect(bar().textContent).not.toContain("Synced");
+    expect(bar().classList.contains("beside-sync")).toBe(true);
+  });
+
+  it("moves on by itself", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-05T12:02:00Z") });
+    const lastSync = { repository, at: "2026-11-05T12:00:00Z" };
+    render(StatusBar, { status: online, lastSync });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(screen.getByRole("button").textContent).toBe("Synced 3 min ago");
+  });
+
+  it("stops its clock when it goes", () => {
+    vi.useFakeTimers();
+    const { unmount } = render(StatusBar, { status: online, lastSync: { repository, at: null } });
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("refreshes at a click", async () => {
+    const onrefresh = vi.fn();
+    render(StatusBar, { status: online, lastSync: { repository, at: null }, onrefresh });
+    await fireEvent.click(screen.getByRole("button", { name: "Not synced yet" }));
+    expect(onrefresh).toHaveBeenCalledOnce();
+  });
+
+  it("has nothing to do at a click unless the page says", async () => {
+    render(StatusBar, { status: online, lastSync: { repository, at: null } });
+    await fireEvent.click(screen.getByRole("button"));
+    expect(screen.getByRole("button")).toBeTruthy();
+  });
+
+  it("stays out of the way when the settings hide the bar", () => {
+    render(StatusBar, { status: online, lastSync: { repository, at: null }, visible: false });
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("stays beside Offline, tinted like the bar", () => {
+    render(StatusBar, { status: { state: "offline" }, lastSync: { repository, at: null } });
+    expect(screen.getByRole("button").classList.contains("offline")).toBe(true);
+  });
+});
 
 describe("StatusBar", () => {
   it("shows who is signed in", () => {

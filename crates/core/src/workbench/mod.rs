@@ -420,7 +420,7 @@ fn row(facts: PullRequestFacts, viewer: &Login) -> WorkbenchRow {
 }
 
 /// A PR that has merged or closed waits on nobody, so it keeps no Issue on the Workbench.
-fn reasons(facts: &PullRequestFacts, viewer: &Login) -> Vec<WorkReason> {
+pub(crate) fn reasons(facts: &PullRequestFacts, viewer: &Login) -> Vec<WorkReason> {
     if facts.state != PrState::Open {
         return Vec::new();
     }

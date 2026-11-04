@@ -2,7 +2,7 @@
   "body": {
     "data": {
       "closed": {
-        "issueCount": 2542
+        "issueCount": 2551
       },
       "repository": {
         "issues": {
@@ -10,16 +10,16 @@
         },
         "nameWithOwner": "python/cpython",
         "pullRequests": {
-          "totalCount": 2313
+          "totalCount": 2315
         },
         "viewerPermission": "WRITE"
       },
       "updated": {
-        "issueCount": 4824
+        "issueCount": 4838
       }
     }
   },
   "query": "query CheckRepository($owner: String!, $name: String!, $updated: String!, $closed: String!) { repository(owner: $owner, name: $name) { nameWithOwner viewerPermission issues(states: OPEN) { totalCount } pullRequests(states: OPEN) { totalCount } } updated: search(query: $updated, type: ISSUE_ADVANCED, first: 0) { issueCount } closed: search(query: $closed, type: ISSUE_ADVANCED, first: 0) { issueCount } }",
-  "reset": 1793824608,
+  "reset": 1793832374,
   "status": 200
 }

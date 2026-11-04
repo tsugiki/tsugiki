@@ -5,7 +5,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rusqlite::Connection;
+use rusqlite::{Connection, named_params};
 
 use super::{CANT_UPDATE, NEWER, saying};
 use crate::error::{Error, ErrorKind};
@@ -37,7 +37,7 @@ pub(super) fn latest(migrations: &[Migration]) -> u32 {
 }
 
 fn user_version(connection: &Connection) -> rusqlite::Result<u32> {
-    connection.pragma_query_value(None, "user_version", |row| row.get(0))
+    connection.pragma_query_value(None, "user_version", |row| row.get("user_version"))
 }
 
 /// Runs the steps this file hasn't had yet, in one transaction, after a backup if it holds anything. Two
@@ -60,9 +60,11 @@ pub(super) fn run(
         return Ok(());
     }
     let holds_something: bool = connection
-        .query_row("SELECT EXISTS (SELECT 1 FROM sqlite_master)", [], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master) AS holds_something",
+            [],
+            |row| row.get("holds_something"),
+        )
         .map_err(saying(CANT_UPDATE))?;
     if holds_something {
         back_up(connection, path, version)?;
@@ -88,7 +90,7 @@ fn back_up(connection: &Connection, path: &Path, version: u32) -> Result<(), Err
     }
     let target = partial.to_string_lossy();
     let _copied = connection
-        .execute("VACUUM INTO ?1", [target.as_ref()])
+        .execute("VACUUM INTO :target", named_params! { ":target": target })
         .map_err(saying(CANT_UPDATE))?;
     fs::rename(&partial, &backup).map_err(saying(CANT_UPDATE))?;
     remove_old_backups(path, &backup);

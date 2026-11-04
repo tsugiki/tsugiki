@@ -3,13 +3,11 @@
 
 use std::collections::BTreeMap;
 
-use rusqlite::{Connection, ToSql, params};
-use serde::Serialize;
-use serde::de::DeserializeOwned;
-use serde_json::Value;
+use rusqlite::{Connection, Statement, named_params};
 
 use crate::github::Login;
-use crate::github::pull_requests::{LatestReview, PullRequest, PullRequestFacts};
+use crate::github::pull_requests::{LatestReview, PrState, PullRequest, PullRequestFacts};
+use crate::repository::RepositoryName;
 
 pub(super) const SCHEMA: &str = "
     CREATE TABLE pull_requests (
@@ -46,143 +44,216 @@ pub(super) const SCHEMA: &str = "
     ) WITHOUT ROWID;
 ";
 
-const SAVE: &str = "INSERT INTO pull_requests
-                        (repository, number, title, state, is_draft, author, target_branch, ci, updated_at)
-                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
-                    ON CONFLICT (repository, number) DO UPDATE SET
-                        title = excluded.title,
-                        state = excluded.state,
-                        is_draft = excluded.is_draft,
-                        author = excluded.author,
-                        target_branch = excluded.target_branch,
-                        ci = excluded.ci,
-                        updated_at = excluded.updated_at";
-const FORGET_REQUESTS: &str = "DELETE FROM review_requests WHERE repository = ?1 AND number = ?2";
-const FORGET_REVIEWS: &str = "DELETE FROM latest_reviews WHERE repository = ?1 AND number = ?2";
-const FORGET_ASSIGNEES: &str = "DELETE FROM assignees WHERE repository = ?1 AND number = ?2";
-const SAVE_REQUEST: &str =
-    "INSERT OR IGNORE INTO review_requests (repository, number, login) VALUES (?1, ?2, ?3)";
-const SAVE_REVIEW: &str = "INSERT OR IGNORE INTO latest_reviews (repository, number, login, state) VALUES (?1, ?2, ?3, ?4)";
-const SAVE_ASSIGNEE: &str =
-    "INSERT OR IGNORE INTO assignees (repository, number, login) VALUES (?1, ?2, ?3)";
-
-const OPEN_PULL_REQUESTS: &str = "SELECT number, title, state, is_draft, author, target_branch, ci
-                                  FROM pull_requests
-                                  WHERE repository = ?1 AND state = 'OPEN'
-                                  ORDER BY updated_at DESC, number DESC";
-const REVIEW_REQUESTS: &str = "SELECT number, login FROM review_requests WHERE repository = ?1";
-const LATEST_REVIEWS: &str =
-    "SELECT number, login, state FROM latest_reviews WHERE repository = ?1";
-const ASSIGNEES: &str = "SELECT number, login FROM assignees WHERE repository = ?1";
-
-/// The queries a screen waits on, for the plan check in the store's tests (ADR 0017).
-#[cfg(test)]
-pub(super) const VIEW_QUERIES: [&str; 4] = [
-    OPEN_PULL_REQUESTS,
-    REVIEW_REQUESTS,
-    LATEST_REVIEWS,
-    ASSIGNEES,
-];
-
-/// The text of a fieldless enum of GitHub's in a column, spelled as GitHub spells it. Serde writes such an
-/// enum as a string, and if one ever didn't, the column's `NOT NULL` would refuse the row.
-fn text_of<T: Serialize>(value: &T) -> Option<String> {
-    serde_json::to_value(value)
-        .ok()
-        .and_then(|value| value.as_str().map(str::to_owned))
-}
-
-fn parse_text<T: DeserializeOwned>(text: String) -> rusqlite::Result<T> {
-    serde_json::from_value(Value::String(text)).map_err(|cause| {
-        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(cause))
-    })
-}
-
 /// Stores `pull_requests` in one transaction, each replacing what Tsugiki knew about it (ADR 0010).
 pub(super) fn save(
     connection: &mut Connection,
-    repository: &str,
+    repository: &RepositoryName,
     pull_requests: &[PullRequest],
 ) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
-    save_each(&transaction, repository, pull_requests)?;
+    for pull_request in pull_requests {
+        replace(&transaction, repository, pull_request)?;
+    }
     transaction.commit()
 }
 
-fn save_each(
+fn replace(
     connection: &Connection,
-    repository: &str,
-    pull_requests: &[PullRequest],
+    repository: &RepositoryName,
+    pull_request: &PullRequest,
 ) -> rusqlite::Result<()> {
-    let mut save_request = connection.prepare(SAVE_REQUEST)?;
-    let mut save_review = connection.prepare(SAVE_REVIEW)?;
-    let mut save_assignee = connection.prepare(SAVE_ASSIGNEE)?;
-    for pull_request in pull_requests {
-        let facts = &pull_request.facts;
-        let number = facts.number;
-        let values: [&dyn ToSql; 9] = [
-            &repository,
-            &number,
-            &facts.title,
-            &text_of(&facts.state),
-            &facts.is_draft,
-            &facts.author.as_ref().map(Login::as_str),
-            &facts.target_branch,
-            &facts.ci.as_ref().and_then(text_of),
-            &pull_request.updated_at.unix_timestamp(),
-        ];
-        let _ = connection.prepare(SAVE)?.execute(&values[..])?;
-        for forget in [FORGET_REQUESTS, FORGET_REVIEWS, FORGET_ASSIGNEES] {
-            let _ = connection
-                .prepare(forget)?
-                .execute(params![repository, number])?;
-        }
-        for login in &facts.review_requests {
-            let _ = save_request.execute(params![repository, number, login.as_str()])?;
-        }
-        for review in &facts.latest_reviews {
-            let (author, state) = (review.author.as_str(), text_of(&review.state));
-            let _ = save_review.execute(params![repository, number, author, state])?;
-        }
-        for login in &facts.assignees {
-            let _ = save_assignee.execute(params![repository, number, login.as_str()])?;
-        }
+    let facts = &pull_request.facts;
+    let number = facts.number;
+    save_pull_request(connection, repository, pull_request)?;
+    forget_review_requests(connection, repository, number)?;
+    forget_latest_reviews(connection, repository, number)?;
+    forget_assignees(connection, repository, number)?;
+    for login in &facts.review_requests {
+        save_review_request(connection, repository, number, login)?;
+    }
+    for review in &facts.latest_reviews {
+        save_latest_review(connection, repository, number, review)?;
+    }
+    for login in &facts.assignees {
+        save_assignee(connection, repository, number, login)?;
     }
     Ok(())
 }
 
-/// Each PR's logins from a query of `(number, login)`.
-fn logins_by_number(
+fn save_pull_request(
     connection: &Connection,
-    query: &str,
-    repository: &str,
+    repository: &RepositoryName,
+    pull_request: &PullRequest,
+) -> rusqlite::Result<()> {
+    let facts = &pull_request.facts;
+    let updated_at = pull_request.updated_at.unix_timestamp();
+    connection
+        .execute(
+            "INSERT INTO pull_requests
+                 (repository, number, title, state, is_draft, author, target_branch, ci, updated_at)
+             VALUES (:repository, :number, :title, :state, :is_draft, :author, :target_branch, :ci,
+                     :updated_at)
+             ON CONFLICT (repository, number) DO UPDATE SET
+                 title = excluded.title,
+                 state = excluded.state,
+                 is_draft = excluded.is_draft,
+                 author = excluded.author,
+                 target_branch = excluded.target_branch,
+                 ci = excluded.ci,
+                 updated_at = excluded.updated_at",
+            named_params! {
+                ":repository": repository,
+                ":number": facts.number,
+                ":title": facts.title,
+                ":state": facts.state,
+                ":is_draft": facts.is_draft,
+                ":author": facts.author,
+                ":target_branch": facts.target_branch,
+                ":ci": facts.ci,
+                ":updated_at": updated_at,
+            },
+        )
+        .map(drop)
+}
+
+fn forget_review_requests(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "DELETE FROM review_requests WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": number },
+        )
+        .map(drop)
+}
+
+fn forget_latest_reviews(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "DELETE FROM latest_reviews WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": number },
+        )
+        .map(drop)
+}
+
+fn forget_assignees(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "DELETE FROM assignees WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": number },
+        )
+        .map(drop)
+}
+
+fn save_review_request(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+    login: &Login,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO review_requests (repository, number, login)
+             VALUES (:repository, :number, :login)",
+            named_params! { ":repository": repository, ":number": number, ":login": login },
+        )
+        .map(drop)
+}
+
+fn save_latest_review(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+    review: &LatestReview,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO latest_reviews (repository, number, login, state)
+             VALUES (:repository, :number, :login, :state)",
+            named_params! {
+                ":repository": repository,
+                ":number": number,
+                ":login": review.author,
+                ":state": review.state,
+            },
+        )
+        .map(drop)
+}
+
+fn save_assignee(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+    login: &Login,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO assignees (repository, number, login)
+             VALUES (:repository, :number, :login)",
+            named_params! { ":repository": repository, ":number": number, ":login": login },
+        )
+        .map(drop)
+}
+
+fn review_requests(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<BTreeMap<u32, Vec<Login>>> {
+    logins_by_number(
+        connection
+            .prepare("SELECT number, login FROM review_requests WHERE repository = :repository")?,
+        repository,
+    )
+}
+
+fn assignees(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<BTreeMap<u32, Vec<Login>>> {
+    logins_by_number(
+        connection.prepare("SELECT number, login FROM assignees WHERE repository = :repository")?,
+        repository,
+    )
+}
+
+/// Each PR's logins, from a `statement` that selects `number` and `login` for `:repository`.
+fn logins_by_number(
+    mut statement: Statement<'_>,
+    repository: &RepositoryName,
 ) -> rusqlite::Result<BTreeMap<u32, Vec<Login>>> {
     let mut found: BTreeMap<u32, Vec<Login>> = BTreeMap::new();
-    let mut statement = connection.prepare(query)?;
-    let mut rows = statement.query([repository])?;
+    let mut rows = statement.query(named_params! { ":repository": repository })?;
     while let Some(row) = rows.next()? {
-        let login: String = row.get(1)?;
-        found
-            .entry(row.get(0)?)
-            .or_default()
-            .push(Login::new(&login));
+        let login = row.get("login")?;
+        found.entry(row.get("number")?).or_default().push(login);
     }
     Ok(found)
 }
 
-fn reviews_by_number(
+fn latest_reviews(
     connection: &Connection,
-    repository: &str,
+    repository: &RepositoryName,
 ) -> rusqlite::Result<BTreeMap<u32, Vec<LatestReview>>> {
     let mut found: BTreeMap<u32, Vec<LatestReview>> = BTreeMap::new();
-    let mut statement = connection.prepare(LATEST_REVIEWS)?;
-    let mut rows = statement.query([repository])?;
+    let query = "SELECT number, login, state FROM latest_reviews WHERE repository = :repository";
+    let mut statement = connection.prepare(query)?;
+    let mut rows = statement.query(named_params! { ":repository": repository })?;
     while let Some(row) = rows.next()? {
-        let login: String = row.get(1)?;
-        found.entry(row.get(0)?).or_default().push(LatestReview {
-            author: Login::new(&login),
-            state: parse_text(row.get(2)?)?,
-        });
+        let review = LatestReview {
+            author: row.get("login")?,
+            state: row.get("state")?,
+        };
+        found.entry(row.get("number")?).or_default().push(review);
     }
     Ok(found)
 }
@@ -190,29 +261,32 @@ fn reviews_by_number(
 /// The open PRs of `repository`, the latest update first.
 pub(super) fn read_open(
     connection: &Connection,
-    repository: &str,
+    repository: &RepositoryName,
 ) -> rusqlite::Result<Vec<PullRequestFacts>> {
-    let mut requests = logins_by_number(connection, REVIEW_REQUESTS, repository)?;
-    let mut reviews = reviews_by_number(connection, repository)?;
-    let mut assignees = logins_by_number(connection, ASSIGNEES, repository)?;
-    let mut statement = connection.prepare(OPEN_PULL_REQUESTS)?;
-    let mut rows = statement.query([repository])?;
+    let mut requests = review_requests(connection, repository)?;
+    let mut reviews = latest_reviews(connection, repository)?;
+    let mut assigned = assignees(connection, repository)?;
+    let query = "SELECT number, title, state, is_draft, author, target_branch, ci
+                 FROM pull_requests
+                 WHERE repository = :repository AND state = :state
+                 ORDER BY updated_at DESC, number DESC";
+    let mut statement = connection.prepare(query)?;
+    let values = named_params! { ":repository": repository, ":state": PrState::Open };
+    let mut rows = statement.query(values)?;
     let mut found = Vec::new();
     while let Some(row) = rows.next()? {
-        let number: u32 = row.get(0)?;
-        let author: Option<String> = row.get(4)?;
-        let ci: Option<String> = row.get(6)?;
+        let number: u32 = row.get("number")?;
         found.push(PullRequestFacts {
             number,
-            title: row.get(1)?,
-            state: parse_text(row.get(2)?)?,
-            is_draft: row.get(3)?,
-            author: author.as_deref().map(Login::new),
-            target_branch: row.get(5)?,
-            ci: ci.map(parse_text).transpose()?,
+            title: row.get("title")?,
+            state: row.get("state")?,
+            is_draft: row.get("is_draft")?,
+            author: row.get("author")?,
+            target_branch: row.get("target_branch")?,
+            ci: row.get("ci")?,
             review_requests: requests.remove(&number).unwrap_or_default(),
             latest_reviews: reviews.remove(&number).unwrap_or_default(),
-            assignees: assignees.remove(&number).unwrap_or_default(),
+            assignees: assigned.remove(&number).unwrap_or_default(),
         });
     }
     Ok(found)
@@ -383,6 +457,108 @@ mod tests {
         fs::remove_dir_all(folder).unwrap();
 
         assert_eq!(found, [1]);
+    }
+
+    /// The rows of a query that counts them as `found`, on the writer's connection.
+    fn count(store: &Store, query: &'static str) -> u32 {
+        store
+            .call(move |connection| connection.query_row(query, [], |row| row.get("found")))
+            .unwrap()
+            .unwrap()
+    }
+
+    #[test]
+    fn a_saved_pr_holds_the_same_text_in_the_same_columns() {
+        let (store, open, _reader, _path, folder) = opened("pr-columns");
+
+        store
+            .save_pull_requests(&cpython(), vec![at(7, facts(1))])
+            .unwrap();
+        let found = [
+            count(
+                &store,
+                "SELECT count(*) AS found FROM pull_requests
+                 WHERE repository = 'python/cpython' COLLATE BINARY AND number = 1
+                   AND title = 'gh-1: Fix it' AND state = 'OPEN' AND is_draft = 0
+                   AND author = 'vstinner' AND target_branch = 'main' AND ci = 'SUCCESS'
+                   AND updated_at = 7",
+            ),
+            count(
+                &store,
+                "SELECT count(*) AS found FROM review_requests
+                 WHERE repository = 'python/cpython' COLLATE BINARY AND number = 1
+                   AND login = 'Octocat' COLLATE BINARY",
+            ),
+            count(
+                &store,
+                "SELECT count(*) AS found FROM latest_reviews
+                 WHERE repository = 'python/cpython' COLLATE BINARY AND number = 1
+                   AND login = 'hugovk' COLLATE BINARY AND state = 'APPROVED'",
+            ),
+            count(
+                &store,
+                "SELECT count(*) AS found FROM assignees
+                 WHERE repository = 'python/cpython' COLLATE BINARY AND number = 1
+                   AND login = 'pablogsal' COLLATE BINARY",
+            ),
+        ];
+        open.close();
+        store.close();
+        fs::remove_dir_all(folder).unwrap();
+
+        assert_eq!(found, [1, 1, 1, 1]);
+    }
+
+    #[test]
+    fn a_row_an_earlier_tsugiki_wrote_reads_back() {
+        let (store, open, reader, _path, folder) = opened("pr-earlier");
+        store
+            .call(|connection| {
+                connection.execute_batch(
+                    "INSERT INTO pull_requests VALUES ('python/cpython', 1, 'gh-1: Fix it', 'OPEN', 0,
+                                                       'vstinner', 'main', 'SUCCESS', 7);
+                     INSERT INTO review_requests VALUES ('python/cpython', 1, 'Octocat');
+                     INSERT INTO latest_reviews VALUES ('python/cpython', 1, 'hugovk', 'APPROVED');
+                     INSERT INTO assignees VALUES ('python/cpython', 1, 'pablogsal');",
+                )
+            })
+            .unwrap()
+            .unwrap();
+
+        let read = reader.work_facts(&cpython()).unwrap();
+        open.close();
+        store.close();
+        fs::remove_dir_all(folder).unwrap();
+
+        assert_eq!(read.pull_requests, [facts(1)]);
+    }
+
+    #[test]
+    fn logins_keep_githubs_casing_and_the_database_ignores_case() {
+        let (store, open, reader, _path, folder) = opened("pr-casing");
+        store.remember_login(&Login::new("OctoCat")).unwrap();
+        let twice = PullRequestFacts {
+            review_requests: vec![Login::new("HugoVK"), Login::new("hugovk")],
+            ..facts(1)
+        };
+
+        store
+            .save_pull_requests(&cpython(), vec![at(1, twice)])
+            .unwrap();
+        let read = reader.work_facts(&cpython()).unwrap();
+        let viewer = store.last_login().unwrap().unwrap();
+        open.close();
+        store.close();
+        fs::remove_dir_all(folder).unwrap();
+
+        let requested: Vec<_> = read
+            .pull_requests
+            .iter()
+            .flat_map(|pr| &pr.review_requests)
+            .map(Login::as_str)
+            .collect();
+        assert_eq!(requested, ["HugoVK"]);
+        assert_eq!(viewer.as_str(), "OctoCat");
     }
 
     #[test]

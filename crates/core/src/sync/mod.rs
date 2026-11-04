@@ -1,7 +1,9 @@
-//! A first sync: the user's own work, found by search and fetched in batches, then the whole tree of each
-//! Issue that work names (ADR 0011, ADR 0015). One `step` is one request, so the session can answer what else
-//! it's asked between them. `github` does the asking, and this decides what to ask for, how much at a time
-//! and when to pause.
+//! A first sync: the user's own work and each Filter, found by search and fetched in batches, then the whole
+//! tree of each Issue they reach (ADR 0011, ADR 0015). One `step` is one request, so the session can answer
+//! what else it's asked between them. `github` does the asking, and this decides what to ask for, how much at
+//! a time and when to pause.
+
+mod filters;
 
 use std::collections::{BTreeSet, VecDeque};
 use std::time::{Duration, Instant};
@@ -9,14 +11,16 @@ use std::time::{Duration, Instant};
 use time::OffsetDateTime;
 
 use crate::error::{Error, ErrorKind};
+use crate::filters::FilterQuery;
 use crate::github::GitHub;
 use crate::github::issues::ListedPr;
 use crate::github::pull_requests::{
     NodeId, PageRequest, PrFetch, PrSearch, PullRequestFacts, RateLimit,
 };
 use crate::links::{possible_numbers, possible_origin};
-use crate::repository::RepositoryName;
+use crate::repository::{RepositoryName, RepositorySettings};
 use crate::store::Store;
+use filters::{FilterWalk, walk_filters};
 
 /// Below this many points left, a sync waits for the reset, because the hourly 5,000 are also the user's
 /// other tools'. We haven't measured what those tools need, and GitHub's `remaining` is approximate.
@@ -58,6 +62,8 @@ const TRIES: u8 = 10;
 /// The progress of one Repository's sync.
 struct UserWorkSync {
     repository: RepositoryName,
+    /// The search of each Filter, each once.
+    filters: Vec<FilterQuery>,
     phase: Phase,
     /// The PRs this run has asked GitHub for, so it asks for each once.
     fetched: BTreeSet<u32>,
@@ -69,6 +75,7 @@ enum Phase {
         cursor: Option<String>,
         found: Vec<NodeId>,
     },
+    SearchingFilters(FilterWalk),
     Fetching(Batches),
     /// The Origin PRs named by the PRs just fetched. `leads.origins` holds only those still to ask for.
     FetchingOrigins {
@@ -105,6 +112,8 @@ struct Leads {
     named: BTreeSet<u32>,
     /// The numbers they could name as Origin PRs.
     origins: BTreeSet<u32>,
+    /// The Issues a Filter found that Tsugiki has as they are now. Each still needs its tree read.
+    held_issues: BTreeSet<u32>,
 }
 
 /// The result of one step.
@@ -119,6 +128,7 @@ struct Link<'a> {
     github: &'a GitHub,
     store: &'a Store,
     repository: &'a RepositoryName,
+    filters: &'a [FilterQuery],
 }
 
 /// A step's result, and the phase to move to.
@@ -127,9 +137,16 @@ type Moved = (Step, Option<Phase>);
 const NO_PAUSE: Step = Step::Searched { pause_until: None };
 
 impl UserWorkSync {
-    fn new(repository: RepositoryName) -> Self {
+    fn new(repository: RepositorySettings) -> Self {
+        let mut filters: Vec<FilterQuery> = Vec::new();
+        for filter in repository.filters {
+            if !filters.contains(&filter.query) {
+                filters.push(filter.query);
+            }
+        }
         Self {
-            repository,
+            repository: repository.name,
+            filters,
             phase: Phase::Searching {
                 searches: &WORK_SEARCHES,
                 cursor: None,
@@ -146,6 +163,7 @@ impl UserWorkSync {
             github,
             store,
             repository: &self.repository,
+            filters: &self.filters,
         };
         let fetched = &mut self.fetched;
         let (step, next) = match &mut self.phase {
@@ -154,6 +172,7 @@ impl UserWorkSync {
                 cursor,
                 found,
             } => search(&link, searches, cursor, found)?,
+            Phase::SearchingFilters(walk) => walk_filters(&link, walk)?,
             Phase::Fetching(batches) => fetch(&link, batches, fetched)?,
             Phase::FetchingOrigins { why, leads } => fetch_origin(&link, *why, leads, fetched)?,
             Phase::FetchingIssues { numbers, shown } => fetch_issues(&link, numbers, shown)?,
@@ -175,11 +194,10 @@ fn search(
     found: &mut Vec<NodeId>,
 ) -> Result<Moved, Error> {
     let Some((search, rest)) = searches.split_first() else {
-        let next = Phase::Fetching(Batches {
-            ids: std::mem::take(found),
-            why: PrFetch::Work,
-            leads: Leads::default(),
-        });
+        link.store
+            .keep_only_filters(link.repository, link.filters.to_vec())?;
+        let walk = FilterWalk::new(link.filters, std::mem::take(found));
+        let next = Phase::SearchingFilters(walk);
         return Ok((NO_PAUSE, Some(next)));
     };
     let asked = PageRequest {
@@ -258,10 +276,14 @@ fn fetch_origin(
 ) -> Result<Moved, Error> {
     let Some(number) = leads.origins.first().copied() else {
         let next = match why {
-            PrFetch::Work => Some(Phase::FetchingIssues {
-                numbers: std::mem::take(&mut leads.named).into_iter().collect(),
-                shown: Vec::new(),
-            }),
+            PrFetch::Work => {
+                let named = std::mem::take(&mut leads.named);
+                let held = std::mem::take(&mut leads.held_issues);
+                Some(Phase::FetchingIssues {
+                    shown: held.difference(&named).copied().collect(),
+                    numbers: named.into_iter().collect(),
+                })
+            }
             PrFetch::Tree => None,
         };
         let step = if next.is_some() {
@@ -379,11 +401,11 @@ pub struct Syncs {
 
 impl Syncs {
     /// Puts a sync of `repository` first, carrying on from where it got if one is already queued.
-    pub fn add(&mut self, repository: RepositoryName) {
+    pub fn add(&mut self, repository: RepositorySettings) {
         let queued = self
             .queue
             .iter()
-            .position(|sync| sync.repository.is_same(&repository))
+            .position(|sync| sync.repository.is_same(&repository.name))
             .and_then(|at| self.queue.remove(at));
         self.queue
             .push_front(queued.unwrap_or_else(|| UserWorkSync::new(repository)));
@@ -415,6 +437,7 @@ impl Syncs {
             | ErrorKind::WriteRefused
             | ErrorKind::NotFound
             | ErrorKind::Conflict
+            | ErrorKind::QueryRefused
             | ErrorKind::Internal => {
                 self.count_failure(problem);
                 next_refresh
@@ -488,18 +511,27 @@ mod tests {
     use super::*;
     use crate::error::ErrorKind;
     use crate::github::testing::{Scripted, reply_ok, token};
-    use crate::github::{Reply, Unreachable};
+    use crate::github::{Reply, Transport, Unreachable};
     use crate::store::{self, OpenReader, StoreReader};
     use serde_json::{Value, json};
     use std::fs;
     use std::path::PathBuf;
     use std::sync::mpsc::Receiver;
 
-    const LOTS: &str = r#""rateLimit":{"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
-    const FEW: &str = r#""rateLimit":{"remaining":10,"resetAt":"2999-01-01T00:00:00Z"}"#;
+    pub(super) const LOTS: &str =
+        r#""rateLimit":{"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
+    pub(super) const FEW: &str = r#""rateLimit":{"remaining":10,"resetAt":"2999-01-01T00:00:00Z"}"#;
 
-    fn cpython() -> RepositoryName {
+    pub(super) fn cpython() -> RepositoryName {
         RepositoryName::parse("python/cpython").unwrap()
+    }
+
+    /// A Repository with no Filters, for the sync's other phases.
+    fn plain(name: RepositoryName) -> RepositorySettings {
+        RepositorySettings {
+            filters: Vec::new(),
+            ..RepositorySettings::new(name)
+        }
     }
 
     fn found(ids: &[&str], next: Option<&str>, rate: &str) -> Result<Reply, Unreachable> {
@@ -511,7 +543,7 @@ mod tests {
         ))
     }
 
-    fn fetched(numbers: &[u32], rate: &str) -> Result<Reply, Unreachable> {
+    pub(super) fn fetched(numbers: &[u32], rate: &str) -> Result<Reply, Unreachable> {
         fetched_titled(numbers, rate, |number| format!("PR {number}"))
     }
 
@@ -557,17 +589,17 @@ mod tests {
         ))
     }
 
-    struct Harness {
-        github: GitHub,
-        store: Store,
-        open: OpenReader,
-        reader: StoreReader,
-        asked: Receiver<(String, Value)>,
-        folder: PathBuf,
+    pub(super) struct Harness {
+        pub(super) github: GitHub,
+        pub(super) store: Store,
+        pub(super) open: OpenReader,
+        pub(super) reader: StoreReader,
+        pub(super) asked: Receiver<(String, Value)>,
+        pub(super) folder: PathBuf,
     }
 
     impl Harness {
-        fn new(name: &str, replies: Vec<Result<Reply, Unreachable>>) -> Self {
+        pub(super) fn new(name: &str, replies: Vec<Result<Reply, Unreachable>>) -> Self {
             let folder = crate::testing::temp_path(&format!("sync-{name}"));
             fs::create_dir_all(&folder).unwrap();
             let path = folder.join("tsugiki.db");
@@ -586,21 +618,28 @@ mod tests {
             }
         }
 
-        fn numbers(&self) -> Vec<u32> {
+        /// A harness whose GitHub is `transport`, which keeps its own record of what's asked.
+        pub(super) fn answering(name: &str, transport: Box<dyn Transport>) -> Self {
+            let mut harness = Self::new(name, Vec::new());
+            harness.github = GitHub::new(transport, token());
+            harness
+        }
+
+        pub(super) fn numbers(&self) -> Vec<u32> {
             let facts = self.reader.work_facts(&cpython()).unwrap();
             let mut numbers: Vec<u32> = facts.pull_requests.iter().map(|pr| pr.number).collect();
             numbers.sort_unstable();
             numbers
         }
 
-        fn operations(&self) -> Vec<String> {
+        pub(super) fn operations(&self) -> Vec<String> {
             self.asked
                 .try_iter()
                 .map(|(operation, _)| operation)
                 .collect()
         }
 
-        fn finish(self) {
+        pub(super) fn finish(self) {
             self.open.close();
             self.store.close();
             fs::remove_dir_all(self.folder).unwrap();
@@ -608,7 +647,7 @@ mod tests {
     }
 
     /// Runs every step that's left, and says which Repositories it announced.
-    fn run_to_the_end(syncs: &mut Syncs, harness: &Harness) -> Vec<RepositoryName> {
+    pub(super) fn run_to_the_end(syncs: &mut Syncs, harness: &Harness) -> Vec<RepositoryName> {
         let mut changed = Vec::new();
         while syncs.ready_at().is_some() {
             changed.extend(syncs.step(&harness.github, &harness.store).unwrap());
@@ -616,11 +655,11 @@ mod tests {
         changed
     }
 
-    fn nothing(rate: &str) -> Result<Reply, Unreachable> {
+    pub(super) fn nothing(rate: &str) -> Result<Reply, Unreachable> {
         found(&[], None, rate)
     }
 
-    fn issues(numbers: &[u32], rate: &str) -> Result<Reply, Unreachable> {
+    pub(super) fn issues(numbers: &[u32], rate: &str) -> Result<Reply, Unreachable> {
         let fields: serde_json::Map<String, Value> = numbers
             .iter()
             .map(|number| {
@@ -640,12 +679,12 @@ mod tests {
         ))
     }
 
-    fn no_cross_references(rate: &str) -> Result<Reply, Unreachable> {
+    pub(super) fn no_cross_references(rate: &str) -> Result<Reply, Unreachable> {
         cross_references(&[], None, rate)
     }
 
     /// A page of an Issue's cross-references that lists these PRs as `id<number>`.
-    fn cross_references(
+    pub(super) fn cross_references(
         numbers: &[u32],
         older: Option<&str>,
         rate: &str,
@@ -671,7 +710,7 @@ mod tests {
     }
 
     /// PR `number` as a fetch answers with it, with `changes` on top.
-    fn pr_node(number: u32, changes: &Value) -> Value {
+    pub(super) fn pr_node(number: u32, changes: &Value) -> Value {
         let mut node = json!({
             "number": number,
             "title": format!("gh-1: Fix it {number}"),
@@ -699,7 +738,7 @@ mod tests {
         node
     }
 
-    fn fetched_nodes(nodes: &[Value], rate: &str) -> Result<Reply, Unreachable> {
+    pub(super) fn fetched_nodes(nodes: &[Value], rate: &str) -> Result<Reply, Unreachable> {
         reply_ok(&format!(
             r#"{{"data":{{"nodes":{},{rate}}}}}"#,
             json!(nodes)
@@ -746,7 +785,7 @@ mod tests {
         replies.push(fetched_nodes(&[merged_node(2), merged_node(3)], LOTS));
         let harness = Harness::new("tree", replies);
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
 
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -771,7 +810,7 @@ mod tests {
         replies.push(fetched_nodes(&[merged_node(3), merged_node(2)], LOTS));
         let harness = Harness::new("tree-pages", replies);
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
 
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -799,7 +838,7 @@ mod tests {
         replies.push(fetched_nodes(&[merged_node(3)], LOTS));
         let harness = Harness::new("tree-two", replies);
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
 
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -826,11 +865,11 @@ mod tests {
         replies.push(fetched_nodes(&[pr_node(3, &json!({}))], LOTS));
         let harness = Harness::new("frozen", replies);
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
         drop(run_to_the_end(&mut syncs, &harness));
         drop(harness.operations());
 
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
         drop(run_to_the_end(&mut syncs, &harness));
 
         let tree_ids: Vec<Value> = harness
@@ -852,7 +891,7 @@ mod tests {
         replies.push(no_cross_references(LOTS));
         let harness = Harness::new("origin", replies);
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
 
         let changed = run_to_the_end(&mut syncs, &harness);
 
@@ -885,7 +924,7 @@ mod tests {
         replies.push(no_cross_references(LOTS));
         let harness = Harness::new("origin-issue", replies);
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
 
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -903,7 +942,7 @@ mod tests {
         replies.push(origin_answer(&merged_node(9), LOTS));
         let harness = Harness::new("tree-origin", replies);
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
 
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -935,7 +974,7 @@ mod tests {
 
         let origins_in_each_sync: Vec<usize> = (0..3)
             .map(|_| {
-                syncs.add(cpython());
+                syncs.add(plain(cpython()));
                 drop(run_to_the_end(&mut syncs, &harness));
                 harness
                     .operations()
@@ -968,11 +1007,11 @@ mod tests {
         replies.push(cross_references(&[], None, LOTS));
         let harness = Harness::new("origin-frozen", replies);
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
         drop(run_to_the_end(&mut syncs, &harness));
         drop(harness.operations());
 
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
         drop(run_to_the_end(&mut syncs, &harness));
 
         assert_eq!(
@@ -994,7 +1033,7 @@ mod tests {
         replies.push(no_cross_references(LOTS));
         let harness = Harness::new("origin-gone", replies);
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
 
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -1008,11 +1047,11 @@ mod tests {
         replies.push(cross_references(&[], Some("older"), FEW));
         let harness = Harness::new("tree-floor", replies);
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
         let before = Instant::now();
 
-        // Four searches, a move, the PR, two moves, the Issue, a move and the first page.
-        for _ in 0..11 {
+        // Four searches, two moves, the PR, two moves, the Issue, a move and the first page.
+        for _ in 0..12 {
             drop(syncs.step(&harness.github, &harness.store).unwrap());
         }
 
@@ -1028,11 +1067,11 @@ mod tests {
         replies.push(origin_answer(&merged_node(9), FEW));
         let harness = Harness::new("origin-floor", replies);
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
         let before = Instant::now();
 
-        // Four searches, a move, the PR, a move and the Origin PR.
-        for _ in 0..8 {
+        // Four searches, two moves, the PR, a move and the Origin PR.
+        for _ in 0..9 {
             drop(syncs.step(&harness.github, &harness.store).unwrap());
         }
 
@@ -1042,7 +1081,7 @@ mod tests {
     }
 
     /// The replies up to and including the search that finds `ids`.
-    fn searches_finding(ids: &[&str]) -> Vec<Result<Reply, Unreachable>> {
+    pub(super) fn searches_finding(ids: &[&str]) -> Vec<Result<Reply, Unreachable>> {
         vec![
             found(ids, None, LOTS),
             nothing(LOTS),
@@ -1060,7 +1099,7 @@ mod tests {
         replies.push(no_cross_references(LOTS));
         let harness = Harness::new("issues", replies);
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
 
         let changed = run_to_the_end(&mut syncs, &harness);
 
@@ -1087,7 +1126,7 @@ mod tests {
         replies.push(fetched(&[1], LOTS));
         let harness = Harness::new("no-issues", replies);
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
 
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -1103,7 +1142,7 @@ mod tests {
         replies.push(no_cross_references(LOTS));
         let harness = Harness::new("conventions", replies);
         let mut syncs = Syncs::default();
-        syncs.add(RepositoryName::parse("python/peps").unwrap());
+        syncs.add(plain(RepositoryName::parse("python/peps").unwrap()));
 
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -1125,11 +1164,11 @@ mod tests {
         replies.push(no_cross_references(LOTS));
         let harness = Harness::new("issue-batches", replies);
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
         let before = Instant::now();
 
-        // Four searches, a move, the PRs, two moves and the first batch of Issues.
-        for _ in 0..9 {
+        // Four searches, two moves, the PRs, two moves and the first batch of Issues.
+        for _ in 0..10 {
             drop(syncs.step(&harness.github, &harness.store).unwrap());
         }
         let ready = syncs.ready_at().unwrap();
@@ -1156,7 +1195,7 @@ mod tests {
             ],
         );
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
 
         let changed = run_to_the_end(&mut syncs, &harness);
 
@@ -1189,7 +1228,7 @@ mod tests {
             ],
         );
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
 
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -1216,7 +1255,7 @@ mod tests {
             ],
         );
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
 
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -1242,7 +1281,7 @@ mod tests {
             ],
         );
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
 
         let changed = run_to_the_end(&mut syncs, &harness);
 
@@ -1266,7 +1305,7 @@ mod tests {
             ],
         );
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
         assert_eq!(syncs.step(&harness.github, &harness.store).unwrap(), None);
 
         let failed = syncs.step(&harness.github, &harness.store).unwrap_err();
@@ -1282,7 +1321,7 @@ mod tests {
     fn a_search_below_the_floor_holds_the_next_step_back() {
         let harness = Harness::new("floor-search", vec![nothing(FEW)]);
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
         let before = Instant::now();
 
         drop(syncs.step(&harness.github, &harness.store).unwrap());
@@ -1305,10 +1344,10 @@ mod tests {
             ],
         );
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
         let before = Instant::now();
 
-        for _ in 0..6 {
+        for _ in 0..7 {
             drop(syncs.step(&harness.github, &harness.store).unwrap());
         }
 
@@ -1321,7 +1360,7 @@ mod tests {
     #[test]
     fn a_held_back_step_says_when() {
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
         let later = Instant::now() + Duration::from_secs(60);
 
         syncs.wait_until(later);
@@ -1347,8 +1386,8 @@ mod tests {
             vec![nothing(LOTS), nothing(LOTS), nothing(LOTS), nothing(LOTS)],
         );
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
-        syncs.add(RepositoryName::parse("Python/CPython").unwrap());
+        syncs.add(plain(cpython()));
+        syncs.add(plain(RepositoryName::parse("Python/CPython").unwrap()));
 
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -1397,7 +1436,7 @@ mod tests {
             ],
         );
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
 
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -1428,8 +1467,8 @@ mod tests {
             ],
         );
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
-        syncs.add(RepositoryName::parse("python/peps").unwrap());
+        syncs.add(plain(cpython()));
+        syncs.add(plain(RepositoryName::parse("python/peps").unwrap()));
 
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -1454,13 +1493,13 @@ mod tests {
             ],
         );
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
         assert_eq!(syncs.step(&harness.github, &harness.store).unwrap(), None);
-        syncs.add(RepositoryName::parse("python/peps").unwrap());
+        syncs.add(plain(RepositoryName::parse("python/peps").unwrap()));
 
-        // The newer sync's four searches, its six moves from phase to phase and its end, then the older
+        // The newer sync's four searches, its seven moves from phase to phase and its end, then the older
         // sync's next page.
-        for _ in 0..12 {
+        for _ in 0..13 {
             assert_eq!(syncs.step(&harness.github, &harness.store).unwrap(), None);
         }
 
@@ -1486,7 +1525,7 @@ mod tests {
     /// Whether a sync is still queued after `tries` failures for `problem`.
     fn queued_after(tries: u8, problem: &Error) -> bool {
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
         for _ in 0..tries {
             syncs.after_failure(problem, soon());
         }
@@ -1496,8 +1535,8 @@ mod tests {
     #[test]
     fn a_step_that_keeps_failing_gives_way_to_the_next_sync() {
         let mut syncs = Syncs::default();
-        syncs.add(RepositoryName::parse("python/peps").unwrap());
-        syncs.add(cpython());
+        syncs.add(plain(RepositoryName::parse("python/peps").unwrap()));
+        syncs.add(plain(cpython()));
 
         for _ in 0..TRIES {
             syncs.after_failure(&broken(), soon());
@@ -1530,7 +1569,7 @@ mod tests {
     fn a_step_that_works_starts_the_count_again() {
         let harness = Harness::new("recovers", vec![nothing(LOTS)]);
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
         for _ in 0..TRIES - 1 {
             syncs.after_failure(&broken(), soon());
         }
@@ -1545,12 +1584,12 @@ mod tests {
     #[test]
     fn asking_again_starts_the_count_again() {
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
         for _ in 0..TRIES - 1 {
             syncs.after_failure(&broken(), soon());
         }
 
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
         syncs.after_failure(&broken(), soon());
 
         assert_eq!(syncs.queue.len(), 1);
@@ -1571,7 +1610,7 @@ mod tests {
     #[test]
     fn a_failure_waits_for_the_next_refresh() {
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
         let next_refresh = soon();
 
         syncs.after_failure(&broken(), next_refresh);
@@ -1588,7 +1627,7 @@ mod tests {
     #[test]
     fn a_rate_limit_waits_for_its_reset() {
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
 
         syncs.after_failure(&limited_until(3000), soon());
 
@@ -1600,7 +1639,7 @@ mod tests {
     #[test]
     fn a_rate_limit_whose_reset_has_passed_still_waits_for_the_next_refresh() {
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
         let next_refresh = soon();
 
         syncs.after_failure(&limited_until(-10), next_refresh);
@@ -1621,7 +1660,7 @@ mod tests {
             ],
         );
         let mut syncs = Syncs::default();
-        syncs.add(cpython());
+        syncs.add(plain(cpython()));
         for _ in 0..5 {
             drop(syncs.step(&harness.github, &harness.store).unwrap());
         }

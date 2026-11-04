@@ -2,8 +2,8 @@
   "body": {
     "data": {
       "rateLimit": {
-        "remaining": 4934,
-        "resetAt": "2026-11-04T18:18:45Z"
+        "remaining": 4968,
+        "resetAt": "2026-11-04T20:36:48Z"
       },
       "search": {
         "nodes": [
@@ -22,6 +22,6 @@
     }
   },
   "query": "query SearchReviewRequests($query: String!, $first: Int!, $after: String) { search(query: $query, type: ISSUE_ADVANCED, first: $first, after: $after) { pageInfo { hasNextPage endCursor } nodes { ... on PullRequest { id } } } rateLimit { remaining resetAt } }",
-  "reset": 1793816325,
+  "reset": 1793824608,
   "status": 200
 }

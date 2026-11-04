@@ -21,9 +21,11 @@ const item = (number: number): WorkbenchItem => ({
   backports: [],
 });
 
+const mine = { name: "Mine", query: "is:open author:@me", count: 1, problem: null };
+
 const answer = (...numbers: number[]) => ({
   status: "ok" as const,
-  data: { items: numbers.map(item) },
+  data: { items: numbers.map(item), count: numbers.length, filters: [mine] },
 });
 
 const refused = { status: "error" as const, error: { kind: "internal" as const, message: "no database" } };
@@ -54,9 +56,63 @@ describe("WorkbenchState", () => {
     const state = new WorkbenchState("python/cpython");
     expect(state.items).toBeUndefined();
     await state.load();
-    expect(commands.workbench).toHaveBeenCalledWith("python/cpython");
+    expect(commands.workbench).toHaveBeenCalledWith("python/cpython", null);
     expect(numbers(state)).toEqual([2, 1]);
+    expect(state.count).toBe(2);
+    expect(state.filters).toEqual([mine]);
     expect(state.error).toBeUndefined();
+  });
+
+  it("asks for a Filter the user selects, and for the whole Workbench again", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(2, 1));
+    const state = new WorkbenchState("python/cpython");
+    expect(state.selected).toBeNull();
+    await state.load();
+
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(1));
+    await state.select(mine.query);
+    expect(state.selected).toBe(mine.query);
+    expect(commands.workbench).toHaveBeenLastCalledWith("python/cpython", mine.query);
+    expect(numbers(state)).toEqual([1]);
+
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(2, 1));
+    await state.select(null);
+    expect(commands.workbench).toHaveBeenLastCalledWith("python/cpython", null);
+    expect(numbers(state)).toEqual([2, 1]);
+  });
+
+  it("keeps a selected Filter when the facts change", async () => {
+    const { send } = catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer(1));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    await state.select(mine.query);
+
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(3, 1));
+    send("python/cpython");
+
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([3, 1]);
+    });
+    expect(commands.workbench).toHaveBeenLastCalledWith("python/cpython", mine.query);
+  });
+
+  it("drops the answer for a line the user has already left", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(2, 1));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    const slow = Promise.withResolvers<ReturnType<typeof answer>>();
+    vi.mocked(commands.workbench).mockReturnValueOnce(slow.promise);
+    const leaving = state.select(mine.query);
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(2, 1));
+    await state.select(null);
+    slow.resolve(answer(1));
+    await leaving;
+
+    expect(numbers(state)).toEqual([2, 1]);
   });
 
   it("listens before it asks, so no change is lost in between", async () => {

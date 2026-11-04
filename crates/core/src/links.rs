@@ -221,6 +221,7 @@ mod tests {
         RepositorySettings {
             name: RepositoryName::parse("sergey-miryanov/gcmon").unwrap(),
             conventions: Conventions::Github,
+            filters: Vec::new(),
         }
     }
 

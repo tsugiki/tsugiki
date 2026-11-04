@@ -37,7 +37,7 @@ const issue = {
 beforeEach(() => {
   vi.resetAllMocks();
   core.listen.mockResolvedValue(core.stopListening);
-  core.workbench.mockResolvedValue({ status: "ok", data: { items: [] } });
+  core.workbench.mockResolvedValue({ status: "ok", data: { items: [], count: 0, filters: [] } });
 });
 
 afterEach(() => {
@@ -60,13 +60,13 @@ it("lists a Standalone PR with the time it changed", async () => {
   vi.setSystemTime("2026-11-04T13:00:00Z");
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [{ kind: "standalone_pr", ...row, backports: [] }] },
+    data: { items: [{ kind: "standalone_pr", ...row, backports: [] }], count: 1, filters: [] },
   });
   render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
 
   const item = await screen.findByRole("listitem");
 
-  expect(core.workbench).toHaveBeenCalledWith("python/cpython");
+  expect(core.workbench).toHaveBeenCalledWith("python/cpython", null);
   expect(within(item).getByText("#160662 gh-112564: Fix UAF for gc debug print")).toBeTruthy();
   expect(
     within(item).getByText("Review request · some-author · into main · Open · CI passed · 3h ago"),
@@ -77,7 +77,7 @@ it("moves a time on while the window stays open", async () => {
   // Only these, because the wait for the first answer runs on the real `setTimeout`.
   vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
   vi.setSystemTime("2026-11-04T13:00:00Z");
-  core.workbench.mockResolvedValue({ status: "ok", data: { items: [issue] } });
+  core.workbench.mockResolvedValue({ status: "ok", data: { items: [issue], count: 1, filters: [] } });
   const { unmount } = render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
   await screen.findByText("issue-author, some-author · 1 PR · 3h ago");
 
@@ -90,7 +90,7 @@ it("moves a time on while the window stays open", async () => {
 
 it("lists an Issue with its PRs under it", async () => {
   vi.setSystemTime("2026-11-04T13:00:00Z");
-  core.workbench.mockResolvedValue({ status: "ok", data: { items: [issue] } });
+  core.workbench.mockResolvedValue({ status: "ok", data: { items: [issue], count: 1, filters: [] } });
   render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
 
   const [item, pullRequest] = await screen.findAllByRole("listitem");
@@ -112,6 +112,33 @@ it("says so while there is nothing to list", async () => {
   expect(await screen.findByText(/Nothing here yet/)).toBeTruthy();
 });
 
+it("shows a Filter's Issues when the user selects it, with the Sidebar's counts", async () => {
+  const mine = { name: "Mine", query: "is:open author:@me", count: 1, problem: null };
+  core.workbench.mockImplementation(async (_: string, selected: string | null) => ({
+    status: "ok",
+    data: { items: selected === null ? [] : [issue], count: 7, filters: [mine] },
+  }));
+  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+
+  await fireEvent.click(await screen.findByRole("button", { name: "Mine 1" }));
+
+  expect(core.workbench).toHaveBeenLastCalledWith("python/cpython", mine.query);
+  expect(await screen.findByText("#112564 GIL drop during collection")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Workbench 7" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Mine 1" }).getAttribute("aria-current")).toBe("true");
+});
+
+it("says how to check a Filter that holds nothing", async () => {
+  const mine = { name: "Mine", query: "is:open author:@me", count: 0, problem: null };
+  core.workbench.mockResolvedValue({ status: "ok", data: { items: [], count: 0, filters: [mine] } });
+  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+
+  await fireEvent.click(await screen.findByRole("button", { name: "Mine 0" }));
+
+  expect(await screen.findByText(/check its query in settings.toml/)).toBeTruthy();
+  expect(screen.queryByText(/Nothing here yet/)).toBeNull();
+});
+
 it("says why it can't read the Workbench", async () => {
   core.workbench.mockResolvedValue({ status: "error", error: { kind: "internal", message: "no database" } });
   render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
@@ -128,7 +155,7 @@ it("opens the other Repository's Workbench and stops listening for the last", as
   await rerender({ name: "tsugiki/tsugiki", onadd: () => {} });
 
   await vi.waitFor(() => {
-    expect(core.workbench).toHaveBeenLastCalledWith("tsugiki/tsugiki");
+    expect(core.workbench).toHaveBeenLastCalledWith("tsugiki/tsugiki", null);
   });
   expect(core.stopListening).toHaveBeenCalledOnce();
 });
@@ -141,7 +168,7 @@ it("stops listening when it goes", async () => {
 });
 
 const answering = (...items: unknown[]) => {
-  core.workbench.mockResolvedValue({ status: "ok", data: { items } });
+  core.workbench.mockResolvedValue({ status: "ok", data: { items, count: items.length, filters: [] } });
 };
 
 const backportRow = {

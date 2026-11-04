@@ -95,7 +95,7 @@ impl PrFetch {
 }
 
 /// GitHub's ID for an item, which a fetch asks for it by.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 #[serde(transparent)]
 pub struct NodeId(String);
 
@@ -215,6 +215,12 @@ impl PullRequestFacts {
             PrState::Closed => true,
             PrState::Merged => self.merge_commit.is_some(),
         }
+    }
+
+    /// True when a newer `updatedAt` brings a sync nothing, as a merged PR stays merged. A closed PR can
+    /// reopen.
+    pub fn stays_as_it_is(&self) -> bool {
+        self.state == PrState::Merged && self.is_frozen()
     }
 }
 

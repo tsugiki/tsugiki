@@ -1,6 +1,10 @@
 //! The Workbench's view model (ADR 0008), worked out from stored facts when the window asks (ADR 0010). Each
 //! item is an Issue with the PRs that fix it and their Backports, or a PR outside any Issue (ADR 0011).
 
+mod filters;
+
+pub use filters::FilterLine;
+
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -10,12 +14,14 @@ use time::OffsetDateTime;
 
 use crate::conventions::Conventions;
 use crate::error::Error;
+use crate::filters::FilterQuery;
 use crate::github::Login;
 use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::{CiState, PrState, PullRequestFacts, ReviewState};
 use crate::links::{BackportKind, BackportLink, MergeCommits, backport_of, fixed_numbers};
 use crate::repository::RepositorySettings;
 use crate::store::{StoreReader, WorkFacts};
+use filters::FilterFacts;
 
 /// The reason a PR is on the user's Workbench.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
@@ -119,53 +125,110 @@ impl WorkbenchItem {
             Self::StandaloneBackport(backport) => (backport.row.updated_at, backport.row.number),
         }
     }
+
+    fn rows(&self) -> Vec<&WorkbenchRow> {
+        match self {
+            Self::Issue(issue) => issue
+                .pull_requests
+                .iter()
+                .flat_map(TreeEntry::rows)
+                .collect(),
+            Self::StandalonePr(tree) => tree.rows(),
+            Self::StandaloneBackport(backport) => vec![&backport.row],
+        }
+    }
 }
 
-/// The items of a Repository's Workbench, the latest update first.
+/// A Repository's Workbench or one of its Filters, with what the Sidebar shows beside it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct Workbench {
+    /// The selected items, the latest update first.
     pub items: Vec<WorkbenchItem>,
+    /// How many items the Workbench holds, until Needs attention exists to count instead.
+    pub count: u32,
+    pub filters: Vec<FilterLine>,
 }
 
 impl Workbench {
-    /// Reads the Workbench of `repository`. This waits on the database and never on a sync (ADR 0018).
-    pub fn read(reader: &StoreReader, repository: &RepositorySettings) -> Result<Self, Error> {
+    /// Reads the Workbench of `repository`, or the Filter `selected`. This waits on the database and never on
+    /// a sync (ADR 0018).
+    pub fn read(
+        reader: &StoreReader,
+        repository: &RepositorySettings,
+        selected: Option<&FilterQuery>,
+    ) -> Result<Self, Error> {
         let facts = reader.work_facts(&repository.name)?;
-        Ok(Self::from_facts(facts, repository))
+        Ok(Self::from_facts(facts, repository, selected))
     }
 
     /// No viewer means nobody has signed in yet, so no PR is the user's.
-    fn from_facts(facts: WorkFacts, repository: &RepositorySettings) -> Self {
-        let Some(viewer) = facts.viewer else {
-            return Self { items: Vec::new() };
-        };
-        let linked = link(facts.pull_requests, &facts.issues, repository, &viewer);
-        let mut issues: BTreeMap<u32, (IssueFacts, Vec<TreeEntry>)> = facts
-            .issues
-            .into_iter()
-            .map(|issue| (issue.number, (issue, Vec::new())))
+    fn from_facts(
+        mut facts: WorkFacts,
+        repository: &RepositorySettings,
+        selected: Option<&FilterQuery>,
+    ) -> Self {
+        let filters = FilterFacts::new(repository, std::mem::take(&mut facts.filters));
+        let matched = filters.matched();
+        let selected = selected.map(|query| filters.numbers_of(query));
+        let candidates = candidates(facts, repository, selected.unwrap_or(&matched));
+        let on_workbench =
+            |item: &&WorkbenchItem| any_reason(&item.rows()) || item.is_reached_by(&matched);
+        let lines = filters.lines(&candidates);
+        let count = count_of(candidates.iter().filter(on_workbench));
+        let mut items: Vec<WorkbenchItem> = candidates
+            .iter()
+            .filter(|item| match selected {
+                Some(numbers) => item.is_reached_by(numbers),
+                None => on_workbench(item),
+            })
+            .cloned()
             .collect();
-        let mut items = Vec::new();
-        for top in plant(linked) {
-            if top.issues.is_empty() {
-                items.extend(standalone(top));
-                continue;
-            }
-            for number in &top.issues {
-                if let Some((_, entries)) = issues.get_mut(number) {
-                    entries.push(top.entry_under(*number));
-                }
+        items.sort_by_key(|item| Reverse(item.updated_at_and_number()));
+        Self {
+            items,
+            count,
+            filters: lines,
+        }
+    }
+}
+
+fn count_of<'a>(items: impl Iterator<Item = &'a WorkbenchItem>) -> u32 {
+    u32::try_from(items.count()).unwrap_or(u32::MAX)
+}
+
+/// Each item the Repository's facts could show, on the Workbench or not. A PR in `first`, the Matched PRs of
+/// the view on show, comes first in its Issue's tree.
+fn candidates(
+    facts: WorkFacts,
+    repository: &RepositorySettings,
+    first: &BTreeSet<u32>,
+) -> Vec<WorkbenchItem> {
+    let Some(viewer) = facts.viewer else {
+        return Vec::new();
+    };
+    let linked = link(facts.pull_requests, &facts.issues, repository, &viewer);
+    let mut issues: BTreeMap<u32, (IssueFacts, Vec<TreeEntry>)> = facts
+        .issues
+        .into_iter()
+        .map(|issue| (issue.number, (issue, Vec::new())))
+        .collect();
+    let mut items = Vec::new();
+    for top in plant(linked) {
+        if top.issues.is_empty() {
+            items.push(standalone(top));
+            continue;
+        }
+        for number in &top.issues {
+            if let Some((_, entries)) = issues.get_mut(number) {
+                entries.push(top.entry_under(*number));
             }
         }
-        items.extend(
-            issues
-                .into_values()
-                .filter(|(_, entries)| entries.iter().any(|entry| any_reason(&entry.rows())))
-                .map(|(issue, entries)| issue_item(issue, entries, repository.conventions)),
-        );
-        items.sort_by_key(|item| Reverse(item.updated_at_and_number()));
-        Self { items }
     }
+    items.extend(issues.into_values().map(|(issue, mut entries)| {
+        entries.sort_by_key(|entry| !entry.rows().iter().any(|row| first.contains(&row.number)));
+        issue_item(issue, entries, repository.conventions)
+    }));
+    items
 }
 
 /// A PR with what the link rules say about it.
@@ -287,26 +350,18 @@ fn plant(linked: Vec<Linked>) -> Vec<Top> {
     tops
 }
 
-/// The item for a line with no Issue, if any PR in it is the user's. Nothing beneath it fixes an Issue, or
-/// the line would show under that Issue.
-fn standalone(top: Top) -> Option<WorkbenchItem> {
+/// The item for a line with no Issue. Nothing beneath it fixes an Issue, or the line would show under that
+/// Issue.
+fn standalone(top: Top) -> WorkbenchItem {
     match top.shape {
-        Shape::Backport(backport) => {
-            let wanted = any_reason(&[&top.row]);
-            let row = top.row;
-            wanted.then_some(WorkbenchItem::StandaloneBackport(BackportRow {
-                row,
-                backport,
-            }))
-        }
-        Shape::Pr { beneath } => {
-            let tree = PrTree {
-                row: top.row,
-                backports: beneath.into_iter().map(|below| below.row).collect(),
-            };
-            let wanted = any_reason(&tree.rows());
-            wanted.then_some(WorkbenchItem::StandalonePr(tree))
-        }
+        Shape::Backport(backport) => WorkbenchItem::StandaloneBackport(BackportRow {
+            row: top.row,
+            backport,
+        }),
+        Shape::Pr { beneath } => WorkbenchItem::StandalonePr(PrTree {
+            row: top.row,
+            backports: beneath.into_iter().map(|below| below.row).collect(),
+        }),
     }
 }
 
@@ -393,16 +448,16 @@ mod tests {
     use crate::github::pull_requests::{LatestReview, OffDefault};
     use crate::repository::RepositoryName;
 
-    fn me() -> Login {
+    pub(super) fn me() -> Login {
         Login::new("octocat")
     }
 
-    fn someone() -> Login {
+    pub(super) fn someone() -> Login {
         Login::new("some-author")
     }
 
     /// A PR that has nothing to do with the viewer.
-    fn stranger() -> PullRequestFacts {
+    pub(super) fn stranger() -> PullRequestFacts {
         PullRequestFacts {
             number: 1,
             title: "gh-1: Fix it".to_owned(),
@@ -528,15 +583,15 @@ mod tests {
         );
     }
 
-    fn at(seconds: i64) -> OffsetDateTime {
+    pub(super) fn at(seconds: i64) -> OffsetDateTime {
         OffsetDateTime::from_unix_timestamp(seconds).unwrap()
     }
 
-    fn cpython() -> RepositorySettings {
+    pub(super) fn cpython() -> RepositorySettings {
         RepositorySettings::new(RepositoryName::parse("python/cpython").unwrap())
     }
 
-    fn issue(number: u32) -> IssueFacts {
+    pub(super) fn issue(number: u32) -> IssueFacts {
         IssueFacts {
             number,
             title: format!("Issue {number}"),
@@ -546,7 +601,7 @@ mod tests {
     }
 
     /// The user's PR, whose title names no Issue.
-    fn mine(number: u32) -> PullRequestFacts {
+    pub(super) fn mine(number: u32) -> PullRequestFacts {
         PullRequestFacts {
             number,
             title: format!("PR {number}"),
@@ -556,7 +611,7 @@ mod tests {
     }
 
     /// The user's PR, whose title names `issue`.
-    fn fixing(number: u32, issue: u32) -> PullRequestFacts {
+    pub(super) fn fixing(number: u32, issue: u32) -> PullRequestFacts {
         PullRequestFacts {
             title: format!("gh-{issue}: Fix it"),
             ..mine(number)
@@ -568,12 +623,13 @@ mod tests {
             viewer: Some(me()),
             pull_requests,
             issues,
+            filters: BTreeMap::new(),
         };
-        Workbench::from_facts(facts, &cpython())
+        Workbench::from_facts(facts, &cpython(), None)
     }
 
     /// Each item as its kind and number, with an Issue's PRs after it.
-    fn outline(workbench: &Workbench) -> Vec<(&'static str, u32, Vec<u32>)> {
+    pub(super) fn outline(workbench: &Workbench) -> Vec<(&'static str, u32, Vec<u32>)> {
         workbench
             .items
             .iter()
@@ -593,7 +649,7 @@ mod tests {
             .collect()
     }
 
-    fn first_issue(workbench: &Workbench) -> &IssueItem {
+    pub(super) fn first_issue(workbench: &Workbench) -> &IssueItem {
         let issues = workbench.items.iter().filter_map(|item| match item {
             WorkbenchItem::Issue(issue) => Some(issue),
             WorkbenchItem::StandalonePr(_) | WorkbenchItem::StandaloneBackport(_) => None,
@@ -624,6 +680,7 @@ mod tests {
     fn changing_a_repositorys_conventions_regroups_the_same_facts() {
         let facts = || WorkFacts {
             viewer: Some(me()),
+            filters: BTreeMap::new(),
             pull_requests: vec![fixing(10, 1)],
             issues: vec![issue(1)],
         };
@@ -632,8 +689,8 @@ mod tests {
             ..cpython()
         };
 
-        let under_cpython = Workbench::from_facts(facts(), &cpython());
-        let under_github = Workbench::from_facts(facts(), &github);
+        let under_cpython = Workbench::from_facts(facts(), &cpython(), None);
+        let under_github = Workbench::from_facts(facts(), &github, None);
 
         assert_eq!(outline(&under_cpython), [("issue", 1, vec![10])]);
         assert_eq!(outline(&under_github), [("standalone", 10, vec![])]);
@@ -832,7 +889,11 @@ mod tests {
     const BOT: &str = "miss-islington";
 
     /// A PR on 3.14 by someone else, titled `title` and committed by `committers`.
-    fn backport(number: u32, title: &str, committers: Vec<Option<Login>>) -> PullRequestFacts {
+    pub(super) fn backport(
+        number: u32,
+        title: &str,
+        committers: Vec<Option<Login>>,
+    ) -> PullRequestFacts {
         PullRequestFacts {
             number,
             title: title.to_owned(),
@@ -846,7 +907,7 @@ mod tests {
         }
     }
 
-    fn bots_backport(number: u32, title: &str) -> PullRequestFacts {
+    pub(super) fn bots_backport(number: u32, title: &str) -> PullRequestFacts {
         PullRequestFacts {
             author: Some(Login::new(BOT)),
             ..backport(number, title, vec![Some(Login::new(BOT))])
@@ -861,7 +922,7 @@ mod tests {
     }
 
     /// The first Issue's lines, as each PR's number with the numbers beneath it.
-    fn tree_of(workbench: &Workbench) -> Vec<(u32, Vec<u32>)> {
+    pub(super) fn tree_of(workbench: &Workbench) -> Vec<(u32, Vec<u32>)> {
         first_issue(workbench)
             .pull_requests
             .iter()
@@ -1133,8 +1194,9 @@ mod tests {
             viewer: Some(me()),
             pull_requests: vec![mine(10), own(backport(11, "[3.14] Fix it (GH-10)", vec![]))],
             issues: vec![],
+            filters: BTreeMap::new(),
         };
-        let found = Workbench::from_facts(facts, &github);
+        let found = Workbench::from_facts(facts, &github, None);
         assert_eq!(
             outline(&found),
             [("standalone", 11, vec![]), ("standalone", 10, vec![])]
@@ -1148,8 +1210,10 @@ mod tests {
                 viewer: None,
                 pull_requests: vec![mine(1)],
                 issues: vec![issue(1)],
+                filters: BTreeMap::new(),
             },
             &cpython(),
+            None,
         );
         assert_eq!(found.items, []);
     }

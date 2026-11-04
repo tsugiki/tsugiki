@@ -2,8 +2,8 @@
   "body": {
     "data": {
       "rateLimit": {
-        "remaining": 4913,
-        "resetAt": "2026-11-04T18:18:45Z"
+        "remaining": 4983,
+        "resetAt": "2026-11-04T19:56:41Z"
       },
       "repository": {
         "pullRequest": {
@@ -118,6 +118,6 @@
     }
   },
   "query": "query FetchOriginPullRequest($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { number title state isDraft updatedAt baseRefName body mergeCommit { oid } repository { nameWithOwner defaultBranchRef { name } } closingIssuesReferences(first: 100) { nodes { number repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } commits(first: 100) { totalCount nodes { commit { message parents { totalCount } committer { user { login } } } } } } } rateLimit { remaining resetAt } }",
-  "reset": 1793816325,
+  "reset": 1793822201,
   "status": 200
 }

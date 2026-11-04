@@ -5,6 +5,7 @@
 pub mod build;
 pub mod conventions;
 pub mod error;
+pub mod filters;
 pub mod folders;
 pub mod github;
 pub mod latest;

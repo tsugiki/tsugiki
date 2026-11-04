@@ -12,7 +12,8 @@
 use tauri::State;
 use tauri::async_runtime::spawn_blocking;
 use tsugiki_core::error::{Error, ErrorKind};
-use tsugiki_core::repository::{Home, RepositoryCheck};
+use tsugiki_core::filters::FilterQuery;
+use tsugiki_core::repository::{Home, RepositoryAccess, RepositoryCheck};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::SettingsOwner;
 use tsugiki_core::store::StoreReader;
@@ -45,19 +46,22 @@ pub(crate) async fn check_repository(
 #[specta::specta]
 pub(crate) fn add_repository(
     name: &str,
+    access: RepositoryAccess,
     owner: State<'_, SettingsOwner>,
     requests: State<'_, SessionRequests>,
 ) -> Result<Home, Error> {
-    crate::add_named_repository(name, &owner, &requests)
+    crate::add_named_repository(name, access, &owner, &requests)
 }
 
-/// The rows of a Repository's Workbench. This waits on the database and never on GitHub (ADR 0018).
+/// The rows of a Repository's Workbench, or of the Filter `selected`, with what its Sidebar shows. This waits
+/// on the database and never on GitHub (ADR 0018).
 #[tauri::command(async)]
 #[specta::specta]
 pub(crate) fn workbench(
     repository: &str,
+    selected: Option<FilterQuery>,
     owner: State<'_, SettingsOwner>,
     reader: State<'_, StoreReader>,
 ) -> Result<Workbench, Error> {
-    crate::read_workbench(repository, &owner, &reader)
+    crate::read_workbench(repository, selected.as_ref(), &owner, &reader)
 }

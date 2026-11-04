@@ -170,7 +170,7 @@
           },
           "state": "OPEN",
           "title": "gh-112564: Fix UAF for gc debug print",
-          "updatedAt": "2026-10-31T08:03:04Z"
+          "updatedAt": "2026-11-04T19:27:01Z"
         },
         {
           "assignees": {
@@ -511,7 +511,7 @@
           },
           "state": "OPEN",
           "title": "gh-160663: Fix UAF in `visit_generation`",
-          "updatedAt": "2026-10-30T21:08:29Z"
+          "updatedAt": "2026-11-04T19:21:23Z"
         },
         {
           "assignees": {
@@ -610,6 +610,12 @@
                   "login": "user-6"
                 },
                 "state": "APPROVED"
+              },
+              {
+                "author": {
+                  "login": "user-7"
+                },
+                "state": "APPROVED"
               }
             ]
           },
@@ -625,14 +631,14 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-7"
+                  "login": "user-8"
                 }
               }
             ]
           },
           "state": "OPEN",
           "title": "GH-159101: Fix UAF when tp_finalize changes the base class",
-          "updatedAt": "2026-10-26T06:31:36Z"
+          "updatedAt": "2026-11-04T19:32:13Z"
         },
         {
           "assignees": {
@@ -825,7 +831,7 @@
               },
               {
                 "author": {
-                  "login": "user-8"
+                  "login": "user-9"
                 },
                 "state": "APPROVED"
               }
@@ -843,12 +849,12 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-7"
+                  "login": "user-8"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-6"
+                  "login": "user-7"
                 }
               }
             ]
@@ -979,7 +985,7 @@
             "nodes": [
               {
                 "author": {
-                  "login": "user-7"
+                  "login": "user-8"
                 },
                 "state": "COMMENTED"
               },
@@ -1003,7 +1009,7 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-9"
+                  "login": "user-10"
                 }
               }
             ]
@@ -1163,17 +1169,17 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-7"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-10"
+                  "login": "user-8"
                 }
               },
               {
                 "requestedReviewer": {
                   "login": "user-11"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "user-12"
                 }
               }
             ]
@@ -1187,7 +1193,7 @@
             "nodes": []
           },
           "author": {
-            "login": "user-12"
+            "login": "user-13"
           },
           "baseRefName": "main",
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit a",
@@ -1200,7 +1206,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-12"
+                      "login": "user-13"
                     }
                   },
                   "message": "",
@@ -1234,7 +1240,7 @@
               },
               {
                 "author": {
-                  "login": "user-13"
+                  "login": "user-14"
                 },
                 "state": "APPROVED"
               }
@@ -1252,7 +1258,7 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-14"
+                  "login": "user-15"
                 }
               }
             ]
@@ -1266,7 +1272,7 @@
             "nodes": []
           },
           "author": {
-            "login": "user-12"
+            "login": "user-13"
           },
           "baseRefName": "main",
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit a",
@@ -1279,7 +1285,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-12"
+                      "login": "user-13"
                     }
                   },
                   "message": "",
@@ -1292,7 +1298,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-12"
+                      "login": "user-13"
                     }
                   },
                   "message": "",
@@ -1305,7 +1311,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-12"
+                      "login": "user-13"
                     }
                   },
                   "message": "",
@@ -1339,13 +1345,13 @@
               },
               {
                 "author": {
-                  "login": "user-15"
+                  "login": "user-16"
                 },
                 "state": "COMMENTED"
               },
               {
                 "author": {
-                  "login": "user-16"
+                  "login": "user-17"
                 },
                 "state": "COMMENTED"
               }
@@ -1363,7 +1369,7 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-7"
+                  "login": "user-8"
                 }
               }
             ]
@@ -1377,7 +1383,7 @@
             "nodes": []
           },
           "author": {
-            "login": "user-17"
+            "login": "user-18"
           },
           "baseRefName": "main",
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consecte",
@@ -1397,7 +1403,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-17"
+                      "login": "user-18"
                     }
                   },
                   "message": "",
@@ -1410,7 +1416,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-17"
+                      "login": "user-18"
                     }
                   },
                   "message": "",
@@ -1423,7 +1429,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-17"
+                      "login": "user-18"
                     }
                   },
                   "message": "",
@@ -1436,7 +1442,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-17"
+                      "login": "user-18"
                     }
                   },
                   "message": "",
@@ -1471,7 +1477,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-17"
+                      "login": "user-18"
                     }
                   },
                   "message": "",
@@ -1484,7 +1490,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-17"
+                      "login": "user-18"
                     }
                   },
                   "message": "",
@@ -1512,7 +1518,7 @@
             "nodes": [
               {
                 "author": {
-                  "login": "user-18"
+                  "login": "user-19"
                 },
                 "state": "COMMENTED"
               },
@@ -1544,7 +1550,7 @@
             "nodes": []
           },
           "author": {
-            "login": "user-12"
+            "login": "user-13"
           },
           "baseRefName": "main",
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor si",
@@ -1557,7 +1563,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-12"
+                      "login": "user-13"
                     }
                   },
                   "message": "",
@@ -1570,7 +1576,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-12"
+                      "login": "user-13"
                     }
                   },
                   "message": "",
@@ -1583,7 +1589,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-12"
+                      "login": "user-13"
                     }
                   },
                   "message": "",
@@ -1596,7 +1602,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-12"
+                      "login": "user-13"
                     }
                   },
                   "message": "",
@@ -1630,7 +1636,7 @@
               },
               {
                 "author": {
-                  "login": "user-19"
+                  "login": "user-20"
                 },
                 "state": "COMMENTED"
               }
@@ -1648,7 +1654,7 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-20"
+                  "login": "user-21"
                 }
               }
             ]
@@ -1662,7 +1668,7 @@
             "nodes": []
           },
           "author": {
-            "login": "user-21"
+            "login": "user-22"
           },
           "baseRefName": "main",
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor s",
@@ -1675,7 +1681,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-21"
+                      "login": "user-22"
                     }
                   },
                   "message": "",
@@ -1688,7 +1694,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-21"
+                      "login": "user-22"
                     }
                   },
                   "message": "",
@@ -1701,7 +1707,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-21"
+                      "login": "user-22"
                     }
                   },
                   "message": "",
@@ -1747,12 +1753,12 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-22"
+                  "login": "user-23"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-9"
+                  "login": "user-10"
                 }
               }
             ]
@@ -1766,7 +1772,7 @@
             "nodes": []
           },
           "author": {
-            "login": "user-23"
+            "login": "user-24"
           },
           "baseRefName": "main",
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing el",
@@ -1779,7 +1785,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-23"
+                      "login": "user-24"
                     }
                   },
                   "message": "",
@@ -1792,7 +1798,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-23"
+                      "login": "user-24"
                     }
                   },
                   "message": "",
@@ -1820,7 +1826,7 @@
             "nodes": [
               {
                 "author": {
-                  "login": "user-24"
+                  "login": "user-25"
                 },
                 "state": "COMMENTED"
               },
@@ -1844,7 +1850,7 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-25"
+                  "login": "user-26"
                 }
               }
             ]
@@ -1858,7 +1864,7 @@
             "nodes": []
           },
           "author": {
-            "login": "user-16"
+            "login": "user-17"
           },
           "baseRefName": "main",
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLo",
@@ -1871,7 +1877,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-16"
+                      "login": "user-17"
                     }
                   },
                   "message": "",
@@ -1899,7 +1905,7 @@
             "nodes": [
               {
                 "author": {
-                  "login": "user-26"
+                  "login": "user-27"
                 },
                 "state": "COMMENTED"
               },
@@ -1923,7 +1929,7 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-27"
+                  "login": "user-28"
                 }
               }
             ]
@@ -1937,7 +1943,7 @@
             "nodes": []
           },
           "author": {
-            "login": "user-28"
+            "login": "user-6"
           },
           "baseRefName": "main",
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLore",
@@ -1950,7 +1956,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-28"
+                      "login": "user-6"
                     }
                   },
                   "message": "",
@@ -1963,7 +1969,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-28"
+                      "login": "user-6"
                     }
                   },
                   "message": "",
@@ -1976,7 +1982,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-28"
+                      "login": "user-6"
                     }
                   },
                   "message": "",
@@ -1989,7 +1995,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-28"
+                      "login": "user-6"
                     }
                   },
                   "message": "",
@@ -2002,7 +2008,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-28"
+                      "login": "user-6"
                     }
                   },
                   "message": "",
@@ -2015,7 +2021,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-28"
+                      "login": "user-6"
                     }
                   },
                   "message": "",
@@ -2028,7 +2034,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-28"
+                      "login": "user-6"
                     }
                   },
                   "message": "",
@@ -2041,7 +2047,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-28"
+                      "login": "user-6"
                     }
                   },
                   "message": "",
@@ -2939,7 +2945,7 @@
               },
               {
                 "author": {
-                  "login": "user-13"
+                  "login": "user-14"
                 },
                 "state": "COMMENTED"
               },
@@ -2957,7 +2963,7 @@
               },
               {
                 "author": {
-                  "login": "user-7"
+                  "login": "user-8"
                 },
                 "state": "COMMENTED"
               }
@@ -2975,12 +2981,12 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-22"
+                  "login": "user-23"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-6"
+                  "login": "user-7"
                 }
               },
               {
@@ -3144,7 +3150,7 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-7"
+                  "login": "user-8"
                 }
               },
               {
@@ -3572,7 +3578,7 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-7"
+                  "login": "user-8"
                 }
               }
             ]
@@ -3847,12 +3853,12 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-7"
+                  "login": "user-8"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-22"
+                  "login": "user-23"
                 }
               }
             ]
@@ -3866,7 +3872,7 @@
             "nodes": []
           },
           "author": {
-            "login": "user-16"
+            "login": "user-17"
           },
           "baseRefName": "main",
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit am",
@@ -3879,7 +3885,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-16"
+                      "login": "user-17"
                     }
                   },
                   "message": "",
@@ -3892,7 +3898,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-16"
+                      "login": "user-17"
                     }
                   },
                   "message": "",
@@ -3905,7 +3911,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-16"
+                      "login": "user-17"
                     }
                   },
                   "message": "",
@@ -3918,7 +3924,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-16"
+                      "login": "user-17"
                     }
                   },
                   "message": "",
@@ -4004,17 +4010,17 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-8"
+                  "login": "user-9"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-25"
+                  "login": "user-26"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-10"
+                  "login": "user-11"
                 }
               }
             ]
@@ -5131,7 +5137,7 @@
               },
               {
                 "author": {
-                  "login": "user-6"
+                  "login": "user-7"
                 },
                 "state": "COMMENTED"
               }
@@ -5149,12 +5155,12 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-22"
+                  "login": "user-23"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-20"
+                  "login": "user-21"
                 }
               },
               {
@@ -5164,7 +5170,7 @@
               },
               {
                 "requestedReviewer": {
-                  "login": "user-27"
+                  "login": "user-28"
                 }
               }
             ]
@@ -5175,12 +5181,12 @@
         }
       ],
       "rateLimit": {
-        "remaining": 4930,
-        "resetAt": "2026-11-04T18:18:45Z"
+        "remaining": 4963,
+        "resetAt": "2026-11-04T20:36:48Z"
       }
     }
   },
   "query": "query FetchPullRequests($ids: [ID!]!) { nodes(ids: $ids) { ... on PullRequest { number title state isDraft updatedAt baseRefName body mergeCommit { oid } repository { nameWithOwner defaultBranchRef { name } } closingIssuesReferences(first: 100) { nodes { number repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } commits(first: 100) { totalCount nodes { commit { message parents { totalCount } committer { user { login } } } } } } } rateLimit { remaining resetAt } }",
-  "reset": 1793816325,
+  "reset": 1793824608,
   "status": 200
 }

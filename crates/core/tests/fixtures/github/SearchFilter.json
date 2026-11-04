@@ -1,0 +1,90 @@
+{
+  "body": {
+    "data": {
+      "rateLimit": {
+        "remaining": 4964,
+        "resetAt": "2026-11-04T20:36:48Z"
+      },
+      "search": {
+        "issueCount": 8,
+        "nodes": [
+          {
+            "__typename": "PullRequest",
+            "id": "PR_kwDOBN0Z8c8AAAABJlTcBw",
+            "number": 159888,
+            "repository": {
+              "nameWithOwner": "python/cpython"
+            },
+            "updatedAt": "2026-11-04T19:32:13Z"
+          },
+          {
+            "__typename": "PullRequest",
+            "id": "PR_kwDOBN0Z8c8AAAABCrEnGw",
+            "number": 157178,
+            "repository": {
+              "nameWithOwner": "python/cpython"
+            },
+            "updatedAt": "2026-10-18T12:48:53Z"
+          },
+          {
+            "__typename": "Issue",
+            "number": 156425,
+            "repository": {
+              "nameWithOwner": "python/cpython"
+            },
+            "updatedAt": "2026-09-08T12:46:00Z"
+          },
+          {
+            "__typename": "PullRequest",
+            "id": "PR_kwDOBN0Z8c8AAAABBFycKA",
+            "number": 156423,
+            "repository": {
+              "nameWithOwner": "python/cpython"
+            },
+            "updatedAt": "2026-10-20T20:37:03Z"
+          },
+          {
+            "__typename": "PullRequest",
+            "id": "PR_kwDOBN0Z8c8AAAABBFqH8Q",
+            "number": 156419,
+            "repository": {
+              "nameWithOwner": "python/cpython"
+            },
+            "updatedAt": "2026-10-27T15:05:03Z"
+          },
+          {
+            "__typename": "Issue",
+            "number": 152125,
+            "repository": {
+              "nameWithOwner": "python/cpython"
+            },
+            "updatedAt": "2026-07-21T14:33:07Z"
+          },
+          {
+            "__typename": "Issue",
+            "number": 145970,
+            "repository": {
+              "nameWithOwner": "python/cpython"
+            },
+            "updatedAt": "2026-03-15T10:50:56Z"
+          },
+          {
+            "__typename": "Issue",
+            "number": 139389,
+            "repository": {
+              "nameWithOwner": "python/cpython"
+            },
+            "updatedAt": "2025-10-19T20:59:53Z"
+          }
+        ],
+        "pageInfo": {
+          "endCursor": "Y3Vyc29yOjg=",
+          "hasNextPage": false
+        }
+      }
+    }
+  },
+  "query": "query SearchFilter($query: String!, $first: Int!, $after: String) { search(query: $query, type: ISSUE_ADVANCED, first: $first, after: $after) { issueCount pageInfo { hasNextPage endCursor } nodes { __typename ... on Issue { number updatedAt repository { nameWithOwner } } ... on PullRequest { id number updatedAt repository { nameWithOwner } } } } rateLimit { remaining resetAt } }",
+  "reset": 1793824608,
+  "status": 200
+}

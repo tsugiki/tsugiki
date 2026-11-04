@@ -16,6 +16,8 @@ pub enum ErrorKind {
     },
     NotFound,
     Conflict,
+    /// GitHub took the request and answered with an error about it. A failed status is `Internal`.
+    QueryRefused,
     Internal,
 }
 
@@ -59,6 +61,7 @@ mod tests {
             (ErrorKind::RateLimited { resets_at: None }, "rate_limited"),
             (ErrorKind::NotFound, "not_found"),
             (ErrorKind::Conflict, "conflict"),
+            (ErrorKind::QueryRefused, "query_refused"),
             (ErrorKind::Internal, "internal"),
         ];
         for (kind, name) in kinds {

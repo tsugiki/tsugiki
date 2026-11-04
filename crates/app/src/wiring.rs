@@ -196,7 +196,11 @@ mod tests {
     const CPYTHON: &str = "python/cpython";
 
     fn add_cpython() -> Value {
-        json!({ "name": CPYTHON })
+        json!({ "name": CPYTHON, "access": "other" })
+    }
+
+    fn the_whole_workbench() -> Value {
+        json!({ "repository": CPYTHON, "selected": null })
     }
 
     #[test]
@@ -204,8 +208,11 @@ mod tests {
         let wired = Wired::start(Err(no_folders()), no_network());
 
         let checking = wired.ask("check_repository", json!({ "input": "a/b" }));
-        let adding = wired.ask("add_repository", json!({ "name": "a/b" }));
-        let reading = wired.ask("workbench", json!({ "repository": "a/b" }));
+        let adding = wired.ask("add_repository", add_cpython());
+        let reading = wired.ask(
+            "workbench",
+            json!({ "repository": "a/b", "selected": null }),
+        );
         drop(wired.stop());
 
         let checking = checking.unwrap_err();
@@ -250,7 +257,7 @@ mod tests {
 
         let started = Instant::now();
         let added = wired.ask("add_repository", add_cpython());
-        let read = wired.ask("workbench", json!({ "repository": CPYTHON }));
+        let read = wired.ask("workbench", the_whole_workbench());
         let waited = started.elapsed();
         drop(release);
         drop(wired.stop());
@@ -310,10 +317,11 @@ mod tests {
     }
 
     /// The recordings hold 22 PRs of real CPython work, and 4 of them are the recording user's own. They name
-    /// 22 Issues: #154019 fixes two by itself, and #156423 and #156419 fix one between them.
+    /// 22 Issues: #154019 fixes two by itself, and #156423 and #156419 fix one between them. The Filters'
+    /// search reaches 2 more that no PR names.
     fn assert_is_the_recorded_work(workbench: &Value) {
         let items = workbench["items"].as_array().unwrap();
-        assert_eq!(items.len(), 22);
+        assert_eq!(items.len(), 24);
         assert!(
             items.iter().all(|item| item["kind"] == "issue"),
             "{items:?}"
@@ -359,16 +367,14 @@ mod tests {
         assert_eq!(kind_of(152_840), "manual");
     }
 
-    /// Waits for the session to save the PRs it found, their Issues, one Issue's tree and the Origin PR that
-    /// tree was missing, and returns the Workbench after.
+    /// Waits for the session to save what each starter Filter found, the PRs, their Issues, one Issue's tree
+    /// and the Origin PR that tree was missing, and returns the Workbench after.
     fn workbench_after_sync(wired: &Wired) -> Value {
-        for _ in ["PRs", "Issues", "tree", "Origin PR"] {
+        for _ in ["Filter", "Filter", "PRs", "Issues", "tree", "Origin PR"] {
             let changed = wired.workbenches.recv_timeout(PLENTY).unwrap();
             assert_eq!(changed, json!({ "repository": CPYTHON }));
         }
-        wired
-            .ask("workbench", json!({ "repository": CPYTHON }))
-            .unwrap()
+        wired.ask("workbench", the_whole_workbench()).unwrap()
     }
 
     #[test]
@@ -398,6 +404,60 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
 
         assert_is_the_recorded_work(&workbench);
+    }
+
+    #[test]
+    fn a_filter_edited_in_the_file_shows_in_the_sidebar_and_the_workbench_after_a_restart() {
+        const EDITED: &str = "is:open author:@me label:type-bug";
+        let (folders, root) = temp_folders("wired-filter-edit");
+        let wired = Wired::start(Ok(folders.clone()), no_network());
+        let _ = wired.ask("add_repository", add_cpython()).unwrap();
+        drop(wired.stop());
+        let settings = std::fs::read_to_string(folders.settings_file()).unwrap();
+        let edited = settings
+            .replace(r#"name = "Mine""#, r#"name = "My bugs""#)
+            .replace(
+                r#"query = "is:open author:@me""#,
+                &format!(r#"query = "{EDITED}""#),
+            );
+        std::fs::write(folders.settings_file(), edited).unwrap();
+
+        let reopened = Wired::start(Ok(folders), recordings());
+        let whole = workbench_after_sync(&reopened);
+        let selected = reopened
+            .ask(
+                "workbench",
+                json!({ "repository": CPYTHON, "selected": EDITED }),
+            )
+            .unwrap();
+        drop(reopened.stop());
+        std::fs::remove_dir_all(root).unwrap();
+
+        let line = &whole["filters"][0];
+        assert_eq!(line["name"], "My bugs");
+        assert_eq!(line["query"], EDITED);
+        assert_eq!(selected["filters"], whole["filters"]);
+        assert_eq!(
+            json!(selected["items"].as_array().unwrap().len()),
+            line["count"]
+        );
+        // The search found 8 items, and #156423 and #156419 share a row with the Issue they fix.
+        assert_eq!(line["count"], 6);
+    }
+
+    #[test]
+    fn a_maintained_repository_starts_with_its_own_filters() {
+        let (folders, root) = temp_folders("wired-maintained");
+        let wired = Wired::start(Ok(folders.clone()), no_network());
+        let adding = json!({ "name": CPYTHON, "access": "maintained" });
+
+        let added = wired.ask("add_repository", adding).unwrap();
+        drop(wired.stop());
+        let settings = std::fs::read_to_string(folders.settings_file()).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(added["repository"]["filters"][0]["name"], "Open Issues");
+        assert!(settings.contains(r#"name = "Open PRs""#), "{settings}");
     }
 
     #[test]

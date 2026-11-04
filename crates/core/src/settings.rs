@@ -18,9 +18,10 @@ use toml_edit::{ArrayOfTables, DocumentMut, Item, Key, RawString, Table, TableLi
 use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
 use crate::latest::{self, LatestReader};
-use crate::repository::{Home, RepositoryName, RepositorySettings};
+use crate::repository::{Home, RepositoryAccess, RepositoryName, RepositorySettings};
 
 const REPOSITORIES: &str = "repositories";
+const FILTERS: &str = "filters";
 const LAST_REPOSITORY: &str = "last_repository";
 const STOPPED_SAVING: &str =
     "Tsugiki stopped saving its settings. Restart Tsugiki to save them again.";
@@ -174,7 +175,11 @@ impl SettingsFiles {
     /// Like `write`, it works from what the files say now and refuses while either can't be used. It saves
     /// `machine.toml` first: if that fails, nothing has changed. If `settings.toml` then fails, the name
     /// there holds nothing, and `home` passes over it.
-    pub fn add_repository(&mut self, name: &RepositoryName) -> Result<Home, Error> {
+    pub fn add_repository(
+        &mut self,
+        name: &RepositoryName,
+        access: RepositoryAccess,
+    ) -> Result<Home, Error> {
         let machine = self.machine_to_edit()?;
         let path = settings_file(&self.folders, &machine);
         let mut edit = TomlEdit::<Settings>::open(&path)?;
@@ -184,7 +189,7 @@ impl SettingsFiles {
             .iter()
             .any(|one| one.name.is_same(name));
         if !held {
-            edit.append(&RepositorySettings::new(name.clone()));
+            edit.append(&RepositorySettings::added(name.clone(), access));
         }
         remember_last_repository(&self.folders.machine_file(), name)?;
         edit.save()?;
@@ -209,6 +214,7 @@ pub struct SettingsOwner {
 
 struct Addition {
     name: RepositoryName,
+    access: RepositoryAccess,
     reply: Sender<Result<SettingsView, Error>>,
 }
 
@@ -219,9 +225,14 @@ impl SettingsOwner {
         let (mut writer, view) = latest::channel(first);
         let (additions, incoming) = mpsc::channel::<Addition>();
         let _ = thread::spawn(move || {
-            for Addition { name, reply } in incoming {
+            for Addition {
+                name,
+                access,
+                reply,
+            } in incoming
+            {
                 let saved = match &mut files {
-                    Ok(files) => files.add_repository(&name).map(|_| files.view()),
+                    Ok(files) => files.add_repository(&name, access).map(|_| files.view()),
                     Err(problem) => Err(problem.clone()),
                 };
                 // Before the answer, so whoever asked finds the addition in `view`. Additions come through
@@ -245,10 +256,18 @@ impl SettingsOwner {
     }
 
     /// Adds `name` to the settings, and answers with what they say now.
-    pub fn add_repository(&self, name: RepositoryName) -> Result<SettingsView, Error> {
+    pub fn add_repository(
+        &self,
+        name: RepositoryName,
+        access: RepositoryAccess,
+    ) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
         self.additions
-            .send(Addition { name, reply })
+            .send(Addition {
+                name,
+                access,
+                reply,
+            })
             .ok()
             .and_then(|()| answer.recv().ok())
             .unwrap_or_else(|| Err(Error::new(ErrorKind::Internal, STOPPED_SAVING)))
@@ -305,11 +324,23 @@ impl TomlEdit<'_, Settings> {
             .entry(REPOSITORIES)
             .or_insert_with(|| Item::ArrayOfTables(ArrayOfTables::new()));
         if let Some(tables) = repositories.as_array_of_tables_mut() {
-            tables.push(table);
+            tables.push(with_filters_as_tables(table));
         } else if let Some(written_inline) = repositories.as_array_mut() {
             written_inline.push(table.into_inline_table());
         }
     }
+}
+
+/// A Filter takes a block of its own, because the user edits these by hand (ADR 0014).
+fn with_filters_as_tables(mut repository: Table) -> Table {
+    if let Some(filters) = repository.remove(FILTERS) {
+        // An empty list can't become tables, and it stays: `filters = []` means no Filters.
+        let filters = filters
+            .into_array_of_tables()
+            .map_or_else(|kept| kept, Item::ArrayOfTables);
+        drop(repository.insert(FILTERS, filters));
+    }
+    repository
 }
 
 /// `write` saves what the Settings window changes, and that window doesn't edit the Repository list. Merging
@@ -515,6 +546,7 @@ fn located(path: &Path, text: &str, cause: &toml_edit::de::Error) -> String {
 mod tests {
     use super::*;
     use crate::conventions::Conventions;
+    use crate::filters::Filter;
 
     const HIDDEN: Settings = Settings {
         status_bar: StatusBarSettings { visible: false },
@@ -530,6 +562,7 @@ mod tests {
             repository: RepositorySettings {
                 name: repository(name),
                 conventions,
+                filters: Filter::starters(RepositoryAccess::Other),
             },
         }
     }
@@ -705,10 +738,131 @@ mod tests {
     }
 
     #[test]
+    fn an_empty_list_of_filters_stays_in_a_repositorys_table() {
+        let mut table = Table::new();
+        drop(table.insert(FILTERS, toml_edit::value(toml_edit::Array::new())));
+
+        let kept = with_filters_as_tables(table);
+
+        assert_eq!(kept[FILTERS].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn a_repositorys_table_with_no_filters_gains_none() {
+        let kept = with_filters_as_tables(Table::new());
+        assert!(kept.is_empty());
+    }
+
+    /// The one Repository `text` holds, as a read of the file gives it.
+    fn the_repository_in(name: &str, text: &str) -> RepositorySettings {
+        let (folders, root) = temp_folders(name);
+        fs::write(folders.settings_file(), text).unwrap();
+        let files = SettingsFiles::load(folders);
+        fs::remove_dir_all(root).unwrap();
+        assert_eq!(files.loaded().problems, Vec::<String>::new());
+        files.loaded().settings.repositories[0].clone()
+    }
+
+    fn filter(name: &str, query: &str) -> Filter {
+        Filter {
+            name: name.to_owned().try_into().unwrap(),
+            query: query.to_owned().try_into().unwrap(),
+        }
+    }
+
+    #[test]
+    fn adding_a_repository_writes_its_starter_filters_where_the_user_can_edit_them() {
+        let (folders, root) = temp_folders("starter-filters");
+        let mut files = SettingsFiles::load(folders.clone());
+
+        drop(
+            files
+                .add_repository(&repository("a/b"), RepositoryAccess::Maintained)
+                .unwrap(),
+        );
+        let written = fs::read_to_string(folders.settings_file()).unwrap();
+        let read = files.loaded().settings.repositories[0].clone();
+        fs::remove_dir_all(root).unwrap();
+
+        assert!(written.contains("[[repositories.filters]]"), "{written}");
+        assert!(written.contains(r#"name = "Open Issues""#), "{written}");
+        assert!(
+            written.contains(r#"query = "is:issue is:open""#),
+            "{written}"
+        );
+        assert_eq!(read.filters, Filter::starters(RepositoryAccess::Maintained));
+    }
+
+    #[test]
+    fn adding_to_a_list_written_inline_keeps_it_inline_with_its_filters() {
+        let (folders, root) = temp_folders("inline-filters");
+        fs::write(
+            folders.settings_file(),
+            "repositories = [{ name = \"a/first\" }]\n",
+        )
+        .unwrap();
+        let mut files = SettingsFiles::load(folders);
+
+        drop(
+            files
+                .add_repository(&repository("a/second"), RepositoryAccess::Other)
+                .unwrap(),
+        );
+        let problems = files.loaded().problems.clone();
+        let added = files.loaded().settings.repositories[1].clone();
+        fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(problems, Vec::<String>::new());
+        assert_eq!(added.filters, Filter::starters(RepositoryAccess::Other));
+    }
+
+    #[test]
+    fn a_repository_with_no_filters_in_the_file_gets_the_starters() {
+        let read = the_repository_in("no-filters", "[[repositories]]\nname = \"a/b\"\n");
+        assert_eq!(read.filters, Filter::starters(RepositoryAccess::Other));
+    }
+
+    #[test]
+    fn a_repository_can_say_it_wants_no_filters() {
+        let read = the_repository_in(
+            "empty-filters",
+            "[[repositories]]\nname = \"a/b\"\nfilters = []\n",
+        );
+        assert_eq!(read.filters, []);
+    }
+
+    #[test]
+    fn a_filter_edited_by_hand_is_what_the_next_read_finds() {
+        let read = the_repository_in(
+            "edited-filter",
+            "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\n\
+             query = \"label:bug\"\n",
+        );
+        assert_eq!(read.filters, [filter("Bugs", "label:bug")]);
+    }
+
+    #[test]
+    fn a_blank_filter_query_is_a_problem_with_the_file_and_the_last_values_stay() {
+        let (folders, root) = temp_folders("blank-filter");
+        fs::write(
+            folders.settings_file(),
+            "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\n\
+             query = \" \"\n",
+        )
+        .unwrap();
+        let files = SettingsFiles::load(folders);
+        fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(files.loaded().settings, Settings::default());
+        assert!(files.loaded().problems[0].contains("A Filter's query can't be blank."));
+    }
+
+    #[test]
     fn a_repositorys_settings_come_from_the_list_whatever_the_case_of_its_name() {
         let chosen = RepositorySettings {
             name: RepositoryName::parse("python/cpython").unwrap(),
             conventions: Conventions::Github,
+            filters: Vec::new(),
         };
         let settings = Settings {
             repositories: vec![chosen.clone()],
@@ -1116,7 +1270,9 @@ alpha = \"x\"
         let (folders, root) = temp_folders("owner");
         let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
 
-        let saved = owner.add_repository(repository("python/cpython")).unwrap();
+        let saved = owner
+            .add_repository(repository("python/cpython"), RepositoryAccess::Other)
+            .unwrap();
         let text = fs::read_to_string(folders.settings_file()).unwrap();
         fs::remove_dir_all(root).unwrap();
 
@@ -1131,7 +1287,9 @@ alpha = \"x\"
         fs::write(folders.settings_file(), "[status_bar\n").unwrap();
         let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
 
-        let refused = owner.add_repository(repository("a/b")).unwrap_err();
+        let refused = owner
+            .add_repository(repository("a/b"), RepositoryAccess::Other)
+            .unwrap_err();
         fs::remove_dir_all(root).unwrap();
 
         assert!(
@@ -1146,7 +1304,9 @@ alpha = \"x\"
         let lost = Error::new(ErrorKind::Internal, "HOME isn't a full path.");
         let owner = SettingsOwner::start(Err(lost));
 
-        let refused = owner.add_repository(repository("a/b")).unwrap_err();
+        let refused = owner
+            .add_repository(repository("a/b"), RepositoryAccess::Other)
+            .unwrap_err();
 
         assert_eq!(refused.message, "HOME isn't a full path.");
     }
@@ -1177,7 +1337,9 @@ alpha = \"x\"
         let (folders, root) = temp_folders("owner-view");
         let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
 
-        let saved = owner.add_repository(repository("python/cpython")).unwrap();
+        let saved = owner
+            .add_repository(repository("python/cpython"), RepositoryAccess::Other)
+            .unwrap();
         fs::remove_dir_all(root).unwrap();
 
         assert_eq!(owner.view(), saved);
@@ -1190,7 +1352,7 @@ alpha = \"x\"
         let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
         let before = owner.view();
 
-        let refused = owner.add_repository(repository("a/b"));
+        let refused = owner.add_repository(repository("a/b"), RepositoryAccess::Other);
         fs::remove_dir_all(root).unwrap();
 
         assert!(refused.is_err());
@@ -1205,7 +1367,11 @@ alpha = \"x\"
         thread::scope(|scope| {
             for name in ["a/one", "a/two", "a/three", "a/four"] {
                 let owner = owner.clone();
-                let _ = scope.spawn(move || owner.add_repository(repository(name)).unwrap());
+                let _ = scope.spawn(move || {
+                    owner
+                        .add_repository(repository(name), RepositoryAccess::Other)
+                        .unwrap()
+                });
             }
         });
         fs::remove_dir_all(root).unwrap();
@@ -1220,7 +1386,9 @@ alpha = \"x\"
             view: latest::channel(SettingsView::default()).1,
         };
 
-        let refused = owner.add_repository(repository("a/b")).unwrap_err();
+        let refused = owner
+            .add_repository(repository("a/b"), RepositoryAccess::Other)
+            .unwrap_err();
 
         assert_eq!(refused.message, STOPPED_SAVING);
     }
@@ -1238,14 +1406,18 @@ alpha = \"x\"
         let (folders, root) = temp_folders("add");
         let mut files = SettingsFiles::load(folders.clone());
 
-        let home = files.add_repository(&repository("python/cpython")).unwrap();
+        let home = files
+            .add_repository(&repository("python/cpython"), RepositoryAccess::Other)
+            .unwrap();
         let text = fs::read_to_string(folders.settings_file()).unwrap();
         fs::remove_dir_all(root).unwrap();
 
         assert_eq!(home, opened("python/cpython", Conventions::Cpython));
         assert_eq!(
             text,
-            "[[repositories]]\nname = \"python/cpython\"\nconventions = \"cpython\"\n"
+            "[[repositories]]\nname = \"python/cpython\"\nconventions = \"cpython\"\n
+[[repositories.filters]]\nname = \"Mine\"\nquery = \"is:open author:@me\"\n
+[[repositories.filters]]\nname = \"Involved\"\nquery = \"is:open involves:@me -author:@me\"\n"
         );
         assert_eq!(files.loaded().settings.repositories.len(), 1);
     }
@@ -1267,7 +1439,10 @@ visible = false
         let mut files = SettingsFiles::load(folders.clone());
 
         let home = files
-            .add_repository(&repository("sergey-miryanov/gcmon"))
+            .add_repository(
+                &repository("sergey-miryanov/gcmon"),
+                RepositoryAccess::Other,
+            )
             .unwrap();
         let after = fs::read_to_string(folders.settings_file()).unwrap();
         fs::remove_dir_all(root).unwrap();
@@ -1284,6 +1459,14 @@ conventions = \"cpython\"
 [[repositories]]
 name = \"sergey-miryanov/gcmon\"
 conventions = \"github\"
+
+[[repositories.filters]]
+name = \"Mine\"
+query = \"is:open author:@me\"
+
+[[repositories.filters]]
+name = \"Involved\"
+query = \"is:open involves:@me -author:@me\"
 
 # The bar.
 [status_bar]
@@ -1302,7 +1485,11 @@ visible = false
         .unwrap();
         let mut files = SettingsFiles::load(folders.clone());
 
-        drop(files.add_repository(&repository("c/d")).unwrap());
+        drop(
+            files
+                .add_repository(&repository("c/d"), RepositoryAccess::Other)
+                .unwrap(),
+        );
         let names: Vec<_> = files
             .loaded()
             .settings
@@ -1321,11 +1508,21 @@ visible = false
     fn adding_a_repository_twice_keeps_one_and_opens_it() {
         let (folders, root) = temp_folders("add-twice");
         let mut files = SettingsFiles::load(folders.clone());
-        drop(files.add_repository(&repository("python/cpython")).unwrap());
-        drop(files.add_repository(&repository("a/b")).unwrap());
+        drop(
+            files
+                .add_repository(&repository("python/cpython"), RepositoryAccess::Other)
+                .unwrap(),
+        );
+        drop(
+            files
+                .add_repository(&repository("a/b"), RepositoryAccess::Other)
+                .unwrap(),
+        );
         let before = fs::read_to_string(folders.settings_file()).unwrap();
 
-        let home = files.add_repository(&repository("Python/CPython")).unwrap();
+        let home = files
+            .add_repository(&repository("Python/CPython"), RepositoryAccess::Other)
+            .unwrap();
         let after = fs::read_to_string(folders.settings_file()).unwrap();
         fs::remove_dir_all(root).unwrap();
 
@@ -1337,8 +1534,16 @@ visible = false
     fn a_normal_launch_reopens_the_last_repository() {
         let (folders, root) = temp_folders("reopen");
         let mut files = SettingsFiles::load(folders.clone());
-        drop(files.add_repository(&repository("a/first")).unwrap());
-        drop(files.add_repository(&repository("a/second")).unwrap());
+        drop(
+            files
+                .add_repository(&repository("a/first"), RepositoryAccess::Other)
+                .unwrap(),
+        );
+        drop(
+            files
+                .add_repository(&repository("a/second"), RepositoryAccess::Other)
+                .unwrap(),
+        );
 
         let reopened = SettingsFiles::load(folders).home();
         fs::remove_dir_all(root).unwrap();
@@ -1372,7 +1577,11 @@ visible = false
         .unwrap();
         let mut files = SettingsFiles::load(folders.clone());
 
-        drop(files.add_repository(&repository("a/new")).unwrap());
+        drop(
+            files
+                .add_repository(&repository("a/new"), RepositoryAccess::Other)
+                .unwrap(),
+        );
         let machine = fs::read_to_string(folders.machine_file()).unwrap();
         let settings = fs::read_to_string(folders.settings_file()).unwrap();
         fs::remove_dir_all(root).unwrap();
@@ -1391,7 +1600,11 @@ visible = false
         point_at(&folders, &moved);
         let mut files = SettingsFiles::load(folders.clone());
 
-        drop(files.add_repository(&repository("a/b")).unwrap());
+        drop(
+            files
+                .add_repository(&repository("a/b"), RepositoryAccess::Other)
+                .unwrap(),
+        );
         let text = fs::read_to_string(&moved).unwrap();
         let machine = fs::read_to_string(folders.machine_file()).unwrap();
         fs::remove_dir_all(root).unwrap();
@@ -1417,7 +1630,9 @@ visible = false
             fs::write(folders.machine_file(), machine).unwrap();
             let mut files = SettingsFiles::load(folders.clone());
 
-            let refused = files.add_repository(&repository("a/b")).unwrap_err();
+            let refused = files
+                .add_repository(&repository("a/b"), RepositoryAccess::Other)
+                .unwrap_err();
             let after = fs::read_to_string(folders.settings_file()).unwrap();
             fs::remove_dir_all(root).unwrap();
 
@@ -1440,7 +1655,9 @@ visible = false
         fs::set_permissions(&file, permissions.clone()).unwrap();
         let mut files = SettingsFiles::load(folders.clone());
 
-        let refused = files.add_repository(&repository("a/b")).unwrap_err();
+        let refused = files
+            .add_repository(&repository("a/b"), RepositoryAccess::Other)
+            .unwrap_err();
         let added = folders.settings_file().exists();
         permissions.set_readonly(false);
         fs::set_permissions(&file, permissions).unwrap();
@@ -1461,7 +1678,9 @@ visible = false
         fs::create_dir(folders.settings_file()).unwrap();
         let mut files = SettingsFiles::load(folders.clone());
 
-        let refused = files.add_repository(&repository("a/b")).unwrap_err();
+        let refused = files
+            .add_repository(&repository("a/b"), RepositoryAccess::Other)
+            .unwrap_err();
         fs::remove_dir_all(root).unwrap();
 
         assert!(

@@ -8,7 +8,14 @@ When a Repository is added, one query counts its open Issues and open PRs. Up to
 
 The order puts what waits on the user first, so the Workbench is right long before the sync ends (about 8 to 10 minutes for CPython):
 
-1. The user's own items: Review requests, open PRs with the user's **Review**, **Own PRs**, assignments, then each **Filter**. Each is a search for IDs, then the missing items in batches of 50. A Filter with over 1,000 results, the search cap, is walked through the Repository's Issue and PR lists instead. The Workbench's views and the Home page's counts are right after about a minute.
+1. The user's own items: Review requests, open PRs with the user's **Review**, **Own PRs**, assignments, then
+   each **Filter**. Each is a search for IDs, then the missing items in batches of 50. Tsugiki brackets a
+   Filter's search, as `repo:<repository> (<filter>)`, so an `OR` in it stays inside the Repository. For a
+   Filter with over 1,000 results, the search cap, Tsugiki runs the same search over `created:` date ranges
+   and halves each range still over the cap. One day with over 1,000 results of its own loses the rest, and
+   the Filter says so in the Sidebar. A search GitHub refuses keeps what it last found, says why in the
+   Sidebar and stops nothing else. The Workbench's views and the Home page's counts are right after about a
+   minute.
 2. The window, newest first. All issues fills in as pages land.
 3. Whole trees for the Issues the Workbench shows ([ADR 0011](0011-pr-links-from-github-signals-by-repository-conventions.md)).
 
@@ -26,6 +33,8 @@ Each page is committed with its cursor ([ADR 0010](0010-one-sqlite-database-and-
 ## Considered Options
 
 - **REST for the lists.** Reviews and CI would need at least three requests per PR, about 9,600 for CPython's 30 days, nearly two hours of budget against GraphQL's 130 points.
+- **Walking the Repository's Issue and PR lists** for a Filter over the search cap. Lists can't apply search
+  syntax, so Tsugiki would need its own copy of GitHub's search language to tell which items match.
 - **Parallel requests.** Faster on paper, but GraphQL's CPU-time limit and the user's shared budget make serial the safe choice, and the first phase is quick anyway.
 - **The window first, then Filters and Reviews**, which is simpler but leaves an old Review request missing for minutes. **Showing nothing until the sync ends.**
 - **Other defaults:** 1,000 open and 14 days, or 300 and 60 days. CPython's first sync would take about half or twice as long.

@@ -23,9 +23,12 @@ export const commands = {
 	 *  Adds a Repository the user has seen the check for, starts its first sync, and says what the window opens
 	 *  on now. This waits on a small file and never on GitHub.
 	 */
-	addRepository: (name: string) => typedError<Home_Serialize, Error_Serialize>(__TAURI_INVOKE("add_repository", { name })),
-	/**  The rows of a Repository's Workbench. This waits on the database and never on GitHub (ADR 0018). */
-	workbench: (repository: string) => typedError<Workbench_Serialize, Error_Serialize>(__TAURI_INVOKE("workbench", { repository })),
+	addRepository: (name: string, access: RepositoryAccess) => typedError<Home_Serialize, Error_Serialize>(__TAURI_INVOKE("add_repository", { name, access })),
+	/**
+	 *  The rows of a Repository's Workbench, or of the Filter `selected`, with what its Sidebar shows. This waits
+	 *  on the database and never on GitHub (ADR 0018).
+	 */
+	workbench: (repository: string, selected: FilterQuery | null) => typedError<Workbench_Serialize, Error_Serialize>(__TAURI_INVOKE("workbench", { repository, selected })),
 };
 
 /** Events */
@@ -76,12 +79,16 @@ export type ErrorKind = ErrorKind_Serialize | ErrorKind_Deserialize;
 /**  What the UI can do something about. */
 export type ErrorKind_Deserialize = { kind: "offline" } | { kind: "unauthorized" } | { kind: "write_refused" } | { kind: "rate_limited"; 
 /**  When the limit resets, in seconds since the Unix epoch, if GitHub said. */
-resets_at?: number | null } | { kind: "not_found" } | { kind: "conflict" } | { kind: "internal" };
+resets_at?: number | null } | { kind: "not_found" } | { kind: "conflict" } | 
+/**  GitHub took the request and answered with an error about it. A failed status is `Internal`. */
+{ kind: "query_refused" } | { kind: "internal" };
 
 /**  What the UI can do something about. */
 export type ErrorKind_Serialize = { kind: "offline" } | { kind: "unauthorized" } | { kind: "write_refused" } | { kind: "rate_limited"; 
 /**  When the limit resets, in seconds since the Unix epoch, if GitHub said. */
-resets_at: number | null } | { kind: "not_found" } | { kind: "conflict" } | { kind: "internal" };
+resets_at: number | null } | { kind: "not_found" } | { kind: "conflict" } | 
+/**  GitHub took the request and answered with an error about it. A failed status is `Internal`. */
+{ kind: "query_refused" } | { kind: "internal" };
 
 /**  A failure in plain words. Details go only to a local log, with tokens scrubbed. */
 export type Error_Deserialize = {
@@ -92,6 +99,45 @@ export type Error_Deserialize = {
 export type Error_Serialize = {
 	message: string,
 } & ErrorKind_Serialize;
+
+/**  A saved GitHub search, as `settings.toml` holds it. */
+export type Filter = {
+	name: FilterName,
+	query: FilterQuery,
+};
+
+/**  A Filter's line of the Sidebar. */
+export type FilterLine = FilterLine_Serialize | FilterLine_Deserialize;
+
+/**  A Filter's line of the Sidebar. */
+export type FilterLine_Deserialize = {
+	name: FilterName,
+	query: FilterQuery,
+	/**  How many items it holds, until Needs attention exists to count instead. */
+	count: number,
+	/**  The words for the failure that stopped its last search from being whole. */
+	problem?: string | null,
+};
+
+/**  A Filter's line of the Sidebar. */
+export type FilterLine_Serialize = {
+	name: FilterName,
+	query: FilterQuery,
+	/**  How many items it holds, until Needs attention exists to count instead. */
+	count: number,
+	/**  The words for the failure that stopped its last search from being whole. */
+	problem: string | null,
+};
+
+/**  A Filter's name in the Sidebar. It reaches the UI as a plain string. */
+export type FilterName = string;
+
+/**
+ *  A Filter's search as the user wrote it, without the Repository. It also names the Filter's results, so
+ *  renaming a Filter keeps them and editing its search replaces them at the next sync. It reaches the UI as a
+ *  plain string.
+ */
+export type FilterQuery = string;
 
 /**  What the window opens on. */
 export type Home = Home_Serialize | Home_Deserialize;
@@ -168,12 +214,18 @@ export type PrTree_Serialize = {
 	backports: BackportRow_Serialize[],
 } & WorkbenchRow_Serialize;
 
+/**  The user's standing in a Repository, as far as adding it needs to know. */
+export type RepositoryAccess = 
+/**  The user administers it on GitHub. */
+"maintained" | "other";
+
 /**  What the add dialog shows before the user decides. */
 export type RepositoryCheck = RepositoryCheck_Serialize | RepositoryCheck_Deserialize;
 
 /**  What the add dialog shows before the user decides. */
 export type RepositoryCheck_Deserialize = {
 	repository: RepositorySettings_Deserialize,
+	access: RepositoryAccess,
 	open_issues: number,
 	open_prs: number,
 	size: RepositorySize,
@@ -187,6 +239,7 @@ export type RepositoryCheck_Deserialize = {
 /**  What the add dialog shows before the user decides. */
 export type RepositoryCheck_Serialize = {
 	repository: RepositorySettings_Serialize,
+	access: RepositoryAccess,
 	open_issues: number,
 	open_prs: number,
 	size: RepositorySize,
@@ -197,19 +250,33 @@ export type RepositoryCheck_Serialize = {
 	first_sync_points: number,
 };
 
-/**  A Repository added by hand may leave its Conventions out, and then gets what adding it would give it. */
+/**
+ *  A Repository added by hand may leave its Conventions and its Filters out. Then it gets what adding it
+ *  would give it, as far as the file can say: only GitHub knows if the user administers it. `filters = []`
+ *  means no Filters.
+ */
 export type RepositoryInFile = RepositoryInFile_Serialize | RepositoryInFile_Deserialize;
 
-/**  A Repository added by hand may leave its Conventions out, and then gets what adding it would give it. */
+/**
+ *  A Repository added by hand may leave its Conventions and its Filters out. Then it gets what adding it
+ *  would give it, as far as the file can say: only GitHub knows if the user administers it. `filters = []`
+ *  means no Filters.
+ */
 export type RepositoryInFile_Deserialize = {
 	name: RepositoryName,
 	conventions?: Conventions | null,
+	filters?: Filter[] | null,
 };
 
-/**  A Repository added by hand may leave its Conventions out, and then gets what adding it would give it. */
+/**
+ *  A Repository added by hand may leave its Conventions and its Filters out. Then it gets what adding it
+ *  would give it, as far as the file can say: only GitHub knows if the user administers it. `filters = []`
+ *  means no Filters.
+ */
 export type RepositoryInFile_Serialize = {
 	name: RepositoryName,
 	conventions: Conventions | null,
+	filters: Filter[] | null,
 };
 
 /**  A Repository's `owner/name`, in the only form that reaches GitHub. It reaches the UI as a plain string. */
@@ -225,6 +292,7 @@ export type RepositorySettings_Deserialize = RepositoryInFile_Deserialize;
 export type RepositorySettings_Serialize = {
 	name: RepositoryName,
 	conventions: Conventions,
+	filters: Filter[],
 };
 
 /**  Which first sync a Repository gets (ADR 0015). */
@@ -334,7 +402,7 @@ export type WorkReason =
 /**  The user has submitted a Review. */
 "reviewed";
 
-/**  The items of a Repository's Workbench, the latest update first. */
+/**  A Repository's Workbench or one of its Filters, with what the Sidebar shows beside it. */
 export type Workbench = Workbench_Serialize | Workbench_Deserialize;
 
 /**  Sent when a Repository's stored facts change, so a window showing its Workbench asks again (ADR 0008). */
@@ -402,14 +470,22 @@ export type WorkbenchRow_Serialize = {
 	reasons: WorkReason[],
 };
 
-/**  The items of a Repository's Workbench, the latest update first. */
+/**  A Repository's Workbench or one of its Filters, with what the Sidebar shows beside it. */
 export type Workbench_Deserialize = {
+	/**  The selected items, the latest update first. */
 	items: WorkbenchItem_Deserialize[],
+	/**  How many items the Workbench holds, until Needs attention exists to count instead. */
+	count: number,
+	filters: FilterLine_Deserialize[],
 };
 
-/**  The items of a Repository's Workbench, the latest update first. */
+/**  A Repository's Workbench or one of its Filters, with what the Sidebar shows beside it. */
 export type Workbench_Serialize = {
+	/**  The selected items, the latest update first. */
 	items: WorkbenchItem_Serialize[],
+	/**  How many items the Workbench holds, until Needs attention exists to count instead. */
+	count: number,
+	filters: FilterLine_Serialize[],
 };
 
 /* Tauri Specta runtime */

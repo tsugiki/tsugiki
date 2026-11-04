@@ -1,11 +1,12 @@
-// One Repository's Workbench: asked for when the window opens it, and again each time the core says its facts
-// changed (ADR 0008).
+// One Repository's Workbench and its Filters: asked for when the window opens it, when the user selects a
+// line of the Sidebar, and each time the core says its facts changed (ADR 0008).
 import {
   commands,
   events,
   type BackportKind,
   type BackportRow_Serialize,
   type CiState,
+  type FilterLine_Serialize,
   type IssueItem_Serialize,
   type PrState,
   type TreeEntry_Serialize,
@@ -15,6 +16,7 @@ import {
 } from "$lib/data/bindings";
 
 export type BackportRow = BackportRow_Serialize;
+export type FilterLine = FilterLine_Serialize;
 export type IssueItem = IssueItem_Serialize;
 export type TreeEntry = TreeEntry_Serialize;
 export type WorkbenchItem = WorkbenchItem_Serialize;
@@ -23,6 +25,10 @@ export type { BackportKind, CiState, PrState, WorkReason };
 
 export class WorkbenchState {
   items = $state<WorkbenchItem[]>();
+  count = $state(0);
+  filters = $state<FilterLine[]>([]);
+  /** The search of the Filter on show, or null for the whole Workbench. */
+  selected = $state<string | null>(null);
   error = $state<string>();
   #repository: string;
   #lastQuestion = 0;
@@ -52,6 +58,12 @@ export class WorkbenchState {
     await this.#ask();
   }
 
+  /** Puts a Filter on show, or the whole Workbench for null. */
+  async select(query: string | null) {
+    this.selected = query;
+    await this.#ask();
+  }
+
   stop() {
     this.#stopped = true;
     this.#stopListening?.();
@@ -60,7 +72,7 @@ export class WorkbenchState {
   async #ask() {
     this.#lastQuestion += 1;
     const question = this.#lastQuestion;
-    const answer = await commands.workbench(this.#repository).catch((e: unknown) => ({
+    const answer = await commands.workbench(this.#repository, this.selected).catch((e: unknown) => ({
       status: "error" as const,
       error: { message: String(e) },
     }));
@@ -68,6 +80,8 @@ export class WorkbenchState {
     if (question !== this.#lastQuestion) return;
     if (answer.status === "ok") {
       this.items = answer.data.items;
+      this.count = answer.data.count;
+      this.filters = answer.data.filters;
       this.error = undefined;
     } else {
       this.error = answer.error.message;

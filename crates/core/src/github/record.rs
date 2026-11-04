@@ -15,6 +15,8 @@ const SCRUBBED: &str = "[token]";
 
 /// Written in place of the viewer's login, so a fixture doesn't depend on who recorded it.
 const VIEWER_STAND_IN: &str = "octocat";
+/// Stands in for a description nothing reads, with the line breaks GitHub's own answers have.
+const FILLER: &str = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\n";
 /// The fields of an answer that people write, where a login can sit inside the text.
 const PROSE_FIELDS: [&str; 2] = ["title", "body"];
 
@@ -50,9 +52,10 @@ pub fn scrub(text: &str, token: &str) -> String {
     scrubbed
 }
 
-/// Empties the description of each PR on its default branch. Tsugiki reads a description only off that branch
-/// (ADR 0011), so here it would add nothing but text that can name people.
-fn blank_unread_descriptions(body: &mut Value) {
+/// Puts filler of the same length in the description of each PR on its default branch. Tsugiki reads a
+/// description only off that branch (ADR 0011), so the words would add nothing but text that can name people,
+/// and the length keeps a recording as large as GitHub's answer.
+fn fill_unread_descriptions(body: &mut Value) {
     let Some(Value::Array(nodes)) = body.pointer_mut("/data/nodes") else {
         return;
     };
@@ -60,8 +63,9 @@ fn blank_unread_descriptions(body: &mut Value) {
         let base = node.pointer("/baseRefName");
         let on_default =
             base.is_some() && base == node.pointer("/repository/defaultBranchRef/name");
-        if on_default && let Some(description) = node.get_mut("body") {
-            *description = Value::String(String::new());
+        if on_default && let Some(Value::String(description)) = node.get_mut("body") {
+            let length = description.chars().count();
+            *description = FILLER.chars().cycle().take(length).collect();
         }
     }
 }
@@ -210,7 +214,7 @@ impl Transport for Recorder {
         if reply.status != 200 || body.get("errors").is_some() {
             return Ok(reply);
         }
-        blank_unread_descriptions(&mut body);
+        fill_unread_descriptions(&mut body);
         let mut stand_ins = self.stand_ins.borrow_mut();
         if let Some(login) = body.pointer("/data/viewer/login").and_then(Value::as_str) {
             stand_ins.add_viewer(login);
@@ -445,7 +449,7 @@ mod tests {
     }
 
     #[test]
-    fn a_recording_keeps_a_description_only_off_the_default_branch() {
+    fn a_recording_keeps_a_descriptions_words_only_off_the_default_branch() {
         let dir = temp_dir("descriptions");
         let on = |base: &str| {
             json!({
@@ -465,7 +469,7 @@ mod tests {
         let body: Value = serde_json::from_str(&replayed.body).unwrap();
         let bodies = |at: usize| body["data"]["nodes"][at]["body"].clone();
         assert_eq!(bodies(0), Value::Null);
-        assert_eq!(bodies(1), "");
+        assert_eq!(bodies(1), "Lorem ip");
         assert_eq!(bodies(2), "Fixes #5");
         assert_eq!(bodies(3), "x");
         assert!(

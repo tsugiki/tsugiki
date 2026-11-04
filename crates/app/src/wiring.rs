@@ -257,7 +257,7 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
 
         assert_eq!(added.unwrap()["screen"], "repository");
-        assert_eq!(read.unwrap()["rows"], json!([]));
+        assert_eq!(read.unwrap()["items"], json!([]));
         assert!(waited < PLENTY / 2, "{waited:?}");
     }
 
@@ -309,10 +309,22 @@ mod tests {
         assert_eq!(asked, announced);
     }
 
-    /// The recordings hold 22 PRs of real CPython work, and 4 of them are the recording user's own.
+    /// The recordings hold 22 PRs of real CPython work, and 4 of them are the recording user's own. They name
+    /// 22 Issues: #154019 fixes two by itself, and #156423 and #156419 fix one between them.
     fn assert_is_the_recorded_work(workbench: &Value) {
-        let rows = workbench["rows"].as_array().unwrap();
-        assert_eq!(rows.len(), 22);
+        let items = workbench["items"].as_array().unwrap();
+        assert_eq!(items.len(), 22);
+        assert!(
+            items.iter().all(|item| item["kind"] == "issue"),
+            "{items:?}"
+        );
+        let rows: Vec<&Value> = items
+            .iter()
+            .flat_map(|item| item["pull_requests"].as_array().unwrap())
+            .collect();
+        assert_eq!(rows.len(), 23);
+        let under_154019 = rows.iter().filter(|row| row["number"] == 154_019);
+        assert_eq!(under_154019.count(), 2);
         let with_reason = |reason: &str| {
             rows.iter()
                 .filter(|row| row["reasons"].as_array().unwrap().contains(&json!(reason)))
@@ -322,10 +334,12 @@ mod tests {
         assert!(with_reason("review_request") > 0);
     }
 
-    /// Waits for the session to save what it found, and returns the Workbench after that.
+    /// Waits for the session to save the PRs it found and then their Issues, and returns the Workbench after.
     fn workbench_after_sync(wired: &Wired) -> Value {
-        let changed = wired.workbenches.recv_timeout(PLENTY).unwrap();
-        assert_eq!(changed, json!({ "repository": CPYTHON }));
+        for _ in ["PRs", "Issues"] {
+            let changed = wired.workbenches.recv_timeout(PLENTY).unwrap();
+            assert_eq!(changed, json!({ "repository": CPYTHON }));
+        }
         wired
             .ask("workbench", json!({ "repository": CPYTHON }))
             .unwrap()

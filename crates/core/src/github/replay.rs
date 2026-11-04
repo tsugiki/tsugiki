@@ -89,7 +89,7 @@ mod tests {
                 &token(),
                 &Request {
                     operation: "Op",
-                    query: "q",
+                    query: "q".into(),
                     variables: serde_json::Value::Null,
                 },
             )
@@ -110,7 +110,7 @@ mod tests {
                 &token(),
                 &Request {
                     operation: "Op",
-                    query: "q",
+                    query: "q".into(),
                     variables: serde_json::Value::Null,
                 },
             )
@@ -127,7 +127,7 @@ mod tests {
         );
         let request = Request {
             operation: "Op",
-            query: "new",
+            query: "new".into(),
             variables: serde_json::Value::Null,
         };
         let replayer = Replayer::new(dir.clone());

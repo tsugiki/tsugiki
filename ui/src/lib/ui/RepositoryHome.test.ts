@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import RepositoryHome from "./RepositoryHome.svelte";
 
 const core = vi.hoisted(() => ({
@@ -16,17 +16,31 @@ vi.mock("$lib/data/bindings", () => ({
 const row = {
   number: 160662,
   title: "gh-112564: Fix UAF for gc debug print",
-  author: "johng",
+  author: "some-author",
   is_draft: false,
   target_branch: "main",
   ci: "SUCCESS",
+  updated_at: "2026-11-04T10:00:00Z",
   reasons: ["review_request"],
+};
+
+const issue = {
+  kind: "issue",
+  number: 112564,
+  title: "GIL drop during collection",
+  people: ["issue-author", "some-author"],
+  updated_at: "2026-11-04T10:00:00Z",
+  pull_requests: [row],
 };
 
 beforeEach(() => {
   vi.resetAllMocks();
   core.listen.mockResolvedValue(core.stopListening);
-  core.workbench.mockResolvedValue({ status: "ok", data: { rows: [] } });
+  core.workbench.mockResolvedValue({ status: "ok", data: { items: [] } });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 it("names the Repository", () => {
@@ -41,15 +55,53 @@ it("offers to add another", async () => {
   expect(onadd).toHaveBeenCalledOnce();
 });
 
-it("lists each PR the core lists", async () => {
-  core.workbench.mockResolvedValue({ status: "ok", data: { rows: [row] } });
+it("lists a Standalone PR with the time it changed", async () => {
+  vi.setSystemTime("2026-11-04T13:00:00Z");
+  core.workbench.mockResolvedValue({
+    status: "ok",
+    data: { items: [{ kind: "standalone_pr", ...row }] },
+  });
   render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
 
   const item = await screen.findByRole("listitem");
 
   expect(core.workbench).toHaveBeenCalledWith("python/cpython");
   expect(within(item).getByText("#160662 gh-112564: Fix UAF for gc debug print")).toBeTruthy();
-  expect(within(item).getByText("Review request · johng · into main · CI passed")).toBeTruthy();
+  expect(
+    within(item).getByText("Review request · some-author · into main · CI passed · 3h ago"),
+  ).toBeTruthy();
+});
+
+it("moves a time on while the window stays open", async () => {
+  // Only these, because the wait for the first answer runs on the real `setTimeout`.
+  vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+  vi.setSystemTime("2026-11-04T13:00:00Z");
+  core.workbench.mockResolvedValue({ status: "ok", data: { items: [issue] } });
+  const { unmount } = render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+  await screen.findByText("issue-author, some-author · 1 PR · 3h ago");
+
+  await vi.advanceTimersByTimeAsync(60 * 60_000);
+
+  expect(screen.getByText("issue-author, some-author · 1 PR · 4h ago")).toBeTruthy();
+  unmount();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("lists an Issue with its PRs under it", async () => {
+  vi.setSystemTime("2026-11-04T13:00:00Z");
+  core.workbench.mockResolvedValue({ status: "ok", data: { items: [issue] } });
+  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+
+  const [item, pullRequest] = await screen.findAllByRole("listitem");
+
+  expect(within(item as HTMLElement).getByText("#112564 GIL drop during collection")).toBeTruthy();
+  expect(within(item as HTMLElement).getByText("issue-author, some-author · 1 PR · 3h ago")).toBeTruthy();
+  expect(
+    within(pullRequest as HTMLElement).getByText("#160662 gh-112564: Fix UAF for gc debug print"),
+  ).toBeTruthy();
+  expect(
+    within(pullRequest as HTMLElement).getByText("Review request · some-author · into main · CI passed"),
+  ).toBeTruthy();
 });
 
 it("says so while there is nothing to list", async () => {

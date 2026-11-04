@@ -1,9 +1,12 @@
 //! Tsugiki's GitHub client. It talks through a [`Transport`], so tests replay recorded answers (ADR 0009).
 
+pub mod issues;
 pub mod live;
 pub mod pull_requests;
 pub mod record;
 pub mod replay;
+
+use std::borrow::Cow;
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -18,7 +21,7 @@ use crate::token::{RunGh, Token};
 /// One GraphQL request. `operation` names the query, and the replayer finds its recording by that name.
 pub struct Request<'a> {
     pub operation: &'a str,
-    pub query: &'a str,
+    pub query: Cow<'a, str>,
     /// What the query's `$` names stand for, so what a user typed can't change the query.
     pub variables: Value,
 }
@@ -35,6 +38,26 @@ pub struct Reply {
 /// GitHub couldn't be reached at all.
 #[derive(Debug, Clone, Copy)]
 pub struct Unreachable;
+
+/// The number `digits` spell. GitHub's numbers are GraphQL `Int`s, 32 bits and signed, and it refuses a whole
+/// query over one that doesn't fit.
+pub(crate) fn issue_number(digits: &str) -> Option<u32> {
+    digits
+        .chars()
+        .all(|c| c.is_ascii_digit())
+        .then(|| digits.parse::<i32>().ok())
+        .flatten()
+        .and_then(|number| u32::try_from(number).ok())
+}
+
+/// The number in `gh-N`, whatever its case.
+pub(crate) fn gh_number(word: &str) -> Option<u32> {
+    let digits = word.get(3..)?;
+    word.get(..3)?
+        .eq_ignore_ascii_case("gh-")
+        .then(|| issue_number(digits))
+        .flatten()
+}
 
 /// How a request reaches GitHub: the network in the app, recorded answers in tests.
 pub trait Transport: Send {
@@ -79,7 +102,7 @@ pub struct Viewer {
 
 const VIEWER: Request<'static> = Request {
     operation: "Viewer",
-    query: "query Viewer { viewer { login } }",
+    query: Cow::Borrowed("query Viewer { viewer { login } }"),
     variables: Value::Null,
 };
 
@@ -160,7 +183,7 @@ impl GitHub {
         let since = today.saturating_sub(Duration::days(i64::from(WINDOW_DAYS)));
         let request = Request {
             operation: "CheckRepository",
-            query: CHECK_REPOSITORY,
+            query: CHECK_REPOSITORY.into(),
             variables: json!({
                 "owner": name.owner(),
                 "name": name.name(),
@@ -264,10 +287,12 @@ fn read<D: DeserializeOwned>(reply: &Reply) -> Result<D, Error> {
     };
     // The data is read after the errors: a field that failed comes back null, which `D` may not allow.
     let envelope: Envelope = serde_json::from_str(&reply.body).map_err(unreadable)?;
-    // `nodes(ids:)` answers null for an ID GitHub no longer knows, and adds this error. The others are still good.
+    // `nodes(ids:)` answers null for an ID GitHub no longer knows, and adds this error. `issues.rs` gets the
+    // same for a number nothing has, one level inside `repository`. The others are still good.
     let gone_node = |error: &&GraphqlError| {
+        let place = error.path.first().and_then(Value::as_str);
         matches!(error.kind, Some(GraphqlErrorKind::NotFound))
-            && error.path.first().and_then(Value::as_str) == Some("nodes")
+            && (place == Some("nodes") || (place == Some("repository") && error.path.len() == 2))
     };
     if let Some(error) = envelope.errors.iter().find(|error| !gone_node(error)) {
         return Err(match error.kind {

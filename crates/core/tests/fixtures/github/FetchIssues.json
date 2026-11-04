@@ -1,0 +1,213 @@
+{
+  "body": {
+    "data": {
+      "rateLimit": {
+        "remaining": 4962,
+        "resetAt": "2026-11-04T17:17:59Z"
+      },
+      "repository": {
+        "i112564": {
+          "__typename": "Issue",
+          "author": {
+            "login": "user-42"
+          },
+          "number": 112564,
+          "title": "gcmodule: GIL drop during collection in debug mode may result in unexpected behavior with multiple threads",
+          "updatedAt": "2026-10-25T12:49:01Z"
+        },
+        "i128942": {
+          "__typename": "Issue",
+          "author": {
+            "login": "user-39"
+          },
+          "number": 128942,
+          "title": "Python `array` module is not free-thread safe.",
+          "updatedAt": "2025-03-02T23:28:56Z"
+        },
+        "i138864": {
+          "__typename": "Issue",
+          "author": {
+            "login": "user-16"
+          },
+          "number": 138864,
+          "title": "`case ...:` generates unclear `SyntaxError` message",
+          "updatedAt": "2025-10-04T12:57:44Z"
+        },
+        "i139778": {
+          "__typename": "Issue",
+          "author": {
+            "login": "user-2"
+          },
+          "number": 139778,
+          "title": "Assertion crash in `code_returns_only_none`",
+          "updatedAt": "2025-10-16T18:53:59Z"
+        },
+        "i140256": {
+          "__typename": "Issue",
+          "author": {
+            "login": "user-35"
+          },
+          "number": 140256,
+          "title": "`LOAD_SMALL_INT` has empty `argrepr` via `Bytecode`",
+          "updatedAt": "2025-10-17T15:50:56Z"
+        },
+        "i140328": {
+          "__typename": "Issue",
+          "author": {
+            "login": "user-2"
+          },
+          "number": 140328,
+          "title": "Use interned versions of string constants if they're already present",
+          "updatedAt": "2026-04-22T22:37:44Z"
+        },
+        "i140798": {
+          "__typename": "Issue",
+          "author": {
+            "login": "user-43"
+          },
+          "number": 140798,
+          "title": "Memory leak with `threading.local` when tracing is active",
+          "updatedAt": "2025-11-02T11:58:16Z"
+        },
+        "i140928": {
+          "__typename": "Issue",
+          "author": {
+            "login": "user-29"
+          },
+          "number": 140928,
+          "title": "pypy-style constant promotion to pool",
+          "updatedAt": "2026-01-09T21:43:22Z"
+        },
+        "i141594": {
+          "__typename": "Issue",
+          "author": {
+            "login": "user-29"
+          },
+          "number": 141594,
+          "title": "JIT x Free-Threading",
+          "updatedAt": "2026-01-10T00:04:36Z"
+        },
+        "i148937": {
+          "__typename": "Issue",
+          "author": {
+            "login": "user-28"
+          },
+          "number": 148937,
+          "title": "GC in 3.14t can defer too much, resulting in high memory use",
+          "updatedAt": "2026-10-21T22:11:02Z"
+        },
+        "i149532": {
+          "__typename": "Issue",
+          "author": {
+            "login": "user-16"
+          },
+          "number": 149532,
+          "title": "Remove `bool.__invert__` for 3.16",
+          "updatedAt": "2026-05-09T07:36:16Z"
+        },
+        "i151763": {
+          "__typename": "Issue",
+          "author": {
+            "login": "user-44"
+          },
+          "number": 151763,
+          "title": "CPython crashes on memory-allocation failure (OOM): 35 findings  (4 dups → 31 distinct)",
+          "updatedAt": "2026-10-09T22:19:49Z"
+        },
+        "i151815": {
+          "__typename": "Issue",
+          "author": {
+            "login": "user-45"
+          },
+          "number": 151815,
+          "title": "Segfault: dealloc of uninitialized iterator in template_iter (Objects/templateobject.c:232)",
+          "updatedAt": "2026-07-26T07:13:51Z"
+        },
+        "i151862": {
+          "__typename": "Issue",
+          "author": {
+            "login": "user-21"
+          },
+          "number": 151862,
+          "title": "concurrent.interpreters: crash (NULL dereference) when an unpickled AttributeError has a non-string arg",
+          "updatedAt": "2026-08-16T15:00:10Z"
+        },
+        "i152125": {
+          "__typename": "Issue",
+          "author": {
+            "login": "octocat"
+          },
+          "number": 152125,
+          "title": "Abort/Segfault: corrupted object freelist in clear_freelist",
+          "updatedAt": "2026-07-21T14:33:07Z"
+        },
+        "i153058": {
+          "__typename": "Issue",
+          "author": {
+            "login": "user-12"
+          },
+          "number": 153058,
+          "title": "weakrefobject.c: binary, ternary, or comparison operations ref leak with dead proxy",
+          "updatedAt": "2026-07-05T07:02:31Z"
+        },
+        "i155176": {
+          "__typename": "Issue",
+          "author": {
+            "login": "user-12"
+          },
+          "number": 155176,
+          "title": "Don't track frozendicts whose contents can never be tracked by the GC",
+          "updatedAt": "2026-08-04T15:04:37Z"
+        },
+        "i155181": {
+          "__typename": "Issue",
+          "author": {
+            "login": "user-12"
+          },
+          "number": 155181,
+          "title": "frozenset() created from a set literal is not untracked by the GC",
+          "updatedAt": "2026-08-04T16:11:35Z"
+        },
+        "i155728": {
+          "__typename": "Issue",
+          "author": {
+            "login": "user-9"
+          },
+          "number": 155728,
+          "title": "test_track_literals depends on a garbage collection",
+          "updatedAt": "2026-08-26T14:41:08Z"
+        },
+        "i156425": {
+          "__typename": "Issue",
+          "author": {
+            "login": "octocat"
+          },
+          "number": 156425,
+          "title": "GC may hold frames longer than necessary",
+          "updatedAt": "2026-09-08T12:46:00Z"
+        },
+        "i159101": {
+          "__typename": "Issue",
+          "author": {
+            "login": "user-46"
+          },
+          "number": 159101,
+          "title": "Use-after-free in PyObject_CallFinalizer when __del__ changes __class__",
+          "updatedAt": "2026-10-20T15:24:15Z"
+        },
+        "i160663": {
+          "__typename": "Issue",
+          "author": {
+            "login": "user-1"
+          },
+          "number": 160663,
+          "title": "UAF in GC `visit_generation()`",
+          "updatedAt": "2026-10-30T19:09:14Z"
+        }
+      }
+    }
+  },
+  "query": "query FetchIssues($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { i112564: issueOrPullRequest(number: 112564) { __typename ... on Issue { number title updatedAt author { login } } } i128942: issueOrPullRequest(number: 128942) { __typename ... on Issue { number title updatedAt author { login } } } i138864: issueOrPullRequest(number: 138864) { __typename ... on Issue { number title updatedAt author { login } } } i139778: issueOrPullRequest(number: 139778) { __typename ... on Issue { number title updatedAt author { login } } } i140256: issueOrPullRequest(number: 140256) { __typename ... on Issue { number title updatedAt author { login } } } i140328: issueOrPullRequest(number: 140328) { __typename ... on Issue { number title updatedAt author { login } } } i140798: issueOrPullRequest(number: 140798) { __typename ... on Issue { number title updatedAt author { login } } } i140928: issueOrPullRequest(number: 140928) { __typename ... on Issue { number title updatedAt author { login } } } i141594: issueOrPullRequest(number: 141594) { __typename ... on Issue { number title updatedAt author { login } } } i148937: issueOrPullRequest(number: 148937) { __typename ... on Issue { number title updatedAt author { login } } } i149532: issueOrPullRequest(number: 149532) { __typename ... on Issue { number title updatedAt author { login } } } i151763: issueOrPullRequest(number: 151763) { __typename ... on Issue { number title updatedAt author { login } } } i151815: issueOrPullRequest(number: 151815) { __typename ... on Issue { number title updatedAt author { login } } } i151862: issueOrPullRequest(number: 151862) { __typename ... on Issue { number title updatedAt author { login } } } i152125: issueOrPullRequest(number: 152125) { __typename ... on Issue { number title updatedAt author { login } } } i153058: issueOrPullRequest(number: 153058) { __typename ... on Issue { number title updatedAt author { login } } } i155176: issueOrPullRequest(number: 155176) { __typename ... on Issue { number title updatedAt author { login } } } i155181: issueOrPullRequest(number: 155181) { __typename ... on Issue { number title updatedAt author { login } } } i155728: issueOrPullRequest(number: 155728) { __typename ... on Issue { number title updatedAt author { login } } } i156425: issueOrPullRequest(number: 156425) { __typename ... on Issue { number title updatedAt author { login } } } i159101: issueOrPullRequest(number: 159101) { __typename ... on Issue { number title updatedAt author { login } } } i160663: issueOrPullRequest(number: 160663) { __typename ... on Issue { number title updatedAt author { login } } } } rateLimit { remaining resetAt } }",
+  "reset": 1793812679,
+  "status": 200
+}

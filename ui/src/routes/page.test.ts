@@ -27,7 +27,7 @@ const gcmon = { name: "sergey-miryanov/gcmon", conventions: "github" } as const;
 
 beforeEach(() => {
   core.home.mockResolvedValue(onboarding);
-  core.workbench.mockResolvedValue({ status: "ok", data: { rows: [] } });
+  core.workbench.mockResolvedValue({ status: "ok", data: { items: [] } });
   core.settings.mockResolvedValue({
     settings: { status_bar: { visible: true }, repositories: [] },
     problems: [],

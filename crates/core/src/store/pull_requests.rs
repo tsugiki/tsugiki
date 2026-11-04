@@ -6,8 +6,10 @@ use std::collections::BTreeMap;
 use rusqlite::{Connection, Statement, named_params};
 
 use crate::github::Login;
-use crate::github::pull_requests::{LatestReview, PrState, PullRequest, PullRequestFacts};
+use crate::github::pull_requests::{LatestReview, PrState, PullRequestFacts};
 use crate::repository::RepositoryName;
+
+use super::columns::UnixTime;
 
 pub(super) const SCHEMA: &str = "
     CREATE TABLE pull_requests (
@@ -44,11 +46,23 @@ pub(super) const SCHEMA: &str = "
     ) WITHOUT ROWID;
 ";
 
+/// The facts the link rules read (ADR 0011). A PR stored before this has neither until the next sync fetches
+/// it.
+pub(super) const LINK_FACTS: &str = "
+    ALTER TABLE pull_requests ADD COLUMN off_default_description TEXT;
+    CREATE TABLE closing_references (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        number INTEGER NOT NULL,
+        issue INTEGER NOT NULL,
+        PRIMARY KEY (repository, number, issue)
+    ) WITHOUT ROWID;
+";
+
 /// Stores `pull_requests` in one transaction, each replacing what Tsugiki knew about it (ADR 0010).
 pub(super) fn save(
     connection: &mut Connection,
     repository: &RepositoryName,
-    pull_requests: &[PullRequest],
+    pull_requests: &[PullRequestFacts],
 ) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
     for pull_request in pull_requests {
@@ -60,14 +74,14 @@ pub(super) fn save(
 fn replace(
     connection: &Connection,
     repository: &RepositoryName,
-    pull_request: &PullRequest,
+    facts: &PullRequestFacts,
 ) -> rusqlite::Result<()> {
-    let facts = &pull_request.facts;
     let number = facts.number;
-    save_pull_request(connection, repository, pull_request)?;
+    save_pull_request(connection, repository, facts)?;
     forget_review_requests(connection, repository, number)?;
     forget_latest_reviews(connection, repository, number)?;
     forget_assignees(connection, repository, number)?;
+    forget_closing_references(connection, repository, number)?;
     for login in &facts.review_requests {
         save_review_request(connection, repository, number, login)?;
     }
@@ -77,22 +91,24 @@ fn replace(
     for login in &facts.assignees {
         save_assignee(connection, repository, number, login)?;
     }
+    for issue in &facts.closing_issues {
+        save_closing_reference(connection, repository, number, *issue)?;
+    }
     Ok(())
 }
 
 fn save_pull_request(
     connection: &Connection,
     repository: &RepositoryName,
-    pull_request: &PullRequest,
+    facts: &PullRequestFacts,
 ) -> rusqlite::Result<()> {
-    let facts = &pull_request.facts;
-    let updated_at = pull_request.updated_at.unix_timestamp();
     connection
         .execute(
             "INSERT INTO pull_requests
-                 (repository, number, title, state, is_draft, author, target_branch, ci, updated_at)
+                 (repository, number, title, state, is_draft, author, target_branch, ci, updated_at,
+                  off_default_description)
              VALUES (:repository, :number, :title, :state, :is_draft, :author, :target_branch, :ci,
-                     :updated_at)
+                     :updated_at, :off_default_description)
              ON CONFLICT (repository, number) DO UPDATE SET
                  title = excluded.title,
                  state = excluded.state,
@@ -100,7 +116,8 @@ fn save_pull_request(
                  author = excluded.author,
                  target_branch = excluded.target_branch,
                  ci = excluded.ci,
-                 updated_at = excluded.updated_at",
+                 updated_at = excluded.updated_at,
+                 off_default_description = excluded.off_default_description",
             named_params! {
                 ":repository": repository,
                 ":number": facts.number,
@@ -110,7 +127,8 @@ fn save_pull_request(
                 ":author": facts.author,
                 ":target_branch": facts.target_branch,
                 ":ci": facts.ci,
-                ":updated_at": updated_at,
+                ":updated_at": facts.updated_at.unix_timestamp(),
+                ":off_default_description": facts.off_default_description,
             },
         )
         .map(drop)
@@ -150,6 +168,19 @@ fn forget_assignees(
     connection
         .execute(
             "DELETE FROM assignees WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": number },
+        )
+        .map(drop)
+}
+
+fn forget_closing_references(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "DELETE FROM closing_references WHERE repository = :repository AND number = :number",
             named_params! { ":repository": repository, ":number": number },
         )
         .map(drop)
@@ -201,6 +232,21 @@ fn save_assignee(
             "INSERT OR IGNORE INTO assignees (repository, number, login)
              VALUES (:repository, :number, :login)",
             named_params! { ":repository": repository, ":number": number, ":login": login },
+        )
+        .map(drop)
+}
+
+fn save_closing_reference(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+    issue: u32,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO closing_references (repository, number, issue)
+             VALUES (:repository, :number, :issue)",
+            named_params! { ":repository": repository, ":number": number, ":issue": issue },
         )
         .map(drop)
 }
@@ -258,6 +304,24 @@ fn latest_reviews(
     Ok(found)
 }
 
+/// Each PR's closing references, in number order.
+fn closing_references(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<BTreeMap<u32, Vec<u32>>> {
+    let mut found: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+    let query = "SELECT number, issue FROM closing_references
+                 WHERE repository = :repository
+                 ORDER BY number, issue";
+    let mut statement = connection.prepare(query)?;
+    let mut rows = statement.query(named_params! { ":repository": repository })?;
+    while let Some(row) = rows.next()? {
+        let issue = row.get("issue")?;
+        found.entry(row.get("number")?).or_default().push(issue);
+    }
+    Ok(found)
+}
+
 /// The open PRs of `repository`, the latest update first.
 pub(super) fn read_open(
     connection: &Connection,
@@ -266,7 +330,9 @@ pub(super) fn read_open(
     let mut requests = review_requests(connection, repository)?;
     let mut reviews = latest_reviews(connection, repository)?;
     let mut assigned = assignees(connection, repository)?;
-    let query = "SELECT number, title, state, is_draft, author, target_branch, ci
+    let mut closing = closing_references(connection, repository)?;
+    let query = "SELECT number, title, state, is_draft, author, target_branch, ci, updated_at,
+                        off_default_description
                  FROM pull_requests
                  WHERE repository = :repository AND state = :state
                  ORDER BY updated_at DESC, number DESC";
@@ -276,6 +342,7 @@ pub(super) fn read_open(
     let mut found = Vec::new();
     while let Some(row) = rows.next()? {
         let number: u32 = row.get("number")?;
+        let UnixTime(updated_at) = row.get("updated_at")?;
         found.push(PullRequestFacts {
             number,
             title: row.get("title")?,
@@ -284,9 +351,12 @@ pub(super) fn read_open(
             author: row.get("author")?,
             target_branch: row.get("target_branch")?,
             ci: row.get("ci")?,
+            updated_at,
             review_requests: requests.remove(&number).unwrap_or_default(),
             latest_reviews: reviews.remove(&number).unwrap_or_default(),
             assignees: assigned.remove(&number).unwrap_or_default(),
+            closing_issues: closing.remove(&number).unwrap_or_default(),
+            off_default_description: row.get("off_default_description")?,
         });
     }
     Ok(found)
@@ -313,22 +383,25 @@ mod tests {
             title: format!("gh-{number}: Fix it"),
             state: PrState::Open,
             is_draft: false,
-            author: Some(Login::new("vstinner")),
+            author: Some(Login::new("some-author")),
             target_branch: "main".to_owned(),
             ci: Some(CiState::Success),
+            updated_at: OffsetDateTime::from_unix_timestamp(1).unwrap(),
             review_requests: vec![Login::new("Octocat")],
             latest_reviews: vec![LatestReview {
-                author: Login::new("hugovk"),
+                author: Login::new("some-reviewer"),
                 state: ReviewState::Approved,
             }],
-            assignees: vec![Login::new("pablogsal")],
+            assignees: vec![Login::new("some-assignee")],
+            closing_issues: vec![7, 8],
+            off_default_description: Some("Fixes #9".to_owned()),
         }
     }
 
-    fn at(seconds: i64, facts: PullRequestFacts) -> PullRequest {
-        PullRequest {
+    fn at(seconds: i64, facts: PullRequestFacts) -> PullRequestFacts {
+        PullRequestFacts {
             updated_at: OffsetDateTime::from_unix_timestamp(seconds).unwrap(),
-            facts,
+            ..facts
         }
     }
 
@@ -373,6 +446,8 @@ mod tests {
             review_requests: vec![],
             latest_reviews: vec![],
             assignees: vec![],
+            closing_issues: vec![],
+            off_default_description: None,
             ..facts(2)
         };
 
@@ -398,11 +473,13 @@ mod tests {
             review_requests: vec![],
             latest_reviews: vec![],
             assignees: vec![],
-            ..facts(1)
+            closing_issues: vec![],
+            off_default_description: None,
+            ..at(2, facts(1))
         };
 
         store
-            .save_pull_requests(&cpython(), vec![at(2, changed.clone())])
+            .save_pull_requests(&cpython(), vec![changed.clone()])
             .unwrap();
         let read = reader.work_facts(&cpython()).unwrap();
         open.close();
@@ -480,8 +557,8 @@ mod tests {
                 "SELECT count(*) AS found FROM pull_requests
                  WHERE repository = 'python/cpython' COLLATE BINARY AND number = 1
                    AND title = 'gh-1: Fix it' AND state = 'OPEN' AND is_draft = 0
-                   AND author = 'vstinner' AND target_branch = 'main' AND ci = 'SUCCESS'
-                   AND updated_at = 7",
+                   AND author = 'some-author' AND target_branch = 'main' AND ci = 'SUCCESS'
+                   AND updated_at = 7 AND off_default_description = 'Fixes #9'",
             ),
             count(
                 &store,
@@ -493,20 +570,25 @@ mod tests {
                 &store,
                 "SELECT count(*) AS found FROM latest_reviews
                  WHERE repository = 'python/cpython' COLLATE BINARY AND number = 1
-                   AND login = 'hugovk' COLLATE BINARY AND state = 'APPROVED'",
+                   AND login = 'some-reviewer' COLLATE BINARY AND state = 'APPROVED'",
             ),
             count(
                 &store,
                 "SELECT count(*) AS found FROM assignees
                  WHERE repository = 'python/cpython' COLLATE BINARY AND number = 1
-                   AND login = 'pablogsal' COLLATE BINARY",
+                   AND login = 'some-assignee' COLLATE BINARY",
+            ),
+            count(
+                &store,
+                "SELECT count(*) AS found FROM closing_references
+                 WHERE repository = 'python/cpython' COLLATE BINARY AND number = 1 AND issue IN (7, 8)",
             ),
         ];
         open.close();
         store.close();
         fs::remove_dir_all(folder).unwrap();
 
-        assert_eq!(found, [1, 1, 1, 1]);
+        assert_eq!(found, [1, 1, 1, 1, 2]);
     }
 
     #[test]
@@ -515,11 +597,13 @@ mod tests {
         store
             .call(|connection| {
                 connection.execute_batch(
-                    "INSERT INTO pull_requests VALUES ('python/cpython', 1, 'gh-1: Fix it', 'OPEN', 0,
-                                                       'vstinner', 'main', 'SUCCESS', 7);
+                    "INSERT INTO pull_requests
+                         (repository, number, title, state, is_draft, author, target_branch, ci, updated_at)
+                     VALUES ('python/cpython', 1, 'gh-1: Fix it', 'OPEN', 0, 'some-author', 'main', 'SUCCESS',
+                             7);
                      INSERT INTO review_requests VALUES ('python/cpython', 1, 'Octocat');
-                     INSERT INTO latest_reviews VALUES ('python/cpython', 1, 'hugovk', 'APPROVED');
-                     INSERT INTO assignees VALUES ('python/cpython', 1, 'pablogsal');",
+                     INSERT INTO latest_reviews VALUES ('python/cpython', 1, 'some-reviewer', 'APPROVED');
+                     INSERT INTO assignees VALUES ('python/cpython', 1, 'some-assignee');",
                 )
             })
             .unwrap()
@@ -530,7 +614,12 @@ mod tests {
         store.close();
         fs::remove_dir_all(folder).unwrap();
 
-        assert_eq!(read.pull_requests, [facts(1)]);
+        let earlier = PullRequestFacts {
+            closing_issues: vec![],
+            off_default_description: None,
+            ..at(7, facts(1))
+        };
+        assert_eq!(read.pull_requests, [earlier]);
     }
 
     #[test]
@@ -538,7 +627,7 @@ mod tests {
         let (store, open, reader, _path, folder) = opened("pr-casing");
         store.remember_login(&Login::new("OctoCat")).unwrap();
         let twice = PullRequestFacts {
-            review_requests: vec![Login::new("HugoVK"), Login::new("hugovk")],
+            review_requests: vec![Login::new("Some-Reviewer"), Login::new("some-reviewer")],
             ..facts(1)
         };
 
@@ -557,7 +646,7 @@ mod tests {
             .flat_map(|pr| &pr.review_requests)
             .map(Login::as_str)
             .collect();
-        assert_eq!(requested, ["HugoVK"]);
+        assert_eq!(requested, ["Some-Reviewer"]);
         assert_eq!(viewer.as_str(), "OctoCat");
     }
 
@@ -571,9 +660,11 @@ mod tests {
         let (release, released) = mpsc::channel::<()>();
         let job: Job = Box::new(move |connection| {
             let transaction = connection.transaction().unwrap();
-            let _ = transaction
-                .execute("UPDATE pull_requests SET title = 'unfinished'", [])
-                .unwrap();
+            let unfinished = PullRequestFacts {
+                title: "unfinished".to_owned(),
+                ..facts(1)
+            };
+            super::replace(&transaction, &cpython(), &unfinished).unwrap();
             started.send(()).unwrap();
             released.recv().unwrap();
             transaction.commit().unwrap();
@@ -595,7 +686,7 @@ mod tests {
         let (store, open, reader, _path, folder) = opened("pr-read-only");
 
         let written = reader
-            .call(|connection| connection.execute("DELETE FROM viewer", []))
+            .call(|connection| write_last_login(connection, &Login::new("octocat")))
             .unwrap();
         open.close();
         store.close();

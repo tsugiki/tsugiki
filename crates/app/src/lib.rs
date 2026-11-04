@@ -77,8 +77,14 @@ fn sync_home(home: &Home, requests: &SessionRequests) {
     }
 }
 
-fn read_workbench(repository: &str, reader: &StoreReader) -> Result<Workbench, Error> {
-    Workbench::read(reader, &RepositoryName::parse(repository)?)
+fn read_workbench(
+    repository: &str,
+    owner: &SettingsOwner,
+    reader: &StoreReader,
+) -> Result<Workbench, Error> {
+    let name = RepositoryName::parse(repository)?;
+    let repository = owner.view().loaded.settings.repository(name);
+    Workbench::read(reader, &repository)
 }
 
 /// Sent whenever the app-wide state changes (ADR 0008).
@@ -213,7 +219,7 @@ mod tests {
 
         let adding = add_named_repository("nonsense", &owner, &session.requests()).unwrap_err();
         let checking = check_typed_repository("nonsense", &session.requests()).unwrap_err();
-        let reading = read_workbench("nonsense", &session.reader()).unwrap_err();
+        let reading = read_workbench("nonsense", &owner, &session.reader()).unwrap_err();
 
         assert_eq!(adding.kind, ErrorKind::NotFound);
         assert_eq!(checking.kind, ErrorKind::NotFound);

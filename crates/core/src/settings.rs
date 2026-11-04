@@ -33,6 +33,17 @@ pub struct Settings {
     pub repositories: Vec<RepositorySettings>,
 }
 
+impl Settings {
+    /// The settings of the Repository `name`, or a new Repository's if the user hasn't added it.
+    pub fn repository(&self, name: RepositoryName) -> RepositorySettings {
+        self.repositories
+            .iter()
+            .find(|repository| repository.name.is_same(&name))
+            .cloned()
+            .unwrap_or_else(|| RepositorySettings::new(name))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(default)]
 pub struct StatusBarSettings {
@@ -691,6 +702,30 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
 
         assert_eq!(files.loaded(), &LoadedSettings::default());
+    }
+
+    #[test]
+    fn a_repositorys_settings_come_from_the_list_whatever_the_case_of_its_name() {
+        let chosen = RepositorySettings {
+            name: RepositoryName::parse("python/cpython").unwrap(),
+            conventions: Conventions::Github,
+        };
+        let settings = Settings {
+            repositories: vec![chosen.clone()],
+            ..Settings::default()
+        };
+
+        let shouting = RepositoryName::parse("Python/CPython").unwrap();
+        assert_eq!(settings.repository(shouting), chosen);
+    }
+
+    #[test]
+    fn a_repository_the_user_hasnt_added_gets_new_settings() {
+        let name = RepositoryName::parse("python/cpython").unwrap();
+        assert_eq!(
+            Settings::default().repository(name.clone()),
+            RepositorySettings::new(name)
+        );
     }
 
     #[test]

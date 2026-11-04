@@ -5,6 +5,7 @@
 
 mod columns;
 mod file;
+mod issues;
 mod migrate;
 mod pull_requests;
 
@@ -19,7 +20,8 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, named_params};
 
 use crate::error::{Error, ErrorKind};
 use crate::github::Login;
-use crate::github::pull_requests::{PullRequest, PullRequestFacts};
+use crate::github::issues::IssueFacts;
+use crate::github::pull_requests::PullRequestFacts;
 use crate::repository::RepositoryName;
 use migrate::{MIGRATIONS, Migration};
 
@@ -61,11 +63,22 @@ impl Store {
     pub fn save_pull_requests(
         &self,
         repository: &RepositoryName,
-        pull_requests: Vec<PullRequest>,
+        pull_requests: Vec<PullRequestFacts>,
     ) -> Result<(), Error> {
         let repository = repository.clone();
         let saved = self
             .call(move |connection| pull_requests::save(connection, &repository, &pull_requests))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Stores `issues` of `repository` in one transaction (ADR 0010).
+    pub fn save_issues(
+        &self,
+        repository: &RepositoryName,
+        issues: Vec<IssueFacts>,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| issues::save(connection, &repository, &issues))?;
         saved.map_err(saying(CANT_WRITE))
     }
 
@@ -104,6 +117,7 @@ pub struct WorkFacts {
     /// The user signed in when Tsugiki last reached GitHub, if it ever has.
     pub viewer: Option<Login>,
     pub pull_requests: Vec<PullRequestFacts>,
+    pub issues: Vec<IssueFacts>,
 }
 
 fn read_last_login(connection: &Connection) -> rusqlite::Result<Option<Login>> {
@@ -134,6 +148,7 @@ fn read_work_facts(
     Ok(WorkFacts {
         viewer: read_last_login(&transaction)?,
         pull_requests: pull_requests::read_open(&transaction, repository)?,
+        issues: issues::read_all(&transaction, repository)?,
     })
 }
 
@@ -329,7 +344,9 @@ mod tests {
     use super::file::{Contents, contents};
     use super::testing::{V1, V2, backups, has_table, temp_database, user_version};
     use super::*;
+    use crate::github::pull_requests::{CiState, LatestReview, PrState, ReviewState};
     use rusqlite::trace::{TraceEvent, TraceEventCodes};
+    use time::OffsetDateTime;
 
     #[test]
     fn a_new_database_gets_the_whole_schema_and_no_backup() {
@@ -461,16 +478,36 @@ mod tests {
     /// Each statement the reads a screen waits on run, as SQLite traces them. One row in each table makes a
     /// query inside a loop over rows run too. A query behind a condition these rows don't meet stays unseen.
     fn view_statements(connection: &mut Connection) -> Vec<String> {
-        connection
-            .execute_batch(
-                "INSERT INTO viewer (id, login) VALUES (1, 'octocat');
-                 INSERT INTO pull_requests VALUES ('python/cpython', 1, 'gh-1: Fix it', 'OPEN', 0,
-                                                   'vstinner', 'main', 'SUCCESS', 7);
-                 INSERT INTO review_requests VALUES ('python/cpython', 1, 'octocat');
-                 INSERT INTO latest_reviews VALUES ('python/cpython', 1, 'hugovk', 'APPROVED');
-                 INSERT INTO assignees VALUES ('python/cpython', 1, 'pablogsal');",
-            )
-            .unwrap();
+        let cpython = RepositoryName::parse("python/cpython").unwrap();
+        let viewer = Login::new("octocat");
+        let saved_at = OffsetDateTime::UNIX_EPOCH;
+        let pull_request = PullRequestFacts {
+            number: 1,
+            title: "gh-1: Fix it".to_owned(),
+            state: PrState::Open,
+            is_draft: false,
+            author: Some(Login::new("some-author")),
+            target_branch: "main".to_owned(),
+            ci: Some(CiState::Success),
+            updated_at: saved_at,
+            review_requests: vec![viewer.clone()],
+            latest_reviews: vec![LatestReview {
+                author: Login::new("some-reviewer"),
+                state: ReviewState::Approved,
+            }],
+            assignees: vec![Login::new("some-assignee")],
+            closing_issues: vec![7],
+            off_default_description: None,
+        };
+        let issue = IssueFacts {
+            number: 1,
+            title: "It broke".to_owned(),
+            author: Some(Login::new("some-author")),
+            updated_at: saved_at,
+        };
+        write_last_login(connection, &viewer).unwrap();
+        pull_requests::save(connection, &cpython, &[pull_request]).unwrap();
+        issues::save(connection, &cpython, &[issue]).unwrap();
         let (seen, statements) = mpsc::channel();
         let trace = move |event: TraceEvent<'_>| {
             if let TraceEvent::Stmt(_, sql) = event {
@@ -479,7 +516,6 @@ mod tests {
         };
         let codes = TraceEventCodes::SQLITE_TRACE_STMT;
         connection.trace_v2(codes, Some(trace)).unwrap();
-        let cpython = RepositoryName::parse("python/cpython").unwrap();
         let read = read_work_facts(connection, &cpython).unwrap();
         assert_eq!(read.pull_requests.len(), 1);
         let no_trace = None::<fn(TraceEvent<'_>)>;
@@ -516,8 +552,10 @@ mod tests {
             "review_requests",
             "latest_reviews",
             "assignees",
+            "closing_references",
+            "issues",
         ];
-        assert_eq!(tables.map(reads), [true; 5]);
+        assert_eq!(tables.map(reads), [true; 7]);
     }
 
     #[test]

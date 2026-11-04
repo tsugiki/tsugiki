@@ -311,8 +311,9 @@ mod tests {
     use super::*;
     use crate::github::testing::{Canned, Scripted, answered, reply_ok, signed_in_gh};
     use crate::github::{Login, Reply, Request, Transport, Unreachable};
+    use crate::repository::RepositorySettings;
     use crate::status::testing::{announced, quiet_board, showing, watched_board, workbench_board};
-    use crate::workbench::Workbench;
+    use crate::workbench::{Workbench, WorkbenchItem};
     use std::cell::RefCell;
     use std::collections::VecDeque;
     use std::fs;
@@ -690,6 +691,12 @@ mod tests {
             "isDraft": false,
             "updatedAt": "2026-11-04T10:00:00Z",
             "baseRefName": "main",
+            "body": "",
+            "repository": {
+                "nameWithOwner": "sergey-miryanov/gcmon",
+                "defaultBranchRef": { "name": "main" },
+            },
+            "closingIssuesReferences": { "nodes": [] },
             "author": { "login": "octocat" },
             "assignees": { "nodes": [] },
             "reviewRequests": { "nodes": [] },
@@ -720,13 +727,15 @@ mod tests {
 
         session.requests().sync(gcmon());
         let changed = changes.recv().unwrap();
-        let workbench = Workbench::read(&reader, &gcmon()).unwrap();
+        let workbench = Workbench::read(&reader, &RepositorySettings::new(gcmon())).unwrap();
         session.stop(PLENTY);
         fs::remove_dir_all(folders.data).unwrap();
 
         assert_eq!(changed, gcmon());
-        let numbers: Vec<u32> = workbench.rows.iter().map(|row| row.number).collect();
-        assert_eq!(numbers, [7]);
+        assert!(
+            matches!(&workbench.items[..], [WorkbenchItem::StandalonePr(row)] if row.number == 7),
+            "{workbench:?}"
+        );
     }
 
     #[test]
@@ -834,11 +843,11 @@ mod tests {
 
         session.requests().sync(gcmon());
         drop(changes.recv().unwrap());
-        let workbench = Workbench::read(&reader, &gcmon()).unwrap();
+        let workbench = Workbench::read(&reader, &RepositorySettings::new(gcmon())).unwrap();
         session.stop(PLENTY);
         fs::remove_dir_all(folders.data).unwrap();
 
-        assert_eq!(workbench.rows.len(), 1);
+        assert_eq!(workbench.items.len(), 1);
     }
 
     #[test]

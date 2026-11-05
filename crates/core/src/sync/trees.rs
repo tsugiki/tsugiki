@@ -45,8 +45,9 @@ pub(super) fn read_cross_references(
     Ok((Step::Searched { pause_until }, None))
 }
 
-/// The leads of the PRs in `listed` that this sync has already saved. The window saves PRs without following
-/// them, because few are in any tree, so a Backport it brought only gets its Origin PR once a tree lists it.
+/// The leads of the PRs in `listed` that this refresh has already saved. It saves a changed PR without
+/// following it, because few are in any tree, so a Backport it brought only gets its Origin PR once a tree
+/// lists it.
 fn leads_of_those_held(
     link: &Link<'_>,
     listed: &[ListedPr],
@@ -86,8 +87,9 @@ fn not_yet_fetched(
 mod tests {
     use crate::sync::Syncs;
     use crate::sync::testing::{
-        FEW, Harness, LOTS, cpython, cross_references, fetched_nodes, issues, merged_node, plain,
-        pr_node, run_to_the_end, searches_finding, up_to_the_first_issue,
+        FEW, Harness, LOTS, cpython, cross_references, fetched_nodes, issue_references,
+        issue_references_with_more, issues, merged_node, plain, pr_node, run_to_the_end,
+        searches_finding, up_to_the_first_issue,
     };
     use serde_json::{Value, json};
     use std::time::{Duration, Instant};
@@ -95,7 +97,7 @@ mod tests {
     #[test]
     fn a_sync_reads_each_shown_issues_cross_references_and_fetches_the_prs_they_list() {
         let mut replies = up_to_the_first_issue();
-        replies.push(cross_references(&[2, 3], None, LOTS));
+        replies.push(issue_references(&[(1, &[2, 3])], LOTS));
         replies.push(fetched_nodes(&[merged_node(2), merged_node(3)], LOTS));
         let harness = Harness::new("tree", replies);
         let mut syncs = Syncs::default();
@@ -108,7 +110,7 @@ mod tests {
             [
                 "FetchPullRequests",
                 "FetchIssues",
-                "FetchCrossReferences",
+                "FetchIssueReferences",
                 "FetchTreePullRequests",
             ]
         );
@@ -119,7 +121,7 @@ mod tests {
     #[test]
     fn a_sync_follows_an_issues_cross_references_page_by_page() {
         let mut replies = up_to_the_first_issue();
-        replies.push(cross_references(&[3], Some("older"), LOTS));
+        replies.push(issue_references_with_more(1, &[3], "older", LOTS));
         replies.push(cross_references(&[2], None, LOTS));
         replies.push(fetched_nodes(&[merged_node(3), merged_node(2)], LOTS));
         let harness = Harness::new("tree-pages", replies);
@@ -134,7 +136,7 @@ mod tests {
             .filter(|(operation, _)| operation == "FetchCrossReferences")
             .map(|(_, sent)| sent["before"].clone())
             .collect();
-        assert_eq!(befores, [Value::Null, json!("older")]);
+        assert_eq!(befores, [json!("older")]);
         assert_eq!(harness.numbers(), [1, 2, 3]);
         harness.finish();
     }
@@ -147,8 +149,7 @@ mod tests {
             LOTS,
         ));
         replies.push(issues(&[1, 2], LOTS));
-        replies.push(cross_references(&[3, 1], None, LOTS));
-        replies.push(cross_references(&[3], None, LOTS));
+        replies.push(issue_references(&[(1, &[3, 1]), (2, &[3])], LOTS));
         replies.push(fetched_nodes(&[merged_node(3)], LOTS));
         let harness = Harness::new("tree-two", replies);
         let mut syncs = Syncs::default();
@@ -169,13 +170,13 @@ mod tests {
     #[test]
     fn a_merged_pr_is_fetched_once_across_syncs_and_an_open_one_again() {
         let mut replies = up_to_the_first_issue();
-        replies.push(cross_references(&[2, 3], None, LOTS));
+        replies.push(issue_references(&[(1, &[2, 3])], LOTS));
         replies.push(fetched_nodes(
             &[merged_node(2), pr_node(3, &json!({}))],
             LOTS,
         ));
         replies.extend(up_to_the_first_issue());
-        replies.push(cross_references(&[2, 3], None, LOTS));
+        replies.push(issue_references(&[(1, &[2, 3])], LOTS));
         replies.push(fetched_nodes(&[pr_node(3, &json!({}))], LOTS));
         let harness = Harness::new("frozen", replies);
         let mut syncs = Syncs::default();
@@ -200,15 +201,17 @@ mod tests {
     #[test]
     fn a_tree_read_below_the_floor_holds_the_next_step_back() {
         let mut replies = up_to_the_first_issue();
-        replies.push(cross_references(&[], Some("older"), FEW));
+        replies.push(issue_references_with_more(1, &[], "older", FEW));
         let harness = Harness::new("tree-floor", replies);
         let mut syncs = Syncs::default();
         syncs.add(plain(cpython()));
         let before = Instant::now();
 
-        // Four searches, two moves, the PR, two moves, the Issue, a move, two empty window pages, a
-        // move and the first page.
-        for _ in 0..15 {
+        while !harness
+            .asked
+            .try_iter()
+            .any(|(name, _)| name == "FetchIssueReferences")
+        {
             drop(syncs.step(&harness.github, &harness.store).unwrap());
         }
 

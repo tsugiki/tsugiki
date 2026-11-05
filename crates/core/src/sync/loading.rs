@@ -1,0 +1,502 @@
+//! A first sync after the user's own work, as one queue (ADR 0015). Trees of what the user needs come first:
+//! their own Issues, then any Issue they open. After that, a page of a list and a batch of PRs take turns, so
+//! rows arrive from the start and each tree fills in soon after its Issue. One request runs at a time.
+
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+
+use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
+
+use super::{FETCH_BATCH, Leads, Link, Moved, SEARCH_PAGE, Step, pause_until};
+use crate::error::Error;
+use crate::github::issues::ListedPr;
+use crate::github::pull_requests::{PageRequest, PrFetch};
+use crate::github::references::IssueReferences;
+use crate::github::refresh::ListPlace;
+use crate::github::window::WindowRequest;
+use crate::links::{possible_numbers, possible_origin};
+use crate::status::LoadProgress;
+
+/// GitHub's largest page. The list of PRs asks for little, so it can use it.
+const PR_LIST_PAGE: usize = 100;
+
+/// How soon a read's findings go: ahead of everything else, for a tree the user needs, or in turn.
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+enum Urgency {
+    Urgent,
+    InTurn,
+}
+
+/// An Issue with more cross-references than one page holds.
+#[derive(Clone, Serialize, Deserialize)]
+struct LongRead {
+    number: u32,
+    cursor: String,
+    urgency: Urgency,
+}
+
+/// The queue and where it has got to, which a first sync saves after each step.
+#[derive(Serialize, Deserialize)]
+pub(super) struct Loading {
+    since: OffsetDateTime,
+    /// Issues whose trees go before everything else: the user's own, and any they open.
+    urgent_issues: Vec<u32>,
+    /// Each Issue that has been in `urgent_issues`. A view on screen asks about once a minute, and one read
+    /// of its tree is enough.
+    opened: BTreeSet<u32>,
+    /// The Issues with more cross-references to read, the urgent ones first.
+    long_reads: VecDeque<LongRead>,
+    issues: ListPlace,
+    issues_total: Option<u32>,
+    issues_read: u32,
+    /// The Issues this sync has read or asked for, so a PR's Issue is asked for once.
+    issues_seen: BTreeSet<u32>,
+    pull_requests: ListPlace,
+    /// The PRs of `urgent_issues`, which go before `queue`.
+    urgent: VecDeque<ListedPr>,
+    queue: VecDeque<ListedPr>,
+    /// Each PR that has ever been in either queue, so each joins once.
+    queued: BTreeSet<u32>,
+    /// True when a page of a list goes next, and false when a batch of PRs does.
+    list_goes_next: bool,
+    /// The Origin PRs of urgent PRs, which their trees need soon.
+    urgent_leads: Leads,
+    /// The leads of the other PRs. Most Origin PRs come through the lists anyway, so those wait for the end.
+    leads: Leads,
+}
+
+/// The one request to make next.
+enum Next {
+    LongRead(LongRead),
+    UrgentIssues,
+    UrgentOrigins,
+    Batch,
+    NamedIssues(Vec<u32>),
+    IssuePage,
+    PullRequestPage,
+    Origins,
+}
+
+/// The stored PRs a sync doesn't fetch again, and when each last changed.
+type Frozen = BTreeMap<u32, OffsetDateTime>;
+
+fn frozen(link: &Link<'_>) -> Result<Frozen, Error> {
+    let stored = link.store.frozen_pull_requests(link.repository)?;
+    Ok(stored
+        .into_iter()
+        .map(|pr| (pr.number, pr.updated_at))
+        .collect())
+}
+
+/// The test for a cross-reference that needn't queue: a PR this sync has, or one that's frozen.
+fn held<'a>(fetched: &'a BTreeSet<u32>, frozen: &'a Frozen) -> impl Fn(u32) -> bool + 'a {
+    |pr| fetched.contains(&pr) || frozen.contains_key(&pr)
+}
+
+impl Loading {
+    pub(super) fn new(since: OffsetDateTime, own_issues: Vec<u32>) -> Self {
+        Self {
+            since,
+            issues_seen: own_issues.iter().copied().collect(),
+            opened: own_issues.iter().copied().collect(),
+            urgent_issues: own_issues,
+            long_reads: VecDeque::new(),
+            issues: ListPlace::Next(None),
+            issues_total: None,
+            issues_read: 0,
+            pull_requests: ListPlace::Next(None),
+            urgent: VecDeque::new(),
+            queue: VecDeque::new(),
+            queued: BTreeSet::new(),
+            list_goes_next: true,
+            urgent_leads: Leads::default(),
+            leads: Leads::default(),
+        }
+    }
+
+    /// Puts Issue `number`'s tree before everything else, the first time it's opened. The read takes its PRs
+    /// out of the queue, even if a page has already listed them.
+    pub(super) fn open_issue(&mut self, number: u32) {
+        if self.opened.insert(number) {
+            self.urgent_issues.insert(0, number);
+        }
+    }
+
+    /// True while the user's own or opened trees are still loading.
+    pub(super) fn trees_come_first(&self) -> bool {
+        self.next_urgent().is_some()
+    }
+
+    pub(super) fn progress(&self, fetched: &BTreeSet<u32>) -> LoadProgress {
+        LoadProgress {
+            issues_read: self.issues_read,
+            issues_total: self.issues_total,
+            prs_fetched: fetched.len().try_into().unwrap_or(u32::MAX),
+            prs_known: fetched
+                .len()
+                .saturating_add(self.urgent.len())
+                .saturating_add(self.queue.len())
+                .try_into()
+                .unwrap_or(u32::MAX),
+        }
+    }
+
+    fn next(&self) -> Next {
+        self.next_urgent().unwrap_or_else(|| self.next_in_turn())
+    }
+
+    /// The next step of the user's own and opened trees, if they need one.
+    fn next_urgent(&self) -> Option<Next> {
+        if !self.urgent_issues.is_empty() {
+            return Some(Next::UrgentIssues);
+        }
+        if let Some(read) = self
+            .long_reads
+            .front()
+            .filter(|read| read.urgency == Urgency::Urgent)
+        {
+            return Some(Next::LongRead(read.clone()));
+        }
+        if !self.urgent.is_empty() {
+            return Some(Next::Batch);
+        }
+        (!self.urgent_leads.origins.is_empty()).then_some(Next::UrgentOrigins)
+    }
+
+    fn next_in_turn(&self) -> Next {
+        if let Some(read) = self.long_reads.front() {
+            return Next::LongRead(read.clone());
+        }
+        // Until the list of Issues ends, a PR's Issue may still turn up on a later page.
+        if self.issues.is_finished() {
+            let named = self.named_issues_left();
+            if !named.is_empty() {
+                return Next::NamedIssues(named);
+            }
+        }
+        let list_is_left = !self.issues.is_finished() || !self.pull_requests.is_finished();
+        if list_is_left && (self.list_goes_next || self.queue.is_empty()) {
+            return if self.issues.is_finished() {
+                Next::PullRequestPage
+            } else {
+                Next::IssuePage
+            };
+        }
+        if self.queue.is_empty() {
+            Next::Origins
+        } else {
+            Next::Batch
+        }
+    }
+
+    fn named_issues_left(&self) -> Vec<u32> {
+        let left = self.leads.named.difference(&self.issues_seen);
+        left.take(FETCH_BATCH).copied().collect()
+    }
+
+    /// Queues `listed`, unless this sync has it or it's frozen. An urgent PR already queued moves up.
+    fn join(&mut self, listed: Vec<ListedPr>, urgency: Urgency, have: &dyn Fn(u32) -> bool) {
+        for pr in listed {
+            if have(pr.number) {
+                continue;
+            }
+            if self.queued.insert(pr.number) {
+                match urgency {
+                    Urgency::Urgent => self.urgent.push_back(pr),
+                    Urgency::InTurn => self.queue.push_back(pr),
+                }
+            } else if urgency == Urgency::Urgent {
+                let at = self
+                    .queue
+                    .iter()
+                    .position(|waiting| waiting.number == pr.number);
+                self.urgent.extend(at.and_then(|at| self.queue.remove(at)));
+            }
+        }
+    }
+
+    fn join_references(
+        &mut self,
+        references: Vec<IssueReferences>,
+        urgency: Urgency,
+        have: &dyn Fn(u32) -> bool,
+    ) {
+        for read in references {
+            if let Some(cursor) = read.next {
+                self.read_more(LongRead {
+                    number: read.number,
+                    cursor,
+                    urgency,
+                });
+            }
+            self.join(read.listed, urgency, have);
+        }
+    }
+
+    /// Goes on to read an Issue's older cross-references. An urgent read goes first and replaces a slower
+    /// one. A page's read adds nothing to an opened Issue, which has its own.
+    fn read_more(&mut self, read: LongRead) {
+        match read.urgency {
+            Urgency::Urgent => {
+                self.long_reads
+                    .retain(|waiting| waiting.number != read.number);
+                self.long_reads.push_front(read);
+            }
+            Urgency::InTurn if self.opened.contains(&read.number) => {}
+            Urgency::InTurn => self.long_reads.push_back(read),
+        }
+    }
+}
+
+/// Makes the next request of `loading`, or says the sync is finished.
+pub(super) fn load(
+    link: &Link<'_>,
+    loading: &mut Loading,
+    fetched: &mut BTreeSet<u32>,
+) -> Result<Moved, Error> {
+    let step = match loading.next() {
+        Next::LongRead(read) => read_long(link, loading, read, fetched)?,
+        Next::UrgentIssues => read_urgent_issues(link, loading, fetched)?,
+        Next::UrgentOrigins => load_urgent_origin(link, loading, fetched)?,
+        Next::Batch => fetch_batch(link, loading, fetched)?,
+        Next::NamedIssues(numbers) => fetch_named_issues(link, loading, &numbers)?,
+        Next::IssuePage => read_issue_page(link, loading, fetched)?,
+        Next::PullRequestPage => read_pull_request_page(link, loading, fetched)?,
+        Next::Origins => load_origins(link, loading, fetched)?,
+    };
+    Ok((step, None))
+}
+
+fn read_long(
+    link: &Link<'_>,
+    loading: &mut Loading,
+    read: LongRead,
+    fetched: &BTreeSet<u32>,
+) -> Result<Step, Error> {
+    let asked = PageRequest {
+        size: SEARCH_PAGE,
+        after: Some(&read.cursor),
+    };
+    let page = link
+        .github
+        .fetch_cross_references(link.repository, read.number, asked)?;
+    let frozen = frozen(link)?;
+    loading.join(page.listed, read.urgency, &held(fetched, &frozen));
+    drop(loading.long_reads.pop_front());
+    if let Some(cursor) = page.next {
+        loading.long_reads.push_front(LongRead { cursor, ..read });
+    }
+    Ok(Step::Searched {
+        pause_until: pause_until(page.rate_limit),
+    })
+}
+
+fn read_urgent_issues(
+    link: &Link<'_>,
+    loading: &mut Loading,
+    fetched: &BTreeSet<u32>,
+) -> Result<Step, Error> {
+    let read =
+        link.github
+            .fetch_issue_references(link.repository, &loading.urgent_issues, FETCH_BATCH)?;
+    let frozen = frozen(link)?;
+    loading.join_references(read.references, Urgency::Urgent, &held(fetched, &frozen));
+    drop(loading.urgent_issues.drain(..read.asked_for));
+    Ok(Step::Searched {
+        pause_until: pause_until(read.rate_limit),
+    })
+}
+
+/// Fetches the next PRs, urgent ones first, and saves them.
+fn fetch_batch(
+    link: &Link<'_>,
+    loading: &mut Loading,
+    fetched: &mut BTreeSet<u32>,
+) -> Result<Step, Error> {
+    let waiting = loading.urgent.iter().chain(loading.queue.iter());
+    let ids: Vec<_> = waiting.take(FETCH_BATCH).map(|pr| pr.id.clone()).collect();
+    let batch = link
+        .github
+        .fetch_pull_requests(PrFetch::Tree, &ids, FETCH_BATCH)?;
+    link.store.save_fetched_pull_requests(
+        link.repository,
+        batch.pull_requests.clone(),
+        batch.activity,
+    )?;
+    let urgent_asked = loading.urgent.len().min(batch.asked_for);
+    let urgent: BTreeSet<u32> = loading
+        .urgent
+        .drain(..urgent_asked)
+        .map(|pr| pr.number)
+        .collect();
+    let queued_asked = batch.asked_for.saturating_sub(urgent_asked);
+    fetched.extend(urgent.iter().copied());
+    fetched.extend(loading.queue.drain(..queued_asked).map(|pr| pr.number));
+    for pull_request in &batch.pull_requests {
+        let origin = possible_origin(pull_request);
+        loading
+            .leads
+            .named
+            .extend(possible_numbers(pull_request, link.repository));
+        if urgent.contains(&pull_request.number) {
+            loading.urgent_leads.origins.extend(origin);
+        } else {
+            loading.leads.origins.extend(origin);
+        }
+    }
+    loading.list_goes_next = true;
+    let touched = batch.pull_requests.iter().map(|pr| pr.number).collect();
+    Ok(Step::saved_if_any(touched, pause_until(batch.rate_limit)))
+}
+
+/// Fetches the Issues that PRs name and the lists haven't brought: a fresh PR on an old Issue doesn't move
+/// the Issue's `updatedAt`, and with no Issue the PR would show as a Standalone PR.
+fn fetch_named_issues(
+    link: &Link<'_>,
+    loading: &mut Loading,
+    numbers: &[u32],
+) -> Result<Step, Error> {
+    let batch = link
+        .github
+        .fetch_issues(link.repository, numbers, FETCH_BATCH)?;
+    let touched = batch.issues.iter().map(|issue| issue.number).collect();
+    link.store
+        .save_fetched_issues(link.repository, batch.issues, batch.activity)?;
+    loading
+        .issues_seen
+        .extend(numbers.iter().take(batch.asked_for).copied());
+    Ok(Step::saved_if_any(touched, pause_until(batch.rate_limit)))
+}
+
+fn read_issue_page(
+    link: &Link<'_>,
+    loading: &mut Loading,
+    fetched: &BTreeSet<u32>,
+) -> Result<Step, Error> {
+    let asked = WindowRequest {
+        since: loading.since,
+        place: &loading.issues,
+        size: SEARCH_PAGE,
+    };
+    let page = link.github.window_issues(link.repository, asked)?;
+    let frozen = frozen(link)?;
+    let numbers: Vec<u32> = page.items.iter().map(|issue| issue.number).collect();
+    link.store
+        .save_fetched_issues(link.repository, page.items, page.activity)?;
+    loading.join_references(page.references, Urgency::InTurn, &held(fetched, &frozen));
+    loading.issues_total = Some(page.total);
+    loading.issues_read = loading
+        .issues_read
+        .saturating_add(numbers.len().try_into().unwrap_or(u32::MAX));
+    loading.issues_seen.extend(numbers.iter().copied());
+    loading.issues = page.next;
+    loading.list_goes_next = false;
+    Ok(Step::saved_if_any(numbers, pause_until(page.rate_limit)))
+}
+
+/// Reads a page of PRs, and queues each one the Issues haven't brought. A frozen PR goes back in only if it
+/// moved, because a merged PR's timeline goes on.
+fn read_pull_request_page(
+    link: &Link<'_>,
+    loading: &mut Loading,
+    fetched: &BTreeSet<u32>,
+) -> Result<Step, Error> {
+    let asked = WindowRequest {
+        since: loading.since,
+        place: &loading.pull_requests,
+        size: PR_LIST_PAGE,
+    };
+    let page = link.github.window_pull_requests(link.repository, asked)?;
+    let frozen = frozen(link)?;
+    let moved = page
+        .items
+        .into_iter()
+        .filter(|pr| {
+            frozen
+                .get(&pr.number)
+                .is_none_or(|held| *held < pr.updated_at)
+        })
+        .map(|pr| ListedPr {
+            id: pr.id,
+            number: pr.number,
+        })
+        .collect();
+    loading.join(moved, Urgency::InTurn, &|pr| fetched.contains(&pr));
+    loading.pull_requests = page.next;
+    loading.list_goes_next = false;
+    Ok(Step::Searched {
+        pause_until: pause_until(page.rate_limit),
+    })
+}
+
+/// Fetches the next Origin PR an urgent PR needs. A frozen one stays as it's stored.
+fn load_urgent_origin(
+    link: &Link<'_>,
+    loading: &mut Loading,
+    fetched: &mut BTreeSet<u32>,
+) -> Result<Step, Error> {
+    loading.urgent_leads.settle_origins(link, fetched)?;
+    let named = std::mem::take(&mut loading.urgent_leads.named);
+    loading.leads.named.extend(named);
+    let Some(number) = loading.urgent_leads.origins.first().copied() else {
+        return Ok(Step::Moved);
+    };
+    load_origin(link, loading, number, fetched)
+}
+
+/// Fetches the next Origin PR no list brought, or finishes the sync with nothing left. Settling can name more
+/// Issues, and those go first.
+fn load_origins(
+    link: &Link<'_>,
+    loading: &mut Loading,
+    fetched: &mut BTreeSet<u32>,
+) -> Result<Step, Error> {
+    loading.leads.settle_origins(link, fetched)?;
+    if let Some(number) = loading.leads.origins.first().copied() {
+        return load_origin(link, loading, number, fetched);
+    }
+    if loading.named_issues_left().is_empty() {
+        Ok(Step::Finished)
+    } else {
+        Ok(Step::Moved)
+    }
+}
+
+/// Fetches Origin PR `number` by itself, because only its number is known, and saves it.
+fn load_origin(
+    link: &Link<'_>,
+    loading: &mut Loading,
+    number: u32,
+    fetched: &mut BTreeSet<u32>,
+) -> Result<Step, Error> {
+    let answer = link
+        .github
+        .fetch_origin_pull_request(link.repository, number)?;
+    let pause_until = pause_until(answer.rate_limit);
+    let step = if let Some((pull_request, activity)) = answer.pull_request {
+        let named = possible_numbers(&pull_request, link.repository);
+        link.store.save_fetched_pull_requests(
+            link.repository,
+            vec![pull_request],
+            vec![activity],
+        )?;
+        loading.leads.named.extend(named);
+        Step::Saved {
+            touched: vec![number],
+            pause_until,
+        }
+    } else {
+        Step::Searched { pause_until }
+    };
+    loading
+        .urgent_leads
+        .origins
+        .retain(|origin| *origin != number);
+    loading.leads.origins.retain(|origin| *origin != number);
+    loading.queue.retain(|pr| pr.number != number);
+    fetched.extend([number]);
+    Ok(step)
+}
+
+#[cfg(test)]
+mod tests;

@@ -1,0 +1,635 @@
+{
+  "body": {
+    "data": {
+      "rateLimit": {
+        "remaining": 4971,
+        "resetAt": "2026-11-04T22:46:14Z"
+      },
+      "repository": {
+        "i112564": {
+          "__typename": "Issue",
+          "number": 112564,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i128942": {
+          "__typename": "Issue",
+          "number": 128942,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i138864": {
+          "__typename": "Issue",
+          "number": 138864,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i139389": {
+          "__typename": "Issue",
+          "number": 139389,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i139778": {
+          "__typename": "Issue",
+          "number": 139778,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i140256": {
+          "__typename": "Issue",
+          "number": 140256,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i140328": {
+          "__typename": "Issue",
+          "number": 140328,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i140798": {
+          "__typename": "Issue",
+          "number": 140798,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i140928": {
+          "__typename": "Issue",
+          "number": 140928,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i141594": {
+          "__typename": "Issue",
+          "number": 141594,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i145970": {
+          "__typename": "Issue",
+          "number": 145970,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i148937": {
+          "__typename": "Issue",
+          "number": 148937,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i149532": {
+          "__typename": "Issue",
+          "number": 149532,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i151763": {
+          "__typename": "Issue",
+          "number": 151763,
+          "timelineItems": {
+            "nodes": [
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7opRYh",
+                  "number": 151779,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7orl9R",
+                  "number": 151798,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7o3C3P",
+                  "number": 151843,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7pAk8P",
+                  "number": 151902,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7pSEyY",
+                  "number": 151931,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7phn5X",
+                  "number": 151968,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7psd-R",
+                  "number": 152013,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7p1KZj",
+                  "number": 152034,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qFqRr",
+                  "number": 152069,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qFqZg",
+                  "number": 152070,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qL-fF",
+                  "number": 152094,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qL-os",
+                  "number": 152095,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qL-xb",
+                  "number": 152096,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qOtDl",
+                  "number": 152110,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qTxlr",
+                  "number": 152131,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qbyQa",
+                  "number": 152155,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qcNre",
+                  "number": 152158,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qcN1M",
+                  "number": 152159,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qcN-V",
+                  "number": 152160,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qc1BM",
+                  "number": 152164,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7qc8-U",
+                  "number": 152165,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7s6Zrw",
+                  "number": 152836,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7s6Zzx",
+                  "number": 152837,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7s7TRk",
+                  "number": 152840,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7wfdCW",
+                  "number": 153548,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "Issue"
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c7zX_mq",
+                  "number": 154019,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c72fVzh",
+                  "number": 154714,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c72fV1L",
+                  "number": 154715,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              },
+              {
+                "source": {
+                  "__typename": "PullRequest",
+                  "id": "PR_kwDOBN0Z8c72fV4H",
+                  "number": 154717,
+                  "repository": {
+                    "nameWithOwner": "python/cpython"
+                  }
+                }
+              }
+            ],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": "Y3Vyc29yOnYyOpPPAAABnuQLmZACqjc1ODQxNjI3MzI="
+            }
+          }
+        },
+        "i151815": {
+          "__typename": "Issue",
+          "number": 151815,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i151862": {
+          "__typename": "Issue",
+          "number": 151862,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i152125": {
+          "__typename": "Issue",
+          "number": 152125,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i153058": {
+          "__typename": "Issue",
+          "number": 153058,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i155176": {
+          "__typename": "Issue",
+          "number": 155176,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i155181": {
+          "__typename": "Issue",
+          "number": 155181,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i155728": {
+          "__typename": "Issue",
+          "number": 155728,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i156425": {
+          "__typename": "Issue",
+          "number": 156425,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i159101": {
+          "__typename": "Issue",
+          "number": 159101,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        },
+        "i160663": {
+          "__typename": "Issue",
+          "number": 160663,
+          "timelineItems": {
+            "nodes": [],
+            "pageInfo": {
+              "hasPreviousPage": false,
+              "startCursor": null
+            }
+          }
+        }
+      }
+    }
+  },
+  "query": "query FetchIssueReferences($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { i112564: issueOrPullRequest(number: 112564) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i128942: issueOrPullRequest(number: 128942) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i138864: issueOrPullRequest(number: 138864) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i139389: issueOrPullRequest(number: 139389) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i139778: issueOrPullRequest(number: 139778) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i140256: issueOrPullRequest(number: 140256) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i140328: issueOrPullRequest(number: 140328) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i140798: issueOrPullRequest(number: 140798) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i140928: issueOrPullRequest(number: 140928) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i141594: issueOrPullRequest(number: 141594) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i145970: issueOrPullRequest(number: 145970) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i148937: issueOrPullRequest(number: 148937) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i149532: issueOrPullRequest(number: 149532) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i151763: issueOrPullRequest(number: 151763) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i151815: issueOrPullRequest(number: 151815) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i151862: issueOrPullRequest(number: 151862) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i152125: issueOrPullRequest(number: 152125) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i153058: issueOrPullRequest(number: 153058) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i155176: issueOrPullRequest(number: 155176) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i155181: issueOrPullRequest(number: 155181) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i155728: issueOrPullRequest(number: 155728) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i156425: issueOrPullRequest(number: 156425) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i159101: issueOrPullRequest(number: 159101) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } i160663: issueOrPullRequest(number: 160663) { __typename ... on Issue { number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } } } } } } } } } rateLimit { remaining resetAt } }",
+  "reset": 1793832374,
+  "status": 200
+}

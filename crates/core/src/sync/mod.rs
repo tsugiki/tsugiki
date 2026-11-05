@@ -1,5 +1,5 @@
-//! A first sync: the user's own work and each Filter, found by search and fetched in batches, then the window
-//! of recent changes, then the whole tree of each Issue they reach (ADR 0011, ADR 0015). It saves its
+//! A first sync: the user's own work and each Filter, found by search and fetched in batches, then the trees
+//! of the Issues they reach, then the rest of the window as one queue (ADR 0011, ADR 0015). It saves its
 //! place after each step, so it comes back to the next page. A Repository that has finished one refreshes
 //! instead, which `refresh` handles. One `step` is one request, so the session can answer what else it's
 //! asked between them. `github` does the asking, and this decides what to ask for, how much at a time and
@@ -8,12 +8,12 @@
 mod batches;
 mod filters;
 mod issues;
+mod loading;
 mod origins;
 mod queue;
 mod refresh;
 mod searches;
 mod trees;
-mod window;
 
 pub use queue::{Progress, Syncs};
 pub use searches::WORK_SEARCHES;
@@ -30,16 +30,16 @@ use crate::github::pull_requests::{NodeId, PrFetch, PullRequestFacts, RateLimit}
 use crate::github::{GitHub, Login};
 use crate::links::{possible_numbers, possible_origin};
 use crate::repository::{RepositoryName, RepositorySettings, WINDOW_DAYS};
-use crate::status::{LastSync, SyncPart};
+use crate::status::{LastSync, LoadProgress, SyncPart};
 use crate::store::{ChangeCheck, FirstSyncPlace, Store, SyncState};
 use batches::fetch;
 use filters::{FilterWalk, walk_filters};
 use issues::fetch_issues;
+use loading::{Loading, load};
 use origins::fetch_origin;
 use refresh::{Changed, Poll, Probing};
 use searches::search;
 use trees::read_cross_references;
-use window::{WindowWalk, walk_window};
 
 /// Below this many points left, a sync waits for the reset, because the hourly 5,000 are also the user's
 /// other tools'. We haven't measured what those tools need, and GitHub's `remaining` is approximate.
@@ -101,7 +101,8 @@ enum Resumable {
         numbers: Vec<u32>,
         shown: Vec<u32>,
     },
-    Window(WindowWalk),
+    /// A first sync's window and trees, as one queue.
+    Loading(Loading),
     ReadingCrossReferences(Reading),
 }
 
@@ -329,21 +330,37 @@ impl UserWorkSync {
     /// The part of a sync this is, for the status bar.
     fn part(&self) -> SyncPart {
         match (&self.phase, &self.first_sync) {
-            (Phase::Resumable(Resumable::Window(_)), Some(_)) => SyncPart::Window,
-            (
-                Phase::Resumable(
-                    Resumable::ReadingCrossReferences(_)
-                    | Resumable::Fetching(Batches {
-                        why: PrFetch::Tree, ..
-                    })
-                    | Resumable::FetchingOrigins {
-                        why: PrFetch::Tree, ..
-                    },
-                ),
-                Some(_),
-            ) => SyncPart::Trees,
+            (Phase::Resumable(Resumable::Loading(loading)), Some(_)) => {
+                if loading.trees_come_first() {
+                    SyncPart::Trees
+                } else {
+                    SyncPart::Window
+                }
+            }
             (_, Some(_)) => SyncPart::YourWork,
             (_, None) => SyncPart::Refresh,
+        }
+    }
+
+    /// The progress of a first sync's queue, for the status bar.
+    fn load_progress(&self) -> Option<LoadProgress> {
+        match &self.phase {
+            Phase::Resumable(Resumable::Loading(loading)) => Some(loading.progress(&self.fetched)),
+            Phase::Starting
+            | Phase::CheckingList(_)
+            | Phase::Polling(_)
+            | Phase::FetchingChanged(_)
+            | Phase::Probing(_)
+            | Phase::Resumable(_) => None,
+        }
+    }
+
+    /// Puts Issue `number`'s tree first, if this sync is at the point of loading trees. Earlier, the queue
+    /// doesn't exist yet and only moments of the user's own work stand before it. A refresh reads no tree for
+    /// an Issue that hasn't changed.
+    fn open_issue(&mut self, number: u32) {
+        if let Phase::Resumable(Resumable::Loading(loading)) = &mut self.phase {
+            loading.open_issue(number);
         }
     }
 
@@ -387,7 +404,7 @@ impl UserWorkSync {
             Phase::Resumable(Resumable::FetchingIssues { numbers, shown }) => {
                 fetch_issues(&link, numbers, shown)?
             }
-            Phase::Resumable(Resumable::Window(walk)) => walk_window(&link, walk, fetched)?,
+            Phase::Resumable(Resumable::Loading(loading)) => load(&link, loading, fetched)?,
             Phase::Resumable(Resumable::ReadingCrossReferences(reading)) => {
                 read_cross_references(&link, reading, fetched)?
             }

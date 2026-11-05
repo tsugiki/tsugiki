@@ -8,7 +8,7 @@ use time::OffsetDateTime;
 use super::{Step, UserWorkSync};
 use crate::error::{Error, ErrorKind};
 use crate::github::GitHub;
-use crate::repository::RepositorySettings;
+use crate::repository::{RepositoryName, RepositorySettings};
 use crate::status::{Change, LastSync, SyncActivity};
 use crate::store::Store;
 
@@ -114,8 +114,20 @@ impl Syncs {
                 .first_sync
                 .as_ref()
                 .map_or(0, |first_sync| first_sync.pages),
+            load: sync.load_progress(),
             paused_until,
         })
+    }
+
+    /// Tells the sync of `repository`, if one is running, that the user opened Issue `number`.
+    pub fn open_issue(&mut self, repository: &RepositoryName, number: u32) {
+        let running = self.queue.iter_mut();
+        if let Some(sync) = running
+            .into_iter()
+            .find(|sync| sync.repository.is_same(repository))
+        {
+            sync.open_issue(number);
+        }
     }
 
     /// The time the next step can run, if there is one.

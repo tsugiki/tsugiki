@@ -162,8 +162,11 @@ fn record_first_sync(github: &GitHub, scout: &GitHub) {
         issues.asked_for
     );
     let work: BTreeSet<u32> = batch.pull_requests.iter().map(|pr| pr.number).collect();
-    let shown = issues.issues.iter().map(|issue| issue.number);
-    let chosen = issue_with_a_backport(scout, &repository, shown.collect(), &work)
+    let shown: Vec<u32> = issues.issues.iter().map(|issue| issue.number).collect();
+    let _references = github
+        .fetch_issue_references(&repository, &shown, FETCH_BATCH)
+        .expect("read the cross-references of the Issues the PRs name");
+    let chosen = issue_with_a_backport(scout, &repository, shown, &work)
         .expect("look for an Issue with a Backport");
     let Some(issue) = chosen else {
         println!("No Issue has a Backport on one page, so the tree's recordings stay as they were");

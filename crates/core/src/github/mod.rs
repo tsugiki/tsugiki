@@ -8,6 +8,7 @@ pub mod issues;
 pub mod live;
 pub mod pull_requests;
 pub mod record;
+pub mod references;
 pub mod refresh;
 pub mod replay;
 pub mod window;
@@ -324,6 +325,8 @@ fn read<D: DeserializeOwned>(reply: &Reply) -> Result<D, Error> {
         RateLimited,
         #[serde(rename = "NOT_FOUND")]
         NotFound,
+        #[serde(rename = "FORBIDDEN")]
+        Forbidden,
         #[serde(other)]
         Other,
     }
@@ -367,14 +370,24 @@ fn read<D: DeserializeOwned>(reply: &Reply) -> Result<D, Error> {
         matches!(error.kind, Some(GraphqlErrorKind::NotFound))
             && (place == Some("nodes") || (place == Some("repository") && error.path.len() == 2))
     };
-    if let Some(error) = envelope.errors.iter().find(|error| !gone_node(error)) {
+    // A cross-reference can come from something this token can't see, such as a repository behind SAML. Its
+    // event comes back null, and a PR Tsugiki can't read can't join a tree. Failing would hold back a whole
+    // page of Issues on every retry.
+    let hidden_source = |error: &&GraphqlError| {
+        matches!(
+            error.kind,
+            Some(GraphqlErrorKind::NotFound | GraphqlErrorKind::Forbidden)
+        ) && error.path.last().and_then(Value::as_str) == Some("source")
+    };
+    let failed = |error: &&GraphqlError| !gone_node(error) && !hidden_source(error);
+    if let Some(error) = envelope.errors.iter().find(failed) {
         return Err(match error.kind {
             Some(GraphqlErrorKind::RateLimited) => rate_limited(),
             Some(GraphqlErrorKind::NotFound) => Error::new(
                 ErrorKind::NotFound,
                 &format!("GitHub said: {}", error.message),
             ),
-            Some(GraphqlErrorKind::Other) | None => Error::new(
+            Some(GraphqlErrorKind::Forbidden | GraphqlErrorKind::Other) | None => Error::new(
                 ErrorKind::QueryRefused,
                 &format!("GitHub said: {}", error.message),
             ),

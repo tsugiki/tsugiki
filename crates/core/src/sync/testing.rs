@@ -111,6 +111,11 @@ pub(super) fn hours_ago(hours: i64) -> String {
 
 /// An Issue as a page of a first sync's window lists it.
 pub(super) fn window_issue(number: u32, updated_at: &str) -> Value {
+    window_issue_referencing(number, updated_at, &[])
+}
+
+/// An Issue as a page of a first sync's window lists it, with these PRs as its cross-references.
+pub(super) fn window_issue_referencing(number: u32, updated_at: &str, prs: &[u32]) -> Value {
     json!({
         "number": number,
         "title": format!("Issue {number}"),
@@ -118,6 +123,7 @@ pub(super) fn window_issue(number: u32, updated_at: &str) -> Value {
         "assignees": { "nodes": [] },
         "timelineItems": { "nodes": [] },
         "author": { "login": "octocat" },
+        "references": reference_timeline(prs, None),
     })
 }
 
@@ -133,7 +139,7 @@ pub(super) fn comment_by(login: &str, at: &str) -> Value {
 
 /// A PR as a page of a first sync's window lists it.
 pub(super) fn window_pr(number: u32, updated_at: &str) -> Value {
-    pr_node(number, &json!({ "updatedAt": updated_at }))
+    json!({ "id": format!("id{number}"), "number": number, "updatedAt": updated_at })
 }
 
 /// A page of a first sync's window, holding `nodes`, of either list.
@@ -143,8 +149,9 @@ pub(super) fn window_page(
     rate: &str,
 ) -> Result<Reply, Unreachable> {
     let info = json!({ "hasNextPage": next.is_some(), "endCursor": next });
+    let total = nodes.len();
     reply_ok(&format!(
-        r#"{{"data":{{"repository":{{"list":{{"pageInfo":{info},"nodes":{}}}}},{rate}}}}}"#,
+        r#"{{"data":{{"repository":{{"list":{{"totalCount":{total},"pageInfo":{info},"nodes":{}}}}},{rate}}}}}"#,
         json!(nodes)
     ))
 }
@@ -274,6 +281,14 @@ pub(super) fn cross_references(
     older: Option<&str>,
     rate: &str,
 ) -> Result<Reply, Unreachable> {
+    let issue = json!({ "timelineItems": reference_timeline(numbers, older) });
+    reply_ok(&format!(
+        r#"{{"data":{{"repository":{{"issue":{issue}}},{rate}}}}}"#
+    ))
+}
+
+/// One page of an Issue's cross-references that lists these PRs as `id<number>`.
+fn reference_timeline(numbers: &[u32], older: Option<&str>) -> Value {
     let nodes: Vec<Value> = numbers
         .iter()
         .map(|number| {
@@ -285,12 +300,56 @@ pub(super) fn cross_references(
                 } })
         })
         .collect();
-    let issue = json!({ "timelineItems": {
-            "pageInfo": { "hasPreviousPage": older.is_some(), "startCursor": older },
-            "nodes": nodes,
-        } });
+    json!({
+        "pageInfo": { "hasPreviousPage": older.is_some(), "startCursor": older },
+        "nodes": nodes,
+    })
+}
+
+/// An answer to a read of Issues by number, each with the PRs that list beside it as cross-references.
+pub(super) fn issue_references(issues: &[(u32, &[u32])], rate: &str) -> Result<Reply, Unreachable> {
+    let mut fields = serde_json::Map::new();
+    for (number, prs) in issues {
+        drop(fields.insert(
+            format!("i{number}"),
+            json!({
+                "__typename": "Issue",
+                "number": number,
+                "timelineItems": reference_timeline(prs, None),
+            }),
+        ));
+    }
     reply_ok(&format!(
-        r#"{{"data":{{"repository":{{"issue":{issue}}},{rate}}}}}"#
+        r#"{{"data":{{"repository":{},{rate}}}}}"#,
+        Value::Object(fields)
+    ))
+}
+
+/// An answer to a read of one Issue by number whose cross-references go on past this page.
+pub(super) fn issue_references_with_more(
+    number: u32,
+    prs: &[u32],
+    older: &str,
+    rate: &str,
+) -> Result<Reply, Unreachable> {
+    let field = json!({
+        "__typename": "Issue",
+        "number": number,
+        "timelineItems": reference_timeline(prs, Some(older)),
+    });
+    reply_ok(&format!(
+        r#"{{"data":{{"repository":{{"i{number}":{field}}},{rate}}}}}"#
+    ))
+}
+
+/// An answer to a read of Issues by number, none of which has a cross-reference.
+pub(super) fn no_issue_references(rate: &str) -> Result<Reply, Unreachable> {
+    issue_references(&[], rate)
+}
+
+pub(super) fn origin_answer(node: &Value, rate: &str) -> Result<Reply, Unreachable> {
+    reply_ok(&format!(
+        r#"{{"data":{{"repository":{{"pullRequest":{node}}},{rate}}}}}"#
     ))
 }
 

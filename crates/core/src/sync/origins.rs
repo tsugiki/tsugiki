@@ -63,14 +63,13 @@ pub(super) fn fetch_origin(
 #[cfg(test)]
 mod tests {
     use crate::github::testing::reply_ok;
-    use crate::github::{Reply, Unreachable};
     use crate::sync::Syncs;
     use crate::sync::recovery::{Scenario, recovers_from_each_failure, resumes_after_each_step};
     use crate::sync::testing::{
-        FEW, Harness, LOTS, comment_by, cpython, cross_references, empty_window_page,
-        fetched_nodes, found, hours_ago, issues, merged_node, no_cross_references, nothing, plain,
-        pr_node, run_to_the_end, searches_finding, up_to_the_first_issue, window_issue,
-        window_page, window_pr,
+        FEW, Harness, LOTS, comment_by, cpython, cross_references, fetched_nodes, found, hours_ago,
+        issue_references, issue_references_with_more, issues, merged_node, no_issue_references,
+        nothing, origin_answer, plain, pr_node, run_to_the_end, searches_finding,
+        up_to_the_first_issue, window_issue_referencing, window_page, window_pr,
     };
     use serde_json::{Value, json};
     use std::time::{Duration, Instant};
@@ -84,12 +83,6 @@ mod tests {
                 "baseRefName": "3.14",
             }),
         )
-    }
-
-    fn origin_answer(node: &Value, rate: &str) -> Result<Reply, Unreachable> {
-        reply_ok(&format!(
-            r#"{{"data":{{"repository":{{"pullRequest":{node}}},{rate}}}}}"#
-        ))
     }
 
     #[test]
@@ -107,7 +100,7 @@ mod tests {
             fetched_nodes(&[backport], LOTS),
             origin_answer(&origin, LOTS),
             issues(&[1], LOTS),
-            no_cross_references(LOTS),
+            no_issue_references(LOTS),
         ];
         let harness = Harness::new("origin-activity", replies);
         let mut syncs = Syncs::default();
@@ -128,52 +121,6 @@ mod tests {
     }
 
     #[test]
-    fn a_backport_the_window_brought_still_leads_to_its_origin_pr_when_a_tree_lists_it() {
-        let mut backport = backport_node(10, 9);
-        backport["updatedAt"] = json!(hours_ago(1));
-        let mut replies = up_to_the_first_issue();
-        replies.push(empty_window_page());
-        replies.push(window_page(&[backport], None, LOTS));
-        replies.push(cross_references(&[10], None, LOTS));
-        replies.push(origin_answer(&merged_node(9), LOTS));
-        let harness = Harness::with_window("origin-window", replies);
-        let mut syncs = Syncs::default();
-        syncs.add(plain(cpython()));
-
-        drop(run_to_the_end(&mut syncs, &harness));
-
-        assert_eq!(
-            harness.operations()[6..],
-            [
-                "WindowIssues",
-                "WindowPullRequests",
-                "FetchCrossReferences",
-                "FetchOriginPullRequest",
-            ]
-        );
-        assert_eq!(harness.numbers(), [1, 9, 10]);
-        harness.finish();
-    }
-
-    #[test]
-    fn a_backport_only_the_window_brought_doesnt_ask_for_its_origin_pr() {
-        let mut backport = backport_node(10, 9);
-        backport["updatedAt"] = json!(hours_ago(1));
-        let mut replies = up_to_the_first_issue();
-        replies.push(empty_window_page());
-        replies.push(window_page(&[backport], None, LOTS));
-        replies.push(no_cross_references(LOTS));
-        let harness = Harness::with_window("origin-window-only", replies);
-        let mut syncs = Syncs::default();
-        syncs.add(plain(cpython()));
-
-        drop(run_to_the_end(&mut syncs, &harness));
-
-        assert_eq!(harness.numbers(), [1, 10]);
-        harness.finish();
-    }
-
-    #[test]
     fn a_first_sync_recovers_from_a_failure_at_each_point() {
         let posts = vec![
             found(&["a"], Some("next"), LOTS),
@@ -184,14 +131,22 @@ mod tests {
             fetched_nodes(&[pr_node(1, &json!({})), backport_node(2, 9)], LOTS),
             origin_answer(&merged_node(9), LOTS),
             issues(&[1], LOTS),
-            window_page(&[window_issue(20, &hours_ago(1))], None, LOTS),
-            window_page(&[window_pr(21, &hours_ago(2))], Some("older"), LOTS),
-            window_page(&[window_pr(22, &hours_ago(3))], None, LOTS),
-            cross_references(&[3], Some("older"), LOTS),
-            // 21 came with the window, so the tree reads what it knows of it from the store.
+            issue_references_with_more(1, &[3], "older", LOTS),
             cross_references(&[4, 21], None, LOTS),
-            fetched_nodes(&[merged_node(3), backport_node(4, 8)], LOTS),
+            fetched_nodes(
+                &[merged_node(3), backport_node(4, 8), merged_node(21)],
+                LOTS,
+            ),
             origin_answer(&merged_node(8), LOTS),
+            window_page(
+                &[window_issue_referencing(20, &hours_ago(1), &[22])],
+                None,
+                LOTS,
+            ),
+            fetched_nodes(&[merged_node(22)], LOTS),
+            window_page(&[window_pr(23, &hours_ago(2))], Some("older"), LOTS),
+            fetched_nodes(&[merged_node(23)], LOTS),
+            window_page(&[window_pr(21, &hours_ago(3))], None, LOTS),
         ];
         let scenario = Scenario {
             name: "recovery-first",
@@ -215,13 +170,15 @@ mod tests {
                 "FetchPullRequests",
                 "FetchOriginPullRequest",
                 "FetchIssues",
-                "WindowIssues",
-                "WindowPullRequests",
-                "WindowPullRequests",
-                "FetchCrossReferences",
+                "FetchIssueReferences",
                 "FetchCrossReferences",
                 "FetchTreePullRequests",
                 "FetchOriginPullRequest",
+                "WindowIssues",
+                "FetchTreePullRequests",
+                "WindowPullRequests",
+                "FetchTreePullRequests",
+                "WindowPullRequests",
             ]
         );
     }
@@ -232,7 +189,7 @@ mod tests {
         replies.push(fetched_nodes(&[backport_node(2, 9)], LOTS));
         replies.push(origin_answer(&merged_node(9), LOTS));
         replies.push(issues(&[1], LOTS));
-        replies.push(no_cross_references(LOTS));
+        replies.push(no_issue_references(LOTS));
         let harness = Harness::new("origin", replies);
         let mut syncs = Syncs::default();
         syncs.add(plain(cpython()));
@@ -246,7 +203,7 @@ mod tests {
                 "FetchPullRequests",
                 "FetchOriginPullRequest",
                 "FetchIssues",
-                "FetchCrossReferences",
+                "FetchIssueReferences",
             ]
         );
         assert_eq!(asked[5]["number"], 9);
@@ -265,7 +222,7 @@ mod tests {
         replies.push(fetched_nodes(&[untitled], LOTS));
         replies.push(origin_answer(&merged_node(9), LOTS));
         replies.push(issues(&[1], LOTS));
-        replies.push(no_cross_references(LOTS));
+        replies.push(no_issue_references(LOTS));
         let harness = Harness::new("origin-issue", replies);
         let mut syncs = Syncs::default();
         syncs.add(plain(cpython()));
@@ -281,7 +238,7 @@ mod tests {
     #[test]
     fn a_sync_fetches_a_tree_backports_missing_origin_pr_after_the_tree() {
         let mut replies = up_to_the_first_issue();
-        replies.push(cross_references(&[2], None, LOTS));
+        replies.push(issue_references(&[(1, &[2])], LOTS));
         replies.push(fetched_nodes(&[backport_node(2, 9)], LOTS));
         replies.push(origin_answer(&merged_node(9), LOTS));
         let harness = Harness::new("tree-origin", replies);
@@ -302,17 +259,17 @@ mod tests {
             LOTS,
         ));
         replies.push(issues(&[1], LOTS));
-        replies.push(no_cross_references(LOTS));
+        replies.push(no_issue_references(LOTS));
         // The next sync finds only the Backport, and its Origin PR has merged by then.
         replies.extend(searches_finding(&["a"]));
         replies.push(fetched_nodes(&[backport_node(2, 8)], LOTS));
         replies.push(origin_answer(&merged_node(8), LOTS));
         replies.push(issues(&[1], LOTS));
-        replies.push(no_cross_references(LOTS));
+        replies.push(no_issue_references(LOTS));
         replies.extend(searches_finding(&["a"]));
         replies.push(fetched_nodes(&[backport_node(2, 8)], LOTS));
         replies.push(issues(&[1], LOTS));
-        replies.push(no_cross_references(LOTS));
+        replies.push(no_issue_references(LOTS));
         let harness = Harness::new("origin-known", replies);
         let mut syncs = Syncs::default();
 
@@ -345,11 +302,11 @@ mod tests {
         replies.push(fetched_nodes(&[untitled(2)], LOTS));
         replies.push(origin_answer(&merged_node(9), LOTS));
         replies.push(issues(&[1], LOTS));
-        replies.push(no_cross_references(LOTS));
+        replies.push(no_issue_references(LOTS));
         replies.extend(searches_finding(&["b"]));
         replies.push(fetched_nodes(&[untitled(3)], LOTS));
         replies.push(issues(&[1], LOTS));
-        replies.push(cross_references(&[], None, LOTS));
+        replies.push(issue_references(&[(1, &[])], LOTS));
         let harness = Harness::new("origin-frozen", replies);
         let mut syncs = Syncs::default();
         syncs.add(plain(cpython()));
@@ -362,7 +319,7 @@ mod tests {
 
         assert_eq!(
             harness.operations()[4..],
-            ["FetchPullRequests", "FetchIssues", "FetchCrossReferences"]
+            ["FetchPullRequests", "FetchIssues", "FetchIssueReferences"]
         );
         harness.finish();
     }
@@ -376,7 +333,7 @@ mod tests {
                 "message":"gone","path":["repository","pullRequest"]}}]}}"#
     )));
         replies.push(issues(&[1], LOTS));
-        replies.push(no_cross_references(LOTS));
+        replies.push(no_issue_references(LOTS));
         let harness = Harness::new("origin-gone", replies);
         let mut syncs = Syncs::default();
         syncs.add(plain(cpython()));

@@ -345,6 +345,27 @@ export type ListedItem_Serialize = {
 	attention: Attention_Serialize | null,
 } & WorkbenchItem_Serialize;
 
+/**  A first sync's progress through its queue. It learns of more PRs as it reads, so `prs_known` grows. */
+export type LoadProgress = LoadProgress_Serialize | LoadProgress_Deserialize;
+
+/**  A first sync's progress through its queue. It learns of more PRs as it reads, so `prs_known` grows. */
+export type LoadProgress_Deserialize = {
+	issues_read: number,
+	/**  Nothing, until the first page of Issues says. */
+	issues_total?: number | null,
+	prs_fetched: number,
+	prs_known: number,
+};
+
+/**  A first sync's progress through its queue. It learns of more PRs as it reads, so `prs_known` grows. */
+export type LoadProgress_Serialize = {
+	issues_read: number,
+	/**  Nothing, until the first page of Issues says. */
+	issues_total: number | null,
+	prs_fetched: number,
+	prs_known: number,
+};
+
 /**  The settings in force, and what is wrong with the files they came from, in words for the status bar. */
 export type LoadedSettings = LoadedSettings_Serialize | LoadedSettings_Deserialize;
 
@@ -555,6 +576,8 @@ export type SyncActivity_Deserialize = {
 	part: SyncPart,
 	/**  The pages a first sync has read. */
 	pages: number,
+	/**  Its progress through the queue, once it gets there. */
+	load?: LoadProgress_Deserialize | null,
 	/**  The time GitHub's points come back, while the sync waits for them. */
 	paused_until: string | null,
 };
@@ -565,12 +588,16 @@ export type SyncActivity_Serialize = {
 	part: SyncPart,
 	/**  The pages a first sync has read. */
 	pages: number,
+	/**  Its progress through the queue, once it gets there. */
+	load: LoadProgress_Serialize | null,
 	/**  The time GitHub's points come back, while the sync waits for them. */
 	paused_until: string | null,
 };
 
 /**  The part of a sync under way, in the order a first sync runs them (ADR 0015). */
-export type SyncPart = "your_work" | "window" | "trees" | 
+export type SyncPart = "your_work" | 
+/**  The trees of the user's own Issues, and of any Issue they open. */
+"trees" | "window" | 
 /**
  *  A refresh, or a sync that hasn't asked the store yet which it is. The status bar only mentions this
  *  when it has to wait.

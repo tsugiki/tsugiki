@@ -22,7 +22,7 @@ In portable mode all of it lives in a `data` folder next to the program instead 
 One file is the unit the user moves to another machine. **Export database** writes a consistent snapshot of it
 with `VACUUM INTO`, and **Import database** replaces the other machine's file with that snapshot, after a
 confirmation and with a backup kept. The cache travels too, which saves a new machine CPython's first sync of
-8 to 10 minutes. The mirrors are cloned again there; with `--reference` that takes under a minute.
+about 27 minutes. The mirrors are cloned again there; with `--reference` that takes under a minute.
 
 The database stores facts, as GitHub and git report them. Needs attention, review state, Issue trees and
 counts are computed in Rust when a screen asks ([ADR 0008](0008-view-models-and-invalidation-over-ipc.md)), so

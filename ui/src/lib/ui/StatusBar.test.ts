@@ -187,6 +187,7 @@ describe("StatusBar's sync under way", () => {
     repository,
     part,
     pages,
+    load: null,
     paused_until: null,
   });
 
@@ -199,6 +200,22 @@ describe("StatusBar's sync under way", () => {
     expect(screen.getByRole("button").textContent).toBe(words);
     expect(bar().textContent).not.toContain("Syncing");
     expect(bar().classList.contains("beside-syncing")).toBe(true);
+  });
+
+  it("says how far the queue has got, and that more PRs may come", () => {
+    const load = { issues_read: 450, issues_total: 1446, prs_fetched: 900, prs_known: 2100 };
+    render(StatusBar, { status: online, lastSync, syncActivity: { ...activity("window"), load } });
+    expect(screen.getByRole("button").textContent).toBe(
+      "Syncing recent items · Issues 450 of 1446 · PRs 900 of 2100 so far",
+    );
+  });
+
+  it("leaves out the total of Issues until GitHub has said it", () => {
+    const load = { issues_read: 0, issues_total: null, prs_fetched: 12, prs_known: 40 };
+    render(StatusBar, { status: online, lastSync, syncActivity: { ...activity("trees"), load } });
+    expect(screen.getByRole("button").textContent).toBe(
+      "Syncing Issue trees · Issues 0 · PRs 12 of 40 so far",
+    );
   });
 
   it("counts one page as one", () => {

@@ -4,12 +4,14 @@
 
 use std::collections::BTreeMap;
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use time::OffsetDateTime;
 
 use super::activity::{IssueTimelineWire, ItemActivity, issue_activity};
 use super::pull_requests::{NodeId, Nodes, PageRequest, Person, RateLimit};
+use super::references::{REFERENCE_FIELDS, ReferenceTimeline};
 use super::{GitHub, Login, Request};
 use crate::error::Error;
 use crate::repository::RepositoryName;
@@ -76,30 +78,44 @@ pub(super) const ISSUE_FIELDS: &str = "number title updatedAt author { login } \
      ... on IssueComment { createdAt author { __typename login } } \
      ... on MentionedEvent { createdAt actor { __typename login } } } }";
 
-/// GitHub's answer for one number.
-#[derive(Deserialize)]
-#[serde(tag = "__typename")]
-enum Numbered {
-    Issue(IssueWire),
-    PullRequest,
-}
-
-/// The query for `numbers`, with one field for each, because GraphQL has no way to look up a list of numbers
-/// and a `$` variable can't add a field. Only digits reach this text.
-fn fetch_issues_query(numbers: &[u32]) -> String {
-    let fields: Vec<String> = numbers
+/// One field for each of `numbers`, each asking `fields` of an Issue, because GraphQL has no way to look up a
+/// list of numbers and a `$` variable can't add a field. Only digits reach this text.
+pub(super) fn query_by_number(operation: &str, numbers: &[u32], fields: &str) -> String {
+    let asked: Vec<String> = numbers
         .iter()
         .map(|number| {
             format!(
-                "i{number}: issueOrPullRequest(number: {number}) {{ __typename ... on Issue {{ {ISSUE_FIELDS} }} }}"
+                "i{number}: issueOrPullRequest(number: {number}) {{ __typename ... on Issue {{ {fields} }} }}"
             )
         })
         .collect();
     format!(
-        "query FetchIssues($owner: String!, $name: String!) {{ repository(owner: $owner, name: $name) \
+        "query {operation}($owner: String!, $name: String!) {{ repository(owner: $owner, name: $name) \
          {{ {} }} rateLimit {{ remaining resetAt }} }}",
-        fields.join(" ")
+        asked.join(" ")
     )
+}
+
+fn fetch_issues_query(numbers: &[u32]) -> String {
+    query_by_number("FetchIssues", numbers, ISSUE_FIELDS)
+}
+
+/// The request of a read of Issues by number.
+pub(super) struct ByNumber<'a> {
+    pub operation: &'static str,
+    pub query: fn(&[u32]) -> String,
+    /// At least one.
+    pub numbers: &'a [u32],
+    pub size: usize,
+}
+
+/// An answer to a read of Issues by number.
+pub(super) struct ReadByNumber<T> {
+    /// One for each number that names an Issue.
+    pub issues: Vec<T>,
+    /// The count of numbers it asked for, which a retry can make smaller than the batch.
+    pub asked_for: usize,
+    pub rate_limit: RateLimit,
 }
 
 /// A PR that mentions an Issue. Only the link rules can say whether it belongs in the Issue's tree.
@@ -120,37 +136,13 @@ pub struct CrossReferences {
 }
 
 /// GitHub lists events oldest first, so `last` and `before` read them from the newest (ADR 0011).
-const FETCH_CROSS_REFERENCES: &str = "query FetchCrossReferences($owner: String!, $name: String!, $number: Int!, $last: Int!, $before: String) { \
-     repository(owner: $owner, name: $name) { issue(number: $number) { \
-     timelineItems(last: $last, before: $before, itemTypes: [CROSS_REFERENCED_EVENT]) { \
-     pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename \
-     ... on PullRequest { id number repository { nameWithOwner } } } } } } } } \
-     rateLimit { remaining resetAt } }";
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct NamedRepository {
-    name_with_owner: RepositoryName,
-}
-
-#[derive(Deserialize)]
-struct SourcePr {
-    #[serde(flatten)]
-    listed: ListedPr,
-    repository: NamedRepository,
-}
-
-/// The Issue or PR that mentioned the Issue.
-#[derive(Deserialize)]
-#[serde(tag = "__typename")]
-enum Source {
-    PullRequest(SourcePr),
-    Issue,
-}
-
-#[derive(Deserialize)]
-struct CrossReferenceEvent {
-    source: Source,
+fn fetch_cross_references_query() -> String {
+    format!(
+        "query FetchCrossReferences($owner: String!, $name: String!, $number: Int!, $last: Int!, \
+         $before: String) {{ repository(owner: $owner, name: $name) {{ issue(number: $number) {{ \
+         timelineItems(last: $last, before: $before, itemTypes: [CROSS_REFERENCED_EVENT]) {{ \
+         {REFERENCE_FIELDS} }} }} }} rateLimit {{ remaining resetAt }} }}"
+    )
 }
 
 impl GitHub {
@@ -164,20 +156,8 @@ impl GitHub {
     ) -> Result<CrossReferences, Error> {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
-        struct PageInfo {
-            has_previous_page: bool,
-            start_cursor: Option<String>,
-        }
-        #[derive(Deserialize)]
-        struct Timeline {
-            #[serde(rename = "pageInfo")]
-            page_info: PageInfo,
-            nodes: Vec<Option<CrossReferenceEvent>>,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
         struct Issue {
-            timeline_items: Timeline,
+            timeline_items: ReferenceTimeline,
         }
         #[derive(Deserialize)]
         struct Holder {
@@ -191,7 +171,7 @@ impl GitHub {
         }
         let (data, _): (Data, usize) = self.query_at_size(page.size, |last| Request {
             operation: "FetchCrossReferences",
-            query: FETCH_CROSS_REFERENCES.into(),
+            query: fetch_cross_references_query().into(),
             variables: json!({
                 "owner": repository.owner(),
                 "name": repository.name(),
@@ -207,23 +187,10 @@ impl GitHub {
                 rate_limit: data.rate_limit,
             });
         };
-        let timeline = issue.timeline_items;
-        let info = timeline.page_info;
-        let listed = timeline
-            .nodes
-            .into_iter()
-            .rev()
-            .flatten()
-            .filter_map(|event| match event.source {
-                Source::PullRequest(pr) if pr.repository.name_with_owner.is_same(repository) => {
-                    Some(pr.listed)
-                }
-                Source::PullRequest(_) | Source::Issue => None,
-            })
-            .collect();
+        let (listed, next) = issue.timeline_items.read(repository);
         Ok(CrossReferences {
             listed,
-            next: info.start_cursor.filter(|_| info.has_previous_page),
+            next,
             rate_limit: data.rate_limit,
         })
     }
@@ -235,33 +202,73 @@ impl GitHub {
         numbers: &[u32],
         size: usize,
     ) -> Result<FetchedIssues, Error> {
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Data {
-            repository: BTreeMap<String, Option<Numbered>>,
-            rate_limit: RateLimit,
-        }
-        let (data, asked_for): (Data, usize) =
-            self.query_at_size(size.min(numbers.len()), |size| {
-                let asked: Vec<u32> = numbers.iter().take(size).copied().collect();
-                Request {
-                    operation: "FetchIssues",
-                    query: fetch_issues_query(&asked).into(),
-                    variables: json!({ "owner": repository.owner(), "name": repository.name() }),
-                }
-            })?;
-        let (issues, activity) = data
-            .repository
-            .into_values()
-            .flatten()
-            .filter_map(|numbered| match numbered {
-                Numbered::Issue(wire) => Some(<(IssueFacts, ItemActivity)>::from(wire)),
-                Numbered::PullRequest => None,
-            })
+        let read: ReadByNumber<IssueWire> = self.read_by_number(
+            repository,
+            ByNumber {
+                operation: "FetchIssues",
+                query: fetch_issues_query,
+                numbers,
+                size,
+            },
+        )?;
+        let (issues, activity) = read
+            .issues
+            .into_iter()
+            .map(<(IssueFacts, ItemActivity)>::from)
             .unzip();
         Ok(FetchedIssues {
             issues,
             activity,
+            asked_for: read.asked_for,
+            rate_limit: read.rate_limit,
+        })
+    }
+
+    /// Asks for the first `read.size` of `read.numbers`, or half that after a 502 or no answer. A number can
+    /// turn out to be a PR or to name nothing, and then the answer holds nothing for it.
+    pub(super) fn read_by_number<T: DeserializeOwned>(
+        &self,
+        repository: &RepositoryName,
+        read: ByNumber<'_>,
+    ) -> Result<ReadByNumber<T>, Error> {
+        #[derive(Deserialize)]
+        #[serde(tag = "__typename", bound = "T: DeserializeOwned")]
+        enum Numbered<T> {
+            Issue(T),
+            PullRequest,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase", bound = "T: DeserializeOwned")]
+        struct Data<T> {
+            repository: BTreeMap<String, Option<Numbered<T>>>,
+            rate_limit: RateLimit,
+        }
+        let ByNumber {
+            operation,
+            query,
+            numbers,
+            size,
+        } = read;
+        let (data, asked_for): (Data<T>, usize) =
+            self.query_at_size(size.min(numbers.len()), |size| {
+                let asked: Vec<u32> = numbers.iter().take(size).copied().collect();
+                Request {
+                    operation,
+                    query: query(&asked).into(),
+                    variables: json!({ "owner": repository.owner(), "name": repository.name() }),
+                }
+            })?;
+        let issues = data
+            .repository
+            .into_values()
+            .flatten()
+            .filter_map(|numbered| match numbered {
+                Numbered::Issue(issue) => Some(issue),
+                Numbered::PullRequest => None,
+            })
+            .collect();
+        Ok(ReadByNumber {
+            issues,
             asked_for,
             rate_limit: data.rate_limit,
         })

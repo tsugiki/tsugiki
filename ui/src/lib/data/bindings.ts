@@ -14,6 +14,8 @@ export const commands = {
 	 *  the core knows gets nothing, and the core's event then tells it.
 	 */
 	lastSync: () => __TAURI_INVOKE<LastSync_Serialize | null>("last_sync"),
+	/**  What the queue of syncs is doing, for a window that has just loaded. */
+	syncActivity: () => __TAURI_INVOKE<SyncActivity_Serialize | null>("sync_activity"),
 	/**  Refreshes the open Repository now, and returns at once. */
 	refresh: () => __TAURI_INVOKE<void>("refresh"),
 	/**  The settings Tsugiki last read, and what was wrong with their files (ADR 0014). */
@@ -43,6 +45,7 @@ export const events = {
 	changed: makeEvent<Changed, Changed>("changed"),
 	lastSyncChanged: makeEvent<LastSyncChanged_Serialize, LastSyncChanged_Deserialize>("last-sync-changed"),
 	statusChanged: makeEvent<StatusChanged_Serialize, StatusChanged_Deserialize>("status-changed"),
+	syncActivityChanged: makeEvent<SyncActivityChanged_Serialize, SyncActivityChanged_Deserialize>("sync-activity-changed"),
 };
 
 /* Types */
@@ -414,6 +417,46 @@ export type Status_Serialize =
 { state: "offline_as"; last_login: Login } | 
 /**  Something stops Tsugiki reading, such as a refused token. */
 { state: "problem"; problem: Error_Serialize };
+
+/**  The work under way in the queue of syncs. */
+export type SyncActivity = SyncActivity_Serialize | SyncActivity_Deserialize;
+
+/**  Sent when what the queue of syncs is doing changes, so the status bar can say. */
+export type SyncActivityChanged = SyncActivityChanged_Serialize | SyncActivityChanged_Deserialize;
+
+/**  Sent when what the queue of syncs is doing changes, so the status bar can say. */
+export type SyncActivityChanged_Deserialize = SyncActivity_Deserialize | null;
+
+/**  Sent when what the queue of syncs is doing changes, so the status bar can say. */
+export type SyncActivityChanged_Serialize = SyncActivity_Serialize | null;
+
+/**  The work under way in the queue of syncs. */
+export type SyncActivity_Deserialize = {
+	repository: RepositoryName,
+	part: SyncPart,
+	/**  The pages a first sync has read. */
+	pages: number,
+	/**  The time GitHub's points come back, while the sync waits for them. */
+	paused_until: string | null,
+};
+
+/**  The work under way in the queue of syncs. */
+export type SyncActivity_Serialize = {
+	repository: RepositoryName,
+	part: SyncPart,
+	/**  The pages a first sync has read. */
+	pages: number,
+	/**  The time GitHub's points come back, while the sync waits for them. */
+	paused_until: string | null,
+};
+
+/**  The part of a sync under way, in the order a first sync runs them (ADR 0015). */
+export type SyncPart = "your_work" | "window" | "trees" | 
+/**
+ *  A refresh, or a sync that hasn't asked the store yet which it is. The status bar only mentions this
+ *  when it has to wait.
+ */
+"refresh";
 
 /**  Where the token comes from. A personal access token joins this with the Account page (ADR 0004). */
 export type TokenSource = "gh";

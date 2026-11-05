@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use super::{Leads, Link, Moved, NO_PAUSE, Phase, Step, pause_until};
+use super::{Leads, Link, Moved, Resumable, Step, pause_until};
 use crate::error::Error;
 use crate::github::pull_requests::PrFetch;
 use crate::links::possible_numbers;
@@ -19,15 +19,18 @@ pub(super) fn fetch_origin(
             PrFetch::Work => {
                 let named = std::mem::take(&mut leads.named);
                 let held = std::mem::take(&mut leads.held_issues);
-                Some(Phase::FetchingIssues {
-                    shown: held.difference(&named).copied().collect(),
-                    numbers: named.into_iter().collect(),
-                })
+                Some(
+                    Resumable::FetchingIssues {
+                        shown: held.difference(&named).copied().collect(),
+                        numbers: named.into_iter().collect(),
+                    }
+                    .into(),
+                )
             }
             PrFetch::Tree | PrFetch::Changed => None,
         };
         let step = if next.is_some() {
-            NO_PAUSE
+            Step::Moved
         } else {
             Step::Finished
         };
@@ -59,11 +62,12 @@ mod tests {
     use crate::github::testing::reply_ok;
     use crate::github::{Reply, Unreachable};
     use crate::sync::Syncs;
-    use crate::sync::recovery::{Scenario, recovers_from_each_failure};
+    use crate::sync::recovery::{Scenario, recovers_from_each_failure, resumes_after_each_step};
     use crate::sync::testing::{
-        FEW, Harness, LOTS, cpython, cross_references, fetched_nodes, found, issues, merged_node,
-        no_cross_references, nothing, plain, pr_node, run_to_the_end, searches_finding,
-        up_to_the_first_issue,
+        FEW, Harness, LOTS, cpython, cross_references, empty_window_page, fetched_nodes, found,
+        hours_ago, issues, merged_node, no_cross_references, nothing, plain, pr_node,
+        run_to_the_end, searches_finding, up_to_the_first_issue, window_issue, window_page,
+        window_pr,
     };
     use serde_json::{Value, json};
     use std::time::{Duration, Instant};
@@ -86,6 +90,52 @@ mod tests {
     }
 
     #[test]
+    fn a_backport_the_window_brought_still_leads_to_its_origin_pr_when_a_tree_lists_it() {
+        let mut backport = backport_node(10, 9);
+        backport["updatedAt"] = json!(hours_ago(1));
+        let mut replies = up_to_the_first_issue();
+        replies.push(empty_window_page());
+        replies.push(window_page(&[backport], None, LOTS));
+        replies.push(cross_references(&[10], None, LOTS));
+        replies.push(origin_answer(&merged_node(9), LOTS));
+        let harness = Harness::with_window("origin-window", replies);
+        let mut syncs = Syncs::default();
+        syncs.add(plain(cpython()));
+
+        drop(run_to_the_end(&mut syncs, &harness));
+
+        assert_eq!(
+            harness.operations()[6..],
+            [
+                "WindowIssues",
+                "WindowPullRequests",
+                "FetchCrossReferences",
+                "FetchOriginPullRequest",
+            ]
+        );
+        assert_eq!(harness.numbers(), [1, 9, 10]);
+        harness.finish();
+    }
+
+    #[test]
+    fn a_backport_only_the_window_brought_doesnt_ask_for_its_origin_pr() {
+        let mut backport = backport_node(10, 9);
+        backport["updatedAt"] = json!(hours_ago(1));
+        let mut replies = up_to_the_first_issue();
+        replies.push(empty_window_page());
+        replies.push(window_page(&[backport], None, LOTS));
+        replies.push(no_cross_references(LOTS));
+        let harness = Harness::with_window("origin-window-only", replies);
+        let mut syncs = Syncs::default();
+        syncs.add(plain(cpython()));
+
+        drop(run_to_the_end(&mut syncs, &harness));
+
+        assert_eq!(harness.numbers(), [1, 10]);
+        harness.finish();
+    }
+
+    #[test]
     fn a_first_sync_recovers_from_a_failure_at_each_point() {
         let posts = vec![
             found(&["a"], Some("next"), LOTS),
@@ -96,8 +146,12 @@ mod tests {
             fetched_nodes(&[pr_node(1, &json!({})), backport_node(2, 9)], LOTS),
             origin_answer(&merged_node(9), LOTS),
             issues(&[1], LOTS),
+            window_page(&[window_issue(20, &hours_ago(1))], None, LOTS),
+            window_page(&[window_pr(21, &hours_ago(2))], Some("older"), LOTS),
+            window_page(&[window_pr(22, &hours_ago(3))], None, LOTS),
             cross_references(&[3], Some("older"), LOTS),
-            cross_references(&[4], None, LOTS),
+            // 21 came with the window, so the tree reads what it knows of it from the store.
+            cross_references(&[4, 21], None, LOTS),
             fetched_nodes(&[merged_node(3), backport_node(4, 8)], LOTS),
             origin_answer(&merged_node(8), LOTS),
         ];
@@ -110,6 +164,7 @@ mod tests {
         };
 
         let operations = recovers_from_each_failure(&scenario);
+        resumes_after_each_step(&scenario);
 
         assert_eq!(
             operations,
@@ -122,6 +177,9 @@ mod tests {
                 "FetchPullRequests",
                 "FetchOriginPullRequest",
                 "FetchIssues",
+                "WindowIssues",
+                "WindowPullRequests",
+                "WindowPullRequests",
                 "FetchCrossReferences",
                 "FetchCrossReferences",
                 "FetchTreePullRequests",

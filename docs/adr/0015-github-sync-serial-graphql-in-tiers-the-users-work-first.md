@@ -37,8 +37,9 @@ current?](https://github.com/tsugiki/tsugiki/issues/13)). Until it is done, a PR
 diff says how far the clone has got. The status bar shows the phase and the pages done.
 
 Each page is committed with its cursor ([ADR 0010](0010-one-sqlite-database-and-per-repository-mirrors.md)),
-so quitting, a crash or going offline resumes at the next page. Syncs of several Repositories run one at a
-time, the open Repository first.
+so quitting, a crash or going offline resumes at the next page. The place is saved after the page, in a
+transaction of its own, so a crash between the two reads that page again. Syncs of several Repositories run
+one at a time, the open Repository first.
 
 ## Afterwards
 

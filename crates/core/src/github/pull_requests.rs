@@ -43,7 +43,7 @@ fn search_query(operation: &str) -> String {
 /// The Workbench works out from these lists why a PR is the user's, so a list cut short would hide a PR the
 /// searches found. GitHub returns at most 100 at a time, and it limits a PR to 10 assignees. `lastCommit`
 /// asks for CI on its own, because CI rollups are slow and `commits` can run to 100.
-const PULL_REQUEST_FIELDS: &str = "number title state isDraft updatedAt baseRefName body \
+pub(super) const PULL_REQUEST_FIELDS: &str = "number title state isDraft updatedAt baseRefName body \
                                    mergeCommit { oid } \
                                    repository { nameWithOwner defaultBranchRef { name } } \
                                    closingIssuesReferences(first: 100) { nodes { number \
@@ -77,7 +77,7 @@ fn fetch_by_number_query() -> String {
 const FETCH_ORIGIN: &str = "FetchOriginPullRequest";
 
 /// The reason for a fetch by ID. Each has its own recording, because a recording holds one answer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PrFetch {
     /// The PRs the user's searches found.
     Work,
@@ -98,7 +98,7 @@ impl PrFetch {
 }
 
 /// GitHub's ID for an item, which a fetch asks for it by.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct NodeId(String);
 
@@ -358,7 +358,7 @@ struct ClosingReference {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct PullRequestWire {
+pub(super) struct PullRequestWire {
     number: u32,
     title: String,
     state: PrState,

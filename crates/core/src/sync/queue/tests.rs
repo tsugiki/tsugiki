@@ -152,9 +152,9 @@ fn a_sync_keeps_its_progress_behind_a_newer_one() {
     assert_eq!(syncs.step(&harness.github, &harness.store).unwrap(), None);
     syncs.add(plain(RepositoryName::parse("python/peps").unwrap()));
 
-    // The newer sync's four searches, its seven moves from phase to phase and its end, then the older
-    // sync's next page.
-    for _ in 0..13 {
+    // The newer sync's four searches, its two empty window pages, its eight moves from phase to phase and its
+    // end, then the older sync's next page.
+    for _ in 0..16 {
         let progress = syncs.step(&harness.github, &harness.store).unwrap();
         assert_eq!(announced(progress), None);
     }
@@ -441,4 +441,86 @@ fn a_pause_is_as_long_as_the_reset_is_away_within_reason() {
     assert_eq!(pause_for(now + minute, now), Duration::from_secs(60));
     assert_eq!(pause_for(now - minute, now), Duration::ZERO);
     assert_eq!(pause_for(now + minute * 600, now), LONGEST_PAUSE);
+}
+
+mod activity {
+    use super::*;
+    use crate::status::{SyncActivity, SyncPart};
+    use crate::sync::testing::{FEW, empty_window_page, hours_ago, window_issue, window_page};
+
+    fn part_and_pages(syncs: &Syncs) -> (SyncPart, u32) {
+        let activity = syncs.activity().unwrap();
+        (activity.part, activity.pages)
+    }
+
+    #[test]
+    fn an_empty_queue_is_doing_nothing() {
+        assert_eq!(Syncs::default().activity(), None);
+    }
+
+    #[test]
+    fn a_first_sync_says_its_part_and_the_pages_it_has_read() {
+        let mut replies = searches_finding(&[]);
+        replies.push(window_page(
+            &[window_issue(1, &hours_ago(1))],
+            Some("more"),
+            LOTS,
+        ));
+        replies.push(empty_window_page());
+        replies.push(empty_window_page());
+        let harness = Harness::with_window("activity-parts", replies);
+        let mut syncs = Syncs::default();
+        syncs.add(plain(cpython()));
+
+        let mut seen = Vec::new();
+        while syncs.ready_at().is_some() {
+            drop(syncs.step(&harness.github, &harness.store).unwrap());
+            if syncs.ready_at().is_some() {
+                seen.push(part_and_pages(&syncs));
+            }
+        }
+
+        seen.dedup();
+        assert_eq!(
+            seen,
+            [
+                (SyncPart::YourWork, 1),
+                (SyncPart::YourWork, 2),
+                (SyncPart::YourWork, 3),
+                (SyncPart::YourWork, 4),
+                (SyncPart::Window, 4),
+                (SyncPart::Window, 5),
+                (SyncPart::Window, 6),
+                (SyncPart::Window, 7),
+                (SyncPart::Trees, 7),
+            ]
+        );
+        harness.finish();
+    }
+
+    #[test]
+    fn a_sync_below_the_floor_says_when_it_goes_on() {
+        let harness = Harness::new("activity-floor", vec![nothing(FEW)]);
+        let mut syncs = Syncs::default();
+        syncs.add(plain(cpython()));
+
+        drop(syncs.step(&harness.github, &harness.store).unwrap());
+
+        let Some(SyncActivity { paused_until, .. }) = syncs.activity() else {
+            panic!("the sync is under way");
+        };
+        let wait = paused_until.unwrap() - time::OffsetDateTime::now_utc();
+        assert!(wait > time::Duration::minutes(30));
+        harness.finish();
+    }
+
+    #[test]
+    fn a_wait_for_the_network_isnt_a_wait_for_points() {
+        let mut syncs = Syncs::default();
+        syncs.add(plain(cpython()));
+
+        syncs.wait_until(Instant::now() + Duration::from_secs(60));
+
+        assert_eq!(syncs.activity().unwrap().paused_until, None);
+    }
 }

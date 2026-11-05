@@ -2,7 +2,7 @@
 //! 1,000 results for one search, so a Filter that reaches more is read through ranges of the day each item
 //! was created.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use time::{Date, Duration, OffsetDateTime};
 
@@ -30,7 +30,7 @@ fn search_filter_query() -> String {
 }
 
 /// The days from `from` to `to`, both included.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreatedRange {
     from: Date,
     to: Date,
@@ -91,7 +91,7 @@ impl FilterSearch<'_> {
 }
 
 /// The handle a fetch needs for an item the search found.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum FilterHitKind {
     /// A fetch asks for an Issue by its number.
     Issue,
@@ -99,7 +99,7 @@ pub enum FilterHitKind {
 }
 
 /// An item a Filter found.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FilterHit {
     pub number: u32,
     pub updated_at: OffsetDateTime,

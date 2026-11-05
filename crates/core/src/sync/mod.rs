@@ -1,7 +1,9 @@
-//! A first sync: the user's own work and each Filter, found by search and fetched in batches, then the whole
-//! tree of each Issue they reach (ADR 0011, ADR 0015). A Repository that has finished one refreshes instead,
-//! which `refresh` handles. One `step` is one request, so the session can answer what else it's asked between
-//! them. `github` does the asking, and this decides what to ask for, how much at a time and when to pause.
+//! A first sync: the user's own work and each Filter, found by search and fetched in batches, then the window
+//! of recent changes, then the whole tree of each Issue they reach (ADR 0011, ADR 0015). It saves its
+//! place after each step, so it comes back to the next page. A Repository that has finished one refreshes
+//! instead, which `refresh` handles. One `step` is one request, so the session can answer what else it's
+//! asked between them. `github` does the asking, and this decides what to ask for, how much at a time and
+//! when to pause.
 
 mod batches;
 mod filters;
@@ -11,23 +13,25 @@ mod queue;
 mod refresh;
 mod searches;
 mod trees;
+mod window;
 
 pub use queue::{Progress, Syncs};
 pub use searches::WORK_SEARCHES;
 
 use std::collections::BTreeSet;
 
-use time::OffsetDateTime;
+use serde::{Deserialize, Serialize};
+use time::{Duration, OffsetDateTime};
 
-use crate::error::Error;
+use crate::error::{Error, ErrorKind};
 use crate::filters::FilterQuery;
-use crate::github::GitHub;
 use crate::github::issues::ListedPr;
-use crate::github::pull_requests::{NodeId, PrFetch, PrSearch, PullRequestFacts, RateLimit};
+use crate::github::pull_requests::{NodeId, PrFetch, PullRequestFacts, RateLimit};
+use crate::github::{GitHub, Login};
 use crate::links::{possible_numbers, possible_origin};
-use crate::repository::{RepositoryName, RepositorySettings};
-use crate::status::LastSync;
-use crate::store::{ChangeCheck, Store, SyncState};
+use crate::repository::{RepositoryName, RepositorySettings, WINDOW_DAYS};
+use crate::status::{LastSync, SyncPart};
+use crate::store::{ChangeCheck, FirstSyncPlace, Store, SyncState};
 use batches::fetch;
 use filters::{FilterWalk, walk_filters};
 use issues::fetch_issues;
@@ -35,6 +39,7 @@ use origins::fetch_origin;
 use refresh::{Changed, Poll, Probing};
 use searches::search;
 use trees::read_cross_references;
+use window::{WindowWalk, walk_window};
 
 /// Below this many points left, a sync waits for the reset, because the hourly 5,000 are also the user's
 /// other tools'. We haven't measured what those tools need, and GitHub's `remaining` is approximate.
@@ -56,6 +61,10 @@ struct UserWorkSync {
     started_at: OffsetDateTime,
     /// How the next refresh can learn that nothing changed, as far as this one knows.
     check: ChangeCheck,
+    /// A first sync's own state. A refresh has none, because it keeps no place to come back to.
+    first_sync: Option<FirstSync>,
+    /// A step that worked and whose place couldn't be saved, which the next try reports once it can.
+    unsaved: Option<Step>,
 }
 
 enum Phase {
@@ -67,8 +76,16 @@ enum Phase {
     Polling(Poll),
     FetchingChanged(Changed),
     Probing(Probing),
+    Resumable(Resumable),
+}
+
+/// The phases a first sync goes through, and so the ones it can stop in and come back to (ADR 0015). A
+/// refresh passes through some of them too, but it redoes itself from the store instead.
+#[derive(Serialize, Deserialize)]
+enum Resumable {
     Searching {
-        searches: &'static [PrSearch],
+        /// The first of `WORK_SEARCHES` still to read.
+        next_search: usize,
         cursor: Option<String>,
         found: Vec<NodeId>,
     },
@@ -84,10 +101,88 @@ enum Phase {
         numbers: Vec<u32>,
         shown: Vec<u32>,
     },
+    Window(WindowWalk),
     ReadingCrossReferences(Reading),
 }
 
+impl From<Resumable> for Phase {
+    fn from(place: Resumable) -> Self {
+        Self::Resumable(place)
+    }
+}
+
+/// The facts a first sync's place depends on. If one has changed the sync starts over: `@me` finds another
+/// user's work, a Filter's searches have moved on, or another version may read the same place differently.
+#[derive(PartialEq, Eq, Serialize, Deserialize)]
+struct PlaceOwner {
+    version: String,
+    login: Option<Login>,
+    filters: Vec<FilterQuery>,
+}
+
+impl PlaceOwner {
+    fn now(store: &Store, filters: &[FilterQuery]) -> Result<Self, Error> {
+        Ok(Self {
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+            login: store.last_login()?,
+            filters: filters.to_vec(),
+        })
+    }
+}
+
+/// A first sync's own state, which a refresh doesn't have.
+struct FirstSync {
+    owner: PlaceOwner,
+    /// The pages it has read.
+    pages: u32,
+}
+
+/// A first sync's place, as the store keeps it.
+#[derive(Serialize)]
+struct PlaceToSave<'a> {
+    owner: &'a PlaceOwner,
+    place: &'a Resumable,
+    fetched: &'a BTreeSet<u32>,
+    started_at: OffsetDateTime,
+    pages: u32,
+}
+
+/// `PlaceToSave` as it reads back.
+#[derive(Deserialize)]
+struct SavedPlace {
+    owner: PlaceOwner,
+    place: Resumable,
+    fetched: BTreeSet<u32>,
+    started_at: OffsetDateTime,
+    pages: u32,
+}
+
+fn place_problem(problem: serde_json::Error) -> Error {
+    Error::new(
+        ErrorKind::Internal,
+        &format!("Tsugiki can't read where its first sync got to: {problem}"),
+    )
+}
+
+/// The place this Repository's first sync got to, if it stopped partway and that place can still be read.
+fn saved_place(store: &Store, repository: &RepositoryName) -> Result<Option<SavedPlace>, Error> {
+    let Some(place) = store.first_sync_place(repository)? else {
+        return Ok(None);
+    };
+    match serde_json::from_str(place.as_str()).map_err(place_problem) {
+        Ok(saved) => Ok(Some(saved)),
+        Err(problem) => {
+            log::warn!(
+                "{repository} starts its first sync over: {}",
+                problem.message
+            );
+            Ok(None)
+        }
+    }
+}
+
 /// The PRs left to fetch by ID.
+#[derive(Serialize, Deserialize)]
 struct Batches {
     ids: Vec<NodeId>,
     why: PrFetch,
@@ -96,6 +191,7 @@ struct Batches {
 
 /// Each shown Issue's cross-references. A tree fills in only when its PRs are saved, in the next phase, so an
 /// Issue's rows appear batch by batch.
+#[derive(Default, Serialize, Deserialize)]
 struct Reading {
     issues: Vec<u32>,
     cursor: Option<String>,
@@ -103,7 +199,7 @@ struct Reading {
 }
 
 /// The numbers the PRs fetched so far point at.
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 struct Leads {
     /// The numbers they could name as Issues.
     named: BTreeSet<u32>,
@@ -115,6 +211,8 @@ struct Leads {
 
 /// The result of one step.
 enum Step {
+    /// It only moved on to the next phase, and asked GitHub for nothing.
+    Moved,
     Searched {
         pause_until: Option<OffsetDateTime>,
     },
@@ -146,12 +244,12 @@ struct Link<'a> {
     store: &'a Store,
     repository: &'a RepositoryName,
     filters: &'a [FilterQuery],
+    /// The start of a first sync's window. A refresh has no window.
+    window_since: Option<OffsetDateTime>,
 }
 
 /// A step's result, and the phase to move to.
 type Moved = (Step, Option<Phase>);
-
-const NO_PAUSE: Step = Step::Searched { pause_until: None };
 
 impl UserWorkSync {
     fn new(repository: RepositorySettings) -> Self {
@@ -168,49 +266,139 @@ impl UserWorkSync {
             fetched: BTreeSet::new(),
             started_at: OffsetDateTime::now_utc(),
             check: ChangeCheck::Skipped,
+            first_sync: None,
+            unsaved: None,
+        }
+    }
+
+    /// Runs one step, then saves a first sync's place, so quitting, a crash or going offline comes back to
+    /// the next page. A save that fails keeps the step, whose news still counts, for the next try to report.
+    fn step(&mut self, github: &GitHub, store: &Store) -> Result<Step, Error> {
+        let step = match self.unsaved.take() {
+            Some(step) => step,
+            None => self.advance(github, store)?,
+        };
+        match self.save_place(store) {
+            Ok(()) => Ok(step),
+            Err(problem) => {
+                self.unsaved = Some(step);
+                Err(problem)
+            }
+        }
+    }
+
+    fn save_place(&self, store: &Store) -> Result<(), Error> {
+        let (Some(first_sync), Phase::Resumable(place)) = (&self.first_sync, &self.phase) else {
+            return Ok(());
+        };
+        let saved = PlaceToSave {
+            owner: &first_sync.owner,
+            place,
+            fetched: &self.fetched,
+            started_at: self.started_at,
+            pages: first_sync.pages,
+        };
+        let text = serde_json::to_string(&saved).map_err(place_problem)?;
+        store.save_first_sync_place(&self.repository, FirstSyncPlace::new(text))
+    }
+
+    /// Takes up a first sync where it stopped, or starts one.
+    fn start_first_sync(&mut self, store: &Store) -> Result<(), Error> {
+        let owner = PlaceOwner::now(store, &self.filters)?;
+        let saved = saved_place(store, &self.repository)?;
+        let Some(saved) = saved.filter(|saved| saved.owner == owner) else {
+            self.first_sync = Some(FirstSync { owner, pages: 0 });
+            self.phase = Resumable::Searching {
+                next_search: 0,
+                cursor: None,
+                found: Vec::new(),
+            }
+            .into();
+            return Ok(());
+        };
+        self.first_sync = Some(FirstSync {
+            owner,
+            pages: saved.pages,
+        });
+        self.phase = saved.place.into();
+        self.fetched = saved.fetched;
+        self.started_at = saved.started_at;
+        Ok(())
+    }
+
+    /// The part of a sync this is, for the status bar.
+    fn part(&self) -> SyncPart {
+        match (&self.phase, &self.first_sync) {
+            (Phase::Resumable(Resumable::Window(_)), Some(_)) => SyncPart::Window,
+            (
+                Phase::Resumable(
+                    Resumable::ReadingCrossReferences(_)
+                    | Resumable::Fetching(Batches {
+                        why: PrFetch::Tree, ..
+                    })
+                    | Resumable::FetchingOrigins {
+                        why: PrFetch::Tree, ..
+                    },
+                ),
+                Some(_),
+            ) => SyncPart::Trees,
+            (_, Some(_)) => SyncPart::YourWork,
+            (_, None) => SyncPart::Refresh,
         }
     }
 
     /// Makes one request, or moves on to the next phase. A failure leaves the place it had, so the same step
     /// can run again.
-    fn step(&mut self, github: &GitHub, store: &Store) -> Result<Step, Error> {
+    fn advance(&mut self, github: &GitHub, store: &Store) -> Result<Step, Error> {
         let link = Link {
             github,
             store,
             repository: &self.repository,
             filters: &self.filters,
+            window_since: self
+                .first_sync
+                .as_ref()
+                .map(|_| self.started_at - Duration::days(WINDOW_DAYS.into())),
         };
         let fetched = &mut self.fetched;
         let (step, next) = match &mut self.phase {
             // Asking the store is no request to GitHub, so this goes straight on to the first one.
             Phase::Starting => {
-                self.phase =
-                    refresh::first_phase(&link, &mut self.check)?.unwrap_or(Phase::Searching {
-                        searches: &WORK_SEARCHES,
-                        cursor: None,
-                        found: Vec::new(),
-                    });
-                return self.step(github, store);
+                match refresh::first_phase(&link, &mut self.check)? {
+                    Some(phase) => self.phase = phase,
+                    None => self.start_first_sync(store)?,
+                }
+                return self.advance(github, store);
             }
             Phase::CheckingList(poll) => refresh::check_list(&link, poll, &self.check)?,
             Phase::Polling(poll) => refresh::poll(&link, poll, &mut self.check)?,
             Phase::FetchingChanged(changed) => refresh::fetch_changed(&link, changed, fetched)?,
             Phase::Probing(probing) => refresh::probe(&link, probing)?,
-            Phase::Searching {
-                searches,
+            Phase::Resumable(Resumable::Searching {
+                next_search,
                 cursor,
                 found,
-            } => search(&link, searches, cursor, found)?,
-            Phase::SearchingFilters(walk) => walk_filters(&link, walk)?,
-            Phase::Fetching(batches) => fetch(&link, batches, fetched)?,
-            Phase::FetchingOrigins { why, leads } => fetch_origin(&link, *why, leads, fetched)?,
-            Phase::FetchingIssues { numbers, shown } => fetch_issues(&link, numbers, shown)?,
-            Phase::ReadingCrossReferences(reading) => {
+            }) => search(&link, next_search, cursor, found)?,
+            Phase::Resumable(Resumable::SearchingFilters(walk)) => walk_filters(&link, walk)?,
+            Phase::Resumable(Resumable::Fetching(batches)) => fetch(&link, batches, fetched)?,
+            Phase::Resumable(Resumable::FetchingOrigins { why, leads }) => {
+                fetch_origin(&link, *why, leads, fetched)?
+            }
+            Phase::Resumable(Resumable::FetchingIssues { numbers, shown }) => {
+                fetch_issues(&link, numbers, shown)?
+            }
+            Phase::Resumable(Resumable::Window(walk)) => walk_window(&link, walk, fetched)?,
+            Phase::Resumable(Resumable::ReadingCrossReferences(reading)) => {
                 read_cross_references(&link, reading, fetched)?
             }
         };
         if let Some(next) = next {
             self.phase = next;
+        }
+        if let (Some(first_sync), Step::Searched { .. } | Step::Saved { .. }) =
+            (self.first_sync.as_mut(), &step)
+        {
+            first_sync.pages += 1;
         }
         Ok(step)
     }

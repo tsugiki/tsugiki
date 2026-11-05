@@ -178,3 +178,68 @@ describe("StatusBar", () => {
     });
   });
 });
+
+describe("StatusBar's sync under way", () => {
+  const online = { state: "online", login: "octocat" } as const;
+  const repository = "python/cpython";
+  const lastSync = { repository, at: null };
+  const activity = (part: "your_work" | "window" | "trees" | "refresh", pages = 12) => ({
+    repository,
+    part,
+    pages,
+    paused_until: null,
+  });
+
+  it.each([
+    ["your_work", "Syncing your work · 12 pages"],
+    ["window", "Syncing recent items · 12 pages"],
+    ["trees", "Syncing Issue trees · 12 pages"],
+  ] as const)("says the part %s and the pages, outside the live region", (part, words) => {
+    render(StatusBar, { status: online, lastSync, syncActivity: activity(part) });
+    expect(screen.getByRole("button").textContent).toBe(words);
+    expect(bar().textContent).not.toContain("Syncing");
+    expect(bar().classList.contains("beside-syncing")).toBe(true);
+  });
+
+  it("counts one page as one", () => {
+    render(StatusBar, { status: online, lastSync, syncActivity: activity("window", 1) });
+    expect(screen.getByRole("button").textContent).toBe("Syncing recent items · 1 page");
+  });
+
+  it("keeps the open Repository's sync time while another Repository syncs", () => {
+    const other = { ...activity("window"), repository: "python/peps" };
+    render(StatusBar, { status: online, lastSync, syncActivity: other });
+    expect(screen.getByRole("button").textContent).toBe("Not synced yet");
+    expect(bar().classList.contains("beside-syncing")).toBe(false);
+  });
+
+  it("says nothing of a refresh", () => {
+    render(StatusBar, { status: online, lastSync, syncActivity: activity("refresh") });
+    expect(screen.getByRole("button").textContent).toBe("Not synced yet");
+    expect(bar().classList.contains("beside-syncing")).toBe(false);
+  });
+
+  it("says in the live region when a sync waits for GitHub's points, even a refresh", () => {
+    const pausedUntil = "2026-11-05T14:30:00Z";
+    const time = new Date(pausedUntil).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    render(StatusBar, {
+      status: online,
+      lastSync,
+      syncActivity: { ...activity("refresh"), paused_until: pausedUntil },
+    });
+    expect(bar().textContent).toContain(`Sync paused until ${time}: GitHub's rate limit is low`);
+  });
+
+  it("shows the wait beside the file's problems, and when the bar is hidden", () => {
+    render(StatusBar, {
+      status: online,
+      visible: false,
+      problems: ["settings.toml has an error"],
+      syncActivity: { ...activity("window"), paused_until: "2026-11-05T14:30:00Z" },
+    });
+    expect(bar().textContent).toContain("settings.toml has an error · Sync paused until");
+  });
+});

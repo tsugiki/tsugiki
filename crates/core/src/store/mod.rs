@@ -29,7 +29,7 @@ use crate::github::pull_requests::PullRequestFacts;
 use crate::repository::RepositoryName;
 pub use filters::{FilterProblem, FilterResults, NarrowedResults};
 use migrate::{MIGRATIONS, Migration};
-pub use sync_state::{ChangeCheck, SyncState};
+pub use sync_state::{ChangeCheck, FirstSyncPlace, SyncState};
 
 const CANT_OPEN: &str = "Tsugiki can't open its database";
 const CANT_READ: &str = "Tsugiki can't read its database";
@@ -158,8 +158,33 @@ impl Store {
         state: SyncState,
     ) -> Result<(), Error> {
         let repository = repository.clone();
+        let saved = self.call(move |connection| {
+            let transaction = connection.transaction()?;
+            sync_state::save(&transaction, &repository, &state)?;
+            sync_state::forget_place(&transaction, &repository)?;
+            transaction.commit()
+        })?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// The place this Repository's first sync got to, if one stopped partway.
+    pub fn first_sync_place(
+        &self,
+        repository: &RepositoryName,
+    ) -> Result<Option<FirstSyncPlace>, Error> {
+        let repository = repository.clone();
+        let read = self.call(move |connection| sync_state::read_place(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    pub fn save_first_sync_place(
+        &self,
+        repository: &RepositoryName,
+        place: FirstSyncPlace,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
         let saved =
-            self.call(move |connection| sync_state::save(connection, &repository, &state))?;
+            self.call(move |connection| sync_state::save_place(connection, &repository, &place))?;
         saved.map_err(saying(CANT_WRITE))
     }
 

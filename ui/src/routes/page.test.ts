@@ -15,12 +15,14 @@ vi.mock("$lib/data/bindings", () => ({
     about: async () => ({ name: "Tsugiki", version: "1.2.3" }),
     status: async () => ({ state: "online", login: "octocat" }),
     lastSync: async () => ({ repository: "sergey-miryanov/gcmon", at: null }),
+    syncActivity: async () => null,
     refresh: async () => null,
     ...core,
   },
   events: {
     statusChanged: { listen: async () => () => {} },
     lastSyncChanged: { listen: async () => () => {} },
+    syncActivityChanged: { listen: async () => () => {} },
     changed: { listen: async () => () => {} },
   },
 }));

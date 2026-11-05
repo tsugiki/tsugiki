@@ -2,9 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use super::{
-    Batches, Leads, Link, Moved, NO_PAUSE, Phase, Reading, SEARCH_PAGE, Step, pause_until,
-};
+use super::{Batches, Leads, Link, Moved, Reading, Resumable, SEARCH_PAGE, Step, pause_until};
 use crate::error::Error;
 use crate::github::issues::ListedPr;
 use crate::github::pull_requests::{NodeId, PageRequest, PrFetch};
@@ -22,12 +20,14 @@ pub(super) fn read_cross_references(
     let Some(issue) = issues.first().copied() else {
         let frozen = link.store.frozen_pull_requests(link.repository)?;
         let frozen: BTreeSet<u32> = frozen.iter().map(|pr| pr.number).collect();
-        let next = Phase::Fetching(Batches {
+        let leads = leads_of_those_held(link, listed, fetched)?;
+        let next = Resumable::Fetching(Batches {
             ids: not_yet_fetched(std::mem::take(listed), fetched, &frozen),
             why: PrFetch::Tree,
-            leads: Leads::default(),
-        });
-        return Ok((NO_PAUSE, Some(next)));
+            leads,
+        })
+        .into();
+        return Ok((Step::Moved, Some(next)));
     };
     let asked = PageRequest {
         size: SEARCH_PAGE,
@@ -43,6 +43,25 @@ pub(super) fn read_cross_references(
     }
     let pause_until = pause_until(page.rate_limit);
     Ok((Step::Searched { pause_until }, None))
+}
+
+/// The leads of the PRs in `listed` that this sync has already saved. The window saves PRs without following
+/// them, because few are in any tree, so a Backport it brought only gets its Origin PR once a tree lists it.
+fn leads_of_those_held(
+    link: &Link<'_>,
+    listed: &[ListedPr],
+    fetched: &BTreeSet<u32>,
+) -> Result<Leads, Error> {
+    let numbers = listed.iter().map(|pr| pr.number);
+    let held: BTreeSet<u32> = numbers.filter(|number| fetched.contains(number)).collect();
+    let mut leads = Leads::default();
+    if !held.is_empty() {
+        let stored = link.store.pull_requests(link.repository)?;
+        for pull_request in stored.iter().filter(|pr| held.contains(&pr.number)) {
+            leads.learn_from(pull_request, link.repository);
+        }
+    }
+    Ok(leads)
 }
 
 /// The IDs of the PRs in `listed` to fetch, each once. A PR Tsugiki keeps as merged or closed stays frozen,
@@ -187,8 +206,9 @@ mod tests {
         syncs.add(plain(cpython()));
         let before = Instant::now();
 
-        // Four searches, two moves, the PR, two moves, the Issue, a move and the first page.
-        for _ in 0..12 {
+        // Four searches, two moves, the PR, two moves, the Issue, a move, two empty window pages, a
+        // move and the first page.
+        for _ in 0..15 {
             drop(syncs.step(&harness.github, &harness.store).unwrap());
         }
 

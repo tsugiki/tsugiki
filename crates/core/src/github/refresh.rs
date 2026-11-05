@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -50,7 +50,7 @@ pub enum ListCheck {
 }
 
 /// How far a poll has read one of its two lists.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ListPlace {
     /// The next page to read, from this cursor. The first page has none.
     Next(Option<String>),
@@ -62,7 +62,7 @@ impl ListPlace {
         *self == Self::Finished
     }
 
-    fn after(&self) -> Option<&str> {
+    pub(super) fn after(&self) -> Option<&str> {
         match self {
             Self::Next(cursor) => cursor.as_deref(),
             Self::Finished => None,
@@ -78,7 +78,7 @@ impl ListPlace {
     }
 
     /// Where this list stands after an answer that had this `page`.
-    fn after_answer(&self, page: PageInfo) -> Self {
+    pub(super) fn after_answer(&self, page: PageInfo) -> Self {
         match (self, page.end_cursor.filter(|_| page.has_next_page)) {
             (Self::Next(_), Some(cursor)) => Self::Next(Some(cursor)),
             (Self::Next(_) | Self::Finished, None) | (Self::Finished, Some(_)) => Self::Finished,
@@ -155,9 +155,17 @@ pub struct ProbedBatch {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct PageInfo {
+pub(super) struct PageInfo {
     has_next_page: bool,
     end_cursor: Option<String>,
+}
+
+/// A page of a list GitHub can leave items out of.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct Listed<T> {
+    pub(super) page_info: PageInfo,
+    pub(super) nodes: Vec<Option<T>>,
 }
 
 #[derive(Deserialize)]
@@ -275,12 +283,6 @@ impl GitHub {
         #[serde(rename_all = "camelCase")]
         struct Total {
             total_count: u32,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Listed<T> {
-            page_info: PageInfo,
-            nodes: Vec<Option<T>>,
         }
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]

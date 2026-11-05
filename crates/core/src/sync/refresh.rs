@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use time::{Duration, OffsetDateTime};
 
 use super::filters::{FilterWalk, RefreshWalk, blames_the_search, can_narrow};
-use super::{FETCH_BATCH, Link, Moved, NO_PAUSE, Phase, SEARCH_PAGE, Step, pause_until};
+use super::{FETCH_BATCH, Link, Moved, Phase, Resumable, SEARCH_PAGE, Step, pause_until};
 use crate::error::Error;
 use crate::filters::FilterQuery;
 use crate::github::Login;
@@ -153,7 +153,7 @@ pub(super) fn check_list(
             Phase::Polling(std::mem::take(poll))
         }
     };
-    Ok((NO_PAUSE, Some(next)))
+    Ok((Step::Moved, Some(next)))
 }
 
 /// Reads the next page of what changed, then merges each search that answered, and moves on after the last.
@@ -171,7 +171,7 @@ pub(super) fn poll(
         return Ok((Step::saved_if_any(merged, None), None));
     }
     let next = Phase::FetchingChanged(plan_the_rest(link, poll)?);
-    Ok((NO_PAUSE, Some(next)))
+    Ok((Step::Moved, Some(next)))
 }
 
 /// Asks for the next page and saves it. One Filter GitHub refuses shouldn't cost the rest, so a refused
@@ -192,7 +192,7 @@ fn read_page(link: &Link<'_>, poll: &mut Poll, check: &mut ChangeCheck) -> Resul
                 problem.message
             );
             poll.narrowed.append(&mut poll.in_request);
-            return Ok(NO_PAUSE);
+            return Ok(Step::Moved);
         }
         Err(problem) => return Err(problem),
     };
@@ -332,7 +332,7 @@ pub(super) fn fetch_changed(
             numbers: tracked_pull_requests(link, fetched)?,
             walk: std::mem::take(&mut changed.walk),
         };
-        return Ok((NO_PAUSE, Some(Phase::Probing(next))));
+        return Ok((Step::Moved, Some(Phase::Probing(next))));
     }
     let batch = link
         .github
@@ -373,7 +373,7 @@ fn tracked_pull_requests(link: &Link<'_>, fetched: &BTreeSet<u32>) -> Result<Vec
 pub(super) fn probe(link: &Link<'_>, probing: &mut Probing) -> Result<Moved, Error> {
     if probing.numbers.is_empty() {
         let walk = std::mem::take(&mut probing.walk);
-        return Ok((NO_PAUSE, Some(Phase::SearchingFilters(walk))));
+        return Ok((Step::Moved, Some(Resumable::SearchingFilters(walk).into())));
     }
     let batch = link
         .github

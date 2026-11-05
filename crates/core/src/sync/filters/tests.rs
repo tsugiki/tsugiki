@@ -5,10 +5,10 @@ use crate::github::{Reply, Request, Transport, Unreachable};
 use crate::repository::RepositorySettings;
 use crate::store::Store;
 use crate::sync::Syncs;
-use crate::sync::recovery::{Scenario, recovers_from_each_failure};
+use crate::sync::recovery::{Scenario, recovers_from_each_failure, resumes_after_each_step};
 use crate::sync::testing::{
-    FEW, Harness, LOTS, cpython, cross_references, fetched, fetched_nodes, issues,
-    no_cross_references, nothing, pr_node, run_to_the_end, searches_finding,
+    FEW, Harness, LOTS, cpython, cross_references, empty_window_page, fetched, fetched_nodes,
+    issues, no_cross_references, nothing, pr_node, run_to_the_end, searches_finding,
 };
 use crate::token::Token;
 use serde_json::{Value, json};
@@ -94,6 +94,8 @@ fn a_filter_walk_recovers_from_a_failure_at_each_point() {
     ));
     posts.push(fetched(&[10], LOTS));
     posts.push(issues(&[1, 2], LOTS));
+    posts.push(empty_window_page());
+    posts.push(empty_window_page());
     posts.push(no_cross_references(LOTS));
     posts.push(no_cross_references(LOTS));
     let scenario = Scenario {
@@ -105,6 +107,7 @@ fn a_filter_walk_recovers_from_a_failure_at_each_point() {
     };
 
     let operations = recovers_from_each_failure(&scenario);
+    resumes_after_each_step(&scenario);
 
     assert_eq!(
         operations[4..],
@@ -115,6 +118,8 @@ fn a_filter_walk_recovers_from_a_failure_at_each_point() {
             "SearchFilter",
             "FetchPullRequests",
             "FetchIssues",
+            "WindowIssues",
+            "WindowPullRequests",
             "FetchCrossReferences",
             "FetchCrossReferences",
         ]
@@ -609,6 +614,7 @@ impl Transport for ByCreated {
             }
             "FetchIssues" => issues(&[], LOTS),
             "FetchCrossReferences" => no_cross_references(LOTS),
+            "WindowIssues" | "WindowPullRequests" => empty_window_page(),
             _ => nothing(LOTS),
         }
     }
@@ -701,6 +707,7 @@ fn a_narrowed_search_github_cuts_off_removes_nothing_and_counts_as_a_change() {
         store: &harness.store,
         repository: &repository,
         filters: &[],
+        window_since: None,
     };
 
     let mut said_nothing_new = false;

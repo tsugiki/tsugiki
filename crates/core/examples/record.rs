@@ -26,6 +26,9 @@ use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
 use tsugiki_core::sync::{FETCH_BATCH, SEARCH_PAGE, WORK_SEARCHES};
 use tsugiki_core::token::Token;
 
+// `WindowIssues.json` and `WindowPullRequests.json` aren't recorded here. A replay answers each page with the
+// same recording, so a real page with more to read would never end, and those two hold an empty page by hand.
+
 /// The Repository the first sync's recordings come from, which every signed-in user can read.
 const WORK_REPOSITORY: &str = "python/cpython";
 /// Tsugiki's own Repository, which proves the REST check on real GitHub. Recordings hold GraphQL only.

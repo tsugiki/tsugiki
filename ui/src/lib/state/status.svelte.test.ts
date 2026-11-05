@@ -3,8 +3,12 @@ import { commands, events } from "$lib/data/bindings";
 import { StatusState, type Status } from "./status.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
-  commands: { status: vi.fn(), lastSync: vi.fn(), refresh: vi.fn() },
-  events: { statusChanged: { listen: vi.fn() }, lastSyncChanged: { listen: vi.fn() } },
+  commands: { status: vi.fn(), lastSync: vi.fn(), syncActivity: vi.fn(), refresh: vi.fn() },
+  events: {
+    statusChanged: { listen: vi.fn() },
+    lastSyncChanged: { listen: vi.fn() },
+    syncActivityChanged: { listen: vi.fn() },
+  },
 }));
 
 const online: Status = { state: "online", login: "octocat" };
@@ -41,6 +45,56 @@ describe("StatusState's last sync", () => {
     vi.resetAllMocks();
     catchListener();
     vi.mocked(commands.status).mockResolvedValue(online);
+  });
+
+  describe("the sync under way", () => {
+    const activity = {
+      repository: "python/cpython",
+      part: "window",
+      pages: 3,
+      paused_until: null,
+    } as const;
+    const catchActivity = () => {
+      const listener = vi.fn<(payload: typeof activity | null) => void>();
+      vi.mocked(events.syncActivityChanged.listen).mockImplementation(async (callback) => {
+        listener.mockImplementation((payload) => {
+          callback({ event: "sync-activity-changed", id: 1, payload });
+        });
+        return () => {};
+      });
+      return listener;
+    };
+
+    it("holds what the core says when the window loads", async () => {
+      catchLastSync();
+      catchActivity();
+      vi.mocked(commands.syncActivity).mockResolvedValue(activity);
+      const state = new StatusState();
+      await state.load();
+      expect(state.syncActivity).toEqual(activity);
+    });
+
+    it("follows the core, down to nothing", async () => {
+      catchLastSync();
+      const activityChanged = catchActivity();
+      vi.mocked(commands.syncActivity).mockResolvedValue(activity);
+      const state = new StatusState();
+      await state.load();
+      activityChanged(null);
+      expect(state.syncActivity).toBeNull();
+    });
+
+    it("lets an event that arrives while asking win, even one that says nothing", async () => {
+      catchLastSync();
+      const activityChanged = catchActivity();
+      vi.mocked(commands.syncActivity).mockImplementation(async () => {
+        activityChanged(null);
+        return activity;
+      });
+      const state = new StatusState();
+      await state.load();
+      expect(state.syncActivity).toBeNull();
+    });
   });
 
   it("holds what the core says when the window loads", async () => {

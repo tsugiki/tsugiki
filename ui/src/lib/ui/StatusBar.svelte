@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { LastSync, Status } from "$lib/state/status.svelte";
-  import { syncedWords } from "./synced";
+  import type { LastSync, Status, SyncActivity } from "$lib/state/status.svelte";
+  import { pausedWords, syncedWords, syncingWords } from "./synced";
 
   const MINUTE = 60_000;
 
@@ -10,6 +10,7 @@
     visible = true,
     problems = [],
     lastSync = null,
+    syncActivity = null,
     onrefresh = () => {},
   }: {
     status: Status | undefined;
@@ -17,6 +18,7 @@
     visible?: boolean;
     problems?: string[];
     lastSync?: LastSync | null;
+    syncActivity?: SyncActivity | null;
     onrefresh?: () => void;
   } = $props();
 
@@ -34,7 +36,12 @@
   const offline = $derived(status?.state === "offline" || status?.state === "offline_as");
   // Hiding the bar can't hide these: nothing else would tell the user.
   const showStatus = $derived(visible || offline || status?.state === "problem" || Boolean(error));
-  const listedProblems = $derived(problems.join(" · "));
+  const paused = $derived(pausedWords(syncActivity));
+  const listedProblems = $derived([...problems, ...(paused ? [paused] : [])].join(" · "));
+  // Another Repository's sync says nothing about the open one's last sync.
+  const syncing = $derived(
+    syncActivity?.repository === lastSync?.repository ? syncingWords(syncActivity) : null,
+  );
 </script>
 
 <!-- Always in the page, because screen readers only announce changes in a live region that already
@@ -44,6 +51,7 @@
   class:offline
   class:empty={!showStatus && !listedProblems}
   class:beside-sync={lastSync !== null && showStatus}
+  class:beside-syncing={syncing !== null && lastSync !== null && showStatus}
 >
   {#if showStatus}
     {#if error}
@@ -64,9 +72,9 @@
   {/if}
   <span>{showStatus && listedProblems ? `· ${listedProblems}` : listedProblems}</span>
 </footer>
-<!-- Outside the live region, or a screen reader would read this out each minute. -->
+<!-- Outside the live region, or a screen reader would read this out each minute, and each page of a sync. -->
 {#if lastSync !== null && showStatus}
-  <button class:offline onclick={onrefresh}>{syncedWords(lastSync.at, now)}</button>
+  <button class:offline onclick={onrefresh}>{syncing ?? syncedWords(lastSync.at, now)}</button>
 {/if}
 
 <style>
@@ -81,6 +89,10 @@
 
   .beside-sync {
     padding-right: 11em;
+  }
+
+  .beside-syncing {
+    padding-right: 22em;
   }
 
   button {

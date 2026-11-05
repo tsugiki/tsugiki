@@ -18,7 +18,7 @@ use tsugiki_core::latest::LatestReader;
 use tsugiki_core::repository::{Home, RepositoryAccess, RepositoryCheck, RepositoryName};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{LoadedSettings, SettingsOwner};
-use tsugiki_core::status::{Change, LastSync, Status};
+use tsugiki_core::status::{Change, LastSync, Status, SyncActivity};
 use tsugiki_core::store::StoreReader;
 use tsugiki_core::workbench::Workbench;
 
@@ -44,6 +44,15 @@ type LatestLastSync = LatestReader<Option<LastSync>>;
 #[tauri::command]
 #[specta::specta]
 fn last_sync(latest: State<'_, LatestLastSync>) -> Option<LastSync> {
+    latest.get()
+}
+
+type LatestSyncActivity = LatestReader<Option<SyncActivity>>;
+
+/// What the queue of syncs is doing, for a window that has just loaded.
+#[tauri::command]
+#[specta::specta]
+fn sync_activity(latest: State<'_, LatestSyncActivity>) -> Option<SyncActivity> {
     latest.get()
 }
 
@@ -121,6 +130,10 @@ struct Changed(Change);
 #[derive(Clone, Serialize, Type, Event)]
 struct LastSyncChanged(LastSync);
 
+/// Sent when what the queue of syncs is doing changes, so the status bar can say.
+#[derive(Clone, Serialize, Type, Event)]
+struct SyncActivityChanged(Option<SyncActivity>);
+
 /// Every command and event the webview can use. The TypeScript bindings are generated from it (ADR 0008).
 pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
     Builder::<R>::new()
@@ -128,6 +141,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             about,
             status,
             last_sync,
+            sync_activity,
             refresh,
             settings,
             home,
@@ -135,7 +149,12 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::add_repository,
             slow_commands::workbench
         ])
-        .events(collect_events![StatusChanged, Changed, LastSyncChanged])
+        .events(collect_events![
+            StatusChanged,
+            Changed,
+            LastSyncChanged,
+            SyncActivityChanged
+        ])
 }
 
 #[cfg(test)]

@@ -7,6 +7,7 @@ pub mod pull_requests;
 pub mod record;
 pub mod refresh;
 pub mod replay;
+pub mod window;
 
 use std::borrow::Cow;
 

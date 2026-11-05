@@ -13,7 +13,7 @@ use tsugiki_core::session::{Intervals, Session};
 use tsugiki_core::settings::{SettingsFiles, SettingsOwner};
 use tsugiki_core::status::{Status, StatusBoard};
 
-use crate::{Changed, LastSyncChanged, StatusChanged, sync_home};
+use crate::{Changed, LastSyncChanged, StatusChanged, SyncActivityChanged, sync_home};
 
 /// How often the open Repository refreshes: a refresh costs a few points, and this is about 60 points an
 /// hour, out of 5,000 (ADR 0015).
@@ -34,6 +34,11 @@ pub(crate) fn connect_core<R: Runtime>(
         app.manage(last_sync_reader),
         "only this manages the last sync"
     );
+    let (mut latest_activity, activity_reader) = latest::channel(None);
+    assert!(
+        app.manage(activity_reader),
+        "only this manages the sync activity"
+    );
     // Two small files, read before the window exists so `settings` and `home` can always answer. A
     // `settings_path` on a slow drive would delay the window. Without folders the defaults apply, and the
     // session shows why. A thread of their own owns the files from here, so saving doesn't wait on GitHub.
@@ -41,6 +46,7 @@ pub(crate) fn connect_core<R: Runtime>(
     let status_handle = app.clone();
     let changes_handle = app.clone();
     let last_sync_handle = app.clone();
+    let activity_handle = app.clone();
     let board = StatusBoard::new(Box::new(move |status| {
         // Before the event: a window that starts listening too late for it then asks `status()`, and has to
         // get this status.
@@ -55,6 +61,12 @@ pub(crate) fn connect_core<R: Runtime>(
         // Before the event, for the reason the status gives above.
         latest_sync.set(&Some(last_sync.clone()));
         log_if_unsent(LastSyncChanged(last_sync.clone()).emit(&last_sync_handle));
+    }))
+    .with_sync_activity(Box::new(move |activity| {
+        // Before the event, for the reason the status gives above.
+        let activity = activity.cloned();
+        latest_activity.set(&activity);
+        log_if_unsent(SyncActivityChanged(activity).emit(&activity_handle));
     }));
     let intervals = Intervals {
         status: refresh,
@@ -149,6 +161,7 @@ mod tests {
         statuses: Receiver<Value>,
         workbenches: Receiver<Value>,
         last_syncs: Receiver<Value>,
+        activities: Receiver<Value>,
         _app: App<MockRuntime>,
     }
 
@@ -163,6 +176,7 @@ mod tests {
             let statuses = hear(&app, "status-changed");
             let workbenches = hear(&app, "changed");
             let last_syncs = hear(&app, "last-sync-changed");
+            let activities = hear(&app, "sync-activity-changed");
             let session = connect_core(app.handle(), folders, access, Duration::from_secs(3600));
             let webview =
                 tauri::WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::default())
@@ -174,6 +188,7 @@ mod tests {
                 statuses,
                 workbenches,
                 last_syncs,
+                activities,
                 _app: app,
             }
         }
@@ -566,6 +581,31 @@ mod tests {
         assert!(refreshed["at"].is_string(), "{refreshed}");
         assert_eq!(asked_for_it, refreshed);
         assert_eq!(clicked.unwrap(), Value::Null);
+    }
+
+    #[test]
+    fn the_status_bar_hears_each_part_of_a_first_sync_and_then_that_it_ended() {
+        let (folders, root) = temp_folders("wired-activity");
+        let wired = Wired::start(Ok(folders), recordings());
+        let _ = wired.ask("add_repository", add_cpython()).unwrap();
+        let _workbench = workbench_after_sync(&wired);
+
+        let mut parts = Vec::new();
+        let ended = loop {
+            let heard = wired.activities.recv_timeout(PLENTY).unwrap();
+            if heard.is_null() {
+                break heard;
+            }
+            parts.push(heard["part"].as_str().unwrap().to_owned());
+        };
+        parts.dedup();
+        let asked = wired.ask("sync_activity", json!({})).unwrap();
+        drop(wired.stop());
+        std::fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(parts, ["refresh", "your_work", "window", "trees"]);
+        assert_eq!(ended, Value::Null);
+        assert_eq!(asked, Value::Null);
     }
 
     #[test]

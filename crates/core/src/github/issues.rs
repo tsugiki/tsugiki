@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use time::OffsetDateTime;
 
@@ -82,7 +82,7 @@ fn fetch_issues_query(numbers: &[u32]) -> String {
 }
 
 /// A PR that mentions an Issue. Only the link rules can say whether it belongs in the Issue's tree.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListedPr {
     pub id: NodeId,
     pub number: u32,

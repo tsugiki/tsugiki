@@ -19,6 +19,68 @@ pub(super) const SCHEMA: &str = "
     ) WITHOUT ROWID;
 ";
 
+/// The place of a first sync that hasn't finished. A finished sync's row in `sync_state` replaces it.
+pub(super) const FIRST_SYNC_PLACE: &str = "
+    CREATE TABLE first_sync_place (
+        repository TEXT PRIMARY KEY COLLATE NOCASE,
+        place TEXT NOT NULL
+    ) WITHOUT ROWID;
+";
+
+/// A first sync's place. Only the sync can read this, and the store only keeps it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FirstSyncPlace(String);
+
+impl FirstSyncPlace {
+    pub fn new(place: String) -> Self {
+        Self(place)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+pub(super) fn read_place(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<Option<FirstSyncPlace>> {
+    connection
+        .query_row(
+            "SELECT place FROM first_sync_place WHERE repository = :repository",
+            named_params! { ":repository": repository },
+            |row| row.get("place").map(FirstSyncPlace),
+        )
+        .optional()
+}
+
+pub(super) fn save_place(
+    connection: &Connection,
+    repository: &RepositoryName,
+    place: &FirstSyncPlace,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "INSERT INTO first_sync_place (repository, place) VALUES (:repository, :place)
+             ON CONFLICT (repository) DO UPDATE SET place = excluded.place",
+            named_params! { ":repository": repository, ":place": place.as_str() },
+        )
+        .map(drop)
+}
+
+/// A sync that has finished has no place to come back to.
+pub(super) fn forget_place(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "DELETE FROM first_sync_place WHERE repository = :repository",
+            named_params! { ":repository": repository },
+        )
+        .map(drop)
+}
+
 /// How a refresh can learn cheaply that nothing changed (ADR 0015).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChangeCheck {

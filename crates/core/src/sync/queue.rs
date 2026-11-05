@@ -9,7 +9,7 @@ use super::{Step, UserWorkSync};
 use crate::error::{Error, ErrorKind};
 use crate::github::GitHub;
 use crate::repository::RepositorySettings;
-use crate::status::{Change, LastSync};
+use crate::status::{Change, LastSync, SyncActivity};
 use crate::store::Store;
 
 /// The rate limit resets every hour, so a longer pause can only come from a clock that's wrong.
@@ -36,14 +36,14 @@ pub enum Progress {
 enum Hold {
     /// Until the next look at GitHub after a failure. The user can ask sooner.
     Retry(Instant),
-    /// Until GitHub's points come back, which asking sooner would only waste.
-    Points(Instant),
+    /// Until GitHub's points come back, which asking sooner would only waste. The status bar shows the time.
+    Points(Instant, OffsetDateTime),
 }
 
 impl Hold {
     fn until(self) -> Instant {
         match self {
-            Self::Retry(at) | Self::Points(at) => at,
+            Self::Retry(at) | Self::Points(at, _) => at,
         }
     }
 }
@@ -100,6 +100,24 @@ impl Syncs {
         }
     }
 
+    /// The work of the sync at the front, for the status bar.
+    pub fn activity(&self) -> Option<SyncActivity> {
+        let sync = self.queue.front()?;
+        let paused_until = match self.not_before {
+            Some(Hold::Points(_, until)) => Some(until),
+            Some(Hold::Retry(_)) | None => None,
+        };
+        Some(SyncActivity {
+            repository: sync.repository.clone(),
+            part: sync.part(),
+            pages: sync
+                .first_sync
+                .as_ref()
+                .map_or(0, |first_sync| first_sync.pages),
+            paused_until,
+        })
+    }
+
     /// The time the next step can run, if there is one.
     pub fn ready_at(&self) -> Option<Instant> {
         self.queue
@@ -118,11 +136,11 @@ impl Syncs {
         self.not_before = Some(match problem.kind {
             ErrorKind::RateLimited {
                 resets_at: Some(resets_at),
-            } => Hold::Points(
+            } => points_hold(
                 OffsetDateTime::from_unix_timestamp(i64::from(resets_at))
                     .map_or(next_refresh, |at| until_instant(at).max(next_refresh)),
             ),
-            ErrorKind::RateLimited { resets_at: None } => Hold::Points(next_refresh),
+            ErrorKind::RateLimited { resets_at: None } => points_hold(next_refresh),
             ErrorKind::Offline => Hold::Retry(next_refresh),
             ErrorKind::Unauthorized
             | ErrorKind::WriteRefused
@@ -160,8 +178,9 @@ impl Syncs {
         let step = sync.step(github, store)?;
         self.failures = 0;
         match step {
+            Step::Moved => Ok(None),
             Step::Searched { pause_until } => {
-                self.not_before = pause_until.map(until_instant).map(Hold::Points);
+                self.not_before = pause_until.map(until_instant).map(points_hold);
                 Ok(None)
             }
             Step::Saved {
@@ -172,7 +191,7 @@ impl Syncs {
                     repository: sync.repository.clone(),
                     items: touched,
                 };
-                self.not_before = pause_until.map(until_instant).map(Hold::Points);
+                self.not_before = pause_until.map(until_instant).map(points_hold);
                 Ok(Some(Progress::Changed(change)))
             }
             Step::Finished => {
@@ -186,6 +205,12 @@ impl Syncs {
             }
         }
     }
+}
+
+/// A wait for GitHub's points until `at`.
+fn points_hold(at: Instant) -> Hold {
+    let wait = at.saturating_duration_since(Instant::now());
+    Hold::Points(at, OffsetDateTime::now_utc() + wait)
 }
 
 fn until_instant(until: OffsetDateTime) -> Instant {

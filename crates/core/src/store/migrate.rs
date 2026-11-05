@@ -53,6 +53,10 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         version: 8,
         sql: super::filters::SEARCHES,
     },
+    Migration {
+        version: 9,
+        sql: super::sync_state::FIRST_SYNC_PLACE,
+    },
 ];
 
 /// The version a file has after all of `migrations`.

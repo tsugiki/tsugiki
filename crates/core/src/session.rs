@@ -335,6 +335,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                 }
             },
         }
+        board.sync_activity(syncs.activity());
     }
 }
 

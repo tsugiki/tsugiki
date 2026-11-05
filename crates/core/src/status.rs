@@ -45,6 +45,33 @@ pub struct LastSync {
     pub at: Option<OffsetDateTime>,
 }
 
+/// The part of a sync under way, in the order a first sync runs them (ADR 0015).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum SyncPart {
+    YourWork,
+    Window,
+    Trees,
+    /// A refresh, or a sync that hasn't asked the store yet which it is. The status bar only mentions this
+    /// when it has to wait.
+    Refresh,
+}
+
+/// The work under way in the queue of syncs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SyncActivity {
+    pub repository: RepositoryName,
+    pub part: SyncPart,
+    /// The pages a first sync has read.
+    pub pages: u32,
+    /// The time GitHub's points come back, while the sync waits for them.
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[specta(type = Option<String>)]
+    pub paused_until: Option<OffsetDateTime>,
+}
+
+type AnnounceActivity = Box<dyn FnMut(Option<&SyncActivity>) + Send>;
+
 /// Holds the status and announces each change, so the app can pass it on as an event. It also announces when
 /// a Repository's stored facts change, so an open screen can ask again, and when a sync of the open
 /// Repository finishes (ADR 0008). The session's thread owns it, so nothing here needs a lock.
@@ -53,6 +80,8 @@ pub struct StatusBoard {
     announce: Box<dyn FnMut(&Status) + Send>,
     announce_change: Box<dyn FnMut(&Change) + Send>,
     announce_last_sync: Box<dyn FnMut(&LastSync) + Send>,
+    sync_activity: Option<SyncActivity>,
+    announce_sync_activity: AnnounceActivity,
 }
 
 impl StatusBoard {
@@ -62,6 +91,8 @@ impl StatusBoard {
             announce,
             announce_change: Box::new(|_| {}),
             announce_last_sync: Box::new(|_| {}),
+            sync_activity: None,
+            announce_sync_activity: Box::new(|_| {}),
         }
     }
 
@@ -77,6 +108,20 @@ impl StatusBoard {
     pub fn with_last_syncs(mut self, announce: Box<dyn FnMut(&LastSync) + Send>) -> Self {
         self.announce_last_sync = announce;
         self
+    }
+
+    /// Also tells `announce` what the queue of syncs is doing, each time that changes.
+    #[must_use]
+    pub fn with_sync_activity(mut self, announce: AnnounceActivity) -> Self {
+        self.announce_sync_activity = announce;
+        self
+    }
+
+    pub(crate) fn sync_activity(&mut self, activity: Option<SyncActivity>) {
+        if self.sync_activity != activity {
+            self.sync_activity = activity;
+            (self.announce_sync_activity)(self.sync_activity.as_ref());
+        }
     }
 
     pub(crate) fn changed(&mut self, change: &Change) {

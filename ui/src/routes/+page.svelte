@@ -56,6 +56,7 @@
   visible={settings.statusBarVisible}
   problems={settings.problems}
   lastSync={status.lastSync}
+  syncActivity={status.syncActivity}
   onrefresh={() => void status.refresh()}
 />
 {#if addOpen}

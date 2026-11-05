@@ -4,9 +4,10 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use serde::{Deserialize, Serialize};
 use time::{Date, OffsetDateTime};
 
-use super::{Batches, Leads, Link, Moved, NO_PAUSE, Phase, SEARCH_PAGE, Step, pause_until};
+use super::{Batches, Leads, Link, Moved, Phase, Resumable, SEARCH_PAGE, Step, pause_until};
 use crate::error::{Error, ErrorKind};
 use crate::filters::FilterQuery;
 use crate::github::filters::{CreatedRange, FilterHit, FilterHitKind, FilterSearch};
@@ -18,7 +19,7 @@ use crate::store::{FilterProblem, FilterResults, NarrowedResults};
 const SEARCH_CAP: u32 = 1000;
 
 /// One search of a walk.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 struct WalkedSearch {
     query: FilterQuery,
     /// Keeps only what changed since this time. Without it, the search replaces the Filter's results.
@@ -26,7 +27,7 @@ struct WalkedSearch {
 }
 
 /// The Filters' searches, one at a time, with what they've found.
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub(super) struct FilterWalk {
     /// The searches still to finish. The first is the one under way.
     left: VecDeque<WalkedSearch>,
@@ -65,6 +66,7 @@ pub(super) fn can_narrow(stored: Option<&FilterResults>) -> bool {
 }
 
 /// How far the search under way has got.
+#[derive(Serialize, Deserialize)]
 enum Place {
     Reading(Pages),
     /// It has no more to read, and its results wait to be saved.
@@ -80,7 +82,7 @@ impl Default for Place {
 }
 
 /// The pages of a search still to read.
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 struct Pages {
     /// The part under way.
     slice: Slice,
@@ -90,7 +92,7 @@ struct Pages {
 }
 
 /// A part of a search GitHub can list whole.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Serialize, Deserialize)]
 enum Slice {
     #[default]
     Whole,
@@ -168,7 +170,7 @@ impl FilterWalk {
 /// won't answer keeps what it last found and says why, and stops nothing else (ADR 0015).
 pub(super) fn walk_filters(link: &Link<'_>, walk: &mut FilterWalk) -> Result<Moved, Error> {
     let Some(search) = walk.left.front().cloned() else {
-        return Ok((NO_PAUSE, Some(fetch_what_is_missing(link, walk)?)));
+        return Ok((Step::Moved, Some(fetch_what_is_missing(link, walk)?)));
     };
     let pause_until = match read_page(link, walk, &search)? {
         Page::Stays(step) => return Ok((step, None)),
@@ -344,11 +346,12 @@ fn fetch_what_is_missing(link: &Link<'_>, walk: &mut FilterWalk) -> Result<Phase
             },
         }
     }
-    Ok(Phase::Fetching(Batches {
+    Ok(Resumable::Fetching(Batches {
         ids,
         why: PrFetch::Work,
         leads,
-    }))
+    })
+    .into())
 }
 
 #[cfg(test)]

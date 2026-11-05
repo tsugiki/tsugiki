@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use super::{Batches, FETCH_BATCH, Link, Moved, NO_PAUSE, Phase, Step, pause_until};
+use super::{Batches, FETCH_BATCH, Link, Moved, Resumable, Step, pause_until};
 use crate::error::Error;
 
 pub(super) fn fetch(
@@ -13,11 +13,12 @@ pub(super) fn fetch(
     let Batches { ids, why, leads } = batches;
     if ids.is_empty() {
         leads.settle_origins(link, fetched)?;
-        let next = Phase::FetchingOrigins {
+        let next = Resumable::FetchingOrigins {
             why: *why,
             leads: std::mem::take(leads),
-        };
-        return Ok((NO_PAUSE, Some(next)));
+        }
+        .into();
+        return Ok((Step::Moved, Some(next)));
     }
     let batch = link.github.fetch_pull_requests(*why, ids, FETCH_BATCH)?;
     link.store

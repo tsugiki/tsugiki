@@ -1,6 +1,7 @@
 //! Fetching the Issues a sync's PRs name, a batch at a time.
 
-use super::{FETCH_BATCH, Link, Moved, NO_PAUSE, Phase, Reading, Step, pause_until};
+use super::window::WindowWalk;
+use super::{FETCH_BATCH, Link, Moved, Reading, Resumable, Step, pause_until};
 use crate::error::Error;
 
 pub(super) fn fetch_issues(
@@ -9,12 +10,16 @@ pub(super) fn fetch_issues(
     shown: &mut Vec<u32>,
 ) -> Result<Moved, Error> {
     if numbers.is_empty() {
-        let next = Phase::ReadingCrossReferences(Reading {
+        let reading = Reading {
             issues: std::mem::take(shown),
             cursor: None,
             listed: Vec::new(),
-        });
-        return Ok((NO_PAUSE, Some(next)));
+        };
+        let next = match link.window_since {
+            Some(since) => Resumable::Window(WindowWalk::new(since, reading)),
+            None => Resumable::ReadingCrossReferences(reading),
+        };
+        return Ok((Step::Moved, Some(next.into())));
     }
     let batch = link
         .github

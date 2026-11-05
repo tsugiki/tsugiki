@@ -6,13 +6,16 @@ use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 
 use super::{Progress, Syncs};
 use crate::github::testing::{Scripted, reply_ok, token};
-use crate::github::{GitHub, Reply, Transport, Unreachable};
+use crate::github::{GitHub, Reply, Request, Transport, Unreachable};
 use crate::repository::{RepositoryName, RepositorySettings};
 use crate::store;
 use crate::store::{OpenReader, Store, StoreReader};
+use crate::token::Token;
 
 pub(super) const LOTS: &str = r#""rateLimit":{"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
 
@@ -80,6 +83,59 @@ pub(super) fn fetched_titled(
     ))
 }
 
+/// Answers from `Scripted`, except that a first sync's window is empty and goes unrecorded. Most tests are
+/// about something else, and `Harness::with_window` is for those that aren't.
+struct EmptyWindow(Scripted);
+
+impl Transport for EmptyWindow {
+    fn post(&self, token: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
+        if request.operation.starts_with("Window") {
+            return empty_window_page();
+        }
+        self.0.post(token, request)
+    }
+}
+
+/// A page of a first sync's window with nothing on it.
+pub(super) fn empty_window_page() -> Result<Reply, Unreachable> {
+    window_page(&[], None, LOTS)
+}
+
+/// The time `hours` ago as GitHub writes it, for an item inside a window that moves with the clock.
+pub(super) fn hours_ago(hours: i64) -> String {
+    (OffsetDateTime::now_utc() - time::Duration::hours(hours))
+        .format(&Rfc3339)
+        .unwrap()
+}
+
+/// An Issue as a page of a first sync's window lists it.
+pub(super) fn window_issue(number: u32, updated_at: &str) -> Value {
+    json!({
+        "number": number,
+        "title": format!("Issue {number}"),
+        "updatedAt": updated_at,
+        "author": { "login": "octocat" },
+    })
+}
+
+/// A PR as a page of a first sync's window lists it.
+pub(super) fn window_pr(number: u32, updated_at: &str) -> Value {
+    pr_node(number, &json!({ "updatedAt": updated_at }))
+}
+
+/// A page of a first sync's window, holding `nodes`, of either list.
+pub(super) fn window_page(
+    nodes: &[Value],
+    next: Option<&str>,
+    rate: &str,
+) -> Result<Reply, Unreachable> {
+    let info = json!({ "hasNextPage": next.is_some(), "endCursor": next });
+    reply_ok(&format!(
+        r#"{{"data":{{"repository":{{"list":{{"pageInfo":{info},"nodes":{}}}}},{rate}}}}}"#,
+        json!(nodes)
+    ))
+}
+
 pub(super) struct Harness {
     pub(super) github: GitHub,
     pub(super) store: Store,
@@ -98,7 +154,7 @@ impl Harness {
         let (to_open, reader) = store::reader();
         let open = to_open.open(&path).unwrap();
         let (script, asked) = Scripted::new(replies);
-        let github = GitHub::new(Box::new(script), token());
+        let github = GitHub::new(Box::new(EmptyWindow(script)), token());
         Self {
             github,
             store,
@@ -107,6 +163,14 @@ impl Harness {
             asked,
             folder,
         }
+    }
+
+    /// A harness whose replies include the first sync's window.
+    pub(super) fn with_window(name: &str, replies: Vec<Result<Reply, Unreachable>>) -> Self {
+        let (script, asked) = Scripted::new(replies);
+        let mut harness = Self::answering(name, Box::new(script));
+        harness.asked = asked;
+        harness
     }
 
     /// A harness whose GitHub is `transport`, which keeps its own record of what's asked.

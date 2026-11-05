@@ -35,15 +35,16 @@ edited on the Repository's Settings page, and an edited preset shows as Custom.
   commit in it was committed by that bot. A merge of the Target branch, as GitHub's Update branch button
   makes, doesn't count. A commit anyone else pushed, including an amended or force-pushed cherry-pick, makes
   it a Manual backport from then on.
-- **Whole trees.** For every Issue the user's work reaches (a Filter match, a Pinned issue, or an Issue named
-  by one of the user's PRs), Tsugiki reads the Issue's cross-reference events, newest first and paginated,
-  fetches the PRs listed there that it doesn't have, and keeps those the rules above tie to the Issue. That
-  drops PRs that only mention it. A Backport's Origin PR is fetched by number when missing. It goes one level:
-  a PR in a tree that names another Issue doesn't bring that Issue's tree. Merged and closed PRs are fetched
+- **Whole trees.** For every Issue a first sync's window brings, and every Issue the user's work reaches (a
+  Filter match, a Pinned issue, or an Issue named by one of the user's PRs), Tsugiki reads the Issue's
+  cross-reference events, newest first and paginated, fetches the PRs listed there that it doesn't have, and
+  keeps those the rules above tie to the Issue. That drops PRs that only mention it. A Backport's Origin PR is
+  fetched by number when missing. It goes one level: a PR in a tree that names another Issue doesn't bring
+  that Issue's tree. Merged and closed PRs are fetched
   once and frozen, apart from a refresh that sees one move ([ADR
   0015](0015-github-sync-serial-graphql-in-tiers-the-users-work-first.md)).
-- **Issues only the window reaches.** These show the PRs Tsugiki already holds, so a tree can lack PRs older
-  than the window. [#129](https://github.com/tsugiki/tsugiki/issues/129) reads their trees too.
+- **Issues only a PR names.** A first sync fetches an Issue that a PR in the window names, without its
+  cross-references. Such an Issue shows the PRs Tsugiki already holds, so its tree can lack some.
 
 ## Considered Options
 
@@ -73,9 +74,10 @@ edited on the Repository's Settings page, and an edited preset shows as Custom.
   events, because they only say which PRs to fetch and the links come from the PRs.
 - A refresh reads cross-references only for an Issue that changed. A cross-reference doesn't always move an
   Issue's `updatedAt`, but a new link still arrives, because each refresh fetches each PR that changed.
-- Measured on CPython with the starter Filters ([#103](https://github.com/tsugiki/tsugiki/issues/103)): a
-  first sync sent 78 cross-reference queries out of 261, at one point each, and the two refreshes after it
-  sent 1 and 0.
+- Measured on CPython with the starter Filters ([#129](https://github.com/tsugiki/tsugiki/issues/129)): the
+  window's 1,444 Issues bring their cross-references inside their pages, and 13 more queries read the Issues
+  with over a page of them. Before that change a first sync sent 78 cross-reference queries out of 261, and
+  the two refreshes after it sent 1 and 0.
 - A link made by hand in the Development panel may wait until its PR or Issue next changes. We couldn't check
   whether it moves the PR's `updatedAt`, and CPython had 1 such link in its latest 800 PRs.
 - Changing a Repository's Conventions re-groups its Workbench at once, with no re-sync.

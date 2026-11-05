@@ -364,6 +364,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             Turn::Opened(repository) => show_last_sync(board, store, repository),
             Turn::Seen(item, at) => mark_seen(board, store, &item, at),
             Turn::FetchIssue(item) => {
+                syncs.open_issue(&item.repository, item.number);
                 if let Err(problem) = fetch_issue(board, store, &github, item) {
                     syncs.after_failure(&problem, due.status);
                     board.set(status_after(problem, store));

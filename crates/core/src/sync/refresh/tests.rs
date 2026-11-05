@@ -811,6 +811,43 @@ fn a_change_too_new_for_the_search_keeps_its_item_in_the_filter() {
 }
 
 #[test]
+fn a_backport_a_refresh_brought_gets_its_origin_pr_when_a_tree_lists_it() {
+    let backport = pr_node(
+        10,
+        &json!({
+            "title": "[3.13] gh-1: Fix it (GH-9)",
+            "baseRefName": "3.13",
+            "author": { "login": "miss-islington" },
+            "updatedAt": AFTER_IT,
+        }),
+    );
+    let origin = reply_ok(&format!(
+        r#"{{"data":{{"repository":{{"pullRequest":{}}},{LOTS}}}}}"#,
+        pr_node(
+            9,
+            &json!({ "state": "MERGED", "mergeCommit": { "oid": "0".repeat(40) } })
+        ),
+    ));
+    let replies = vec![
+        polled(
+            &list(&[issue_node(1, AFTER_IT)], None),
+            &list(&[changed_pr(10, AFTER_IT)], None),
+            &[],
+        ),
+        fetched_nodes(&[backport], LOTS),
+        cross_references(&[10], None, LOTS),
+        origin,
+    ];
+    let harness = after_a_sync("refresh-origin", replies);
+    holding_issue(&harness, 1, LONG_BEFORE);
+
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+
+    assert_eq!(harness.numbers(), [9, 10]);
+    harness.finish();
+}
+
+#[test]
 fn a_refresh_that_stopped_reads_the_trees_it_owed_at_the_next_start() {
     let moved = || {
         polled(

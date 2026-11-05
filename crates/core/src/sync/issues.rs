@@ -1,6 +1,6 @@
 //! Fetching the Issues a sync's PRs name, a batch at a time.
 
-use super::window::WindowWalk;
+use super::loading::Loading;
 use super::{FETCH_BATCH, Link, Moved, Reading, Resumable, Step, pause_until};
 use crate::error::Error;
 
@@ -10,14 +10,14 @@ pub(super) fn fetch_issues(
     shown: &mut Vec<u32>,
 ) -> Result<Moved, Error> {
     if numbers.is_empty() {
-        let reading = Reading {
-            issues: std::mem::take(shown),
-            cursor: None,
-            listed: Vec::new(),
-        };
+        let issues = std::mem::take(shown);
         let next = match link.window_since {
-            Some(since) => Resumable::Window(WindowWalk::new(since, reading)),
-            None => Resumable::ReadingCrossReferences(reading),
+            Some(since) => Resumable::Loading(Loading::new(since, issues)),
+            None => Resumable::ReadingCrossReferences(Reading {
+                issues,
+                cursor: None,
+                listed: Vec::new(),
+            }),
         };
         return Ok((Step::Moved, Some(next.into())));
     }
@@ -44,7 +44,7 @@ mod tests {
     use crate::repository::RepositoryName;
     use crate::sync::Syncs;
     use crate::sync::testing::{
-        FEW, Harness, LOTS, cpython, fetched, fetched_titled, issues, no_cross_references, plain,
+        FEW, Harness, LOTS, cpython, fetched, fetched_titled, issues, no_issue_references, plain,
         run_to_the_end, searches_finding,
     };
     use std::time::{Duration, Instant};
@@ -59,8 +59,7 @@ mod tests {
         let mut replies = searches_finding(&["a", "b"]);
         replies.push(fetched_naming_issues(&[1, 2], LOTS));
         replies.push(issues(&[1, 2], LOTS));
-        replies.push(no_cross_references(LOTS));
-        replies.push(no_cross_references(LOTS));
+        replies.push(no_issue_references(LOTS));
         let harness = Harness::new("issues", replies);
         let mut syncs = Syncs::default();
         syncs.add(plain(cpython()));
@@ -70,12 +69,7 @@ mod tests {
         let asked: Vec<String> = harness.operations();
         assert_eq!(
             asked[4..],
-            [
-                "FetchPullRequests",
-                "FetchIssues",
-                "FetchCrossReferences",
-                "FetchCrossReferences",
-            ]
+            ["FetchPullRequests", "FetchIssues", "FetchIssueReferences",]
         );
         let facts = harness.reader.work_facts(&cpython()).unwrap();
         let stored: Vec<u32> = facts.issues.iter().map(|issue| issue.number).collect();
@@ -103,7 +97,7 @@ mod tests {
         let mut replies = searches_finding(&["a"]);
         replies.push(fetched_naming_issues(&[1], LOTS));
         replies.push(issues(&[1], LOTS));
-        replies.push(no_cross_references(LOTS));
+        replies.push(no_issue_references(LOTS));
         let harness = Harness::new("conventions", replies);
         let mut syncs = Syncs::default();
         syncs.add(plain(RepositoryName::parse("python/peps").unwrap()));
@@ -112,7 +106,7 @@ mod tests {
 
         assert_eq!(
             harness.operations()[4..],
-            ["FetchPullRequests", "FetchIssues", "FetchCrossReferences"]
+            ["FetchPullRequests", "FetchIssues", "FetchIssueReferences"]
         );
         harness.finish();
     }
@@ -124,8 +118,7 @@ mod tests {
         replies.push(fetched_naming_issues(&ids, LOTS));
         replies.push(issues(&[1], FEW));
         replies.push(issues(&[2], LOTS));
-        replies.push(no_cross_references(LOTS));
-        replies.push(no_cross_references(LOTS));
+        replies.push(no_issue_references(LOTS));
         let harness = Harness::new("issue-batches", replies);
         let mut syncs = Syncs::default();
         syncs.add(plain(cpython()));

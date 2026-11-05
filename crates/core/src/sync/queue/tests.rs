@@ -4,7 +4,8 @@ use crate::github::pull_requests::RateLimit;
 use crate::repository::RepositoryName;
 use crate::sync::testing::{
     Harness, LOTS, announced, cpython, cross_references, fetched, fetched_nodes, found,
-    merged_node, nothing, plain, run_to_the_end, searches_finding, soon, up_to_the_first_issue,
+    issue_references_with_more, merged_node, nothing, plain, run_to_the_end, searches_finding,
+    soon, up_to_the_first_issue,
 };
 use crate::sync::{RATE_LIMIT_FLOOR, pause_until};
 use serde_json::{Value, json};
@@ -152,9 +153,9 @@ fn a_sync_keeps_its_progress_behind_a_newer_one() {
     assert_eq!(syncs.step(&harness.github, &harness.store).unwrap(), None);
     syncs.add(plain(RepositoryName::parse("python/peps").unwrap()));
 
-    // The newer sync's four searches, its two empty window pages, its eight moves from phase to phase and its
-    // end, then the older sync's next page.
-    for _ in 0..16 {
+    // The newer sync's four searches, its moves up to the queue, its two empty window pages and the end, then
+    // the older sync's next page.
+    for _ in 0..13 {
         let progress = syncs.step(&harness.github, &harness.store).unwrap();
         assert_eq!(announced(progress), None);
     }
@@ -301,7 +302,7 @@ fn only_the_open_repository_says_its_sync_finished() {
 #[test]
 fn a_first_sync_that_gave_way_keeps_the_cross_references_it_had_listed() {
     let mut replies = up_to_the_first_issue();
-    replies.push(cross_references(&[3], Some("older"), LOTS));
+    replies.push(issue_references_with_more(1, &[3], "older", LOTS));
     replies.push(cross_references(&[2], None, LOTS));
     replies.push(fetched_nodes(&[merged_node(3), merged_node(2)], LOTS));
     let harness = Harness::new("gave-way-listed", replies);
@@ -310,7 +311,7 @@ fn a_first_sync_that_gave_way_keeps_the_cross_references_it_had_listed() {
     let mut before_it_gave_way = Vec::new();
     while !before_it_gave_way
         .iter()
-        .any(|(operation, _)| operation == "FetchCrossReferences")
+        .any(|(operation, _)| operation == "FetchIssueReferences")
     {
         drop(syncs.step(&harness.github, &harness.store).unwrap());
         before_it_gave_way.extend(harness.asked.try_iter());
@@ -528,7 +529,6 @@ mod activity {
                 (SyncPart::Window, 5),
                 (SyncPart::Window, 6),
                 (SyncPart::Window, 7),
-                (SyncPart::Trees, 7),
             ]
         );
         harness.finish();

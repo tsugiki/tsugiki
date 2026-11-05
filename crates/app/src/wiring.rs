@@ -711,7 +711,7 @@ mod tests {
         drop(wired.stop());
         std::fs::remove_dir_all(root).unwrap();
 
-        assert_eq!(parts, ["refresh", "your_work", "window", "trees"]);
+        assert_eq!(parts, ["refresh", "your_work", "trees", "window"]);
         assert_eq!(ended, Value::Null);
         assert_eq!(asked, Value::Null);
     }

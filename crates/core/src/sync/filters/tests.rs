@@ -7,8 +7,8 @@ use crate::store::Store;
 use crate::sync::Syncs;
 use crate::sync::recovery::{Scenario, recovers_from_each_failure, resumes_after_each_step};
 use crate::sync::testing::{
-    FEW, Harness, LOTS, cpython, cross_references, empty_window_page, fetched, fetched_nodes,
-    issues, no_cross_references, nothing, pr_node, run_to_the_end, searches_finding,
+    FEW, Harness, LOTS, cpython, empty_window_page, fetched, fetched_nodes, issue_references,
+    issues, no_issue_references, nothing, pr_node, run_to_the_end, searches_finding,
 };
 use crate::token::Token;
 use serde_json::{Value, json};
@@ -94,10 +94,9 @@ fn a_filter_walk_recovers_from_a_failure_at_each_point() {
     ));
     posts.push(fetched(&[10], LOTS));
     posts.push(issues(&[1, 2], LOTS));
+    posts.push(no_issue_references(LOTS));
     posts.push(empty_window_page());
     posts.push(empty_window_page());
-    posts.push(no_cross_references(LOTS));
-    posts.push(no_cross_references(LOTS));
     let scenario = Scenario {
         name: "recovery-filters",
         settings: filtering(&["a", "b", "c"]),
@@ -118,10 +117,9 @@ fn a_filter_walk_recovers_from_a_failure_at_each_point() {
             "SearchFilter",
             "FetchPullRequests",
             "FetchIssues",
+            "FetchIssueReferences",
             "WindowIssues",
             "WindowPullRequests",
-            "FetchCrossReferences",
-            "FetchCrossReferences",
         ]
     );
 }
@@ -131,7 +129,7 @@ fn a_save_that_failed_goes_again_with_no_new_search() {
     let mut replies = searches_finding(&[]);
     replies.push(all_of(&[issue_hit(1)]));
     replies.push(issues(&[1], LOTS));
-    replies.push(no_cross_references(LOTS));
+    replies.push(no_issue_references(LOTS));
     let harness = Harness::new("filter-save-again", replies);
     let broken = Store::stopped();
     let mut syncs = Syncs::default();
@@ -150,7 +148,7 @@ fn a_save_that_failed_goes_again_with_no_new_search() {
     let asked = harness.operations();
     assert_eq!(
         asked[4..],
-        ["SearchFilter", "FetchIssues", "FetchCrossReferences"]
+        ["SearchFilter", "FetchIssues", "FetchIssueReferences"]
     );
     broken.close();
     harness.finish();
@@ -162,7 +160,7 @@ fn a_filter_runs_after_the_users_work_and_fetches_what_it_found() {
     replies.push(all_of(&[issue_hit(1), pr_hit(10, "2026-11-04T10:00:00Z")]));
     replies.push(fetched(&[10], LOTS));
     replies.push(issues(&[1], LOTS));
-    replies.push(no_cross_references(LOTS));
+    replies.push(no_issue_references(LOTS));
     let harness = Harness::new("filter-first", replies);
     let mut syncs = Syncs::default();
     syncs.add(filtering(&["a"]));
@@ -175,7 +173,7 @@ fn a_filter_runs_after_the_users_work_and_fetches_what_it_found() {
             "SearchFilter",
             "FetchPullRequests",
             "FetchIssues",
-            "FetchCrossReferences"
+            "FetchIssueReferences"
         ]
     );
     assert_eq!(found_by(&harness, "a"), [1, 10]);
@@ -189,8 +187,7 @@ fn a_filters_search_says_the_repository_and_follows_its_pages() {
     replies.push(filter_page(2, &[issue_hit(1)], Some("more")));
     replies.push(filter_page(2, &[issue_hit(2)], None));
     replies.push(issues(&[1, 2], LOTS));
-    replies.push(no_cross_references(LOTS));
-    replies.push(no_cross_references(LOTS));
+    replies.push(no_issue_references(LOTS));
     let harness = Harness::new("filter-pages", replies);
     let mut syncs = Syncs::default();
     syncs.add(filtering(&["label:bug"]));
@@ -211,7 +208,7 @@ fn each_filter_keeps_its_own_results_and_a_shared_item_is_fetched_once() {
     replies.push(all_of(&[issue_hit(1), issue_hit(2)]));
     replies.push(all_of(&[issue_hit(2), issue_hit(3)]));
     replies.push(issues(&[1, 2, 3], LOTS));
-    replies.extend((0..3).map(|_| no_cross_references(LOTS)));
+    replies.push(no_issue_references(LOTS));
     let harness = Harness::new("filter-shared", replies);
     let mut syncs = Syncs::default();
     syncs.add(filtering(&["a", "b"]));
@@ -285,7 +282,7 @@ fn a_second_sync_fetches_only_what_changed_and_still_reads_each_tree() {
         LOTS,
     ));
     replies.push(issues(&[1, 2, 3], LOTS));
-    replies.extend((0..3).map(|_| no_cross_references(LOTS)));
+    replies.push(no_issue_references(LOTS));
     replies.extend(searches_finding(&[]));
     replies.push(all_of(&[
         issue_hit(1),
@@ -296,7 +293,7 @@ fn a_second_sync_fetches_only_what_changed_and_still_reads_each_tree() {
     ]));
     replies.push(fetched(&[11], LOTS));
     replies.push(issues(&[2, 3], LOTS));
-    replies.extend((0..3).map(|_| no_cross_references(LOTS)));
+    replies.push(no_issue_references(LOTS));
     let harness = Harness::new("filter-missing", replies);
     let mut syncs = Syncs::default();
     syncs.add(filtering(&["a"]));
@@ -305,19 +302,24 @@ fn a_second_sync_fetches_only_what_changed_and_still_reads_each_tree() {
 
     harness.forget_the_last_sync();
     syncs.add(filtering(&["a"]));
-    drop(run_to_the_end(&mut syncs, &harness));
+    // All three trees are owed, Issue 1's among them.
+    let mut owed = Value::Null;
+    while syncs.ready_at().is_some() {
+        drop(syncs.step(&harness.github, &harness.store).unwrap());
+        if let Some(place) = harness.store.first_sync_place(&cpython()).unwrap() {
+            let place: Value = serde_json::from_str(place.as_str()).unwrap();
+            let issues = &place["place"]["Loading"]["urgent_issues"];
+            if owed.is_null() && !issues.is_null() {
+                owed = issues.clone();
+            }
+        }
+    }
 
     let asked: Vec<(String, Value)> = harness.asked.try_iter().collect();
     // Only #11 changed and can change: #10 didn't, and #12 has merged.
     let batch = asked.iter().find(|(name, _)| name == "FetchPullRequests");
     assert_eq!(batch.unwrap().1["ids"], json!(["id11"]));
-    // All three trees are read, Issue 1's among them.
-    let reads = asked
-        .iter()
-        .filter(|(name, _)| name == "FetchCrossReferences");
-    let mut numbers: Vec<Value> = reads.map(|(_, sent)| sent["number"].clone()).collect();
-    numbers.sort_by_key(Value::to_string);
-    assert_eq!(numbers, [json!(1), json!(2), json!(3)]);
+    assert_eq!(owed, json!([1, 2, 3]));
     harness.finish();
 }
 
@@ -326,10 +328,10 @@ fn an_issue_a_filter_found_as_tsugiki_has_it_isnt_fetched_again() {
     let mut replies = searches_finding(&[]);
     replies.push(all_of(&[issue_hit(1)]));
     replies.push(issues(&[1], LOTS));
-    replies.push(no_cross_references(LOTS));
+    replies.push(no_issue_references(LOTS));
     replies.extend(searches_finding(&[]));
     replies.push(all_of(&[issue_hit(1)]));
-    replies.push(no_cross_references(LOTS));
+    replies.push(no_issue_references(LOTS));
     let harness = Harness::new("filter-held-issue", replies);
     let mut syncs = Syncs::default();
     syncs.add(filtering(&["a"]));
@@ -342,7 +344,7 @@ fn an_issue_a_filter_found_as_tsugiki_has_it_isnt_fetched_again() {
 
     assert_eq!(
         harness.operations()[4..],
-        ["SearchFilter", "FetchCrossReferences"]
+        ["SearchFilter", "FetchIssueReferences"]
     );
     harness.finish();
 }
@@ -399,11 +401,11 @@ fn a_tree_fetches_again_an_open_pr_a_filter_found_unchanged_as_its_ci_may_have_m
         LOTS,
     ));
     replies.push(issues(&[1], LOTS));
-    replies.push(cross_references(&[10], None, LOTS));
+    replies.push(issue_references(&[(1, &[10])], LOTS));
     replies.extend(searches_finding(&[]));
     replies.push(all_of(&[pr_hit(10, SAVED)]));
     replies.push(issues(&[1], LOTS));
-    replies.push(cross_references(&[10], None, LOTS));
+    replies.push(issue_references(&[(1, &[10])], LOTS));
     replies.push(fetched_nodes(
         &[pr_node(
             10,
@@ -426,7 +428,7 @@ fn a_tree_fetches_again_an_open_pr_a_filter_found_unchanged_as_its_ci_may_have_m
         [
             "SearchFilter",
             "FetchIssues",
-            "FetchCrossReferences",
+            "FetchIssueReferences",
             "FetchTreePullRequests"
         ]
     );
@@ -454,7 +456,7 @@ fn a_search_the_user_edited_away_loses_its_results_at_the_next_sync() {
     let mut replies = searches_finding(&[]);
     replies.push(all_of(&[issue_hit(1)]));
     replies.push(issues(&[1], LOTS));
-    replies.push(no_cross_references(LOTS));
+    replies.push(no_issue_references(LOTS));
     replies.extend(searches_finding(&[]));
     replies.push(all_of(&[]));
     let harness = Harness::new("filter-edited", replies);
@@ -475,14 +477,14 @@ fn a_filter_github_wont_answer_says_why_and_stops_nothing_else() {
     let mut replies = searches_finding(&[]);
     replies.push(all_of(&[issue_hit(1)]));
     replies.push(issues(&[1], LOTS));
-    replies.push(no_cross_references(LOTS));
+    replies.push(no_issue_references(LOTS));
     replies.extend(searches_finding(&[]));
     replies.push(reply_ok(
         r#"{"errors":[{"message":"That search is too long"}]}"#,
     ));
     replies.push(all_of(&[issue_hit(2)]));
     replies.push(issues(&[2], LOTS));
-    replies.push(no_cross_references(LOTS));
+    replies.push(no_issue_references(LOTS));
     let harness = Harness::new("filter-refused", replies);
     let mut syncs = Syncs::default();
     syncs.add(filtering(&["a"]));
@@ -527,7 +529,7 @@ fn an_outage_blames_no_filter_and_its_search_runs_again() {
     }));
     replies.push(all_of(&[issue_hit(1)]));
     replies.push(issues(&[1], LOTS));
-    replies.push(no_cross_references(LOTS));
+    replies.push(no_issue_references(LOTS));
     let harness = Harness::new("filter-outage", replies);
     let mut syncs = Syncs::default();
     syncs.add(filtering(&["a"]));
@@ -613,7 +615,7 @@ impl Transport for ByCreated {
                 Ok(self.answer(request.variables["query"].as_str().unwrap_or_default()))
             }
             "FetchIssues" => issues(&[], LOTS),
-            "FetchCrossReferences" => no_cross_references(LOTS),
+            "FetchIssueReferences" => no_issue_references(LOTS),
             "WindowIssues" | "WindowPullRequests" => empty_window_page(),
             _ => nothing(LOTS),
         }

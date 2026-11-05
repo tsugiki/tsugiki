@@ -52,6 +52,7 @@ describe("StatusState's last sync", () => {
       repository: "python/cpython",
       part: "window",
       pages: 3,
+      load: null,
       paused_until: null,
     } as const;
     const catchActivity = () => {

@@ -50,11 +50,22 @@ pub struct LastSync {
 #[serde(rename_all = "snake_case")]
 pub enum SyncPart {
     YourWork,
-    Window,
+    /// The trees of the user's own Issues, and of any Issue they open.
     Trees,
+    Window,
     /// A refresh, or a sync that hasn't asked the store yet which it is. The status bar only mentions this
     /// when it has to wait.
     Refresh,
+}
+
+/// A first sync's progress through its queue. It learns of more PRs as it reads, so `prs_known` grows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+pub struct LoadProgress {
+    pub issues_read: u32,
+    /// Nothing, until the first page of Issues says.
+    pub issues_total: Option<u32>,
+    pub prs_fetched: u32,
+    pub prs_known: u32,
 }
 
 /// The work under way in the queue of syncs.
@@ -64,6 +75,8 @@ pub struct SyncActivity {
     pub part: SyncPart,
     /// The pages a first sync has read.
     pub pages: u32,
+    /// Its progress through the queue, once it gets there.
+    pub load: Option<LoadProgress>,
     /// The time GitHub's points come back, while the sync waits for them.
     #[serde(with = "time::serde::rfc3339::option")]
     #[specta(type = Option<String>)]

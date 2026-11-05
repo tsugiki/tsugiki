@@ -7,7 +7,7 @@ and other tools share them. REST is used only for conditional (`ETag`) change ch
 which cost nothing when nothing changed. Searches opt into advanced search (`type: ISSUE_ADVANCED`); the
 default mode returns nothing for `OR` with parentheses. The numbers come from [How can GitHub data sync
 incrementally within rate limits?](https://github.com/tsugiki/tsugiki/issues/9) (branch
-`research/github-sync`). Points don't limit Tsugiki: CPython's first sync costs about 220 and steady state
+`research/github-sync`). Points don't limit Tsugiki: CPython's first sync costs about 570 and steady state
 about 140 an hour. GitHub's 10-second query timeout does.
 
 ## First sync
@@ -17,8 +17,8 @@ everything open is loaded, plus whatever closed in the last 30 days. Above that,
 a window of the last 30 days. The add dialog shows the count, the choice, and the expected time and API cost,
 and both numbers are settings on the Repository's page.
 
-The order puts what waits on the user first, so the Workbench is right long before the sync ends (about 8 to
-10 minutes for CPython):
+The order puts what waits on the user first, so the Workbench is right long before the sync ends (about 27
+minutes for CPython):
 
 1. The user's own items: Review requests, open PRs with the user's **Review**, **Own PRs**, assignments, then
    each **Filter**. Each is a search for IDs, then the missing items in batches of 50. Tsugiki brackets a
@@ -28,17 +28,37 @@ The order puts what waits on the user first, so the Workbench is right long befo
    the Filter says so in the Sidebar. A search GitHub refuses keeps what it last found, says why in the
    Sidebar and stops nothing else. The Workbench's views and the Home page's counts are right after about a
    minute.
-2. The window, newest first. All issues fills in as pages land.
-3. Whole trees for the Issues the user's work reaches ([ADR
+2. Whole trees for the Issues the user's work reaches ([ADR
    0011](0011-pr-links-from-github-signals-by-repository-conventions.md)).
+3. Everything else in the window, as one queue. A page of Issues, newest first, and a batch of PRs take turns,
+   so rows arrive from the start and a tree fills in soon after its Issue. Each Issue on a page brings its
+   latest 50 cross-references, and their PRs join the queue. An Issue with more reads the rest before
+   anything else. Once the Issues end, pages of the PR list add the PRs no Issue listed. Those pages ask for
+   the ID, number and update time of 100 PRs, so each takes little of GitHub's time. All issues fills in as
+   pages land. Issues that the fetched PRs name but no page brought come next, then Origin PRs, by number.
+
+No PR is fetched twice, and a frozen PR is fetched again only if the list shows it changed. If the user opens
+an Issue while the queue runs, that Issue goes first: its cross-references, then its PRs, which leave the
+queue, then their Origin PRs.
+
+Requests stay serial because GitHub allows 60 seconds of GraphQL CPU time a minute, which it estimates from
+total response time, and a batch of 25 PRs takes about 6 seconds. A second thread would only reach that limit
+sooner.
+
+Measured on CPython ([#129](https://github.com/tsugiki/tsugiki/issues/129)), for an account with 108 PRs in
+its own trees: the user's own rows arrived after 20 seconds, the first rows of the window after 69, and the
+Issues' rows ended after about 6 minutes. The whole sync took 27 minutes and 542 queries, and 19 of those
+minutes went on 201 batches of PRs. It holds 5,091 PRs and 2,461 Issues. The order before this one took 15
+minutes and read the trees of 78 Issues, where this one reads a tree for each of the 1,444 in the window.
 
 The mirror is cloned at the same time ([How is a Repository's mirror created and kept
 current?](https://github.com/tsugiki/tsugiki/issues/13)). Until it is done, a PR's conversation shows and its
-diff says how far the clone has got. The status bar shows the phase and the pages done.
+diff says how far the clone has got. The status bar shows the phase and, in the queue, the Issues read of
+their total and the PRs fetched of those known so far. That second count grows as the lists bring more PRs.
 
 Each page of a first sync is committed with its place ([ADR
-0010](0010-one-sqlite-database-and-per-repository-mirrors.md)). The place holds the cursor and the PRs that
-cross-references have listed so far, so quitting, a crash, going offline or giving way after 10 failed tries
+0010](0010-one-sqlite-database-and-per-repository-mirrors.md)). The place holds the cursors and the queue, so
+quitting, a crash, going offline or giving way after 10 failed tries
 resumes at the next page. The place is saved after the page, in a transaction of its own, so a crash between
 the two reads that page again. Syncs of several Repositories run one at a time, the open Repository first.
 
@@ -78,8 +98,12 @@ and reads the trees it still owed.
   30 days, nearly two hours of budget against GraphQL's 130 points.
 - **Walking the Repository's Issue and PR lists** for a Filter over the search cap. Lists can't apply search
   syntax, so Tsugiki would need its own copy of GitHub's search language to tell which items match.
-- **Parallel requests.** Faster on paper, but GraphQL's CPU-time limit and the user's shared budget make
-  serial the safe choice, and the first phase is quick anyway.
+- **Parallel requests**, such as one thread for Issues and one for PRs. Faster on paper, but GraphQL's
+  CPU-time limit and the user's shared budget make serial the safe choice, and the first phase is quick
+  anyway.
+- **The window, then the trees.** The user's own Issues waited 15 minutes for their trees this way, and the
+  window's other Issues never got theirs. Listing PRs whole took 5.4 seconds a query against under 1 for the
+  light list, and the batches fetch those PRs whole anyway.
 - **The window first, then Filters and Reviews**, which is simpler but leaves an old Review request missing
   for minutes. **Showing nothing until the sync ends.**
 - **Other defaults:** 1,000 open and 14 days, or 300 and 60 days. CPython's first sync would take about half

@@ -8,6 +8,7 @@ mod columns;
 mod failed_checks;
 mod file;
 mod filters;
+mod issue_content;
 mod issues;
 mod migrate;
 mod pull_requests;
@@ -21,13 +22,14 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Weak};
 use std::thread::{self, JoinHandle};
 
-use rusqlite::{Connection, OpenFlags, OptionalExtension, named_params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, named_params};
 use time::OffsetDateTime;
 
 use crate::error::{Error, ErrorKind};
 use crate::filters::FilterQuery;
 use crate::github::Login;
 use crate::github::activity::ItemActivity;
+use crate::github::issue_content::IssueContent;
 use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::PullRequestFacts;
 use crate::repository::RepositoryName;
@@ -292,6 +294,20 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
+    /// Replaces what's kept of what Issue `number` says.
+    pub fn save_issue_content(
+        &self,
+        repository: &RepositoryName,
+        number: u32,
+        content: IssueContent,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| {
+            issue_content::save(connection, &repository, number, &content)
+        })?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
     /// Records that the user looked at item `number` at `at`.
     pub fn mark_seen(
         &self,
@@ -404,15 +420,33 @@ fn read_work_facts(
     connection: &mut Connection,
     repository: &RepositoryName,
 ) -> rusqlite::Result<WorkFacts> {
-    let transaction = connection.transaction()?;
-    let viewer = read_last_login(&transaction)?;
+    work_facts_in(&connection.transaction()?, repository)
+}
+
+fn work_facts_in(
+    transaction: &Transaction<'_>,
+    repository: &RepositoryName,
+) -> rusqlite::Result<WorkFacts> {
+    let viewer = read_last_login(transaction)?;
     Ok(WorkFacts {
-        activity: activity::read_facts(&transaction, repository, viewer.as_ref())?,
+        activity: activity::read_facts(transaction, repository, viewer.as_ref())?,
         viewer,
-        pull_requests: pull_requests::read_all(&transaction, repository)?,
-        issues: issues::read_all(&transaction, repository)?,
-        filters: filters::read_all(&transaction, repository)?,
+        pull_requests: pull_requests::read_all(transaction, repository)?,
+        issues: issues::read_all(transaction, repository)?,
+        filters: filters::read_all(transaction, repository)?,
     })
+}
+
+/// The facts behind the Issue view, from one transaction, so a view never mixes two saves (ADR 0018).
+fn read_issue_facts(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<(WorkFacts, Option<IssueContent>)> {
+    let transaction = connection.transaction()?;
+    let facts = work_facts_in(&transaction, repository)?;
+    let content = issue_content::read(&transaction, repository, number)?;
+    Ok((facts, content))
 }
 
 /// Asks the read-only connection, from any thread. A question asked before the database opens waits for it.
@@ -426,6 +460,18 @@ impl StoreReader {
     pub fn work_facts(&self, repository: &RepositoryName) -> Result<WorkFacts, Error> {
         let repository = repository.clone();
         let read = self.call(move |connection| read_work_facts(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    /// The facts behind the Issue view of Issue `number`.
+    pub fn issue_facts(
+        &self,
+        repository: &RepositoryName,
+        number: u32,
+    ) -> Result<(WorkFacts, Option<IssueContent>), Error> {
+        let repository = repository.clone();
+        let read =
+            self.call(move |connection| read_issue_facts(connection, &repository, number))?;
         read.map_err(saying(CANT_READ))
     }
 
@@ -784,6 +830,13 @@ mod tests {
             problem: Some(FilterProblem::Refused("It was cut off".to_owned())),
         };
         filters::save(connection, &cpython, &query, &results).unwrap();
+        // With nothing kept, the read would stop before it asks for the comments.
+        let content = IssueContent {
+            body_html: "<p>It crashes</p>".to_owned(),
+            comments: Vec::new(),
+            earlier_comments: 0,
+        };
+        issue_content::save(connection, &cpython, 1, &content).unwrap();
         let (seen, statements) = mpsc::channel();
         let trace = move |event: TraceEvent<'_>| {
             if let TraceEvent::Stmt(_, sql) = event {
@@ -792,8 +845,9 @@ mod tests {
         };
         let codes = TraceEventCodes::SQLITE_TRACE_STMT;
         connection.trace_v2(codes, Some(trace)).unwrap();
-        let read = read_work_facts(connection, &cpython).unwrap();
+        let (read, kept) = read_issue_facts(connection, &cpython, 1).unwrap();
         assert_eq!(read.pull_requests.len(), 1);
+        assert_eq!(kept, Some(content));
         let no_trace = None::<fn(TraceEvent<'_>)>;
         connection.trace_v2(codes, no_trace).unwrap();
         statements.try_iter().collect()

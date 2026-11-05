@@ -214,8 +214,9 @@ to Generated files does not make a review stale.
 _Avoid_: Outdated, dismissed
 
 **Last seen**:
-The moment the user last opened a PR or an **Issue** in Tsugiki, or handed a PR off to a review tool. It is
-tracked per PR and per Issue; opening an Issue's tree does not update its PRs' Last seen.
+The moment the user last opened a PR or an **Issue** in Tsugiki, opened one on GitHub from Tsugiki, or handed
+a PR off to a review tool. It is tracked per PR and per Issue; opening an Issue's tree does not update its
+PRs' Last seen.
 _Avoid_: Last visited, read
 
 **Read-only**:

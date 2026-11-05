@@ -134,3 +134,37 @@ it("opens the command palette on Ctrl+Shift+P and closes it on Esc", async () =>
   await fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
   expect(screen.queryByRole("dialog")).toBeNull();
 });
+
+it("gives the list's keys to a dialog on top of it", async () => {
+  core.home.mockResolvedValue({ screen: "repository", repository: gcmon });
+  core.workbench.mockResolvedValue({
+    status: "ok",
+    data: {
+      items: [
+        {
+          kind: "issue",
+          number: 7,
+          title: "It crashes",
+          people: [],
+          updated_at: "2026-11-04T10:00:00Z",
+          pull_requests: [],
+          attention: null,
+        },
+      ],
+      quiet: [],
+      count: 0,
+      review_requests: 0,
+      filters: [],
+    },
+  });
+  render(Page);
+  const row = await screen.findByRole("button", { name: "#7 It crashes" });
+
+  await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+  await fireEvent.keyDown(document.body, { key: "ArrowDown" });
+  expect(document.activeElement).not.toBe(row);
+
+  await fireEvent.keyDown(window, { key: "Escape" });
+  await fireEvent.keyDown(document.body, { key: "ArrowDown" });
+  expect(document.activeElement).toBe(row);
+});

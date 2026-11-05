@@ -24,10 +24,12 @@ tauri-build = "2.7.4"
 tauri-plugin-deep-link = "2.6.3"
 tauri-plugin-single-instance = "2.5.5"
 tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
+open = "5.4.5"
 time = { version = "0.3.55", features = ["formatting", "parsing", "serde"] }
 toml_edit = { version = "0.25.17", features = ["serde"] }
 tsugiki-core = { path = "crates/core" }
 tsugiki-webview-keys = { path = "crates/webview-keys" }
+url = "2.5.8"
 ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
 webview2-com = "0.39.1" # The version Tauri's window hands its controller in.
 windows-core = "0.62.2" # The version webview2-com uses.

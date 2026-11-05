@@ -19,6 +19,7 @@ tauri-build.workspace = true
 
 [dependencies]
 log.workspace = true
+open.workspace = true
 serde.workspace = true
 serde_json.workspace = true # `generate_context!` writes code that names it, to hold the plugins' config.
 specta.workspace = true

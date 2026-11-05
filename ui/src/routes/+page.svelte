@@ -44,7 +44,11 @@
   {#if home.current?.screen === "onboarding"}
     <Onboarding token={home.current.token} onadd={openAdd} />
   {:else if home.current?.screen === "repository"}
-    <RepositoryHome name={home.current.repository.name} onadd={openAdd} />
+    <RepositoryHome
+      name={home.current.repository.name}
+      onadd={openAdd}
+      keysActive={!addOpen && !paletteOpen}
+    />
   {:else if home.error}
     <!-- One expression: Svelte compiles `{a} {b}` with `?? ""` branches that no test can reach. -->
     <p>{`Tsugiki can't say what to open: ${home.error}`}</p>

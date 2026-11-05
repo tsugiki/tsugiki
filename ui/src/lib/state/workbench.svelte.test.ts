@@ -19,6 +19,7 @@ const item = (number: number): ListedItem => ({
   ci: "SUCCESS",
   updated_at: "2026-11-04T10:00:00Z",
   reasons: ["own_pr"],
+  your_review: null,
   backports: [],
 });
 
@@ -51,6 +52,49 @@ const numbers = (state: WorkbenchState) => state.items?.map((i) => i.number);
 describe("WorkbenchState", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+  });
+
+  it("moves the cursor through the list and the quiet section, and stops at each end", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue({
+      status: "ok",
+      data: { items: [item(3)], quiet: [item(2), item(1)], count: 0, review_requests: 0, filters: [] },
+    });
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    expect(state.underCursor).toBeUndefined();
+
+    state.moveCursor(-1);
+    expect(state.cursor).toBe(3);
+    state.moveCursor(-1);
+    expect(state.cursor).toBe(3);
+    state.moveCursor(1);
+    state.moveCursor(1);
+    expect(state.underCursor?.number).toBe(1);
+    state.moveCursor(1);
+    expect(state.cursor).toBe(1);
+    state.stop();
+  });
+
+  it("starts the cursor over when its item has left the list", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer(2, 1));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    state.cursor = 99;
+
+    state.moveCursor(1);
+
+    expect(state.cursor).toBe(2);
+    state.stop();
+  });
+
+  it("has no cursor to move before the list arrives", () => {
+    const state = new WorkbenchState("python/cpython");
+
+    state.moveCursor(1);
+
+    expect(state.cursor).toBeUndefined();
   });
 
   it("holds what the core lists for its Repository", async () => {

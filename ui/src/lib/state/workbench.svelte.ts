@@ -11,6 +11,7 @@ import {
   type IssueItem_Serialize,
   type ListedItem_Serialize,
   type PrState,
+  type ReviewState,
   type TreeEntry_Serialize,
   type WorkbenchRow_Serialize,
   type WorkbenchView,
@@ -25,7 +26,7 @@ export type IssueItem = IssueItem_Serialize;
 export type ListedItem = ListedItem_Serialize;
 export type TreeEntry = TreeEntry_Serialize;
 export type WorkbenchRow = WorkbenchRow_Serialize;
-export type { BackportKind, CiState, PrState, WorkbenchView, WorkReason, Why };
+export type { BackportKind, CiState, PrState, ReviewState, WorkbenchView, WorkReason, Why };
 
 export class WorkbenchState {
   items = $state<ListedItem[]>();
@@ -35,6 +36,8 @@ export class WorkbenchState {
   filters = $state<FilterLine[]>([]);
   selected = $state<WorkbenchView>({ kind: "whole" });
   error = $state<string>();
+  /** The number of the item the list's keys act on. A re-query leaves it in place (ADR 0008). */
+  cursor = $state<number>();
   #repository: string;
   #lastQuestion = 0;
   #stopListening: (() => void) | undefined;
@@ -70,9 +73,26 @@ export class WorkbenchState {
     await this.#ask();
   }
 
+  /** The item under the cursor, wherever the list now has it. */
+  get underCursor() {
+    return this.#listed().find((item) => item.number === this.cursor);
+  }
+
+  /** Moves the cursor down the list, or up it, stopping at each end. With none yet it starts at the top. */
+  moveCursor(step: 1 | -1) {
+    const numbers = this.#listed().map((item) => item.number);
+    const at = this.cursor === undefined ? -1 : numbers.indexOf(this.cursor);
+    const next = at === -1 ? 0 : Math.min(Math.max(at + step, 0), numbers.length - 1);
+    this.cursor = numbers[next] ?? this.cursor;
+  }
+
   stop() {
     this.#stopped = true;
     this.#stopListening?.();
+  }
+
+  #listed() {
+    return [...(this.items ?? []), ...this.quiet];
   }
 
   async #ask() {

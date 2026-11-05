@@ -20,6 +20,7 @@ const reviewRow: WorkbenchRow = {
   ci: "SUCCESS",
   updated_at: "2026-11-04T10:00:00Z",
   reasons: ["review_request"],
+  your_review: null,
 };
 
 const review: ListedItem = {
@@ -41,6 +42,7 @@ const review: ListedItem = {
           state: "MERGED",
           target_branch: "3.14",
           reasons: [],
+          your_review: null,
           backport: "bot",
         },
       ],
@@ -60,6 +62,7 @@ const own: ListedItem = {
   ci: "FAILURE",
   updated_at: "2026-11-04T09:00:00Z",
   reasons: ["own_pr"],
+  your_review: null,
   backports: [],
 };
 

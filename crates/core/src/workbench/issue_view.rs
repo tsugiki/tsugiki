@@ -1,0 +1,206 @@
+//! The Issue view: an Issue with its tree, and what it says (ADR 0008).
+
+use std::collections::BTreeSet;
+
+use serde::Serialize;
+use specta::Type;
+
+use super::{IssueItem, WorkbenchItem, candidates};
+use crate::error::Error;
+use crate::github::Login;
+use crate::github::issue_content::IssueContent;
+use crate::repository::RepositorySettings;
+use crate::store::StoreReader;
+
+/// An Issue as the Detail pane shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct IssueView {
+    #[serde(flatten)]
+    pub issue: IssueItem,
+    /// Nothing, for an Issue whose author's account has gone.
+    pub author: Option<Login>,
+    /// Nothing, until Tsugiki has read this Issue from GitHub once.
+    pub content: Option<IssueContent>,
+}
+
+impl IssueView {
+    /// Reads Issue `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and never on
+    /// GitHub, so the view opens on what was last read (ADR 0018).
+    pub fn read(
+        reader: &StoreReader,
+        repository: &RepositorySettings,
+        number: u32,
+    ) -> Result<Option<Self>, Error> {
+        let (facts, content) = reader.issue_facts(&repository.name, number)?;
+        let held = facts.issues.iter().find(|issue| issue.number == number);
+        let author = held.and_then(|issue| issue.author.clone());
+        let found = candidates(facts, repository, &BTreeSet::new())
+            .into_iter()
+            .find_map(|item| match item {
+                WorkbenchItem::Issue(issue) if issue.number == number => Some(issue),
+                WorkbenchItem::Issue(_)
+                | WorkbenchItem::StandalonePr(_)
+                | WorkbenchItem::StandaloneBackport(_) => None,
+            });
+        Ok(found.map(|issue| Self {
+            issue,
+            author,
+            content,
+        }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use time::OffsetDateTime;
+
+    use super::*;
+    use crate::conventions::Conventions;
+    use crate::github::issue_content::IssueComment;
+    use crate::github::issues::IssueFacts;
+    use crate::github::pull_requests::{LatestReview, PullRequestFacts, ReviewState};
+    use crate::repository::RepositoryName;
+    use crate::store::{Store, reader};
+    use crate::workbench::WorkbenchRow;
+    use crate::workbench::testing::{fixing, issue};
+
+    fn cpython() -> RepositoryName {
+        RepositoryName::parse("python/cpython").unwrap()
+    }
+
+    fn settings() -> RepositorySettings {
+        RepositorySettings {
+            name: cpython(),
+            conventions: Conventions::Cpython,
+            filters: Vec::new(),
+        }
+    }
+
+    struct World {
+        store: Store,
+        reader: StoreReader,
+        open: crate::store::OpenReader,
+        folder: std::path::PathBuf,
+    }
+
+    impl World {
+        fn new(name: &str) -> Self {
+            let folder = crate::testing::temp_path(&format!("issue-view-{name}"));
+            std::fs::create_dir_all(&folder).unwrap();
+            let path = folder.join("tsugiki.db");
+            let store = Store::open(&path).unwrap();
+            store.remember_login(&Login::new("octocat")).unwrap();
+            let (to_open, reader) = reader();
+            let open = to_open.open(&path).unwrap();
+            Self {
+                store,
+                reader,
+                open,
+                folder,
+            }
+        }
+
+        fn has(&self, pull_requests: Vec<PullRequestFacts>, issues: Vec<IssueFacts>) {
+            self.store
+                .save_pull_requests(&cpython(), pull_requests)
+                .unwrap();
+            self.store.save_issues(&cpython(), issues).unwrap();
+        }
+
+        fn view(&self, number: u32) -> Option<IssueView> {
+            IssueView::read(&self.reader, &settings(), number).unwrap()
+        }
+
+        fn finish(self) {
+            self.open.close();
+            self.store.close();
+            std::fs::remove_dir_all(self.folder).unwrap();
+        }
+    }
+
+    fn pr_row(view: &IssueView) -> &WorkbenchRow {
+        view.issue.pull_requests[0].rows()[0]
+    }
+
+    #[test]
+    fn an_issue_tsugiki_doesnt_hold_has_no_view() {
+        let world = World::new("none");
+        assert_eq!(world.view(1), None);
+        world.finish();
+    }
+
+    #[test]
+    fn an_issue_shows_its_author_and_prs_before_tsugiki_has_read_what_it_says() {
+        let world = World::new("before-reading");
+        let written = IssueFacts {
+            author: Some(Login::new("issue-author")),
+            ..issue(1)
+        };
+        world.has(vec![fixing(5, 1)], vec![written]);
+
+        let view = world.view(1).unwrap();
+
+        assert_eq!(view.issue.number, 1);
+        assert_eq!(view.author, Some(Login::new("issue-author")));
+        assert_eq!(pr_row(&view).number, 5);
+        assert_eq!(view.content, None);
+        world.finish();
+    }
+
+    #[test]
+    fn an_issue_nobody_has_to_act_on_still_has_a_view_with_what_was_last_read() {
+        let world = World::new("after-reading");
+        world.has(vec![], vec![issue(1)]);
+        let content = IssueContent {
+            body_html: "<p>It crashes</p>".to_owned(),
+            comments: vec![IssueComment {
+                author: None,
+                created_at: OffsetDateTime::UNIX_EPOCH,
+                body_html: "<p>Which build?</p>".to_owned(),
+            }],
+            earlier_comments: 0,
+        };
+        world
+            .store
+            .save_issue_content(&cpython(), 1, content.clone())
+            .unwrap();
+
+        assert_eq!(world.view(1).unwrap().content, Some(content));
+        world.finish();
+    }
+
+    #[test]
+    fn a_pr_row_says_how_the_user_last_reviewed_it() {
+        let world = World::new("review");
+        let review = |author: &str, state| LatestReview {
+            author: Login::new(author),
+            state,
+        };
+        let reviewed = PullRequestFacts {
+            latest_reviews: vec![
+                review("some-reviewer", ReviewState::Commented),
+                review("octocat", ReviewState::ChangesRequested),
+            ],
+            ..fixing(5, 1)
+        };
+        let drafted = PullRequestFacts {
+            latest_reviews: vec![review("octocat", ReviewState::Pending)],
+            ..fixing(6, 2)
+        };
+        let others_only = PullRequestFacts {
+            latest_reviews: vec![review("some-reviewer", ReviewState::Approved)],
+            ..fixing(7, 3)
+        };
+        world.has(
+            vec![reviewed, drafted, others_only],
+            vec![issue(1), issue(2), issue(3)],
+        );
+
+        let your_review = |number| pr_row(&world.view(number).unwrap()).your_review;
+
+        assert_eq!(your_review(1), Some(ReviewState::ChangesRequested));
+        assert_eq!(your_review(2), None, "a pending Review is only a draft");
+        assert_eq!(your_review(3), None);
+        world.finish();
+    }
+}

@@ -3,6 +3,7 @@
 pub mod activity;
 pub mod checks;
 pub mod filters;
+pub mod issue_content;
 pub mod issues;
 pub mod live;
 pub mod pull_requests;

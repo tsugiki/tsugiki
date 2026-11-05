@@ -18,6 +18,13 @@ export const commands = {
 	syncActivity: () => __TAURI_INVOKE<SyncActivity_Serialize | null>("sync_activity"),
 	/**  Refreshes the open Repository now, and returns at once. */
 	refresh: () => __TAURI_INVOKE<void>("refresh"),
+	/**
+	 *  Tells the core the user opened an Issue, which moves its Last seen and reads what it says from GitHub, and
+	 *  returns at once.
+	 */
+	openIssue: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_issue", { repository, number })),
+	/**  Asks the core to read what an Issue on screen says now, and returns at once (ADR 0015). */
+	fetchIssue: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("fetch_issue", { repository, number })),
 	/**  The settings Tsugiki last read, and what was wrong with their files (ADR 0014). */
 	settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
 	/**  What the window opens on. */
@@ -38,6 +45,18 @@ export const commands = {
 	 *  on the database and never on GitHub (ADR 0018).
 	 */
 	workbench: (repository: string, view: WorkbenchView) => typedError<Workbench_Serialize, Error_Serialize>(__TAURI_INVOKE("workbench", { repository, view })),
+	/**
+	 *  The Issue view of Issue `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and
+	 *  never on GitHub (ADR 0018).
+	 */
+	issue: (repository: string, number: number) => typedError<IssueView_Serialize | null, Error_Serialize>(__TAURI_INVOKE("issue", { repository, number })),
+	/**  Opens an Issue or a PR on GitHub in the system browser. */
+	openOnGithub: (repository: string, item: GitHubItem) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_on_github", { repository, item })),
+	/**
+	 *  Opens a link from a description or a comment in the system browser. Tsugiki never navigates its own window
+	 *  to a web page.
+	 */
+	openLink: (address: string) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_link", { address })),
 };
 
 /** Events */
@@ -179,6 +198,9 @@ export type FilterName = string;
  */
 export type FilterQuery = string;
 
+/**  An Issue or a PR, as the window names it to open on GitHub. */
+export type GitHubItem = { kind: "issue"; number: number } | { kind: "pull_request"; number: number };
+
 /**  What the window opens on. */
 export type Home = Home_Serialize | Home_Deserialize;
 
@@ -195,6 +217,50 @@ export type Home_Serialize =
 { screen: "onboarding"; token: TokenSource } | 
 /**  The last Repository the user had open. */
 { screen: "repository"; repository: RepositorySettings_Serialize };
+
+/**  A comment on an Issue. */
+export type IssueComment = IssueComment_Serialize | IssueComment_Deserialize;
+
+/**  A comment on an Issue. */
+export type IssueComment_Deserialize = {
+	/**  Nothing, for a comment whose author's account has gone. */
+	author?: Login | null,
+	created_at: string,
+	/**  GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005). */
+	body_html: string,
+};
+
+/**  A comment on an Issue. */
+export type IssueComment_Serialize = {
+	/**  Nothing, for a comment whose author's account has gone. */
+	author: Login | null,
+	created_at: string,
+	/**  GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005). */
+	body_html: string,
+};
+
+/**  An Issue's description and its recent comments. */
+export type IssueContent = IssueContent_Serialize | IssueContent_Deserialize;
+
+/**  An Issue's description and its recent comments. */
+export type IssueContent_Deserialize = {
+	/**  GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005). */
+	body_html: string,
+	/**  The most recent comments, oldest first. */
+	comments: IssueComment_Deserialize[],
+	/**  The count of older comments that only GitHub shows. */
+	earlier_comments: number,
+};
+
+/**  An Issue's description and its recent comments. */
+export type IssueContent_Serialize = {
+	/**  GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005). */
+	body_html: string,
+	/**  The most recent comments, oldest first. */
+	comments: IssueComment_Serialize[],
+	/**  The count of older comments that only GitHub shows. */
+	earlier_comments: number,
+};
 
 /**  An Issue on the Workbench, with its tree: each PR Tsugiki knows that fixes it, whatever its state. */
 export type IssueItem = IssueItem_Serialize | IssueItem_Deserialize;
@@ -220,6 +286,25 @@ export type IssueItem_Serialize = {
 	updated_at: string,
 	pull_requests: TreeEntry_Serialize[],
 };
+
+/**  An Issue as the Detail pane shows it. */
+export type IssueView = IssueView_Serialize | IssueView_Deserialize;
+
+/**  An Issue as the Detail pane shows it. */
+export type IssueView_Deserialize = {
+	/**  Nothing, for an Issue whose author's account has gone. */
+	author?: Login | null,
+	/**  Nothing, until Tsugiki has read this Issue from GitHub once. */
+	content?: IssueContent_Deserialize | null,
+} & IssueItem_Deserialize;
+
+/**  An Issue as the Detail pane shows it. */
+export type IssueView_Serialize = {
+	/**  Nothing, for an Issue whose author's account has gone. */
+	author: Login | null,
+	/**  Nothing, until Tsugiki has read this Issue from GitHub once. */
+	content: IssueContent_Serialize | null,
+} & IssueItem_Serialize;
 
 /**  When the open Repository last finished a sync. */
 export type LastSync = LastSync_Serialize | LastSync_Deserialize;
@@ -380,6 +465,8 @@ export type RepositorySize =
 "small" | 
 /**  What was updated in the window. */
 "large";
+
+export type ReviewState = "PENDING" | "COMMENTED" | "APPROVED" | "CHANGES_REQUESTED" | "DISMISSED";
 
 /**  What `settings.toml` holds. A value the file leaves out takes its default. */
 export type Settings = Settings_Serialize | Settings_Deserialize;
@@ -573,6 +660,8 @@ export type WorkbenchRow_Deserialize = {
 	updated_at: string,
 	/**  Empty for a PR that another PR put on the Workbench, and for one no longer open. */
 	reasons: WorkReason[],
+	/**  The user's latest submitted Review. A pending Review is a draft, so it isn't one yet. */
+	your_review?: ReviewState | null,
 };
 
 /**  A PR's line of the list. */
@@ -587,6 +676,8 @@ export type WorkbenchRow_Serialize = {
 	updated_at: string,
 	/**  Empty for a PR that another PR put on the Workbench, and for one no longer open. */
 	reasons: WorkReason[],
+	/**  The user's latest submitted Review. A pending Review is a draft, so it isn't one yet. */
+	your_review: ReviewState | null,
 };
 
 /**  The list the window asks for. */

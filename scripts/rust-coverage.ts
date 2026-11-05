@@ -1,7 +1,9 @@
 // Rust's coverage gate (ADR 0009): runs the tests on this OS and fails below 100% of lines and functions.
 // It leaves the report at target/coverage/lcov.info, for Codecov.
 import { spawnSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync } from "node:fs";
+
+import { filesWithGaps, unrunRegions } from "./coverage-gaps.ts";
 
 // Stable Rust can't exclude a single function, so an exclusion is a whole file.
 const EXCLUDED = [
@@ -34,10 +36,43 @@ const args = [
   "100",
   "--show-missing-lines",
 ];
+
+/** Says what never ran. A closure or a `?` can sit on a covered line, and then cargo-llvm-cov doesn't say. */
+function printGaps(): void {
+  const lcovPath = "target/coverage/lcov.info";
+  const report = "target/coverage/report.txt";
+  const made = spawnSync("cargo", [
+    "llvm-cov",
+    "report",
+    "--text",
+    "--output-path",
+    report,
+    "--ignore-filename-regex",
+    ignore,
+  ]);
+  if (made.status !== 0) {
+    console.error("`cargo llvm-cov report` failed, so these are counts with no source lines.");
+  }
+  const text = made.status === 0 ? readFileSync(report, "utf8") : "";
+  for (const gap of filesWithGaps(readFileSync(lcovPath, "utf8"))) {
+    console.error(`${gap.path}: lines ${gap.lines}, functions ${gap.functions}`);
+    for (const { at, source, whole } of unrunRegions(text, gap.path)) {
+      console.error(`  ${at}: ${whole ? "never ran" : "part never ran"}: ${source}`);
+    }
+  }
+}
+
+const started = Date.now();
 const result = spawnSync("cargo", args, { stdio: "inherit" });
 if (result.error) console.error(result.error.message);
 if (result.status !== 0) {
-  // A closure that never ran can sit on a covered line, and then cargo-llvm-cov fails without saying why.
-  console.error("A test failed, or coverage is below 100%. `cargo llvm-cov report --html` shows any gap.");
+  // A failed test leaves the last run's report in place, so only a fresh report says anything about now.
+  const fresh = statSync("target/coverage/lcov.info", { throwIfNoEntry: false });
+  if (fresh !== undefined && fresh.mtimeMs >= started) {
+    printGaps();
+    console.error("Coverage is below 100%. A `?` or a closure alone on a line needs its own covered line.");
+  } else {
+    console.error("A test failed, so there is no new coverage report.");
+  }
 }
 process.exit(result.status ?? 1);

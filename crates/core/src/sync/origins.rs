@@ -1,0 +1,267 @@
+//! Fetching the Origin PR a Backport names, when Tsugiki lacks it (ADR 0011).
+
+use std::collections::BTreeSet;
+
+use super::{Leads, Link, Moved, NO_PAUSE, Phase, Step, pause_until};
+use crate::error::Error;
+use crate::github::pull_requests::PrFetch;
+use crate::links::possible_numbers;
+
+/// The next Origin PR to ask for, one at a time.
+pub(super) fn fetch_origin(
+    link: &Link<'_>,
+    why: PrFetch,
+    leads: &mut Leads,
+    fetched: &mut BTreeSet<u32>,
+) -> Result<Moved, Error> {
+    let Some(number) = leads.origins.first().copied() else {
+        let next = match why {
+            PrFetch::Work => {
+                let named = std::mem::take(&mut leads.named);
+                let held = std::mem::take(&mut leads.held_issues);
+                Some(Phase::FetchingIssues {
+                    shown: held.difference(&named).copied().collect(),
+                    numbers: named.into_iter().collect(),
+                })
+            }
+            PrFetch::Tree | PrFetch::Changed => None,
+        };
+        let step = if next.is_some() {
+            NO_PAUSE
+        } else {
+            Step::Finished
+        };
+        return Ok((step, next));
+    };
+    let answer = link
+        .github
+        .fetch_origin_pull_request(link.repository, number)?;
+    let pause_until = pause_until(answer.rate_limit);
+    let step = if let Some(pull_request) = answer.pull_request {
+        let named = possible_numbers(&pull_request, link.repository);
+        link.store
+            .save_pull_requests(link.repository, vec![pull_request])?;
+        leads.named.extend(named);
+        Step::Saved {
+            touched: vec![number],
+            pause_until,
+        }
+    } else {
+        Step::Searched { pause_until }
+    };
+    fetched.extend([number]);
+    leads.origins.retain(|other| *other != number);
+    Ok((step, None))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::github::testing::reply_ok;
+    use crate::github::{Reply, Unreachable};
+    use crate::sync::Syncs;
+    use crate::sync::testing::{
+        FEW, Harness, LOTS, cpython, cross_references, fetched_nodes, issues, merged_node,
+        no_cross_references, plain, pr_node, run_to_the_end, searches_finding,
+        up_to_the_first_issue,
+    };
+    use serde_json::{Value, json};
+    use std::time::{Duration, Instant};
+
+    /// PR `number`, a Backport of `origin` on 3.14.
+    fn backport_node(number: u32, origin: u32) -> Value {
+        pr_node(
+            number,
+            &json!({
+                "title": format!("[3.14] gh-1: Fix it (GH-{origin})"),
+                "baseRefName": "3.14",
+            }),
+        )
+    }
+
+    fn origin_answer(node: &Value, rate: &str) -> Result<Reply, Unreachable> {
+        reply_ok(&format!(
+            r#"{{"data":{{"repository":{{"pullRequest":{node}}},{rate}}}}}"#
+        ))
+    }
+
+    #[test]
+    fn a_sync_fetches_a_users_backports_missing_origin_pr_by_number() {
+        let mut replies = searches_finding(&["a"]);
+        replies.push(fetched_nodes(&[backport_node(2, 9)], LOTS));
+        replies.push(origin_answer(&merged_node(9), LOTS));
+        replies.push(issues(&[1], LOTS));
+        replies.push(no_cross_references(LOTS));
+        let harness = Harness::new("origin", replies);
+        let mut syncs = Syncs::default();
+        syncs.add(plain(cpython()));
+
+        let changed = run_to_the_end(&mut syncs, &harness);
+
+        let (numbers, asked): (Vec<String>, Vec<Value>) = harness.asked.try_iter().unzip();
+        assert_eq!(
+            numbers[4..],
+            [
+                "FetchPullRequests",
+                "FetchOriginPullRequest",
+                "FetchIssues",
+                "FetchCrossReferences",
+            ]
+        );
+        assert_eq!(asked[5]["number"], 9);
+        assert_eq!(harness.numbers(), [2, 9]);
+        assert_eq!(changed.len(), 3);
+        harness.finish();
+    }
+
+    #[test]
+    fn a_sync_fetches_the_issues_a_users_backports_origin_pr_names() {
+        let mut replies = searches_finding(&["a"]);
+        let untitled = pr_node(
+            2,
+            &json!({ "title": "[3.14] Fix it (GH-9)", "baseRefName": "3.14" }),
+        );
+        replies.push(fetched_nodes(&[untitled], LOTS));
+        replies.push(origin_answer(&merged_node(9), LOTS));
+        replies.push(issues(&[1], LOTS));
+        replies.push(no_cross_references(LOTS));
+        let harness = Harness::new("origin-issue", replies);
+        let mut syncs = Syncs::default();
+        syncs.add(plain(cpython()));
+
+        drop(run_to_the_end(&mut syncs, &harness));
+
+        let facts = harness.reader.work_facts(&cpython()).unwrap();
+        let stored: Vec<u32> = facts.issues.iter().map(|issue| issue.number).collect();
+        assert_eq!(stored, [1]);
+        harness.finish();
+    }
+
+    #[test]
+    fn a_sync_fetches_a_tree_backports_missing_origin_pr_after_the_tree() {
+        let mut replies = up_to_the_first_issue();
+        replies.push(cross_references(&[2], None, LOTS));
+        replies.push(fetched_nodes(&[backport_node(2, 9)], LOTS));
+        replies.push(origin_answer(&merged_node(9), LOTS));
+        let harness = Harness::new("tree-origin", replies);
+        let mut syncs = Syncs::default();
+        syncs.add(plain(cpython()));
+
+        drop(run_to_the_end(&mut syncs, &harness));
+
+        assert_eq!(harness.numbers(), [1, 2, 9]);
+        harness.finish();
+    }
+
+    #[test]
+    fn a_sync_doesnt_ask_for_an_origin_pr_it_has_fetched_or_frozen() {
+        let mut replies = searches_finding(&["a"]);
+        replies.push(fetched_nodes(
+            &[pr_node(9, &json!({})), backport_node(2, 9)],
+            LOTS,
+        ));
+        replies.push(issues(&[1], LOTS));
+        replies.push(no_cross_references(LOTS));
+        // The next sync finds only the Backport, and its Origin PR has merged by then.
+        replies.extend(searches_finding(&["a"]));
+        replies.push(fetched_nodes(&[backport_node(2, 8)], LOTS));
+        replies.push(origin_answer(&merged_node(8), LOTS));
+        replies.push(issues(&[1], LOTS));
+        replies.push(no_cross_references(LOTS));
+        replies.extend(searches_finding(&["a"]));
+        replies.push(fetched_nodes(&[backport_node(2, 8)], LOTS));
+        replies.push(issues(&[1], LOTS));
+        replies.push(no_cross_references(LOTS));
+        let harness = Harness::new("origin-known", replies);
+        let mut syncs = Syncs::default();
+
+        let origins_in_each_sync: Vec<usize> = (0..3)
+            .map(|_| {
+                harness.forget_the_last_sync();
+                syncs.add(plain(cpython()));
+                drop(run_to_the_end(&mut syncs, &harness));
+                harness
+                    .operations()
+                    .iter()
+                    .filter(|operation| *operation == "FetchOriginPullRequest")
+                    .count()
+            })
+            .collect();
+
+        assert_eq!(origins_in_each_sync, [0, 1, 0]);
+        harness.finish();
+    }
+
+    #[test]
+    fn a_frozen_origin_pr_still_leads_a_new_backport_to_its_issue() {
+        let untitled = |number: u32| {
+            pr_node(
+                number,
+                &json!({ "title": "[3.14] Fix it (GH-9)", "baseRefName": "3.14" }),
+            )
+        };
+        let mut replies = searches_finding(&["a"]);
+        replies.push(fetched_nodes(&[untitled(2)], LOTS));
+        replies.push(origin_answer(&merged_node(9), LOTS));
+        replies.push(issues(&[1], LOTS));
+        replies.push(no_cross_references(LOTS));
+        replies.extend(searches_finding(&["b"]));
+        replies.push(fetched_nodes(&[untitled(3)], LOTS));
+        replies.push(issues(&[1], LOTS));
+        replies.push(cross_references(&[], None, LOTS));
+        let harness = Harness::new("origin-frozen", replies);
+        let mut syncs = Syncs::default();
+        syncs.add(plain(cpython()));
+        drop(run_to_the_end(&mut syncs, &harness));
+        drop(harness.operations());
+
+        harness.forget_the_last_sync();
+        syncs.add(plain(cpython()));
+        drop(run_to_the_end(&mut syncs, &harness));
+
+        assert_eq!(
+            harness.operations()[4..],
+            ["FetchPullRequests", "FetchIssues", "FetchCrossReferences"]
+        );
+        harness.finish();
+    }
+
+    #[test]
+    fn an_origin_number_that_names_no_pr_is_asked_for_once() {
+        let mut replies = searches_finding(&["a"]);
+        replies.push(fetched_nodes(&[backport_node(2, 9)], LOTS));
+        replies.push(reply_ok(&format!(
+        r#"{{"data":{{"repository":{{"pullRequest":null}},{LOTS}}},"errors":[{{"type":"NOT_FOUND",
+                "message":"gone","path":["repository","pullRequest"]}}]}}"#
+    )));
+        replies.push(issues(&[1], LOTS));
+        replies.push(no_cross_references(LOTS));
+        let harness = Harness::new("origin-gone", replies);
+        let mut syncs = Syncs::default();
+        syncs.add(plain(cpython()));
+
+        drop(run_to_the_end(&mut syncs, &harness));
+
+        assert_eq!(harness.numbers(), [2]);
+        harness.finish();
+    }
+
+    #[test]
+    fn an_origin_fetch_below_the_floor_holds_the_next_step_back() {
+        let mut replies = searches_finding(&["a"]);
+        replies.push(fetched_nodes(&[backport_node(2, 9)], LOTS));
+        replies.push(origin_answer(&merged_node(9), FEW));
+        let harness = Harness::new("origin-floor", replies);
+        let mut syncs = Syncs::default();
+        syncs.add(plain(cpython()));
+        let before = Instant::now();
+
+        // Four searches, two moves, the PR, a move and the Origin PR.
+        for _ in 0..9 {
+            drop(syncs.step(&harness.github, &harness.store).unwrap());
+        }
+
+        let ready = syncs.ready_at().unwrap();
+        assert!(ready > before + Duration::from_secs(3000), "{ready:?}");
+        harness.finish();
+    }
+}

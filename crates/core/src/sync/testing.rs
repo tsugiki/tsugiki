@@ -1,0 +1,282 @@
+//! Test helpers for the sync: a harness and GitHub's answers.
+
+use std::fs;
+use std::path::PathBuf;
+use std::sync::mpsc::Receiver;
+use std::time::{Duration, Instant};
+
+use serde_json::{Value, json};
+
+use super::{Progress, Syncs};
+use crate::github::testing::{Scripted, reply_ok, token};
+use crate::github::{GitHub, Reply, Transport, Unreachable};
+use crate::repository::{RepositoryName, RepositorySettings};
+use crate::store;
+use crate::store::{OpenReader, Store, StoreReader};
+
+pub(super) const LOTS: &str = r#""rateLimit":{"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
+
+pub(super) const FEW: &str = r#""rateLimit":{"remaining":10,"resetAt":"2999-01-01T00:00:00Z"}"#;
+
+pub(super) fn cpython() -> RepositoryName {
+    RepositoryName::parse("python/cpython").unwrap()
+}
+
+/// A Repository with no Filters, for the sync's other phases.
+pub(super) fn plain(name: RepositoryName) -> RepositorySettings {
+    RepositorySettings {
+        filters: Vec::new(),
+        ..RepositorySettings::new(name)
+    }
+}
+
+pub(super) fn found(ids: &[&str], next: Option<&str>, rate: &str) -> Result<Reply, Unreachable> {
+    let nodes: Vec<Value> = ids.iter().map(|id| json!({ "id": id })).collect();
+    let info = json!({ "hasNextPage": next.is_some(), "endCursor": next });
+    reply_ok(&format!(
+        r#"{{"data":{{"search":{{"pageInfo":{info},"nodes":{}}},{rate}}}}}"#,
+        json!(nodes)
+    ))
+}
+
+pub(super) fn fetched(numbers: &[u32], rate: &str) -> Result<Reply, Unreachable> {
+    fetched_titled(numbers, rate, |number| format!("PR {number}"))
+}
+
+pub(super) fn fetched_titled(
+    numbers: &[u32],
+    rate: &str,
+    title: impl Fn(u32) -> String,
+) -> Result<Reply, Unreachable> {
+    let nodes: Vec<Value> = numbers
+        .iter()
+        .map(|number| {
+            json!({
+                "number": number,
+                "title": title(*number),
+                "state": "OPEN",
+                "isDraft": false,
+                "updatedAt": "2026-11-04T10:00:00Z",
+                "baseRefName": "main",
+                "body": "",
+                "repository": {
+                    "nameWithOwner": "python/cpython",
+                    "defaultBranchRef": { "name": "main" },
+                },
+                "closingIssuesReferences": { "nodes": [] },
+                "author": { "login": "octocat" },
+                "assignees": { "nodes": [] },
+                "reviewRequests": { "nodes": [] },
+                "latestReviews": { "nodes": [] },
+                "lastCommit": { "nodes": [] },
+                "mergeCommit": null,
+                "commits": { "totalCount": 0, "nodes": [] },
+            })
+        })
+        .collect();
+    reply_ok(&format!(
+        r#"{{"data":{{"nodes":{},{rate}}}}}"#,
+        json!(nodes)
+    ))
+}
+
+pub(super) struct Harness {
+    pub(super) github: GitHub,
+    pub(super) store: Store,
+    pub(super) open: OpenReader,
+    pub(super) reader: StoreReader,
+    pub(super) asked: Receiver<(String, Value)>,
+    pub(super) folder: PathBuf,
+}
+
+impl Harness {
+    pub(super) fn new(name: &str, replies: Vec<Result<Reply, Unreachable>>) -> Self {
+        let folder = crate::testing::temp_path(&format!("sync-{name}"));
+        fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("tsugiki.db");
+        let store = Store::open(&path).unwrap();
+        let (to_open, reader) = store::reader();
+        let open = to_open.open(&path).unwrap();
+        let (script, asked) = Scripted::new(replies);
+        let github = GitHub::new(Box::new(script), token());
+        Self {
+            github,
+            store,
+            open,
+            reader,
+            asked,
+            folder,
+        }
+    }
+
+    /// A harness whose GitHub is `transport`, which keeps its own record of what's asked.
+    pub(super) fn answering(name: &str, transport: Box<dyn Transport>) -> Self {
+        let mut harness = Self::new(name, Vec::new());
+        harness.github = GitHub::new(transport, token());
+        harness
+    }
+
+    pub(super) fn numbers(&self) -> Vec<u32> {
+        let facts = self.reader.work_facts(&cpython()).unwrap();
+        let mut numbers: Vec<u32> = facts.pull_requests.iter().map(|pr| pr.number).collect();
+        numbers.sort_unstable();
+        numbers
+    }
+
+    pub(super) fn operations(&self) -> Vec<String> {
+        self.asked
+            .try_iter()
+            .map(|(operation, _)| operation)
+            .collect()
+    }
+
+    /// Makes the next sync a whole one, as a first sync that was interrupted leaves it.
+    pub(super) fn forget_the_last_sync(&self) {
+        self.store.forget_sync_state(&cpython()).unwrap();
+    }
+
+    pub(super) fn finish(self) {
+        self.open.close();
+        self.store.close();
+        fs::remove_dir_all(self.folder).unwrap();
+    }
+}
+
+/// Runs every step that's left, and says which Repositories it announced.
+pub(super) fn run_to_the_end(syncs: &mut Syncs, harness: &Harness) -> Vec<RepositoryName> {
+    let mut changed = Vec::new();
+    while syncs.ready_at().is_some() {
+        changed.extend(announced(
+            syncs.step(&harness.github, &harness.store).unwrap(),
+        ));
+    }
+    changed
+}
+
+/// The Repository a step says changed, if it says one did.
+pub(super) fn announced(progress: Option<Progress>) -> Option<RepositoryName> {
+    match progress? {
+        Progress::Changed(change) => Some(change.repository),
+        Progress::Finished(_) => None,
+    }
+}
+
+pub(super) fn nothing(rate: &str) -> Result<Reply, Unreachable> {
+    found(&[], None, rate)
+}
+
+pub(super) fn issues(numbers: &[u32], rate: &str) -> Result<Reply, Unreachable> {
+    let fields: serde_json::Map<String, Value> = numbers
+        .iter()
+        .map(|number| {
+            let issue = json!({
+                "__typename": "Issue",
+                "number": number,
+                "title": format!("Issue {number}"),
+                "updatedAt": "2026-11-04T10:00:00Z",
+                "author": { "login": "some-author" },
+            });
+            (format!("i{number}"), issue)
+        })
+        .collect();
+    reply_ok(&format!(
+        r#"{{"data":{{"repository":{},{rate}}}}}"#,
+        Value::Object(fields)
+    ))
+}
+
+pub(super) fn no_cross_references(rate: &str) -> Result<Reply, Unreachable> {
+    cross_references(&[], None, rate)
+}
+
+/// A page of an Issue's cross-references that lists these PRs as `id<number>`.
+pub(super) fn cross_references(
+    numbers: &[u32],
+    older: Option<&str>,
+    rate: &str,
+) -> Result<Reply, Unreachable> {
+    let nodes: Vec<Value> = numbers
+        .iter()
+        .map(|number| {
+            json!({ "source": {
+                    "__typename": "PullRequest",
+                    "id": format!("id{number}"),
+                    "number": number,
+                    "repository": { "nameWithOwner": "python/cpython" },
+                } })
+        })
+        .collect();
+    let issue = json!({ "timelineItems": {
+            "pageInfo": { "hasPreviousPage": older.is_some(), "startCursor": older },
+            "nodes": nodes,
+        } });
+    reply_ok(&format!(
+        r#"{{"data":{{"repository":{{"issue":{issue}}},{rate}}}}}"#
+    ))
+}
+
+/// PR `number` as a fetch answers with it, with `changes` on top.
+pub(super) fn pr_node(number: u32, changes: &Value) -> Value {
+    let mut node = json!({
+        "number": number,
+        "title": format!("gh-1: Fix it {number}"),
+        "state": "OPEN",
+        "isDraft": false,
+        "updatedAt": "2026-11-04T10:00:00Z",
+        "baseRefName": "main",
+        "body": "",
+        "repository": {
+            "nameWithOwner": "python/cpython",
+            "defaultBranchRef": { "name": "main" },
+        },
+        "closingIssuesReferences": { "nodes": [] },
+        "author": { "login": "octocat" },
+        "assignees": { "nodes": [] },
+        "reviewRequests": { "nodes": [] },
+        "latestReviews": { "nodes": [] },
+        "lastCommit": { "nodes": [] },
+        "mergeCommit": null,
+        "commits": { "totalCount": 0, "nodes": [] },
+    });
+    for (name, value) in changes.as_object().unwrap() {
+        node[name] = value.clone();
+    }
+    node
+}
+
+pub(super) fn fetched_nodes(nodes: &[Value], rate: &str) -> Result<Reply, Unreachable> {
+    reply_ok(&format!(
+        r#"{{"data":{{"nodes":{},{rate}}}}}"#,
+        json!(nodes)
+    ))
+}
+
+/// PR `number`, a merged PR that fixes Issue 1.
+pub(super) fn merged_node(number: u32) -> Value {
+    pr_node(
+        number,
+        &json!({ "state": "MERGED", "mergeCommit": { "oid": format!("{number:040x}") } }),
+    )
+}
+
+/// The replies that bring the user's one PR, #1, and its one Issue, #1.
+pub(super) fn up_to_the_first_issue() -> Vec<Result<Reply, Unreachable>> {
+    let mut replies = searches_finding(&["a"]);
+    replies.push(fetched_nodes(&[pr_node(1, &json!({}))], LOTS));
+    replies.push(issues(&[1], LOTS));
+    replies
+}
+
+/// The replies up to and including the search that finds `ids`.
+pub(super) fn searches_finding(ids: &[&str]) -> Vec<Result<Reply, Unreachable>> {
+    vec![
+        found(ids, None, LOTS),
+        nothing(LOTS),
+        nothing(LOTS),
+        nothing(LOTS),
+    ]
+}
+
+pub(super) fn soon() -> Instant {
+    Instant::now() + Duration::from_secs(60)
+}

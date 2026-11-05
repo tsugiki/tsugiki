@@ -30,6 +30,10 @@ binary, and one that uses `tsugiki_app` also links Tauri and WebView2. If more t
 `crates/app/tests/` use it, move those into one `tests/app/main.rs` binary. `docs/build-costs.md` has the
 numbers.
 
+A source file in `core` over about 500 lines whose tests outnumber its code keeps them in a sibling file:
+`#[cfg(test)] mod tests;` in `sync/refresh.rs` loads `sync/refresh/tests.rs`. Reading the code then doesn't
+mean paging past its tests.
+
 ## Rust design rules
 
 Clippy enforces most of our rules, and `Cargo.toml` and `clippy.toml` give the reason for each. No tool can

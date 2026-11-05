@@ -228,6 +228,28 @@ impl Store {
         ask(&self.jobs, work)
     }
 
+    /// This store, except that call number `lost`, if any, goes missing as if its thread had stopped. The
+    /// other calls reach the database in order, so a step can save one thing and fail on the next. The
+    /// receiver hears of each call.
+    #[cfg(test)]
+    pub(crate) fn failing_at_call(
+        &self,
+        lost: Option<usize>,
+    ) -> (Self, std::sync::mpsc::Receiver<usize>) {
+        let (jobs, calls) = std::sync::mpsc::channel::<Job>();
+        let (seen, heard) = std::sync::mpsc::channel();
+        let database = self.jobs.clone();
+        let thread = std::thread::spawn(move || {
+            for (call, job) in calls.iter().enumerate() {
+                seen.send(call).expect("the test holds the receiver");
+                if lost != Some(call) {
+                    drop(database.send(job));
+                }
+            }
+        });
+        (Self { jobs, thread }, heard)
+    }
+
     /// A store whose thread has gone, as it would be after a panic there.
     #[cfg(test)]
     pub(crate) fn stopped() -> Self {

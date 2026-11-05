@@ -47,6 +47,18 @@ pub(super) struct Poll {
     changed_prs: Vec<ChangedPr>,
     /// The Issues this poll changed, which need their trees read.
     moved_issues: BTreeSet<u32>,
+    /// The items saved that the window hasn't heard about yet.
+    touched: Vec<u32>,
+    /// The items the searches merged so far found.
+    hits: BTreeMap<u32, FilterHit>,
+    /// The time to ask again, from the last page's points.
+    pause_until: Option<OffsetDateTime>,
+}
+
+impl Poll {
+    fn has_read_everything(&self) -> bool {
+        self.issues.is_finished() && self.pull_requests.is_finished()
+    }
 }
 
 impl Default for Poll {
@@ -65,6 +77,9 @@ impl Default for Poll {
             answers: Vec::new(),
             changed_prs: Vec::new(),
             moved_issues: BTreeSet::new(),
+            touched: Vec::new(),
+            hits: BTreeMap::new(),
+            pause_until: None,
         }
     }
 }
@@ -147,13 +162,29 @@ pub(super) fn check_list(
     Ok((NO_PAUSE, Some(next)))
 }
 
-/// Reads the next page of what changed, and moves on after the last. One Filter GitHub refuses mustn't stop
-/// the rest, so a refused request goes again without the searches, and each of them walks alone.
+/// Reads the next page of what changed, and moves on after the last. A failed step keeps its place in `poll`,
+/// so the next try picks up after the part that worked.
 pub(super) fn poll(
     link: &Link<'_>,
     poll: &mut Poll,
     check: &mut ChangeCheck,
 ) -> Result<Moved, Error> {
+    if !poll.has_read_everything() {
+        read_page(link, poll, check)?;
+    }
+    let next = if poll.has_read_everything() {
+        merge_answers(link, poll)?;
+        Some(Phase::FetchingChanged(plan_the_rest(link, poll)?))
+    } else {
+        None
+    };
+    let touched = std::mem::take(&mut poll.touched);
+    Ok((Step::saved_if_any(touched, poll.pause_until), next))
+}
+
+/// Asks for the next page and saves it. One Filter GitHub refuses shouldn't cost the rest, so a refused
+/// request goes again without the searches, and each of them walks alone.
+fn read_page(link: &Link<'_>, poll: &mut Poll, check: &mut ChangeCheck) -> Result<(), Error> {
     let asked = PollRequest {
         since: poll.since,
         issues: &poll.issues,
@@ -169,11 +200,11 @@ pub(super) fn poll(
                 problem.message
             );
             poll.narrowed.append(&mut poll.in_request);
-            return Ok((NO_PAUSE, None));
+            return Ok(());
         }
         Err(problem) => return Err(problem),
     };
-    let mut touched = save_moved_issues(link, answer.issues, poll)?;
+    save_moved_issues(link, answer.issues, poll)?;
     poll.in_request.clear();
     poll.answers.extend(answer.filters);
     let settled = answer
@@ -189,15 +220,8 @@ pub(super) fn poll(
         (true, None) => ChangeCheck::Untagged,
         (true, Some(tag)) => ChangeCheck::Tagged(tag),
     };
-    let pause_until = pause_until(answer.rate_limit);
-    let next = if poll.issues.is_finished() && poll.pull_requests.is_finished() {
-        let (next, moved) = finish_poll(link, poll)?;
-        touched.extend(moved);
-        Some(Phase::FetchingChanged(next))
-    } else {
-        None
-    };
-    Ok((Step::saved_if_any(touched, pause_until), next))
+    poll.pause_until = pause_until(answer.rate_limit);
+    Ok(())
 }
 
 /// Saves each Issue Tsugiki holds that this answer changes. An Issue it doesn't hold isn't on any screen, and
@@ -206,53 +230,69 @@ fn save_moved_issues(
     link: &Link<'_>,
     issues: Vec<IssueFacts>,
     poll: &mut Poll,
-) -> Result<Vec<u32>, Error> {
+) -> Result<(), Error> {
     let held = link.store.issues(link.repository)?;
     let held: BTreeMap<u32, IssueFacts> = held
         .into_iter()
         .map(|issue| (issue.number, issue))
         .collect();
-    let settled = issues
+    let settled: Vec<u32> = issues
         .iter()
-        .filter(|issue| issue.updated_at <= poll.settled_before);
-    poll.changed.extend(settled.map(|issue| issue.number));
-    if poll.redo {
-        let in_the_window = issues.iter().map(|issue| issue.number);
-        poll.moved_issues
-            .extend(in_the_window.filter(|number| held.contains_key(number)));
-    }
+        .filter(|issue| issue.updated_at <= poll.settled_before)
+        .map(|issue| issue.number)
+        .collect();
+    let in_the_window: Vec<u32> = issues
+        .iter()
+        .map(|issue| issue.number)
+        .filter(|number| held.contains_key(number))
+        .collect();
     let moved: Vec<IssueFacts> = issues
         .into_iter()
         .filter(|issue| held.get(&issue.number).is_some_and(|old| old != issue))
         .collect();
     let touched: Vec<u32> = moved.iter().map(|issue| issue.number).collect();
     link.store.save_issues(link.repository, moved)?;
+    poll.changed.extend(settled);
+    if poll.redo {
+        poll.moved_issues.extend(in_the_window);
+    }
     poll.moved_issues.extend(touched.iter().copied());
-    Ok(touched)
+    poll.touched.extend(touched);
+    Ok(())
 }
 
-/// Merges each search that answered whole, and plans what's left. Answers with the numbers that moved.
-fn finish_poll(link: &Link<'_>, poll: &mut Poll) -> Result<(Changed, Vec<u32>), Error> {
-    let mut moved = Vec::new();
-    let mut hits: BTreeMap<u32, FilterHit> = BTreeMap::new();
-    let mut narrowed = std::mem::take(&mut poll.narrowed);
-    for (query, page) in std::mem::take(&mut poll.answers) {
+/// Merges each search that answered whole, one at a time, so a failed merge leaves the rest to the next try.
+/// A search with more pages walks on its own instead.
+fn merge_answers(link: &Link<'_>, poll: &mut Poll) -> Result<(), Error> {
+    while let Some((query, page)) = poll.answers.first() {
         if page.next.is_some() {
-            narrowed.push(query);
-            continue;
+            poll.narrowed.push(query.clone());
+        } else {
+            let results = NarrowedResults {
+                changed: poll.changed.clone(),
+                found: page.hits.iter().map(|hit| hit.number).collect(),
+                cut_off: false,
+            };
+            let moved = link
+                .store
+                .merge_filter_results(link.repository, query, results)?;
+            poll.touched.extend(moved);
+            let hits = page.hits.iter().cloned();
+            poll.hits.extend(hits.map(|hit| (hit.number, hit)));
         }
-        let results = NarrowedResults {
-            changed: poll.changed.clone(),
-            found: page.hits.iter().map(|hit| hit.number).collect(),
-            cut_off: false,
-        };
-        moved.extend(
-            link.store
-                .merge_filter_results(link.repository, &query, results)?,
-        );
-        hits.extend(page.hits.into_iter().map(|hit| (hit.number, hit)));
+        drop(poll.answers.remove(0));
     }
+    Ok(())
+}
+
+/// Plans what's left after the poll. It asks the store first, so a failure leaves `poll` as it was.
+fn plan_the_rest(link: &Link<'_>, poll: &mut Poll) -> Result<Changed, Error> {
     let stored = stored_pull_requests(link)?;
+    let viewer = if poll.redo {
+        link.store.last_login()?
+    } else {
+        None
+    };
     let is_behind = |pr: &ChangedPr| {
         stored
             .get(&pr.number)
@@ -262,14 +302,13 @@ fn finish_poll(link: &Link<'_>, poll: &mut Poll) -> Result<(Changed, Vec<u32>), 
     let ids: Vec<NodeId> = ids.map(|pr| pr.id.clone()).collect();
     let mut walk = FilterWalk::of_refresh(RefreshWalk {
         whole: std::mem::take(&mut poll.whole),
-        narrowed,
+        narrowed: std::mem::take(&mut poll.narrowed),
         since: Some(poll.since),
         changed: std::mem::take(&mut poll.changed),
-        hits,
+        hits: std::mem::take(&mut poll.hits),
     });
     walk.hold_issues(std::mem::take(&mut poll.moved_issues));
     if poll.redo {
-        let viewer = link.store.last_login()?;
         let held = poll
             .changed_prs
             .iter()
@@ -278,7 +317,7 @@ fn finish_poll(link: &Link<'_>, poll: &mut Poll) -> Result<(Changed, Vec<u32>), 
             walk.learn_from(pull_request, link.repository);
         }
     }
-    Ok((Changed { ids, walk }, moved))
+    Ok(Changed { ids, walk })
 }
 
 /// True when `pull_request` is on one of the user's own lists.

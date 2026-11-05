@@ -13,14 +13,13 @@ pub use startup::run;
 use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
 use tsugiki_core::error::Error;
-use tsugiki_core::filters::FilterQuery;
 use tsugiki_core::latest::LatestReader;
 use tsugiki_core::repository::{Home, RepositoryAccess, RepositoryCheck, RepositoryName};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{LoadedSettings, SettingsOwner};
 use tsugiki_core::status::{Change, LastSync, Status, SyncActivity};
 use tsugiki_core::store::StoreReader;
-use tsugiki_core::workbench::Workbench;
+use tsugiki_core::workbench::{Workbench, WorkbenchView};
 
 #[tauri::command]
 #[specta::specta]
@@ -109,13 +108,13 @@ fn sync_home(home: &Home, requests: &SessionRequests) {
 
 fn read_workbench(
     repository: &str,
-    selected: Option<&FilterQuery>,
+    view: &WorkbenchView,
     owner: &SettingsOwner,
     reader: &StoreReader,
 ) -> Result<Workbench, Error> {
     let name = RepositoryName::parse(repository)?;
     let repository = owner.view().loaded.settings.repository(name);
-    Workbench::read(reader, &repository, selected)
+    Workbench::read(reader, &repository, view)
 }
 
 /// Sent whenever the app-wide state changes (ADR 0008).
@@ -273,7 +272,8 @@ mod tests {
         )
         .unwrap_err();
         let checking = check_typed_repository("nonsense", &session.requests()).unwrap_err();
-        let reading = read_workbench("nonsense", None, &owner, &session.reader()).unwrap_err();
+        let reading = read_workbench("nonsense", &WorkbenchView::Whole, &owner, &session.reader())
+            .unwrap_err();
 
         assert_eq!(adding.kind, ErrorKind::NotFound);
         assert_eq!(checking.kind, ErrorKind::NotFound);

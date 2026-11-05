@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands, events } from "$lib/data/bindings";
-import { WorkbenchState, type WorkbenchItem } from "./workbench.svelte";
+import { WorkbenchState, type ListedItem } from "./workbench.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
   commands: { workbench: vi.fn() },
   events: { changed: { listen: vi.fn() } },
 }));
 
-const item = (number: number): WorkbenchItem => ({
+const item = (number: number): ListedItem => ({
+  attention: null,
   kind: "standalone_pr",
   number,
   title: `PR ${String(number)}`,
@@ -22,10 +23,12 @@ const item = (number: number): WorkbenchItem => ({
 });
 
 const mine = { name: "Mine", query: "is:open author:@me", count: 1, problem: null };
+const whole = { kind: "whole" } as const;
+const onlyMine = { kind: "filter", query: mine.query } as const;
 
 const answer = (...numbers: number[]) => ({
   status: "ok" as const,
-  data: { items: numbers.map(item), count: numbers.length, filters: [mine] },
+  data: { items: numbers.map(item), quiet: [], count: numbers.length, review_requests: 0, filters: [mine] },
 });
 
 const refused = { status: "error" as const, error: { kind: "internal" as const, message: "no database" } };
@@ -56,29 +59,42 @@ describe("WorkbenchState", () => {
     const state = new WorkbenchState("python/cpython");
     expect(state.items).toBeUndefined();
     await state.load();
-    expect(commands.workbench).toHaveBeenCalledWith("python/cpython", null);
+    expect(commands.workbench).toHaveBeenCalledWith("python/cpython", whole);
     expect(numbers(state)).toEqual([2, 1]);
     expect(state.count).toBe(2);
     expect(state.filters).toEqual([mine]);
     expect(state.error).toBeUndefined();
   });
 
+  it("holds the quiet section and the Review requests count", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValueOnce({
+      status: "ok",
+      data: { items: [], quiet: [item(4)], count: 0, review_requests: 3, filters: [] },
+    });
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    expect(state.quiet.map((listed) => listed.number)).toEqual([4]);
+    expect(state.reviewRequests).toBe(3);
+  });
+
   it("asks for a Filter the user selects, and for the whole Workbench again", async () => {
     catchListener();
     vi.mocked(commands.workbench).mockResolvedValueOnce(answer(2, 1));
     const state = new WorkbenchState("python/cpython");
-    expect(state.selected).toBeNull();
+    expect(state.selected).toEqual(whole);
     await state.load();
 
     vi.mocked(commands.workbench).mockResolvedValueOnce(answer(1));
-    await state.select(mine.query);
-    expect(state.selected).toBe(mine.query);
-    expect(commands.workbench).toHaveBeenLastCalledWith("python/cpython", mine.query);
+    await state.select(onlyMine);
+    expect(state.selected).toEqual(onlyMine);
+    expect(commands.workbench).toHaveBeenLastCalledWith("python/cpython", onlyMine);
     expect(numbers(state)).toEqual([1]);
 
     vi.mocked(commands.workbench).mockResolvedValueOnce(answer(2, 1));
-    await state.select(null);
-    expect(commands.workbench).toHaveBeenLastCalledWith("python/cpython", null);
+    await state.select(whole);
+    expect(commands.workbench).toHaveBeenLastCalledWith("python/cpython", whole);
     expect(numbers(state)).toEqual([2, 1]);
   });
 
@@ -87,7 +103,7 @@ describe("WorkbenchState", () => {
     vi.mocked(commands.workbench).mockResolvedValue(answer(1));
     const state = new WorkbenchState("python/cpython");
     await state.load();
-    await state.select(mine.query);
+    await state.select(onlyMine);
 
     vi.mocked(commands.workbench).mockResolvedValueOnce(answer(3, 1));
     send("python/cpython");
@@ -95,7 +111,7 @@ describe("WorkbenchState", () => {
     await vi.waitFor(() => {
       expect(numbers(state)).toEqual([3, 1]);
     });
-    expect(commands.workbench).toHaveBeenLastCalledWith("python/cpython", mine.query);
+    expect(commands.workbench).toHaveBeenLastCalledWith("python/cpython", onlyMine);
   });
 
   it("drops the answer for a line the user has already left", async () => {
@@ -106,9 +122,9 @@ describe("WorkbenchState", () => {
 
     const slow = Promise.withResolvers<ReturnType<typeof answer>>();
     vi.mocked(commands.workbench).mockReturnValueOnce(slow.promise);
-    const leaving = state.select(mine.query);
+    const leaving = state.select(onlyMine);
     vi.mocked(commands.workbench).mockResolvedValueOnce(answer(2, 1));
-    await state.select(null);
+    await state.select(whole);
     slow.resolve(answer(1));
     await leaving;
 

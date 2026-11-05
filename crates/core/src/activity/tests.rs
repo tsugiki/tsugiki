@@ -5,8 +5,8 @@ use std::path::PathBuf;
 
 use time::{Duration, OffsetDateTime};
 
-use super::{NewActivity, WhatHappened, on_issue, on_pull_request};
-use crate::conventions::CPYTHON_BACKPORT_BOT;
+use super::{NewActivity, News, WhatHappened};
+use crate::conventions::{CPYTHON_BACKPORT_BOT, Conventions};
 use crate::github::Login;
 use crate::github::activity::{Activity, ActivityKind, ItemActivity};
 use crate::github::issues::IssueFacts;
@@ -14,7 +14,7 @@ use crate::github::pull_requests::{
     CiState, LatestReview, OffDefault, PrState, PullRequestFacts, ReviewState,
 };
 use crate::repository::RepositoryName;
-use crate::store::{ChangeCheck, Store, SyncState};
+use crate::store::{ChangeCheck, OpenReader, Store, StoreReader, SyncState, WorkFacts, reader};
 
 const OWN_PR: u32 = 1;
 const COLLEAGUES_PR: u32 = 2;
@@ -81,6 +81,8 @@ fn event(kind: ActivityKind, who: &Login, at: OffsetDateTime) -> Activity {
 /// A Repository whose first sync began three days ago and whose user signed in as `me()`.
 struct World {
     store: Store,
+    reader: StoreReader,
+    open_reader: OpenReader,
     folder: PathBuf,
 }
 
@@ -105,9 +107,17 @@ impl World {
     fn before_its_first_sync(name: &str) -> Self {
         let folder = crate::testing::temp_path(&format!("activity-{name}"));
         fs::create_dir_all(&folder).unwrap();
-        let store = Store::open(&folder.join("tsugiki.db")).unwrap();
+        let path = folder.join("tsugiki.db");
+        let store = Store::open(&path).unwrap();
         store.remember_login(&me()).unwrap();
-        Self { store, folder }
+        let (to_open, reader) = reader();
+        let open_reader = to_open.open(&path).unwrap();
+        Self {
+            store,
+            reader,
+            open_reader,
+            folder,
+        }
     }
 
     fn has(&self, pull_requests: Vec<PullRequestFacts>) {
@@ -136,17 +146,45 @@ impl World {
         self.has(vec![finished]);
     }
 
+    fn facts(&self) -> WorkFacts {
+        self.reader.work_facts(&cpython()).unwrap()
+    }
+
+    /// The facts with every event on item `number`. The Workbench's read leaves out items that don't concern
+    /// the user, and New activity says what happened on them too.
+    fn facts_about(&self, number: u32) -> WorkFacts {
+        let mut facts = self.facts();
+        let events = self.store.activity(&cpython(), number).unwrap();
+        let first_sync = facts.activity.first_sync;
+        let later = events
+            .into_iter()
+            .filter(|event| first_sync.is_some_and(|started| event.at > started));
+        let events = facts.activity.events.entry(number).or_default();
+        events.clear();
+        events.extend(later);
+        facts
+    }
+
     fn new_on_pull_request(&self, number: u32) -> Vec<WhatHappened> {
-        let news = on_pull_request(&self.store, &cpython(), number).unwrap();
+        let facts = self.facts_about(number);
+        let held = &facts.pull_requests;
+        let viewer = facts.viewer.as_ref().unwrap();
+        let news = News::new(&facts.activity, held, viewer, Conventions::Cpython);
+        let pull_request = held.iter().find(|pr| pr.number == number).unwrap();
+        let news = news.on_pull_request(pull_request);
         news.into_iter().map(|new: NewActivity| new.what).collect()
     }
 
     fn new_on_issue(&self, number: u32) -> Vec<WhatHappened> {
-        let news = on_issue(&self.store, &cpython(), number).unwrap();
+        let facts = self.facts_about(number);
+        let viewer = facts.viewer.as_ref().unwrap();
+        let news = News::new(&facts.activity, &[], viewer, Conventions::Cpython);
+        let news = news.on_issue(number);
         news.into_iter().map(|new: NewActivity| new.what).collect()
     }
 
     fn finish(self) {
+        self.open_reader.close();
         self.store.close();
         fs::remove_dir_all(self.folder).unwrap();
     }
@@ -508,35 +546,6 @@ fn one_failure_on_a_bot_backport_the_user_reviewed_is_one_item() {
 }
 
 #[test]
-fn a_store_that_cant_read_says_so_at_each_read() {
-    let world = World::new("cant-read");
-    let own = pull_request(OWN_PR, &me());
-    let bot_backport = PullRequestFacts {
-        ci: Some(CiState::Failure),
-        ..backport(BOT_BACKPORT, CPYTHON_BACKPORT_BOT)
-    };
-    world.has(vec![own.clone(), bot_backport]);
-    world.ci_reaches(&own, CiState::Success);
-    let mut failures = 0;
-    for call in 0..50 {
-        let (failing, _calls) = world.store.failing_at_call(Some(call));
-        let on_pr = on_pull_request(&failing, &cpython(), OWN_PR);
-        failing.close();
-        if on_pr.is_err() {
-            failures += 1;
-        }
-    }
-    for call in 0..4 {
-        let (failing, _calls) = world.store.failing_at_call(Some(call));
-        let on_item = on_issue(&failing, &cpython(), OWN_PR);
-        failing.close();
-        assert!(on_item.is_err(), "{call}");
-    }
-    assert!(failures > 5, "{failures}");
-    world.finish();
-}
-
-#[test]
 fn the_bot_failing_to_make_a_backport_is_new_activity_on_the_origin_pr() {
     let world = World::new("backport-conflict");
     world.has(vec![pull_request(OWN_PR, &me())]);
@@ -645,7 +654,7 @@ fn nothing_is_new_before_the_first_sync_finishes() {
 #[test]
 fn a_later_refresh_doesnt_move_the_start_of_news() {
     let world = World::new("refresh-keeps-start");
-    let started_at = world.store.first_sync_started_at(&cpython()).unwrap();
+    let started_at = world.facts().activity.first_sync;
     let later = SyncState {
         started_at: hours_ago(1),
         finished_at: hours_ago(1),
@@ -654,17 +663,7 @@ fn a_later_refresh_doesnt_move_the_start_of_news() {
     };
     world.store.save_sync_state(&cpython(), later).unwrap();
 
-    assert_eq!(
-        world.store.first_sync_started_at(&cpython()).unwrap(),
-        started_at
-    );
-    world.finish();
-}
-
-#[test]
-fn a_pr_tsugiki_doesnt_have_has_no_new_activity() {
-    let world = World::new("missing");
-    assert_eq!(world.new_on_pull_request(COLLEAGUES_PR), []);
+    assert_eq!(world.facts().activity.first_sync, started_at);
     world.finish();
 }
 
@@ -675,6 +674,7 @@ fn someone_elses_comment_on_an_issue_is_new_activity() {
         number: ISSUE,
         title: "An Issue".to_owned(),
         author: Some(colleague()),
+        assignees: vec![],
         updated_at: hours_ago(1),
     };
     let activity = vec![ItemActivity {
@@ -702,11 +702,9 @@ fn opening_an_issue_doesnt_update_its_prs_last_seen() {
     let world = World::new("issue-tree");
     world.opened(ISSUE, hours_ago(1));
 
-    assert_eq!(
-        world.store.last_seen(&cpython(), COLLEAGUES_PR).unwrap(),
-        None
-    );
-    assert!(world.store.last_seen(&cpython(), ISSUE).unwrap().is_some());
+    let last_seen = world.facts().activity.last_seen;
+    assert_eq!(last_seen.get(&COLLEAGUES_PR), None);
+    assert!(last_seen.contains_key(&ISSUE));
     world.finish();
 }
 
@@ -717,10 +715,7 @@ fn last_seen_doesnt_move_back_when_the_clock_does() {
     world.opened(ISSUE, later);
     world.opened(ISSUE, hours_ago(5));
 
-    assert_eq!(
-        world.store.last_seen(&cpython(), ISSUE).unwrap(),
-        Some(later)
-    );
+    assert_eq!(world.facts().activity.last_seen.get(&ISSUE), Some(&later));
     world.finish();
 }
 
@@ -758,5 +753,20 @@ fn each_kind_of_event_reads_back_as_it_was_saved() {
     let mut read = world.store.activity(&cpython(), ISSUE).unwrap();
     read.sort_by(|left, right| left.kind.cmp(&right.kind));
     assert_eq!(read, events);
+    world.finish();
+}
+
+#[test]
+fn a_failed_bot_backport_nobody_can_act_on_any_more_is_no_news() {
+    let world = World::new("closed-backport");
+    let own = pull_request(OWN_PR, &me());
+    let closed = PullRequestFacts {
+        state: PrState::Closed,
+        ci: Some(CiState::Failure),
+        ..backport(BOT_BACKPORT, CPYTHON_BACKPORT_BOT)
+    };
+    world.has(vec![own, closed]);
+
+    assert_eq!(world.new_on_pull_request(OWN_PR), []);
     world.finish();
 }

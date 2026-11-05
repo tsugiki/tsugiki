@@ -4,12 +4,12 @@ use std::collections::BTreeMap;
 
 use time::OffsetDateTime;
 
-use super::{IssueItem, TreeEntry, WorkReason, Workbench, WorkbenchItem, reasons};
+use super::{IssueItem, TreeEntry, WorkReason, Workbench, WorkbenchItem, WorkbenchView, reasons};
 use crate::github::Login;
 use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::{OffDefault, PrState, PullRequestFacts};
 use crate::repository::{RepositoryName, RepositorySettings};
-use crate::store::WorkFacts;
+use crate::store::{ActivityFacts, WorkFacts};
 
 pub(super) fn me() -> Login {
     Login::new("octocat")
@@ -56,6 +56,7 @@ pub(super) fn issue(number: u32) -> IssueFacts {
         number,
         title: format!("Issue {number}"),
         author: Some(Login::new("issue-author")),
+        assignees: vec![],
         updated_at: at(1),
     }
 }
@@ -87,8 +88,9 @@ pub(super) fn workbench(
         pull_requests,
         issues,
         filters: BTreeMap::new(),
+        activity: ActivityFacts::default(),
     };
-    Workbench::from_facts(facts, &cpython(), None)
+    Workbench::from_facts(facts, &cpython(), &WorkbenchView::Whole)
 }
 
 /// Each item as its kind and number, with an Issue's PRs after it.
@@ -96,7 +98,8 @@ pub(super) fn outline(workbench: &Workbench) -> Vec<(&'static str, u32, Vec<u32>
     workbench
         .items
         .iter()
-        .map(|item| match item {
+        .chain(&workbench.quiet)
+        .map(|listed| match &listed.item {
             WorkbenchItem::Issue(issue) => {
                 let rows = issue.pull_requests.iter().flat_map(TreeEntry::rows);
                 ("issue", issue.number, rows.map(|row| row.number).collect())
@@ -113,7 +116,8 @@ pub(super) fn outline(workbench: &Workbench) -> Vec<(&'static str, u32, Vec<u32>
 }
 
 pub(super) fn first_issue(workbench: &Workbench) -> &IssueItem {
-    let issues = workbench.items.iter().filter_map(|item| match item {
+    let listed = workbench.items.iter().chain(&workbench.quiet);
+    let issues = listed.filter_map(|listed| match &listed.item {
         WorkbenchItem::Issue(issue) => Some(issue),
         WorkbenchItem::StandalonePr(_) | WorkbenchItem::StandaloneBackport(_) => None,
     });

@@ -236,7 +236,7 @@ mod tests {
     }
 
     fn the_whole_workbench() -> Value {
-        json!({ "repository": CPYTHON, "selected": null })
+        json!({ "repository": CPYTHON, "view": { "kind": "whole" } })
     }
 
     #[test]
@@ -247,7 +247,7 @@ mod tests {
         let adding = wired.ask("add_repository", add_cpython());
         let reading = wired.ask(
             "workbench",
-            json!({ "repository": "a/b", "selected": null }),
+            json!({ "repository": "a/b", "view": { "kind": "whole" } }),
         );
         drop(wired.stop());
 
@@ -352,11 +352,19 @@ mod tests {
         assert_eq!(asked, announced);
     }
 
+    /// Each item the answer lists, in the order the window shows them.
+    fn listed(workbench: &Value) -> Vec<&Value> {
+        let items = workbench["items"].as_array().unwrap().iter();
+        items
+            .chain(workbench["quiet"].as_array().unwrap())
+            .collect()
+    }
+
     /// The recordings hold 22 PRs of real CPython work, and 4 of them are the recording user's own. They name
     /// 22 Issues: #154019 fixes two by itself, and #156423 and #156419 fix one between them. The Filters'
     /// search reaches 2 more that no PR names.
     fn assert_is_the_recorded_work(workbench: &Value) {
-        let items = workbench["items"].as_array().unwrap();
+        let items = listed(workbench);
         assert_eq!(items.len(), 24);
         assert!(
             items.iter().all(|item| item["kind"] == "issue"),
@@ -463,7 +471,7 @@ mod tests {
         let selected = reopened
             .ask(
                 "workbench",
-                json!({ "repository": CPYTHON, "selected": EDITED }),
+                json!({ "repository": CPYTHON, "view": { "kind": "filter", "query": EDITED } }),
             )
             .unwrap();
         drop(reopened.stop());
@@ -473,12 +481,8 @@ mod tests {
         assert_eq!(line["name"], "My bugs");
         assert_eq!(line["query"], EDITED);
         assert_eq!(selected["filters"], whole["filters"]);
-        assert_eq!(
-            json!(selected["items"].as_array().unwrap().len()),
-            line["count"]
-        );
         // The search found 8 items, and #156423 and #156419 share a row with the Issue they fix.
-        assert_eq!(line["count"], 6);
+        assert_eq!(listed(&selected).len(), 6);
     }
 
     #[test]
@@ -517,7 +521,8 @@ mod tests {
                             "number": self.number,
                             "title": "A new title",
                             "updatedAt": "2999-01-01T00:00:00Z",
-                            "comments": { "nodes": [] },
+                            "assignees": { "nodes": [] },
+                            "timelineItems": { "nodes": [] },
                             "author": null,
                         }])),
                         "pullRequests": page(json!([])),

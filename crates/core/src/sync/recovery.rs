@@ -16,7 +16,7 @@ use super::testing::Harness;
 use super::{Progress, Syncs};
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::repository::RepositorySettings;
-use crate::store::{ChangeCheck, Store, WorkFacts};
+use crate::store::{ActivityFacts, ChangeCheck, Store, WorkFacts};
 use crate::token::Token;
 
 /// A request, by what would change its answer.
@@ -176,7 +176,11 @@ fn run(
     }
     let state = harness.store.sync_state(&settings.name).unwrap();
     let ended = Ended {
-        facts: harness.reader.work_facts(&settings.name).unwrap(),
+        // A retried save notices its events and CI results a little later, which nothing compares.
+        facts: WorkFacts {
+            activity: ActivityFacts::default(),
+            ..harness.reader.work_facts(&settings.name).unwrap()
+        },
         check: state.as_ref().map(|state| state.check.clone()),
         refresh_under_way: state.map(|state| state.refresh_under_way),
         told_the_window,

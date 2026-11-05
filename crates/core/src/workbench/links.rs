@@ -45,11 +45,11 @@ mod tests {
     use crate::conventions::Conventions;
     use crate::github::pull_requests::PullRequestFacts;
     use crate::repository::RepositorySettings;
-    use crate::store::WorkFacts;
-    use crate::workbench::Workbench;
+    use crate::store::{ActivityFacts, WorkFacts};
     use crate::workbench::testing::{
         backport, cpython, fixing, issue, me, mine, outline, own, stranger, workbench,
     };
+    use crate::workbench::{Workbench, WorkbenchView};
     use std::collections::BTreeMap;
 
     #[test]
@@ -73,6 +73,7 @@ mod tests {
     #[test]
     fn changing_a_repositorys_conventions_regroups_the_same_facts() {
         let facts = || WorkFacts {
+            activity: ActivityFacts::default(),
             viewer: Some(me()),
             filters: BTreeMap::new(),
             pull_requests: vec![fixing(10, 1)],
@@ -83,8 +84,8 @@ mod tests {
             ..cpython()
         };
 
-        let under_cpython = Workbench::from_facts(facts(), &cpython(), None);
-        let under_github = Workbench::from_facts(facts(), &github, None);
+        let under_cpython = Workbench::from_facts(facts(), &cpython(), &WorkbenchView::Whole);
+        let under_github = Workbench::from_facts(facts(), &github, &WorkbenchView::Whole);
 
         assert_eq!(outline(&under_cpython), [("issue", 1, vec![10])]);
         assert_eq!(outline(&under_github), [("standalone", 10, vec![])]);
@@ -129,12 +130,13 @@ mod tests {
             ..cpython()
         };
         let facts = WorkFacts {
+            activity: ActivityFacts::default(),
             viewer: Some(me()),
             pull_requests: vec![mine(10), own(backport(11, "[3.14] Fix it (GH-10)", vec![]))],
             issues: vec![],
             filters: BTreeMap::new(),
         };
-        let found = Workbench::from_facts(facts, &github, None);
+        let found = Workbench::from_facts(facts, &github, &WorkbenchView::Whole);
         assert_eq!(
             outline(&found),
             [("standalone", 11, vec![]), ("standalone", 10, vec![])]

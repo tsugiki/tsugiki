@@ -151,7 +151,7 @@ mod tests {
             vec![issue(1)],
         );
         let sent = serde_json::to_value(&found).unwrap();
-        let entries = &sent["items"][0]["pull_requests"];
+        let entries = &sent["quiet"][0]["pull_requests"];
         assert_eq!(entries[0]["backports"][0]["number"], 5);
         assert_eq!(entries[0]["backports"][0]["backport"], "manual");
         assert_eq!(entries[1]["kind"], "backport");

@@ -73,6 +73,7 @@ fn holding_issue(harness: &Harness, number: u32, updated_at: &str) {
         number,
         title: format!("Issue {number}"),
         author: None,
+        assignees: vec![],
         updated_at: at(updated_at),
     };
     harness.store.save_issues(&cpython(), vec![issue]).unwrap();
@@ -113,7 +114,8 @@ fn issue_node(number: u32, updated_at: &str) -> Value {
         "number": number,
         "title": format!("Issue {number} now"),
         "updatedAt": updated_at,
-        "comments": { "nodes": [] },
+        "assignees": { "nodes": [] },
+        "timelineItems": { "nodes": [] },
         "author": null,
     })
 }
@@ -194,6 +196,29 @@ fn probed(states: &[(u32, &str)]) -> Result<Reply, Unreachable> {
     ))
 }
 
+/// GitHub's answer about the checks of PR `number`, of which `names` failed.
+fn failed_checks(number: u32, names: &[&str]) -> Result<Reply, Unreachable> {
+    let runs: Vec<Value> = names
+        .iter()
+        .map(|name| {
+            json!({ "__typename": "CheckRun", "name": name, "conclusion": "FAILURE",
+                            "checkSuite": null })
+        })
+        .collect();
+    let pull_request = json!({
+        "number": number,
+        "lastCommit": { "nodes": [
+            { "commit": { "statusCheckRollup": { "contexts": { "nodes": runs } } } }
+        ] },
+    });
+    let rate_limit = json!({ "remaining": 4000, "resetAt": "2999-01-01T00:00:00Z" });
+    let data = json!({ "data": {
+        "repository": { format!("p{number}"): pull_request },
+        "rateLimit": rate_limit,
+    } });
+    reply_ok(&data.to_string())
+}
+
 /// Runs the refresh to its end, and answers with everything it announced.
 fn run(syncs: &mut Syncs, harness: &Harness) -> Vec<Change> {
     let mut changes = Vec::new();
@@ -243,6 +268,7 @@ fn a_refresh_recovers_from_a_failure_at_each_point() {
         ),
         fetched_nodes(&[strangers_pr(3, AFTER_IT)], LOTS),
         probed(&[(4, "FAILURE")]),
+        failed_checks(4, &["Tests"]),
         reply_ok(&format!(
             r#"{{"data":{{"search":{},{LOTS}}}}}"#,
             search(&[issue_hit(2), issue_hit(5)], None)
@@ -271,6 +297,7 @@ fn a_refresh_recovers_from_a_failure_at_each_point() {
             "RefreshRepository",
             "FetchChangedPullRequests",
             "ProbePullRequests",
+            "FetchFailedChecks",
             "SearchFilter",
             "FetchIssues",
             "FetchCrossReferences",
@@ -340,7 +367,7 @@ fn a_refresh_of_a_small_repository_recovers_from_a_failure_at_each_point() {
             holding_pr(harness, &own_open_pr(1, &json!({})));
             stored_filter(harness, "a", &[]);
         },
-        posts: vec![probed(&[(1, "FAILURE")])],
+        posts: vec![probed(&[(1, "FAILURE")]), failed_checks(1, &["Tests"])],
         checks: vec![check_reply(304, None)],
     };
 
@@ -430,6 +457,7 @@ fn an_issue_nothing_shows_stays_out_and_an_unchanged_one_says_nothing() {
         number: 2,
         title: "Issue 2 now".to_owned(),
         author: None,
+        assignees: vec![],
         updated_at: at(LONG_BEFORE),
     };
     harness.store.save_issues(&cpython(), vec![same]).unwrap();
@@ -584,8 +612,39 @@ fn the_users_changed_pr_brings_its_issue_and_a_strangers_doesnt() {
 }
 
 #[test]
+fn github_refusing_to_name_the_failed_checks_leaves_them_for_the_next_refresh() {
+    let refused = reply_ok(r#"{"errors":[{"message":"Resource not accessible"}]}"#);
+    let replies = vec![quiet_poll(), probed(&[(1, "FAILURE")]), refused];
+    let harness = after_a_sync("checks-refused", replies);
+    holding_pr(&harness, &own_open_pr(1, &json!({})));
+    let mut syncs = refreshing(filtering(&[]));
+
+    let changes = run(&mut syncs, &harness);
+
+    assert_eq!(
+        harness.operations(),
+        [
+            "RefreshRepository",
+            "ProbePullRequests",
+            "FetchFailedChecks"
+        ]
+    );
+    assert_eq!(changes.len(), 1);
+    let unread = harness
+        .store
+        .pull_requests_with_unread_checks(&cpython(), &me())
+        .unwrap();
+    assert_eq!(unread, [1]);
+    harness.finish();
+}
+
+#[test]
 fn a_probe_of_the_users_open_prs_saves_ci_and_names_only_what_moved() {
-    let replies = vec![quiet_poll(), probed(&[(1, "SUCCESS"), (2, "FAILURE")])];
+    let replies = vec![
+        quiet_poll(),
+        probed(&[(1, "SUCCESS"), (2, "FAILURE")]),
+        failed_checks(2, &["Tests", "Docs"]),
+    ];
     let harness = after_a_sync("probe", replies);
     let green = json!({
         "lastCommit": { "nodes": [
@@ -601,14 +660,30 @@ fn a_probe_of_the_users_open_prs_saves_ci_and_names_only_what_moved() {
 
     assert_eq!(
         harness.operations(),
-        ["RefreshRepository", "ProbePullRequests"]
+        [
+            "RefreshRepository",
+            "ProbePullRequests",
+            "FetchFailedChecks"
+        ]
     );
+    let read = harness.reader.work_facts(&cpython()).unwrap();
+    assert_eq!(
+        read.activity.failed_checks.get(&2).unwrap(),
+        &["Docs", "Tests"]
+    );
+    // The probe's CI, and then the names of the checks that failed.
     assert_eq!(
         changes,
-        [Change {
-            repository: cpython(),
-            items: vec![2],
-        }]
+        [
+            Change {
+                repository: cpython(),
+                items: vec![2],
+            },
+            Change {
+                repository: cpython(),
+                items: vec![2],
+            }
+        ]
     );
     harness.finish();
 }
@@ -1160,7 +1235,7 @@ fn a_304_skips_the_poll_and_the_probe_still_runs() {
     let (harness, tags) = small_repository(
         "small-same",
         vec![check_reply(304, None)],
-        vec![probed(&[(1, "FAILURE")])],
+        vec![probed(&[(1, "FAILURE")]), failed_checks(1, &["Tests"])],
     );
     synced(&harness, ChangeCheck::Tagged(Etag::new("\"same\"")));
     holding_pr(&harness, &own_open_pr(1, &json!({})));
@@ -1381,7 +1456,8 @@ fn a_refresh_probes_the_ci_of_an_open_bot_backport_of_what_the_user_wrote() {
 fn a_moved_issue_keeps_who_commented_and_one_tsugiki_doesnt_hold_keeps_nothing() {
     let commented = |number: u32| {
         let mut node = issue_node(number, AFTER_IT);
-        node["comments"] = json!({ "nodes": [{
+        node["timelineItems"] = json!({ "nodes": [{
+            "__typename": "IssueComment",
             "createdAt": AFTER_IT,
             "author": { "__typename": "User", "login": "some-author" },
         }] });

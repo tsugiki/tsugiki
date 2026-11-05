@@ -1,5 +1,6 @@
 // The Workbench's words for what the core says about an Issue or a PR.
 import type {
+  Attention,
   BackportKind,
   CiState,
   IssueItem,
@@ -7,6 +8,7 @@ import type {
   TreeEntry,
   WorkbenchRow,
   WorkReason,
+  Why,
 } from "$lib/state/workbench.svelte";
 
 const REASONS: Record<WorkReason, string> = {
@@ -33,6 +35,37 @@ const CI: Record<CiState, string> = {
   PENDING: "CI running",
   SUCCESS: "CI passed",
 };
+
+/** The words an Alert would use for one reason an item Needs attention. */
+function saying(why: Why): string {
+  switch (why.kind) {
+    case "review_requested":
+      return "Review requested from you";
+    case "ci_failed":
+      return why.checks.length > 0 ? `CI failed: ${why.checks.join(", ")}` : "CI failed";
+    case "ci_passed":
+      return "CI passed";
+    case "changes_requested":
+      return `Changes requested by ${why.by}`;
+    case "approved":
+      return `Approved by ${why.by}`;
+    case "reviewed":
+      return `Reviewed by ${why.by}`;
+    case "comment":
+      return `New comment from ${why.by}`;
+    case "commits":
+      return `New commits from ${why.by}`;
+    case "ready_for_review":
+      return `Ready for review, from ${why.by}`;
+    case "mentioned":
+      return "You were mentioned";
+    case "backport_failed":
+      return `Bot backport to ${why.target} failed`;
+  }
+}
+
+/** The reasons an item Needs attention, the newest first. */
+export const preview = (attention: Attention) => attention.why.map(saying).join(" · ");
 
 const MINUTE = 60_000;
 const MINUTES_IN_HOUR = 60;

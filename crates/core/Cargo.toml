@@ -23,6 +23,7 @@ ureq.workspace = true
 
 [dev-dependencies]
 divan.workspace = true
+insta.workspace = true
 
 [[bench]]
 name = "about"

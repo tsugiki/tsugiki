@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use time::OffsetDateTime;
 
-use super::activity::{IssueCommentWire, ItemActivity, issue_activity};
+use super::activity::{IssueTimelineWire, ItemActivity, issue_activity};
 use super::pull_requests::{NodeId, Nodes, PageRequest, Person, RateLimit};
 use super::{GitHub, Login, Request};
 use crate::error::Error;
@@ -21,6 +21,7 @@ pub struct IssueFacts {
     pub title: String,
     /// Nothing, for an Issue whose author's account has gone.
     pub author: Option<Login>,
+    pub assignees: Vec<Login>,
     pub updated_at: OffsetDateTime,
 }
 
@@ -43,25 +44,37 @@ pub(super) struct IssueWire {
     #[serde(with = "time::serde::rfc3339")]
     updated_at: OffsetDateTime,
     author: Option<Person>,
-    comments: Nodes<IssueCommentWire>,
+    assignees: Nodes<Person>,
+    timeline_items: Nodes<IssueTimelineWire>,
 }
 
 impl From<IssueWire> for (IssueFacts, ItemActivity) {
     fn from(wire: IssueWire) -> Self {
-        let activity = issue_activity(wire.number, wire.comments);
+        let activity = issue_activity(wire.number, wire.timeline_items);
         let facts = IssueFacts {
             number: wire.number,
             title: wire.title,
             author: wire.author.map(|person| person.login),
+            assignees: wire
+                .assignees
+                .nodes
+                .into_iter()
+                .flatten()
+                .map(|person| person.login)
+                .collect(),
             updated_at: wire.updated_at,
         };
         (facts, activity)
     }
 }
 
-/// The fields of an Issue that `IssueWire` reads. The last comments are enough to say that someone posted.
+/// The fields of an Issue that `IssueWire` reads. The last comments and mentions are enough to say that
+/// someone posted, and whether the post named the user.
 pub(super) const ISSUE_FIELDS: &str = "number title updatedAt author { login } \
-     comments(last: 50) { nodes { createdAt author { __typename login } } }";
+     assignees(first: 20) { nodes { login } } \
+     timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename \
+     ... on IssueComment { createdAt author { __typename login } } \
+     ... on MentionedEvent { createdAt actor { __typename login } } } }";
 
 /// GitHub's answer for one number.
 #[derive(Deserialize)]

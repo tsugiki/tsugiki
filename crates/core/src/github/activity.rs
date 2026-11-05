@@ -5,7 +5,7 @@ use serde::Deserialize;
 use time::OffsetDateTime;
 
 use super::Login;
-use super::pull_requests::{Nodes, Person};
+use super::pull_requests::{Nodes, Person, ReviewerWire};
 use crate::conventions::Conventions;
 
 /// The name GitHub itself gives an account that no longer exists.
@@ -28,6 +28,12 @@ pub enum ActivityKind {
     BackportFailed {
         target: String,
     },
+    /// Someone asked `who` to review this PR. It says when a Review request began, and it's no news itself.
+    ReviewRequested,
+    /// Someone assigned this PR to `who`. It says when a Review request began, and it's no news itself.
+    Assigned,
+    /// A post mentioned `who`, the person GitHub names on this event. `who` didn't write the post.
+    Mentioned,
 }
 
 /// One thing that happened on an Issue or a PR.
@@ -148,6 +154,21 @@ pub(super) enum TimelineWire {
         created_at: OffsetDateTime,
         actor: Option<ActorWire>,
     },
+    MentionedEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<ActorWire>,
+    },
+    ReviewRequestedEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        requested_reviewer: Option<ReviewerWire>,
+    },
+    AssignedEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        assignee: Option<ReviewerWire>,
+    },
 }
 
 impl TimelineWire {
@@ -189,6 +210,25 @@ impl TimelineWire {
             Self::HeadRefForcePushedEvent { created_at, actor } => {
                 by_person(ActivityKind::Commit, actor, created_at)
             }
+            Self::MentionedEvent { created_at, actor } => {
+                by_person(ActivityKind::Mentioned, actor, created_at)
+            }
+            Self::ReviewRequestedEvent {
+                created_at,
+                requested_reviewer,
+            } => Some(Activity {
+                kind: ActivityKind::ReviewRequested,
+                who: requested_reviewer?.login?,
+                at: created_at,
+            }),
+            Self::AssignedEvent {
+                created_at,
+                assignee,
+            } => Some(Activity {
+                kind: ActivityKind::Assigned,
+                who: assignee?.login?,
+                at: created_at,
+            }),
         }
     }
 }
@@ -208,22 +248,35 @@ pub(super) fn pull_request_activity(
     }
 }
 
-/// A comment on an Issue. An Issue's timeline can only add comments.
+/// One item of an Issue's timeline, of the kinds `ISSUE_FIELDS` asks for.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct IssueCommentWire {
-    #[serde(with = "time::serde::rfc3339")]
-    created_at: OffsetDateTime,
-    author: Option<ActorWire>,
+#[serde(tag = "__typename", rename_all_fields = "camelCase")]
+pub(super) enum IssueTimelineWire {
+    IssueComment {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        author: Option<ActorWire>,
+    },
+    MentionedEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<ActorWire>,
+    },
 }
 
-/// The activity in Issue `number`'s `comments`.
-pub(super) fn issue_activity(number: u32, comments: Nodes<IssueCommentWire>) -> ItemActivity {
-    let comments = comments.nodes.into_iter().flatten();
-    let events = comments.filter_map(|comment| {
-        let who = person(comment.author)?;
-        let kind = ActivityKind::Comment;
-        let at = comment.created_at;
+/// The activity in Issue `number`'s `timeline`.
+pub(super) fn issue_activity(number: u32, timeline: Nodes<IssueTimelineWire>) -> ItemActivity {
+    let items = timeline.nodes.into_iter().flatten();
+    let events = items.filter_map(|item| {
+        let (kind, who, at) = match item {
+            IssueTimelineWire::IssueComment { created_at, author } => {
+                (ActivityKind::Comment, author, created_at)
+            }
+            IssueTimelineWire::MentionedEvent { created_at, actor } => {
+                (ActivityKind::Mentioned, actor, created_at)
+            }
+        };
+        let who = person(who)?;
         Some(Activity { kind, who, at })
     });
     ItemActivity {
@@ -412,12 +465,68 @@ mod tests {
     #[test]
     fn an_issues_comments_count_unless_a_bot_wrote_them() {
         let comments = json!({ "nodes": [
-            { "createdAt": AT, "author": actor("User", "issue-author") },
-            { "createdAt": AT, "author": actor("Bot", "bedevere-app") },
+            { "__typename": "IssueComment", "createdAt": AT, "author": actor("User", "issue-author") },
+            { "__typename": "IssueComment", "createdAt": AT, "author": actor("Bot", "bedevere-app") },
             null,
         ] });
         let read = issue_activity(3, serde_json::from_value(comments).unwrap());
         assert_eq!(read.number, 3);
         assert_eq!(read.events, one(ActivityKind::Comment, "issue-author"));
+    }
+
+    #[test]
+    fn a_mention_of_someone_on_an_issue_names_the_person_it_mentions() {
+        let timeline = json!({ "nodes": [
+            { "__typename": "MentionedEvent", "createdAt": AT, "actor": actor("User", "issue-author") },
+            { "__typename": "MentionedEvent", "createdAt": AT, "actor": actor("Bot", "bedevere-app") },
+        ] });
+        let read = issue_activity(3, serde_json::from_value(timeline).unwrap());
+        assert_eq!(read.events, one(ActivityKind::Mentioned, "issue-author"));
+    }
+
+    #[test]
+    fn a_review_request_and_an_assignment_on_a_pr_name_the_person_they_ask() {
+        let asked = |kind: &str, field: &str| {
+            json!({
+                "__typename": kind, "createdAt": AT, field: { "login": "some-reviewer" },
+            })
+        };
+        let nodes = |item: Value| json!({ "nodes": [item] });
+        let read_one = |item: Value| {
+            let timeline = serde_json::from_value(nodes(item)).unwrap();
+            pull_request_activity(3, timeline, Conventions::Github).events
+        };
+
+        assert_eq!(
+            read_one(asked("ReviewRequestedEvent", "requestedReviewer")),
+            one(ActivityKind::ReviewRequested, "some-reviewer")
+        );
+        assert_eq!(
+            read_one(asked("AssignedEvent", "assignee")),
+            one(ActivityKind::Assigned, "some-reviewer")
+        );
+        assert_eq!(
+            read_one(json!({
+                "__typename": "MentionedEvent", "createdAt": AT, "actor": actor("User", "some-reviewer"),
+            })),
+            one(ActivityKind::Mentioned, "some-reviewer")
+        );
+    }
+
+    #[test]
+    fn a_review_request_of_a_team_and_an_assignee_gone_from_github_name_nobody() {
+        let nodes = json!({ "nodes": [
+            { "__typename": "ReviewRequestedEvent", "createdAt": AT, "requestedReviewer": {} },
+            { "__typename": "ReviewRequestedEvent", "createdAt": AT, "requestedReviewer": null },
+            { "__typename": "AssignedEvent", "createdAt": AT, "assignee": {} },
+            { "__typename": "AssignedEvent", "createdAt": AT, "assignee": null },
+        ] });
+        let read = pull_request_activity(
+            3,
+            serde_json::from_value(nodes).unwrap(),
+            Conventions::Github,
+        );
+
+        assert_eq!(read.events, []);
     }
 }

@@ -3,8 +3,8 @@
 
 use rusqlite::{Connection, named_params};
 
-use super::activity;
 use super::columns::UnixTime;
+use super::{activity, pull_requests};
 use crate::github::activity::ItemActivity;
 use crate::github::issues::IssueFacts;
 use crate::repository::RepositoryName;
@@ -30,6 +30,10 @@ pub(super) fn save(
     let transaction = connection.transaction()?;
     for issue in issues {
         save_issue(&transaction, repository, issue)?;
+        pull_requests::forget_assignees(&transaction, repository, issue.number)?;
+        for login in &issue.assignees {
+            pull_requests::save_assignee(&transaction, repository, issue.number, login)?;
+        }
     }
     activity::save(&transaction, repository, events)?;
     transaction.commit()
@@ -69,13 +73,16 @@ pub(super) fn read_all(
                  ORDER BY number";
     let mut statement = connection.prepare(query)?;
     let mut rows = statement.query(named_params! { ":repository": repository })?;
+    let mut assignees = pull_requests::assignees(connection, repository)?;
     let mut found = Vec::new();
     while let Some(row) = rows.next()? {
         let UnixTime(updated_at) = row.get("updated_at")?;
+        let number = row.get("number")?;
         found.push(IssueFacts {
-            number: row.get("number")?,
+            number,
             title: row.get("title")?,
             author: row.get("author")?,
+            assignees: assignees.remove(&number).unwrap_or_default(),
             updated_at,
         });
     }
@@ -98,6 +105,7 @@ mod tests {
             number,
             title: format!("Issue {number}"),
             author: Some(Login::new("some-author")),
+            assignees: vec![],
             updated_at: OffsetDateTime::from_unix_timestamp(7).unwrap(),
         }
     }
@@ -151,6 +159,7 @@ mod tests {
         let changed = IssueFacts {
             title: "A better title".to_owned(),
             author: None,
+            assignees: vec![],
             updated_at: OffsetDateTime::from_unix_timestamp(8).unwrap(),
             ..issue(1)
         };

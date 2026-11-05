@@ -1,10 +1,12 @@
 use super::*;
+use crate::github::replay::Replayer;
 use crate::github::testing::{Canned, Scripted, answered, reply_ok, signed_in_gh};
 use crate::github::{Login, Reply, Request, Transport, Unreachable};
+use crate::repository::{RepositoryName, RepositorySettings};
 use crate::status::Change;
 use crate::status::testing::{announced, changes_board, quiet_board, showing, watched_board};
 use crate::store::{ChangeCheck, SyncState};
-use crate::workbench::{Workbench, WorkbenchItem};
+use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::fs;
@@ -418,6 +420,50 @@ fn work_fetch() -> Result<Reply, Unreachable> {
     reply_ok(&format!(r#"{{"data":{{"nodes":[{node}],{WORK_RATE}}}}}"#))
 }
 
+/// The recorded `python/cpython` work as the Workbench lists it: the sections in order, with each item's
+/// reasons.
+fn inbox_of(workbench: &Workbench) -> String {
+    let line = |listed: &ListedItem| {
+        let number = listed.item.updated_at_and_number().1;
+        let why = listed.attention.as_ref().map(|attention| &attention.why);
+        format!("#{number} {why:?}")
+    };
+    let waiting = workbench.items.iter().map(line).collect::<Vec<_>>();
+    let quiet = workbench.quiet.iter().map(line).collect::<Vec<_>>();
+    format!(
+        "count {}, review requests {}\n\n{}\n\nquiet\n{}\n",
+        workbench.count,
+        workbench.review_requests,
+        waiting.join("\n"),
+        quiet.join("\n"),
+    )
+}
+
+#[test]
+fn the_recorded_cpython_work_reads_as_an_inbox() {
+    let recordings = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
+    let access = GitHubAccess {
+        transport: Box::new(Replayer::new(recordings)),
+        run_gh: signed_in_gh,
+    };
+    let folders = temp_folders("recorded-inbox");
+    let (board, changes) = changes_board();
+    let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
+    let reader = session.reader();
+    let cpython = RepositorySettings::new(RepositoryName::parse("python/cpython").unwrap());
+
+    session.requests().sync(cpython.clone());
+    // Two Filters, the PRs they found, their Issues, one Issue's tree and an Origin PR.
+    for _ in 0..6 {
+        let _change = changes.recv_timeout(PLENTY).unwrap();
+    }
+    let workbench = Workbench::read(&reader, &cpython, &WorkbenchView::Whole).unwrap();
+    session.stop(PLENTY);
+    fs::remove_dir_all(folders.data).unwrap();
+
+    insta::assert_snapshot!(inbox_of(&workbench));
+}
+
 #[test]
 fn a_sync_fills_the_workbench_and_says_so() {
     let (script, _asked) = Scripted::new(vec![
@@ -439,7 +485,7 @@ fn a_sync_fills_the_workbench_and_says_so() {
 
     session.requests().sync(plain_gcmon());
     let changed = changes.recv().unwrap();
-    let workbench = Workbench::read(&reader, &plain_gcmon(), None).unwrap();
+    let workbench = Workbench::read(&reader, &plain_gcmon(), &WorkbenchView::Whole).unwrap();
     session.stop(PLENTY);
     fs::remove_dir_all(folders.data).unwrap();
 
@@ -451,7 +497,7 @@ fn a_sync_fills_the_workbench_and_says_so() {
         }
     );
     assert!(
-        matches!(&workbench.items[..], [WorkbenchItem::StandalonePr(tree)] if tree.row.number == 7),
+        matches!(&workbench.items[..], [ListedItem { item: WorkbenchItem::StandalonePr(tree), .. }] if tree.row.number == 7),
         "{workbench:?}"
     );
 }
@@ -563,7 +609,7 @@ fn a_sync_waits_until_tsugiki_knows_who_the_user_is() {
 
     session.requests().sync(plain_gcmon());
     drop(changes.recv().unwrap());
-    let workbench = Workbench::read(&reader, &plain_gcmon(), None).unwrap();
+    let workbench = Workbench::read(&reader, &plain_gcmon(), &WorkbenchView::Whole).unwrap();
     session.stop(PLENTY);
     fs::remove_dir_all(folders.data).unwrap();
 

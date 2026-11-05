@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import type { IssueItem, WorkbenchRow } from "$lib/state/workbench.svelte";
-import { ago, details, headline, issueDetails, standaloneDetails } from "./workbench-row";
+import type { IssueItem, WorkbenchRow, Why } from "$lib/state/workbench.svelte";
+import { ago, details, headline, issueDetails, preview, standaloneDetails } from "./workbench-row";
 
 const row: WorkbenchRow = {
   number: 160662,
@@ -135,4 +135,26 @@ it("says when a Standalone PR changed", () => {
   expect(standaloneDetails(row, threeHoursLater)).toBe(
     "Review request · some-author · into main · Open · CI passed · 3h ago",
   );
+});
+
+it.each<[Why, string]>([
+  [{ kind: "review_requested" }, "Review requested from you"],
+  [{ kind: "ci_failed", checks: [] }, "CI failed"],
+  [{ kind: "ci_failed", checks: ["Tests / Ubuntu", "Docs"] }, "CI failed: Tests / Ubuntu, Docs"],
+  [{ kind: "ci_passed" }, "CI passed"],
+  [{ kind: "changes_requested", by: "some-reviewer" }, "Changes requested by some-reviewer"],
+  [{ kind: "approved", by: "some-reviewer" }, "Approved by some-reviewer"],
+  [{ kind: "reviewed", by: "some-reviewer" }, "Reviewed by some-reviewer"],
+  [{ kind: "comment", by: "some-author" }, "New comment from some-author"],
+  [{ kind: "commits", by: "some-author" }, "New commits from some-author"],
+  [{ kind: "ready_for_review", by: "some-author" }, "Ready for review, from some-author"],
+  [{ kind: "mentioned" }, "You were mentioned"],
+  [{ kind: "backport_failed", target: "3.13" }, "Bot backport to 3.13 failed"],
+])("a preview says %j as %s", (why, words) => {
+  expect(preview({ since: "2026-11-04T10:00:00Z", why: [why] })).toBe(words);
+});
+
+it("a preview lists every reason in the order it came", () => {
+  const why: Why[] = [{ kind: "ci_passed" }, { kind: "mentioned" }];
+  expect(preview({ since: "2026-11-04T10:00:00Z", why })).toBe("CI passed · You were mentioned");
 });

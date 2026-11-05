@@ -115,7 +115,8 @@ pub(super) fn window_issue(number: u32, updated_at: &str) -> Value {
         "number": number,
         "title": format!("Issue {number}"),
         "updatedAt": updated_at,
-        "comments": { "nodes": [] },
+        "assignees": { "nodes": [] },
+        "timelineItems": { "nodes": [] },
         "author": { "login": "octocat" },
     })
 }
@@ -250,7 +251,8 @@ pub(super) fn issues(numbers: &[u32], rate: &str) -> Result<Reply, Unreachable> 
                 "number": number,
                 "title": format!("Issue {number}"),
                 "updatedAt": "2026-11-04T10:00:00Z",
-                "comments": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "timelineItems": { "nodes": [] },
                 "author": { "login": "some-author" },
             });
             (format!("i{number}"), issue)

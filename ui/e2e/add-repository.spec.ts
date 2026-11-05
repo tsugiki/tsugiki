@@ -22,7 +22,7 @@ test("adding the first Repository goes from onboarding to the Repository", async
     home: onboarding,
     checkRepository: { status: "ok", data: check },
     addRepository: { status: "ok", data: cpython },
-    workbench: { status: "ok", data: { items: [], count: 0, filters: [] } },
+    workbench: { status: "ok", data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [] } },
   });
   await page.goto("/");
   await expect(page.getByText("Your token comes from the GitHub CLI")).toBeVisible();
@@ -66,7 +66,7 @@ test("a Repository GitHub doesn't have is named in the dialog, and Esc leaves on
 test("a normal launch opens on the Repository the core names", async ({ page }) => {
   await mockCore(page, {
     home: cpython,
-    workbench: { status: "ok", data: { items: [], count: 0, filters: [] } },
+    workbench: { status: "ok", data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [] } },
   });
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "python/cpython" })).toBeVisible();

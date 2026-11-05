@@ -12,12 +12,11 @@
 use tauri::State;
 use tauri::async_runtime::spawn_blocking;
 use tsugiki_core::error::{Error, ErrorKind};
-use tsugiki_core::filters::FilterQuery;
 use tsugiki_core::repository::{Home, RepositoryAccess, RepositoryCheck};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::SettingsOwner;
 use tsugiki_core::store::StoreReader;
-use tsugiki_core::workbench::Workbench;
+use tsugiki_core::workbench::{Workbench, WorkbenchView};
 
 /// What adding the Repository the user typed would load. A check can wait out a stuck request to GitHub, so
 /// it waits on a thread meant for blocking, and leaves the threads that answer the window's other commands
@@ -53,15 +52,15 @@ pub(crate) fn add_repository(
     crate::add_named_repository(name, access, &owner, &requests)
 }
 
-/// The rows of a Repository's Workbench, or of the Filter `selected`, with what its Sidebar shows. This waits
+/// The rows of a view of a Repository's Workbench, with what its Sidebar shows. This waits
 /// on the database and never on GitHub (ADR 0018).
 #[tauri::command(async)]
 #[specta::specta]
 pub(crate) fn workbench(
     repository: &str,
-    selected: Option<FilterQuery>,
+    view: WorkbenchView,
     owner: State<'_, SettingsOwner>,
     reader: State<'_, StoreReader>,
 ) -> Result<Workbench, Error> {
-    crate::read_workbench(repository, selected.as_ref(), &owner, &reader)
+    crate::read_workbench(repository, &view, &owner, &reader)
 }

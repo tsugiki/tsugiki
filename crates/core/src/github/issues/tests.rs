@@ -28,7 +28,8 @@ fn issue_json(number: u32) -> Value {
         "number": number,
         "title": format!("Issue {number}"),
         "updatedAt": "2026-11-04T10:00:00Z",
-        "comments": { "nodes": [] },
+        "assignees": { "nodes": [] },
+        "timelineItems": { "nodes": [] },
         "author": { "login": "some-author" },
     })
 }
@@ -171,6 +172,7 @@ fn a_fetched_issue_is_read_into_its_facts() {
             number: 7,
             title: "Issue 7".to_owned(),
             author: Some(Login::new("some-author")),
+            assignees: vec![],
             updated_at: OffsetDateTime::parse("2026-11-04T10:00:00Z", &Rfc3339).unwrap(),
         }]
     );

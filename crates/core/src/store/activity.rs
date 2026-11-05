@@ -1,10 +1,13 @@
 //! The store's part of New activity: Last seen, the timeline GitHub reported, and when a first sync
 //! began. Issues and PRs share their numbers in a Repository, so a number says which item a row is about.
 
+use std::collections::BTreeMap;
+
 use rusqlite::{Connection, OptionalExtension, Row, named_params};
 use time::OffsetDateTime;
 
 use super::columns::UnixTime;
+use super::failed_checks;
 use crate::github::Login;
 use crate::github::activity::{Activity, ActivityKind, ItemActivity};
 use crate::repository::RepositoryName;
@@ -46,6 +49,9 @@ const COMMENT: &str = "comment";
 const REVIEW: &str = "review";
 const READY_FOR_REVIEW: &str = "ready_for_review";
 const BACKPORT_FAILED: &str = "backport_failed";
+const REVIEW_REQUESTED: &str = "review_requested";
+const ASSIGNED: &str = "assigned";
+const MENTIONED: &str = "mentioned";
 
 /// `kind` as its two columns.
 fn columns_of(kind: &ActivityKind) -> (&'static str, &str) {
@@ -55,6 +61,9 @@ fn columns_of(kind: &ActivityKind) -> (&'static str, &str) {
         ActivityKind::Review => (REVIEW, ""),
         ActivityKind::ReadyForReview => (READY_FOR_REVIEW, ""),
         ActivityKind::BackportFailed { target } => (BACKPORT_FAILED, target),
+        ActivityKind::ReviewRequested => (REVIEW_REQUESTED, ""),
+        ActivityKind::Assigned => (ASSIGNED, ""),
+        ActivityKind::Mentioned => (MENTIONED, ""),
     }
 }
 
@@ -112,6 +121,9 @@ fn event_in(row: &Row<'_>) -> rusqlite::Result<Option<Activity>> {
         BACKPORT_FAILED => ActivityKind::BackportFailed {
             target: row.get("target")?,
         },
+        REVIEW_REQUESTED => ActivityKind::ReviewRequested,
+        ASSIGNED => ActivityKind::Assigned,
+        MENTIONED => ActivityKind::Mentioned,
         // A later version's kind means nothing to this one, and the row stays for it.
         _ => return Ok(None),
     };
@@ -119,10 +131,12 @@ fn event_in(row: &Row<'_>) -> rusqlite::Result<Option<Activity>> {
     Ok(Some(Activity { kind, who, at }))
 }
 
+#[cfg(test)]
 const SELECT_EVENTS: &str = "SELECT kind, target, who, noticed_at AS at FROM activity
      WHERE repository = :repository AND number = :number ORDER BY noticed_at, kind, target, who";
 
 /// The events kept for item `number`, each at the time New activity goes by, oldest first.
+#[cfg(test)]
 pub(super) fn read(
     connection: &Connection,
     repository: &RepositoryName,
@@ -155,20 +169,6 @@ pub(super) fn mark_seen(
         .map(drop)
 }
 
-pub(super) fn last_seen(
-    connection: &Connection,
-    repository: &RepositoryName,
-    number: u32,
-) -> rusqlite::Result<Option<OffsetDateTime>> {
-    connection
-        .query_row(
-            "SELECT at FROM last_seen WHERE repository = :repository AND number = :number",
-            named_params! { ":repository": repository, ":number": number },
-            |row| row.get("at").map(|UnixTime(at)| at),
-        )
-        .optional()
-}
-
 /// Remembers when this Repository's first sync began, once.
 pub(super) fn remember_first_sync(
     connection: &Connection,
@@ -184,7 +184,77 @@ pub(super) fn remember_first_sync(
         .map(drop)
 }
 
-pub(super) fn first_sync_started_at(
+/// The facts New activity and Needs attention read about a Repository's items, all in one go, so ranking a
+/// list costs no query for each item.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ActivityFacts {
+    /// The moment the Repository's first sync began, once a first sync has finished.
+    pub first_sync: Option<OffsetDateTime>,
+    pub last_seen: BTreeMap<u32, OffsetDateTime>,
+    /// Each event that names the user, and what happened after the first sync began on the items they wrote,
+    /// reviewed, are assigned to or commented on, each at the time New activity goes by, oldest first. Only
+    /// those can make an item Need attention, and a Repository holds too many others to read with each list.
+    pub events: BTreeMap<u32, Vec<Activity>>,
+    /// The moment Tsugiki saw each PR's CI reach a result.
+    pub ci_finished: BTreeMap<u32, OffsetDateTime>,
+    /// The names of the failed checks of each PR Tsugiki has asked about.
+    pub failed_checks: BTreeMap<u32, Vec<String>>,
+}
+
+const SELECT_LAST_SEEN: &str = "SELECT number, at FROM last_seen WHERE repository = :repository";
+const SELECT_CI_FINISHED: &str = "SELECT number, ci_finished_at AS at FROM pull_requests
+     WHERE repository = :repository AND ci_finished_at IS NOT NULL";
+const SELECT_LISTED_EVENTS: &str =
+    "SELECT number, kind, target, who, noticed_at AS at FROM activity
+     WHERE repository = :repository AND (who = :viewer OR (noticed_at > :first_sync AND number IN (
+         SELECT number FROM pull_requests WHERE repository = :repository AND author = :viewer
+         UNION SELECT number FROM issues WHERE repository = :repository AND author = :viewer
+         UNION SELECT number FROM latest_reviews WHERE repository = :repository AND login = :viewer
+         UNION SELECT number FROM assignees WHERE repository = :repository AND login = :viewer
+         UNION SELECT number FROM activity WHERE repository = :repository AND who = :viewer
+     )))
+     ORDER BY noticed_at, kind, target, who";
+
+fn moment_in(row: &Row<'_>) -> rusqlite::Result<(u32, OffsetDateTime)> {
+    let UnixTime(at) = row.get("at")?;
+    Ok((row.get("number")?, at))
+}
+
+/// The moment in each row of `query`, which selects `number` and `at`, by number.
+fn moments(
+    connection: &Connection,
+    query: &str,
+    repository: &RepositoryName,
+) -> rusqlite::Result<BTreeMap<u32, OffsetDateTime>> {
+    let mut statement = connection.prepare(query)?;
+    let asked = named_params! { ":repository": repository };
+    let rows = statement.query_map(asked, moment_in)?;
+    rows.collect()
+}
+
+fn listed_events(
+    connection: &Connection,
+    repository: &RepositoryName,
+    first_sync: Option<OffsetDateTime>,
+    viewer: Option<&Login>,
+) -> rusqlite::Result<BTreeMap<u32, Vec<Activity>>> {
+    let mut statement = connection.prepare(SELECT_LISTED_EVENTS)?;
+    let asked = named_params! {
+        ":repository": repository,
+        ":first_sync": first_sync.map(OffsetDateTime::unix_timestamp),
+        ":viewer": viewer,
+    };
+    let mut rows = statement.query(asked)?;
+    let mut found: BTreeMap<u32, Vec<Activity>> = BTreeMap::new();
+    while let Some(row) = rows.next()? {
+        if let Some(event) = event_in(row)? {
+            found.entry(row.get("number")?).or_default().push(event);
+        }
+    }
+    Ok(found)
+}
+
+fn first_sync(
     connection: &Connection,
     repository: &RepositoryName,
 ) -> rusqlite::Result<Option<OffsetDateTime>> {
@@ -197,21 +267,20 @@ pub(super) fn first_sync_started_at(
         .optional()
 }
 
-/// The moment Tsugiki saw PR `number`'s CI reach a result, if it has.
-pub(super) fn ci_finished_at(
+/// `repository`'s activity, as `viewer` reads it.
+pub(super) fn read_facts(
     connection: &Connection,
     repository: &RepositoryName,
-    number: u32,
-) -> rusqlite::Result<Option<OffsetDateTime>> {
-    let found = connection
-        .query_row(
-            "SELECT ci_finished_at FROM pull_requests
-             WHERE repository = :repository AND number = :number",
-            named_params! { ":repository": repository, ":number": number },
-            |row| row.get::<_, Option<UnixTime>>("ci_finished_at"),
-        )
-        .optional()?;
-    Ok(found.flatten().map(|UnixTime(at)| at))
+    viewer: Option<&Login>,
+) -> rusqlite::Result<ActivityFacts> {
+    let first_sync = first_sync(connection, repository)?;
+    Ok(ActivityFacts {
+        first_sync,
+        last_seen: moments(connection, SELECT_LAST_SEEN, repository)?,
+        events: listed_events(connection, repository, first_sync, viewer)?,
+        ci_finished: moments(connection, SELECT_CI_FINISHED, repository)?,
+        failed_checks: failed_checks::read_all(connection, repository)?,
+    })
 }
 
 #[cfg(test)]
@@ -244,10 +313,11 @@ mod tests {
         assert_eq!(inserted, 1);
         drop(raw);
 
-        let store = Store::open(&path).unwrap();
-        let started = store.first_sync_started_at(&repository).unwrap();
+        Store::open(&path).unwrap().close();
+        let reopened = Connection::open(&path).unwrap();
+        let started = first_sync(&reopened, &repository).unwrap();
+        drop(reopened);
 
-        store.close();
         std::fs::remove_dir_all(folder).unwrap();
         assert_eq!(started, Some(synced));
     }
@@ -267,6 +337,8 @@ mod tests {
             )
             .unwrap();
         assert_eq!(inserted, 1);
+        let author = Login::new("some-author");
+        let listed = listed_events(&raw, &repository, None, Some(&author)).unwrap();
         drop(raw);
 
         let read = store.activity(&repository, 1).unwrap();
@@ -274,5 +346,6 @@ mod tests {
         store.close();
         std::fs::remove_dir_all(folder).unwrap();
         assert_eq!(read, []);
+        assert_eq!(listed, BTreeMap::new());
     }
 }

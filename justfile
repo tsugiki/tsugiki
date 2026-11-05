@@ -37,11 +37,19 @@ fmt:
     npm run fmt
 
 # Run every check CI runs, one at a time. `smoke` isn't one: it opens a window and presses real keys.
-check: lint typecheck test rust-coverage deny machete release-check e2e
+check: lint doc-width typecheck test rust-coverage deny machete release-check e2e
 
 # Check the formatting and lint with ESLint
 lint:
     npm run lint
+
+# Fail on a line of Markdown, a comment or a docstring past 110 columns
+doc-width:
+    npm run doc-width
+
+# List the prose this branch adds that's worth rereading, or that of the files you name. It never fails.
+prose-check *files:
+    node scripts/prose-check.ts {{files}}
 
 # Type check with svelte-check, and lint Rust with Clippy
 typecheck:

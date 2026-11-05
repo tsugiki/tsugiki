@@ -42,6 +42,20 @@ jobs:
             echo "docs-only=true" >> "$GITHUB_OUTPUT"
           fi
 
+  # Runs on a docs-only PR too, because that's where a wide line of Markdown lands.
+  doc-width:
+    name: doc-width
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - run: npm run doc-width
+
   rust:
     name: ${{ matrix.check }} (windows-latest)
     needs: [changes]
@@ -270,7 +284,7 @@ jobs:
   ci-passed:
     name: CI passed
     if: ${{ always() }}
-    needs: [changes, rust, dependencies, release-check, rust-coverage, ui, playwright, macos]
+    needs: [changes, doc-width, rust, dependencies, release-check, rust-coverage, ui, playwright, macos]
     runs-on: ubuntu-latest
     steps:
       - name: Every job succeeded, or skipped on a docs-only PR

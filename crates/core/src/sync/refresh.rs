@@ -47,12 +47,8 @@ pub(super) struct Poll {
     changed_prs: Vec<ChangedPr>,
     /// The Issues this poll changed, which need their trees read.
     moved_issues: BTreeSet<u32>,
-    /// The items saved that the window hasn't heard about yet.
-    touched: Vec<u32>,
     /// The items the searches merged so far found.
     hits: BTreeMap<u32, FilterHit>,
-    /// The time to ask again, from the last page's points.
-    pause_until: Option<OffsetDateTime>,
 }
 
 impl Poll {
@@ -77,9 +73,7 @@ impl Default for Poll {
             answers: Vec::new(),
             changed_prs: Vec::new(),
             moved_issues: BTreeSet::new(),
-            touched: Vec::new(),
             hits: BTreeMap::new(),
-            pause_until: None,
         }
     }
 }
@@ -162,29 +156,27 @@ pub(super) fn check_list(
     Ok((NO_PAUSE, Some(next)))
 }
 
-/// Reads the next page of what changed, and moves on after the last. A failed step keeps its place in `poll`,
-/// so the next try picks up after the part that worked.
+/// Reads the next page of what changed, then merges each search that answered, and moves on after the last.
+/// Each step saves one thing and tells the window of it, so a save that fails holds back no news. A failed
+/// step keeps its place in `poll`, so the next try picks up after the part that worked.
 pub(super) fn poll(
     link: &Link<'_>,
     poll: &mut Poll,
     check: &mut ChangeCheck,
 ) -> Result<Moved, Error> {
     if !poll.has_read_everything() {
-        read_page(link, poll, check)?;
+        return Ok((read_page(link, poll, check)?, None));
     }
-    let next = if poll.has_read_everything() {
-        merge_answers(link, poll)?;
-        Some(Phase::FetchingChanged(plan_the_rest(link, poll)?))
-    } else {
-        None
-    };
-    let touched = std::mem::take(&mut poll.touched);
-    Ok((Step::saved_if_any(touched, poll.pause_until), next))
+    if let Some(merged) = merge_next_answer(link, poll)? {
+        return Ok((Step::saved_if_any(merged, None), None));
+    }
+    let next = Phase::FetchingChanged(plan_the_rest(link, poll)?);
+    Ok((NO_PAUSE, Some(next)))
 }
 
 /// Asks for the next page and saves it. One Filter GitHub refuses shouldn't cost the rest, so a refused
 /// request goes again without the searches, and each of them walks alone.
-fn read_page(link: &Link<'_>, poll: &mut Poll, check: &mut ChangeCheck) -> Result<(), Error> {
+fn read_page(link: &Link<'_>, poll: &mut Poll, check: &mut ChangeCheck) -> Result<Step, Error> {
     let asked = PollRequest {
         since: poll.since,
         issues: &poll.issues,
@@ -200,11 +192,11 @@ fn read_page(link: &Link<'_>, poll: &mut Poll, check: &mut ChangeCheck) -> Resul
                 problem.message
             );
             poll.narrowed.append(&mut poll.in_request);
-            return Ok(());
+            return Ok(NO_PAUSE);
         }
         Err(problem) => return Err(problem),
     };
-    save_moved_issues(link, answer.issues, poll)?;
+    let touched = save_moved_issues(link, answer.issues, poll)?;
     poll.in_request.clear();
     poll.answers.extend(answer.filters);
     let settled = answer
@@ -220,17 +212,16 @@ fn read_page(link: &Link<'_>, poll: &mut Poll, check: &mut ChangeCheck) -> Resul
         (true, None) => ChangeCheck::Untagged,
         (true, Some(tag)) => ChangeCheck::Tagged(tag),
     };
-    poll.pause_until = pause_until(answer.rate_limit);
-    Ok(())
+    Ok(Step::saved_if_any(touched, pause_until(answer.rate_limit)))
 }
 
 /// Saves each Issue Tsugiki holds that this answer changes. An Issue it doesn't hold isn't on any screen, and
-/// a Filter that reaches one brings it later.
+/// a Filter that reaches one brings it later. Answers with the Issues it saved.
 fn save_moved_issues(
     link: &Link<'_>,
     issues: Vec<IssueFacts>,
     poll: &mut Poll,
-) -> Result<(), Error> {
+) -> Result<Vec<u32>, Error> {
     let held = link.store.issues(link.repository)?;
     let held: BTreeMap<u32, IssueFacts> = held
         .into_iter()
@@ -257,17 +248,14 @@ fn save_moved_issues(
         poll.moved_issues.extend(in_the_window);
     }
     poll.moved_issues.extend(touched.iter().copied());
-    poll.touched.extend(touched);
-    Ok(())
+    Ok(touched)
 }
 
-/// Merges each search that answered whole, one at a time, so a failed merge leaves the rest to the next try.
-/// A search with more pages walks on its own instead.
-fn merge_answers(link: &Link<'_>, poll: &mut Poll) -> Result<(), Error> {
+/// Merges the next search that answered whole, and answers with the items that moved, or `None` with no
+/// search left. A search with more pages walks on its own instead.
+fn merge_next_answer(link: &Link<'_>, poll: &mut Poll) -> Result<Option<Vec<u32>>, Error> {
     while let Some((query, page)) = poll.answers.first() {
-        if page.next.is_some() {
-            poll.narrowed.push(query.clone());
-        } else {
+        if page.next.is_none() {
             let results = NarrowedResults {
                 changed: poll.changed.clone(),
                 found: page.hits.iter().map(|hit| hit.number).collect(),
@@ -276,13 +264,15 @@ fn merge_answers(link: &Link<'_>, poll: &mut Poll) -> Result<(), Error> {
             let moved = link
                 .store
                 .merge_filter_results(link.repository, query, results)?;
-            poll.touched.extend(moved);
             let hits = page.hits.iter().cloned();
             poll.hits.extend(hits.map(|hit| (hit.number, hit)));
+            drop(poll.answers.remove(0));
+            return Ok(Some(moved.into_iter().collect()));
         }
+        poll.narrowed.push(query.clone());
         drop(poll.answers.remove(0));
     }
-    Ok(())
+    Ok(None)
 }
 
 /// Plans what's left after the poll. It asks the store first, so a failure leaves `poll` as it was.

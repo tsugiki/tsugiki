@@ -296,6 +296,7 @@ fn reference_timeline(numbers: &[u32], older: Option<&str>) -> Value {
                     "__typename": "PullRequest",
                     "id": format!("id{number}"),
                     "number": number,
+                    "updatedAt": hours_ago(1),
                     "repository": { "nameWithOwner": "python/cpython" },
                 } })
         })

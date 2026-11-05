@@ -12,8 +12,8 @@ use crate::repository::RepositoryName;
 
 /// The fields of one page of an Issue's cross-references.
 pub(super) const REFERENCE_FIELDS: &str = "pageInfo { hasPreviousPage startCursor } nodes { ... on \
-     CrossReferencedEvent { source { __typename ... on PullRequest { id number repository { nameWithOwner } \
-     } } } }";
+     CrossReferencedEvent { source { __typename ... on PullRequest { id number updatedAt repository { \
+     nameWithOwner } } } } }";
 
 /// The cross-references of one Issue, and the cursor of the older ones if a page didn't hold them all.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -164,6 +164,7 @@ mod tests {
             "__typename": "PullRequest",
             "id": format!("id{number}"),
             "number": number,
+            "updatedAt": "2026-11-04T10:00:00Z",
             "repository": { "nameWithOwner": repository },
         }})
     }
@@ -202,8 +203,12 @@ mod tests {
         assert_eq!(found.asked_for, 3);
         assert_eq!(found.rate_limit.remaining, 4000);
         let listed = |number: u32| -> ListedPr {
-            serde_json::from_value(json!({ "id": format!("id{number}"), "number": number }))
-                .unwrap()
+            serde_json::from_value(json!({
+                "id": format!("id{number}"),
+                "number": number,
+                "updatedAt": "2026-11-04T10:00:00Z",
+            }))
+            .unwrap()
         };
         assert_eq!(
             found.references,

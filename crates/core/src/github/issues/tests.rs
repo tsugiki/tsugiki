@@ -43,6 +43,7 @@ fn pr_source(number: u32, repository: &str) -> Value {
         "__typename": "PullRequest",
         "id": format!("id{number}"),
         "number": number,
+        "updatedAt": "2026-11-04T10:00:00Z",
         "repository": { "nameWithOwner": repository },
     })
 }

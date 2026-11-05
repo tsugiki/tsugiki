@@ -1,11 +1,13 @@
 use super::*;
-use crate::github::Unreachable;
+use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::RateLimit;
+use crate::github::testing::reply_ok;
+use crate::github::{Reply, Unreachable};
 use crate::repository::RepositoryName;
 use crate::sync::testing::{
     Harness, LOTS, announced, cpython, cross_references, fetched, fetched_nodes, found,
-    issue_references_with_more, merged_node, nothing, plain, run_to_the_end, searches_finding,
-    soon, up_to_the_first_issue,
+    issue_references_with_more, issues, merged_node, nothing, plain, pr_node, run_to_the_end,
+    searches_finding, soon, up_to_the_first_issue,
 };
 use crate::sync::{RATE_LIMIT_FLOOR, pause_until};
 use serde_json::{Value, json};
@@ -559,4 +561,240 @@ mod activity {
 
         assert_eq!(syncs.activity().unwrap().paused_until, None);
     }
+}
+
+/// Syncs and a harness after a first sync that found nothing, with `replies` for what comes next.
+fn after_a_first_sync(name: &str, replies: Vec<Result<Reply, Unreachable>>) -> (Syncs, Harness) {
+    let mut all = searches_finding(&[]);
+    all.extend(replies);
+    let harness = Harness::new(name, all);
+    let mut syncs = Syncs::default();
+    syncs.add(plain(cpython()));
+    drop(run_to_the_end(&mut syncs, &harness));
+    drop(harness.operations());
+    (syncs, harness)
+}
+
+#[test]
+fn opening_an_issue_after_a_first_sync_reads_its_whole_tree_once() {
+    let (mut syncs, harness) = after_a_first_sync(
+        "tree-open",
+        vec![
+            cross_references(&[20], Some("older"), LOTS),
+            cross_references(&[21], None, LOTS),
+            fetched_nodes(&[merged_node(20), merged_node(21)], LOTS),
+            issues(&[1], LOTS),
+        ],
+    );
+    let last_sync = harness.store.sync_state(&cpython()).unwrap();
+
+    syncs.open_issue(&cpython(), 7);
+    syncs.open_issue(&cpython(), 7);
+
+    assert_eq!(syncs.activity().unwrap().part, SyncPart::Trees);
+    assert_eq!(run_to_the_end(&mut syncs, &harness), [cpython(), cpython()]);
+    assert_eq!(harness.numbers(), [20, 21]);
+    assert_eq!(harness.store.sync_state(&cpython()).unwrap(), last_sync);
+    // A view on screen asks about once a minute, and by now the tree has been read.
+    syncs.open_issue(&cpython(), 7);
+    assert_eq!(syncs.ready_at(), None);
+    assert_eq!(
+        harness.operations(),
+        [
+            "FetchCrossReferences",
+            "FetchCrossReferences",
+            "FetchTreePullRequests",
+            "FetchIssues"
+        ]
+    );
+    harness.finish();
+}
+
+#[test]
+fn a_click_on_refresh_waits_behind_a_tree_and_still_runs() {
+    let (mut syncs, harness) =
+        after_a_first_sync("tree-click", vec![cross_references(&[], None, LOTS)]);
+
+    syncs.open_issue(&cpython(), 7);
+    syncs.refresh_now();
+
+    assert_eq!(syncs.activity().unwrap().part, SyncPart::Trees);
+    while !syncs.trees.is_empty() {
+        drop(syncs.step(&harness.github, &harness.store).unwrap());
+    }
+    assert_eq!(syncs.activity().unwrap().part, SyncPart::Refresh);
+    assert_eq!(syncs.queue.len(), 1);
+    harness.finish();
+}
+
+#[test]
+fn opening_an_issue_with_no_queue_to_join_reads_its_tree_alone() {
+    let mut syncs = Syncs::default();
+    syncs.add(plain(cpython()));
+
+    syncs.open_issue(&cpython(), 7);
+
+    assert_eq!(syncs.trees.len(), 1);
+    assert_eq!(syncs.queue.len(), 1);
+}
+
+#[test]
+fn only_the_open_repository_reads_an_opened_tree() {
+    let mut syncs = Syncs::default();
+    syncs.open_issue(&cpython(), 7);
+    syncs.add(plain(RepositoryName::parse("python/peps").unwrap()));
+    syncs.open_issue(&cpython(), 7);
+
+    assert!(syncs.trees.is_empty());
+}
+
+#[test]
+fn coming_back_to_a_repository_reads_an_opened_tree_again() {
+    let mut syncs = Syncs::default();
+    syncs.add(plain(cpython()));
+    syncs.open_issue(&cpython(), 7);
+    syncs.add(plain(RepositoryName::parse("python/peps").unwrap()));
+    syncs.add(plain(cpython()));
+
+    syncs.open_issue(&cpython(), 7);
+
+    assert_eq!(syncs.trees.len(), 1);
+}
+
+#[test]
+fn another_repository_doesnt_wait_behind_an_opened_tree() {
+    let peps = RepositoryName::parse("python/peps").unwrap();
+    let mut syncs = Syncs::default();
+    syncs.add(plain(cpython()));
+    syncs.open_issue(&cpython(), 7);
+
+    syncs.add(plain(peps.clone()));
+
+    assert_eq!(syncs.activity().unwrap().repository, peps);
+}
+
+fn facts_of_issue(number: u32) -> Vec<IssueFacts> {
+    vec![IssueFacts {
+        number,
+        title: format!("Issue {number}"),
+        author: None,
+        assignees: Vec::new(),
+        updated_at: OffsetDateTime::now_utc(),
+    }]
+}
+
+fn refused() -> Result<Reply, Unreachable> {
+    reply_ok(r#"{"data":null,"errors":[{"type":"FORBIDDEN","message":"No."}]}"#)
+}
+
+#[test]
+fn a_tree_github_refuses_leaves_at_once_and_can_be_asked_for_again() {
+    let (mut syncs, harness) = after_a_first_sync("tree-refused", vec![refused()]);
+    syncs.open_issue(&cpython(), 7);
+    syncs.refresh_now();
+
+    assert!(matches!(
+        syncs.step(&harness.github, &harness.store),
+        Ok(None)
+    ));
+
+    assert!(syncs.trees.is_empty());
+    assert_eq!(syncs.activity().unwrap().part, SyncPart::Refresh);
+    syncs.open_issue(&cpython(), 7);
+    assert_eq!(syncs.trees.len(), 1);
+    harness.finish();
+}
+
+#[test]
+fn a_tree_waits_while_github_cant_be_reached() {
+    let (mut syncs, harness) = after_a_first_sync("tree-offline", vec![Err(Unreachable)]);
+    syncs.open_issue(&cpython(), 7);
+
+    let problem = syncs.step(&harness.github, &harness.store).unwrap_err();
+
+    assert_eq!(problem.kind, ErrorKind::Offline);
+    assert_eq!(syncs.trees.len(), 1);
+    harness.finish();
+}
+
+#[test]
+fn a_tree_brings_only_the_issues_its_prs_name_that_tsugiki_lacks() {
+    let named = |number: u32, title: &str| {
+        pr_node(
+            number,
+            &json!({ "title": title, "state": "MERGED", "mergeCommit": { "oid": format!("{number:040x}") } }),
+        )
+    };
+    let (mut syncs, harness) = after_a_first_sync(
+        "tree-named",
+        vec![
+            cross_references(&[20, 21], None, LOTS),
+            fetched_nodes(
+                &[named(20, "gh-5: Fix it"), named(21, "gh-7: Fix it")],
+                LOTS,
+            ),
+            issues(&[5], LOTS),
+        ],
+    );
+    harness
+        .store
+        .save_fetched_issues(&cpython(), facts_of_issue(7), Vec::new())
+        .unwrap();
+    syncs.open_issue(&cpython(), 7);
+
+    drop(run_to_the_end(&mut syncs, &harness));
+
+    assert_eq!(
+        harness.operations(),
+        [
+            "FetchCrossReferences",
+            "FetchTreePullRequests",
+            "FetchIssues"
+        ]
+    );
+    let held = harness.store.issues(&cpython()).unwrap();
+    let mut numbers: Vec<u32> = held.iter().map(|issue| issue.number).collect();
+    numbers.sort_unstable();
+    assert_eq!(numbers, [5, 7]);
+    harness.finish();
+}
+
+#[test]
+fn a_tree_whose_prs_name_issues_tsugiki_has_asks_for_no_more() {
+    let (mut syncs, harness) = after_a_first_sync(
+        "tree-named-held",
+        vec![
+            cross_references(&[20], None, LOTS),
+            fetched_nodes(&[pr_node(20, &json!({ "title": "gh-7: Fix it" }))], LOTS),
+        ],
+    );
+    harness
+        .store
+        .save_fetched_issues(&cpython(), facts_of_issue(7), Vec::new())
+        .unwrap();
+    syncs.open_issue(&cpython(), 7);
+
+    drop(run_to_the_end(&mut syncs, &harness));
+
+    assert_eq!(
+        harness.operations(),
+        ["FetchCrossReferences", "FetchTreePullRequests"]
+    );
+    harness.finish();
+}
+
+#[test]
+fn a_tree_that_keeps_failing_gives_way_to_the_sync_behind_it() {
+    let mut syncs = Syncs::default();
+    syncs.add(plain(cpython()));
+    syncs.open_issue(&cpython(), 7);
+
+    for _ in 0..TRIES {
+        syncs.after_failure(&broken(), soon());
+    }
+
+    assert!(syncs.trees.is_empty());
+    assert_eq!(syncs.queue.len(), 1);
+    syncs.open_issue(&cpython(), 7);
+    assert_eq!(syncs.trees.len(), 1);
 }

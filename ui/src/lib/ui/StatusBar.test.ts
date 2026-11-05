@@ -202,6 +202,11 @@ describe("StatusBar's sync under way", () => {
     expect(bar().classList.contains("beside-syncing")).toBe(true);
   });
 
+  it("counts no pages for the tree of an Issue the user opened", () => {
+    render(StatusBar, { status: online, lastSync, syncActivity: { ...activity("trees"), pages: 0 } });
+    expect(screen.getByRole("button").textContent).toBe("Syncing Issue trees");
+  });
+
   it("says how far the queue has got, and that more PRs may come", () => {
     const load = { issues_read: 450, issues_total: 1446, prs_fetched: 900, prs_known: 2100 };
     render(StatusBar, { status: online, lastSync, syncActivity: { ...activity("window"), load } });

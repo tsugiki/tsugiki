@@ -192,30 +192,91 @@ fn the_list_of_prs_brings_what_no_issue_reached() {
     harness.finish();
 }
 
+/// Issue 10 as a page lists it: PR 20 inside the window, PR 21 older than it, and older references besides.
+fn issue_with_a_pr_older_than_the_window() -> Value {
+    let mut issue = window_issue_with_more(10, "older");
+    issue["references"]["nodes"] = json!([older_reference(21), reference(20)]);
+    issue
+}
+
+fn reference(number: u32) -> Value {
+    window_issue_referencing(0, &hours_ago(1), &[number])["references"]["nodes"][0].clone()
+}
+
+fn older_reference(number: u32) -> Value {
+    let mut older = reference(number);
+    older["source"]["updatedAt"] = json!("2000-01-01T00:00:00Z");
+    older
+}
+
 #[test]
-fn an_issue_with_more_references_than_a_page_reads_the_rest() {
-    let at = hours_ago(1);
-    let mut issue = window_issue_referencing(10, &at, &[20]);
-    issue["references"]["pageInfo"] = json!({ "hasPreviousPage": true, "startCursor": "older" });
+fn a_page_queues_only_the_prs_inside_the_window() {
     let mut replies = up_to_the_queue();
-    replies.push(window_page(&[issue], None, LOTS));
-    replies.push(cross_references(&[21], Some("oldest"), LOTS));
-    replies.push(cross_references(&[22], None, LOTS));
-    replies.push(fetched_nodes(&[merged(20), merged(21), merged(22)], LOTS));
+    replies.push(window_page(
+        &[issue_with_a_pr_older_than_the_window()],
+        None,
+        LOTS,
+    ));
+    replies.push(fetched_nodes(&[merged(20)], LOTS));
     replies.push(empty_window_page());
-    let harness = Harness::with_window("queue-long", replies);
+    let harness = Harness::with_window("queue-older-waits", replies);
     let mut syncs = syncing();
 
     drop(run_to_the_end(&mut syncs, &harness));
 
     let asked: Vec<(String, Value)> = harness.asked.try_iter().collect();
-    let befores: Vec<Value> = asked
-        .iter()
-        .filter(|(name, _)| name == "FetchCrossReferences")
-        .map(|(_, sent)| sent["before"].clone())
-        .collect();
-    assert_eq!(befores, [json!("older"), json!("oldest")]);
-    assert_eq!(fetched_ids(&asked), [json!(["id20", "id21", "id22"])]);
+    assert_eq!(fetched_ids(&asked), [json!(["id20"])]);
+    assert_eq!(long_reads(&asked), Vec::<(Value, Value)>::new());
+    harness.finish();
+}
+
+#[test]
+fn opening_an_issue_brings_its_older_prs_and_older_references() {
+    let mut replies = up_to_the_queue();
+    replies.push(window_page(
+        &[issue_with_a_pr_older_than_the_window()],
+        None,
+        LOTS,
+    ));
+    replies.push(issue_references_with_more(10, &[20, 21], "older", LOTS));
+    replies.push(cross_references(&[22], Some("oldest"), LOTS));
+    replies.push(cross_references(&[], None, LOTS));
+    replies.push(fetched_nodes(&[merged(20), merged(21), merged(22)], LOTS));
+    replies.push(empty_window_page());
+    let harness = Harness::with_window("queue-older-opened", replies);
+    let mut syncs = syncing();
+    drop(run_until_asked(&mut syncs, &harness, "WindowIssues"));
+
+    syncs.open_issue(&cpython(), 10);
+    drop(run_to_the_end(&mut syncs, &harness));
+
+    let asked: Vec<(String, Value)> = harness.asked.try_iter().collect();
+    assert_eq!(fetched_ids(&asked), [json!(["id21", "id20", "id22"])]);
+    assert_eq!(
+        long_reads(&asked),
+        [(json!(10), json!("older")), (json!(10), json!("oldest"))]
+    );
+    harness.finish();
+}
+
+#[test]
+fn opening_the_users_own_issue_doesnt_read_its_tree_again() {
+    let mut replies = up_to_the_queue_with_an_issue();
+    replies.push(issue_references(&[(1, &[])], LOTS));
+    replies.push(empty_window_page());
+    replies.push(empty_window_page());
+    let harness = Harness::with_window("queue-open-own", replies);
+    let mut syncs = syncing();
+    drop(run_until_asked(
+        &mut syncs,
+        &harness,
+        "FetchIssueReferences",
+    ));
+
+    syncs.open_issue(&cpython(), 1);
+    drop(run_to_the_end(&mut syncs, &harness));
+
+    assert_eq!(harness.operations(), ["WindowIssues", "WindowPullRequests"]);
     harness.finish();
 }
 
@@ -299,16 +360,17 @@ fn a_view_that_asks_again_doesnt_read_its_issue_again() {
 }
 
 #[test]
-fn an_opened_issues_older_references_go_before_the_others() {
+fn an_opened_issues_older_references_go_before_the_queue() {
+    let at = hours_ago(1);
     let mut replies = up_to_the_queue();
     replies.push(window_page(
-        &[window_issue_with_more(10, "older-10")],
+        &[window_issue_referencing(10, &at, &[20])],
         None,
         LOTS,
     ));
     replies.push(issue_references_with_more(11, &[], "older-11", LOTS));
     replies.push(cross_references(&[], None, LOTS));
-    replies.push(cross_references(&[], None, LOTS));
+    replies.push(fetched_nodes(&[merged(20)], LOTS));
     replies.push(empty_window_page());
     let harness = Harness::with_window("queue-long-urgent", replies);
     let mut syncs = syncing();
@@ -324,37 +386,14 @@ fn an_opened_issues_older_references_go_before_the_others() {
     assert_eq!(activity.part, SyncPart::Trees);
     drop(run_to_the_end(&mut syncs, &harness));
 
-    let asked: Vec<(String, Value)> = harness.asked.try_iter().collect();
     assert_eq!(
-        long_reads(&asked),
+        harness.operations(),
         [
-            (json!(11), json!("older-11")),
-            (json!(10), json!("older-10")),
+            "FetchCrossReferences",
+            "FetchTreePullRequests",
+            "WindowPullRequests"
         ]
     );
-    harness.finish();
-}
-
-#[test]
-fn opening_an_issue_replaces_the_slower_read_of_its_older_references() {
-    let mut replies = up_to_the_queue();
-    replies.push(window_page(
-        &[window_issue_with_more(10, "from-the-page")],
-        None,
-        LOTS,
-    ));
-    replies.push(issue_references_with_more(10, &[], "from-the-open", LOTS));
-    replies.push(cross_references(&[], None, LOTS));
-    replies.push(empty_window_page());
-    let harness = Harness::with_window("queue-long-replaced", replies);
-    let mut syncs = syncing();
-    drop(run_until_asked(&mut syncs, &harness, "WindowIssues"));
-
-    syncs.open_issue(&cpython(), 10);
-    drop(run_to_the_end(&mut syncs, &harness));
-
-    let asked: Vec<(String, Value)> = harness.asked.try_iter().collect();
-    assert_eq!(long_reads(&asked), [(json!(10), json!("from-the-open"))]);
     harness.finish();
 }
 

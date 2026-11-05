@@ -31,25 +31,28 @@ minutes for CPython):
 2. Whole trees for the Issues the user's work reaches ([ADR
    0011](0011-pr-links-from-github-signals-by-repository-conventions.md)).
 3. Everything else in the window, as one queue. A page of Issues, newest first, and a batch of PRs take turns,
-   so rows arrive from the start and a tree fills in soon after its Issue. Each Issue on a page brings its
-   latest 50 cross-references, and their PRs join the queue. An Issue with more reads the rest before
-   anything else. Once the Issues end, pages of the PR list add the PRs no Issue listed. Those pages ask for
-   the ID, number and update time of 100 PRs, so each takes little of GitHub's time. All issues fills in as
-   pages land. Issues that the fetched PRs name but no page brought come next, then Origin PRs, by number.
+   so rows arrive from the start and a PR in the window fills in soon after its Issue. Each Issue on a page
+   brings its latest 50 cross-references, and the PRs they list that changed inside the window join the queue.
+   Once the Issues end, pages of the PR list add the PRs no Issue listed. Those pages ask for the ID, number
+   and update time of 100 PRs, so each takes little of GitHub's time. All issues fills in as pages land.
+   Issues that the fetched PRs name but no page brought come next, then Origin PRs, by number.
 
-No PR is fetched twice, and a frozen PR is fetched again only if the list shows it changed. If the user opens
-an Issue while the queue runs, that Issue goes first: its cross-references, then its PRs, which leave the
-queue, then their Origin PRs.
+No PR is fetched twice, and a frozen PR is fetched again only if the list shows it changed. A PR older than
+the window waits until the user needs its Issue's tree. If the user opens an Issue while the queue runs, that
+Issue goes first: all its cross-references, then its PRs, which leave the queue, then their Origin PRs.
+Opening one later reads the same whole tree, once per Issue until the app restarts or another Repository
+opens, ahead of any sync. That read doesn't count as a sync, and a failure that only concerns this Issue goes
+to the log, so the next open tries again.
 
 Requests stay serial because GitHub allows 60 seconds of GraphQL CPU time a minute, which it estimates from
 total response time, and a batch of 25 PRs takes about 6 seconds. A second thread would only reach that limit
 sooner.
 
-Measured on CPython ([#129](https://github.com/tsugiki/tsugiki/issues/129)), for an account with 108 PRs in
-its own trees: the user's own rows arrived after 20 seconds, the first rows of the window after 69, and the
-Issues' rows ended after about 6 minutes. The whole sync took 27 minutes and 542 queries, and 19 of those
-minutes went on 201 batches of PRs. It holds 5,091 PRs and 2,461 Issues. The order before this one took 15
-minutes and read the trees of 78 Issues, where this one reads a tree for each of the 1,444 in the window.
+Measured on CPython ([#132](https://github.com/tsugiki/tsugiki/issues/132)), for an account with 108 PRs in
+its own trees: the user's own rows arrived after 20 seconds, the first rows of the window after 72, and the
+Issues' rows ended after about 5 minutes. The whole sync took 20.5 minutes and 457 queries, and 13.5 of those
+minutes went on 144 batches of PRs. It holds 3,631 PRs and 2,368 Issues. Opening an Issue afterwards took 1.7
+and 4.2 seconds on two Issues with 14 and 19 cross-references.
 
 The mirror is cloned at the same time ([How is a Repository's mirror created and kept
 current?](https://github.com/tsugiki/tsugiki/issues/13)). Until it is done, a PR's conversation shows and its
@@ -101,9 +104,12 @@ and reads the trees it still owed.
 - **Parallel requests**, such as one thread for Issues and one for PRs. Faster on paper, but GraphQL's
   CPU-time limit and the user's shared budget make serial the safe choice, and the first phase is quick
   anyway.
-- **The window, then the trees.** The user's own Issues waited 15 minutes for their trees this way, and the
-  window's other Issues never got theirs. Listing PRs whole took 5.4 seconds a query against under 1 for the
-  light list, and the batches fetch those PRs whole anyway.
+- **The window, then the trees.** The user's own Issues waited 15 minutes for their trees this way, in a sync
+  of 15 minutes that sent 78 cross-reference queries, one Issue each. Listing PRs whole took 5.4 seconds a
+  query against under 1 for the light list, and the batches fetch those PRs whole anyway.
+- **A whole tree for each Issue in the window** ([#129](https://github.com/tsugiki/tsugiki/issues/129)). It
+  took 27 minutes and 542 queries and held 5,091 PRs. Its 57 extra batches of PRs took about 5.5 of those 6.5
+  extra minutes.
 - **The window first, then Filters and Reviews**, which is simpler but leaves an old Review request missing
   for minutes. **Showing nothing until the sync ends.**
 - **Other defaults:** 1,000 open and 14 days, or 300 and 60 days. CPython's first sync would take about half

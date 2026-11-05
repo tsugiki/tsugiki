@@ -2,10 +2,23 @@
 
 use std::collections::BTreeSet;
 
-use super::{Leads, Link, Moved, Resumable, Step, pause_until};
+use super::{Leads, Link, Moved, Phase, Resumable, Step, pause_until};
 use crate::error::Error;
 use crate::github::pull_requests::PrFetch;
 use crate::links::possible_numbers;
+
+/// The next phase if a tree's PRs name Issues Tsugiki lacks. With no Issue, such a PR would show as a
+/// Standalone PR, however old it is. A tree goes one level, so those Issues come without trees of their own
+/// (ADR 0011).
+fn issues_a_tree_lacks(link: &Link<'_>, leads: &mut Leads) -> Result<Option<Phase>, Error> {
+    if leads.named.is_empty() {
+        return Ok(None);
+    }
+    let stored = link.store.issues(link.repository)?;
+    let held: BTreeSet<u32> = stored.iter().map(|issue| issue.number).collect();
+    let lacking: Vec<u32> = leads.named.difference(&held).copied().collect();
+    Ok((!lacking.is_empty()).then(|| Resumable::FetchingNamedIssues(lacking).into()))
+}
 
 /// The next Origin PR to ask for, one at a time.
 pub(super) fn fetch_origin(
@@ -27,7 +40,7 @@ pub(super) fn fetch_origin(
                     .into(),
                 )
             }
-            PrFetch::Tree | PrFetch::Changed => None,
+            PrFetch::Tree | PrFetch::Changed => issues_a_tree_lacks(link, leads)?,
         };
         let step = if next.is_some() {
             Step::Moved

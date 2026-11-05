@@ -103,6 +103,7 @@ mod tests {
     use tsugiki_core::github::replay::Replayer;
     use tsugiki_core::github::{Reply, Request, Transport, Unreachable};
     use tsugiki_core::token::{GhOutput, Token};
+    use tsugiki_core::web::{GitHubItem, WebAddress};
 
     /// Longer than any of these tests should wait on a working app.
     const PLENTY: Duration = Duration::from_secs(60);
@@ -350,6 +351,107 @@ mod tests {
 
         assert_eq!(announced, json!({ "state": "offline" }));
         assert_eq!(asked, announced);
+    }
+
+    /// A system browser that won't start.
+    fn no_browser(_: &WebAddress) -> Result<(), Error> {
+        Err(Error::new(
+            tsugiki_core::error::ErrorKind::Internal,
+            "no browser",
+        ))
+    }
+
+    #[test]
+    fn opening_an_issue_moves_its_last_seen_and_tells_the_window() {
+        let (folders, root) = temp_folders("wired-open-issue");
+        let wired = Wired::start(Ok(folders), no_network());
+        let issue_7 = json!({ "repository": CPYTHON, "number": 7 });
+
+        drop(wired.ask("open_issue", issue_7.clone()).unwrap());
+        let changed = wired.workbenches.recv_timeout(PLENTY).unwrap();
+        drop(wired.ask("fetch_issue", issue_7.clone()).unwrap());
+        let held = wired.ask("issue", issue_7).unwrap();
+        drop(wired.stop());
+        std::fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(changed, json!({ "repository": CPYTHON, "items": [7] }));
+        assert_eq!(held, Value::Null, "nothing has saved an Issue #7");
+    }
+
+    #[test]
+    fn a_name_that_isnt_a_repository_opens_nothing() {
+        let (folders, root) = temp_folders("wired-open-bad-name");
+        let wired = Wired::start(Ok(folders), no_network());
+        let bad = json!({ "repository": "not a name", "number": 7 });
+
+        let open = wired.ask("open_issue", bad.clone()).unwrap_err();
+        let fetch = wired.ask("fetch_issue", bad.clone()).unwrap_err();
+        let read = wired.ask("issue", bad).unwrap_err();
+        let requests = wired.session.requests();
+        let page = crate::open_github_page(
+            "not a name",
+            GitHubItem::Issue { number: 7 },
+            &requests,
+            no_browser,
+        );
+        drop(wired.stop());
+        std::fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(open["kind"], "not_found");
+        assert_eq!(fetch["kind"], "not_found");
+        assert_eq!(read["kind"], "not_found");
+        assert!(page.is_err());
+    }
+
+    #[test]
+    fn opening_an_item_on_github_shows_its_page_and_then_moves_its_last_seen() {
+        let (folders, root) = temp_folders("wired-open-on-github");
+        let wired = Wired::start(Ok(folders), no_network());
+        let requests = wired.session.requests();
+        let shown = std::cell::RefCell::new(Vec::new());
+        for item in [
+            GitHubItem::Issue { number: 7 },
+            GitHubItem::PullRequest { number: 8 },
+        ] {
+            crate::open_github_page(CPYTHON, item, &requests, |address| {
+                shown.borrow_mut().push(address.as_str().to_owned());
+                Ok(())
+            })
+            .unwrap();
+        }
+        let first = wired.workbenches.recv_timeout(PLENTY).unwrap();
+        let second = wired.workbenches.recv_timeout(PLENTY).unwrap();
+        drop(wired.stop());
+        std::fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(
+            shown.into_inner(),
+            [
+                "https://github.com/python/cpython/issues/7",
+                "https://github.com/python/cpython/pull/8",
+            ]
+        );
+        assert_eq!(first, json!({ "repository": CPYTHON, "items": [7] }));
+        assert_eq!(second, json!({ "repository": CPYTHON, "items": [8] }));
+    }
+
+    #[test]
+    fn a_browser_that_doesnt_open_leaves_last_seen_where_it_is() {
+        let (folders, root) = temp_folders("wired-no-browser");
+        let wired = Wired::start(Ok(folders), no_network());
+        let requests = wired.session.requests();
+
+        let opened = crate::open_github_page(
+            CPYTHON,
+            GitHubItem::PullRequest { number: 8 },
+            &requests,
+            no_browser,
+        );
+        let wired = wired.stop();
+        std::fs::remove_dir_all(root).unwrap();
+
+        assert!(opened.is_err());
+        assert!(wired.workbenches.try_recv().is_err());
     }
 
     /// Each item the answer lists, in the order the window shows them.

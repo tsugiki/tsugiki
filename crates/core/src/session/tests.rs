@@ -1,4 +1,5 @@
 use super::*;
+use crate::github::issue_content::IssueContent;
 use crate::github::replay::Replayer;
 use crate::github::testing::{Canned, Scripted, answered, reply_ok, signed_in_gh};
 use crate::github::{Login, Reply, Request, Transport, Unreachable};
@@ -269,6 +270,185 @@ fn watching_follows_github_until_told_to_stop() {
         last_login: Login::new("octocat"),
     };
     assert_eq!(announced(&seen), [octocat(), offline_as, octocat()]);
+}
+
+/// The answer to `FetchIssueContent`.
+fn issue_content_reply() -> Result<Reply, Unreachable> {
+    reply_ok(
+        r#"{"data":{"repository":{"issue":{"bodyHTML":"<p>It crashes</p>",
+            "comments":{"totalCount":0,"nodes":[]}}}}}"#,
+    )
+}
+
+/// A session that runs `ask` and stops, and what the database then holds of Issue 7.
+fn after_asking(
+    name: &str,
+    access: GitHubAccess,
+    ask: impl FnOnce(&SessionRequests),
+) -> (Option<IssueContent>, Option<OffsetDateTime>, Vec<Status>) {
+    let folders = temp_folders(name);
+    let (board, seen) = watched_board();
+    let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
+    ask(&session.requests());
+    session.stop(PLENTY);
+
+    let path = folders.database();
+    let store = Store::open(&path).unwrap();
+    let (to_open, reader) = store::reader();
+    let open = to_open.open(&path).unwrap();
+    let (facts, content) = reader.issue_facts(&gcmon(), 7).unwrap();
+    open.close();
+    store.close();
+    fs::remove_dir_all(folders.data).unwrap();
+    (
+        content,
+        facts.activity.last_seen.get(&7).copied(),
+        announced(&seen),
+    )
+}
+
+#[test]
+fn opening_an_issue_records_last_seen_and_keeps_what_it_says() {
+    let access = replying(vec![signed_in(), issue_content_reply()]);
+    let before = OffsetDateTime::now_utc();
+
+    let (content, last_seen, _) =
+        after_asking("open-issue", access, |asked| asked.open_issue(gcmon(), 7));
+
+    assert_eq!(content.unwrap().body_html, "<p>It crashes</p>");
+    assert!(last_seen.unwrap() >= before.replace_nanosecond(0).unwrap());
+}
+
+#[test]
+fn reading_an_issue_on_screen_again_leaves_last_seen_where_it_is() {
+    let access = replying(vec![signed_in(), issue_content_reply()]);
+
+    let (content, last_seen, _) =
+        after_asking("fetch-issue", access, |asked| asked.fetch_issue(gcmon(), 7));
+
+    assert!(content.is_some());
+    assert_eq!(last_seen, None);
+}
+
+#[test]
+fn opening_a_pr_records_last_seen_and_asks_github_nothing() {
+    // `Replies` panics if it is asked a second time.
+    let access = replying(vec![signed_in()]);
+
+    let (content, last_seen, _) = after_asking("seen-pr", access, |asked| asked.seen(gcmon(), 7));
+
+    assert_eq!(content, None);
+    assert!(last_seen.is_some());
+}
+
+#[test]
+fn opening_an_issue_with_no_token_still_records_last_seen() {
+    let access = GitHubAccess {
+        transport: Box::new(Canned(Err(Unreachable))),
+        run_gh: without_gh,
+    };
+
+    let (content, last_seen, _) =
+        after_asking("no-token", access, |asked| asked.open_issue(gcmon(), 7));
+
+    assert_eq!(content, None);
+    assert!(last_seen.is_some());
+}
+
+#[test]
+fn opening_an_issue_tells_the_window_each_time_its_facts_change() {
+    let (changes_sent, changes) = mpsc::channel();
+    let board = quiet_board().with_changes(Box::new(move |change: &Change| {
+        changes_sent.send(change.clone()).unwrap();
+    }));
+    let folders = temp_folders("open-issue-changes");
+    let access = replying(vec![signed_in(), issue_content_reply()]);
+    let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
+
+    session.requests().open_issue(gcmon(), 7);
+    session.stop(PLENTY);
+    fs::remove_dir_all(folders.data).unwrap();
+
+    let change = Change {
+        repository: gcmon(),
+        items: vec![7],
+    };
+    assert_eq!(
+        changes.try_iter().collect::<Vec<_>>(),
+        [change.clone(), change]
+    );
+}
+
+#[test]
+fn an_issue_github_has_lost_troubles_only_the_log() {
+    let gone = reply_ok(r#"{"data":{"repository":{"issue":null}}}"#);
+    let access = replying(vec![signed_in(), gone]);
+
+    let (content, last_seen, shown) =
+        after_asking("gone-issue", access, |asked| asked.open_issue(gcmon(), 7));
+
+    assert_eq!(content, None);
+    assert!(last_seen.is_some());
+    assert_eq!(shown.last(), Some(&octocat()));
+}
+
+#[test]
+fn an_answer_about_one_issue_that_cant_be_read_troubles_only_the_log() {
+    let access = replying(vec![signed_in(), reply_ok("not json")]);
+
+    let (content, _, shown) = after_asking("garbled-issue", access, |asked| {
+        asked.open_issue(gcmon(), 7);
+    });
+
+    assert_eq!(content, None);
+    assert_eq!(shown.last(), Some(&octocat()));
+}
+
+fn issue_7() -> Item {
+    Item {
+        repository: gcmon(),
+        number: 7,
+    }
+}
+
+#[test]
+fn a_last_seen_that_cant_be_stored_is_a_problem() {
+    let (mut board, seen) = watched_board();
+
+    mark_seen(
+        &mut board,
+        &Store::stopped(),
+        &issue_7(),
+        OffsetDateTime::UNIX_EPOCH,
+    );
+
+    assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
+}
+
+#[test]
+fn what_an_issue_says_that_cant_be_stored_is_a_problem() {
+    let (mut board, seen) = watched_board();
+    let access = replying(vec![signed_in(), issue_content_reply()]);
+    let github = connect(&mut quiet_board(), &empty_store(), access).unwrap();
+
+    fetch_issue(&mut board, &Store::stopped(), &github, issue_7()).unwrap();
+
+    assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
+}
+
+#[test]
+fn losing_the_network_while_reading_an_issue_shows_on_the_status_bar() {
+    let access = replying(vec![signed_in(), Err(Unreachable)]);
+
+    let (content, _, shown) = after_asking("offline-issue", access, |asked| {
+        asked.open_issue(gcmon(), 7)
+    });
+
+    assert_eq!(content, None);
+    let offline_as = Status::OfflineAs {
+        last_login: Login::new("octocat"),
+    };
+    assert_eq!(shown.last(), Some(&offline_as));
 }
 
 const AN_HOUR: Duration = Duration::from_secs(3600);
@@ -645,7 +825,7 @@ fn a_session_with_no_token_ends_when_it_can_no_longer_be_asked_anything() {
     };
     drop(messages);
 
-    refreshes.wait_for_stop();
+    refreshes.wait_for_stop(&mut quiet_board(), &empty_store());
 }
 
 #[test]
@@ -824,7 +1004,7 @@ fn a_session_with_no_token_ignores_a_refresh_until_it_stops() {
     messages.send(Message::Refresh).unwrap();
     messages.send(Message::Stop).unwrap();
 
-    refreshes.wait_for_stop();
+    refreshes.wait_for_stop(&mut quiet_board(), &empty_store());
 }
 
 #[test]

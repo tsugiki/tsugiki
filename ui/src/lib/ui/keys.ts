@@ -104,7 +104,7 @@ export function currentOs(platform: string = navigator.platform): Os {
   return platform.startsWith("Mac") ? "mac" : "other";
 }
 
-function isTextBox(target: EventTarget | null): boolean {
+export function isTextBox(target: EventTarget | null): boolean {
   return (
     target instanceof HTMLInputElement ||
     target instanceof HTMLTextAreaElement ||

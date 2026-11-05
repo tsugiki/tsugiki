@@ -20,6 +20,7 @@ pub mod status;
 pub mod store;
 pub mod sync;
 pub mod token;
+pub mod web;
 pub mod workbench;
 
 use serde::Serialize;

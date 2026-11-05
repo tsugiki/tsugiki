@@ -20,6 +20,7 @@ specta.workspace = true
 time.workspace = true
 toml_edit.workspace = true
 ureq.workspace = true
+url.workspace = true
 
 [dev-dependencies]
 divan.workspace = true

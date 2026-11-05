@@ -4,12 +4,22 @@ import RepositoryHome from "./RepositoryHome.svelte";
 
 const core = vi.hoisted(() => ({
   workbench: vi.fn(),
+  issue: vi.fn(),
+  openIssue: vi.fn(),
+  fetchIssue: vi.fn(),
+  openOnGithub: vi.fn(),
   listen: vi.fn(),
   stopListening: vi.fn(),
 }));
 
 vi.mock("$lib/data/bindings", () => ({
-  commands: { workbench: core.workbench },
+  commands: {
+    workbench: core.workbench,
+    issue: core.issue,
+    openIssue: core.openIssue,
+    fetchIssue: core.fetchIssue,
+    openOnGithub: core.openOnGithub,
+  },
   events: { changed: { listen: core.listen } },
 }));
 
@@ -23,6 +33,7 @@ const row = {
   ci: "SUCCESS",
   updated_at: "2026-11-04T10:00:00Z",
   reasons: ["review_request"],
+  your_review: null,
 };
 
 const issue = {
@@ -37,6 +48,20 @@ const issue = {
 beforeEach(() => {
   vi.resetAllMocks();
   core.listen.mockResolvedValue(core.stopListening);
+  core.openIssue.mockResolvedValue({ status: "ok", data: null });
+  core.openOnGithub.mockResolvedValue({ status: "ok", data: null });
+  core.issue.mockResolvedValue({
+    status: "ok",
+    data: {
+      number: 112564,
+      title: "GIL drop during collection",
+      people: [],
+      updated_at: "2026-11-04T10:00:00Z",
+      pull_requests: [],
+      author: "issue-author",
+      content: null,
+    },
+  });
   core.workbench.mockResolvedValue({
     status: "ok",
     data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [] },
@@ -263,6 +288,7 @@ const backportRow = {
   title: "[3.14] gh-112564: Fix UAF for gc debug print (GH-160662)",
   target_branch: "3.14",
   reasons: [],
+  your_review: null,
   backport: "bot",
 };
 
@@ -300,4 +326,267 @@ it("lists a Backport with no Issue and no Origin PR by itself", async () => {
 
   expect(await screen.findByText(/^#160700 /)).toBeTruthy();
   expect(screen.getAllByRole("listitem")).toHaveLength(1);
+});
+
+const standalone = { kind: "standalone_pr", ...row, number: 5, title: "Alone", backports: [] };
+
+/** A window on two items: the Issue and, under Quiet, a Standalone PR. */
+const listing = async () => {
+  core.workbench.mockResolvedValue({
+    status: "ok",
+    data: {
+      items: [{ ...issue, attention: null }],
+      quiet: [{ ...standalone, attention: null }],
+      count: 0,
+      review_requests: 0,
+      filters: [],
+    },
+  });
+  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  return {
+    issueRow: await screen.findByRole("button", { name: "#112564 GIL drop during collection" }),
+    prRow: screen.getByRole("button", { name: "#5 Alone" }),
+  };
+};
+
+const press = (key: string, init: KeyboardEventInit = {}) =>
+  fireEvent.keyDown(document.body, { key, ...init });
+
+it("opens an Issue in the Detail pane on a click, and moves Last seen", async () => {
+  const { issueRow } = await listing();
+
+  await fireEvent.click(issueRow);
+
+  expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
+  expect(core.openIssue).toHaveBeenCalledExactlyOnceWith("python/cpython", 112564);
+  expect(issueRow.getAttribute("aria-current")).toBe("true");
+});
+
+it("says how long ago each comment in the Detail pane came", async () => {
+  core.issue.mockResolvedValue({
+    status: "ok",
+    data: {
+      number: 112564,
+      title: "GIL drop during collection",
+      people: [],
+      updated_at: "2026-11-04T10:00:00Z",
+      pull_requests: [],
+      author: "issue-author",
+      content: {
+        body_html: "<p>It crashes</p>",
+        comments: [
+          { author: "some-reviewer", created_at: new Date().toISOString(), body_html: "<p>Which build?</p>" },
+        ],
+        earlier_comments: 0,
+      },
+    },
+  });
+  const { issueRow } = await listing();
+
+  await fireEvent.click(issueRow);
+
+  expect(await screen.findByText("some-reviewer · just now")).toBeTruthy();
+});
+
+it("opening the Issue on show again moves Last seen again", async () => {
+  const { issueRow } = await listing();
+
+  await fireEvent.click(issueRow);
+  await fireEvent.click(issueRow);
+
+  await vi.waitFor(() => {
+    expect(core.openIssue).toHaveBeenCalledTimes(2);
+  });
+});
+
+it("swaps the Detail pane for the next Issue", async () => {
+  core.workbench.mockResolvedValue({
+    status: "ok",
+    data: {
+      items: [
+        { ...issue, attention: null },
+        { ...issue, number: 2, title: "Next", attention: null },
+      ],
+      quiet: [],
+      count: 0,
+      review_requests: 0,
+      filters: [],
+    },
+  });
+  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+
+  await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
+  await fireEvent.click(screen.getByRole("button", { name: "#2 Next" }));
+
+  await vi.waitFor(() => {
+    expect(core.openIssue).toHaveBeenLastCalledWith("python/cpython", 2);
+  });
+});
+
+it("opens a Standalone PR on GitHub, since it has no view yet", async () => {
+  const { prRow } = await listing();
+
+  await fireEvent.click(prRow);
+
+  expect(core.openOnGithub).toHaveBeenCalledExactlyOnceWith("python/cpython", {
+    kind: "pull_request",
+    number: 5,
+  });
+  expect(screen.queryByRole("region", { name: "Issue view" })).toBeNull();
+});
+
+it("says so when the browser won't open", async () => {
+  core.openOnGithub.mockResolvedValue({
+    status: "error",
+    error: { kind: "internal", message: "Tsugiki couldn't open the system browser." },
+  });
+  const { prRow } = await listing();
+
+  await fireEvent.click(prRow);
+
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "Tsugiki couldn't open the system browser.",
+  );
+});
+
+it("moves through the list with the arrows, and focus follows", async () => {
+  const { issueRow, prRow } = await listing();
+
+  await press("ArrowDown");
+  expect(document.activeElement).toBe(issueRow);
+  await press("ArrowDown");
+  expect(document.activeElement).toBe(prRow);
+  await press("ArrowUp");
+  expect(document.activeElement).toBe(issueRow);
+  expect(core.openIssue).not.toHaveBeenCalled();
+});
+
+it("does nothing on the arrows with an empty list", async () => {
+  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  await screen.findByText(/Nothing here yet/);
+
+  await press("ArrowDown");
+
+  expect(document.activeElement).toBe(document.body);
+});
+
+it("opens the selection with Enter when focus has left the list", async () => {
+  const { issueRow } = await listing();
+  await press("ArrowDown");
+  issueRow.blur();
+
+  await press("Enter");
+
+  expect(core.openIssue).toHaveBeenCalledExactlyOnceWith("python/cpython", 112564);
+});
+
+it("leaves Enter alone with nothing selected, and on a focused control", async () => {
+  const { issueRow } = await listing();
+
+  await press("Enter");
+  await press("ArrowDown");
+  await fireEvent.keyDown(issueRow, { key: "Enter" });
+
+  expect(core.openIssue).not.toHaveBeenCalled();
+});
+
+it("takes a held Enter as one press", async () => {
+  const { issueRow } = await listing();
+  await press("ArrowDown");
+  const repeat = new KeyboardEvent("keydown", {
+    key: "Enter",
+    repeat: true,
+    bubbles: true,
+    cancelable: true,
+  });
+
+  await fireEvent(issueRow, repeat);
+
+  expect(repeat.defaultPrevented).toBe(true);
+});
+
+it("leaves the browser its other keys, and F12 for a development build", async () => {
+  await listing();
+  const f12 = new KeyboardEvent("keydown", { key: "F12", bubbles: true, cancelable: true });
+
+  await fireEvent(document.body, f12);
+
+  expect(f12.defaultPrevented).toBe(false);
+});
+
+it("Ctrl+Shift+G still works from a text box", async () => {
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  const box = document.body.appendChild(document.createElement("input"));
+
+  await fireEvent.keyDown(box, { key: "G", ctrlKey: true, shiftKey: true });
+  box.remove();
+
+  expect(core.openOnGithub).toHaveBeenCalledOnce();
+});
+
+it("leaves the arrows to a text box", async () => {
+  await listing();
+  const box = document.body.appendChild(document.createElement("input"));
+
+  await fireEvent.keyDown(box, { key: "ArrowDown" });
+  box.remove();
+
+  expect(document.activeElement).toBe(document.body);
+});
+
+it("leaves its keys alone while a dialog is on top", async () => {
+  core.workbench.mockResolvedValue({
+    status: "ok",
+    data: { items: [{ ...issue, attention: null }], quiet: [], count: 0, review_requests: 0, filters: [] },
+  });
+  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn(), keysActive: false });
+  await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
+
+  await press("ArrowDown");
+  await press("G", { ctrlKey: true, shiftKey: true });
+
+  expect(document.activeElement).toBe(document.body);
+  expect(core.openOnGithub).not.toHaveBeenCalled();
+});
+
+it("Ctrl+Shift+G opens the Issue on show on GitHub", async () => {
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+
+  await press("G", { ctrlKey: true, shiftKey: true });
+
+  expect(core.openOnGithub).toHaveBeenCalledExactlyOnceWith("python/cpython", {
+    kind: "issue",
+    number: 112564,
+  });
+});
+
+it("Ctrl+Shift+G opens what's under the cursor when no Issue is on show", async () => {
+  await listing();
+
+  await press("G", { ctrlKey: true, shiftKey: true });
+  expect(core.openOnGithub).not.toHaveBeenCalled();
+
+  await press("ArrowDown");
+  await press("G", { ctrlKey: true, shiftKey: true });
+  expect(core.openOnGithub).toHaveBeenLastCalledWith("python/cpython", { kind: "issue", number: 112564 });
+
+  await press("ArrowDown");
+  await press("G", { ctrlKey: true, shiftKey: true });
+  expect(core.openOnGithub).toHaveBeenLastCalledWith("python/cpython", { kind: "pull_request", number: 5 });
+});
+
+it("closes the Detail pane when the Repository changes", async () => {
+  core.workbench.mockResolvedValue({
+    status: "ok",
+    data: { items: [{ ...issue, attention: null }], quiet: [], count: 0, review_requests: 0, filters: [] },
+  });
+  const { rerender } = render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
+  expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
+
+  await rerender({ name: "python/other" });
+
+  expect(screen.queryByRole("region", { name: "Issue view" })).toBeNull();
 });

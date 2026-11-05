@@ -33,11 +33,18 @@ pub struct WorkbenchRow {
     pub updated_at: OffsetDateTime,
     /// Empty for a PR that another PR put on the Workbench, and for one no longer open.
     pub reasons: Vec<WorkReason>,
+    /// The user's latest submitted Review. A pending Review is a draft, so it isn't one yet.
+    pub your_review: Option<ReviewState>,
 }
 
 /// The PR's line of the list, whatever it has to do with `viewer`.
 pub(super) fn row(facts: PullRequestFacts, viewer: &Login) -> WorkbenchRow {
     let reasons = reasons(&facts, viewer);
+    let your_review = facts
+        .latest_reviews
+        .iter()
+        .find(|review| review.author == *viewer && review.state != ReviewState::Pending)
+        .map(|review| review.state);
     WorkbenchRow {
         number: facts.number,
         title: facts.title,
@@ -48,6 +55,7 @@ pub(super) fn row(facts: PullRequestFacts, viewer: &Login) -> WorkbenchRow {
         ci: facts.ci,
         updated_at: facts.updated_at,
         reasons,
+        your_review,
     }
 }
 
@@ -212,6 +220,7 @@ mod tests {
                     ci: Some(CiState::Pending),
                     updated_at: at(3),
                     reasons: vec![WorkReason::OwnPr],
+                    your_review: None,
                 },
                 backports: vec![],
             })

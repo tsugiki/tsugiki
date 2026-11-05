@@ -11,7 +11,7 @@ use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
 use crate::github::{GitHub, GitHubAccess};
 use crate::repository::{RepositoryCheck, RepositoryName, RepositorySettings};
-use crate::status::{LastSync, Status, StatusBoard};
+use crate::status::{Change, LastSync, Status, StatusBoard};
 use crate::store::{self, OpenReader, ReaderToOpen, Store, StoreReader};
 use crate::sync::{Progress, Syncs};
 use crate::token::Token;
@@ -54,6 +54,13 @@ pub struct Session {
     reader: StoreReader,
 }
 
+/// An Issue or a PR of a Repository, in a message to the session's thread.
+#[derive(Debug, PartialEq, Eq)]
+struct Item {
+    repository: RepositoryName,
+    number: u32,
+}
+
 /// What others ask of the session's thread, which alone holds the token and the client.
 enum Message {
     Stop,
@@ -65,6 +72,11 @@ enum Message {
         repository: RepositorySettings,
     },
     Refresh,
+    Seen {
+        item: Item,
+        at: OffsetDateTime,
+    },
+    FetchIssue(Item),
 }
 
 /// Asks the session about Repositories, from any thread. A check waits for what the session is doing first,
@@ -86,6 +98,27 @@ impl SessionRequests {
     /// covers this.
     pub fn refresh(&self) {
         drop(self.messages.send(Message::Refresh));
+    }
+
+    /// Tells the session the user opened Issue `number`, which moves its Last seen and reads what it says
+    /// from GitHub, and returns at once. A session that can't ask GitHub still records Last seen.
+    pub fn open_issue(&self, repository: RepositoryName, number: u32) {
+        self.seen(repository.clone(), number);
+        self.fetch_issue(repository, number);
+    }
+
+    /// Asks the session to read what an Issue on screen says now, and returns at once. This leaves Last seen
+    /// where it is, since a window left open doesn't mean the user read what came in.
+    pub fn fetch_issue(&self, repository: RepositoryName, number: u32) {
+        let item = Item { repository, number };
+        drop(self.messages.send(Message::FetchIssue(item)));
+    }
+
+    /// Tells the session the user opened item `number`, which moves its Last seen, and returns at once.
+    pub fn seen(&self, repository: RepositoryName, number: u32) {
+        let item = Item { repository, number };
+        let at = OffsetDateTime::now_utc();
+        drop(self.messages.send(Message::Seen { item, at }));
     }
 
     /// Asks GitHub what adding `name` would load. A session with no token or no database answers with an
@@ -201,18 +234,26 @@ enum Turn {
     RefreshNow,
     /// The window opened this Repository, so it needs to know when its last sync was.
     Opened(RepositoryName),
+    /// The user opened this item at this moment.
+    Seen(Item, OffsetDateTime),
+    /// An Issue on screen needs what it says read from GitHub.
+    FetchIssue(Item),
     SyncStep,
     Stop,
 }
 
 impl Refreshes {
     /// Waits for a stop message, for a session with nothing to ask GitHub with. A check dropped here tells
-    /// the one asking that the session isn't connected.
-    fn wait_for_stop(&self) {
+    /// the one asking that the session isn't connected. Last seen needs only the database, so it still moves.
+    fn wait_for_stop(&self, board: &mut StatusBoard, store: &Store) {
         while let Ok(message) = self.incoming.recv() {
             match message {
                 Message::Stop => return,
-                Message::Check { .. } | Message::Sync { .. } | Message::Refresh => {}
+                Message::Seen { item, at } => mark_seen(board, store, &item, at),
+                Message::Check { .. }
+                | Message::Sync { .. }
+                | Message::Refresh
+                | Message::FetchIssue(_) => {}
             }
         }
     }
@@ -235,6 +276,8 @@ impl Refreshes {
                     return Turn::Opened(opened);
                 }
                 Ok(Message::Refresh) => return Turn::RefreshNow,
+                Ok(Message::Seen { item, at }) => return Turn::Seen(item, at),
+                Ok(Message::FetchIssue(item)) => return Turn::FetchIssue(item),
                 Ok(Message::Check { name, reply }) => {
                     let today = OffsetDateTime::now_utc().date();
                     #[expect(
@@ -297,7 +340,7 @@ fn run(board: &mut StatusBoard, database: Database, access: GitHubAccess, refres
 /// `board` shows why, and the database stays open until then, so the window can read what's stored.
 fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes: &Refreshes) {
     let Some(github) = connect(board, store, access) else {
-        refreshes.wait_for_stop();
+        refreshes.wait_for_stop(board, store);
         return;
     };
     let mut syncs = Syncs::default();
@@ -319,6 +362,13 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                 due.repository = Instant::now() + intervals.repository;
             }
             Turn::Opened(repository) => show_last_sync(board, store, repository),
+            Turn::Seen(item, at) => mark_seen(board, store, &item, at),
+            Turn::FetchIssue(item) => {
+                if let Err(problem) = fetch_issue(board, store, &github, item) {
+                    syncs.after_failure(&problem, due.status);
+                    board.set(status_after(problem, store));
+                }
+            }
             // A Workbench lists nothing until Tsugiki knows who the user is, and no event tells the window
             // when it learns that. So a sync waits for it, and its first save then shows the rows.
             Turn::SyncStep if !matches!(store.last_login(), Ok(Some(_))) => {
@@ -337,6 +387,55 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
         }
         board.sync_activity(syncs.activity());
     }
+}
+
+/// Moves the Last seen of `item`, and tells the window, whose lists go by it.
+fn mark_seen(board: &mut StatusBoard, store: &Store, item: &Item, at: OffsetDateTime) {
+    match store.mark_seen(&item.repository, item.number, at) {
+        Ok(()) => board.changed(&Change {
+            repository: item.repository.clone(),
+            items: vec![item.number],
+        }),
+        Err(problem) => board.set(Status::Problem { problem }),
+    }
+}
+
+/// Reads what an Issue says from GitHub, keeps it, and tells the window. The view goes on showing what was
+/// last read if this fails. An error returned here speaks for all of GitHub, so the status bar and the syncs
+/// need to hear it. Any other trouble is this one Issue's, and goes to the log.
+fn fetch_issue(
+    board: &mut StatusBoard,
+    store: &Store,
+    github: &GitHub,
+    item: Item,
+) -> Result<(), Error> {
+    let Item { repository, number } = item;
+    let content = match github.issue_content(&repository, number) {
+        Ok(content) => content,
+        Err(problem) => {
+            return match problem.kind {
+                ErrorKind::Offline | ErrorKind::RateLimited { .. } | ErrorKind::Unauthorized => {
+                    Err(problem)
+                }
+                ErrorKind::WriteRefused
+                | ErrorKind::NotFound
+                | ErrorKind::Conflict
+                | ErrorKind::QueryRefused
+                | ErrorKind::Internal => {
+                    log::warn!("Tsugiki couldn't read Issue #{number}: {}", problem.message);
+                    Ok(())
+                }
+            };
+        }
+    };
+    match store.save_issue_content(&repository, number, content) {
+        Ok(()) => board.changed(&Change {
+            repository,
+            items: vec![number],
+        }),
+        Err(problem) => board.set(Status::Problem { problem }),
+    }
+    Ok(())
 }
 
 /// Tells the window when `repository` last finished a sync, so the status bar can say.

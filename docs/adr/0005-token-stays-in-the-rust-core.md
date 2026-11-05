@@ -26,6 +26,9 @@ This matters more because the default token (gh's, [ADR 0004](0004-auth-via-gh-c
   rather than asking repeatedly. Logs and error reports scrub tokens.
 - git never gets the token for a public Repository: the mirror fetches anonymously.
 - Tauri capabilities expose only Tsugiki's own commands to the webview: no shell, file system or HTTP plugins.
+- The webview can ask the core to open a link in the system browser, since a link in a description has to go
+  somewhere. The core treats that link as untrusted and opens only an `http` or `https` address, never a file
+  or an installed app's scheme.
 - Releases are built in GitHub Actions with artifact attestations, so a user can check one with `gh
   attestation verify`. The source is public.
 - The Account page says all of this in plain words, next to what the current token lets Tsugiki do.

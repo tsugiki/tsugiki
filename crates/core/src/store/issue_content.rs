@@ -1,0 +1,197 @@
+//! The Issue view's last read of an Issue, so it opens at once, and with GitHub down (ADR 0015). Each read
+//! replaces the last. These rows hold long HTML, so unlike the other tables they keep a rowid: SQLite advises
+//! against `WITHOUT ROWID` for large rows.
+
+use rusqlite::{Connection, Row, named_params};
+
+use super::columns::UnixTime;
+use crate::github::issue_content::{IssueComment, IssueContent};
+use crate::repository::RepositoryName;
+
+pub(super) const SCHEMA: &str = "
+    CREATE TABLE issue_content (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        number INTEGER NOT NULL,
+        body_html TEXT NOT NULL,
+        earlier_comments INTEGER NOT NULL,
+        PRIMARY KEY (repository, number)
+    );
+    CREATE TABLE issue_comments (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        number INTEGER NOT NULL,
+        position INTEGER NOT NULL,
+        author TEXT,
+        created_at INTEGER NOT NULL,
+        body_html TEXT NOT NULL,
+        PRIMARY KEY (repository, number, position)
+    );
+";
+
+/// Replaces what's kept of Issue `number` with `content`, in one transaction.
+pub(super) fn save(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+    number: u32,
+    content: &IssueContent,
+) -> rusqlite::Result<()> {
+    let transaction = connection.transaction()?;
+    save_body(&transaction, repository, number, content)?;
+    forget_comments(&transaction, repository, number)?;
+    for (position, comment) in (0_u32..).zip(&content.comments) {
+        save_comment(&transaction, repository, (number, position), comment)?;
+    }
+    transaction.commit()
+}
+
+fn save_body(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+    content: &IssueContent,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "INSERT INTO issue_content (repository, number, body_html, earlier_comments)
+             VALUES (:repository, :number, :body_html, :earlier_comments)
+             ON CONFLICT (repository, number) DO UPDATE SET
+                 body_html = excluded.body_html,
+                 earlier_comments = excluded.earlier_comments",
+            named_params! {
+                ":repository": repository,
+                ":number": number,
+                ":body_html": content.body_html,
+                ":earlier_comments": content.earlier_comments,
+            },
+        )
+        .map(drop)
+}
+
+fn forget_comments(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "DELETE FROM issue_comments WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": number },
+        )
+        .map(drop)
+}
+
+fn save_comment(
+    connection: &Connection,
+    repository: &RepositoryName,
+    (number, position): (u32, u32),
+    comment: &IssueComment,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "INSERT INTO issue_comments (repository, number, position, author, created_at, body_html)
+             VALUES (:repository, :number, :position, :author, :created_at, :body_html)",
+            named_params! {
+                ":repository": repository,
+                ":number": number,
+                ":position": position,
+                ":author": comment.author,
+                ":created_at": comment.created_at.unix_timestamp(),
+                ":body_html": comment.body_html,
+            },
+        )
+        .map(drop)
+}
+
+fn comment_in(row: &Row<'_>) -> rusqlite::Result<IssueComment> {
+    let UnixTime(created_at) = row.get("created_at")?;
+    Ok(IssueComment {
+        author: row.get("author")?,
+        created_at,
+        body_html: row.get("body_html")?,
+    })
+}
+
+const SELECT_BODY: &str = "SELECT body_html, earlier_comments FROM issue_content
+     WHERE repository = :repository AND number = :number";
+const SELECT_COMMENTS: &str = "SELECT author, created_at, body_html FROM issue_comments
+     WHERE repository = :repository AND number = :number ORDER BY position";
+
+/// The content kept for Issue `number`. Nothing, until Tsugiki has read it once.
+pub(super) fn read(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<Option<IssueContent>> {
+    let asked = named_params! { ":repository": repository, ":number": number };
+    let mut statement = connection.prepare(SELECT_BODY)?;
+    let mut found = statement.query(asked)?;
+    let Some(row) = found.next()? else {
+        return Ok(None);
+    };
+    let body_html = row.get("body_html")?;
+    let earlier_comments = row.get("earlier_comments")?;
+    let mut statement = connection.prepare(SELECT_COMMENTS)?;
+    let comments = statement.query_map(asked, comment_in)?;
+    Ok(Some(IssueContent {
+        body_html,
+        comments: comments.collect::<rusqlite::Result<_>>()?,
+        earlier_comments,
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use time::OffsetDateTime;
+
+    use super::*;
+    use crate::github::Login;
+    use crate::store::Store;
+    use crate::store::reader;
+    use crate::store::testing::temp_database;
+
+    fn cpython() -> RepositoryName {
+        RepositoryName::parse("python/cpython").unwrap()
+    }
+
+    fn comment(body_html: &str) -> IssueComment {
+        IssueComment {
+            author: Some(Login::new("some-reviewer")),
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            body_html: body_html.to_owned(),
+        }
+    }
+
+    fn content(body_html: &str, comments: Vec<IssueComment>) -> IssueContent {
+        IssueContent {
+            body_html: body_html.to_owned(),
+            comments,
+            earlier_comments: 2,
+        }
+    }
+
+    #[test]
+    fn each_read_replaces_the_last_and_other_issues_keep_theirs() {
+        let (path, folder) = temp_database("issue-content");
+        let store = Store::open(&path).unwrap();
+        let (to_open, reader) = reader();
+        let open = to_open.open(&path).unwrap();
+        let first = content("<p>One</p>", vec![comment("<p>a</p>"), comment("<p>b</p>")]);
+        store.save_issue_content(&cpython(), 1, first).unwrap();
+        let other = content("<p>Other</p>", vec![comment("<p>c</p>")]);
+        store
+            .save_issue_content(&cpython(), 2, other.clone())
+            .unwrap();
+        let second = content("<p>Two</p>", vec![comment("<p>d</p>")]);
+        store
+            .save_issue_content(&cpython(), 1, second.clone())
+            .unwrap();
+
+        let read = |number| reader.issue_facts(&cpython(), number).unwrap().1;
+
+        assert_eq!(read(1), Some(second));
+        assert_eq!(read(2), Some(other));
+        assert_eq!(read(3), None);
+        open.close();
+        store.close();
+        std::fs::remove_dir_all(folder).unwrap();
+    }
+}

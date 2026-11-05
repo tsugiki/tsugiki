@@ -1,6 +1,15 @@
 import { expect, it } from "vitest";
 import type { IssueItem, WorkbenchRow, Why } from "$lib/state/workbench.svelte";
-import { ago, details, headline, issueDetails, preview, standaloneDetails } from "./workbench-row";
+import {
+  ago,
+  backportWords,
+  details,
+  headline,
+  issueDetails,
+  preview,
+  prStateWords,
+  standaloneDetails,
+} from "./workbench-row";
 
 const row: WorkbenchRow = {
   number: 160662,
@@ -12,6 +21,7 @@ const row: WorkbenchRow = {
   ci: "SUCCESS",
   updated_at: "2026-11-04T10:00:00Z",
   reasons: ["review_request"],
+  your_review: null,
 };
 
 const issue: IssueItem = {
@@ -157,4 +167,16 @@ it.each<[Why, string]>([
 it("a preview lists every reason in the order it came", () => {
   const why: Why[] = [{ kind: "ci_passed" }, { kind: "mentioned" }];
   expect(preview({ since: "2026-11-04T10:00:00Z", why })).toBe("CI passed · You were mentioned");
+});
+
+it("says a PR's state, CI and where the user stands in the Issue view", () => {
+  expect(prStateWords(row)).toBe("Open · CI passed · Review request");
+  expect(prStateWords({ ...row, reasons: [], your_review: "CHANGES_REQUESTED" })).toBe(
+    "Open · CI passed · You requested changes",
+  );
+  expect(prStateWords({ ...row, reasons: [], is_draft: true, ci: null })).toBe("Open · Draft");
+});
+
+it("names a Backport by its branch and state", () => {
+  expect(backportWords({ ...row, state: "MERGED", target_branch: "3.14" })).toBe("3.14 Merged");
 });

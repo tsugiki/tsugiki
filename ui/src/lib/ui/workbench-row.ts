@@ -5,6 +5,7 @@ import type {
   CiState,
   IssueItem,
   PrState,
+  ReviewState,
   TreeEntry,
   WorkbenchRow,
   WorkReason,
@@ -34,6 +35,14 @@ const CI: Record<CiState, string> = {
   FAILURE: "CI failed",
   PENDING: "CI running",
   SUCCESS: "CI passed",
+};
+
+const YOUR_REVIEW: Record<ReviewState, string> = {
+  PENDING: "Your Review is a draft",
+  COMMENTED: "You commented",
+  APPROVED: "You approved",
+  CHANGES_REQUESTED: "You requested changes",
+  DISMISSED: "Your Review was dismissed",
 };
 
 /** The words an Alert would use for one reason an item Needs attention. */
@@ -113,3 +122,18 @@ export function details(row: WorkbenchRow & { backport?: BackportKind }): string
   ];
   return parts.join(" · ");
 }
+
+/** A PR's line in the Issue view: its state, CI and where the user stands on it. */
+export function prStateWords(row: WorkbenchRow): string {
+  const parts = [
+    STATES[row.state],
+    ...(row.is_draft ? ["Draft"] : []),
+    ...(row.ci ? [CI[row.ci]] : []),
+    ...(row.reasons.includes("review_request") ? [REASONS.review_request] : []),
+    ...(row.your_review ? [YOUR_REVIEW[row.your_review]] : []),
+  ];
+  return parts.join(" · ");
+}
+
+/** A Backport in the line its Origin PR folds them into: its branch and state. */
+export const backportWords = (row: WorkbenchRow) => `${row.target_branch} ${STATES[row.state]}`;

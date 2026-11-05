@@ -19,6 +19,8 @@ use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{LoadedSettings, SettingsOwner};
 use tsugiki_core::status::{Change, LastSync, Status, SyncActivity};
 use tsugiki_core::store::StoreReader;
+use tsugiki_core::web::{GitHubItem, WebAddress};
+use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::{Workbench, WorkbenchView};
 
 #[tauri::command]
@@ -60,6 +62,31 @@ fn sync_activity(latest: State<'_, LatestSyncActivity>) -> Option<SyncActivity> 
 #[specta::specta]
 fn refresh(requests: State<'_, SessionRequests>) {
     requests.refresh();
+}
+
+/// Tells the core the user opened an Issue, which moves its Last seen and reads what it says from GitHub, and
+/// returns at once.
+#[tauri::command]
+#[specta::specta]
+fn open_issue(
+    repository: &str,
+    number: u32,
+    requests: State<'_, SessionRequests>,
+) -> Result<(), Error> {
+    requests.open_issue(RepositoryName::parse(repository)?, number);
+    Ok(())
+}
+
+/// Asks the core to read what an Issue on screen says now, and returns at once (ADR 0015).
+#[tauri::command]
+#[specta::specta]
+fn fetch_issue(
+    repository: &str,
+    number: u32,
+    requests: State<'_, SessionRequests>,
+) -> Result<(), Error> {
+    requests.fetch_issue(RepositoryName::parse(repository)?, number);
+    Ok(())
 }
 
 /// The settings Tsugiki last read, and what was wrong with their files (ADR 0014).
@@ -117,6 +144,31 @@ fn read_workbench(
     Workbench::read(reader, &repository, view)
 }
 
+fn read_issue(
+    repository: &str,
+    number: u32,
+    owner: &SettingsOwner,
+    reader: &StoreReader,
+) -> Result<Option<IssueView>, Error> {
+    let name = RepositoryName::parse(repository)?;
+    let repository = owner.view().loaded.settings.repository(name);
+    IssueView::read(reader, &repository, number)
+}
+
+/// Opens the page of `item` on GitHub with `show`, and then moves its Last seen, since the user has it in
+/// front of them. If the browser didn't open, they haven't seen it.
+fn open_github_page(
+    repository: &str,
+    item: GitHubItem,
+    requests: &SessionRequests,
+    show: impl FnOnce(&WebAddress) -> Result<(), Error>,
+) -> Result<(), Error> {
+    let name = RepositoryName::parse(repository)?;
+    show(&WebAddress::of_item(&name, item))?;
+    requests.seen(name, item.number());
+    Ok(())
+}
+
 /// Sent whenever the app-wide state changes (ADR 0008).
 #[derive(Clone, Serialize, Type, Event)]
 struct StatusChanged(Status);
@@ -142,11 +194,16 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             last_sync,
             sync_activity,
             refresh,
+            open_issue,
+            fetch_issue,
             settings,
             home,
             slow_commands::check_repository,
             slow_commands::add_repository,
-            slow_commands::workbench
+            slow_commands::workbench,
+            slow_commands::issue,
+            slow_commands::open_on_github,
+            slow_commands::open_link
         ])
         .events(collect_events![
             StatusChanged,

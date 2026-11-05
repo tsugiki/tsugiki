@@ -16,6 +16,8 @@ use tsugiki_core::repository::{Home, RepositoryAccess, RepositoryCheck};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::SettingsOwner;
 use tsugiki_core::store::StoreReader;
+use tsugiki_core::web::{GitHubItem, WebAddress};
+use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::{Workbench, WorkbenchView};
 
 /// What adding the Repository the user typed would load. A check can wait out a stuck request to GitHub, so
@@ -63,4 +65,48 @@ pub(crate) fn workbench(
     reader: State<'_, StoreReader>,
 ) -> Result<Workbench, Error> {
     crate::read_workbench(repository, &view, &owner, &reader)
+}
+
+/// The Issue view of Issue `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and
+/// never on GitHub (ADR 0018).
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn issue(
+    repository: &str,
+    number: u32,
+    owner: State<'_, SettingsOwner>,
+    reader: State<'_, StoreReader>,
+) -> Result<Option<IssueView>, Error> {
+    crate::read_issue(repository, number, &owner, &reader)
+}
+
+/// Opens an Issue or a PR on GitHub in the system browser.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn open_on_github(
+    repository: &str,
+    item: GitHubItem,
+    requests: State<'_, SessionRequests>,
+) -> Result<(), Error> {
+    crate::open_github_page(repository, item, &requests, show_in_browser)
+}
+
+/// Opens a link from a description or a comment in the system browser. Tsugiki never navigates its own window
+/// to a web page.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn open_link(address: &str) -> Result<(), Error> {
+    show_in_browser(&WebAddress::parse(address)?)
+}
+
+/// Starting a browser can take a moment, so this runs on the commands that can wait. No test calls it: it
+/// would open a real browser over the user's work.
+fn show_in_browser(address: &WebAddress) -> Result<(), Error> {
+    open::that_detached(address.as_str()).map_err(|cause| {
+        log::error!("The system browser didn't open: {cause}");
+        Error::new(
+            ErrorKind::Internal,
+            "Tsugiki couldn't open the system browser.",
+        )
+    })
 }

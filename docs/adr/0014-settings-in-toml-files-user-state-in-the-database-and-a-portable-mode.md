@@ -1,14 +1,19 @@
 # Settings in TOML files, user state in the database, and a portable mode
 
-What the user configures lives in two TOML files they can read and edit. What the user does while working lives in `tsugiki.db` ([ADR 0010](0010-one-sqlite-database-and-per-repository-mirrors.md)).
+What the user configures lives in two TOML files they can read and edit. What the user does while working
+lives in `tsugiki.db` ([ADR 0010](0010-one-sqlite-database-and-per-repository-mirrors.md)).
 
-- **`settings.toml`** travels between machines: settings, remapped keybindings, and each Repository with its **Conventions** ([ADR 0011](0011-pr-links-from-github-signals-by-repository-conventions.md)) and Filters. Only values that differ from the defaults are written.
+- **`settings.toml`** travels between machines: settings, remapped keybindings, and each Repository with its
+  **Conventions** ([ADR 0011](0011-pr-links-from-github-signals-by-repository-conventions.md)) and Filters.
+  Only values that differ from the defaults are written.
 - **`machine.toml`** stays on its machine: the token source, the editor command, paths, the clone each
   Repository borrows objects from, the Repository to reopen, window places and zoom. It may set
   `settings_path`, which puts `settings.toml` anywhere, such as a dotfiles repository or a synced folder. That
   is how the user syncs it.
-- **`tsugiki.db`** holds the user's state with the cache: Pinned issues, Muted authors, Muted and Archived items, Local marks, Last seen, and unsent composer text. These move with Export and Import database.
-- **The keychain** holds a personal access token, which never travels ([ADR 0005](0005-token-stays-in-the-rust-core.md)).
+- **`tsugiki.db`** holds the user's state with the cache: Pinned issues, Muted authors, Muted and Archived
+  items, Local marks, Last seen, and unsent composer text. These move with Export and Import database.
+- **The keychain** holds a personal access token, which never travels ([ADR
+  0005](0005-token-stays-in-the-rust-core.md)).
 
 Tsugiki reads both files when it starts and when the Settings dialog opens, and doesn't watch them. The files
 can be edited by hand, but an edit made while Tsugiki runs waits until one of those moments, so a restart is
@@ -50,15 +55,20 @@ other runs brings the running one forward.
 
 ## Considered Options
 
-- **Everything in the database**, with no files: one thing to move, but settings could be changed only in the Settings dialog, and they couldn't be read, diffed or kept in a dotfiles repository.
+- **Everything in the database**, with no files: one thing to move, but settings could be changed only in the
+  Settings dialog, and they couldn't be read, diffed or kept in a dotfiles repository.
 - **JSONC files, as VS Code has them.** Familiar, but noisier to write by hand than TOML. **Watching both
   files and applying a hand edit at once.** Handy for someone tuning a setting in an editor, but it needs
   either a polling thread or the `notify` crate with its handling of editors that replace files and of a
   missing folder, for edits that are rare while Tsugiki runs. **Reading the files only at start-up**, so a
   hand edit waits for a restart even with the dialog open.
-- **Pinned issues and Muted authors in `settings.toml`**, as scope.md first had them. They change as the user works, from the Sidebar and the Issue list, which is state, not configuration. Keeping them in the file would mean rewriting it all the time.
-- **Fixed locations only**, synced by a symlink the user makes, or **all files next to the database**, synced by copying.
-- **Data always beside the program**, with no app-data folders. On macOS nothing may be written inside `Tsugiki.app`, and on Windows the uninstaller would have to tell data from program files.
+- **Pinned issues and Muted authors in `settings.toml`**, as scope.md first had them. They change as the user
+  works, from the Sidebar and the Issue list, which is state, not configuration. Keeping them in the file
+  would mean rewriting it all the time.
+- **Fixed locations only**, synced by a symlink the user makes, or **all files next to the database**, synced
+  by copying.
+- **Data always beside the program**, with no app-data folders. On macOS nothing may be written inside
+  `Tsugiki.app`, and on Windows the uninstaller would have to tell data from program files.
 - **Keeping Tauri's per-user install folder**, `%LOCALAPPDATA%\tsugiki`, which is where ADR 0010 put the data.
   The program and its data would share a folder.
 
@@ -69,10 +79,11 @@ other runs brings the running one forward.
   `%LOCALAPPDATA%\Programs\Tsugiki`, as VS Code's user setup does. Its "Delete app data" box removes
   `%LOCALAPPDATA%\tsugiki` and `%APPDATA%\tsugiki`, not the `io.github.tsugiki` folder Tauri's uninstaller
   would remove.
-- On Windows, `webview\` holds WebView2's profile and cache, so a portable copy leaves nothing behind. On macOS
-  WKWebView picks its own folder, which Tauri can't move, so a portable copy there does leave that.
+- On Windows, `webview\` holds WebView2's profile and cache, so a portable copy leaves nothing behind. On
+  macOS WKWebView picks its own folder, which Tauri can't move, so a portable copy there does leave that.
 - Releases carry a Windows portable `.zip`, attested like everything else. It's all Windows gets until Stage
   4.
-- A Repository removed from `settings.toml` by hand keeps its rows in the database, so adding it back restores its pins and marks. Remove repository in Settings deletes them and the mirror, as ADR 0010 says.
+- A Repository removed from `settings.toml` by hand keeps its rows in the database, so adding it back restores
+  its pins and marks. Remove repository in Settings deletes them and the mirror, as ADR 0010 says.
 - A missing `settings.toml` at `settings_path` starts from the defaults, and the status bar says so. If it
   goes missing while Tsugiki runs, the last good values stay, since it may only be a drive gone for now.

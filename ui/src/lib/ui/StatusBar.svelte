@@ -37,7 +37,8 @@
   const listedProblems = $derived(problems.join(" · "));
 </script>
 
-<!-- Always in the page, because screen readers only announce changes in a live region that already exists. -->
+<!-- Always in the page, because screen readers only announce changes in a live region that already
+     exists. -->
 <footer
   role="status"
   class:offline

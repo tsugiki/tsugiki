@@ -11,6 +11,8 @@
     "build": "tauri build",
     "bindings": "node scripts/bindings.ts",
     "check": "npm run svelte-check && npm run clippy",
+    "doc-width": "node scripts/doc-width.ts",
+    "prose-check": "node scripts/prose-check.ts",
     "lint": "npm run eslint && npm run prettier && npm run rustfmt",
     "fmt": "npm run fmt -w ui && prettier --write scripts .github eslint.config.ts codecov.yml && cargo fmt --all",
     "test": "npm run vitest && npm run cargo-test && npm run stale-bindings",

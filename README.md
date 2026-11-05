@@ -8,20 +8,24 @@
 <p align="center">A review workbench for CPython core developers, and for the projects they maintain.</p>
 
 <p align="center">
-  <a href="https://codecov.io/gh/tsugiki/tsugiki"><img alt="codecov" src="https://codecov.io/gh/tsugiki/tsugiki/graph/badge.svg?token=4DS69EB5ML"></a>
-  <a href="https://app.codspeed.io/tsugiki/tsugiki?utm_source=badge"><img alt="CodSpeed" src="https://img.shields.io/endpoint?url=https://app.codspeed.io/badge.json"></a>
+  <a href="https://codecov.io/gh/tsugiki/tsugiki"><img alt="codecov"
+    src="https://codecov.io/gh/tsugiki/tsugiki/graph/badge.svg?token=4DS69EB5ML"></a>
+  <a href="https://app.codspeed.io/tsugiki/tsugiki?utm_source=badge"><img alt="CodSpeed"
+    src="https://img.shields.io/endpoint?url=https://app.codspeed.io/badge.json"></a>
 </p>
 
 ---
 
-Tsugiki (接ぎ木, *grafting*) is a desktop app for taking in your GitHub work without the email inbox or the slow web UI. The name comes from **Backports**: a fix lands on main and is grafted onto each maintenance branch.
+Tsugiki (接ぎ木, *grafting*) is a desktop app for taking in your GitHub work without the email inbox or the slow
+web UI. The name comes from **Backports**: a fix lands on main and is grafted onto each maintenance branch.
 
 For the **Repositories** you add, such as `python/cpython` and your own projects, Tsugiki:
 
 - groups PRs under the Issues they fix, with each fix's Backports beside it;
 - works out what is waiting on you from GitHub's own data, not from notifications;
 - lets you review inside the app, with a fast diff, review state kept per PR, and VS Code keybindings;
-- keeps your GitHub token in its Rust core, away from the webview, and works with a read-only token if you'd rather not hand it write access.
+- keeps your GitHub token in its Rust core, away from the webview, and works with a read-only token if you'd
+  rather not hand it write access.
 
 ## Status
 
@@ -32,7 +36,8 @@ Tsugiki is being designed. There is no app to install yet. The decisions made so
 - [docs/adr](docs/adr/): architecture decisions and why they were made.
 - [Issues](https://github.com/tsugiki/tsugiki/issues): open points to check before building.
 
-It will be a [Tauri](https://tauri.app/) app (Rust with Svelte 5 and TypeScript) for Windows and macOS. Its command-line name is `tsg`.
+It will be a [Tauri](https://tauri.app/) app (Rust with Svelte 5 and TypeScript) for Windows and macOS. Its
+command-line name is `tsg`.
 
 ## Checking a download
 
@@ -66,4 +71,5 @@ the links Tsugiki was asked to open, and quote what GitHub sent, so read it befo
 
 ## License
 
-[MIT](LICENSE). The wordmark is outlined from [Zen Kaku Gothic New](https://github.com/googlefonts/zen-kakugothic), under the SIL Open Font License 1.1.
+[MIT](LICENSE). The wordmark is outlined from [Zen Kaku Gothic
+New](https://github.com/googlefonts/zen-kakugothic), under the SIL Open Font License 1.1.

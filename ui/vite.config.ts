@@ -24,6 +24,9 @@ export default defineConfig({
         "../scripts/bindings.ts",
         "../scripts/rust-coverage.ts",
         "../scripts/release-check.ts",
+        // coverage: command lines around git, with their logic in the files they call.
+        "../scripts/doc-width.ts",
+        "../scripts/prose-check.ts",
         // coverage: checks the real window with real keys, which no unit test can do.
         "../scripts/smoke.ts",
         // coverage: zips the real build and starts it, which no unit test can do.

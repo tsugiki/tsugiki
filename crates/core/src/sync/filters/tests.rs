@@ -4,6 +4,7 @@ use crate::github::testing::reply_ok;
 use crate::github::{Reply, Request, Transport, Unreachable};
 use crate::repository::RepositorySettings;
 use crate::sync::Syncs;
+use crate::sync::recovery::{Scenario, recovers_from_each_failure};
 use crate::sync::testing::{
     FEW, Harness, LOTS, cpython, cross_references, fetched, fetched_nodes, issues,
     no_cross_references, nothing, pr_node, run_to_the_end, searches_finding,
@@ -79,6 +80,44 @@ fn filter_problem(harness: &Harness, query: &str) -> Option<String> {
         .get(&filter_query(query))
         .and_then(|results| results.problem.clone())
         .map(|problem| problem.words().to_owned())
+}
+
+#[test]
+fn a_filter_walk_recovers_from_a_failure_at_each_point() {
+    let mut posts = searches_finding(&[]);
+    posts.push(filter_page(2, &[issue_hit(1)], Some("more")));
+    posts.push(filter_page(2, &[issue_hit(2)], None));
+    posts.push(all_of(&[pr_hit(10, "2026-11-04T10:00:00Z")]));
+    posts.push(reply_ok(
+        r#"{"errors":[{"message":"That search is too long"}]}"#,
+    ));
+    posts.push(fetched(&[10], LOTS));
+    posts.push(issues(&[1, 2], LOTS));
+    posts.push(no_cross_references(LOTS));
+    posts.push(no_cross_references(LOTS));
+    let scenario = Scenario {
+        name: "recovery-filters",
+        settings: filtering(&["a", "b", "c"]),
+        prepare: |_| {},
+        posts,
+        checks: Vec::new(),
+    };
+
+    let operations = recovers_from_each_failure(&scenario);
+
+    assert_eq!(
+        operations[4..],
+        [
+            "SearchFilter",
+            "SearchFilter",
+            "SearchFilter",
+            "SearchFilter",
+            "FetchPullRequests",
+            "FetchIssues",
+            "FetchCrossReferences",
+            "FetchCrossReferences",
+        ]
+    );
 }
 
 #[test]

@@ -187,14 +187,16 @@ pub(super) fn walk_filters(link: &Link<'_>, walk: &mut FilterWalk) -> Result<Mov
         walk.current.extend([hit.number]);
         drop(walk.hits.insert(hit.number, hit));
     }
-    walk.cursor = page.next;
-    if walk.cursor.is_none() {
-        let _read = walk.slices.pop();
-    }
-    if !walk.slices.is_empty() {
+    let ends_its_slice = page.next.is_none();
+    if !ends_its_slice || walk.slices.len() > 1 {
+        walk.cursor = page.next;
+        if ends_its_slice {
+            let _read = walk.slices.pop();
+        }
         return Ok((Step::Searched { pause_until }, None));
     }
-    let numbers = std::mem::take(&mut walk.current);
+    // The walk moves on only once the save has worked, so a failed save reads this page again.
+    let numbers = walk.current.clone();
     let step = if search.since.is_some() {
         let narrowed = NarrowedResults {
             changed: walk.changed.clone(),

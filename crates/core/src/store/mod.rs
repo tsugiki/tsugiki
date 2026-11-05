@@ -228,6 +228,24 @@ impl Store {
         ask(&self.jobs, work)
     }
 
+    /// This store, except that call number `failing` from here on is lost, as if its thread had stopped.
+    /// The other calls reach the database in order, so a step can save one thing and fail on the next.
+    #[cfg(test)]
+    pub(crate) fn failing_at_call(&self, failing: usize) -> Self {
+        let (jobs, calls) = std::sync::mpsc::channel::<Job>();
+        let database = self.jobs.clone();
+        let thread = std::thread::spawn(move || {
+            for job in calls
+                .iter()
+                .enumerate()
+                .filter(|(call, _)| *call != failing)
+            {
+                drop(database.send(job.1));
+            }
+        });
+        Self { jobs, thread }
+    }
+
     /// A store whose thread has gone, as it would be after a panic there.
     #[cfg(test)]
     pub(crate) fn stopped() -> Self {

@@ -59,9 +59,10 @@ mod tests {
     use crate::github::testing::reply_ok;
     use crate::github::{Reply, Unreachable};
     use crate::sync::Syncs;
+    use crate::sync::recovery::{Scenario, recovers_from_each_failure};
     use crate::sync::testing::{
-        FEW, Harness, LOTS, cpython, cross_references, fetched_nodes, issues, merged_node,
-        no_cross_references, plain, pr_node, run_to_the_end, searches_finding,
+        FEW, Harness, LOTS, cpython, cross_references, fetched_nodes, found, issues, merged_node,
+        no_cross_references, nothing, plain, pr_node, run_to_the_end, searches_finding,
         up_to_the_first_issue,
     };
     use serde_json::{Value, json};
@@ -82,6 +83,51 @@ mod tests {
         reply_ok(&format!(
             r#"{{"data":{{"repository":{{"pullRequest":{node}}},{rate}}}}}"#
         ))
+    }
+
+    #[test]
+    fn a_first_sync_recovers_from_a_failure_at_each_point() {
+        let posts = vec![
+            found(&["a"], Some("next"), LOTS),
+            found(&["b"], None, LOTS),
+            nothing(LOTS),
+            nothing(LOTS),
+            nothing(LOTS),
+            fetched_nodes(&[pr_node(1, &json!({})), backport_node(2, 9)], LOTS),
+            origin_answer(&merged_node(9), LOTS),
+            issues(&[1], LOTS),
+            cross_references(&[3], Some("older"), LOTS),
+            cross_references(&[4], None, LOTS),
+            fetched_nodes(&[merged_node(3), backport_node(4, 8)], LOTS),
+            origin_answer(&merged_node(8), LOTS),
+        ];
+        let scenario = Scenario {
+            name: "recovery-first",
+            settings: plain(cpython()),
+            prepare: |_| {},
+            posts,
+            checks: Vec::new(),
+        };
+
+        let operations = recovers_from_each_failure(&scenario);
+
+        assert_eq!(
+            operations,
+            [
+                "SearchReviewRequests",
+                "SearchReviewRequests",
+                "SearchReviewedPrs",
+                "SearchOwnPrs",
+                "SearchAssignedPrs",
+                "FetchPullRequests",
+                "FetchOriginPullRequest",
+                "FetchIssues",
+                "FetchCrossReferences",
+                "FetchCrossReferences",
+                "FetchTreePullRequests",
+                "FetchOriginPullRequest",
+            ]
+        );
     }
 
     #[test]

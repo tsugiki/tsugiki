@@ -261,4 +261,6 @@ fn pause_until(limit: RateLimit) -> Option<OffsetDateTime> {
 }
 
 #[cfg(test)]
+mod recovery;
+#[cfg(test)]
 mod testing;

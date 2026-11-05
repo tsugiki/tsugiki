@@ -6,6 +6,7 @@ use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport,
 use crate::repository::{RepositoryName, RepositorySettings};
 use crate::status::Change;
 use crate::store::{FilterProblem, WorkFacts};
+use crate::sync::recovery::{Scenario, recovers_from_each_failure};
 use crate::sync::testing::{
     FEW, Harness, LOTS, cpython, cross_references, fetched_nodes, issues, no_cross_references,
     pr_node,
@@ -210,6 +211,134 @@ fn refreshing(settings: RepositorySettings) -> Syncs {
 
 fn facts(harness: &Harness) -> WorkFacts {
     harness.reader.work_facts(&cpython()).unwrap()
+}
+
+/// A Repository that finished a sync, holding what a poll and a probe can move.
+fn holding_what_can_move(harness: &Harness) {
+    synced(harness, ChangeCheck::Skipped);
+    harness.store.remember_login(&me()).unwrap();
+    holding_issue(harness, 1, LONG_BEFORE);
+    holding_pr(harness, &strangers_pr(3, LONG_BEFORE));
+    holding_pr(harness, &own_open_pr(4, &json!({})));
+    stored_filter(harness, "a", &[1, 9]);
+    stored_filter(harness, "b", &[]);
+}
+
+#[test]
+fn a_refresh_recovers_from_a_failure_at_each_point() {
+    let posts = vec![
+        polled(
+            &list(&[issue_node(1, AFTER_IT)], None),
+            &list(&[changed_pr(3, AFTER_IT)], None),
+            &[
+                search(&[issue_hit(2)], Some("more")),
+                search(&[issue_hit(6)], None),
+            ],
+        ),
+        fetched_nodes(&[strangers_pr(3, AFTER_IT)], LOTS),
+        probed(&[(4, "FAILURE")]),
+        reply_ok(&format!(
+            r#"{{"data":{{"search":{},{LOTS}}}}}"#,
+            search(&[issue_hit(2), issue_hit(5)], None)
+        )),
+        issues(&[2, 5, 6], LOTS),
+        cross_references(&[7], None, LOTS),
+        no_cross_references(LOTS),
+        no_cross_references(LOTS),
+        no_cross_references(LOTS),
+        fetched_nodes(&[strangers_pr(7, AFTER_IT)], LOTS),
+    ];
+    let scenario = Scenario {
+        name: "recovery-refresh",
+        settings: filtering(&["a", "b"]),
+        prepare: holding_what_can_move,
+        posts,
+        checks: Vec::new(),
+    };
+
+    let operations = recovers_from_each_failure(&scenario);
+
+    assert_eq!(
+        operations,
+        [
+            "RefreshRepository",
+            "FetchChangedPullRequests",
+            "ProbePullRequests",
+            "SearchFilter",
+            "FetchIssues",
+            "FetchCrossReferences",
+            "FetchCrossReferences",
+            "FetchCrossReferences",
+            "FetchCrossReferences",
+            "FetchTreePullRequests",
+        ]
+    );
+}
+
+#[test]
+fn a_refresh_that_redoes_an_interrupted_one_recovers_from_a_failure_at_each_point() {
+    let posts = vec![
+        polled(
+            &list(&[issue_node(1, AFTER_IT)], Some("more")),
+            &list(&[changed_pr(4, AFTER_IT)], None),
+            &[],
+        ),
+        quiet_poll(),
+        fetched_nodes(&[pr_node(4, &json!({ "updatedAt": AFTER_IT }))], LOTS),
+        issues(&[1], LOTS),
+        no_cross_references(LOTS),
+    ];
+    let scenario = Scenario {
+        name: "recovery-redo",
+        settings: filtering(&[]),
+        prepare: |harness| {
+            let state = SyncState {
+                started_at: at(LAST_SYNC),
+                finished_at: at(LAST_SYNC),
+                check: ChangeCheck::Skipped,
+                refresh_under_way: true,
+            };
+            harness.store.save_sync_state(&cpython(), state).unwrap();
+            harness.store.remember_login(&me()).unwrap();
+            holding_issue(harness, 1, LONG_BEFORE);
+            holding_pr(harness, &own_open_pr(4, &json!({})));
+        },
+        posts,
+        checks: Vec::new(),
+    };
+
+    let operations = recovers_from_each_failure(&scenario);
+
+    assert_eq!(
+        operations,
+        [
+            "RefreshRepository",
+            "RefreshRepository",
+            "FetchChangedPullRequests",
+            "FetchIssues",
+            "FetchCrossReferences",
+        ]
+    );
+}
+
+#[test]
+fn a_refresh_of_a_small_repository_recovers_from_a_failure_at_each_point() {
+    let scenario = Scenario {
+        name: "recovery-small",
+        settings: filtering(&["a"]),
+        prepare: |harness| {
+            synced(harness, ChangeCheck::Tagged(Etag::new("\"same\"")));
+            harness.store.remember_login(&me()).unwrap();
+            holding_pr(harness, &own_open_pr(1, &json!({})));
+            stored_filter(harness, "a", &[]);
+        },
+        posts: vec![probed(&[(1, "FAILURE")])],
+        checks: vec![check_reply(304, None)],
+    };
+
+    let operations = recovers_from_each_failure(&scenario);
+
+    assert_eq!(operations[1], "ProbePullRequests");
 }
 
 #[test]

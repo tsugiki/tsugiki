@@ -17,6 +17,7 @@ export function syncedWords(at: string | null, now: Date): string {
 const PART_WORDS = {
   your_work: "Syncing your work",
   window: "Syncing recent items",
+  older_open: "Syncing older open items",
   trees: "Syncing Issue trees",
 } as const;
 

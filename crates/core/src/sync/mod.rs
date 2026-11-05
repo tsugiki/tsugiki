@@ -346,6 +346,8 @@ impl UserWorkSync {
             (Phase::Resumable(Resumable::Loading(loading)), Some(_)) => {
                 if loading.trees_come_first() {
                     SyncPart::Trees
+                } else if loading.reads_older_open_items() {
+                    SyncPart::OlderOpen
                 } else {
                     SyncPart::Window
                 }

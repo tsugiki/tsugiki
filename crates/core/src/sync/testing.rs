@@ -12,7 +12,7 @@ use time::format_description::well_known::Rfc3339;
 use super::{Progress, Syncs};
 use crate::github::testing::{Scripted, reply_ok, token};
 use crate::github::{GitHub, Reply, Request, Transport, Unreachable};
-use crate::repository::{RepositoryName, RepositorySettings};
+use crate::repository::{RepositoryCounts, RepositoryName, RepositorySettings};
 use crate::store;
 use crate::store::{OpenReader, Store, StoreReader};
 use crate::token::Token;
@@ -93,7 +93,55 @@ impl Transport for EmptyWindow {
         if request.operation.starts_with("Window") {
             return empty_window_page();
         }
+        if request.operation == "CheckRepository" {
+            return counted(LARGE);
+        }
         self.0.post(token, request)
+    }
+}
+
+/// More open Issues and PRs than a small Repository has.
+pub(super) const LARGE: u32 = 501;
+
+/// The add dialog's count of a Repository with `open` open Issues and no open PR, which a first sync asks for
+/// before its lists.
+pub(super) fn counted(open: u32) -> Result<Reply, Unreachable> {
+    counted_as(RepositoryCounts {
+        open_issues: open,
+        open_prs: 0,
+        updated_in_window: 0,
+        closed_in_window: 0,
+    })
+}
+
+/// The add dialog's count of a Repository, as GitHub answers it.
+pub(super) fn counted_as(counts: RepositoryCounts) -> Result<Reply, Unreachable> {
+    let body = json!({ "data": {
+        "repository": {
+            "nameWithOwner": "python/cpython",
+            "viewerPermission": "READ",
+            "issues": { "totalCount": counts.open_issues },
+            "pullRequests": { "totalCount": counts.open_prs },
+        },
+        "updated": { "issueCount": counts.updated_in_window },
+        "closed": { "issueCount": counts.closed_in_window },
+    } });
+    reply_ok(&body.to_string())
+}
+
+/// Answers a first sync's count with `open` open items, and passes each other request to `inner`, which
+/// keeps its own record of what's asked.
+struct Counted {
+    open: u32,
+    inner: Scripted,
+}
+
+impl Transport for Counted {
+    fn post(&self, token: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
+        if request.operation == "CheckRepository" {
+            return counted(self.open);
+        }
+        self.inner.post(token, request)
     }
 }
 
@@ -185,8 +233,16 @@ impl Harness {
         }
     }
 
-    /// A harness whose replies include the first sync's window.
+    /// A harness whose replies include the first sync's window, for a large Repository.
     pub(super) fn with_window(name: &str, replies: Vec<Result<Reply, Unreachable>>) -> Self {
+        let (inner, asked) = Scripted::new(replies);
+        let mut harness = Self::answering(name, Box::new(Counted { open: LARGE, inner }));
+        harness.asked = asked;
+        harness
+    }
+
+    /// A harness whose replies answer every request, the count included.
+    pub(super) fn scripted(name: &str, replies: Vec<Result<Reply, Unreachable>>) -> Self {
         let (script, asked) = Scripted::new(replies);
         let mut harness = Self::answering(name, Box::new(script));
         harness.asked = asked;

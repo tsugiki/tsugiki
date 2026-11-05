@@ -183,7 +183,7 @@ describe("StatusBar's sync under way", () => {
   const online = { state: "online", login: "octocat" } as const;
   const repository = "python/cpython";
   const lastSync = { repository, at: null };
-  const activity = (part: "your_work" | "window" | "trees" | "refresh", pages = 12) => ({
+  const activity = (part: "your_work" | "window" | "trees" | "older_open" | "refresh", pages = 12) => ({
     repository,
     part,
     pages,
@@ -195,6 +195,7 @@ describe("StatusBar's sync under way", () => {
     ["your_work", "Syncing your work · 12 pages"],
     ["window", "Syncing recent items · 12 pages"],
     ["trees", "Syncing Issue trees · 12 pages"],
+    ["older_open", "Syncing older open items · 12 pages"],
   ] as const)("says the part %s and the pages, outside the live region", (part, words) => {
     render(StatusBar, { status: online, lastSync, syncActivity: activity(part) });
     expect(screen.getByRole("button").textContent).toBe(words);

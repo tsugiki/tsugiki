@@ -598,6 +598,8 @@ export type SyncActivity_Serialize = {
 export type SyncPart = "your_work" | 
 /**  The trees of the user's own Issues, and of any Issue they open. */
 "trees" | "window" | 
+/**  A small Repository's open items that last changed before the window. */
+"older_open" | 
 /**
  *  A refresh, or a sync that hasn't asked the store yet which it is. The status bar only mentions this
  *  when it has to wait.

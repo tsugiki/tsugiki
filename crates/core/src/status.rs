@@ -53,6 +53,8 @@ pub enum SyncPart {
     /// The trees of the user's own Issues, and of any Issue they open.
     Trees,
     Window,
+    /// A small Repository's open items that last changed before the window.
+    OlderOpen,
     /// A refresh, or a sync that hasn't asked the store yet which it is. The status bar only mentions this
     /// when it has to wait.
     Refresh,

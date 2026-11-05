@@ -15,9 +15,11 @@ about 140 an hour. GitHub's 10-second query timeout does.
 When a Repository is added, one query counts its open Issues and open PRs. Up to 500 is a small Repository:
 everything open is loaded, plus whatever closed in the last 30 days. Above that, a large one is loaded through
 a window of the last 30 days. The add dialog shows the count, the choice, and the expected time and API cost,
-and both numbers are settings on the Repository's page.
+and both numbers are settings on the Repository's page. The first sync counts again with the same query when
+its queue starts, and a resumed sync keeps that count, so a Repository that crossed 500 after it was added
+gets the sync its size calls for then.
 
-The order puts what waits on the user first, so the Workbench is right long before the sync ends (about 27
+The order puts what waits on the user first, so the Workbench is right long before the sync ends (about 20
 minutes for CPython):
 
 1. The user's own items: Review requests, open PRs with the user's **Review**, **Own PRs**, assignments, then
@@ -36,6 +38,12 @@ minutes for CPython):
    Once the Issues end, pages of the PR list add the PRs no Issue listed. Those pages ask for the ID, number
    and update time of 100 PRs, so each takes little of GitHub's time. All issues fills in as pages land.
    Issues that the fetched PRs name but no page brought come next, then Origin PRs, by number.
+4. For a small Repository, its open items that last changed before the window, in the same queue once the
+   window's lists end: open Issues, then open PRs. GitHub can't list items by a time they changed before, so
+   each list runs oldest first and ends at the first item the window holds. Closing an item changes it, so the
+   window already holds what closed inside it: none of 400 closed CPython Issues and PRs had closed after
+   their last change. The status bar calls this part "Syncing older open items". GitHub can't count those
+   Issues, so the count of Issues has no total until the last list of them ends.
 
 No PR is fetched twice, and a frozen PR is fetched again only if the list shows it changed. A PR older than
 the window waits until the user needs its Issue's tree. If the user opens an Issue while the queue runs, that
@@ -47,6 +55,11 @@ to the log, so the next open tries again.
 Requests stay serial because GitHub allows 60 seconds of GraphQL CPU time a minute, which it estimates from
 total response time, and a batch of 25 PRs takes about 6 seconds. A second thread would only reach that limit
 sooner.
+
+Measured on python/typeshed ([#120](https://github.com/tsugiki/tsugiki/issues/120)), a small Repository with
+385 open items, the oldest unchanged since 2018: the add dialog counted 577 items and estimated 150 seconds
+and 67 points. The sync took 150 seconds and 44 queries, so about 44 points, and loaded 592 items. 6 of those
+queries walked the open items from before the window.
 
 Measured on CPython ([#132](https://github.com/tsugiki/tsugiki/issues/132)), for an account with 108 PRs in
 its own trees: the user's own rows arrived after 20 seconds, the first rows of the window after 72, and the

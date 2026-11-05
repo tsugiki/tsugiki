@@ -1,7 +1,8 @@
 //! A first sync after the user's own work, as one queue (ADR 0015). Whole trees of what the user needs come
 //! first: their own Issues, then any Issue they open. After that, a page of a list and a batch of PRs take
 //! turns, so rows arrive from the start and the PRs of the window fill in soon after their Issues. A PR older
-//! than the window waits until the user opens its Issue. One request runs at a time.
+//! than the window waits until the user opens its Issue. A small Repository also lists its open items that
+//! last changed before the window, so the sync loads what the add dialog counted. One request runs at a time.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -14,8 +15,9 @@ use crate::github::issues::ListedPr;
 use crate::github::pull_requests::{PageRequest, PrFetch};
 use crate::github::references::IssueReferences;
 use crate::github::refresh::ListPlace;
-use crate::github::window::WindowRequest;
+use crate::github::window::{ListRequest, Span};
 use crate::links::{possible_numbers, possible_origin};
+use crate::repository::RepositorySize;
 use crate::status::LoadProgress;
 
 /// GitHub's largest page. The list of PRs asks for little, so it can use it.
@@ -35,6 +37,41 @@ struct LongRead {
     cursor: String,
 }
 
+/// One of a first sync's lists.
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+enum List {
+    Issues(Span),
+    PullRequests(Span),
+}
+
+/// A list and how far it has got.
+#[derive(Clone, Serialize, Deserialize)]
+struct Walk {
+    list: List,
+    place: ListPlace,
+}
+
+/// The lists a first sync of a Repository this size walks, in order: the window, then a small Repository's
+/// older open items, so the status bar moves from one part to the next once.
+fn lists_for(size: RepositorySize) -> VecDeque<Walk> {
+    let lists = match size {
+        RepositorySize::Small => vec![
+            List::Issues(Span::Window),
+            List::PullRequests(Span::Window),
+            List::Issues(Span::OlderOpen),
+            List::PullRequests(Span::OlderOpen),
+        ],
+        RepositorySize::Large => vec![List::Issues(Span::Window), List::PullRequests(Span::Window)],
+    };
+    lists
+        .into_iter()
+        .map(|list| Walk {
+            list,
+            place: ListPlace::Next(None),
+        })
+        .collect()
+}
+
 /// The queue and where it has got to, which a first sync saves after each step.
 #[derive(Serialize, Deserialize)]
 pub(super) struct Loading {
@@ -46,12 +83,15 @@ pub(super) struct Loading {
     opened: BTreeSet<u32>,
     /// The urgent Issues with more cross-references to read.
     long_reads: VecDeque<LongRead>,
-    issues: ListPlace,
+    /// The lists still to read, the next first, once the sync has counted the Repository's open items the way
+    /// the add dialog does. A count taken when the sync starts holds even if the Repository has crossed the
+    /// line since it was added.
+    lists: Option<VecDeque<Walk>>,
+    /// The count of Issues the lists bring, while the sync knows it.
     issues_total: Option<u32>,
     issues_read: u32,
     /// The Issues this sync has read or asked for, so a PR's Issue is asked for once.
     issues_seen: BTreeSet<u32>,
-    pull_requests: ListPlace,
     /// The PRs of `urgent_issues`, which go before `queue`.
     urgent: VecDeque<ListedPr>,
     queue: VecDeque<ListedPr>,
@@ -67,13 +107,13 @@ pub(super) struct Loading {
 
 /// The one request to make next.
 enum Next {
+    Count,
     LongRead(LongRead),
     UrgentIssues,
     UrgentOrigins,
     Batch,
     NamedIssues(Vec<u32>),
-    IssuePage,
-    PullRequestPage,
+    Page(Walk),
     Origins,
 }
 
@@ -101,10 +141,9 @@ impl Loading {
             opened: own_issues.iter().copied().collect(),
             urgent_issues: own_issues,
             long_reads: VecDeque::new(),
-            issues: ListPlace::Next(None),
+            lists: None,
             issues_total: None,
             issues_read: 0,
-            pull_requests: ListPlace::Next(None),
             urgent: VecDeque::new(),
             queue: VecDeque::new(),
             queued: BTreeSet::new(),
@@ -141,7 +180,25 @@ impl Loading {
         }
     }
 
+    /// True once the window's lists have ended and a small Repository's older open items are left.
+    pub(super) fn reads_older_open_items(&self) -> bool {
+        self.walks().next().is_some_and(|walk| {
+            matches!(
+                walk.list,
+                List::Issues(Span::OlderOpen) | List::PullRequests(Span::OlderOpen)
+            )
+        })
+    }
+
+    /// The lists still to read, none before the count.
+    fn walks(&self) -> impl Iterator<Item = &Walk> {
+        self.lists.iter().flatten()
+    }
+
     fn next(&self) -> Next {
+        if self.lists.is_none() {
+            return Next::Count;
+        }
         self.next_urgent().unwrap_or_else(|| self.next_in_turn())
     }
 
@@ -160,20 +217,17 @@ impl Loading {
     }
 
     fn next_in_turn(&self) -> Next {
-        // Until the list of Issues ends, a PR's Issue may still turn up on a later page.
-        if self.issues.is_finished() {
+        // Until the lists of Issues end, a PR's Issue may still turn up on a later page.
+        if !self.issues_left() {
             let named = self.named_issues_left();
             if !named.is_empty() {
                 return Next::NamedIssues(named);
             }
         }
-        let list_is_left = !self.issues.is_finished() || !self.pull_requests.is_finished();
-        if list_is_left && (self.list_goes_next || self.queue.is_empty()) {
-            return if self.issues.is_finished() {
-                Next::PullRequestPage
-            } else {
-                Next::IssuePage
-            };
+        if let Some(walk) = self.walks().next()
+            && (self.list_goes_next || self.queue.is_empty())
+        {
+            return Next::Page(walk.clone());
         }
         if self.queue.is_empty() {
             Next::Origins
@@ -182,9 +236,45 @@ impl Loading {
         }
     }
 
+    fn issues_left(&self) -> bool {
+        self.walks()
+            .any(|walk| matches!(walk.list, List::Issues(_)))
+    }
+
     fn named_issues_left(&self) -> Vec<u32> {
         let left = self.leads.named.difference(&self.issues_seen);
         left.take(FETCH_BATCH).copied().collect()
+    }
+
+    /// Moves the list just read on to `next`, or drops it once it ends.
+    fn move_list_on(&mut self, next: ListPlace) {
+        let lists = self.lists.get_or_insert_with(VecDeque::new);
+        let going_on = lists.pop_front().filter(|_| !next.is_finished());
+        if let Some(walk) = going_on {
+            lists.push_front(Walk {
+                place: next,
+                ..walk
+            });
+        }
+        self.list_goes_next = false;
+    }
+
+    /// Counts a page of Issues. GitHub gives the window's total, but can't count the older open Issues, so
+    /// while those are left there's no total until the last Issue list ends.
+    fn count_issues(&mut self, read: usize, window_total: Option<u32>) {
+        self.issues_read = self
+            .issues_read
+            .saturating_add(read.try_into().unwrap_or(u32::MAX));
+        let older_left = self
+            .walks()
+            .any(|walk| walk.list == List::Issues(Span::OlderOpen));
+        self.issues_total = if !self.issues_left() {
+            Some(self.issues_read)
+        } else if older_left {
+            None
+        } else {
+            window_total
+        };
     }
 
     /// Queues `listed`, unless this sync has it or it's frozen. An urgent PR already queued moves up.
@@ -248,16 +338,29 @@ pub(super) fn load(
     fetched: &mut BTreeSet<u32>,
 ) -> Result<Moved, Error> {
     let step = match loading.next() {
+        Next::Count => count(link, loading)?,
         Next::LongRead(read) => read_long(link, loading, read, fetched)?,
         Next::UrgentIssues => read_urgent_issues(link, loading, fetched)?,
         Next::UrgentOrigins => load_urgent_origin(link, loading, fetched)?,
         Next::Batch => fetch_batch(link, loading, fetched)?,
         Next::NamedIssues(numbers) => fetch_named_issues(link, loading, &numbers)?,
-        Next::IssuePage => read_issue_page(link, loading, fetched)?,
-        Next::PullRequestPage => read_pull_request_page(link, loading, fetched)?,
+        Next::Page(walk) => match walk.list {
+            List::Issues(span) => read_issue_page(link, loading, fetched, (span, &walk.place))?,
+            List::PullRequests(span) => {
+                read_pull_request_page(link, loading, fetched, (span, &walk.place))?
+            }
+        },
         Next::Origins => load_origins(link, loading, fetched)?,
     };
     Ok((step, None))
+}
+
+/// Counts the Repository's open items with the add dialog's own query, which decides the lists to read.
+fn count(link: &Link<'_>, loading: &mut Loading) -> Result<Step, Error> {
+    let today = OffsetDateTime::now_utc().date();
+    let check = link.github.check_repository(link.repository, today)?;
+    loading.lists = Some(lists_for(check.size));
+    Ok(Step::Searched { pause_until: None })
 }
 
 fn read_long(
@@ -366,25 +469,23 @@ fn read_issue_page(
     link: &Link<'_>,
     loading: &mut Loading,
     fetched: &BTreeSet<u32>,
+    (span, place): (Span, &ListPlace),
 ) -> Result<Step, Error> {
-    let asked = WindowRequest {
+    let asked = ListRequest {
+        span,
         since: loading.since,
-        place: &loading.issues,
+        place,
         size: SEARCH_PAGE,
     };
-    let page = link.github.window_issues(link.repository, asked)?;
+    let page = link.github.list_issues(link.repository, asked)?;
     let frozen = frozen(link)?;
     let numbers: Vec<u32> = page.items.iter().map(|issue| issue.number).collect();
     link.store
         .save_fetched_issues(link.repository, page.items, page.activity)?;
     loading.join_window_references(page.references, &held(fetched, &frozen));
-    loading.issues_total = Some(page.total);
-    loading.issues_read = loading
-        .issues_read
-        .saturating_add(numbers.len().try_into().unwrap_or(u32::MAX));
     loading.issues_seen.extend(numbers.iter().copied());
-    loading.issues = page.next;
-    loading.list_goes_next = false;
+    loading.move_list_on(page.next);
+    loading.count_issues(numbers.len(), page.total);
     Ok(Step::saved_if_any(numbers, pause_until(page.rate_limit)))
 }
 
@@ -394,13 +495,15 @@ fn read_pull_request_page(
     link: &Link<'_>,
     loading: &mut Loading,
     fetched: &BTreeSet<u32>,
+    (span, place): (Span, &ListPlace),
 ) -> Result<Step, Error> {
-    let asked = WindowRequest {
+    let asked = ListRequest {
+        span,
         since: loading.since,
-        place: &loading.pull_requests,
+        place,
         size: PR_LIST_PAGE,
     };
-    let page = link.github.window_pull_requests(link.repository, asked)?;
+    let page = link.github.list_pull_requests(link.repository, asked)?;
     let frozen = frozen(link)?;
     let moved = page
         .items
@@ -417,8 +520,7 @@ fn read_pull_request_page(
         })
         .collect();
     loading.join(moved, Urgency::InTurn, &|pr| fetched.contains(&pr));
-    loading.pull_requests = page.next;
-    loading.list_goes_next = false;
+    loading.move_list_on(page.next);
     Ok(Step::Searched {
         pause_until: pause_until(page.rate_limit),
     })

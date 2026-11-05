@@ -625,6 +625,7 @@ fn a_probe_with_many_prs_runs_in_batches_and_pauses_at_the_floor() {
     drop(syncs.step(&harness.github, &harness.store).unwrap());
     drop(syncs.step(&harness.github, &harness.store).unwrap());
     drop(syncs.step(&harness.github, &harness.store).unwrap());
+    drop(syncs.step(&harness.github, &harness.store).unwrap());
     let paused = syncs.ready_at().unwrap();
 
     assert_eq!(
@@ -857,6 +858,54 @@ fn a_filter_merges_its_narrowed_answer_and_brings_what_it_newly_reached() {
     assert_eq!(results.numbers, BTreeSet::from([2, 9]));
     assert_eq!(changes[0].items, [1, 2]);
     harness.finish();
+}
+
+/// Runs a refresh whose poll saves an Issue and merges two Filters, up to its first failure, and checks the
+/// window has heard of what's saved by then. Answers with the store calls the run made.
+fn the_window_hears_of_each_save_with_call_lost(lost: Option<usize>) -> usize {
+    let replies = vec![
+        polled(
+            &list(&[issue_node(1, AFTER_IT)], None),
+            &list(&[], None),
+            &[search(&[issue_hit(2)], None), search(&[issue_hit(3)], None)],
+        ),
+        issues(&[2, 3], LOTS),
+        no_cross_references(LOTS),
+        no_cross_references(LOTS),
+        no_cross_references(LOTS),
+    ];
+    let harness = after_a_sync(&format!("poll-news-{lost:?}"), replies);
+    holding_issue(&harness, 1, LONG_BEFORE);
+    stored_filter(&harness, "a", &[]);
+    stored_filter(&harness, "b", &[]);
+    let mut syncs = refreshing(filtering(&["a", "b"]));
+    let (flaky, calls) = harness.store.failing_at_call(lost);
+
+    let mut heard = BTreeSet::new();
+    while syncs.ready_at().is_some() {
+        match syncs.step(&harness.github, &flaky) {
+            Ok(Some(Progress::Changed(change))) => heard.extend(change.items),
+            Ok(_) => {}
+            Err(_) => break,
+        }
+    }
+    flaky.close();
+
+    let facts = facts(&harness);
+    let mut saved = &facts.filters[&query("a")].numbers | &facts.filters[&query("b")].numbers;
+    saved.extend((facts.issues[0].title == "Issue 1 now").then_some(1));
+    assert!(saved.is_subset(&heard), "{lost:?}: {saved:?} {heard:?}");
+    harness.finish();
+    calls.try_iter().count()
+}
+
+#[test]
+fn the_window_hears_of_each_save_in_a_poll_before_the_next_can_fail() {
+    let calls = the_window_hears_of_each_save_with_call_lost(None);
+
+    for lost in 0..calls {
+        assert!(the_window_hears_of_each_save_with_call_lost(Some(lost)) <= calls);
+    }
 }
 
 #[test]
@@ -1185,6 +1234,8 @@ fn the_failure_of_a_step_after_the_poll_can_run_again() {
     let harness = after_a_sync("retry", replies);
     let mut syncs = refreshing(filtering(&[]));
 
+    // The poll reads, then moves on.
+    drop(syncs.step(&harness.github, &harness.store).unwrap());
     drop(syncs.step(&harness.github, &harness.store).unwrap());
     let failed = syncs.step(&harness.github, &harness.store).unwrap_err();
     drop(run(&mut syncs, &harness));

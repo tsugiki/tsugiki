@@ -50,6 +50,8 @@ one at a time, the open Repository first.
   changed PRs by ID, and a batch then fetches only those Tsugiki holds an older copy of, so a quiet refresh
   costs a few points. Small Repositories first ask REST with `If-None-Match` and skip that request on a `304`.
   The probe still runs, because a `304` says nothing about CI.
+  After it, one more request names the failed checks of each Own PR whose CI failed since Tsugiki last
+  asked. A CPython PR runs about 70 checks, too many to read with every fetch.
 - **A later launch** runs the same refresh from the stored last poll time. A Filter with no stored results,
   such as one just edited in `settings.toml`, still gets its whole search. Trees are read only for Issues the
   refresh found changed or newly reached.

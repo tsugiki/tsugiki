@@ -5,6 +5,7 @@
 
 mod activity;
 mod columns;
+mod failed_checks;
 mod file;
 mod filters;
 mod issues;
@@ -26,10 +27,11 @@ use time::OffsetDateTime;
 use crate::error::{Error, ErrorKind};
 use crate::filters::FilterQuery;
 use crate::github::Login;
-use crate::github::activity::{Activity, ItemActivity};
+use crate::github::activity::ItemActivity;
 use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::PullRequestFacts;
 use crate::repository::RepositoryName;
+pub use activity::ActivityFacts;
 pub use filters::{FilterProblem, FilterResults, NarrowedResults};
 use migrate::{MIGRATIONS, Migration};
 pub use sync_state::{ChangeCheck, FirstSyncPlace, SyncState};
@@ -265,6 +267,31 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
+    /// The numbers of `viewer`'s open PRs whose CI failed after Tsugiki last asked which checks failed.
+    pub fn pull_requests_with_unread_checks(
+        &self,
+        repository: &RepositoryName,
+        viewer: &Login,
+    ) -> Result<Vec<u32>, Error> {
+        let repository = repository.clone();
+        let viewer = viewer.clone();
+        let read =
+            self.call(move |connection| failed_checks::unread(connection, &repository, &viewer))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    /// Replaces what the store knows about each PR's failed checks.
+    pub fn save_failed_checks(
+        &self,
+        repository: &RepositoryName,
+        read: Vec<(u32, Vec<String>)>,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved =
+            self.call(move |connection| failed_checks::save(connection, &repository, &read))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
     /// Records that the user looked at item `number` at `at`.
     pub fn mark_seen(
         &self,
@@ -278,49 +305,15 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// The moment the user last looked at item `number`, if they have.
-    pub fn last_seen(
-        &self,
-        repository: &RepositoryName,
-        number: u32,
-    ) -> Result<Option<OffsetDateTime>, Error> {
-        let repository = repository.clone();
-        let read =
-            self.call(move |connection| activity::last_seen(connection, &repository, number))?;
-        read.map_err(saying(CANT_READ))
-    }
-
     /// The events kept for item `number`, oldest first.
+    #[cfg(test)]
     pub fn activity(
         &self,
         repository: &RepositoryName,
         number: u32,
-    ) -> Result<Vec<Activity>, Error> {
+    ) -> Result<Vec<crate::github::activity::Activity>, Error> {
         let repository = repository.clone();
         let read = self.call(move |connection| activity::read(connection, &repository, number))?;
-        read.map_err(saying(CANT_READ))
-    }
-
-    /// The moment this Repository's first sync began, once a first sync has finished.
-    pub fn first_sync_started_at(
-        &self,
-        repository: &RepositoryName,
-    ) -> Result<Option<OffsetDateTime>, Error> {
-        let repository = repository.clone();
-        let read =
-            self.call(move |connection| activity::first_sync_started_at(connection, &repository))?;
-        read.map_err(saying(CANT_READ))
-    }
-
-    /// The moment Tsugiki saw PR `number`'s CI reach a result, if it has.
-    pub fn ci_finished_at(
-        &self,
-        repository: &RepositoryName,
-        number: u32,
-    ) -> Result<Option<OffsetDateTime>, Error> {
-        let repository = repository.clone();
-        let read =
-            self.call(move |connection| activity::ci_finished_at(connection, &repository, number))?;
         read.map_err(saying(CANT_READ))
     }
 
@@ -384,6 +377,7 @@ pub struct WorkFacts {
     pub issues: Vec<IssueFacts>,
     /// Each search of this Repository, with its last results.
     pub filters: BTreeMap<FilterQuery, FilterResults>,
+    pub activity: ActivityFacts,
 }
 
 fn read_last_login(connection: &Connection) -> rusqlite::Result<Option<Login>> {
@@ -411,8 +405,10 @@ fn read_work_facts(
     repository: &RepositoryName,
 ) -> rusqlite::Result<WorkFacts> {
     let transaction = connection.transaction()?;
+    let viewer = read_last_login(&transaction)?;
     Ok(WorkFacts {
-        viewer: read_last_login(&transaction)?,
+        activity: activity::read_facts(&transaction, repository, viewer.as_ref())?,
+        viewer,
         pull_requests: pull_requests::read_all(&transaction, repository)?,
         issues: issues::read_all(&transaction, repository)?,
         filters: filters::read_all(&transaction, repository)?,
@@ -776,6 +772,7 @@ mod tests {
             number: 1,
             title: "It broke".to_owned(),
             author: Some(Login::new("some-author")),
+            assignees: vec![],
             updated_at: saved_at,
         };
         write_last_login(connection, &viewer).unwrap();

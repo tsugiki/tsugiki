@@ -102,8 +102,8 @@ _Avoid_: Project, workspace, repo list
 
 **Workbench**:
 The home list of **Issues** the user is currently following in the current **Repository**: every Issue that a
-**Filter** reaches, that is a **Pinned issue**, or that has an open PR the user holds a **Review** on. An
-Issue being closed on GitHub does not remove it.
+**Filter** reaches, that is a **Pinned issue**, that has an open PR the user holds a **Review** on, or that
+**Needs attention**. An Issue being closed on GitHub does not remove it.
 _Avoid_: Dashboard, inbox
 
 **Filter**:

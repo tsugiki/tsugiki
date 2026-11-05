@@ -58,14 +58,20 @@ pub(super) const PULL_REQUEST_FIELDS: &str = "number title state isDraft updated
                                    commits(first: 100) { totalCount nodes { commit { message \
                                    parents { totalCount } committer { user { login } } } } } \
                                    timelineItems(last: 50, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, \
-                                   PULL_REQUEST_REVIEW, READY_FOR_REVIEW_EVENT, HEAD_REF_FORCE_PUSHED_EVENT]) { \
+                                   PULL_REQUEST_REVIEW, READY_FOR_REVIEW_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, \
+                                   MENTIONED_EVENT, REVIEW_REQUESTED_EVENT, ASSIGNED_EVENT]) { \
                                    nodes { __typename \
                                    ... on PullRequestCommit { commit { committedDate \
                                    author { name user { login } } committer { name user { login } } } } \
                                    ... on IssueComment { createdAt author { __typename login } bodyText } \
                                    ... on PullRequestReview { submittedAt author { __typename login } } \
                                    ... on ReadyForReviewEvent { createdAt actor { __typename login } } \
-                                   ... on HeadRefForcePushedEvent { createdAt actor { __typename login } } } }";
+                                   ... on HeadRefForcePushedEvent { createdAt actor { __typename login } } \
+                                   ... on MentionedEvent { createdAt actor { __typename login } } \
+                                   ... on ReviewRequestedEvent { createdAt requestedReviewer { \
+                                   ... on User { login } ... on Bot { login } } } \
+                                   ... on AssignedEvent { createdAt assignee { \
+                                   ... on User { login } ... on Bot { login } } } } }";
 
 /// The text of a fetch of PRs by ID.
 fn fetch_by_ids_query(operation: PrFetch) -> String {
@@ -291,8 +297,8 @@ pub(super) struct ReviewRequestWire {
 
 /// A team has no `login`, and a query that asks for none gets an empty object for it.
 #[derive(Deserialize)]
-struct ReviewerWire {
-    login: Option<Login>,
+pub(super) struct ReviewerWire {
+    pub(super) login: Option<Login>,
 }
 
 #[derive(Deserialize)]

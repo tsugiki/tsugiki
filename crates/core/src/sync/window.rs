@@ -422,7 +422,7 @@ mod tests {
     fn a_window_page_keeps_what_happened_on_its_items() {
         let at = hours_ago(1);
         let mut issue = window_issue(1, &at);
-        issue["comments"] = json!({ "nodes": [comment_by("issue-author", &at)] });
+        issue["timelineItems"] = json!({ "nodes": [comment_by("issue-author", &at)] });
         let mut pr = window_pr(2, &at);
         pr["timelineItems"] = json!({ "nodes": [comment_by("some-author", &at)] });
         let old = window_pr(3, "2020-01-01T10:00:00Z");

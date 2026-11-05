@@ -1,12 +1,14 @@
 //! The Workbench's view model (ADR 0008), worked out from stored facts when the window asks (ADR 0010). Each
 //! item is an Issue with the PRs that fix it and their Backports, or a PR outside any Issue (ADR 0011).
 
+mod attention;
 mod backports;
 mod filters;
 mod issues;
 mod links;
 mod rows;
 
+pub use attention::{Attention, Why};
 pub use filters::FilterLine;
 pub use issues::IssueItem;
 pub(crate) use rows::reasons;
@@ -15,7 +17,7 @@ pub use rows::{WorkReason, WorkbenchRow};
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
 use time::OffsetDateTime;
 
@@ -25,6 +27,7 @@ use crate::github::issues::IssueFacts;
 use crate::links::BackportKind;
 use crate::repository::RepositorySettings;
 use crate::store::{StoreReader, WorkFacts};
+use attention::Causes;
 use backports::{plant, standalone};
 use filters::FilterFacts;
 use issues::issue_item;
@@ -83,7 +86,7 @@ pub enum WorkbenchItem {
 }
 
 impl WorkbenchItem {
-    fn updated_at_and_number(&self) -> (OffsetDateTime, u32) {
+    pub(crate) fn updated_at_and_number(&self) -> (OffsetDateTime, u32) {
         match self {
             Self::Issue(issue) => (issue.updated_at, issue.number),
             Self::StandalonePr(tree) => (tree.row.updated_at, tree.row.number),
@@ -104,60 +107,117 @@ impl WorkbenchItem {
     }
 }
 
-/// A Repository's Workbench or one of its Filters, with what the Sidebar shows beside it.
+/// A top-level entry of the list, with why it Needs attention, if it does.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct ListedItem {
+    #[serde(flatten)]
+    pub item: WorkbenchItem,
+    pub attention: Option<Attention>,
+}
+
+/// The list the window asks for.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WorkbenchView {
+    Whole,
+    Filter { query: FilterQuery },
+    ReviewRequests,
+}
+
+/// A Repository's Workbench or one of its views, with what the Sidebar shows beside it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct Workbench {
-    /// The selected items, the latest update first.
-    pub items: Vec<WorkbenchItem>,
-    /// How many items the Workbench holds, until Needs attention exists to count instead.
+    /// The items that Need attention, newest first by when they started to, then the rest by last update.
+    pub items: Vec<ListedItem>,
+    /// The Issues with nothing that Needs attention, the latest update first.
+    pub quiet: Vec<ListedItem>,
+    /// The count of items on the Workbench that Need attention.
     pub count: u32,
+    /// The count of items that hold a PR carrying a Review request.
+    pub review_requests: u32,
     pub filters: Vec<FilterLine>,
 }
 
 impl Workbench {
-    /// Reads the Workbench of `repository`, or the Filter `selected`. This waits on the database and never on
-    /// a sync (ADR 0018).
+    /// Reads the view `view` of `repository`'s Workbench. This waits on the database and never on a sync
+    /// (ADR 0018).
     pub fn read(
         reader: &StoreReader,
         repository: &RepositorySettings,
-        selected: Option<&FilterQuery>,
+        view: &WorkbenchView,
     ) -> Result<Self, Error> {
         let facts = reader.work_facts(&repository.name)?;
-        Ok(Self::from_facts(facts, repository, selected))
+        Ok(Self::from_facts(facts, repository, view))
     }
 
     /// No viewer means nobody has signed in yet, so no PR is the user's.
     fn from_facts(
         mut facts: WorkFacts,
         repository: &RepositorySettings,
-        selected: Option<&FilterQuery>,
+        view: &WorkbenchView,
     ) -> Self {
         let filters = FilterFacts::new(repository, std::mem::take(&mut facts.filters));
         let matched = filters.matched();
-        let selected = selected.map(|query| filters.numbers_of(query));
-        let candidates = candidates(facts, repository, selected.unwrap_or(&matched));
-        let on_workbench =
-            |item: &&WorkbenchItem| any_reason(&item.rows()) || item.is_reached_by(&matched);
-        let lines = filters.lines(&candidates);
-        let count = count_of(candidates.iter().filter(on_workbench));
-        let mut items: Vec<WorkbenchItem> = candidates
-            .iter()
-            .filter(|item| match selected {
-                Some(numbers) => item.is_reached_by(numbers),
-                None => on_workbench(item),
+        let causes = Causes::of(&facts, repository.conventions);
+        let selected = match view {
+            WorkbenchView::Whole => None,
+            WorkbenchView::Filter { query } => Some(filters.numbers_of(query)),
+            WorkbenchView::ReviewRequests => Some(&causes.review_requests),
+        };
+        let listed: Vec<ListedItem> = candidates(facts, repository, selected.unwrap_or(&matched))
+            .into_iter()
+            .map(|item| ListedItem {
+                attention: causes.attention_of(&item),
+                item,
             })
-            .cloned()
             .collect();
-        items.sort_by_key(|item| Reverse(item.updated_at_and_number()));
+        let on_workbench = |listed: &&ListedItem| {
+            listed.attention.is_some()
+                || any_reason(&listed.item.rows())
+                || listed.item.is_reached_by(&matched)
+        };
+        let lines = filters.lines(&listed);
+        let count = count_of(listed.iter().filter(|listed| listed.attention.is_some()));
+        let review_requests = count_of(
+            listed
+                .iter()
+                .filter(|listed| listed.item.is_reached_by(&causes.review_requests)),
+        );
+        let shown = listed.iter().filter(|listed| match selected {
+            Some(numbers) => listed.item.is_reached_by(numbers),
+            None => on_workbench(listed),
+        });
+        let (items, quiet) = sections(shown.cloned().collect());
         Self {
             items,
+            quiet,
             count,
+            review_requests,
             filters: lines,
         }
     }
 }
 
-fn count_of<'a>(items: impl Iterator<Item = &'a WorkbenchItem>) -> u32 {
+/// `shown` in the order of a list: what Needs attention, then the rest, and apart from them the quiet
+/// section, which is every Issue with nothing that Needs attention.
+fn sections(shown: Vec<ListedItem>) -> (Vec<ListedItem>, Vec<ListedItem>) {
+    let (mut waiting, others): (Vec<_>, Vec<_>) = shown
+        .into_iter()
+        .partition(|listed| listed.attention.is_some());
+    let (mut quiet, mut rest): (Vec<_>, Vec<_>) = others
+        .into_iter()
+        .partition(|listed| matches!(listed.item, WorkbenchItem::Issue(_)));
+    waiting.sort_by_key(|listed| {
+        let since = listed.attention.as_ref().map(|attention| attention.since);
+        Reverse((since, listed.item.updated_at_and_number().1))
+    });
+    rest.sort_by_key(|listed| Reverse(listed.item.updated_at_and_number()));
+    quiet.sort_by_key(|listed| Reverse(listed.item.updated_at_and_number()));
+    waiting.append(&mut rest);
+    (waiting, quiet)
+}
+
+fn count_of<'a>(items: impl Iterator<Item = &'a ListedItem>) -> u32 {
     u32::try_from(items.count()).unwrap_or(u32::MAX)
 }
 
@@ -204,8 +264,11 @@ fn any_reason(rows: &[&WorkbenchRow]) -> bool {
 mod testing;
 #[cfg(test)]
 mod tests {
+    use serde_json::Value;
+
     use super::*;
     use crate::github::pull_requests::{PrState, PullRequestFacts};
+    use crate::store::ActivityFacts;
     use crate::workbench::testing::{
         at, cpython, first_issue, fixing, issue, mine, outline, reasons_for, stranger, workbench,
     };
@@ -259,10 +322,11 @@ mod tests {
         assert_eq!(sent["items"][0]["kind"], "standalone_pr");
         assert_eq!(sent["items"][0]["number"], 3);
         assert_eq!(sent["items"][0]["updated_at"], "1970-01-01T00:00:01Z");
-        assert_eq!(sent["items"][1]["kind"], "issue");
-        assert_eq!(sent["items"][1]["updated_at"], "1970-01-01T00:00:01Z");
-        assert_eq!(sent["items"][1]["pull_requests"][0]["kind"], "pr");
-        assert_eq!(sent["items"][1]["pull_requests"][0]["number"], 4);
+        assert_eq!(sent["items"][0]["attention"], Value::Null);
+        assert_eq!(sent["quiet"][0]["kind"], "issue");
+        assert_eq!(sent["quiet"][0]["updated_at"], "1970-01-01T00:00:01Z");
+        assert_eq!(sent["quiet"][0]["pull_requests"][0]["kind"], "pr");
+        assert_eq!(sent["quiet"][0]["pull_requests"][0]["number"], 4);
     }
 
     #[test]
@@ -279,13 +343,14 @@ mod tests {
     fn nothing_is_the_users_before_anyone_signs_in() {
         let found = Workbench::from_facts(
             WorkFacts {
+                activity: ActivityFacts::default(),
                 viewer: None,
                 pull_requests: vec![mine(1)],
                 issues: vec![issue(1)],
                 filters: BTreeMap::new(),
             },
             &cpython(),
-            None,
+            &WorkbenchView::Whole,
         );
         assert_eq!(found.items, []);
     }

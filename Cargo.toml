@@ -11,6 +11,7 @@ repository = "https://github.com/tsugiki/tsugiki"
 
 [workspace.dependencies]
 divan = { package = "codspeed-divan-compat", version = "=6.0.0" }
+insta = "1.43.1"
 log = "0.4.35"
 # `trace` is for the store's plan check. It stays on here so tests and builds share one `rusqlite`.
 rusqlite = { version = "0.41.1", default-features = false, features = ["bundled", "trace"] }

@@ -154,6 +154,9 @@ fn save_pull_request(
                      WHEN excluded.ci IS NOT pull_requests.ci
                          AND excluded.ci IN ('SUCCESS', 'FAILURE', 'ERROR')
                      THEN :now ELSE pull_requests.ci_finished_at END,
+                 checks_read_at = CASE
+                     WHEN excluded.updated_at > pull_requests.updated_at THEN NULL
+                     ELSE pull_requests.checks_read_at END,
                  updated_at = excluded.updated_at,
                  off_default_description = excluded.off_default_description,
                  merge_commit = excluded.merge_commit",
@@ -201,7 +204,7 @@ fn forget_latest_reviews(
         .map(drop)
 }
 
-fn forget_assignees(
+pub(super) fn forget_assignees(
     connection: &Connection,
     repository: &RepositoryName,
     number: u32,
@@ -326,7 +329,7 @@ fn save_latest_review(
         .map(drop)
 }
 
-fn save_assignee(
+pub(super) fn save_assignee(
     connection: &Connection,
     repository: &RepositoryName,
     number: u32,
@@ -367,7 +370,7 @@ fn review_requests(
     )
 }
 
-fn assignees(
+pub(super) fn assignees(
     connection: &Connection,
     repository: &RepositoryName,
 ) -> rusqlite::Result<BTreeMap<u32, Vec<Login>>> {

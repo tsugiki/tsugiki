@@ -3,32 +3,37 @@
 import {
   commands,
   events,
+  type Attention_Serialize,
   type BackportKind,
   type BackportRow_Serialize,
   type CiState,
   type FilterLine_Serialize,
   type IssueItem_Serialize,
+  type ListedItem_Serialize,
   type PrState,
   type TreeEntry_Serialize,
-  type WorkbenchItem_Serialize,
   type WorkbenchRow_Serialize,
+  type WorkbenchView,
   type WorkReason,
+  type Why,
 } from "$lib/data/bindings";
 
+export type Attention = Attention_Serialize;
 export type BackportRow = BackportRow_Serialize;
 export type FilterLine = FilterLine_Serialize;
 export type IssueItem = IssueItem_Serialize;
+export type ListedItem = ListedItem_Serialize;
 export type TreeEntry = TreeEntry_Serialize;
-export type WorkbenchItem = WorkbenchItem_Serialize;
 export type WorkbenchRow = WorkbenchRow_Serialize;
-export type { BackportKind, CiState, PrState, WorkReason };
+export type { BackportKind, CiState, PrState, WorkbenchView, WorkReason, Why };
 
 export class WorkbenchState {
-  items = $state<WorkbenchItem[]>();
+  items = $state<ListedItem[]>();
+  quiet = $state<ListedItem[]>([]);
   count = $state(0);
+  reviewRequests = $state(0);
   filters = $state<FilterLine[]>([]);
-  /** The search of the Filter on show, or null for the whole Workbench. */
-  selected = $state<string | null>(null);
+  selected = $state<WorkbenchView>({ kind: "whole" });
   error = $state<string>();
   #repository: string;
   #lastQuestion = 0;
@@ -60,9 +65,8 @@ export class WorkbenchState {
     await this.#ask();
   }
 
-  /** Puts a Filter on show, or the whole Workbench for null. */
-  async select(query: string | null) {
-    this.selected = query;
+  async select(view: WorkbenchView) {
+    this.selected = view;
     await this.#ask();
   }
 
@@ -82,7 +86,9 @@ export class WorkbenchState {
     if (question !== this.#lastQuestion) return;
     if (answer.status === "ok") {
       this.items = answer.data.items;
+      this.quiet = answer.data.quiet;
       this.count = answer.data.count;
+      this.reviewRequests = answer.data.review_requests;
       this.filters = answer.data.filters;
       this.error = undefined;
     } else {

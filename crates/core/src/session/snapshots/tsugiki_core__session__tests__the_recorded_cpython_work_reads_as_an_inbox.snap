@@ -1,0 +1,32 @@
+---
+source: crates/core/src/session/tests.rs
+expression: inbox_of(&workbench)
+---
+count 3, review requests 2
+
+#112564 Some([ReviewRequested])
+#156425 Some([CiFailed { checks: [] }])
+#140798 Some([ReviewRequested])
+
+quiet
+#159101 None
+#160663 None
+#155728 None
+#140328 None
+#152125 None
+#151763 None
+#155176 None
+#148937 None
+#151815 None
+#153058 None
+#141594 None
+#139778 None
+#151862 None
+#155181 None
+#149532 None
+#128942 None
+#140928 None
+#140256 None
+#138864 None
+#145970 None
+#139389 None

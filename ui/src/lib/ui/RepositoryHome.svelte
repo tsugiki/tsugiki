@@ -1,9 +1,15 @@
 <script lang="ts">
-  import { WorkbenchState, type BackportRow } from "$lib/state/workbench.svelte";
+  import { WorkbenchState, type BackportRow, type ListedItem } from "$lib/state/workbench.svelte";
   import Sidebar from "./Sidebar.svelte";
-  import { details, headline, issueDetails, standaloneDetails } from "./workbench-row";
+  import { details, headline, issueDetails, preview, standaloneDetails } from "./workbench-row";
 
   const MINUTE = 60_000;
+  const EMPTY = {
+    whole: "Nothing here yet. The first sync lists what waits on you as it finds it.",
+    filter:
+      "Nothing in this Filter yet. If a sync has run, check its query in settings.toml: GitHub finds nothing for a search it can't read.",
+    review_requests: "Nobody has asked you for a review.",
+  };
 
   let { name, onadd }: { name: string; onadd: () => void } = $props();
 
@@ -43,12 +49,43 @@
   {/if}
 {/snippet}
 
+{#snippet listed(item: ListedItem)}
+  <li>
+    {#if item.attention}
+      <strong>{headline(item)}</strong>
+      <small class="preview">{preview(item.attention)}</small>
+    {:else}
+      <span>{headline(item)}</span>
+    {/if}
+    {#if item.kind === "issue"}
+      <small>{issueDetails(item, now)}</small>
+      <ul class="pull-requests">
+        {#each item.pull_requests as entry (entry.number)}
+          <li>
+            <span>{headline(entry)}</span>
+            <small>{details(entry)}</small>
+            {#if entry.kind === "pr"}
+              {@render backports(entry.backports)}
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {:else}
+      <small>{standaloneDetails(item, now)}</small>
+      {#if item.kind === "standalone_pr"}
+        {@render backports(item.backports)}
+      {/if}
+    {/if}
+  </li>
+{/snippet}
+
 <div class="home">
   <Sidebar
     count={workbench.count}
+    reviewRequests={workbench.reviewRequests}
     filters={workbench.filters}
     selected={workbench.selected}
-    onselect={(query) => void workbench.select(query)}
+    onselect={(view) => void workbench.select(view)}
   />
   <section>
     <h1>{name}</h1>
@@ -57,40 +94,22 @@
       <!-- One expression: Svelte compiles `{a} {b}` with `?? ""` branches that no test can reach. -->
       <p role="alert">{`Tsugiki can't read this Workbench: ${workbench.error}`}</p>
     {/if}
-    {#if workbench.items?.length === 0 && workbench.selected !== null}
-      <p>
-        Nothing in this Filter yet. If a sync has run, check its query in settings.toml: GitHub finds nothing
-        for a search it can't read.
-      </p>
-    {:else if workbench.items?.length === 0}
-      <p>Nothing here yet. The first sync lists what waits on you as it finds it.</p>
+    {#if workbench.items?.length === 0 && workbench.quiet.length === 0}
+      <p>{EMPTY[workbench.selected.kind]}</p>
     {:else if workbench.items}
       <ul>
         {#each workbench.items as item (item.number)}
-          <li>
-            <span>{headline(item)}</span>
-            {#if item.kind === "issue"}
-              <small>{issueDetails(item, now)}</small>
-              <ul class="pull-requests">
-                {#each item.pull_requests as entry (entry.number)}
-                  <li>
-                    <span>{headline(entry)}</span>
-                    <small>{details(entry)}</small>
-                    {#if entry.kind === "pr"}
-                      {@render backports(entry.backports)}
-                    {/if}
-                  </li>
-                {/each}
-              </ul>
-            {:else}
-              <small>{standaloneDetails(item, now)}</small>
-              {#if item.kind === "standalone_pr"}
-                {@render backports(item.backports)}
-              {/if}
-            {/if}
-          </li>
+          {@render listed(item)}
         {/each}
       </ul>
+      {#if workbench.quiet.length > 0}
+        <h2>Quiet</h2>
+        <ul>
+          {#each workbench.quiet as item (item.number)}
+            {@render listed(item)}
+          {/each}
+        </ul>
+      {/if}
     {/if}
   </section>
 </div>
@@ -103,6 +122,15 @@
 
   h1 {
     font-size: 16px;
+  }
+
+  h2 {
+    font-size: 13px;
+    margin: 16px 0 0;
+  }
+
+  .preview {
+    font-weight: 600;
   }
 
   ul {

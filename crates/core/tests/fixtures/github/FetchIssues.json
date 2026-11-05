@@ -8,7 +8,8 @@
       "repository": {
         "i112564": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "user-51"
           },
@@ -18,7 +19,8 @@
         },
         "i128942": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "user-49"
           },
@@ -28,7 +30,8 @@
         },
         "i138864": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "user-29"
           },
@@ -38,7 +41,8 @@
         },
         "i139389": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "octocat"
           },
@@ -48,7 +52,8 @@
         },
         "i139778": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "user-18"
           },
@@ -58,7 +63,8 @@
         },
         "i140256": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "user-45"
           },
@@ -68,7 +74,8 @@
         },
         "i140328": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "user-18"
           },
@@ -78,7 +85,8 @@
         },
         "i140798": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "user-52"
           },
@@ -88,7 +96,8 @@
         },
         "i140928": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "user-40"
           },
@@ -98,7 +107,8 @@
         },
         "i141594": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "user-40"
           },
@@ -108,7 +118,8 @@
         },
         "i145970": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "octocat"
           },
@@ -118,7 +129,8 @@
         },
         "i148937": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "user-7"
           },
@@ -128,7 +140,8 @@
         },
         "i149532": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "user-29"
           },
@@ -138,7 +151,8 @@
         },
         "i151763": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "user-53"
           },
@@ -148,7 +162,8 @@
         },
         "i151815": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "user-54"
           },
@@ -158,7 +173,8 @@
         },
         "i151862": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "user-34"
           },
@@ -168,7 +184,8 @@
         },
         "i152125": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "octocat"
           },
@@ -178,7 +195,8 @@
         },
         "i153058": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "user-25"
           },
@@ -188,7 +206,8 @@
         },
         "i155176": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "user-25"
           },
@@ -198,7 +217,8 @@
         },
         "i155181": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "user-25"
           },
@@ -208,7 +228,8 @@
         },
         "i155728": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "user-23"
           },
@@ -218,7 +239,8 @@
         },
         "i156425": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "octocat"
           },
@@ -228,7 +250,8 @@
         },
         "i159101": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "user-55"
           },
@@ -238,7 +261,8 @@
         },
         "i160663": {
           "__typename": "Issue",
-          "comments": { "nodes": [] },
+          "assignees": { "nodes": [] },
+          "timelineItems": { "nodes": [] },
           "author": {
             "login": "user-17"
           },
@@ -249,7 +273,7 @@
       }
     }
   },
-  "query": "query FetchIssues($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { i112564: issueOrPullRequest(number: 112564) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i128942: issueOrPullRequest(number: 128942) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i138864: issueOrPullRequest(number: 138864) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i139389: issueOrPullRequest(number: 139389) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i139778: issueOrPullRequest(number: 139778) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i140256: issueOrPullRequest(number: 140256) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i140328: issueOrPullRequest(number: 140328) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i140798: issueOrPullRequest(number: 140798) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i140928: issueOrPullRequest(number: 140928) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i141594: issueOrPullRequest(number: 141594) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i145970: issueOrPullRequest(number: 145970) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i148937: issueOrPullRequest(number: 148937) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i149532: issueOrPullRequest(number: 149532) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i151763: issueOrPullRequest(number: 151763) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i151815: issueOrPullRequest(number: 151815) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i151862: issueOrPullRequest(number: 151862) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i152125: issueOrPullRequest(number: 152125) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i153058: issueOrPullRequest(number: 153058) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i155176: issueOrPullRequest(number: 155176) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i155181: issueOrPullRequest(number: 155181) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i155728: issueOrPullRequest(number: 155728) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i156425: issueOrPullRequest(number: 156425) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i159101: issueOrPullRequest(number: 159101) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } i160663: issueOrPullRequest(number: 160663) { __typename ... on Issue { number title updatedAt author { login } comments(last: 50) { nodes { createdAt author { __typename login } } } } } } rateLimit { remaining resetAt } }",
+  "query": "query FetchIssues($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { i112564: issueOrPullRequest(number: 112564) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i128942: issueOrPullRequest(number: 128942) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i138864: issueOrPullRequest(number: 138864) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i139389: issueOrPullRequest(number: 139389) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i139778: issueOrPullRequest(number: 139778) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i140256: issueOrPullRequest(number: 140256) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i140328: issueOrPullRequest(number: 140328) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i140798: issueOrPullRequest(number: 140798) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i140928: issueOrPullRequest(number: 140928) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i141594: issueOrPullRequest(number: 141594) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i145970: issueOrPullRequest(number: 145970) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i148937: issueOrPullRequest(number: 148937) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i149532: issueOrPullRequest(number: 149532) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i151763: issueOrPullRequest(number: 151763) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i151815: issueOrPullRequest(number: 151815) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i151862: issueOrPullRequest(number: 151862) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i152125: issueOrPullRequest(number: 152125) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i153058: issueOrPullRequest(number: 153058) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i155176: issueOrPullRequest(number: 155176) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i155181: issueOrPullRequest(number: 155181) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i155728: issueOrPullRequest(number: 155728) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i156425: issueOrPullRequest(number: 156425) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i159101: issueOrPullRequest(number: 159101) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i160663: issueOrPullRequest(number: 160663) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } } rateLimit { remaining resetAt } }",
   "reset": 1793832374,
   "status": 200
 }

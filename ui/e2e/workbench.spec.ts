@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type {
   Filter,
-  WorkbenchItem_Serialize as WorkbenchItem,
+  ListedItem_Serialize as ListedItem,
   WorkbenchRow_Serialize as WorkbenchRow,
 } from "../src/lib/data/bindings.ts";
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
@@ -22,7 +22,8 @@ const reviewRow: WorkbenchRow = {
   reasons: ["review_request"],
 };
 
-const review: WorkbenchItem = {
+const review: ListedItem = {
+  attention: { since: "2026-11-04T10:00:00Z", why: [{ kind: "review_requested" }] },
   kind: "issue",
   number: 112564,
   title: "GIL drop during collection",
@@ -47,7 +48,8 @@ const review: WorkbenchItem = {
   ],
 };
 
-const own: WorkbenchItem = {
+const own: ListedItem = {
+  attention: null,
   kind: "standalone_pr",
   number: 157178,
   title: "GH-156425: Clear GC frame on early return",
@@ -64,13 +66,17 @@ const own: WorkbenchItem = {
 test("the Workbench lists what waits on the user", async ({ page }) => {
   await mockCore(page, {
     home: cpython,
-    workbench: { status: "ok", data: { items: [review, own], count: 2, filters: [] } },
+    workbench: {
+      status: "ok",
+      data: { items: [review, own], quiet: [], count: 2, review_requests: 0, filters: [] },
+    },
   });
   await page.goto("/");
 
   const rows = page.getByRole("listitem");
   await expect(rows).toHaveCount(4);
-  await expect(rows.nth(0)).toContainText("#112564 GIL drop during collection");
+  await expect(rows.nth(0).locator("strong")).toHaveText("#112564 GIL drop during collection");
+  await expect(rows.nth(0)).toContainText("Review requested from you");
   await expect(rows.nth(0)).toContainText("issue-author, some-author · 2 PRs · ");
   await expect(rows.nth(1)).toContainText("#160662 gh-112564: Fix UAF for gc debug print");
   await expect(rows.nth(1)).toContainText("Review request · some-author · into main · Open · CI passed");
@@ -81,12 +87,15 @@ test("the Workbench lists what waits on the user", async ({ page }) => {
 test("the first sync's rows appear as the core saves them", async ({ page }) => {
   await mockCore(page, {
     home: cpython,
-    workbench: { status: "ok", data: { items: [], count: 0, filters: [] } },
+    workbench: { status: "ok", data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [] } },
   });
   await page.goto("/");
   await expect(page.getByText(/Nothing here yet/)).toBeVisible();
 
-  await changeAnswer(page, "workbench", { status: "ok", data: { items: [own], count: 1, filters: [] } });
+  await changeAnswer(page, "workbench", {
+    status: "ok",
+    data: { items: [own], quiet: [], count: 1, review_requests: 0, filters: [] },
+  });
   await emitFromCore(page, "changed", { repository: "tsugiki/tsugiki", items: [1] });
   await emitFromCore(page, "changed", { repository: repository.name, items: [1] });
 
@@ -95,7 +104,7 @@ test("the first sync's rows appear as the core saves them", async ({ page }) => 
 });
 
 test("the Sidebar lists the Filters, and selecting one shows its Issues", async ({ page }) => {
-  const whole = { items: [review, own], count: 2, filters: [mine] };
+  const whole = { items: [review, own], quiet: [], count: 2, review_requests: 0, filters: [mine] };
   await mockCore(page, { home: cpython, workbench: { status: "ok", data: whole } });
   await page.goto("/");
 
@@ -113,7 +122,7 @@ test("the Sidebar lists the Filters, and selecting one shows its Issues", async 
 
 test("a change keeps the selected Filter and the place the user had scrolled to", async ({ page }) => {
   const many = Array.from({ length: 80 }, (_, at) => ({ ...own, number: 1000 + at }));
-  const whole = { items: many, count: 80, filters: [mine] };
+  const whole = { items: many, quiet: [], count: 80, review_requests: 0, filters: [mine] };
   await page.setViewportSize({ width: 800, height: 400 });
   await mockCore(page, { home: cpython, workbench: { status: "ok", data: whole } });
   await page.goto("/");
@@ -138,7 +147,7 @@ test("a change keeps the selected Filter and the place the user had scrolled to"
 test("the status bar says when the Repository last synced, and a click asks again", async ({ page }) => {
   await mockCore(page, {
     home: cpython,
-    workbench: { status: "ok", data: { items: [], count: 0, filters: [] } },
+    workbench: { status: "ok", data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [] } },
     status: { state: "online", login: "octocat" },
     lastSync: { repository: repository.name, at: null },
   });

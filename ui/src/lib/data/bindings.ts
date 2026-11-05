@@ -34,10 +34,10 @@ export const commands = {
 	 */
 	addRepository: (name: string, access: RepositoryAccess) => typedError<Home_Serialize, Error_Serialize>(__TAURI_INVOKE("add_repository", { name, access })),
 	/**
-	 *  The rows of a Repository's Workbench, or of the Filter `selected`, with what its Sidebar shows. This waits
+	 *  The rows of a view of a Repository's Workbench, with what its Sidebar shows. This waits
 	 *  on the database and never on GitHub (ADR 0018).
 	 */
-	workbench: (repository: string, selected: FilterQuery | null) => typedError<Workbench_Serialize, Error_Serialize>(__TAURI_INVOKE("workbench", { repository, selected })),
+	workbench: (repository: string, view: WorkbenchView) => typedError<Workbench_Serialize, Error_Serialize>(__TAURI_INVOKE("workbench", { repository, view })),
 };
 
 /** Events */
@@ -53,6 +53,25 @@ export const events = {
 export type About = {
 	name: string,
 	version: string,
+};
+
+/**  The reasons an item Needs attention, and since when. */
+export type Attention = Attention_Serialize | Attention_Deserialize;
+
+/**  The reasons an item Needs attention, and since when. */
+export type Attention_Deserialize = {
+	/**  The start of its oldest reason, which places the item in a list. */
+	since: string,
+	/**  The newest first, each once. */
+	why: Why[],
+};
+
+/**  The reasons an item Needs attention, and since when. */
+export type Attention_Serialize = {
+	/**  The start of its oldest reason, which places the item in a list. */
+	since: string,
+	/**  The newest first, each once. */
+	why: Why[],
 };
 
 /**  A Backport's kind: it shares its Origin PR's review state, or it gets a review of its own. */
@@ -134,7 +153,7 @@ export type FilterLine = FilterLine_Serialize | FilterLine_Deserialize;
 export type FilterLine_Deserialize = {
 	name: FilterName,
 	query: FilterQuery,
-	/**  How many items it holds, until Needs attention exists to count instead. */
+	/**  The count of its items that Need attention. */
 	count: number,
 	/**  The words for the failure that stopped its last search from being whole. */
 	problem?: string | null,
@@ -144,7 +163,7 @@ export type FilterLine_Deserialize = {
 export type FilterLine_Serialize = {
 	name: FilterName,
 	query: FilterQuery,
-	/**  How many items it holds, until Needs attention exists to count instead. */
+	/**  The count of its items that Need attention. */
 	count: number,
 	/**  The words for the failure that stopped its last search from being whole. */
 	problem: string | null,
@@ -227,6 +246,19 @@ export type LastSync_Serialize = {
 	/**  Nothing, until its first sync finishes. */
 	at: string | null,
 };
+
+/**  A top-level entry of the list, with why it Needs attention, if it does. */
+export type ListedItem = ListedItem_Serialize | ListedItem_Deserialize;
+
+/**  A top-level entry of the list, with why it Needs attention, if it does. */
+export type ListedItem_Deserialize = {
+	attention?: Attention_Deserialize | null,
+} & WorkbenchItem_Deserialize;
+
+/**  A top-level entry of the list, with why it Needs attention, if it does. */
+export type ListedItem_Serialize = {
+	attention: Attention_Serialize | null,
+} & WorkbenchItem_Serialize;
 
 /**  The settings in force, and what is wrong with the files they came from, in words for the status bar. */
 export type LoadedSettings = LoadedSettings_Serialize | LoadedSettings_Deserialize;
@@ -482,14 +514,19 @@ export type TreeEntry_Serialize = {
 	kind: "backport",
 } & BackportRow_Serialize;
 
+/**  One reason an item Needs attention. */
+export type Why = { kind: "review_requested" } | 
+/**  Empty `checks` means Tsugiki hasn't heard which ones failed, or GitHub names none. */
+{ kind: "ci_failed"; checks: string[] } | { kind: "ci_passed" } | { kind: "changes_requested"; by: Login } | { kind: "approved"; by: Login } | { kind: "reviewed"; by: Login } | { kind: "comment"; by: Login } | { kind: "commits"; by: Login } | { kind: "ready_for_review"; by: Login } | { kind: "mentioned" } | { kind: "backport_failed"; target: string };
+
 /**  The reason a PR is on the user's Workbench. */
 export type WorkReason = 
-/**  The user is a requested reviewer or an assignee. */
+/**  The user is a requested reviewer, or an assignee of someone else's PR who hasn't submitted a Review. */
 "review_request" | "own_pr" | 
 /**  The user has submitted a Review. */
 "reviewed";
 
-/**  A Repository's Workbench or one of its Filters, with what the Sidebar shows beside it. */
+/**  A Repository's Workbench or one of its views, with what the Sidebar shows beside it. */
 export type Workbench = Workbench_Serialize | Workbench_Deserialize;
 
 /**  A top-level entry of the list. */
@@ -552,21 +589,32 @@ export type WorkbenchRow_Serialize = {
 	reasons: WorkReason[],
 };
 
-/**  A Repository's Workbench or one of its Filters, with what the Sidebar shows beside it. */
+/**  The list the window asks for. */
+export type WorkbenchView = { kind: "whole" } | { kind: "filter"; query: FilterQuery } | { kind: "review_requests" };
+
+/**  A Repository's Workbench or one of its views, with what the Sidebar shows beside it. */
 export type Workbench_Deserialize = {
-	/**  The selected items, the latest update first. */
-	items: WorkbenchItem_Deserialize[],
-	/**  How many items the Workbench holds, until Needs attention exists to count instead. */
+	/**  The items that Need attention, newest first by when they started to, then the rest by last update. */
+	items: ListedItem_Deserialize[],
+	/**  The Issues with nothing that Needs attention, the latest update first. */
+	quiet: ListedItem_Deserialize[],
+	/**  The count of items on the Workbench that Need attention. */
 	count: number,
+	/**  The count of items that hold a PR carrying a Review request. */
+	review_requests: number,
 	filters: FilterLine_Deserialize[],
 };
 
-/**  A Repository's Workbench or one of its Filters, with what the Sidebar shows beside it. */
+/**  A Repository's Workbench or one of its views, with what the Sidebar shows beside it. */
 export type Workbench_Serialize = {
-	/**  The selected items, the latest update first. */
-	items: WorkbenchItem_Serialize[],
-	/**  How many items the Workbench holds, until Needs attention exists to count instead. */
+	/**  The items that Need attention, newest first by when they started to, then the rest by last update. */
+	items: ListedItem_Serialize[],
+	/**  The Issues with nothing that Needs attention, the latest update first. */
+	quiet: ListedItem_Serialize[],
+	/**  The count of items on the Workbench that Need attention. */
 	count: number,
+	/**  The count of items that hold a PR carrying a Review request. */
+	review_requests: number,
 	filters: FilterLine_Serialize[],
 };
 

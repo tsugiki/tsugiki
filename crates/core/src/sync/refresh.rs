@@ -394,11 +394,45 @@ fn tracked_pull_requests(link: &Link<'_>, fetched: &BTreeSet<u32>) -> Result<Vec
     Ok(tracked.map(|pr| pr.number).collect())
 }
 
+/// Asks which checks failed on a batch of the user's open PRs whose CI failed since Tsugiki last asked. A
+/// probe has read their CI. Any more wait for the next refresh. A name only fills out a preview, so
+/// GitHub refusing this question leaves the rest of the refresh to run: the PR stays unread, and the next
+/// refresh asks again.
+fn read_failed_checks(link: &Link<'_>) -> Result<Step, Error> {
+    let Some(viewer) = link.store.last_login()? else {
+        return Ok(Step::Moved);
+    };
+    let numbers = link
+        .store
+        .pull_requests_with_unread_checks(link.repository, &viewer)?;
+    if numbers.is_empty() {
+        return Ok(Step::Moved);
+    }
+    let asked = link
+        .github
+        .failed_checks(link.repository, &numbers, FETCH_BATCH);
+    let read = match asked {
+        Ok(read) => read,
+        Err(problem) if blames_the_search(&problem) => {
+            log::warn!(
+                "GitHub wouldn't say which checks failed: {}",
+                problem.message
+            );
+            return Ok(Step::Moved);
+        }
+        Err(problem) => return Err(problem),
+    };
+    let touched = read.found.iter().map(|(number, _)| *number).collect();
+    link.store.save_failed_checks(link.repository, read.found)?;
+    Ok(Step::saved_if_any(touched, pause_until(read.rate_limit)))
+}
+
 /// Probes the next batch of the user's open PRs, for the CI and Reviews that don't move `updatedAt`.
 pub(super) fn probe(link: &Link<'_>, probing: &mut Probing) -> Result<Moved, Error> {
     if probing.numbers.is_empty() {
+        let read = read_failed_checks(link)?;
         let walk = std::mem::take(&mut probing.walk);
-        return Ok((Step::Moved, Some(Resumable::SearchingFilters(walk).into())));
+        return Ok((read, Some(Resumable::SearchingFilters(walk).into())));
     }
     let batch = link
         .github

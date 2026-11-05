@@ -358,7 +358,10 @@ function whatClosingLeft(folder: string): string | undefined {
   return left.length === 0 ? undefined : `it left ${left.join(" and ")}`;
 }
 
-/** A portable copy keeps everything in its folder (ADR 0014), and the webview's data is the part Tauri wouldn't. */
+/**
+ * A portable copy keeps everything in its folder (ADR 0014), and the webview's data is the part Tauri
+ * wouldn't.
+ */
 function whereTheWebviewWrote(folder: string): string | undefined {
   return existsSync(join(folder, "webview")) ? undefined : `${folder} has no webview folder`;
 }

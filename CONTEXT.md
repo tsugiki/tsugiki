@@ -1,147 +1,158 @@
 # Tsugiki
 
-A review workbench for a CPython core developer who also maintains projects of their own. For the **Repositories** the user adds, it is the one place where they take in their GitHub work, in place of the email inbox: it groups PRs under the Issues they fix and works out from GitHub's data, not from GitHub's notifications, what is waiting on the user. A single Issue or PR may still be opened in the browser, but the work happens in Tsugiki.
+A review workbench for a CPython core developer who also maintains projects of their own. For the
+**Repositories** the user adds, it is the one place where they take in their GitHub work, in place of the
+email inbox: it groups PRs under the Issues they fix and works out from GitHub's data, not from GitHub's
+notifications, what is waiting on the user. A single Issue or PR may still be opened in the browser, but the
+work happens in Tsugiki.
 
 ## Language
 
 ### Work structure
 
-**Issue**:
-A GitHub issue in the current **Repository** that one or more PRs fix. In CPython a PR names its Issue with the `gh-NNNNN:` prefix in its title; elsewhere it links it the GitHub way ("Fixes #N"). A PR can fix several Issues and then belongs to each of them. A PR that only mentions an Issue doesn't fix it.
-_Avoid_: Ticket, bug
+**Issue**: A GitHub issue in the current **Repository** that one or more PRs fix. In CPython a PR names its
+Issue with the `gh-NNNNN:` prefix in its title; elsewhere it links it the GitHub way ("Fixes #N"). A PR can
+fix several Issues and then belongs to each of them. A PR that only mentions an Issue doesn't fix it. _Avoid_:
+Ticket, bug
 
-**Stacked PR**:
-A PR whose **Target branch** is another PR's branch instead of the default branch; it is stacked on that PR, and a chain of them is a stack. GitHub ignores "Closes #N" on such a PR, but Tsugiki still counts the Issues it names.
-_Avoid_: Dependent PR, child PR, chained PR
+**Stacked PR**: A PR whose **Target branch** is another PR's branch instead of the default branch; it is
+stacked on that PR, and a chain of them is a stack. GitHub ignores "Closes #N" on such a PR, but Tsugiki still
+counts the Issues it names. _Avoid_: Dependent PR, child PR, chained PR
 
 **Origin PR**:
 A PR against `main` that fixes (part of) an **Issue**; any **Backports** are made from it.
 _Avoid_: Main PR, parent PR, original PR
 
-**Backport**:
-A PR that carries an **Origin PR**'s change to a maintenance **Target branch**. It is opened either by `miss-islington` or by hand, and its title carries `(GH-NNNNN)` pointing at its Origin PR; without that, its "cherry picked from" line does. Only a **Repository** whose **Conventions** have Backports has them.
+**Backport**: A PR that carries an **Origin PR**'s change to a maintenance **Target branch**. It is opened
+either by `miss-islington` or by hand, and its title carries `(GH-NNNNN)` pointing at its Origin PR; without
+that, its "cherry picked from" line does. Only a **Repository** whose **Conventions** have Backports has them.
 _Avoid_: Cherry-pick, child PR
 
-**Bot backport**:
-A **Backport** opened by `miss-islington` in which every commit is the bot's, apart from merges of the Target branch (GitHub's Update branch). It shares its **Origin PR**'s review state instead of having its own.
-_Avoid_: Auto backport, clean backport
+**Bot backport**: A **Backport** opened by `miss-islington` in which every commit is the bot's, apart from
+merges of the Target branch (GitHub's Update branch). It shares its **Origin PR**'s review state instead of
+having its own. _Avoid_: Auto backport, clean backport
 
-**Manual backport**:
-A **Backport** opened by a person, or a **Bot backport** to which someone else pushed a commit, even an amended cherry-pick. It is reviewed on its own, because its diff can differ from the Origin PR's.
-_Avoid_: Hand backport, conflicted backport
+**Manual backport**: A **Backport** opened by a person, or a **Bot backport** to which someone else pushed a
+commit, even an amended cherry-pick. It is reviewed on its own, because its diff can differ from the Origin
+PR's. _Avoid_: Hand backport, conflicted backport
 
-**Target branch**:
-The branch a PR merges into: the default branch (`main`), a maintenance branch such as `3.14`, or, for a **Stacked PR**, another PR's branch.
-_Avoid_: Base, version
+**Target branch**: The branch a PR merges into: the default branch (`main`), a maintenance branch such as
+`3.14`, or, for a **Stacked PR**, another PR's branch. _Avoid_: Base, version
 
-**Conventions**:
-How a **Repository**'s PRs name the **Issues** they fix and the **Origin PRs** their **Backports** come from, and which bot opens Bot backports. CPython's: the `gh-NNNNN:` title prefix, `(GH-NNNNN)` Backports and `miss-islington`. Every other Repository starts with GitHub's: "Fixes #N" links and no Backports. The user can edit them per Repository.
-_Avoid_: Rules, repo config, preset
+**Conventions**: How a **Repository**'s PRs name the **Issues** they fix and the **Origin PRs** their
+**Backports** come from, and which bot opens Bot backports. CPython's: the `gh-NNNNN:` title prefix,
+`(GH-NNNNN)` Backports and `miss-islington`. Every other Repository starts with GitHub's: "Fixes #N" links and
+no Backports. The user can edit them per Repository. _Avoid_: Rules, repo config, preset
 
-**Needs attention**:
-The state of an Issue or PR that is waiting on the user. A PR needs it when it carries a **Review request**, the user's **Review** of it is a **Stale review**, it is an **Own PR** whose CI failed, or it has **New activity** and the user either reviewed it or wrote it. An open PR the user has not reviewed is listed but does not need attention. A colleague's **Draft PR** needs attention only when it carries a Review request. In a **Maintained repository**, every open PR someone else opened also needs attention until the user merges, closes or reviews it; **Dependency updates** need it only when one is ready to merge or its CI failed.
-An Issue, or a PR's conversation, also needs attention when someone else has posted since the user's **Last seen** and the user is in the conversation: they opened it, it is assigned to them, they commented in it, or the new posts mention them. An Issue the user only follows through a **Filter** or a pin shows its New activity but does not need attention.
-_Avoid_: Pending, todo
+**Needs attention**: The state of an Issue or PR that is waiting on the user. A PR needs it when it carries a
+**Review request**, the user's **Review** of it is a **Stale review**, it is an **Own PR** whose CI failed, or
+it has **New activity** and the user either reviewed it or wrote it. An open PR the user has not reviewed is
+listed but does not need attention. A colleague's **Draft PR** needs attention only when it carries a Review
+request. In a **Maintained repository**, every open PR someone else opened also needs attention until the user
+merges, closes or reviews it; **Dependency updates** need it only when one is ready to merge or its CI failed.
+An Issue, or a PR's conversation, also needs attention when someone else has posted since the user's **Last
+seen** and the user is in the conversation: they opened it, it is assigned to them, they commented in it, or
+the new posts mention them. An Issue the user only follows through a **Filter** or a pin shows its New
+activity but does not need attention. _Avoid_: Pending, todo
 
-**Maintained repository**:
-A **Repository** the user administers on GitHub, such as their own projects. There the user is the one who lands other people's PRs, not one reviewer among many.
-_Avoid_: Own repo, personal project
+**Maintained repository**: A **Repository** the user administers on GitHub, such as their own projects. There
+the user is the one who lands other people's PRs, not one reviewer among many. _Avoid_: Own repo, personal
+project
 
-**Dependency updates**:
-The open PRs a dependency bot (dependabot) opened in a **Maintained repository**, shown together as one item instead of one item each.
-_Avoid_: Bumps, bot PRs
+**Dependency updates**: The open PRs a dependency bot (dependabot) opened in a **Maintained repository**,
+shown together as one item instead of one item each. _Avoid_: Bumps, bot PRs
 
-**Draft PR**:
-A PR its author has marked as not yet ready for review. Its review state is still tracked. When it becomes ready for review, that counts as **New activity**.
-_Avoid_: WIP PR
+**Draft PR**: A PR its author has marked as not yet ready for review. Its review state is still tracked. When
+it becomes ready for review, that counts as **New activity**. _Avoid_: WIP PR
 
-**Generated file**:
-A file that CPython's `.gitattributes` marks as `generated` on the PR's **Target branch**, such as Argument Clinic output or `Python/generated_cases.c.h`.
-_Avoid_: Autogenerated, derived file
+**Generated file**: A file that CPython's `.gitattributes` marks as `generated` on the PR's **Target branch**,
+such as Argument Clinic output or `Python/generated_cases.c.h`. _Avoid_: Autogenerated, derived file
 
-**NEWS entry**:
-A `Misc/NEWS.d/next/<section>/*.rst` blurb added by a PR, describing the change for the changelog. A PR can add several of them, or none.
-_Avoid_: Blurb, changelog entry
+**NEWS entry**: A `Misc/NEWS.d/next/<section>/*.rst` blurb added by a PR, describing the change for the
+changelog. A PR can add several of them, or none. _Avoid_: Blurb, changelog entry
 
 ### Workbench
 
-**Repository**:
-A GitHub repository the user works in through Tsugiki, such as `python/cpython`. The user works in one Repository at a time and switches between them; each has its own **Workbench**, **Filters** and **Pinned issues**, and nothing is listed across Repositories.
-_Avoid_: Project, workspace, repo list
+**Repository**: A GitHub repository the user works in through Tsugiki, such as `python/cpython`. The user
+works in one Repository at a time and switches between them; each has its own **Workbench**, **Filters** and
+**Pinned issues**, and nothing is listed across Repositories. _Avoid_: Project, workspace, repo list
 
-**Workbench**:
-The home list of **Issues** the user is currently following in the current **Repository**: every Issue that a **Filter** reaches, that is a **Pinned issue**, or that has an open PR the user holds a **Review** on. An Issue being closed on GitHub does not remove it.
-_Avoid_: Dashboard, inbox
+**Workbench**: The home list of **Issues** the user is currently following in the current **Repository**:
+every Issue that a **Filter** reaches, that is a **Pinned issue**, or that has an open PR the user holds a
+**Review** on. An Issue being closed on GitHub does not remove it. _Avoid_: Dashboard, inbox
 
-**Filter**:
-A saved GitHub search the user defines, such as "PRs I opened" or "a colleague's open PRs". It can match Issues directly or match PRs; a matching PR pulls its **Issue** onto the **Workbench**. Clicking a person opens an unsaved Filter for what they authored, which the user can save or close.
-_Avoid_: Query, section
+**Filter**: A saved GitHub search the user defines, such as "PRs I opened" or "a colleague's open PRs". It can
+match Issues directly or match PRs; a matching PR pulls its **Issue** onto the **Workbench**. Clicking a
+person opens an unsaved Filter for what they authored, which the user can save or close. _Avoid_: Query,
+section
 
-**All issues**:
-An unsaved **Filter** every **Repository** has, over all its open Issues and open PRs, most recently updated first. Each PR is its own row there, whether or not it fixes an Issue. The user can show only Issues or only PRs, narrow it by typing a GitHub search, and save the result as a Filter. It is where the user finds an Issue to read, comment on or pin, or a PR to open.
-_Avoid_: Issue browser, backlog
+**All issues**: An unsaved **Filter** every **Repository** has, over all its open Issues and open PRs, most
+recently updated first. Each PR is its own row there, whether or not it fixes an Issue. The user can show only
+Issues or only PRs, narrow it by typing a GitHub search, and save the result as a Filter. It is where the user
+finds an Issue to read, comment on or pin, or a PR to open. _Avoid_: Issue browser, backlog
 
-**Peek**:
-A popup that shows an Issue or PR from outside the current **Repository**, rendered from the API, with a way to open it in the browser, or in Tsugiki when its Repository has been added.
-_Avoid_: Preview, quick look
+**Peek**: A popup that shows an Issue or PR from outside the current **Repository**, rendered from the API,
+with a way to open it in the browser, or in Tsugiki when its Repository has been added. _Avoid_: Preview,
+quick look
 
-**Built-in view**:
-A **Workbench** list that Tsugiki defines from its own states, which GitHub search cannot express: Stale reviews, New activity, Review requests, Archived (everything **Archived**) and Muted (everything **Muted**, the **Muted authors**, and what they hide), each item with a way to bring it back.
+**Built-in view**: A **Workbench** list that Tsugiki defines from its own states, which GitHub search cannot
+express: Stale reviews, New activity, Review requests, Archived (everything **Archived**) and Muted
+(everything **Muted**, the **Muted authors**, and what they hide), each item with a way to bring it back.
 _Avoid_: Smart filter, saved view
 
-**Matched PR**:
-A PR inside an **Issue**'s tree that one of the user's **Filters** matched. It is listed first, ahead of the rest of the tree.
-_Avoid_: Hit, result
+**Matched PR**: A PR inside an **Issue**'s tree that one of the user's **Filters** matched. It is listed
+first, ahead of the rest of the tree. _Avoid_: Hit, result
 
-**Pinned issue**:
-An **Issue** the user has explicitly put on the **Workbench** in Tsugiki. It stays there whether or not any **Filter** matches it. This is unrelated to GitHub's own "pin issue" feature on a repository.
-_Avoid_: Watched issue, starred issue, subscribed issue
+**Pinned issue**: An **Issue** the user has explicitly put on the **Workbench** in Tsugiki. It stays there
+whether or not any **Filter** matches it. This is unrelated to GitHub's own "pin issue" feature on a
+repository. _Avoid_: Watched issue, starred issue, subscribed issue
 
-**Standalone PR**:
-A PR that fixes no **Issue**, such as a CPython `skip issue` PR or a dependabot bump. It stands on the **Workbench** as an item of its own, beside the Issues, instead of being grouped.
-_Avoid_: No issue, orphan PR, unlinked PR
+**Standalone PR**: A PR that fixes no **Issue**, such as a CPython `skip issue` PR or a dependabot bump. It
+stands on the **Workbench** as an item of its own, beside the Issues, instead of being grouped. _Avoid_: No
+issue, orphan PR, unlinked PR
 
-**Archived**:
-A **Workbench** item (an Issue, a **Standalone PR** or **Dependency updates**) the user has put away until something new needs their attention there; then it comes back by itself. Like archiving a mail thread. Kept in Tsugiki only.
-_Avoid_: Dismissed, done, snoozed
+**Archived**: A **Workbench** item (an Issue, a **Standalone PR** or **Dependency updates**) the user has put
+away until something new needs their attention there; then it comes back by itself. Like archiving a mail
+thread. Kept in Tsugiki only. _Avoid_: Dismissed, done, snoozed
 
-**Muted**:
-A **Workbench** item the user has hidden until they unmute it, whatever happens to it, except a **Review request** or an assignment to the user: someone asking by name always shows. Kept in Tsugiki only.
+**Muted**: A **Workbench** item the user has hidden until they unmute it, whatever happens to it, except a
+**Review request** or an assignment to the user: someone asking by name always shows. Kept in Tsugiki only.
 _Avoid_: Ignored, blocked
 
-**Muted author**:
-A person or bot whose Issues and **Standalone PRs** the user has hidden from one **Repository**'s **Workbench**, usually because their area is outside the user's interest. Their PRs inside an Issue the user follows stay listed but never need attention, and an Issue they opened still shows when another PR in it needs attention or a **Filter** matches it. As with **Muted**, a Review request or an assignment always shows. Kept in Tsugiki only.
-_Avoid_: Blocked user, ignored user
+**Muted author**: A person or bot whose Issues and **Standalone PRs** the user has hidden from one
+**Repository**'s **Workbench**, usually because their area is outside the user's interest. Their PRs inside an
+Issue the user follows stay listed but never need attention, and an Issue they opened still shows when another
+PR in it needs attention or a **Filter** matches it. As with **Muted**, a Review request or an assignment
+always shows. Kept in Tsugiki only. _Avoid_: Blocked user, ignored user
 
 ### Reviewing
 
-**Review**:
-A record that the user looked at a PR as of a specific commit. It is either a review the user submitted on GitHub (approve, request changes, or comment, line comments included) or a **Local mark**. Plain conversation comments do not count.
-_Avoid_: Approval, LGTM
+**Review**: A record that the user looked at a PR as of a specific commit. It is either a review the user
+submitted on GitHub (approve, request changes, or comment, line comments included) or a **Local mark**. Plain
+conversation comments do not count. _Avoid_: Approval, LGTM
 
-**Review checkout**:
-A single working tree that Tsugiki owns and switches to the head of whichever PR the user is reviewing, so an editor can be opened on it. It is never one of the user's own worktrees.
-_Avoid_: Sandbox, scratch worktree
+**Review checkout**: A single working tree that Tsugiki owns and switches to the head of whichever PR the user
+is reviewing, so an editor can be opened on it. It is never one of the user's own worktrees. _Avoid_: Sandbox,
+scratch worktree
 
-**Definition peek**:
-An inline view, opened from a symbol in a diff, of where that symbol is defined at the commit the line comes from. **Go to definition** opens the same place in full instead.
-_Avoid_: Symbol peek, Peek (that word is the popup for an Issue or PR)
+**Definition peek**: An inline view, opened from a symbol in a diff, of where that symbol is defined at the
+commit the line comes from. **Go to definition** opens the same place in full instead. _Avoid_: Symbol peek,
+Peek (that word is the popup for an Issue or PR)
 
-**Pending review**:
-The user's unsubmitted GitHub review on a PR, holding their draft comments. It is not a **Review** until it is submitted.
-_Avoid_: Draft review, local draft
+**Pending review**: The user's unsubmitted GitHub review on a PR, holding their draft comments. It is not a
+**Review** until it is submitted. _Avoid_: Draft review, local draft
 
 **Local mark**:
 A **Review** the user records only inside Tsugiki, without leaving a trace on GitHub.
 _Avoid_: Bookmark, seen flag
 
-**Review request**:
-A PR where the user is a requested reviewer or an assignee. It always counts as **Needs attention** until the user submits a review on GitHub (a **Local mark** does not clear it), even for a **Bot backport**.
-_Avoid_: Assignment, ping
+**Review request**: A PR where the user is a requested reviewer or an assignee. It always counts as **Needs
+attention** until the user submits a review on GitHub (a **Local mark** does not clear it), even for a **Bot
+backport**. _Avoid_: Assignment, ping
 
-**Outdated thread**:
-A comment thread whose lines no longer exist at the PR's current head. It stays visible together with the code it was written against, and the user's own unresolved Outdated threads are listed first during a re-review.
-_Avoid_: Stale thread, orphaned comment
+**Outdated thread**: A comment thread whose lines no longer exist at the PR's current head. It stays visible
+together with the code it was written against, and the user's own unresolved Outdated threads are listed first
+during a re-review. _Avoid_: Stale thread, orphaned comment
 
 **Unreviewed**:
 The user has not yet reviewed the PR.
@@ -149,26 +160,28 @@ The user has not yet reviewed the PR.
 **Reviewed**:
 The user has reviewed the PR, and the PR has not changed since then.
 
-**Stale review**:
-A **Review** taken before the PR's own diff changed in files other than **Generated files**, through new commits or a rewritten history. A merge from `main`, a rebase that leaves the diff the same, or a change only to Generated files does not make a review stale.
-_Avoid_: Outdated, dismissed
+**Stale review**: A **Review** taken before the PR's own diff changed in files other than **Generated files**,
+through new commits or a rewritten history. A merge from `main`, a rebase that leaves the diff the same, or a
+change only to Generated files does not make a review stale. _Avoid_: Outdated, dismissed
 
-**Last seen**:
-The moment the user last opened a PR or an **Issue** in Tsugiki, or handed a PR off to a review tool. It is tracked per PR and per Issue; opening an Issue's tree does not update its PRs' Last seen.
-_Avoid_: Last visited, read
+**Last seen**: The moment the user last opened a PR or an **Issue** in Tsugiki, or handed a PR off to a review
+tool. It is tracked per PR and per Issue; opening an Issue's tree does not update its PRs' Last seen. _Avoid_:
+Last visited, read
 
-**Read-only**:
-Tsugiki shows a **Repository** but can't write to GitHub there: when offline, or when the token can't write to that Repository. Comments and reviews can still be written in the composer and copied to GitHub by hand.
-_Avoid_: View-only, guest mode
+**Read-only**: Tsugiki shows a **Repository** but can't write to GitHub there: when offline, or when the token
+can't write to that Repository. Comments and reviews can still be written in the composer and copied to GitHub
+by hand. _Avoid_: View-only, guest mode
 
-**Alert**:
-An OS notification that Tsugiki raises for what only the user can unblock: CI finished on an **Own PR**, a **Review request**, a **Review** on an Own PR, a failed **Bot backport** of the user's **Origin PR**. The user can turn each kind of Alert off. A missed Alert is found in the **Workbench**, where its item **Needs attention**.
-_Avoid_: Notification (that word means GitHub's notifications)
+**Alert**: An OS notification that Tsugiki raises for what only the user can unblock: CI finished on an **Own
+PR**, a **Review request**, a **Review** on an Own PR, a failed **Bot backport** of the user's **Origin PR**.
+The user can turn each kind of Alert off. A missed Alert is found in the **Workbench**, where its item **Needs
+attention**. _Avoid_: Notification (that word means GitHub's notifications)
 
 **Own PR**:
 A PR the user authored.
 _Avoid_: My PR
 
-**New activity**:
-Something that happened on a PR after the user's **Last seen**: commits, comments, or reviews by people other than the user, a failed **Bot backport**, or a change in CI status on an **Own PR** or a PR the user has a **Review** on. Other bot activity and label changes do not count. It is reported alongside the review state and never changes it.
-_Avoid_: Unread, notifications
+**New activity**: Something that happened on a PR after the user's **Last seen**: commits, comments, or
+reviews by people other than the user, a failed **Bot backport**, or a change in CI status on an **Own PR** or
+a PR the user has a **Review** on. Other bot activity and label changes do not count. It is reported alongside
+the review state and never changes it. _Avoid_: Unread, notifications

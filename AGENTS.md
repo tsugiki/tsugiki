@@ -20,6 +20,13 @@ Use [`just`](https://github.com/casey/just), and the `justfile` says how to inst
 every check CI runs, one at a time on a few cores, because someone is working on this computer while it runs.
 `just` lists the rest.
 
+Run `just check` once per PR, at the end, after `/code-review` and its fixes. Before that, run single test
+files, `just typecheck`, `just doc-width` and the tests of each crate the change touches. If a gate fails, fix
+it and rerun only that gate. Run `just check` again only if the fix changes behaviour outside that gate.
+
+Put a `timeout` on a test run after you change what a parser requires: a session test can loop forever on a
+reply it can't parse.
+
 `just smoke` opens a window and presses real keys, so ask before each run, and before each release rehearsal
 on CI. It runs before a release. In a PR, run it only when the PR changes `crates/app/src/startup.rs`,
 `crates/webview-keys`, the Tauri config or the Tauri version. Test everything else without a window:

@@ -3,11 +3,11 @@ use crate::github::Unreachable;
 use crate::github::pull_requests::RateLimit;
 use crate::repository::RepositoryName;
 use crate::sync::testing::{
-    Harness, LOTS, announced, cpython, fetched, found, nothing, plain, run_to_the_end,
-    searches_finding, soon,
+    Harness, LOTS, announced, cpython, cross_references, fetched, fetched_nodes, found,
+    merged_node, nothing, plain, run_to_the_end, searches_finding, soon, up_to_the_first_issue,
 };
 use crate::sync::{RATE_LIMIT_FLOOR, pause_until};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 fn limited_until(from_now: i64) -> Error {
     let resets_at = OffsetDateTime::now_utc().unix_timestamp() + from_now;
@@ -295,6 +295,42 @@ fn only_the_open_repository_says_its_sync_finished() {
     }
 
     assert_eq!(finished, [cpython()]);
+    harness.finish();
+}
+
+#[test]
+fn a_first_sync_that_gave_way_keeps_the_cross_references_it_had_listed() {
+    let mut replies = up_to_the_first_issue();
+    replies.push(cross_references(&[3], Some("older"), LOTS));
+    replies.push(cross_references(&[2], None, LOTS));
+    replies.push(fetched_nodes(&[merged_node(3), merged_node(2)], LOTS));
+    let harness = Harness::new("gave-way-listed", replies);
+    let mut syncs = Syncs::default();
+    syncs.add(plain(cpython()));
+    let mut before_it_gave_way = Vec::new();
+    while !before_it_gave_way
+        .iter()
+        .any(|(operation, _)| operation == "FetchCrossReferences")
+    {
+        drop(syncs.step(&harness.github, &harness.store).unwrap());
+        before_it_gave_way.extend(harness.asked.try_iter());
+    }
+
+    for _ in 0..TRIES {
+        syncs.after_failure(&broken(), soon());
+    }
+    assert_eq!(syncs.ready_at(), None);
+    syncs.refresh_now();
+    drop(run_to_the_end(&mut syncs, &harness));
+
+    let next_page: Vec<Value> = harness
+        .asked
+        .try_iter()
+        .filter(|(operation, _)| operation == "FetchCrossReferences")
+        .map(|(_, sent)| sent["before"].clone())
+        .collect();
+    assert_eq!(next_page, [json!("older")]);
+    assert_eq!(harness.numbers(), [1, 2, 3]);
     harness.finish();
 }
 

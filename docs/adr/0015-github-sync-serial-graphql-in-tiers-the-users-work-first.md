@@ -29,17 +29,21 @@ The order puts what waits on the user first, so the Workbench is right long befo
    Sidebar and stops nothing else. The Workbench's views and the Home page's counts are right after about a
    minute.
 2. The window, newest first. All issues fills in as pages land.
-3. Whole trees for the Issues the Workbench shows ([ADR
+3. Whole trees for the Issues the user's work reaches ([ADR
    0011](0011-pr-links-from-github-signals-by-repository-conventions.md)).
 
 The mirror is cloned at the same time ([How is a Repository's mirror created and kept
 current?](https://github.com/tsugiki/tsugiki/issues/13)). Until it is done, a PR's conversation shows and its
 diff says how far the clone has got. The status bar shows the phase and the pages done.
 
-Each page is committed with its cursor ([ADR 0010](0010-one-sqlite-database-and-per-repository-mirrors.md)),
-so quitting, a crash or going offline resumes at the next page. The place is saved after the page, in a
-transaction of its own, so a crash between the two reads that page again. Syncs of several Repositories run
-one at a time, the open Repository first.
+Each page of a first sync is committed with its place ([ADR
+0010](0010-one-sqlite-database-and-per-repository-mirrors.md)). The place holds the cursor and the PRs that
+cross-references have listed so far, so quitting, a crash, going offline or giving way after 10 failed tries
+resumes at the next page. The place is saved after the page, in a transaction of its own, so a crash between
+the two reads that page again. Syncs of several Repositories run one at a time, the open Repository first.
+
+A refresh keeps no place. One that stopped leaves a mark, and the next refresh looks back from the same time
+and reads the trees it still owed.
 
 ## Afterwards
 

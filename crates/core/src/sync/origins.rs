@@ -40,10 +40,13 @@ pub(super) fn fetch_origin(
         .github
         .fetch_origin_pull_request(link.repository, number)?;
     let pause_until = pause_until(answer.rate_limit);
-    let step = if let Some(pull_request) = answer.pull_request {
+    let step = if let Some((pull_request, activity)) = answer.pull_request {
         let named = possible_numbers(&pull_request, link.repository);
-        link.store
-            .save_pull_requests(link.repository, vec![pull_request])?;
+        link.store.save_fetched_pull_requests(
+            link.repository,
+            vec![pull_request],
+            vec![activity],
+        )?;
         leads.named.extend(named);
         Step::Saved {
             touched: vec![number],
@@ -64,10 +67,10 @@ mod tests {
     use crate::sync::Syncs;
     use crate::sync::recovery::{Scenario, recovers_from_each_failure, resumes_after_each_step};
     use crate::sync::testing::{
-        FEW, Harness, LOTS, cpython, cross_references, empty_window_page, fetched_nodes, found,
-        hours_ago, issues, merged_node, no_cross_references, nothing, plain, pr_node,
-        run_to_the_end, searches_finding, up_to_the_first_issue, window_issue, window_page,
-        window_pr,
+        FEW, Harness, LOTS, comment_by, cpython, cross_references, empty_window_page,
+        fetched_nodes, found, hours_ago, issues, merged_node, no_cross_references, nothing, plain,
+        pr_node, run_to_the_end, searches_finding, up_to_the_first_issue, window_issue,
+        window_page, window_pr,
     };
     use serde_json::{Value, json};
     use std::time::{Duration, Instant};
@@ -87,6 +90,41 @@ mod tests {
         reply_ok(&format!(
             r#"{{"data":{{"repository":{{"pullRequest":{node}}},{rate}}}}}"#
         ))
+    }
+
+    #[test]
+    fn a_first_sync_keeps_what_happened_on_the_prs_it_fetched_and_on_their_origin_prs() {
+        let timeline = |login: &str| json!({ "nodes": [comment_by(login, &hours_ago(1))] });
+        let mut backport = backport_node(1, 9);
+        backport["timelineItems"] = timeline("some-reviewer");
+        let mut origin = merged_node(9);
+        origin["timelineItems"] = timeline("some-author");
+        let replies = vec![
+            found(&["a"], None, LOTS),
+            nothing(LOTS),
+            nothing(LOTS),
+            nothing(LOTS),
+            fetched_nodes(&[backport], LOTS),
+            origin_answer(&origin, LOTS),
+            issues(&[1], LOTS),
+            no_cross_references(LOTS),
+        ];
+        let harness = Harness::new("origin-activity", replies);
+        let mut syncs = Syncs::default();
+        syncs.add(plain(cpython()));
+
+        drop(run_to_the_end(&mut syncs, &harness));
+
+        let who = |number: u32| -> Vec<String> {
+            let events = harness.store.activity(&cpython(), number).unwrap();
+            events
+                .iter()
+                .map(|event| event.who.as_str().to_owned())
+                .collect()
+        };
+        assert_eq!(who(1), ["some-reviewer"]);
+        assert_eq!(who(9), ["some-author"]);
+        harness.finish();
     }
 
     #[test]

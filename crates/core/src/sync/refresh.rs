@@ -8,13 +8,16 @@ use time::{Duration, OffsetDateTime};
 
 use super::filters::{FilterWalk, RefreshWalk, blames_the_search, can_narrow};
 use super::{FETCH_BATCH, Link, Moved, Phase, Resumable, SEARCH_PAGE, Step, pause_until};
+use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::filters::FilterQuery;
 use crate::github::Login;
+use crate::github::activity::ItemActivity;
 use crate::github::filters::{FilterHit, FilterPage};
 use crate::github::issues::IssueFacts;
-use crate::github::pull_requests::{NodeId, PrFetch, PullRequestFacts};
+use crate::github::pull_requests::{NodeId, PrFetch, PrState, PullRequestFacts};
 use crate::github::refresh::{ChangedPr, Etag, ListCheck, ListPlace, PollRequest};
+use crate::links::{BackportKind, MergeCommits, backport_of};
 use crate::repository::SMALL_UP_TO;
 use crate::store::{ChangeCheck, NarrowedResults, SyncState};
 use crate::workbench::reasons;
@@ -196,7 +199,7 @@ fn read_page(link: &Link<'_>, poll: &mut Poll, check: &mut ChangeCheck) -> Resul
         }
         Err(problem) => return Err(problem),
     };
-    let touched = save_moved_issues(link, answer.issues, poll)?;
+    let touched = save_moved_issues(link, (answer.issues, answer.issue_activity), poll)?;
     poll.in_request.clear();
     poll.answers.extend(answer.filters);
     let settled = answer
@@ -219,7 +222,7 @@ fn read_page(link: &Link<'_>, poll: &mut Poll, check: &mut ChangeCheck) -> Resul
 /// a Filter that reaches one brings it later. Answers with the Issues it saved.
 fn save_moved_issues(
     link: &Link<'_>,
-    issues: Vec<IssueFacts>,
+    (issues, activity): (Vec<IssueFacts>, Vec<ItemActivity>),
     poll: &mut Poll,
 ) -> Result<Vec<u32>, Error> {
     let held = link.store.issues(link.repository)?;
@@ -242,7 +245,12 @@ fn save_moved_issues(
         .filter(|issue| held.get(&issue.number).is_some_and(|old| old != issue))
         .collect();
     let touched: Vec<u32> = moved.iter().map(|issue| issue.number).collect();
-    link.store.save_issues(link.repository, moved)?;
+    let activity = activity
+        .into_iter()
+        .filter(|item| touched.contains(&item.number))
+        .collect();
+    link.store
+        .save_fetched_issues(link.repository, moved, activity)?;
     poll.changed.extend(settled);
     if poll.redo {
         poll.moved_issues.extend(in_the_window);
@@ -283,10 +291,12 @@ fn plan_the_rest(link: &Link<'_>, poll: &mut Poll) -> Result<Changed, Error> {
     } else {
         None
     };
+    // A merged PR stays merged, but its timeline goes on: the bot's comment that a Bot backport failed can
+    // land after a sync has fetched the merge.
     let is_behind = |pr: &ChangedPr| {
         stored
             .get(&pr.number)
-            .is_none_or(|held| !held.stays_as_it_is() && held.updated_at < pr.updated_at)
+            .is_none_or(|held| held.updated_at < pr.updated_at)
     };
     let ids = poll.changed_prs.iter().filter(|pr| is_behind(pr));
     let ids: Vec<NodeId> = ids.map(|pr| pr.id.clone()).collect();
@@ -339,8 +349,11 @@ pub(super) fn fetch_changed(
         .fetch_pull_requests(PrFetch::Changed, &changed.ids, FETCH_BATCH)?;
     let stored = stored_pull_requests(link)?;
     let viewer = link.store.last_login()?;
-    link.store
-        .save_pull_requests(link.repository, batch.pull_requests.clone())?;
+    link.store.save_fetched_pull_requests(
+        link.repository,
+        batch.pull_requests.clone(),
+        batch.activity,
+    )?;
     let mut touched = Vec::new();
     for pull_request in &batch.pull_requests {
         fetched.extend([pull_request.number]);
@@ -357,15 +370,27 @@ pub(super) fn fetch_changed(
     Ok((Step::saved_if_any(touched, pause_until), None))
 }
 
-/// The open PRs on the user's own lists that this refresh hasn't just fetched.
+/// The open PRs on the user's own lists, and the open Bot backports of what the user wrote or reviewed, that
+/// this refresh hasn't just fetched. A Bot backport's failed CI is New activity on its Origin PR, and CI
+/// doesn't move `updatedAt`.
 fn tracked_pull_requests(link: &Link<'_>, fetched: &BTreeSet<u32>) -> Result<Vec<u32>, Error> {
     let Some(viewer) = link.store.last_login()? else {
         return Ok(Vec::new());
     };
     let stored = link.store.pull_requests(link.repository)?;
-    let tracked = stored
-        .iter()
-        .filter(|pr| !fetched.contains(&pr.number) && !reasons(pr, &viewer).is_empty());
+    let conventions = Conventions::for_repository(link.repository);
+    let merges = MergeCommits::of(&stored);
+    let is_the_users_backport = |pr: &PullRequestFacts| {
+        let link = backport_of(pr, conventions, &merges);
+        let origin = link.filter(|link| link.kind == BackportKind::Bot);
+        let origin = origin.and_then(|link| stored.iter().find(|held| held.number == link.origin));
+        pr.state == PrState::Open
+            && origin.is_some_and(|origin| origin.is_written_or_reviewed_by(&viewer))
+    };
+    let tracked = stored.iter().filter(|pr| {
+        !fetched.contains(&pr.number)
+            && (!reasons(pr, &viewer).is_empty() || is_the_users_backport(pr))
+    });
     Ok(tracked.map(|pr| pr.number).collect())
 }
 
@@ -389,7 +414,8 @@ pub(super) fn probe(link: &Link<'_>, probing: &mut Probing) -> Result<Moved, Err
         })
         .collect();
     let touched: Vec<u32> = updated.iter().map(|pr| pr.number).collect();
-    link.store.save_pull_requests(link.repository, updated)?;
+    link.store
+        .save_fetched_pull_requests(link.repository, updated, batch.activity)?;
     drop(probing.numbers.drain(..batch.asked_for));
     let pause_until = pause_until(batch.rate_limit);
     Ok((Step::saved_if_any(touched, pause_until), None))

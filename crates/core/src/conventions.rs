@@ -9,6 +9,19 @@ use crate::repository::RepositoryName;
 const CPYTHON: &str = "python/cpython";
 /// `pub` because the recorder keeps this login, which the rules have to recognise in a recording.
 pub const CPYTHON_BACKPORT_BOT: &str = "miss-islington";
+/// The GitHub App that speaks for the backport bot in comments.
+pub const CPYTHON_BACKPORT_APP: &str = "miss-islington-app";
+/// Accounts that look like people to GitHub and are bots.
+pub const CPYTHON_BOT_ACCOUNTS: [&str; 2] = [CPYTHON_BACKPORT_BOT, "bedevere-bot"];
+/// The words around the branch in the backport bot's two comments about a failure. If the bot's wording
+/// changes, a failed Bot backport reads as a bot's comment and stops counting, until these change too.
+const CPYTHON_BACKPORT_FAILURES: [(&str, &str); 2] = [
+    (
+        "I could not cleanly backport this to ",
+        " due to a conflict",
+    ),
+    ("I had trouble checking out the ", " backport branch"),
+];
 
 /// How a Repository's PRs name their Issues and Backports (ADR 0011). `links.rs` reads this.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -67,6 +80,32 @@ impl Conventions {
         Self::ALL
             .iter()
             .find_map(|conventions| conventions.origin_in_title(title))
+    }
+
+    /// True for an account that GitHub takes for a person but these Conventions know is a bot.
+    pub fn is_bot_account(self, login: &Login) -> bool {
+        match self {
+            Self::Cpython => CPYTHON_BOT_ACCOUNTS
+                .iter()
+                .any(|bot| login == &Login::new(bot)),
+            Self::Github => false,
+        }
+    }
+
+    /// The branch a Bot backport failed to reach, if `comment` from `author` says one did.
+    pub fn failed_backport_target(self, author: &Login, comment: &str) -> Option<String> {
+        match self {
+            Self::Cpython if author == &Login::new(CPYTHON_BACKPORT_APP) => {
+                CPYTHON_BACKPORT_FAILURES
+                    .iter()
+                    .find_map(|(before, after)| {
+                        let (_, rest) = comment.split_once(before)?;
+                        let (target, _) = rest.split_once(after)?;
+                        Some(target.trim_matches('`').to_owned())
+                    })
+            }
+            Self::Cpython | Self::Github => None,
+        }
     }
 
     /// True for a bot that opens Backports. A Backport it wrote is a Bot backport, and the Workbench leaves
@@ -204,6 +243,57 @@ mod tests {
             Some(9)
         );
         assert_eq!(Conventions::origin_in_title_under_any("Fix it"), None);
+    }
+
+    #[test]
+    fn cpython_knows_its_bot_accounts_and_github_knows_none() {
+        for bot in ["miss-islington", "bedevere-bot"] {
+            assert!(
+                Conventions::Cpython.is_bot_account(&Login::new(bot)),
+                "{bot}"
+            );
+            assert!(
+                !Conventions::Github.is_bot_account(&Login::new(bot)),
+                "{bot}"
+            );
+        }
+        assert!(!Conventions::Cpython.is_bot_account(&Login::new("some-author")));
+    }
+
+    #[test]
+    fn the_backport_bots_words_name_the_branch_it_failed_to_reach() {
+        let app = Login::new("miss-islington-app");
+        let target = |comment: &str| Conventions::Cpython.failed_backport_target(&app, comment);
+        assert_eq!(
+            target(
+                "Sorry, @a and @b, I could not cleanly backport this to 3.14 due to a conflict."
+            ),
+            Some("3.14".to_owned())
+        );
+        assert_eq!(
+            target("Sorry @a, I had trouble checking out the `3.13` backport branch."),
+            Some("3.13".to_owned())
+        );
+        assert_eq!(
+            target("Thanks @a for the PR, I'm working now to backport this."),
+            None
+        );
+        assert_eq!(target("I could not cleanly backport this to 3.14"), None);
+    }
+
+    #[test]
+    fn only_the_backport_bot_can_say_a_bot_backport_failed() {
+        let words = "I could not cleanly backport this to 3.14 due to a conflict.";
+        let person = Login::new("some-author");
+        assert_eq!(
+            Conventions::Cpython.failed_backport_target(&person, words),
+            None
+        );
+        let app = Login::new("miss-islington-app");
+        assert_eq!(
+            Conventions::Github.failed_backport_target(&app, words),
+            None
+        );
     }
 
     #[test]

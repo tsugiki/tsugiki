@@ -5,7 +5,8 @@ use serde::de::DeserializeOwned;
 use serde_json::json;
 use time::OffsetDateTime;
 
-use super::issues::{IssueFacts, IssueWire};
+use super::activity::ItemActivity;
+use super::issues::{ISSUE_FIELDS, IssueFacts, IssueWire};
 use super::pull_requests::{PULL_REQUEST_FIELDS, PullRequestFacts, PullRequestWire, RateLimit};
 use super::refresh::{ListPlace, Listed, github_time};
 use super::{GitHub, Request};
@@ -15,11 +16,15 @@ use crate::repository::RepositoryName;
 const WINDOW_ISSUES: &str = "WindowIssues";
 const WINDOW_PULL_REQUESTS: &str = "WindowPullRequests";
 
-const WINDOW_ISSUES_QUERY: &str = "query WindowIssues($owner: String!, $name: String!, \
-     $since: DateTime!, $first: Int!, $after: String) { repository(owner: $owner, name: $name) { \
-     list: issues(first: $first, after: $after, filterBy: { since: $since }, \
-     orderBy: { field: UPDATED_AT, direction: DESC }) { pageInfo { hasNextPage endCursor } \
-     nodes { number title updatedAt author { login } } } } rateLimit { remaining resetAt } }";
+fn window_issues_query() -> String {
+    format!(
+        "query {WINDOW_ISSUES}($owner: String!, $name: String!, $since: DateTime!, $first: Int!, \
+         $after: String) {{ repository(owner: $owner, name: $name) {{ \
+         list: issues(first: $first, after: $after, filterBy: {{ since: $since }}, \
+         orderBy: {{ field: UPDATED_AT, direction: DESC }}) {{ pageInfo {{ hasNextPage endCursor }} \
+         nodes {{ {ISSUE_FIELDS} }} }} }} rateLimit {{ remaining resetAt }} }}"
+    )
+}
 
 /// GitHub's list of PRs takes no `since`, so the walk stops at the first PR older than the window.
 fn window_pull_requests_query() -> String {
@@ -44,6 +49,7 @@ pub struct WindowRequest<'a> {
 #[derive(Debug)]
 pub struct WindowPage<T> {
     pub items: Vec<T>,
+    pub activity: Vec<ItemActivity>,
     pub next: ListPlace,
     pub rate_limit: RateLimit,
 }
@@ -69,10 +75,11 @@ impl GitHub {
         repository: &RepositoryName,
         asked: WindowRequest<'_>,
     ) -> Result<WindowPage<IssueFacts>, Error> {
+        let query = window_issues_query();
         let (data, _): (Data<IssueWire>, usize) =
             self.query_at_size(asked.size, |first| Request {
                 operation: WINDOW_ISSUES,
-                query: WINDOW_ISSUES_QUERY.into(),
+                query: query.as_str().into(),
                 variables: json!({
                     "owner": repository.owner(),
                     "name": repository.name(),
@@ -83,8 +90,10 @@ impl GitHub {
             })?;
         let next = asked.place.after_answer(data.repository.list.page_info);
         let nodes = data.repository.list.nodes.into_iter().flatten();
+        let (items, activity) = nodes.map(Into::into).unzip();
         Ok(WindowPage {
-            items: nodes.map(IssueFacts::from).collect(),
+            items,
+            activity,
             next,
             rate_limit: data.rate_limit,
         })
@@ -110,16 +119,18 @@ impl GitHub {
                 }),
             })?;
         let nodes = data.repository.list.nodes.into_iter().flatten();
-        let mut items: Vec<PullRequestFacts> = nodes.map(PullRequestFacts::from).collect();
-        let read = items.len();
-        items.retain(|pr| pr.updated_at >= asked.since);
-        let next = if items.len() < read {
+        let mut parts: Vec<(PullRequestFacts, ItemActivity)> = nodes.map(Into::into).collect();
+        let read = parts.len();
+        parts.retain(|(pr, _)| pr.updated_at >= asked.since);
+        let next = if parts.len() < read {
             ListPlace::Finished
         } else {
             asked.place.after_answer(data.repository.list.page_info)
         };
+        let (items, activity) = parts.into_iter().unzip();
         Ok(WindowPage {
             items,
+            activity,
             next,
             rate_limit: data.rate_limit,
         })

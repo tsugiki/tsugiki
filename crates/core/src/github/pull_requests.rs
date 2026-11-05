@@ -8,7 +8,9 @@ use serde_json::json;
 use specta::Type;
 use time::OffsetDateTime;
 
+use super::activity::{ItemActivity, TimelineWire, pull_request_activity};
 use super::{BAD_GATEWAY, CommitSha, GitHub, Login, Request, Unreachable, read};
+use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::repository::RepositoryName;
 
@@ -42,7 +44,8 @@ fn search_query(operation: &str) -> String {
 
 /// The Workbench works out from these lists why a PR is the user's, so a list cut short would hide a PR the
 /// searches found. GitHub returns at most 100 at a time, and it limits a PR to 10 assignees. `lastCommit`
-/// asks for CI on its own, because CI rollups are slow and `commits` can run to 100.
+/// asks for CI on its own, because CI rollups are slow and `commits` can run to 100. The last 50 items of a
+/// timeline are enough for New activity, which has to say that someone did something lately.
 pub(super) const PULL_REQUEST_FIELDS: &str = "number title state isDraft updatedAt baseRefName body \
                                    mergeCommit { oid } \
                                    repository { nameWithOwner defaultBranchRef { name } } \
@@ -53,7 +56,16 @@ pub(super) const PULL_REQUEST_FIELDS: &str = "number title state isDraft updated
                                    latestReviews(first: 100) { nodes { author { login } state } } \
                                    lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } \
                                    commits(first: 100) { totalCount nodes { commit { message \
-                                   parents { totalCount } committer { user { login } } } } }";
+                                   parents { totalCount } committer { user { login } } } } } \
+                                   timelineItems(last: 50, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, \
+                                   PULL_REQUEST_REVIEW, READY_FOR_REVIEW_EVENT, HEAD_REF_FORCE_PUSHED_EVENT]) { \
+                                   nodes { __typename \
+                                   ... on PullRequestCommit { commit { committedDate \
+                                   author { name user { login } } committer { name user { login } } } } \
+                                   ... on IssueComment { createdAt author { __typename login } bodyText } \
+                                   ... on PullRequestReview { submittedAt author { __typename login } } \
+                                   ... on ReadyForReviewEvent { createdAt actor { __typename login } } \
+                                   ... on HeadRefForcePushedEvent { createdAt actor { __typename login } } } }";
 
 /// The text of a fetch of PRs by ID.
 fn fetch_by_ids_query(operation: PrFetch) -> String {
@@ -124,6 +136,7 @@ pub struct SearchPage {
 #[derive(Debug, PartialEq, Eq)]
 pub struct FetchedBatch {
     pub pull_requests: Vec<PullRequestFacts>,
+    pub activity: Vec<ItemActivity>,
     /// The number of IDs it asked for, which is fewer than offered after a retry.
     pub asked_for: usize,
     pub rate_limit: RateLimit,
@@ -133,7 +146,7 @@ pub struct FetchedBatch {
 #[derive(Debug, PartialEq, Eq)]
 pub struct FetchedOrigin {
     /// Nothing, when that number names an Issue or nothing.
-    pub pull_request: Option<PullRequestFacts>,
+    pub pull_request: Option<(PullRequestFacts, ItemActivity)>,
     pub rate_limit: RateLimit,
 }
 
@@ -220,8 +233,17 @@ impl PullRequestFacts {
         }
     }
 
-    /// True when a newer `updatedAt` brings a sync nothing, as a merged PR stays merged. A closed PR can
-    /// reopen.
+    /// True when `login` wrote this PR or has a Review on it. A review they haven't submitted isn't one yet.
+    pub fn is_written_or_reviewed_by(&self, login: &Login) -> bool {
+        self.author.as_ref() == Some(login)
+            || self
+                .latest_reviews
+                .iter()
+                .any(|review| review.author == *login && review.state != ReviewState::Pending)
+    }
+
+    /// True when a newer `updatedAt` says nothing a Filter or a tree reads has changed, as a merged PR stays
+    /// merged. A closed PR can reopen.
     pub fn stays_as_it_is(&self) -> bool {
         self.state == PrState::Merged && self.is_frozen()
     }
@@ -253,7 +275,7 @@ fn cherry_picks(text: &str) -> impl Iterator<Item = CommitSha> + '_ {
 #[derive(Deserialize)]
 pub(super) struct Nodes<T> {
     /// GitHub's schema allows a null for anything in a list, such as an item the token can't see.
-    nodes: Vec<Option<T>>,
+    pub(super) nodes: Vec<Option<T>>,
 }
 
 #[derive(Deserialize)]
@@ -376,6 +398,7 @@ pub(super) struct PullRequestWire {
     latest_reviews: Nodes<LatestReviewWire>,
     last_commit: Nodes<LastCommitNode>,
     commits: CommitsWire,
+    timeline_items: Nodes<TimelineWire>,
 }
 
 impl CommitsWire {
@@ -448,8 +471,10 @@ pub(super) fn ci_of(last_commit: Nodes<LastCommitNode>) -> Option<CiState> {
     Some(rollup.state)
 }
 
-impl From<PullRequestWire> for PullRequestFacts {
+impl From<PullRequestWire> for (PullRequestFacts, ItemActivity) {
     fn from(wire: PullRequestWire) -> Self {
+        let conventions = Conventions::for_repository(&wire.repository.name_with_owner);
+        let activity = pull_request_activity(wire.number, wire.timeline_items, conventions);
         let review_requests = requested_logins(wire.review_requests);
         let latest_reviews = reviews_of(wire.latest_reviews);
         let ci = ci_of(wire.last_commit);
@@ -476,7 +501,7 @@ impl From<PullRequestWire> for PullRequestFacts {
             .repository
             .default_branch_ref
             .is_none_or(|branch| branch.name == wire.base_ref_name);
-        Self {
+        let facts = PullRequestFacts {
             number: wire.number,
             title: wire.title,
             state: wire.state,
@@ -494,7 +519,8 @@ impl From<PullRequestWire> for PullRequestFacts {
                 .filter(|_| wire.state == PrState::Merged)
                 .and_then(|commit| CommitSha::parse(&commit.oid)),
             off_default: (!on_default).then(|| wire.commits.off_default(wire.body)),
-        }
+        };
+        (facts, activity)
     }
 }
 
@@ -572,13 +598,10 @@ impl GitHub {
                 variables: json!({ "ids": asked }),
             }
         })?;
+        let (pull_requests, activity) = data.nodes.into_iter().flatten().map(Into::into).unzip();
         Ok(FetchedBatch {
-            pull_requests: data
-                .nodes
-                .into_iter()
-                .flatten()
-                .map(PullRequestFacts::from)
-                .collect(),
+            pull_requests,
+            activity,
             asked_for,
             rate_limit: data.rate_limit,
         })
@@ -612,7 +635,7 @@ impl GitHub {
             }),
         })?;
         Ok(FetchedOrigin {
-            pull_request: data.repository.pull_request.map(PullRequestFacts::from),
+            pull_request: data.repository.pull_request.map(Into::into),
             rate_limit: data.rate_limit,
         })
     }

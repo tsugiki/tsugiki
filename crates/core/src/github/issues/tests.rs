@@ -28,6 +28,7 @@ fn issue_json(number: u32) -> Value {
         "number": number,
         "title": format!("Issue {number}"),
         "updatedAt": "2026-11-04T10:00:00Z",
+        "comments": { "nodes": [] },
         "author": { "login": "some-author" },
     })
 }

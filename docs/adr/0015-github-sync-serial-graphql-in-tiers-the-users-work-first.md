@@ -57,7 +57,9 @@ one at a time, the open Repository first.
   it changed. A Filter member whose change is at least two minutes old, and that the narrowed search didn't
   return, has stopped matching. A newer change waits for the next refresh, whose window still holds it.
 - **An open Issue or PR** is fetched when opened and about once a minute while on screen. **Merged and closed
-  PRs** are fetched once and frozen; their open Backports stay live.
+  PRs** are fetched once and frozen for what the link rules read; their open Backports stay live. A refresh
+  still fetches one that moves, because its timeline goes on: the bot's comment that a Bot backport failed can
+  land after a sync has saved the merge.
 - **Older items on demand.** Opening one, by a link, a `tsg` URL or "also fixes #N", fetches it and its tree,
   and it stays cached. A search typed in All issues also runs on GitHub, and results the cache lacks are
   added. All issues ends with "Load 30 more days", which walks further back once without changing the window.

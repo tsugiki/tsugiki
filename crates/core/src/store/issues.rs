@@ -3,7 +3,9 @@
 
 use rusqlite::{Connection, named_params};
 
+use super::activity;
 use super::columns::UnixTime;
+use crate::github::activity::ItemActivity;
 use crate::github::issues::IssueFacts;
 use crate::repository::RepositoryName;
 
@@ -23,11 +25,13 @@ pub(super) fn save(
     connection: &mut Connection,
     repository: &RepositoryName,
     issues: &[IssueFacts],
+    events: &[ItemActivity],
 ) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
     for issue in issues {
         save_issue(&transaction, repository, issue)?;
     }
+    activity::save(&transaction, repository, events)?;
     transaction.commit()
 }
 

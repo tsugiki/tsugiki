@@ -4,11 +4,14 @@
 use std::collections::BTreeMap;
 
 use rusqlite::{Connection, Statement, named_params};
+use time::OffsetDateTime;
 
+use crate::github::activity::ItemActivity;
 use crate::github::pull_requests::{LatestReview, OffDefault, PullRequestFacts};
 use crate::github::{CommitSha, Login};
 use crate::repository::RepositoryName;
 
+use super::activity;
 use super::columns::UnixTime;
 
 pub(super) const SCHEMA: &str = "
@@ -83,8 +86,11 @@ pub(super) fn save(
     connection: &mut Connection,
     repository: &RepositoryName,
     pull_requests: &[PullRequestFacts],
+    events: &[ItemActivity],
 ) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
+    // Before the PRs, because a commit counts differently on a PR the store holds.
+    activity::save(&transaction, repository, events)?;
     for pull_request in pull_requests {
         replace(&transaction, repository, pull_request)?;
     }
@@ -131,9 +137,12 @@ fn save_pull_request(
         .execute(
             "INSERT INTO pull_requests
                  (repository, number, title, state, is_draft, author, target_branch, ci, updated_at,
-                  off_default_description, merge_commit)
+                  off_default_description, merge_commit, ci_finished_at)
              VALUES (:repository, :number, :title, :state, :is_draft, :author, :target_branch, :ci,
-                     :updated_at, :off_default_description, :merge_commit)
+                     :updated_at, :off_default_description, :merge_commit, CASE
+                         WHEN :ci IN ('SUCCESS', 'FAILURE', 'ERROR')
+                             AND EXISTS (SELECT 1 FROM first_syncs WHERE repository = :repository)
+                         THEN :now END)
              ON CONFLICT (repository, number) DO UPDATE SET
                  title = excluded.title,
                  state = excluded.state,
@@ -141,6 +150,10 @@ fn save_pull_request(
                  author = excluded.author,
                  target_branch = excluded.target_branch,
                  ci = excluded.ci,
+                 ci_finished_at = CASE
+                     WHEN excluded.ci IS NOT pull_requests.ci
+                         AND excluded.ci IN ('SUCCESS', 'FAILURE', 'ERROR')
+                     THEN :now ELSE pull_requests.ci_finished_at END,
                  updated_at = excluded.updated_at,
                  off_default_description = excluded.off_default_description,
                  merge_commit = excluded.merge_commit",
@@ -156,6 +169,7 @@ fn save_pull_request(
                 ":updated_at": facts.updated_at.unix_timestamp(),
                 ":off_default_description": facts.off_default.as_ref().map(|off| &off.description),
                 ":merge_commit": facts.merge_commit,
+                ":now": OffsetDateTime::now_utc().unix_timestamp(),
             },
         )
         .map(drop)

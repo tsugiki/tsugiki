@@ -105,7 +105,8 @@ fn read_issues(link: &Link<'_>, walk: &mut WindowWalk) -> Result<PageRead, Error
     let page = link.github.window_issues(link.repository, asked)?;
     let oldest_read = page.items.last().map(|issue| issue.updated_at);
     let numbers = page.items.iter().map(|issue| issue.number).collect();
-    link.store.save_issues(link.repository, page.items)?;
+    link.store
+        .save_fetched_issues(link.repository, page.items, page.activity)?;
     walk.issues.moved_on(page.next, oldest_read);
     Ok((numbers, page.rate_limit))
 }
@@ -123,7 +124,8 @@ fn read_pull_requests(
     let page = link.github.window_pull_requests(link.repository, asked)?;
     let oldest_read = page.items.last().map(|pr| pr.updated_at);
     let numbers: Vec<u32> = page.items.iter().map(|pr| pr.number).collect();
-    link.store.save_pull_requests(link.repository, page.items)?;
+    link.store
+        .save_fetched_pull_requests(link.repository, page.items, page.activity)?;
     fetched.extend(numbers.iter().copied());
     walk.pull_requests.moved_on(page.next, oldest_read);
     Ok((numbers, page.rate_limit))
@@ -131,15 +133,15 @@ fn read_pull_requests(
 
 #[cfg(test)]
 mod tests {
-    use serde_json::Value;
+    use serde_json::{Value, json};
     use time::{Duration, OffsetDateTime};
 
     use crate::github::{Login, Reply, Unreachable};
     use crate::repository::RepositorySettings;
     use crate::store::FirstSyncPlace;
     use crate::sync::testing::{
-        FEW, Harness, LOTS, cpython, empty_window_page, hours_ago, plain, run_to_the_end,
-        searches_finding, window_issue, window_page, window_pr,
+        FEW, Harness, LOTS, comment_by, cpython, empty_window_page, hours_ago, plain,
+        run_to_the_end, searches_finding, window_issue, window_page, window_pr,
     };
     use crate::sync::{Progress, Syncs, UserWorkSync};
 
@@ -413,6 +415,36 @@ mod tests {
         let operations = harness.operations();
         assert_eq!(operations[0], "SearchReviewRequests");
         assert!(harness.store.sync_state(&cpython()).unwrap().is_some());
+        harness.finish();
+    }
+
+    #[test]
+    fn a_window_page_keeps_what_happened_on_its_items() {
+        let at = hours_ago(1);
+        let mut issue = window_issue(1, &at);
+        issue["comments"] = json!({ "nodes": [comment_by("issue-author", &at)] });
+        let mut pr = window_pr(2, &at);
+        pr["timelineItems"] = json!({ "nodes": [comment_by("some-author", &at)] });
+        let old = window_pr(3, "2020-01-01T10:00:00Z");
+        let mut replies = up_to_the_window();
+        replies.push(window_page(&[issue], None, LOTS));
+        replies.push(window_page(&[pr, old], None, LOTS));
+        let harness = Harness::with_window("window-activity", replies);
+        let mut syncs = Syncs::default();
+        syncs.add(plain(cpython()));
+
+        run_pages(&mut syncs, &harness, 11);
+
+        let who = |number: u32| -> Vec<String> {
+            let events = harness.store.activity(&cpython(), number).unwrap();
+            events
+                .iter()
+                .map(|event| event.who.as_str().to_owned())
+                .collect()
+        };
+        assert_eq!(who(1), ["issue-author"]);
+        assert_eq!(who(2), ["some-author"]);
+        assert_eq!(who(3), Vec::<String>::new());
         harness.finish();
     }
 

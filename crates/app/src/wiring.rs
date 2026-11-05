@@ -517,6 +517,7 @@ mod tests {
                             "number": self.number,
                             "title": "A new title",
                             "updatedAt": "2999-01-01T00:00:00Z",
+                            "comments": { "nodes": [] },
                             "author": null,
                         }])),
                         "pullRequests": page(json!([])),

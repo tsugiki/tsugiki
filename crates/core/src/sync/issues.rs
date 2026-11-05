@@ -26,7 +26,8 @@ pub(super) fn fetch_issues(
         .fetch_issues(link.repository, numbers, FETCH_BATCH)?;
     let numbered = batch.issues.iter().map(|issue| issue.number);
     let found: Vec<u32> = numbered.collect();
-    link.store.save_issues(link.repository, batch.issues)?;
+    link.store
+        .save_fetched_issues(link.repository, batch.issues, batch.activity)?;
     shown.extend(found.iter().copied());
     drop(numbers.drain(..batch.asked_for));
     let pause_until = pause_until(batch.rate_limit);

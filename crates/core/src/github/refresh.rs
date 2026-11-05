@@ -9,13 +9,15 @@ use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
+use super::activity::{ItemActivity, TimelineWire, pull_request_activity};
 use super::filters::{FOUND_FIELDS, FilterPage, FilterSearch, SearchWire};
-use super::issues::{IssueFacts, IssueWire};
+use super::issues::{ISSUE_FIELDS, IssueFacts, IssueWire};
 use super::pull_requests::{
     CiState, LastCommitNode, LatestReview, LatestReviewWire, NodeId, Nodes, PageRequest,
     PullRequestFacts, RateLimit, ReviewRequestWire, ci_of, requested_logins, reviews_of,
 };
 use super::{ConditionalGet, GitHub, Login, Request, Unreachable};
+use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::filters::FilterQuery;
 use crate::repository::RepositoryName;
@@ -114,6 +116,7 @@ pub struct PollAnswer {
     /// The open Issues and PRs, which say whether this Repository counts as small.
     pub open_items: u32,
     pub issues: Vec<IssueFacts>,
+    pub issue_activity: Vec<ItemActivity>,
     pub next_issues: ListPlace,
     pub pull_requests: Vec<ChangedPr>,
     pub next_pull_requests: ListPlace,
@@ -148,6 +151,7 @@ impl PrProbe {
 pub struct ProbedBatch {
     /// One for each number that still names a PR.
     pub probes: Vec<PrProbe>,
+    pub activity: Vec<ItemActivity>,
     /// The count of numbers it asked for, which a retry can make smaller than the batch.
     pub asked_for: usize,
     pub rate_limit: RateLimit,
@@ -175,16 +179,20 @@ struct ProbeWire {
     review_requests: Nodes<ReviewRequestWire>,
     latest_reviews: Nodes<LatestReviewWire>,
     last_commit: Nodes<LastCommitNode>,
+    timeline_items: Nodes<TimelineWire>,
 }
 
-impl From<ProbeWire> for PrProbe {
-    fn from(wire: ProbeWire) -> Self {
-        Self {
-            number: wire.number,
-            ci: ci_of(wire.last_commit),
-            review_requests: requested_logins(wire.review_requests),
-            latest_reviews: reviews_of(wire.latest_reviews),
-        }
+impl ProbeWire {
+    /// The probe, and the Reviews its timeline lists. These Reviews have no comments for Conventions to read.
+    fn into_parts(self) -> (PrProbe, ItemActivity) {
+        let activity = pull_request_activity(self.number, self.timeline_items, Conventions::Github);
+        let probe = PrProbe {
+            number: self.number,
+            ci: ci_of(self.last_commit),
+            review_requests: requested_logins(self.review_requests),
+            latest_reviews: reviews_of(self.latest_reviews),
+        };
+        (probe, activity)
     }
 }
 
@@ -213,7 +221,7 @@ fn poll_query(searches: usize) -> String {
          openPrs: pullRequests(states: OPEN) {{ totalCount }} \
          issues(first: $issues, after: $issuesAfter, filterBy: {{ since: $since }}, \
          orderBy: {{ field: UPDATED_AT, direction: DESC }}) {{ pageInfo {{ hasNextPage endCursor }} \
-         nodes {{ number title updatedAt author {{ login }} }} }} \
+         nodes {{ {ISSUE_FIELDS} }} }} \
          pullRequests(first: $prs, after: $prsAfter, orderBy: {{ field: UPDATED_AT, direction: DESC }}) {{ \
          pageInfo {{ hasNextPage endCursor }} nodes {{ id number updatedAt }} }} }} \
          {asked}rateLimit {{ remaining resetAt }} }}"
@@ -230,7 +238,9 @@ fn probe_query(numbers: &[u32]) -> String {
                  reviewRequests(first: 100) {{ nodes {{ requestedReviewer {{ \
                  ... on User {{ login }} ... on Bot {{ login }} }} }} }} \
                  latestReviews(first: 100) {{ nodes {{ author {{ login }} state }} }} \
-                 lastCommit: commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }} }}"
+                 lastCommit: commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }} \
+                 timelineItems(last: 20, itemTypes: [PULL_REQUEST_REVIEW]) {{ nodes {{ __typename \
+                 ... on PullRequestReview {{ submittedAt author {{ __typename login }} }} }} }} }}"
             )
         })
         .collect();
@@ -326,16 +336,14 @@ impl GitHub {
             let wire = searches.remove(&format!("f{at}"))?;
             Some((query.clone(), wire.into_page(repository, rate_limit)))
         };
+        let next_issues = asked.issues.after_answer(polled.issues.page_info);
+        let polled_issues = polled.issues.nodes.into_iter().flatten();
+        let (issues, issue_activity) = polled_issues.map(Into::into).unzip();
         Ok(PollAnswer {
             open_items: polled.open_issues.total_count + polled.open_prs.total_count,
-            issues: polled
-                .issues
-                .nodes
-                .into_iter()
-                .flatten()
-                .map(IssueFacts::from)
-                .collect(),
-            next_issues: asked.issues.after_answer(polled.issues.page_info),
+            issues,
+            issue_activity,
+            next_issues,
             pull_requests,
             next_pull_requests,
             filters: asked
@@ -371,13 +379,11 @@ impl GitHub {
         };
         let (data, asked_for): (Data, usize) =
             self.query_at_size(size.min(numbers.len()), request)?;
+        let answers = data.repository.into_values().flatten();
+        let (probes, activity) = answers.map(ProbeWire::into_parts).unzip();
         Ok(ProbedBatch {
-            probes: data
-                .repository
-                .into_values()
-                .flatten()
-                .map(PrProbe::from)
-                .collect(),
+            probes,
+            activity,
             asked_for,
             rate_limit: data.rate_limit,
         })

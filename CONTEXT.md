@@ -238,5 +238,7 @@ _Avoid_: My PR
 Something that happened on a PR after the user's **Last seen**: commits, comments, or reviews by people other
 than the user, a failed **Bot backport**, or a change in CI status on an **Own PR** or a PR the user has a
 **Review** on. Other bot activity and label changes do not count. It is reported alongside the review state
-and never changes it.
+and never changes it. A Bot backport has failed when the bot says it could not make it, which counts on the
+**Origin PR**, or when its CI fails, which counts on it and on its Origin PR. On an item the user has never
+opened, only what happened since the **Repository**'s first sync counts.
 _Avoid_: Unread, notifications

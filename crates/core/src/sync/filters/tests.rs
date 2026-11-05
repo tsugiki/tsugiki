@@ -3,6 +3,7 @@ use crate::filters::Filter;
 use crate::github::testing::reply_ok;
 use crate::github::{Reply, Request, Transport, Unreachable};
 use crate::repository::RepositorySettings;
+use crate::store::Store;
 use crate::sync::Syncs;
 use crate::sync::recovery::{Scenario, recovers_from_each_failure};
 use crate::sync::testing::{
@@ -118,6 +119,36 @@ fn a_filter_walk_recovers_from_a_failure_at_each_point() {
             "FetchCrossReferences",
         ]
     );
+}
+
+#[test]
+fn a_save_that_failed_goes_again_with_no_new_search() {
+    let mut replies = searches_finding(&[]);
+    replies.push(all_of(&[issue_hit(1)]));
+    replies.push(issues(&[1], LOTS));
+    replies.push(no_cross_references(LOTS));
+    let harness = Harness::new("filter-save-again", replies);
+    let broken = Store::stopped();
+    let mut syncs = Syncs::default();
+    syncs.add(filtering(&["a"]));
+
+    // Four searches and a move.
+    for _ in 0..5 {
+        drop(syncs.step(&harness.github, &harness.store).unwrap());
+    }
+    let failed = syncs.step(&harness.github, &broken).unwrap_err();
+    assert_eq!(failed.kind, ErrorKind::Internal);
+    assert_eq!(found_by(&harness, "a"), [0_u32; 0]);
+    drop(run_to_the_end(&mut syncs, &harness));
+
+    assert_eq!(found_by(&harness, "a"), [1]);
+    let asked = harness.operations();
+    assert_eq!(
+        asked[4..],
+        ["SearchFilter", "FetchIssues", "FetchCrossReferences"]
+    );
+    broken.close();
+    harness.finish();
 }
 
 #[test]

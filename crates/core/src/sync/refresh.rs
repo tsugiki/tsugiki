@@ -236,21 +236,26 @@ fn save_moved_issues(
         .into_iter()
         .map(|issue| (issue.number, issue))
         .collect();
-    let settled = issues
+    let settled: Vec<u32> = issues
         .iter()
-        .filter(|issue| issue.updated_at <= poll.settled_before);
-    poll.changed.extend(settled.map(|issue| issue.number));
-    if poll.redo {
-        let in_the_window = issues.iter().map(|issue| issue.number);
-        poll.moved_issues
-            .extend(in_the_window.filter(|number| held.contains_key(number)));
-    }
+        .filter(|issue| issue.updated_at <= poll.settled_before)
+        .map(|issue| issue.number)
+        .collect();
+    let in_the_window: Vec<u32> = issues
+        .iter()
+        .map(|issue| issue.number)
+        .filter(|number| held.contains_key(number))
+        .collect();
     let moved: Vec<IssueFacts> = issues
         .into_iter()
         .filter(|issue| held.get(&issue.number).is_some_and(|old| old != issue))
         .collect();
     let touched: Vec<u32> = moved.iter().map(|issue| issue.number).collect();
     link.store.save_issues(link.repository, moved)?;
+    poll.changed.extend(settled);
+    if poll.redo {
+        poll.moved_issues.extend(in_the_window);
+    }
     poll.moved_issues.extend(touched.iter().copied());
     poll.touched.extend(touched);
     Ok(())
@@ -283,7 +288,11 @@ fn merge_answers(link: &Link<'_>, poll: &mut Poll) -> Result<(), Error> {
 /// Plans what's left after the poll. It asks the store first, so a failure leaves `poll` as it was.
 fn plan_the_rest(link: &Link<'_>, poll: &mut Poll) -> Result<Changed, Error> {
     let stored = stored_pull_requests(link)?;
-    let viewer = link.store.last_login()?;
+    let viewer = if poll.redo {
+        link.store.last_login()?
+    } else {
+        None
+    };
     let is_behind = |pr: &ChangedPr| {
         stored
             .get(&pr.number)

@@ -5,14 +5,14 @@
 //! takes. A subject's own test brings a scenario here, and these runs take each of its error paths.
 
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::VecDeque;
 use std::ops::Range;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Instant;
 
 use serde_json::{Value, json};
 
-use super::testing::{Harness, cpython};
+use super::testing::Harness;
 use super::{Progress, Syncs};
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::repository::RepositorySettings;
@@ -120,7 +120,8 @@ struct Ended {
     facts: WorkFacts,
     check: Option<ChangeCheck>,
     refresh_under_way: Option<bool>,
-    told_the_window: BTreeSet<u32>,
+    /// Each thing the window heard, which may name no item, as for the Sidebar.
+    told_the_window: Vec<Vec<u32>>,
 }
 
 /// A run's end, with the failures on the way there.
@@ -133,13 +134,13 @@ struct Run {
 fn run(settings: &RepositorySettings, harness: &Harness, store: &Store) -> Run {
     let mut syncs = Syncs::default();
     syncs.add(settings.clone());
-    let mut told_the_window = BTreeSet::new();
+    let mut told_the_window = Vec::new();
     let mut steps = 0;
     let mut problems = Vec::new();
     while syncs.ready_at().is_some() {
         assert!(steps < MOST_STEPS, "the sync doesn't end");
         match syncs.step(&harness.github, store) {
-            Ok(Some(Progress::Changed(change))) => told_the_window.extend(change.items),
+            Ok(Some(Progress::Changed(change))) => told_the_window.push(change.items),
             Ok(_) => {}
             Err(problem) => {
                 syncs.after_failure(&problem, Instant::now());
@@ -148,9 +149,9 @@ fn run(settings: &RepositorySettings, harness: &Harness, store: &Store) -> Run {
         }
         steps += 1;
     }
-    let state = harness.store.sync_state(&cpython()).unwrap();
+    let state = harness.store.sync_state(&settings.name).unwrap();
     let ended = Ended {
-        facts: harness.reader.work_facts(&cpython()).unwrap(),
+        facts: harness.reader.work_facts(&settings.name).unwrap(),
         check: state.as_ref().map(|state| state.check.clone()),
         refresh_under_way: state.map(|state| state.refresh_under_way),
         told_the_window,
@@ -158,7 +159,15 @@ fn run(settings: &RepositorySettings, harness: &Harness, store: &Store) -> Run {
     Run { ended, problems }
 }
 
-/// A run that fails, and the requests it got answers to, with a repeat of one in a row counted once.
+/// Takes out the repeats in a row, of which a run can have `allowed`.
+fn once_each(mut asked: Vec<Asked>, allowed: usize) -> Vec<Asked> {
+    let all = asked.len();
+    asked.dedup();
+    assert!(all - asked.len() <= allowed, "a step repeated itself");
+    asked
+}
+
+/// The run with no failure, which each run that fails has to match.
 struct Failing<'a> {
     scenario: &'a Scenario,
     clean: &'a Ended,
@@ -168,8 +177,9 @@ struct Failing<'a> {
 }
 
 impl Failing<'_> {
-    /// Runs the sync with these failures, and answers whether any happened.
-    fn check(&self, what: &str, failing: Range<usize>, broken: Option<usize>) -> bool {
+    /// Runs the sync with these failures, and answers with those it saw. A step whose save failed may ask
+    /// once more for what it already had. A request that failed has no answer to repeat.
+    fn check(&self, what: &str, failing: Range<usize>, lost: Option<usize>) -> Vec<String> {
         let (served, seen) = mpsc::channel();
         let transport = Replaying {
             posts: self.posts.to_vec(),
@@ -182,19 +192,15 @@ impl Failing<'_> {
         let harness = Harness::answering(&name, Box::new(transport));
         (self.scenario.prepare)(&harness);
 
-        let flaky = broken.map(|call| harness.store.failing_at_call(call));
-        let store = flaky.as_ref().unwrap_or(&harness.store);
-        let failed = run(&self.scenario.settings, &harness, store);
-        if let Some(flaky) = flaky {
-            flaky.close();
-        }
+        let (flaky, _calls) = harness.store.failing_at_call(lost);
+        let failed = run(&self.scenario.settings, &harness, &flaky);
+        flaky.close();
 
-        let mut asked: Vec<Asked> = seen.try_iter().collect();
-        asked.dedup();
+        let asked = once_each(seen.try_iter().collect(), usize::from(lost.is_some()));
         assert_eq!(failed.ended, *self.clean, "{name}");
         assert_eq!(asked, self.served, "{name}");
         harness.finish();
-        !failed.problems.is_empty()
+        failed.problems
     }
 }
 
@@ -217,7 +223,9 @@ pub(super) fn recovers_from_each_failure(scenario: &Scenario) -> Vec<String> {
     };
     let harness = Harness::answering(scenario.name, Box::new(transport));
     (scenario.prepare)(&harness);
-    let clean = run(&scenario.settings, &harness, &harness.store);
+    let (counted, calls) = harness.store.failing_at_call(None);
+    let clean = run(&scenario.settings, &harness, &counted);
+    counted.close();
     harness.finish();
 
     assert_eq!(
@@ -226,10 +234,9 @@ pub(super) fn recovers_from_each_failure(scenario: &Scenario) -> Vec<String> {
     );
     let posts = collected(&posts);
     let checks = collected(&checks);
-    let mut asked = collected(&seen);
+    let asked = once_each(collected(&seen), 0);
     assert_eq!(posts.len(), scenario.posts.len(), "a reply went unasked");
     assert_eq!(checks.len(), scenario.checks.len(), "a check went unasked");
-    asked.dedup();
     let failing = Failing {
         scenario,
         clean: &clean.ended,
@@ -239,11 +246,11 @@ pub(super) fn recovers_from_each_failure(scenario: &Scenario) -> Vec<String> {
     };
     for request in 0..posts.len() {
         // A request gets a second try at half the size, so a failure takes two.
-        assert!(failing.check(&format!("ask-{request}"), request..request + 2, None));
+        let problems = failing.check(&format!("ask-{request}"), request..request + 2, None);
+        assert!(!problems.is_empty());
     }
-    let mut call = 0;
-    while failing.check(&format!("call-{call}"), 0..0, Some(call)) {
-        call += 1;
+    for call in 0..calls.try_iter().count() {
+        drop(failing.check(&format!("call-{call}"), 0..0, Some(call)));
     }
     asked.into_iter().map(|(operation, _)| operation).collect()
 }

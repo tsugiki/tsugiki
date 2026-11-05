@@ -222,6 +222,7 @@ fn holding_what_can_move(harness: &Harness) {
     holding_pr(harness, &own_open_pr(4, &json!({})));
     stored_filter(harness, "a", &[1, 9]);
     stored_filter(harness, "b", &[]);
+    stored_filter(harness, "c", &[]);
 }
 
 #[test]
@@ -233,6 +234,7 @@ fn a_refresh_recovers_from_a_failure_at_each_point() {
             &[
                 search(&[issue_hit(2)], Some("more")),
                 search(&[issue_hit(6)], None),
+                search(&[issue_hit(8)], None),
             ],
         ),
         fetched_nodes(&[strangers_pr(3, AFTER_IT)], LOTS),
@@ -241,8 +243,9 @@ fn a_refresh_recovers_from_a_failure_at_each_point() {
             r#"{{"data":{{"search":{},{LOTS}}}}}"#,
             search(&[issue_hit(2), issue_hit(5)], None)
         )),
-        issues(&[2, 5, 6], LOTS),
+        issues(&[2, 5, 6, 8], LOTS),
         cross_references(&[7], None, LOTS),
+        no_cross_references(LOTS),
         no_cross_references(LOTS),
         no_cross_references(LOTS),
         no_cross_references(LOTS),
@@ -250,7 +253,7 @@ fn a_refresh_recovers_from_a_failure_at_each_point() {
     ];
     let scenario = Scenario {
         name: "recovery-refresh",
-        settings: filtering(&["a", "b"]),
+        settings: filtering(&["a", "b", "c"]),
         prepare: holding_what_can_move,
         posts,
         checks: Vec::new(),
@@ -266,6 +269,7 @@ fn a_refresh_recovers_from_a_failure_at_each_point() {
             "ProbePullRequests",
             "SearchFilter",
             "FetchIssues",
+            "FetchCrossReferences",
             "FetchCrossReferences",
             "FetchCrossReferences",
             "FetchCrossReferences",

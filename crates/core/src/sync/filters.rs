@@ -30,9 +30,8 @@ struct WalkedSearch {
 pub(super) struct FilterWalk {
     /// The searches still to finish. The first is the one under way.
     left: VecDeque<WalkedSearch>,
-    /// The parts of that search still to read. The last is the one under way.
-    slices: Vec<Slice>,
-    cursor: Option<String>,
+    /// How far that search has got.
+    place: Place,
     /// That search's results so far.
     current: BTreeSet<u32>,
     cut_off: bool,
@@ -65,9 +64,35 @@ pub(super) fn can_narrow(stored: Option<&FilterResults>) -> bool {
     stored.is_some_and(|results| !matches!(results.problem, Some(FilterProblem::Refused(_))))
 }
 
+/// How far the search under way has got.
+enum Place {
+    Reading(Pages),
+    /// It has no more to read, and its results wait to be saved.
+    Read {
+        pause_until: Option<OffsetDateTime>,
+    },
+}
+
+impl Default for Place {
+    fn default() -> Self {
+        Self::Reading(Pages::default())
+    }
+}
+
+/// The pages of a search still to read.
+#[derive(Default)]
+struct Pages {
+    /// The part under way.
+    slice: Slice,
+    /// The parts to read after it, the next one last.
+    older: Vec<Slice>,
+    cursor: Option<String>,
+}
+
 /// A part of a search GitHub can list whole.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 enum Slice {
+    #[default]
     Whole,
     Created(CreatedRange),
 }
@@ -96,7 +121,6 @@ impl FilterWalk {
                 .cloned()
                 .map(|query| WalkedSearch { query, since: None })
                 .collect(),
-            slices: vec![Slice::Whole],
             work,
             ..Self::default()
         }
@@ -119,7 +143,6 @@ impl FilterWalk {
             .map(|query| WalkedSearch { query, since });
         Self {
             left: whole.chain(narrowed).collect(),
-            slices: vec![Slice::Whole],
             hits,
             changed,
             ..Self::default()
@@ -144,58 +167,14 @@ impl FilterWalk {
 /// Reads the next page of the search under way, or moves on from the last of them. One Filter that GitHub
 /// won't answer keeps what it last found and says why, and stops nothing else (ADR 0015).
 pub(super) fn walk_filters(link: &Link<'_>, walk: &mut FilterWalk) -> Result<Moved, Error> {
-    let (Some(search), Some(slice)) = (walk.left.front().cloned(), walk.slices.last().copied())
-    else {
+    let Some(search) = walk.left.front().cloned() else {
         return Ok((NO_PAUSE, Some(fetch_what_is_missing(link, walk)?)));
     };
+    let pause_until = match read_page(link, walk, &search)? {
+        Page::Stays(step) => return Ok((step, None)),
+        Page::Last { pause_until } => pause_until,
+    };
     let query = &search.query;
-    let asked = FilterSearch {
-        query,
-        created: slice.created(),
-        since: search.since,
-        page: PageRequest {
-            size: SEARCH_PAGE,
-            after: walk.cursor.as_deref(),
-        },
-    };
-    let page = match link.github.search_filter(link.repository, &asked) {
-        Ok(page) => page,
-        Err(problem) if blames_the_search(&problem) => {
-            log::warn!("GitHub wouldn't search {query:?}: {}", problem.message);
-            link.store
-                .save_filter_problem(link.repository, query, &problem.message)?;
-            walk.start_the_next_search();
-            let saved = Step::Saved {
-                touched: Vec::new(),
-                pause_until: None,
-            };
-            return Ok((saved, None));
-        }
-        Err(problem) => return Err(problem),
-    };
-    let pause_until = pause_until(page.rate_limit);
-    if walk.cursor.is_none() && page.total > SEARCH_CAP {
-        let today = OffsetDateTime::now_utc().date();
-        if let Some((older, newer)) = slice.halves(today) {
-            let _halved = walk.slices.pop();
-            walk.slices.extend([older, newer]);
-            return Ok((Step::Searched { pause_until }, None));
-        }
-        walk.cut_off = true;
-    }
-    for hit in page.hits {
-        walk.current.extend([hit.number]);
-        drop(walk.hits.insert(hit.number, hit));
-    }
-    let ends_its_slice = page.next.is_none();
-    if !ends_its_slice || walk.slices.len() > 1 {
-        walk.cursor = page.next;
-        if ends_its_slice {
-            let _read = walk.slices.pop();
-        }
-        return Ok((Step::Searched { pause_until }, None));
-    }
-    // The walk moves on only once the save has worked, so a failed save reads this page again.
     let numbers = walk.current.clone();
     let step = if search.since.is_some() {
         let narrowed = NarrowedResults {
@@ -231,6 +210,77 @@ pub(super) fn walk_filters(link: &Link<'_>, walk: &mut FilterWalk) -> Result<Mov
     Ok((step, None))
 }
 
+/// The meaning of a page for the search under way.
+enum Page {
+    /// This step ends here, with the search still under way or done with.
+    Stays(Step),
+    /// The search has no more to read, so its results are ready to save.
+    Last { pause_until: Option<OffsetDateTime> },
+}
+
+/// Reads the next page of the search under way. A search read to its end stays that way, so a save that
+/// failed goes again with no new request.
+fn read_page(link: &Link<'_>, walk: &mut FilterWalk, search: &WalkedSearch) -> Result<Page, Error> {
+    let pages = match &mut walk.place {
+        Place::Read { pause_until } => {
+            return Ok(Page::Last {
+                pause_until: *pause_until,
+            });
+        }
+        Place::Reading(pages) => pages,
+    };
+    let query = &search.query;
+    let asked = FilterSearch {
+        query,
+        created: pages.slice.created(),
+        since: search.since,
+        page: PageRequest {
+            size: SEARCH_PAGE,
+            after: pages.cursor.as_deref(),
+        },
+    };
+    let page = match link.github.search_filter(link.repository, &asked) {
+        Ok(page) => page,
+        Err(problem) if blames_the_search(&problem) => {
+            log::warn!("GitHub wouldn't search {query:?}: {}", problem.message);
+            link.store
+                .save_filter_problem(link.repository, query, &problem.message)?;
+            walk.start_the_next_search();
+            return Ok(Page::Stays(Step::Saved {
+                touched: Vec::new(),
+                pause_until: None,
+            }));
+        }
+        Err(problem) => return Err(problem),
+    };
+    let pause_until = pause_until(page.rate_limit);
+    let more = Page::Stays(Step::Searched { pause_until });
+    if pages.cursor.is_none() && page.total > SEARCH_CAP {
+        let today = OffsetDateTime::now_utc().date();
+        if let Some((older, newer)) = pages.slice.halves(today) {
+            pages.older.push(older);
+            pages.slice = newer;
+            return Ok(more);
+        }
+        walk.cut_off = true;
+    }
+    for hit in page.hits {
+        walk.current.extend([hit.number]);
+        drop(walk.hits.insert(hit.number, hit));
+    }
+    if page.next.is_some() {
+        pages.cursor = page.next;
+        return Ok(more);
+    }
+    if let Some(slice) = pages.older.pop() {
+        pages.slice = slice;
+        pages.cursor = None;
+        return Ok(more);
+    }
+    walk.place = Place::Read { pause_until };
+    Ok(Page::Last { pause_until })
+}
+
 /// True when GitHub refused this search, which the next Filter's search wouldn't run into. An outage, no
 /// network, a refused token or no points left would stop that search too, so the sync tries this one again.
 pub(super) fn blames_the_search(problem: &Error) -> bool {
@@ -248,8 +298,7 @@ pub(super) fn blames_the_search(problem: &Error) -> bool {
 impl FilterWalk {
     fn start_the_next_search(&mut self) {
         drop(self.left.pop_front());
-        self.slices = vec![Slice::Whole];
-        self.cursor = None;
+        self.place = Place::default();
         self.current.clear();
         self.cut_off = false;
     }

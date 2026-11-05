@@ -1,6 +1,6 @@
 //! The queue of syncs: which runs next, when it can run and when it gives up (ADR 0015).
 
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 use std::time::{Duration, Instant};
 
 use time::OffsetDateTime;
@@ -9,7 +9,7 @@ use super::{Step, UserWorkSync};
 use crate::error::{Error, ErrorKind};
 use crate::github::GitHub;
 use crate::repository::{RepositoryName, RepositorySettings};
-use crate::status::{Change, LastSync, SyncActivity};
+use crate::status::{Change, LastSync, SyncActivity, SyncPart};
 use crate::store::Store;
 
 /// The rate limit resets every hour, so a longer pause can only come from a clock that's wrong.
@@ -48,11 +48,23 @@ impl Hold {
     }
 }
 
+/// The read of the whole tree of an Issue the user opened.
+struct OpenedTree {
+    number: u32,
+    sync: UserWorkSync,
+}
+
 /// The syncs still to run, one at a time. The one asked for last goes first, because the window has that
 /// Repository open (ADR 0015), and the others keep their progress behind it.
 #[derive(Default)]
 pub struct Syncs {
     queue: VecDeque<UserWorkSync>,
+    /// The trees of Issues the user opened with no first sync's queue to put them in. Each goes ahead of
+    /// `queue` for its few requests, and leaves no trace of a sync behind it.
+    trees: VecDeque<OpenedTree>,
+    /// The Issues of `open` the user has opened since it opened. Each reads its tree once, because a view on
+    /// screen asks about once a minute.
+    opened: BTreeSet<u32>,
     not_before: Option<Hold>,
     failures: u8,
     /// The Repository the window has open, which alone keeps refreshing.
@@ -62,6 +74,10 @@ pub struct Syncs {
 impl Syncs {
     /// Puts a sync of `repository` first, carrying on from where it got if one is already queued.
     pub fn add(&mut self, repository: RepositorySettings) {
+        if !self.is_open(&repository.name) {
+            self.opened.clear();
+            self.trees.clear();
+        }
         self.open = Some(repository.clone());
         let queued = self
             .queue
@@ -100,16 +116,22 @@ impl Syncs {
         }
     }
 
-    /// The work of the sync at the front, for the status bar.
+    /// The work going on now, for the status bar.
     pub fn activity(&self) -> Option<SyncActivity> {
-        let sync = self.queue.front()?;
+        let (sync, part) = match self.trees.front() {
+            Some(tree) => (&tree.sync, SyncPart::Trees),
+            None => {
+                let sync = self.queue.front()?;
+                (sync, sync.part())
+            }
+        };
         let paused_until = match self.not_before {
             Some(Hold::Points(_, until)) => Some(until),
             Some(Hold::Retry(_)) | None => None,
         };
         Some(SyncActivity {
             repository: sync.repository.clone(),
-            part: sync.part(),
+            part,
             pages: sync
                 .first_sync
                 .as_ref()
@@ -119,21 +141,38 @@ impl Syncs {
         })
     }
 
-    /// Tells the sync of `repository`, if one is running, that the user opened Issue `number`.
+    /// Tells the syncs the user opened Issue `number` of the open Repository. A first sync's queue moves its
+    /// tree up. With no queue the tree gets its own read, because the PRs older than the window aren't in
+    /// yet.
     pub fn open_issue(&mut self, repository: &RepositoryName, number: u32) {
-        let running = self.queue.iter_mut();
-        if let Some(sync) = running
-            .into_iter()
-            .find(|sync| sync.repository.is_same(repository))
-        {
-            sync.open_issue(number);
+        if !self.is_open(repository) || !self.opened.insert(number) {
+            return;
         }
+        let queued = self
+            .queue
+            .iter_mut()
+            .find(|sync| sync.repository.is_same(repository))
+            .is_some_and(|sync| sync.open_issue(number));
+        if let (false, Some(open)) = (queued, &self.open) {
+            self.trees.push_back(OpenedTree {
+                number,
+                sync: UserWorkSync::tree_of(open.clone(), number),
+            });
+        }
+    }
+
+    fn is_open(&self, repository: &RepositoryName) -> bool {
+        self.open
+            .as_ref()
+            .is_some_and(|open| open.name.is_same(repository))
     }
 
     /// The time the next step can run, if there is one.
     pub fn ready_at(&self) -> Option<Instant> {
-        self.queue
+        self.trees
             .front()
+            .map(|tree| &tree.sync)
+            .or_else(|| self.queue.front())
             .map(|_| self.not_before.map_or_else(Instant::now, Hold::until))
     }
 
@@ -170,24 +209,51 @@ impl Syncs {
         self.failures += 1;
         if self.failures >= TRIES {
             self.failures = 0;
-            if let Some(sync) = self.queue.pop_front() {
-                log::error!(
-                    "Tsugiki gave up syncing {}: {}",
-                    sync.repository,
-                    problem.message
-                );
+            match self.trees.pop_front() {
+                Some(tree) => self.give_up_on(&tree, problem),
+                None => {
+                    if let Some(sync) = self.queue.pop_front() {
+                        log::error!(
+                            "Tsugiki gave up syncing {}: {}",
+                            sync.repository,
+                            problem.message
+                        );
+                    }
+                }
             }
         }
+    }
+
+    /// Forgets that `tree`'s Issue was opened, so opening it asks again. A view on screen does that about
+    /// once a minute.
+    fn give_up_on(&mut self, tree: &OpenedTree, problem: &Error) {
+        let number = tree.number;
+        self.opened.retain(|opened| *opened != number);
+        log::warn!(
+            "Tsugiki couldn't read the tree of Issue #{number}: {}",
+            problem.message
+        );
     }
 
     /// Runs one step of the first sync in the queue. Answers with what changed for the rest of the app, if
     /// anything did.
     pub fn step(&mut self, github: &GitHub, store: &Store) -> Result<Option<Progress>, Error> {
-        let Some(sync) = self.queue.front_mut() else {
+        let reading_a_tree = !self.trees.is_empty();
+        let tree = self.trees.front_mut().map(|tree| &mut tree.sync);
+        let Some(sync) = tree.or_else(|| self.queue.front_mut()) else {
             return Ok(None);
         };
         self.not_before = None;
-        let step = sync.step(github, store)?;
+        let step = match sync.step(github, store) {
+            // One Issue's trouble mustn't stand in the way of the sync behind it.
+            Err(problem) if reading_a_tree && !problem.kind.speaks_for_all_of_github() => {
+                if let Some(tree) = self.trees.pop_front() {
+                    self.give_up_on(&tree, &problem);
+                }
+                return Ok(None);
+            }
+            step => step?,
+        };
         self.failures = 0;
         match step {
             Step::Moved => Ok(None),
@@ -206,12 +272,14 @@ impl Syncs {
                 self.not_before = pause_until.map(until_instant).map(points_hold);
                 Ok(Some(Progress::Changed(change)))
             }
+            // A tree isn't a whole sync, so it doesn't move the time of the last one.
+            Step::Finished if reading_a_tree => {
+                drop(self.trees.pop_front());
+                Ok(None)
+            }
             Step::Finished => {
                 let finished = sync.finish(store)?;
-                let is_open = self
-                    .open
-                    .as_ref()
-                    .is_some_and(|open| open.name.is_same(&finished.repository));
+                let is_open = self.is_open(&finished.repository);
                 drop(self.queue.pop_front());
                 Ok(is_open.then_some(Progress::Finished(finished)))
             }

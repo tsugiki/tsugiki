@@ -187,9 +187,10 @@ The order in which v1 is built is in [build-order.md](build-order.md).
   user's review state.
 - All of an Issue's fully merged Origin PRs and their Backports collapse into a single summary line.
 - Only Backports that already exist are shown; Tsugiki does not try to work out which ones are missing.
-- Trees are whole: an Issue's older PRs and Backports, and a Backport's Origin PR, are fetched even when they
-  fall outside the synced window. Links follow GitHub alone; a wrong one is fixed on GitHub, not in Tsugiki
-  ([ADR 0011](adr/0011-pr-links-from-github-signals-by-repository-conventions.md)).
+- Trees are whole for the user's own Issues and any Issue they open: its older PRs and Backports, and a
+  Backport's Origin PR, are fetched even when they fall outside the synced window. Another Issue's row can
+  lack those older PRs until it's opened. Links follow GitHub alone; a wrong one is fixed on GitHub, not in
+  Tsugiki ([ADR 0011](adr/0011-pr-links-from-github-signals-by-repository-conventions.md)).
 - **Draft PRs** get a badge.
 - A PR that fixes several Issues shows under each of them, with "also fixes #N" on its row.
 - **Stacked PRs**: a PR that targets another PR's branch is stacked on it. Its row and PR view say "stacked on
@@ -313,8 +314,8 @@ The order in which v1 is built is in [build-order.md](build-order.md).
   the last 30 days of updates; the threshold and the window are settings. Either way it loads what waits on
   the user first (Review requests, PRs with the user's Review, Own PRs, assignments, then the Filters), so the
   Workbench is right in about a minute, then the trees of the user's Issues, then the rest of the window
-  newest first, each Issue with its tree. The status bar shows its progress. An interrupted sync resumes where
-  it stopped. Widening the window loads only the added days; narrowing it deletes nothing.
+  newest first, with the PRs that changed in the window. The status bar shows its progress. An interrupted
+  sync resumes where it stopped. Widening the window loads only the added days; narrowing it deletes nothing.
 - Older items come on demand: opening one fetches it and keeps it, a search in All issues also runs on GitHub,
   and All issues ends with "Load 30 more days".
 - Settings are kept in two TOML files, which Tsugiki reads when it starts and when the Settings dialog opens,

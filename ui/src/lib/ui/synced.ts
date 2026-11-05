@@ -32,6 +32,7 @@ function loadWords(load: NonNullable<SyncActivity["load"]>): string {
 export function syncingWords(activity: SyncActivity | null): string | null {
   if (activity === null || activity.part === "refresh") return null;
   if (activity.load) return `${PART_WORDS[activity.part]} · ${loadWords(activity.load)}`;
+  if (activity.pages === 0) return PART_WORDS[activity.part];
   const pages = activity.pages === 1 ? "1 page" : `${String(activity.pages)} pages`;
   return `${PART_WORDS[activity.part]} · ${pages}`;
 }

@@ -1,6 +1,7 @@
-//! A first sync after the user's own work, as one queue (ADR 0015). Trees of what the user needs come first:
-//! their own Issues, then any Issue they open. After that, a page of a list and a batch of PRs take turns, so
-//! rows arrive from the start and each tree fills in soon after its Issue. One request runs at a time.
+//! A first sync after the user's own work, as one queue (ADR 0015). Whole trees of what the user needs come
+//! first: their own Issues, then any Issue they open. After that, a page of a list and a batch of PRs take
+//! turns, so rows arrive from the start and the PRs of the window fill in soon after their Issues. A PR older
+//! than the window waits until the user opens its Issue. One request runs at a time.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -21,18 +22,17 @@ use crate::status::LoadProgress;
 const PR_LIST_PAGE: usize = 100;
 
 /// How soon a read's findings go: ahead of everything else, for a tree the user needs, or in turn.
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Urgency {
     Urgent,
     InTurn,
 }
 
-/// An Issue with more cross-references than one page holds.
+/// An urgent Issue with more cross-references than one page holds.
 #[derive(Clone, Serialize, Deserialize)]
 struct LongRead {
     number: u32,
     cursor: String,
-    urgency: Urgency,
 }
 
 /// The queue and where it has got to, which a first sync saves after each step.
@@ -44,7 +44,7 @@ pub(super) struct Loading {
     /// Each Issue that has been in `urgent_issues`. A view on screen asks about once a minute, and one read
     /// of its tree is enough.
     opened: BTreeSet<u32>,
-    /// The Issues with more cross-references to read, the urgent ones first.
+    /// The urgent Issues with more cross-references to read.
     long_reads: VecDeque<LongRead>,
     issues: ListPlace,
     issues_total: Option<u32>,
@@ -150,11 +150,7 @@ impl Loading {
         if !self.urgent_issues.is_empty() {
             return Some(Next::UrgentIssues);
         }
-        if let Some(read) = self
-            .long_reads
-            .front()
-            .filter(|read| read.urgency == Urgency::Urgent)
-        {
+        if let Some(read) = self.long_reads.front() {
             return Some(Next::LongRead(read.clone()));
         }
         if !self.urgent.is_empty() {
@@ -164,9 +160,6 @@ impl Loading {
     }
 
     fn next_in_turn(&self) -> Next {
-        if let Some(read) = self.long_reads.front() {
-            return Next::LongRead(read.clone());
-        }
         // Until the list of Issues ends, a PR's Issue may still turn up on a later page.
         if self.issues.is_finished() {
             let named = self.named_issues_left();
@@ -215,35 +208,35 @@ impl Loading {
         }
     }
 
-    fn join_references(
+    /// Queues the whole of the trees the user needs, and goes on to read any older cross-references.
+    fn join_urgent_references(
         &mut self,
         references: Vec<IssueReferences>,
-        urgency: Urgency,
         have: &dyn Fn(u32) -> bool,
     ) {
         for read in references {
             if let Some(cursor) = read.next {
-                self.read_more(LongRead {
+                self.long_reads.push_front(LongRead {
                     number: read.number,
                     cursor,
-                    urgency,
                 });
             }
-            self.join(read.listed, urgency, have);
+            self.join(read.listed, Urgency::Urgent, have);
         }
     }
 
-    /// Goes on to read an Issue's older cross-references. An urgent read goes first and replaces a slower
-    /// one. A page's read adds nothing to an opened Issue, which has its own.
-    fn read_more(&mut self, read: LongRead) {
-        match read.urgency {
-            Urgency::Urgent => {
-                self.long_reads
-                    .retain(|waiting| waiting.number != read.number);
-                self.long_reads.push_front(read);
-            }
-            Urgency::InTurn if self.opened.contains(&read.number) => {}
-            Urgency::InTurn => self.long_reads.push_back(read),
+    /// Queues what a page's Issues list inside the window, so those PRs arrive soon after their Issues. The
+    /// list of PRs would bring the same PRs later. An older PR waits until the user needs its tree, and older
+    /// cross-references could only add more of those.
+    fn join_window_references(
+        &mut self,
+        references: Vec<IssueReferences>,
+        have: &dyn Fn(u32) -> bool,
+    ) {
+        for read in references {
+            let since = self.since;
+            let recent = read.listed.into_iter().filter(|pr| pr.updated_at >= since);
+            self.join(recent.collect(), Urgency::InTurn, have);
         }
     }
 }
@@ -281,10 +274,11 @@ fn read_long(
         .github
         .fetch_cross_references(link.repository, read.number, asked)?;
     let frozen = frozen(link)?;
-    loading.join(page.listed, read.urgency, &held(fetched, &frozen));
+    loading.join(page.listed, Urgency::Urgent, &held(fetched, &frozen));
     drop(loading.long_reads.pop_front());
     if let Some(cursor) = page.next {
-        loading.long_reads.push_front(LongRead { cursor, ..read });
+        let number = read.number;
+        loading.long_reads.push_front(LongRead { number, cursor });
     }
     Ok(Step::Searched {
         pause_until: pause_until(page.rate_limit),
@@ -300,7 +294,7 @@ fn read_urgent_issues(
         link.github
             .fetch_issue_references(link.repository, &loading.urgent_issues, FETCH_BATCH)?;
     let frozen = frozen(link)?;
-    loading.join_references(read.references, Urgency::Urgent, &held(fetched, &frozen));
+    loading.join_urgent_references(read.references, &held(fetched, &frozen));
     drop(loading.urgent_issues.drain(..read.asked_for));
     Ok(Step::Searched {
         pause_until: pause_until(read.rate_limit),
@@ -383,7 +377,7 @@ fn read_issue_page(
     let numbers: Vec<u32> = page.items.iter().map(|issue| issue.number).collect();
     link.store
         .save_fetched_issues(link.repository, page.items, page.activity)?;
-    loading.join_references(page.references, Urgency::InTurn, &held(fetched, &frozen));
+    loading.join_window_references(page.references, &held(fetched, &frozen));
     loading.issues_total = Some(page.total);
     loading.issues_read = loading
         .issues_read
@@ -419,6 +413,7 @@ fn read_pull_request_page(
         .map(|pr| ListedPr {
             id: pr.id,
             number: pr.number,
+            updated_at: pr.updated_at,
         })
         .collect();
     loading.join(moved, Urgency::InTurn, &|pr| fetched.contains(&pr));

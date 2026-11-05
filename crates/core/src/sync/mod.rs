@@ -34,7 +34,7 @@ use crate::status::{LastSync, LoadProgress, SyncPart};
 use crate::store::{ChangeCheck, FirstSyncPlace, Store, SyncState};
 use batches::fetch;
 use filters::{FilterWalk, walk_filters};
-use issues::fetch_issues;
+use issues::{fetch_issues, fetch_named_issues};
 use loading::{Loading, load};
 use origins::fetch_origin;
 use refresh::{Changed, Poll, Probing};
@@ -104,6 +104,8 @@ enum Resumable {
     /// A first sync's window and trees, as one queue.
     Loading(Loading),
     ReadingCrossReferences(Reading),
+    /// The Issues a tree's PRs name that Tsugiki lacks.
+    FetchingNamedIssues(Vec<u32>),
 }
 
 impl From<Resumable> for Phase {
@@ -272,6 +274,17 @@ impl UserWorkSync {
         }
     }
 
+    /// A read of the whole tree of Issue `number`, and nothing else.
+    fn tree_of(repository: RepositorySettings, number: u32) -> Self {
+        let mut sync = Self::new(repository);
+        sync.phase = Resumable::ReadingCrossReferences(Reading {
+            issues: vec![number],
+            ..Reading::default()
+        })
+        .into();
+        sync
+    }
+
     /// Runs one step, then saves a first sync's place, so quitting, a crash or going offline comes back to
     /// the next page. A save that fails keeps the step, whose news still counts, for the next try to report.
     fn step(&mut self, github: &GitHub, store: &Store) -> Result<Step, Error> {
@@ -355,12 +368,13 @@ impl UserWorkSync {
         }
     }
 
-    /// Puts Issue `number`'s tree first, if this sync is at the point of loading trees. Earlier, the queue
-    /// doesn't exist yet and only moments of the user's own work stand before it. A refresh reads no tree for
-    /// an Issue that hasn't changed.
-    fn open_issue(&mut self, number: u32) {
+    /// Puts Issue `number`'s tree first, if this sync is at the point of loading trees, and says if it was.
+    fn open_issue(&mut self, number: u32) -> bool {
         if let Phase::Resumable(Resumable::Loading(loading)) = &mut self.phase {
             loading.open_issue(number);
+            true
+        } else {
+            false
         }
     }
 
@@ -407,6 +421,9 @@ impl UserWorkSync {
             Phase::Resumable(Resumable::Loading(loading)) => load(&link, loading, fetched)?,
             Phase::Resumable(Resumable::ReadingCrossReferences(reading)) => {
                 read_cross_references(&link, reading, fetched)?
+            }
+            Phase::Resumable(Resumable::FetchingNamedIssues(numbers)) => {
+                fetch_named_issues(&link, numbers)?
             }
         };
         if let Some(next) = next {

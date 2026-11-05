@@ -183,12 +183,12 @@ pub(crate) const SMALL_UP_TO: u32 = 500;
 /// How far back the first sync looks, in days (ADR 0015).
 pub const WINDOW_DAYS: u8 = 30;
 
-/// Measured on CPython's last 30 days (#129): 4,760 items took about 570 points and 27 minutes, one request
-/// at a time, with a tree for each Issue. About 10 of those points are the user's own work and don't grow
-/// with the window.
+/// Measured on CPython's last 30 days (#132): 4,760 items took about 485 points and 20.5 minutes, one request
+/// at a time, with whole trees for the user's own Issues. About 10 of those points are the user's own work
+/// and don't grow with the window.
 const FIXED_POINTS: u32 = 10;
-const POINTS_PER_THOUSAND_ITEMS: u32 = 118;
-const MILLISECONDS_PER_ITEM: u32 = 340;
+const POINTS_PER_THOUSAND_ITEMS: u32 = 100;
+const MILLISECONDS_PER_ITEM: u32 = 260;
 
 /// Which first sync a Repository gets (ADR 0015).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
@@ -396,7 +396,7 @@ mod tests {
 
     #[test]
     fn the_estimate_for_cpython_agrees_with_what_was_measured() {
-        // A first sync measured about 570 points and 27 minutes for 4,760 items.
+        // A first sync measured about 485 points and 20.5 minutes for 4,760 items.
         let cpython = RepositoryCounts {
             open_issues: 6935,
             open_prs: 2308,
@@ -405,9 +405,9 @@ mod tests {
         };
         let check = RepositoryCheck::new(name("python/cpython"), cpython, RepositoryAccess::Other);
         assert_eq!(check.repository.conventions, Conventions::Cpython);
-        assert!((540..=600).contains(&check.first_sync_points), "{check:?}");
+        assert!((460..=510).contains(&check.first_sync_points), "{check:?}");
         assert!(
-            (1500..=1700).contains(&check.first_sync_seconds),
+            (1150..=1300).contains(&check.first_sync_seconds),
             "{check:?}"
         );
     }

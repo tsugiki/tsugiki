@@ -21,6 +21,20 @@ pub enum ErrorKind {
     Internal,
 }
 
+impl ErrorKind {
+    /// True when no other request would fare better, so the trouble isn't about the one thing that was asked.
+    pub fn speaks_for_all_of_github(&self) -> bool {
+        match self {
+            Self::Offline | Self::RateLimited { .. } | Self::Unauthorized => true,
+            Self::WriteRefused
+            | Self::NotFound
+            | Self::Conflict
+            | Self::QueryRefused
+            | Self::Internal => false,
+        }
+    }
+}
+
 /// A failure in plain words. Details go only to a local log, with tokens scrubbed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct Error {

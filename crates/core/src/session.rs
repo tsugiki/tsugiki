@@ -413,20 +413,10 @@ fn fetch_issue(
     let Item { repository, number } = item;
     let content = match github.issue_content(&repository, number) {
         Ok(content) => content,
+        Err(problem) if problem.kind.speaks_for_all_of_github() => return Err(problem),
         Err(problem) => {
-            return match problem.kind {
-                ErrorKind::Offline | ErrorKind::RateLimited { .. } | ErrorKind::Unauthorized => {
-                    Err(problem)
-                }
-                ErrorKind::WriteRefused
-                | ErrorKind::NotFound
-                | ErrorKind::Conflict
-                | ErrorKind::QueryRefused
-                | ErrorKind::Internal => {
-                    log::warn!("Tsugiki couldn't read Issue #{number}: {}", problem.message);
-                    Ok(())
-                }
-            };
+            log::warn!("Tsugiki couldn't read Issue #{number}: {}", problem.message);
+            return Ok(());
         }
     };
     match store.save_issue_content(&repository, number, content) {

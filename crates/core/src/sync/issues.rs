@@ -38,6 +38,22 @@ pub(super) fn fetch_issues(
     Ok((step, None))
 }
 
+/// Fetches the Issues a tree's PRs name, for their rows only, and then the tree is done.
+pub(super) fn fetch_named_issues(link: &Link<'_>, numbers: &mut Vec<u32>) -> Result<Moved, Error> {
+    if numbers.is_empty() {
+        return Ok((Step::Finished, None));
+    }
+    let batch = link
+        .github
+        .fetch_issues(link.repository, numbers, FETCH_BATCH)?;
+    let touched = batch.issues.iter().map(|issue| issue.number).collect();
+    link.store
+        .save_fetched_issues(link.repository, batch.issues, batch.activity)?;
+    drop(numbers.drain(..batch.asked_for));
+    let step = Step::saved_if_any(touched, pause_until(batch.rate_limit));
+    Ok((step, None))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::github::{Reply, Unreachable};

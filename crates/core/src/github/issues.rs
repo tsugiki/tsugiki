@@ -123,6 +123,8 @@ pub(super) struct ReadByNumber<T> {
 pub struct ListedPr {
     pub id: NodeId,
     pub number: u32,
+    #[serde(rename = "updatedAt", with = "time::serde::rfc3339")]
+    pub updated_at: OffsetDateTime,
 }
 
 /// One page of an Issue's cross-references, the newest PR first.

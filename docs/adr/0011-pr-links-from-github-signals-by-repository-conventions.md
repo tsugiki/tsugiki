@@ -35,16 +35,19 @@ edited on the Repository's Settings page, and an edited preset shows as Custom.
   commit in it was committed by that bot. A merge of the Target branch, as GitHub's Update branch button
   makes, doesn't count. A commit anyone else pushed, including an amended or force-pushed cherry-pick, makes
   it a Manual backport from then on.
-- **Whole trees.** For every Issue a first sync's window brings, and every Issue the user's work reaches (a
-  Filter match, a Pinned issue, or an Issue named by one of the user's PRs), Tsugiki reads the Issue's
-  cross-reference events, newest first and paginated, fetches the PRs listed there that it doesn't have, and
-  keeps those the rules above tie to the Issue. That drops PRs that only mention it. A Backport's Origin PR is
-  fetched by number when missing. It goes one level: a PR in a tree that names another Issue doesn't bring
-  that Issue's tree. Merged and closed PRs are fetched
-  once and frozen, apart from a refresh that sees one move ([ADR
-  0015](0015-github-sync-serial-graphql-in-tiers-the-users-work-first.md)).
+- **Whole trees.** For every Issue the user's work reaches (a Filter match, a Pinned issue, or an Issue named
+  by one of the user's PRs) and every Issue the user opens, Tsugiki reads the Issue's cross-reference events,
+  newest first and paginated, fetches the PRs listed there that it doesn't have, and keeps those the rules
+  above tie to the Issue. That drops PRs that only mention it. A Backport's Origin PR is fetched by number
+  when missing. It goes one level: a PR in a tree that names another Issue brings that Issue's row if Tsugiki
+  lacks it, without its tree. Merged and closed PRs are fetched once and frozen, apart from a refresh that
+  sees one move ([ADR 0015](0015-github-sync-serial-graphql-in-tiers-the-users-work-first.md)).
+- **Other Issues in the window.** A first sync fetches only the PRs that changed inside the window, because
+  the older ones are the costly part of a tree and the user opens few of those Issues. Such an Issue's row can
+  lack older PRs, an old open PR among them, until the user opens it.
 - **Issues only a PR names.** A first sync fetches an Issue that a PR in the window names, without its
-  cross-references. Such an Issue shows the PRs Tsugiki already holds, so its tree can lack some.
+  cross-references. Such an Issue shows the PRs Tsugiki already holds, so its tree can lack some until the
+  user opens it.
 
 ## Considered Options
 
@@ -74,10 +77,10 @@ edited on the Repository's Settings page, and an edited preset shows as Custom.
   events, because they only say which PRs to fetch and the links come from the PRs.
 - A refresh reads cross-references only for an Issue that changed. A cross-reference doesn't always move an
   Issue's `updatedAt`, but a new link still arrives, because each refresh fetches each PR that changed.
-- Measured on CPython with the starter Filters ([#129](https://github.com/tsugiki/tsugiki/issues/129)): the
-  window's 1,444 Issues bring their cross-references inside their pages, and 13 more queries read the Issues
-  with over a page of them. Before that change a first sync sent 78 cross-reference queries out of 261, and
-  the two refreshes after it sent 1 and 0.
+- Measured on CPython with the starter Filters ([#132](https://github.com/tsugiki/tsugiki/issues/132)): the
+  window's 1,446 Issues bring their latest cross-references inside their pages, and only the user's own and
+  opened Issues read more, 4 queries in that run. Before #129 a first sync sent 78 cross-reference queries out
+  of 261, and the two refreshes after it sent 1 and 0.
 - A link made by hand in the Development panel may wait until its PR or Issue next changes. We couldn't check
   whether it moves the PR's `updatedAt`, and CPython had 1 such link in its latest 800 PRs.
 - Changing a Repository's Conventions re-groups its Workbench at once, with no re-sync.

@@ -10,6 +10,7 @@
             "login": "miss-islington"
           },
           "baseRefName": "3.11",
+          "timelineItems": { "nodes": [] },
           "body": "* gh-161323: Refuse drive-relative paths in tarfile extraction filters\n\nOn Windows, os.path.join() does not put a name such as 'C:foo' below a\ndestination that has no drive, so the 'tar' and 'data' filters now refuse\nnames and link targets with a drive, after normalization.\nFixes CVE-2026-107784.\n\nreported by Girish Konda\n\nANT-2026-RSL1F4AT\n(cherry picked from commit e4c751ba63d41660332db162ff7836e933631858)\n\n",
           "closingIssuesReferences": {
             "nodes": []
@@ -80,6 +81,7 @@
             "login": "user-1"
           },
           "baseRefName": "main",
+          "timelineItems": { "nodes": [] },
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.",
           "closingIssuesReferences": {
             "nodes": []
@@ -207,6 +209,7 @@
             "login": "miss-islington"
           },
           "baseRefName": "3.13",
+          "timelineItems": { "nodes": [] },
           "body": "* gh-161323: Refuse drive-relative paths in tarfile extraction filters\n\nOn Windows, os.path.join() does not put a name such as 'C:foo' below a\ndestination that has no drive, so the 'tar' and 'data' filters now refuse\nnames and link targets with a drive, after normalization.\nFixes CVE-2026-107784.\n\nreported by Girish Konda\n\nANT-2026-RSL1F4AT\n(cherry picked from commit e4c751ba63d41660332db162ff7836e933631858)\n\n",
           "closingIssuesReferences": {
             "nodes": []
@@ -273,6 +276,7 @@
             "login": "user-1"
           },
           "baseRefName": "3.15",
+          "timelineItems": { "nodes": [] },
           "body": "Py_SETREF(), Py_XSETREF() and Py_CLEAR() now use memcpy() to set _tmp_old_dst/_tmp_old_op to fix a strict aliasing issue.\n\nPy_SETREF(), Py_XSETREF() and Py_CLEAR() now also cast _tmp_old_dst/_tmp_old_op to PyObject* when calling Py_DECREF()/Py_XDECREF() to avoid compiler warnings with the limited C API.\n\nAdd the _Py_TESTCEXT_NO_TYPEOF macro to undefine the _Py_TYPEOF macro.\n\n\n(cherry picked from commit f8e65ee35d05cc47e1e02e716c934b8acaa9b5bd)\n\n<!--\nThanks for your contribution!\nPlease read this comment in its entirety. It's quite important.\n\n# Pull Request title\n\nIt should be in the following format:\n\n```\ngh-NNNNNN: Summary of the changes made\n```\n\nWhere: gh-NNNNNN refers to the GitHub issue number.\n\nMost PRs will require an issue number. Trivial changes, like fixing a typo, do not need an issue.\n\n# Backport Pull Request title\n\nIf this is a backport PR (PR made against branches other than `main`),\nplease ensure that the PR title is in the following format:\n\n```\n[X.Y] <title from the original PR> (GH-NNNNNN)\n```\n\nWhere: [X.Y] is the branch name, for example: [3.13].\n\nGH-NNNNNN refers to the PR number from `main`.\n\n-->\n\n\n<!-- gh-issue-number: gh-161185 -->\n* Issue: gh-161185\n<!-- /gh-issue-number -->\n",
           "closingIssuesReferences": {
             "nodes": []
@@ -333,6 +337,7 @@
             "login": "miss-islington"
           },
           "baseRefName": "3.12",
+          "timelineItems": { "nodes": [] },
           "body": "* gh-161323: Refuse drive-relative paths in tarfile extraction filters\n\nOn Windows, os.path.join() does not put a name such as 'C:foo' below a\ndestination that has no drive, so the 'tar' and 'data' filters now refuse\nnames and link targets with a drive, after normalization.\nFixes CVE-2026-107784.\n\nreported by Girish Konda\n\nANT-2026-RSL1F4AT\n(cherry picked from commit e4c751ba63d41660332db162ff7836e933631858)\n\n",
           "closingIssuesReferences": {
             "nodes": []
@@ -399,6 +404,7 @@
             "login": "user-11"
           },
           "baseRefName": "main",
+          "timelineItems": { "nodes": [] },
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.",
           "closingIssuesReferences": {
             "nodes": []
@@ -492,6 +498,7 @@
             "login": "miss-islington"
           },
           "baseRefName": "3.15",
+          "timelineItems": { "nodes": [] },
           "body": "* gh-161323: Refuse drive-relative paths in tarfile extraction filters\n\nOn Windows, os.path.join() does not put a name such as 'C:foo' below a\ndestination that has no drive, so the 'tar' and 'data' filters now refuse\nnames and link targets with a drive, after normalization.\nFixes CVE-2026-107784.\n\nreported by Girish Konda\n\nANT-2026-RSL1F4AT\n(cherry picked from commit e4c751ba63d41660332db162ff7836e933631858)\n\n",
           "closingIssuesReferences": {
             "nodes": []
@@ -562,6 +569,7 @@
             "login": "user-2"
           },
           "baseRefName": "main",
+          "timelineItems": { "nodes": [] },
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipi",
           "closingIssuesReferences": {
             "nodes": []
@@ -687,6 +695,7 @@
             "login": "miss-islington"
           },
           "baseRefName": "3.14",
+          "timelineItems": { "nodes": [] },
           "body": "* gh-161323: Refuse drive-relative paths in tarfile extraction filters\n\nOn Windows, os.path.join() does not put a name such as 'C:foo' below a\ndestination that has no drive, so the 'tar' and 'data' filters now refuse\nnames and link targets with a drive, after normalization.\nFixes CVE-2026-107784.\n\nreported by Girish Konda\n\nANT-2026-RSL1F4AT\n(cherry picked from commit e4c751ba63d41660332db162ff7836e933631858)\n\n",
           "closingIssuesReferences": {
             "nodes": []
@@ -753,6 +762,7 @@
             "login": "user-3"
           },
           "baseRefName": "main",
+          "timelineItems": { "nodes": [] },
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adi",
           "closingIssuesReferences": {
             "nodes": []
@@ -818,7 +828,7 @@
       }
     }
   },
-  "query": "query FetchChangedPullRequests($ids: [ID!]!) { nodes(ids: $ids) { ... on PullRequest { number title state isDraft updatedAt baseRefName body mergeCommit { oid } repository { nameWithOwner defaultBranchRef { name } } closingIssuesReferences(first: 100) { nodes { number repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } commits(first: 100) { totalCount nodes { commit { message parents { totalCount } committer { user { login } } } } } } } rateLimit { remaining resetAt } }",
+  "query": "query FetchChangedPullRequests($ids: [ID!]!) { nodes(ids: $ids) { ... on PullRequest { number title state isDraft updatedAt baseRefName body mergeCommit { oid } repository { nameWithOwner defaultBranchRef { name } } closingIssuesReferences(first: 100) { nodes { number repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } commits(first: 100) { totalCount nodes { commit { message parents { totalCount } committer { user { login } } } } } timelineItems(last: 50, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW, READY_FOR_REVIEW_EVENT, HEAD_REF_FORCE_PUSHED_EVENT]) { nodes { __typename ... on PullRequestCommit { commit { committedDate author { name user { login } } committer { name user { login } } } } ... on IssueComment { createdAt author { __typename login } bodyText } ... on PullRequestReview { submittedAt author { __typename login } } ... on ReadyForReviewEvent { createdAt actor { __typename login } } ... on HeadRefForcePushedEvent { createdAt actor { __typename login } } } } } } rateLimit { remaining resetAt } }",
   "reset": 1793832374,
   "status": 200
 }

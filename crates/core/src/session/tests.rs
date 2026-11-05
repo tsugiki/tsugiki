@@ -409,6 +409,7 @@ fn work_fetch() -> Result<Reply, Unreachable> {
         "author": { "login": "octocat" },
         "assignees": { "nodes": [] },
         "reviewRequests": { "nodes": [] },
+        "timelineItems": { "nodes": [] },
         "latestReviews": { "nodes": [] },
         "lastCommit": { "nodes": [] },
         "mergeCommit": null,

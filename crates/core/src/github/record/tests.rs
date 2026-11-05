@@ -254,6 +254,72 @@ fn a_recording_keeps_a_descriptions_words_only_off_the_default_branch() {
     );
 }
 
+#[test]
+fn a_recording_keeps_a_bots_comments_and_only_the_length_of_a_persons() {
+    let dir = temp_dir("comments");
+    let comment =
+        |kind: &str, text: &str| json!({ "author": { "__typename": kind }, "bodyText": text });
+    let pr = json!({ "timelineItems": { "nodes": [
+        comment("User", "Someone's words"),
+        comment("Bot", "Sorry, I could not"),
+        { "commit": {} },
+    ] } });
+    let nodes = json!({ "data": { "nodes": [pr] } });
+    let answer = reply(&nodes.to_string());
+    let recorder = Recorder::new(Box::new(Canned(Ok(answer))), dir.clone());
+
+    drop(recorder.post(&token(), &REQUEST).unwrap());
+    let replayed = Replayer::new(dir.clone()).post(&token(), &REQUEST).unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+
+    let body: Value = serde_json::from_str(&replayed.body).unwrap();
+    let text =
+        |at: usize| body["data"]["nodes"][0]["timelineItems"]["nodes"][at]["bodyText"].clone();
+    assert_eq!(text(0), "Lorem ipsum dol");
+    assert_eq!(text(1), "Sorry, I could not");
+}
+
+#[test]
+fn a_recording_keeps_the_bots_and_web_flow_and_hides_people_in_a_timeline() {
+    let dir = temp_dir("timeline-people");
+    let pr = json!({ "timelineItems": { "nodes": [
+        {
+            "author": { "__typename": "Bot", "login": "miss-islington-app" },
+            "bodyText": "Sorry, @some-person, I could not cleanly backport this to 3.14 due to a conflict.",
+        },
+        { "commit": {
+            "author": { "name": "A Real Name", "user": { "login": "some-person" } },
+            "committer": { "name": "GitHub", "user": { "login": "web-flow" } },
+        } },
+        { "commit": {
+            "author": { "name": "dependabot[bot]", "user": null },
+            "committer": { "name": "dependabot[bot]", "user": null },
+        } },
+    ] } });
+    let nodes = json!({ "data": { "repository": { "list": { "nodes": [pr] } } } });
+    let answer = reply(&nodes.to_string());
+    let recorder = Recorder::new(Box::new(Canned(Ok(answer))), dir.clone());
+
+    drop(recorder.post(&token(), &REQUEST).unwrap());
+    let replayed = Replayer::new(dir.clone()).post(&token(), &REQUEST).unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+
+    assert!(!replayed.body.contains("some-person"), "{}", replayed.body);
+    assert!(!replayed.body.contains("A Real Name"), "{}", replayed.body);
+    let body: Value = serde_json::from_str(&replayed.body).unwrap();
+    let items = &body["data"]["repository"]["list"]["nodes"][0]["timelineItems"]["nodes"];
+    assert_eq!(items[0]["author"]["login"], "miss-islington-app");
+    assert_eq!(items[1]["commit"]["committer"]["user"]["login"], "web-flow");
+    assert_eq!(items[1]["commit"]["committer"]["name"], Value::Null);
+    assert_eq!(items[2]["commit"]["committer"]["name"], "dependabot[bot]");
+    assert!(
+        items[0]["bodyText"]
+            .as_str()
+            .unwrap()
+            .ends_with("I could not cleanly backport this to 3.14 due to a conflict.")
+    );
+}
+
 /// The part of `node`, answered at `pointer`, that a recording keeps.
 fn recorded_pr(name: &str, answer: &Value) -> Value {
     let dir = temp_dir(name);

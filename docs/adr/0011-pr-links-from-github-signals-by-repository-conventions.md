@@ -39,7 +39,8 @@ edited on the Repository's Settings page, and an edited preset shows as Custom.
   in the synced window), Tsugiki reads the Issue's cross-reference events, newest first and paginated, fetches
   the PRs listed there that it doesn't have, and keeps those the rules above tie to the Issue. That drops PRs
   that only mention it. A Backport's Origin PR is fetched by number when missing. Merged and closed PRs are
-  fetched once and frozen.
+  fetched once and frozen, apart from a refresh that sees one move ([ADR
+  0015](0015-github-sync-serial-graphql-in-tiers-the-users-work-first.md)).
 
 ## Considered Options
 

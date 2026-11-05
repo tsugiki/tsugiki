@@ -7,8 +7,9 @@ use std::path::PathBuf;
 
 use serde_json::{Value, json};
 
+use super::activity::{APP_NAME_END, WEB_COMMITTER};
 use super::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
-use crate::conventions::CPYTHON_BACKPORT_BOT;
+use crate::conventions::{CPYTHON_BACKPORT_APP, CPYTHON_BOT_ACCOUNTS};
 use crate::token::Token;
 
 const PREFIXES: [&str; 6] = ["gho_", "ghp_", "ghs_", "ghu_", "ghr_", "github_pat_"];
@@ -26,7 +27,7 @@ const RECORDED_OWNER: &str = "python";
 /// The start of the one line Tsugiki reads in a commit message.
 const CHERRY_PICK: &str = "(cherry picked from commit ";
 /// The fields of an answer that people write, where a login can sit inside the text.
-const PROSE_FIELDS: [&str; 2] = ["title", "body"];
+const PROSE_FIELDS: [&str; 3] = ["title", "body", "bodyText"];
 
 fn is_token_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
@@ -71,6 +72,27 @@ fn keep_only_what_is_read(body: &mut Value) {
     if let Some(node) = body.pointer_mut("/data/repository/pullRequest") {
         keep_what_a_pr_reads(node);
     }
+    if let Some(Value::Array(nodes)) = body.pointer_mut("/data/repository/list/nodes") {
+        nodes.iter_mut().for_each(keep_what_a_pr_reads);
+    }
+}
+
+/// Only a bot's comment is read, for the words that say a Bot backport failed. A commit's names are only read
+/// to spot an App, and a person's can be their real name.
+fn keep_what_a_timeline_item_reads(item: &mut Value) {
+    let from_a_bot = item.pointer("/author/__typename") == Some(&json!("Bot"));
+    if !from_a_bot && let Some(Value::String(text)) = item.get_mut("bodyText") {
+        *text = FILLER.chars().cycle().take(text.chars().count()).collect();
+    }
+    for actor in ["/commit/author/name", "/commit/committer/name"] {
+        if let Some(name) = item.pointer_mut(actor)
+            && !name
+                .as_str()
+                .is_some_and(|name| name.ends_with(APP_NAME_END))
+        {
+            *name = Value::Null;
+        }
+    }
 }
 
 fn keep_what_a_pr_reads(node: &mut Value) {
@@ -89,6 +111,9 @@ fn keep_what_a_pr_reads(node: &mut Value) {
                 PEOPLE_LINES.iter().any(|marker| line.contains(marker))
             })
         };
+    }
+    if let Some(Value::Array(items)) = node.pointer_mut("/timelineItems/nodes") {
+        items.iter_mut().for_each(keep_what_a_timeline_item_reads);
     }
     if let Some(Value::Array(commits)) = node.pointer_mut("/commits/nodes") {
         for commit in commits {
@@ -118,11 +143,15 @@ struct StandIns {
 }
 
 impl Default for StandIns {
-    /// The backport bot stays as it is, because the Backport rules have to recognise it in a recording.
+    /// These stay as they are, because the rules have to recognise them in a recording.
     fn default() -> Self {
-        let bot = CPYTHON_BACKPORT_BOT.to_owned();
+        let kept = CPYTHON_BOT_ACCOUNTS
+            .into_iter()
+            .chain([CPYTHON_BACKPORT_APP, WEB_COMMITTER]);
         Self {
-            by_login: BTreeMap::from([(bot.clone(), bot)]),
+            by_login: kept
+                .map(|login| (login.to_owned(), login.to_owned()))
+                .collect(),
         }
     }
 }
@@ -137,8 +166,9 @@ impl StandIns {
 
     /// The stand-in for `login`, a new one the first time.
     fn for_login(&mut self, login: &str) -> String {
-        // The bot's entry takes no number.
-        let next = format!("user-{}", self.by_login.len().saturating_sub(1));
+        // The kept logins take no number.
+        let kept = CPYTHON_BOT_ACCOUNTS.len() + 2;
+        let next = format!("user-{}", self.by_login.len().saturating_sub(kept));
         self.by_login
             .entry(login.to_ascii_lowercase())
             .or_insert(next)

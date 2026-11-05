@@ -3,6 +3,7 @@
 //! a thread that runs its jobs in turn, so a caller waits only for the jobs ahead of its own on that
 //! connection.
 
+mod activity;
 mod columns;
 mod file;
 mod filters;
@@ -20,10 +21,12 @@ use std::sync::{Arc, Weak};
 use std::thread::{self, JoinHandle};
 
 use rusqlite::{Connection, OpenFlags, OptionalExtension, named_params};
+use time::OffsetDateTime;
 
 use crate::error::{Error, ErrorKind};
 use crate::filters::FilterQuery;
 use crate::github::Login;
+use crate::github::activity::{Activity, ItemActivity};
 use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::PullRequestFacts;
 use crate::repository::RepositoryName;
@@ -72,8 +75,21 @@ impl Store {
         pull_requests: Vec<PullRequestFacts>,
     ) -> Result<(), Error> {
         let repository = repository.clone();
-        let saved = self
-            .call(move |connection| pull_requests::save(connection, &repository, &pull_requests))?;
+        self.save_fetched_pull_requests(&repository, pull_requests, Vec::new())
+    }
+
+    /// Stores `pull_requests` and what GitHub says happened on them in one transaction, so a crash can't
+    /// keep a PR's new `updatedAt` and lose the activity that a later sync then has no reason to ask for.
+    pub fn save_fetched_pull_requests(
+        &self,
+        repository: &RepositoryName,
+        pull_requests: Vec<PullRequestFacts>,
+        events: Vec<ItemActivity>,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| {
+            pull_requests::save(connection, &repository, &pull_requests, &events)
+        })?;
         saved.map_err(saying(CANT_WRITE))
     }
 
@@ -158,10 +174,12 @@ impl Store {
         state: SyncState,
     ) -> Result<(), Error> {
         let repository = repository.clone();
+        let started_at = state.started_at;
         let saved = self.call(move |connection| {
             let transaction = connection.transaction()?;
             sync_state::save(&transaction, &repository, &state)?;
             sync_state::forget_place(&transaction, &repository)?;
+            activity::remember_first_sync(&transaction, &repository, started_at)?;
             transaction.commit()
         })?;
         saved.map_err(saying(CANT_WRITE))
@@ -230,9 +248,80 @@ impl Store {
         repository: &RepositoryName,
         issues: Vec<IssueFacts>,
     ) -> Result<(), Error> {
+        self.save_fetched_issues(repository, issues, Vec::new())
+    }
+
+    /// Stores `issues` and what GitHub says happened on them in one transaction, as
+    /// `save_fetched_pull_requests` does.
+    pub fn save_fetched_issues(
+        &self,
+        repository: &RepositoryName,
+        issues: Vec<IssueFacts>,
+        events: Vec<ItemActivity>,
+    ) -> Result<(), Error> {
         let repository = repository.clone();
-        let saved = self.call(move |connection| issues::save(connection, &repository, &issues))?;
+        let saved =
+            self.call(move |connection| issues::save(connection, &repository, &issues, &events))?;
         saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Records that the user looked at item `number` at `at`.
+    pub fn mark_seen(
+        &self,
+        repository: &RepositoryName,
+        number: u32,
+        at: OffsetDateTime,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved =
+            self.call(move |connection| activity::mark_seen(connection, &repository, number, at))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// The moment the user last looked at item `number`, if they have.
+    pub fn last_seen(
+        &self,
+        repository: &RepositoryName,
+        number: u32,
+    ) -> Result<Option<OffsetDateTime>, Error> {
+        let repository = repository.clone();
+        let read =
+            self.call(move |connection| activity::last_seen(connection, &repository, number))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    /// The events kept for item `number`, oldest first.
+    pub fn activity(
+        &self,
+        repository: &RepositoryName,
+        number: u32,
+    ) -> Result<Vec<Activity>, Error> {
+        let repository = repository.clone();
+        let read = self.call(move |connection| activity::read(connection, &repository, number))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    /// The moment this Repository's first sync began, once a first sync has finished.
+    pub fn first_sync_started_at(
+        &self,
+        repository: &RepositoryName,
+    ) -> Result<Option<OffsetDateTime>, Error> {
+        let repository = repository.clone();
+        let read =
+            self.call(move |connection| activity::first_sync_started_at(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    /// The moment Tsugiki saw PR `number`'s CI reach a result, if it has.
+    pub fn ci_finished_at(
+        &self,
+        repository: &RepositoryName,
+        number: u32,
+    ) -> Result<Option<OffsetDateTime>, Error> {
+        let repository = repository.clone();
+        let read =
+            self.call(move |connection| activity::ci_finished_at(connection, &repository, number))?;
+        read.map_err(saying(CANT_READ))
     }
 
     /// Finishes what was asked for and closes the file.
@@ -690,8 +779,8 @@ mod tests {
             updated_at: saved_at,
         };
         write_last_login(connection, &viewer).unwrap();
-        pull_requests::save(connection, &cpython, &[pull_request]).unwrap();
-        issues::save(connection, &cpython, &[issue]).unwrap();
+        pull_requests::save(connection, &cpython, &[pull_request], &[]).unwrap();
+        issues::save(connection, &cpython, &[issue], &[]).unwrap();
         let query: FilterQuery = "is:open".to_owned().try_into().unwrap();
         let results = FilterResults {
             numbers: [1].into(),

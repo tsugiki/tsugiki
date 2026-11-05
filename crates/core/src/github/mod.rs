@@ -1,5 +1,6 @@
 //! Tsugiki's GitHub client. It talks through a [`Transport`], so tests replay recorded answers (ADR 0009).
 
+pub mod activity;
 pub mod filters;
 pub mod issues;
 pub mod live;

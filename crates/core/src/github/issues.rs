@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use time::OffsetDateTime;
 
-use super::pull_requests::{NodeId, PageRequest, Person, RateLimit};
+use super::activity::{IssueCommentWire, ItemActivity, issue_activity};
+use super::pull_requests::{NodeId, Nodes, PageRequest, Person, RateLimit};
 use super::{GitHub, Login, Request};
 use crate::error::Error;
 use crate::repository::RepositoryName;
@@ -28,6 +29,7 @@ pub struct IssueFacts {
 pub struct FetchedIssues {
     /// One for each number that names an Issue.
     pub issues: Vec<IssueFacts>,
+    pub activity: Vec<ItemActivity>,
     /// The count of numbers it asked for, which a retry can make smaller than the batch.
     pub asked_for: usize,
     pub rate_limit: RateLimit,
@@ -41,18 +43,25 @@ pub(super) struct IssueWire {
     #[serde(with = "time::serde::rfc3339")]
     updated_at: OffsetDateTime,
     author: Option<Person>,
+    comments: Nodes<IssueCommentWire>,
 }
 
-impl From<IssueWire> for IssueFacts {
+impl From<IssueWire> for (IssueFacts, ItemActivity) {
     fn from(wire: IssueWire) -> Self {
-        Self {
+        let activity = issue_activity(wire.number, wire.comments);
+        let facts = IssueFacts {
             number: wire.number,
             title: wire.title,
             author: wire.author.map(|person| person.login),
             updated_at: wire.updated_at,
-        }
+        };
+        (facts, activity)
     }
 }
+
+/// The fields of an Issue that `IssueWire` reads. The last comments are enough to say that someone posted.
+pub(super) const ISSUE_FIELDS: &str = "number title updatedAt author { login } \
+     comments(last: 50) { nodes { createdAt author { __typename login } } }";
 
 /// GitHub's answer for one number.
 #[derive(Deserialize)]
@@ -69,8 +78,7 @@ fn fetch_issues_query(numbers: &[u32]) -> String {
         .iter()
         .map(|number| {
             format!(
-                "i{number}: issueOrPullRequest(number: {number}) {{ __typename ... on Issue {{ number \
-                 title updatedAt author {{ login }} }} }}"
+                "i{number}: issueOrPullRequest(number: {number}) {{ __typename ... on Issue {{ {ISSUE_FIELDS} }} }}"
             )
         })
         .collect();
@@ -229,17 +237,18 @@ impl GitHub {
                     variables: json!({ "owner": repository.owner(), "name": repository.name() }),
                 }
             })?;
-        let issues = data
+        let (issues, activity) = data
             .repository
             .into_values()
             .flatten()
             .filter_map(|numbered| match numbered {
-                Numbered::Issue(wire) => Some(IssueFacts::from(wire)),
+                Numbered::Issue(wire) => Some(<(IssueFacts, ItemActivity)>::from(wire)),
                 Numbered::PullRequest => None,
             })
-            .collect();
+            .unzip();
         Ok(FetchedIssues {
             issues,
+            activity,
             asked_for,
             rate_limit: data.rate_limit,
         })

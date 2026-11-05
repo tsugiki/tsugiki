@@ -38,6 +38,7 @@ fn issue(number: u32) -> Value {
         "number": number,
         "title": format!("Issue {number}"),
         "updatedAt": NEWER,
+        "comments": { "nodes": [] },
         "author": { "login": "some-author" },
     })
 }
@@ -328,6 +329,7 @@ fn probed(number: u32) -> Value {
     json!({
         "number": number,
         "reviewRequests": { "nodes": [{ "requestedReviewer": { "login": "some-reviewer" } }] },
+        "timelineItems": { "nodes": [] },
         "latestReviews": { "nodes": [{ "author": { "login": "some-author" }, "state": "APPROVED" }] },
         "lastCommit": { "nodes": [{ "commit": { "statusCheckRollup": { "state": "SUCCESS" } } }] },
     })

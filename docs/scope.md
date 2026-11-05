@@ -215,6 +215,11 @@ The order in which v1 is built is in [build-order.md](build-order.md).
 - **Last seen** is recorded per PR and per Issue.
 - **New activity** covers people's commits, comments and reviews, a failed Bot backport, and CI changes on an
   **Own PR** or on a PR the user holds a Review on. Other bot activity and label changes do not count.
+- A Bot backport has failed when the bot says it could not make it, which counts on the Origin PR, or when
+  its CI fails, which counts on it and on its Origin PR. A CI change means CI reached a result, so a push that
+  sets CI back to pending is no news.
+- On an item the user has never opened, only what happened since the Repository's first sync counts, so a
+  first sync doesn't mark months of history as new.
 - An **Alert** is raised for what only the user can unblock ([ADR
   0016](adr/0016-alerts-launch-tsugiki-links-own-toasts-on-windows-the-plugin-on-macos.md)): CI finished on an
   Own PR, a Review request, a Review on an Own PR, and a failed Bot backport of the user's Origin PR. A reply

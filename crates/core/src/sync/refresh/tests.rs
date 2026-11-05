@@ -1,6 +1,8 @@
 use super::*;
 use crate::error::ErrorKind;
 use crate::filters::Filter;
+use crate::github::activity::{Activity, ActivityKind};
+use crate::github::pull_requests::CiState;
 use crate::github::testing::reply_ok;
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::repository::{RepositoryName, RepositorySettings};
@@ -111,6 +113,7 @@ fn issue_node(number: u32, updated_at: &str) -> Value {
         "number": number,
         "title": format!("Issue {number} now"),
         "updatedAt": updated_at,
+        "comments": { "nodes": [] },
         "author": null,
     })
 }
@@ -176,6 +179,7 @@ fn probed(states: &[(u32, &str)]) -> Result<Reply, Unreachable> {
             let probe = json!({
                 "number": number,
                 "reviewRequests": { "nodes": [] },
+                "timelineItems": { "nodes": [] },
                 "latestReviews": { "nodes": [] },
                 "lastCommit": { "nodes": [
                     { "commit": { "statusCheckRollup": { "state": state } } }
@@ -487,7 +491,11 @@ fn a_stale_pr_is_fetched_and_a_current_or_merged_one_isnt() {
             &[],
         ),
         fetched_nodes(
-            &[strangers_pr(1, AFTER_IT), strangers_pr(4, AFTER_IT)],
+            &[
+                strangers_pr(1, AFTER_IT),
+                strangers_pr(3, AFTER_IT),
+                strangers_pr(4, AFTER_IT),
+            ],
             LOTS,
         ),
     ];
@@ -506,12 +514,12 @@ fn a_stale_pr_is_fetched_and_a_current_or_merged_one_isnt() {
     let changes = run(&mut syncs, &harness);
 
     let asked: Vec<(String, Value)> = harness.asked.try_iter().collect();
-    assert_eq!(asked[1].1["ids"], json!(["id1", "id4"]));
+    assert_eq!(asked[1].1["ids"], json!(["id1", "id3", "id4"]));
     let touched: Vec<u32> = changes
         .into_iter()
         .flat_map(|change| change.items)
         .collect();
-    assert_eq!(touched, [1, 4]);
+    assert_eq!(touched, [1, 3, 4]);
     harness.finish();
 }
 
@@ -803,6 +811,7 @@ fn a_probe_that_lists_people_in_another_order_says_nothing() {
             { "requestedReviewer": { "login": "some-reviewer" } },
             { "requestedReviewer": { "login": "Another-reviewer" } },
         ] },
+        "timelineItems": { "nodes": [] },
         "latestReviews": { "nodes": [
             { "author": { "login": "some-author" }, "state": "COMMENTED" },
             { "author": { "login": "Another-author" }, "state": "APPROVED" },
@@ -814,6 +823,7 @@ fn a_probe_that_lists_people_in_another_order_says_nothing() {
             { "requestedReviewer": { "login": "Another-reviewer" } },
             { "requestedReviewer": { "login": "some-reviewer" } },
         ] },
+        "timelineItems": { "nodes": [] },
         "latestReviews": { "nodes": [
             { "author": { "login": "Another-author" }, "state": "APPROVED" },
             { "author": { "login": "some-author" }, "state": "COMMENTED" },
@@ -1253,5 +1263,176 @@ fn a_name_in_another_repository_shares_nothing() {
     let state = harness.store.sync_state(&other).unwrap();
 
     assert_eq!(state, None);
+    harness.finish();
+}
+
+/// The comment at `AFTER_IT` that these tests read back.
+fn comment_after_it(who: &str) -> Activity {
+    Activity {
+        kind: ActivityKind::Comment,
+        who: Login::new(who),
+        at: at(AFTER_IT),
+    }
+}
+
+/// A merged PR by someone else that Tsugiki holds, and the poll that says it moved, with GitHub's next
+/// answer.
+fn a_merged_pr_moves(name: &str, replies: Vec<Result<Reply, Unreachable>>) -> Harness {
+    let moved = list(&[changed_pr(3, AFTER_IT)], None);
+    let mut all = vec![polled(&list(&[], None), &moved, &[])];
+    all.extend(replies);
+    let harness = after_a_sync(name, all);
+    let held = json!({
+        "author": { "login": "some-author" },
+        "state": "MERGED",
+        "mergeCommit": { "oid": "0".repeat(40) },
+        "updatedAt": LONG_BEFORE,
+    });
+    holding_pr(&harness, &pr_node(3, &held));
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+    harness
+}
+
+#[test]
+fn the_bots_comment_after_a_sync_saw_the_merge_still_reaches_the_store() {
+    let conflict = json!({
+        "__typename": "IssueComment",
+        "createdAt": AFTER_IT,
+        "author": { "__typename": "Bot", "login": "miss-islington-app" },
+        "bodyText": "Sorry, I could not cleanly backport this to `3.14` due to a conflict.",
+    });
+    let after = json!({
+        "author": { "login": "some-author" },
+        "state": "MERGED",
+        "mergeCommit": { "oid": "0".repeat(40) },
+        "updatedAt": AFTER_IT,
+        "timelineItems": { "nodes": [conflict] },
+    });
+    let replies = vec![fetched_nodes(&[pr_node(3, &after)], LOTS)];
+
+    let harness = a_merged_pr_moves("merged-moved", replies);
+
+    let events = harness.store.activity(&cpython(), 3).unwrap();
+    assert_eq!(
+        events,
+        [Activity {
+            kind: ActivityKind::BackportFailed {
+                target: "3.14".to_owned()
+            },
+            who: Login::new("miss-islington-app"),
+            at: at(AFTER_IT),
+        }]
+    );
+    harness.finish();
+}
+
+#[test]
+fn a_refresh_probes_the_ci_of_an_open_bot_backport_of_what_the_user_wrote() {
+    let backport = |number: u32, origin: u32| {
+        pr_node(
+            number,
+            &json!({
+                "title": format!("[3.14] gh-1: Fix it (GH-{origin})"),
+                "baseRefName": "3.14",
+                "author": { "login": "miss-islington" },
+                "updatedAt": LONG_BEFORE,
+                "commits": { "totalCount": 1, "nodes": [{ "commit": {
+                    "message": "Fix it",
+                    "parents": { "totalCount": 1 },
+                    "committer": { "user": { "login": "miss-islington" } },
+                } }] },
+            }),
+        )
+    };
+    let merged = |number: u32, author: &str| {
+        pr_node(
+            number,
+            &json!({
+                "author": { "login": author },
+                "state": "MERGED",
+                "mergeCommit": { "oid": "0".repeat(40) },
+                "updatedAt": LONG_BEFORE,
+            }),
+        )
+    };
+    let replies = vec![quiet_poll(), probed(&[(10, "FAILURE")])];
+    let harness = after_a_sync("probe-backport", replies);
+    holding_pr(&harness, &merged(1, "octocat"));
+    holding_pr(&harness, &backport(10, 1));
+    holding_pr(&harness, &merged(2, "some-author"));
+    holding_pr(&harness, &backport(20, 2));
+    let mut syncs = refreshing(filtering(&[]));
+
+    drop(run(&mut syncs, &harness));
+
+    let probe_asked: Vec<(String, Value)> = harness.asked.try_iter().collect();
+    let probe = probe_asked
+        .iter()
+        .find(|(operation, _)| operation == "ProbePullRequests");
+    assert!(probe.is_some());
+    let held = harness.store.pull_requests(&cpython()).unwrap();
+    let ci = |number: u32| held.iter().find(|pr| pr.number == number).unwrap().ci;
+    assert_eq!(ci(10), Some(CiState::Failure));
+    assert_eq!(ci(20), None);
+    harness.finish();
+}
+
+#[test]
+fn a_moved_issue_keeps_who_commented_and_one_tsugiki_doesnt_hold_keeps_nothing() {
+    let commented = |number: u32| {
+        let mut node = issue_node(number, AFTER_IT);
+        node["comments"] = json!({ "nodes": [{
+            "createdAt": AFTER_IT,
+            "author": { "__typename": "User", "login": "some-author" },
+        }] });
+        node
+    };
+    let issues_list = list(&[commented(1), commented(2)], None);
+    let replies = vec![
+        polled(&issues_list, &list(&[], None), &[]),
+        cross_references(&[], None, LOTS),
+    ];
+    let harness = after_a_sync("issue-activity", replies);
+    holding_issue(&harness, 1, LONG_BEFORE);
+
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+
+    let events = harness.store.activity(&cpython(), 1).unwrap();
+    assert_eq!(events, [comment_after_it("some-author")]);
+    assert_eq!(harness.store.activity(&cpython(), 2).unwrap(), []);
+    harness.finish();
+}
+
+#[test]
+fn a_probe_keeps_a_review_that_didnt_move_the_pr() {
+    let review = json!({
+        "__typename": "PullRequestReview",
+        "submittedAt": AFTER_IT,
+        "author": { "__typename": "User", "login": "some-reviewer" },
+    });
+    let fields = json!({ "p1": {
+        "number": 1,
+        "reviewRequests": { "nodes": [] },
+        "timelineItems": { "nodes": [review] },
+        "latestReviews": { "nodes": [] },
+        "lastCommit": { "nodes": [] },
+    } });
+    let answer = format!(r#"{{"data":{{"repository":{fields},{LOTS}}}}}"#);
+    let harness = after_a_sync("probe-activity", vec![quiet_poll(), reply_ok(&answer)]);
+    holding_pr(
+        &harness,
+        &own_open_pr(1, &json!({ "updatedAt": LONG_BEFORE })),
+    );
+
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+
+    assert_eq!(
+        harness.store.activity(&cpython(), 1).unwrap(),
+        [Activity {
+            kind: ActivityKind::Review,
+            who: Login::new("some-reviewer"),
+            at: at(AFTER_IT),
+        }]
+    );
     harness.finish();
 }

@@ -21,8 +21,11 @@ pub(super) fn fetch(
         return Ok((Step::Moved, Some(next)));
     }
     let batch = link.github.fetch_pull_requests(*why, ids, FETCH_BATCH)?;
-    link.store
-        .save_pull_requests(link.repository, batch.pull_requests.clone())?;
+    link.store.save_fetched_pull_requests(
+        link.repository,
+        batch.pull_requests.clone(),
+        batch.activity,
+    )?;
     for pull_request in &batch.pull_requests {
         leads.learn_from(pull_request, link.repository);
         fetched.extend([pull_request.number]);

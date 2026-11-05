@@ -70,6 +70,7 @@ pub(super) fn fetched_titled(
                 "author": { "login": "octocat" },
                 "assignees": { "nodes": [] },
                 "reviewRequests": { "nodes": [] },
+                "timelineItems": { "nodes": [] },
                 "latestReviews": { "nodes": [] },
                 "lastCommit": { "nodes": [] },
                 "mergeCommit": null,
@@ -114,7 +115,18 @@ pub(super) fn window_issue(number: u32, updated_at: &str) -> Value {
         "number": number,
         "title": format!("Issue {number}"),
         "updatedAt": updated_at,
+        "comments": { "nodes": [] },
         "author": { "login": "octocat" },
+    })
+}
+
+/// A timeline item: `login` commenting at `at`.
+pub(super) fn comment_by(login: &str, at: &str) -> Value {
+    json!({
+        "__typename": "IssueComment",
+        "createdAt": at,
+        "author": { "__typename": "User", "login": login },
+        "bodyText": "Looks good",
     })
 }
 
@@ -238,6 +250,7 @@ pub(super) fn issues(numbers: &[u32], rate: &str) -> Result<Reply, Unreachable> 
                 "number": number,
                 "title": format!("Issue {number}"),
                 "updatedAt": "2026-11-04T10:00:00Z",
+                "comments": { "nodes": [] },
                 "author": { "login": "some-author" },
             });
             (format!("i{number}"), issue)
@@ -301,6 +314,7 @@ pub(super) fn pr_node(number: u32, changes: &Value) -> Value {
         "lastCommit": { "nodes": [] },
         "mergeCommit": null,
         "commits": { "totalCount": 0, "nodes": [] },
+        "timelineItems": { "nodes": [] },
     });
     for (name, value) in changes.as_object().unwrap() {
         node[name] = value.clone();

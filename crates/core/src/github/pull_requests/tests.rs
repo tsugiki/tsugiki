@@ -66,6 +66,7 @@ fn pr_json() -> serde_json::Value {
             { "requestedReviewer": {} },
             { "requestedReviewer": null },
         ] },
+        "timelineItems": { "nodes": [] },
         "latestReviews": { "nodes": [
             { "author": { "login": "some-assignee" }, "state": "CHANGES_REQUESTED" },
             { "author": null, "state": "APPROVED" },
@@ -214,7 +215,7 @@ fn an_origin_fetched_by_number_comes_back_with_its_facts() {
         .fetch_origin_pull_request(&cpython(), 140_124)
         .unwrap();
 
-    assert_eq!(fetched.pull_request.unwrap().number, 140_124);
+    assert_eq!(fetched.pull_request.unwrap().0.number, 140_124);
     assert_eq!(fetched.rate_limit.remaining, 4000);
     let (operation, variables) = asked.recv().unwrap();
     assert_eq!(operation, "FetchOriginPullRequest");
@@ -453,6 +454,7 @@ fn a_null_in_a_pull_requests_lists_is_left_out() {
         "author": null,
         "assignees": { "nodes": [null, { "login": "octocat" }] },
         "reviewRequests": { "nodes": [null] },
+        "timelineItems": { "nodes": [] },
         "latestReviews": { "nodes": [null] },
         "lastCommit": { "nodes": [null] },
         "mergeCommit": null,

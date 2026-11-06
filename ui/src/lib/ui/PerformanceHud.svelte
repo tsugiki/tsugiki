@@ -1,8 +1,9 @@
 <script lang="ts">
   // The performance HUD's panel (ADR 0017): each number against its budget, red while it misses, and a
-  // recording that writes one line to the log for the release's notes.
+  // recording that writes a summary line for the release's notes to the log, and a line per long frame.
+  import { describeCause } from "$lib/state/frame-causes";
   import { nextFrameLimit } from "$lib/state/frames";
-  import { BUDGETS, type HudState } from "$lib/state/hud.svelte";
+  import { BUDGETS, type HudState, type IssueOpening } from "$lib/state/hud.svelte";
 
   let { hud, refreshing }: { hud: HudState; refreshing: boolean } = $props();
 
@@ -60,7 +61,51 @@
       budget: `${String(BUDGETS.viewQuery)} ms`,
       missed: over(hud.viewQuery, BUDGETS.viewQuery),
     },
+    {
+      name: "Issue from the database",
+      value: databaseWords(hud.issue),
+      budget: `${String(BUDGETS.issueFromDatabase)} ms`,
+      missed: over(fromDatabase(hud.issue), BUDGETS.issueFromDatabase),
+    },
+    {
+      name: "Issue from GitHub",
+      value: gitHubWords(hud.issue),
+      budget: "none set",
+      missed: false,
+    },
   ]);
+
+  /** The database's part, once the window has shown it. */
+  function fromDatabase(issue: IssueOpening | undefined): number | undefined {
+    return issue === undefined || issue.stage === "database" ? undefined : issue.fromDatabase;
+  }
+
+  function databaseWords(issue: IssueOpening | undefined): string {
+    if (issue === undefined) return "—";
+    return issue.stage === "database" ? "waiting" : ms(issue.fromDatabase);
+  }
+
+  function gitHubWords(issue: IssueOpening | undefined): string {
+    switch (issue?.stage) {
+      case undefined:
+        return "—";
+      case "database":
+      case "github":
+        return "waiting";
+      case "held":
+        return "held";
+      case "read":
+        return ms(issue.fromGitHub);
+    }
+  }
+
+  /** The last long frame, with how long ago it was and its cause. */
+  const longFrame = $derived.by(() => {
+    const frame = hud.longFrame;
+    if (frame === undefined) return undefined;
+    const ago = Math.max(Math.round((hud.now - frame.end) / 1000), 0);
+    return `Last long frame: ${ms(frame.duration)}, ${String(ago)} s ago, ${describeCause(frame.cause)}`;
+  });
 </script>
 
 <aside aria-label="Performance HUD">
@@ -78,6 +123,9 @@
       {/each}
     </tbody>
   </table>
+  {#if longFrame}
+    <p class="miss">{longFrame}</p>
+  {/if}
   {#if hud.recording}
     <button onclick={() => void hud.stop()}>Stop recording</button>
   {:else}

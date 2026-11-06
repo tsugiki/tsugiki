@@ -73,3 +73,40 @@ it("says what went wrong", () => {
   render(PerformanceHud, { hud, refreshing: false });
   expect(screen.getByRole("alert").textContent).toBe("Error: no log");
 });
+
+it("shows the last Issue opened, from the database and from GitHub", async () => {
+  const { hud } = shownHud();
+  hud.issue = { stage: "github", number: 1234, fromDatabase: 240 };
+  render(PerformanceHud, { hud, refreshing: false });
+  expect(line("Issue from the database")).toEqual({ value: "240.0 ms", budget: "200 ms", missed: true });
+  expect(line("Issue from GitHub")).toEqual({ value: "waiting", budget: "none set", missed: false });
+  hud.issue = { stage: "read", number: 1234, fromDatabase: 12, fromGitHub: 640 };
+  await Promise.resolve();
+  expect(line("Issue from the database")).toEqual({ value: "12.0 ms", budget: "200 ms", missed: false });
+  expect(line("Issue from GitHub").value).toBe("640.0 ms");
+});
+
+it("says when the database held the Issue's text, and before one opens", async () => {
+  const { hud } = shownHud();
+  render(PerformanceHud, { hud, refreshing: false });
+  expect(line("Issue from the database").value).toBe("—");
+  expect(line("Issue from GitHub").value).toBe("—");
+  hud.issue = { stage: "database", number: 1 };
+  await Promise.resolve();
+  expect(line("Issue from the database").value).toBe("waiting");
+  hud.issue = { stage: "held", number: 1, fromDatabase: 5 };
+  await Promise.resolve();
+  expect(line("Issue from GitHub").value).toBe("held");
+});
+
+it("shows the last long frame, how long ago it was, and its cause", async () => {
+  const { hud } = shownHud();
+  render(PerformanceHud, { hud, refreshing: false });
+  expect(screen.queryByText(/^Last long frame/)).toBeNull();
+  hud.longFrame = { end: 1000, duration: 40.1, cause: { kind: "click" } };
+  hud.now = 4400;
+  await Promise.resolve();
+  expect(screen.getByText(/^Last long frame/).textContent).toBe(
+    "Last long frame: 40.1 ms, 3 s ago, after a click",
+  );
+});

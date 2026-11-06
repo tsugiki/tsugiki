@@ -66,7 +66,10 @@
     workbench.cursor = item.number;
     if (item.kind !== "issue") {
       void onGitHub({ kind: "pull_request", number: item.number });
-    } else if (issue?.number === item.number) {
+      return;
+    }
+    hud.issueOpened(item.number);
+    if (issue?.number === item.number) {
       void issue.open();
     } else {
       issue?.stop();

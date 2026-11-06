@@ -121,6 +121,15 @@ describe("keys", () => {
     expect(hud.key).toBe(26);
   });
 
+  it("takes no key while hidden", () => {
+    const { hud, frame } = harness();
+    hud.keyPressed(3);
+    hud.toggle();
+    frame(16);
+    frame(32);
+    expect(hud.key).toBeUndefined();
+  });
+
   it("listens for keys only while it shows", () => {
     const { hud, frame } = harness();
     const press = () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "j" }));
@@ -281,6 +290,11 @@ describe("recording", () => {
       keys: { count: 1, worst_ms: 22 },
       view_queries: { count: 2, worst_ms: 30 },
       refreshes: { count: 1, dropped_frames: 2 },
+      issues: null,
+      long_frames: [
+        { at_s: 0.056, ms: 40, cause: null },
+        { at_s: 0.12, ms: 48, cause: { kind: "view_query" } },
+      ],
     });
     expect(hud.written).toBe("the line");
   });
@@ -305,6 +319,8 @@ describe("recording", () => {
       keys: null,
       view_queries: null,
       refreshes: null,
+      issues: null,
+      long_frames: [],
     });
   });
 
@@ -361,5 +377,177 @@ describe("the browser's clock", () => {
     await new Promise((resolve) => browserClock.requestFrame(resolve));
     expect(never).not.toHaveBeenCalled();
     expect(browserClock.now()).toBeGreaterThan(0);
+  });
+});
+
+/** Clicks the window at `at` on the HUD's clock, which a real click gets from the browser. */
+function clickAt(at: number) {
+  const click = new MouseEvent("click");
+  Object.defineProperty(click, "timeStamp", { value: at });
+  window.dispatchEvent(click);
+}
+
+describe("long frames", () => {
+  it("shows the last frame over 25 ms with what came before it, after 10 s have passed", async () => {
+    const { hud, frames, frame, setNow } = harness();
+    hud.toggle();
+    frames(0, 320, 16);
+    setNow(330);
+    await hud.timed(() => Promise.resolve());
+    frame(360);
+    expect(hud.longFrame).toEqual({ end: 360, duration: 40, cause: { kind: "view_query" } });
+    frames(376, 12_000, 16);
+    expect(hud.frames?.worst).toBe(16);
+    expect(hud.longFrame?.end).toBe(360);
+    expect(hud.now).toBeGreaterThan(11_700);
+  });
+
+  it("takes a key or a click as a cause, and a frame with neither has none", () => {
+    const { hud, frames, frame } = harness();
+    hud.toggle();
+    frames(0, 320, 16);
+    hud.keyPressed(330);
+    frame(360);
+    expect(hud.longFrame?.cause).toEqual({ kind: "key" });
+    frames(376, 2000, 16);
+    clickAt(2010);
+    frame(2040);
+    expect(hud.longFrame?.cause).toEqual({ kind: "click" });
+    frames(2056, 4000, 16);
+    frame(4040);
+    expect(hud.longFrame?.cause).toBeUndefined();
+  });
+
+  it("hears clicks only while it shows", () => {
+    const { hud, frame } = harness();
+    clickAt(1010);
+    hud.toggle();
+    hud.toggle();
+    clickAt(1020);
+    hud.toggle();
+    frame(1000);
+    frame(1040);
+    expect(hud.longFrame).toEqual({ end: 1040, duration: 40, cause: undefined });
+  });
+});
+
+describe("opening an Issue", () => {
+  it("times an Issue the database holds from the click to its painted frame", () => {
+    const { hud, frame, setNow } = harness();
+    hud.toggle();
+    frame(0);
+    setNow(5);
+    hud.issueOpened(1234);
+    expect(hud.issue).toEqual({ stage: "database", number: 1234 });
+    hud.issueShown(1234, true);
+    frame(16);
+    expect(hud.issue).toEqual({ stage: "held", number: 1234, fromDatabase: 11 });
+  });
+
+  it("times the text that had to come from GitHub, and names it as a cause", async () => {
+    const { hud, frame, frames, setNow } = harness();
+    hud.toggle();
+    frames(0, 320, 16);
+    setNow(330);
+    hud.issueOpened(1234);
+    hud.issueShown(1234, false);
+    frame(336);
+    expect(hud.issue).toEqual({ stage: "github", number: 1234, fromDatabase: 6 });
+    hud.issueShown(1234, false);
+    setNow(900);
+    hud.issueShown(1234, true);
+    frame(940);
+    await Promise.resolve();
+    const read = { stage: "read", number: 1234, fromDatabase: 6, fromGitHub: 610 };
+    expect(hud.issue).toEqual(read);
+    expect(hud.longFrame?.cause).toEqual({ kind: "issue_text", number: 1234 });
+    hud.issueShown(1234, true);
+    frame(956);
+    await Promise.resolve();
+    expect(hud.issue).toEqual(read);
+  });
+
+  it("leaves out another Issue's answer, and an Issue opened while hidden", () => {
+    const { hud, frame } = harness();
+    hud.issueOpened(1);
+    hud.toggle();
+    hud.issueShown(1, true);
+    frame(0);
+    expect(hud.issue).toBeUndefined();
+    hud.issueOpened(2);
+    hud.issueShown(1, true);
+    frame(16);
+    expect(hud.issue).toEqual({ stage: "database", number: 2 });
+  });
+
+  it("says in a recording the slowest Issue from the database and from GitHub", async () => {
+    const { hud, core, frame, setNow } = harness();
+    hud.toggle();
+    frame(0);
+    hud.start();
+    hud.issueOpened(1);
+    hud.issueShown(1, true);
+    frame(16);
+    hud.issueOpened(2);
+    hud.issueShown(2, false);
+    frame(48);
+    setNow(500);
+    hud.issueShown(2, true);
+    frame(512);
+    await Promise.resolve();
+    await hud.stop();
+    expect(core.recordMeasurement).toHaveBeenCalledWith(
+      expect.objectContaining({
+        issues: { from_database: { count: 2, worst_ms: 32 }, from_github: { count: 1, worst_ms: 496 } },
+      }),
+    );
+  });
+
+  it("still counts an Issue whose text never arrived", async () => {
+    const { hud, core, frame } = harness();
+    hud.toggle();
+    frame(0);
+    hud.start();
+    hud.issueOpened(1);
+    hud.issueShown(1, false);
+    frame(250);
+    await hud.stop();
+    expect(core.recordMeasurement).toHaveBeenCalledWith(
+      expect.objectContaining({ issues: { from_database: { count: 1, worst_ms: 250 }, from_github: null } }),
+    );
+  });
+
+  it("drops what waits for a paint when the window hides, so the hidden time doesn't count", () => {
+    const { hud, frame, frames } = harness();
+    const hidden = vi.spyOn(document, "hidden", "get");
+    hud.toggle();
+    frame(0);
+    hud.issueOpened(1);
+    hud.issueShown(1, false);
+    hud.keyPressed(1);
+    hidden.mockReturnValue(true);
+    document.dispatchEvent(new Event("visibilitychange"));
+    hidden.mockReturnValue(false);
+    document.dispatchEvent(new Event("visibilitychange"));
+    frames(60_000, 60_016, 16);
+    expect(hud.issue).toBeUndefined();
+    expect(hud.key).toBeUndefined();
+    hud.issueShown(1, true);
+    frame(60_032);
+    expect(hud.issue).toBeUndefined();
+    hidden.mockRestore();
+  });
+
+  it("keeps the last Issue's times when the window hides after it opened", () => {
+    const { hud, frame } = harness();
+    const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    hud.toggle();
+    frame(0);
+    hud.issueOpened(1);
+    hud.issueShown(1, true);
+    frame(16);
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(hud.issue).toEqual({ stage: "held", number: 1, fromDatabase: 16 });
+    hidden.mockRestore();
   });
 });

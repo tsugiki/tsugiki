@@ -37,7 +37,8 @@ published.
   6. The maintainer runs the macOS checklist on the draft's `.dmg`, measures the performance budgets in the
      real window on Windows and macOS ([ADR
      0017](0017-performance-budgets-codspeed-gates-prs-the-window-is-measured-before-release.md)), and
-     publishes the release by hand.
+     publishes the release by hand. Windows comes first: until the maintainer takes macOS on, the macOS
+     checklist and the macOS measurement wait, and a release ships its `.dmg` with CI's checks only.
 - **Before a tag.** CI fails a PR when `CHANGELOG.md` has no section for the version in `Cargo.toml`, so a
   mistake shows before anyone tags it. The PR that sets a version comes from a `release/` branch, such as
   `release/0.1`, and each push to it rehearses the workflow: the checks, the smoke test and the builds run,

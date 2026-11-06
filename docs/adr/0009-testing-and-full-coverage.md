@@ -77,7 +77,8 @@ release. Coverage is held at 100%, and CI fails below it.
   query-plan check from that ADR is a test in the core, so it runs on Windows and macOS.
 - Before a release (in the release workflow, and runnable by hand): the CPython mirror suite, the smoke tests
   on Windows, a check that live GitHub responses still match the recorded fixtures (read-only), the macOS
-  checklist, and the performance budgets measured in the real window
+  checklist (once the maintainer takes macOS on, as ADR 0012 says), and the performance budgets measured in
+  the real window
   ([ADR 0017](0017-performance-budgets-codspeed-gates-prs-the-window-is-measured-before-release.md)).
 - Code is written to be testable: the clock, the transport, the git runner and paths are passed in, not
   reached for.

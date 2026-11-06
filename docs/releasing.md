@@ -34,12 +34,13 @@ checks each attestation. Nothing is public until you publish.
 
 ## 3. Check the draft
 
-The workflow can't do these, so you do them on the draft's files:
+The workflow can't do this, so you do it on the draft's zip: measure the performance budgets in the real
+window on Windows
+([ADR 0017](adr/0017-performance-budgets-codspeed-gates-prs-the-window-is-measured-before-release.md)).
 
-- Run the [macOS checklist](macos-checklist.md) on the `.dmg`
-  ([ADR 0009](adr/0009-testing-and-full-coverage.md)).
-- Measure the performance budgets in the real window on Windows and macOS
-  ([ADR 0017](adr/0017-performance-budgets-codspeed-gates-prs-the-window-is-measured-before-release.md)).
+Windows comes first. Until you take macOS on, the `.dmg` ships with CI's checks only. From then on, also run
+the [macOS checklist](macos-checklist.md) on the `.dmg`, which measures the budgets there too
+([ADR 0009](adr/0009-testing-and-full-coverage.md)).
 
 ## 4. Publish
 

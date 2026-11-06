@@ -1,9 +1,10 @@
 # The macOS checklist
 
-Run it on the draft release's `.dmg` before you publish, in step 3 of [Making a release](releasing.md). The
-Windows smoke test checks the real window on CI, but WKWebView doesn't speak the Chrome DevTools Protocol, so
-on macOS you check it by hand ([ADR 0009](adr/0009-testing-and-full-coverage.md)). You need an Apple silicon
-Mac with `gh` signed in, and about 15 minutes.
+Run it on the draft release's `.dmg` before you publish, in step 3 of [Making a release](releasing.md),
+once you take macOS on. Until then Windows comes first, and a release skips it. The Windows smoke test checks
+the real window on CI, but WKWebView doesn't speak the Chrome DevTools Protocol, so on macOS you check it by
+hand ([ADR 0009](adr/0009-testing-and-full-coverage.md)). You need an Apple silicon Mac with `gh` signed in,
+and about 15 minutes.
 
 Note each check that fails. Publish only once it's fixed, or once it has an issue and you've chosen to ship
 with it.

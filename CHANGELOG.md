@@ -9,7 +9,8 @@ release's body, and fails without it
 
 ## Version 0.1.1 (2026-11-07)
 
-A new PR in the Repository you have open shows at its next refresh, even while CPython's first sync runs. The
+A new PR in the Repository you have open shows at its next refresh, even while CPython's first sync runs.
+Tsugiki also logs each performance budget the window misses, so `tsugiki.log` shows where it's slow. The
 database is the same as 0.1.0's, so 0.1.1 opens it as it is.
 
 ### Added
@@ -24,18 +25,6 @@ database is the same as 0.1.0's, so 0.1.1 opens it as it is.
 - Repositories take turns to sync, so a big first sync no longer holds back the others. The open Repository
   gets every other step. Before, a refresh waited behind a first sync of CPython, and a new PR took 12
   minutes to show. While another Repository syncs, the status bar names it beside the sync time.
-
-### First install
-
-Tsugiki isn't code-signed yet, so Windows and macOS warn you the first time you open it. To make sure a
-download is the file Tsugiki's workflow built, follow
-[Checking a download](https://github.com/tsugiki/tsugiki#checking-a-download) before you open it.
-
-- **Windows:** unzip `Tsugiki_0.1.1_x64-portable.zip` anywhere and run `tsg.exe`. When Windows says "Windows
-  protected your PC", click More info, then Run anyway. Tsugiki keeps its data in the `data` folder next to
-  `tsg.exe`, so to keep 0.1.0's, move its `data` folder next to the new `tsg.exe`.
-- **macOS:** open the `.dmg` and drag Tsugiki to Applications. macOS blocks it the first time, so open
-  System Settings › Privacy & Security and click Open Anyway beside Tsugiki.
 
 ## Version 0.1.0 (2026-11-06)
 

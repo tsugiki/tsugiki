@@ -117,11 +117,27 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 2
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
       - run: npm run release-check
+      # The Release workflow rehearses only a PR from a `release/` branch of this repository, so a PR that
+      # sets a version or changes that workflow has to come from one (ADR 0012). HEAD^1 is the PR's base.
+      - name: A new version or Release workflow comes from a release/ branch
+        if: >-
+          ${{ github.event_name == 'pull_request' && !(startsWith(github.head_ref, 'release/') &&
+          github.event.pull_request.head.repo.full_name == github.repository) }}
+        run: |
+          if ! git diff --quiet HEAD^1 HEAD -- .github/workflows/release.yml; then
+            echo "::error::Change release.yml on a release/ branch, so the Release workflow rehearses it."
+            exit 1
+          fi
+          if [ "$(git show HEAD^1:Cargo.toml | grep -m1 '^version = ')" != "$(grep -m1 '^version = ' Cargo.toml)" ]; then
+            echo "::error::Set the version on a release/ branch, so the Release workflow rehearses it."
+            exit 1
+          fi
 
   rust-coverage:
     name: rust-coverage (windows-latest)

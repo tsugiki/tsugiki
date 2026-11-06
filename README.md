@@ -29,15 +29,33 @@ For the **Repositories** you add, such as `python/cpython` and your own projects
 
 ## Status
 
-Tsugiki is being designed. There is no app to install yet. The decisions made so far are written down here:
+Tsugiki 0.1 is the first release for daily use: an Issues inbox, where you read what waits on you and act on
+GitHub. Reviewing PRs inside the app comes in the next stages of [docs/build-order.md](docs/build-order.md).
+The decisions behind it are written down here:
 
 - [CONTEXT.md](CONTEXT.md): the glossary. Terms in **bold** are defined there.
 - [docs/scope.md](docs/scope.md): what v1 does, and what it leaves out.
 - [docs/adr](docs/adr/): architecture decisions and why they were made.
-- [Issues](https://github.com/tsugiki/tsugiki/issues): open points to check before building.
+- [Issues](https://github.com/tsugiki/tsugiki/issues): open points and planned work.
 
-It will be a [Tauri](https://tauri.app/) app (Rust with Svelte 5 and TypeScript) for Windows and macOS. Its
+It is a [Tauri](https://tauri.app/) app (Rust with Svelte 5 and TypeScript) for Windows and macOS. Its
 command-line name is `tsg`.
+
+## Installing
+
+Tsugiki runs on 64-bit Windows and on Macs with Apple silicon. It reads GitHub with the
+[GitHub CLI](https://cli.github.com/)'s token, so install `gh` and run `gh auth login` first.
+
+Download the latest release from [Releases](https://github.com/tsugiki/tsugiki/releases). Tsugiki isn't
+code-signed yet, so Windows and macOS warn you the first time you open it:
+
+- **Windows:** unzip the `x64-portable.zip` anywhere and run `tsg.exe`. When Windows says "Windows protected
+  your PC", click More info, then Run anyway. Tsugiki keeps its data in the `data` folder next to `tsg.exe`.
+- **macOS:** open the `.dmg` and drag Tsugiki to Applications. macOS refuses the first open, so open System
+  Settings › Privacy & Security and click Open Anyway beside Tsugiki.
+
+Then add a Repository, such as `python/cpython`. Its first sync loads what waits on you before anything
+else, and the status bar shows how far it has got.
 
 ## Checking a download
 

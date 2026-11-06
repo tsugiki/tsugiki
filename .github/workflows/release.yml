@@ -2,9 +2,11 @@
 # attests each one and uploads them to a draft release, then checks the draft's files the way a user would.
 # Publishing stays a person's job, after the checks in ADR 0012.
 #
-# Starting it from the Actions tab is a rehearsal of the branch you pick: the checks, the smoke test and the
-# builds run, and nothing gets attested or uploaded to a release. Rehearse a change to this file before
-# merging it, because a real run's attestations stay in a public log for good.
+# A pull request from a `release/` branch of this repository, such as the one that sets a version, rehearses
+# the release: the checks, the smoke test and the builds run, and nothing gets attested or uploaded. A pull
+# request from any other branch, or from a fork, starts a run that skips every job, and CI fails it if it sets
+# a version or changes this file. Try a change to this file on a `release/` branch, because a real run's
+# attestations stay in a public log for good.
 #
 # No job restores a cache: anything a pull request's run saved could otherwise end up in a download.
 name: Release
@@ -13,7 +15,14 @@ on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
-  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+# A newer run for the same PR or tag cancels the older one. A new push makes a rehearsal out of date, and when
+# a tag is deleted and pushed again, the old run would upload its files under the new tag.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 # Each job asks for its own, out of contents: write, id-token: write and attestations: write (ADR 0012).
 permissions: {}
@@ -21,6 +30,10 @@ permissions: {}
 jobs:
   check:
     name: check the version
+    # The other jobs need this one, so a pull request from any other branch, or from a fork, skips them all.
+    if: >-
+      ${{ github.event_name == 'push' || (startsWith(github.head_ref, 'release/') &&
+      github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

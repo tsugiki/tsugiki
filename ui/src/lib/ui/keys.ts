@@ -9,6 +9,7 @@ export type Os = "mac" | "other";
  */
 const OWNED_KEYS = [
   "ctrl+shift+p",
+  "ctrl+shift+h",
   "ctrl+p",
   "f12",
   "alt+f12",

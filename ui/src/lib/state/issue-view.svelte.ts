@@ -1,6 +1,7 @@
 // The Issue on show in the Detail pane: opened once, asked for again each time the core says its Repository
 // changed (ADR 0008), and read from GitHub about once a minute while it's on screen (ADR 0015).
 import { commands, events, type IssueComment_Serialize, type IssueView_Serialize } from "$lib/data/bindings";
+import { hud } from "./hud.svelte";
 
 export type IssueComment = IssueComment_Serialize;
 export type IssueView = IssueView_Serialize;
@@ -71,10 +72,12 @@ export class IssueViewState {
   async #ask() {
     this.#lastQuestion += 1;
     const question = this.#lastQuestion;
-    const answer = await commands.issue(this.#repository, this.number).catch((e: unknown) => ({
-      status: "error" as const,
-      error: { message: String(e) },
-    }));
+    const answer = await hud
+      .timed(() => commands.issue(this.#repository, this.number))
+      .catch((e: unknown) => ({
+        status: "error" as const,
+        error: { message: String(e) },
+      }));
     // A newer question reads newer facts, so this drops an older answer that arrives late.
     if (question !== this.#lastQuestion) return;
     if (answer.status === "ok") {

@@ -31,9 +31,18 @@ needed to reach 100 ms.
 - **Also on every PR**, a test runs each view query's statements through SQLite's `EXPLAIN QUERY PLAN` and
   fails on a full scan of a large table, such as Issues, PRs or comments. This catches a missing index
   directly, even before the data is large enough for the benchmark to show it.
-- **Before a release**, the millisecond budgets are measured in the real window on the maintainer's Windows
-  and macOS machines, with the prototype's in-page harness (frame times, p95, worst frame, first paint) and
-  timed core runs. They are compared with the budgets and with the last release. A miss blocks the release
+- **Before a release**, the maintainer measures the millisecond budgets in the release build's real window,
+  on Windows and on macOS, with Tsugiki's performance HUD. The HUD is a panel in a corner of the window that
+  stays hidden until `Ctrl+Shift+H` or the palette's Show performance HUD turns it on, and no run saves it.
+  It shows the start-up to a usable Workbench, the time from a key to the next frame, the last 10 s of frames
+  (the latest, p95, worst, and how many took over 25 ms), the frames dropped during the last background
+  refresh, and how long the window waited for its last view query. Each number turns red while it misses.
+  The window's wait for a view query includes the core's query and the IPC around it, and the benchmarks
+  time the core alone.
+
+  To measure a release, the maintainer starts a recording, scrolls the Workbench, opens Issues, presses keys
+  and refreshes, then stops it. The HUD writes one line to `tsugiki.log` with the build's version, and the
+  line goes in the release's notes, so the next release can be compared with it. A miss blocks the release
   ([ADR 0012](0012-unsigned-v1-releases-from-a-tag-attested-and-checked.md)).
 
 ## Considered Options

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Page from "./+page.svelte";
 
 const core = vi.hoisted(() => ({
@@ -167,4 +167,33 @@ it("gives the list's keys to a dialog on top of it", async () => {
   await fireEvent.keyDown(window, { key: "Escape" });
   await fireEvent.keyDown(document.body, { key: "ArrowDown" });
   expect(document.activeElement).toBe(row);
+});
+
+describe("the performance HUD", () => {
+  const ctrlShiftH = () =>
+    fireEvent.keyDown(window, { key: "H", code: "KeyH", ctrlKey: true, shiftKey: true });
+  const panel = () => screen.queryByRole("complementary", { name: "Performance HUD" });
+
+  it("shows and hides on Ctrl+Shift+H", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    render(Page);
+    expect(panel()).toBeNull();
+    await ctrlShiftH();
+    expect(panel()).toBeTruthy();
+    await ctrlShiftH();
+    expect(panel()).toBeNull();
+  });
+
+  it("shows and hides from the command palette", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    render(Page);
+    const fromPalette = async (title: string) => {
+      await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+      await fireEvent.click(screen.getByRole("option", { name: title }));
+    };
+    await fromPalette("Show performance HUD");
+    expect(panel()).toBeTruthy();
+    await fromPalette("Hide performance HUD");
+    expect(panel()).toBeNull();
+  });
 });

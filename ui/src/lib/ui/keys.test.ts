@@ -119,6 +119,7 @@ describe("keyGuard", () => {
       { key: "p", code: "KeyP", ctrlKey: true },
       { key: "з", code: "KeyP", ctrlKey: true },
       { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true },
+      { key: "H", code: "KeyH", ctrlKey: true, shiftKey: true },
       { key: "F12", code: "F12" },
       { key: "F12", code: "F12", altKey: true },
       { key: "F7", code: "F7" },

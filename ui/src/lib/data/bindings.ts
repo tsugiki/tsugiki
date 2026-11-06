@@ -29,6 +29,10 @@ export const commands = {
 	settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
 	/**  What the window opens on. */
 	home: () => __TAURI_INVOKE<Home_Serialize>("home"),
+	/**  The milliseconds since Tsugiki started running. */
+	timeRunning: () => __TAURI_INVOKE<number | null>("time_running"),
+	/**  Writes what the performance HUD measured to `tsugiki.log`, and says the line it wrote. */
+	recordMeasurement: (measurement: Measurement_Deserialize) => __TAURI_INVOKE<string>("record_measurement", { measurement }),
 	/**
 	 *  What adding the Repository the user typed would load. A check can wait out a stuck request to GitHub, so
 	 *  it waits on a thread meant for blocking, and leaves the threads that answer the window's other commands
@@ -201,6 +205,15 @@ export type FilterName = string;
  *  plain string.
  */
 export type FilterQuery = string;
+
+export type Frames = {
+	count: number,
+	p95_ms: number | null,
+	worst_ms: number | null,
+	/**  The longest a frame may take while the window scrolls. */
+	limit_ms: number | null,
+	over_limit: number,
+};
 
 /**  An Issue or a PR, as the window names it to open on GitHub. */
 export type GitHubItem = { kind: "issue"; number: number } | { kind: "pull_request"; number: number };
@@ -388,6 +401,37 @@ export type LoadedSettings_Serialize = {
 /**  A GitHub username. It reaches the UI as a plain string, in GitHub's casing. */
 export type Login = string;
 
+/**  One recording, as the window sends it. Each time is in milliseconds. */
+export type Measurement = Measurement_Serialize | Measurement_Deserialize;
+
+/**  One recording, as the window sends it. Each time is in milliseconds. */
+export type Measurement_Deserialize = {
+	seconds: number | null,
+	/**  Nothing, if the window drew no frame while recording. */
+	frames?: Frames | null,
+	/**  From Tsugiki's code starting to run to a usable Workbench, if this run opened on one. */
+	startup_ms?: number | null,
+	/**  From each key to the frame after it. */
+	keys?: Slowest | null,
+	/**  The window's wait for each view query. */
+	view_queries?: Slowest | null,
+	refreshes?: Refreshes | null,
+};
+
+/**  One recording, as the window sends it. Each time is in milliseconds. */
+export type Measurement_Serialize = {
+	seconds: number | null,
+	/**  Nothing, if the window drew no frame while recording. */
+	frames: Frames | null,
+	/**  From Tsugiki's code starting to run to a usable Workbench, if this run opened on one. */
+	startup_ms: number | null,
+	/**  From each key to the frame after it. */
+	keys: Slowest | null,
+	/**  The window's wait for each view query. */
+	view_queries: Slowest | null,
+	refreshes: Refreshes | null,
+};
+
 export type PrState = "OPEN" | "CLOSED" | "MERGED";
 
 /**  A PR with its Backports beneath it. */
@@ -402,6 +446,12 @@ export type PrTree_Deserialize = {
 export type PrTree_Serialize = {
 	backports: BackportRow_Serialize[],
 } & WorkbenchRow_Serialize;
+
+/**  The background refreshes that ran while the window drew frames. */
+export type Refreshes = {
+	count: number,
+	dropped_frames: number,
+};
 
 /**  The user's standing in a Repository, as far as adding it needs to know. */
 export type RepositoryAccess = 
@@ -506,6 +556,12 @@ export type Settings_Deserialize = {
 export type Settings_Serialize = {
 	status_bar: StatusBarSettings_Serialize,
 	repositories: RepositorySettings_Serialize[],
+};
+
+/**  The slowest of `count` timings. */
+export type Slowest = {
+	count: number,
+	worst_ms: number | null,
 };
 
 /**  The app's state, shown in the status bar. */

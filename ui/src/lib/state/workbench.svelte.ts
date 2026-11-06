@@ -18,6 +18,7 @@ import {
   type WorkReason,
   type Why,
 } from "$lib/data/bindings";
+import { hud } from "./hud.svelte";
 
 export type Attention = Attention_Serialize;
 export type BackportRow = BackportRow_Serialize;
@@ -98,10 +99,12 @@ export class WorkbenchState {
   async #ask() {
     this.#lastQuestion += 1;
     const question = this.#lastQuestion;
-    const answer = await commands.workbench(this.#repository, this.selected).catch((e: unknown) => ({
-      status: "error" as const,
-      error: { message: String(e) },
-    }));
+    const answer = await hud
+      .timed(() => commands.workbench(this.#repository, this.selected))
+      .catch((e: unknown) => ({
+        status: "error" as const,
+        error: { message: String(e) },
+      }));
     // A newer question reads newer facts, so this drops an older answer that arrives late.
     if (question !== this.#lastQuestion) return;
     if (answer.status === "ok") {

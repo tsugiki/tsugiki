@@ -13,6 +13,7 @@ use tsugiki_core::github::live::{Https, run_gh};
 use tsugiki_core::launch;
 use tsugiki_core::logfile;
 
+use crate::Started;
 use crate::navigation;
 use crate::specta_builder;
 use crate::wiring::connect_core;
@@ -31,6 +32,7 @@ const QUIT_PATIENCE: Duration = Duration::from_secs(1);
     reason = "without a window the user has nowhere to read an error, so a failure ends the program"
 )]
 pub fn run() {
+    let started = Started::now();
     let folders = Folders::current();
     if let Ok(found) = &folders {
         logfile::start(found.log());
@@ -61,6 +63,7 @@ pub fn run() {
     let app = tauri_builder
         .build(context)
         .expect("Tsugiki failed to start");
+    assert!(app.manage(started), "only this manages the start");
     logfile::say_started();
     #[cfg(all(windows, debug_assertions))]
     register_development_scheme(app.handle());

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { openOnGitHub, type GitHubItem } from "$lib/state/browser";
+  import { hud } from "$lib/state/hud.svelte";
   import { IssueViewState } from "$lib/state/issue-view.svelte";
   import { WorkbenchState, type BackportRow, type ListedItem } from "$lib/state/workbench.svelte";
   import IssueDetail from "./IssueDetail.svelte";
@@ -43,6 +44,12 @@
       issue?.stop();
       issue = undefined;
     };
+  });
+
+  // The first Workbench drawn ends the start-up the performance HUD times. Effects run once the rows are in
+  // the page.
+  $effect(() => {
+    if (workbench.items !== undefined) void hud.markUsable();
   });
 
   /** The Issue in the Detail pane. */

@@ -114,10 +114,12 @@ fn a_backports_facts_read_back_the_same() {
         }),
         ..facts(5)
     };
+    // A merged PR's Review requests aren't read back, so this one has none.
     let origin = PullRequestFacts {
         state: PrState::Merged,
         merge_commit: Some(sha("0123abcdef")),
         off_default: None,
+        review_requests: vec![],
         ..facts(6)
     };
 
@@ -278,6 +280,46 @@ fn repositories_keep_apart_and_their_names_ignore_case() {
     fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(found, [1]);
+}
+
+#[test]
+fn a_merged_or_closed_pr_keeps_its_review_requests_and_a_read_skips_them() {
+    let (store, open, reader, _path, folder) = opened("pr-requests");
+    let in_state = |number, state| PullRequestFacts {
+        state,
+        ..facts(number)
+    };
+    store
+        .save_pull_requests(
+            &cpython(),
+            vec![
+                in_state(1, PrState::Open),
+                in_state(2, PrState::Merged),
+                in_state(3, PrState::Closed),
+            ],
+        )
+        .unwrap();
+
+    let read = reader.work_facts(&cpython()).unwrap();
+    let stored = count(&store, "SELECT count(*) AS found FROM review_requests");
+    open.close();
+    store.close();
+    fs::remove_dir_all(folder).unwrap();
+
+    let requests: Vec<(u32, usize)> = read
+        .pull_requests
+        .iter()
+        .map(|pr| (pr.number, pr.review_requests.len()))
+        .collect();
+    assert_eq!(requests, [(3, 0), (2, 0), (1, 1)]);
+    assert_eq!(stored, 3);
+    // The rest of a merged or closed PR still reads back, for the Issue view and for attention.
+    assert!(
+        read.pull_requests
+            .iter()
+            .all(|pr| pr.latest_reviews.len() == 1)
+    );
+    assert!(read.pull_requests.iter().all(|pr| pr.assignees.len() == 1));
 }
 
 /// The rows of a query that counts them as `found`, on the writer's connection.

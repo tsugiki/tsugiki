@@ -3,11 +3,12 @@
 
 use std::collections::BTreeMap;
 
-use rusqlite::{Connection, Statement, named_params};
+use rusqlite::types::FromSql;
+use rusqlite::{Connection, Statement, ToSql, named_params};
 use time::OffsetDateTime;
 
 use crate::github::activity::ItemActivity;
-use crate::github::pull_requests::{LatestReview, OffDefault, PullRequestFacts};
+use crate::github::pull_requests::{LatestReview, OffDefault, PrState, PullRequestFacts};
 use crate::github::{CommitSha, Login};
 use crate::repository::RepositoryName;
 
@@ -359,14 +360,22 @@ fn save_closing_reference(
         .map(drop)
 }
 
+/// Each open PR's Review requests. A merged or closed PR asks nothing of anyone, so its requests stay stored
+/// and go unread.
 fn review_requests(
     connection: &Connection,
     repository: &RepositoryName,
 ) -> rusqlite::Result<BTreeMap<u32, Vec<Login>>> {
-    logins_by_number(
-        connection
-            .prepare("SELECT number, login FROM review_requests WHERE repository = :repository")?,
-        repository,
+    let query = "SELECT request.number AS number, request.login AS login
+                 FROM review_requests AS request
+                 JOIN pull_requests AS pull_request
+                     ON pull_request.repository = request.repository
+                     AND pull_request.number = request.number
+                 WHERE request.repository = :repository AND pull_request.state = :open";
+    values_by_number(
+        connection.prepare(query)?,
+        named_params! { ":repository": repository, ":open": PrState::Open },
+        "login",
     )
 }
 
@@ -374,22 +383,27 @@ pub(super) fn assignees(
     connection: &Connection,
     repository: &RepositoryName,
 ) -> rusqlite::Result<BTreeMap<u32, Vec<Login>>> {
-    logins_by_number(
+    values_by_number(
         connection.prepare("SELECT number, login FROM assignees WHERE repository = :repository")?,
-        repository,
+        named_params! { ":repository": repository },
+        "login",
     )
 }
 
-/// Each PR's logins, from a `statement` that selects `number` and `login` for `:repository`.
-fn logins_by_number(
+/// Each item's values in the `value` column of what `statement` answers, by its `number` column. Each
+/// column is found by name once, because a search on every row costs more than reading it.
+fn values_by_number<T: FromSql>(
     mut statement: Statement<'_>,
-    repository: &RepositoryName,
-) -> rusqlite::Result<BTreeMap<u32, Vec<Login>>> {
-    let mut found: BTreeMap<u32, Vec<Login>> = BTreeMap::new();
-    let mut rows = statement.query(named_params! { ":repository": repository })?;
+    params: &[(&str, &dyn ToSql)],
+    value: &str,
+) -> rusqlite::Result<BTreeMap<u32, Vec<T>>> {
+    let number = statement.column_index("number")?;
+    let value = statement.column_index(value)?;
+    let mut found: BTreeMap<u32, Vec<T>> = BTreeMap::new();
+    let mut rows = statement.query(params)?;
     while let Some(row) = rows.next()? {
-        let login = row.get("login")?;
-        found.entry(row.get("number")?).or_default().push(login);
+        let item = row.get(value)?;
+        found.entry(row.get(number)?).or_default().push(item);
     }
     Ok(found)
 }
@@ -401,13 +415,16 @@ fn latest_reviews(
     let mut found: BTreeMap<u32, Vec<LatestReview>> = BTreeMap::new();
     let query = "SELECT number, login, state FROM latest_reviews WHERE repository = :repository";
     let mut statement = connection.prepare(query)?;
+    let number = statement.column_index("number")?;
+    let login = statement.column_index("login")?;
+    let state = statement.column_index("state")?;
     let mut rows = statement.query(named_params! { ":repository": repository })?;
     while let Some(row) = rows.next()? {
         let review = LatestReview {
-            author: row.get("login")?,
-            state: row.get("state")?,
+            author: row.get(login)?,
+            state: row.get(state)?,
         };
-        found.entry(row.get("number")?).or_default().push(review);
+        found.entry(row.get(number)?).or_default().push(review);
     }
     Ok(found)
 }
@@ -417,17 +434,14 @@ fn closing_references(
     connection: &Connection,
     repository: &RepositoryName,
 ) -> rusqlite::Result<BTreeMap<u32, Vec<u32>>> {
-    let mut found: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
     let query = "SELECT number, issue FROM closing_references
                  WHERE repository = :repository
                  ORDER BY number, issue";
-    let mut statement = connection.prepare(query)?;
-    let mut rows = statement.query(named_params! { ":repository": repository })?;
-    while let Some(row) = rows.next()? {
-        let issue = row.get("issue")?;
-        found.entry(row.get("number")?).or_default().push(issue);
-    }
-    Ok(found)
+    values_by_number(
+        connection.prepare(query)?,
+        named_params! { ":repository": repository },
+        "issue",
+    )
 }
 
 /// Each PR's cherry-picked commits.
@@ -435,15 +449,12 @@ fn cherry_picks(
     connection: &Connection,
     repository: &RepositoryName,
 ) -> rusqlite::Result<BTreeMap<u32, Vec<CommitSha>>> {
-    let mut found: BTreeMap<u32, Vec<CommitSha>> = BTreeMap::new();
-    let query = "SELECT number, sha FROM cherry_picks WHERE repository = :repository";
-    let mut statement = connection.prepare(query)?;
-    let mut rows = statement.query(named_params! { ":repository": repository })?;
-    while let Some(row) = rows.next()? {
-        let sha = row.get("sha")?;
-        found.entry(row.get("number")?).or_default().push(sha);
-    }
-    Ok(found)
+    values_by_number(
+        connection
+            .prepare("SELECT number, sha FROM cherry_picks WHERE repository = :repository")?,
+        named_params! { ":repository": repository },
+        "sha",
+    )
 }
 
 /// Each PR's committers, in the order of its commits.
@@ -451,17 +462,46 @@ fn committers(
     connection: &Connection,
     repository: &RepositoryName,
 ) -> rusqlite::Result<BTreeMap<u32, Vec<Option<Login>>>> {
-    let mut found: BTreeMap<u32, Vec<Option<Login>>> = BTreeMap::new();
     let query = "SELECT number, login FROM committers
                  WHERE repository = :repository
                  ORDER BY number, position";
-    let mut statement = connection.prepare(query)?;
-    let mut rows = statement.query(named_params! { ":repository": repository })?;
-    while let Some(row) = rows.next()? {
-        let login = row.get("login")?;
-        found.entry(row.get("number")?).or_default().push(login);
+    values_by_number(
+        connection.prepare(query)?,
+        named_params! { ":repository": repository },
+        "login",
+    )
+}
+
+/// The position of each of a PR's columns in the answer to `read_all`, found once, as `values_by_number`
+/// does.
+struct PullRequestColumns {
+    number: usize,
+    title: usize,
+    state: usize,
+    is_draft: usize,
+    author: usize,
+    target_branch: usize,
+    ci: usize,
+    updated_at: usize,
+    off_default_description: usize,
+    merge_commit: usize,
+}
+
+impl PullRequestColumns {
+    fn of(statement: &Statement<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            number: statement.column_index("number")?,
+            title: statement.column_index("title")?,
+            state: statement.column_index("state")?,
+            is_draft: statement.column_index("is_draft")?,
+            author: statement.column_index("author")?,
+            target_branch: statement.column_index("target_branch")?,
+            ci: statement.column_index("ci")?,
+            updated_at: statement.column_index("updated_at")?,
+            off_default_description: statement.column_index("off_default_description")?,
+            merge_commit: statement.column_index("merge_commit")?,
+        })
     }
-    Ok(found)
 }
 
 /// Every PR of `repository`, whatever its state, the latest update first.
@@ -481,26 +521,27 @@ pub(super) fn read_all(
                  WHERE repository = :repository
                  ORDER BY updated_at DESC, number DESC";
     let mut statement = connection.prepare(query)?;
+    let column = PullRequestColumns::of(&statement)?;
     let mut rows = statement.query(named_params! { ":repository": repository })?;
     let mut found = Vec::new();
     while let Some(row) = rows.next()? {
-        let number: u32 = row.get("number")?;
-        let UnixTime(updated_at) = row.get("updated_at")?;
-        let description: Option<String> = row.get("off_default_description")?;
+        let number: u32 = row.get(column.number)?;
+        let UnixTime(updated_at) = row.get(column.updated_at)?;
+        let description: Option<String> = row.get(column.off_default_description)?;
         found.push(PullRequestFacts {
             number,
-            title: row.get("title")?,
-            state: row.get("state")?,
-            is_draft: row.get("is_draft")?,
-            author: row.get("author")?,
-            target_branch: row.get("target_branch")?,
-            ci: row.get("ci")?,
+            title: row.get(column.title)?,
+            state: row.get(column.state)?,
+            is_draft: row.get(column.is_draft)?,
+            author: row.get(column.author)?,
+            target_branch: row.get(column.target_branch)?,
+            ci: row.get(column.ci)?,
             updated_at,
             review_requests: requests.remove(&number).unwrap_or_default(),
             latest_reviews: reviews.remove(&number).unwrap_or_default(),
             assignees: assigned.remove(&number).unwrap_or_default(),
             closing_issues: closing.remove(&number).unwrap_or_default(),
-            merge_commit: row.get("merge_commit")?,
+            merge_commit: row.get(column.merge_commit)?,
             off_default: description.map(|description| OffDefault {
                 description,
                 cherry_picked_from: picks.remove(&number).unwrap_or_default(),

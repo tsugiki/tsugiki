@@ -205,6 +205,7 @@ pub struct PullRequestFacts {
     /// Nothing, when the last commit has no checks.
     pub ci: Option<CiState>,
     pub updated_at: OffsetDateTime,
+    /// Empty when the store reads back a merged or closed PR: those requests ask nothing of anyone.
     pub review_requests: Vec<Login>,
     pub latest_reviews: Vec<LatestReview>,
     pub assignees: Vec<Login>,

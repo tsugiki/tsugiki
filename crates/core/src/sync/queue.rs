@@ -10,17 +10,17 @@ use crate::error::{Error, ErrorKind};
 use crate::github::GitHub;
 use crate::github::clock::GitHubClock;
 use crate::repository::{RepositoryName, RepositorySettings};
-use crate::status::{Change, LastSync, SyncActivity, SyncPart};
+use crate::status::{Change, LastSync, OpenSync, SyncActivity, SyncPart};
 use crate::store::Store;
 
 /// The rate limit resets every hour, so a longer pause can only come from a clock that's wrong.
 const LONGEST_PAUSE: Duration = Duration::from_secs(3600);
 
-/// A step can fail this many times in a row for any reason but the network or the rate limit, with one try
-/// at each refresh. GitHub's own outages give the same errors as a Repository that has gone, so this lets one
-/// pass before the sync gives way to the next. Asking for that Repository again, or restarting, tries again.
-/// The timer also tries a Repository that has finished a sync, since a refresh costs a few points. A first
-/// sync costs thousands, so it waits for the user.
+/// A sync's step can fail this many times in a row for any reason but the network or the rate limit, with
+/// one try at each refresh. GitHub's own outages give the same errors as a Repository that has gone, so this
+/// lets one pass before the sync leaves the queue. Asking for that Repository again, or restarting, tries
+/// again. The timer also tries a Repository that has finished a sync, since a refresh costs a few points. A
+/// first sync costs thousands, so it waits for the user.
 const TRIES: u8 = 10;
 
 /// What a step of the queue did that the rest of the app can see.
@@ -32,7 +32,15 @@ pub enum Progress {
     Finished(LastSync),
 }
 
-/// Why the next step waits, and until when.
+/// A step that failed: the problem, for the status bar, and the work it holds back.
+#[derive(Debug)]
+pub struct StepFailure {
+    /// It names the Repository when that isn't the open one, unless it speaks for all of GitHub.
+    pub problem: Error,
+    turn: Turn,
+}
+
+/// Why every step waits, and until when.
 #[derive(Clone, Copy)]
 enum Hold {
     /// Until the next look at GitHub after a failure. The user can ask sooner.
@@ -49,45 +57,105 @@ impl Hold {
     }
 }
 
+/// A sync in the queue, with what its own failures have done to it.
+struct Queued {
+    sync: UserWorkSync,
+    /// The time its next step can run, after a failure that spoke for its Repository alone.
+    held_until: Option<Instant>,
+    /// Its failures in a row that count towards [`TRIES`].
+    failures: u8,
+}
+
+impl Queued {
+    fn new(sync: UserWorkSync) -> Self {
+        Self {
+            sync,
+            held_until: None,
+            failures: 0,
+        }
+    }
+
+    fn is_ready(&self, now: Instant) -> bool {
+        self.held_until.is_none_or(|at| at <= now)
+    }
+}
+
 /// The read of the whole tree of an Issue the user opened.
 struct OpenedTree {
     number: u32,
     sync: UserWorkSync,
+    failures: u8,
 }
 
-/// The syncs still to run, one at a time. The one asked for last goes first, because the window has that
-/// Repository open (ADR 0015), and the others keep their progress behind it.
+/// The work that takes a step.
+#[derive(Debug)]
+enum Turn {
+    /// The first of the opened Issues' trees.
+    Tree,
+    /// The queued sync of this Repository.
+    Sync(RepositoryName),
+}
+
+/// A step that didn't finish its sync.
+struct Stepped {
+    /// The Issues and PRs it saved, if it saved any.
+    touched: Option<Vec<u32>>,
+    /// The time GitHub's points come back, when they ran low.
+    pause_until: Option<OffsetDateTime>,
+}
+
+/// The step as [`Stepped`], or nothing for one that finished its sync.
+fn unfinished(step: Step) -> Option<Stepped> {
+    let (touched, pause_until) = match step {
+        Step::Finished => return None,
+        Step::Moved => (None, None),
+        Step::Searched { pause_until } => (None, pause_until),
+        Step::Saved {
+            touched,
+            pause_until,
+        } => (Some(touched), pause_until),
+    };
+    Some(Stepped {
+        touched,
+        pause_until,
+    })
+}
+
+/// The syncs still to run, one step at a time. Repositories take turns, so a big first sync doesn't keep
+/// the others waiting (ADR 0015). The open Repository has every other step, because the window shows it,
+/// and the others take theirs in the order they were asked for, the latest first.
 #[derive(Default)]
 pub struct Syncs {
-    queue: VecDeque<UserWorkSync>,
+    queue: VecDeque<Queued>,
     /// The trees of Issues the user opened with no first sync's queue to put them in. Each goes ahead of
     /// `queue` for its few requests, and leaves no trace of a sync behind it.
     trees: VecDeque<OpenedTree>,
     /// The Issues of `open` the user has opened since it opened. Each reads its tree once, because a view on
     /// screen asks about once a minute.
     opened: BTreeSet<u32>,
+    /// A wait for all of GitHub, which holds back every step.
     not_before: Option<Hold>,
-    failures: u8,
+    /// The open Repository's sync took the last step, so another Repository's takes the next.
+    open_went_last: bool,
     /// The Repository the window has open, which alone keeps refreshing.
     open: Option<RepositorySettings>,
 }
 
 impl Syncs {
-    /// Puts a sync of `repository` first, carrying on from where it got if one is already queued.
+    /// Opens `repository` and gives its sync the next step, carrying on from where it got if one is already
+    /// queued.
     pub fn add(&mut self, repository: RepositorySettings) {
         if !self.is_open(&repository.name) {
             self.opened.clear();
             self.trees.clear();
         }
-        self.open = Some(repository.clone());
-        let queued = self
-            .queue
-            .iter()
-            .position(|sync| sync.repository.is_same(&repository.name))
-            .and_then(|at| self.queue.remove(at));
-        self.queue
-            .push_front(queued.unwrap_or_else(|| UserWorkSync::new(repository)));
-        self.failures = 0;
+        let sync = self.take(&repository.name).map_or_else(
+            || UserWorkSync::new(repository.clone()),
+            |queued| queued.sync,
+        );
+        self.queue.push_front(Queued::new(sync));
+        self.open = Some(repository);
+        self.open_went_last = false;
     }
 
     /// Queues the timer's refresh of the open Repository, unless a sync of it is under way or waiting. A
@@ -97,17 +165,14 @@ impl Syncs {
             return;
         };
         let has_synced = matches!(store.sync_state(&open.name), Ok(Some(_)));
-        let queued = self
-            .queue
-            .iter()
-            .any(|sync| sync.repository.is_same(&open.name));
-        if has_synced && !queued {
-            self.queue.push_back(UserWorkSync::new(open.clone()));
+        if has_synced && self.position(&open.name).is_none() {
+            self.queue
+                .push_back(Queued::new(UserWorkSync::new(open.clone())));
         }
     }
 
-    /// Answers the user's click: the open Repository goes first, and stops waiting for the next look at
-    /// GitHub. A wait for GitHub's points stays.
+    /// Answers the user's click: the open Repository takes the next step, and stops waiting for the next
+    /// look at GitHub. A wait for GitHub's points stays.
     pub fn refresh_now(&mut self) {
         if let Some(open) = self.open.clone() {
             self.add(open);
@@ -117,28 +182,44 @@ impl Syncs {
         }
     }
 
-    /// The work going on now, for the status bar.
+    /// The work going on, for the status bar. The other Repositories go by name, so their turns don't
+    /// change it.
     pub fn activity(&self) -> Option<SyncActivity> {
-        let (sync, part) = match self.trees.front() {
-            Some(tree) => (&tree.sync, SyncPart::Trees),
-            None => {
-                let sync = self.queue.front()?;
-                (sync, sync.part())
-            }
+        let open = match self.trees.front() {
+            Some(tree) => Some((&tree.sync, SyncPart::Trees)),
+            None => self
+                .queue
+                .iter()
+                .find(|queued| self.is_open(&queued.sync.repository))
+                .map(|queued| (&queued.sync, queued.sync.part())),
         };
+        if open.is_none() && self.queue.is_empty() {
+            return None;
+        }
+        let mut elsewhere: Vec<RepositoryName> = self
+            .queue
+            .iter()
+            .map(|queued| &queued.sync.repository)
+            .filter(|repository| !self.is_open(repository))
+            .cloned()
+            .collect();
+        elsewhere.sort_by_key(|repository| repository.to_string().to_ascii_lowercase());
         let paused_until = match self.not_before {
             Some(Hold::Points(_, until)) => Some(until),
             Some(Hold::Retry(_)) | None => None,
         };
         Some(SyncActivity {
-            repository: sync.repository.clone(),
-            part,
-            pages: sync
-                .first_sync
-                .as_ref()
-                .map_or(0, |first_sync| first_sync.pages),
-            load: sync.load_progress(),
+            open: open.map(|(sync, part)| OpenSync {
+                repository: sync.repository.clone(),
+                part,
+                pages: sync
+                    .first_sync
+                    .as_ref()
+                    .map_or(0, |first_sync| first_sync.pages),
+                load: sync.load_progress(),
+            }),
             paused_until,
+            elsewhere,
         })
     }
 
@@ -150,14 +231,13 @@ impl Syncs {
             return;
         }
         let queued = self
-            .queue
-            .iter_mut()
-            .find(|sync| sync.repository.is_same(repository))
-            .is_some_and(|sync| sync.open_issue(number));
+            .queued_mut(repository)
+            .is_some_and(|queued| queued.sync.open_issue(number));
         if let (false, Some(open)) = (queued, &self.open) {
             self.trees.push_back(OpenedTree {
                 number,
                 sync: UserWorkSync::tree_of(open.clone(), number),
+                failures: 0,
             });
         }
     }
@@ -168,62 +248,121 @@ impl Syncs {
             .is_some_and(|open| open.name.is_same(repository))
     }
 
-    /// The time the next step can run, if there is one.
-    pub fn ready_at(&self) -> Option<Instant> {
-        self.trees
-            .front()
-            .map(|tree| &tree.sync)
-            .or_else(|| self.queue.front())
-            .map(|_| self.not_before.map_or_else(Instant::now, Hold::until))
+    fn position(&self, repository: &RepositoryName) -> Option<usize> {
+        self.queue
+            .iter()
+            .position(|queued| queued.sync.repository.is_same(repository))
     }
 
-    /// Holds the next step back until `at`.
+    fn queued_mut(&mut self, repository: &RepositoryName) -> Option<&mut Queued> {
+        self.queue
+            .iter_mut()
+            .find(|queued| queued.sync.repository.is_same(repository))
+    }
+
+    /// Takes `repository`'s sync out of the queue.
+    fn take(&mut self, repository: &RepositoryName) -> Option<Queued> {
+        self.queue.remove(self.position(repository)?)
+    }
+
+    /// The place of the sync that takes the next step. Of the syncs that aren't held back, the open
+    /// Repository's and the first of the others take turns. With every sync held back, the one free soonest
+    /// goes.
+    fn next_sync(&self) -> Option<usize> {
+        let now = Instant::now();
+        let ready = |open: bool| {
+            self.queue.iter().find(|queued| {
+                self.is_open(&queued.sync.repository) == open && queued.is_ready(now)
+            })
+        };
+        let next = match (ready(true), ready(false)) {
+            (Some(_), Some(other)) if self.open_went_last => other,
+            (Some(ready), _) | (None, Some(ready)) => ready,
+            (None, None) => self.queue.iter().min_by_key(|queued| queued.held_until)?,
+        };
+        self.position(&next.sync.repository)
+    }
+
+    /// The time the next step can run, if there is one.
+    pub fn ready_at(&self) -> Option<Instant> {
+        let free = if self.trees.is_empty() {
+            self.queue
+                .iter()
+                .map(|queued| queued.held_until.unwrap_or_else(Instant::now))
+                .min()?
+        } else {
+            Instant::now()
+        };
+        Some(self.not_before.map_or(free, |hold| hold.until().max(free)))
+    }
+
+    /// Holds every step back until `at`.
     pub fn wait_until(&mut self, at: Instant) {
         self.not_before = Some(Hold::Retry(at));
     }
 
-    /// Holds the next step back after `problem`, at least until `next_refresh`, and stops a sync that keeps
-    /// failing from blocking the ones behind it.
-    /// GitHub's `clock` turns a rate limit's reset into a wait.
-    pub fn after_failure(&mut self, problem: &Error, next_refresh: Instant, clock: GitHubClock) {
-        self.not_before = Some(match problem.kind {
-            ErrorKind::RateLimited {
-                resets_at: Some(resets_at),
-            } => points_hold(
-                OffsetDateTime::from_unix_timestamp(i64::from(resets_at))
-                    .map_or(next_refresh, |at| {
-                        until_instant(clock, at).max(next_refresh)
-                    }),
-            ),
-            ErrorKind::RateLimited { resets_at: None } => points_hold(next_refresh),
-            // Fixing the clock is up to the user, and the next try after it goes through.
-            ErrorKind::Offline | ErrorKind::CertificateDates => Hold::Retry(next_refresh),
-            ErrorKind::Unauthorized
-            | ErrorKind::WriteRefused
-            | ErrorKind::NotFound
-            | ErrorKind::Conflict
-            | ErrorKind::QueryRefused
-            | ErrorKind::Internal => {
-                self.count_failure(problem);
-                Hold::Retry(next_refresh)
+    /// Holds back the work whose step failed, at least until `next_refresh`: all of it if the problem speaks
+    /// for all of GitHub, or else that sync alone, so the other Repositories carry on. It also takes a sync
+    /// that keeps failing out of the queue. GitHub's `clock` turns a rate limit's reset into a wait.
+    pub fn after_failure(
+        &mut self,
+        failure: &StepFailure,
+        next_refresh: Instant,
+        clock: GitHubClock,
+    ) {
+        let problem = &failure.problem;
+        let hold = hold_after(problem, next_refresh, clock);
+        if counts_toward_tries(problem.kind) {
+            self.count_failure(&failure.turn, problem);
+        }
+        match &failure.turn {
+            Turn::Sync(repository) if !problem.kind.speaks_for_all_of_github() => {
+                if let Some(queued) = self.queued_mut(repository) {
+                    queued.held_until = Some(hold.until());
+                }
             }
-        });
+            // A tree's own trouble ends its read in the step, so a tree fails only for all of GitHub.
+            Turn::Sync(_) | Turn::Tree => self.not_before = Some(hold),
+        }
     }
 
-    fn count_failure(&mut self, problem: &Error) {
-        self.failures += 1;
-        if self.failures >= TRIES {
-            self.failures = 0;
-            match self.trees.pop_front() {
-                Some(tree) => self.give_up_on(&tree, problem),
-                None => {
-                    if let Some(sync) = self.queue.pop_front() {
-                        log::error!(
-                            "Tsugiki gave up syncing {}: {}",
-                            sync.repository,
-                            problem.message
-                        );
-                    }
+    /// Holds every step back after fetching an opened Issue failed, if `problem` speaks for all of GitHub. An
+    /// Issue's own trouble holds back no sync.
+    pub fn after_fetch_failure(
+        &mut self,
+        problem: &Error,
+        next_refresh: Instant,
+        clock: GitHubClock,
+    ) {
+        if problem.kind.speaks_for_all_of_github() {
+            self.not_before = Some(hold_after(problem, next_refresh, clock));
+        }
+    }
+
+    fn count_failure(&mut self, turn: &Turn, problem: &Error) {
+        match turn {
+            Turn::Tree => {
+                let gave_up = self.trees.front_mut().is_some_and(|tree| {
+                    tree.failures += 1;
+                    tree.failures >= TRIES
+                });
+                if gave_up && let Some(tree) = self.trees.pop_front() {
+                    self.give_up_on(&tree, problem);
+                }
+            }
+            Turn::Sync(repository) => {
+                let Some(queued) = self.queued_mut(repository) else {
+                    return;
+                };
+                queued.failures += 1;
+                if queued.failures >= TRIES
+                    && let Some(queued) = self.take(repository)
+                {
+                    log::error!(
+                        "Tsugiki gave up syncing {}: {}",
+                        queued.sync.repository,
+                        problem.message
+                    );
                 }
             }
         }
@@ -240,59 +379,157 @@ impl Syncs {
         );
     }
 
-    /// Runs one step of the first sync in the queue. Answers with what changed for the rest of the app, if
+    /// Runs one step of the work whose turn it is. Answers with what changed for the rest of the app, if
     /// anything did.
-    pub fn step(&mut self, github: &GitHub, store: &Store) -> Result<Option<Progress>, Error> {
-        let reading_a_tree = !self.trees.is_empty();
-        let tree = self.trees.front_mut().map(|tree| &mut tree.sync);
-        let Some(sync) = tree.or_else(|| self.queue.front_mut()) else {
+    pub fn step(
+        &mut self,
+        github: &GitHub,
+        store: &Store,
+    ) -> Result<Option<Progress>, StepFailure> {
+        // A tree goes first.
+        if let Some(tree) = self.trees.pop_front() {
+            return self.step_tree(tree, github, store);
+        }
+        let Some(taken) = self
+            .next_sync()
+            .and_then(|at| Some((at, self.queue.remove(at)?)))
+        else {
             return Ok(None);
         };
+        self.step_sync(taken, github, store)
+    }
+
+    /// Runs a step of `tree`, which goes back to the front of the trees until it finishes.
+    fn step_tree(
+        &mut self,
+        mut tree: OpenedTree,
+        github: &GitHub,
+        store: &Store,
+    ) -> Result<Option<Progress>, StepFailure> {
         self.not_before = None;
-        let step = match sync.step(github, store) {
-            // One Issue's trouble mustn't stand in the way of the sync behind it.
-            Err(problem) if reading_a_tree && !problem.kind.speaks_for_all_of_github() => {
-                if let Some(tree) = self.trees.pop_front() {
-                    self.give_up_on(&tree, &problem);
-                }
+        let step = match tree.sync.step(github, store) {
+            Ok(step) => step,
+            // One Issue's trouble mustn't stand in the way of the syncs behind it.
+            Err(problem) if !problem.kind.speaks_for_all_of_github() => {
+                self.give_up_on(&tree, &problem);
                 return Ok(None);
             }
-            step => step?,
+            Err(problem) => {
+                self.trees.push_front(tree);
+                return Err(StepFailure {
+                    problem,
+                    turn: Turn::Tree,
+                });
+            }
         };
-        self.failures = 0;
-        match step {
-            Step::Moved => Ok(None),
-            Step::Searched { pause_until } => {
-                self.not_before = pause_until
-                    .map(|at| until_instant(github.clock(), at))
-                    .map(points_hold);
-                Ok(None)
+        tree.failures = 0;
+        let repository = tree.sync.repository.clone();
+        // A tree isn't a whole sync, so it doesn't move the time of the last one.
+        let Some(stepped) = unfinished(step) else {
+            return Ok(None);
+        };
+        self.trees.push_front(tree);
+        Ok(self.after_step(repository, stepped, github))
+    }
+
+    /// Runs a step of the sync `queued`, taken from place `at`, which then goes to the back of the queue,
+    /// behind the others'. A step that fails puts it back in its place.
+    fn step_sync(
+        &mut self,
+        (at, mut queued): (usize, Queued),
+        github: &GitHub,
+        store: &Store,
+    ) -> Result<Option<Progress>, StepFailure> {
+        self.not_before = None;
+        let is_open = self.is_open(&queued.sync.repository);
+        queued.held_until = None;
+        let stepped = match queued.sync.step(github, store).map(unfinished) {
+            Ok(Some(stepped)) => stepped,
+            Ok(None) => match queued.sync.finish(store) {
+                Ok(finished) => {
+                    self.open_went_last = is_open;
+                    return Ok(is_open.then_some(Progress::Finished(finished)));
+                }
+                Err(problem) => return Err(self.put_back(at, queued, problem)),
+            },
+            Err(problem) => return Err(self.put_back(at, queued, problem)),
+        };
+        self.open_went_last = is_open;
+        queued.failures = 0;
+        let repository = queued.sync.repository.clone();
+        self.queue.push_back(queued);
+        Ok(self.after_step(repository, stepped, github))
+    }
+
+    /// Puts back a sync whose step failed, at `at`. The status bar shows the problem beside the open
+    /// Repository, so it names another Repository's, unless the problem speaks for all of GitHub.
+    fn put_back(&mut self, at: usize, queued: Queued, problem: Error) -> StepFailure {
+        let repository = queued.sync.repository.clone();
+        self.queue.insert(at, queued);
+        let problem = if self.is_open(&repository) || problem.kind.speaks_for_all_of_github() {
+            problem
+        } else {
+            Error {
+                kind: problem.kind,
+                message: format!("{repository}: {}", problem.message),
             }
-            Step::Saved {
-                touched,
-                pause_until,
-            } => {
-                let change = Change {
-                    repository: sync.repository.clone(),
-                    items: touched,
-                };
-                self.not_before = pause_until
-                    .map(|at| until_instant(github.clock(), at))
-                    .map(points_hold);
-                Ok(Some(Progress::Changed(change)))
-            }
-            // A tree isn't a whole sync, so it doesn't move the time of the last one.
-            Step::Finished if reading_a_tree => {
-                drop(self.trees.pop_front());
-                Ok(None)
-            }
-            Step::Finished => {
-                let finished = sync.finish(store)?;
-                let is_open = self.is_open(&finished.repository);
-                drop(self.queue.pop_front());
-                Ok(is_open.then_some(Progress::Finished(finished)))
-            }
+        };
+        StepFailure {
+            problem,
+            turn: Turn::Sync(repository),
         }
+    }
+
+    /// Passes on what a step saved, and any wait for GitHub's points it asked for.
+    fn after_step(
+        &mut self,
+        repository: RepositoryName,
+        stepped: Stepped,
+        github: &GitHub,
+    ) -> Option<Progress> {
+        self.not_before = stepped
+            .pause_until
+            .map(|at| until_instant(github.clock(), at))
+            .map(points_hold);
+        stepped
+            .touched
+            .map(|items| Progress::Changed(Change { repository, items }))
+    }
+}
+
+/// The wait after `problem`, at least until `next_refresh`.
+fn hold_after(problem: &Error, next_refresh: Instant, clock: GitHubClock) -> Hold {
+    match problem.kind {
+        ErrorKind::RateLimited {
+            resets_at: Some(resets_at),
+        } => points_hold(
+            OffsetDateTime::from_unix_timestamp(i64::from(resets_at)).map_or(next_refresh, |at| {
+                until_instant(clock, at).max(next_refresh)
+            }),
+        ),
+        ErrorKind::RateLimited { resets_at: None } => points_hold(next_refresh),
+        ErrorKind::Offline
+        | ErrorKind::CertificateDates
+        | ErrorKind::Unauthorized
+        | ErrorKind::WriteRefused
+        | ErrorKind::NotFound
+        | ErrorKind::Conflict
+        | ErrorKind::QueryRefused
+        | ErrorKind::Internal => Hold::Retry(next_refresh),
+    }
+}
+
+/// A failure of this kind counts towards [`TRIES`]. The network and the rate limit come back by themselves,
+/// and fixing the clock is up to the user, and the next try after it goes through.
+fn counts_toward_tries(kind: ErrorKind) -> bool {
+    match kind {
+        ErrorKind::RateLimited { .. } | ErrorKind::Offline | ErrorKind::CertificateDates => false,
+        ErrorKind::Unauthorized
+        | ErrorKind::WriteRefused
+        | ErrorKind::NotFound
+        | ErrorKind::Conflict
+        | ErrorKind::QueryRefused
+        | ErrorKind::Internal => true,
     }
 }
 

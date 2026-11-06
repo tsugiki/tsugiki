@@ -384,7 +384,7 @@ fn an_opened_issues_older_references_go_before_the_queue() {
         &harness,
         "FetchIssueReferences",
     ));
-    let activity = syncs.activity().unwrap();
+    let activity = syncs.activity().unwrap().open.unwrap();
     assert_eq!(activity.part, SyncPart::Trees);
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -476,7 +476,7 @@ fn an_urgent_origin_waiting_in_the_queue_leaves_it() {
         "FetchOriginPullRequest",
     ));
 
-    let load = syncs.activity().unwrap().load.unwrap();
+    let load = syncs.activity().unwrap().open.unwrap().load.unwrap();
     // The batch took 45 and the 24 newest of the queue, and the Origin PR no longer waits behind them.
     assert_eq!((load.prs_fetched, load.prs_known), (26, 26));
     harness.finish();
@@ -742,11 +742,11 @@ fn the_status_bar_hears_how_far_the_queue_has_got() {
     replies.push(page);
     let harness = Harness::with_window("queue-progress", replies);
     let mut syncs = syncing();
-    assert_eq!(syncs.activity().unwrap().load, None);
+    assert_eq!(syncs.activity().unwrap().open.unwrap().load, None);
 
     drop(run_until_asked(&mut syncs, &harness, "WindowIssues"));
 
-    let load = syncs.activity().unwrap().load.unwrap();
+    let load = syncs.activity().unwrap().open.unwrap().load.unwrap();
     assert_eq!(load.issues_read, 1);
     assert_eq!(load.issues_total, Some(40));
     assert_eq!((load.prs_fetched, load.prs_known), (0, 2));
@@ -767,7 +767,7 @@ fn the_status_bar_says_trees_while_the_users_own_come_first() {
     ));
 
     assert_eq!(
-        syncs.activity().unwrap().part,
+        syncs.activity().unwrap().open.unwrap().part,
         crate::status::SyncPart::Trees
     );
     harness.finish();
@@ -1190,15 +1190,15 @@ fn the_status_bar_says_when_older_open_items_load() {
     let mut syncs = syncing();
 
     drop(run_until_asked(&mut syncs, &harness, "WindowIssues"));
-    let in_the_window = syncs.activity().unwrap();
+    let in_the_window = syncs.activity().unwrap().open.unwrap();
     drop(run_until_asked(
         &mut syncs,
         &harness,
         "FetchTreePullRequests",
     ));
-    let after_the_window = syncs.activity().unwrap();
+    let after_the_window = syncs.activity().unwrap().open.unwrap();
     drop(run_until_asked(&mut syncs, &harness, "OlderOpenIssues"));
-    let after_the_issues = syncs.activity().unwrap();
+    let after_the_issues = syncs.activity().unwrap().open.unwrap();
     drop(run_to_the_end(&mut syncs, &harness));
 
     assert_eq!(in_the_window.part, SyncPart::Window);

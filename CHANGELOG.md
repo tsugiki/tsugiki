@@ -7,6 +7,12 @@ release's body, and fails without it
 
 ## WIP
 
+### Fixed
+
+- Repositories take turns to sync, so a big first sync no longer holds back the others. The open Repository
+  gets every other step. Before, a refresh waited behind a first sync of CPython, and a new PR took 12
+  minutes to show. While another Repository syncs, the status bar names it beside the sync time.
+
 ## Version 0.1.0 (2026-11-06)
 
 The first version for daily work. It lists the Issues that wait on you in `python/cpython` and your own

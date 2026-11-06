@@ -366,7 +366,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             Turn::FetchIssue(item) => {
                 syncs.open_issue(&item.repository, item.number);
                 if let Err(problem) = fetch_issue(board, store, &github, item) {
-                    syncs.after_failure(&problem, due.status, github.clock());
+                    syncs.after_fetch_failure(&problem, due.status, github.clock());
                     board.set(status_after(problem, store));
                 }
             }
@@ -380,9 +380,9 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                 Ok(Some(Progress::Finished(last_sync))) => board.last_sync(&last_sync),
                 Ok(None) => {}
                 // The next refresh shows whether GitHub is back, and the sync carries on from there.
-                Err(problem) => {
-                    syncs.after_failure(&problem, due.status, github.clock());
-                    board.set(status_after(problem, store));
+                Err(failure) => {
+                    syncs.after_failure(&failure, due.status, github.clock());
+                    board.set(status_after(failure.problem, store));
                 }
             },
         }

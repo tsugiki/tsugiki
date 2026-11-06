@@ -705,7 +705,7 @@ mod tests {
             if heard.is_null() {
                 break heard;
             }
-            parts.push(heard["part"].as_str().unwrap().to_owned());
+            parts.push(heard["open"]["part"].as_str().unwrap().to_owned());
         };
         parts.dedup();
         let asked = wired.ask("sync_activity", json!({})).unwrap();

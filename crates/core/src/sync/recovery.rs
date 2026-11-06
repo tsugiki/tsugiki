@@ -167,9 +167,9 @@ fn run(
         match syncs.step(&harness.github, store) {
             Ok(Some(Progress::Changed(change))) => told_the_window.push(change.items),
             Ok(_) => {}
-            Err(problem) => {
-                syncs.after_failure(&problem, Instant::now(), harness.github.clock());
-                problems.push(problem.message);
+            Err(failure) => {
+                syncs.after_failure(&failure, Instant::now(), harness.github.clock());
+                problems.push(failure.problem.message);
             }
         }
         steps += 1;

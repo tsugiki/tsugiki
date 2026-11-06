@@ -73,16 +73,25 @@ pub struct LoadProgress {
 /// The work under way in the queue of syncs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct SyncActivity {
+    /// The open Repository's sync, or the tree of an Issue the user opened in it, while there is one.
+    pub open: Option<OpenSync>,
+    /// The time GitHub's points come back, while the syncs wait for them.
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[specta(type = Option<String>)]
+    pub paused_until: Option<OffsetDateTime>,
+    /// The other Repositories with a sync queued, by name. They take turns with the open one (ADR 0015).
+    pub elsewhere: Vec<RepositoryName>,
+}
+
+/// How far the open Repository's sync has got.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct OpenSync {
     pub repository: RepositoryName,
     pub part: SyncPart,
     /// The pages a first sync has read.
     pub pages: u32,
     /// Its progress through the queue, once it gets there.
     pub load: Option<LoadProgress>,
-    /// The time GitHub's points come back, while the sync waits for them.
-    #[serde(with = "time::serde::rfc3339::option")]
-    #[specta(type = Option<String>)]
-    pub paused_until: Option<OffsetDateTime>,
 }
 
 type AnnounceActivity = Box<dyn FnMut(Option<&SyncActivity>) + Send>;

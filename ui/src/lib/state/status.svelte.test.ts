@@ -49,11 +49,9 @@ describe("StatusState's last sync", () => {
 
   describe("the sync under way", () => {
     const activity = {
-      repository: "python/cpython",
-      part: "window",
-      pages: 3,
-      load: null,
+      open: { repository: "python/cpython", part: "window", pages: 3, load: null },
       paused_until: null,
+      elsewhere: [] as string[],
     } as const;
     const catchActivity = () => {
       const listener = vi.fn<(payload: typeof activity | null) => void>();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { syncedWords } from "./synced";
+import { elsewhereWords, syncedWords } from "./synced";
 
 const now = new Date("2026-11-05T12:00:00Z");
 
@@ -18,5 +18,28 @@ describe("syncedWords", () => {
     expect(syncedWords("2026-11-05T11:00:01Z", now)).toBe("Synced 59 min ago");
     expect(syncedWords("2026-11-05T09:00:00Z", now)).toBe("Synced 3 h ago");
     expect(syncedWords("2026-11-03T12:00:00Z", now)).toBe("Synced 2 d ago");
+  });
+});
+
+describe("elsewhereWords", () => {
+  const activity = (elsewhere: string[]) =>
+    ({
+      open: null,
+      paused_until: null,
+      elsewhere,
+    }) as const;
+
+  it("says nothing with no other Repository syncing", () => {
+    expect(elsewhereWords(null)).toBeNull();
+    expect(elsewhereWords(activity([]))).toBeNull();
+  });
+
+  it("names the one other Repository syncing", () => {
+    expect(elsewhereWords(activity(["python/peps"]))).toBe("python/peps syncing");
+  });
+
+  it("names the next of several and counts the rest", () => {
+    const several = ["python/peps", "python/devguide", "python/typeshed"];
+    expect(elsewhereWords(activity(several))).toBe("python/peps and 2 more syncing");
   });
 });

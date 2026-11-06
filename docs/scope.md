@@ -72,14 +72,17 @@ The order in which v1 is built is in [build-order.md](build-order.md).
     An item that Needs attention is marked the way unread mail is. In the Workbench, a Filter or Pinned
     issues, items that Need attention come first, newest first by when they started to need it, then the rest
     by last update, then the quiet section. The preview says why in the words an **Alert** would use: "CI
-    failed: Tests / Ubuntu", "Changes requested by vstinner", "Review requested from you". An Issue's PRs
-    aren't listed here. Any item can be **Archived** or **Muted**, and its author **Muted**. A footer under
-    the list gives the legend and the list's keys (↑ ↓, E, M, `Alt+←`, `?` for all); it can be switched off.
+    failed: Tests / Ubuntu", "Changes requested by vstinner", "Review requested from you". An Issue's Origin
+    PRs and their Backports are listed under it, and ↑ ↓ stop on each of them. `Enter` or a click opens the
+    item or PR under the cursor in the Detail pane. Any item can be **Archived** or **Muted**, and its author
+    **Muted**. A footer under the list gives the legend and the list's keys (↑ ↓, E, M, `Alt+←`, `?` for all);
+    it can be switched off.
   - **Detail pane** (right): the selected item. That is either an **Issue view** or a **PR view**.
     - The Issue view shows the title and its author, the Origin PRs, the description, and recent comments,
       with a box to comment. Each Origin PR's Backports are folded into one line that gives their branches and
       states.
-    - The PR view shows Conversation and Files as tabs.
+    - The PR view shows Conversation and Files as tabs, and opens on Conversation. `Ctrl+PageDown` and
+      `Ctrl+PageUp` switch tabs, and so does `Enter` on the PR's row once the PR is open.
 
     Esc goes from a PR back to its Issue.
 
@@ -280,6 +283,7 @@ The order in which v1 is built is in [build-order.md](build-order.md).
 | Find in diff | `Ctrl+F` |
 | Hide / show the Sidebar | `Ctrl+B` |
 | Unified ↔ side-by-side | `Ctrl+Alt+U` |
+| Next / previous tab in the PR view | `Ctrl+PageDown` / `Ctrl+PageUp` |
 | Send comment | `Ctrl+Enter` |
 | Open in editor | `Ctrl+Shift+E` |
 | Local mark | `Ctrl+K M` |

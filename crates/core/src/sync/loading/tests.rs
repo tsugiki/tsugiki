@@ -1,6 +1,7 @@
 use serde_json::{Value, json};
 use time::{Duration, OffsetDateTime};
 
+use crate::github::testing::{dated, signed_in_as};
 use crate::github::{Login, Reply, Unreachable};
 use crate::repository::{RepositoryAccess, RepositoryCheck, RepositoryCounts, RepositorySettings};
 use crate::status::SyncPart;
@@ -958,16 +959,25 @@ fn a_window_page_below_the_floor_holds_the_next_step_back() {
 
 #[test]
 fn a_first_sync_taken_up_again_keeps_when_it_started() {
+    // GitHub's clock says two days ago for the first sync, and now for the one that takes it up.
     let long_ago = OffsetDateTime::now_utc() - Duration::days(2);
-    let harness = Harness::with_window("window-started", up_to_the_queue());
+    let mut replies = up_to_the_queue();
+    replies.insert(0, dated(signed_in_as("reviewer"), long_ago));
+    replies.insert(
+        2,
+        dated(signed_in_as("reviewer"), OffsetDateTime::now_utc()),
+    );
+    let harness = Harness::with_window("window-started", replies);
+    drop(harness.github.viewer().unwrap());
     let mut first = UserWorkSync::new(plain(cpython()));
-    first.started_at = long_ago;
     drop(first.step(&harness.github, &harness.store).unwrap());
+    drop(harness.github.viewer().unwrap());
 
     let mut taken_up = UserWorkSync::new(plain(cpython()));
     drop(taken_up.step(&harness.github, &harness.store).unwrap());
 
-    assert_eq!(taken_up.started_at, long_ago);
+    assert!((first.started_at - long_ago).abs() < Duration::minutes(1));
+    assert_eq!(taken_up.started_at, first.started_at);
     assert_eq!(taken_up.first_sync.map(|sync| sync.pages), Some(2));
     harness.finish();
 }

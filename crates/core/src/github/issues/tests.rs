@@ -132,6 +132,7 @@ fn a_page_of_cross_references_github_cant_answer_is_asked_for_at_half_size() {
     let bad_gateway = Ok(Reply {
         status: 502,
         reset: None,
+        date: None,
         body: "Bad Gateway".to_owned(),
     });
     let (script, asked) = Scripted::new(vec![bad_gateway, timeline(&[], None)]);

@@ -357,7 +357,7 @@ pub(super) fn load(
 
 /// Counts the Repository's open items with the add dialog's own query, which decides the lists to read.
 fn count(link: &Link<'_>, loading: &mut Loading) -> Result<Step, Error> {
-    let today = OffsetDateTime::now_utc().date();
+    let today = link.github.clock().now().date();
     let check = link.github.check_repository(link.repository, today)?;
     loading.lists = Some(lists_for(check.size));
     Ok(Step::Searched { pause_until: None })

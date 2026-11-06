@@ -3,7 +3,7 @@ use crate::error::ErrorKind;
 use crate::filters::Filter;
 use crate::github::activity::{Activity, ActivityKind};
 use crate::github::pull_requests::CiState;
-use crate::github::testing::reply_ok;
+use crate::github::testing::{dated, reply_ok, signed_in_as};
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::repository::{RepositoryName, RepositorySettings};
 use crate::status::Change;
@@ -1222,6 +1222,7 @@ fn small_repository(
 
 fn check_reply(status: u16, etag: Option<&str>) -> ConditionalReply {
     ConditionalReply {
+        date: None,
         status,
         etag: etag.map(str::to_owned),
     }
@@ -1547,5 +1548,75 @@ fn a_probe_keeps_a_review_that_didnt_move_the_pr() {
             at: at(AFTER_IT),
         }]
     );
+    harness.finish();
+}
+
+const FIVE_MINUTES: time::Duration = time::Duration::minutes(5);
+
+/// A harness after a sync, whose first reply sets GitHub's clock to `github_time`, which the local clock is
+/// off from.
+fn on_githubs_clock(
+    name: &str,
+    github_time: OffsetDateTime,
+    replies: Vec<Result<Reply, Unreachable>>,
+) -> Harness {
+    let mut all = vec![dated(signed_in_as("reviewer"), github_time)];
+    all.extend(replies);
+    let harness = after_a_sync(name, all);
+    drop(harness.github.viewer().unwrap());
+    harness
+}
+
+#[test]
+fn a_refresh_asks_since_the_last_start_by_githubs_clock_whatever_the_local_clock_says() {
+    for local_is_off_by in [FIVE_MINUTES, -FIVE_MINUTES] {
+        let github_time = OffsetDateTime::now_utc() - local_is_off_by;
+        let harness = on_githubs_clock(
+            "github-clock",
+            github_time,
+            vec![quiet_poll(), quiet_poll()],
+        );
+
+        drop(run(&mut refreshing(filtering(&[])), &harness));
+        drop(run(&mut refreshing(filtering(&[])), &harness));
+
+        let asked: Vec<(String, Value)> = harness.asked.try_iter().collect();
+        let since = asked[2].1["since"].as_str().unwrap();
+        let since = OffsetDateTime::parse(since, &Rfc3339).unwrap();
+        let expected = github_time - OVERLAP;
+        assert!(
+            since >= expected - time::Duration::seconds(1),
+            "{since} against {expected}"
+        );
+        assert!(
+            since <= expected + time::Duration::seconds(10),
+            "{since} against {expected}"
+        );
+        harness.finish();
+    }
+}
+
+#[test]
+fn a_change_under_two_minutes_old_by_githubs_clock_keeps_its_item_in_the_filter() {
+    // The local clock is 5 minutes fast, so by it this change is 6 minutes old and settled.
+    let github_time = OffsetDateTime::now_utc() - FIVE_MINUTES;
+    let changed = (github_time - time::Duration::minutes(1))
+        .format(&Rfc3339)
+        .unwrap();
+    let replies = vec![
+        polled(
+            &list(&[issue_node(1, &changed)], None),
+            &list(&[changed_pr(2, &changed)], None),
+            &[search(&[], None)],
+        ),
+        fetched_nodes(&[strangers_pr(2, &changed)], LOTS),
+    ];
+    let harness = on_githubs_clock("github-clock-settled", github_time, replies);
+    stored_filter(&harness, "a", &[1, 2]);
+
+    drop(run(&mut refreshing(filtering(&["a"])), &harness));
+
+    let results = &facts(&harness).filters[&query("a")];
+    assert_eq!(results.numbers, BTreeSet::from([1, 2]));
     harness.finish();
 }

@@ -28,6 +28,7 @@ fn reply(body: &str) -> Reply {
     Reply {
         status: 200,
         reset: Some(9),
+        date: None,
         body: body.to_owned(),
     }
 }
@@ -69,6 +70,7 @@ fn a_failed_answer_leaves_the_recording_alone() {
         let answer = Reply {
             status,
             reset: None,
+            date: None,
             body: body.to_owned(),
         };
         let recorder = Recorder::new(Box::new(Canned(Ok(answer))), dir.clone());

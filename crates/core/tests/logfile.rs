@@ -33,6 +33,7 @@ impl Transport for Proxy {
         Ok(Reply {
             status: 403,
             reset: None,
+            date: None,
             body: "Blocked by your company's proxy".to_owned(),
         })
     }

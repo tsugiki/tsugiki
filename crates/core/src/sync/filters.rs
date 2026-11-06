@@ -258,7 +258,7 @@ fn read_page(link: &Link<'_>, walk: &mut FilterWalk, search: &WalkedSearch) -> R
     let pause_until = pause_until(page.rate_limit);
     let more = Page::Stays(Step::Searched { pause_until });
     if pages.cursor.is_none() && page.total > SEARCH_CAP {
-        let today = OffsetDateTime::now_utc().date();
+        let today = link.github.clock().now().date();
         if let Some((older, newer)) = pages.slice.halves(today) {
             pages.older.push(older);
             pages.slice = newer;

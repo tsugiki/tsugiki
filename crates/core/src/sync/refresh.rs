@@ -111,7 +111,7 @@ pub(super) fn first_phase(
         .partition(|query| can_narrow(stored.get(query)));
     let poll = Poll {
         since: state.started_at - OVERLAP,
-        settled_before: OffsetDateTime::now_utc() - OVERLAP,
+        settled_before: link.github.clock().now() - OVERLAP,
         redo: state.refresh_under_way,
         in_request,
         whole,

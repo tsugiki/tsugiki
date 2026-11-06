@@ -528,6 +528,7 @@ fn an_outage_blames_no_filter_and_its_search_runs_again() {
     replies.push(Ok(Reply {
         status: 503,
         reset: None,
+        date: None,
         body: String::new(),
     }));
     replies.push(all_of(&[issue_hit(1)]));

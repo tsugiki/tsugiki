@@ -363,6 +363,7 @@ mod tests {
         let bad_gateway = Ok(Reply {
             status: 502,
             reset: None,
+            date: None,
             body: "Bad Gateway".to_owned(),
         });
         let (script, asked) = Scripted::new(vec![bad_gateway, page_of(&json!([]), None)]);

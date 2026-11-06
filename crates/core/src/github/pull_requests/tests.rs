@@ -260,6 +260,7 @@ fn bad_gateway() -> Result<Reply, Unreachable> {
     Ok(Reply {
         status: 502,
         reset: None,
+        date: None,
         body: "Bad Gateway".to_owned(),
     })
 }
@@ -552,6 +553,7 @@ fn a_refused_token_isnt_retried() {
     let (script, asked) = Scripted::new(vec![Ok(Reply {
         status: 401,
         reset: None,
+        date: None,
         body: String::new(),
     })]);
 

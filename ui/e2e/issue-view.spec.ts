@@ -152,6 +152,26 @@ test("a link in a description leaves the window where it is", async ({ page }) =
   expect(page.url()).toBe(address);
 });
 
+test("a refresh or a base address in a description leaves the window where it is", async ({ page }) => {
+  await mockCore(
+    page,
+    answers(
+      '<meta http-equiv="refresh" content="0; url=/?moved">' +
+        '<base href="https://github.com/elsewhere/"><p>Read this</p>',
+    ),
+  );
+  await page.goto("/");
+  const address = page.url();
+
+  await page.getByRole("button", { name: "#7 Issue 7" }).click();
+  await expect(page.getByRole("region", { name: "Issue view" })).toContainText("Read this");
+  // A refresh of 0 seconds would have moved the page by the time it settles.
+  await page.waitForLoadState("networkidle");
+
+  expect(page.url()).toBe(address);
+  expect(await page.evaluate(() => document.baseURI)).toBe(address);
+});
+
 test("the content security policy stops what a description tries to run or load", async ({ page }) => {
   const config = JSON.parse(readFileSync("../crates/app/tauri.conf.json", "utf8")) as {
     app: { security: { csp: string } };

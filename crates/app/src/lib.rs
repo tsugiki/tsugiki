@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+mod navigation;
 mod slow_commands;
 mod startup;
 mod wiring;

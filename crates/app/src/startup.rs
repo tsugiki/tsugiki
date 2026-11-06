@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Manager, RunEvent, WebviewWindowBuilder};
 use tsugiki_core::build::Build;
 use tsugiki_core::folders::Folders;
@@ -12,6 +13,7 @@ use tsugiki_core::github::live::{Https, run_gh};
 use tsugiki_core::launch;
 use tsugiki_core::logfile;
 
+use crate::navigation;
 use crate::specta_builder;
 use crate::wiring::connect_core;
 
@@ -93,7 +95,21 @@ fn open_window(app: &AppHandle, webview_data: Option<PathBuf>) -> tauri::Result<
     let Some(config) = app.config().app.windows.first() else {
         return Err(tauri::Error::WindowNotFound);
     };
-    let window = WebviewWindowBuilder::from_config(app, config)?;
+    let dev_url = tauri::is_dev()
+        .then(|| app.config().build.dev_url.clone())
+        .flatten();
+    let window = WebviewWindowBuilder::from_config(app, config)?
+        .on_navigation(move |url| {
+            let allowed = navigation::stays_in_tsugiki(url, dev_url.as_ref());
+            if !allowed {
+                log::warn!("Tsugiki kept its window from going to {url}");
+            }
+            allowed
+        })
+        .on_new_window(|url, _| {
+            log::warn!("Tsugiki kept a window from opening on {url}");
+            NewWindowResponse::Deny
+        });
     let window = match webview_data {
         Some(folder) => window.data_directory(folder),
         None => window,

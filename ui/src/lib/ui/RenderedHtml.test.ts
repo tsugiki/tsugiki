@@ -74,3 +74,22 @@ it("keeps a form from submitting the window away", () => {
 
   expect(submit.defaultPrevented).toBe(true);
 });
+
+it("drops a refresh and a base address, and shows the rest", () => {
+  const { container } = render(RenderedHtml, {
+    html: '<meta http-equiv="refresh" content="0; url=/"><base href="https://github.com/"><p>Read this</p>',
+    onlink: vi.fn(),
+  });
+
+  expect(screen.getByText("Read this").tagName).toBe("P");
+  expect(container.querySelectorAll("meta, base")).toHaveLength(0);
+});
+
+it("shows new HTML in place of the old", async () => {
+  const { rerender } = render(RenderedHtml, { html: "<p>Before</p>", onlink: vi.fn() });
+
+  await rerender({ html: "<p>After</p>" });
+
+  expect(screen.getByText("After").tagName).toBe("P");
+  expect(screen.queryByText("Before")).toBeNull();
+});

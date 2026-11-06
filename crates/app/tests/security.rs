@@ -55,7 +55,10 @@ fn rust_names_only_github_as_a_host() {
         }
     }
     assert!(found.contains("api.github.com"), "the scan found {found:?}");
-    let allowed = BTreeSet::from(["api.github.com".to_owned(), "github.com".to_owned()]);
+    // Tauri serves the window's own pages from `tauri.localhost` on Windows, and `navigation.rs` names it to
+    // keep the window there, so naming it connects to nothing.
+    let allowed =
+        BTreeSet::from(["api.github.com", "github.com", "tauri.localhost"].map(str::to_owned));
     assert!(
         found.is_subset(&allowed),
         "the core connects only to GitHub, not {found:?}"
@@ -104,7 +107,7 @@ fn the_webview_has_the_strict_csp() {
     assert_eq!(
         config["app"]["security"]["csp"],
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
-         img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+         img-src 'self' data:; connect-src ipc: http://ipc.localhost; base-uri 'none'; form-action 'none'"
     );
 }
 

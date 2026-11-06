@@ -8,6 +8,8 @@ const core = vi.hoisted(() => ({
   openIssue: vi.fn(),
   fetchIssue: vi.fn(),
   openOnGithub: vi.fn(),
+  // The HUD logs a slow opening of an Issue whether or not it shows.
+  recordMiss: vi.fn(() => Promise.resolve("a miss")),
   listen: vi.fn(),
   stopListening: vi.fn(),
 }));
@@ -19,6 +21,7 @@ vi.mock("$lib/data/bindings", () => ({
     openIssue: core.openIssue,
     fetchIssue: core.fetchIssue,
     openOnGithub: core.openOnGithub,
+    recordMiss: core.recordMiss,
   },
   events: { changed: { listen: core.listen } },
 }));

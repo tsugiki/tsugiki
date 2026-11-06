@@ -33,6 +33,8 @@ export const commands = {
 	timeRunning: () => __TAURI_INVOKE<number | null>("time_running"),
 	/**  Writes what the performance HUD measured to `tsugiki.log`, and says the summary line it wrote. */
 	recordMeasurement: (measurement: Measurement_Deserialize) => __TAURI_INVOKE<string>("record_measurement", { measurement }),
+	/**  Writes a budget the window missed to `tsugiki.log`, and says the line it wrote. */
+	recordMiss: (miss: Miss_Deserialize) => __TAURI_INVOKE<string>("record_miss", { miss }),
 	/**
 	 *  What adding the Repository the user typed would load. A check can wait out a stuck request to GitHub, so
 	 *  it waits on a thread meant for blocking, and leaves the threads that answer the window's other commands
@@ -242,6 +244,9 @@ export type Home_Serialize =
 { screen: "onboarding"; token: TokenSource } | 
 /**  The last Repository the user had open. */
 { screen: "repository"; repository: RepositorySettings_Serialize };
+
+/**  A key or a click. The key itself isn't named, so the log holds nothing the user typed. */
+export type Input = "key" | "click";
 
 /**  A comment on an Issue. */
 export type IssueComment = IssueComment_Serialize | IssueComment_Deserialize;
@@ -488,6 +493,55 @@ export type Measurement_Serialize = {
 	long_frames: LongFrame_Serialize[],
 };
 
+/**
+ *  One budget the window missed, or the start-up time, which it logs each launch. Each time is in
+ *  milliseconds.
+ */
+export type Miss = Miss_Serialize | Miss_Deserialize;
+
+/**  A kind of miss that can repeat. A launch has one start-up. */
+export type MissKind = "view_query" | "issue_from_database" | "issue_from_github" | "input" | "long_frame";
+
+/**
+ *  One budget the window missed, or the start-up time, which it logs each launch. Each time is in
+ *  milliseconds.
+ */
+export type Miss_Deserialize = 
+/**  From Tsugiki's code starting to run to a usable Workbench, slow or not. */
+{ kind: "startup"; ms: number | null } | 
+/**  The window's wait for a view query. */
+{ kind: "view_query"; ms: number | null } | 
+/**  From the click on an Issue to the window showing what the database held of it. */
+{ kind: "issue_from_database"; number: number; ms: number | null } | 
+/**  From the click on an Issue to its text arriving from GitHub. */
+{ kind: "issue_from_github"; number: number; ms: number | null } | 
+/**  From a key or click to the next paint. */
+{ kind: "input"; input: Input; ms: number | null } | 
+/**  A frame the browser reports as long, with the scripts that ran in it, longest first. */
+{ kind: "long_frame"; ms: number | null; scripts: Script_Deserialize[] } | 
+/**  The window logged `limit` misses of one kind within a minute, and logs no more of them until it ends. */
+{ kind: "capped"; of: MissKind; limit: number };
+
+/**
+ *  One budget the window missed, or the start-up time, which it logs each launch. Each time is in
+ *  milliseconds.
+ */
+export type Miss_Serialize = 
+/**  From Tsugiki's code starting to run to a usable Workbench, slow or not. */
+{ kind: "startup"; ms: number | null } | 
+/**  The window's wait for a view query. */
+{ kind: "view_query"; ms: number | null } | 
+/**  From the click on an Issue to the window showing what the database held of it. */
+{ kind: "issue_from_database"; number: number; ms: number | null } | 
+/**  From the click on an Issue to its text arriving from GitHub. */
+{ kind: "issue_from_github"; number: number; ms: number | null } | 
+/**  From a key or click to the next paint. */
+{ kind: "input"; input: Input; ms: number | null } | 
+/**  A frame the browser reports as long, with the scripts that ran in it, longest first. */
+{ kind: "long_frame"; ms: number | null; scripts: Script_Serialize[] } | 
+/**  The window logged `limit` misses of one kind within a minute, and logs no more of them until it ends. */
+{ kind: "capped"; of: MissKind; limit: number };
+
 /**  How far the open Repository's sync has got. */
 export type OpenSync = OpenSync_Serialize | OpenSync_Deserialize;
 
@@ -621,6 +675,31 @@ export type RepositorySize =
 "large";
 
 export type ReviewState = "PENDING" | "COMMENTED" | "APPROVED" | "CHANGES_REQUESTED" | "DISMISSED";
+
+/**  A script that ran in a long frame, as the browser names it. */
+export type Script = Script_Serialize | Script_Deserialize;
+
+/**  A script that ran in a long frame, as the browser names it. */
+export type Script_Deserialize = {
+	/**  The script's caller, such as `HTMLButtonElement.onclick` or `FrameRequestCallback`. */
+	invoker: string,
+	/**  Nothing, when the browser doesn't know it. */
+	function?: string | null,
+	/**  The script's file, without the window's origin, or nothing when the browser doesn't know it. */
+	source?: string | null,
+	ms: number | null,
+};
+
+/**  A script that ran in a long frame, as the browser names it. */
+export type Script_Serialize = {
+	/**  The script's caller, such as `HTMLButtonElement.onclick` or `FrameRequestCallback`. */
+	invoker: string,
+	/**  Nothing, when the browser doesn't know it. */
+	function: string | null,
+	/**  The script's file, without the window's origin, or nothing when the browser doesn't know it. */
+	source: string | null,
+	ms: number | null,
+};
 
 /**  What `settings.toml` holds. A value the file leaves out takes its default. */
 export type Settings = Settings_Serialize | Settings_Deserialize;

@@ -8,6 +8,7 @@ function shownHud() {
   const core = {
     timeRunning: () => Promise.resolve(null),
     recordMeasurement: vi.fn(() => Promise.resolve("Performance of Tsugiki 0.1.0 over 1.0 s")),
+    recordMiss: () => Promise.resolve("a miss"),
   };
   const hud = new HudState(clock, core);
   hud.toggle();

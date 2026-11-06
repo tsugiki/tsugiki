@@ -18,6 +18,7 @@ use tauri_specta::{Builder, Event, collect_commands, collect_events};
 use tsugiki_core::error::Error;
 use tsugiki_core::latest::LatestReader;
 use tsugiki_core::measurement::Measurement;
+use tsugiki_core::misses::Miss;
 use tsugiki_core::repository::{Home, RepositoryAccess, RepositoryCheck, RepositoryName};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{LoadedSettings, SettingsOwner};
@@ -136,6 +137,15 @@ fn record_measurement(measurement: Measurement) -> String {
     summary
 }
 
+/// Writes a budget the window missed to `tsugiki.log`, and says the line it wrote.
+#[tauri::command]
+#[specta::specta]
+fn record_miss(miss: Miss) -> String {
+    let line = miss.line();
+    log::info!("{line}");
+    line
+}
+
 fn check_typed_repository(
     input: &str,
     requests: &SessionRequests,
@@ -233,6 +243,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             home,
             time_running,
             record_measurement,
+            record_miss,
             slow_commands::check_repository,
             slow_commands::add_repository,
             slow_commands::workbench,
@@ -313,6 +324,12 @@ mod tests {
         .unwrap();
         let line = record_measurement(measurement.clone());
         assert_eq!(line, measurement.summary());
+    }
+
+    #[test]
+    fn a_miss_answers_with_the_line_it_wrote() {
+        let miss: Miss = serde_json::from_str(r#"{"kind": "view_query", "ms": 73}"#).unwrap();
+        assert_eq!(record_miss(miss.clone()), miss.line());
     }
 
     #[test]

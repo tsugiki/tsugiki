@@ -21,6 +21,8 @@
   void settings.load();
   const home = new HomeState();
   void home.load();
+  // WKWebView has no PerformanceObserver for keys and long frames, and the miss log asks before it listens.
+  hud.watchBrowser(globalThis.PerformanceObserver);
 
   let addOpen = $state(false);
   const openAdd = () => {

@@ -255,8 +255,26 @@ The order in which v1 is built is in [build-order.md](build-order.md).
   sits under it like any other, placed by its file, line and side. It can be replied to and resolved like any
   thread, and `F8` reaches it in order. If its line no longer exists at the head, it is an **Outdated
   thread**.
-- **Outdated threads** are grouped at the top of their file together with the code they were written against.
-  During a re-review, the user's own unresolved Outdated threads are listed first.
+- **Outdated threads** are grouped at the top of their file together with the code they were written against:
+  the last 4 lines of the hunk GitHub stored with the thread, ending at the commented line, and the whole hunk
+  on "show more". During a re-review, the user's own unresolved Outdated threads are listed first.
+- A thread on a whole file sits at the top of that file, above its Outdated threads, marked "on the file".
+- A thread is matched to a file by its path, as the file's name or its name before a rename. A thread that
+  matches no file in the diff, because a later commit took the file's change back out, goes in "On files no
+  longer in the diff" at the end of the Files tab, shown like an Outdated thread.
+- A resolved thread folds to one line under its code: the first commenter, the number of comments and
+  "Resolved". `Enter` or a click opens it. `F8` and `Shift+F8` go through the unresolved threads: in each file
+  the threads on the file first, then the Outdated ones, then those in the diff, and last the threads on files
+  no longer in the diff.
+- A comment hidden on GitHub (as off-topic, outdated, resolved, a duplicate, spam or abuse) folds to one line
+  with its reason, as on GitHub, and opens on a click. A thread whose comments are all hidden counts as
+  resolved.
+- The user's own **Pending review**, started on github.com, shows its draft comments in place, marked as the
+  user's and pending.
+- The Conversation tab shows each **Review** as one block: its author, state, commit and text, then each of
+  its threads as one line (file and line, the first words, the replies, Resolved or Outdated) that opens the
+  thread in the Files tab. A Review with no text and no threads is one line, such as "some-reviewer approved
+  at abc1234". A thread itself shows only in the Files tab.
 - **Go to definition** (`F12`) and **Definition peek** (`Alt+F12`) find a symbol's definition with `git grep`
   at the line's commit: the PR's head, or the base for a removed line. They know Python, C in CPython's style
   and the reST directives in `Doc/`, and fall back to a whole-word search. A definition in a file the PR

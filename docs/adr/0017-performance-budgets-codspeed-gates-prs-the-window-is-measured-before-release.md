@@ -32,7 +32,8 @@ needed to reach 100 ms.
   fails on a full scan of a large table, such as Issues, PRs or comments. This catches a missing index
   directly, even before the data is large enough for the benchmark to show it.
 - **Before a release**, the maintainer measures the millisecond budgets in the release build's real window,
-  on Windows and on macOS, with Tsugiki's performance HUD. The HUD is a panel in a corner of the window that
+  on Windows and on macOS (once the maintainer takes macOS on, as ADR 0012 says), with Tsugiki's performance
+  HUD. The HUD is a panel in a corner of the window that
   stays hidden until `Ctrl+Shift+H` or the palette's Show performance HUD turns it on, and no run saves it.
   It shows the start-up to a usable Workbench, the time from a key to the next frame, the last 10 s of frames
   (the latest, p95, worst, and how many took over 25 ms), the frames dropped during the last background

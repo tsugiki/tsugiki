@@ -87,13 +87,9 @@ mod tests {
         assert_eq!(problem.kind, ErrorKind::Internal);
         assert!(problem.message.contains("newer"), "{}", problem.message);
         assert_eq!(fs::read(&path).unwrap(), before);
-        let names: Vec<_> = fs::read_dir(&folder)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name())
-            .collect();
         // The lock is Tsugiki's own, beside the file.
         assert_eq!(
-            names,
+            files_in(&folder),
             ["tsugiki.db", "tsugiki.db.lock"],
             "no -wal or -shm files either"
         );
@@ -101,12 +97,15 @@ mod tests {
         fs::remove_dir_all(folder).unwrap();
     }
 
-    /// What the folder holds, so a test can see that SQLite never touched the file.
+    /// What the folder holds, in name order, so a test can see that SQLite never touched the file. The order
+    /// `read_dir` gives depends on the file system, and macOS lists `tsugiki.db.lock` first.
     fn files_in(folder: &Path) -> Vec<OsString> {
-        fs::read_dir(folder)
+        let mut names: Vec<OsString> = fs::read_dir(folder)
             .unwrap()
             .map(|entry| entry.unwrap().file_name())
-            .collect()
+            .collect();
+        names.sort();
+        names
     }
 
     #[test]

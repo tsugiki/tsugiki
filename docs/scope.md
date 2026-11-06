@@ -245,6 +245,11 @@ The order in which v1 is built is in [build-order.md](build-order.md).
   PR.
 - Generated files are collapsed by default and shown with line counts. Whether a file is generated comes from
   `.gitattributes` on the PR's **Target branch**.
+- A PR whose commits the mirror doesn't hold yet says "Fetching the PR's commits…" until they arrive. When
+  the PR has moved on since the mirror's copy, the older diff stays readable under "Showing abc1234 · fetching
+  the newer def5678", with the threads held back and counted, since their lines belong to the newer commit.
+  The newer diff then takes its place at the same file. A fetch that fails says so, keeps the older diff and
+  offers Try again.
 - Every **NEWS entry** in the PR is rendered at the top. A PR can have several, or none.
 - Comments can cover a single line or a range of lines within one hunk. They go into the user's GitHub
   **Pending review**, which is then submitted as Approve, Request changes, or Comment.

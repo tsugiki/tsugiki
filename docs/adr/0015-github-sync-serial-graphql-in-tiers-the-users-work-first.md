@@ -124,6 +124,14 @@ and reads the trees it still owed.
   PRs** are fetched once and frozen for what the link rules read; their open Backports stay live. A refresh
   still fetches one that moves, because its timeline goes on: the bot's comment that a Bot backport failed can
   land after a sync has saved the merge.
+- **The PRs the user's work reaches** (Review requests, Own PRs, PRs with the user's Review, each Filter's PRs
+  and the PRs in their Issues' trees) are kept ready to open
+  ([#157](https://github.com/tsugiki/tsugiki/issues/157)). Each fetch of one reads its `headRefOid`. A step
+  that saves a head the **Mirror** lacks hands it to the mirror's worker, which fetches the heads it has been
+  handed in one `git fetch --stdin` and takes the ones handed meanwhile in the next. git spends no points, so
+  only Offline holds it back, as it holds a sync. When a refresh finds one of these PRs changed, a step after
+  it reads the PR's conversation, Reviews and threads into the database, so opening it shows them at once. Any
+  other PR's head is fetched, and its conversation read, when the user opens it, ahead of what waits.
 - **Older items on demand.** Opening one, by a link, a `tsg` URL or "also fixes #N", fetches it and its tree,
   and it stays cached. A search typed in All issues also runs on GitHub, and results the cache lacks are
   added. All issues ends with "Load 30 more days", which walks further back once without changing the window.

@@ -1,4 +1,4 @@
-use super::testing::{Canned, answered, token};
+use super::testing::{Canned, Scripted, answered, dated, signed_in_as, token};
 use super::*;
 use crate::conventions::Conventions;
 use crate::filters::Filter;
@@ -37,7 +37,7 @@ fn github_says_who_the_user_is() {
 
 #[test]
 fn a_login_is_read_from_the_viewer() {
-    let viewer = client(answered(200, r#"{"data":{"viewer":{"login":"octocat"}}}"#));
+    let viewer = client(Canned(signed_in_as("octocat")));
     assert_eq!(
         viewer.viewer().unwrap(),
         Viewer {
@@ -63,6 +63,7 @@ fn the_primary_rate_limit_says_when_it_resets() {
     let error = error_of(Canned(Ok(Reply {
         status: 403,
         reset: Some(1_800_000_000),
+        date: None,
         body: r#"{"message":"API rate limit exceeded for user"}"#.to_owned(),
     })));
     assert_eq!(error.kind, limited_until(Some(1_800_000_000)));
@@ -79,6 +80,7 @@ fn a_graphql_rate_limit_is_a_rate_limit() {
     let error = error_of(Canned(Ok(Reply {
         status: 200,
         reset: Some(1_800_000_000),
+        date: None,
         body: body.to_owned(),
     })));
     assert_eq!(error.kind, limited_until(Some(1_800_000_000)));
@@ -244,6 +246,7 @@ impl Transport for Renamed {
         Ok(Reply {
             status: 200,
             reset: None,
+            date: None,
             body: body.to_string(),
         })
     }
@@ -306,4 +309,38 @@ fn an_unreadable_answer_is_internal() {
 #[test]
 fn an_answer_without_data_is_internal() {
     assert_eq!(error_of(answered(200, "{}")).kind, ErrorKind::Internal);
+}
+
+#[test]
+fn githubs_clock_goes_by_the_last_reply_that_has_a_date() {
+    let ahead = OffsetDateTime::now_utc() + Duration::minutes(5);
+    let (script, _) = Scripted::new(vec![
+        dated(signed_in_as("reviewer"), ahead),
+        signed_in_as("reviewer"),
+    ]);
+    let github = client(script);
+    let before = github.clock().now();
+
+    drop(github.viewer().unwrap());
+    drop(github.viewer().unwrap());
+    let now = github.clock().now();
+
+    assert!(before < ahead - Duration::minutes(4));
+    assert!(ahead <= now && now < ahead + Duration::seconds(10), "{now}");
+}
+
+#[test]
+fn a_reply_github_didnt_send_leaves_its_clock() {
+    let ahead = OffsetDateTime::now_utc() + Duration::minutes(5);
+    let proxy = Reply {
+        status: 403,
+        reset: None,
+        date: Some(ahead),
+        body: "Blocked by your company's proxy".to_owned(),
+    };
+    let github = client(Canned(Ok(proxy)));
+
+    drop(github.viewer().unwrap_err());
+
+    assert!(github.clock().now() < ahead - Duration::minutes(4));
 }

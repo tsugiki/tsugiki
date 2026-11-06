@@ -269,7 +269,13 @@ impl GitHub {
             path: &path,
             etag: tag.map(Etag::as_str),
         };
-        match self.transport.get(&self.token, &request) {
+        let reply = self.transport.get(&self.token, &request);
+        if let Ok(reply) = &reply
+            && (reply.status == NOT_MODIFIED || reply.status == OK)
+        {
+            self.set_clock(reply.date);
+        }
+        match reply {
             Ok(reply) if reply.status == NOT_MODIFIED => ListCheck::Same,
             Ok(reply) if reply.status == OK => {
                 ListCheck::Moved(reply.etag.as_deref().map(Etag::new))

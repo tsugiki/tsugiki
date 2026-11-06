@@ -1,7 +1,8 @@
 use super::*;
+use crate::github::clock::GitHubClock;
 use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::RateLimit;
-use crate::github::testing::reply_ok;
+use crate::github::testing::{dated, reply_ok, signed_in_as};
 use crate::github::{Reply, Unreachable};
 use crate::repository::RepositoryName;
 use crate::sync::testing::{
@@ -23,7 +24,7 @@ fn queued_after(tries: u8, problem: &Error) -> bool {
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
     for _ in 0..tries {
-        syncs.after_failure(problem, soon());
+        syncs.after_failure(problem, soon(), GitHubClock::default());
     }
     syncs.ready_at().is_some()
 }
@@ -189,7 +190,7 @@ fn the_timer_leaves_a_first_sync_that_gave_up_and_a_click_starts_it_again() {
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
     for _ in 0..TRIES {
-        syncs.after_failure(&broken(), soon());
+        syncs.after_failure(&broken(), soon(), GitHubClock::default());
     }
     assert_eq!(syncs.ready_at(), None);
 
@@ -209,22 +210,25 @@ fn a_click_ends_a_wait_for_the_network_and_keeps_a_wait_for_points() {
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
 
-    syncs.after_failure(&offline, later);
+    syncs.after_failure(&offline, later, GitHubClock::default());
     syncs.refresh_now();
     assert!(syncs.ready_at().unwrap() < later);
 
-    syncs.after_failure(&spent, later);
+    syncs.after_failure(&spent, later, GitHubClock::default());
     syncs.refresh_now();
     assert_eq!(syncs.ready_at(), Some(later));
 }
 
 #[test]
 fn the_last_sync_says_when_it_finished_and_the_next_asks_from_when_it_started() {
-    let harness = Harness::new("finish-time", searches_finding(&[]));
+    // GitHub's clock is an hour behind, so the sync starts an hour before it ends by the local clock.
+    let began = OffsetDateTime::now_utc() - time::Duration::hours(1);
+    let mut replies = vec![dated(signed_in_as("reviewer"), began)];
+    replies.extend(searches_finding(&[]));
+    let harness = Harness::new("finish-time", replies);
+    drop(harness.github.viewer().unwrap());
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
-    let began = OffsetDateTime::now_utc() - time::Duration::hours(1);
-    syncs.queue.front_mut().unwrap().started_at = began;
 
     let mut finished = None;
     while syncs.ready_at().is_some() {
@@ -237,7 +241,7 @@ fn the_last_sync_says_when_it_finished_and_the_next_asks_from_when_it_started() 
 
     let state = harness.store.sync_state(&cpython()).unwrap().unwrap();
     assert_eq!(finished, Some(state.finished_at));
-    assert_eq!(state.started_at.unix_timestamp(), began.unix_timestamp());
+    assert!((state.started_at - began).abs() < time::Duration::seconds(2));
     assert!(state.finished_at > began + time::Duration::minutes(59));
     harness.finish();
 }
@@ -320,7 +324,7 @@ fn a_first_sync_that_gave_way_keeps_the_cross_references_it_had_listed() {
     }
 
     for _ in 0..TRIES {
-        syncs.after_failure(&broken(), soon());
+        syncs.after_failure(&broken(), soon(), GitHubClock::default());
     }
     assert_eq!(syncs.ready_at(), None);
     syncs.refresh_now();
@@ -344,7 +348,7 @@ fn a_step_that_keeps_failing_gives_way_to_the_next_sync() {
     syncs.add(plain(cpython()));
 
     for _ in 0..TRIES {
-        syncs.after_failure(&broken(), soon());
+        syncs.after_failure(&broken(), soon(), GitHubClock::default());
     }
 
     assert_eq!(syncs.queue.len(), 1);
@@ -359,7 +363,7 @@ fn a_step_that_keeps_failing_gives_way_to_the_next_sync() {
 fn failures_with_nothing_queued_change_nothing() {
     let mut syncs = Syncs::default();
     for _ in 0..TRIES {
-        syncs.after_failure(&broken(), soon());
+        syncs.after_failure(&broken(), soon(), GitHubClock::default());
     }
     assert_eq!(syncs.ready_at(), None);
 }
@@ -376,11 +380,11 @@ fn a_step_that_works_starts_the_count_again() {
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
     for _ in 0..TRIES - 1 {
-        syncs.after_failure(&broken(), soon());
+        syncs.after_failure(&broken(), soon(), GitHubClock::default());
     }
 
     drop(syncs.step(&harness.github, &harness.store).unwrap());
-    syncs.after_failure(&broken(), soon());
+    syncs.after_failure(&broken(), soon(), GitHubClock::default());
 
     assert_eq!(syncs.queue.len(), 1);
     harness.finish();
@@ -391,11 +395,11 @@ fn asking_again_starts_the_count_again() {
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
     for _ in 0..TRIES - 1 {
-        syncs.after_failure(&broken(), soon());
+        syncs.after_failure(&broken(), soon(), GitHubClock::default());
     }
 
     syncs.add(plain(cpython()));
-    syncs.after_failure(&broken(), soon());
+    syncs.after_failure(&broken(), soon(), GitHubClock::default());
 
     assert_eq!(syncs.queue.len(), 1);
 }
@@ -418,7 +422,7 @@ fn a_failure_waits_for_the_next_refresh() {
     syncs.add(plain(cpython()));
     let next_refresh = soon();
 
-    syncs.after_failure(&broken(), next_refresh);
+    syncs.after_failure(&broken(), next_refresh, GitHubClock::default());
 
     assert_eq!(syncs.ready_at(), Some(next_refresh));
 }
@@ -428,11 +432,35 @@ fn a_rate_limit_waits_for_its_reset() {
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
 
-    syncs.after_failure(&limited_until(3000), soon());
+    syncs.after_failure(&limited_until(3000), soon(), GitHubClock::default());
 
     let wait = syncs.ready_at().unwrap() - Instant::now();
     assert!(wait > Duration::from_secs(2900), "{wait:?}");
     assert!(wait <= Duration::from_secs(3001), "{wait:?}");
+}
+
+#[test]
+fn a_rate_limit_waits_for_its_reset_by_githubs_clock_whatever_the_local_clock_says() {
+    for local_is_off_by in [300, -300] {
+        let local = OffsetDateTime::now_utc();
+        let github_time = local - time::Duration::seconds(local_is_off_by);
+        let (clock, _) = GitHubClock::default().after(github_time, local);
+        let resets_at = u32::try_from(github_time.unix_timestamp() + 1200).unwrap();
+        let limited = Error::new(
+            ErrorKind::RateLimited {
+                resets_at: Some(resets_at),
+            },
+            "limited",
+        );
+        let mut syncs = Syncs::default();
+        syncs.add(plain(cpython()));
+
+        syncs.after_failure(&limited, soon(), clock);
+
+        let wait = syncs.ready_at().unwrap() - Instant::now();
+        assert!(wait > Duration::from_secs(1190), "{wait:?}");
+        assert!(wait <= Duration::from_secs(1201), "{wait:?}");
+    }
 }
 
 #[test]
@@ -441,7 +469,7 @@ fn a_rate_limit_whose_reset_has_passed_still_waits_for_the_next_refresh() {
     syncs.add(plain(cpython()));
     let next_refresh = soon();
 
-    syncs.after_failure(&limited_until(-10), next_refresh);
+    syncs.after_failure(&limited_until(-10), next_refresh, GitHubClock::default());
 
     assert_eq!(syncs.ready_at(), Some(next_refresh));
 }
@@ -791,7 +819,7 @@ fn a_tree_that_keeps_failing_gives_way_to_the_sync_behind_it() {
     syncs.open_issue(&cpython(), 7);
 
     for _ in 0..TRIES {
-        syncs.after_failure(&broken(), soon());
+        syncs.after_failure(&broken(), soon(), GitHubClock::default());
     }
 
     assert!(syncs.trees.is_empty());

@@ -98,6 +98,16 @@ and reads the trees it still owed.
 - **Each poll looks back two minutes further than the last one**, because GitHub's search can lag behind what
   it changed. A Filter member whose change is at least two minutes old, and that the narrowed search didn't
   return, has stopped matching. A newer change waits for the next refresh, whose window still holds it.
+- **A refresh's times come from GitHub's clock**, because GitHub's `updatedAt` is what they meet. Each
+  answer GitHub sends, a `200` or a `304`, carries a `Date` header, and Tsugiki keeps how far the last one is
+  from the local clock. GitHub's time is the local time plus that skew, with no request of its own, and it
+  stays right after the computer sleeps. Another status can come from a proxy, so its `Date` doesn't count. A
+  sync's start, which sets the next poll's `since`, the two-minute limit that keeps a change in a Filter, the
+  wait for a rate limit's reset and the `created:` dates of a Filter search all go by it. The session asks who
+  is signed in before a sync steps, so the local clock stands in only when that failed, as it does offline at
+  launch. The time of the last sync's end stays on the local clock, because the status bar counts "Synced 2
+  min ago" from the window's clock. A skew over a minute goes to the log, and again when it moves by over a
+  minute.
 - **An open Issue or PR** is fetched when opened and about once a minute while on screen. **Merged and closed
   PRs** are fetched once and frozen for what the link rules read; their open Backports stay live. A refresh
   still fetches one that moves, because its timeline goes on: the bot's comment that a Bot backport failed can

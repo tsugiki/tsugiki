@@ -639,6 +639,7 @@ mod tests {
             Ok(Reply {
                 status: 200,
                 reset: None,
+                date: None,
                 body: json!({ "data": data }).to_string(),
             })
         }

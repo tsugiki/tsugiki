@@ -8,6 +8,7 @@ use time::OffsetDateTime;
 use super::{Step, UserWorkSync};
 use crate::error::{Error, ErrorKind};
 use crate::github::GitHub;
+use crate::github::clock::GitHubClock;
 use crate::repository::{RepositoryName, RepositorySettings};
 use crate::status::{Change, LastSync, SyncActivity, SyncPart};
 use crate::store::Store;
@@ -183,13 +184,16 @@ impl Syncs {
 
     /// Holds the next step back after `problem`, at least until `next_refresh`, and stops a sync that keeps
     /// failing from blocking the ones behind it.
-    pub fn after_failure(&mut self, problem: &Error, next_refresh: Instant) {
+    /// GitHub's `clock` turns a rate limit's reset into a wait.
+    pub fn after_failure(&mut self, problem: &Error, next_refresh: Instant, clock: GitHubClock) {
         self.not_before = Some(match problem.kind {
             ErrorKind::RateLimited {
                 resets_at: Some(resets_at),
             } => points_hold(
                 OffsetDateTime::from_unix_timestamp(i64::from(resets_at))
-                    .map_or(next_refresh, |at| until_instant(at).max(next_refresh)),
+                    .map_or(next_refresh, |at| {
+                        until_instant(clock, at).max(next_refresh)
+                    }),
             ),
             ErrorKind::RateLimited { resets_at: None } => points_hold(next_refresh),
             ErrorKind::Offline => Hold::Retry(next_refresh),
@@ -258,7 +262,9 @@ impl Syncs {
         match step {
             Step::Moved => Ok(None),
             Step::Searched { pause_until } => {
-                self.not_before = pause_until.map(until_instant).map(points_hold);
+                self.not_before = pause_until
+                    .map(|at| until_instant(github.clock(), at))
+                    .map(points_hold);
                 Ok(None)
             }
             Step::Saved {
@@ -269,7 +275,9 @@ impl Syncs {
                     repository: sync.repository.clone(),
                     items: touched,
                 };
-                self.not_before = pause_until.map(until_instant).map(points_hold);
+                self.not_before = pause_until
+                    .map(|at| until_instant(github.clock(), at))
+                    .map(points_hold);
                 Ok(Some(Progress::Changed(change)))
             }
             // A tree isn't a whole sync, so it doesn't move the time of the last one.
@@ -293,8 +301,9 @@ fn points_hold(at: Instant) -> Hold {
     Hold::Points(at, OffsetDateTime::now_utc() + wait)
 }
 
-fn until_instant(until: OffsetDateTime) -> Instant {
-    Instant::now() + pause_for(until, OffsetDateTime::now_utc())
+/// The local instant GitHub's `clock` reaches `until`.
+fn until_instant(clock: GitHubClock, until: OffsetDateTime) -> Instant {
+    Instant::now() + pause_for(until, clock.now())
 }
 
 /// The wait from `now` to `until`, which comes from GitHub's clock.

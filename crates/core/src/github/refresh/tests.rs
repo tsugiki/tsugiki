@@ -262,6 +262,7 @@ fn listing(answer: Result<ConditionalReply, Unreachable>, tag: Option<&Etag>) ->
 
 fn replied(status: u16, etag: Option<&str>) -> Result<ConditionalReply, Unreachable> {
     Ok(ConditionalReply {
+        date: None,
         status,
         etag: etag.map(str::to_owned),
     })
@@ -366,6 +367,7 @@ fn a_probe_asks_for_half_after_a_bad_gateway() {
     let bad_gateway = Ok(Reply {
         status: 502,
         reset: None,
+        date: None,
         body: String::new(),
     });
     let (script, _asked) =
@@ -461,4 +463,26 @@ fn the_recorded_probe_reads_as_a_probe() {
         .unwrap();
 
     assert!(!batch.probes.is_empty());
+}
+
+#[test]
+fn a_list_checks_date_sets_githubs_clock_and_a_proxys_doesnt() {
+    let ahead = OffsetDateTime::now_utc() + time::Duration::minutes(5);
+    let clock_after = |status: u16| {
+        let answer = Ok(ConditionalReply {
+            status,
+            etag: None,
+            date: Some(ahead),
+        });
+        let lists = Lists {
+            answer,
+            asked: mpsc::channel().0,
+        };
+        let github = GitHub::new(Box::new(lists), token());
+        drop(github.check_list(&cpython(), None));
+        github.clock().now()
+    };
+
+    assert!(clock_after(304) >= ahead);
+    assert!(clock_after(407) < ahead - time::Duration::minutes(4));
 }

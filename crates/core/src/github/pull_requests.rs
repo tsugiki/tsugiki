@@ -653,7 +653,7 @@ impl GitHub {
         size: usize,
         request: impl Fn(usize) -> Request<'a>,
     ) -> Result<(D, usize), Error> {
-        match self.transport.post(&self.token, &request(size)) {
+        match self.post(&request(size)) {
             Ok(reply) if reply.status != BAD_GATEWAY => Ok((read(&reply)?, size)),
             Ok(_) | Err(Unreachable) => {
                 let smaller = size.div_ceil(2);

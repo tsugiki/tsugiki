@@ -279,7 +279,7 @@ impl Refreshes {
                 Ok(Message::Seen { item, at }) => return Turn::Seen(item, at),
                 Ok(Message::FetchIssue(item)) => return Turn::FetchIssue(item),
                 Ok(Message::Check { name, reply }) => {
-                    let today = OffsetDateTime::now_utc().date();
+                    let today = github.clock().now().date();
                     #[expect(
                         clippy::let_underscore_must_use,
                         reason = "this fails only if the caller has gone, and it waits for this answer"
@@ -366,7 +366,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             Turn::FetchIssue(item) => {
                 syncs.open_issue(&item.repository, item.number);
                 if let Err(problem) = fetch_issue(board, store, &github, item) {
-                    syncs.after_failure(&problem, due.status);
+                    syncs.after_failure(&problem, due.status, github.clock());
                     board.set(status_after(problem, store));
                 }
             }
@@ -381,7 +381,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                 Ok(None) => {}
                 // The next refresh shows whether GitHub is back, and the sync carries on from there.
                 Err(problem) => {
-                    syncs.after_failure(&problem, due.status);
+                    syncs.after_failure(&problem, due.status, github.clock());
                     board.set(status_after(problem, store));
                 }
             },

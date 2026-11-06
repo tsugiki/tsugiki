@@ -57,7 +57,8 @@ struct UserWorkSync {
     phase: Phase,
     /// The PRs this run has asked GitHub for, so it asks for each once.
     fetched: BTreeSet<u32>,
-    /// When this sync began: what changes after this waits for the next one.
+    /// The time this sync began by GitHub's clock: what changes after this waits for the next one. Its first
+    /// step sets it, or a saved first sync's place.
     started_at: OffsetDateTime,
     /// How the next refresh can learn that nothing changed, as far as this one knows.
     check: ChangeCheck,
@@ -397,6 +398,7 @@ impl UserWorkSync {
         let (step, next) = match &mut self.phase {
             // Asking the store is no request to GitHub, so this goes straight on to the first one.
             Phase::Starting => {
+                self.started_at = github.clock().now();
                 match refresh::first_phase(&link, &mut self.check)? {
                     Some(phase) => self.phase = phase,
                     None => self.start_first_sync(store)?,

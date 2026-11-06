@@ -2,6 +2,7 @@
 
 pub mod activity;
 pub mod checks;
+pub mod clock;
 pub mod filters;
 pub mod issue_content;
 pub mod issues;
@@ -14,14 +15,16 @@ pub mod replay;
 pub mod window;
 
 use std::borrow::Cow;
+use std::cell::Cell;
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use specta::Type;
-use time::{Date, Duration};
+use time::{Date, Duration, OffsetDateTime};
 
 use crate::error::{Error, ErrorKind};
+use crate::github::clock::{GitHubClock, skew_warning};
 use crate::repository::{
     RepositoryAccess, RepositoryCheck, RepositoryCounts, RepositoryName, WINDOW_DAYS,
 };
@@ -41,6 +44,8 @@ pub struct Reply {
     pub status: u16,
     /// The `x-ratelimit-reset` header, in seconds since the Unix epoch.
     pub reset: Option<u32>,
+    /// The `Date` header: GitHub's time when it answered.
+    pub date: Option<OffsetDateTime>,
     pub body: String,
 }
 
@@ -58,6 +63,8 @@ pub struct ConditionalReply {
     pub status: u16,
     /// The `ETag` header.
     pub etag: Option<String>,
+    /// The `Date` header: GitHub's time when it answered.
+    pub date: Option<OffsetDateTime>,
 }
 
 /// GitHub couldn't be reached at all.
@@ -176,11 +183,45 @@ const CHECK_REPOSITORY: &str = "query CheckRepository($owner: String!, $name: St
 pub struct GitHub {
     transport: Box<dyn Transport>,
     token: Token,
+    /// GitHub's time, as its last dated reply told it. It lives in memory only, because a saved time is
+    /// already in GitHub's time.
+    clock: Cell<GitHubClock>,
 }
 
 impl GitHub {
     pub fn new(transport: Box<dyn Transport>, token: Token) -> Self {
-        Self { transport, token }
+        Self {
+            transport,
+            token,
+            clock: Cell::new(GitHubClock::default()),
+        }
+    }
+
+    /// GitHub's clock, as its replies so far tell it.
+    pub fn clock(&self) -> GitHubClock {
+        self.clock.get()
+    }
+
+    /// Sends `request`, and sets GitHub's clock by the reply's `Date`.
+    fn post(&self, request: &Request<'_>) -> Result<Reply, Unreachable> {
+        let reply = self.transport.post(&self.token, request)?;
+        if reply.status == 200 {
+            self.set_clock(reply.date);
+        }
+        Ok(reply)
+    }
+
+    /// Sets GitHub's clock by `date`, from a reply GitHub sent. Another status can come from a proxy, whose
+    /// clock is its own. No `date` leaves the clock as it was.
+    fn set_clock(&self, date: Option<OffsetDateTime>) {
+        let Some(date) = date else {
+            return;
+        };
+        let (clock, skew) = self.clock.get().after(date, OffsetDateTime::now_utc());
+        self.clock.set(clock);
+        if let Some(skew) = skew {
+            log::warn!("{}", skew_warning(skew));
+        }
     }
 
     /// Asks GitHub who the token belongs to.
@@ -290,8 +331,7 @@ impl GitHub {
 
     fn query<D: DeserializeOwned>(&self, request: &Request<'_>) -> Result<D, Error> {
         let reply = self
-            .transport
-            .post(&self.token, request)
+            .post(request)
             .map_err(|Unreachable| Error::new(ErrorKind::Offline, "Tsugiki can't reach GitHub."))?;
         read(&reply)
     }
@@ -418,6 +458,7 @@ pub(crate) mod testing {
         Canned(Ok(Reply {
             status,
             reset: None,
+            date: None,
             body: body.to_owned(),
         }))
     }
@@ -455,8 +496,25 @@ pub(crate) mod testing {
         Ok(Reply {
             status: 200,
             reset: None,
+            date: None,
             body: body.to_owned(),
         })
+    }
+
+    /// `reply`, which GitHub dated `date`.
+    pub(crate) fn dated(
+        reply: Result<Reply, Unreachable>,
+        date: OffsetDateTime,
+    ) -> Result<Reply, Unreachable> {
+        reply.map(|reply| Reply {
+            date: Some(date),
+            ..reply
+        })
+    }
+
+    /// GitHub's answer that `login` is signed in.
+    pub(crate) fn signed_in_as(login: &str) -> Result<Reply, Unreachable> {
+        reply_ok(&format!(r#"{{"data":{{"viewer":{{"login":"{login}"}}}}}}"#))
     }
 
     pub(crate) fn signed_in_gh(_: &[&str]) -> std::io::Result<GhOutput> {

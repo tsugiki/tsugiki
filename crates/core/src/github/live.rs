@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use ureq::Agent;
 
 use super::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
+use crate::github::clock::http_date;
 use crate::token::{GhOutput, Token};
 
 /// The only address the core sends requests to (ADR 0005).
@@ -69,9 +70,14 @@ impl Transport for Https {
             .headers()
             .get("x-ratelimit-reset")
             .and_then(|value| value.to_str().ok()?.parse().ok());
+        let date = response
+            .headers()
+            .get("date")
+            .and_then(|value| http_date(value.to_str().ok()?));
         Ok(Reply {
             status: response.status().as_u16(),
             reset,
+            date,
             body: response.body_mut().read_to_string().map_err(unreachable)?,
         })
     }
@@ -91,12 +97,16 @@ impl Transport for Https {
             asking = asking.header("If-None-Match", etag);
         }
         let response = asking.call().map_err(unreachable)?;
-        let etag = response.headers().get("etag");
+        let headers = response.headers();
         Ok(ConditionalReply {
             status: response.status().as_u16(),
-            etag: etag
+            etag: headers
+                .get("etag")
                 .and_then(|value| value.to_str().ok())
                 .map(str::to_owned),
+            date: headers
+                .get("date")
+                .and_then(|value| http_date(value.to_str().ok()?)),
         })
     }
 }

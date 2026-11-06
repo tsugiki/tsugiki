@@ -1,7 +1,7 @@
 use super::*;
 use crate::github::issue_content::IssueContent;
 use crate::github::replay::Replayer;
-use crate::github::testing::{Canned, Scripted, answered, reply_ok, signed_in_gh};
+use crate::github::testing::{Canned, Scripted, answered, reply_ok, signed_in_as, signed_in_gh};
 use crate::github::{Login, Reply, Request, Transport, Unreachable};
 use crate::repository::{RepositoryName, RepositorySettings};
 use crate::status::Change;
@@ -198,11 +198,7 @@ impl Transport for Replies {
 }
 
 fn signed_in() -> Result<Reply, Unreachable> {
-    Ok(Reply {
-        status: 200,
-        reset: None,
-        body: r#"{"data":{"viewer":{"login":"octocat"}}}"#.to_owned(),
-    })
+    signed_in_as("octocat")
 }
 
 #[test]
@@ -480,6 +476,7 @@ fn a_session_answers_a_check_between_refreshes() {
     let gcmon_reply = Reply {
         status: 200,
         reset: None,
+        date: None,
         body: GCMON.to_owned(),
     };
     let access = replying(vec![signed_in(), Ok(gcmon_reply)]);
@@ -859,6 +856,7 @@ impl Transport for QuietRepository {
         Ok(Reply {
             status: 200,
             reset: None,
+            date: None,
             body,
         })
     }

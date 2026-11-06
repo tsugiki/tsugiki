@@ -70,6 +70,7 @@ impl Transport for Replayer {
             return Ok(Reply {
                 status: 200,
                 reset: None,
+                date: None,
                 body: NO_ISSUES.to_owned(),
             });
         }
@@ -84,6 +85,7 @@ impl Transport for Replayer {
         Ok(Reply {
             status: recording.status,
             reset: recording.reset,
+            date: None,
             body,
         })
     }

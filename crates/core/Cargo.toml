@@ -31,5 +31,9 @@ insta.workspace = true
 name = "about"
 harness = false
 
+[[bench]]
+name = "store"
+harness = false
+
 [lints]
 workspace = true

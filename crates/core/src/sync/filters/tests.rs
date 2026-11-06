@@ -7,8 +7,9 @@ use crate::store::Store;
 use crate::sync::Syncs;
 use crate::sync::recovery::{Scenario, recovers_from_each_failure, resumes_after_each_step};
 use crate::sync::testing::{
-    FEW, Harness, LOTS, cpython, empty_window_page, fetched, fetched_nodes, issue_references,
-    issues, no_issue_references, nothing, pr_node, run_to_the_end, searches_finding,
+    FEW, Harness, LARGE, LOTS, counted, cpython, empty_window_page, fetched, fetched_nodes,
+    issue_references, issues, no_issue_references, nothing, pr_node, run_to_the_end,
+    searches_finding,
 };
 use crate::token::Token;
 use serde_json::{Value, json};
@@ -94,6 +95,7 @@ fn a_filter_walk_recovers_from_a_failure_at_each_point() {
     ));
     posts.push(fetched(&[10], LOTS));
     posts.push(issues(&[1, 2], LOTS));
+    posts.push(counted(LARGE));
     posts.push(no_issue_references(LOTS));
     posts.push(empty_window_page());
     posts.push(empty_window_page());
@@ -117,6 +119,7 @@ fn a_filter_walk_recovers_from_a_failure_at_each_point() {
             "SearchFilter",
             "FetchPullRequests",
             "FetchIssues",
+            "CheckRepository",
             "FetchIssueReferences",
             "WindowIssues",
             "WindowPullRequests",
@@ -617,6 +620,7 @@ impl Transport for ByCreated {
             "FetchIssues" => issues(&[], LOTS),
             "FetchIssueReferences" => no_issue_references(LOTS),
             "WindowIssues" | "WindowPullRequests" => empty_window_page(),
+            "CheckRepository" => counted(LARGE),
             _ => nothing(LOTS),
         }
     }

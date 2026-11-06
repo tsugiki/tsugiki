@@ -2,14 +2,15 @@ use serde_json::{Value, json};
 use time::{Duration, OffsetDateTime};
 
 use crate::github::{Login, Reply, Unreachable};
-use crate::repository::RepositorySettings;
+use crate::repository::{RepositoryAccess, RepositoryCheck, RepositoryCounts, RepositorySettings};
 use crate::status::SyncPart;
 use crate::store::FirstSyncPlace;
+use crate::sync::recovery::{Scenario, recovers_from_each_failure, resumes_after_each_step};
 use crate::sync::testing::{
-    FEW, Harness, LOTS, comment_by, cpython, cross_references, empty_window_page, fetched_nodes,
-    hours_ago, issue_references, issue_references_with_more, issues, plain, pr_node,
-    run_to_the_end, searches_finding, window_issue, window_issue_referencing, window_page,
-    window_pr,
+    FEW, Harness, LARGE, LOTS, comment_by, counted, counted_as, cpython, cross_references,
+    empty_window_page, fetched_nodes, hours_ago, issue_references, issue_references_with_more,
+    issues, plain, pr_node, run_to_the_end, searches_finding, window_issue,
+    window_issue_referencing, window_page, window_pr,
 };
 use crate::sync::{Progress, Step, Syncs, UserWorkSync};
 
@@ -1054,6 +1055,8 @@ fn a_step_whose_place_cant_be_saved_keeps_its_news_for_the_next_try() {
     ) {
         drop(sync.step(&harness.github, &harness.store).unwrap());
     }
+    // The count goes before the page.
+    drop(sync.step(&harness.github, &harness.store).unwrap());
     // Reading the frozen PRs and this page's save land, but saving its place doesn't.
     let (saves_once, _calls) = harness.store.failing_at_call(Some(2));
 
@@ -1065,4 +1068,156 @@ fn a_step_whose_place_cant_be_saved_keeps_its_news_for_the_next_try() {
     assert!(matches!(again, Step::Saved { .. }));
     assert_eq!(harness.operations().len(), 5);
     harness.finish();
+}
+
+const LONG_AGO: &str = "2001-01-01T00:00:00Z";
+
+/// Open PR `number`, naming no Issue.
+fn open_pr(number: u32) -> Value {
+    pr_node(number, &json!({ "title": format!("Fix it {number}") }))
+}
+
+/// A small Repository: Issue 10 open and Issue 11 closed inside the window, Issue 12 open since long ago,
+/// PR 20 open inside the window and PR 21 open since long ago.
+fn small_repository() -> (RepositoryCounts, Vec<Result<Reply, Unreachable>>) {
+    let at = hours_ago(1);
+    let counts = RepositoryCounts {
+        open_issues: 2,
+        open_prs: 2,
+        updated_in_window: 3,
+        closed_in_window: 1,
+    };
+    let mut replies = searches_finding(&[]);
+    replies.push(counted_as(counts));
+    replies.push(window_page(
+        &[window_issue(10, &at), window_issue(11, &at)],
+        None,
+        LOTS,
+    ));
+    replies.push(window_page(
+        &[window_pr(20, &at), window_pr(29, LONG_AGO)],
+        Some("more"),
+        LOTS,
+    ));
+    replies.push(fetched_nodes(&[open_pr(20)], LOTS));
+    // Oldest first, so each list of older open items ends at the first item the window has.
+    replies.push(window_page(
+        &[window_issue(12, LONG_AGO), window_issue(10, &at)],
+        Some("more"),
+        LOTS,
+    ));
+    replies.push(window_page(
+        &[window_pr(21, LONG_AGO), window_pr(20, &at)],
+        Some("more"),
+        LOTS,
+    ));
+    replies.push(fetched_nodes(&[open_pr(21)], LOTS));
+    (counts, replies)
+}
+
+#[test]
+fn a_small_repository_loads_what_the_add_dialog_counted() {
+    let (counts, replies) = small_repository();
+    let harness = Harness::scripted("queue-small", replies);
+    let mut syncs = syncing();
+
+    drop(run_to_the_end(&mut syncs, &harness));
+
+    let check = RepositoryCheck::new(cpython(), counts, RepositoryAccess::Other);
+    let mut issues: Vec<u32> = harness
+        .store
+        .issues(&cpython())
+        .unwrap()
+        .iter()
+        .map(|issue| issue.number)
+        .collect();
+    issues.sort_unstable();
+    assert_eq!(issues, [10, 11, 12]);
+    assert_eq!(harness.numbers(), [20, 21]);
+    let loaded = issues.len() + harness.numbers().len();
+    assert_eq!(u32::try_from(loaded).unwrap(), check.first_sync_items);
+    let asked: Vec<(String, Value)> = harness.asked.try_iter().skip(4).collect();
+    let operations: Vec<&str> = asked.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(
+        operations,
+        [
+            "CheckRepository",
+            "WindowIssues",
+            "WindowPullRequests",
+            "FetchTreePullRequests",
+            "OlderOpenIssues",
+            "OlderOpenPullRequests",
+            "FetchTreePullRequests",
+        ]
+    );
+    // GitHub can't list open items by a time they changed before, so these lists ask for none.
+    assert_eq!(asked[4].1.get("since"), None);
+    harness.finish();
+}
+
+#[test]
+fn a_large_repository_reads_only_the_window() {
+    let mut replies = searches_finding(&[]);
+    replies.push(counted(LARGE));
+    replies.push(empty_window_page());
+    replies.push(empty_window_page());
+    let harness = Harness::scripted("queue-large", replies);
+    let mut syncs = syncing();
+
+    drop(run_to_the_end(&mut syncs, &harness));
+
+    assert_eq!(
+        queue_operations(&harness),
+        ["CheckRepository", "WindowIssues", "WindowPullRequests"]
+    );
+    harness.finish();
+}
+
+#[test]
+fn the_status_bar_says_when_older_open_items_load() {
+    let (_, replies) = small_repository();
+    let harness = Harness::scripted("queue-small-status", replies);
+    let mut syncs = syncing();
+
+    drop(run_until_asked(&mut syncs, &harness, "WindowIssues"));
+    let in_the_window = syncs.activity().unwrap();
+    drop(run_until_asked(
+        &mut syncs,
+        &harness,
+        "FetchTreePullRequests",
+    ));
+    let after_the_window = syncs.activity().unwrap();
+    drop(run_until_asked(&mut syncs, &harness, "OlderOpenIssues"));
+    let after_the_issues = syncs.activity().unwrap();
+    drop(run_to_the_end(&mut syncs, &harness));
+
+    assert_eq!(in_the_window.part, SyncPart::Window);
+    // GitHub can't count the older open Issues, so there's no total until they're all in.
+    assert_eq!(in_the_window.load.unwrap().issues_total, None);
+    assert_eq!(after_the_window.part, SyncPart::OlderOpen);
+    let load = after_the_issues.load.unwrap();
+    assert_eq!((load.issues_read, load.issues_total), (3, Some(3)));
+    harness.finish();
+}
+
+#[test]
+fn a_small_repositorys_first_sync_recovers_from_a_failure_at_each_point() {
+    let (_, posts) = small_repository();
+    let scenario = Scenario {
+        name: "small",
+        settings: plain(cpython()),
+        prepare: |_| {},
+        posts,
+        checks: Vec::new(),
+    };
+
+    let operations = recovers_from_each_failure(&scenario);
+    resumes_after_each_step(&scenario);
+
+    assert_eq!(operations.last().unwrap(), "FetchTreePullRequests");
+    assert!(
+        operations
+            .iter()
+            .any(|name| name == "OlderOpenPullRequests")
+    );
 }

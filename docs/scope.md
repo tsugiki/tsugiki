@@ -314,8 +314,9 @@ The order in which v1 is built is in [build-order.md](build-order.md).
   the last 30 days of updates; the threshold and the window are settings. Either way it loads what waits on
   the user first (Review requests, PRs with the user's Review, Own PRs, assignments, then the Filters), so the
   Workbench is right in about a minute, then the trees of the user's Issues, then the rest of the window
-  newest first, with the PRs that changed in the window. The status bar shows its progress. An interrupted
-  sync resumes where it stopped. Widening the window loads only the added days; narrowing it deletes nothing.
+  newest first, with the PRs that changed in the window, and for a small one its open items from before the
+  window. The status bar shows its progress. An interrupted sync resumes where it stopped. Widening the window
+  loads only the added days; narrowing it deletes nothing.
 - Older items come on demand: opening one fetches it and keeps it, a search in All issues also runs on GitHub,
   and All issues ends with "Load 30 more days".
 - Settings are kept in two TOML files, which Tsugiki reads when it starts and when the Settings dialog opens,

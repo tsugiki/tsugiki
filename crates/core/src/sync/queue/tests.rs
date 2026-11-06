@@ -155,9 +155,9 @@ fn a_sync_keeps_its_progress_behind_a_newer_one() {
     assert_eq!(syncs.step(&harness.github, &harness.store).unwrap(), None);
     syncs.add(plain(RepositoryName::parse("python/peps").unwrap()));
 
-    // The newer sync's four searches, its moves up to the queue, its two empty window pages and the end, then
-    // the older sync's next page.
-    for _ in 0..13 {
+    // The newer sync's four searches, its moves up to the queue, its count, its two empty window pages and
+    // the end, then the older sync's next page.
+    for _ in 0..14 {
         let progress = syncs.step(&harness.github, &harness.store).unwrap();
         assert_eq!(announced(progress), None);
     }
@@ -531,6 +531,7 @@ mod activity {
                 (SyncPart::Window, 5),
                 (SyncPart::Window, 6),
                 (SyncPart::Window, 7),
+                (SyncPart::Window, 8),
             ]
         );
         harness.finish();

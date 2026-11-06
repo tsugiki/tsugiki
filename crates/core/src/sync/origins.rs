@@ -79,10 +79,10 @@ mod tests {
     use crate::sync::Syncs;
     use crate::sync::recovery::{Scenario, recovers_from_each_failure, resumes_after_each_step};
     use crate::sync::testing::{
-        FEW, Harness, LOTS, comment_by, cpython, cross_references, fetched_nodes, found, hours_ago,
-        issue_references, issue_references_with_more, issues, merged_node, no_issue_references,
-        nothing, origin_answer, plain, pr_node, run_to_the_end, searches_finding,
-        up_to_the_first_issue, window_issue_referencing, window_page, window_pr,
+        FEW, Harness, LARGE, LOTS, comment_by, counted, cpython, cross_references, fetched_nodes,
+        found, hours_ago, issue_references, issue_references_with_more, issues, merged_node,
+        no_issue_references, nothing, origin_answer, plain, pr_node, run_to_the_end,
+        searches_finding, up_to_the_first_issue, window_issue_referencing, window_page, window_pr,
     };
     use serde_json::{Value, json};
     use std::time::{Duration, Instant};
@@ -144,6 +144,7 @@ mod tests {
             fetched_nodes(&[pr_node(1, &json!({})), backport_node(2, 9)], LOTS),
             origin_answer(&merged_node(9), LOTS),
             issues(&[1], LOTS),
+            counted(LARGE),
             issue_references_with_more(1, &[3], "older", LOTS),
             cross_references(&[4, 21], None, LOTS),
             fetched_nodes(
@@ -183,6 +184,7 @@ mod tests {
                 "FetchPullRequests",
                 "FetchOriginPullRequest",
                 "FetchIssues",
+                "CheckRepository",
                 "FetchIssueReferences",
                 "FetchCrossReferences",
                 "FetchTreePullRequests",

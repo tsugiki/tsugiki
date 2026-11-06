@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { Miss } from "$lib/data/bindings";
 import { browserClock, HudState } from "./hud.svelte";
 
 /** A clock the test moves by hand, and frames that come only when the test draws one. */
@@ -23,6 +24,7 @@ function harness() {
   const core = {
     timeRunning: vi.fn(() => Promise.resolve<number | null>(640)),
     recordMeasurement: vi.fn(() => Promise.resolve("the line")),
+    recordMiss: vi.fn<(miss: Miss) => Promise<string>>(() => Promise.resolve("the line")),
   };
   const hud = new HudState(clock, core);
   /** Draws a frame at `time`, if the HUD asked for one. */
@@ -467,13 +469,10 @@ describe("opening an Issue", () => {
     expect(hud.issue).toEqual(read);
   });
 
-  it("leaves out another Issue's answer, and an Issue opened while hidden", () => {
+  it("leaves out another Issue's answer", () => {
     const { hud, frame } = harness();
-    hud.issueOpened(1);
     hud.toggle();
-    hud.issueShown(1, true);
     frame(0);
-    expect(hud.issue).toBeUndefined();
     hud.issueOpened(2);
     hud.issueShown(1, true);
     frame(16);
@@ -549,5 +548,147 @@ describe("opening an Issue", () => {
     document.dispatchEvent(new Event("visibilitychange"));
     expect(hud.issue).toEqual({ stage: "held", number: 1, fromDatabase: 16 });
     hidden.mockRestore();
+  });
+});
+
+describe("the misses it logs, shown or not", () => {
+  it("logs a view query over its budget", async () => {
+    const { hud, core, setNow } = harness();
+    const query = (ms: number) =>
+      hud.timed(() => {
+        setNow(ms);
+        return Promise.resolve();
+      });
+    setNow(0);
+    await query(50);
+    expect(core.recordMiss).not.toHaveBeenCalled();
+    setNow(0);
+    await query(73);
+    expect(core.recordMiss).toHaveBeenCalledExactlyOnceWith({ kind: "view_query", ms: 73 });
+  });
+
+  it("logs the start-up, fast or slow", async () => {
+    const { hud, core } = harness();
+    await hud.markUsable();
+    expect(core.recordMiss).toHaveBeenCalledExactlyOnceWith({ kind: "startup", ms: 640 });
+  });
+
+  it("logs no start-up the core can't say", async () => {
+    const { hud, core } = harness();
+    core.timeRunning.mockResolvedValueOnce(null);
+    await hud.markUsable();
+    expect(core.recordMiss).not.toHaveBeenCalled();
+  });
+
+  it("times an Issue opened while hidden with one frame for each part, and logs the slow parts", async () => {
+    const { hud, core, clock, frame, waiting, setNow } = harness();
+    setNow(0);
+    hud.issueOpened(7);
+    hud.issueShown(7, false);
+    expect(clock.requestFrame).toHaveBeenCalledOnce();
+    frame(250);
+    expect(core.recordMiss).toHaveBeenCalledExactlyOnceWith({
+      kind: "issue_from_database",
+      number: 7,
+      ms: 250,
+    });
+    expect(waiting.size).toBe(0);
+    setNow(2600);
+    hud.issueShown(7, true);
+    frame(2610);
+    await Promise.resolve();
+    expect(core.recordMiss).toHaveBeenLastCalledWith({ kind: "issue_from_github", number: 7, ms: 2610 });
+    expect(waiting.size).toBe(0);
+  });
+
+  it("drops an Issue waiting for GitHub when the window hides", () => {
+    const { hud, core, frame, waiting } = harness();
+    const hidden = vi.spyOn(document, "hidden", "get");
+    hud.issueOpened(7);
+    hud.issueShown(7, false);
+    frame(100);
+    hidden.mockReturnValue(true);
+    document.dispatchEvent(new Event("visibilitychange"));
+    hidden.mockReturnValue(false);
+    document.dispatchEvent(new Event("visibilitychange"));
+    hud.issueShown(7, true);
+    expect(waiting.size).toBe(0);
+    expect(core.recordMiss).not.toHaveBeenCalled();
+    hidden.mockRestore();
+  });
+
+  it("keeps timing an Issue when the HUD hides", () => {
+    const { hud, core, frame, setNow } = harness();
+    hud.toggle();
+    frame(0);
+    hud.issueOpened(7);
+    hud.issueShown(7, true);
+    hud.toggle();
+    setNow(300);
+    frame(300);
+    expect(core.recordMiss).toHaveBeenCalledExactlyOnceWith({
+      kind: "issue_from_database",
+      number: 7,
+      ms: 300,
+    });
+  });
+
+  it("logs no view query the window hid during", async () => {
+    const { hud, core, setNow } = harness();
+    const hidden = vi.spyOn(document, "hidden", "get");
+    setNow(0);
+    await hud.timed(() => {
+      setNow(400);
+      hidden.mockReturnValue(true);
+      document.dispatchEvent(new Event("visibilitychange"));
+      hidden.mockReturnValue(false);
+      return Promise.resolve();
+    });
+    setNow(0);
+    hidden.mockReturnValue(true);
+    await hud.timed(() => {
+      setNow(400);
+      return Promise.resolve();
+    });
+    expect(core.recordMiss).not.toHaveBeenCalled();
+    hidden.mockRestore();
+  });
+
+  it("hands an Issue's paint to the frame loop when it shows", () => {
+    const { hud, clock, frame, setNow } = harness();
+    setNow(0);
+    hud.issueOpened(7);
+    hud.issueShown(7, true);
+    hud.toggle();
+    expect(clock.cancelFrame).toHaveBeenCalledExactlyOnceWith(1);
+    frame(16);
+    expect(hud.issue).toEqual({ stage: "held", number: 7, fromDatabase: 16 });
+  });
+
+  it("logs nothing for an Issue opened in time", async () => {
+    const { hud, core, frame, setNow } = harness();
+    setNow(0);
+    hud.issueOpened(7);
+    hud.issueShown(7, false);
+    frame(200);
+    setNow(1990);
+    hud.issueShown(7, true);
+    frame(2000);
+    await Promise.resolve();
+    expect(core.recordMiss).not.toHaveBeenCalled();
+  });
+
+  it("drops the frame it asked for while hidden when the window hides", () => {
+    const { hud, core, waiting } = harness();
+    const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    hud.issueOpened(7);
+    hud.issueShown(7, true);
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(waiting.size).toBe(0);
+    hidden.mockRestore();
+    document.dispatchEvent(new Event("visibilitychange"));
+    hud.issueShown(7, true);
+    expect(waiting.size).toBe(0);
+    expect(core.recordMiss).not.toHaveBeenCalled();
   });
 });

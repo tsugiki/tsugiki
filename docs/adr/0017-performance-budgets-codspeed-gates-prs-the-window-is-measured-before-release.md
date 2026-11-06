@@ -4,16 +4,16 @@ Tsugiki has to feel instant on CPython: about ten thousand open Issues and PRs, 
 [ADR 0008](0008-view-models-and-invalidation-over-ipc.md) runs a screen's whole query again on every `changed`
 event, which works only if those queries are fast. These are the budgets, measured on CPython-sized data:
 
-| What | Budget |
-|---|---|
-| Start-up to a usable Workbench, from the database, without waiting on the network | 1 s |
-| A view query (`workbench`, `issue`, `pr`, `sidebar`) in the core, p95 | 50 ms |
-| Keys, selection, typing in a search box | the next frame |
-| Palette results | 50 ms |
-| Scrolling or flinging any list or diff | no frame over 25 ms |
-| Opening a PR: the conversation / the first diff rows | 200 ms / 1 s |
-| Jumping into a file not yet highlighted | 100 ms |
-| A background refresh | no dropped frame |
+| What                                                                              | Budget              |
+| --------------------------------------------------------------------------------- | ------------------- |
+| Start-up to a usable Workbench, from the database, without waiting on the network | 1 s                 |
+| A view query (`workbench`, `issue`, `pr`, `sidebar`) in the core, p95             | 50 ms               |
+| Keys, selection, typing in a search box                                           | the next frame      |
+| Palette results                                                                   | 50 ms               |
+| Scrolling or flinging any list or diff                                            | no frame over 25 ms |
+| Opening a PR: the conversation / the first diff rows                              | 200 ms / 1 s        |
+| Jumping into a file not yet highlighted                                           | 100 ms              |
+| A background refresh                                                              | no dropped frame    |
 
 The diff prototype ([ADR 0001](0001-standalone-tauri-gui-with-in-app-review.md)) already meets most of the
 diff's numbers. Jumping into a file it hadn't highlighted took up to 214 ms, so per-chunk highlighting is
@@ -52,6 +52,16 @@ needed to reach 100 ms.
   a line for each frame over 25 ms with its cause. The summary line goes in the release's notes, so the next
   release can be compared with it. A miss blocks the release
   ([ADR 0012](0012-unsigned-v1-releases-from-a-tag-attested-and-checked.md)).
+
+- **In daily use, through 0.x**, the window writes a line to `tsugiki.log` for each budget it misses, whether
+  or not the HUD shows (#151): a view query over 50 ms, an Issue over 200 ms from the database, its text over
+  2 s from GitHub, a key or click past the next frame, and each long frame with the scripts that ran in it.
+  It also writes the start-up time of each launch that opens on a Workbench, slow or not. An idle window does
+  no work for this. The HUD's timers run only around a query, a click or a launch, and the browser reports
+  slow keys and long frames itself (the Event Timing API and `long-animation-frame` entries, which report
+  nothing under 50 ms). WebView2 has both reports and WKWebView neither, so on macOS only the HUD's timers
+  log. A line never names a key, and the window logs at most 10 misses of a kind a minute, then a line saying
+  it stopped. A time the window spent hidden isn't a miss. We decide at 1.0 whether this stays.
 
 ## Considered Options
 

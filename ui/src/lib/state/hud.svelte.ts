@@ -1,7 +1,8 @@
 // The performance HUD (ADR 0017): what the window measures of itself against the stage 1 budgets, so the
 // maintainer can measure a release build before tagging it. It starts hidden each run, and while hidden it
-// asks for no frames and hears no keys. Only the times of view queries and the start-up are kept then, at the
-// cost of reading the clock.
+// runs no frame loop and hears no keys. It still times the start-up, view queries and the Issues the user
+// opens then, at the cost of reading the clock and of a frame for each part of an Issue, and logs the times
+// that miss their budgets (#151).
 import {
   commands,
   type IssueOpenings_Deserialize as IssueOpenings,
@@ -9,12 +10,16 @@ import {
 } from "$lib/data/bindings";
 import { type Cause, causeOf, type Happening } from "./frame-causes";
 import { droppedFrames, type Frame, frameInterval, frameStats, type FrameStats, recent } from "./frames";
+import { type MissCore, MissLog, type ObserverClass } from "./misses";
 
 /**
  * ADR 0017's budgets, in milliseconds. A key's budget is the next frame, which `nextFrameLimit` sets, and an
  * Issue's text read from GitHub has none, since it waits on the network.
  */
 export const BUDGETS = { startup: 1000, frame: 25, viewQuery: 50, issueFromDatabase: 200 } as const;
+
+/** The time an Issue's text from GitHub can take before the log mentions it. No budget says this. */
+const SLOW_FROM_GITHUB = 2000;
 
 /** The time a happening can still be a long frame's cause, so the HUD keeps no more than this of them. */
 const CAUSES_KEPT = 1000;
@@ -65,7 +70,7 @@ export interface HudClock {
 }
 
 /** The core's commands the HUD calls. */
-export interface HudCore {
+export interface HudCore extends MissCore {
   timeRunning(): Promise<number | null>;
   recordMeasurement(measurement: Measurement): Promise<string>;
 }
@@ -143,6 +148,11 @@ export class HudState {
   #shownAt = 0;
   /** The frame asked for, while the HUD shows. */
   #handle = 0;
+  /** The one frame asked for while hidden, so a paint can be timed without a frame loop. */
+  #paintHandle: number | undefined;
+  /** The times the window has hidden, so a query can tell whether it hid while the query ran. */
+  #hidings = 0;
+  #misses: MissLog;
   #pendingKey: number | undefined;
   /** The callbacks waiting for the next frame to be painted, to read the clock then. */
   #afterNextPaint: ((at: number) => void)[] = [];
@@ -157,6 +167,14 @@ export class HudState {
   constructor(clock: HudClock = browserClock, core: HudCore = commands) {
     this.#clock = clock;
     this.#core = core;
+    this.#misses = new MissLog(clock, core);
+    // Hidden or shown, the HUD times Issues, and a window that hides paints nothing until it shows again.
+    document.addEventListener("visibilitychange", this.#onVisibility);
+  }
+
+  /** Logs the slow keys, clicks and long frames the browser reports, where it can. */
+  watchBrowser(Observer: ObserverClass | undefined) {
+    this.#misses.watch(Observer);
   }
 
   toggle() {
@@ -184,7 +202,6 @@ export class HudState {
 
   /** Starts timing the opening of Issue `number`, which the user has clicked. */
   issueOpened(number: number) {
-    if (!this.visible) return;
     this.#opening = { stage: "clicked", number, start: this.#clock.now() };
     this.issue = { stage: "database", number };
   }
@@ -199,6 +216,9 @@ export class HudState {
       const times = new Promise<IssueTimes>((resolve) => {
         this.#whenPainted((painted) => {
           const fromDatabase = painted - opening.start;
+          if (fromDatabase > BUDGETS.issueFromDatabase) {
+            this.#misses.missed({ kind: "issue_from_database", number, ms: fromDatabase });
+          }
           this.issue = { stage: hasText ? "held" : "github", number, fromDatabase };
           const shown = { database: fromDatabase, github: null };
           recording?.issues.push(shown);
@@ -214,6 +234,9 @@ export class HudState {
       this.#whenPainted((painted) => {
         void opening.times.then((times) => {
           times.github = painted - opening.start;
+          if (times.github > SLOW_FROM_GITHUB) {
+            this.#misses.missed({ kind: "issue_from_github", number, ms: times.github });
+          }
           this.issue = { stage: "read", number, fromDatabase: times.database, fromGitHub: times.github };
         });
       });
@@ -223,11 +246,17 @@ export class HudState {
   /** Waits for a view query, and times it. */
   async timed<T>(ask: () => Promise<T>): Promise<T> {
     const start = this.#clock.now();
+    const hidings = this.#hidings;
     try {
       return await ask();
     } finally {
       const answered = this.#clock.now();
       this.viewQuery = answered - start;
+      // A hidden window's answers wait on the browser, so their time isn't the query's.
+      const shown = !document.hidden && this.#hidings === hidings;
+      if (shown && answered - start > BUDGETS.viewQuery) {
+        this.#misses.missed({ kind: "view_query", ms: answered - start });
+      }
       this.#recording?.viewQueries.push(answered - start);
       this.#happened({ at: answered, cause: { kind: "view_query" } });
     }
@@ -243,6 +272,7 @@ export class HudState {
       // The core read its clock somewhere between the question and the answer, and the middle stands for it.
       const since = (this.#clock.now() - usable) / 2;
       this.startup = running === null ? undefined : running - since;
+      if (this.startup !== undefined) this.#misses.startup(this.startup);
     } catch (e) {
       this.error = String(e);
     }
@@ -342,24 +372,24 @@ export class HudState {
     this.#previous = undefined;
     window.addEventListener("keydown", this.#onKey, { capture: true });
     window.addEventListener("click", this.#onClick, { capture: true });
-    document.addEventListener("visibilitychange", this.#onVisibility);
+    this.#cancelPaintFrame();
     this.#handle = this.#clock.requestFrame(this.#onFrame);
   }
 
-  /** Hiding the HUD ends a recording, which still reaches the log. */
+  /**
+   * Hiding the HUD ends a recording, which still reaches the log. An Issue being opened is still timed, with
+   * the one frame a hidden HUD asks for.
+   */
   #hide() {
     if (this.#recording) void this.stop();
     this.visible = false;
     window.removeEventListener("keydown", this.#onKey, { capture: true });
     window.removeEventListener("click", this.#onClick, { capture: true });
-    document.removeEventListener("visibilitychange", this.#onVisibility);
     this.#clock.cancelFrame(this.#handle);
-    this.#pendingKey = undefined;
-    this.#afterNextPaint = [];
     this.#happenings = [];
-    this.#opening = undefined;
     this.#refreshDropped = undefined;
     this.#lastHeard = undefined;
+    this.#askForPaint();
   }
 
   #onKey = (e: KeyboardEvent) => {
@@ -375,9 +405,36 @@ export class HudState {
     if (this.visible) this.#happenings.push(happening);
   }
 
-  /** Calls `callback` with the time once the next frame has been painted. Only a HUD that shows asks. */
+  /** Calls `callback` with the time once the next frame has been painted. */
   #whenPainted(callback: (at: number) => void) {
     this.#afterNextPaint.push(callback);
+    this.#askForPaint();
+  }
+
+  /** A hidden HUD runs no frame loop, so it asks for the one frame that what waits for a paint needs. */
+  #askForPaint() {
+    if (this.visible || this.#paintHandle !== undefined || this.#afterNextPaint.length === 0) return;
+    this.#paintHandle = this.#clock.requestFrame(() => {
+      this.#paintHandle = undefined;
+      this.#timePaint();
+    });
+  }
+
+  #cancelPaintFrame() {
+    if (this.#paintHandle === undefined) return;
+    this.#clock.cancelFrame(this.#paintHandle);
+    this.#paintHandle = undefined;
+  }
+
+  /** Has what waits for this frame's paint read the clock once it has been painted. */
+  #timePaint() {
+    const waiting = this.#afterNextPaint;
+    if (waiting.length === 0) return;
+    this.#afterNextPaint = [];
+    this.#clock.afterPaint(() => {
+      const painted = this.#clock.now();
+      for (const callback of waiting) callback(painted);
+    });
   }
 
   /** A hidden window draws no frames, so the gap until it shows again isn't one. */
@@ -385,6 +442,8 @@ export class HudState {
     this.#previous = undefined;
     // A hidden window paints nothing, so whatever waits for a paint would count the time it was hidden.
     if (document.hidden) {
+      this.#hidings += 1;
+      this.#cancelPaintFrame();
       this.#afterNextPaint = [];
       this.#pendingKey = undefined;
       if (this.#opening?.stage !== "done") this.issue = undefined;
@@ -399,14 +458,7 @@ export class HudState {
       this.#addFrame({ end: time, duration: time - this.#previous });
     }
     this.#previous = time;
-    const waiting = this.#afterNextPaint;
-    if (waiting.length > 0) {
-      this.#afterNextPaint = [];
-      this.#clock.afterPaint(() => {
-        const painted = this.#clock.now();
-        for (const callback of waiting) callback(painted);
-      });
-    }
+    this.#timePaint();
     if (time - this.#shownAt >= SHOW_EVERY) {
       this.#recent = recent(this.#recent, time, RECENT);
       this.#happenings = this.#happenings.filter((happening) => happening.at > time - CAUSES_KEPT);

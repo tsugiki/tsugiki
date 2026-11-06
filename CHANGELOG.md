@@ -7,6 +7,13 @@ release's body, and fails without it
 
 ## WIP
 
+### Added
+
+- Tsugiki writes a line to `tsugiki.log` each time the window misses a performance budget, such as a slow
+  view query, a slow key or a long frame, and the start-up time of each launch that opens on a Workbench.
+  Daily use then shows where Tsugiki is slow, without a recording from the performance HUD. A burst writes at
+  most 10 lines of a kind a minute.
+
 ## Version 0.1.0 (2026-11-06)
 
 The first version for daily work. It lists the Issues that wait on you in `python/cpython` and your own

@@ -1,5 +1,8 @@
-// The status bar's words for when the open Repository last synced, and for a sync under way.
+// The status bar's words for when the open Repository last synced, for a sync under way, and for the other
+// Repositories syncing.
 import type { SyncActivity } from "$lib/state/status.svelte";
+
+type OpenSync = NonNullable<SyncActivity["open"]>;
 
 const MINUTE_MS = 60_000;
 const MINUTES_IN_HOUR = 60;
@@ -24,18 +27,26 @@ const PART_WORDS = {
 /**
  * A first sync's progress through its queue. It learns of more PRs as it reads, so their count says "so far".
  */
-function loadWords(load: NonNullable<SyncActivity["load"]>): string {
+function loadWords(load: NonNullable<OpenSync["load"]>): string {
   const issues = load.issues_total === null ? "" : ` of ${String(load.issues_total)}`;
   return `Issues ${String(load.issues_read)}${issues} · PRs ${String(load.prs_fetched)} of ${String(load.prs_known)} so far`;
 }
 
 /** A first sync's part and how far it has got. A refresh has no words: it says only when it has to wait. */
 export function syncingWords(activity: SyncActivity | null): string | null {
-  if (activity === null || activity.part === "refresh") return null;
-  if (activity.load) return `${PART_WORDS[activity.part]} · ${loadWords(activity.load)}`;
-  if (activity.pages === 0) return PART_WORDS[activity.part];
-  const pages = activity.pages === 1 ? "1 page" : `${String(activity.pages)} pages`;
-  return `${PART_WORDS[activity.part]} · ${pages}`;
+  const open = activity?.open;
+  if (!open || open.part === "refresh") return null;
+  if (open.load) return `${PART_WORDS[open.part]} · ${loadWords(open.load)}`;
+  if (open.pages === 0) return PART_WORDS[open.part];
+  const pages = open.pages === 1 ? "1 page" : `${String(open.pages)} pages`;
+  return `${PART_WORDS[open.part]} · ${pages}`;
+}
+
+/** The other Repositories syncing, which take turns with the open one: the next by name, then a count. */
+export function elsewhereWords(activity: SyncActivity | null): string | null {
+  const [next, ...rest] = activity?.elsewhere ?? [];
+  if (next === undefined) return null;
+  return rest.length === 0 ? `${next} syncing` : `${next} and ${String(rest.length)} more syncing`;
 }
 
 /** The wait for GitHub's points, while there is one. */

@@ -488,6 +488,29 @@ export type Measurement_Serialize = {
 	long_frames: LongFrame_Serialize[],
 };
 
+/**  How far the open Repository's sync has got. */
+export type OpenSync = OpenSync_Serialize | OpenSync_Deserialize;
+
+/**  How far the open Repository's sync has got. */
+export type OpenSync_Deserialize = {
+	repository: RepositoryName,
+	part: SyncPart,
+	/**  The pages a first sync has read. */
+	pages: number,
+	/**  Its progress through the queue, once it gets there. */
+	load?: LoadProgress_Deserialize | null,
+};
+
+/**  How far the open Repository's sync has got. */
+export type OpenSync_Serialize = {
+	repository: RepositoryName,
+	part: SyncPart,
+	/**  The pages a first sync has read. */
+	pages: number,
+	/**  Its progress through the queue, once it gets there. */
+	load: LoadProgress_Serialize | null,
+};
+
 export type PrState = "OPEN" | "CLOSED" | "MERGED";
 
 /**  A PR with its Backports beneath it. */
@@ -688,26 +711,22 @@ export type SyncActivityChanged_Serialize = SyncActivity_Serialize | null;
 
 /**  The work under way in the queue of syncs. */
 export type SyncActivity_Deserialize = {
-	repository: RepositoryName,
-	part: SyncPart,
-	/**  The pages a first sync has read. */
-	pages: number,
-	/**  Its progress through the queue, once it gets there. */
-	load?: LoadProgress_Deserialize | null,
-	/**  The time GitHub's points come back, while the sync waits for them. */
+	/**  The open Repository's sync, or the tree of an Issue the user opened in it, while there is one. */
+	open?: OpenSync_Deserialize | null,
+	/**  The time GitHub's points come back, while the syncs wait for them. */
 	paused_until: string | null,
+	/**  The other Repositories with a sync queued, by name. They take turns with the open one (ADR 0015). */
+	elsewhere: RepositoryName[],
 };
 
 /**  The work under way in the queue of syncs. */
 export type SyncActivity_Serialize = {
-	repository: RepositoryName,
-	part: SyncPart,
-	/**  The pages a first sync has read. */
-	pages: number,
-	/**  Its progress through the queue, once it gets there. */
-	load: LoadProgress_Serialize | null,
-	/**  The time GitHub's points come back, while the sync waits for them. */
+	/**  The open Repository's sync, or the tree of an Issue the user opened in it, while there is one. */
+	open: OpenSync_Serialize | null,
+	/**  The time GitHub's points come back, while the syncs wait for them. */
 	paused_until: string | null,
+	/**  The other Repositories with a sync queued, by name. They take turns with the open one (ADR 0015). */
+	elsewhere: RepositoryName[],
 };
 
 /**  The part of a sync under way, in the order a first sync runs them (ADR 0015). */

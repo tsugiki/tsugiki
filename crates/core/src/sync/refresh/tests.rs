@@ -409,7 +409,7 @@ fn a_finished_refresh_moves_the_last_sync_on_and_a_failed_one_leaves_it() {
     drop(run(&mut syncs, &harness));
     let after = harness.store.sync_state(&cpython()).unwrap().unwrap();
 
-    assert_eq!(failed.kind, ErrorKind::Offline);
+    assert_eq!(failed.problem.kind, ErrorKind::Offline);
     assert_eq!(during.started_at, at(LAST_SYNC));
     assert!(during.refresh_under_way);
     assert!(after.started_at > at(LAST_SYNC));
@@ -1167,7 +1167,7 @@ fn a_poll_refused_with_no_searches_is_a_failure() {
 
     let problem = syncs.step(&harness.github, &harness.store).unwrap_err();
 
-    assert_eq!(problem.kind, ErrorKind::QueryRefused);
+    assert_eq!(problem.problem.kind, ErrorKind::QueryRefused);
     harness.finish();
 }
 
@@ -1179,7 +1179,7 @@ fn a_poll_that_fails_with_searches_in_it_is_a_failure_too() {
 
     let problem = syncs.step(&harness.github, &harness.store).unwrap_err();
 
-    assert_eq!(problem.kind, ErrorKind::Offline);
+    assert_eq!(problem.problem.kind, ErrorKind::Offline);
     harness.finish();
 }
 
@@ -1370,7 +1370,7 @@ fn the_failure_of_a_step_after_the_poll_can_run_again() {
     let failed = syncs.step(&harness.github, &harness.store).unwrap_err();
     drop(run(&mut syncs, &harness));
 
-    assert_eq!(failed.kind, ErrorKind::Offline);
+    assert_eq!(failed.problem.kind, ErrorKind::Offline);
     assert_eq!(harness.numbers(), [1]);
     harness.finish();
 }

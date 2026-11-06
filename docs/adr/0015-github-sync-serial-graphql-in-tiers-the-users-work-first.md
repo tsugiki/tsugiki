@@ -74,9 +74,19 @@ their total and the PRs fetched of those known so far. That second count grows a
 
 Each page of a first sync is committed with its place ([ADR
 0010](0010-one-sqlite-database-and-per-repository-mirrors.md)). The place holds the cursors and the queue, so
-quitting, a crash, going offline or giving way after 10 failed tries
+quitting, a crash, going offline or leaving the queue after 10 failed tries
 resumes at the next page. The place is saved after the page, in a transaction of its own, so a crash between
-the two reads that page again. Syncs of several Repositories run one at a time, the open Repository first.
+the two reads that page again.
+
+Syncs of several Repositories share one queue and take turns, one step each, so a big first sync can't keep
+the others waiting. The open Repository has every other step, and the others take theirs in the order the
+user asked for them, the latest first. The open Repository's timed refresh used to wait behind a first sync
+of CPython, and a new PR took 12 minutes to show
+([#161](https://github.com/tsugiki/tsugiki/issues/161)). While other Repositories sync, the status bar names
+them beside the open one's sync time. A failure that speaks for all of GitHub, such as going offline or a
+spent rate limit, holds back every step. Any other failure holds back that Repository alone until the next
+status refresh, and counts toward its 10 tries. The status bar then names that Repository, unless it's the
+open one.
 
 A refresh keeps no place. One that stopped leaves a mark, and the next refresh looks back from the same time
 and reads the trees it still owed.
@@ -126,6 +136,9 @@ and reads the trees it still owed.
   30 days, nearly two hours of budget against GraphQL's 130 points.
 - **Walking the Repository's Issue and PR lists** for a Filter over the search cap. Lists can't apply search
   syntax, so Tsugiki would need its own copy of GitHub's search language to tell which items match.
+- **The open Repository's sync first, to its end.** With CPython open for its first sync, every other
+  Repository would wait about 15 minutes, and a Repository whose sync keeps failing would hold the rest back
+  until it gave up.
 - **Parallel requests**, such as one thread for Issues and one for PRs. Faster on paper, but GraphQL's
   CPU-time limit and the user's shared budget make serial the safe choice, and the first phase is quick
   anyway.

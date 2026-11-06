@@ -183,12 +183,15 @@ describe("StatusBar's sync under way", () => {
   const online = { state: "online", login: "octocat" } as const;
   const repository = "python/cpython";
   const lastSync = { repository, at: null };
-  const activity = (part: "your_work" | "window" | "trees" | "older_open" | "refresh", pages = 12) => ({
-    repository,
-    part,
-    pages,
-    load: null,
+  type Load = { issues_read: number; issues_total: number | null; prs_fetched: number; prs_known: number };
+  const activity = (
+    part: "your_work" | "window" | "trees" | "older_open" | "refresh",
+    pages = 12,
+    load: Load | null = null,
+  ) => ({
+    open: { repository, part, pages, load },
     paused_until: null,
+    elsewhere: [] as string[],
   });
 
   it.each([
@@ -204,13 +207,13 @@ describe("StatusBar's sync under way", () => {
   });
 
   it("counts no pages for the tree of an Issue the user opened", () => {
-    render(StatusBar, { status: online, lastSync, syncActivity: { ...activity("trees"), pages: 0 } });
+    render(StatusBar, { status: online, lastSync, syncActivity: activity("trees", 0) });
     expect(screen.getByRole("button").textContent).toBe("Syncing Issue trees");
   });
 
   it("says how far the queue has got, and that more PRs may come", () => {
     const load = { issues_read: 450, issues_total: 1446, prs_fetched: 900, prs_known: 2100 };
-    render(StatusBar, { status: online, lastSync, syncActivity: { ...activity("window"), load } });
+    render(StatusBar, { status: online, lastSync, syncActivity: activity("window", 12, load) });
     expect(screen.getByRole("button").textContent).toBe(
       "Syncing recent items · Issues 450 of 1446 · PRs 900 of 2100 so far",
     );
@@ -218,7 +221,7 @@ describe("StatusBar's sync under way", () => {
 
   it("leaves out the total of Issues until GitHub has said it", () => {
     const load = { issues_read: 0, issues_total: null, prs_fetched: 12, prs_known: 40 };
-    render(StatusBar, { status: online, lastSync, syncActivity: { ...activity("trees"), load } });
+    render(StatusBar, { status: online, lastSync, syncActivity: activity("trees", 12, load) });
     expect(screen.getByRole("button").textContent).toBe(
       "Syncing Issue trees · Issues 0 · PRs 12 of 40 so far",
     );
@@ -229,11 +232,20 @@ describe("StatusBar's sync under way", () => {
     expect(screen.getByRole("button").textContent).toBe("Syncing recent items · 1 page");
   });
 
-  it("keeps the open Repository's sync time while another Repository syncs", () => {
-    const other = { ...activity("window"), repository: "python/peps" };
+  it("keeps the open Repository's sync time while another Repository syncs, and names it", () => {
+    const other = { open: null, paused_until: null, elsewhere: ["python/peps"] };
     render(StatusBar, { status: online, lastSync, syncActivity: other });
-    expect(screen.getByRole("button").textContent).toBe("Not synced yet");
-    expect(bar().classList.contains("beside-syncing")).toBe(false);
+    expect(screen.getByRole("button").textContent).toBe("Not synced yet · python/peps syncing");
+    expect(bar().textContent).not.toContain("python/peps");
+    expect(bar().classList.contains("beside-syncing")).toBe(true);
+  });
+
+  it("names the other Repository syncing beside the open one's sync", () => {
+    const both = { ...activity("window"), elsewhere: ["python/peps"] };
+    render(StatusBar, { status: online, lastSync, syncActivity: both });
+    expect(screen.getByRole("button").textContent).toBe(
+      "Syncing recent items · 12 pages · python/peps syncing",
+    );
   });
 
   it("says nothing of a refresh", () => {

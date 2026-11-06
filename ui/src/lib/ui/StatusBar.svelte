@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { LastSync, Status, SyncActivity } from "$lib/state/status.svelte";
-  import { pausedWords, syncedWords, syncingWords } from "./synced";
+  import { elsewhereWords, pausedWords, syncedWords, syncingWords } from "./synced";
 
   const MINUTE = 60_000;
 
@@ -38,9 +38,13 @@
   const showStatus = $derived(visible || offline || status?.state === "problem" || Boolean(error));
   const paused = $derived(pausedWords(syncActivity));
   const listedProblems = $derived([...problems, ...(paused ? [paused] : [])].join(" · "));
-  // Another Repository's sync says nothing about the open one's last sync.
+  // A sync of the Repository open before the window switched says nothing about the one open now.
   const syncing = $derived(
-    syncActivity?.repository === lastSync?.repository ? syncingWords(syncActivity) : null,
+    syncActivity?.open?.repository === lastSync?.repository ? syncingWords(syncActivity) : null,
+  );
+  const elsewhere = $derived(elsewhereWords(syncActivity));
+  const syncWords = $derived(
+    [syncing ?? syncedWords(lastSync?.at ?? null, now), ...(elsewhere ? [elsewhere] : [])].join(" · "),
   );
 </script>
 
@@ -51,7 +55,7 @@
   class:offline
   class:empty={!showStatus && !listedProblems}
   class:beside-sync={lastSync !== null && showStatus}
-  class:beside-syncing={syncing !== null && lastSync !== null && showStatus}
+  class:beside-syncing={(syncing !== null || elsewhere !== null) && lastSync !== null && showStatus}
 >
   {#if showStatus}
     {#if error}
@@ -74,7 +78,7 @@
 </footer>
 <!-- Outside the live region, or a screen reader would read this out each minute, and each page of a sync. -->
 {#if lastSync !== null && showStatus}
-  <button class:offline onclick={onrefresh}>{syncing ?? syncedWords(lastSync.at, now)}</button>
+  <button class:offline onclick={onrefresh}>{syncWords}</button>
 {/if}
 
 <style>

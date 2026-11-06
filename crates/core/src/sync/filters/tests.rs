@@ -143,7 +143,7 @@ fn a_save_that_failed_goes_again_with_no_new_search() {
         drop(syncs.step(&harness.github, &harness.store).unwrap());
     }
     let failed = syncs.step(&harness.github, &broken).unwrap_err();
-    assert_eq!(failed.kind, ErrorKind::Internal);
+    assert_eq!(failed.problem.kind, ErrorKind::Internal);
     assert_eq!(found_by(&harness, "a"), [0_u32; 0]);
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -546,7 +546,7 @@ fn an_outage_blames_no_filter_and_its_search_runs_again() {
     assert_eq!(filter_problem(&harness, "a"), None);
     drop(run_to_the_end(&mut syncs, &harness));
 
-    assert_eq!(failed.kind, ErrorKind::Internal);
+    assert_eq!(failed.problem.kind, ErrorKind::Internal);
     assert_eq!(filter_problem(&harness, "a"), None);
     assert_eq!(found_by(&harness, "a"), [1]);
     harness.finish();
@@ -570,7 +570,7 @@ fn with_no_network_a_filters_search_waits_and_runs_again() {
     assert_eq!(filter_problem(&harness, "a"), None);
     drop(run_to_the_end(&mut syncs, &harness));
 
-    assert_eq!(refused.kind, ErrorKind::Offline);
+    assert_eq!(refused.problem.kind, ErrorKind::Offline);
     assert_eq!(filter_problem(&harness, "a"), None);
     let asked = harness.operations();
     assert_eq!(asked[4..], ["SearchFilter"; 3]);

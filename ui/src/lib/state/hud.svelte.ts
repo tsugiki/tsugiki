@@ -2,11 +2,53 @@
 // maintainer can measure a release build before tagging it. It starts hidden each run, and while hidden it
 // asks for no frames and hears no keys. Only the times of view queries and the start-up are kept then, at the
 // cost of reading the clock.
-import { commands, type Measurement_Deserialize as Measurement } from "$lib/data/bindings";
+import {
+  commands,
+  type IssueOpenings_Deserialize as IssueOpenings,
+  type Measurement_Deserialize as Measurement,
+} from "$lib/data/bindings";
+import { type Cause, causeOf, type Happening } from "./frame-causes";
 import { droppedFrames, type Frame, frameInterval, frameStats, type FrameStats, recent } from "./frames";
 
-/** ADR 0017's budgets, in milliseconds. A key's budget is the next frame, which `nextFrameLimit` sets. */
-export const BUDGETS = { startup: 1000, frame: 25, viewQuery: 50 } as const;
+/**
+ * ADR 0017's budgets, in milliseconds. A key's budget is the next frame, which `nextFrameLimit` sets, and an
+ * Issue's text read from GitHub has none, since it waits on the network.
+ */
+export const BUDGETS = { startup: 1000, frame: 25, viewQuery: 50, issueFromDatabase: 200 } as const;
+
+/** The time a happening can still be a long frame's cause, so the HUD keeps no more than this of them. */
+const CAUSES_KEPT = 1000;
+
+/** A frame over the limit, and what came before it. */
+export interface LongFrame extends Frame {
+  cause: Cause | undefined;
+}
+
+/**
+ * The last Issue opened while the HUD showed, timed from the click: until the window showed what the
+ * database held, and until its text arrived from GitHub if the database didn't hold it.
+ */
+export type IssueOpening =
+  | { stage: "database"; number: number }
+  | { stage: "github"; number: number; fromDatabase: number }
+  | { stage: "held"; number: number; fromDatabase: number }
+  | { stage: "read"; number: number; fromDatabase: number; fromGitHub: number };
+
+/** One Issue's times in a recording. `github` is null until its text arrives, and stays null when the
+ * database held it. */
+interface IssueTimes {
+  database: number;
+  github: number | null;
+}
+
+/**
+ * An Issue being opened. `reading` waits for its text from GitHub, and `times` settles once the database's
+ * part has been painted, which comes first.
+ */
+type Opening =
+  | { stage: "clicked"; number: number; start: number }
+  | { stage: "reading"; number: number; start: number; times: Promise<IssueTimes> }
+  | { stage: "done"; number: number };
 
 /** The span the HUD's frame numbers cover. */
 const RECENT = 10_000;
@@ -28,13 +70,32 @@ export interface HudCore {
   recordMeasurement(measurement: Measurement): Promise<string>;
 }
 
-/** The frames, keys, view queries and refreshes a recording has seen since Start. */
+/** The frames, keys, queries, refreshes and Issues a recording has seen since Start. */
 interface Recording {
   started: number;
   frames: Frame[];
+  longFrames: LongFrame[];
   keys: number[];
   viewQueries: number[];
   refreshes: number[];
+  issues: IssueTimes[];
+}
+
+/** The slowest of `times`, or nothing without any. */
+function slowest(times: number[]) {
+  return times.length === 0
+    ? null
+    : { count: times.length, worst_ms: times.reduce((worst, time) => Math.max(worst, time)) };
+}
+
+/** The Issues a recording opened, as the log has them. */
+function issueTimes(issues: readonly IssueTimes[]): IssueOpenings | null {
+  const fromDatabase = slowest(issues.map((issue) => issue.database));
+  if (fromDatabase === null) return null;
+  return {
+    from_database: fromDatabase,
+    from_github: slowest(issues.flatMap((issue) => (issue.github === null ? [] : [issue.github]))),
+  };
 }
 
 export const browserClock: HudClock = {
@@ -66,6 +127,11 @@ export class HudState {
   viewQuery = $state<number>();
   /** The frames dropped during the last background refresh the HUD saw end. */
   lastRefresh = $state<number>();
+  /** The last frame over the limit since the HUD showed. */
+  longFrame = $state<LongFrame>();
+  issue = $state<IssueOpening>();
+  /** The time of the HUD's last update, so a line can say how long ago something was. */
+  now = $state(0);
   recording = $state(false);
   /** The line the last recording wrote to `tsugiki.log`. */
   written = $state<string>();
@@ -78,6 +144,10 @@ export class HudState {
   /** The frame asked for, while the HUD shows. */
   #handle = 0;
   #pendingKey: number | undefined;
+  /** The callbacks waiting for the next frame to be painted, to read the clock then. */
+  #afterNextPaint: ((at: number) => void)[] = [];
+  #happenings: Happening[] = [];
+  #opening: Opening | undefined;
   #refreshDropped: number | undefined;
   #recording: Recording | undefined;
   #startupSettled = false;
@@ -99,7 +169,55 @@ export class HudState {
 
   /** Notes a key pressed at `at`, which the next frame times. The first key before a frame counts. */
   keyPressed(at: number) {
-    this.#pendingKey ??= at;
+    if (!this.visible) return;
+    this.#happened({ at, cause: { kind: "key" } });
+    if (this.#pendingKey !== undefined) return;
+    this.#pendingKey = at;
+    const recording = this.#recording;
+    this.#whenPainted((painted) => {
+      this.#pendingKey = undefined;
+      const took = painted - at;
+      this.key = took;
+      recording?.keys.push(took);
+    });
+  }
+
+  /** Starts timing the opening of Issue `number`, which the user has clicked. */
+  issueOpened(number: number) {
+    if (!this.visible) return;
+    this.#opening = { stage: "clicked", number, start: this.#clock.now() };
+    this.issue = { stage: "database", number };
+  }
+
+  /** Says the window now shows Issue `number`, and whether that includes its text. */
+  issueShown(number: number, hasText: boolean) {
+    const opening = this.#opening;
+    if (opening?.number !== number) return;
+    if (opening.stage === "clicked") {
+      const recording = this.#recording;
+      // A recording holds the Issue from here, so one still waiting for its text counts.
+      const times = new Promise<IssueTimes>((resolve) => {
+        this.#whenPainted((painted) => {
+          const fromDatabase = painted - opening.start;
+          this.issue = { stage: hasText ? "held" : "github", number, fromDatabase };
+          const shown = { database: fromDatabase, github: null };
+          recording?.issues.push(shown);
+          resolve(shown);
+        });
+      });
+      this.#opening = hasText
+        ? { stage: "done", number }
+        : { stage: "reading", number, start: opening.start, times };
+    } else if (opening.stage === "reading" && hasText) {
+      this.#opening = { stage: "done", number };
+      this.#happened({ at: this.#clock.now(), cause: { kind: "issue_text", number } });
+      this.#whenPainted((painted) => {
+        void opening.times.then((times) => {
+          times.github = painted - opening.start;
+          this.issue = { stage: "read", number, fromDatabase: times.database, fromGitHub: times.github };
+        });
+      });
+    }
   }
 
   /** Waits for a view query, and times it. */
@@ -108,9 +226,10 @@ export class HudState {
     try {
       return await ask();
     } finally {
-      const took = this.#clock.now() - start;
-      this.viewQuery = took;
-      this.#recording?.viewQueries.push(took);
+      const answered = this.#clock.now();
+      this.viewQuery = answered - start;
+      this.#recording?.viewQueries.push(answered - start);
+      this.#happened({ at: answered, cause: { kind: "view_query" } });
     }
   }
 
@@ -151,7 +270,15 @@ export class HudState {
 
   start() {
     if (!this.visible) return;
-    this.#recording = { started: this.#clock.now(), frames: [], keys: [], viewQueries: [], refreshes: [] };
+    this.#recording = {
+      started: this.#clock.now(),
+      frames: [],
+      longFrames: [],
+      keys: [],
+      viewQueries: [],
+      refreshes: [],
+      issues: [],
+    };
     this.recording = true;
     this.written = undefined;
     this.error = undefined;
@@ -173,10 +300,6 @@ export class HudState {
 
   #measurement(recording: Recording): Measurement {
     const frames = frameStats(recording.frames, BUDGETS.frame);
-    const slowest = (times: number[]) =>
-      times.length === 0
-        ? null
-        : { count: times.length, worst_ms: times.reduce((worst, time) => Math.max(worst, time)) };
     return {
       seconds: (this.#clock.now() - recording.started) / 1000,
       frames: frames
@@ -198,6 +321,12 @@ export class HudState {
               count: recording.refreshes.length,
               dropped_frames: recording.refreshes.reduce((sum, dropped) => sum + dropped, 0),
             },
+      issues: issueTimes(recording.issues),
+      long_frames: recording.longFrames.map((frame) => ({
+        at_s: (frame.end - recording.started) / 1000,
+        ms: frame.duration,
+        cause: frame.cause ?? null,
+      })),
     };
   }
 
@@ -207,9 +336,12 @@ export class HudState {
     this.frames = undefined;
     this.key = undefined;
     this.lastRefresh = undefined;
+    this.longFrame = undefined;
+    this.issue = undefined;
     this.#recent = [];
     this.#previous = undefined;
     window.addEventListener("keydown", this.#onKey, { capture: true });
+    window.addEventListener("click", this.#onClick, { capture: true });
     document.addEventListener("visibilitychange", this.#onVisibility);
     this.#handle = this.#clock.requestFrame(this.#onFrame);
   }
@@ -219,9 +351,13 @@ export class HudState {
     if (this.#recording) void this.stop();
     this.visible = false;
     window.removeEventListener("keydown", this.#onKey, { capture: true });
+    window.removeEventListener("click", this.#onClick, { capture: true });
     document.removeEventListener("visibilitychange", this.#onVisibility);
     this.#clock.cancelFrame(this.#handle);
     this.#pendingKey = undefined;
+    this.#afterNextPaint = [];
+    this.#happenings = [];
+    this.#opening = undefined;
     this.#refreshDropped = undefined;
     this.#lastHeard = undefined;
   }
@@ -230,9 +366,30 @@ export class HudState {
     this.keyPressed(e.timeStamp);
   };
 
+  #onClick = (e: MouseEvent) => {
+    this.#happened({ at: e.timeStamp, cause: { kind: "click" } });
+  };
+
+  /** Notes what the window did, while the HUD shows, as a cause for a long frame after it. */
+  #happened(happening: Happening) {
+    if (this.visible) this.#happenings.push(happening);
+  }
+
+  /** Calls `callback` with the time once the next frame has been painted. Only a HUD that shows asks. */
+  #whenPainted(callback: (at: number) => void) {
+    this.#afterNextPaint.push(callback);
+  }
+
   /** A hidden window draws no frames, so the gap until it shows again isn't one. */
   #onVisibility = () => {
     this.#previous = undefined;
+    // A hidden window paints nothing, so whatever waits for a paint would count the time it was hidden.
+    if (document.hidden) {
+      this.#afterNextPaint = [];
+      this.#pendingKey = undefined;
+      if (this.#opening?.stage !== "done") this.issue = undefined;
+      this.#opening = undefined;
+    }
   };
 
   #onFrame = (time: number) => {
@@ -242,21 +399,21 @@ export class HudState {
       this.#addFrame({ end: time, duration: time - this.#previous });
     }
     this.#previous = time;
-    const pressed = this.#pendingKey;
-    if (pressed !== undefined) {
-      this.#pendingKey = undefined;
-      const recording = this.#recording;
+    const waiting = this.#afterNextPaint;
+    if (waiting.length > 0) {
+      this.#afterNextPaint = [];
       this.#clock.afterPaint(() => {
-        const took = this.#clock.now() - pressed;
-        this.key = took;
-        recording?.keys.push(took);
+        const painted = this.#clock.now();
+        for (const callback of waiting) callback(painted);
       });
     }
     if (time - this.#shownAt >= SHOW_EVERY) {
       this.#recent = recent(this.#recent, time, RECENT);
+      this.#happenings = this.#happenings.filter((happening) => happening.at > time - CAUSES_KEPT);
       this.frames = frameStats(this.#recent, BUDGETS.frame);
       this.interval = frameInterval(this.#recent);
       this.#shownAt = time;
+      this.now = time;
     }
     this.#handle = this.#clock.requestFrame(this.#onFrame);
   };
@@ -264,6 +421,11 @@ export class HudState {
   #addFrame(frame: Frame) {
     this.#recent.push(frame);
     this.#recording?.frames.push(frame);
+    if (frame.duration > BUDGETS.frame) {
+      const long = { ...frame, cause: causeOf(frame, this.#happenings) };
+      this.longFrame = long;
+      this.#recording?.longFrames.push(long);
+    }
     if (this.#refreshDropped !== undefined) {
       this.#refreshDropped += droppedFrames(frame.duration, this.interval);
     }

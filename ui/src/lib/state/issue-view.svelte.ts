@@ -83,6 +83,8 @@ export class IssueViewState {
     if (answer.status === "ok") {
       this.view = answer.data;
       this.error = undefined;
+      // A view that has stopped is no longer on screen, though its last answer can still arrive.
+      if (!this.#stopped) hud.issueShown(this.number, answer.data !== null && answer.data.content !== null);
     } else {
       this.error = answer.error.message;
     }

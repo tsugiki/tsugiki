@@ -16,4 +16,5 @@ release's body, and fails without it
   picks up where it stopped.
 - A portable `.zip` for Windows and a `.dmg` for Apple silicon Macs. An installer comes later, with Alerts.
 - A performance HUD, on `Ctrl+Shift+H` or from the command palette, that shows the window's speed against
-  its budgets and writes a recording's numbers to `tsugiki.log`.
+  its budgets and writes a recording's numbers to `tsugiki.log`. It says what came before a long frame, and
+  times opening an Issue, from the database and from GitHub.

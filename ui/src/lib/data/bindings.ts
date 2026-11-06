@@ -31,7 +31,7 @@ export const commands = {
 	home: () => __TAURI_INVOKE<Home_Serialize>("home"),
 	/**  The milliseconds since Tsugiki started running. */
 	timeRunning: () => __TAURI_INVOKE<number | null>("time_running"),
-	/**  Writes what the performance HUD measured to `tsugiki.log`, and says the line it wrote. */
+	/**  Writes what the performance HUD measured to `tsugiki.log`, and says the summary line it wrote. */
 	recordMeasurement: (measurement: Measurement_Deserialize) => __TAURI_INVOKE<string>("record_measurement", { measurement }),
 	/**
 	 *  What adding the Repository the user typed would load. A check can wait out a stuck request to GitHub, so
@@ -116,6 +116,14 @@ export type BackportRow_Deserialize = {
 export type BackportRow_Serialize = {
 	backport: BackportKind,
 } & WorkbenchRow_Serialize;
+
+/**
+ *  The last thing that happened before a long frame. A key isn't named, so the log holds nothing the
+ *  user typed.
+ */
+export type Cause = { kind: "key" } | { kind: "click" } | { kind: "view_query" } | 
+/**  An Issue's description and comments arrived from GitHub. */
+{ kind: "issue_text"; number: number };
 
 /**  What a sync changed in a Repository's stored facts (ADR 0008). */
 export type Change = {
@@ -304,6 +312,25 @@ export type IssueItem_Serialize = {
 	pull_requests: TreeEntry_Serialize[],
 };
 
+/**  The Issues opened while recording, from the click to the Issue on screen. */
+export type IssueOpenings = IssueOpenings_Serialize | IssueOpenings_Deserialize;
+
+/**  The Issues opened while recording, from the click to the Issue on screen. */
+export type IssueOpenings_Deserialize = {
+	/**  Each Issue, until the window showed what the database held. */
+	from_database: Slowest,
+	/**  The ones whose text the database didn't hold, until that text arrived from GitHub. */
+	from_github?: Slowest | null,
+};
+
+/**  The Issues opened while recording, from the click to the Issue on screen. */
+export type IssueOpenings_Serialize = {
+	/**  Each Issue, until the window showed what the database held. */
+	from_database: Slowest,
+	/**  The ones whose text the database didn't hold, until that text arrived from GitHub. */
+	from_github: Slowest | null,
+};
+
 /**  An Issue as the Detail pane shows it. */
 export type IssueView = IssueView_Serialize | IssueView_Deserialize;
 
@@ -401,6 +428,27 @@ export type LoadedSettings_Serialize = {
 /**  A GitHub username. It reaches the UI as a plain string, in GitHub's casing. */
 export type Login = string;
 
+/**  A frame over the limit. */
+export type LongFrame = LongFrame_Serialize | LongFrame_Deserialize;
+
+/**  A frame over the limit. */
+export type LongFrame_Deserialize = {
+	/**  Its end, in seconds from the start of the recording. */
+	at_s: number | null,
+	ms: number | null,
+	/**  Nothing, if Tsugiki did nothing the HUD knows of during it or right before. */
+	cause?: Cause | null,
+};
+
+/**  A frame over the limit. */
+export type LongFrame_Serialize = {
+	/**  Its end, in seconds from the start of the recording. */
+	at_s: number | null,
+	ms: number | null,
+	/**  Nothing, if Tsugiki did nothing the HUD knows of during it or right before. */
+	cause: Cause | null,
+};
+
 /**  One recording, as the window sends it. Each time is in milliseconds. */
 export type Measurement = Measurement_Serialize | Measurement_Deserialize;
 
@@ -416,6 +464,10 @@ export type Measurement_Deserialize = {
 	/**  The window's wait for each view query. */
 	view_queries?: Slowest | null,
 	refreshes?: Refreshes | null,
+	/**  The Issues opened while recording, if any. */
+	issues?: IssueOpenings_Deserialize | null,
+	/**  Each frame over the limit, in the order they came. */
+	long_frames: LongFrame_Deserialize[],
 };
 
 /**  One recording, as the window sends it. Each time is in milliseconds. */
@@ -430,6 +482,10 @@ export type Measurement_Serialize = {
 	/**  The window's wait for each view query. */
 	view_queries: Slowest | null,
 	refreshes: Refreshes | null,
+	/**  The Issues opened while recording, if any. */
+	issues: IssueOpenings_Serialize | null,
+	/**  Each frame over the limit, in the order they came. */
+	long_frames: LongFrame_Serialize[],
 };
 
 export type PrState = "OPEN" | "CLOSED" | "MERGED";

@@ -124,13 +124,16 @@ fn time_running(started: State<'_, Started>) -> f64 {
     started.0.elapsed().as_secs_f64() * 1000.0
 }
 
-/// Writes what the performance HUD measured to `tsugiki.log`, and says the line it wrote.
+/// Writes what the performance HUD measured to `tsugiki.log`, and says the summary line it wrote.
 #[tauri::command]
 #[specta::specta]
 fn record_measurement(measurement: Measurement) -> String {
-    let line = measurement.summary();
-    log::info!("{line}");
-    line
+    let summary = measurement.summary();
+    log::info!("{summary}");
+    for line in measurement.long_frame_lines() {
+        log::info!("{line}");
+    }
+    summary
 }
 
 fn check_typed_repository(
@@ -305,7 +308,7 @@ mod tests {
     fn a_measurement_answers_with_the_line_it_wrote() {
         let measurement: Measurement = serde_json::from_str(
             r#"{"seconds": 2, "frames": null, "startup_ms": null, "keys": null, "view_queries": null,
-                "refreshes": null}"#,
+                "refreshes": null, "issues": null, "long_frames": [{"at_s": 1, "ms": 30, "cause": null}]}"#,
         )
         .unwrap();
         let line = record_measurement(measurement.clone());

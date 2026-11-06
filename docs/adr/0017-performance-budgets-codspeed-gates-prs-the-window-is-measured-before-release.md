@@ -40,9 +40,16 @@ needed to reach 100 ms.
   The window's wait for a view query includes the core's query and the IPC around it, and the benchmarks
   time the core alone.
 
+  The HUD also keeps the last frame over 25 ms after the 10 s have passed it, with what came before it:
+  a key, a click, a view's answer, or an Issue's text arriving from GitHub. It times the last Issue opened,
+  from the click to the frame that shows it, in two parts. The part the database held counts against the
+  200 ms a PR's conversation has. The part read from GitHub, for an Issue Tsugiki hadn't read before, waits
+  on the network and has no budget.
+
   To measure a release, the maintainer starts a recording, scrolls the Workbench, opens Issues, presses keys
-  and refreshes, then stops it. The HUD writes one line to `tsugiki.log` with the build's version, and the
-  line goes in the release's notes, so the next release can be compared with it. A miss blocks the release
+  and refreshes, then stops it. The HUD writes a summary line to `tsugiki.log` with the build's version, and
+  a line for each frame over 25 ms with its cause. The summary line goes in the release's notes, so the next
+  release can be compared with it. A miss blocks the release
   ([ADR 0012](0012-unsigned-v1-releases-from-a-tag-attested-and-checked.md)).
 
 ## Considered Options

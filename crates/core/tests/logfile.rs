@@ -132,8 +132,8 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
 
     assert_eq!(
         fs::read_dir(&folder).unwrap().count(),
-        2,
-        "the log and the folder only"
+        3,
+        "the log, the folder in the way and the store's lock only"
     );
     fs::remove_dir_all(folder).unwrap();
 }

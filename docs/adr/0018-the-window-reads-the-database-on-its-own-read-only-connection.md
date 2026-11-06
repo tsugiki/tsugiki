@@ -14,12 +14,20 @@ The session opens the reader after `Store` has run the migrations, and a questio
 for that. `StoreReader` holds only a weak link to its thread, so the session alone decides when that thread
 ends. Closing both connections on quit removes the `-wal` file.
 
+One Tsugiki at a time holds `Store` for a data folder. Before it reads or migrates the file, `Store` takes
+an OS lock on `tsugiki.db.lock` beside it, and a second Tsugiki on that folder stops with a Problem that says
+why. The single-instance plugin hands a second `tsg` over to the first, but on macOS two started together can
+both pass its check, and another user's Tsugiki hides it (#126). The lock belongs to the folder, so an
+installed Tsugiki, a development build and a portable copy each hold their own, and the system lets go of it
+when a process ends, crash or not.
+
 ## Considered Options
 
 - **Reads as messages to the session thread.** One thread would own all the data, which is the simplest rule.
   A read would then wait for the request to GitHub in flight, and that breaks the 50 ms budget on every list.
 - **Reads on `Store`'s thread, with the session sending it writes.** The window would stop waiting on GitHub,
   but each read would wait for the save ahead of it.
+- **SQLite's exclusive locking mode** in place of the lock file. It would also keep the reader out.
 - **A connection for each command.** Nothing needs reads to run side by side yet, and each command would pay
   to open SQLite again.
 

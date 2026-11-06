@@ -91,7 +91,12 @@ mod tests {
             .unwrap()
             .map(|entry| entry.unwrap().file_name())
             .collect();
-        assert_eq!(names, ["tsugiki.db"], "no -wal or -shm files either");
+        // The lock is Tsugiki's own, beside the file.
+        assert_eq!(
+            names,
+            ["tsugiki.db", "tsugiki.db.lock"],
+            "no -wal or -shm files either"
+        );
         assert_eq!(backups(&folder), [""; 0]);
         fs::remove_dir_all(folder).unwrap();
     }
@@ -115,7 +120,12 @@ mod tests {
         assert_eq!(problem.kind, ErrorKind::Internal);
         assert_eq!(problem.message, NOT_A_DATABASE);
         assert_eq!(fs::read_to_string(&path).unwrap(), text);
-        assert_eq!(files_in(&folder), ["tsugiki.db"], "SQLite never opened it");
+        let left = files_in(&folder);
+        assert_eq!(
+            left,
+            ["tsugiki.db", "tsugiki.db.lock"],
+            "SQLite never opened it"
+        );
         fs::remove_dir_all(folder).unwrap();
     }
 

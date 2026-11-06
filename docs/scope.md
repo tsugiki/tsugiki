@@ -72,11 +72,11 @@ The order in which v1 is built is in [build-order.md](build-order.md).
     An item that Needs attention is marked the way unread mail is. In the Workbench, a Filter or Pinned
     issues, items that Need attention come first, newest first by when they started to need it, then the rest
     by last update, then the quiet section. The preview says why in the words an **Alert** would use: "CI
-    failed: Tests / Ubuntu", "Changes requested by vstinner", "Review requested from you". An Issue's Origin
-    PRs and their Backports are listed under it, and ↑ ↓ stop on each of them. `Enter` or a click opens the
-    item or PR under the cursor in the Detail pane. Any item can be **Archived** or **Muted**, and its author
-    **Muted**. A footer under the list gives the legend and the list's keys (↑ ↓, E, M, `Alt+←`, `?` for all);
-    it can be switched off.
+    failed: Tests / Ubuntu", "Changes requested by some-reviewer", "Review requested from you". An Issue's
+    Origin PRs and their Backports are listed under it, and ↑ ↓ stop on each of them. `Enter` or a click opens
+    the item or PR under the cursor in the Detail pane. Any item can be **Archived** or **Muted**, and its
+    author **Muted**. A footer under the list gives the legend and the list's keys (↑ ↓, E, M, `Alt+←`, `?`
+    for all); it can be switched off.
   - **Detail pane** (right): the selected item. That is either an **Issue view** or a **PR view**.
     - The Issue view shows the title and its author, the Origin PRs, the description, and recent comments,
       with a box to comment. Each Origin PR's Backports are folded into one line that gives their branches and

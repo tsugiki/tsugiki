@@ -36,8 +36,8 @@ checks each attestation. Nothing is public until you publish.
 
 The workflow can't do these, so you do them on the draft's files:
 
-- Run the macOS checklist on the `.dmg` ([ADR 0009](adr/0009-testing-and-full-coverage.md)). It isn't written
-  yet.
+- Run the [macOS checklist](macos-checklist.md) on the `.dmg`
+  ([ADR 0009](adr/0009-testing-and-full-coverage.md)).
 - Measure the performance budgets in the real window on Windows and macOS
   ([ADR 0017](adr/0017-performance-budgets-codspeed-gates-prs-the-window-is-measured-before-release.md)).
 

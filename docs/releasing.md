@@ -6,7 +6,7 @@ and `.github/workflows/release.yml` holds the details.
 
 ## 1. Prepare the version
 
-In a PR to main:
+In a PR to main from a `release/X.Y` branch, such as `release/0.1`:
 
 1. Set `version` in `[workspace.package]` in `Cargo.toml`, and run `cargo check` so `Cargo.lock` follows. The
    release builds use `--locked`, and they fail if it doesn't.
@@ -15,6 +15,7 @@ In a PR to main:
 
 `just release-check` prints the notes the release will carry. CI's `release-check` job fails the PR if
 `CHANGELOG.md` has no section for that version, and the `deny` job fails it if `Cargo.lock` didn't follow.
+Each push to the PR also rehearses the release (see [Rehearsing](#rehearsing)).
 
 ## 2. Tag it
 
@@ -47,16 +48,12 @@ a published release's files or tag, so to fix a bad release, make a new version.
 
 ## Rehearsing
 
-To try the workflow without a release, for example after you change it, run it on a branch:
-
-```
-gh workflow run release.yml --repo tsugiki/tsugiki --ref <branch>
-```
-
-Or use "Run workflow" on the Release workflow in the Actions tab. A rehearsal needs no tag. It checks that
+Each push to a PR from a `release/` branch rehearses the release. A PR from another branch starts a Release
+run that skips every job, and CI fails it if it sets a version or changes the workflow. To try a change to
+the workflow, push it on a `release/` branch and open a PR. A rehearsal needs no tag. It checks that
 `CHANGELOG.md` has a section for `Cargo.toml`'s version, runs the smoke test and builds the zip and the dmg,
-then stops, so it leaves no attestation and no draft. You can download both from the run, but they have no
-attestation, so don't hand them to anyone.
+then stops, so it leaves no attestation and no draft. A newer push cancels the PR's older rehearsal. You can
+download both files from the run, but they have no attestation, so don't hand them to anyone.
 
 ## If the workflow fails
 

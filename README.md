@@ -22,41 +22,59 @@ web UI. The name comes from **Backports**: a fix lands on main and is grafted on
 For the **Repositories** you add, such as `python/cpython` and your own projects, Tsugiki:
 
 - groups PRs under the Issues they fix, with each fix's Backports beside it;
-- works out what is waiting on you from GitHub's own data, not from notifications;
+- works out what waits on you from GitHub's own data, so a notification you missed hides nothing;
 - lets you review inside the app, with a fast diff, review state kept per PR, and VS Code keybindings;
 - keeps your GitHub token in its Rust core, away from the webview, and works with a read-only token if you'd
   rather not hand it write access.
 
 ## Status
 
-Tsugiki is being designed. There is no app to install yet. The decisions made so far are written down here:
+Tsugiki 0.1 is the first version for daily work. It lists the Issues that wait on you, and you answer them
+on GitHub. Reviewing PRs in the app comes in the later stages of
+[docs/build-order.md](docs/build-order.md). These files record the decisions behind it:
 
 - [CONTEXT.md](CONTEXT.md): the glossary. Terms in **bold** are defined there.
 - [docs/scope.md](docs/scope.md): what v1 does, and what it leaves out.
-- [docs/adr](docs/adr/): architecture decisions and why they were made.
-- [Issues](https://github.com/tsugiki/tsugiki/issues): open points to check before building.
+- [docs/adr](docs/adr/): architecture decisions, each with its reasons.
+- [Issues](https://github.com/tsugiki/tsugiki/issues): open points and planned work.
 
-It will be a [Tauri](https://tauri.app/) app (Rust with Svelte 5 and TypeScript) for Windows and macOS. Its
+It is a [Tauri](https://tauri.app/) app (Rust with Svelte 5 and TypeScript) for Windows and macOS. Its
 command-line name is `tsg`.
+
+## Installing
+
+Tsugiki runs on 64-bit Windows and on Macs with Apple silicon. It reads GitHub with the
+[GitHub CLI](https://cli.github.com/)'s token, so install `gh` and run `gh auth login` first.
+
+Download the latest release from [Releases](https://github.com/tsugiki/tsugiki/releases). Tsugiki isn't
+code-signed yet, so Windows and macOS warn you the first time you open it:
+
+- **Windows:** unzip the `x64-portable.zip` anywhere and run `tsg.exe`. When Windows says "Windows protected
+  your PC", click More info, then Run anyway. Tsugiki keeps its data in the `data` folder next to `tsg.exe`.
+- **macOS:** open the `.dmg` and drag Tsugiki to Applications. macOS blocks it the first time, so open
+  System Settings › Privacy & Security and click Open Anyway beside Tsugiki.
+
+Then add a Repository, such as `python/cpython`. Its first sync loads what waits on you before anything
+else, and the status bar shows how far it has got.
 
 ## Checking a download
 
-Tsugiki's downloads aren't code-signed, so Windows and macOS warn you when you open one. What shows where a
-file came from is its attestation: a public record, made when the file was built, that ties the file's exact
-bytes to Tsugiki's release workflow and the commit it ran on. To check a file you downloaded, use the
-[GitHub CLI](https://cli.github.com/):
+Tsugiki's downloads aren't code-signed, so Windows and macOS warn you when you open one. Each file's
+attestation shows where it came from. Tsugiki's release workflow writes this public record as it builds the
+file, and the record ties the file's exact bytes to the workflow and the commit it ran on. To check a file
+you downloaded, use the [GitHub CLI](https://cli.github.com/):
 
 ```
 gh attestation verify <file> --repo tsugiki/tsugiki --signer-workflow tsugiki/tsugiki/.github/workflows/release.yml
 ```
 
-If this fails, the file isn't the one Tsugiki's workflow built, so don't run it, and please open an issue. A
-pass tells you where the file came from. It doesn't tell you the code is free of bugs.
+If this fails, the file isn't the one Tsugiki's workflow built, so don't run it, and open an issue. A pass
+tells you where the file came from, and says nothing about bugs in the code.
 
 ## Reporting a bug
 
-Tsugiki keeps a log of why things failed, and attaching it to a bug report helps. It stays on your computer
-unless you send it, and Tsugiki hides your GitHub token in it. It can still name your paths, your login and
+Tsugiki keeps a log of why things failed, so attach it to a bug report. It stays on your computer unless
+you send it, and Tsugiki hides your GitHub token in it. It can still name your paths, your login and
 the links Tsugiki was asked to open, and quote what GitHub sent, so read it before you post it.
 
 | Where Tsugiki runs | The log |

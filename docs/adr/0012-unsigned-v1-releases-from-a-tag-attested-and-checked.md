@@ -39,9 +39,11 @@ published.
      0017](0017-performance-budgets-codspeed-gates-prs-the-window-is-measured-before-release.md)), and
      publishes the release by hand.
 - **Before a tag.** CI fails a PR when `CHANGELOG.md` has no section for the version in `Cargo.toml`, so a
-  mistake shows before anyone tags it. To try the workflow itself, the maintainer starts it from the Actions
-  tab on any branch. That rehearsal runs the checks, the smoke test and the builds, then stops: it makes no
-  tag, no attestation and no release.
+  mistake shows before anyone tags it. The PR that sets a version comes from a `release/` branch, such as
+  `release/0.1`, and each push to it rehearses the workflow: the checks, the smoke test and the builds run,
+  then it stops, with no tag, no attestation and no release. Nobody starts a rehearsal by hand, and a change
+  to the workflow is tried on a `release/` branch too. CI fails a PR from any other branch that sets a version
+  or changes the workflow, so none skips its rehearsal unseen.
 - The repository has GitHub's immutable releases turned on, so a published release's assets and tag can't
   change.
 - **Update notices.** Tsugiki asks `api.github.com/repos/tsugiki/tsugiki/releases/latest` at start-up and

@@ -7,14 +7,43 @@ release's body, and fails without it
 
 ## WIP
 
+## Version 0.1.0 (2026-11-06)
+
+The first version for daily work. It lists the Issues that wait on you in `python/cpython` and your own
+Repositories, and you answer them on GitHub.
+
 ### Added
 
-- A window that follows whether GitHub can be reached and who is signed in.
+- Add a Repository by its name or its link. Tsugiki uses the GitHub CLI's token, so sign in with
+  `gh auth login` first.
+- A first sync loads what waits on you before anything else, so the Workbench is right in about a minute.
+  Then it loads everything open in a small Repository, or the last 30 days of a large one like CPython. The
+  status bar shows its progress, and a sync you quit resumes where it stopped. After that, Tsugiki refreshes
+  on its own, and when you click the status bar.
+- The Sidebar: the Workbench, Review requests, the starter Filters, and Filters you write in `settings.toml`,
+  each with its count.
+- The Workbench lists Issues by Needs attention, says why each one waits on you, and shows its Origin PRs with
+  their Backports beneath them.
+- The Issue view: the title, description and comments, and each PR with its state, CI and Reviews.
+- Last seen and New activity: an Issue you've read stops looking unread until something new happens on it.
+- `↑`/`↓` and `Enter` move through the list and open an Issue, and `Ctrl+Shift+G` opens it on GitHub. On
+  macOS, `Cmd` replaces `Ctrl` in Tsugiki's keys.
+- The window shows whether Tsugiki can reach GitHub, and who is signed in.
 - `tsg` runs one Tsugiki and passes `tsugiki://` links and other arguments to it.
-- Tsugiki's keys reach Tsugiki: Print, Reload and the other browser shortcuts stay off.
-- A first sync also loads the last 30 days in the background, shows its progress in the status bar, and
-  picks up where it stopped.
+- Print, Reload and the other browser shortcuts stay off, so Tsugiki gets those keys.
 - A portable `.zip` for Windows and a `.dmg` for Apple silicon Macs. An installer comes later, with Alerts.
-- A performance HUD, on `Ctrl+Shift+H` or from the command palette, that shows the window's speed against
-  its budgets and writes a recording's numbers to `tsugiki.log`. It says what came before a long frame, and
-  times opening an Issue, from the database and from GitHub.
+- A performance HUD, on `Ctrl+Shift+H` or from the command palette. It shows the window's speed against
+  its budgets, names what came before a long frame, and times opening an Issue, from the database and from
+  GitHub. Hide it to write the recording's numbers to `tsugiki.log`.
+
+### First install
+
+Tsugiki isn't code-signed yet, so Windows and macOS warn you the first time you open it. To make sure a
+download is the file Tsugiki's workflow built, follow
+[Checking a download](https://github.com/tsugiki/tsugiki#checking-a-download) before you open it.
+
+- **Windows:** unzip `Tsugiki_0.1.0_x64-portable.zip` anywhere and run `tsg.exe`. When Windows says "Windows
+  protected your PC", click More info, then Run anyway. Tsugiki keeps its data in the `data` folder next to
+  `tsg.exe`.
+- **macOS:** open the `.dmg` and drag Tsugiki to Applications. macOS blocks it the first time, so open
+  System Settings › Privacy & Security and click Open Anyway beside Tsugiki.

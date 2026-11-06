@@ -23,7 +23,8 @@ pub(super) const SCHEMA: &str = "
         author TEXT,
         created_at INTEGER NOT NULL,
         body_html TEXT NOT NULL,
-        PRIMARY KEY (repository, number, position)
+        PRIMARY KEY (repository, number, position),
+        FOREIGN KEY (repository, number) REFERENCES issue_content (repository, number)
     );
 ";
 

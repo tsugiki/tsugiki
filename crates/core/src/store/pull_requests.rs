@@ -33,20 +33,23 @@ pub(super) const SCHEMA: &str = "
         repository TEXT NOT NULL COLLATE NOCASE,
         number INTEGER NOT NULL,
         login TEXT NOT NULL COLLATE NOCASE,
-        PRIMARY KEY (repository, number, login)
+        PRIMARY KEY (repository, number, login),
+        FOREIGN KEY (repository, number) REFERENCES pull_requests (repository, number)
     ) WITHOUT ROWID;
     CREATE TABLE latest_reviews (
         repository TEXT NOT NULL COLLATE NOCASE,
         number INTEGER NOT NULL,
         login TEXT NOT NULL COLLATE NOCASE,
         state TEXT NOT NULL,
-        PRIMARY KEY (repository, number, login)
+        PRIMARY KEY (repository, number, login),
+        FOREIGN KEY (repository, number) REFERENCES pull_requests (repository, number)
     ) WITHOUT ROWID;
     CREATE TABLE assignees (
         repository TEXT NOT NULL COLLATE NOCASE,
         number INTEGER NOT NULL,
         login TEXT NOT NULL COLLATE NOCASE,
-        PRIMARY KEY (repository, number, login)
+        PRIMARY KEY (repository, number, login),
+        FOREIGN KEY (repository, number) REFERENCES pull_requests (repository, number)
     ) WITHOUT ROWID;
 ";
 
@@ -58,7 +61,8 @@ pub(super) const LINK_FACTS: &str = "
         repository TEXT NOT NULL COLLATE NOCASE,
         number INTEGER NOT NULL,
         issue INTEGER NOT NULL,
-        PRIMARY KEY (repository, number, issue)
+        PRIMARY KEY (repository, number, issue),
+        FOREIGN KEY (repository, number) REFERENCES pull_requests (repository, number)
     ) WITHOUT ROWID;
 ";
 
@@ -71,14 +75,16 @@ pub(super) const BACKPORT_FACTS: &str = "
         repository TEXT NOT NULL COLLATE NOCASE,
         number INTEGER NOT NULL,
         sha TEXT NOT NULL,
-        PRIMARY KEY (repository, number, sha)
+        PRIMARY KEY (repository, number, sha),
+        FOREIGN KEY (repository, number) REFERENCES pull_requests (repository, number)
     ) WITHOUT ROWID;
     CREATE TABLE committers (
         repository TEXT NOT NULL COLLATE NOCASE,
         number INTEGER NOT NULL,
         position INTEGER NOT NULL,
         login TEXT,
-        PRIMARY KEY (repository, number, position)
+        PRIMARY KEY (repository, number, position),
+        FOREIGN KEY (repository, number) REFERENCES pull_requests (repository, number)
     ) WITHOUT ROWID;
 ";
 
@@ -205,7 +211,7 @@ fn forget_latest_reviews(
         .map(drop)
 }
 
-pub(super) fn forget_assignees(
+fn forget_assignees(
     connection: &Connection,
     repository: &RepositoryName,
     number: u32,
@@ -330,7 +336,7 @@ fn save_latest_review(
         .map(drop)
 }
 
-pub(super) fn save_assignee(
+fn save_assignee(
     connection: &Connection,
     repository: &RepositoryName,
     number: u32,
@@ -379,7 +385,7 @@ fn review_requests(
     )
 }
 
-pub(super) fn assignees(
+fn assignees(
     connection: &Connection,
     repository: &RepositoryName,
 ) -> rusqlite::Result<BTreeMap<u32, Vec<Login>>> {
@@ -392,7 +398,7 @@ pub(super) fn assignees(
 
 /// Each item's values in the `value` column of what `statement` answers, by its `number` column. Each
 /// column is found by name once, because a search on every row costs more than reading it.
-fn values_by_number<T: FromSql>(
+pub(super) fn values_by_number<T: FromSql>(
     mut statement: Statement<'_>,
     params: &[(&str, &dyn ToSql)],
     value: &str,

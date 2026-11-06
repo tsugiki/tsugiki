@@ -15,6 +15,8 @@ use crate::error::{Error, ErrorKind};
 const KEPT_OTHER_BACKUPS: usize = 2;
 
 /// One numbered step of the schema. A released step never changes, since a user's file has already run it.
+/// Until 0.1 nothing is released, so a step can change in place, and a file from before the change has to be
+/// deleted by hand.
 pub(super) struct Migration {
     pub(super) version: u32,
     pub(super) sql: &'static str,
@@ -109,15 +111,51 @@ pub(super) fn run(
     if holds_something {
         back_up(connection, path, version)?;
     }
-    let run_all = |connection: &mut Connection| -> rusqlite::Result<()> {
-        let transaction = connection.transaction()?;
-        for step in pending {
-            transaction.execute_batch(step.sql)?;
-            transaction.pragma_update(None, "user_version", step.version)?;
-        }
-        transaction.commit()
-    };
-    run_all(connection).map_err(saying(CANT_UPDATE))
+    connection
+        .pragma_update(None, "foreign_keys", false)
+        .map_err(saying(CANT_UPDATE))?;
+    let ran = run_checked(connection, &pending);
+    let enforced = connection
+        .pragma_update(None, "foreign_keys", true)
+        .map_err(saying(CANT_UPDATE));
+    ran.and(enforced)
+}
+
+/// Runs `pending` in one transaction, and commits only if every foreign key still holds. These are SQLite's
+/// steps for changing a table, from the ALTER TABLE page of its docs: a step that rebuilds a table
+/// others point at drops it first, which enforcement refuses. `PRAGMA foreign_keys` does nothing inside a
+/// transaction, so `run` turns enforcement off before this and back on after it.
+fn run_checked(connection: &mut Connection, pending: &[&Migration]) -> Result<(), Error> {
+    let transaction = connection.transaction().map_err(saying(CANT_UPDATE))?;
+    for step in pending {
+        transaction
+            .execute_batch(step.sql)
+            .map_err(saying(CANT_UPDATE))?;
+        transaction
+            .pragma_update(None, "user_version", step.version)
+            .map_err(saying(CANT_UPDATE))?;
+    }
+    let broken = broken_keys(&transaction).map_err(saying(CANT_UPDATE))?;
+    if !broken.is_empty() {
+        // Dropping the transaction rolls it back.
+        return Err(saying(CANT_UPDATE)(format!(
+            "rows break a foreign key, from table to table: {}",
+            broken.join(", ")
+        )));
+    }
+    transaction.commit().map_err(saying(CANT_UPDATE))
+}
+
+/// Each pair of tables where a row points at a row that isn't there, as `child -> parent`.
+fn broken_keys(connection: &Connection) -> rusqlite::Result<Vec<String>> {
+    let query = "SELECT DISTINCT \"table\" AS child, parent FROM pragma_foreign_key_check ORDER BY child, parent";
+    let mut statement = connection.prepare(query)?;
+    let pairs = statement.query_map([], |row| {
+        let child: String = row.get("child")?;
+        let parent: String = row.get("parent")?;
+        Ok(format!("{child} -> {parent}"))
+    });
+    pairs?.collect()
 }
 
 /// Writes `tsugiki.db.v<version>.bak`, replacing one a failed migration left. The copy gets its final name
@@ -386,6 +424,92 @@ mod tests {
 
         assert!(problem.message.contains("newer"), "{}", problem.message);
         drop(writer);
+        fs::remove_dir_all(folder).unwrap();
+    }
+
+    /// A parent and a child that points at it.
+    const PARENTS: Migration = Migration {
+        version: 2,
+        sql: "CREATE TABLE parents (id INTEGER PRIMARY KEY);
+              CREATE TABLE children (id INTEGER PRIMARY KEY, parent INTEGER NOT NULL REFERENCES parents (id));
+              INSERT INTO parents (id) VALUES (1);
+              INSERT INTO children (parent) VALUES (1);",
+    };
+
+    /// Gives `parents` a new column the way SQLite's steps for changing a table do: a new table, a copy, a
+    /// drop and a rename. Dropping a parent that has children fails while foreign keys are enforced.
+    const REBUILT_PARENTS: Migration = Migration {
+        version: 3,
+        sql: "CREATE TABLE new_parents (id INTEGER PRIMARY KEY, name TEXT NOT NULL DEFAULT '');
+              INSERT INTO new_parents (id) SELECT id FROM parents;
+              DROP TABLE parents;
+              ALTER TABLE new_parents RENAME TO parents;",
+    };
+
+    const ORPHAN: Migration = Migration {
+        version: 3,
+        sql: "INSERT INTO children (parent) VALUES (99);",
+    };
+
+    fn children(path: &Path) -> Vec<u32> {
+        let connection = Connection::open(path).unwrap();
+        let mut statement = connection
+            .prepare("SELECT parent FROM children ORDER BY id")
+            .unwrap();
+        statement
+            .query_map([], |row| row.get("parent"))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+
+    fn enforces_foreign_keys(connection: &Connection) -> bool {
+        connection
+            .pragma_query_value(None, "foreign_keys", |row| row.get("foreign_keys"))
+            .unwrap()
+    }
+
+    #[test]
+    fn a_migration_can_rebuild_a_table_that_others_point_at() {
+        let (path, folder) = temp_database("rebuilt-parent");
+        open_with(&path, &[V1, PARENTS]).unwrap().close();
+
+        open_with(&path, &[V1, PARENTS, REBUILT_PARENTS])
+            .unwrap()
+            .close();
+
+        assert_eq!(user_version(&path), 3);
+        assert_eq!(children(&path), [1]);
+        fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn a_migration_that_breaks_a_foreign_key_fails_and_changes_nothing() {
+        let (path, folder) = temp_database("broken-key");
+        open_with(&path, &[V1, PARENTS]).unwrap().close();
+
+        let problem = open_with(&path, &[V1, PARENTS, ORPHAN]).err().unwrap();
+
+        assert_eq!(problem.kind, ErrorKind::Internal);
+        assert_eq!(problem.message, CANT_UPDATE);
+        assert_eq!(user_version(&path), 2);
+        assert_eq!(children(&path), [1]);
+        assert_eq!(backups(&folder), ["tsugiki.db.v2.bak"]);
+        assert_eq!(children(&folder.join("tsugiki.db.v2.bak")), [1]);
+        fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn foreign_keys_are_enforced_again_after_a_migration_whatever_happened() {
+        let (path, folder) = temp_database("keys-back-on");
+        let mut connection = Connection::open(&path).unwrap();
+
+        run(&mut connection, &path, &[V1, PARENTS]).unwrap();
+        assert!(enforces_foreign_keys(&connection));
+        let _problem = run(&mut connection, &path, &[V1, PARENTS, ORPHAN]).unwrap_err();
+        assert!(enforces_foreign_keys(&connection));
+
+        drop(connection);
         fs::remove_dir_all(folder).unwrap();
     }
 

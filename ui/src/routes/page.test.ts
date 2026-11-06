@@ -14,7 +14,7 @@ vi.mock("$lib/data/bindings", () => ({
   commands: {
     about: async () => ({ name: "Tsugiki", version: "1.2.3" }),
     status: async () => ({ state: "online", login: "octocat" }),
-    lastSync: async () => ({ repository: "sergey-miryanov/gcmon", at: null }),
+    lastSync: async () => ({ repository: "some-maintainer/gcmon", at: null }),
     syncActivity: async () => null,
     refresh: async () => null,
     ...core,
@@ -28,7 +28,7 @@ vi.mock("$lib/data/bindings", () => ({
 }));
 
 const onboarding = { screen: "onboarding", token: "gh" } as const;
-const gcmon = { name: "sergey-miryanov/gcmon", conventions: "github", filters: [] } as const;
+const gcmon = { name: "some-maintainer/gcmon", conventions: "github", filters: [] } as const;
 
 beforeEach(() => {
   core.home.mockResolvedValue(onboarding);

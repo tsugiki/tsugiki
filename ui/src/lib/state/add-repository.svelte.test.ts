@@ -5,7 +5,7 @@ import { AddRepositoryState } from "./add-repository.svelte";
 vi.mock("$lib/data/bindings", () => ({ commands: { checkRepository: vi.fn(), addRepository: vi.fn() } }));
 
 const check: RepositoryCheck_Serialize = {
-  repository: { name: "Sergey-Miryanov/gcmon", conventions: "github", filters: [] },
+  repository: { name: "Some-Maintainer/gcmon", conventions: "github", filters: [] },
   open_issues: 10,
   open_prs: 3,
   size: "small",
@@ -25,13 +25,13 @@ beforeEach(() => {
 it("asks about what the user typed and holds the answer", async () => {
   vi.mocked(commands.checkRepository).mockResolvedValue({ status: "ok", data: check });
   const state = new AddRepositoryState();
-  state.input = "sergey-miryanov/gcmon";
+  state.input = "some-maintainer/gcmon";
 
   const checking = state.check();
   expect(state.step).toEqual({ step: "checking" });
   await checking;
 
-  expect(commands.checkRepository).toHaveBeenCalledWith("sergey-miryanov/gcmon");
+  expect(commands.checkRepository).toHaveBeenCalledWith("some-maintainer/gcmon");
   expect(state.step).toEqual({ step: "checked", check });
 });
 
@@ -87,7 +87,7 @@ it("adds by the name GitHub gave and returns what the window opens on", async ()
   expect(state.step).toEqual({ step: "adding", check });
 
   expect(await adding).toEqual(home);
-  expect(commands.addRepository).toHaveBeenCalledWith("Sergey-Miryanov/gcmon", "maintained");
+  expect(commands.addRepository).toHaveBeenCalledWith("Some-Maintainer/gcmon", "maintained");
 });
 
 it("says why an add failed", async () => {

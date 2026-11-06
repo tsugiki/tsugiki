@@ -192,7 +192,7 @@ fn merged_and_closed_prs_are_frozen_and_open_ones_are_not() {
             ],
         )
         .unwrap();
-    let elsewhere = RepositoryName::parse("sergey-miryanov/gcmon").unwrap();
+    let elsewhere = RepositoryName::parse("some-maintainer/gcmon").unwrap();
     store
         .save_pull_requests(&elsewhere, vec![merged(4)])
         .unwrap();

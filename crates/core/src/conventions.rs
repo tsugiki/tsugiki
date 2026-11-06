@@ -157,7 +157,7 @@ mod tests {
         for cpython in ["python/cpython", "Python/CPython"] {
             assert_eq!(for_name(cpython), Conventions::Cpython);
         }
-        for other in ["sergey-miryanov/gcmon", "python/peps", "someone/cpython"] {
+        for other in ["some-maintainer/gcmon", "python/peps", "someone/cpython"] {
             assert_eq!(for_name(other), Conventions::Github);
         }
     }

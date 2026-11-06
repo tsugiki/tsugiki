@@ -567,6 +567,10 @@ fn open_with(path: &Path, migrations: &[Migration]) -> Result<Store, Error> {
     connection
         .pragma_update(None, "journal_mode", "WAL")
         .map_err(saying(CANT_OPEN))?;
+    // The bundled SQLite enforces foreign keys from the start, but another build might not.
+    connection
+        .pragma_update(None, "foreign_keys", true)
+        .map_err(saying(CANT_OPEN))?;
     migrate::run(&mut connection, path, migrations)?;
     // A crash, a force-kill or a quit during a slow request skips closing the store, which would leave a new
     // version in the `-wal` file, where `file::check` can't see it. If another connection blocks this, SQLite
@@ -886,10 +890,52 @@ mod tests {
             "cherry_picks",
             "committers",
             "issues",
+            "issue_assignees",
             "filter_matches",
             "filter_problems",
         ];
-        assert_eq!(tables.map(reads), [true; 11]);
+        assert_eq!(tables.map(reads), [true; 12]);
+    }
+
+    #[test]
+    fn a_row_for_an_item_the_store_doesnt_hold_is_refused() {
+        // Tsugiki's own saves write an item before its rows, so only SQL can write one without the other.
+        let connection = migrated();
+        let orphans = [
+            "INSERT INTO review_requests VALUES ('python/cpython', 1, 'someone')",
+            "INSERT INTO latest_reviews VALUES ('python/cpython', 1, 'someone', 'APPROVED')",
+            "INSERT INTO assignees VALUES ('python/cpython', 1, 'someone')",
+            "INSERT INTO closing_references VALUES ('python/cpython', 1, 7)",
+            "INSERT INTO cherry_picks VALUES ('python/cpython', 1, '0123abc')",
+            "INSERT INTO committers VALUES ('python/cpython', 1, 0, 'someone')",
+            "INSERT INTO issue_assignees VALUES ('python/cpython', 7, 'someone')",
+            "INSERT INTO issue_comments VALUES ('python/cpython', 7, 0, 'someone', 0, '<p>Hi</p>')",
+        ];
+        let refused = orphans.map(|sql| {
+            let refusal = connection.execute(sql, []).err();
+            refusal.and_then(|error| error.sqlite_error().map(|failure| failure.extended_code))
+        });
+        assert_eq!(
+            refused,
+            [Some(rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY); 8]
+        );
+    }
+
+    #[test]
+    fn a_store_with_nothing_to_migrate_enforces_foreign_keys() {
+        let (path, folder) = temp_database("keys-enforced");
+        open_with(&path, &[V1]).unwrap().close();
+
+        let store = open_with(&path, &[V1]).unwrap();
+        let enforced: bool = store
+            .call(|connection| {
+                connection.pragma_query_value(None, "foreign_keys", |row| row.get("foreign_keys"))
+            })
+            .unwrap()
+            .unwrap();
+        store.close();
+        fs::remove_dir_all(folder).unwrap();
+        assert!(enforced);
     }
 
     #[test]

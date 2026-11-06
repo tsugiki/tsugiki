@@ -211,6 +211,7 @@ const SELECT_LISTED_EVENTS: &str =
          UNION SELECT number FROM issues WHERE repository = :repository AND author = :viewer
          UNION SELECT number FROM latest_reviews WHERE repository = :repository AND login = :viewer
          UNION SELECT number FROM assignees WHERE repository = :repository AND login = :viewer
+         UNION SELECT number FROM issue_assignees WHERE repository = :repository AND login = :viewer
          UNION SELECT number FROM activity WHERE repository = :repository AND who = :viewer
      )))
      ORDER BY noticed_at, kind, target, who";

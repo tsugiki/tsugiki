@@ -21,8 +21,8 @@ with it.
    [Checking a download](../README.md#checking-a-download) says.
 2. Open the `.dmg` and drag Tsugiki to Applications.
 3. Open Tsugiki from Applications. macOS blocks it. Open System Settings › Privacy & Security, click Open
-   Anyway beside Tsugiki, and confirm. The window opens, and what you saw matches the release notes' First
-   install steps.
+   Anyway beside Tsugiki, and confirm. The window opens, and what you saw matches the steps in
+   [Installing](../README.md#installing).
 4. Quit Tsugiki and open it again. It opens with no warning.
 
 ## The window and its keys

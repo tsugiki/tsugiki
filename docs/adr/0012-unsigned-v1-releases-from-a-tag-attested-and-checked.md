@@ -57,8 +57,8 @@ published.
 - **Release notes** live in `CHANGELOG.md`. Its "WIP" section is kept current as changes land, and the PR that
   sets the version renames it to `## Version X.Y.Z (YYYY-MM-DD)`. A version's section has Added, Changed and
   Fixed in the glossary's words. It has a Database part when a migration runs, saying that older versions
-  can't open the file and whether the cache is synced again. It ends with the first-install steps for
-  SmartScreen and Open Anyway.
+  can't open the file and whether the cache is synced again. The first-install steps for SmartScreen and Open
+  Anyway live in the README's Installing, so only the first version's section carries them.
 
 ## Considered Options
 

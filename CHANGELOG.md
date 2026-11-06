@@ -7,6 +7,11 @@ release's body, and fails without it
 
 ## WIP
 
+## Version 0.1.1 (2026-11-07)
+
+Repositories sync in turns, so a first sync of a large Repository no longer holds back the one you have open.
+The window logs each performance budget it misses to `tsugiki.log`.
+
 ### Added
 
 - Tsugiki writes a line to `tsugiki.log` each time the window misses a performance budget, such as a slow

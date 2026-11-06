@@ -290,6 +290,7 @@ The order in which v1 is built is in [build-order.md](build-order.md).
 | Archive / Mute the selected item | `E` / `M` |
 | Settings | `Ctrl+,` |
 | Zoom in / out / reset | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
+| Show or hide the performance HUD | `Ctrl+Shift+H` |
 
 - The webview's own browser shortcuts (Print, Reload, Find, zoom, DevTools) never fire in a release build;
   Tsugiki's keys win, on any keyboard layout. Zoom is Tsugiki's, kept per machine, and Ctrl+wheel doesn't

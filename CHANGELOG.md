@@ -15,3 +15,5 @@ release's body, and fails without it
 - A first sync also loads the last 30 days in the background, shows its progress in the status bar, and
   picks up where it stopped.
 - A portable `.zip` for Windows and a `.dmg` for Apple silicon Macs. An installer comes later, with Alerts.
+- A performance HUD, on `Ctrl+Shift+H` or from the command palette, that shows the window's speed against
+  its budgets and writes a recording's numbers to `tsugiki.log`.

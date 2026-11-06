@@ -8,6 +8,8 @@ mod slow_commands;
 mod startup;
 mod wiring;
 
+use std::time::Instant;
+
 use serde::Serialize;
 use specta::Type;
 pub use startup::run;
@@ -15,6 +17,7 @@ use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
 use tsugiki_core::error::Error;
 use tsugiki_core::latest::LatestReader;
+use tsugiki_core::measurement::Measurement;
 use tsugiki_core::repository::{Home, RepositoryAccess, RepositoryCheck, RepositoryName};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{LoadedSettings, SettingsOwner};
@@ -102,6 +105,32 @@ fn settings(owner: State<'_, SettingsOwner>) -> LoadedSettings {
 #[specta::specta]
 fn home(owner: State<'_, SettingsOwner>) -> Home {
     owner.view().home
+}
+
+/// The moment Tsugiki's code started running, for the performance HUD's start-up time (ADR 0017). The
+/// process itself started a moment earlier, but Rust has no portable way to ask the OS when.
+pub(crate) struct Started(Instant);
+
+impl Started {
+    pub(crate) fn now() -> Self {
+        Self(Instant::now())
+    }
+}
+
+/// The milliseconds since Tsugiki started running.
+#[tauri::command]
+#[specta::specta]
+fn time_running(started: State<'_, Started>) -> f64 {
+    started.0.elapsed().as_secs_f64() * 1000.0
+}
+
+/// Writes what the performance HUD measured to `tsugiki.log`, and says the line it wrote.
+#[tauri::command]
+#[specta::specta]
+fn record_measurement(measurement: Measurement) -> String {
+    let line = measurement.summary();
+    log::info!("{line}");
+    line
 }
 
 fn check_typed_repository(
@@ -199,6 +228,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             fetch_issue,
             settings,
             home,
+            time_running,
+            record_measurement,
             slow_commands::check_repository,
             slow_commands::add_repository,
             slow_commands::workbench,
@@ -257,6 +288,28 @@ mod tests {
     #[test]
     fn about_answers_with_what_the_core_says() {
         assert_eq!(about(), tsugiki_core::about());
+    }
+
+    #[test]
+    fn time_running_counts_from_the_start() {
+        let app = mock_app();
+        assert!(app.manage(Started::now()));
+        std::thread::sleep(Duration::from_millis(20));
+        let first = time_running(app.state());
+        let second = time_running(app.state());
+        assert!(first >= 20.0, "{first}");
+        assert!(second >= first, "{first} then {second}");
+    }
+
+    #[test]
+    fn a_measurement_answers_with_the_line_it_wrote() {
+        let measurement: Measurement = serde_json::from_str(
+            r#"{"seconds": 2, "frames": null, "startup_ms": null, "keys": null, "view_queries": null,
+                "refreshes": null}"#,
+        )
+        .unwrap();
+        let line = record_measurement(measurement.clone());
+        assert_eq!(line, measurement.summary());
     }
 
     #[test]

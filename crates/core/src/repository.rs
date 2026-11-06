@@ -286,8 +286,8 @@ mod tests {
     #[test]
     fn a_name_can_hold_what_github_allows() {
         assert_eq!(
-            name("sergey-miryanov/pep848-sim").to_string(),
-            "sergey-miryanov/pep848-sim"
+            name("some-maintainer/pep848-sim").to_string(),
+            "some-maintainer/pep848-sim"
         );
         assert_eq!(name("a/b_c.d-e").to_string(), "a/b_c.d-e");
     }
@@ -365,7 +365,7 @@ mod tests {
     #[test]
     fn up_to_500_open_is_small_and_loads_those_and_what_closed_lately() {
         let check =
-            RepositoryCheck::new(name("sergey-miryanov/gcmon"), FEW, RepositoryAccess::Other);
+            RepositoryCheck::new(name("some-maintainer/gcmon"), FEW, RepositoryAccess::Other);
         assert_eq!(check.size, RepositorySize::Small);
         assert_eq!(check.open_issues, 10);
         assert_eq!(check.open_prs, 3);

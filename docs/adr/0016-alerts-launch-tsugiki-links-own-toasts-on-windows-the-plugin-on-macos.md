@@ -36,9 +36,9 @@ link to one handler in the core, so a `tsugiki://` link opened from a browser wo
   **Muted** item raises only Review request Alerts; an **Archived** one alerts as usual. More than 3 at once,
   as after start-up or coming back online, become one Alert ("5 things need you in python/cpython") that opens
   the Home page. Nothing is raised while Tsugiki isn't running.
-- An Alert's title says what happened: "CI failed", "Review requested", "Changes requested by vstinner", "Bot
-  backport to 3.13 failed". The body gives the PR's title and number, the Repository, and for CI the failed
-  checks. A click on a Review Alert opens the PR at that Review.
+- An Alert's title says what happened: "CI failed", "Review requested", "Changes requested by
+  some-reviewer", "Bot backport to 3.13 failed". The body gives the PR's title and number, the Repository, and
+  for CI the failed checks. A click on a Review Alert opens the PR at that Review.
 
 ## No list of Alerts
 

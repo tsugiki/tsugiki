@@ -894,14 +894,14 @@ visible = false
 
     let home = files
         .add_repository(
-            &repository("sergey-miryanov/gcmon"),
+            &repository("some-maintainer/gcmon"),
             RepositoryAccess::Other,
         )
         .unwrap();
     let after = fs::read_to_string(folders.settings_file()).unwrap();
     fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(home, opened("sergey-miryanov/gcmon", Conventions::Github));
+    assert_eq!(home, opened("some-maintainer/gcmon", Conventions::Github));
     assert_eq!(
         after,
         "\
@@ -911,7 +911,7 @@ name = \"python/cpython\" # The big one.
 conventions = \"cpython\"
 
 [[repositories]]
-name = \"sergey-miryanov/gcmon\"
+name = \"some-maintainer/gcmon\"
 conventions = \"github\"
 
 [[repositories.filters]]

@@ -8,7 +8,7 @@ fn cpython() -> RepositorySettings {
 
 fn gcmon() -> RepositorySettings {
     RepositorySettings {
-        name: RepositoryName::parse("sergey-miryanov/gcmon").unwrap(),
+        name: RepositoryName::parse("some-maintainer/gcmon").unwrap(),
         conventions: Conventions::Github,
         filters: Vec::new(),
     }

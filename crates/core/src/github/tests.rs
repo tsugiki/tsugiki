@@ -186,13 +186,13 @@ fn a_check_asks_about_the_last_30_days_and_keeps_the_name_out_of_the_query() {
 
 #[test]
 fn a_check_gives_the_name_as_github_spells_it() {
-    let body = r#"{"data":{"repository":{"nameWithOwner":"Sergey-Miryanov/GCMon",
+    let body = r#"{"data":{"repository":{"nameWithOwner":"Some-Maintainer/GCMon",
             "issues":{"totalCount":10},"pullRequests":{"totalCount":3}},
             "updated":{"issueCount":43},"closed":{"issueCount":35}}}"#;
     let check = client(answered(200, body))
-        .check_repository(&name("sergey-miryanov/gcmon"), the_day())
+        .check_repository(&name("some-maintainer/gcmon"), the_day())
         .unwrap();
-    assert_eq!(check.repository.name.to_string(), "Sergey-Miryanov/GCMon");
+    assert_eq!(check.repository.name.to_string(), "Some-Maintainer/GCMon");
     assert_eq!(check.size, RepositorySize::Small);
     assert_eq!(check.first_sync_items, 48);
 }

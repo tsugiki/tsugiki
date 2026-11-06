@@ -494,12 +494,12 @@ const HOURLY: Intervals = Intervals {
 };
 const PLENTY: Duration = Duration::from_secs(10);
 
-const GCMON: &str = r#"{"data":{"repository":{"nameWithOwner":"sergey-miryanov/gcmon",
+const GCMON: &str = r#"{"data":{"repository":{"nameWithOwner":"some-maintainer/gcmon",
         "issues":{"totalCount":10},"pullRequests":{"totalCount":3}},
         "updated":{"issueCount":43},"closed":{"issueCount":35}}}"#;
 
 fn gcmon() -> RepositoryName {
-    RepositoryName::parse("sergey-miryanov/gcmon").unwrap()
+    RepositoryName::parse("some-maintainer/gcmon").unwrap()
 }
 
 /// A Repository with no Filters, so a sync asks for what these tests script.
@@ -621,7 +621,7 @@ fn work_fetch() -> Result<Reply, Unreachable> {
         "baseRefName": "main",
         "body": "",
         "repository": {
-            "nameWithOwner": "sergey-miryanov/gcmon",
+            "nameWithOwner": "some-maintainer/gcmon",
             "defaultBranchRef": { "name": "main" },
         },
         "closingIssuesReferences": { "nodes": [] },

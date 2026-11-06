@@ -3,7 +3,7 @@ import type { RepositoryCheck } from "$lib/state/add-repository.svelte";
 import { describeCheck } from "./repository-check";
 
 const gcmon: RepositoryCheck = {
-  repository: { name: "sergey-miryanov/gcmon", conventions: "github", filters: [] },
+  repository: { name: "some-maintainer/gcmon", conventions: "github", filters: [] },
   open_issues: 10,
   open_prs: 3,
   size: "small",

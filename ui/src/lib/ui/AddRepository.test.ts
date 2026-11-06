@@ -7,7 +7,7 @@ const core = vi.hoisted(() => ({ checkRepository: vi.fn(), addRepository: vi.fn(
 vi.mock("$lib/data/bindings", () => ({ commands: core }));
 
 const check: RepositoryCheck = {
-  repository: { name: "sergey-miryanov/gcmon", conventions: "github", filters: [] },
+  repository: { name: "some-maintainer/gcmon", conventions: "github", filters: [] },
   open_issues: 10,
   open_prs: 3,
   size: "small",
@@ -25,9 +25,9 @@ const button = (name: string) => screen.getByRole<HTMLButtonElement>("button", {
 async function checked() {
   core.checkRepository.mockResolvedValue({ status: "ok", data: check });
   const input = screen.getByRole("textbox", { name: "Repository" });
-  await fireEvent.input(input, { target: { value: "sergey-miryanov/gcmon" } });
+  await fireEvent.input(input, { target: { value: "some-maintainer/gcmon" } });
   await fireEvent.click(button("Check"));
-  await screen.findByRole("heading", { name: "sergey-miryanov/gcmon" });
+  await screen.findByRole("heading", { name: "some-maintainer/gcmon" });
 }
 
 beforeEach(() => {
@@ -43,7 +43,7 @@ it("is a dialog with a name that takes the focus", () => {
 it("says what checking found: the counts, the choice, the time and the cost", async () => {
   render(AddRepository, { onclose: () => {}, onadded: () => {} });
   await checked();
-  expect(core.checkRepository).toHaveBeenCalledWith("sergey-miryanov/gcmon");
+  expect(core.checkRepository).toHaveBeenCalledWith("some-maintainer/gcmon");
   expect(screen.getByText("10 open Issues, 3 open PRs.")).toBeTruthy();
   expect(screen.getByText(/^Small:/)).toBeTruthy();
   expect(screen.getByText(/under a minute, about 12 points/)).toBeTruthy();

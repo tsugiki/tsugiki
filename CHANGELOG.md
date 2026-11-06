@@ -9,9 +9,8 @@ release's body, and fails without it
 
 ## Version 0.1.1 (2026-11-07)
 
-A new PR in the Repository you have open shows at its next refresh, even while CPython's first sync runs.
-Tsugiki also logs each performance budget the window misses, so `tsugiki.log` shows where it's slow. The
-database is the same as 0.1.0's, so 0.1.1 opens it as it is.
+Repositories sync in turns, so a first sync of a large Repository no longer holds back the one you have open.
+The window logs each performance budget it misses to `tsugiki.log`.
 
 ### Added
 

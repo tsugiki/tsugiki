@@ -384,7 +384,8 @@ mod tests {
 
     #[test]
     fn a_search_that_fails_twice_is_the_failure() {
-        let (script, _asked) = Scripted::new(vec![Err(Unreachable), Err(Unreachable)]);
+        let (script, _asked) =
+            Scripted::new(vec![Err(Unreachable::Offline), Err(Unreachable::Offline)]);
 
         let query = query();
         let refused = github(script)

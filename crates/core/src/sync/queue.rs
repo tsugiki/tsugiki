@@ -196,7 +196,8 @@ impl Syncs {
                     }),
             ),
             ErrorKind::RateLimited { resets_at: None } => points_hold(next_refresh),
-            ErrorKind::Offline => Hold::Retry(next_refresh),
+            // Fixing the clock is up to the user, and the next try after it goes through.
+            ErrorKind::Offline | ErrorKind::CertificateDates => Hold::Retry(next_refresh),
             ErrorKind::Unauthorized
             | ErrorKind::WriteRefused
             | ErrorKind::NotFound

@@ -1,6 +1,7 @@
 use super::*;
 use crate::error::ErrorKind;
 use crate::github::Reply;
+use crate::github::Unreachable;
 use crate::github::testing::{Scripted, reply_ok, token};
 use serde_json::Value;
 use time::format_description::well_known::Rfc3339;
@@ -525,8 +526,10 @@ fn after_a_502_a_fetch_asks_once_more_at_half_the_size() {
 
 #[test]
 fn with_no_answer_a_search_asks_once_more_at_half_the_size() {
-    let (script, asked) =
-        Scripted::new(vec![Err(Unreachable), reply_ok(&search_body(&["a"], None))]);
+    let (script, asked) = Scripted::new(vec![
+        Err(Unreachable::Offline),
+        reply_ok(&search_body(&["a"], None)),
+    ]);
 
     let page = github(script)
         .search_pull_requests(&MINE, &cpython(), page(None))
@@ -539,7 +542,7 @@ fn with_no_answer_a_search_asks_once_more_at_half_the_size() {
 
 #[test]
 fn a_second_failure_is_the_answer() {
-    let (script, _asked) = Scripted::new(vec![bad_gateway(), Err(Unreachable)]);
+    let (script, _asked) = Scripted::new(vec![bad_gateway(), Err(Unreachable::Offline)]);
 
     let refused = github(script)
         .fetch_pull_requests(PrFetch::Work, &ids(&["a"]), 25)

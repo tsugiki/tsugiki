@@ -29,7 +29,7 @@ fn store_remembering(login: &str) -> Store {
 
 fn offline() -> GitHubAccess {
     GitHubAccess {
-        transport: Box::new(Canned(Err(Unreachable))),
+        transport: Box::new(Canned(Err(Unreachable::Offline))),
         run_gh: signed_in_gh,
     }
 }
@@ -153,7 +153,7 @@ fn a_refused_token_is_a_problem_and_keeps_the_last_login_stored() {
 fn without_gh_nothing_is_asked_and_the_problem_shows() {
     let (mut board, seen) = watched_board();
     let access = GitHubAccess {
-        transport: Box::new(Canned(Err(Unreachable))),
+        transport: Box::new(Canned(Err(Unreachable::Offline))),
         run_gh: without_gh,
     };
     assert!(connect(&mut board, &empty_store(), access).is_none());
@@ -203,7 +203,7 @@ fn signed_in() -> Result<Reply, Unreachable> {
 
 #[test]
 fn the_status_follows_the_network_going_and_coming_back() {
-    let access = replying(vec![signed_in(), Err(Unreachable), signed_in()]);
+    let access = replying(vec![signed_in(), Err(Unreachable::Offline), signed_in()]);
     let (mut board, seen) = watched_board();
     let store = empty_store();
     let github = connect(&mut board, &store, access).unwrap();
@@ -214,6 +214,25 @@ fn the_status_follows_the_network_going_and_coming_back() {
         showing(&seen),
         Status::OfflineAs {
             last_login: Login::new("octocat")
+        }
+    );
+
+    refresh(&mut board, &store, &github);
+    assert_eq!(showing(&seen), octocat());
+}
+
+#[test]
+fn a_certificate_outside_its_dates_asks_for_the_clock_until_github_answers() {
+    let access = replying(vec![Err(Unreachable::CertificateDates), signed_in()]);
+    let (mut board, seen) = watched_board();
+    let store = empty_store();
+    let github = connect(&mut board, &store, access).unwrap();
+    let words =
+        "GitHub's certificate isn't valid by this computer's clock. Check the date and time.";
+    assert_eq!(
+        showing(&seen),
+        Status::Problem {
+            problem: Error::new(ErrorKind::CertificateDates, words)
         }
     );
 
@@ -241,7 +260,7 @@ fn stopped_refreshes() -> Refreshes {
 #[test]
 fn watching_follows_github_until_told_to_stop() {
     // `Replies` panics if it is asked a fourth time, so the third status has to stop the watching.
-    let access = replying(vec![signed_in(), Err(Unreachable), signed_in()]);
+    let access = replying(vec![signed_in(), Err(Unreachable::Offline), signed_in()]);
     let (stop, incoming) = mpsc::channel();
     let (passed, seen) = mpsc::channel();
     let mut shown = 0;
@@ -340,7 +359,7 @@ fn opening_a_pr_records_last_seen_and_asks_github_nothing() {
 #[test]
 fn opening_an_issue_with_no_token_still_records_last_seen() {
     let access = GitHubAccess {
-        transport: Box::new(Canned(Err(Unreachable))),
+        transport: Box::new(Canned(Err(Unreachable::Offline))),
         run_gh: without_gh,
     };
 
@@ -434,7 +453,7 @@ fn what_an_issue_says_that_cant_be_stored_is_a_problem() {
 
 #[test]
 fn losing_the_network_while_reading_an_issue_shows_on_the_status_bar() {
-    let access = replying(vec![signed_in(), Err(Unreachable)]);
+    let access = replying(vec![signed_in(), Err(Unreachable::Offline)]);
 
     let (content, _, shown) = after_asking("offline-issue", access, |asked| {
         asked.open_issue(gcmon(), 7)
@@ -713,8 +732,8 @@ fn a_sync_github_cant_answer_shows_offline_and_waits_for_the_next_refresh() {
     // `Replies` panics at a fifth question, so the sync can't run ahead of the refresh.
     let access = replying(vec![
         signed_in(),
-        Err(Unreachable),
-        Err(Unreachable),
+        Err(Unreachable::Offline),
+        Err(Unreachable::Offline),
         signed_in(),
     ]);
     let (messages, incoming) = mpsc::channel();
@@ -755,7 +774,7 @@ struct BlipThenWork {
 impl Transport for BlipThenWork {
     fn post(&self, _: &crate::token::Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
         match request.operation {
-            "Viewer" if self.blip.swap(false, Ordering::Relaxed) => Err(Unreachable),
+            "Viewer" if self.blip.swap(false, Ordering::Relaxed) => Err(Unreachable::Offline),
             "Viewer" => signed_in(),
             "FetchPullRequests" => work_fetch(),
             _ => work_search(&["a"]),
@@ -796,7 +815,7 @@ fn a_sync_waits_until_tsugiki_knows_who_the_user_is() {
 #[test]
 fn with_no_token_what_is_stored_stays_readable() {
     let access = GitHubAccess {
-        transport: Box::new(Canned(Err(Unreachable))),
+        transport: Box::new(Canned(Err(Unreachable::Offline))),
         run_gh: without_gh,
     };
     let folders = temp_folders("no-token");
@@ -1135,7 +1154,7 @@ fn starting_without_gh_keeps_the_problem_that_says_how_to_sign_in() {
     let folders = temp_folders("no-gh");
     let (mut board, seen) = watched_board();
     let access = GitHubAccess {
-        transport: Box::new(Canned(Err(Unreachable))),
+        transport: Box::new(Canned(Err(Unreachable::Offline))),
         run_gh: without_gh,
     };
 

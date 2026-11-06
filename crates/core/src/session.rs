@@ -461,7 +461,8 @@ fn status_after(problem: Error, store: &Store) -> Status {
             Ok(None) => Status::Offline,
             Err(problem) => Status::Problem { problem },
         },
-        ErrorKind::Unauthorized
+        ErrorKind::CertificateDates
+        | ErrorKind::Unauthorized
         | ErrorKind::WriteRefused
         | ErrorKind::RateLimited { .. }
         | ErrorKind::NotFound

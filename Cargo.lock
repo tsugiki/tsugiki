@@ -4462,6 +4462,7 @@ dependencies = [
  "insta",
  "log",
  "rusqlite",
+ "rustls",
  "serde",
  "serde_json",
  "specta",

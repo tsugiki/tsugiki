@@ -647,7 +647,7 @@ impl GitHub {
     }
 
     /// Asks for `size` items, and after a 502 or no answer asks once more for half as many (ADR 0015). Says
-    /// how many the answer is for.
+    /// how many the answer is for. A certificate outside its dates would fail the smaller request too.
     pub(super) fn query_at_size<'a, D: DeserializeOwned>(
         &self,
         size: usize,
@@ -655,7 +655,8 @@ impl GitHub {
     ) -> Result<(D, usize), Error> {
         match self.post(&request(size)) {
             Ok(reply) if reply.status != BAD_GATEWAY => Ok((read(&reply)?, size)),
-            Ok(_) | Err(Unreachable) => {
+            Err(cause @ Unreachable::CertificateDates) => Err(cause.into()),
+            Ok(_) | Err(Unreachable::Offline) => {
                 let smaller = size.div_ceil(2);
                 log::warn!("GitHub didn't answer for {size} items, so asking for {smaller}");
                 Ok((self.query(&request(smaller))?, smaller))

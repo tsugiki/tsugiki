@@ -555,8 +555,8 @@ fn an_outage_blames_no_filter_and_its_search_runs_again() {
 #[test]
 fn with_no_network_a_filters_search_waits_and_runs_again() {
     let mut replies = searches_finding(&[]);
-    replies.push(Err(Unreachable));
-    replies.push(Err(Unreachable));
+    replies.push(Err(Unreachable::Offline));
+    replies.push(Err(Unreachable::Offline));
     replies.push(all_of(&[]));
     let harness = Harness::new("filter-offline", replies);
     let mut syncs = Syncs::default();

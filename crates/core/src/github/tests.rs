@@ -48,7 +48,10 @@ fn a_login_is_read_from_the_viewer() {
 
 #[test]
 fn no_connection_means_offline() {
-    assert_eq!(error_of(Canned(Err(Unreachable))).kind, ErrorKind::Offline);
+    assert_eq!(
+        error_of(Canned(Err(Unreachable::Offline))).kind,
+        ErrorKind::Offline
+    );
 }
 
 #[test]
@@ -147,7 +150,7 @@ impl Transport for Asked {
     )]
     fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
         self.0.send(request.variables.clone()).unwrap();
-        Err(Unreachable)
+        Err(Unreachable::Offline)
     }
 }
 
@@ -279,7 +282,7 @@ fn a_repository_github_doesnt_have_says_which_and_why_it_might_be_hidden() {
 
 #[test]
 fn a_check_that_fails_for_another_reason_says_that_reason() {
-    let error = client(Canned(Err(Unreachable)))
+    let error = client(Canned(Err(Unreachable::Offline)))
         .check_repository(&name("a/b"), the_day())
         .unwrap_err();
     assert_eq!(error.kind, ErrorKind::Offline);

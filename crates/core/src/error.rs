@@ -8,6 +8,8 @@ use specta::Type;
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ErrorKind {
     Offline,
+    /// GitHub's certificate isn't valid at this computer's date and time, so no request reaches GitHub.
+    CertificateDates,
     Unauthorized,
     WriteRefused,
     RateLimited {
@@ -25,7 +27,10 @@ impl ErrorKind {
     /// True when no other request would fare better, so the trouble isn't about the one thing that was asked.
     pub fn speaks_for_all_of_github(&self) -> bool {
         match self {
-            Self::Offline | Self::RateLimited { .. } | Self::Unauthorized => true,
+            Self::Offline
+            | Self::CertificateDates
+            | Self::RateLimited { .. }
+            | Self::Unauthorized => true,
             Self::WriteRefused
             | Self::NotFound
             | Self::Conflict
@@ -70,6 +75,7 @@ mod tests {
     fn the_kinds_are_the_ones_adr_0008_names() {
         let kinds = [
             (ErrorKind::Offline, "offline"),
+            (ErrorKind::CertificateDates, "certificate_dates"),
             (ErrorKind::Unauthorized, "unauthorized"),
             (ErrorKind::WriteRefused, "write_refused"),
             (ErrorKind::RateLimited { resets_at: None }, "rate_limited"),

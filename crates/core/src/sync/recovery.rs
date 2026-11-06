@@ -105,7 +105,7 @@ impl Transport for Replaying {
     fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
         let at = self.asks.replace(self.asks.get() + 1);
         if self.failing.contains(&at) {
-            return Err(Unreachable);
+            return Err(Unreachable::Offline);
         }
         Ok(self.serve(&self.posts, asked_by_post(request)))
     }

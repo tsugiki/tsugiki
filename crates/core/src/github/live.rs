@@ -10,6 +10,7 @@ use std::io;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use rustls::CertificateError;
 use ureq::Agent;
 
 use super::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
@@ -130,11 +131,36 @@ pub fn run_gh(args: &[&str]) -> io::Result<GhOutput> {
     outcome
 }
 
-/// The status bar only says GitHub can't be reached, so this is the one place the reason shows: a proxy that
-/// inspects TLS, for example.
+/// The status bar says only that GitHub can't be reached, or that its certificate's dates don't fit the
+/// clock, so this is the one place the whole reason shows: a proxy that inspects TLS, for example.
 fn unreachable(cause: ureq::Error) -> Unreachable {
     log::warn!("A request to GitHub failed: {cause}");
-    Unreachable
+    if is_outside_certificate_dates(&cause) {
+        Unreachable::CertificateDates
+    } else {
+        Unreachable::Offline
+    }
+}
+
+/// True when `cause` is a certificate that has expired or isn't valid yet. A failed handshake reaches ureq
+/// as an I/O error that wraps rustls's own: ureq's `Error::Rustls` comes only from setting up a connection,
+/// before any certificate arrives.
+fn is_outside_certificate_dates(cause: &ureq::Error) -> bool {
+    let tls = if let ureq::Error::Io(io) = cause {
+        io.get_ref()
+            .and_then(|inner| inner.downcast_ref::<rustls::Error>())
+    } else {
+        None
+    };
+    matches!(
+        tls,
+        Some(rustls::Error::InvalidCertificate(
+            CertificateError::Expired
+                | CertificateError::ExpiredContext { .. }
+                | CertificateError::NotValidYet
+                | CertificateError::NotValidYetContext { .. }
+        ))
+    )
 }
 
 /// Runs one program, with no console window on Windows, and gives up on it after `GH_TIMEOUT`.
@@ -165,4 +191,52 @@ fn run_program(program: &str, args: &[&str]) -> io::Result<GhOutput> {
         success: output.status.success(),
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use rustls::pki_types::UnixTime;
+
+    use super::*;
+
+    /// A handshake that rustls failed, as ureq hands it back.
+    fn handshake_failed(error: CertificateError) -> ureq::Error {
+        let tls = rustls::Error::InvalidCertificate(error);
+        ureq::Error::Io(io::Error::new(io::ErrorKind::InvalidData, tls))
+    }
+
+    #[test]
+    fn a_certificate_outside_its_dates_is_about_the_clock() {
+        // webpki's verifier, which ureq uses, gives the two with context.
+        let time = UnixTime::since_unix_epoch(Duration::from_secs(1_800_000_000));
+        let causes = [
+            handshake_failed(CertificateError::ExpiredContext {
+                time,
+                not_after: UnixTime::since_unix_epoch(Duration::from_secs(1_700_000_000)),
+            }),
+            handshake_failed(CertificateError::NotValidYetContext {
+                time,
+                not_before: UnixTime::since_unix_epoch(Duration::from_secs(1_900_000_000)),
+            }),
+            handshake_failed(CertificateError::Expired),
+            handshake_failed(CertificateError::NotValidYet),
+        ];
+        for cause in causes {
+            assert_eq!(unreachable(cause), Unreachable::CertificateDates);
+        }
+    }
+
+    #[test]
+    fn any_other_failure_is_offline() {
+        let causes = [
+            handshake_failed(CertificateError::UnknownIssuer),
+            handshake_failed(CertificateError::ExpiredRevocationList),
+            ureq::Error::Rustls(rustls::Error::InvalidCertificate(CertificateError::Expired)),
+            ureq::Error::Io(io::Error::new(io::ErrorKind::TimedOut, "timed out")),
+            ureq::Error::HostNotFound,
+        ];
+        for cause in causes {
+            assert_eq!(unreachable(cause), Unreachable::Offline);
+        }
+    }
 }

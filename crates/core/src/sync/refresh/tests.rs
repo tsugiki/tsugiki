@@ -396,7 +396,11 @@ fn a_finished_refresh_moves_the_last_sync_on_and_a_failed_one_leaves_it() {
     // A request gets a second try at half the size, so a failure takes two.
     let harness = after_a_sync(
         "poll-time",
-        vec![Err(Unreachable), Err(Unreachable), quiet_poll()],
+        vec![
+            Err(Unreachable::Offline),
+            Err(Unreachable::Offline),
+            quiet_poll(),
+        ],
     );
     let mut syncs = refreshing(filtering(&[]));
 
@@ -1169,7 +1173,7 @@ fn a_poll_refused_with_no_searches_is_a_failure() {
 
 #[test]
 fn a_poll_that_fails_with_searches_in_it_is_a_failure_too() {
-    let harness = after_a_sync("poll-offline", vec![Err(Unreachable)]);
+    let harness = after_a_sync("poll-offline", vec![Err(Unreachable::Offline)]);
     stored_filter(&harness, "a", &[]);
     let mut syncs = refreshing(filtering(&["a"]));
 
@@ -1191,7 +1195,7 @@ impl Transport for SmallRepository {
         self.posts
             .borrow_mut()
             .pop_front()
-            .unwrap_or(Err(Unreachable))
+            .unwrap_or(Err(Unreachable::Offline))
     }
 
     fn get(
@@ -1200,7 +1204,10 @@ impl Transport for SmallRepository {
         request: &ConditionalGet<'_>,
     ) -> Result<ConditionalReply, Unreachable> {
         drop(self.tags.send(request.etag.map(str::to_owned)));
-        self.checks.borrow_mut().pop_front().ok_or(Unreachable)
+        self.checks
+            .borrow_mut()
+            .pop_front()
+            .ok_or(Unreachable::Offline)
     }
 }
 
@@ -1350,8 +1357,8 @@ fn the_failure_of_a_step_after_the_poll_can_run_again() {
             &list(&[changed_pr(1, AFTER_IT)], None),
             &[],
         ),
-        Err(Unreachable),
-        Err(Unreachable),
+        Err(Unreachable::Offline),
+        Err(Unreachable::Offline),
         fetched_nodes(&[strangers_pr(1, AFTER_IT)], LOTS),
     ];
     let harness = after_a_sync("retry", replies);

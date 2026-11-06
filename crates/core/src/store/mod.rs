@@ -16,7 +16,7 @@ mod sync_state;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
-use std::fs;
+use std::fs::{self, File, OpenOptions, TryLockError};
 use std::path::Path;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Weak};
@@ -44,6 +44,8 @@ const CANT_WRITE: &str = "Tsugiki can't write to its database";
 const CANT_UPDATE: &str = "Tsugiki can't update its database to this version";
 const NEWER: &str = "A newer version of Tsugiki wrote this database, so this version won't open it. \
                      Update Tsugiki to read it.";
+pub(crate) const IN_USE: &str = "Another Tsugiki has this database open, so this one leaves it alone. \
+                                 Use that one, or close it and start Tsugiki again.";
 const STOPPED: &str = "Tsugiki's database stopped working. Restart Tsugiki to open it again.";
 
 type Job = Box<dyn FnOnce(&mut Connection) + Send>;
@@ -561,6 +563,7 @@ fn ask<T: Send + 'static>(
 
 fn open_with(path: &Path, migrations: &[Migration]) -> Result<Store, Error> {
     fs::create_dir_all(path.with_file_name("")).map_err(saying(CANT_OPEN))?;
+    let lock = lock(path)?;
     file::check(path, migrate::latest(migrations))?;
 
     let mut connection = Connection::open(path).map_err(saying(CANT_OPEN))?;
@@ -585,8 +588,31 @@ fn open_with(path: &Path, migrations: &[Migration]) -> Result<Store, Error> {
         for job in queue {
             job(&mut connection);
         }
+        drop(connection);
+        drop(lock);
     });
     Ok(Store { jobs, thread })
+}
+
+/// Takes the lock beside the database at `path`, which one Tsugiki at a time holds while it writes (ADR
+/// 0018). It belongs to the folder, so an installed Tsugiki, a development build and a portable copy each
+/// hold their own. The system lets go of it when the file closes or the process ends, so a crash can't leave
+/// the next start locked out. The empty file stays. A database in memory belongs to its one connection, so it
+/// needs none.
+fn lock(path: &Path) -> Result<Option<File>, Error> {
+    if path == Path::new(":memory:") {
+        return Ok(None);
+    }
+    let file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(migrate::with_suffix(path, ".lock"))
+        .map_err(saying(CANT_OPEN))?;
+    match file.try_lock() {
+        Err(TryLockError::WouldBlock) => Err(Error::new(ErrorKind::Internal, IN_USE)),
+        locked => locked.map(|()| Some(file)).map_err(saying(CANT_OPEN)),
+    }
 }
 
 /// Turns a failure into words a user can read (`Error`). SQLite's or the OS's reason goes to the log.
@@ -671,6 +697,26 @@ mod tests {
         assert_eq!(user_version(&path), latest);
         assert!(has_table(&path, "viewer"));
         assert_eq!(backups(&folder), [""; 0]);
+        fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn a_second_store_on_the_same_file_is_refused_and_leaves_it_alone() {
+        let (path, folder) = temp_database("held");
+        let first = open_with(&path, &[V1]).unwrap();
+
+        let problem = open_with(&path, &[V1, V2]).err().unwrap();
+
+        first.close();
+        assert_eq!(problem.message, IN_USE);
+        assert_eq!(user_version(&path), 1);
+        assert_eq!(backups(&folder), [""; 0]);
+        open_with(&path, &[V1, V2]).unwrap().close();
+        assert_eq!(
+            user_version(&path),
+            2,
+            "closing the first store lets go of the file"
+        );
         fs::remove_dir_all(folder).unwrap();
     }
 

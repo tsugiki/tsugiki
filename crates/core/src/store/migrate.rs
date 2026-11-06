@@ -82,9 +82,8 @@ fn user_version(connection: &Connection) -> rusqlite::Result<u32> {
     connection.pragma_query_value(None, "user_version", |row| row.get("user_version"))
 }
 
-/// Runs the steps this file hasn't had yet, in one transaction, after a backup if it holds anything. Two
-/// Tsugikis can still race here on macOS, where the single-instance check isn't atomic: it connects to a
-/// socket, then binds it later, so two started together can both go on.
+/// Runs the steps this file hasn't had yet, in one transaction, after a backup if it holds anything. The
+/// store's lock keeps a second Tsugiki out of here.
 pub(super) fn run(
     connection: &mut Connection,
     path: &Path,
@@ -203,7 +202,7 @@ fn remove_old_backups(path: &Path, written: &Path) {
     }
 }
 
-fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
+pub(super) fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
     let mut longer = path.as_os_str().to_owned();
     longer.push(suffix);
     PathBuf::from(longer)

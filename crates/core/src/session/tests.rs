@@ -72,6 +72,27 @@ fn temp_folders(name: &str) -> Folders {
 }
 
 #[test]
+fn a_second_session_on_the_same_folder_says_why_it_stopped() {
+    let folders = temp_folders("held");
+    let (first_board, first_seen) = watched_board();
+    let first = Session::start(first_board, Ok(folders.clone()), offline(), HOURLY);
+    // A session says nothing until its database is open.
+    let first_status = first_seen.recv().unwrap();
+    let (board, seen) = watched_board();
+
+    let second = Session::start(board, Ok(folders.clone()), offline(), HOURLY);
+    second.stop(PLENTY);
+
+    first.stop(PLENTY);
+    fs::remove_dir_all(folders.data).unwrap();
+    assert!(problem_of(first_status).is_none());
+    assert_eq!(
+        problem_of(showing(&seen)),
+        Some(Error::new(ErrorKind::Internal, crate::store::IN_USE))
+    );
+}
+
+#[test]
 fn signing_in_shows_the_login() {
     let (mut board, seen) = watched_board();
     assert!(connect(&mut board, &empty_store(), octocat_answers()).is_some());

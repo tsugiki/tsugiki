@@ -538,7 +538,7 @@ fn closing_both_connections_leaves_only_the_database() {
     fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(refused, Error::new(ErrorKind::Internal, STOPPED));
-    assert_eq!(left, ["tsugiki.db"]);
+    assert_eq!(left, ["tsugiki.db", "tsugiki.db.lock"]);
 }
 
 #[test]

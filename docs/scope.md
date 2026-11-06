@@ -28,7 +28,8 @@ The order in which v1 is built is in [build-order.md](build-order.md).
   0017](adr/0017-performance-budgets-codspeed-gates-prs-the-window-is-measured-before-release.md)).
 - Code comes from Tsugiki's own bare mirror. PRs, reviews, comments and CI come from the GitHub API ([ADR
   0002](adr/0002-tsugiki-owns-its-git-state.md)).
-- Git is driven through the `git` CLI ([ADR 0003](adr/0003-git-cli-over-libgit2-and-gitoxide.md)).
+- Git is driven through the `git` CLI, 2.30 or newer
+  ([ADR 0003](adr/0003-git-cli-over-libgit2-and-gitoxide.md)).
 - `tsg` is the app's executable, and there is one instance of it ([ADR
   0007](adr/0007-core-library-and-thin-tauri-app.md)). On its own, `tsg` starts Tsugiki or brings it to the
   front. `tsg python/cpython#12345`, an Issue or PR URL, or a `tsugiki://` link (what an **Alert** carries),
@@ -91,12 +92,12 @@ The order in which v1 is built is in [build-order.md](build-order.md).
     sizes and the Sidebar's state belong to the machine, like the window's position, and are not synced.
 - A **status bar** runs along the bottom of every screen, the Home page included, for what is app-wide and has
   no other place. It stays when the Sidebar is hidden.
-  - Left, where the eye spends its time: sync status ("Synced 2 min ago", a click refreshes), **Offline:
+  - Left, where the eye spends its time: sync status ("Synced 2 min ago", a click refreshes) with the
+    background work beside it ("· python/peps syncing", "· Cloning python/cpython 42%"), **Offline:
     read-only** (which tints the whole bar), and problems that stop Tsugiki reading, such as an expired token
     or a low API rate limit, each opening the Settings page that fixes it.
-  - Right: unsent **Pending reviews** in any Repository (a click opens the PR), the first key of a chord while
-    Tsugiki waits for the second, and at the far end background work with its progress (refreshes, mirror
-    fetches, a first sync, patch-id checks), since that is rarely what the user looks for.
+  - Right: unsent **Pending reviews** in any Repository (a click opens the PR), and the first key of a chord
+    while Tsugiki waits for the second.
   - Each part can be switched off from the bar's right-click menu or Settings › General, and the whole bar can
     be hidden ("View: Toggle Status Bar"). Being offline or an expired token still shows: the bar comes back
     with only that problem, since nothing else would tell the user.
@@ -265,8 +266,16 @@ The order in which v1 is built is in [build-order.md](build-order.md).
 - "Open in editor" runs the editor command (`code -g` by default) on the **Review checkout**, moved to the
   PR's current head. If the user has edited files there, Tsugiki first offers Discard and switch, Copy as
   patch, or Cancel. Settings › Repositories shows the checkout's size, with Remove checkout.
+- A Repository's **Mirror** is first cloned as the Repository is added, alongside its first sync, one
+  Repository at a time with the open one first. Add repository offers to borrow objects from a clone the user
+  has, picked as a folder, and gives the time and disk each choice takes. Tsugiki checks that the folder is a
+  clone with a remote for that repository, and doesn't search the disk for one. The path is kept in the
+  Repository's settings, so a new clone after a broken one borrows again. A clone that fails is deleted and
+  tried again, and one cut off by quitting starts again at the next launch.
 - While a Repository's mirror is still being cloned, the diff, the definitions and Open in editor say how far
-  it has got.
+  it has got. The Conversation tab works meanwhile.
+- Without git 2.30 or newer, or without room on the disk for the clone, the diff says what is missing, with a
+  link to git's downloads or the space needed, and offers Check again. The rest of Tsugiki works without it.
 
 ### Keyboard
 

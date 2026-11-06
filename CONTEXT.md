@@ -100,6 +100,11 @@ Repository at a time and switches between them; each has its own **Workbench**, 
 issues**, and nothing is listed across Repositories.
 _Avoid_: Project, workspace, repo list
 
+**Mirror**:
+Tsugiki's own copy of a **Repository**'s git history, from which it reads diffs and files. When it is first
+made, it can borrow objects from a clone the user has.
+_Avoid_: Cache, local clone
+
 **Workbench**:
 The home list of **Issues** the user is currently following in the current **Repository**: every Issue that a
 **Filter** reaches, that is a **Pinned issue**, that has an open PR the user holds a **Review** on, or that

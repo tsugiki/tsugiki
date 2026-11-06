@@ -39,8 +39,8 @@ fn a_failed_step_keeps_its_place_and_runs_again() {
         "failure",
         vec![
             found(&["a"], Some("next"), LOTS),
-            Err(Unreachable),
-            Err(Unreachable),
+            Err(Unreachable::Offline),
+            Err(Unreachable::Offline),
             found(&["b"], None, LOTS),
         ],
     );
@@ -411,6 +411,35 @@ fn no_network_never_ends_a_sync() {
 }
 
 #[test]
+fn a_certificate_outside_its_dates_never_ends_a_sync() {
+    let clock = Error::new(ErrorKind::CertificateDates, "check the clock");
+    assert!(queued_after(u8::MAX, &clock));
+}
+
+#[test]
+fn a_sync_held_by_a_certificate_outside_its_dates_carries_on_from_its_place() {
+    let mut replies = searches_finding(&[]);
+    replies.insert(1, Err(Unreachable::CertificateDates));
+    let harness = Harness::new("certificate-dates", replies);
+    let mut syncs = Syncs::default();
+    syncs.add(plain(cpython()));
+    drop(syncs.step(&harness.github, &harness.store).unwrap());
+
+    let problem = syncs.step(&harness.github, &harness.store).unwrap_err();
+    syncs.after_failure(&problem, Instant::now(), GitHubClock::default());
+    drop(run_to_the_end(&mut syncs, &harness));
+
+    assert_eq!(problem.kind, ErrorKind::CertificateDates);
+    assert_eq!(
+        harness.operations().len(),
+        5,
+        "the failed search, asked once, and the four"
+    );
+    assert!(harness.store.sync_state(&cpython()).unwrap().is_some());
+    harness.finish();
+}
+
+#[test]
 fn a_rate_limit_never_ends_a_sync() {
     let limited = Error::new(ErrorKind::RateLimited { resets_at: None }, "limited");
     assert!(queued_after(u8::MAX, &limited));
@@ -736,7 +765,7 @@ fn a_tree_github_refuses_leaves_at_once_and_can_be_asked_for_again() {
 
 #[test]
 fn a_tree_waits_while_github_cant_be_reached() {
-    let (mut syncs, harness) = after_a_first_sync("tree-offline", vec![Err(Unreachable)]);
+    let (mut syncs, harness) = after_a_first_sync("tree-offline", vec![Err(Unreachable::Offline)]);
     syncs.open_issue(&cpython(), 7);
 
     let problem = syncs.step(&harness.github, &harness.store).unwrap_err();

@@ -136,14 +136,18 @@ export type Error = Error_Serialize | Error_Deserialize;
 export type ErrorKind = ErrorKind_Serialize | ErrorKind_Deserialize;
 
 /**  What the UI can do something about. */
-export type ErrorKind_Deserialize = { kind: "offline" } | { kind: "unauthorized" } | { kind: "write_refused" } | { kind: "rate_limited"; 
+export type ErrorKind_Deserialize = { kind: "offline" } | 
+/**  GitHub's certificate isn't valid at this computer's date and time, so no request reaches GitHub. */
+{ kind: "certificate_dates" } | { kind: "unauthorized" } | { kind: "write_refused" } | { kind: "rate_limited"; 
 /**  When the limit resets, in seconds since the Unix epoch, if GitHub said. */
 resets_at?: number | null } | { kind: "not_found" } | { kind: "conflict" } | 
 /**  GitHub took the request and answered with an error about it. A failed status is `Internal`. */
 { kind: "query_refused" } | { kind: "internal" };
 
 /**  What the UI can do something about. */
-export type ErrorKind_Serialize = { kind: "offline" } | { kind: "unauthorized" } | { kind: "write_refused" } | { kind: "rate_limited"; 
+export type ErrorKind_Serialize = { kind: "offline" } | 
+/**  GitHub's certificate isn't valid at this computer's date and time, so no request reaches GitHub. */
+{ kind: "certificate_dates" } | { kind: "unauthorized" } | { kind: "write_refused" } | { kind: "rate_limited"; 
 /**  When the limit resets, in seconds since the Unix epoch, if GitHub said. */
 resets_at: number | null } | { kind: "not_found" } | { kind: "conflict" } | 
 /**  GitHub took the request and answered with an error about it. A failed status is `Internal`. */

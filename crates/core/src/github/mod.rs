@@ -68,8 +68,27 @@ pub struct ConditionalReply {
 }
 
 /// GitHub couldn't be reached at all.
-#[derive(Debug, Clone, Copy)]
-pub struct Unreachable;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unreachable {
+    /// No network, no answer in time, or a connection that failed some other way, a certificate that failed
+    /// for a reason other than its dates among them.
+    Offline,
+    /// GitHub's certificate isn't valid at this computer's date and time. The clock may be wrong, or the
+    /// certificate may have expired, and the check can't tell which.
+    CertificateDates,
+}
+
+impl From<Unreachable> for Error {
+    fn from(unreachable: Unreachable) -> Self {
+        match unreachable {
+            Unreachable::Offline => Error::new(ErrorKind::Offline, "Tsugiki can't reach GitHub."),
+            Unreachable::CertificateDates => Error::new(
+                ErrorKind::CertificateDates,
+                "GitHub's certificate isn't valid by this computer's clock. Check the date and time.",
+            ),
+        }
+    }
+}
 
 /// The number `digits` spell. GitHub's numbers are GraphQL `Int`s, 32 bits and signed, and it refuses a whole
 /// query over one that doesn't fit.
@@ -127,7 +146,7 @@ pub trait Transport: Send {
         _token: &Token,
         _request: &ConditionalGet<'_>,
     ) -> Result<ConditionalReply, Unreachable> {
-        Err(Unreachable)
+        Err(Unreachable::Offline)
     }
 }
 
@@ -306,6 +325,7 @@ impl GitHub {
                 &format!("GitHub has no Repository named {name}, or your token can't see it."),
             ),
             ErrorKind::Offline
+            | ErrorKind::CertificateDates
             | ErrorKind::Unauthorized
             | ErrorKind::WriteRefused
             | ErrorKind::RateLimited { .. }
@@ -330,9 +350,7 @@ impl GitHub {
     }
 
     fn query<D: DeserializeOwned>(&self, request: &Request<'_>) -> Result<D, Error> {
-        let reply = self
-            .post(request)
-            .map_err(|Unreachable| Error::new(ErrorKind::Offline, "Tsugiki can't reach GitHub."))?;
+        let reply = self.post(request)?;
         read(&reply)
     }
 }
@@ -488,7 +506,7 @@ pub(crate) mod testing {
             self.replies
                 .borrow_mut()
                 .pop_front()
-                .unwrap_or(Err(Unreachable))
+                .unwrap_or(Err(Unreachable::Offline))
         }
     }
 

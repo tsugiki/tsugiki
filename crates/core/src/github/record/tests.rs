@@ -459,7 +459,7 @@ fn a_body_that_isnt_json_is_recorded_as_text() {
 #[test]
 fn no_connection_records_nothing() {
     let dir = temp_dir("offline");
-    let recorder = Recorder::new(Box::new(Canned(Err(Unreachable))), dir.clone());
+    let recorder = Recorder::new(Box::new(Canned(Err(Unreachable::Offline))), dir.clone());
     assert!(recorder.post(&token(), &REQUEST).is_err());
     assert!(!dir.exists());
 }

@@ -16,7 +16,7 @@ use super::pull_requests::{
     CiState, LastCommitNode, LatestReview, LatestReviewWire, NodeId, Nodes, PageRequest,
     PullRequestFacts, RateLimit, ReviewRequestWire, ci_of, requested_logins, reviews_of,
 };
-use super::{ConditionalGet, GitHub, Login, Request, Unreachable};
+use super::{ConditionalGet, GitHub, Login, Request};
 use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::filters::FilterQuery;
@@ -284,7 +284,7 @@ impl GitHub {
                 log::warn!("GitHub answered a list check with status {}", reply.status);
                 ListCheck::Moved(None)
             }
-            Err(Unreachable) => ListCheck::Moved(None),
+            Err(_) => ListCheck::Moved(None),
         }
     }
 

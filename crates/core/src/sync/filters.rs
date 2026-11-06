@@ -289,6 +289,7 @@ pub(super) fn blames_the_search(problem: &Error) -> bool {
     match problem.kind {
         ErrorKind::NotFound | ErrorKind::QueryRefused => true,
         ErrorKind::Offline
+        | ErrorKind::CertificateDates
         | ErrorKind::Unauthorized
         | ErrorKind::WriteRefused
         | ErrorKind::RateLimited { .. }

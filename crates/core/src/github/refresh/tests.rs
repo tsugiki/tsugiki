@@ -1,5 +1,6 @@
 use super::*;
 use crate::error::ErrorKind;
+use crate::github::Unreachable;
 use crate::github::pull_requests::{PrState, ReviewState};
 use crate::github::replay::Replayer;
 use crate::github::testing::{Scripted, reply_ok, token};
@@ -238,7 +239,7 @@ struct Lists {
 
 impl Transport for Lists {
     fn post(&self, _: &Token, _: &Request<'_>) -> Result<Reply, Unreachable> {
-        Err(Unreachable)
+        Err(Unreachable::Offline)
     }
 
     fn get(
@@ -311,7 +312,10 @@ fn a_list_that_moved_gives_its_new_tag() {
 fn a_list_check_that_fails_counts_as_moved() {
     assert_eq!(listing(replied(200, None), None), ListCheck::Moved(None));
     assert_eq!(listing(replied(500, None), None), ListCheck::Moved(None));
-    assert_eq!(listing(Err(Unreachable), None), ListCheck::Moved(None));
+    assert_eq!(
+        listing(Err(Unreachable::Offline), None),
+        ListCheck::Moved(None)
+    );
 }
 
 #[test]

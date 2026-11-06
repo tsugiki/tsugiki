@@ -83,7 +83,7 @@ mod tests {
                 nothing(LOTS),
                 nothing(LOTS),
                 nothing(LOTS),
-                Err(Unreachable),
+                Err(Unreachable::Offline),
                 fetched(&[1, 2], LOTS),
                 fetched(&[3, 4], LOTS),
             ],

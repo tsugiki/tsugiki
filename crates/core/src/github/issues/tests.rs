@@ -152,7 +152,8 @@ fn a_page_of_cross_references_github_cant_answer_is_asked_for_at_half_size() {
 
 #[test]
 fn a_page_of_cross_references_that_fails_twice_is_the_failure() {
-    let (script, _asked) = Scripted::new(vec![Err(Unreachable), Err(Unreachable)]);
+    let (script, _asked) =
+        Scripted::new(vec![Err(Unreachable::Offline), Err(Unreachable::Offline)]);
 
     let refused = github(script)
         .fetch_cross_references(&cpython(), 7, page(None))
@@ -229,7 +230,10 @@ fn a_repository_that_has_gone_is_still_an_error() {
 
 #[test]
 fn a_batch_asks_for_its_size_and_a_retry_for_half() {
-    let replies = vec![Err(Unreachable), answer(&json!({ "i1": issue_json(1) }))];
+    let replies = vec![
+        Err(Unreachable::Offline),
+        answer(&json!({ "i1": issue_json(1) })),
+    ];
     let (script, _asked) = Scripted::new(replies);
 
     let fetched = github(script)

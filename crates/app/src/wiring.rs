@@ -128,7 +128,7 @@ mod tests {
 
     impl Transport for NoNetwork {
         fn post(&self, _: &Token, _: &Request<'_>) -> Result<Reply, Unreachable> {
-            Err(Unreachable)
+            Err(Unreachable::Offline)
         }
     }
 
@@ -150,7 +150,7 @@ mod tests {
         fn post(&self, _: &Token, _: &Request<'_>) -> Result<Reply, Unreachable> {
             self.arrived.send(()).unwrap_or(());
             self.released.recv_timeout(PLENTY).unwrap_or(());
-            Err(Unreachable)
+            Err(Unreachable::Offline)
         }
     }
 

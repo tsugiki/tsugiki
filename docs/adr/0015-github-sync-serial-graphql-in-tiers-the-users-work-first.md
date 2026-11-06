@@ -107,7 +107,9 @@ and reads the trees it still owed.
   is signed in before a sync steps, so the local clock stands in only when that failed, as it does offline at
   launch. The time of the last sync's end stays on the local clock, because the status bar counts "Synced 2
   min ago" from the window's clock. A skew over a minute goes to the log, and again when it moves by over a
-  minute.
+  minute. A clock outside the dates of GitHub's certificate fails every request before GitHub answers, so no
+  `Date` can help. The status bar then asks the user to check the date and time, and a sync tries again at
+  each status refresh, as it does offline, with no count toward giving up.
 - **An open Issue or PR** is fetched when opened and about once a minute while on screen. **Merged and closed
   PRs** are fetched once and frozen for what the link rules read; their open Backports stay live. A refresh
   still fetches one that moves, because its timeline goes on: the bot's comment that a Bot backport failed can

@@ -131,6 +131,22 @@ mod tests {
     }
 
     #[test]
+    fn a_database_a_failed_run_left_behind_is_gone_for_the_next_test() {
+        // A test that panics leaves its folder behind, and a later run can get the same process ID.
+        let (path, _) = temp_database("issues-leftover");
+        let store = Store::open(&path).unwrap();
+        store.save_issues(&cpython(), vec![issue(1)]).unwrap();
+        store.close();
+
+        let (path, folder) = temp_database("issues-leftover");
+        let store = Store::open(&path).unwrap();
+        let read = store.issues(&cpython()).unwrap();
+        store.close();
+        fs::remove_dir_all(folder).unwrap();
+        assert_eq!(read, []);
+    }
+
+    #[test]
     fn what_the_writer_saves_the_reader_reads_in_order() {
         let read = saved(
             "issues-roundtrip",

@@ -17,7 +17,8 @@ event, which works only if those queries are fast. These are the budgets, measur
 
 The diff prototype ([ADR 0001](0001-standalone-tauri-gui-with-in-app-review.md)) already meets most of the
 diff's numbers. Jumping into a file it hadn't highlighted took up to 214 ms, so per-chunk highlighting is
-needed to reach 100 ms.
+needed to reach 100 ms. The 100 ms covers the jump's rows, which are highlighted unless the parse runs late,
+and then their colors follow ([#158](https://github.com/tsugiki/tsugiki/issues/158)).
 
 ## How they are checked
 

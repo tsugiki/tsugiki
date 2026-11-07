@@ -30,8 +30,16 @@ review.
   others. With 150k rows it dropped no frames on WebView2 or WKWebView. It reached first paint in 1.4 s on
   Windows and 0.8 s on macOS, against 5.9 s and 3.1 s for highlighting everything up front, and on Windows it
   used 16 MB of JS heap against 37 MB. Inserting each file's rows as a block of HTML caused freezes of up to
-  0.9 s, and halved the frame rate on macOS. One cost is still open. Jumping into a large file that hasn't
-  been highlighted yet takes up to 214 ms on Windows and 117 ms on macOS, because the whole file is
-  highlighted at that moment. Highlighting per chunk, or in the background after first paint, should fix it.
+  0.9 s, and halved the frame rate on macOS. Jumping into a large file the prototype hadn't highlighted took
+  up to 214 ms on Windows and 117 ms on macOS, because syntect highlighted the whole file at that moment.
+- Highlighting uses tree-sitter ([#153](https://github.com/tsugiki/tsugiki/issues/153),
+  [#158](https://github.com/tsugiki/tsugiki/issues/158)). Each file is parsed whole once and its `Tree` kept,
+  and a chunk is highlighted over its byte range only, in about 1 ms. A chunk request parses its file if it
+  has to, which took 55 to 69 ms on CPython's largest C files. After first paint a worker parses the PR's
+  other files in diff order, both versions, and a jump or a scroll goes ahead of it. Generated files are
+  parsed when expanded. A chunk whose highlight isn't ready in 50 ms paints as plain text, and only that
+  chunk repaints when its colors arrive. The worker keeps the open PR's trees and the previous PR's, under a
+  cap set from a measured `Tree`. The range highlighter is Tsugiki's own, with injections for Markdown code
+  fences, reST `code-block` and the `<script>` and `<style>` of HTML and Svelte.
 - Tsugiki writes to GitHub: review comments, Pending reviews, submitting reviews, replies, resolving threads,
   suggestions, and PR-level comments. Merging, labels and reviewer requests stay on GitHub.

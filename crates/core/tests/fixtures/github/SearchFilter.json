@@ -2,21 +2,12 @@
   "body": {
     "data": {
       "rateLimit": {
-        "remaining": 4999,
-        "resetAt": "2026-11-04T22:46:22Z"
+        "remaining": 4977,
+        "resetAt": "2026-11-07T09:33:19Z"
       },
       "search": {
-        "issueCount": 8,
+        "issueCount": 7,
         "nodes": [
-          {
-            "__typename": "PullRequest",
-            "id": "PR_kwDOBN0Z8c8AAAABJlTcBw",
-            "number": 159888,
-            "repository": {
-              "nameWithOwner": "python/cpython"
-            },
-            "updatedAt": "2026-11-04T19:32:13Z"
-          },
           {
             "__typename": "PullRequest",
             "id": "PR_kwDOBN0Z8c8AAAABCrEnGw",
@@ -78,13 +69,13 @@
           }
         ],
         "pageInfo": {
-          "endCursor": "Y3Vyc29yOjg=",
+          "endCursor": "Y3Vyc29yOjc=",
           "hasNextPage": false
         }
       }
     }
   },
   "query": "query SearchFilter($query: String!, $first: Int!, $after: String) { search(query: $query, type: ISSUE_ADVANCED, first: $first, after: $after) { issueCount pageInfo { hasNextPage endCursor } nodes { __typename ... on Issue { number updatedAt repository { nameWithOwner } } ... on PullRequest { id number updatedAt repository { nameWithOwner } } } } rateLimit { remaining resetAt } }",
-  "reset": 1793832382,
+  "reset": 1794043999,
   "status": 200
 }

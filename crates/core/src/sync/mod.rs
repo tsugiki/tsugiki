@@ -51,7 +51,8 @@ pub const FETCH_BATCH: usize = 25;
 
 /// The progress of one Repository's sync.
 struct UserWorkSync {
-    repository: RepositoryName,
+    /// The Repository's settings as the sync started, which say which PRs the user's work reaches.
+    settings: RepositorySettings,
     /// The search of each Filter, each once.
     filters: Vec<FilterQuery>,
     phase: Phase,
@@ -258,13 +259,13 @@ type Moved = (Step, Option<Phase>);
 impl UserWorkSync {
     fn new(repository: RepositorySettings) -> Self {
         let mut filters: Vec<FilterQuery> = Vec::new();
-        for filter in repository.filters {
+        for filter in &repository.filters {
             if !filters.contains(&filter.query) {
-                filters.push(filter.query);
+                filters.push(filter.query.clone());
             }
         }
         Self {
-            repository: repository.name,
+            settings: repository,
             filters,
             phase: Phase::Starting,
             fetched: BTreeSet::new(),
@@ -314,13 +315,13 @@ impl UserWorkSync {
             pages: first_sync.pages,
         };
         let text = serde_json::to_string(&saved).map_err(place_problem)?;
-        store.save_first_sync_place(&self.repository, FirstSyncPlace::new(text))
+        store.save_first_sync_place(&self.settings.name, FirstSyncPlace::new(text))
     }
 
     /// Takes up a first sync where it stopped, or starts one.
     fn start_first_sync(&mut self, store: &Store) -> Result<(), Error> {
         let owner = PlaceOwner::now(store, &self.filters)?;
-        let saved = saved_place(store, &self.repository)?;
+        let saved = saved_place(store, &self.settings.name)?;
         let Some(saved) = saved.filter(|saved| saved.owner == owner) else {
             self.first_sync = Some(FirstSync { owner, pages: 0 });
             self.phase = Resumable::Searching {
@@ -387,7 +388,7 @@ impl UserWorkSync {
         let link = Link {
             github,
             store,
-            repository: &self.repository,
+            repository: &self.settings.name,
             filters: &self.filters,
             window_since: self
                 .first_sync
@@ -452,9 +453,9 @@ impl UserWorkSync {
             check: self.check.clone(),
             refresh_under_way: false,
         };
-        store.save_sync_state(&self.repository, state)?;
+        store.save_sync_state(&self.settings.name, state)?;
         Ok(LastSync {
-            repository: self.repository.clone(),
+            repository: self.settings.name.clone(),
             at: Some(finished_at),
         })
     }

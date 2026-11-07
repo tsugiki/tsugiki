@@ -225,7 +225,7 @@ fn a_refresh_of_the_open_repository_takes_the_next_turn_beside_another_sync() {
     syncs.add(plain(cpython()));
     syncs
         .queue
-        .retain(|queued| queued.sync.repository == peps());
+        .retain(|queued| queued.sync.settings.name == peps());
     drop(syncs.step(&harness.github, &harness.store).unwrap());
 
     syncs.refresh_open(&harness.store);
@@ -296,7 +296,7 @@ fn with_the_open_repository_idle_the_activity_only_names_the_others() {
     syncs.add(plain(cpython()));
     syncs
         .queue
-        .retain(|queued| queued.sync.repository == peps());
+        .retain(|queued| queued.sync.settings.name == peps());
 
     let activity = syncs.activity().unwrap();
 
@@ -532,7 +532,7 @@ fn a_step_that_keeps_failing_gives_way_to_the_next_sync() {
     }
 
     assert_eq!(syncs.queue.len(), 1);
-    assert_eq!(syncs.queue.front().unwrap().sync.repository, peps());
+    assert_eq!(syncs.queue.front().unwrap().sync.settings.name, peps());
     assert_eq!(syncs.queue.front().unwrap().failures, 0);
 }
 

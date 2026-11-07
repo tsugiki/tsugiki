@@ -52,6 +52,7 @@ fn pull_request(number: u32, author: &Login) -> PullRequestFacts {
         assignees: vec![],
         closing_issues: vec![],
         merge_commit: None,
+        head: None,
         off_default: None,
     }
 }

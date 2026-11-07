@@ -35,6 +35,7 @@ pub(super) fn stranger() -> PullRequestFacts {
         assignees: vec![],
         closing_issues: vec![],
         merge_commit: None,
+        head: None,
         off_default: None,
     }
 }

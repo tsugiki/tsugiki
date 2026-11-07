@@ -168,6 +168,13 @@ impl Store {
         read.map_err(saying(CANT_READ))
     }
 
+    /// The facts behind the Workbench of `repository`, as this writer last saved them.
+    pub fn work_facts(&self, repository: &RepositoryName) -> Result<WorkFacts, Error> {
+        let repository = repository.clone();
+        let read = self.call(move |connection| read_work_facts(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
     /// The last sync of `repository` that finished, if one has.
     pub fn sync_state(&self, repository: &RepositoryName) -> Result<Option<SyncState>, Error> {
         let repository = repository.clone();
@@ -892,6 +899,7 @@ mod tests {
             assignees: vec![Login::new("some-assignee")],
             closing_issues: vec![7],
             merge_commit: CommitSha::parse("0123abc"),
+            head: None,
             off_default: Some(OffDefault {
                 description: String::new(),
                 cherry_picked_from: CommitSha::parse("0123abc").into_iter().collect(),

@@ -74,6 +74,7 @@ fn pr_json() -> serde_json::Value {
         ] },
         "lastCommit": { "nodes": [{ "commit": { "statusCheckRollup": { "state": "FAILURE" } } }] },
         "mergeCommit": null,
+        "headRefOid": "89abcdef0123456789abcdef0123456789abcdef",
         "commits": { "totalCount": 0, "nodes": [] },
     })
 }
@@ -352,6 +353,7 @@ fn a_fetched_pr_is_read_into_its_facts() {
             assignees: vec![Login::new("some-reviewer")],
             closing_issues: vec![7],
             merge_commit: None,
+            head: Some(sha("89abcdef0123456789abcdef0123456789abcdef")),
             off_default: None,
         }
     );
@@ -460,6 +462,7 @@ fn a_null_in_a_pull_requests_lists_is_left_out() {
         "latestReviews": { "nodes": [null] },
         "lastCommit": { "nodes": [null] },
         "mergeCommit": null,
+        "headRefOid": "89abcdef0123456789abcdef0123456789abcdef",
         "commits": { "totalCount": 0, "nodes": [] },
     });
     let (script, _asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([node])))]);
@@ -567,4 +570,34 @@ fn a_refused_token_isnt_retried() {
     assert_eq!(refused.kind, ErrorKind::Unauthorized);
     drop(asked.recv().unwrap());
     assert!(asked.try_recv().is_err());
+}
+
+#[test]
+fn a_recorded_pr_carries_the_commit_its_branch_is_at() {
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
+    let github = GitHub::new(
+        Box::new(crate::github::replay::Replayer::new(fixtures)),
+        token(),
+    );
+
+    let batch = github
+        .fetch_pull_requests(PrFetch::Work, &ids(&["a"]), 25)
+        .unwrap();
+
+    assert!(!batch.pull_requests.is_empty());
+    for pr in &batch.pull_requests {
+        assert!(pr.head.is_some(), "PR #{} has no head", pr.number);
+    }
+}
+
+#[test]
+fn a_fetched_pr_keeps_its_head_and_drops_one_that_isnt_a_sha() {
+    let with_head = |oid: &str| {
+        let mut pr = pr_json();
+        pr["headRefOid"] = json!(oid);
+        read_back(&pr).head
+    };
+    let whole = "89abcdef0123456789abcdef0123456789abcdef";
+    assert_eq!(with_head(whole), Some(sha(whole)));
+    assert_eq!(with_head("not a sha"), None);
 }

@@ -74,6 +74,7 @@ pub(super) fn fetched_titled(
                 "latestReviews": { "nodes": [] },
                 "lastCommit": { "nodes": [] },
                 "mergeCommit": null,
+                "headRefOid": "89abcdef0123456789abcdef0123456789abcdef",
                 "commits": { "totalCount": 0, "nodes": [] },
             })
         })
@@ -431,6 +432,7 @@ pub(super) fn pr_node(number: u32, changes: &Value) -> Value {
         "latestReviews": { "nodes": [] },
         "lastCommit": { "nodes": [] },
         "mergeCommit": null,
+        "headRefOid": "89abcdef0123456789abcdef0123456789abcdef",
         "commits": { "totalCount": 0, "nodes": [] },
         "timelineItems": { "nodes": [] },
     });

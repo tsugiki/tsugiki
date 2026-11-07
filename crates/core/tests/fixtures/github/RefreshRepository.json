@@ -2,20 +2,10 @@
   "body": {
     "data": {
       "f0": {
-        "issueCount": 1,
-        "nodes": [
-          {
-            "__typename": "PullRequest",
-            "id": "PR_kwDOBN0Z8c8AAAABJlTcBw",
-            "number": 159888,
-            "repository": {
-              "nameWithOwner": "python/cpython"
-            },
-            "updatedAt": "2026-11-04T19:32:13Z"
-          }
-        ],
+        "issueCount": 0,
+        "nodes": [],
         "pageInfo": {
-          "endCursor": "Y3Vyc29yOjE=",
+          "endCursor": null,
           "hasNextPage": false
         }
       },
@@ -23,22 +13,20 @@
         "issueCount": 2,
         "nodes": [
           {
-            "__typename": "PullRequest",
-            "id": "PR_kwDOBN0Z8c8AAAABKlmbmA",
-            "number": 160667,
+            "__typename": "Issue",
+            "number": 159101,
             "repository": {
               "nameWithOwner": "python/cpython"
             },
-            "updatedAt": "2026-11-04T19:21:23Z"
+            "updatedAt": "2026-11-07T08:37:54Z"
           },
           {
-            "__typename": "PullRequest",
-            "id": "PR_kwDOBN0Z8c8AAAABKlAJ0A",
-            "number": 160662,
+            "__typename": "Issue",
+            "number": 116946,
             "repository": {
               "nameWithOwner": "python/cpython"
             },
-            "updatedAt": "2026-11-04T19:27:01Z"
+            "updatedAt": "2026-11-07T07:23:48Z"
           }
         ],
         "pageInfo": {
@@ -47,179 +35,883 @@
         }
       },
       "rateLimit": {
-        "remaining": 4997,
-        "resetAt": "2026-11-04T22:46:14Z"
+        "remaining": 4952,
+        "resetAt": "2026-11-07T09:29:53Z"
       },
       "repository": {
         "issues": {
           "nodes": [
             {
+              "assignees": {
+                "nodes": []
+              },
               "author": {
                 "login": "user-1"
               },
-              "number": 161185,
-              "title": "[C API] Py_CLEAR(), Py_SETREF() and Py_XSETREF() memcpy() implementation is not safe with strict aliasing",
-              "assignees": { "nodes": [] },
-              "timelineItems": { "nodes": [] },
-              "updatedAt": "2026-11-04T21:37:23Z"
-            },
-            {
-              "author": {
-                "login": "user-1"
+              "number": 161540,
+              "timelineItems": {
+                "nodes": [
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-2"
+                    },
+                    "createdAt": "2026-11-07T08:26:23Z"
+                  }
+                ]
               },
-              "number": 161354,
-              "title": "test_ast: test_nodes_have_inline_values() fails when test_ast is run twice",
-              "assignees": { "nodes": [] },
-              "timelineItems": { "nodes": [] },
-              "updatedAt": "2026-11-04T21:33:26Z"
+              "title": "Add debug assert for out-of-bounds dk_indices values in do_lookup",
+              "updatedAt": "2026-11-07T08:49:02Z"
             },
             {
-              "author": {
-                "login": "user-2"
+              "assignees": {
+                "nodes": []
               },
-              "number": 161323,
-              "title": "tarfile: Windows same-drive drive-relative symlink not caught by data filter",
-              "assignees": { "nodes": [] },
-              "timelineItems": { "nodes": [] },
-              "updatedAt": "2026-11-04T21:25:20Z"
-            },
-            {
               "author": {
                 "login": "user-3"
               },
-              "number": 161317,
-              "title": "configparser: write() silently drops leading whitespace from multiline values on round-trip",
-              "assignees": { "nodes": [] },
-              "timelineItems": { "nodes": [] },
-              "updatedAt": "2026-11-04T21:22:53Z"
+              "number": 161524,
+              "timelineItems": {
+                "nodes": []
+              },
+              "title": "Optimising sparse dict copy",
+              "updatedAt": "2026-11-07T08:44:35Z"
             },
             {
+              "assignees": {
+                "nodes": [
+                  {
+                    "login": "octocat"
+                  }
+                ]
+              },
               "author": {
                 "login": "user-4"
               },
-              "number": 161229,
-              "title": "`__lazy_import__: globals=None` signature differs from explicit None behavior",
-              "assignees": { "nodes": [] },
-              "timelineItems": { "nodes": [] },
-              "updatedAt": "2026-11-04T21:14:13Z"
+              "number": 159101,
+              "timelineItems": {
+                "nodes": [
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "octocat"
+                    },
+                    "createdAt": "2026-10-10T07:39:47Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-5"
+                    },
+                    "createdAt": "2026-10-10T09:45:22Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "octocat"
+                    },
+                    "createdAt": "2026-11-07T07:22:47Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-6"
+                    },
+                    "createdAt": "2026-11-07T07:22:49Z"
+                  }
+                ]
+              },
+              "title": "Use-after-free in PyObject_CallFinalizer when __del__ changes __class__",
+              "updatedAt": "2026-11-07T08:37:54Z"
             },
             {
-              "author": {
-                "login": "user-5"
+              "assignees": {
+                "nodes": [
+                  {
+                    "login": "user-7"
+                  }
+                ]
               },
-              "number": 151464,
-              "title": "Tokenizer produces token '<>', missing in the language grammar (regardless on __future__.barry_as_FLUFL settings)",
-              "assignees": { "nodes": [] },
-              "timelineItems": { "nodes": [] },
-              "updatedAt": "2026-11-04T21:02:29Z"
+              "author": {
+                "login": "user-8"
+              },
+              "number": 161420,
+              "timelineItems": {
+                "nodes": [
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-8"
+                    },
+                    "createdAt": "2026-11-05T12:42:01Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-9"
+                    },
+                    "createdAt": "2026-11-05T15:06:18Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-10"
+                    },
+                    "createdAt": "2026-11-06T16:14:54Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-7"
+                    },
+                    "createdAt": "2026-11-06T16:14:57Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-7"
+                    },
+                    "createdAt": "2026-11-06T20:46:42Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-8"
+                    },
+                    "createdAt": "2026-11-06T20:46:44Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-8"
+                    },
+                    "createdAt": "2026-11-07T06:15:47Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-10"
+                    },
+                    "createdAt": "2026-11-07T06:15:50Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-7"
+                    },
+                    "createdAt": "2026-11-07T06:15:50Z"
+                  }
+                ]
+              },
+              "title": "Free-threaded 3.14.10 and 3.15.2 keep memory freed by other threads: 10 GB peaks since the mimalloc 2.5.2 update",
+              "updatedAt": "2026-11-07T08:35:18Z"
             },
             {
-              "author": {
-                "login": "user-1"
+              "assignees": {
+                "nodes": []
               },
-              "number": 161353,
-              "title": "test_tcl leaked [1, 1, 1] handles on AMD64 Windows Server 2025 Refleaks 3.x",
-              "assignees": { "nodes": [] },
-              "timelineItems": { "nodes": [] },
-              "updatedAt": "2026-11-04T20:58:32Z"
+              "author": {
+                "login": "user-11"
+              },
+              "number": 161415,
+              "timelineItems": {
+                "nodes": []
+              },
+              "title": "pydoc `help()` lists related topics that do not exist (`FILES`, `unicode`)",
+              "updatedAt": "2026-11-07T08:28:50Z"
             },
             {
-              "author": {
-                "login": "user-6"
+              "assignees": {
+                "nodes": []
               },
-              "number": 161288,
-              "title": "perf trampoline segfaults on UBSan builds",
-              "assignees": { "nodes": [] },
-              "timelineItems": { "nodes": [] },
-              "updatedAt": "2026-11-04T20:15:52Z"
+              "author": {
+                "login": "user-12"
+              },
+              "number": 161513,
+              "timelineItems": {
+                "nodes": [
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-13"
+                    },
+                    "createdAt": "2026-11-07T08:18:17Z"
+                  }
+                ]
+              },
+              "title": "platform: import _wmi on first use",
+              "updatedAt": "2026-11-07T08:18:17Z"
             },
             {
-              "author": {
-                "login": "user-1"
+              "assignees": {
+                "nodes": []
               },
-              "number": 161336,
-              "title": "test_imaplib failed with ConnectionRefusedError on AMD64 FreeBSD Refleaks 3.15 buildbot",
-              "assignees": { "nodes": [] },
-              "timelineItems": { "nodes": [] },
-              "updatedAt": "2026-11-04T19:58:13Z"
+              "author": {
+                "login": "user-14"
+              },
+              "number": 152433,
+              "timelineItems": {
+                "nodes": [
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-5"
+                    },
+                    "createdAt": "2026-06-27T16:48:10Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-15"
+                    },
+                    "createdAt": "2026-06-27T16:48:11Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-16"
+                    },
+                    "createdAt": "2026-06-27T16:48:12Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-16"
+                    },
+                    "createdAt": "2026-06-27T18:28:41Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-17"
+                    },
+                    "createdAt": "2026-06-27T18:28:42Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-14"
+                    },
+                    "createdAt": "2026-06-27T18:57:31Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-17"
+                    },
+                    "createdAt": "2026-06-27T20:12:57Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-15"
+                    },
+                    "createdAt": "2026-07-06T12:54:24Z"
+                  }
+                ]
+              },
+              "title": "Windows: improve compatibility to build for UWP / Xbox",
+              "updatedAt": "2026-11-07T08:14:31Z"
             },
             {
-              "author": {
-                "login": "user-7"
+              "assignees": {
+                "nodes": []
               },
-              "number": 159434,
-              "title": "Function `__annotations__` can cache a stale result from `__annotate__`",
-              "assignees": { "nodes": [] },
-              "timelineItems": { "nodes": [] },
-              "updatedAt": "2026-11-04T19:41:14Z"
+              "author": {
+                "login": "user-18"
+              },
+              "number": 161477,
+              "timelineItems": {
+                "nodes": [
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-19"
+                    },
+                    "createdAt": "2026-11-06T22:03:48Z"
+                  }
+                ]
+              },
+              "title": "idlelib: stray comma makes `__repr__` format a one-element tuple",
+              "updatedAt": "2026-11-07T08:09:59Z"
+            },
+            {
+              "assignees": {
+                "nodes": []
+              },
+              "author": {
+                "login": "user-20"
+              },
+              "number": 160109,
+              "timelineItems": {
+                "nodes": [
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-10"
+                    },
+                    "createdAt": "2026-10-21T19:51:56Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-10"
+                    },
+                    "createdAt": "2026-10-22T04:23:26Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-21"
+                    },
+                    "createdAt": "2026-10-28T04:38:37Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-20"
+                    },
+                    "createdAt": "2026-10-28T04:38:39Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-10"
+                    },
+                    "createdAt": "2026-11-04T16:05:21Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-20"
+                    },
+                    "createdAt": "2026-11-04T16:05:24Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-22"
+                    },
+                    "createdAt": "2026-11-05T09:47:09Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-10"
+                    },
+                    "createdAt": "2026-11-05T13:18:46Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-20"
+                    },
+                    "createdAt": "2026-11-05T13:18:47Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-21"
+                    },
+                    "createdAt": "2026-11-05T13:18:48Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-22"
+                    },
+                    "createdAt": "2026-11-05T13:18:50Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-22"
+                    },
+                    "createdAt": "2026-11-05T14:17:34Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-10"
+                    },
+                    "createdAt": "2026-11-05T14:17:37Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-20"
+                    },
+                    "createdAt": "2026-11-05T14:17:38Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-21"
+                    },
+                    "createdAt": "2026-11-05T14:17:39Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-20"
+                    },
+                    "createdAt": "2026-11-07T07:33:30Z"
+                  }
+                ]
+              },
+              "title": "Remove unused FVS_* macros",
+              "updatedAt": "2026-11-07T07:33:30Z"
+            },
+            {
+              "assignees": {
+                "nodes": []
+              },
+              "author": {
+                "login": "user-10"
+              },
+              "number": 116946,
+              "timelineItems": {
+                "nodes": [
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-10"
+                    },
+                    "createdAt": "2024-03-18T08:02:05Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-10"
+                    },
+                    "createdAt": "2024-03-18T08:03:16Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-5"
+                    },
+                    "createdAt": "2025-08-30T13:14:55Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-5"
+                    },
+                    "createdAt": "2025-09-01T12:14:01Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-23"
+                    },
+                    "createdAt": "2025-09-01T12:14:03Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-23"
+                    },
+                    "createdAt": "2025-09-01T12:19:38Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-24"
+                    },
+                    "createdAt": "2025-09-01T14:44:56Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-5"
+                    },
+                    "createdAt": "2025-09-01T14:46:56Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-24"
+                    },
+                    "createdAt": "2025-09-01T14:58:35Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-5"
+                    },
+                    "createdAt": "2025-09-01T15:06:09Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-24"
+                    },
+                    "createdAt": "2025-09-01T15:58:56Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-5"
+                    },
+                    "createdAt": "2025-09-11T12:43:23Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-23"
+                    },
+                    "createdAt": "2025-09-11T12:50:44Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "octocat"
+                    },
+                    "createdAt": "2025-09-11T12:53:39Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-5"
+                    },
+                    "createdAt": "2025-09-11T13:08:25Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "octocat"
+                    },
+                    "createdAt": "2025-09-15T19:34:45Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-23"
+                    },
+                    "createdAt": "2025-09-15T19:34:46Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-5"
+                    },
+                    "createdAt": "2025-09-16T10:29:42Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "octocat"
+                    },
+                    "createdAt": "2025-09-16T10:29:42Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "octocat"
+                    },
+                    "createdAt": "2025-09-16T11:22:48Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-5"
+                    },
+                    "createdAt": "2025-09-16T11:22:50Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "octocat"
+                    },
+                    "createdAt": "2025-09-17T17:13:11Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-5"
+                    },
+                    "createdAt": "2025-09-17T17:13:13Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-5"
+                    },
+                    "createdAt": "2025-09-17T17:46:58Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "octocat"
+                    },
+                    "createdAt": "2025-09-17T17:57:50Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "octocat"
+                    },
+                    "createdAt": "2025-09-17T18:02:47Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-5"
+                    },
+                    "createdAt": "2025-09-17T18:02:49Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-25"
+                    },
+                    "createdAt": "2025-09-18T16:34:22Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-5"
+                    },
+                    "createdAt": "2025-09-18T16:47:54Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-24"
+                    },
+                    "createdAt": "2025-09-18T16:47:56Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-23"
+                    },
+                    "createdAt": "2025-10-01T07:42:08Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-26"
+                    },
+                    "createdAt": "2026-04-11T03:16:12Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-24"
+                    },
+                    "createdAt": "2026-06-26T16:24:20Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-27"
+                    },
+                    "createdAt": "2026-08-16T05:07:04Z"
+                  },
+                  {
+                    "__typename": "MentionedEvent",
+                    "actor": {
+                      "__typename": "User",
+                      "login": "user-24"
+                    },
+                    "createdAt": "2026-08-16T05:07:06Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-10"
+                    },
+                    "createdAt": "2026-11-06T20:53:23Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-10"
+                    },
+                    "createdAt": "2026-11-06T21:01:49Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "octocat"
+                    },
+                    "createdAt": "2026-11-06T22:17:20Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-27"
+                    },
+                    "createdAt": "2026-11-06T23:19:18Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "user-27"
+                    },
+                    "createdAt": "2026-11-07T05:12:07Z"
+                  },
+                  {
+                    "__typename": "IssueComment",
+                    "author": {
+                      "__typename": "User",
+                      "login": "octocat"
+                    },
+                    "createdAt": "2026-11-07T07:23:48Z"
+                  }
+                ]
+              },
+              "title": "Heap types implemented in C must have Py_TPFLAGS_HAVE_GC and implement tp_traverse",
+              "updatedAt": "2026-11-07T07:23:48Z"
             }
           ],
           "pageInfo": {
-            "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0wNFQxOTo0MToxNFrPAAAAAVzuFNk=",
+            "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0wN1QwNzoyMzo0OFrOgp9CyA==",
             "hasNextPage": true
           }
         },
         "openIssues": {
-          "totalCount": 6937
+          "totalCount": 6947
         },
         "openPrs": {
-          "totalCount": 2315
+          "totalCount": 2317
         },
         "pullRequests": {
           "nodes": [
             {
-              "id": "PR_kwDOBN0Z8c8AAAABM6u_wg",
-              "number": 161359,
-              "updatedAt": "2026-11-04T21:42:18Z"
+              "id": "PR_kwDOBN0Z8c7t2P6v",
+              "number": 153021,
+              "updatedAt": "2026-11-07T09:05:08Z"
             },
             {
-              "id": "PR_kwDOBN0Z8c8AAAABMUmAmA",
-              "number": 161186,
-              "updatedAt": "2026-11-04T21:38:23Z"
+              "id": "PR_kwDOBN0Z8c8AAAABNfGR9w",
+              "number": 161544,
+              "updatedAt": "2026-11-07T08:55:17Z"
             },
             {
-              "id": "PR_kwDOBN0Z8c8AAAABM6u2cw",
-              "number": 161357,
-              "updatedAt": "2026-11-04T21:37:51Z"
+              "id": "PR_kwDOBN0Z8c8AAAABNfHA8A",
+              "number": 161545,
+              "updatedAt": "2026-11-07T08:49:01Z"
             },
             {
-              "id": "PR_kwDOBN0Z8c8AAAABM64azw",
-              "number": 161360,
-              "updatedAt": "2026-11-04T21:37:27Z"
+              "id": "PR_kwDOBN0Z8c8AAAABNAyrvw",
+              "number": 161386,
+              "updatedAt": "2026-11-07T08:47:54Z"
             },
             {
-              "id": "PR_kwDOBN0Z8c8AAAABM6u7FQ",
-              "number": 161358,
-              "updatedAt": "2026-11-04T21:35:37Z"
+              "id": "PR_kwDOBN0Z8c8AAAABNByPNA",
+              "number": 161397,
+              "updatedAt": "2026-11-07T08:45:02Z"
             },
             {
-              "id": "PR_kwDOBN0Z8c8AAAABKesw_A",
-              "number": 160616,
-              "updatedAt": "2026-11-04T21:35:21Z"
+              "id": "PR_kwDOBN0Z8c8AAAABNXBlJQ",
+              "number": 161507,
+              "updatedAt": "2026-11-07T08:44:00Z"
             },
             {
-              "id": "PR_kwDOBN0Z8c8AAAABM6urMA",
-              "number": 161355,
-              "updatedAt": "2026-11-04T21:29:40Z"
+              "id": "PR_kwDOBN0Z8c75lsPv",
+              "number": 155070,
+              "updatedAt": "2026-11-07T08:42:36Z"
             },
             {
-              "id": "PR_kwDOBN0Z8c8AAAABM3sDcQ",
-              "number": 161334,
-              "updatedAt": "2026-11-04T21:25:25Z"
+              "id": "PR_kwDOBN0Z8c8AAAABNfCu1g",
+              "number": 161543,
+              "updatedAt": "2026-11-07T08:37:18Z"
             },
             {
-              "id": "PR_kwDOBN0Z8c8AAAABM6uxwQ",
-              "number": 161356,
-              "updatedAt": "2026-11-04T21:25:01Z"
+              "id": "PR_kwDOBN0Z8c8AAAABNe6Nww",
+              "number": 161539,
+              "updatedAt": "2026-11-07T08:33:19Z"
             },
             {
-              "id": "PR_kwDOBN0Z8c8AAAABM40AdA",
-              "number": 161337,
-              "updatedAt": "2026-11-04T21:23:01Z"
+              "id": "PR_kwDOBN0Z8c8AAAABNDorIg",
+              "number": 161417,
+              "updatedAt": "2026-11-07T08:28:55Z"
             }
           ],
           "pageInfo": {
-            "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0wNFQyMToyMzowMVrPAAAAATONAHQ=",
+            "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0wN1QwODoyODo1NVrPAAAAATQ6KyI=",
             "hasNextPage": true
           }
         }
@@ -227,6 +919,6 @@
     }
   },
   "query": "query RefreshRepository($owner: String!, $name: String!, $since: DateTime!, $issues: Int!, $issuesAfter: String, $prs: Int!, $prsAfter: String, $first: Int!, $filter0: String!, $filter1: String!) { repository(owner: $owner, name: $name) { openIssues: issues(states: OPEN) { totalCount } openPrs: pullRequests(states: OPEN) { totalCount } issues(first: $issues, after: $issuesAfter, filterBy: { since: $since }, orderBy: { field: UPDATED_AT, direction: DESC }) { pageInfo { hasNextPage endCursor } nodes { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } pullRequests(first: $prs, after: $prsAfter, orderBy: { field: UPDATED_AT, direction: DESC }) { pageInfo { hasNextPage endCursor } nodes { id number updatedAt } } } f0: search(query: $filter0, type: ISSUE_ADVANCED, first: $first) { issueCount pageInfo { hasNextPage endCursor } nodes { __typename ... on Issue { number updatedAt repository { nameWithOwner } } ... on PullRequest { id number updatedAt repository { nameWithOwner } } } } f1: search(query: $filter1, type: ISSUE_ADVANCED, first: $first) { issueCount pageInfo { hasNextPage endCursor } nodes { __typename ... on Issue { number updatedAt repository { nameWithOwner } } ... on PullRequest { id number updatedAt repository { nameWithOwner } } } } rateLimit { remaining resetAt } }",
-  "reset": 1793832374,
+  "reset": 1794043793,
   "status": 200
 }

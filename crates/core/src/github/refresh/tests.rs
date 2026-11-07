@@ -407,6 +407,7 @@ fn a_probe_changes_only_what_it_read() {
         assignees: vec![Login::new("some-assignee")],
         closing_issues: vec![9],
         merge_commit: None,
+        head: None,
         off_default: None,
     };
     let probe = PrProbe {

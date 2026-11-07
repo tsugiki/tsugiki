@@ -30,6 +30,7 @@ fn facts(number: u32) -> PullRequestFacts {
         assignees: vec![Login::new("some-assignee")],
         closing_issues: vec![7, 8],
         merge_commit: None,
+        head: Some(sha("89abcdef")),
         off_default: Some(OffDefault::described("Fixes #9")),
     }
 }
@@ -84,6 +85,7 @@ fn a_pr_with_nothing_optional_reads_back_the_same() {
         assignees: vec![],
         closing_issues: vec![],
         merge_commit: None,
+        head: None,
         off_default: None,
         ..facts(2)
     };
@@ -118,6 +120,7 @@ fn a_backports_facts_read_back_the_same() {
     let origin = PullRequestFacts {
         state: PrState::Merged,
         merge_commit: Some(sha("0123abcdef")),
+        head: None,
         off_default: None,
         review_requests: vec![],
         ..facts(6)
@@ -178,6 +181,7 @@ fn merged_and_closed_prs_are_frozen_and_open_ones_are_not() {
     };
     let merged = |number| PullRequestFacts {
         merge_commit: Some(sha("0123abc")),
+        head: None,
         ..in_state(number, PrState::Merged)
     };
     store
@@ -220,6 +224,7 @@ fn saving_a_pr_again_replaces_what_was_known() {
         assignees: vec![],
         closing_issues: vec![],
         merge_commit: None,
+        head: None,
         off_default: None,
         ..at(2, facts(1))
     };
@@ -403,6 +408,7 @@ fn a_row_an_earlier_tsugiki_wrote_reads_back() {
     let earlier = PullRequestFacts {
         closing_issues: vec![],
         merge_commit: None,
+        head: None,
         off_default: None,
         ..at(7, facts(1))
     };

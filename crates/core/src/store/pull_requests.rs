@@ -66,6 +66,10 @@ pub(super) const LINK_FACTS: &str = "
     ) WITHOUT ROWID;
 ";
 
+/// The commit each PR's branch is at, which the Repository's mirror fetches (#157). A PR stored before this
+/// has none until the next sync fetches it.
+pub(super) const HEADS: &str = "ALTER TABLE pull_requests ADD COLUMN head TEXT;";
+
 /// The facts the Backport rules read (ADR 0011). A PR stored before this has none, so it isn't a Bot
 /// backport until the next sync fetches it. A merged one isn't frozen until then either, because it has no
 /// merge commit.
@@ -144,9 +148,9 @@ fn save_pull_request(
         .execute(
             "INSERT INTO pull_requests
                  (repository, number, title, state, is_draft, author, target_branch, ci, updated_at,
-                  off_default_description, merge_commit, ci_finished_at)
+                  off_default_description, merge_commit, head, ci_finished_at)
              VALUES (:repository, :number, :title, :state, :is_draft, :author, :target_branch, :ci,
-                     :updated_at, :off_default_description, :merge_commit, CASE
+                     :updated_at, :off_default_description, :merge_commit, :head, CASE
                          WHEN :ci IN ('SUCCESS', 'FAILURE', 'ERROR')
                              AND EXISTS (SELECT 1 FROM first_syncs WHERE repository = :repository)
                          THEN :now END)
@@ -166,7 +170,8 @@ fn save_pull_request(
                      ELSE pull_requests.checks_read_at END,
                  updated_at = excluded.updated_at,
                  off_default_description = excluded.off_default_description,
-                 merge_commit = excluded.merge_commit",
+                 merge_commit = excluded.merge_commit,
+                 head = excluded.head",
             named_params! {
                 ":repository": repository,
                 ":number": facts.number,
@@ -179,6 +184,7 @@ fn save_pull_request(
                 ":updated_at": facts.updated_at.unix_timestamp(),
                 ":off_default_description": facts.off_default.as_ref().map(|off| &off.description),
                 ":merge_commit": facts.merge_commit,
+                ":head": facts.head,
                 ":now": OffsetDateTime::now_utc().unix_timestamp(),
             },
         )
@@ -491,6 +497,7 @@ struct PullRequestColumns {
     updated_at: usize,
     off_default_description: usize,
     merge_commit: usize,
+    head: usize,
 }
 
 impl PullRequestColumns {
@@ -506,6 +513,7 @@ impl PullRequestColumns {
             updated_at: statement.column_index("updated_at")?,
             off_default_description: statement.column_index("off_default_description")?,
             merge_commit: statement.column_index("merge_commit")?,
+            head: statement.column_index("head")?,
         })
     }
 }
@@ -522,7 +530,7 @@ pub(super) fn read_all(
     let mut picks = cherry_picks(connection, repository)?;
     let mut committed = committers(connection, repository)?;
     let query = "SELECT number, title, state, is_draft, author, target_branch, ci, updated_at,
-                        off_default_description, merge_commit
+                        off_default_description, merge_commit, head
                  FROM pull_requests
                  WHERE repository = :repository
                  ORDER BY updated_at DESC, number DESC";
@@ -548,6 +556,7 @@ pub(super) fn read_all(
             assignees: assigned.remove(&number).unwrap_or_default(),
             closing_issues: closing.remove(&number).unwrap_or_default(),
             merge_commit: row.get(column.merge_commit)?,
+            head: row.get(column.head)?,
             off_default: description.map(|description| OffDefault {
                 description,
                 cherry_picked_from: picks.remove(&number).unwrap_or_default(),

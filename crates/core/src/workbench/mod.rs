@@ -25,7 +25,9 @@ use time::OffsetDateTime;
 
 use crate::error::Error;
 use crate::filters::FilterQuery;
+use crate::github::CommitSha;
 use crate::github::issues::IssueFacts;
+use crate::github::pull_requests::PrHead;
 use crate::links::BackportKind;
 use crate::repository::RepositorySettings;
 use crate::store::{StoreReader, WorkFacts};
@@ -141,6 +143,31 @@ pub struct Workbench {
 }
 
 impl Workbench {
+    /// The heads of the PRs the user's work reaches: each PR on the whole Workbench, the quiet items' and
+    /// those in Issues' trees too. A PR stored before Tsugiki read heads has none to give.
+    pub fn reached_heads(facts: WorkFacts, repository: &RepositorySettings) -> Vec<PrHead> {
+        let heads: BTreeMap<u32, CommitSha> = facts
+            .pull_requests
+            .iter()
+            .filter_map(|pr| Some((pr.number, pr.head.clone()?)))
+            .collect();
+        let whole = Self::from_facts(facts, repository, &WorkbenchView::Whole);
+        let reached: BTreeSet<u32> = whole
+            .items
+            .iter()
+            .chain(&whole.quiet)
+            .flat_map(|listed| listed.item.rows())
+            .map(|row| row.number)
+            .collect();
+        reached
+            .into_iter()
+            .filter_map(|number| {
+                let commit = heads.get(&number)?.clone();
+                Some(PrHead { number, commit })
+            })
+            .collect()
+    }
+
     /// Reads the view `view` of `repository`'s Workbench. This waits on the database and never on a sync
     /// (ADR 0018).
     pub fn read(

@@ -76,7 +76,19 @@ pub(crate) fn connect_core<R: Runtime>(
     let last_sync_handle = app.clone();
     let activity_handle = app.clone();
     let cloning_handle = app.clone();
+    let mirrors = Mirrors::start(
+        folders.clone(),
+        outside.remotes,
+        Box::new(move |cloning| {
+            // Before the event, for the reason the status gives below.
+            let cloning = cloning.cloned();
+            latest_cloning.set(&cloning);
+            log_if_unsent(CloningChanged(cloning).emit(&cloning_handle));
+        }),
+    );
+    let (following, fetching) = (mirrors.requests(), mirrors.requests());
     let board = StatusBoard::new(Box::new(move |status| {
+        following.follow(status);
         // Before the event: a window that starts listening too late for it then asks `status()`, and has to
         // get this status.
         latest_status.set(status);
@@ -96,21 +108,14 @@ pub(crate) fn connect_core<R: Runtime>(
         let activity = activity.cloned();
         latest_activity.set(&activity);
         log_if_unsent(SyncActivityChanged(activity).emit(&activity_handle));
+    }))
+    .with_heads(Box::new(move |repository, heads| {
+        fetching.fetch_heads(repository.clone(), heads);
     }));
     let intervals = Intervals {
         status: refresh,
         repository: REPOSITORY_REFRESH,
     };
-    let mirrors = Mirrors::start(
-        folders.clone(),
-        outside.remotes,
-        Box::new(move |cloning| {
-            // Before the event, for the reason the status gives above.
-            let cloning = cloning.cloned();
-            latest_cloning.set(&cloning);
-            log_if_unsent(CloningChanged(cloning).emit(&cloning_handle));
-        }),
-    );
     let session = Session::start(board, folders, outside.github, intervals);
     let requests = session.requests();
     let work = RepositoryWork {
@@ -564,12 +569,12 @@ mod tests {
             .collect()
     }
 
-    /// The recordings hold 22 PRs of real CPython work, and 4 of them are the recording user's own. They name
-    /// 22 Issues: #154019 fixes two by itself, and #156423 and #156419 fix one between them. The Filters'
+    /// The recordings hold 21 PRs of real CPython work, and 3 of them are the recording user's own. They name
+    /// 21 Issues: #154019 fixes two by itself, and #156423 and #156419 fix one between them. The Filters'
     /// search reaches 2 more that no PR names.
     fn assert_is_the_recorded_work(workbench: &Value) {
         let items = listed(workbench);
-        assert_eq!(items.len(), 24);
+        assert_eq!(items.len(), 23);
         assert!(
             items.iter().all(|item| item["kind"] == "issue"),
             "{items:?}"
@@ -593,7 +598,7 @@ mod tests {
                 .filter(|row| row["reasons"].as_array().unwrap().contains(&json!(reason)))
                 .count()
         };
-        assert_eq!(with_reason("own_pr"), 4);
+        assert_eq!(with_reason("own_pr"), 3);
         assert!(with_reason("review_request") > 0);
     }
 
@@ -685,8 +690,9 @@ mod tests {
         assert_eq!(line["name"], "My bugs");
         assert_eq!(line["query"], EDITED);
         assert_eq!(selected["filters"], whole["filters"]);
-        // The search found 8 items, and #156423 and #156419 share a row with the Issue they fix.
-        assert_eq!(listed(&selected).len(), 6);
+        // The search found 7 items. #157178 shares a row with the Issue it fixes, which the search found too,
+        // and #156423 and #156419 share one with the Issue they fix.
+        assert_eq!(listed(&selected).len(), 5);
     }
 
     #[test]
@@ -966,5 +972,61 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
 
         assert_eq!(order, [json!(CPYTHON), json!("octo-org/first")]);
+    }
+
+    /// Puts a commit of PR `number`'s own on the remote for `name`, under `refs/pull/N/head` as GitHub
+    /// keeps it, and gives the commit.
+    fn pull_request_on(root: &Path, name: &str, number: u32) -> String {
+        let work = root.join("remotes").join("work").join(name);
+        std::fs::write(work.join("NEWS"), format!("PR {number}\n")).unwrap();
+        git(&work, &["add", "NEWS"]);
+        git(
+            &work,
+            &[
+                "-c",
+                "user.name=Contributor",
+                "-c",
+                "user.email=contributor@example.com",
+                "commit",
+                "-qm",
+                "PR",
+            ],
+        );
+        let bare = root.join("remotes").join(format!("{name}.git"));
+        git(
+            &work,
+            &[
+                "push",
+                "-q",
+                &bare.to_string_lossy(),
+                &format!("HEAD:refs/pull/{number}/head"),
+            ],
+        );
+        let head = std::fs::read_to_string(bare.join(format!("refs/pull/{number}/head")));
+        head.unwrap().trim().to_owned()
+    }
+
+    #[test]
+    fn a_sync_fetches_the_heads_of_the_users_prs_into_the_mirror() {
+        let (folders, root) = temp_folders("wiring-heads");
+        let remotes = remotes(&root, &[CPYTHON]);
+        // The user's own PR in the recordings.
+        let commit = pull_request_on(&root, CPYTHON, 157_178);
+        let wired = Wired::start_cloning_from(Ok(folders.clone()), recordings(), remotes);
+
+        let _ = wired.ask("add_repository", add_cpython()).unwrap();
+        let _clone = clones(&wired, 1);
+        let mirror =
+            folders.mirror(&tsugiki_core::repository::RepositoryName::parse(CPYTHON).unwrap());
+        let fetched = mirror.join("refs/tsugiki/pull/157178/head");
+        let deadline = Instant::now() + PLENTY;
+        while !fetched.exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        drop(wired.stop());
+        let head = std::fs::read_to_string(&fetched).unwrap_or_default();
+        std::fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(head.trim(), commit);
     }
 }

@@ -136,8 +136,10 @@ impl Mirrors {
             clone: None,
         };
         let _ = thread::spawn(move || {
-            // `stop` learns the worker is over when this goes, however the thread ends.
+            // `stop` learns the worker is over when this goes, however the thread ends. Locals go in reverse
+            // order, so `incoming` goes first, and a request after `stop` finds nobody to take it.
             let _finishing = finishing;
+            let incoming = incoming;
             worker.run(&incoming);
         });
         Self { messages, finished }

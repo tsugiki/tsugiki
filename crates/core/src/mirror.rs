@@ -1,7 +1,7 @@
 //! Each Repository's **Mirror**: a bare clone in its folder (ADR 0002, ADR 0010). One worker thread writes
 //! to the mirrors, beside the session's sync queue, and clones them one at a time.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::OsStr;
 use std::fs;
 use std::io::{self, BufReader, Read};
@@ -45,7 +45,16 @@ pub struct Cloning {
 const PARTIAL: &str = "mirror.git.partial";
 
 /// Says the clone under way each time it moves on, and `None` when it ends.
-type AnnounceCloning = Box<dyn FnMut(Option<&Cloning>) + Send>;
+pub type AnnounceCloning = Box<dyn FnMut(Option<&Cloning>) + Send>;
+
+/// Says which PRs' heads a fetch brought into a Repository's mirror.
+pub type AnnounceFetched = Box<dyn FnMut(&RepositoryName, &[u32]) + Send>;
+
+/// What the worker tells the app as it goes.
+pub struct Announce {
+    pub cloning: AnnounceCloning,
+    pub fetched: AnnounceFetched,
+}
 
 /// Where clones come from: GitHub, or in tests a folder of bare repositories laid out as GitHub's are.
 pub struct Remotes {
@@ -87,6 +96,8 @@ enum Message {
     Clone(RepositoryName, Turn),
     /// The heads of the PRs the user's work reaches in a Repository, as the store has them now.
     Heads(RepositoryName, Vec<PrHead>),
+    /// The head of a PR the user opened, which the mirror lacks.
+    First(RepositoryName, PrHead),
     /// Whether to hold back the next git, while GitHub can't be reached.
     Hold(bool),
     Progress(CloneProgress),
@@ -135,6 +146,12 @@ impl MirrorRequests {
         self.send(Message::Heads(repository, heads));
     }
 
+    /// Fetches the head of a PR the user opened, which `repository`'s mirror lacks, ahead of the heads
+    /// waiting. The worker fetches it whatever it noted of it before, so a ref GitHub made late arrives.
+    pub fn fetch_first(&self, repository: RepositoryName, head: PrHead) {
+        self.send(Message::First(repository, head));
+    }
+
     /// Holds back the next git while `status` says GitHub can't be reached. A rate limit is the API's, and
     /// git doesn't use the API, so it holds back nothing.
     pub fn follow(&self, status: &Status) {
@@ -155,13 +172,35 @@ impl MirrorRequests {
     }
 }
 
+/// Requests that reach a test rather than a worker, which hears each head asked for first.
+#[cfg(test)]
+pub(crate) struct HeardRequests(Receiver<Message>);
+
+#[cfg(test)]
+impl HeardRequests {
+    pub(crate) fn new() -> (MirrorRequests, Self) {
+        let (messages, heard) = mpsc::channel();
+        (MirrorRequests { messages }, Self(heard))
+    }
+
+    /// The heads asked for first since the last call.
+    pub(crate) fn firsts(&self) -> Vec<(RepositoryName, PrHead)> {
+        let heard = self.0.try_iter().filter_map(|message| match message {
+            Message::First(repository, head) => Some((repository, head)),
+            Message::Clone(..)
+            | Message::Heads(..)
+            | Message::Hold(_)
+            | Message::Progress(_)
+            | Message::Ended { .. }
+            | Message::Stop => None,
+        });
+        heard.collect()
+    }
+}
+
 impl Mirrors {
     /// Starts the worker. Without `folders` it has nowhere to put a mirror, and logs each request instead.
-    pub fn start(
-        folders: Result<Folders, Error>,
-        remotes: Remotes,
-        announce: AnnounceCloning,
-    ) -> Self {
+    pub fn start(folders: Result<Folders, Error>, remotes: Remotes, announce: Announce) -> Self {
         Self::with_git(Box::new(LiveGit), folders, remotes, announce)
     }
 
@@ -169,7 +208,7 @@ impl Mirrors {
         git: Box<dyn Git>,
         folders: Result<Folders, Error>,
         remotes: Remotes,
-        announce: AnnounceCloning,
+        announce: Announce,
     ) -> Self {
         let (messages, incoming) = mpsc::channel();
         let (finishing, finished) = mpsc::channel::<()>();
@@ -301,7 +340,7 @@ struct Clone {
 struct Fetch {
     repository: RepositoryName,
     mirror: PathBuf,
-    batch: BTreeMap<u32, CommitSha>,
+    batch: Batch,
     git: Box<dyn Run>,
     /// Heads or a status came while it ran, so if it fails, the next fetch has a reason to try again.
     news: bool,
@@ -321,11 +360,20 @@ enum Pace {
 /// `refs/pull/N/head` a few seconds after a push.
 const BEHIND_PATIENCE: Duration = Duration::from_secs(10);
 
+/// What one fetch brings into a mirror: PR heads, and the Target branches their diffs start from.
+#[derive(Debug, Default)]
+struct Batch {
+    heads: BTreeMap<u32, CommitSha>,
+    branches: BTreeSet<String>,
+}
+
 /// What the worker knows of one Repository's PR heads.
 struct Heads {
     repository: RepositoryName,
     /// Heads handed over and not fetched yet, which go in the next fetch.
     waiting: BTreeMap<u32, CommitSha>,
+    /// The Target branches of the heads waiting, which the next fetch brings up to date with them.
+    branches: BTreeSet<String>,
     /// Heads whose fetch left their ref somewhere else, as GitHub hadn't moved it yet (#201), or whose ref
     /// couldn't be read back.
     behind: BTreeMap<u32, Behind>,
@@ -335,14 +383,16 @@ struct Heads {
 }
 
 impl Heads {
-    /// Notes where the heads of a fetch that succeeded `landed`, or nothing if that couldn't be read. One
-    /// that is behind for the first time since it was handed over is fetched once more at `retry`.
+    /// Notes where the heads of a fetch that succeeded `landed`, or nothing if that couldn't be read, and
+    /// gives the PRs whose heads landed. One that is behind for the first time since it was handed over is
+    /// fetched once more at `retry`.
     fn note_fetched(
         &mut self,
         batch: BTreeMap<u32, CommitSha>,
         landed: Option<&BTreeMap<u32, CommitSha>>,
         retry: Instant,
-    ) {
+    ) -> Vec<u32> {
+        let mut arrived = Vec::new();
         for (number, commit) in batch {
             // The same head handed over during the fetch asks for nothing more.
             if self.waiting.get(&number) == Some(&commit) {
@@ -353,6 +403,9 @@ impl Heads {
                 None => Some(&commit),
             };
             let Some(elsewhere) = elsewhere else {
+                if landed.is_some_and(|landed| landed.contains_key(&number)) {
+                    arrived.push(number);
+                }
                 drop(self.behind.remove(&number));
                 drop(self.settled.insert(number, commit));
                 continue;
@@ -370,6 +423,7 @@ impl Heads {
                 drop(self.behind.insert(number, due));
             }
         }
+        arrived
     }
 }
 
@@ -385,7 +439,7 @@ struct Worker {
     git: Box<dyn Git>,
     folders: Result<Folders, Error>,
     remotes: Remotes,
-    announce: AnnounceCloning,
+    announce: Announce,
     /// For the thread that reads each git's progress.
     messages: Sender<Message>,
     waiting: VecDeque<RepositoryName>,
@@ -416,6 +470,13 @@ impl Worker {
                         self.pace = Pace::Going;
                     }
                     self.hand_over(&repository, heads);
+                }
+                Ok(Message::First(repository, head)) => {
+                    self.heard_news();
+                    if self.pace == Pace::Stalled {
+                        self.pace = Pace::Going;
+                    }
+                    self.put_first(&repository, head);
                 }
                 Ok(Message::Hold(held)) => {
                     self.heard_news();
@@ -476,6 +537,7 @@ impl Worker {
             .unwrap_or_else(|| Heads {
                 repository: repository.clone(),
                 waiting: BTreeMap::new(),
+                branches: BTreeSet::new(),
                 behind: BTreeMap::new(),
                 settled: BTreeMap::new(),
             })
@@ -491,15 +553,32 @@ impl Worker {
     /// under way asks for too waits, in case that fetch fails.
     fn hand_over(&mut self, repository: &RepositoryName, heads: Vec<PrHead>) {
         let mut known = self.take_heads(repository);
-        for PrHead { number, commit } in heads {
+        for PrHead {
+            number,
+            commit,
+            target_branch,
+        } in heads
+        {
             // A hand-over is a reason to try a head again, so one that was behind starts afresh.
             drop(known.behind.remove(&number));
             if known.settled.get(&number) == Some(&commit) {
                 drop(known.waiting.remove(&number));
             } else {
                 drop(known.waiting.insert(number, commit));
+                let _ = known.branches.insert(target_branch);
             }
         }
+        self.heads.push_front(known);
+    }
+
+    /// Puts the head of a PR the user opened in the next fetch, whatever the worker noted of it, and its
+    /// Repository ahead of the others.
+    fn put_first(&mut self, repository: &RepositoryName, head: PrHead) {
+        let mut known = self.take_heads(repository);
+        drop(known.behind.remove(&head.number));
+        drop(known.settled.remove(&head.number));
+        drop(known.waiting.insert(head.number, head.commit));
+        let _ = known.branches.insert(head.target_branch);
         self.heads.push_front(known);
     }
 
@@ -531,7 +610,7 @@ impl Worker {
             }
             match self.start_clone(repository, folder) {
                 Ok(clone) => {
-                    (self.announce)(Some(&clone.cloning));
+                    (self.announce.cloning)(Some(&clone.cloning));
                     self.job = Some(Job::Clone(clone));
                 }
                 Err((repository, cause)) => {
@@ -576,34 +655,33 @@ impl Worker {
 
     /// The waiting heads of the first Repository whose mirror is there, with where it is. The heads of one
     /// whose mirror isn't there wait for its clone.
-    fn next_batch(&mut self) -> Option<(RepositoryName, BTreeMap<u32, CommitSha>, PathBuf)> {
+    fn next_batch(&mut self) -> Option<(RepositoryName, Batch, PathBuf)> {
         let going = self.pace == Pace::Going;
         let folders = self.folders.as_ref().ok().filter(|_| going)?;
         let heads = self.heads.iter_mut().find(|heads| {
             !heads.waiting.is_empty() && folders.mirror(&heads.repository).exists()
         })?;
         let mirror = folders.mirror(&heads.repository);
-        Some((
-            heads.repository.clone(),
-            mem::take(&mut heads.waiting),
-            mirror,
-        ))
+        let batch = Batch {
+            heads: mem::take(&mut heads.waiting),
+            branches: mem::take(&mut heads.branches),
+        };
+        Some((heads.repository.clone(), batch, mirror))
     }
 
-    /// Fetches each head of `batch` in one go. A glob in each refspec lets a head GitHub no longer has match
-    /// nothing, where a plain one would fail the whole fetch (#157), and `--prune` deletes its old ref, so
-    /// the refs read back say which heads GitHub has. A connection that stalls for a minute
-    /// fails the fetch, which would otherwise hold up every git after it.
-    fn start_fetch(
-        &mut self,
-        repository: RepositoryName,
-        batch: BTreeMap<u32, CommitSha>,
-        mirror: PathBuf,
-    ) {
-        let refspecs: String = batch
+    /// Fetches each head and branch of `batch` in one go. A glob in each refspec lets a head or a branch
+    /// GitHub no longer has match nothing, where a plain one would fail the whole fetch (#157), and
+    /// `--prune` deletes its old ref, so the refs read back say which heads GitHub has. A branch's glob
+    /// also brings the branches whose names start with its name, which costs little. A connection that
+    /// stalls for a minute fails the fetch, which would otherwise hold up every git after it.
+    fn start_fetch(&mut self, repository: RepositoryName, batch: Batch, mirror: PathBuf) {
+        let heads = batch
+            .heads
             .keys()
-            .map(|number| format!("+refs/pull/{number}/head*:refs/tsugiki/pull/{number}/head*\n"))
-            .collect();
+            .map(|number| format!("+refs/pull/{number}/head*:refs/tsugiki/pull/{number}/head*\n"));
+        let branches = (batch.branches.iter())
+            .map(|branch| format!("+refs/heads/{branch}*:refs/heads/{branch}*\n"));
+        let refspecs: String = heads.chain(branches).collect();
         let args = [
             OsStr::new("-c"),
             OsStr::new("http.lowSpeedLimit=1"),
@@ -637,12 +715,14 @@ impl Worker {
         }
     }
 
-    /// Puts back the heads of a fetch that failed, behind any newer ones handed over meanwhile.
-    fn try_again_later(&mut self, repository: &RepositoryName, batch: BTreeMap<u32, CommitSha>) {
+    /// Puts back the heads and branches of a fetch that failed, behind any newer heads handed over
+    /// meanwhile.
+    fn try_again_later(&mut self, repository: &RepositoryName, batch: Batch) {
         let mut known = self.take_heads(repository);
-        for (number, commit) in batch {
+        for (number, commit) in batch.heads {
             let _ = known.waiting.entry(number).or_insert(commit);
         }
+        known.branches.extend(batch.branches);
         self.heads.push_back(known);
     }
 
@@ -678,13 +758,18 @@ impl Worker {
                 None
             }
         };
+        let retry = Instant::now() + self.remotes.patience;
+        // Back where it was, so an opened PR's head handed over meanwhile still goes first.
+        let at = self
+            .heads
+            .iter()
+            .position(|known| known.repository.is_same(&repository));
         let mut known = self.take_heads(&repository);
-        known.note_fetched(
-            batch,
-            landed.as_ref(),
-            Instant::now() + self.remotes.patience,
-        );
-        self.heads.push_back(known);
+        let arrived = known.note_fetched(batch.heads, landed.as_ref(), retry);
+        self.heads.insert(at.unwrap_or(self.heads.len()), known);
+        if !arrived.is_empty() {
+            (self.announce.fetched)(&repository, &arrived);
+        }
     }
 
     /// Where each PR head ref in `mirror` points.
@@ -746,7 +831,7 @@ impl Worker {
             && clone.cloning.progress != progress
         {
             clone.cloning.progress = progress;
-            (self.announce)(Some(&clone.cloning));
+            (self.announce.cloning)(Some(&clone.cloning));
         }
     }
 
@@ -767,7 +852,7 @@ impl Worker {
                 drop(fs::remove_dir_all(&clone.partial));
             }
         }
-        (self.announce)(None);
+        (self.announce.cloning)(None);
     }
 }
 

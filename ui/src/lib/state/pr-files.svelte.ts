@@ -26,6 +26,8 @@ export type PrFiles = PrFiles_Serialize;
 export type DiffFile = DiffFile_Serialize;
 export type DiffRow = DiffRow_Serialize;
 export type NewsEntry = NewsEntry_Serialize;
+/** A diff the tab shows, from its merge base to its head. */
+type Ready = Extract<PrFiles, { state: "ready" }>;
 export type { Cloning, FileChange, Highlight, LinkTo, NewsBlock, NewsPiece, Span };
 
 /** Rows asked for at a time: about 25 screens, as the diff prototype found best. */
@@ -50,7 +52,7 @@ export class PrFilesState {
   readonly #repository: string;
   readonly #number: number;
   readonly #jumps: JumpTimer;
-  /** The rows the core has sent, by chunk, for the head of `view`. */
+  /** The rows the core has sent, by chunk, for the diff `view` shows. */
   #chunks = new SvelteMap<number, DiffRow[]>();
   /** The spans of each row, by chunk, which come after its rows. */
   #spans = new SvelteMap<number, Span[][]>();
@@ -109,14 +111,16 @@ export class PrFilesState {
     this.#stopListening = [];
   }
 
-  /** Asks the core what the tab shows now. A new head brings new rows. */
+  /** Asks the core what the tab shows now. A new head brings new rows, as does a new merge base: a PR
+   * moved to another Target branch keeps its head, and its diff can list other files in the places the tab
+   * holds. */
   async ask() {
     this.#lastQuestion += 1;
     const question = this.#lastQuestion;
     const answer = await this.#safely(() => commands.pullRequestFiles(this.#repository, this.#number));
     // A newer question reads newer facts, so this drops an older answer that arrives late.
     if (question !== this.#lastQuestion || answer === undefined) return;
-    if (this.#head(answer) !== this.#head(this.view)) {
+    if (this.#diff(answer) !== this.#diff(this.view)) {
       this.#chunks.clear();
       this.#spans.clear();
       this.#asked.clear();
@@ -142,13 +146,13 @@ export class PrFilesState {
     this.#opened.add(file);
     const view = this.view;
     if (view?.state !== "ready") return;
-    for (const chunk of this.#asked) void this.#respan(view.head, chunk);
+    for (const chunk of this.#asked) void this.#respan(view, chunk);
   }
 
   /** Asks for a chunk's spans again, and paints them if they come while it still belongs. */
-  async #respan(head: string, chunk: number) {
-    const spans = await this.#fetchSpans(head, chunk);
-    if (spans !== undefined && this.#wanted(head, chunk)) this.#spans.set(chunk, spans);
+  async #respan(diff: Ready, chunk: number) {
+    const spans = await this.#fetchSpans(diff, chunk);
+    if (spans !== undefined && this.#wanted(diff, chunk)) this.#spans.set(chunk, spans);
   }
 
   /** Row `index` of the diff, once the core has sent it. */
@@ -188,63 +192,67 @@ export class PrFilesState {
       this.#asked.add(chunk);
       // One jump for the rows that show, timed by the first of their chunks.
       const jump: Jump | undefined = shown.length === 0 ? this.#jumps.jumped() : undefined;
-      shown.push(this.#fetch(view.head, chunk, jump));
+      shown.push(this.#fetch(view, chunk, jump));
     }
     for (const chunk of after) {
       if (this.#asked.has(chunk)) continue;
       this.#asked.add(chunk);
-      void Promise.all(shown).then(() => this.#fetch(view.head, chunk, undefined));
+      void Promise.all(shown).then(() => this.#fetch(view, chunk, undefined));
     }
   }
 
   /** Asks for a chunk's rows and spans together. The rows show once the spans come, or once they have
    * waited `SPANS_WAIT` since the ask, whichever is first. */
-  async #fetch(head: string, chunk: number, jump: Jump | undefined) {
-    const spans = this.#fetchSpans(head, chunk);
+  async #fetch(diff: Ready, chunk: number, jump: Jump | undefined) {
+    const spans = this.#fetchSpans(diff, chunk);
     const waited = new Promise<undefined>((resolve) => setTimeout(resolve, SPANS_WAIT));
-    const rows = await this.#safely(() => commands.pullRequestRows(this.#chunk(head, chunk)));
+    const rows = await this.#safely(() => commands.pullRequestRows(this.#chunk(diff, chunk)));
     if (rows === undefined) {
-      this.#asked.delete(chunk);
+      // A chunk of an older diff that fails leaves the newer diff's ask for the same chunk alone.
+      if (this.#wanted(diff, chunk)) this.#asked.delete(chunk);
       return;
     }
     const early = await Promise.race([spans, waited]);
-    if (!this.#wanted(head, chunk)) return;
+    if (!this.#wanted(diff, chunk)) return;
     if (early !== undefined) this.#spans.set(chunk, early);
     this.#chunks.set(chunk, rows);
     jump?.rowsShown(early !== undefined);
     if (early !== undefined) return;
     const late = await spans;
-    if (late === undefined || !this.#wanted(head, chunk)) return;
+    if (late === undefined || !this.#wanted(diff, chunk)) return;
     this.#spans.set(chunk, late);
     jump?.spansShown();
   }
 
   /** A chunk's spans, or nothing if they don't come. Its rows fail for the same causes, and say so. */
-  async #fetchSpans(head: string, chunk: number): Promise<Span[][] | undefined> {
+  async #fetchSpans(diff: Ready, chunk: number): Promise<Span[][] | undefined> {
     const answer = await commands
-      .pullRequestSpans(this.#chunk(head, chunk), [...this.#opened])
+      .pullRequestSpans(this.#chunk(diff, chunk), [...this.#opened])
       .catch(() => undefined);
     return answer?.status === "ok" ? answer.data : undefined;
   }
 
-  #chunk(head: string, chunk: number) {
+  /** A chunk of `diff`, which names the commits it runs between so the core reads it from those. */
+  #chunk(diff: Ready, chunk: number) {
     return {
       repository: this.#repository,
       number: this.#number,
-      head,
+      head: diff.head,
+      base: diff.base,
       start: chunk * CHUNK,
       end: (chunk + 1) * CHUNK,
     };
   }
 
-  /** Whether what came for `chunk` at `head` still belongs: what came for an older head would land among the
-   * newer head's, and a chunk let go of is far from what shows. */
-  #wanted(head: string, chunk: number): boolean {
-    return this.#head(this.view) === head && this.#asked.has(chunk);
+  /** Whether what came for `chunk` of `diff` still belongs: what came for an older diff would land among
+   * the newer one's, and a chunk let go of is far from what shows. */
+  #wanted(diff: Ready, chunk: number): boolean {
+    return this.#diff(this.view) === this.#diff(diff) && this.#asked.has(chunk);
   }
 
-  #head(view: PrFiles | null | undefined): string | undefined {
-    return view?.state === "ready" ? view.head : undefined;
+  /** The commits the diff `view` shows runs between, or nothing if it shows none. */
+  #diff(view: PrFiles | null | undefined): string | undefined {
+    return view?.state === "ready" ? `${view.base}..${view.head}` : undefined;
   }
 
   /** What a command answered, or undefined after saying why it failed. */

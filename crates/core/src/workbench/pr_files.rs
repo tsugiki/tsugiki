@@ -8,7 +8,8 @@ use serde::Serialize;
 use specta::Type;
 
 use crate::diff::{
-    self, Chunk, DiffFile, DiffRow, Diffs, Held, Highlighter, NewsEntry, OpenDiff, PrAt,
+    self, Against, Chunk, DiffFile, DiffOf, DiffRow, Diffs, Held, Highlighter, NewsEntry, OpenDiff,
+    PrAt,
 };
 use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
@@ -32,6 +33,10 @@ pub enum PrFiles {
         /// The commit the diff ends at, which each chunk names.
         #[specta(type = String)]
         head: CommitSha,
+        /// The merge base the diff starts from, which each chunk names too. A PR moved to another
+        /// Target branch keeps its head and gets another merge base (#211).
+        #[specta(type = String)]
+        base: CommitSha,
         files: Vec<DiffFile>,
         rows: u32,
         /// The PR's NEWS entries, rendered above the rows.
@@ -74,9 +79,10 @@ impl PrFiles {
             number,
             head: head.clone(),
         };
+        let target = Against::Branch(&pr.target_branch);
         // The diff on show is in the mirror, so asking git again would only cost a moment.
-        if let Some(open) = sources.diffs.shown(&at) {
-            return Ok(Some(Self::ready(head, &open)));
+        if let Some(open) = sources.diffs.shown(&at, target) {
+            return Ok(Some(Self::ready(&open)));
         }
         match diff::held(&mirror, &pr.target_branch, &head) {
             Held::NoHead => {
@@ -96,44 +102,43 @@ impl PrFiles {
                 ),
             )),
             Held::Both => {
-                let target = &pr.target_branch;
-                let open = sources
-                    .diffs
-                    .get_or_read(&at, || diff::read(&mirror, target, &head))?;
-                Ok(Some(Self::ready(head, &open)))
+                let read = || diff::read(&mirror, &pr.target_branch, &head);
+                let open = sources.diffs.get_or_read(&at, target, read)?;
+                Ok(Some(Self::ready(&open)))
             }
         }
     }
 
-    fn ready(head: CommitSha, open: &OpenDiff) -> Self {
+    fn ready(open: &OpenDiff) -> Self {
         Self::Ready {
-            head,
+            head: open.pr.head.clone(),
+            base: open.base.clone(),
             files: open.diff.files().to_vec(),
             rows: open.diff.row_count(),
             news: open.news.clone(),
         }
     }
 
-    /// The rows in `range` of `pr`'s diff, cut to its end. They come from the diff on show, unless the
+    /// The rows in `range` of the diff `of`, cut to its end. They come from the diff on show, unless the
     /// user has opened another PR since.
     pub fn rows(
         sources: &DiffSources<'_>,
-        pr: &PrAt,
+        of: &DiffOf,
         range: Range<u32>,
     ) -> Result<Vec<DiffRow>, Error> {
-        Ok(Self::open(sources, pr)?.diff.rows(range).to_vec())
+        Ok(Self::open(sources, of)?.diff.rows(range).to_vec())
     }
 
     /// The spans of the rows in `range`, which highlight their code (#178). Those of a Generated file come
     /// only once the window opens it, and `opened` names those, by their place among the files (#181).
     pub fn spans(
         sources: &DiffSources<'_>,
-        pr: &PrAt,
+        of: &DiffOf,
         range: Range<u32>,
         opened: &[u32],
     ) -> Result<Vec<Vec<Span>>, Error> {
-        let mirror = sources.folders.mirror(&pr.repository);
-        let open = Self::open(sources, pr)?;
+        let mirror = sources.folders.mirror(&of.pr.repository);
+        let open = Self::open(sources, of)?;
         let chunk = Chunk {
             rows: range,
             opened,
@@ -141,9 +146,11 @@ impl PrFiles {
         Ok(sources.highlighter.spans(&open, &mirror, chunk))
     }
 
-    /// The diff of `pr`: the one on show, or else read again, as when the user has opened another PR since.
-    fn open(sources: &DiffSources<'_>, pr: &PrAt) -> Result<Arc<OpenDiff>, Error> {
-        sources.diffs.get_or_read(pr, || {
+    /// The diff `of`: the one on show, or else read again from its base, as when the user has opened
+    /// another PR since. The Target branch only says which files are Generated.
+    fn open(sources: &DiffSources<'_>, of: &DiffOf) -> Result<Arc<OpenDiff>, Error> {
+        let DiffOf { pr, base } = of;
+        sources.diffs.get_or_read(pr, Against::Base(base), || {
             let facts = facts(sources.reader, &pr.repository, pr.number)?;
             let Some(facts) = facts else {
                 return Err(Error::new(
@@ -152,7 +159,7 @@ impl PrFiles {
                 ));
             };
             let mirror = sources.folders.mirror(&pr.repository);
-            diff::read(&mirror, &facts.target_branch, &pr.head)
+            diff::read_between(&mirror, &facts.target_branch, base, &pr.head)
         })
     }
 }
@@ -236,6 +243,18 @@ mod tests {
 
         fn repository(&self) -> RepositoryName {
             self.view.settings().name
+        }
+
+        /// PR 7's diff from `base` to `head`.
+        fn diff_of(&self, head: &CommitSha, base: &CommitSha) -> DiffOf {
+            DiffOf {
+                pr: PrAt {
+                    repository: self.repository(),
+                    number: 7,
+                    head: head.clone(),
+                },
+                base: base.clone(),
+            }
         }
 
         fn files(&self) -> Option<PrFiles> {
@@ -325,18 +344,16 @@ mod tests {
         world.has_pr(Some(head.clone()), "main");
 
         let files = world.files().unwrap();
-        let pr = PrAt {
-            repository: world.repository(),
-            number: 7,
-            head: head.clone(),
-        };
-        let rows = PrFiles::rows(&world.sources(), &pr, 0..3).unwrap();
+        let of = world.diff_of(&head, &read.base);
+        let rows = PrFiles::rows(&world.sources(), &of, 0..3).unwrap();
         // main marks Lib/ast.py generated, and the window has opened each file.
         let opened: Vec<u32> = (0..).take(whole.files().len()).collect();
-        let spans = PrFiles::spans(&world.sources(), &pr, 0..whole.row_count(), &opened).unwrap();
+        let all = 0..whole.row_count();
+        let spans = PrFiles::spans(&world.sources(), &of, all, &opened).unwrap();
 
         let expected = PrFiles::Ready {
             head,
+            base: read.base,
             files: whole.files().to_vec(),
             rows: whole.row_count(),
             news: read.news,
@@ -367,28 +384,55 @@ mod tests {
     }
 
     #[test]
-    fn rows_of_a_diff_no_longer_on_show_are_read_again() {
+    fn rows_of_a_diff_no_longer_on_show_are_read_again_from_its_base() {
         let world = World::new("read-again");
         let mirrored = Mirrored::new("pr-files-read-again");
         let head = mirrored.head.clone();
-        let whole = mirrored.diff();
+        let whole = mirrored.read();
+        let _ = git_in(&mirrored.mirror, &["branch", "3.14", head.as_str()]);
         world.mirrors(&mirrored);
-        world.has_pr(Some(head.clone()), "main");
-        let pr = PrAt {
-            repository: world.repository(),
-            number: 7,
-            head,
-        };
-        let elsewhere = PrAt {
-            number: 8,
-            ..pr.clone()
+        // The PR moved to 3.14 after the window read its files against main.
+        world.has_pr(Some(head.clone()), "3.14");
+        let of = world.diff_of(&head, &whole.base);
+        let elsewhere = DiffOf {
+            pr: PrAt {
+                number: 8,
+                ..of.pr.clone()
+            },
+            ..of.clone()
         };
 
-        let rows = PrFiles::rows(&world.sources(), &pr, 3..5).unwrap();
+        let rows = PrFiles::rows(&world.sources(), &of, 3..5).unwrap();
         let unknown = PrFiles::rows(&world.sources(), &elsewhere, 0..5).unwrap_err();
 
-        assert_eq!(rows, whole.rows(3..5));
+        assert_eq!(rows, whole.diff.rows(3..5));
         assert_eq!(unknown.message, "Tsugiki doesn't hold PR #8.");
+        mirrored.finish();
+        world.finish();
+    }
+
+    #[test]
+    fn a_pr_moved_to_another_branch_shows_its_diff_against_that_branch() {
+        let world = World::new("retargeted");
+        let mirrored = Mirrored::new("pr-files-retargeted");
+        let head = mirrored.head.clone();
+        // 3.14 already holds the PR's commit, so the diff against it is empty.
+        let _ = git_in(&mirrored.mirror, &["branch", "3.14", head.as_str()]);
+        world.mirrors(&mirrored);
+        world.has_pr(Some(head.clone()), "main");
+        let before = world.files();
+
+        world.has_pr(Some(head.clone()), "3.14");
+
+        let expected = PrFiles::Ready {
+            head: head.clone(),
+            base: head,
+            files: Vec::new(),
+            rows: 0,
+            news: Vec::new(),
+        };
+        assert_ne!(before, Some(expected.clone()));
+        assert_eq!(world.files(), Some(expected));
         mirrored.finish();
         world.finish();
     }

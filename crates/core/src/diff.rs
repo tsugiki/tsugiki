@@ -310,11 +310,40 @@ pub fn held(mirror: &Path, target: &str, head: &CommitSha) -> Held {
 /// GitHub finds them, the files `target` marks generated, and the NEWS entries at `head`. Both have to be
 /// in `mirror`, as `held` says.
 pub fn read(mirror: &Path, target: &str, head: &CommitSha) -> Result<MirrorDiff, Error> {
+    read_from(mirror, target, Start::MergeBase, head)
+}
+
+/// Reads the diff from `base` to `head` as `read` does, with the files `target` marks generated. A chunk
+/// of a diff the window holds comes from the commits it was read between, whatever the Target branch is
+/// now (#211).
+pub fn read_between(
+    mirror: &Path,
+    target: &str,
+    base: &CommitSha,
+    head: &CommitSha,
+) -> Result<MirrorDiff, Error> {
+    read_from(mirror, target, Start::Base(base), head)
+}
+
+/// Where a diff starts.
+#[derive(Debug, Clone, Copy)]
+enum Start<'a> {
+    /// The merge base of the head and the Target branch.
+    MergeBase,
+    Base(&'a CommitSha),
+}
+
+fn read_from(
+    mirror: &Path,
+    target: &str,
+    start: Start<'_>,
+    head: &CommitSha,
+) -> Result<MirrorDiff, Error> {
     let index = TargetIndex::new(mirror);
     // The index takes as long as a small diff, so the two run side by side.
     let (diff, made) = std::thread::scope(|scope| {
         let made = scope.spawn(|| index.make(target));
-        (run_diff(mirror, target, head), made.join())
+        (run_diff(mirror, target, start, head), made.join())
     });
     let (base, numstat, patch) = diff.map_err(|cause| cant_read(mirror, &cause))?;
     let mut diff = Diff::parse(&numstat, &patch)?;
@@ -461,17 +490,15 @@ fn news(mirror: &Path, head: &CommitSha, files: &[DiffFile]) -> Vec<NewsEntry> {
 fn run_diff(
     mirror: &Path,
     target: &str,
+    start: Start<'_>,
     head: &CommitSha,
 ) -> std::io::Result<(CommitSha, String, String)> {
+    let base_commit = match start {
+        Start::MergeBase => merge_base(mirror, target, head)?,
+        Start::Base(base) => base.clone(),
+    };
+    let base = base_commit.as_str();
     let head = head.as_str();
-    let base = git(
-        mirror,
-        &["merge-base", &format!("refs/heads/{target}"), head],
-    )?;
-    let base = base.trim();
-    // Built every time, as a closure that never runs would fail the coverage gate (ADR 0009).
-    let not_a_commit = std::io::Error::other(format!("merge-base gave {base:?}"));
-    let base_commit = CommitSha::parse(base).ok_or(not_a_commit)?;
     // A user's git config can change how a diff looks, so these say each choice outright.
     let options = [
         "--no-color",
@@ -499,6 +526,16 @@ fn run_diff(
     Ok((base_commit, numstat.unwrap_or(Err(stopped))?, patch?))
 }
 
+/// The merge base of `head` and the branch `target`.
+fn merge_base(mirror: &Path, target: &str, head: &CommitSha) -> std::io::Result<CommitSha> {
+    let branch = format!("refs/heads/{target}");
+    let base = git(mirror, &["merge-base", &branch, head.as_str()])?;
+    let base = base.trim();
+    // Built every time, as a closure that never runs would fail the coverage gate (ADR 0009).
+    let not_a_commit = std::io::Error::other(format!("merge-base gave {base:?}"));
+    CommitSha::parse(base).ok_or(not_a_commit)
+}
+
 fn git(mirror: &Path, args: &[&str]) -> std::io::Result<String> {
     let mut all = vec![OsStr::new("-C"), mirror.as_os_str()];
     all.extend(args.iter().map(OsStr::new));
@@ -514,7 +551,8 @@ fn cant_read(mirror: &Path, cause: &std::io::Error) -> Error {
     )
 }
 
-/// A PR at one head, which has one diff.
+/// A PR at one head. Its diff starts where the head leaves its Target branch, so a PR moved to another
+/// branch has another diff at the same head.
 #[derive(Debug, Clone)]
 pub struct PrAt {
     pub repository: RepositoryName,
@@ -530,13 +568,54 @@ impl PrAt {
     }
 }
 
+/// A PR's diff as the window holds it: from the merge base it was told to the PR's head. Each chunk names
+/// both, so its rows come from the commits the window's list of files does (#211).
+#[derive(Debug, Clone)]
+pub struct DiffOf {
+    pub pr: PrAt,
+    pub base: CommitSha,
+}
+
+/// Which of a PR's diffs at one head a caller wants.
+#[derive(Debug, Clone, Copy)]
+pub enum Against<'a> {
+    /// The diff against the branch the PR targets now, by its name.
+    Branch(&'a str),
+    /// The diff from a merge base the window holds.
+    Base(&'a CommitSha),
+}
+
+impl Against<'_> {
+    /// The branch a diff read for this is read against, if this names one.
+    fn branch(self) -> Option<String> {
+        match self {
+            Self::Branch(target) => Some(target.to_owned()),
+            Self::Base(_) => None,
+        }
+    }
+}
+
 /// A diff the window reads in chunks, and the PR it belongs to.
 #[derive(Debug)]
 pub struct OpenDiff {
     pub pr: PrAt,
+    /// The Target branch it was read against. A diff read from a merge base the window held has none,
+    /// whatever the PR targets now: that branch may have another merge base.
+    pub target: Option<String>,
     pub base: CommitSha,
     pub diff: Diff,
     pub news: Vec<NewsEntry>,
+}
+
+impl OpenDiff {
+    /// Whether this is the diff of `pr` that `against` asks for.
+    fn answers(&self, pr: &PrAt, against: Against<'_>) -> bool {
+        self.pr.is(pr)
+            && match against {
+                Against::Branch(target) => self.target.as_deref() == Some(target),
+                Against::Base(base) => self.base == *base,
+            }
+    }
 }
 
 /// The diff of the PR on show, which each chunk the window asks for comes from. Commands run on threads of
@@ -557,21 +636,24 @@ struct Shown {
 }
 
 impl Diffs {
-    /// The diff of `pr`, if it is the one on show.
-    pub fn shown(&self, pr: &PrAt) -> Option<Arc<OpenDiff>> {
-        self.lock().open.clone().filter(|open| open.pr.is(pr))
+    /// The diff of `pr` that `against` asks for, if it is the one on show.
+    pub fn shown(&self, pr: &PrAt, against: Against<'_>) -> Option<Arc<OpenDiff>> {
+        let open = self.lock().open.clone();
+        open.filter(|open| open.answers(pr, against))
     }
 
-    /// The diff of `pr`: the one on show, or else what `read` gives, which takes its place unless a read
-    /// that started later got there first. That one is of the PR the user opened since.
+    /// The diff of `pr` that `against` asks for: the one on show, or else what `read` gives, which takes
+    /// its place unless a read that started later got there first. That one is of the PR the user opened
+    /// since.
     pub fn get_or_read(
         &self,
         pr: &PrAt,
+        against: Against<'_>,
         read: impl FnOnce() -> Result<MirrorDiff, Error>,
     ) -> Result<Arc<OpenDiff>, Error> {
         let started = {
             let mut shown = self.lock();
-            if let Some(open) = shown.open.clone().filter(|open| open.pr.is(pr)) {
+            if let Some(open) = shown.open.clone().filter(|open| open.answers(pr, against)) {
                 return Ok(open);
             }
             shown.reads += 1;
@@ -580,6 +662,7 @@ impl Diffs {
         let MirrorDiff { base, diff, news } = read()?;
         let read = Arc::new(OpenDiff {
             pr: pr.clone(),
+            target: against.branch(),
             base,
             diff,
             news,

@@ -15,7 +15,7 @@ use specta::Type;
 pub use startup::run;
 use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
-use tsugiki_core::diff::{DiffRow, Diffs, Highlighter, PrAt};
+use tsugiki_core::diff::{DiffOf, DiffRow, Diffs, Highlighter, PrAt};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::folders::Folders;
 use tsugiki_core::github::CommitSha;
@@ -291,24 +291,34 @@ pub(crate) struct DiffChunk {
     number: u32,
     /// The commit the diff ends at, as the Files tab was told.
     head: String,
+    /// The merge base the diff starts from, as the Files tab was told.
+    base: String,
     start: u32,
     end: u32,
 }
 
 impl DiffChunk {
-    /// The PR at the head the chunk names, and its rows.
-    fn parse(self) -> Result<(PrAt, std::ops::Range<u32>), Error> {
-        let Some(head) = CommitSha::parse(&self.head) else {
-            let message = format!("{:?} isn't a commit.", self.head);
-            return Err(Error::new(ErrorKind::NotFound, &message));
-        };
+    /// The diff between the commits the chunk names, and its rows.
+    fn parse(self) -> Result<(DiffOf, std::ops::Range<u32>), Error> {
         let pr = PrAt {
             repository: RepositoryName::parse(&self.repository)?,
             number: self.number,
-            head,
+            head: commit(&self.head)?,
         };
-        Ok((pr, self.start..self.end))
+        let of = DiffOf {
+            pr,
+            base: commit(&self.base)?,
+        };
+        Ok((of, self.start..self.end))
     }
+}
+
+/// The commit `sha` names, as the window sent it.
+fn commit(sha: &str) -> Result<CommitSha, Error> {
+    CommitSha::parse(sha).ok_or_else(|| {
+        let message = format!("{sha:?} isn't a commit.");
+        Error::new(ErrorKind::NotFound, &message)
+    })
 }
 
 fn read_pull_request_files(
@@ -326,8 +336,8 @@ fn read_pull_request_rows(
     work: &DiffWork,
     reader: &StoreReader,
 ) -> Result<Vec<DiffRow>, Error> {
-    let (pr, rows) = chunk.parse()?;
-    PrFiles::rows(&work.sources(reader)?, &pr, rows)
+    let (of, rows) = chunk.parse()?;
+    PrFiles::rows(&work.sources(reader)?, &of, rows)
 }
 
 fn read_pull_request_spans(
@@ -336,8 +346,8 @@ fn read_pull_request_spans(
     work: &DiffWork,
     reader: &StoreReader,
 ) -> Result<Vec<Vec<Span>>, Error> {
-    let (pr, rows) = chunk.parse()?;
-    PrFiles::spans(&work.sources(reader)?, &pr, rows, opened)
+    let (of, rows) = chunk.parse()?;
+    PrFiles::spans(&work.sources(reader)?, &of, rows, opened)
 }
 
 /// Opens the page of `item` on GitHub with `show`, and then moves its Last seen, since the user has it in

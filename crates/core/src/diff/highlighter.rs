@@ -19,7 +19,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 
-use super::{DiffRow, OpenDiff};
+use super::{DiffRow, NewsEntry, OpenDiff};
 use crate::github::live;
 use crate::highlight::{Language, Parsed, Span};
 
@@ -51,9 +51,6 @@ const BATCH: usize = 16;
 
 /// The PRs whose trees the thread keeps: the open one, and the one before it.
 const PRS: usize = 2;
-
-/// Where NEWS entries are.
-const NEWS: &str = "Misc/NEWS.d/";
 
 /// `lines`, which are in order, as runs to highlight, each with no gap of more than `GAP` lines.
 fn runs(lines: &[u32]) -> Vec<Range<u32>> {
@@ -141,6 +138,14 @@ enum Job {
     },
 }
 
+/// Rows of a diff the window asks spans for, and the Generated files it shows open, by their place among
+/// the files.
+#[derive(Debug, Clone)]
+pub struct Chunk<'a> {
+    pub rows: Range<u32>,
+    pub opened: &'a [u32],
+}
+
 /// The thread that parses the versions of the open PR's files and keeps their trees: their one writer. Each
 /// chunk asks it for the spans of its rows.
 #[derive(Clone)]
@@ -162,13 +167,20 @@ impl Highlighter {
         Self { jobs, shelf }
     }
 
-    /// The spans of each row in `range`, read from the versions of its files in `mirror`. A row that shows
-    /// no line of code, or whose file Tsugiki doesn't highlight, has none.
-    pub fn spans(&self, diff: &Arc<OpenDiff>, mirror: &Path, range: Range<u32>) -> Vec<Vec<Span>> {
+    /// The spans of each row of `chunk`, read from the versions of its files in `mirror`. A row that shows
+    /// no line of code, or whose file Tsugiki doesn't highlight, has none. Nor has a row of a Generated file
+    /// the chunk doesn't name as opened: a collapsed file's rows don't show, and parsing it would hold up
+    /// the files that do (#181).
+    pub fn spans(&self, diff: &Arc<OpenDiff>, mirror: &Path, chunk: Chunk<'_>) -> Vec<Vec<Span>> {
+        let Chunk {
+            rows: range,
+            opened,
+        } = chunk;
         let first = range.start;
+        let shown = |&((file, _), _): &(Version, u32)| !diff.collapsed(file, opened);
         let lines: Vec<Option<(Version, u32)>> = (first..)
             .zip(diff.diff.rows(range))
-            .map(|(row, shown)| diff.line(row, shown))
+            .map(|(row, shown_row)| diff.line(row, shown_row).filter(shown))
             .collect();
         // The lines each version shows in this chunk, in order.
         let mut wanted: BTreeMap<Version, Vec<u32>> = BTreeMap::new();
@@ -559,8 +571,15 @@ impl OpenDiff {
         Some(((file, side), line))
     }
 
+    /// Whether file `file` is Generated and `opened` doesn't name it.
+    fn collapsed(&self, file: usize, opened: &[u32]) -> bool {
+        let generated = self.diff.files.get(file).is_some_and(|file| file.generated);
+        generated && !u32::try_from(file).is_ok_and(|file| opened.contains(&file))
+    }
+
     /// The versions to parse ahead, in order: those the rows show and Tsugiki highlights, NEWS entries
-    /// first, then the rest in the diff's order, each file's merge base before its head.
+    /// first, then the rest in the diff's order, each file's merge base before its head. A Generated file
+    /// waits for a chunk to ask for it, as it starts collapsed (#181).
     fn ahead(&self) -> VecDeque<Version> {
         let rows = self.diff.rows(0..self.diff.row_count());
         let shown: BTreeSet<Version> = (0..)
@@ -572,11 +591,13 @@ impl OpenDiff {
             self.diff
                 .files
                 .get(file)
-                .is_some_and(|file| file.path.starts_with(NEWS))
+                .is_some_and(|file| NewsEntry::is_entry(&file.path))
         };
         let (news, rest): (Vec<Version>, Vec<Version>) = shown
             .into_iter()
-            .filter(|&version| self.object(version).is_some())
+            .filter(|&(file, side)| {
+                !self.collapsed(file, &[]) && self.object((file, side)).is_some()
+            })
             .partition(is_news);
         news.into_iter().chain(rest).collect()
     }
@@ -622,7 +643,7 @@ impl OpenDiff {
 
 /// The files `names` names, read from `mirror` with one `git cat-file --batch`: the text of each, or
 /// nothing for one git has no blob for. If git fails, the list stops short.
-fn blobs(mirror: &Path, names: &[&str]) -> Vec<Option<String>> {
+pub(super) fn blobs(mirror: &Path, names: &[&str]) -> Vec<Option<String>> {
     if names.is_empty() {
         return Vec::new();
     }
@@ -637,7 +658,7 @@ fn blobs(mirror: &Path, names: &[&str]) -> Vec<Option<String>> {
         Ok(output) => parse_batch(&output),
         Err(cause) => {
             let mirror = mirror.display();
-            log::warn!("Tsugiki can't read files from {mirror} to highlight them: {cause}");
+            log::warn!("Tsugiki can't read files from {mirror}: {cause}");
             Vec::new()
         }
     }

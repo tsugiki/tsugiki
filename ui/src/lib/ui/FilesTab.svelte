@@ -4,7 +4,7 @@
   import DiffRows from "./DiffRows.svelte";
   import { cloningWords } from "./synced";
 
-  let { files }: { files: PrFilesState } = $props();
+  let { files, onlink }: { files: PrFilesState; onlink: (address: string) => void } = $props();
 </script>
 
 {#if files.error}
@@ -16,7 +16,7 @@
   <p class="waiting">Fetching the PR's commits…</p>
 {:else if files.view?.state === "ready"}
   <div class="diff">
-    <DiffRows diff={files} rows={files.view.rows} files={files.view.files} />
+    <DiffRows diff={files} files={files.view.files} news={files.view.news} {onlink} />
   </div>
 {/if}
 

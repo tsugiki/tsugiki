@@ -49,8 +49,16 @@ pub(crate) struct Mirrored {
     pub(crate) head: CommitSha,
 }
 
+/// A NEWS entry main has before the PR starts, which a PR can delete.
+const OLD_NEWS: &str = "Misc/NEWS.d/next/Library/2026-01-01-00-00-00.gh-issue-2.Old.rst";
+
 impl Mirrored {
     pub(crate) fn new(name: &str) -> Self {
+        Self::with(name, |_| {})
+    }
+
+    /// The same, with what `more` adds to the PR's commit in the folder it gets.
+    fn with(name: &str, more: impl FnOnce(&Path)) -> Self {
         let root = crate::testing::temp_path(&format!("diff-{name}"));
         let work = root.join("work");
         for folder in ["Lib", "Modules", "Doc", "Tools"] {
@@ -64,6 +72,8 @@ impl Mirrored {
         fs::write(work.join("Doc/notes.txt"), numbered(1..=20)).unwrap();
         fs::write(work.join("logo.png"), b"\x89PNG\0\x01").unwrap();
         fs::write(work.join("Tools/run.sh"), "echo hi\n").unwrap();
+        fs::create_dir_all(work.join("Misc/NEWS.d/next/Library")).unwrap();
+        fs::write(work.join(OLD_NEWS), "Old news.\n").unwrap();
         let _ = git_in(&work, &["add", "."]);
         let _ = git_in(&work, &["commit", "-qm", "One"]);
 
@@ -76,13 +86,18 @@ impl Mirrored {
         fs::write(work.join("Doc/news.txt"), news).unwrap();
         fs::write(work.join("logo.png"), b"\x89PNG\0\x02").unwrap();
         fs::write(work.join("Lib/spaced name ü.py"), "pass\n").unwrap();
+        more(&work);
         let _ = git_in(&work, &["add", "."]);
         let _ = git_in(&work, &["update-index", "--chmod=+x", "Tools/run.sh"]);
         let _ = git_in(&work, &["commit", "-qm", "The PR"]);
 
         let _ = git_in(&work, &["switch", "-q", "main"]);
         fs::write(work.join("README.rst"), "Moved on\n").unwrap();
-        let _ = git_in(&work, &["add", "README.rst"]);
+        // Only main's newest commit marks files generated, so a diff reads them from there.
+        let attributes = "[attr]generated linguist-generated=true\nLib/ast.py generated\n\
+                          *.png linguist-generated\nDoc/** -linguist-generated\n";
+        fs::write(work.join(".gitattributes"), attributes).unwrap();
+        let _ = git_in(&work, &["add", "README.rst", ".gitattributes"]);
         let _ = git_in(&work, &["commit", "-qm", "Two"]);
 
         let mirror = root.join("mirror.git");
@@ -241,6 +256,7 @@ fn a_read_that_ends_after_a_later_one_leaves_the_later_on_show() {
         Ok(MirrorDiff {
             base: sha(&"0".repeat(40)),
             diff: Diff::parse("", "")?,
+            news: Vec::new(),
         })
     };
 
@@ -310,12 +326,18 @@ fn each_row_is_highlighted_from_its_version_and_a_removed_line_from_the_merge_ba
         .get_or_read(&pr, || Ok(mirrored.read()))
         .unwrap();
     let all = 0..open.diff.row_count();
+    // main marks Lib/ast.py generated, and the window has opened each file.
+    let opened: Vec<u32> = (0..).take(open.diff.files().len()).collect();
 
     let highlighter = Highlighter::start();
-    let spans = highlighter.spans(&open, &mirrored.mirror, all.clone());
-    let chunk = highlighter.spans(&open, &mirrored.mirror, 3..9);
+    let rows = |rows| Chunk {
+        rows,
+        opened: &opened,
+    };
+    let spans = highlighter.spans(&open, &mirrored.mirror, rows(all.clone()));
+    let chunk = highlighter.spans(&open, &mirrored.mirror, rows(3..9));
     // A highlighter of its own, as this one keeps each version it parsed.
-    let unreadable = Highlighter::start().spans(&open, Path::new("no-mirror"), all.clone());
+    let unreadable = Highlighter::start().spans(&open, Path::new("no-mirror"), rows(all.clone()));
 
     let drawn: Vec<String> = (open.diff.rows(all).iter().zip(&spans))
         .filter_map(|(row, spans)| match row {
@@ -328,5 +350,99 @@ fn each_row_is_highlighted_from_its_version_and_a_removed_line_from_the_merge_ba
     insta::assert_snapshot!(drawn.join("\n"));
     assert_eq!(chunk, spans.get(3..9).unwrap());
     assert!(unreadable.iter().all(Vec::is_empty));
+    mirrored.finish();
+}
+
+#[test]
+fn files_the_target_branch_marks_generated_say_so() {
+    let mirrored = Mirrored::new("generated");
+
+    let diff = mirrored.diff();
+
+    let generated: Vec<&str> = diff
+        .files()
+        .iter()
+        .filter(|file| file.generated)
+        .map(|file| file.path.as_str())
+        .collect();
+    assert_eq!(generated, ["Lib/ast.py", "logo.png"]);
+    mirrored.finish();
+}
+
+#[test]
+fn only_the_target_branch_s_attributes_count_and_an_index_a_run_left_goes() {
+    let mirrored = Mirrored::new("own-attributes");
+    let own = mirrored.root.join("own.attributes");
+    fs::write(&own, "Modules/** linguist-generated\n").unwrap();
+    let _ = git_in(
+        &mirrored.mirror,
+        &["config", "core.attributesFile", &own.to_string_lossy()],
+    );
+    let left = mirrored.mirror.join("tsugiki-attributes-1-0.index");
+    fs::write(&left, "").unwrap();
+
+    let diff = mirrored.diff();
+
+    let generated = diff.files().iter().filter(|file| file.generated);
+    let generated: Vec<&str> = generated.map(|file| file.path.as_str()).collect();
+    assert_eq!(generated, ["Lib/ast.py", "logo.png"]);
+    assert!(!left.exists());
+    let indexes = fs::read_dir(&mirrored.mirror).unwrap().flatten();
+    assert!(
+        indexes
+            .into_iter()
+            .all(|entry| !entry.file_name().to_string_lossy().starts_with(INDEX))
+    );
+    mirrored.finish();
+}
+
+#[test]
+fn a_left_index_the_sweep_cant_remove_stays_and_the_diff_still_reads() {
+    let mirrored = Mirrored::new("stuck-index");
+    let stuck = mirrored.mirror.join("tsugiki-attributes-1-0.index");
+    fs::create_dir(&stuck).unwrap();
+
+    let diff = mirrored.diff();
+
+    assert!(diff.files().iter().any(|file| file.generated));
+    assert!(stuck.is_dir());
+    mirrored.finish();
+}
+
+#[test]
+fn attributes_git_cant_read_mark_nothing_generated() {
+    let mirrored = Mirrored::new("no-attributes");
+    let mut diff = mirrored.diff();
+
+    let made = TargetIndex::new(&mirrored.mirror).make("no-such-branch");
+    diff.mark_generated(made.map(|()| vec![true; 7]), &mirrored.mirror);
+
+    assert!(diff.files().iter().all(|file| !file.generated));
+    mirrored.finish();
+}
+
+#[test]
+fn a_prs_news_entries_come_rendered_from_its_head() {
+    let entry = "Misc/NEWS.d/next/Library/2026-11-07-10-00-00.gh-issue-1.New.rst";
+    let mirrored = Mirrored::with("news", |work| {
+        fs::write(work.join(entry), "Fix :func:`ast.parse`.\n").unwrap();
+        fs::write(work.join("Misc/NEWS.d/3.14.0.rst"), "Released.\n").unwrap();
+        let _ = git_in(work, &["rm", "-q", OLD_NEWS]);
+    });
+
+    let read = mirrored.read();
+
+    assert_eq!(
+        read.news,
+        [NewsEntry::render(entry, "Fix :func:`ast.parse`.\n")]
+    );
+    mirrored.finish();
+}
+
+#[test]
+fn a_pr_without_news_entries_has_none() {
+    let mirrored = Mirrored::new("no-news");
+
+    assert!(mirrored.read().news.is_empty());
     mirrored.finish();
 }

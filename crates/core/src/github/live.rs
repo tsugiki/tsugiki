@@ -203,6 +203,27 @@ pub(crate) fn start_git(args: &[&OsStr], input: &[u8]) -> io::Result<(Child, Chi
     }
 }
 
+/// Runs a `git` that only reads local files, with `args`, and gives its output. Its last line of error output
+/// says why it failed.
+pub(crate) fn read_git(args: &[&OsStr]) -> io::Result<String> {
+    let mut command = Command::new("git");
+    let _ = command
+        .args(args)
+        .env("LC_ALL", "C")
+        .env("LANGUAGE", "C")
+        .stdin(Stdio::null());
+    without_window(&mut command);
+    let output = command.output()?;
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    } else {
+        let errors = String::from_utf8_lossy(&output.stderr);
+        Err(io::Error::other(
+            errors.lines().last().unwrap_or("").to_owned(),
+        ))
+    }
+}
+
 /// Ends `git` and waits for it. git hands a download to helpers (`git-remote-https`, `index-pack`), which
 /// would otherwise go on downloading after Tsugiki quits, so this ends them too. A failure leaves a trace.
 pub(crate) fn stop_git(git: &mut Child) {

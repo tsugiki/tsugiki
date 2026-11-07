@@ -451,6 +451,10 @@ fn lines_from_the_server_or_without_a_percentage_say_nothing() {
 /// A git that tells the test each time the worker starts it, and ends when the test says.
 struct FakeGit {
     starts: Sender<FakeStart>,
+    /// Handed to each start, for the test to say where the refs landed.
+    landed: Sender<String>,
+    /// What each read of the mirror's refs gives, which a fetch that succeeds sends first.
+    refs: Receiver<String>,
 }
 
 /// One start of the fake git.
@@ -464,6 +468,8 @@ struct FakeStart {
     asked: Receiver<()>,
     /// Hears when the worker stops this git.
     stopped: Receiver<()>,
+    /// What the worker reads back from the mirror's refs after this git.
+    refs: Sender<String>,
 }
 
 impl FakeStart {
@@ -474,8 +480,50 @@ impl FakeStart {
         self.asked.recv_timeout(PLENTY).unwrap();
     }
 
+    /// Ends this git. A fetch leaves each head it asked for at the commit `head` gives it.
     fn succeed(self) {
+        if self.args.iter().any(|arg| arg == "fetch") {
+            let landed = self.numbers().into_iter().map(head).collect();
+            self.succeed_with(landed);
+        } else {
+            self.end(Outcome::Succeeded);
+        }
+    }
+
+    /// Ends this git, with the mirror's PR refs at `landed` after it.
+    fn succeed_with(self, landed: Vec<PrHead>) {
+        let refs: String = landed
+            .iter()
+            .map(|PrHead { number, commit }| {
+                format!(
+                    "{} refs/tsugiki/pull/{number}/head
+",
+                    commit.as_str()
+                )
+            })
+            .collect();
+        self.refs.send(refs).unwrap();
         self.end(Outcome::Succeeded);
+    }
+
+    /// Ends this git, and leaves the mirror's refs unreadable.
+    fn succeed_unread(self) {
+        self.end(Outcome::Succeeded);
+    }
+
+    /// The PRs whose heads this fetch asks for.
+    fn numbers(&self) -> Vec<u32> {
+        self.refspecs()
+            .iter()
+            .filter_map(|refspec| {
+                refspec
+                    .strip_prefix("+refs/pull/")?
+                    .split('/')
+                    .next()?
+                    .parse()
+                    .ok()
+            })
+            .collect()
     }
 
     fn fail(self) {
@@ -529,6 +577,7 @@ impl Git for FakeGit {
                 outcome,
                 asked,
                 stopped,
+                refs: self.landed.clone(),
             })
             .map_err(|_unheard| io::Error::other("the test has stopped listening"))?;
         Ok(Started {
@@ -540,16 +589,32 @@ impl Git for FakeGit {
             output: Box::new(output),
         })
     }
+
+    fn read(&self, _args: &[&OsStr]) -> io::Result<String> {
+        self.refs
+            .try_recv()
+            .map_err(|_none| io::Error::other("the test gave no refs"))
+    }
 }
 
 impl Place {
-    /// The worker with the fake git, and each start of it.
+    /// The worker with the fake git, and each start of it. A head that is behind waits longer than a test.
     fn start_faked(&self) -> (Mirrors, Receiver<FakeStart>) {
+        self.start_faked_with(PLENTY)
+    }
+
+    /// The worker with the fake git, whose heads that are behind wait `patience` to be fetched once more.
+    fn start_faked_with(&self, patience: Duration) -> (Mirrors, Receiver<FakeStart>) {
         let (starting, starts) = channel();
+        let (landed, refs) = channel();
         let mirrors = Mirrors::with_git(
-            Box::new(FakeGit { starts: starting }),
+            Box::new(FakeGit {
+                starts: starting,
+                landed,
+                refs,
+            }),
             Ok(self.folders.clone()),
-            self.clone_source(),
+            self.clone_source().patient(patience),
             Box::new(|_| {}),
         );
         (mirrors, starts)
@@ -599,6 +664,7 @@ fn the_heads_handed_over_together_go_in_one_fetch_into_the_mirror() {
             "--stdin",
             "--no-tags",
             "--no-write-fetch-head",
+            "--prune",
             "origin"
         ]
     );
@@ -663,6 +729,123 @@ fn a_failed_fetch_tries_again_when_github_is_back() {
     requests.follow(&Status::Online {
         login: Login::new("octocat"),
     });
+    let again = starts.recv_timeout(PLENTY).unwrap();
+
+    assert_eq!(again.refspecs(), [refspec(1)]);
+    again.succeed();
+    mirrors.stop(PLENTY);
+}
+
+#[test]
+fn a_fetch_that_brings_an_older_commit_leaves_the_head_for_the_next_hand_over() {
+    let place = Place::new("older-head");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    // GitHub hadn't moved `refs/pull/1/head` yet, so the fetch brought what it was before.
+    let older = PrHead {
+        number: 1,
+        commit: head(9).commit,
+    };
+    starts
+        .recv_timeout(PLENTY)
+        .unwrap()
+        .succeed_with(vec![older]);
+    requests.fetch_heads(cpython.clone(), vec![head(1), head(2)]);
+    let next = starts.recv_timeout(PLENTY).unwrap();
+
+    assert_eq!(next.refspecs(), [refspec(1), refspec(2)]);
+    next.succeed();
+    requests.fetch_heads(cpython, vec![head(1), head(2)]);
+    mirrors.stop(PLENTY);
+    assert!(starts.recv().is_err(), "both heads landed");
+}
+
+#[test]
+fn a_head_that_is_behind_is_fetched_once_more_after_a_moment_then_waits_for_a_hand_over() {
+    let place = Place::new("behind-retry");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked_with(Duration::from_millis(50));
+    let requests = mirrors.requests();
+    let older = PrHead {
+        number: 1,
+        commit: head(9).commit,
+    };
+
+    requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    starts
+        .recv_timeout(PLENTY)
+        .unwrap()
+        .succeed_with(vec![older.clone()]);
+    let again = starts.recv_timeout(PLENTY).unwrap();
+    assert_eq!(again.refspecs(), [refspec(1)]);
+    again.succeed_with(vec![older]);
+    requests.fetch_heads(cpython, vec![head(2)]);
+    let next = starts.recv_timeout(PLENTY).unwrap();
+
+    assert_eq!(
+        next.refspecs(),
+        [refspec(2)],
+        "head 1 waits for a hand-over"
+    );
+    next.succeed();
+    mirrors.stop(PLENTY);
+}
+
+#[test]
+fn a_head_handed_over_during_its_fetch_that_comes_back_behind_isnt_asked_for_at_once() {
+    let place = Place::new("behind-during");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    let fetch = starts.recv_timeout(PLENTY).unwrap();
+    requests.fetch_heads(cpython, vec![head(1)]);
+    fetch.succeed_with(vec![PrHead {
+        number: 1,
+        commit: head(9).commit,
+    }]);
+    mirrors.stop(PLENTY);
+
+    assert!(starts.recv().is_err());
+}
+
+#[test]
+fn a_head_github_doesnt_have_isnt_fetched_again() {
+    let place = Place::new("missing-head");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.fetch_heads(cpython.clone(), vec![head(1), head(2)]);
+    starts
+        .recv_timeout(PLENTY)
+        .unwrap()
+        .succeed_with(vec![head(1)]);
+    requests.fetch_heads(cpython, vec![head(1), head(2)]);
+    mirrors.stop(PLENTY);
+
+    assert!(starts.recv().is_err());
+}
+
+#[test]
+fn heads_whose_refs_cant_be_read_back_are_fetched_at_the_next_hand_over() {
+    let place = Place::new("unread-refs");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    starts.recv_timeout(PLENTY).unwrap().succeed_unread();
+    requests.fetch_heads(cpython, vec![head(1)]);
     let again = starts.recv_timeout(PLENTY).unwrap();
 
     assert_eq!(again.refspecs(), [refspec(1)]);
@@ -774,7 +957,8 @@ fn a_rate_limit_doesnt_hold_the_worker() {
 }
 
 #[test]
-fn a_fetch_brings_a_prs_head_into_the_mirror_and_a_head_github_lacks_fails_nothing() {
+fn a_fetch_brings_a_prs_head_into_the_mirror_and_a_head_github_lacks_fails_nothing_and_loses_its_ref()
+ {
     let place = Place::new("real-heads");
     let hello = named("octo-org/hello");
     place.remote(&hello);
@@ -782,6 +966,10 @@ fn a_fetch_brings_a_prs_head_into_the_mirror_and_a_head_github_lacks_fails_nothi
     mirrors.requests().clone_mirror(hello.clone());
     let _clone = one_clone(&announced);
     let commit = place.pull_request(&hello, 1);
+    let mirror = place.folders.mirror(&hello);
+    // What an earlier fetch left of a PR whose head GitHub has since dropped.
+    let _ = git(&mirror, &["update-ref", "refs/tsugiki/pull/2/head", "HEAD"]);
+    let dropped = mirror.join("refs/tsugiki/pull/2/head");
 
     let heads = vec![
         PrHead {
@@ -791,10 +979,9 @@ fn a_fetch_brings_a_prs_head_into_the_mirror_and_a_head_github_lacks_fails_nothi
         head(2),
     ];
     mirrors.requests().fetch_heads(hello.clone(), heads);
-    let mirror = place.folders.mirror(&hello);
     let fetched = mirror.join("refs/tsugiki/pull/1/head");
     let deadline = Instant::now() + PLENTY;
-    while !fetched.exists() && Instant::now() < deadline {
+    while (!fetched.exists() || dropped.exists()) && Instant::now() < deadline {
         thread::sleep(Duration::from_millis(20));
     }
     mirrors.stop(PLENTY);
@@ -811,4 +998,29 @@ fn a_fetch_brings_a_prs_head_into_the_mirror_and_a_head_github_lacks_fails_nothi
         "refs/tsugiki/pull/1/head
 "
     );
+    let read = LiveGit.read(&[
+        OsStr::new("-C"),
+        mirror.as_os_str(),
+        OsStr::new("for-each-ref"),
+        OsStr::new("--format=%(objectname) %(refname)"),
+        OsStr::new("refs/tsugiki/pull/"),
+    ]);
+    assert_eq!(
+        pull_refs(&read.unwrap()),
+        BTreeMap::from([(1, CommitSha::parse(&commit).unwrap())])
+    );
+}
+
+#[test]
+fn only_a_prs_head_ref_reads_as_where_its_head_landed() {
+    let listing = format!(
+        "{one} refs/tsugiki/pull/1/head
+{one} refs/tsugiki/pull/2/head-x
+not a commit          refs/tsugiki/pull/3/head
+{one} refs/tsugiki/pull/four/head
+",
+        one = head(1).commit.as_str()
+    );
+
+    assert_eq!(pull_refs(&listing), BTreeMap::from([(1, head(1).commit)]));
 }

@@ -14,6 +14,7 @@ pub mod launch;
 pub mod links;
 pub mod logfile;
 pub mod measurement;
+pub mod mirror;
 pub mod misses;
 pub mod repository;
 pub mod session;

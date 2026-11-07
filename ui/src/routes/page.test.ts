@@ -16,6 +16,7 @@ vi.mock("$lib/data/bindings", () => ({
     status: async () => ({ state: "online", login: "octocat" }),
     lastSync: async () => ({ repository: "some-maintainer/gcmon", at: null }),
     syncActivity: async () => null,
+    cloning: async () => null,
     refresh: async () => null,
     ...core,
   },
@@ -23,6 +24,7 @@ vi.mock("$lib/data/bindings", () => ({
     statusChanged: { listen: async () => () => {} },
     lastSyncChanged: { listen: async () => () => {} },
     syncActivityChanged: { listen: async () => () => {} },
+    cloningChanged: { listen: async () => () => {} },
     changed: { listen: async () => () => {} },
   },
 }));

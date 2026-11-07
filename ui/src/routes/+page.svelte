@@ -80,6 +80,7 @@
   problems={settings.problems}
   lastSync={status.lastSync}
   syncActivity={status.syncActivity}
+  cloning={status.cloning}
   onrefresh={() => void status.refresh()}
 />
 {#if addOpen}

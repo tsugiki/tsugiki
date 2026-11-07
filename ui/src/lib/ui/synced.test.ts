@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { elsewhereWords, syncedWords } from "./synced";
+import { cloningWords, elsewhereWords, syncedWords } from "./synced";
 
 const now = new Date("2026-11-05T12:00:00Z");
 
@@ -41,5 +41,21 @@ describe("elsewhereWords", () => {
   it("names the next of several and counts the rest", () => {
     const several = ["python/peps", "python/devguide", "python/typeshed"];
     expect(elsewhereWords(activity(several))).toBe("python/peps and 2 more syncing");
+  });
+});
+
+describe("cloningWords", () => {
+  const repository = "python/cpython";
+
+  it("says nothing with no clone under way", () => {
+    expect(cloningWords(null)).toBeNull();
+  });
+
+  it.each([
+    [{ stage: "starting" }, "Cloning python/cpython"],
+    [{ stage: "receiving", percent: 42 }, "Cloning python/cpython 42%"],
+    [{ stage: "resolving", percent: 80 }, "Indexing python/cpython 80%"],
+  ] as const)("says the stage of %o and how far it has got", (progress, words) => {
+    expect(cloningWords({ repository, progress })).toBe(words);
   });
 });

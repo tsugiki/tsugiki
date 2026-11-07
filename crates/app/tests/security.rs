@@ -56,9 +56,17 @@ fn rust_names_only_github_as_a_host() {
     }
     assert!(found.contains("api.github.com"), "the scan found {found:?}");
     // Tauri serves the window's own pages from `tauri.localhost` on Windows, and `navigation.rs` names it to
-    // keep the window there, so naming it connects to nothing.
-    let allowed =
-        BTreeSet::from(["api.github.com", "github.com", "tauri.localhost"].map(str::to_owned));
+    // keep the window there, so naming it connects to nothing. A mirror's test clones from a server of its
+    // own on this computer, at `127.0.0.1`.
+    let allowed = BTreeSet::from(
+        [
+            "api.github.com",
+            "github.com",
+            "tauri.localhost",
+            "127.0.0.1",
+        ]
+        .map(str::to_owned),
+    );
     assert!(
         found.is_subset(&allowed),
         "the core connects only to GitHub, not {found:?}"

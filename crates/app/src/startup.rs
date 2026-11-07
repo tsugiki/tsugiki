@@ -12,11 +12,12 @@ use tsugiki_core::github::GitHubAccess;
 use tsugiki_core::github::live::{Https, run_gh};
 use tsugiki_core::launch;
 use tsugiki_core::logfile;
+use tsugiki_core::mirror::Remotes;
 
 use crate::Started;
 use crate::navigation;
 use crate::specta_builder;
-use crate::wiring::connect_core;
+use crate::wiring::{Outside, connect_core};
 
 /// How often Tsugiki asks GitHub whether it is still there, at about one point of the hourly 5,000 each.
 const REFRESH: Duration = Duration::from_secs(60);
@@ -69,14 +70,17 @@ pub fn run() {
     register_development_scheme(app.handle());
     launch::open_command_line(Build::CURRENT, &launch::command_line());
     builder.mount_events(&app);
-    let access = GitHubAccess {
-        transport: Box::new(Https::new()),
-        run_gh,
+    let outside = Outside {
+        github: GitHubAccess {
+            transport: Box::new(Https::new()),
+            run_gh,
+        },
+        remotes: Remotes::github(),
     };
-    let session = connect_core(app.handle(), folders, access, REFRESH);
+    let core = connect_core(app.handle(), folders, outside, REFRESH);
     app.run(move |_app, event| {
         if let RunEvent::Exit = event {
-            session.stop(QUIT_PATIENCE);
+            core.stop(QUIT_PATIENCE);
             log::logger().flush();
         }
         // On macOS the OS hands a link to the running app rather than starting a second `tsg`.

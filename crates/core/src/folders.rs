@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use crate::build::Build;
 use crate::error::{Error, ErrorKind};
+use crate::repository::RepositoryName;
 
 /// The OS whose layout applies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,6 +25,9 @@ impl Os {
     #[cfg(not(windows))]
     pub const CURRENT: Self = Self::MacOs;
 }
+
+/// A **Mirror**'s folder, in its Repository's folder.
+const MIRROR: &str = "mirror.git";
 
 /// The folders Tsugiki's files live in.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,6 +57,18 @@ impl Folders {
     /// Where `machine.toml` is.
     pub fn machine_file(&self) -> PathBuf {
         self.data.join("machine.toml")
+    }
+
+    /// A Repository's folder under `repos` (ADR 0010). GitHub's names ignore case, so the folder's name
+    /// doesn't keep it.
+    pub fn repository(&self, repository: &RepositoryName) -> PathBuf {
+        let folder = format!("{}__{}", repository.owner(), repository.name()).to_lowercase();
+        self.data.join("repos").join(folder)
+    }
+
+    /// Where a Repository's **Mirror** is, in its folder.
+    pub fn mirror(&self, repository: &RepositoryName) -> PathBuf {
+        self.repository(repository).join(MIRROR)
     }
 
     /// Where `settings.toml` is, unless `settings_path` in `machine.toml` says otherwise.

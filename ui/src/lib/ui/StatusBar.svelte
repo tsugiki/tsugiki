@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { LastSync, Status, SyncActivity } from "$lib/state/status.svelte";
-  import { elsewhereWords, pausedWords, syncedWords, syncingWords } from "./synced";
+  import type { Cloning, LastSync, Status, SyncActivity } from "$lib/state/status.svelte";
+  import { cloningWords, elsewhereWords, pausedWords, syncedWords, syncingWords } from "./synced";
 
   const MINUTE = 60_000;
 
@@ -11,6 +11,7 @@
     problems = [],
     lastSync = null,
     syncActivity = null,
+    cloning = null,
     onrefresh = () => {},
   }: {
     status: Status | undefined;
@@ -19,6 +20,7 @@
     problems?: string[];
     lastSync?: LastSync | null;
     syncActivity?: SyncActivity | null;
+    cloning?: Cloning | null;
     onrefresh?: () => void;
   } = $props();
 
@@ -43,66 +45,65 @@
     syncActivity?.open?.repository === lastSync?.repository ? syncingWords(syncActivity) : null,
   );
   const elsewhere = $derived(elsewhereWords(syncActivity));
+  const clone = $derived(cloningWords(cloning));
   const syncWords = $derived(
-    [syncing ?? syncedWords(lastSync?.at ?? null, now), ...(elsewhere ? [elsewhere] : [])].join(" · "),
+    [syncing ?? syncedWords(lastSync?.at ?? null, now), clone, elsewhere]
+      .filter((words) => words !== null)
+      .join(" · "),
   );
 </script>
 
-<!-- Always in the page, because screen readers only announce changes in a live region that already
-     exists. -->
-<footer
-  role="status"
-  class:offline
-  class:empty={!showStatus && !listedProblems}
-  class:beside-sync={lastSync !== null && showStatus}
-  class:beside-syncing={(syncing !== null || elsewhere !== null) && lastSync !== null && showStatus}
->
-  {#if showStatus}
-    {#if error}
-      Tsugiki can't read its status: {error}
-    {:else if status?.state === "problem"}
-      {status.problem.message}
-    {:else if status?.state === "offline"}
-      Offline: read-only
-    {:else if status?.state === "offline_as"}
-      {`${status.last_login} · Offline: read-only`}
-    {:else if status?.state === "online"}
-      {status.login}
-    {:else if status?.state === "connecting_as"}
-      {`${status.last_login} · Connecting…`}
-    {:else}
-      Connecting…
+<!-- One row, so the sync words take the room they need and the status gets the rest. -->
+<div class="bar">
+  <!-- Always in the page, because screen readers only announce changes in a live region that already
+       exists. -->
+  <footer role="status" class:offline class:empty={!showStatus && !listedProblems}>
+    {#if showStatus}
+      {#if error}
+        Tsugiki can't read its status: {error}
+      {:else if status?.state === "problem"}
+        {status.problem.message}
+      {:else if status?.state === "offline"}
+        Offline: read-only
+      {:else if status?.state === "offline_as"}
+        {`${status.last_login} · Offline: read-only`}
+      {:else if status?.state === "online"}
+        {status.login}
+      {:else if status?.state === "connecting_as"}
+        {`${status.last_login} · Connecting…`}
+      {:else}
+        Connecting…
+      {/if}
     {/if}
+    <span>{showStatus && listedProblems ? `· ${listedProblems}` : listedProblems}</span>
+  </footer>
+  <!-- Outside the live region, or a screen reader would read this out each minute, and each page of a
+       sync. -->
+  {#if lastSync !== null && showStatus}
+    <button class:offline onclick={onrefresh}>{syncWords}</button>
   {/if}
-  <span>{showStatus && listedProblems ? `· ${listedProblems}` : listedProblems}</span>
-</footer>
-<!-- Outside the live region, or a screen reader would read this out each minute, and each page of a sync. -->
-{#if lastSync !== null && showStatus}
-  <button class:offline onclick={onrefresh}>{syncWords}</button>
-{/if}
+</div>
 
 <style>
-  footer {
+  .bar {
     position: fixed;
     inset: auto 0 0;
+    display: flex;
+  }
+
+  footer {
+    flex: 1;
+    min-width: 0;
     padding: 2px 8px;
     font-size: 12px;
     background: #e8e8e8;
     color: #222;
   }
 
-  .beside-sync {
-    padding-right: 11em;
-  }
-
-  .beside-syncing {
-    padding-right: 22em;
-  }
-
   button {
-    position: fixed;
-    right: 0;
-    bottom: 0;
+    flex: none;
+    align-self: flex-end;
+    white-space: nowrap;
     padding: 2px 8px;
     border: none;
     font-size: 12px;

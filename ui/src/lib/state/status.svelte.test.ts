@@ -3,11 +3,18 @@ import { commands, events } from "$lib/data/bindings";
 import { StatusState, type Status } from "./status.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
-  commands: { status: vi.fn(), lastSync: vi.fn(), syncActivity: vi.fn(), refresh: vi.fn() },
+  commands: {
+    status: vi.fn(),
+    lastSync: vi.fn(),
+    syncActivity: vi.fn(),
+    cloning: vi.fn(),
+    refresh: vi.fn(),
+  },
   events: {
     statusChanged: { listen: vi.fn() },
     lastSyncChanged: { listen: vi.fn() },
     syncActivityChanged: { listen: vi.fn() },
+    cloningChanged: { listen: vi.fn() },
   },
 }));
 
@@ -93,6 +100,51 @@ describe("StatusState's last sync", () => {
       const state = new StatusState();
       await state.load();
       expect(state.syncActivity).toBeNull();
+    });
+  });
+
+  describe("a mirror's clone under way", () => {
+    const cloning = { repository: "python/cpython", progress: { stage: "receiving", percent: 42 } } as const;
+    const catchCloning = () => {
+      const listener = vi.fn<(payload: typeof cloning | null) => void>();
+      vi.mocked(events.cloningChanged.listen).mockImplementation(async (callback) => {
+        listener.mockImplementation((payload) => {
+          callback({ event: "cloning-changed", id: 1, payload });
+        });
+        return () => {};
+      });
+      return listener;
+    };
+
+    it("holds what the core says when the window loads", async () => {
+      catchLastSync();
+      catchCloning();
+      vi.mocked(commands.cloning).mockResolvedValue(cloning);
+      const state = new StatusState();
+      await state.load();
+      expect(state.cloning).toEqual(cloning);
+    });
+
+    it("follows the core, down to nothing", async () => {
+      catchLastSync();
+      const cloningChanged = catchCloning();
+      vi.mocked(commands.cloning).mockResolvedValue(cloning);
+      const state = new StatusState();
+      await state.load();
+      cloningChanged(null);
+      expect(state.cloning).toBeNull();
+    });
+
+    it("lets an event that arrives while asking win, even one that says nothing", async () => {
+      catchLastSync();
+      const cloningChanged = catchCloning();
+      vi.mocked(commands.cloning).mockImplementation(async () => {
+        cloningChanged(null);
+        return cloning;
+      });
+      const state = new StatusState();
+      await state.load();
+      expect(state.cloning).toBeNull();
     });
   });
 

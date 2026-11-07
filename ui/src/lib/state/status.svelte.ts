@@ -2,12 +2,13 @@
 import {
   commands,
   events,
+  type Cloning,
   type LastSync,
   type Status_Serialize as Status,
   type SyncActivity,
 } from "$lib/data/bindings";
 
-export type { LastSync, Status, SyncActivity };
+export type { Cloning, LastSync, Status, SyncActivity };
 
 export class StatusState {
   status = $state<Status>();
@@ -17,6 +18,9 @@ export class StatusState {
   syncActivity = $state<SyncActivity | null>(null);
   /** An event has said, so an answer asked for before it is out of date. */
   #heardActivity = false;
+  /** A mirror's clone under way. Nothing, between clones. */
+  cloning = $state<Cloning | null>(null);
+  #heardCloning = false;
   error = $state<string>();
 
   async load() {
@@ -32,13 +36,19 @@ export class StatusState {
         this.syncActivity = payload;
         this.#heardActivity = true;
       });
+      await events.cloningChanged.listen(({ payload }) => {
+        this.cloning = payload;
+        this.#heardCloning = true;
+      });
       const current = await commands.status();
       const lastSync = await commands.lastSync();
       const syncActivity = await commands.syncActivity();
+      const cloning = await commands.cloning();
       // An event that arrived while asking is newer than these answers.
       this.status ??= current;
       this.lastSync ??= lastSync;
       if (!this.#heardActivity) this.syncActivity = syncActivity;
+      if (!this.#heardCloning) this.cloning = cloning;
     } catch (e) {
       this.error = String(e);
     }

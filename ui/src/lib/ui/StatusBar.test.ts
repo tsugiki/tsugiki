@@ -23,7 +23,7 @@ describe("StatusBar's last sync", () => {
     render(StatusBar, { status: online, lastSync });
     expect(screen.getByRole("button").textContent).toBe("Synced 2 min ago");
     expect(bar().textContent).not.toContain("Synced");
-    expect(bar().classList.contains("beside-sync")).toBe(true);
+    expect(screen.getByRole("button").parentElement).toBe(bar().parentElement);
   });
 
   it("moves on by itself", async () => {
@@ -203,7 +203,6 @@ describe("StatusBar's sync under way", () => {
     render(StatusBar, { status: online, lastSync, syncActivity: activity(part) });
     expect(screen.getByRole("button").textContent).toBe(words);
     expect(bar().textContent).not.toContain("Syncing");
-    expect(bar().classList.contains("beside-syncing")).toBe(true);
   });
 
   it("counts no pages for the tree of an Issue the user opened", () => {
@@ -237,7 +236,6 @@ describe("StatusBar's sync under way", () => {
     render(StatusBar, { status: online, lastSync, syncActivity: other });
     expect(screen.getByRole("button").textContent).toBe("Not synced yet · python/peps syncing");
     expect(bar().textContent).not.toContain("python/peps");
-    expect(bar().classList.contains("beside-syncing")).toBe(true);
   });
 
   it("names the other Repository syncing beside the open one's sync", () => {
@@ -251,7 +249,6 @@ describe("StatusBar's sync under way", () => {
   it("says nothing of a refresh", () => {
     render(StatusBar, { status: online, lastSync, syncActivity: activity("refresh") });
     expect(screen.getByRole("button").textContent).toBe("Not synced yet");
-    expect(bar().classList.contains("beside-syncing")).toBe(false);
   });
 
   it("says in the live region when a sync waits for GitHub's points, even a refresh", () => {
@@ -276,5 +273,22 @@ describe("StatusBar's sync under way", () => {
       syncActivity: { ...activity("window"), paused_until: "2026-11-05T14:30:00Z" },
     });
     expect(bar().textContent).toContain("settings.toml has an error · Sync paused until");
+  });
+
+  it("shows a mirror's clone beside the sync time, outside the live region", () => {
+    vi.useFakeTimers({ now: new Date("2026-11-05T12:02:00Z") });
+    const cloning = { repository, progress: { stage: "receiving", percent: 42 } } as const;
+    render(StatusBar, { status: online, lastSync: { repository, at: "2026-11-05T12:00:00Z" }, cloning });
+    expect(screen.getByRole("button").textContent).toBe("Synced 2 min ago · Cloning python/cpython 42%");
+    expect(bar().textContent).not.toContain("Cloning");
+  });
+
+  it("puts a clone before the other Repositories syncing", () => {
+    const cloning = { repository: "python/peps", progress: { stage: "starting" } } as const;
+    const other = { open: null, paused_until: null, elsewhere: ["python/peps"] };
+    render(StatusBar, { status: online, lastSync, syncActivity: other, cloning });
+    expect(screen.getByRole("button").textContent).toBe(
+      "Not synced yet · Cloning python/peps · python/peps syncing",
+    );
   });
 });

@@ -2,3 +2,6 @@
 
 # GitHub folds these recordings in PR diffs, and `npm run record` writes them.
 crates/core/tests/fixtures/** linguist-generated=true
+
+# A recording of what git writes to a pipe, whose lines end in a carriage return.
+crates/core/tests/fixtures/git/*.txt -text

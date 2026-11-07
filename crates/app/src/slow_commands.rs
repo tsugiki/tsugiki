@@ -42,17 +42,17 @@ pub(crate) async fn check_repository(
         })
 }
 
-/// Adds a Repository the user has seen the check for, starts its first sync, and says what the window opens
-/// on now. This waits on a small file and never on GitHub.
+/// Adds a Repository the user has seen the check for, starts its first sync and its mirror's clone, and says
+/// what the window opens on now. This waits on a small file and never on GitHub or git.
 #[tauri::command(async)]
 #[specta::specta]
 pub(crate) fn add_repository(
     name: &str,
     access: RepositoryAccess,
     owner: State<'_, SettingsOwner>,
-    requests: State<'_, SessionRequests>,
+    work: State<'_, crate::RepositoryWork>,
 ) -> Result<Home, Error> {
-    crate::add_named_repository(name, access, &owner, &requests)
+    crate::add_named_repository(name, access, &owner, &work)
 }
 
 /// The rows of a view of a Repository's Workbench, with what its Sidebar shows. This waits

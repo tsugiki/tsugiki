@@ -1,7 +1,7 @@
 //! The window's commands and events, set up on any Tauri runtime. `startup.rs` calls this on the real one.
 //! The tests here call it on Tauri's mock one, so they check this wiring without a window.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_specta::Event;
@@ -9,24 +9,50 @@ use tsugiki_core::error::Error;
 use tsugiki_core::folders::Folders;
 use tsugiki_core::github::GitHubAccess;
 use tsugiki_core::latest;
+use tsugiki_core::mirror::{Mirrors, Remotes};
 use tsugiki_core::session::{Intervals, Session};
 use tsugiki_core::settings::{SettingsFiles, SettingsOwner};
 use tsugiki_core::status::{Status, StatusBoard};
 
-use crate::{Changed, LastSyncChanged, StatusChanged, SyncActivityChanged, sync_home};
+use crate::{
+    Changed, CloningChanged, LastSyncChanged, RepositoryWork, StatusChanged, SyncActivityChanged,
+};
 
 /// How often the open Repository refreshes: a refresh costs a few points, and this is about 60 points an
 /// hour, out of 5,000 (ADR 0015).
 const REPOSITORY_REFRESH: Duration = Duration::from_secs(180);
 
-/// Reads the settings, starts the session and gives the commands what they ask. Events need `mount_events` to
-/// have run on `app`.
+/// What Tsugiki reaches outside the computer: GitHub's API and `gh`, and where mirrors are cloned from.
+pub(crate) struct Outside {
+    pub(crate) github: GitHubAccess,
+    pub(crate) remotes: Remotes,
+}
+
+/// The threads that work for the window: the session, and the mirrors' one writer.
+pub(crate) struct Core {
+    pub(crate) session: Session,
+    mirrors: Mirrors,
+}
+
+impl Core {
+    /// Stops both threads at once, and gives them `patience` between them to finish.
+    pub(crate) fn stop(&self, patience: Duration) {
+        let deadline = Instant::now() + patience;
+        self.mirrors.begin_stopping();
+        self.session.stop(patience);
+        self.mirrors
+            .wait_for_end(deadline.saturating_duration_since(Instant::now()));
+    }
+}
+
+/// Reads the settings, starts the session and the mirrors, and gives the commands what they ask. Events need
+/// `mount_events` to have run on `app`.
 pub(crate) fn connect_core<R: Runtime>(
     app: &AppHandle<R>,
     folders: Result<Folders, Error>,
-    access: GitHubAccess,
+    outside: Outside,
     refresh: Duration,
-) -> Session {
+) -> Core {
     let (mut latest_status, status_reader) = latest::channel(Status::default());
     assert!(app.manage(status_reader), "only this manages the status");
     let (mut latest_sync, last_sync_reader) = latest::channel(None);
@@ -39,6 +65,8 @@ pub(crate) fn connect_core<R: Runtime>(
         app.manage(activity_reader),
         "only this manages the sync activity"
     );
+    let (mut latest_cloning, cloning_reader) = latest::channel(None);
+    assert!(app.manage(cloning_reader), "only this manages the clone");
     // Two small files, read before the window exists so `settings` and `home` can always answer. A
     // `settings_path` on a slow drive would delay the window. Without folders the defaults apply, and the
     // session shows why. A thread of their own owns the files from here, so saving doesn't wait on GitHub.
@@ -47,6 +75,7 @@ pub(crate) fn connect_core<R: Runtime>(
     let changes_handle = app.clone();
     let last_sync_handle = app.clone();
     let activity_handle = app.clone();
+    let cloning_handle = app.clone();
     let board = StatusBoard::new(Box::new(move |status| {
         // Before the event: a window that starts listening too late for it then asks `status()`, and has to
         // get this status.
@@ -72,14 +101,37 @@ pub(crate) fn connect_core<R: Runtime>(
         status: refresh,
         repository: REPOSITORY_REFRESH,
     };
-    let session = Session::start(board, folders, access, intervals);
+    let mirrors = Mirrors::start(
+        folders.clone(),
+        outside.remotes,
+        Box::new(move |cloning| {
+            // Before the event, for the reason the status gives above.
+            let cloning = cloning.cloned();
+            latest_cloning.set(&cloning);
+            log_if_unsent(CloningChanged(cloning).emit(&cloning_handle));
+        }),
+    );
+    let session = Session::start(board, folders, outside.github, intervals);
     let requests = session.requests();
-    sync_home(&settings.view().home, &requests);
+    let work = RepositoryWork {
+        session: requests.clone(),
+        mirrors: mirrors.requests(),
+    };
+    let view = settings.view();
+    work.start(&view.home);
+    // The Repositories added before 0.2 have no mirror yet, and get theirs after the open one's.
+    for repository in &view.loaded.settings.repositories {
+        work.mirrors.clone_mirror(repository.name.clone());
+    }
     assert!(app.manage(settings), "only this manages the settings");
     assert!(app.manage(requests), "only this manages the requests");
+    assert!(
+        app.manage(work),
+        "only this manages the work on Repositories"
+    );
     let reader = session.reader();
     assert!(app.manage(reader), "only this manages the reader");
-    session
+    Core { session, mirrors }
 }
 
 /// A window that misses an event catches up when it next asks, so this only leaves a trace in the log.
@@ -97,11 +149,12 @@ mod tests {
     use serde_json::{Value, json};
     use std::path::Path;
     use std::sync::mpsc::{Receiver, Sender, channel};
-    use std::time::Instant;
     use tauri::test::{MockRuntime, mock_builder, mock_context, noop_assets};
     use tauri::{App, Listener, WebviewWindow};
     use tsugiki_core::github::replay::Replayer;
     use tsugiki_core::github::{Reply, Request, Transport, Unreachable};
+    use tsugiki_core::repository::RepositoryAccess;
+    use tsugiki_core::settings::SettingsFiles;
     use tsugiki_core::token::{GhOutput, Token};
     use tsugiki_core::web::{GitHubItem, WebAddress};
 
@@ -157,17 +210,27 @@ mod tests {
     /// The app as `startup.rs` wires it, on Tauri's mock runtime with a webview to send commands from. It
     /// listens before the session starts, so it hears every event.
     struct Wired {
-        session: Session,
+        core: Core,
         webview: WebviewWindow<MockRuntime>,
         statuses: Receiver<Value>,
         workbenches: Receiver<Value>,
         last_syncs: Receiver<Value>,
         activities: Receiver<Value>,
+        clonings: Receiver<Value>,
         _app: App<MockRuntime>,
     }
 
     impl Wired {
+        /// The app with mirrors cloned from a folder with nothing in it, so each clone fails at once.
         fn start(folders: Result<Folders, Error>, access: GitHubAccess) -> Self {
+            Self::start_cloning_from(folders, access, Remotes::under("no-remotes/".to_owned()))
+        }
+
+        fn start_cloning_from(
+            folders: Result<Folders, Error>,
+            github: GitHubAccess,
+            remotes: Remotes,
+        ) -> Self {
             let builder = specta_builder();
             let app = mock_builder()
                 .invoke_handler(builder.invoke_handler())
@@ -178,18 +241,21 @@ mod tests {
             let workbenches = hear(&app, "changed");
             let last_syncs = hear(&app, "last-sync-changed");
             let activities = hear(&app, "sync-activity-changed");
-            let session = connect_core(app.handle(), folders, access, Duration::from_secs(3600));
+            let clonings = hear(&app, "cloning-changed");
+            let outside = Outside { github, remotes };
+            let core = connect_core(app.handle(), folders, outside, Duration::from_secs(3600));
             let webview =
                 tauri::WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::default())
                     .build()
                     .unwrap();
             Self {
-                session,
+                core,
                 webview,
                 statuses,
                 workbenches,
                 last_syncs,
                 activities,
+                clonings,
                 _app: app,
             }
         }
@@ -216,7 +282,7 @@ mod tests {
         }
 
         fn stop(self) -> Self {
-            self.session.stop(PLENTY);
+            self.core.stop(PLENTY);
             self
         }
     }
@@ -422,7 +488,7 @@ mod tests {
             .into_iter()
             .map(|command| wired.ask(command, bad.clone()).unwrap_err()["kind"].clone())
             .collect();
-        let requests = wired.session.requests();
+        let requests = wired.core.session.requests();
         let page = crate::open_github_page(
             "not a name",
             GitHubItem::Issue { number: 7 },
@@ -443,7 +509,7 @@ mod tests {
     fn opening_an_item_on_github_shows_its_page_and_then_moves_its_last_seen() {
         let (folders, root) = temp_folders("wired-open-on-github");
         let wired = Wired::start(Ok(folders), no_network());
-        let requests = wired.session.requests();
+        let requests = wired.core.session.requests();
         let shown = std::cell::RefCell::new(Vec::new());
         for item in [
             GitHubItem::Issue { number: 7 },
@@ -475,7 +541,7 @@ mod tests {
     fn a_browser_that_doesnt_open_leaves_last_seen_where_it_is() {
         let (folders, root) = temp_folders("wired-no-browser");
         let wired = Wired::start(Ok(folders), no_network());
-        let requests = wired.session.requests();
+        let requests = wired.core.session.requests();
 
         let opened = crate::open_github_page(
             CPYTHON,
@@ -780,5 +846,125 @@ mod tests {
     #[test]
     fn a_change_the_window_cant_hear_leaves_only_a_trace() {
         log_if_unsent(Err(tauri::Error::WindowNotFound));
+    }
+
+    #[expect(
+        clippy::disallowed_types,
+        reason = "tests build their repositories with the real git (ADR 0009)"
+    )]
+    fn git(dir: &Path, args: &[&str]) {
+        let output = std::process::Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "git {args:?}: {output:?}");
+    }
+
+    /// Bare repositories with one commit each under `root`, laid out as GitHub's are, for mirrors to clone.
+    fn remotes(root: &Path, names: &[&str]) -> Remotes {
+        let remotes = root.join("remotes");
+        for name in names {
+            let work = remotes.join("work").join(name);
+            std::fs::create_dir_all(&work).unwrap();
+            git(&work, &["init", "-q"]);
+            std::fs::write(
+                work.join("README.rst"),
+                "This is Python version 3.15.0 alpha 0\n",
+            )
+            .unwrap();
+            git(&work, &["add", "README.rst"]);
+            git(
+                &work,
+                &[
+                    "-c",
+                    "user.name=Contributor",
+                    "-c",
+                    "user.email=contributor@example.com",
+                    "commit",
+                    "-qm",
+                    "One",
+                ],
+            );
+            let bare = remotes.join(format!("{name}.git"));
+            git(
+                &remotes,
+                &[
+                    "clone",
+                    "-q",
+                    "--bare",
+                    &work.to_string_lossy(),
+                    &bare.to_string_lossy(),
+                ],
+            );
+        }
+        let path = remotes.to_string_lossy().replace('\\', "/");
+        let slash = if path.starts_with('/') { "" } else { "/" };
+        Remotes::under(format!("file://{slash}{path}/"))
+    }
+
+    /// The Repositories each clone announced, in turn, as the webview heard them.
+    fn clones(wired: &Wired, count: usize) -> Vec<Vec<Value>> {
+        (0..count)
+            .map(|_| {
+                let mut clone = Vec::new();
+                loop {
+                    let heard = wired.clonings.recv_timeout(PLENTY).unwrap();
+                    if heard.is_null() {
+                        break clone;
+                    }
+                    clone.push(heard);
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn adding_a_repository_shows_its_clone_until_it_ends() {
+        let (folders, root) = temp_folders("wiring-clone");
+        let remotes = remotes(&root, &[CPYTHON]);
+        let wired = Wired::start_cloning_from(Ok(folders.clone()), recordings(), remotes);
+
+        let _ = wired.ask("add_repository", add_cpython()).unwrap();
+        let clone = clones(&wired, 1).remove(0);
+        let asked = wired.ask("cloning", json!({})).unwrap();
+        drop(wired.stop());
+        let mirror =
+            folders.mirror(&tsugiki_core::repository::RepositoryName::parse(CPYTHON).unwrap());
+        let cloned = mirror.join("HEAD").is_file();
+        std::fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(
+            clone.first(),
+            Some(&json!({ "repository": CPYTHON, "progress": { "stage": "starting" } }))
+        );
+        assert!(clone.contains(
+            &json!({ "repository": CPYTHON, "progress": { "stage": "receiving", "percent": 100 } })
+        ));
+        assert_eq!(asked, Value::Null);
+        assert!(cloned);
+    }
+
+    #[test]
+    fn repositories_added_before_get_their_mirrors_at_launch_the_open_one_first() {
+        let (folders, root) = temp_folders("wiring-clones-at-launch");
+        let mut files = SettingsFiles::load(folders.clone());
+        for name in ["octo-org/first", CPYTHON] {
+            let name = tsugiki_core::repository::RepositoryName::parse(name).unwrap();
+            let _ = files
+                .add_repository(&name, RepositoryAccess::Other)
+                .unwrap();
+        }
+        let remotes = remotes(&root, &["octo-org/first", CPYTHON]);
+        let wired = Wired::start_cloning_from(Ok(folders), recordings(), remotes);
+
+        let order: Vec<Value> = clones(&wired, 2)
+            .into_iter()
+            .map(|clone| clone[0]["repository"].clone())
+            .collect();
+        drop(wired.stop());
+        std::fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(order, [json!(CPYTHON), json!("octo-org/first")]);
     }
 }

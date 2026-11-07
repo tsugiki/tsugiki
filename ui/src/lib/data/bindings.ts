@@ -205,6 +205,8 @@ export type DiffChunk = {
 	number: number,
 	/**  The commit the diff ends at, as the Files tab was told. */
 	head: string,
+	/**  The merge base the diff starts from, as the Files tab was told. */
+	base: string,
 	start: number,
 	end: number,
 };
@@ -805,7 +807,12 @@ export type PrFiles_Deserialize =
 /**  The diff, whose rows the window asks for by number. */
 { state: "ready"; 
 /**  The commit the diff ends at, which each chunk names. */
-head: string; files: DiffFile_Deserialize[]; rows: number; 
+head: string; 
+/**
+ *  The merge base the diff starts from, which each chunk names too. A PR moved to another
+ *  Target branch keeps its head and gets another merge base (#211).
+ */
+base: string; files: DiffFile_Deserialize[]; rows: number; 
 /**  The PR's NEWS entries, rendered above the rows. */
 news: NewsEntry_Deserialize[] };
 
@@ -818,7 +825,12 @@ export type PrFiles_Serialize =
 /**  The diff, whose rows the window asks for by number. */
 { state: "ready"; 
 /**  The commit the diff ends at, which each chunk names. */
-head: string; files: DiffFile_Serialize[]; rows: number; 
+head: string; 
+/**
+ *  The merge base the diff starts from, which each chunk names too. A PR moved to another
+ *  Target branch keeps its head and gets another merge base (#211).
+ */
+base: string; files: DiffFile_Serialize[]; rows: number; 
 /**  The PR's NEWS entries, rendered above the rows. */
 news: NewsEntry_Serialize[] };
 

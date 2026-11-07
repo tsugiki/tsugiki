@@ -1098,18 +1098,25 @@ mod tests {
                 json!({ "repository": CPYTHON, "number": 1 }),
             )
         };
-        let chunk_of = |head: &str| json!({ "repository": CPYTHON, "number": 1, "head": head, "start": 0, "end": 512 });
-        let chunk = |head: &str| wired.ask("pull_request_rows", json!({ "chunk": chunk_of(head) }));
+        let chunk_of = |head: &str, base: &str| json!({ "repository": CPYTHON, "number": 1, "head": head, "base": base, "start": 0, "end": 512 });
+        let chunk = |head: &str, base: &str| {
+            wired.ask(
+                "pull_request_rows",
+                json!({ "chunk": chunk_of(head, base) }),
+            )
+        };
 
         let fetching = files().unwrap();
         let heard = wired.heads.recv_timeout(PLENTY).unwrap();
         let ready = files().unwrap();
-        let rows = chunk(&commit).unwrap();
+        let base = ready["base"].as_str().unwrap_or_default().to_owned();
+        let rows = chunk(&commit, &base).unwrap();
         let spans = wired.ask(
             "pull_request_spans",
-            json!({ "chunk": chunk_of(&commit), "opened": [] }),
+            json!({ "chunk": chunk_of(&commit, &base), "opened": [] }),
         );
-        let no_commit = chunk("main").unwrap_err();
+        let no_commit = chunk("main", &base).unwrap_err();
+        let no_base = chunk(&commit, "main").unwrap_err();
         drop(wired.stop());
         std::fs::remove_dir_all(root).unwrap();
 
@@ -1125,8 +1132,9 @@ mod tests {
         });
         assert_eq!(
             ready,
-            json!({ "state": "ready", "head": commit, "files": [news], "rows": 3, "news": [] })
+            json!({ "state": "ready", "head": commit, "base": base, "files": [news], "rows": 3, "news": [] })
         );
+        assert!(CommitSha::parse(&base).is_some_and(|base| base.as_str() != commit));
         assert_eq!(
             rows,
             json!([
@@ -1141,6 +1149,7 @@ mod tests {
             ])
         );
         assert_eq!(no_commit["message"], "\"main\" isn't a commit.");
+        assert_eq!(no_base["message"], "\"main\" isn't a commit.");
         // NEWS is in no language Tsugiki highlights.
         assert_eq!(spans.unwrap(), json!([[], [], []]));
     }

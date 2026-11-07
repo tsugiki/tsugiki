@@ -49,6 +49,7 @@ const rows: DiffRow[] = [
 const ready = (count: number, more: Partial<{ files: DiffFile[]; news: NewsEntry[] }> = {}): PrFiles => ({
   state: "ready",
   head: "abc",
+  base: "base",
   rows: count,
   news: [],
   files: [
@@ -154,6 +155,7 @@ it("draws each kind of row once the core sends them", async () => {
     repository: "python/cpython",
     number: 11,
     head: "abc",
+    base: "base",
     start: 0,
     end: CHUNK,
   });

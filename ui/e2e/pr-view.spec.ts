@@ -75,6 +75,7 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
       data: {
         state: "ready",
         head: "0123abcdef",
+        base: "fedcba3210",
         files: [
           {
             path: "NEWS",

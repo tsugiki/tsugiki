@@ -197,7 +197,7 @@ it("sends a link in a NEWS entry to the browser", async () => {
   ];
   core.pullRequestFiles.mockResolvedValue({
     status: "ok",
-    data: { state: "ready", head: "abc", files: [], rows: 0, news },
+    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news },
   });
   await shown(view, 10);
   await fireEvent.click(screen.getByRole("tab", { name: "Files" }));

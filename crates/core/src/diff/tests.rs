@@ -233,14 +233,88 @@ fn the_diff_on_show_answers_each_chunk_and_another_head_is_read_again() {
         ..pr.clone()
     };
 
-    let first = diffs.get_or_read(&pr, || Ok(mirrored.read())).unwrap();
-    let again = diffs.get_or_read(&pr, || panic!("read again")).unwrap();
-    let other = diffs.get_or_read(&moved, || Ok(mirrored.read())).unwrap();
+    let main = Against::Branch("main");
+
+    let first = diffs
+        .get_or_read(&pr, main, || Ok(mirrored.read()))
+        .unwrap();
+    let again = diffs
+        .get_or_read(&pr, main, || panic!("read again"))
+        .unwrap();
+    let from_base = Against::Base(&first.base);
+    let chunk = diffs
+        .get_or_read(&pr, from_base, || panic!("read again"))
+        .unwrap();
+    let other = diffs
+        .get_or_read(&moved, main, || Ok(mirrored.read()))
+        .unwrap();
 
     assert!(Arc::ptr_eq(&first, &again));
+    assert!(Arc::ptr_eq(&first, &chunk));
     assert_eq!(other.pr.head, moved.head);
-    let failed = diffs.get_or_read(&other_pr, || Err(Error::new(ErrorKind::Internal, "no")));
-    assert!(failed.is_err());
+    let no = || Err(Error::new(ErrorKind::Internal, "no"));
+    assert!(diffs.get_or_read(&other_pr, main, no).is_err());
+    mirrored.finish();
+}
+
+#[test]
+fn a_diff_against_another_branch_or_from_another_base_is_read_again() {
+    let mirrored = Mirrored::new("retargeted");
+    let diffs = Diffs::default();
+    let pr = PrAt {
+        repository: RepositoryName::parse("python/cpython").unwrap(),
+        number: 7,
+        head: mirrored.head.clone(),
+    };
+    let head = &mirrored.head;
+    let main = Against::Branch("main");
+    let first = diffs
+        .get_or_read(&pr, main, || Ok(mirrored.read()))
+        .unwrap();
+    let elsewhere = Against::Base(head);
+
+    let retargeted = diffs.get_or_read(&pr, Against::Branch("3.14"), || Ok(mirrored.read()));
+    let retargeted = retargeted.unwrap();
+    // A chunk of a diff the window holds from another base, read while the PR targets main.
+    let from_base = diffs.get_or_read(&pr, elsewhere, || {
+        read_between(&mirrored.mirror, "main", head, head)
+    });
+
+    assert!(!Arc::ptr_eq(&first, &retargeted));
+    assert_eq!(from_base.unwrap().diff.row_count(), 0);
+    assert!(diffs.shown(&pr, elsewhere).is_some());
+    // Its base may not be main's, so it can't answer for main.
+    assert!(diffs.shown(&pr, main).is_none());
+    mirrored.finish();
+}
+
+#[test]
+fn a_diff_from_a_base_reads_from_that_base_whatever_the_branch_says() {
+    let mirrored = Mirrored::new("from-base");
+    let first = mirrored.read();
+    let _ = git_in(
+        &mirrored.mirror,
+        &["branch", "3.14", mirrored.head.as_str()],
+    );
+
+    let again = read_between(&mirrored.mirror, "3.14", &first.base, &mirrored.head).unwrap();
+    let retargeted = read(&mirrored.mirror, "3.14", &mirrored.head).unwrap();
+
+    assert_eq!(again.base, first.base);
+    assert_eq!(again.diff.rows(0..100), first.diff.rows(0..100));
+    assert_eq!(retargeted.base, mirrored.head);
+    assert_eq!(retargeted.diff.row_count(), 0);
+    mirrored.finish();
+}
+
+#[test]
+fn a_base_the_mirror_lacks_cant_be_read() {
+    let mirrored = Mirrored::new("no-base");
+    let elsewhere = sha(&"2".repeat(40));
+
+    let problem = read_between(&mirrored.mirror, "main", &elsewhere, &mirrored.head);
+
+    assert_eq!(problem.unwrap_err().kind, ErrorKind::Internal);
     mirrored.finish();
 }
 
@@ -260,16 +334,18 @@ fn a_read_that_ends_after_a_later_one_leaves_the_later_on_show() {
         })
     };
 
+    let main = Against::Branch("main");
+
     // The user opens PR 8 while PR 7's diff is still being read.
-    let earlier = diffs.get_or_read(&pr(7), || {
-        let later = diffs.get_or_read(&pr(8), empty).unwrap();
+    let earlier = diffs.get_or_read(&pr(7), main, || {
+        let later = diffs.get_or_read(&pr(8), main, empty).unwrap();
         assert_eq!(later.pr.number, 8);
         empty()
     });
 
     assert_eq!(earlier.unwrap().pr.number, 7);
-    assert!(diffs.shown(&pr(8)).is_some());
-    assert!(diffs.shown(&pr(7)).is_none());
+    assert!(diffs.shown(&pr(8), main).is_some());
+    assert!(diffs.shown(&pr(7), main).is_none());
 }
 
 #[test]
@@ -323,7 +399,7 @@ fn each_row_is_highlighted_from_its_version_and_a_removed_line_from_the_merge_ba
         head: mirrored.head.clone(),
     };
     let open = Diffs::default()
-        .get_or_read(&pr, || Ok(mirrored.read()))
+        .get_or_read(&pr, Against::Branch("main"), || Ok(mirrored.read()))
         .unwrap();
     let all = 0..open.diff.row_count();
     // main marks Lib/ast.py generated, and the window has opened each file.

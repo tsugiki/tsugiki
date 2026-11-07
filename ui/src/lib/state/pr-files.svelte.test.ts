@@ -53,9 +53,11 @@ const file = (path: string, row: number, generated = false): DiffFile => ({
   generated,
 });
 
-const ready = (head: string, rows: number, files = [file("NEWS", 0)]): PrFiles => ({
+/** A diff from `base` to `head`. */
+const ready = (head: string, rows: number, files = [file("NEWS", 0)], base = "base"): PrFiles => ({
   state: "ready",
   head,
+  base,
   files,
   rows,
   news: [],
@@ -100,6 +102,22 @@ const loaded = async (answer: PrFiles | null = { state: "fetching" }, jumps = ti
   return files;
 };
 
+/** Rows that come only when the test answers them. */
+const heldRows = () => {
+  let answer: (answer: unknown) => void = () => {};
+  core.pullRequestRows.mockReturnValueOnce(
+    new Promise((resolve) => {
+      answer = resolve;
+    }),
+  );
+  return (rows: unknown) => {
+    answer(rows);
+  };
+};
+
+/** Waits until what the answers so far set going has run its course. */
+const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
+
 /** Spans that come only when the test answers them. */
 const heldSpans = () => {
   let answer: (answer: unknown) => void = () => {};
@@ -143,7 +161,7 @@ it("shows a chunk's rows with their spans when the spans come in time, and times
   expect(files.spans(0)).toEqual(keyword(0));
   expect(files.spans(1)).toBeUndefined();
   expect(core.pullRequestSpans).toHaveBeenCalledWith(
-    { repository: "python/cpython", number: 11, head: "abc", start: 0, end: CHUNK },
+    { repository: "python/cpython", number: 11, head: "abc", base: "base", start: 0, end: CHUNK },
     [],
   );
   // The chunk after only comes near, so it isn't a jump.
@@ -371,8 +389,8 @@ it("asks for the chunks near what shows, and the one after, once each", async ()
   });
 
   expect(core.pullRequestRows.mock.calls).toEqual([
-    [{ repository: "python/cpython", number: 11, head: "abc", start: 0, end: CHUNK }],
-    [{ repository: "python/cpython", number: 11, head: "abc", start: CHUNK, end: 2 * CHUNK }],
+    [{ repository: "python/cpython", number: 11, head: "abc", base: "base", start: 0, end: CHUNK }],
+    [{ repository: "python/cpython", number: 11, head: "abc", base: "base", start: CHUNK, end: 2 * CHUNK }],
   ]);
   expect(files.row(0)).toEqual(added("row 0"));
   expect(files.row(1)).toBeUndefined();
@@ -486,6 +504,35 @@ it("collapses the Generated files of a new head again", async () => {
   expect(files.collapsed(1)).toBe(true);
 });
 
+it("starts over when the PR moves to another branch with the same head, and drops the old rows late", async () => {
+  const diff = (base: string) => ready("abc", 10, [file("NEWS", 0), file("Lib/generated.py", 5, true)], base);
+  const files = await loaded(diff("on-main"));
+  files.toggle(1);
+  files.need(0, 9);
+  await vi.waitFor(() => {
+    expect(files.row(0)).toEqual(added("row 0"));
+  });
+  const answerLate = heldRows();
+  core.pullRequestFiles.mockResolvedValue(ok(diff("on-3.14")));
+  await files.ask();
+  files.need(0, 9);
+  core.pullRequestFiles.mockResolvedValue(ok(diff("on-3.13")));
+  await files.ask();
+  const answerNew = heldRows();
+  files.need(0, 9);
+  answerLate(ok([added("from 3.14")]));
+  await settled();
+
+  expect(files.row(0)).toBeUndefined();
+  expect(files.collapsed(1)).toBe(true);
+  const bases = core.pullRequestRows.mock.calls.map(([chunk]) => (chunk as { base?: string }).base);
+  expect(bases).toEqual(["on-main", "on-3.14", "on-3.13"]);
+  answerNew(ok([added("from 3.13")]));
+  await vi.waitFor(() => {
+    expect(files.row(0)).toEqual(added("from 3.13"));
+  });
+});
+
 it("lets go of the chunks far from what shows, and of those that arrive once far", async () => {
   const files = await loaded(ready("abc", 20 * CHUNK));
   files.need(0, 10);
@@ -517,6 +564,25 @@ it("lets go of the chunks far from what shows, and of those that arrive once far
   files.need(CHUNK + 10, CHUNK + 20);
   await vi.waitFor(() => {
     expect(core.pullRequestRows).toHaveBeenCalledTimes(9);
+  });
+});
+
+it("keeps asking for a chunk of the newer diff when the same chunk of the older one fails", async () => {
+  const diff = (base: string) => ready("abc", 10, [file("NEWS", 0)], base);
+  const files = await loaded(diff("on-main"));
+  const failOld = heldRows();
+  files.need(0, 9);
+  core.pullRequestFiles.mockResolvedValue(ok(diff("on-3.14")));
+  await files.ask();
+  const answerNew = heldRows();
+  files.need(0, 9);
+
+  failOld({ status: "error", error: { message: "gone" } });
+  await settled();
+  answerNew(ok([added("on 3.14")]));
+
+  await vi.waitFor(() => {
+    expect(files.row(0)).toEqual(added("on 3.14"));
   });
 });
 

@@ -13,7 +13,7 @@ See [[String the docs]]([String docs/index.md]) or [String <https://example.com>
 - Run it:
 
 [Constant ```sh]
-[Function just] check
+just check
 [Constant ```]
 
 [Constant ```rust]

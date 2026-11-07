@@ -16,15 +16,6 @@ macro_rules! query {
 /// One entry per language, in order of name.
 pub(super) static LANGUAGES: &[Spec] = &[
     Spec {
-        name: "bash",
-        aliases: &["shell", "zsh"],
-        files: &[Extension("sh"), Extension("bash")],
-        grammar: tree_sitter_bash::LANGUAGE,
-        highlights: &[tree_sitter_bash::HIGHLIGHT_QUERY],
-        injections: &[],
-        paints: &[],
-    },
-    Spec {
         name: "c",
         aliases: &[],
         files: &[Extension("c"), Extension("h")],

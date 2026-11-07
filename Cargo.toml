@@ -32,7 +32,6 @@ toml_edit = { version = "0.25.17", features = ["serde"] }
 # The highlighter (#153): the parser, the type each grammar hands it, and the grammars.
 tree-sitter = "0.27.2"
 tree-sitter-language = "0.1.9"
-tree-sitter-bash = "0.25.1"
 tree-sitter-c = "0.24.2"
 tree-sitter-css = "0.25.0"
 tree-sitter-html = "0.23.2"

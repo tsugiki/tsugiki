@@ -52,6 +52,8 @@ impl Mirrored {
             fs::create_dir_all(work.join(folder)).unwrap();
         }
         let _ = git_in(&work, &["init", "-q", "-b", "main"]);
+        // The PR sets run.sh's mode in the index only, which macOS's git would then see as a change on disk.
+        let _ = git_in(&work, &["config", "core.fileMode", "false"]);
         fs::write(work.join("Lib/ast.py"), numbered(1..=10)).unwrap();
         fs::write(work.join("Modules/old.c"), "int x;\n").unwrap();
         fs::write(work.join("Doc/notes.txt"), numbered(1..=20)).unwrap();

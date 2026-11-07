@@ -278,7 +278,7 @@ test("a thread's place in the Conversation opens it in Files, under its line in 
   await expect(pane.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
   const box = pane.getByRole("group", { name: "Review thread" });
   await expect(box).toContainText("Say what it fixes.");
-  /** Where the thread starts below its line, and where the next line starts below the thread, in pixels. */
+  /** The gaps in pixels from line `line` to the thread under it, and from the thread to line `next`. */
   const gaps = (line: string, next: string) =>
     box.evaluate(
       (thread, [line, next]) => {

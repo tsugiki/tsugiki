@@ -1279,10 +1279,10 @@ export type Status_Serialize =
 /**  Something stops Tsugiki reading, such as a refused token. */
 { state: "problem"; problem: Error_Serialize };
 
-/**  What a thread is about. */
+/**  A thread's subject: a whole file, or a line on one side of the diff. */
 export type Subject = Subject_Serialize | Subject_Deserialize;
 
-/**  What a thread is about. */
+/**  A thread's subject: a whole file, or a line on one side of the diff. */
 export type Subject_Deserialize = 
 /**  The whole file. */
 { kind: "file" } | 
@@ -1296,7 +1296,7 @@ line?: number | null;
 /**  The line it was on when it began. */
 original?: number | null };
 
-/**  What a thread is about. */
+/**  A thread's subject: a whole file, or a line on one side of the diff. */
 export type Subject_Serialize = 
 /**  The whole file. */
 { kind: "file" } | 

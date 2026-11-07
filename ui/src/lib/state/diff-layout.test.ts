@@ -5,7 +5,7 @@ import { DiffLayout, type Expanded, type LaidFile, type LaidThread } from "./dif
 /** Files whose headers sit at `rows`, with no gaps and no changes to pair. */
 const at = (...rows: number[]): LaidFile[] => rows.map((row) => ({ row, gaps: [], rest: null, pairs: [] }));
 
-/** What places `first` to `last` show, as row numbers, `old/new` for a line, `more:file`, `removed|added`
+/** Places `first` to `last` of `layout`, as row numbers, `old/new` for a line, `more:file`, `removed|added`
  * for a pair, with `-` for a side that shows nothing, and `tN` for thread N. */
 const places = (layout: DiffLayout, first = 0, last = layout.count - 1) =>
   Array.from({ length: last - first + 1 }, (_, index) => {

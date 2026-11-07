@@ -55,8 +55,8 @@ export const CHUNK = 512;
 /** Lines a click shows above or below a gap, as on GitHub. */
 export const EXPAND = 20;
 
-/** How many places an open thread takes before the tab measures it: its header, and a line of who wrote
- * each comment and two of its words. */
+/** The tab's guess at an open thread's places before it measures the thread: its header, and a line of
+ * who wrote each comment and two of its words. */
 const guessPlaces = (thread: DiffThread) => 1 + 3 * thread.comments.length;
 
 /** The line past any file's last, to ask for a file to its end. */
@@ -125,7 +125,7 @@ export class PrFilesState {
   #lengths = new SvelteMap<number, number>();
   /** The threads the user folded or opened, against how each starts: open, or folded once resolved. */
   #flipped = new SvelteSet<string>();
-  /** How many places each open thread takes, by its id, once the tab has measured it. */
+  /** The places of each open thread the tab has measured, by its id. */
   #measured = new SvelteMap<string, number>();
   /** The thread to move to once the diff comes, as one opened from the Conversation before it did. */
   #revealing: string | undefined;
@@ -240,7 +240,7 @@ export class PrFilesState {
     if (this.#measured.get(id) !== places) this.#measured.set(id, places);
   }
 
-  /** How many places thread `thread`, at `at` among the threads, takes: one when folded. */
+  /** The places thread `thread`, at `at` among the threads, takes: one when folded. */
   #places(thread: DiffThread, at: number): number {
     return this.folded(at) ? 1 : (this.#measured.get(thread.id) ?? guessPlaces(thread));
   }

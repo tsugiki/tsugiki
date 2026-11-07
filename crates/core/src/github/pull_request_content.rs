@@ -61,7 +61,7 @@ impl ThreadId {
     }
 }
 
-/// What a thread is about.
+/// A thread's subject: a whole file, or a line on one side of the diff.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Subject {

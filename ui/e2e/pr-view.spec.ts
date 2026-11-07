@@ -84,6 +84,8 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
             row: 0,
             columns: 8,
             generated: false,
+            gaps: [],
+            rest: null,
           },
         ],
         rows: 3,

@@ -1,8 +1,17 @@
 <!-- The rows of a PR's diff, drawn only near what the tab shows, below its NEWS entries. Every row has the
      same height, so a row's place follows from where it shows, and the core sends the rows in chunks as they
-     come near (ADR 0001). A collapsed Generated file shows only its header (#181). -->
+     come near (ADR 0001). A collapsed Generated file shows only its header (#181). A hunk's row offers to
+     show the lines its gap leaves out, and the row after a file's last hunk the lines after it (#182). -->
 <script lang="ts">
-  import type { DiffFile, FileChange, NewsEntry, PrFilesState } from "$lib/state/pr-files.svelte";
+  import type { HiddenGap } from "$lib/state/diff-layout";
+  import {
+    EXPAND,
+    type DiffFile,
+    type FileChange,
+    type NewsEntry,
+    type PrFilesState,
+    type Span,
+  } from "$lib/state/pr-files.svelte";
   import NewsEntries from "./NewsEntries.svelte";
   import { pieces } from "./spans";
 
@@ -28,7 +37,7 @@
   const last = $derived(Math.min(rows - 1, Math.ceil((scrollTop + height - newsHeight) / ROW) + OVERSCAN));
   const shown = $derived(Array.from({ length: Math.max(0, last - first + 1) }, (_, i) => first + i));
   /** Room for the longest line, so the scroll width doesn't change as rows come and go. */
-  const columns = $derived(files.reduce((widest, file) => Math.max(widest, file.columns), 0));
+  const columns = $derived(files.reduce((widest, file) => Math.max(widest, file.columns), diff.columns));
 
   $effect(() => {
     diff.need(first, last);
@@ -49,7 +58,55 @@
 <!-- A line of code after its marker, highlighted once its spans come. Each piece sits on one line, as the
      row keeps its text's spaces. -->
 <!-- prettier-ignore -->
-{#snippet code(marker: string, text: string, index: number)}<span class="text">{marker}{#each pieces(text, diff.spans(index) ?? []) as piece, at (at)}{#if piece.highlight}<span class={`hl-${piece.highlight}`}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</span>{/snippet}
+{#snippet code(marker: string, text: string, spans: Span[])}<span class="text">{marker}{#each pieces(text, spans) as piece, at (at)}{#if piece.highlight}<span class={`hl-${piece.highlight}`}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</span>{/snippet}
+
+<!-- The button that shows the whole file. -->
+{#snippet whole(file: number)}
+  <button
+    type="button"
+    class="whole"
+    onclick={() => {
+      void diff.expandFile(file);
+    }}>Whole file</button
+  >
+{/snippet}
+
+<!-- The buttons of a gap that still hides lines, in the place of a hunk row's line numbers: 20 more above the
+     hunk or below the one before, or the rest of a short gap. As on GitHub, the gap at a file's start has
+     no hunk before it, so it shows lines only above its hunk. -->
+{#snippet gap({ file, gap, hidden }: HiddenGap)}
+  <span class="expand">
+    {#if hidden > EXPAND}
+      <button
+        type="button"
+        class="step"
+        aria-label={`Show ${String(EXPAND)} lines above`}
+        title={`Show ${String(EXPAND)} lines above`}
+        onclick={() => {
+          diff.expandAbove(file, gap);
+        }}>↑</button
+      >{#if gap.new > 1}<button
+          type="button"
+          class="step"
+          aria-label={`Show ${String(EXPAND)} lines below`}
+          title={`Show ${String(EXPAND)} lines below`}
+          onclick={() => {
+            diff.expandBelow(file, gap);
+          }}>↓</button
+        >{/if}
+    {:else}
+      <button
+        type="button"
+        class="step"
+        aria-label={`Show ${String(hidden)} hidden lines`}
+        title={`Show ${String(hidden)} hidden lines`}
+        onclick={() => {
+          diff.expandGap(file, gap);
+        }}>↕</button
+      >
+    {/if}
+  </span>{@render whole(file)}
+{/snippet}
 
 <!-- A region that scrolls takes focus, so the keys scroll it (axe's scrollable-region-focusable). -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -72,48 +129,82 @@
     style:min-width={`calc(${String(columns)}ch + 112px)`}
   >
     {#each shown as place (place)}
-      {@const index = diff.layout.row(place)}
-      {@const row = diff.row(index)}
-      <div class={`row ${row?.kind ?? "waiting"}`} style:top={`${String(place * ROW)}px`}>
-        {#if row?.kind === "file"}
-          {@const file = generated(index)}
-          {#if file === undefined}
-            <span class="path">{named(row)}</span><span class="count">{counted(row.change)}</span>
-          {:else}
-            <button
-              type="button"
-              class="toggle"
-              aria-expanded={!diff.collapsed(file)}
-              onclick={() => {
-                diff.toggle(file);
-              }}
-              ><span class="chevron">{diff.collapsed(file) ? "▸" : "▾"}</span><span class="path"
-                >{named(row)}</span
-              ></button
-            ><span class="count">{counted(row.change)}</span><span class="count">Generated</span>
-          {/if}
-        {:else if row?.kind === "hunk" || row?.kind === "note"}
-          <span class="number"></span><span class="number"></span><span class="text">{row.text}</span>
-        {:else if row?.kind === "context"}
-          <span class="number">{row.old}</span><span class="number">{row.new}</span>{@render code(
+      {@const at = diff.layout.at(place)}
+      {#if at.kind === "line"}
+        {@const line = diff.line(at.file, at.new)}
+        <div class="row context expanded" style:top={`${String(place * ROW)}px`}>
+          <span class="number">{at.old}</span><span class="number">{at.new}</span>{@render code(
             " ",
-            row.text,
-            index,
+            line.text,
+            line.spans,
           )}
-        {:else if row?.kind === "added"}
-          <span class="number"></span><span class="number">{row.new}</span>{@render code(
-            "+",
-            row.text,
-            index,
-          )}
-        {:else if row?.kind === "removed"}
-          <span class="number">{row.old}</span><span class="number"></span>{@render code(
-            "-",
-            row.text,
-            index,
-          )}
-        {/if}
-      </div>
+        </div>
+      {:else if at.kind === "more"}
+        {@const file = at.file}
+        <div class="row more" style:top={`${String(place * ROW)}px`}>
+          <span class="expand"
+            ><button
+              type="button"
+              class="step"
+              aria-label={`Show ${String(EXPAND)} more lines`}
+              title={`Show ${String(EXPAND)} more lines`}
+              onclick={() => {
+                void diff.expandRest(file);
+              }}>↓</button
+            ></span
+          >{@render whole(file)}
+        </div>
+      {:else}
+        {@const index = at.row}
+        {@const row = diff.row(index)}
+        <div class={`row ${row?.kind ?? "waiting"}`} style:top={`${String(place * ROW)}px`}>
+          {#if row?.kind === "file"}
+            {@const file = generated(index)}
+            {#if file === undefined}
+              <span class="path">{named(row)}</span><span class="count">{counted(row.change)}</span>
+            {:else}
+              <button
+                type="button"
+                class="toggle"
+                aria-expanded={!diff.collapsed(file)}
+                onclick={() => {
+                  diff.toggle(file);
+                }}
+                ><span class="chevron">{diff.collapsed(file) ? "▸" : "▾"}</span><span class="path"
+                  >{named(row)}</span
+                ></button
+              ><span class="count">{counted(row.change)}</span><span class="count">Generated</span>
+            {/if}
+          {:else if row?.kind === "hunk"}
+            {@const hidden = diff.layout.gapAt(index)}
+            {#if hidden === undefined}
+              <span class="number"></span><span class="number"></span>
+            {:else}
+              {@render gap(hidden)}
+            {/if}<span class="text">{row.text}</span>
+          {:else if row?.kind === "note"}
+            <span class="number"></span><span class="number"></span><span class="text">{row.text}</span>
+          {:else if row?.kind === "context"}
+            <span class="number">{row.old}</span><span class="number">{row.new}</span>{@render code(
+              " ",
+              row.text,
+              diff.spans(index) ?? [],
+            )}
+          {:else if row?.kind === "added"}
+            <span class="number"></span><span class="number">{row.new}</span>{@render code(
+              "+",
+              row.text,
+              diff.spans(index) ?? [],
+            )}
+          {:else if row?.kind === "removed"}
+            <span class="number">{row.old}</span><span class="number"></span>{@render code(
+              "-",
+              row.text,
+              diff.spans(index) ?? [],
+            )}
+          {/if}
+        </div>
+      {/if}
     {/each}
   </div>
 </div>
@@ -185,9 +276,43 @@
     width: 1ch;
   }
 
-  .hunk {
+  .hunk,
+  .more {
     background: color-mix(in srgb, #0969da 10%, transparent);
     opacity: 0.8;
+  }
+
+  /* A gap's buttons take the place of the two columns of line numbers. */
+  .expand {
+    display: flex;
+    flex: none;
+    width: 96px;
+  }
+
+  .step,
+  .whole {
+    padding: 0 6px;
+    border: 0;
+    font: inherit;
+    color: inherit;
+    background: none;
+    cursor: pointer;
+  }
+
+  .step {
+    width: 24px;
+    padding: 0;
+  }
+
+  .whole {
+    flex: none;
+    margin-right: 8px;
+    text-decoration: underline;
+  }
+
+  .step:hover,
+  .whole:hover {
+    background: color-mix(in srgb, #0969da 20%, transparent);
   }
 
   .note {

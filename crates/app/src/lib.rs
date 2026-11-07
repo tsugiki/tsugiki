@@ -15,7 +15,7 @@ use specta::Type;
 pub use startup::run;
 use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
-use tsugiki_core::diff::{DiffOf, DiffRow, Diffs, Highlighter, PrAt};
+use tsugiki_core::diff::{DiffOf, DiffRow, Diffs, HeadLine, Highlighter, PrAt};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::folders::Folders;
 use tsugiki_core::github::CommitSha;
@@ -300,17 +300,56 @@ pub(crate) struct DiffChunk {
 impl DiffChunk {
     /// The diff between the commits the chunk names, and its rows.
     fn parse(self) -> Result<(DiffOf, std::ops::Range<u32>), Error> {
-        let pr = PrAt {
-            repository: RepositoryName::parse(&self.repository)?,
-            number: self.number,
-            head: commit(&self.head)?,
-        };
-        let of = DiffOf {
-            pr,
-            base: commit(&self.base)?,
-        };
+        let of = diff_of(&self.repository, self.number, &self.head, &self.base)?;
         Ok((of, self.start..self.end))
     }
+}
+
+/// Lines of a file at a PR's head that a gap of its diff leaves out, as the window asks for them when the
+/// user expands the gap (#182).
+#[derive(Debug, Clone, Deserialize, Type)]
+pub(crate) struct GapLines {
+    repository: String,
+    number: u32,
+    /// The commit the diff ends at, as the Files tab was told.
+    head: String,
+    /// The merge base the diff starts from, as the Files tab was told.
+    base: String,
+    /// The file's place among the diff's files.
+    file: u32,
+    /// The first line, counted from 1.
+    start: u32,
+    /// The line after the last.
+    end: u32,
+}
+
+impl GapLines {
+    /// The diff between the commits it names, the file, and its lines. Lines that start at 0 or end before
+    /// they start name no lines of a file.
+    fn parse(self) -> Result<(DiffOf, u32, std::ops::Range<u32>), Error> {
+        if self.start == 0 || self.start > self.end {
+            let message = format!(
+                "Lines {} to {} aren't lines of a file.",
+                self.start, self.end
+            );
+            return Err(Error::new(ErrorKind::Internal, &message));
+        }
+        let of = diff_of(&self.repository, self.number, &self.head, &self.base)?;
+        Ok((of, self.file, self.start..self.end))
+    }
+}
+
+/// The diff of PR `number` from `base` to `head`, as the window names it.
+fn diff_of(repository: &str, number: u32, head: &str, base: &str) -> Result<DiffOf, Error> {
+    let pr = PrAt {
+        repository: RepositoryName::parse(repository)?,
+        number,
+        head: commit(head)?,
+    };
+    Ok(DiffOf {
+        pr,
+        base: commit(base)?,
+    })
 }
 
 /// The commit `sha` names, as the window sent it.
@@ -348,6 +387,15 @@ fn read_pull_request_spans(
 ) -> Result<Vec<Vec<Span>>, Error> {
     let (of, rows) = chunk.parse()?;
     PrFiles::spans(&work.sources(reader)?, &of, rows, opened)
+}
+
+fn read_pull_request_lines(
+    lines: GapLines,
+    work: &DiffWork,
+    reader: &StoreReader,
+) -> Result<Vec<HeadLine>, Error> {
+    let (of, file, lines) = lines.parse()?;
+    PrFiles::lines(&work.sources(reader)?, &of, file, lines)
 }
 
 /// Opens the page of `item` on GitHub with `show`, and then moves its Last seen, since the user has it in
@@ -415,6 +463,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::pull_request_files,
             slow_commands::pull_request_rows,
             slow_commands::pull_request_spans,
+            slow_commands::pull_request_lines,
             slow_commands::open_on_github,
             slow_commands::open_link
         ])

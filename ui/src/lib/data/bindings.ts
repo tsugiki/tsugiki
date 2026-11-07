@@ -83,6 +83,12 @@ export const commands = {
 	 *  files: the rows of the others get none.
 	 */
 	pullRequestSpans: (chunk: DiffChunk, opened: number[]) => typedError<Span[][], Error_Serialize>(__TAURI_INVOKE("pull_request_spans", { chunk, opened })),
+	/**
+	 *  The lines a gap of a PR's diff leaves out, read from the file at the PR's head in its mirror with their
+	 *  spans, which the Files tab shows when the user expands the gap. It asks GitHub for nothing. Those past
+	 *  the file's end don't come.
+	 */
+	pullRequestLines: (lines: GapLines) => typedError<HeadLine[], Error_Serialize>(__TAURI_INVOKE("pull_request_lines", { lines })),
 	/**  Opens an Issue or a PR on GitHub in the system browser. */
 	openOnGithub: (repository: string, item: GitHubItem) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_on_github", { repository, item })),
 	/**
@@ -232,6 +238,10 @@ export type DiffFile_Deserialize = {
 	 *  starts collapsed.
 	 */
 	generated: boolean,
+	/**  The lines its hunks leave out above each of them, which the window can show (#182). */
+	gaps: Gap[],
+	/**  Where the lines after its last hunk start, if the file may go on there. */
+	rest?: Rest | null,
 };
 
 /**  A file the diff changes, as the Files tab lists it. */
@@ -252,6 +262,10 @@ export type DiffFile_Serialize = {
 	 *  starts collapsed.
 	 */
 	generated: boolean,
+	/**  The lines its hunks leave out above each of them, which the window can show (#182). */
+	gaps: Gap[],
+	/**  Where the lines after its last hunk start, if the file may go on there. */
+	rest: Rest | null,
 };
 
 /**  One row of the diff, as the window draws it. */
@@ -362,8 +376,51 @@ export type Frames = {
 	over_limit: number,
 };
 
+/**
+ *  The lines of a file that a diff leaves out above one of its hunks: the same lines at the merge base and
+ *  at the head, so either number counts on from the gap's first.
+ */
+export type Gap = {
+	/**  The row of the hunk below the gap. */
+	row: number,
+	/**  The gap's first line at the merge base. */
+	old: number,
+	/**  The gap's first line at the head. */
+	new: number,
+	/**  How many lines it leaves out. */
+	lines: number,
+};
+
+/**
+ *  Lines of a file at a PR's head that a gap of its diff leaves out, as the window asks for them when the
+ *  user expands the gap (#182).
+ */
+export type GapLines = {
+	repository: string,
+	number: number,
+	/**  The commit the diff ends at, as the Files tab was told. */
+	head: string,
+	/**  The merge base the diff starts from, as the Files tab was told. */
+	base: string,
+	/**  The file's place among the diff's files. */
+	file: number,
+	/**  The first line, counted from 1. */
+	start: number,
+	/**  The line after the last. */
+	end: number,
+};
+
 /**  An Issue or a PR, as the window names it to open on GitHub. */
 export type GitHubItem = { kind: "issue"; number: number } | { kind: "pull_request"; number: number };
+
+/**
+ *  A line of a file at the PR's head that a gap leaves out, which the window shows when the user expands
+ *  the gap (#182), and its spans.
+ */
+export type HeadLine = {
+	text: string,
+	spans: Span[],
+};
 
 /**  Sent when PR heads arrive in a Repository's mirror, so a Files tab waiting for one asks again. */
 export type HeadsFetched = Change;
@@ -991,6 +1048,16 @@ export type RepositorySize =
 
 /**  Whether someone marked a thread resolved. */
 export type Resolution = "open" | "resolved";
+
+/**
+ *  The first line after a file's last hunk. git ends a hunk with 3 lines of context where the file goes
+ *  on, so a hunk that ends with fewer, or with the file's missing newline, ends the file. How many lines
+ *  follow only the file at the head says.
+ */
+export type Rest = {
+	old: number,
+	new: number,
+};
 
 /**  Someone's Review of a PR, as the Conversation shows it. */
 export type Review = Review_Serialize | Review_Deserialize;

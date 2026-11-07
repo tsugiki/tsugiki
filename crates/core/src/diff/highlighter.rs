@@ -19,8 +19,11 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 
-use super::{DiffRow, NewsEntry, OpenDiff};
-use crate::github::live;
+use serde::Serialize;
+use specta::Type;
+
+use super::{DiffRow, NewsEntry, OpenDiff, count};
+use crate::github::{CommitSha, live};
 use crate::highlight::{Language, Parsed, Span};
 
 /// Which version of a file a line is in.
@@ -138,6 +141,22 @@ enum Job {
     },
 }
 
+/// A line of a file at the PR's head that a gap leaves out, which the window shows when the user expands
+/// the gap (#182), and its spans.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct HeadLine {
+    pub text: String,
+    pub spans: Vec<Span>,
+}
+
+/// Lines of one of a diff's files at the PR's head, counted from 1: those a gap leaves out, which the
+/// window asks for when the user expands it. The file is its place among the diff's files.
+#[derive(Debug, Clone)]
+pub struct FileLines {
+    pub file: usize,
+    pub lines: Range<u32>,
+}
+
 /// Rows of a diff the window asks spans for, and the Generated files it shows open, by their place among
 /// the files.
 #[derive(Debug, Clone)]
@@ -208,6 +227,45 @@ impl Highlighter {
             .map(|line| {
                 line.and_then(|line| spans.remove(&line))
                     .unwrap_or_default()
+            })
+            .collect()
+    }
+
+    /// The lines `wanted` names, read from `mirror` and highlighted from the same tree as their file's
+    /// rows. Those past the file's end don't come, nor do those of a file git can't read.
+    pub fn head_lines(
+        &self,
+        diff: &Arc<OpenDiff>,
+        mirror: &Path,
+        wanted: FileLines,
+    ) -> Vec<HeadLine> {
+        let FileLines { file, lines } = wanted;
+        let path = diff.diff.files.get(file).map(|file| file.path.as_str());
+        let name = path.and_then(|path| object_name(&diff.pr.head, path));
+        let text = name.and_then(|name| blobs(mirror, &[&name]).into_iter().next().flatten());
+        let text = text.unwrap_or_default();
+        let skip = usize::try_from(lines.start.saturating_sub(1)).unwrap_or(usize::MAX);
+        let take = usize::try_from(lines.end.saturating_sub(lines.start)).unwrap_or(usize::MAX);
+        let texts: Vec<&str> = text.lines().skip(skip).take(take).collect();
+        if texts.is_empty() {
+            return Vec::new();
+        }
+        let shown = lines.start..lines.start.saturating_add(count(texts.len()));
+        let from = Source {
+            diff: Arc::clone(diff),
+            mirror: mirror.to_owned(),
+        };
+        let version = (file, Side::Head);
+        let tree = self.trees(from, vec![version]).remove(&version).flatten();
+        let mut spans = tree
+            .map(|parsed| parsed.spans(shown))
+            .unwrap_or_default()
+            .into_iter();
+        texts
+            .into_iter()
+            .map(|text| HeadLine {
+                text: text.to_owned(),
+                spans: spans.next().unwrap_or_default(),
             })
             .collect()
     }
@@ -610,8 +668,7 @@ impl OpenDiff {
             Side::Head => (&self.pr.head, &file.path),
         };
         let language = Language::of(path)?;
-        // git reads a name a line.
-        (!path.contains('\n')).then(|| (language, format!("{}:{path}", commit.as_str())))
+        object_name(commit, path).map(|name| (language, name))
     }
 
     /// `versions` read from `mirror` with one git.
@@ -639,6 +696,11 @@ impl OpenDiff {
             })
             .collect()
     }
+}
+
+/// The name git knows `path` at `commit` by, unless the path has a line break: git reads a name a line.
+fn object_name(commit: &CommitSha, path: &str) -> Option<String> {
+    (!path.contains('\n')).then(|| format!("{}:{path}", commit.as_str()))
 }
 
 /// The files `names` names, read from `mirror` with one `git cat-file --batch`: the text of each, or

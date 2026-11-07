@@ -1115,6 +1115,15 @@ mod tests {
             "pull_request_spans",
             json!({ "chunk": chunk_of(&commit, &base), "opened": [] }),
         );
+        let lines_of = |start: u32, end: u32| {
+            wired.ask(
+                "pull_request_lines",
+                json!({ "lines": { "repository": CPYTHON, "number": 1, "head": commit, "base": base, "file": 0, "start": start, "end": end } }),
+            )
+        };
+        let lines = lines_of(1, 21);
+        let from_0 = lines_of(0, 21).unwrap_err();
+        let backwards = lines_of(21, 1).unwrap_err();
         let no_commit = chunk("main", &base).unwrap_err();
         let no_base = chunk(&commit, "main").unwrap_err();
         drop(wired.stop());
@@ -1128,7 +1137,9 @@ mod tests {
             "change": { "kind": "lines", "added": 1, "removed": 0 },
             "row": 0,
             "columns": 4,
-            "generated": false
+            "generated": false,
+            "gaps": [],
+            "rest": null
         });
         assert_eq!(
             ready,
@@ -1152,5 +1163,12 @@ mod tests {
         assert_eq!(no_base["message"], "\"main\" isn't a commit.");
         // NEWS is in no language Tsugiki highlights.
         assert_eq!(spans.unwrap(), json!([[], [], []]));
+        // The file has one line, read from the mirror.
+        assert_eq!(lines.unwrap(), json!([{ "text": "PR 1", "spans": [] }]));
+        assert_eq!(from_0["message"], "Lines 0 to 21 aren't lines of a file.");
+        assert_eq!(
+            backwards["message"],
+            "Lines 21 to 1 aren't lines of a file."
+        );
     }
 }

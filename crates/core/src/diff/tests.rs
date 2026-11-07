@@ -373,6 +373,34 @@ fn a_patch_and_a_list_of_files_that_dont_agree_read_as_nothing() {
 }
 
 #[test]
+fn each_file_names_the_lines_its_hunks_leave_out() {
+    let numstat = "1\t1\ta.py\x001\t1\tb.py\x001\t1\tc.py\x00";
+    let a = "diff --git a/a.py b/a.py\n\
+             @@ -8,7 +8,7 @@ def f():\n l8\n l9\n l10\n-l11\n+L11\n l12\n l13\n l14\n\
+             @@ -40,6 +40,7 @@ def g():\n l40\n l41\n l42\n+new\n l43\n l44\n l45\n";
+    // The change ends one line before the end of the file, so nothing follows it.
+    let b = "diff --git a/b.py b/b.py\n@@ -1,2 +1,2 @@\n-a\n+A\n b\n";
+    // Three lines of context, and then the file ends without a newline.
+    let c = "diff --git a/c.py b/c.py\n@@ -1,4 +1,4 @@\n-a\n+A\n b\n c\n d\n\\ No newline at end of file\n";
+
+    let diff = Diff::parse(numstat, &format!("{a}{b}{c}")).unwrap();
+
+    let [a, b, c] = diff.files() else {
+        panic!("three files");
+    };
+    let above = |row, line, lines| Gap {
+        row,
+        old: line,
+        new: line,
+        lines,
+    };
+    assert_eq!(a.gaps, [above(1, 1, 7), above(10, 15, 25)]);
+    assert_eq!(a.rest, Some(Rest { old: 46, new: 47 }));
+    assert_eq!((b.gaps.as_slice(), b.rest), ([].as_slice(), None));
+    assert_eq!((c.gaps.as_slice(), c.rest), ([].as_slice(), None));
+}
+
+#[test]
 fn an_empty_line_of_context_without_its_space_is_still_context() {
     let patch = "diff --git a/a.py b/a.py\n@@ -1,2 +1,2 @@\n\n-x\n+y\n";
 

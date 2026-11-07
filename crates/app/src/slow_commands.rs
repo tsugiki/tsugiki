@@ -11,7 +11,7 @@
 
 use tauri::State;
 use tauri::async_runtime::spawn_blocking;
-use tsugiki_core::diff::DiffRow;
+use tsugiki_core::diff::{DiffRow, HeadLine};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::highlight::Span;
 use tsugiki_core::repository::{Home, RepositoryAccess, RepositoryCheck};
@@ -164,4 +164,17 @@ pub(crate) fn pull_request_spans(
     reader: State<'_, StoreReader>,
 ) -> Result<Vec<Vec<Span>>, Error> {
     crate::read_pull_request_spans(chunk, &opened, &work, &reader)
+}
+
+/// The lines a gap of a PR's diff leaves out, read from the file at the PR's head in its mirror with their
+/// spans, which the Files tab shows when the user expands the gap. It asks GitHub for nothing. Those past
+/// the file's end don't come.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn pull_request_lines(
+    lines: crate::GapLines,
+    work: State<'_, crate::DiffWork>,
+    reader: State<'_, StoreReader>,
+) -> Result<Vec<HeadLine>, Error> {
+    crate::read_pull_request_lines(lines, &work, &reader)
 }

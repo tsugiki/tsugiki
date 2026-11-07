@@ -8,8 +8,8 @@ use serde::Serialize;
 use specta::Type;
 
 use crate::diff::{
-    self, Against, Chunk, DiffFile, DiffOf, DiffRow, Diffs, Held, Highlighter, NewsEntry, OpenDiff,
-    PrAt,
+    self, Against, Chunk, DiffFile, DiffOf, DiffRow, Diffs, FileLines, HeadLine, Held, Highlighter,
+    NewsEntry, OpenDiff, PrAt,
 };
 use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
@@ -144,6 +144,22 @@ impl PrFiles {
             opened,
         };
         Ok(sources.highlighter.spans(&open, &mirror, chunk))
+    }
+
+    /// Lines `lines` of file `file` at the PR's head, counted from 1, with their spans: those a gap of the
+    /// diff `of` leaves out, which the user expands (#182). They come from the mirror, so expanding asks
+    /// GitHub for nothing. Those past the file's end don't come.
+    pub fn lines(
+        sources: &DiffSources<'_>,
+        of: &DiffOf,
+        file: u32,
+        lines: Range<u32>,
+    ) -> Result<Vec<HeadLine>, Error> {
+        let mirror = sources.folders.mirror(&of.pr.repository);
+        let open = Self::open(sources, of)?;
+        let file = usize::try_from(file).unwrap_or(usize::MAX);
+        let wanted = FileLines { file, lines };
+        Ok(sources.highlighter.head_lines(&open, &mirror, wanted))
     }
 
     /// The diff `of`: the one on show, or else read again from its base, as when the user has opened
@@ -362,6 +378,47 @@ mod tests {
         assert_eq!(rows, whole.rows(0..3));
         assert_eq!(spans.len(), whole.rows(0..whole.row_count()).len());
         assert_eq!(spans.iter().filter(|spans| !spans.is_empty()).count(), 13);
+        mirrored.finish();
+        world.finish();
+    }
+
+    #[test]
+    fn the_lines_a_gap_leaves_out_come_from_the_head_highlighted_and_stop_at_its_end() {
+        let world = World::new("lines");
+        let mirrored = Mirrored::new("pr-files-lines");
+        let head = mirrored.head.clone();
+        let read = mirrored.read();
+        world.mirrors(&mirrored);
+        world.has_pr(Some(head.clone()), "main");
+        let of = world.diff_of(&head, &read.base);
+        let at = |path: &str| {
+            let mut files = read.diff.files().iter();
+            u32::try_from(files.position(|file| file.path == path).unwrap()).unwrap()
+        };
+        let lines = |file, range| PrFiles::lines(&world.sources(), &of, file, range).unwrap();
+
+        let first = lines(at("Lib/ast.py"), 1..3);
+        let last = lines(at("Lib/ast.py"), 10..30);
+        let plain = lines(at("Doc/news.txt"), 2..3);
+        let unknown = lines(99, 1..3);
+
+        let texts = |lines: &[HeadLine]| {
+            lines
+                .iter()
+                .map(|line| line.text.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(texts(&first), ["x1 = 1", "x2 = 2"]);
+        assert!(first.iter().all(|line| !line.spans.is_empty()));
+        assert_eq!(texts(&last), ["x10 = 10", "x11 = 11"]);
+        assert_eq!(
+            plain,
+            [HeadLine {
+                text: "line 2".to_owned(),
+                spans: Vec::new()
+            }]
+        );
+        assert_eq!(unknown, []);
         mirrored.finish();
         world.finish();
     }

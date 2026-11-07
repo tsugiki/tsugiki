@@ -28,6 +28,7 @@
     "vitest": "npm run coverage -w ui --",
     "cargo-test": "cargo test --workspace -- --skip bindings_are_up_to_date",
     "stale-bindings": "cargo test -p tsugiki-app --test bindings",
+    "highlight-samples": "cargo test -p tsugiki-core --lib highlight::tests::each_sample",
     "rust-coverage": "node scripts/rust-coverage.ts",
     "smoke": "node scripts/smoke.ts",
     "release-check": "node scripts/release-check.ts",

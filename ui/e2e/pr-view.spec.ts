@@ -95,7 +95,17 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
         { kind: "added", new: 1, text: "The fix" },
       ],
     },
-    pullRequestSpans: { status: "ok", data: [[], [], [{ start: 4, end: 7, highlight: "keyword" }]] },
+    pullRequestSpans: {
+      status: "ok",
+      data: [
+        [],
+        [],
+        [
+          { start: 0, end: 3, highlight: "heading" },
+          { start: 4, end: 7, highlight: "keyword" },
+        ],
+      ],
+    },
   });
   await page.goto("/");
   await expect(page.getByRole("button", { name: "#7 Issue 7" })).toBeVisible();
@@ -117,6 +127,7 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
   const keyword = diff.locator(".hl-keyword");
   await expect(keyword).toHaveText("fix");
   await expect(keyword).toHaveCSS("color", "rgb(207, 34, 46)");
+  await expect(diff.locator(".hl-heading")).toHaveCSS("font-weight", "600");
   await page.evaluate(() => {
     document.documentElement.dataset["theme"] = "dark";
   });

@@ -1,0 +1,20 @@
+---
+source: crates/core/src/highlight/tests.rs
+expression: drawn
+---
+[Constant <!DOCTYPE html>]
+<[Tag html] [Function lang]=[String "en"]>
+  <[Tag head]>
+    [Comment <!-- The page the docs open. -->]
+    <[Tag style]>
+      [Tag body] { [Constant margin]: [Constant 0]; }
+    </[Tag style]>
+  </[Tag head]>
+  <[Tag body]>
+    <[Tag p] [Function class]=[String "note"]>Tsugiki &amp; you</[Tag p]>
+    <[Tag script]>
+      [Keyword const] rows [Keyword =] document.[Function querySelectorAll]([String ".row"]);
+      console.[Function log]([String `]${rows.length}[String  rows`]);
+    </[Tag script]>
+  </[Tag body]>
+</[Tag html]>

@@ -1,0 +1,16 @@
+---
+source: crates/core/src/highlight/tests.rs
+expression: drawn
+---
+[Comment #!/bin/sh]
+[Comment # Builds CPython in a folder of its own.]
+[Function set] [Constant -e]
+build=[String "]${1:-build}[String "]
+[Function mkdir] [Constant -p] [String "][Keyword $][String build"] [Keyword &&] [Function cd] [String "][Keyword $][String build"]
+[Keyword if] [ ! -f Makefile ]; [Keyword then]
+    [Function ../configure] [Constant --with-pydebug] [Constant --prefix=][String "][Keyword $][String HOME/.local"]
+[Keyword fi]
+[Keyword for] target [Keyword in] all test; [Keyword do]
+    [Function make] [Constant -j][String "]$([Function nproc])[String "] [String "][Keyword $][String target"] || [Function exit] 1
+[Keyword done]
+[Function echo] [String "Built in ][Keyword $][String build"]

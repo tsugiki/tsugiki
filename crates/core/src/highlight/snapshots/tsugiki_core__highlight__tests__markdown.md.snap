@@ -1,0 +1,25 @@
+---
+source: crates/core/src/highlight/tests.rs
+expression: drawn
+---
+# [Heading Contributing]
+
+Read [Strong **the guide**] and the [Emphasis *notes*], then run [Constant `just check`].
+See [[String the docs]]([String docs/index.md]) or [String <https://example.com>].
+
+## [Heading Building]
+
+- Install [[String just]]([String https://github.com/casey/just]).
+- Run it:
+
+[Constant ```sh]
+[Function just] check
+[Constant ```]
+
+[Constant ```rust]
+[Keyword fn] [Function main]() { [Function println!]([String "{}"], [Constant 1]); }
+[Constant ```]
+
+> A quote, with a <[Tag kbd]>key</[Tag kbd]> in it.
+
+[Constant     indented code]

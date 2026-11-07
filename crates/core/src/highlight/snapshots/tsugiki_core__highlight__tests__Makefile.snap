@@ -1,0 +1,19 @@
+---
+source: crates/core/src/highlight/tests.rs
+expression: drawn
+---
+[Comment # Builds the docs.]
+[Constant PYTHON] [Keyword ?=] [String python3]
+[Constant SOURCES] [Keyword :=] [String $(][Keyword wildcard][String  *.rst)]
+
+[Constant .PHONY]: html clean
+[Constant html]: $([Constant SOURCES])
+	$([Constant PYTHON]) -m sphinx -b html . build/html
+
+[Keyword ifeq] ($([Constant OS]),Windows_NT)
+[Constant clean]:
+	del /q build
+[Keyword else]
+[Constant clean]:
+	rm -rf build
+[Keyword endif]

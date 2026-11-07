@@ -20,3 +20,8 @@ first in another terminal:
 npm run dev -w ui
 cargo run
 ```
+
+## Add a language to the highlighter
+
+[docs/highlighting.md](docs/highlighting.md) says how the Files tab colors code, and walks through adding a
+language: a crate, an entry in a table, and a sample file.

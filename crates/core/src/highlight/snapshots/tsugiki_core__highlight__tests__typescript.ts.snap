@@ -1,0 +1,19 @@
+---
+source: crates/core/src/highlight/tests.rs
+expression: drawn
+---
+[Comment // The rows the view asks for at a time.]
+[Keyword export] [Keyword const] [Constant CHUNK] [Keyword =] [Constant 512];
+
+[Keyword export] [Keyword interface] [Type Chunk][Keyword <][Type T][Keyword >] {
+  [Keyword readonly] start: [Type number];
+  rows: [Type T][];
+}
+
+[Keyword export] [Keyword function] [Function chunk][Keyword <][Type T][Keyword >](rows: [Keyword readonly] [Type T][], start: [Type number]): [Type Chunk]<[Type T]> [Keyword |] [Constant null] {
+  [Keyword if] (start [Keyword >=] rows.length) [Keyword return] [Constant null];
+  [Keyword const] end [Keyword =] [Type Math].[Function min](start [Keyword +] [Constant CHUNK], rows.length);
+  [Keyword return] { start, rows: rows.[Function slice](start, end) [Keyword as] [Type T][] };
+}
+
+[Keyword enum] [Type Side] { Base, Head }

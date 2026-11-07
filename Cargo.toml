@@ -29,10 +29,24 @@ tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
 open = "5.4.5"
 time = { version = "0.3.55", features = ["formatting", "parsing", "serde"] }
 toml_edit = { version = "0.25.17", features = ["serde"] }
-# The highlighter (#153): the parser, and one grammar for each language.
+# The highlighter (#153): the parser, the type each grammar hands it, and the grammars.
 tree-sitter = "0.27.2"
+tree-sitter-language = "0.1.9"
+tree-sitter-bash = "0.25.1"
 tree-sitter-c = "0.24.2"
+tree-sitter-css = "0.25.0"
+tree-sitter-html = "0.23.2"
+tree-sitter-javascript = "0.25.0"
+tree-sitter-json = "0.24.8"
+tree-sitter-make = "1.1.1"
+tree-sitter-md = "0.5.4"
 tree-sitter-python = "0.25.0"
+tree-sitter-rst = "0.2.0"
+tree-sitter-rust = "0.24.2"
+tree-sitter-svelte-ng = "1.0.2"
+tree-sitter-toml-ng = "0.7.0"
+tree-sitter-typescript = "0.23.2"
+tree-sitter-yaml = "0.7.2"
 tsugiki-core = { path = "crates/core" }
 tsugiki-webview-keys = { path = "crates/webview-keys" }
 url = "2.5.8"

@@ -8,9 +8,9 @@ use std::io::{self, BufReader, Read};
 use std::mem;
 use std::path::{Path, PathBuf};
 use std::process::Child;
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use specta::Type;
@@ -50,6 +50,8 @@ type AnnounceCloning = Box<dyn FnMut(Option<&Cloning>) + Send>;
 /// Where clones come from: GitHub, or in tests a folder of bare repositories laid out as GitHub's are.
 pub struct Remotes {
     base: String,
+    /// How long a head whose fetch brought another commit waits before it is fetched once more.
+    patience: Duration,
 }
 
 impl Remotes {
@@ -59,7 +61,16 @@ impl Remotes {
 
     /// Remotes at `base` followed by `owner/name.git`.
     pub fn under(base: String) -> Self {
-        Self { base }
+        Self {
+            base,
+            patience: BEHIND_PATIENCE,
+        }
+    }
+
+    /// The same remotes, with a head that is behind waiting `patience`.
+    #[cfg(test)]
+    fn patient(self, patience: Duration) -> Self {
+        Self { patience, ..self }
     }
 
     fn url(&self, repository: &RepositoryName) -> String {
@@ -227,6 +238,8 @@ impl Drop for Mirrors {
 trait Git: Send {
     /// Starts git with `args`, and gives it `input` on its standard input.
     fn start(&self, args: &[&OsStr], input: &[u8]) -> io::Result<Started>;
+    /// Runs a git that only reads a mirror, so it ends at once, and gives its output.
+    fn read(&self, args: &[&OsStr]) -> io::Result<String>;
 }
 
 /// A git the worker started.
@@ -253,6 +266,10 @@ impl Git for LiveGit {
             run: Box::new(git),
             output: Box::new(output),
         })
+    }
+
+    fn read(&self, args: &[&OsStr]) -> io::Result<String> {
+        live::read_git(args)
     }
 }
 
@@ -283,6 +300,7 @@ struct Clone {
 /// A fetch of PR heads under way.
 struct Fetch {
     repository: RepositoryName,
+    mirror: PathBuf,
     batch: BTreeMap<u32, CommitSha>,
     git: Box<dyn Run>,
     /// Heads or a status came while it ran, so if it fails, the next fetch has a reason to try again.
@@ -299,13 +317,71 @@ enum Pace {
     Held,
 }
 
+/// How long a head whose fetch brought another commit waits before it is fetched once more. GitHub moves
+/// `refs/pull/N/head` a few seconds after a push.
+const BEHIND_PATIENCE: Duration = Duration::from_secs(10);
+
 /// What the worker knows of one Repository's PR heads.
 struct Heads {
     repository: RepositoryName,
     /// Heads handed over and not fetched yet, which go in the next fetch.
     waiting: BTreeMap<u32, CommitSha>,
-    /// The heads fetched since Tsugiki started. A head that moves on is fetched again.
-    fetched: BTreeMap<u32, CommitSha>,
+    /// Heads whose fetch left their ref somewhere else, as GitHub hadn't moved it yet (#201), or whose ref
+    /// couldn't be read back.
+    behind: BTreeMap<u32, Behind>,
+    /// The heads fetched since Tsugiki started, and those GitHub didn't have. A head that moves on is
+    /// fetched again.
+    settled: BTreeMap<u32, CommitSha>,
+}
+
+impl Heads {
+    /// Notes where the heads of a fetch that succeeded `landed`, or nothing if that couldn't be read. One
+    /// that is behind for the first time since it was handed over is fetched once more at `retry`.
+    fn note_fetched(
+        &mut self,
+        batch: BTreeMap<u32, CommitSha>,
+        landed: Option<&BTreeMap<u32, CommitSha>>,
+        retry: Instant,
+    ) {
+        for (number, commit) in batch {
+            // The same head handed over during the fetch asks for nothing more.
+            if self.waiting.get(&number) == Some(&commit) {
+                drop(self.waiting.remove(&number));
+            }
+            let elsewhere = match landed {
+                Some(landed) => landed.get(&number).filter(|&at| *at != commit),
+                None => Some(&commit),
+            };
+            let Some(elsewhere) = elsewhere else {
+                drop(self.behind.remove(&number));
+                drop(self.settled.insert(number, commit));
+                continue;
+            };
+            if landed.is_some() {
+                log::info!(
+                    "GitHub had PR #{number} of {} at {} rather than {}",
+                    self.repository,
+                    elsewhere.as_str(),
+                    commit.as_str()
+                );
+            }
+            let retried = Behind::Retried {
+                commit: commit.clone(),
+            };
+            if self.behind.get(&number) != Some(&retried) {
+                let due = Behind::Due { commit, at: retry };
+                drop(self.behind.insert(number, due));
+            }
+        }
+    }
+}
+
+/// A head whose fetch didn't bring it. It is fetched once more after a moment, and after that only when
+/// it is handed over again, so a ref GitHub never moves doesn't keep a fetch going.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Behind {
+    Due { commit: CommitSha, at: Instant },
+    Retried { commit: CommitSha },
 }
 
 struct Worker {
@@ -326,7 +402,16 @@ impl Worker {
     fn run(&mut self, incoming: &Receiver<Message>) {
         loop {
             self.start_next();
-            match incoming.recv() {
+            let message = match self.next_due() {
+                Some(at) => {
+                    match incoming.recv_timeout(at.saturating_duration_since(Instant::now())) {
+                        Err(RecvTimeoutError::Timeout) => continue,
+                        other => other.map_err(drop),
+                    }
+                }
+                None => incoming.recv().map_err(drop),
+            };
+            match message {
                 Ok(Message::Clone(repository, turn)) => self.wait(repository, turn),
                 Ok(Message::Heads(repository, heads)) => {
                     self.heard_news();
@@ -394,7 +479,8 @@ impl Worker {
             .unwrap_or_else(|| Heads {
                 repository: repository.clone(),
                 waiting: BTreeMap::new(),
-                fetched: BTreeMap::new(),
+                behind: BTreeMap::new(),
+                settled: BTreeMap::new(),
             })
     }
 
@@ -409,7 +495,9 @@ impl Worker {
     fn hand_over(&mut self, repository: &RepositoryName, heads: Vec<PrHead>) {
         let mut known = self.take_heads(repository);
         for PrHead { number, commit } in heads {
-            if known.fetched.get(&number) == Some(&commit) {
+            // A hand-over is a reason to try a head again, so one that was behind starts afresh.
+            drop(known.behind.remove(&number));
+            if known.settled.get(&number) == Some(&commit) {
                 drop(known.waiting.remove(&number));
             } else {
                 drop(known.waiting.insert(number, commit));
@@ -421,9 +509,10 @@ impl Worker {
     /// Starts the next git, unless one is under way or GitHub can't be reached. A fetch goes ahead of a
     /// clone, as it takes a moment and a clone can take minutes.
     fn start_next(&mut self) {
+        self.retry_due();
         while self.job.is_none() && self.pace != Pace::Held {
             if let Some((repository, batch, mirror)) = self.next_batch() {
-                self.start_fetch(repository, batch, &mirror);
+                self.start_fetch(repository, batch, mirror);
                 continue;
             }
             let Some(repository) = self.waiting.pop_front() else {
@@ -455,6 +544,39 @@ impl Worker {
         }
     }
 
+    /// When the first head that is behind is due to be fetched once more.
+    fn next_due(&self) -> Option<Instant> {
+        self.heads
+            .iter()
+            .flat_map(|heads| heads.behind.values())
+            .filter_map(|behind| match behind {
+                Behind::Due { at, .. } => Some(*at),
+                Behind::Retried { .. } => None,
+            })
+            .min()
+    }
+
+    /// Puts each head that is due to be fetched once more with the waiting ones. A newer one handed over
+    /// meanwhile went there itself.
+    fn retry_due(&mut self) {
+        let now = Instant::now();
+        for heads in &mut self.heads {
+            for (number, behind) in &mut heads.behind {
+                if let Behind::Due { commit, at } = behind
+                    && *at <= now
+                {
+                    let _ = heads
+                        .waiting
+                        .entry(*number)
+                        .or_insert_with(|| commit.clone());
+                    *behind = Behind::Retried {
+                        commit: commit.clone(),
+                    };
+                }
+            }
+        }
+    }
+
     /// The waiting heads of the first Repository whose mirror is there, with where it is. The heads of one
     /// whose mirror isn't there wait for its clone.
     fn next_batch(&mut self) -> Option<(RepositoryName, BTreeMap<u32, CommitSha>, PathBuf)> {
@@ -472,13 +594,14 @@ impl Worker {
     }
 
     /// Fetches each head of `batch` in one go. A glob in each refspec lets a head GitHub no longer has match
-    /// nothing, where a plain one would fail the whole fetch (#157). A connection that stalls for a minute
+    /// nothing, where a plain one would fail the whole fetch (#157), and `--prune` deletes its old ref, so
+    /// the refs read back say which heads GitHub has. A connection that stalls for a minute
     /// fails the fetch, which would otherwise hold up every git after it.
     fn start_fetch(
         &mut self,
         repository: RepositoryName,
         batch: BTreeMap<u32, CommitSha>,
-        mirror: &Path,
+        mirror: PathBuf,
     ) {
         let refspecs: String = batch
             .keys()
@@ -495,6 +618,7 @@ impl Worker {
             OsStr::new("--stdin"),
             OsStr::new("--no-tags"),
             OsStr::new("--no-write-fetch-head"),
+            OsStr::new("--prune"),
             OsStr::new("origin"),
         ];
         match self.git.start(&args, refspecs.as_bytes()) {
@@ -502,6 +626,7 @@ impl Worker {
                 self.listen(started.output);
                 self.job = Some(Job::Fetch(Fetch {
                     repository,
+                    mirror,
                     batch,
                     git: started.run,
                     news: false,
@@ -526,9 +651,15 @@ impl Worker {
 
     /// Notes the heads a fetch brought, which no longer wait. A failed fetch leaves the refs it had, and its
     /// heads wait for the next fetch.
+    ///
+    /// GitHub moves `refs/pull/N/head` a moment after a push, so a fetch can bring the commit before the
+    /// one handed over (#201). A head whose ref doesn't point at its commit is behind, and so is each head
+    /// of a fetch whose refs can't be read back. A head whose glob matched nothing has no ref, as it isn't
+    /// on GitHub, and is settled until it moves on.
     fn finish_fetch(&mut self, fetch: Fetch, last_words: &str) {
         let Fetch {
             repository,
+            mirror,
             batch,
             mut git,
             news,
@@ -543,12 +674,32 @@ impl Worker {
             }
             return;
         }
+        let landed = match self.read_pull_refs(&mirror) {
+            Ok(landed) => Some(landed),
+            Err(cause) => {
+                log::warn!("Tsugiki can't read which PR heads of {repository} it fetched: {cause}");
+                None
+            }
+        };
         let mut known = self.take_heads(&repository);
-        known
-            .waiting
-            .retain(|number, commit| batch.get(number) != Some(commit));
-        known.fetched.extend(batch);
+        known.note_fetched(
+            batch,
+            landed.as_ref(),
+            Instant::now() + self.remotes.patience,
+        );
         self.heads.push_back(known);
+    }
+
+    /// Where each PR head ref in `mirror` points.
+    fn read_pull_refs(&self, mirror: &Path) -> io::Result<BTreeMap<u32, CommitSha>> {
+        let args = [
+            OsStr::new("-C"),
+            mirror.as_os_str(),
+            OsStr::new("for-each-ref"),
+            OsStr::new("--format=%(objectname) %(refname)"),
+            OsStr::new("refs/tsugiki/pull/"),
+        ];
+        Ok(pull_refs(&self.git.read(&args)?))
     }
 
     fn start_clone(
@@ -621,6 +772,23 @@ impl Worker {
         }
         (self.announce)(None);
     }
+}
+
+/// Reads `git for-each-ref`'s lines of a commit and a ref. A ref the glob matched beside the head, such as
+/// `refs/tsugiki/pull/1/head-x`, isn't one.
+fn pull_refs(listing: &str) -> BTreeMap<u32, CommitSha> {
+    listing
+        .lines()
+        .filter_map(|line| {
+            let (commit, name) = line.split_once(' ')?;
+            let number = name
+                .strip_prefix("refs/tsugiki/pull/")?
+                .strip_suffix("/head")?
+                .parse()
+                .ok()?;
+            Some((number, CommitSha::parse(commit)?))
+        })
+        .collect()
 }
 
 /// Passes on each line of progress git writes, until git closes its error output. git ends a line of

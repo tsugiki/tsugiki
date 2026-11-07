@@ -8,7 +8,8 @@ import {
   type ThreadLine_Serialize,
 } from "$lib/data/bindings";
 import { DetailState } from "./detail-view.svelte";
-import { PrFilesState } from "./pr-files.svelte";
+import { hud } from "./hud.svelte";
+import { DiffViewChoice, PrFilesState } from "./pr-files.svelte";
 import type { Stop } from "./workbench.svelte";
 
 export type PrView = PrView_Serialize;
@@ -27,14 +28,20 @@ export class PrViewState extends DetailState<PrView> {
   /** Its Files tab, which asks for the diff as the PR opens, so a head the mirror lacks is fetched first. */
   readonly files: PrFilesState;
 
-  constructor(repository: string, number: number, issue: number | undefined) {
+  /** `choice` is the view of the diff, which the Repository's page keeps from PR to PR. */
+  constructor(
+    repository: string,
+    number: number,
+    issue: number | undefined,
+    choice: DiffViewChoice = new DiffViewChoice(),
+  ) {
     super(repository, number, {
       open: (repository, number) => commands.openPullRequest(repository, number),
       fetch: (repository, number) => commands.fetchPullRequest(repository, number),
       read: (repository, number) => commands.pullRequest(repository, number),
     });
     this.issue = issue;
-    this.files = new PrFilesState(repository, number);
+    this.files = new PrFilesState(repository, number, hud, choice);
   }
 
   override async load() {

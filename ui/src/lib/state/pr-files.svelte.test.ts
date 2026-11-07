@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   CHUNK,
+  DiffViewChoice,
   EXPAND,
   PrFilesState,
   SPANS_WAIT,
@@ -56,6 +57,7 @@ const file = (path: string, row: number, generated = false): DiffFile => ({
   generated,
   gaps: [],
   rest: null,
+  pairs: [],
 });
 
 /** A diff from `base` to `head`. */
@@ -666,6 +668,7 @@ const gapped = (base = "base") =>
           { row: 6, old: 10, new: 12, lines: 45 },
         ],
         rest: { old: 60, new: 62 },
+        pairs: [],
       },
       file("b.py", 20),
     ],
@@ -800,4 +803,21 @@ it("expands nothing until the diff is ready, nor after a file that ends with its
   await files.expandRest(1);
 
   expect(asked()).toEqual([]);
+});
+
+it("lays the diff out in the view the window chose, which one choice holds for every PR", async () => {
+  const choice = new DiffViewChoice();
+  const changed = { ...file("a.py", 0), pairs: [{ row: 2, removed: 2, added: 1 }] };
+  core.pullRequestFiles.mockResolvedValue(ok(ready("abc", 6, [changed])));
+  const one = new PrFilesState("python/cpython", 11, timer(), choice);
+  const other = new PrFilesState("python/cpython", 12, timer(), choice);
+  await Promise.all([one.load(), other.load()]);
+  const unified = one.layout.count;
+
+  choice.toggle();
+
+  expect([unified, one.layout.count, other.layout.count]).toEqual([6, 5, 5]);
+  expect([one.shownAs, other.shownAs]).toEqual(["side-by-side", "side-by-side"]);
+  choice.toggle();
+  expect(one.shownAs).toBe("unified");
 });

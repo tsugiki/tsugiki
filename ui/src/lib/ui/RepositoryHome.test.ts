@@ -93,6 +93,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 it("names the Repository", () => {
@@ -581,6 +582,42 @@ it("switches the PR view's tabs with Ctrl+PageDown and Ctrl+PageUp", async () =>
   expect(pageDown.defaultPrevented).toBe(true);
   await press("PageUp", { ctrlKey: true });
   expect(files.getAttribute("aria-selected")).toBe("false");
+});
+
+it("switches the Files tab between unified and side by side with Ctrl+Alt+U, for each PR after", async () => {
+  core.pullRequestFiles.mockResolvedValue({
+    status: "ok",
+    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [] },
+  });
+  // jsdom lays nothing out, so the diff's bind:clientHeight has nothing to observe.
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const { prRow } = await listing();
+  await fireEvent.click(prRow);
+  const files = await screen.findByRole("tab", { name: "Files" });
+  const toggle = () =>
+    new KeyboardEvent("keydown", { key: "u", ctrlKey: true, altKey: true, bubbles: true, cancelable: true });
+  // The Conversation tab has no diff to switch.
+  const onConversation = toggle();
+  await fireEvent(document.body, onConversation);
+  await fireEvent.click(files);
+  expect(await screen.findByRole("region", { name: "Diff" })).toBeTruthy();
+
+  const onFiles = toggle();
+  await fireEvent(document.body, onFiles);
+  expect(await screen.findByRole("region", { name: "Side-by-side diff" })).toBeTruthy();
+  await press("Escape");
+  await fireEvent.click(prRow);
+  await fireEvent.click(await screen.findByRole("tab", { name: "Files" }));
+
+  expect(await screen.findByRole("region", { name: "Side-by-side diff" })).toBeTruthy();
+  expect([onConversation.defaultPrevented, onFiles.defaultPrevented]).toEqual([false, true]);
 });
 
 it("leaves Ctrl+PageDown alone with no PR on show", async () => {

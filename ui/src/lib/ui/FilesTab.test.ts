@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/svelte";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
   CHUNK,
+  DiffViewChoice,
   PrFilesState,
   type DiffFile,
   type DiffRow,
@@ -64,6 +65,7 @@ const ready = (count: number, more: Partial<{ files: DiffFile[]; news: NewsEntry
       generated: false,
       gaps: [],
       rest: null,
+      pairs: [],
     },
     {
       path: "logo.png",
@@ -74,6 +76,7 @@ const ready = (count: number, more: Partial<{ files: DiffFile[]; news: NewsEntry
       generated: false,
       gaps: [],
       rest: null,
+      pairs: [],
     },
   ],
   ...more,
@@ -84,10 +87,10 @@ const onlink = vi.fn();
 /** A HUD that times nothing, as these tests don't look at the jumps. */
 const untimed = { jumped: () => ({ rowsShown: () => undefined, spansShown: () => undefined }) };
 
-/** The Files tab of PR 11 once the core answered `answer`. */
-const shown = async (answer: PrFiles | null) => {
+/** The Files tab of PR 11 once the core answered `answer`, in the view `choice` holds. */
+const shown = async (answer: PrFiles | null, choice = new DiffViewChoice()) => {
   core.pullRequestFiles.mockResolvedValue(ok(answer));
-  const files = new PrFilesState("python/cpython", 11, untimed);
+  const files = new PrFilesState("python/cpython", 11, untimed, choice);
   await files.load();
   render(FilesTab, { files, onlink });
   return files;
@@ -232,6 +235,7 @@ it("starts a Generated file collapsed to its header, and opens it on a click", a
     generated,
     gaps: [],
     rest: null,
+    pairs: [],
   });
   const files = [file("news.txt", 0, false), file("logo.png", 5, true), file("ast.py", 7, false)];
   await shown(ready(rows.length, { files }));
@@ -368,6 +372,7 @@ const gappedFile: DiffFile = {
     { row: 6, old: 53, new: 53, lines: 53 },
   ],
   rest: { old: 109, new: 109 },
+  pairs: [],
 };
 
 /** The fake core sends `gapped`'s rows, and its lines with their first word a keyword. */
@@ -447,4 +452,122 @@ it("shows the whole file from the row after its last hunk", async () => {
   expect(core.pullRequestLines.mock.calls.map(([lines]) => [lines.start, lines.end])).toEqual([
     [1, 2 ** 32 - 1],
   ]);
+});
+
+/** A file that replaces 2 lines with 1, the second without a newline, removes a line, and adds one. */
+const changed: DiffRow[] = [
+  { kind: "file", path: "a.py", old_path: null, change: { kind: "lines", added: 2, removed: 3 } },
+  { kind: "hunk", text: "@@ -1,6 +1,5 @@" },
+  { kind: "context", old: 1, new: 1, text: "a" },
+  { kind: "removed", old: 2, text: "b" },
+  { kind: "removed", old: 3, text: "c" },
+  { kind: "note", text: "No newline at end of file" },
+  { kind: "added", new: 2, text: "B" },
+  { kind: "context", old: 4, new: 3, text: "d" },
+  { kind: "removed", old: 5, text: "e" },
+  { kind: "context", old: 6, new: 4, text: "f" },
+  { kind: "added", new: 5, text: "g" },
+];
+const changedFile: DiffFile = {
+  ...gappedFile,
+  change: { kind: "lines", added: 2, removed: 3 },
+  gaps: [],
+  rest: null,
+  pairs: [
+    { row: 3, removed: 3, added: 1 },
+    { row: 8, removed: 1, added: 0 },
+    { row: 10, removed: 0, added: 1 },
+  ],
+};
+
+/** A choice of the side-by-side view. */
+const sideBySide = () => {
+  const choice = new DiffViewChoice();
+  choice.toggle();
+  return choice;
+};
+
+it("draws a change's removed rows beside its added ones side by side, and context on both sides", async () => {
+  core.pullRequestRows.mockResolvedValue(ok(changed));
+  await shown(ready(changed.length, { files: [changedFile] }), sideBySide());
+  await vi.waitFor(() => {
+    expect(lines()[0]).toBe("a.py+2 −3");
+  });
+
+  expect(lines()).toEqual([
+    "a.py+2 −3",
+    "@@ -1,6 +1,5 @@",
+    "1 a1 a",
+    "2-b2+B",
+    "3-c",
+    "No newline at end of file",
+    "4 d3 d",
+    "5-e",
+    "6 f4 f",
+    "5+g",
+  ]);
+  /** What each side of row `row` shows: a removed line, an added one, or nothing. */
+  const sides = (row: number) =>
+    [...(document.querySelectorAll(".row")[row]?.children ?? [])].map(
+      (side) =>
+        ["removed", "added"].find((kind) => side.classList.contains(kind)) ?? (side.textContent || "nothing"),
+    );
+  expect([3, 4, 5, 7, 9].map(sides)).toEqual([
+    ["removed", "added"],
+    ["removed", "nothing"],
+    ["No newline at end of file", "nothing"],
+    ["removed", "nothing"],
+    ["nothing", "added"],
+  ]);
+  const diff = screen.getByRole("region", { name: "Side-by-side diff" });
+  const spacer = diff.querySelector(".spacer") as HTMLElement;
+  expect(spacer.style.height).toBe(`${String(10 * 20)}px`);
+  expect(spacer.style.minWidth).toBe("calc(16ch + 160px)");
+});
+
+it("draws the lines a gap left out on both sides, side by side", async () => {
+  setUpGapped();
+  const paired = { ...gappedFile, pairs: [{ row: 3, removed: 1, added: 1 }] };
+  await shown(ready(gapped.length, { files: [paired] }), sideBySide());
+  await vi.waitFor(() => {
+    expect(lines()).toContain("↓Whole file");
+  });
+
+  await fireEvent.click(screen.getByRole("button", { name: "Show 20 more lines" }));
+
+  await vi.waitFor(() => {
+    expect(lines()).toContain("109 def f109109 def f109");
+  });
+  expect(lines()).toContain("51-b51+B");
+});
+
+it("keeps the row at the top in view as the view switches", async () => {
+  core.pullRequestRows.mockResolvedValue(ok(changed));
+  const choice = new DiffViewChoice();
+  await shown(ready(changed.length, { files: [changedFile] }), choice);
+  await vi.waitFor(() => {
+    expect(lines()[0]).toBe("a.py+2 −3");
+  });
+  const diff = screen.getByRole("region", { name: "Diff" });
+  // Five pixels into row 7, the context line "d", which shows at place 6 side by side.
+  diff.scrollTop = 7 * 20 + 5;
+  await fireEvent.scroll(diff);
+
+  choice.toggle();
+  await vi.waitFor(() => {
+    expect(diff.scrollTop).toBe(6 * 20 + 5);
+  });
+  await fireEvent.scroll(diff);
+  choice.toggle();
+  await vi.waitFor(() => {
+    expect(diff.scrollTop).toBe(7 * 20 + 5);
+  });
+  // At the top, the tab stays there.
+  diff.scrollTop = 0;
+  await fireEvent.scroll(diff);
+  choice.toggle();
+  await vi.waitFor(() => {
+    expect(screen.getByRole("region", { name: "Side-by-side diff" })).toBe(diff);
+  });
+  expect(diff.scrollTop).toBe(0);
 });

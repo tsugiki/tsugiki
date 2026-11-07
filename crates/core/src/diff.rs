@@ -38,6 +38,22 @@ pub struct DiffFile {
     pub gaps: Vec<Gap>,
     /// Where the lines after its last hunk start, if the file may go on there.
     pub rest: Option<Rest>,
+    /// Its changes, each a run of removed rows and the added rows after them, which the side-by-side view
+    /// shows beside each other (#183).
+    pub pairs: Vec<Pair>,
+}
+
+/// Removed rows and the added rows right after them: the lines a change replaced, and what replaced them.
+/// Either side may have no rows. A side's rows end with the note that its last line has no newline, if git
+/// wrote one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+pub struct Pair {
+    /// The pair's first row. The added rows start after the removed ones.
+    pub row: u32,
+    /// How many rows the removed side has.
+    pub removed: u32,
+    /// How many rows the added side has.
+    pub added: u32,
 }
 
 /// The lines of a file that a diff leaves out above one of its hunks: the same lines at the merge base and
@@ -158,6 +174,9 @@ impl Diff {
             let first = rows.len();
             (file.gaps, file.rest) = parse_section(section, &mut rows)?;
             file.columns = rows.get(first..).map_or(0, widest);
+            file.pairs = rows
+                .get(first..)
+                .map_or_else(Vec::new, |own| pairs(own, first));
         }
         Ok(Self { files, rows })
     }
@@ -223,6 +242,7 @@ fn parse_numstat(numstat: &str) -> Result<Vec<DiffFile>, Error> {
             generated: false,
             gaps: Vec::new(),
             rest: None,
+            pairs: Vec::new(),
         });
     }
     Ok(files)
@@ -313,6 +333,41 @@ fn parse_section(
         new: new_end,
     });
     Ok((gaps, rest))
+}
+
+/// The changes of `rows`, where `rows` starts at row `first` of the diff.
+fn pairs(rows: &[DiffRow], first: usize) -> Vec<Pair> {
+    let mut pairs = Vec::new();
+    let mut at = 0;
+    while at < rows.len() {
+        let removed = side(rows, at, |row| matches!(row, DiffRow::Removed { .. }));
+        let added = side(rows, at + removed, |row| {
+            matches!(row, DiffRow::Added { .. })
+        });
+        if removed + added == 0 {
+            at += 1;
+            continue;
+        }
+        pairs.push(Pair {
+            row: count(first + at),
+            removed: count(removed),
+            added: count(added),
+        });
+        at += removed + added;
+    }
+    pairs
+}
+
+/// How many rows from `from` on are lines that `changed` picks, with the notes right after them.
+fn side(rows: &[DiffRow], from: usize, changed: fn(&DiffRow) -> bool) -> usize {
+    let rows = rows.get(from..).unwrap_or_default();
+    let lines = rows.iter().take_while(|row| changed(row)).count();
+    let rest = rows.get(lines..).unwrap_or_default();
+    let notes = rest
+        .iter()
+        .take_while(|row| matches!(row, DiffRow::Note { .. }))
+        .count();
+    if lines == 0 { 0 } else { lines + notes }
 }
 
 /// How many characters the longest line of `rows` has.

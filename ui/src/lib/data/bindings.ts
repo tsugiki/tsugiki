@@ -242,6 +242,11 @@ export type DiffFile_Deserialize = {
 	gaps: Gap[],
 	/**  Where the lines after its last hunk start, if the file may go on there. */
 	rest?: Rest | null,
+	/**
+	 *  Its changes, each a run of removed rows and the added rows after them, which the side-by-side view
+	 *  shows beside each other (#183).
+	 */
+	pairs: Pair[],
 };
 
 /**  A file the diff changes, as the Files tab lists it. */
@@ -266,6 +271,11 @@ export type DiffFile_Serialize = {
 	gaps: Gap[],
 	/**  Where the lines after its last hunk start, if the file may go on there. */
 	rest: Rest | null,
+	/**
+	 *  Its changes, each a run of removed rows and the added rows after them, which the side-by-side view
+	 *  shows beside each other (#183).
+	 */
+	pairs: Pair[],
 };
 
 /**  One row of the diff, as the window draws it. */
@@ -851,6 +861,20 @@ export type OpenSync_Serialize = {
 
 /**  The start of a thread's line: the first words of its first comment, or the reason that comment is hidden. */
 export type Opening = { kind: "words"; words: string } | { kind: "hidden"; reason: HiddenReason };
+
+/**
+ *  Removed rows and the added rows right after them: the lines a change replaced, and what replaced them.
+ *  Either side may have no rows. A side's rows end with the note that its last line has no newline, if git
+ *  wrote one.
+ */
+export type Pair = {
+	/**  The pair's first row. The added rows start after the removed ones. */
+	row: number,
+	/**  How many rows the removed side has. */
+	removed: number,
+	/**  How many rows the added side has. */
+	added: number,
+};
 
 /**  What the Files tab shows. */
 export type PrFiles = PrFiles_Serialize | PrFiles_Deserialize;

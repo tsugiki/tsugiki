@@ -86,6 +86,7 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
             generated: false,
             gaps: [],
             rest: null,
+            pairs: [{ row: 2, removed: 0, added: 1 }],
           },
         ],
         rows: 3,
@@ -137,6 +138,16 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
     document.documentElement.dataset["theme"] = "dark";
   });
   await expect(keyword).toHaveCSS("color", "rgb(255, 123, 114)");
+  // Side by side, the added line shows on the right half, and the key switches back.
+  await page.keyboard.press("ControlOrMeta+Alt+u");
+  const added = pane.getByRole("region", { name: "Side-by-side diff" }).locator(".side.added");
+  await expect(added).toHaveText("1+The fix");
+  const left = await added.evaluate(
+    (side: HTMLElement) => side.offsetLeft / (side.parentElement?.clientWidth ?? 1),
+  );
+  expect(left).toBeCloseTo(0.5, 1);
+  await page.keyboard.press("ControlOrMeta+Alt+u");
+  await expect(diff).toContainText("1+The fix");
   await page.keyboard.press("ControlOrMeta+PageUp");
   await expect(pane).toContainText("The fix");
 

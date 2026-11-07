@@ -397,7 +397,6 @@
     display: flex;
     flex: 1 1 50%;
     min-width: 0;
-    overflow: hidden;
   }
 
   /* Side by side, a row stays as wide as the tab, and scrolling across moves the code on both sides while
@@ -415,9 +414,9 @@
     overflow: hidden;
   }
 
+  /* The code moves across inside its side's clip, the only clip a side has. */
   .clip > .text {
-    display: inline-block;
-    transform: translateX(calc(-1 * var(--across)));
+    margin-left: calc(-1 * var(--across));
   }
 
   .side + .side {

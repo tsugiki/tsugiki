@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_specta::Event;
-use tsugiki_core::diff::Diffs;
+use tsugiki_core::diff::{Diffs, Highlighter};
 use tsugiki_core::error::Error;
 use tsugiki_core::folders::Folders;
 use tsugiki_core::github::GitHubAccess;
@@ -129,6 +129,7 @@ pub(crate) fn connect_core<R: Runtime>(
         folders: folders.clone(),
         diffs: Diffs::default(),
         mirrors: mirrors.requests(),
+        highlighter: Highlighter::start(),
     };
     assert!(app.manage(diffs), "only this manages the diffs");
     let session = Session::start(board, folders, outside.github, intervals);

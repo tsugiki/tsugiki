@@ -17,6 +17,8 @@ pub enum Miss {
     IssueFromDatabase { number: u32, ms: f64 },
     /// From the click on an Issue to its text arriving from GitHub.
     IssueFromGithub { number: u32, ms: f64 },
+    /// From a scroll in a PR's diff to the rows it hadn't held on screen (#180).
+    Jump { ms: f64 },
     /// From a key or click to the next paint.
     Input { input: Input, ms: f64 },
     /// A frame the browser reports as long, with the scripts that ran in it, longest first.
@@ -40,6 +42,7 @@ pub enum MissKind {
     ViewQuery,
     IssueFromDatabase,
     IssueFromGithub,
+    Jump,
     Input,
     LongFrame,
 }
@@ -68,6 +71,7 @@ impl Miss {
             Self::IssueFromGithub { number, ms } => {
                 format!("Slow opening of #{number} from GitHub: {ms:.0} ms")
             }
+            Self::Jump { ms } => format!("Slow jump in a diff: {ms:.1} ms to its rows"),
             Self::Input { input, ms } => {
                 let input = match input {
                     Input::Key => "key",
@@ -92,6 +96,7 @@ impl Miss {
                     MissKind::ViewQuery => "slow view queries",
                     MissKind::IssueFromDatabase => "slow openings from the database",
                     MissKind::IssueFromGithub => "slow openings from GitHub",
+                    MissKind::Jump => "slow jumps in a diff",
                     MissKind::Input => "slow keys and clicks",
                     MissKind::LongFrame => "long frames",
                 };
@@ -143,6 +148,10 @@ mod tests {
                 "Slow opening of #1234 from GitHub: 2400 ms",
             ),
             (
+                r#"{"kind": "jump", "ms": 140.25}"#,
+                "Slow jump in a diff: 140.2 ms to its rows",
+            ),
+            (
                 r#"{"kind": "input", "input": "key", "ms": 41}"#,
                 "Slow key: 41.0 ms to the next paint",
             ),
@@ -182,6 +191,7 @@ mod tests {
             ("view_query", "slow view queries"),
             ("issue_from_database", "slow openings from the database"),
             ("issue_from_github", "slow openings from GitHub"),
+            ("jump", "slow jumps in a diff"),
             ("input", "slow keys and clicks"),
             ("long_frame", "long frames"),
         ];

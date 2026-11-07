@@ -1,11 +1,12 @@
 // The performance HUD (ADR 0017): what the window measures of itself against the stage 1 budgets, so the
 // maintainer can measure a release build before tagging it. It starts hidden each run, and while hidden it
-// runs no frame loop and hears no keys. It still times the start-up, view queries and the Issues the user
-// opens then, at the cost of reading the clock and of a frame for each part of an Issue, and logs the times
-// that miss their budgets (#151).
+// runs no frame loop and hears no keys. It still times the start-up, view queries, the Issues the user opens
+// and the jumps in a diff then, at the cost of reading the clock and of a frame for each part of an Issue or
+// a jump, and logs the times that miss their budgets (#151).
 import {
   commands,
   type IssueOpenings_Deserialize as IssueOpenings,
+  type Jumps,
   type Measurement_Deserialize as Measurement,
 } from "$lib/data/bindings";
 import { type Cause, causeOf, type Happening } from "./frame-causes";
@@ -16,7 +17,13 @@ import { type MissCore, MissLog, type ObserverClass } from "./misses";
  * ADR 0017's budgets, in milliseconds. A key's budget is the next frame, which `nextFrameLimit` sets, and an
  * Issue's text read from GitHub has none, since it waits on the network.
  */
-export const BUDGETS = { startup: 1000, frame: 25, viewQuery: 50, issueFromDatabase: 200 } as const;
+export const BUDGETS = {
+  startup: 1000,
+  frame: 25,
+  viewQuery: 50,
+  issueFromDatabase: 200,
+  jump: 100,
+} as const;
 
 /** The time an Issue's text from GitHub can take before the log mentions it. No budget says this. */
 const SLOW_FROM_GITHUB = 2000;
@@ -38,6 +45,29 @@ export type IssueOpening =
   | { stage: "github"; number: number; fromDatabase: number }
   | { stage: "held"; number: number; fromDatabase: number }
   | { stage: "read"; number: number; fromDatabase: number; fromGitHub: number };
+
+/**
+ * A jump in a PR's diff: a scroll that shows rows the window doesn't hold. The HUD times it from the scroll
+ * until its rows are painted, and until their spans are, if those come after.
+ */
+export interface Jump {
+  /** The rows are on their way to the screen, highlighted if their spans came in time. */
+  rowsShown(highlighted: boolean): void;
+  /** The spans of rows that showed plain are on their way to the screen. */
+  spansShown(): void;
+}
+
+/** Times jumps. The Files tab asks it for a `Jump` each time it shows rows it doesn't hold. */
+export interface JumpTimer {
+  jumped(): Jump;
+}
+
+/** The last jump's times: until its rows were painted, and until their spans were, or null if they haven't
+ * been. */
+export interface JumpTimes {
+  rows: number;
+  spans: number | null;
+}
 
 /** One Issue's times in a recording. `github` is null until its text arrives, and stays null when the
  * database held it. */
@@ -84,6 +114,7 @@ interface Recording {
   viewQueries: number[];
   refreshes: number[];
   issues: IssueTimes[];
+  jumps: { rows: number; plain: boolean }[];
 }
 
 /** The slowest of `times`, or nothing without any. */
@@ -103,6 +134,12 @@ function issueTimes(issues: readonly IssueTimes[]): IssueOpenings | null {
   };
 }
 
+/** The jumps a recording saw, as the log has them. */
+function jumpTimes(jumps: readonly { rows: number; plain: boolean }[]): Jumps | null {
+  const rows = slowest(jumps.map((jump) => jump.rows));
+  return rows === null ? null : { rows, plain: jumps.filter((jump) => jump.plain).length };
+}
+
 export const browserClock: HudClock = {
   now: () => performance.now(),
   requestFrame: (callback) => requestAnimationFrame(callback),
@@ -119,7 +156,7 @@ export const browserClock: HudClock = {
   },
 };
 
-export class HudState {
+export class HudState implements JumpTimer {
   visible = $state(false);
   /** The last 10 s of frames, or nothing before the HUD has shown them. */
   frames = $state<FrameStats>();
@@ -135,6 +172,8 @@ export class HudState {
   /** The last frame over the limit since the HUD showed. */
   longFrame = $state<LongFrame>();
   issue = $state<IssueOpening>();
+  /** The last jump in a PR's diff. */
+  jump = $state<JumpTimes>();
   /** The time of the HUD's last update, so a line can say how long ago something was. */
   now = $state(0);
   recording = $state(false);
@@ -158,6 +197,8 @@ export class HudState {
   #afterNextPaint: ((at: number) => void)[] = [];
   #happenings: Happening[] = [];
   #opening: Opening | undefined;
+  /** The last jump's times, so a jump before it can't change what shows. */
+  #lastJump: JumpTimes | undefined;
   #refreshDropped: number | undefined;
   #recording: Recording | undefined;
   #startupSettled = false;
@@ -243,6 +284,41 @@ export class HudState {
     }
   }
 
+  /** Starts timing a jump in a PR's diff, hidden or shown. A jump the window hid during isn't timed, as its
+   * time would hold the time it was hidden. */
+  jumped(): Jump {
+    const start = this.#clock.now();
+    const hidings = this.#hidings;
+    const recording = this.#recording;
+    const times: JumpTimes = { rows: 0, spans: null };
+    this.#lastJump = times;
+    const show = () => {
+      if (this.#lastJump === times) this.jump = { ...times };
+    };
+    const whenPainted = (callback: (painted: number) => void) => {
+      this.#whenPainted((painted) => {
+        if (this.#hidings === hidings) callback(painted);
+      });
+    };
+    return {
+      rowsShown: (highlighted) => {
+        whenPainted((painted) => {
+          times.rows = painted - start;
+          if (highlighted) times.spans = times.rows;
+          if (times.rows > BUDGETS.jump) this.#misses.missed({ kind: "jump", ms: times.rows });
+          recording?.jumps.push({ rows: times.rows, plain: !highlighted });
+          show();
+        });
+      },
+      spansShown: () => {
+        whenPainted((painted) => {
+          times.spans = painted - start;
+          show();
+        });
+      },
+    };
+  }
+
   /** Waits for a view query, and times it. */
   async timed<T>(ask: () => Promise<T>): Promise<T> {
     const start = this.#clock.now();
@@ -308,6 +384,7 @@ export class HudState {
       viewQueries: [],
       refreshes: [],
       issues: [],
+      jumps: [],
     };
     this.recording = true;
     this.written = undefined;
@@ -352,6 +429,7 @@ export class HudState {
               dropped_frames: recording.refreshes.reduce((sum, dropped) => sum + dropped, 0),
             },
       issues: issueTimes(recording.issues),
+      jumps: jumpTimes(recording.jumps),
       long_frames: recording.longFrames.map((frame) => ({
         at_s: (frame.end - recording.started) / 1000,
         ms: frame.duration,
@@ -368,6 +446,7 @@ export class HudState {
     this.lastRefresh = undefined;
     this.longFrame = undefined;
     this.issue = undefined;
+    this.jump = undefined;
     this.#recent = [];
     this.#previous = undefined;
     window.addEventListener("keydown", this.#onKey, { capture: true });

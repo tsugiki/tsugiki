@@ -1,5 +1,5 @@
-import { beforeEach, expect, it, vi } from "vitest";
-import { CHUNK, PrFilesState, type DiffRow, type PrFiles } from "./pr-files.svelte";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { CHUNK, PrFilesState, SPANS_WAIT, type DiffRow, type PrFiles } from "./pr-files.svelte";
 
 type Heard = (event: { payload: unknown }) => void;
 
@@ -51,12 +51,39 @@ const added = (text: string): DiffRow => ({ kind: "added", new: 1, text });
 const keyword = (start: number) => [{ start: 0, end: start + 1, highlight: "keyword" as const }];
 const cloning = { repository: "python/cpython", progress: { stage: "receiving", percent: 40 } } as const;
 
+/** A HUD that notes what each jump it times says, numbered from 1. */
+const timer = () => {
+  const seen: string[] = [];
+  const jumped = vi.fn(() => {
+    const jump = String(jumped.mock.calls.length);
+    return {
+      rowsShown: (highlighted: boolean) =>
+        seen.push(`${jump}: rows ${highlighted ? "highlighted" : "plain"}`),
+      spansShown: () => seen.push(`${jump}: spans`),
+    };
+  });
+  return { jumped, seen };
+};
+
 /** A Files tab for PR 11 that has loaded, with the core answering `answer`. */
-const loaded = async (answer: PrFiles | null = { state: "fetching" }) => {
+const loaded = async (answer: PrFiles | null = { state: "fetching" }, jumps = timer()) => {
   core.pullRequestFiles.mockResolvedValue(ok(answer));
-  const files = new PrFilesState("python/cpython", 11);
+  const files = new PrFilesState("python/cpython", 11, jumps);
   await files.load();
   return files;
+};
+
+/** Spans that come only when the test answers them. */
+const heldSpans = () => {
+  let answer: (answer: unknown) => void = () => {};
+  core.pullRequestSpans.mockReturnValueOnce(
+    new Promise((resolve) => {
+      answer = resolve;
+    }),
+  );
+  return (spans: unknown) => {
+    answer(spans);
+  };
 };
 
 beforeEach(() => {
@@ -72,32 +99,75 @@ beforeEach(() => {
   );
 });
 
-it("asks for each chunk's spans with its rows, and shows the rows before the spans come", async () => {
-  const files = await loaded(ready("abc", 10));
-  let answerSpans: (answer: unknown) => void = () => {};
-  core.pullRequestSpans.mockReturnValueOnce(
-    new Promise((resolve) => {
-      answerSpans = resolve;
-    }),
-  );
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+it("shows a chunk's rows with their spans when the spans come in time, and times one jump", async () => {
+  const jumps = timer();
+  const files = await loaded(ready("abc", 3 * CHUNK), jumps);
 
   files.need(0, 9);
   await vi.waitFor(() => {
-    expect(files.row(0)).toEqual(added("row 0"));
+    expect(files.row(CHUNK)).toBeDefined();
   });
-  expect(files.spans(0)).toBeUndefined();
-  answerSpans(ok([keyword(0)]));
 
-  await vi.waitFor(() => {
-    expect(files.spans(0)).toEqual(keyword(0));
-  });
+  expect(files.row(0)).toEqual(added("row 0"));
+  expect(files.spans(0)).toEqual(keyword(0));
   expect(files.spans(1)).toBeUndefined();
-  expect(core.pullRequestSpans).toHaveBeenCalledExactlyOnceWith({
+  expect(core.pullRequestSpans).toHaveBeenCalledWith({
     repository: "python/cpython",
     number: 11,
     head: "abc",
     start: 0,
     end: CHUNK,
+  });
+  // The chunk after only comes near, so it isn't a jump.
+  expect(jumps.seen).toEqual(["1: rows highlighted"]);
+  files.need(5, 20);
+  files.need(2 * CHUNK, 2 * CHUNK + 9);
+  expect(jumps.jumped).toHaveBeenCalledTimes(2);
+});
+
+it("waits 50 ms for a chunk's spans, then shows its rows plain and the spans when they come", async () => {
+  const jumps = timer();
+  const files = await loaded(ready("abc", 2 * CHUNK), jumps);
+  vi.useFakeTimers();
+  const [first, after] = [heldSpans(), heldSpans()];
+
+  files.need(0, 9);
+  await vi.advanceTimersByTimeAsync(SPANS_WAIT - 1);
+  expect(files.row(0)).toBeUndefined();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(files.row(0)).toEqual(added("row 0"));
+  expect(files.spans(0)).toBeUndefined();
+  first(ok([keyword(0)]));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(files.spans(0)).toEqual(keyword(0));
+
+  // The chunk after waits for those that show, and then for its own spans.
+  expect(core.pullRequestRows).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(SPANS_WAIT);
+  expect(files.row(CHUNK)).toEqual(added(`row ${String(CHUNK)}`));
+  after(ok([keyword(CHUNK)]));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(files.spans(CHUNK)).toEqual(keyword(CHUNK));
+  expect(jumps.seen).toEqual(["1: rows plain", "1: spans"]);
+});
+
+it("asks for the chunk after those that show once their spans have come", async () => {
+  const files = await loaded(ready("abc", 2 * CHUNK));
+  const answer = heldSpans();
+
+  files.need(0, 9);
+  await vi.waitFor(() => {
+    expect(files.row(0)).toBeDefined();
+  });
+  expect(core.pullRequestRows).toHaveBeenCalledOnce();
+  answer(ok([keyword(0)]));
+
+  await vi.waitFor(() => {
+    expect(files.row(CHUNK)).toBeDefined();
   });
 });
 
@@ -107,13 +177,11 @@ it("lets go of a chunk's spans with its rows, and drops those that come once it'
   await vi.waitFor(() => {
     expect(files.spans(0)).toEqual(keyword(0));
   });
-  let answerLate: (answer: unknown) => void = () => {};
-  core.pullRequestSpans.mockReturnValueOnce(
-    new Promise((resolve) => {
-      answerLate = resolve;
-    }),
-  );
+  const answerLate = heldSpans();
   files.need(5 * CHUNK, 5 * CHUNK + 10);
+  await vi.waitFor(() => {
+    expect(files.row(5 * CHUNK)).toBeDefined();
+  });
   files.need(10 * CHUNK, 10 * CHUNK + 10);
   answerLate(ok([keyword(5 * CHUNK)]));
 
@@ -332,7 +400,9 @@ it("lets go of the chunks far from what shows, and of those that arrive once far
     expect(files.row(0)).toEqual(added("row 0"));
   });
   files.need(CHUNK + 10, CHUNK + 20);
-  expect(core.pullRequestRows).toHaveBeenCalledTimes(9);
+  await vi.waitFor(() => {
+    expect(core.pullRequestRows).toHaveBeenCalledTimes(9);
+  });
 });
 
 it("asks for a chunk again after it failed", async () => {

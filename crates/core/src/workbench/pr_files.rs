@@ -7,7 +7,7 @@ use std::sync::Arc;
 use serde::Serialize;
 use specta::Type;
 
-use crate::diff::{self, DiffFile, DiffRow, Diffs, Held, OpenDiff, PrAt};
+use crate::diff::{self, DiffFile, DiffRow, Diffs, Held, Highlighter, OpenDiff, PrAt};
 use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
 use crate::github::CommitSha;
@@ -35,13 +35,14 @@ pub enum PrFiles {
     },
 }
 
-/// Where the Files tab reads from: the database, the mirrors and the diff on show. It asks the mirrors'
-/// worker for a head the mirror lacks.
+/// Where the Files tab reads from: the database, the mirrors, the diff on show and the trees of its files.
+/// It asks the mirrors' worker for a head the mirror lacks.
 pub struct DiffSources<'a> {
     pub reader: &'a StoreReader,
     pub folders: &'a Folders,
     pub diffs: &'a Diffs,
     pub mirrors: &'a MirrorRequests,
+    pub highlighter: &'a Highlighter,
 }
 
 impl PrFiles {
@@ -125,7 +126,8 @@ impl PrFiles {
         range: Range<u32>,
     ) -> Result<Vec<Vec<Span>>, Error> {
         let mirror = sources.folders.mirror(&pr.repository);
-        Ok(Self::open(sources, pr)?.spans(&mirror, range))
+        let open = Self::open(sources, pr)?;
+        Ok(sources.highlighter.spans(&open, &mirror, range))
     }
 
     /// The diff of `pr`: the one on show, or else read again, as when the user has opened another PR since.
@@ -172,6 +174,7 @@ mod tests {
         diffs: Diffs,
         mirrors: MirrorRequests,
         heard: HeardRequests,
+        highlighter: Highlighter,
     }
 
     impl World {
@@ -189,6 +192,7 @@ mod tests {
                 diffs: Diffs::default(),
                 mirrors,
                 heard,
+                highlighter: Highlighter::start(),
             }
         }
 
@@ -198,6 +202,7 @@ mod tests {
                 folders: &self.folders,
                 diffs: &self.diffs,
                 mirrors: &self.mirrors,
+                highlighter: &self.highlighter,
             }
         }
 

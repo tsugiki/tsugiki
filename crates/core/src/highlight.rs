@@ -11,12 +11,12 @@ mod languages;
 
 use std::cmp::Reverse;
 use std::fmt;
-use std::ops::Range;
+use std::ops::{ControlFlow, Range};
 use std::sync::{LazyLock, OnceLock};
 
 use serde::Serialize;
 use specta::Type;
-use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator, Tree};
+use tree_sitter::{ParseOptions, ParseState, Parser, Query, QueryCursor, StreamingIterator, Tree};
 use tree_sitter_language::LanguageFn;
 
 use languages::LANGUAGES;
@@ -306,14 +306,57 @@ impl fmt::Debug for Parsed {
     }
 }
 
+/// What a parse that was asked to stop gives: nothing, since it threw away what it had parsed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Stopped;
+
+/// The bytes a tree takes for each node `Node::descendant_count` counts. A counting allocator measured 78 to
+/// 112 bytes on CPython's largest C and Python files (`Objects/typeobject.c` took 7.2 MB, and
+/// `Lib/test/test_typing.py` 13.3 MB), and this adds what the allocator keeps beside each block (#180).
+const BYTES_PER_NODE: usize = 128;
+
 impl Parsed {
     /// Parses `source` whole, and the code in other languages inside it. Code tree-sitter can't make sense
     /// of, such as a macro the C grammar doesn't know, still parses, with an error node around it.
     pub fn parse(language: Language, source: String) -> Option<Self> {
+        Self::parse_unless(language, source, &mut || false).unwrap_or(None)
+    }
+
+    /// Parses as `parse` does, unless `stop` says to stop. It asks every hundred or so steps of the
+    /// parse, and before each piece of code inside the file.
+    pub fn parse_unless(
+        language: Language,
+        source: String,
+        stop: &mut dyn FnMut() -> bool,
+    ) -> Result<Option<Self>, Stopped> {
+        let mut stopped = false;
+        let parsed = Self::parse_while(language, source, &mut || {
+            stopped = stop();
+            !stopped
+        });
+        if stopped { Err(Stopped) } else { Ok(parsed) }
+    }
+
+    /// Parses as `parse` does, while `go_on` says to.
+    fn parse_while(
+        language: Language,
+        source: String,
+        go_on: &mut dyn FnMut() -> bool,
+    ) -> Option<Self> {
         let grammar = language.grammar()?;
         let mut parser = Parser::new();
         parser.set_language(&grammar.language).ok()?;
-        let tree = parser.parse(&source, None)?;
+        let mut progress = |_: &ParseState| {
+            if go_on() {
+                ControlFlow::Continue(())
+            } else {
+                ControlFlow::Break(())
+            }
+        };
+        let options = ParseOptions::new().progress_callback(&mut progress);
+        let bytes = source.as_bytes();
+        let read = &mut |at: usize, _| bytes.get(at..).unwrap_or_default();
+        let tree = parser.parse_with_options(read, None, Some(options))?;
         let ends = source.match_indices('\n').map(|(at, _)| at + 1);
         let lines = std::iter::once(0).chain(ends).collect();
         let whole = Layer {
@@ -328,8 +371,18 @@ impl Parsed {
             lines,
             layers: vec![whole],
         };
-        parsed.inject(&mut parser);
+        parsed.inject(&mut parser, go_on)?;
         Some(parsed)
+    }
+
+    /// About how many bytes of memory this takes: the file, where its lines start, and its trees.
+    pub fn cost(&self) -> usize {
+        let nodes: usize = self
+            .layers
+            .iter()
+            .map(|layer| layer.tree.root_node().descendant_count())
+            .sum();
+        self.source.len() + self.lines.len() * size_of::<usize>() + nodes * BYTES_PER_NODE
     }
 
     /// The spans of each line in `lines`, numbered from 1 as a diff numbers them. A line past the end has

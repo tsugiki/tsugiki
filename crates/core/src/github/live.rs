@@ -206,16 +206,42 @@ pub(crate) fn start_git(args: &[&OsStr], input: &[u8]) -> io::Result<(Child, Chi
 /// Runs a `git` that only reads local files, with `args`, and gives its output. Its last line of error output
 /// says why it failed.
 pub(crate) fn read_git(args: &[&OsStr]) -> io::Result<String> {
-    let mut command = Command::new("git");
-    let _ = command
-        .args(args)
-        .env("LC_ALL", "C")
-        .env("LANGUAGE", "C")
-        .stdin(Stdio::null());
-    without_window(&mut command);
+    let mut command = local_git(args);
+    let _ = command.stdin(Stdio::null());
     let output = command.output()?;
+    git_output(&output).map(|stdout| String::from_utf8_lossy(stdout).into_owned())
+}
+
+/// Runs a `git` that only reads local files, with `args` and `input` on its standard input, and gives its
+/// output as git wrote it. Its last line of error output says why it failed.
+pub(crate) fn read_git_bytes(args: &[&OsStr], input: Vec<u8>) -> io::Result<Vec<u8>> {
+    let mut command = local_git(args);
+    let _ = command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut git = command.spawn()?;
+    // On a thread of its own, so a git that writes before it has read everything can't leave both waiting on
+    // a full pipe. Closing the input tells git that is all.
+    if let Some(mut stdin) = git.stdin.take() {
+        let _ = thread::spawn(move || drop(stdin.write_all(&input)));
+    }
+    let output = git.wait_with_output()?;
+    git_output(&output).map(<[u8]>::to_vec)
+}
+
+/// A `git` with `args` that only reads local files, and writes in English with no console window.
+fn local_git(args: &[&OsStr]) -> Command {
+    let mut command = Command::new("git");
+    let _ = command.args(args).env("LC_ALL", "C").env("LANGUAGE", "C");
+    without_window(&mut command);
+    command
+}
+
+/// What a `git` printed, or the last line of its error output if it failed.
+fn git_output(output: &std::process::Output) -> io::Result<&[u8]> {
     if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+        Ok(&output.stdout)
     } else {
         let errors = String::from_utf8_lossy(&output.stderr);
         Err(io::Error::other(

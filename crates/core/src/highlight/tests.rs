@@ -463,3 +463,69 @@ fn a_file_s_extension_is_what_follows_the_last_dot_of_a_name_with_more_before_it
     assert!(!rs.holds("libers"));
     assert!(File::Name("Makefile").holds("Makefile"));
 }
+
+/// 13,000 lines of C, as the `highlight` bench has, whose tree takes 7.8 MB.
+fn long_c() -> String {
+    let function = |n: u32| {
+        [
+            format!("/* Checks the object's slot {n}, and says why it can't. */"),
+            "static int".to_owned(),
+            format!("check_slot_{n}(PyTypeObject *type, PyObject *value)"),
+            "{".to_owned(),
+            "    Py_ssize_t size = PyTuple_GET_SIZE(value);".to_owned(),
+            format!("    if (size > {n} && type->tp_flags & Py_TPFLAGS_HEAPTYPE) {{"),
+            "        PyErr_Format(PyExc_TypeError,".to_owned(),
+            "                     \"%s.__slots__ has %zd items\",".to_owned(),
+            "                     type->tp_name, size);".to_owned(),
+            "        return -1;".to_owned(),
+            "    }".to_owned(),
+            "    for (Py_ssize_t i = 0; i < size; i++) {".to_owned(),
+            "        PyObject *item = PyTuple_GET_ITEM(value, i);".to_owned(),
+            "        if (!PyUnicode_Check(item)) {".to_owned(),
+            "            return 0;".to_owned(),
+            "        }".to_owned(),
+            "    }".to_owned(),
+            "    return 1;".to_owned(),
+            "}".to_owned(),
+            String::new(),
+        ]
+        .join(
+            "
+",
+        )
+    };
+    (0..650).map(function).collect::<Vec<_>>().join(
+        "
+",
+    )
+}
+
+#[test]
+fn a_version_is_counted_at_no_less_than_its_tree_measured_and_not_twice_that() {
+    let parsed = Parsed::parse(language("c"), long_c()).unwrap();
+
+    let megabytes = parsed.cost() / 1_000_000;
+
+    assert!((8..16).contains(&megabytes), "{megabytes} MB");
+}
+
+#[test]
+fn a_parse_stops_when_asked_and_says_so() {
+    let source = "Text\n\n```python\nx = 1\n```\n";
+    let mut checks = 0;
+    let whole = Parsed::parse_unless(language("markdown"), source.to_owned(), &mut || {
+        checks += 1;
+        false
+    });
+    assert!(matches!(whole, Ok(Some(_))));
+
+    // The last check comes after the file's own tree, before a layer inside it.
+    let mut left = checks;
+    let stopped = Parsed::parse_unless(language("markdown"), source.to_owned(), &mut || {
+        left -= 1;
+        left == 0
+    });
+    assert!(matches!(stopped, Err(Stopped)));
+    let at_once = Parsed::parse_unless(language("c"), long_c(), &mut || true);
+    assert!(matches!(at_once, Err(Stopped)));
+}

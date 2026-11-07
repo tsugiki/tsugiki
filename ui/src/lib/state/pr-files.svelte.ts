@@ -1,6 +1,7 @@
 // A PR's Files tab: its diff from the Repository's mirror, or why it isn't there yet. The rows stay in the
 // core, and this asks for them in chunks near what the tab shows (ADR 0001), with the spans that highlight
-// them (#178).
+// them (#178). A chunk's rows wait a moment for their spans, so a jump into a file the core has parsed shows
+// it highlighted at once (#180).
 import { SvelteMap } from "svelte/reactivity";
 import {
   commands,
@@ -13,6 +14,7 @@ import {
   type PrFiles_Serialize,
   type Span,
 } from "$lib/data/bindings";
+import { hud, type Jump, type JumpTimer } from "./hud.svelte";
 
 export type PrFiles = PrFiles_Serialize;
 export type DiffFile = DiffFile_Serialize;
@@ -22,6 +24,10 @@ export type { Cloning, FileChange, Highlight, Span };
 /** Rows asked for at a time: about 25 screens, as the diff prototype found best. */
 export const CHUNK = 512;
 
+/** How long a chunk's rows wait for their spans before they show plain. The spans repaint the chunk when
+ * they come. */
+export const SPANS_WAIT = 50;
+
 export class PrFilesState {
   /** Undefined until the core answers, and null if Tsugiki doesn't hold this PR. */
   view = $state<PrFiles | null>();
@@ -30,6 +36,7 @@ export class PrFilesState {
   cloning = $state<Cloning | null>(null);
   readonly #repository: string;
   readonly #number: number;
+  readonly #jumps: JumpTimer;
   /** The rows the core has sent, by chunk, for the head of `view`. */
   #chunks = new SvelteMap<number, DiffRow[]>();
   /** The spans of each row, by chunk, which come after its rows. */
@@ -41,9 +48,10 @@ export class PrFilesState {
   #stopListening: (() => void)[] = [];
   #stopped = false;
 
-  constructor(repository: string, number: number) {
+  constructor(repository: string, number: number, jumps: JumpTimer = hud) {
     this.#repository = repository;
     this.#number = number;
+    this.#jumps = jumps;
   }
 
   /** Listens first, so it hears the head arrive or the clone end while it asks. */
@@ -112,36 +120,62 @@ export class PrFilesState {
   }
 
   /** Asks for the chunks that hold rows `first` to `last`, and the one after, unless asked before. It lets
-   * go of the chunks more than one away from those, so a long diff holds only the rows near what shows. */
+   * go of the chunks more than one away from those, so a long diff holds only the rows near what shows. A
+   * chunk that holds some of those rows is a jump, which the HUD times. */
   need(first: number, last: number) {
     const view = this.view;
     if (view?.state !== "ready") return;
     const firstChunk = Math.floor(first / CHUNK);
-    const lastChunk = Math.min(Math.floor(last / CHUNK) + 1, Math.ceil(view.rows / CHUNK) - 1);
+    const shownChunk = Math.floor(last / CHUNK);
+    const lastChunk = Math.min(shownChunk + 1, Math.ceil(view.rows / CHUNK) - 1);
     for (const chunk of this.#asked) {
       if (chunk >= firstChunk - 1 && chunk <= lastChunk + 1) continue;
       this.#asked.delete(chunk);
       this.#chunks.delete(chunk);
       this.#spans.delete(chunk);
     }
+    // The chunks that hold rows that show, which the chunk after waits for, so that the core parses their
+    // files first.
+    const shown: Promise<void>[] = [];
     for (let chunk = firstChunk; chunk <= lastChunk; chunk++) {
       if (this.#asked.has(chunk)) continue;
       this.#asked.add(chunk);
-      void this.#fetch(view.head, chunk);
-      void this.#fetchSpans(view.head, chunk);
+      if (chunk > shownChunk) {
+        void Promise.all(shown).then(() => this.#fetch(view.head, chunk, undefined));
+        continue;
+      }
+      // One jump for the rows that show, timed by the first of their chunks.
+      const jump: Jump | undefined = shown.length === 0 ? this.#jumps.jumped() : undefined;
+      shown.push(this.#fetch(view.head, chunk, jump));
     }
   }
 
-  async #fetch(head: string, chunk: number) {
+  /** Asks for a chunk's rows and spans together. The rows show once the spans come, or once they have
+   * waited `SPANS_WAIT` since the ask, whichever is first. */
+  async #fetch(head: string, chunk: number, jump: Jump | undefined) {
+    const spans = this.#fetchSpans(head, chunk);
+    const waited = new Promise<undefined>((resolve) => setTimeout(resolve, SPANS_WAIT));
     const rows = await this.#safely(() => commands.pullRequestRows(this.#chunk(head, chunk)));
-    if (rows === undefined) this.#asked.delete(chunk);
-    else if (this.#wanted(head, chunk)) this.#chunks.set(chunk, rows);
+    if (rows === undefined) {
+      this.#asked.delete(chunk);
+      return;
+    }
+    const early = await Promise.race([spans, waited]);
+    if (!this.#wanted(head, chunk)) return;
+    if (early !== undefined) this.#spans.set(chunk, early);
+    this.#chunks.set(chunk, rows);
+    jump?.rowsShown(early !== undefined);
+    if (early !== undefined) return;
+    const late = await spans;
+    if (late === undefined || !this.#wanted(head, chunk)) return;
+    this.#spans.set(chunk, late);
+    jump?.spansShown();
   }
 
-  async #fetchSpans(head: string, chunk: number) {
-    // A chunk whose spans don't come shows plain. Its rows fail for the same causes, and say so.
+  /** A chunk's spans, or nothing if they don't come. Its rows fail for the same causes, and say so. */
+  async #fetchSpans(head: string, chunk: number): Promise<Span[][] | undefined> {
     const answer = await commands.pullRequestSpans(this.#chunk(head, chunk)).catch(() => undefined);
-    if (answer?.status === "ok" && this.#wanted(head, chunk)) this.#spans.set(chunk, answer.data);
+    return answer?.status === "ok" ? answer.data : undefined;
   }
 
   #chunk(head: string, chunk: number) {

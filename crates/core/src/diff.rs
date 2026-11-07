@@ -14,6 +14,8 @@ use crate::error::{Error, ErrorKind};
 use crate::github::{CommitSha, live};
 use crate::repository::RepositoryName;
 
+pub use highlighter::Highlighter;
+
 /// A file the diff changes, as the Files tab lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct DiffFile {
@@ -373,13 +375,12 @@ impl PrAt {
     }
 }
 
-/// A diff the window reads in chunks, the PR it belongs to, and the versions of its files parsed so far.
+/// A diff the window reads in chunks, and the PR it belongs to.
 #[derive(Debug)]
 pub struct OpenDiff {
     pub pr: PrAt,
     pub base: CommitSha,
     pub diff: Diff,
-    trees: highlighted::Trees,
 }
 
 /// The diff of the PR on show, which each chunk the window asks for comes from. Commands run on threads of
@@ -425,7 +426,6 @@ impl Diffs {
             pr: pr.clone(),
             base,
             diff,
-            trees: highlighted::Trees::default(),
         });
         let mut shown = self.lock();
         if started > shown.read {
@@ -442,7 +442,7 @@ impl Diffs {
     }
 }
 
-mod highlighted;
+mod highlighter;
 
 #[cfg(test)]
 pub(crate) mod tests;

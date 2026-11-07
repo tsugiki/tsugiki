@@ -3,7 +3,7 @@
   // recording that writes a summary line for the release's notes to the log, and a line per long frame.
   import { describeCause } from "$lib/state/frame-causes";
   import { nextFrameLimit } from "$lib/state/frames";
-  import { BUDGETS, type HudState, type IssueOpening } from "$lib/state/hud.svelte";
+  import { BUDGETS, type HudState, type IssueOpening, type JumpTimes } from "$lib/state/hud.svelte";
 
   let { hud, refreshing }: { hud: HudState; refreshing: boolean } = $props();
 
@@ -73,7 +73,20 @@
       budget: "none set",
       missed: false,
     },
+    {
+      name: "Jump in a diff",
+      value: jumpWords(hud.jump),
+      budget: `${String(BUDGETS.jump)} ms`,
+      missed: over(hud.jump?.rows, BUDGETS.jump),
+    },
   ]);
+
+  /** The jump's rows, and when their spans came if they showed plain. */
+  function jumpWords(jump: JumpTimes | undefined): string {
+    if (jump === undefined) return "—";
+    if (jump.spans === jump.rows) return ms(jump.rows);
+    return `${ms(jump.rows)}, plain ${jump.spans === null ? "so far" : `until ${ms(jump.spans)}`}`;
+  }
 
   /** The database's part, once the window has shown it. */
   function fromDatabase(issue: IssueOpening | undefined): number | undefined {

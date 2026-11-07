@@ -15,7 +15,7 @@ use specta::Type;
 pub use startup::run;
 use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
-use tsugiki_core::diff::{DiffRow, Diffs, PrAt};
+use tsugiki_core::diff::{DiffRow, Diffs, Highlighter, PrAt};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::folders::Folders;
 use tsugiki_core::github::CommitSha;
@@ -262,12 +262,13 @@ fn read_pull_request(
     PrView::read(reader, &repository, number)
 }
 
-/// What the Files tab reads besides the database: where the mirrors are, the diff on show, and the mirrors'
-/// worker, which fetches a head a mirror lacks.
+/// What the Files tab reads besides the database: where the mirrors are, the diff on show, the mirrors'
+/// worker, which fetches a head a mirror lacks, and the highlighter, which parses the files.
 pub(crate) struct DiffWork {
     pub(crate) folders: Result<Folders, Error>,
     pub(crate) diffs: Diffs,
     pub(crate) mirrors: MirrorRequests,
+    pub(crate) highlighter: Highlighter,
 }
 
 impl DiffWork {
@@ -278,6 +279,7 @@ impl DiffWork {
             folders,
             diffs: &self.diffs,
             mirrors: &self.mirrors,
+            highlighter: &self.highlighter,
         })
     }
 }

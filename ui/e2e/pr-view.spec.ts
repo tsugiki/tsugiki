@@ -82,7 +82,8 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
             old_path: null,
             change: { kind: "lines", added: 1, removed: 0 },
             row: 0,
-            columns: 8,
+            // A line this long elsewhere in the PR still leaves the halves side by side in view.
+            columns: 400,
             generated: false,
             gaps: [],
             rest: null,
@@ -140,12 +141,32 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
   await expect(keyword).toHaveCSS("color", "rgb(255, 123, 114)");
   // Side by side, the added line shows on the right half, and the key switches back.
   await page.keyboard.press("ControlOrMeta+Alt+u");
-  const added = pane.getByRole("region", { name: "Side-by-side diff" }).locator(".side.added");
+  const sideBySide = pane.getByRole("region", { name: "Side-by-side diff" });
+  const added = sideBySide.locator(".side.added");
   await expect(added).toHaveText("1+The fix");
-  const left = await added.evaluate(
-    (side: HTMLElement) => side.offsetLeft / (side.parentElement?.clientWidth ?? 1),
+  /** Where the added side starts and ends across the diff's region, from 0 at its left to 1 at its right. */
+  const across = () =>
+    added.evaluate((side) => {
+      const region = side.closest("[role=region]")?.getBoundingClientRect();
+      const box = side.getBoundingClientRect();
+      return region === undefined
+        ? []
+        : [(box.left - region.left) / region.width, (box.right - region.left) / region.width];
+    });
+  const [start = 0, end = 0] = await across();
+  expect(start).toBeCloseTo(0.5, 1);
+  expect(end).toBeLessThanOrEqual(1);
+  // Scrolled across, the halves stay where they are, and their code moves.
+  await sideBySide.evaluate((region) => {
+    region.scrollLeft = 200;
+  });
+  await expect
+    .poll(() => added.locator(".text").evaluate((text) => text.getBoundingClientRect().x))
+    .toBeLessThan(await added.evaluate((side) => side.getBoundingClientRect().x));
+  const [scrolledStart = 0, scrolledEnd = 0] = await across();
+  expect([scrolledStart, scrolledEnd].map((at) => at.toFixed(2))).toEqual(
+    [start, end].map((at) => at.toFixed(2)),
   );
-  expect(left).toBeCloseTo(0.5, 1);
   await page.keyboard.press("ControlOrMeta+Alt+u");
   await expect(diff).toContainText("1+The fix");
   await page.keyboard.press("ControlOrMeta+PageUp");

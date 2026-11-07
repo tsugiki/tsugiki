@@ -33,7 +33,9 @@
 
   let scroller = $state<HTMLElement>();
   let scrollTop = $state(0);
+  let scrollLeft = $state(0);
   let height = $state(0);
+  let width = $state(0);
   /** How tall the NEWS entries above the rows are. */
   let newsHeight = $state(0);
   const rows = $derived(diff.layout.count);
@@ -84,7 +86,7 @@
 
 <!-- One side of a row side by side: a line's number and its code. -->
 <!-- prettier-ignore -->
-{#snippet side(kind: string, number: number, marker: string, text: string, spans: Span[])}<span class={`side ${kind}`}><span class="number">{number}</span>{@render code(marker, text, spans)}</span>{/snippet}
+{#snippet side(kind: string, number: number, marker: string, text: string, spans: Span[])}<span class={`side ${kind}`}><span class="number">{number}</span><span class="clip">{@render code(marker, text, spans)}</span></span>{/snippet}
 
 <!-- A side with nothing on it, as the right side of a removed row has, or one whose row hasn't come. -->
 {#snippet blank(kind: string)}<span class={`side ${kind}`}></span>{/snippet}
@@ -105,7 +107,9 @@
   {:else if row?.kind === "added"}
     {@render side("added", row.new, "+", row.text, diff.spans(index) ?? [])}
   {:else if row?.kind === "note"}
-    <span class="side note"><span class="number"></span><span class="text">{row.text}</span></span>
+    <span class="side note"
+      ><span class="number"></span><span class="clip"><span class="text">{row.text}</span></span></span
+    >
   {:else}
     {@render blank("waiting")}
   {/if}
@@ -168,8 +172,10 @@
   tabindex="0"
   bind:this={scroller}
   bind:clientHeight={height}
+  bind:clientWidth={width}
   onscroll={(event) => {
     scrollTop = event.currentTarget.scrollTop;
+    scrollLeft = event.currentTarget.scrollLeft;
   }}
 >
   <div bind:clientHeight={newsHeight}>
@@ -179,8 +185,10 @@
     class="spacer"
     style:height={`${String(rows * ROW)}px`}
     style:min-width={sideBySide
-      ? `calc(${String(2 * columns)}ch + 160px)`
+      ? `calc(${String(width)}px + max(0px, ${String(columns + 1)}ch + 56px - ${String(width / 2)}px))`
       : `calc(${String(columns)}ch + 112px)`}
+    style:--across={`${String(scrollLeft)}px`}
+    style:--width={`${String(width)}px`}
   >
     {#each shown as place (place)}
       {@const at = diff.layout.at(place)}
@@ -390,6 +398,26 @@
     flex: 1 1 50%;
     min-width: 0;
     overflow: hidden;
+  }
+
+  /* Side by side, a row stays as wide as the tab, and scrolling across moves the code on both sides while
+     the line numbers stay. Each side holds as much of its line as fits, so the halves stay in view however
+     long the PR's longest line is. */
+  .split {
+    left: var(--across);
+    right: auto;
+    width: var(--width);
+  }
+
+  .clip {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .clip > .text {
+    display: inline-block;
+    transform: translateX(calc(-1 * var(--across)));
   }
 
   .side + .side {

@@ -522,7 +522,9 @@ it("draws a change's removed rows beside its added ones side by side, and contex
   const diff = screen.getByRole("region", { name: "Side-by-side diff" });
   const spacer = diff.querySelector(".spacer") as HTMLElement;
   expect(spacer.style.height).toBe(`${String(10 * 20)}px`);
-  expect(spacer.style.minWidth).toBe("calc(16ch + 160px)");
+  // As wide as the tab, which jsdom makes 0 wide, and as far again as a side's longest line runs past
+  // its half.
+  expect(spacer.style.minWidth).toBe("calc(0px + max(0px, 9ch - 0px + 56px))");
 });
 
 it("draws the lines a gap left out on both sides, side by side", async () => {

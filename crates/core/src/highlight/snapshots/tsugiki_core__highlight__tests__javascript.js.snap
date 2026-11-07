@@ -1,0 +1,19 @@
+---
+source: crates/core/src/highlight/tests.rs
+expression: drawn
+---
+[Comment // Counts the rows each file shows.]
+[Keyword import] { readFile } [Keyword from] [String "node:fs/promises"];
+
+[Keyword export] [Keyword async] [Keyword function] [Function count](path, { skip [Keyword =] [Constant 0] } [Keyword =] {}) {
+  [Keyword const] text [Keyword =] [Keyword await] [Function readFile](path, [String "utf8"]);
+  [Keyword const] lines [Keyword =] text.[Function split]([Keyword /][String \r?\n][Keyword /]).[Function slice](skip);
+  [Keyword if] (lines.length [Keyword ===] [Constant 0]) [Keyword return] [Constant null];
+  [Keyword return] lines.[Function filter]((line) [Keyword =>] line.[Function startsWith]([String "+"])).length;
+}
+
+[Keyword class] [Type Counter] [Keyword extends] [Type Map] {
+  [Keyword static] MAX [Keyword =] [Constant 1_000];
+}
+
+[Keyword const] view [Keyword =] <[Type Row] [Function count][Keyword =]{[Function count]([String "a.diff"])} [Function label][Keyword =][String "added"] />;

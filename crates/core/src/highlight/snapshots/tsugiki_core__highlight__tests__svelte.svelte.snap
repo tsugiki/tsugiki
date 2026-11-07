@@ -1,0 +1,24 @@
+---
+source: crates/core/src/highlight/tests.rs
+expression: drawn
+---
+<[Tag script] [Function lang]=[String "ts"]>
+  [Keyword import] [Type Row] [Keyword from] [String "./Row.svelte"];
+
+  [Keyword let] { rows }: { rows: [Type string][] } [Keyword =] [Function $props]();
+  [Keyword let] count [Keyword =] [Function $derived](rows.length);
+</[Tag script]>
+
+{#[Keyword if] count [Keyword >] [Constant 0]}
+  <[Tag ul] [Function class]=[String "rows"]>
+    {#[Keyword each] rows [Keyword as] row, [Function index] (index)}
+      <[Tag Row] [Function text]={row} [Function on:click]={() [Keyword =>] console.[Function log](index)} />
+    {/[Keyword each]}
+  </[Tag ul]>
+{:[Keyword else]}
+  <[Tag p]>No rows</[Tag p]>
+{/[Keyword if]}
+
+<[Tag style]>
+  .[Function rows] { [Constant margin]: [Constant 0]; }
+</[Tag style]>

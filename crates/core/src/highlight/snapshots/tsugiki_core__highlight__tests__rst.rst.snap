@@ -1,0 +1,21 @@
+---
+source: crates/core/src/highlight/tests.rs
+expression: drawn
+---
+[Heading What's new]
+[Heading ==========]
+
+This release adds [Strong **highlighting**] and [Emphasis *themes*]. See [Keyword :func:`repr`] and [Constant ``x``].
+
+* A bullet, with a [String `link <https://example.com>`_].
+
+[Function ..] [Function note::]
+
+   A note.
+
+[Function ..] [Function code-block::] python
+
+   [Keyword def] [Function f](x):
+       [Keyword return] x [Keyword +] [Constant 1]
+
+[Comment .. Comment that Sphinx doesn't show.]

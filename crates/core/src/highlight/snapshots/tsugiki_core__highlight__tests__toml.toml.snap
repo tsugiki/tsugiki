@@ -1,0 +1,16 @@
+---
+source: crates/core/src/highlight/tests.rs
+expression: drawn
+---
+[Comment # The workspace.]
+[[Tag workspace]]
+[Tag members] [Keyword =] [[String "crates/*"]]
+[Tag resolver] [Keyword =] [String "2"]
+
+[[Tag workspace].[Tag dependencies]]
+[Tag tree-sitter] [Keyword =] [String "0.27.2"]
+[Tag serde] [Keyword =] { [Tag version] [Keyword =] [String "1.0"], [Tag features] [Keyword =] [[String "derive"]] }
+
+[[Tag profile].[Tag release]]
+[Tag lto] [Keyword =] [Constant true]
+[Tag opt-level] [Keyword =] [Constant 3]

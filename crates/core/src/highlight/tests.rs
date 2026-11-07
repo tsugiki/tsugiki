@@ -1,4 +1,11 @@
+use std::path::Path;
+
 use super::*;
+
+/// The language Tsugiki calls `name`.
+fn language(name: &str) -> Language {
+    Language::named(name).unwrap()
+}
 
 /// Lines `lines` of `source`, each span drawn as `[highlight text]`.
 fn drawn(language: Language, source: &str, lines: Range<u32>) -> Vec<String> {
@@ -12,6 +19,12 @@ fn drawn(language: Language, source: &str, lines: Range<u32>) -> Vec<String> {
             with_spans(text, &spans)
         })
         .collect()
+}
+
+/// Every line of `source`, drawn as `drawn` draws them.
+fn drawn_whole(language: Language, source: &str) -> Vec<String> {
+    let lines = u32::try_from(source.lines().count()).unwrap();
+    drawn(language, source, 1..lines + 1)
 }
 
 /// `text` with each span drawn as `[highlight text]`.
@@ -36,30 +49,156 @@ pub(crate) fn with_spans(text: &str, spans: &[Span]) -> String {
 }
 
 #[test]
-fn a_file_is_highlighted_by_its_extension() {
+fn a_file_is_highlighted_by_its_extension_or_its_name() {
     let languages = [
         "Objects/typeobject.c",
         "Include/object.h",
-        "Lib/ast.py",
         "Lib/typing.pyi",
         "Doc/whatsnew/3.15.rst",
-        "Makefile",
+        "Makefile.pre.in",
+        "ui/src/App.svelte",
         "Lib/dir.py/README",
+        "Lib/.py",
     ]
-    .map(Language::of);
+    .map(|path| Language::of(path).map(|language| language.spec.name));
 
     assert_eq!(
         languages,
         [
-            Some(Language::C),
-            Some(Language::C),
-            Some(Language::Python),
-            Some(Language::Python),
-            None,
+            Some("c"),
+            Some("c"),
+            Some("python"),
+            Some("rst"),
+            Some("make"),
+            Some("svelte"),
             None,
             None
         ]
     );
+}
+
+#[test]
+fn a_fence_may_name_a_language_by_its_name_an_alias_or_an_extension() {
+    let named = [
+        "python",
+        " Python3 ",
+        "py",
+        "ts",
+        "rs",
+        "markdown_inline",
+        "pycon",
+    ]
+    .map(|name| Language::named(name).map(|language| language.spec.name));
+
+    assert_eq!(
+        named,
+        [
+            Some("python"),
+            Some("python"),
+            Some("python"),
+            Some("typescript"),
+            Some("rust"),
+            Some("markdown_inline"),
+            None
+        ]
+    );
+}
+
+#[test]
+fn each_language_s_queries_compile_and_use_only_the_predicates_tsugiki_reads() {
+    for (index, spec) in LANGUAGES.iter().enumerate() {
+        let name = spec.name;
+        let grammar = Language { spec, index }.grammar();
+        let grammar = grammar.unwrap_or_else(|| panic!("{name}'s queries compile"));
+        let injections = grammar
+            .injections
+            .iter()
+            .map(|injections| &injections.query);
+        for query in std::iter::once(&grammar.highlights).chain(injections) {
+            for pattern in 0..query.pattern_count() {
+                // tree-sitter's Rust binding checks `#eq?`, `#match?` and `#any-of?`, and reads `#set!`.
+                // It leaves the rest, such as Neovim's `#lua-match?`, to its caller, which Tsugiki isn't.
+                let predicates = query.general_predicates(pattern);
+                assert!(
+                    predicates.is_empty(),
+                    "{name}'s pattern {pattern} has {predicates:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn no_two_languages_claim_the_same_file_or_name() {
+    let mut files = std::collections::HashSet::new();
+    let mut names = std::collections::HashSet::new();
+    for spec in LANGUAGES {
+        for file in spec.files {
+            assert!(files.insert(*file), "two languages claim {file:?}");
+        }
+        let extensions = spec.files.iter().filter_map(|file| match *file {
+            File::Extension(extension) => Some(extension),
+            File::Name(_) => None,
+        });
+        let aliases = spec.aliases.iter().copied();
+        let mut called: Vec<&str> = [spec.name]
+            .into_iter()
+            .chain(aliases)
+            .chain(extensions)
+            .collect();
+        called.sort_unstable();
+        called.dedup();
+        for name in called {
+            assert!(names.insert(name), "two languages are called {name}");
+            assert_eq!(name, name.to_lowercase(), "{name} is in lower case");
+        }
+    }
+}
+
+#[test]
+fn each_sample_is_highlighted_as_its_snapshot_shows() {
+    let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/highlight/samples");
+    let mut samples: Vec<_> = std::fs::read_dir(folder)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    samples.sort();
+    let mut highlighted = Vec::new();
+    for sample in samples {
+        let name = sample.file_name().unwrap().to_str().unwrap().to_owned();
+        let language = Language::of(&name).unwrap_or_else(|| panic!("Tsugiki highlights {name}"));
+        let source = std::fs::read_to_string(&sample).unwrap();
+        let drawn = drawn_whole(language, &source).join("\n");
+        assert!(drawn.contains('['), "{name} has highlights");
+        insta::assert_snapshot!(name, drawn);
+        highlighted.push(language);
+    }
+    for (index, spec) in LANGUAGES.iter().enumerate() {
+        let name = spec.name;
+        let sampled = highlighted.contains(&Language { spec, index });
+        assert!(sampled || spec.files.is_empty(), "{name} has a sample");
+    }
+}
+
+#[test]
+fn a_query_that_doesn_t_compile_or_has_no_content_leaves_its_language_plain() {
+    let broken = Spec {
+        name: "broken",
+        aliases: &[],
+        files: &[],
+        grammar: tree_sitter_json::LANGUAGE,
+        highlights: &["(no_such_node) @string"],
+        injections: &[],
+        paints: &[],
+    };
+    let no_content = Spec {
+        highlights: &[tree_sitter_json::HIGHLIGHTS_QUERY],
+        injections: &["(string) @injection.language"],
+        ..broken
+    };
+
+    assert!(Grammar::compile(&broken).is_none());
+    assert!(Grammar::compile(&no_content).is_none());
 }
 
 #[test]
@@ -75,7 +214,7 @@ def walk(top: str, depth=2):
 ";
 
     assert_eq!(
-        drawn(Language::Python, source, 1..8),
+        drawn_whole(language("python"), source),
         [
             "[Keyword import] os",
             "",
@@ -89,7 +228,7 @@ def walk(top: str, depth=2):
 }
 
 #[test]
-fn c_shows_the_preprocessor_types_strings_and_calls() {
+fn c_shows_the_preprocessor_types_strings_and_calls_and_a_macro_s_body_as_c() {
     let source = "\
 #include <Python.h>
 #define LIMIT 10
@@ -103,18 +242,19 @@ check(PyObject *op)
 ";
 
     assert_eq!(
-        drawn(Language::C, source, 1..10),
+        drawn_whole(language("c"), source),
         [
             "[Keyword #include] [String <Python.h>]",
-            // The C grammar leaves a macro's body as text, and its query takes only capitals for constants.
-            "[Keyword #define] [Constant LIMIT] 10",
+            "[Keyword #define] [Constant LIMIT] [Constant 10]",
             "",
             "[Keyword static] [Type int]",
-            "[Function check]([Type PyObject] [Keyword *]op)",
+            // Helix's query takes the `*` of a pointer for part of its type.
+            "[Function check]([Type PyObject] [Type *]op)",
             "{",
             "    [Comment /* A comment. */]",
-            "    [Keyword return] [Function PyErr_Format](PyExc_ValueError, [String \"bad %d\"], \
-             [Constant LIMIT]) [Keyword ==] [Constant NULL];",
+            // Helix's query leaves a call's arguments plain, after the pattern that paints a constant.
+            "    [Keyword return] [Function PyErr_Format](PyExc_ValueError, [String \"bad %d\"], LIMIT) \
+             [Keyword ==] [Constant NULL];",
             "}",
         ]
     );
@@ -125,7 +265,7 @@ fn a_chunk_reads_only_its_lines_and_a_node_from_above_paints_from_its_first_line
     let source = "x = 1\ndoc = \"\"\"one\ntwo\nthree\"\"\"\ny = 2\n";
 
     assert_eq!(
-        drawn(Language::Python, source, 3..6),
+        drawn(language("python"), source, 3..6),
         [
             "[String two]",
             "[String three\"\"\"]",
@@ -136,17 +276,125 @@ fn a_chunk_reads_only_its_lines_and_a_node_from_above_paints_from_its_first_line
 
 #[test]
 fn of_the_patterns_that_capture_one_node_the_last_in_the_query_wins() {
-    // Python's query captures a capitalised name as a constructor, and one in capitals after that as a
-    // constant. A call is a function's after either.
+    // Helix's Python query captures a capitalised name as a type, and one in capitals after that as a
+    // constant. A call is a constructor's after the first.
     assert_eq!(
-        drawn(Language::Python, "LIMIT = Point(1)\n", 1..2),
-        ["[Constant LIMIT] [Keyword =] [Function Point]([Constant 1])"]
+        drawn(language("python"), "LIMIT = Point(1)\n", 1..2),
+        ["[Constant LIMIT] [Keyword =] [Type Point]([Constant 1])"]
     );
 }
 
 #[test]
+fn a_markdown_fence_shows_its_language_and_one_tsugiki_doesn_t_know_shows_plain() {
+    let source = "\
+# The *first* heading, with a <kbd>key</kbd>
+
+```python
+def f(): return 1
+```
+
+> ```c
+> int x = 1; /* one
+> two */
+> ```
+
+```pycon
+>>> f()
+```
+";
+
+    assert_eq!(
+        drawn_whole(language("markdown"), source),
+        [
+            // A paragraph's HTML tags parse as one, so a closing tag shows as its opening one does.
+            "# [Heading The ][Emphasis *first*][Heading  heading, with a <][Tag kbd][Heading >key</][Tag kbd]\
+             [Heading >]",
+            "",
+            "[Constant ```python]",
+            "[Keyword def] [Function f](): [Keyword return] [Constant 1]",
+            "[Constant ```]",
+            "",
+            "> [Constant ```c]",
+            "> [Type int] x [Keyword =] [Constant 1]; [Comment /* one]",
+            // The comment runs over the quote's `>`, which the C wasn't parsed from.
+            "> [Comment two */]",
+            "> [Constant ```]",
+            "",
+            "[Constant ```pycon]",
+            ">>> f()",
+            "[Constant ```]",
+        ]
+    );
+}
+
+#[test]
+fn html_and_svelte_show_a_script_and_a_style_in_their_languages() {
+    let html = "\
+<script>let x = 1;</script>
+<style>p { color: red; }</style>
+";
+    let svelte = "\
+<script lang=\"ts\">let x: number = 1;</script>
+<style lang=\"scss\">p { color: red; }</style>
+<p>{x + 1}</p>
+";
+
+    assert_eq!(
+        drawn_whole(language("html"), html),
+        [
+            "<[Tag script]>[Keyword let] x [Keyword =] [Constant 1];</[Tag script]>",
+            "<[Tag style]>[Tag p] { [Constant color]: red; }</[Tag style]>",
+        ]
+    );
+    assert_eq!(
+        drawn_whole(language("svelte"), svelte),
+        [
+            "<[Tag script] [Function lang]=[String \"ts\"]>[Keyword let] x: [Type number] [Keyword =] \
+             [Constant 1];</[Tag script]>",
+            "<[Tag style] [Function lang]=[String \"scss\"]>[Tag p] { [Constant color]: red; }</[Tag style]>",
+            "<[Tag p]>{x [Keyword +] [Constant 1]}</[Tag p]>",
+        ]
+    );
+}
+
+#[test]
+fn a_rest_code_block_shows_its_language_without_the_directive_s_indent() {
+    let source = "\
+Title
+=====
+
+.. code-block:: python
+
+   def f():
+       return 1
+";
+
+    assert_eq!(
+        drawn_whole(language("rst"), source),
+        [
+            "[Heading Title]",
+            "[Heading =====]",
+            "",
+            "[Function ..] [Function code-block::] python",
+            "",
+            "   [Keyword def] [Function f]():",
+            "       [Keyword return] [Constant 1]",
+        ]
+    );
+}
+
+#[test]
+fn code_is_parsed_at_most_four_layers_in() {
+    let source = "a!(b!(c!(d!(e!(f!(1))))));\n";
+
+    let parsed = Parsed::parse(language("rust"), source.to_owned()).unwrap();
+
+    assert!(format!("{parsed:?}").starts_with("Parsed { language: rust, lines: 2, layers: 5"));
+}
+
+#[test]
 fn spans_count_utf16_code_units_as_the_webview_does() {
-    let parsed = Parsed::parse(Language::Python, "s = \"ü😀\" # x\n".to_owned()).unwrap();
+    let parsed = Parsed::parse(language("python"), "s = \"ü😀\" # x\n".to_owned()).unwrap();
 
     let spans = parsed.spans(1..2);
 
@@ -167,33 +415,51 @@ fn spans_count_utf16_code_units_as_the_webview_does() {
 
 #[test]
 fn lines_past_the_end_have_no_spans() {
-    let parsed = Parsed::parse(Language::C, "int x;".to_owned()).unwrap();
+    let parsed = Parsed::parse(language("c"), "int x;".to_owned()).unwrap();
 
     assert_eq!(
         parsed.spans(1..4).iter().map(Vec::len).collect::<Vec<_>>(),
         [1, 0, 0]
     );
     assert_eq!(parsed.spans(5..5), Vec::<Vec<Span>>::new());
-    assert!(format!("{parsed:?}").starts_with("Parsed { language: C, lines: 1"));
 }
 
 #[test]
-fn each_capture_name_in_both_queries_paints_as_the_github_look_has_it() {
-    let painted = |grammar: &Grammar| -> Vec<(String, Option<Paint>)> {
-        let names = grammar.query.capture_names().iter();
-        names
-            .map(|name| ((*name).to_owned(), Paint::of(name)))
-            .collect()
+fn the_longest_part_of_a_capture_s_name_with_a_rule_decides_what_it_paints() {
+    let paint = |capture| Paint::of(capture, &[]);
+    let yaml = |capture| {
+        Paint::of(
+            capture,
+            &[("property", Some(Highlight::Tag)), ("label", None)],
+        )
     };
 
-    let c = painted(&C);
-    let python = painted(&PYTHON);
-
-    assert!(c.contains(&("type".to_owned(), Some(Paint::Color(Highlight::Type)))));
-    assert!(python.contains(&("embedded".to_owned(), Some(Paint::Plain))));
-    assert!(python.contains(&("variable".to_owned(), None)));
     assert_eq!(
-        Paint::of("attribute"),
+        paint("function.builtin"),
         Some(Paint::Color(Highlight::Function))
     );
+    assert_eq!(
+        paint("constant.character"),
+        Some(Paint::Color(Highlight::String))
+    );
+    assert_eq!(
+        paint("constant.character.escape"),
+        Some(Paint::Color(Highlight::Constant))
+    );
+    assert_eq!(paint("tag.delimiter"), None);
+    assert_eq!(paint("embedded"), Some(Paint::Plain));
+    assert_eq!(paint("variable.parameter"), None);
+    assert_eq!(paint("_ann"), None);
+    assert_eq!(yaml("property"), Some(Paint::Color(Highlight::Tag)));
+    assert_eq!(yaml("label.anchor"), None);
+}
+
+#[test]
+fn a_file_s_extension_is_what_follows_the_last_dot_of_a_name_with_more_before_it() {
+    let rs = File::Extension("rs");
+
+    assert!(rs.holds("lib.rs"));
+    assert!(!rs.holds(".rs"));
+    assert!(!rs.holds("libers"));
+    assert!(File::Name("Makefile").holds("Makefile"));
 }

@@ -360,8 +360,12 @@ export type HiddenReason = "abuse" | "off_topic" | "outdated" | "resolved" | "du
 /**  GitHub gave a reason Tsugiki doesn't know, or none. */
 "unstated";
 
-/**  What a run of text shows as, in colors that look like github.com's. */
-export type Highlight = "keyword" | "string" | "comment" | "constant" | "function" | "type";
+/**  What a run of text shows as, in colors and styles that look like github.com's. */
+export type Highlight = "keyword" | "string" | "comment" | "constant" | "function" | "type" | 
+/**  An HTML tag's name, or a key in YAML or TOML. */
+"tag" | 
+/**  A heading in Markdown or reST. */
+"heading" | "strong" | "emphasis";
 
 /**  What the window opens on. */
 export type Home = Home_Serialize | Home_Deserialize;

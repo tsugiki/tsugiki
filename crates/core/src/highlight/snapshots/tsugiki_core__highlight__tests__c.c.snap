@@ -1,0 +1,18 @@
+---
+source: crates/core/src/highlight/tests.rs
+expression: drawn
+---
+[Keyword #include] [String "Python.h"]
+[Keyword #define] [Function CHECK](op) ([Function Py_IS_TYPE]((op), [Keyword &]PyList_Type))
+
+[Comment /* Returns the length, or -1 with an error set. */]
+[Keyword static] [Type Py_ssize_t]
+[Function list_length]([Type PyObject] [Type *]op)
+{
+    [Keyword if] ([Keyword !][Function CHECK](op)) {
+        [Function PyErr_SetString](PyExc_TypeError, [String "expected a list, not '%s'"]);
+        [Keyword return] [Constant -1];
+    }
+    [Type char] sep [Keyword =] [String '][Constant \n][String '];
+    [Keyword return] [Function PyList_GET_SIZE](op) [Keyword +] (sep [Keyword ==] [Constant 0] [Keyword ?] [Constant 1] [Keyword :] [Constant 0]);
+}

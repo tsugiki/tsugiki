@@ -174,6 +174,23 @@
     color: var(--hl-entity);
   }
 
+  .text :global(.hl-tag) {
+    color: var(--hl-tag);
+  }
+
+  .text :global(.hl-heading) {
+    color: var(--hl-constant);
+    font-weight: 600;
+  }
+
+  .text :global(.hl-strong) {
+    font-weight: 600;
+  }
+
+  .text :global(.hl-emphasis) {
+    font-style: italic;
+  }
+
   /* github.com's light palette. The window has no dark theme yet: one that sets `data-theme="dark"` on the
      root gets github.com's dark palette below. */
   .scroller {
@@ -182,6 +199,7 @@
     --hl-comment: #59636e;
     --hl-constant: #0550ae;
     --hl-entity: #6639ba;
+    --hl-tag: #116329;
   }
 
   :global(:root[data-theme="dark"]) .scroller {
@@ -190,5 +208,6 @@
     --hl-comment: #9198a1;
     --hl-constant: #79c0ff;
     --hl-entity: #d2a8ff;
+    --hl-tag: #7ee787;
   }
 </style>

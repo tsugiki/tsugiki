@@ -17,6 +17,10 @@ release's body, and fails without it
   Adding a Repository starts its clone beside its first sync, and Repositories added before get theirs at the
   next launch, the open one first. The status bar shows "Cloning python/cpython 42%" beside the sync time.
   Quitting stops a clone, and the next launch starts it again. Tsugiki needs `git` on the `PATH` for this.
+- Each sync fetches into the mirror the branch of each PR your work reaches: your Review requests, your own
+  PRs and those you reviewed, your Filters' PRs and the PRs in your Issues' trees. One `git fetch` takes all
+  the PRs whose branch moved, and a PR GitHub has dropped fails nothing. While Tsugiki is offline the mirror
+  waits.
 
 ## Version 0.1.1 (2026-11-07)
 

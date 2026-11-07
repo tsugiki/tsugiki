@@ -2,8 +2,8 @@
   "body": {
     "data": {
       "rateLimit": {
-        "remaining": 4992,
-        "resetAt": "2026-11-04T22:46:14Z"
+        "remaining": 4950,
+        "resetAt": "2026-11-07T09:29:53Z"
       },
       "search": {
         "nodes": [
@@ -12,9 +12,6 @@
           },
           {
             "id": "PR_kwDOBN0Z8c8AAAABKlAJ0A"
-          },
-          {
-            "id": "PR_kwDOBN0Z8c8AAAABJlTcBw"
           },
           {
             "id": "PR_kwDOBN0Z8c8AAAABCrEnGw"
@@ -75,13 +72,13 @@
           }
         ],
         "pageInfo": {
-          "endCursor": "Y3Vyc29yOjIy",
+          "endCursor": "Y3Vyc29yOjIx",
           "hasNextPage": false
         }
       }
     }
   },
   "query": "query SearchReviewedPrs($query: String!, $first: Int!, $after: String) { search(query: $query, type: ISSUE_ADVANCED, first: $first, after: $after) { pageInfo { hasNextPage endCursor } nodes { ... on PullRequest { id } } } rateLimit { remaining resetAt } }",
-  "reset": 1793832374,
+  "reset": 1794043793,
   "status": 200
 }

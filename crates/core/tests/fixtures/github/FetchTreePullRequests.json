@@ -7,10 +7,9 @@
             "nodes": []
           },
           "author": {
-            "login": "user-56"
+            "login": "user-99"
           },
           "baseRefName": "main",
-          "timelineItems": { "nodes": [] },
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit ",
           "closingIssuesReferences": {
             "nodes": []
@@ -21,7 +20,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-56"
+                      "login": "user-99"
                     }
                   },
                   "message": "",
@@ -33,6 +32,7 @@
             ],
             "totalCount": 1
           },
+          "headRefOid": "f459c4bdf1263973d18686f31af2a266038c380d",
           "isDraft": true,
           "lastCommit": {
             "nodes": [
@@ -60,17 +60,96 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-12"
+                  "login": "user-33"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-11"
+                  "login": "user-72"
                 }
               }
             ]
           },
           "state": "CLOSED",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-99"
+                    }
+                  },
+                  "committedDate": "2026-07-26T07:10:54Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-99"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-26T07:13:54Z",
+                "requestedReviewer": {
+                  "login": "user-33"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-26T07:13:54Z",
+                "requestedReviewer": {
+                  "login": "user-72"
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-56"
+                },
+                "bodyText": "All commit authors signed the Contributor License Agreement.",
+                "createdAt": "2026-07-26T07:13:58Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-100"
+                },
+                "createdAt": "2026-07-26T07:25:02Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-101"
+                },
+                "bodyText": "user-100 Review: Didn't find any major issues. Another round soon, please!\nReviewed commit: f459c4bdf1\n ℹ️ About user-100 in GitHub\n\nYour team has set up user-100 to review pull requests in this repo. Reviews are triggered when you\n\nOpen a pull request for review\nMark a draft as ready\nComment \"@user-100 review\".\n\nIf user-100 has suggestions, it will comment; otherwise it will react with 👍.\nuser-100 can also answer questions or update the PR. Try commenting \"@user-100 address that feedback\".",
+                "createdAt": "2026-07-26T07:28:13Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-100"
+                },
+                "createdAt": "2026-07-26T07:28:14Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-99"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing e",
+                "createdAt": "2026-07-26T08:16:53Z"
+              }
+            ]
+          },
           "title": "gh-151763: Restore exception if parser recovery path leaves none set (OOM-0021)",
           "updatedAt": "2026-07-26T08:16:54Z"
         },
@@ -79,10 +158,9 @@
             "nodes": []
           },
           "author": {
-            "login": "user-56"
+            "login": "user-99"
           },
           "baseRefName": "main",
-          "timelineItems": { "nodes": [] },
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing ",
           "closingIssuesReferences": {
             "nodes": []
@@ -93,7 +171,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-56"
+                      "login": "user-99"
                     }
                   },
                   "message": "",
@@ -105,6 +183,7 @@
             ],
             "totalCount": 1
           },
+          "headRefOid": "2d6f1ffb202690ff45f25d9477ce2412b75b6d43",
           "isDraft": true,
           "lastCommit": {
             "nodes": [
@@ -132,6 +211,80 @@
             "nodes": []
           },
           "state": "CLOSED",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-99"
+                    }
+                  },
+                  "committedDate": "2026-07-26T07:10:53Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-99"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-56"
+                },
+                "bodyText": "All commit authors signed the Contributor License Agreement.",
+                "createdAt": "2026-07-26T07:13:52Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-100"
+                },
+                "createdAt": "2026-07-26T07:25:01Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-101"
+                },
+                "bodyText": "user-100 Review: Didn't find any major issues. Already looking forward to the next diff.\nReviewed commit: 2d6f1ffb20\n ℹ️ About user-100 in GitHub\n\nYour team has set up user-100 to review pull requests in this repo. Reviews are triggered when you\n\nOpen a pull request for review\nMark a draft as ready\nComment \"@user-100 review\".\n\nIf user-100 has suggestions, it will comment; otherwise it will react with 👍.\nuser-100 can also answer questions or update the PR. Try commenting \"@user-100 address that feedback\".",
+                "createdAt": "2026-07-26T07:26:34Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-100"
+                },
+                "createdAt": "2026-07-26T07:26:36Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-5"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit",
+                "createdAt": "2026-07-26T08:08:35Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-99"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit ame",
+                "createdAt": "2026-07-26T08:25:29Z"
+              }
+            ]
+          },
           "title": "gh-151673: Fix crash in warnings setup_context when filename alloc fails",
           "updatedAt": "2026-07-26T08:25:29Z"
         },
@@ -140,10 +293,9 @@
             "nodes": []
           },
           "author": {
-            "login": "user-56"
+            "login": "user-99"
           },
           "baseRefName": "main",
-          "timelineItems": { "nodes": [] },
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet",
           "closingIssuesReferences": {
             "nodes": []
@@ -154,7 +306,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-56"
+                      "login": "user-99"
                     }
                   },
                   "message": "",
@@ -166,6 +318,7 @@
             ],
             "totalCount": 1
           },
+          "headRefOid": "277cbd6acab5a586a36d120a40293608f85505bb",
           "isDraft": true,
           "lastCommit": {
             "nodes": [
@@ -193,12 +346,84 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-11"
+                  "login": "user-72"
                 }
               }
             ]
           },
           "state": "CLOSED",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-99"
+                    }
+                  },
+                  "committedDate": "2026-07-26T07:10:52Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-99"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-26T07:13:47Z",
+                "requestedReviewer": {
+                  "login": "user-72"
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-56"
+                },
+                "bodyText": "All commit authors signed the Contributor License Agreement.",
+                "createdAt": "2026-07-26T07:13:51Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-100"
+                },
+                "createdAt": "2026-07-26T07:24:59Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-101"
+                },
+                "bodyText": "user-100 Review: Didn't find any major issues. Hooray!\nReviewed commit: 277cbd6aca\n ℹ️ About user-100 in GitHub\n\nYour team has set up user-100 to review pull requests in this repo. Reviews are triggered when you\n\nOpen a pull request for review\nMark a draft as ready\nComment \"@user-100 review\".\n\nIf user-100 has suggestions, it will comment; otherwise it will react with 👍.\nuser-100 can also answer questions or update the PR. Try commenting \"@user-100 address that feedback\".",
+                "createdAt": "2026-07-26T07:27:00Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-100"
+                },
+                "createdAt": "2026-07-26T07:27:01Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-99"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing e",
+                "createdAt": "2026-07-26T08:16:45Z"
+              }
+            ]
+          },
           "title": "gh-151815: Fix crash in t-string iterator on partial construction under OOM",
           "updatedAt": "2026-07-26T08:16:46Z"
         },
@@ -207,10 +432,9 @@
             "nodes": []
           },
           "author": {
-            "login": "user-30"
+            "login": "user-67"
           },
           "baseRefName": "main",
-          "timelineItems": { "nodes": [] },
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n",
           "closingIssuesReferences": {
             "nodes": []
@@ -221,7 +445,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-30"
+                      "login": "user-67"
                     }
                   },
                   "message": "",
@@ -233,6 +457,7 @@
             ],
             "totalCount": 1
           },
+          "headRefOid": "058fd2afd4e8528251981e99a6f37af08b54b137",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -260,37 +485,157 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-22"
+                  "login": "user-48"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-50"
+                  "login": "user-87"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-26"
+                  "login": "user-7"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-39"
+                  "login": "user-43"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-57"
+                  "login": "user-102"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-58"
+                  "login": "user-103"
                 }
               }
             ]
           },
           "state": "OPEN",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "HeadRefForcePushedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-67"
+                },
+                "createdAt": "2026-07-11T09:11:12Z"
+              },
+              {
+                "__typename": "ReadyForReviewEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-67"
+                },
+                "createdAt": "2026-07-11T09:57:33Z"
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-11T09:57:33Z",
+                "requestedReviewer": {
+                  "login": "user-48"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-11T12:18:12Z",
+                "requestedReviewer": {
+                  "login": "user-87"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-11T12:18:13Z",
+                "requestedReviewer": {
+                  "login": "user-7"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-11T12:18:13Z",
+                "requestedReviewer": {
+                  "login": "user-43"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-11T12:18:13Z",
+                "requestedReviewer": {
+                  "login": "user-102"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-11T12:18:13Z",
+                "requestedReviewer": {
+                  "login": "user-103"
+                }
+              },
+              {
+                "__typename": "HeadRefForcePushedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-67"
+                },
+                "createdAt": "2026-07-12T14:43:28Z"
+              },
+              {
+                "__typename": "HeadRefForcePushedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-67"
+                },
+                "createdAt": "2026-07-12T14:53:51Z"
+              },
+              {
+                "__typename": "HeadRefForcePushedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-67"
+                },
+                "createdAt": "2026-07-25T05:20:05Z"
+              },
+              {
+                "__typename": "HeadRefForcePushedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-67"
+                },
+                "createdAt": "2026-08-09T13:44:27Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-67"
+                    }
+                  },
+                  "committedDate": "2026-09-22T05:42:38Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-67"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "HeadRefForcePushedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-67"
+                },
+                "createdAt": "2026-09-22T05:42:40Z"
+              }
+            ]
+          },
           "title": "gh-151763: Fix dealloc clears the in-flight exception in subtype_dealloc",
           "updatedAt": "2026-09-22T05:42:40Z"
         },
@@ -299,10 +644,9 @@
             "nodes": []
           },
           "author": {
-            "login": "user-34"
+            "login": "user-70"
           },
           "baseRefName": "3.13",
-          "timelineItems": { "nodes": [] },
           "body": "(cherry picked from commit 669299b62f6c2176d4bedcf550fb9baaabd6a9d6)\n\n\n<!-- gh-issue-number: gh-151763 -->\n* Issue: gh-151763\n<!-- /gh-issue-number -->\n",
           "closingIssuesReferences": {
             "nodes": []
@@ -313,7 +657,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-34"
+                      "login": "user-70"
                     }
                   },
                   "message": "(cherry picked from commit 669299b62f6c2176d4bedcf550fb9baaabd6a9d6)\n",
@@ -325,6 +669,7 @@
             ],
             "totalCount": 1
           },
+          "headRefOid": "cd6dd6c396bc3fd78fb88a6e9f9418375fc2caca",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -341,7 +686,7 @@
             "nodes": [
               {
                 "author": {
-                  "login": "user-12"
+                  "login": "user-33"
                 },
                 "state": "APPROVED"
               }
@@ -361,22 +706,89 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-11"
+                  "login": "user-72"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-22"
+                  "login": "user-48"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-24"
+                  "login": "user-63"
                 }
               }
             ]
           },
           "state": "MERGED",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-70"
+                    }
+                  },
+                  "committedDate": "2026-07-02T01:50:26Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-70"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-02T01:50:31Z",
+                "requestedReviewer": {
+                  "login": "user-33"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-02T01:50:31Z",
+                "requestedReviewer": {
+                  "login": "user-72"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-02T01:50:31Z",
+                "requestedReviewer": {
+                  "login": "user-48"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-02T01:50:31Z",
+                "requestedReviewer": {
+                  "login": "user-63"
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-46"
+                },
+                "bodyText": "Documentation build overview\n\n📚 cpython-previews | 🛠️ Build #33403058 | 📁 Comparing cd6dd6c against main (669299b)\n\n   🔍 Preview build   \n\n465 files changed · + 1 added · ± 424 modified · - 40 deleted\n\n+ Added\n\nlibrary/asyncio-policy.html\n\n± Modified\n\nabout.html\nbugs.html\ncopyright.html\nglossary.html\nindex.html\nlicense.html\npy-modindex.html\nc-api/allocation.html\nc-api/apiabiversion.html\nc-api/arg.html\nand 414 more...\n\n- Deleted\n\nimprove-page-nojs.html\nimprove-page.html\n_static/tachyon-example-flamegraph.html\n_static/tachyon-example-heatmap.html\nc-api/extension-modules.html\nc-api/interp-lifecycle.html\nc-api/lifecycle.html\nc-api/profiling.html\nc-api/sentinel.html\nc-api/slots.html\nand 30 more...",
+                "createdAt": "2026-07-02T01:54:33Z"
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-33"
+                },
+                "submittedAt": "2026-07-02T07:40:11Z"
+              }
+            ]
+          },
           "title": "[3.13] gh-151763: Fix OOM-0013 crash when the parser or compiler fails to allocate (GH-151968)",
           "updatedAt": "2026-07-02T08:22:50Z"
         },
@@ -388,7 +800,6 @@
             "login": "miss-islington"
           },
           "baseRefName": "3.14",
-          "timelineItems": { "nodes": [] },
           "body": "(cherry picked from commit 669299b62f6c2176d4bedcf550fb9baaabd6a9d6)\n\n\n<!-- gh-issue-number: gh-151763 -->\n* Issue: gh-151763\n<!-- /gh-issue-number -->\n",
           "closingIssuesReferences": {
             "nodes": []
@@ -411,6 +822,7 @@
             ],
             "totalCount": 1
           },
+          "headRefOid": "73a238c5ac6446eae41f8a32004266ed8b02017e",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -427,7 +839,7 @@
             "nodes": [
               {
                 "author": {
-                  "login": "user-12"
+                  "login": "user-33"
                 },
                 "state": "APPROVED"
               }
@@ -447,22 +859,80 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-11"
+                  "login": "user-72"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-22"
+                  "login": "user-48"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-24"
+                  "login": "user-63"
                 }
               }
             ]
           },
           "state": "MERGED",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-70"
+                    }
+                  },
+                  "committedDate": "2026-07-02T00:34:31Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "miss-islington"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-02T00:34:33Z",
+                "requestedReviewer": {
+                  "login": "user-33"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-02T00:34:33Z",
+                "requestedReviewer": {
+                  "login": "user-72"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-02T00:34:33Z",
+                "requestedReviewer": {
+                  "login": "user-48"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-02T00:34:33Z",
+                "requestedReviewer": {
+                  "login": "user-63"
+                }
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-33"
+                },
+                "submittedAt": "2026-07-02T08:23:02Z"
+              }
+            ]
+          },
           "title": "[3.14] gh-151763: Fix OOM-0013 crash when the parser or compiler fails to allocate (GH-151968)",
           "updatedAt": "2026-07-02T08:23:12Z"
         },
@@ -474,7 +944,6 @@
             "login": "miss-islington"
           },
           "baseRefName": "3.15",
-          "timelineItems": { "nodes": [] },
           "body": "(cherry picked from commit 669299b62f6c2176d4bedcf550fb9baaabd6a9d6)\n\n\n<!-- gh-issue-number: gh-151763 -->\n* Issue: gh-151763\n<!-- /gh-issue-number -->\n",
           "closingIssuesReferences": {
             "nodes": []
@@ -497,6 +966,7 @@
             ],
             "totalCount": 1
           },
+          "headRefOid": "481ed997a7148133ba70bb4fd409983e6f9f2d9a",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -526,27 +996,77 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-12"
+                  "login": "user-33"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-11"
+                  "login": "user-72"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-22"
+                  "login": "user-48"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-24"
+                  "login": "user-63"
                 }
               }
             ]
           },
           "state": "MERGED",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-70"
+                    }
+                  },
+                  "committedDate": "2026-07-02T00:34:24Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "miss-islington"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-02T00:34:27Z",
+                "requestedReviewer": {
+                  "login": "user-33"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-02T00:34:27Z",
+                "requestedReviewer": {
+                  "login": "user-72"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-02T00:34:27Z",
+                "requestedReviewer": {
+                  "login": "user-48"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-02T00:34:27Z",
+                "requestedReviewer": {
+                  "login": "user-63"
+                }
+              }
+            ]
+          },
           "title": "[3.15] gh-151763: Fix OOM-0013 crash when the parser or compiler fails to allocate (GH-151968)",
           "updatedAt": "2026-07-02T08:23:28Z"
         },
@@ -555,10 +1075,9 @@
             "nodes": []
           },
           "author": {
-            "login": "user-59"
+            "login": "user-95"
           },
           "baseRefName": "main",
-          "timelineItems": { "nodes": [] },
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsu",
           "closingIssuesReferences": {
             "nodes": []
@@ -569,7 +1088,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-59"
+                      "login": "user-95"
                     }
                   },
                   "message": "",
@@ -582,7 +1101,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-59"
+                      "login": "user-95"
                     }
                   },
                   "message": "",
@@ -595,7 +1114,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-59"
+                      "login": "user-95"
                     }
                   },
                   "message": "",
@@ -607,6 +1126,7 @@
             ],
             "totalCount": 3
           },
+          "headRefOid": "9d47a7b82d22aec8db46e7ab014c1cf8968bab29",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -634,22 +1154,142 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-35"
+                  "login": "user-30"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-60"
+                  "login": "user-28"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-21"
+                  "login": "user-44"
                 }
               }
             ]
           },
           "state": "OPEN",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-95"
+                    }
+                  },
+                  "committedDate": "2026-06-25T07:37:37Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-95"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-25T07:39:05Z",
+                "requestedReviewer": {
+                  "login": "user-30"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-25T07:39:05Z",
+                "requestedReviewer": {
+                  "login": "user-44"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-25T07:39:05Z",
+                "requestedReviewer": {
+                  "login": "user-28"
+                }
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-44"
+                },
+                "submittedAt": "2026-06-25T15:50:12Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-51"
+                },
+                "bodyText": "A Python core developer has requested some changes be made to your pull request before we can consider merging it. If you could please address their requests along with any other requests in other reviews from core developers that would be appreciated.\nOnce you have made the requested changes, please leave a comment on this pull request containing the phrase I have made the requested changes; please review again. I will then notify any core developers who have left a review that you're ready for them to take another look at this pull request.",
+                "createdAt": "2026-06-25T15:50:17Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-95"
+                    }
+                  },
+                  "committedDate": "2026-06-25T16:37:37Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-95"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-44"
+                },
+                "submittedAt": "2026-06-25T18:42:03Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-95"
+                    }
+                  },
+                  "committedDate": "2026-06-25T19:11:10Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-95"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-25T19:15:12Z",
+                "requestedReviewer": {
+                  "login": "user-44"
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-31"
+                },
+                "bodyText": "This PR is stale because it has been open for 90 days with no activity.",
+                "createdAt": "2026-10-05T06:19:20Z"
+              }
+            ]
+          },
           "title": "gh-151763: Fix OOM cleanup of initial thread state",
           "updatedAt": "2026-10-05T06:19:20Z"
         },
@@ -658,10 +1298,9 @@
             "nodes": []
           },
           "author": {
-            "login": "user-59"
+            "login": "user-95"
           },
           "baseRefName": "main",
-          "timelineItems": { "nodes": [] },
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet,",
           "closingIssuesReferences": {
             "nodes": []
@@ -672,7 +1311,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-59"
+                      "login": "user-95"
                     }
                   },
                   "message": "",
@@ -684,6 +1323,7 @@
             ],
             "totalCount": 1
           },
+          "headRefOid": "f1b35194f497f53547d3616146282b27c6a5f2ef",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -711,6 +1351,37 @@
             "nodes": []
           },
           "state": "OPEN",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-95"
+                    }
+                  },
+                  "committedDate": "2026-06-25T07:25:00Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-95"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-31"
+                },
+                "bodyText": "This PR is stale because it has been open for 90 days with no activity.",
+                "createdAt": "2026-10-05T06:19:18Z"
+              }
+            ]
+          },
           "title": "gh-151763: Fix debug assertion in unicode subtype cleanup under OOM",
           "updatedAt": "2026-10-05T06:19:18Z"
         },
@@ -722,7 +1393,6 @@
             "login": "miss-islington"
           },
           "baseRefName": "3.13",
-          "timelineItems": { "nodes": [] },
           "body": "(cherry picked from commit a6c2d4ae3bd744610e1a8b70396effdabca1593d)\n\n\n<!-- gh-issue-number: gh-151763 -->\n* Issue: gh-151763\n<!-- /gh-issue-number -->\n",
           "closingIssuesReferences": {
             "nodes": []
@@ -745,6 +1415,7 @@
             ],
             "totalCount": 1
           },
+          "headRefOid": "3166ce0e8fe63754c589214d06cbb331c5f0a218",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -774,12 +1445,50 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-35"
+                  "login": "user-30"
                 }
               }
             ]
           },
           "state": "MERGED",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-13"
+                    }
+                  },
+                  "committedDate": "2026-06-25T07:04:23Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "miss-islington"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-25T07:04:25Z",
+                "requestedReviewer": {
+                  "login": "user-30"
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-46"
+                },
+                "bodyText": "Documentation build overview\n\n📚 cpython-previews | 🛠️ Build #33302471 | 📁 Comparing 3166ce0 against main (a6c2d4a)\n\n   🔍 Preview build   \n\n465 files changed · ± 425 modified · - 40 deleted\n\n± Modified\n\nabout.html\nbugs.html\ncopyright.html\nglossary.html\nindex.html\nlicense.html\npy-modindex.html\nc-api/allocation.html\nc-api/apiabiversion.html\nc-api/arg.html\nand 415 more...\n\n- Deleted\n\nimprove-page-nojs.html\nimprove-page.html\n_static/tachyon-example-flamegraph.html\n_static/tachyon-example-heatmap.html\nc-api/extension-modules.html\nc-api/interp-lifecycle.html\nc-api/lifecycle.html\nc-api/profiling.html\nc-api/sentinel.html\nc-api/slots.html\nand 30 more...",
+                "createdAt": "2026-06-25T07:13:05Z"
+              }
+            ]
+          },
           "title": "[3.13] gh-151763: Fix crash in `_interpqueues.create` on `MemoryError` (GH-152131)",
           "updatedAt": "2026-06-25T07:29:37Z"
         },
@@ -791,7 +1500,6 @@
             "login": "miss-islington"
           },
           "baseRefName": "3.14",
-          "timelineItems": { "nodes": [] },
           "body": "(cherry picked from commit a6c2d4ae3bd744610e1a8b70396effdabca1593d)\n\n\n<!-- gh-issue-number: gh-151763 -->\n* Issue: gh-151763\n<!-- /gh-issue-number -->\n",
           "closingIssuesReferences": {
             "nodes": []
@@ -814,6 +1522,7 @@
             ],
             "totalCount": 1
           },
+          "headRefOid": "5f1116909dcff9588d385d3cb7d3b30fe0c2d5ef",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -843,12 +1552,41 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-35"
+                  "login": "user-30"
                 }
               }
             ]
           },
           "state": "MERGED",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-13"
+                    }
+                  },
+                  "committedDate": "2026-06-25T07:04:17Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "miss-islington"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-25T07:04:20Z",
+                "requestedReviewer": {
+                  "login": "user-30"
+                }
+              }
+            ]
+          },
           "title": "[3.14] gh-151763: Fix crash in `_interpqueues.create` on `MemoryError` (GH-152131)",
           "updatedAt": "2026-06-25T07:31:32Z"
         },
@@ -860,7 +1598,6 @@
             "login": "miss-islington"
           },
           "baseRefName": "3.15",
-          "timelineItems": { "nodes": [] },
           "body": "(cherry picked from commit a6c2d4ae3bd744610e1a8b70396effdabca1593d)\n\n\n<!-- gh-issue-number: gh-151763 -->\n* Issue: gh-151763\n<!-- /gh-issue-number -->\n",
           "closingIssuesReferences": {
             "nodes": []
@@ -883,6 +1620,7 @@
             ],
             "totalCount": 1
           },
+          "headRefOid": "a815197eba49c8b26fc9373ad494f8e5d03df37a",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -912,12 +1650,41 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-35"
+                  "login": "user-30"
                 }
               }
             ]
           },
           "state": "MERGED",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-13"
+                    }
+                  },
+                  "committedDate": "2026-06-25T07:04:12Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "miss-islington"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-25T07:04:14Z",
+                "requestedReviewer": {
+                  "login": "user-30"
+                }
+              }
+            ]
+          },
           "title": "[3.15] gh-151763: Fix crash in `_interpqueues.create` on `MemoryError` (GH-152131)",
           "updatedAt": "2026-06-25T07:32:30Z"
         },
@@ -926,10 +1693,9 @@
             "nodes": []
           },
           "author": {
-            "login": "user-59"
+            "login": "user-95"
           },
           "baseRefName": "main",
-          "timelineItems": { "nodes": [] },
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsu",
           "closingIssuesReferences": {
             "nodes": []
@@ -940,7 +1706,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-59"
+                      "login": "user-95"
                     }
                   },
                   "message": "",
@@ -952,6 +1718,7 @@
             ],
             "totalCount": 1
           },
+          "headRefOid": "dcf5de8de6d84d7bd6d9bce1b57f4fa550aea7e5",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -979,22 +1746,74 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-35"
+                  "login": "user-30"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-21"
+                  "login": "user-44"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-60"
+                  "login": "user-28"
                 }
               }
             ]
           },
           "state": "CLOSED",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-95"
+                    }
+                  },
+                  "committedDate": "2026-06-25T06:42:38Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-95"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-25T06:44:59Z",
+                "requestedReviewer": {
+                  "login": "user-30"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-25T06:44:59Z",
+                "requestedReviewer": {
+                  "login": "user-44"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-25T06:44:59Z",
+                "requestedReviewer": {
+                  "login": "user-28"
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-95"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing el",
+                "createdAt": "2026-06-25T07:20:15Z"
+              }
+            ]
+          },
           "title": "gh-151763: Fix OOM cleanup of initial thread state",
           "updatedAt": "2026-06-25T07:20:15Z"
         },
@@ -1003,10 +1822,9 @@
             "nodes": []
           },
           "author": {
-            "login": "user-29"
+            "login": "user-13"
           },
           "baseRefName": "main",
-          "timelineItems": { "nodes": [] },
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit a",
           "closingIssuesReferences": {
             "nodes": []
@@ -1017,7 +1835,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-29"
+                      "login": "user-13"
                     }
                   },
                   "message": "",
@@ -1051,6 +1869,7 @@
             ],
             "totalCount": 3
           },
+          "headRefOid": "0870a6061da920b32f91b5b6d7a62a9fc3106259",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -1067,7 +1886,7 @@
             "nodes": [
               {
                 "author": {
-                  "login": "user-21"
+                  "login": "user-44"
                 },
                 "state": "APPROVED"
               }
@@ -1087,12 +1906,132 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-35"
+                  "login": "user-30"
                 }
               }
             ]
           },
           "state": "MERGED",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-13"
+                    }
+                  },
+                  "committedDate": "2026-06-24T22:01:11Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-13"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-24T22:01:44Z",
+                "requestedReviewer": {
+                  "login": "user-44"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-24T22:01:45Z",
+                "requestedReviewer": {
+                  "login": "user-30"
+                }
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-44"
+                },
+                "submittedAt": "2026-06-25T01:14:15Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-13"
+                    }
+                  },
+                  "committedDate": "2026-06-25T06:33:40Z",
+                  "committer": {
+                    "name": null,
+                    "user": null
+                  }
+                }
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-13"
+                    }
+                  },
+                  "committedDate": "2026-06-25T06:35:06Z",
+                  "committer": {
+                    "name": null,
+                    "user": null
+                  }
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "miss-islington-app"
+                },
+                "bodyText": "Thanks @user-13 for the PR 🌮🎉.. I'm working now to backport this PR to: 3.13, 3.14, 3.15.\n🐍🍒⛏🤖",
+                "createdAt": "2026-06-25T07:04:07Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-13"
+                },
+                "createdAt": "2026-06-25T07:04:08Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-51"
+                },
+                "bodyText": "GH-152158 is a backport of this pull request to the 3.15 branch.",
+                "createdAt": "2026-06-25T07:04:21Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-51"
+                },
+                "bodyText": "GH-152159 is a backport of this pull request to the 3.14 branch.",
+                "createdAt": "2026-06-25T07:04:27Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-51"
+                },
+                "bodyText": "GH-152160 is a backport of this pull request to the 3.13 branch.",
+                "createdAt": "2026-06-25T07:04:32Z"
+              }
+            ]
+          },
           "title": "gh-151763: Fix crash in `_interpqueues.create` on `MemoryError`",
           "updatedAt": "2026-06-25T07:04:32Z"
         },
@@ -1101,10 +2040,9 @@
             "nodes": []
           },
           "author": {
-            "login": "user-61"
+            "login": "user-104"
           },
           "baseRefName": "main",
-          "timelineItems": { "nodes": [] },
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur ad",
           "closingIssuesReferences": {
             "nodes": []
@@ -1115,7 +2053,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-61"
+                      "login": "user-104"
                     }
                   },
                   "message": "",
@@ -1128,7 +2066,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-61"
+                      "login": "user-104"
                     }
                   },
                   "message": "",
@@ -1141,7 +2079,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-61"
+                      "login": "user-104"
                     }
                   },
                   "message": "",
@@ -1186,6 +2124,7 @@
             ],
             "totalCount": 6
           },
+          "headRefOid": "3e027a128e50b93e84b675188ffffcc52ebbcc4b",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -1202,7 +2141,7 @@
             "nodes": [
               {
                 "author": {
-                  "login": "user-29"
+                  "login": "user-13"
                 },
                 "state": "COMMENTED"
               },
@@ -1214,7 +2153,7 @@
               },
               {
                 "author": {
-                  "login": "user-28"
+                  "login": "user-45"
                 },
                 "state": "APPROVED"
               }
@@ -1234,12 +2173,225 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-22"
+                  "login": "user-48"
                 }
               }
             ]
           },
           "state": "MERGED",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-24T18:03:37Z",
+                "requestedReviewer": {
+                  "login": "user-45"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-24T18:03:37Z",
+                "requestedReviewer": {
+                  "login": "user-48"
+                }
+              },
+              {
+                "__typename": "HeadRefForcePushedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-104"
+                },
+                "createdAt": "2026-06-24T18:18:53Z"
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-13"
+                },
+                "submittedAt": "2026-06-24T20:51:59Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "octocat"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit a",
+                "createdAt": "2026-06-24T21:15:31Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-104"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dol",
+                "createdAt": "2026-06-24T21:33:34Z"
+              },
+              {
+                "__typename": "HeadRefForcePushedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-104"
+                },
+                "createdAt": "2026-06-24T22:06:24Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-104"
+                    }
+                  },
+                  "committedDate": "2026-06-24T22:52:10Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-104"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "HeadRefForcePushedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-104"
+                },
+                "createdAt": "2026-06-24T22:52:28Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-104"
+                    }
+                  },
+                  "committedDate": "2026-06-24T22:55:09Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-104"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-104"
+                    }
+                  },
+                  "committedDate": "2026-06-24T22:57:22Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-104"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-104"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, cons",
+                "createdAt": "2026-06-24T22:59:33Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-104"
+                    }
+                  },
+                  "committedDate": "2026-06-25T01:02:00Z",
+                  "committer": {
+                    "name": null,
+                    "user": null
+                  }
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-104"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLore",
+                "createdAt": "2026-06-25T13:52:46Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "octocat"
+                    }
+                  },
+                  "committedDate": "2026-06-27T13:53:49Z",
+                  "committer": {
+                    "name": null,
+                    "user": null
+                  }
+                }
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "octocat"
+                },
+                "submittedAt": "2026-06-28T10:36:23Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-31"
+                },
+                "bodyText": "This PR is stale because it has been open for 90 days with no activity.",
+                "createdAt": "2026-10-05T06:19:14Z"
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-45"
+                },
+                "submittedAt": "2026-10-05T08:28:47Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-45"
+                    }
+                  },
+                  "committedDate": "2026-10-05T08:29:59Z",
+                  "committer": {
+                    "name": null,
+                    "user": null
+                  }
+                }
+              }
+            ]
+          },
           "title": "gh-152107: Fix crash when creating a dict item iterator under MemoryError",
           "updatedAt": "2026-10-05T09:10:19Z"
         },
@@ -1251,7 +2403,6 @@
             "login": "miss-islington"
           },
           "baseRefName": "3.15",
-          "timelineItems": { "nodes": [] },
           "body": "(cherry picked from commit ce8b81fff4094bd0cfb0c57193135bfc904c0ca2)\n\n\n<!-- gh-issue-number: gh-151763 -->\n* Issue: gh-151763\n<!-- /gh-issue-number -->\n",
           "closingIssuesReferences": {
             "nodes": []
@@ -1274,6 +2425,7 @@
             ],
             "totalCount": 1
           },
+          "headRefOid": "bd3482d050284fbaaf8a2d810fc9197242f57fce",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -1303,6 +2455,28 @@
             "nodes": []
           },
           "state": "MERGED",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-95"
+                    }
+                  },
+                  "committedDate": "2026-06-24T15:56:59Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "miss-islington"
+                    }
+                  }
+                }
+              }
+            ]
+          },
           "title": "[3.15] gh-151763: Fix NULL dereference in `os._path_normpath()` under OOM (GH-151779)",
           "updatedAt": "2026-06-24T16:25:34Z"
         },
@@ -1314,7 +2488,6 @@
             "login": "miss-islington"
           },
           "baseRefName": "3.14",
-          "timelineItems": { "nodes": [] },
           "body": "(cherry picked from commit ce8b81fff4094bd0cfb0c57193135bfc904c0ca2)\n\n\n<!-- gh-issue-number: gh-151763 -->\n* Issue: gh-151763\n<!-- /gh-issue-number -->\n",
           "closingIssuesReferences": {
             "nodes": []
@@ -1337,6 +2510,7 @@
             ],
             "totalCount": 1
           },
+          "headRefOid": "3bee42994d417290e2125ef54de6ca7d93cebcf1",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -1366,6 +2540,28 @@
             "nodes": []
           },
           "state": "MERGED",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-95"
+                    }
+                  },
+                  "committedDate": "2026-06-24T15:56:53Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "miss-islington"
+                    }
+                  }
+                }
+              }
+            ]
+          },
           "title": "[3.14] gh-151763: Fix NULL dereference in `os._path_normpath()` under OOM (GH-151779)",
           "updatedAt": "2026-06-24T16:23:22Z"
         },
@@ -1377,7 +2573,6 @@
             "login": "miss-islington"
           },
           "baseRefName": "3.13",
-          "timelineItems": { "nodes": [] },
           "body": "(cherry picked from commit ce8b81fff4094bd0cfb0c57193135bfc904c0ca2)\n\n\n<!-- gh-issue-number: gh-151763 -->\n* Issue: gh-151763\n<!-- /gh-issue-number -->\n",
           "closingIssuesReferences": {
             "nodes": []
@@ -1400,6 +2595,7 @@
             ],
             "totalCount": 1
           },
+          "headRefOid": "62a346a6d51c8615d9c314cb09266758d90c49fe",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -1429,6 +2625,37 @@
             "nodes": []
           },
           "state": "MERGED",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-95"
+                    }
+                  },
+                  "committedDate": "2026-06-24T15:56:47Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "miss-islington"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-46"
+                },
+                "bodyText": "Documentation build overview\n\n📚 cpython-previews | 🛠️ Build #33293002 | 📁 Comparing 62a346a against main (ce8b81f)\n\n   🔍 Preview build   \n\n465 files changed · ± 425 modified · - 40 deleted\n\n± Modified\n\nabout.html\nbugs.html\ncopyright.html\nglossary.html\nindex.html\nlicense.html\npy-modindex.html\nc-api/allocation.html\nc-api/apiabiversion.html\nc-api/arg.html\nand 415 more...\n\n- Deleted\n\nimprove-page-nojs.html\nimprove-page.html\n_static/tachyon-example-flamegraph.html\n_static/tachyon-example-heatmap.html\nc-api/extension-modules.html\nc-api/interp-lifecycle.html\nc-api/lifecycle.html\nc-api/profiling.html\nc-api/sentinel.html\nc-api/slots.html\nand 30 more...",
+                "createdAt": "2026-06-24T16:00:23Z"
+              }
+            ]
+          },
           "title": "[3.13] gh-151763: Fix NULL dereference in `os._path_normpath()` under OOM (GH-151779)",
           "updatedAt": "2026-06-24T16:22:29Z"
         },
@@ -1440,7 +2667,6 @@
             "login": "miss-islington"
           },
           "baseRefName": "3.14",
-          "timelineItems": { "nodes": [] },
           "body": "(cherry picked from commit 22dd5b5b374c8eb4def7d55bb8de5928e345c73a)\n\n\n<!-- gh-issue-number: gh-151763 -->\n* Issue: gh-151763\n<!-- /gh-issue-number -->\n",
           "closingIssuesReferences": {
             "nodes": []
@@ -1463,6 +2689,7 @@
             ],
             "totalCount": 1
           },
+          "headRefOid": "08f03fa398d3c64f2abfdf6538b5f46c54608ab5",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -1492,12 +2719,41 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-22"
+                  "login": "user-48"
                 }
               }
             ]
           },
           "state": "MERGED",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-13"
+                    }
+                  },
+                  "committedDate": "2026-06-24T11:46:53Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "miss-islington"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-24T11:46:55Z",
+                "requestedReviewer": {
+                  "login": "user-48"
+                }
+              }
+            ]
+          },
           "title": "[3.14] gh-151763: Fix possible crash on `CodeType` deallocation (GH-152034)",
           "updatedAt": "2026-06-24T12:11:49Z"
         },
@@ -1509,7 +2765,6 @@
             "login": "miss-islington"
           },
           "baseRefName": "3.15",
-          "timelineItems": { "nodes": [] },
           "body": "(cherry picked from commit 22dd5b5b374c8eb4def7d55bb8de5928e345c73a)\n\n\n<!-- gh-issue-number: gh-151763 -->\n* Issue: gh-151763\n<!-- /gh-issue-number -->\n",
           "closingIssuesReferences": {
             "nodes": []
@@ -1532,6 +2787,7 @@
             ],
             "totalCount": 1
           },
+          "headRefOid": "8eed594628d150ea13687984b66f7b4ed9c06110",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -1561,12 +2817,41 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-22"
+                  "login": "user-48"
                 }
               }
             ]
           },
           "state": "MERGED",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-13"
+                    }
+                  },
+                  "committedDate": "2026-06-24T11:46:47Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "miss-islington"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-24T11:46:49Z",
+                "requestedReviewer": {
+                  "login": "user-48"
+                }
+              }
+            ]
+          },
           "title": "[3.15] gh-151763: Fix possible crash on `CodeType` deallocation (GH-152034)",
           "updatedAt": "2026-06-24T12:17:47Z"
         },
@@ -1575,10 +2860,9 @@
             "nodes": []
           },
           "author": {
-            "login": "user-29"
+            "login": "user-13"
           },
           "baseRefName": "main",
-          "timelineItems": { "nodes": [] },
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit a",
           "closingIssuesReferences": {
             "nodes": []
@@ -1589,7 +2873,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-29"
+                      "login": "user-13"
                     }
                   },
                   "message": "",
@@ -1601,6 +2885,7 @@
             ],
             "totalCount": 1
           },
+          "headRefOid": "a1ae864530ff551033da628c2d8154edda4ef0ae",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -1617,7 +2902,7 @@
             "nodes": [
               {
                 "author": {
-                  "login": "user-33"
+                  "login": "user-23"
                 },
                 "state": "APPROVED"
               }
@@ -1637,17 +2922,103 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-21"
+                  "login": "user-44"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-22"
+                  "login": "user-48"
                 }
               }
             ]
           },
           "state": "MERGED",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-13"
+                    }
+                  },
+                  "committedDate": "2026-06-23T20:49:21Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-13"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-23T20:49:50Z",
+                "requestedReviewer": {
+                  "login": "user-44"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-23T20:49:51Z",
+                "requestedReviewer": {
+                  "login": "user-48"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-24T11:19:01Z",
+                "requestedReviewer": {
+                  "login": "user-23"
+                }
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-23"
+                },
+                "submittedAt": "2026-06-24T11:36:11Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "miss-islington-app"
+                },
+                "bodyText": "Thanks @user-13 for the PR 🌮🎉.. I'm working now to backport this PR to: 3.14, 3.15.\n🐍🍒⛏🤖",
+                "createdAt": "2026-06-24T11:46:43Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-13"
+                },
+                "createdAt": "2026-06-24T11:46:45Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-51"
+                },
+                "bodyText": "GH-152069 is a backport of this pull request to the 3.15 branch.",
+                "createdAt": "2026-06-24T11:46:56Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-51"
+                },
+                "bodyText": "GH-152070 is a backport of this pull request to the 3.14 branch.",
+                "createdAt": "2026-06-24T11:47:03Z"
+              }
+            ]
+          },
           "title": "gh-151763: Fix possible crash on `CodeType` deallocation",
           "updatedAt": "2026-06-24T11:47:03Z"
         },
@@ -1656,10 +3027,9 @@
             "nodes": []
           },
           "author": {
-            "login": "user-29"
+            "login": "user-13"
           },
           "baseRefName": "main",
-          "timelineItems": { "nodes": [] },
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.",
           "closingIssuesReferences": {
             "nodes": []
@@ -1670,7 +3040,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-29"
+                      "login": "user-13"
                     }
                   },
                   "message": "",
@@ -1682,6 +3052,7 @@
             ],
             "totalCount": 1
           },
+          "headRefOid": "0d4498d71d56bfff149932f3ec63b65aee41943d",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -1698,7 +3069,7 @@
             "nodes": [
               {
                 "author": {
-                  "login": "user-21"
+                  "login": "user-44"
                 },
                 "state": "COMMENTED"
               }
@@ -1716,12 +3087,65 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-35"
+                  "login": "user-30"
                 }
               }
             ]
           },
           "state": "CLOSED",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-13"
+                    }
+                  },
+                  "committedDate": "2026-06-23T14:30:41Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-13"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-23T14:32:47Z",
+                "requestedReviewer": {
+                  "login": "user-44"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-23T14:32:48Z",
+                "requestedReviewer": {
+                  "login": "user-30"
+                }
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-44"
+                },
+                "submittedAt": "2026-06-23T16:38:18Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-13"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit",
+                "createdAt": "2026-06-23T16:41:57Z"
+              }
+            ]
+          },
           "title": "gh-151763: Fix `_interpreters.capture_exception` crash on memory errors",
           "updatedAt": "2026-06-23T16:41:58Z"
         },
@@ -1729,15 +3153,14 @@
           "assignees": {
             "nodes": [
               {
-                "login": "user-12"
+                "login": "user-33"
               }
             ]
           },
           "author": {
-            "login": "user-34"
+            "login": "user-70"
           },
           "baseRefName": "main",
-          "timelineItems": { "nodes": [] },
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLore",
           "closingIssuesReferences": {
             "nodes": []
@@ -1748,7 +3171,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-34"
+                      "login": "user-70"
                     }
                   },
                   "message": "",
@@ -1761,7 +3184,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-34"
+                      "login": "user-70"
                     }
                   },
                   "message": "",
@@ -1773,6 +3196,7 @@
             ],
             "totalCount": 2
           },
+          "headRefOid": "1c1487c6f0f28b9f9488d5508e4bd7f67f75c8aa",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -1789,7 +3213,7 @@
             "nodes": [
               {
                 "author": {
-                  "login": "user-12"
+                  "login": "user-33"
                 },
                 "state": "COMMENTED"
               }
@@ -1809,22 +3233,191 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-11"
+                  "login": "user-72"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-22"
+                  "login": "user-48"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-24"
+                  "login": "user-63"
                 }
               }
             ]
           },
           "state": "MERGED",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-70"
+                    }
+                  },
+                  "committedDate": "2026-06-23T07:11:52Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-70"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-23T07:17:30Z",
+                "requestedReviewer": {
+                  "login": "user-33"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-23T07:17:30Z",
+                "requestedReviewer": {
+                  "login": "user-72"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-23T07:17:31Z",
+                "requestedReviewer": {
+                  "login": "user-48"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-23T07:17:31Z",
+                "requestedReviewer": {
+                  "login": "user-63"
+                }
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-70"
+                    }
+                  },
+                  "committedDate": "2026-06-23T07:21:58Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-70"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-33"
+                },
+                "submittedAt": "2026-07-02T00:33:15Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "miss-islington-app"
+                },
+                "bodyText": "Thanks @user-70 for the PR, and @user-33 for merging it 🌮🎉.. I'm working now to backport this PR to: 3.13, 3.14, 3.15.\n🐍🍒⛏🤖",
+                "createdAt": "2026-07-02T00:34:20Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-33"
+                },
+                "createdAt": "2026-07-02T00:34:22Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-70"
+                },
+                "createdAt": "2026-07-02T00:34:22Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-51"
+                },
+                "bodyText": "GH-152836 is a backport of this pull request to the 3.15 branch.",
+                "createdAt": "2026-07-02T00:34:33Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "miss-islington-app"
+                },
+                "bodyText": "Sorry, @user-70 and @user-33, I could not cleanly backport this to 3.13 due to a conflict.\nPlease backport using cherry_picker on command line.\ncherry_picker 669299b62f6c2176d4bedcf550fb9baaabd6a9d6 3.13",
+                "createdAt": "2026-07-02T00:34:36Z"
+              },
+              {
+                "__typename": "AssignedEvent",
+                "assignee": {
+                  "login": "user-33"
+                },
+                "createdAt": "2026-07-02T00:34:36Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-33"
+                },
+                "createdAt": "2026-07-02T00:34:37Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-70"
+                },
+                "createdAt": "2026-07-02T00:34:37Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-51"
+                },
+                "bodyText": "GH-152837 is a backport of this pull request to the 3.14 branch.",
+                "createdAt": "2026-07-02T00:34:39Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-51"
+                },
+                "bodyText": "GH-152840 is a backport of this pull request to the 3.13 branch.",
+                "createdAt": "2026-07-02T01:50:36Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-70"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum d",
+                "createdAt": "2026-07-02T01:51:04Z"
+              }
+            ]
+          },
           "title": "gh-151763: Fix OOM-0013 crash when the parser or compiler fails to allocate",
           "updatedAt": "2026-07-02T01:51:04Z"
         },
@@ -1833,10 +3426,9 @@
             "nodes": []
           },
           "author": {
-            "login": "user-62"
+            "login": "user-97"
           },
           "baseRefName": "main",
-          "timelineItems": { "nodes": [] },
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing ",
           "closingIssuesReferences": {
             "nodes": []
@@ -1847,7 +3439,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-62"
+                      "login": "user-97"
                     }
                   },
                   "message": "",
@@ -1860,7 +3452,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-62"
+                      "login": "user-97"
                     }
                   },
                   "message": "",
@@ -1873,7 +3465,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-62"
+                      "login": "user-97"
                     }
                   },
                   "message": "",
@@ -1896,6 +3488,7 @@
             ],
             "totalCount": 4
           },
+          "headRefOid": "d702f01a308049a9ce8bbbc25584d8ca7ffbc35f",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -1923,22 +3516,134 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-12"
+                  "login": "user-33"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-11"
+                  "login": "user-72"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-63"
+                  "login": "user-50"
                 }
               }
             ]
           },
           "state": "OPEN",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-97"
+                    }
+                  },
+                  "committedDate": "2026-06-22T16:33:42Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-97"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-97"
+                    }
+                  },
+                  "committedDate": "2026-06-22T16:55:49Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-97"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-22T16:57:50Z",
+                "requestedReviewer": {
+                  "login": "user-33"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-22T16:57:50Z",
+                "requestedReviewer": {
+                  "login": "user-72"
+                }
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-50"
+                },
+                "submittedAt": "2026-06-23T08:32:24Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-97"
+                    }
+                  },
+                  "committedDate": "2026-06-23T09:38:05Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-97"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-97"
+                    }
+                  },
+                  "committedDate": "2026-06-23T09:38:45Z",
+                  "committer": {
+                    "name": null,
+                    "user": null
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-23T09:39:43Z",
+                "requestedReviewer": {
+                  "login": "user-50"
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-31"
+                },
+                "bodyText": "This PR is stale because it has been open for 90 days with no activity.",
+                "createdAt": "2026-09-23T06:10:48Z"
+              }
+            ]
+          },
           "title": "gh-151763: Fix double decref in _PyPegen_raise_error_known_location()",
           "updatedAt": "2026-09-23T06:10:49Z"
         },
@@ -1947,10 +3652,9 @@
             "nodes": []
           },
           "author": {
-            "login": "user-59"
+            "login": "user-95"
           },
           "baseRefName": "main",
-          "timelineItems": { "nodes": [] },
           "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor s",
           "closingIssuesReferences": {
             "nodes": []
@@ -1961,7 +3665,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-59"
+                      "login": "user-95"
                     }
                   },
                   "message": "",
@@ -1974,7 +3678,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-59"
+                      "login": "user-95"
                     }
                   },
                   "message": "",
@@ -1986,6 +3690,7 @@
             ],
             "totalCount": 2
           },
+          "headRefOid": "97f1148a52d5b0da12da5599a790ec4fd66fea8b",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -2002,7 +3707,7 @@
             "nodes": [
               {
                 "author": {
-                  "login": "user-63"
+                  "login": "user-50"
                 },
                 "state": "COMMENTED"
               }
@@ -2020,23 +3725,87 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-35"
+                  "login": "user-30"
                 }
               }
             ]
           },
           "state": "OPEN",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-95"
+                    }
+                  },
+                  "committedDate": "2026-06-22T04:53:40Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-95"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-06-22T04:57:36Z",
+                "requestedReviewer": {
+                  "login": "user-30"
+                }
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-50"
+                },
+                "submittedAt": "2026-06-22T12:28:13Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-95"
+                    }
+                  },
+                  "committedDate": "2026-06-22T14:16:57Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-95"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-31"
+                },
+                "bodyText": "This PR is stale because it has been open for 90 days with no activity.",
+                "createdAt": "2026-09-23T00:16:25Z"
+              }
+            ]
+          },
           "title": "gh-151763: Fix OOM-0014 crash in _interpchannels._channel_id",
           "updatedAt": "2026-09-23T00:16:26Z"
         }
       ],
       "rateLimit": {
-        "remaining": 4969,
-        "resetAt": "2026-11-04T22:46:14Z"
+        "remaining": 4931,
+        "resetAt": "2026-11-07T09:29:53Z"
       }
     }
   },
-  "query": "query FetchTreePullRequests($ids: [ID!]!) { nodes(ids: $ids) { ... on PullRequest { number title state isDraft updatedAt baseRefName body mergeCommit { oid } repository { nameWithOwner defaultBranchRef { name } } closingIssuesReferences(first: 100) { nodes { number repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } commits(first: 100) { totalCount nodes { commit { message parents { totalCount } committer { user { login } } } } } timelineItems(last: 50, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW, READY_FOR_REVIEW_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, MENTIONED_EVENT, REVIEW_REQUESTED_EVENT, ASSIGNED_EVENT]) { nodes { __typename ... on PullRequestCommit { commit { committedDate author { name user { login } } committer { name user { login } } } } ... on IssueComment { createdAt author { __typename login } bodyText } ... on PullRequestReview { submittedAt author { __typename login } } ... on ReadyForReviewEvent { createdAt actor { __typename login } } ... on HeadRefForcePushedEvent { createdAt actor { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } ... on ReviewRequestedEvent { createdAt requestedReviewer { ... on User { login } ... on Bot { login } } } ... on AssignedEvent { createdAt assignee { ... on User { login } ... on Bot { login } } } } } } } rateLimit { remaining resetAt } }",
-  "reset": 1793832374,
+  "query": "query FetchTreePullRequests($ids: [ID!]!) { nodes(ids: $ids) { ... on PullRequest { number title state isDraft updatedAt baseRefName body mergeCommit { oid } headRefOid repository { nameWithOwner defaultBranchRef { name } } closingIssuesReferences(first: 100) { nodes { number repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } commits(first: 100) { totalCount nodes { commit { message parents { totalCount } committer { user { login } } } } } timelineItems(last: 50, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW, READY_FOR_REVIEW_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, MENTIONED_EVENT, REVIEW_REQUESTED_EVENT, ASSIGNED_EVENT]) { nodes { __typename ... on PullRequestCommit { commit { committedDate author { name user { login } } committer { name user { login } } } } ... on IssueComment { createdAt author { __typename login } bodyText } ... on PullRequestReview { submittedAt author { __typename login } } ... on ReadyForReviewEvent { createdAt actor { __typename login } } ... on HeadRefForcePushedEvent { createdAt actor { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } ... on ReviewRequestedEvent { createdAt requestedReviewer { ... on User { login } ... on Bot { login } } } ... on AssignedEvent { createdAt assignee { ... on User { login } ... on Bot { login } } } } } } } rateLimit { remaining resetAt } }",
+  "reset": 1794043793,
   "status": 200
 }

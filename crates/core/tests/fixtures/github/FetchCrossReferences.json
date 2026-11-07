@@ -2,8 +2,8 @@
   "body": {
     "data": {
       "rateLimit": {
-        "remaining": 4971,
-        "resetAt": "2026-11-04T22:46:14Z"
+        "remaining": 4933,
+        "resetAt": "2026-11-07T09:29:53Z"
       },
       "repository": {
         "issue": {
@@ -19,10 +19,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7opRYh",
                   "number": 151779,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-06-24T16:10:40Z"
                 }
               },
               {
@@ -30,10 +30,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7orl9R",
                   "number": 151798,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-09-23T00:16:07Z"
                 }
               },
               {
@@ -51,10 +51,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7o3C3P",
                   "number": 151843,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-06-24T09:25:05Z"
                 }
               },
               {
@@ -62,10 +62,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7pAk8P",
                   "number": 151902,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-09-23T00:16:26Z"
                 }
               },
               {
@@ -78,10 +78,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7pSEyY",
                   "number": 151931,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-09-23T06:10:49Z"
                 }
               },
               {
@@ -89,10 +89,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7phn5X",
                   "number": 151968,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-07-02T01:51:04Z"
                 }
               },
               {
@@ -100,10 +100,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7psd-R",
                   "number": 152013,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-06-23T16:41:58Z"
                 }
               },
               {
@@ -111,10 +111,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7p1KZj",
                   "number": 152034,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-06-24T11:47:03Z"
                 }
               },
               {
@@ -127,10 +127,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7qFqRr",
                   "number": 152069,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-06-24T12:17:47Z"
                 }
               },
               {
@@ -138,10 +138,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7qFqZg",
                   "number": 152070,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-06-24T12:11:49Z"
                 }
               },
               {
@@ -149,10 +149,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7qL-fF",
                   "number": 152094,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-06-24T16:22:29Z"
                 }
               },
               {
@@ -160,10 +160,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7qL-os",
                   "number": 152095,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-06-24T16:23:22Z"
                 }
               },
               {
@@ -171,10 +171,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7qL-xb",
                   "number": 152096,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-06-24T16:25:34Z"
                 }
               },
               {
@@ -187,10 +187,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7qOtDl",
                   "number": 152110,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-10-05T09:10:19Z"
                 }
               },
               {
@@ -208,10 +208,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7qTxlr",
                   "number": 152131,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-06-25T07:04:32Z"
                 }
               },
               {
@@ -224,10 +224,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7qbyQa",
                   "number": 152155,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-06-25T07:20:15Z"
                 }
               },
               {
@@ -240,10 +240,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7qcNre",
                   "number": 152158,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-06-25T07:32:30Z"
                 }
               },
               {
@@ -251,10 +251,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7qcN1M",
                   "number": 152159,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-06-25T07:31:32Z"
                 }
               },
               {
@@ -262,10 +262,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7qcN-V",
                   "number": 152160,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-06-25T07:29:37Z"
                 }
               },
               {
@@ -273,10 +273,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7qc1BM",
                   "number": 152164,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-10-05T06:19:18Z"
                 }
               },
               {
@@ -284,10 +284,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7qc8-U",
                   "number": 152165,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-10-05T06:19:20Z"
                 }
               },
               {
@@ -305,10 +305,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7s6Zrw",
                   "number": 152836,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-07-02T08:23:28Z"
                 }
               },
               {
@@ -316,10 +316,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7s6Zzx",
                   "number": 152837,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-07-02T08:23:12Z"
                 }
               },
               {
@@ -327,10 +327,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7s7TRk",
                   "number": 152840,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-07-02T08:22:50Z"
                 }
               },
               {
@@ -338,10 +338,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7wfdCW",
                   "number": 153548,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-09-22T05:42:40Z"
                 }
               },
               {
@@ -354,10 +354,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c7zX_mq",
                   "number": 154019,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-10-24T08:59:35Z"
                 }
               },
               {
@@ -365,10 +365,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c72fVzh",
                   "number": 154714,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-07-26T08:16:46Z"
                 }
               },
               {
@@ -376,10 +376,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c72fV1L",
                   "number": 154715,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-07-26T08:25:29Z"
                 }
               },
               {
@@ -387,10 +387,10 @@
                   "__typename": "PullRequest",
                   "id": "PR_kwDOBN0Z8c72fV4H",
                   "number": 154717,
-                  "updatedAt": "2026-11-04T10:00:00Z",
                   "repository": {
                     "nameWithOwner": "python/cpython"
-                  }
+                  },
+                  "updatedAt": "2026-07-26T08:16:54Z"
                 }
               }
             ],
@@ -404,6 +404,6 @@
     }
   },
   "query": "query FetchCrossReferences($owner: String!, $name: String!, $number: Int!, $last: Int!, $before: String) { repository(owner: $owner, name: $name) { issue(number: $number) { timelineItems(last: $last, before: $before, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number updatedAt repository { nameWithOwner } } } } } } } } rateLimit { remaining resetAt } }",
-  "reset": 1793832374,
+  "reset": 1794043793,
   "status": 200
 }

@@ -8,8 +8,9 @@
 )]
 
 use std::ffi::OsStr;
-use std::io;
+use std::io::{self, Write};
 use std::process::{Child, ChildStderr, Command, Stdio};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use rustls::CertificateError;
@@ -165,11 +166,12 @@ fn is_outside_certificate_dates(cause: &ureq::Error) -> bool {
     )
 }
 
-/// Starts `git` with `args`, its error output piped for its progress, which it writes in English.
+/// Starts `git` with `args` and `input` on its standard input, its error output piped for its progress, which
+/// it writes in English.
 ///
 /// A Repository git can't read fails rather than asking for a password nobody sees: no terminal prompt, and
 /// no credential helper, since Git Credential Manager on Windows would open a sign-in window.
-pub(crate) fn start_git(args: &[&OsStr]) -> io::Result<(Child, ChildStderr)> {
+pub(crate) fn start_git(args: &[&OsStr], input: &[u8]) -> io::Result<(Child, ChildStderr)> {
     let mut command = Command::new("git");
     let _ = command
         .args(["-c", "credential.helper="])
@@ -178,7 +180,7 @@ pub(crate) fn start_git(args: &[&OsStr]) -> io::Result<(Child, ChildStderr)> {
         .env("GCM_INTERACTIVE", "never")
         .env("LC_ALL", "C")
         .env("LANGUAGE", "C")
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
     without_window(&mut command);
@@ -186,6 +188,12 @@ pub(crate) fn start_git(args: &[&OsStr]) -> io::Result<(Child, ChildStderr)> {
     #[cfg(unix)]
     let _ = std::os::unix::process::CommandExt::process_group(&mut command, 0);
     let mut git = command.spawn()?;
+    // On a thread of its own, so a git that writes before it reads can't leave both waiting on a full pipe.
+    // A git that stops reading says why on its error output. Closing the input tells git that is all.
+    if let Some(mut stdin) = git.stdin.take() {
+        let input = input.to_vec();
+        let _ = thread::spawn(move || drop(stdin.write_all(&input)));
+    }
     match git.stderr.take() {
         Some(progress) => Ok((git, progress)),
         None => {

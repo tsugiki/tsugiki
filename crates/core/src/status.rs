@@ -6,6 +6,7 @@ use time::OffsetDateTime;
 
 use crate::error::Error;
 use crate::github::Login;
+use crate::github::pull_requests::PrHead;
 use crate::repository::RepositoryName;
 
 /// The app's state, shown in the status bar.
@@ -96,6 +97,8 @@ pub struct OpenSync {
 
 type AnnounceActivity = Box<dyn FnMut(Option<&SyncActivity>) + Send>;
 
+type AnnounceHeads = Box<dyn FnMut(&RepositoryName, Vec<PrHead>) + Send>;
+
 /// Holds the status and announces each change, so the app can pass it on as an event. It also announces when
 /// a Repository's stored facts change, so an open screen can ask again, and when a sync of the open
 /// Repository finishes (ADR 0008). The session's thread owns it, so nothing here needs a lock.
@@ -106,6 +109,7 @@ pub struct StatusBoard {
     announce_last_sync: Box<dyn FnMut(&LastSync) + Send>,
     sync_activity: Option<SyncActivity>,
     announce_sync_activity: AnnounceActivity,
+    announce_heads: AnnounceHeads,
 }
 
 impl StatusBoard {
@@ -117,6 +121,7 @@ impl StatusBoard {
             announce_last_sync: Box::new(|_| {}),
             sync_activity: None,
             announce_sync_activity: Box::new(|_| {}),
+            announce_heads: Box::new(|_, _| {}),
         }
     }
 
@@ -139,6 +144,18 @@ impl StatusBoard {
     pub fn with_sync_activity(mut self, announce: AnnounceActivity) -> Self {
         self.announce_sync_activity = announce;
         self
+    }
+
+    /// Also hands `announce` the heads of the PRs the user's work reaches in a Repository, each time a sync
+    /// saves its facts, for its mirror to fetch.
+    #[must_use]
+    pub fn with_heads(mut self, announce: AnnounceHeads) -> Self {
+        self.announce_heads = announce;
+        self
+    }
+
+    pub(crate) fn reached_heads(&mut self, repository: &RepositoryName, heads: Vec<PrHead>) {
+        (self.announce_heads)(repository, heads);
     }
 
     pub(crate) fn sync_activity(&mut self, activity: Option<SyncActivity>) {
@@ -179,6 +196,17 @@ pub(crate) mod testing {
             StatusBoard::new(Box::new(|_| {})).with_changes(Box::new(move |change: &Change| {
                 passed.send(change.clone()).unwrap();
             }));
+        (board, seen)
+    }
+
+    /// A board that passes on the PR heads it is handed, for the mirrors.
+    pub(crate) fn heads_board() -> (StatusBoard, Receiver<(RepositoryName, Vec<PrHead>)>) {
+        let (passed, seen) = mpsc::channel();
+        let board = StatusBoard::new(Box::new(|_| {})).with_heads(Box::new(
+            move |repository: &RepositoryName, heads: Vec<PrHead>| {
+                passed.send((repository.clone(), heads)).unwrap();
+            },
+        ));
         (board, seen)
     }
 

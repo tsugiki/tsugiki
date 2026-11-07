@@ -1,11 +1,14 @@
 use super::*;
 use crate::github::issue_content::IssueContent;
+use crate::github::pull_requests::{PrHead, PrState, PullRequestFacts};
 use crate::github::replay::Replayer;
 use crate::github::testing::{Canned, Scripted, answered, reply_ok, signed_in_as, signed_in_gh};
-use crate::github::{Login, Reply, Request, Transport, Unreachable};
+use crate::github::{CommitSha, Login, Reply, Request, Transport, Unreachable};
 use crate::repository::{RepositoryName, RepositorySettings};
 use crate::status::Change;
-use crate::status::testing::{announced, changes_board, quiet_board, showing, watched_board};
+use crate::status::testing::{
+    announced, changes_board, heads_board, quiet_board, showing, watched_board,
+};
 use crate::store::{ChangeCheck, SyncState};
 use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
 use std::cell::RefCell;
@@ -695,6 +698,7 @@ fn work_fetch() -> Result<Reply, Unreachable> {
         "latestReviews": { "nodes": [] },
         "lastCommit": { "nodes": [] },
         "mergeCommit": null,
+        "headRefOid": "89abcdef0123456789abcdef0123456789abcdef",
         "commits": { "totalCount": 0, "nodes": [] },
     });
     reply_ok(&format!(r#"{{"data":{{"nodes":[{node}],{WORK_RATE}}}}}"#))
@@ -779,6 +783,71 @@ fn a_sync_fills_the_workbench_and_says_so() {
     assert!(
         matches!(&workbench.items[..], [ListedItem { item: WorkbenchItem::StandalonePr(tree), .. }] if tree.row.number == 7),
         "{workbench:?}"
+    );
+}
+
+/// A PR of `author` in `gcmon`, stored with its branch at `head`.
+fn stored_pr(number: u32, author: &str, head: &str) -> PullRequestFacts {
+    PullRequestFacts {
+        number,
+        title: format!("gh-{number}: Fix it"),
+        state: PrState::Open,
+        is_draft: false,
+        author: Some(Login::new(author)),
+        target_branch: "main".to_owned(),
+        ci: None,
+        updated_at: OffsetDateTime::from_unix_timestamp(1).unwrap(),
+        review_requests: vec![],
+        latest_reviews: vec![],
+        assignees: vec![],
+        closing_issues: vec![],
+        merge_commit: None,
+        head: CommitSha::parse(head),
+        off_default: None,
+    }
+}
+
+#[test]
+fn a_sync_hands_the_mirror_the_heads_it_saved_of_the_prs_the_users_work_reaches() {
+    let (script, _asked) = Scripted::new(vec![
+        signed_in(),
+        work_search(&["a"]),
+        work_search(&[]),
+        work_search(&[]),
+        work_search(&[]),
+        work_fetch(),
+    ]);
+    let access = GitHubAccess {
+        transport: Box::new(script),
+        run_gh: signed_in_gh,
+    };
+    let folders = temp_folders("reached-heads");
+    let store = Store::open(&folders.database()).unwrap();
+    // The user's own PR, which the sync finds moved on, and a PR of someone else's.
+    let stored = vec![
+        stored_pr(7, "octocat", "0123abc"),
+        stored_pr(8, "some-author", "4567def"),
+    ];
+    store.save_pull_requests(&gcmon(), stored).unwrap();
+    store.close();
+    let (board, heads) = heads_board();
+    let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
+
+    session.requests().sync(plain_gcmon());
+    let handed = heads.recv_timeout(PLENTY).unwrap();
+    session.stop(PLENTY);
+    fs::remove_dir_all(folders.data).unwrap();
+
+    let moved = CommitSha::parse("89abcdef0123456789abcdef0123456789abcdef").unwrap();
+    assert_eq!(
+        handed,
+        (
+            gcmon(),
+            vec![PrHead {
+                number: 7,
+                commit: moved,
+            }]
+        )
     );
 }
 

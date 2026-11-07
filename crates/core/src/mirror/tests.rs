@@ -2,11 +2,14 @@ use std::fs;
 use std::io::{self, Read};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{Receiver, channel};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::{Duration, Instant};
 
 use super::*;
 use crate::error::ErrorKind;
+use crate::github::pull_requests::PrHead;
+use crate::github::{CommitSha, Login};
+use crate::status::Status;
 
 /// Longer than any of these tests should wait on a working git.
 const PLENTY: Duration = Duration::from_secs(60);
@@ -112,6 +115,44 @@ impl Place {
             Box::new(move |cloning| drop(announcing.send(cloning.cloned()))),
         );
         (mirrors, announced)
+    }
+}
+
+impl Place {
+    /// A PR `number` on the remote for `name`, as GitHub keeps one: a commit of its own under
+    /// `refs/pull/N/head`, on no branch. Gives the commit.
+    fn pull_request(&self, name: &RepositoryName, number: u32) -> String {
+        let work = self.remotes.join(format!("work-{}", name.name()));
+        fs::write(work.join("NEWS"), format!("PR {number}\n")).unwrap();
+        let _ = git(&work, &["add", "NEWS"]);
+        let _ = git(
+            &work,
+            &[
+                "-c",
+                "user.name=Contributor",
+                "-c",
+                "user.email=contributor@example.com",
+                "commit",
+                "-qm",
+                &format!("PR {number}"),
+            ],
+        );
+        let commit = git(&work, &["rev-parse", "HEAD"]).trim().to_owned();
+        let bare = self
+            .remotes
+            .join(name.owner())
+            .join(format!("{}.git", name.name()));
+        let _ = git(
+            &work,
+            &[
+                "push",
+                "-q",
+                &bare.to_string_lossy(),
+                &format!("HEAD:refs/pull/{number}/head"),
+            ],
+        );
+        let _ = git(&work, &["reset", "-q", "--hard", "HEAD~1"]);
+        commit
     }
 }
 
@@ -405,4 +446,369 @@ fn lines_from_the_server_or_without_a_percentage_say_nothing() {
     ] {
         assert_eq!(read_progress(line), None, "{line}");
     }
+}
+
+/// A git that tells the test each time the worker starts it, and ends when the test says.
+struct FakeGit {
+    starts: Sender<FakeStart>,
+}
+
+/// One start of the fake git.
+struct FakeStart {
+    args: Vec<String>,
+    input: String,
+    /// Closing it closes git's error output, as git does when it ends.
+    output: io::PipeWriter,
+    outcome: Sender<bool>,
+    /// Hears when the worker has asked how git ended, so what the test sends next comes after.
+    asked: Receiver<()>,
+    /// Hears when the worker stops this git.
+    stopped: Receiver<()>,
+}
+
+impl FakeStart {
+    /// Ends this git, and waits for the worker to hear how.
+    fn end(self, outcome: Outcome) {
+        self.outcome.send(outcome == Outcome::Succeeded).unwrap();
+        drop(self.output);
+        self.asked.recv_timeout(PLENTY).unwrap();
+    }
+
+    fn succeed(self) {
+        self.end(Outcome::Succeeded);
+    }
+
+    fn fail(self) {
+        self.end(Outcome::Failed);
+    }
+
+    fn refspecs(&self) -> Vec<&str> {
+        self.input.lines().collect()
+    }
+}
+
+#[derive(PartialEq, Eq)]
+enum Outcome {
+    Succeeded,
+    Failed,
+}
+
+struct FakeRun {
+    outcome: Receiver<bool>,
+    asking: Sender<()>,
+    stopping: Sender<()>,
+}
+
+impl Run for FakeRun {
+    fn succeeded(&mut self) -> bool {
+        let succeeded = self.outcome.recv().unwrap_or(false);
+        self.asking.send(()).unwrap();
+        succeeded
+    }
+
+    fn stop(&mut self) {
+        self.stopping.send(()).unwrap();
+    }
+}
+
+impl Git for FakeGit {
+    fn start(&self, args: &[&OsStr], input: &[u8]) -> io::Result<Started> {
+        let (output, writer) = io::pipe()?;
+        let (outcome, outcomes) = channel();
+        let (stopping, stopped) = channel();
+        let (asking, asked) = channel();
+        // A test that has stopped listening has a git that can't start.
+        self.starts
+            .send(FakeStart {
+                args: args
+                    .iter()
+                    .map(|arg| arg.to_string_lossy().into_owned())
+                    .collect(),
+                input: String::from_utf8_lossy(input).into_owned(),
+                output: writer,
+                outcome,
+                asked,
+                stopped,
+            })
+            .map_err(|_unheard| io::Error::other("the test has stopped listening"))?;
+        Ok(Started {
+            run: Box::new(FakeRun {
+                outcome: outcomes,
+                asking,
+                stopping,
+            }),
+            output: Box::new(output),
+        })
+    }
+}
+
+impl Place {
+    /// The worker with the fake git, and each start of it.
+    fn start_faked(&self) -> (Mirrors, Receiver<FakeStart>) {
+        let (starting, starts) = channel();
+        let mirrors = Mirrors::with_git(
+            Box::new(FakeGit { starts: starting }),
+            Ok(self.folders.clone()),
+            self.clone_source(),
+            Box::new(|_| {}),
+        );
+        (mirrors, starts)
+    }
+
+    /// A mirror that is already there, as far as the worker can tell.
+    fn mirrored(&self, repository: &RepositoryName) {
+        fs::create_dir_all(self.folders.mirror(repository)).unwrap();
+    }
+}
+
+fn head(number: u32) -> PrHead {
+    PrHead {
+        number,
+        commit: CommitSha::parse(&format!("{number:040x}")).unwrap(),
+    }
+}
+
+fn refspec(number: u32) -> String {
+    format!("+refs/pull/{number}/head*:refs/tsugiki/pull/{number}/head*")
+}
+
+#[test]
+fn the_heads_handed_over_together_go_in_one_fetch_into_the_mirror() {
+    let place = Place::new("one-batch");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+
+    mirrors
+        .requests()
+        .fetch_heads(cpython.clone(), vec![head(2), head(1)]);
+    let fetch = starts.recv_timeout(PLENTY).unwrap();
+
+    assert_eq!(fetch.refspecs(), [refspec(1), refspec(2)]);
+    let mirror = place.folders.mirror(&cpython);
+    assert_eq!(
+        fetch.args,
+        [
+            "-c",
+            "http.lowSpeedLimit=1",
+            "-c",
+            "http.lowSpeedTime=60",
+            "-C",
+            &mirror.to_string_lossy(),
+            "fetch",
+            "--stdin",
+            "--no-tags",
+            "--no-write-fetch-head",
+            "origin"
+        ]
+    );
+    fetch.succeed();
+    mirrors.stop(PLENTY);
+    assert!(starts.recv().is_err(), "one fetch, and nothing after it");
+}
+
+#[test]
+fn heads_handed_over_during_a_fetch_go_in_the_next() {
+    let place = Place::new("next-batch");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    let first = starts.recv_timeout(PLENTY).unwrap();
+    requests.fetch_heads(cpython.clone(), vec![head(1), head(2)]);
+    requests.fetch_heads(cpython.clone(), vec![head(3)]);
+    first.succeed();
+    let next = starts.recv_timeout(PLENTY).unwrap();
+
+    assert_eq!(next.refspecs(), [refspec(2), refspec(3)]);
+    next.succeed();
+    mirrors.stop(PLENTY);
+}
+
+#[test]
+fn a_fetched_head_isnt_fetched_again_and_a_failed_one_is() {
+    let place = Place::new("fetched-once");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    starts.recv_timeout(PLENTY).unwrap().succeed();
+    requests.fetch_heads(cpython.clone(), vec![head(1), head(2)]);
+    let second = starts.recv_timeout(PLENTY).unwrap();
+    assert_eq!(second.refspecs(), [refspec(2)]);
+    second.fail();
+    requests.fetch_heads(cpython.clone(), vec![head(1), head(2)]);
+    let third = starts.recv_timeout(PLENTY).unwrap();
+
+    assert_eq!(third.refspecs(), [refspec(2)]);
+    third.succeed();
+    mirrors.stop(PLENTY);
+}
+
+#[test]
+fn a_failed_fetch_tries_again_when_github_is_back() {
+    let place = Place::new("fetch-again");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    starts.recv_timeout(PLENTY).unwrap().fail();
+    requests.follow(&Status::Offline);
+    requests.follow(&Status::Online {
+        login: Login::new("octocat"),
+    });
+    let again = starts.recv_timeout(PLENTY).unwrap();
+
+    assert_eq!(again.refspecs(), [refspec(1)]);
+    again.succeed();
+    mirrors.stop(PLENTY);
+}
+
+#[test]
+fn heads_wait_for_their_mirror_to_be_cloned() {
+    let place = Place::new("heads-wait");
+    let cpython = named("python/cpython");
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.clone_mirror(cpython.clone());
+    let clone = starts.recv_timeout(PLENTY).unwrap();
+    requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    // What a real clone leaves, for the worker to move into place.
+    fs::create_dir_all(clone.args.last().unwrap()).unwrap();
+    clone.succeed();
+    let fetch = starts.recv_timeout(PLENTY).unwrap();
+
+    assert_eq!(fetch.refspecs(), [refspec(1)]);
+    fetch.succeed();
+    mirrors.stop(PLENTY);
+}
+
+#[test]
+fn heads_without_a_mirror_wait_and_start_nothing() {
+    let place = Place::new("no-mirror");
+    let (mirrors, starts) = place.start_faked();
+
+    mirrors
+        .requests()
+        .fetch_heads(named("python/cpython"), vec![head(1)]);
+    mirrors.stop(PLENTY);
+
+    assert!(starts.recv().is_err());
+}
+
+#[test]
+fn quitting_stops_a_fetch_under_way() {
+    let place = Place::new("stop-fetch");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+
+    mirrors.requests().fetch_heads(cpython, vec![head(1)]);
+    let fetch = starts.recv_timeout(PLENTY).unwrap();
+    mirrors.stop(PLENTY);
+
+    assert_eq!(fetch.stopped.recv_timeout(PLENTY), Ok(()));
+}
+
+#[test]
+fn a_fetch_that_cant_start_leaves_only_a_trace() {
+    let place = Place::new("cant-fetch");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    drop(starts);
+    let requests = mirrors.requests();
+
+    // The second hand-over is the news a stalled worker waits for, and it tries once more.
+    requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    requests.fetch_heads(cpython, vec![head(1)]);
+    mirrors.stop(PLENTY);
+}
+
+#[test]
+fn offline_holds_the_worker() {
+    let place = Place::new("offline");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.follow(&Status::Offline);
+    requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    requests.clone_mirror(named("octo-org/hello"));
+    mirrors.stop(PLENTY);
+
+    assert!(starts.recv().is_err());
+}
+
+#[test]
+fn a_rate_limit_doesnt_hold_the_worker() {
+    let place = Place::new("rate-limited");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.follow(&Status::OfflineAs {
+        last_login: Login::new("octocat"),
+    });
+    requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    requests.follow(&Status::Problem {
+        problem: Error::new(
+            ErrorKind::RateLimited { resets_at: None },
+            "GitHub's rate limit",
+        ),
+    });
+    let fetch = starts.recv_timeout(PLENTY).unwrap();
+
+    assert_eq!(fetch.refspecs(), [refspec(1)]);
+    fetch.succeed();
+    mirrors.stop(PLENTY);
+}
+
+#[test]
+fn a_fetch_brings_a_prs_head_into_the_mirror_and_a_head_github_lacks_fails_nothing() {
+    let place = Place::new("real-heads");
+    let hello = named("octo-org/hello");
+    place.remote(&hello);
+    let (mirrors, announced) = place.start();
+    mirrors.requests().clone_mirror(hello.clone());
+    let _clone = one_clone(&announced);
+    let commit = place.pull_request(&hello, 1);
+
+    let heads = vec![
+        PrHead {
+            number: 1,
+            commit: CommitSha::parse(&commit).unwrap(),
+        },
+        head(2),
+    ];
+    mirrors.requests().fetch_heads(hello.clone(), heads);
+    let mirror = place.folders.mirror(&hello);
+    let fetched = mirror.join("refs/tsugiki/pull/1/head");
+    let deadline = Instant::now() + PLENTY;
+    while !fetched.exists() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(20));
+    }
+    mirrors.stop(PLENTY);
+
+    assert_eq!(
+        git(&mirror, &["rev-parse", "refs/tsugiki/pull/1/head"]).trim(),
+        commit
+    );
+    assert_eq!(
+        git(
+            &mirror,
+            &["for-each-ref", "--format=%(refname)", "refs/tsugiki"]
+        ),
+        "refs/tsugiki/pull/1/head
+"
+    );
 }

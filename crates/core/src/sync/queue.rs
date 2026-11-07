@@ -190,7 +190,7 @@ impl Syncs {
             None => self
                 .queue
                 .iter()
-                .find(|queued| self.is_open(&queued.sync.repository))
+                .find(|queued| self.is_open(&queued.sync.settings.name))
                 .map(|queued| (&queued.sync, queued.sync.part())),
         };
         if open.is_none() && self.queue.is_empty() {
@@ -199,7 +199,7 @@ impl Syncs {
         let mut elsewhere: Vec<RepositoryName> = self
             .queue
             .iter()
-            .map(|queued| &queued.sync.repository)
+            .map(|queued| &queued.sync.settings.name)
             .filter(|repository| !self.is_open(repository))
             .cloned()
             .collect();
@@ -210,7 +210,7 @@ impl Syncs {
         };
         Some(SyncActivity {
             open: open.map(|(sync, part)| OpenSync {
-                repository: sync.repository.clone(),
+                repository: sync.settings.name.clone(),
                 part,
                 pages: sync
                     .first_sync
@@ -242,6 +242,17 @@ impl Syncs {
         }
     }
 
+    /// The settings of `repository` as its sync runs with them, while it is queued or open.
+    pub fn settings(&self, repository: &RepositoryName) -> Option<&RepositorySettings> {
+        let queued = self.queue.iter().map(|queued| &queued.sync.settings);
+        let trees = self.trees.iter().map(|tree| &tree.sync.settings);
+        self.open
+            .iter()
+            .chain(queued)
+            .chain(trees)
+            .find(|settings| settings.name.is_same(repository))
+    }
+
     fn is_open(&self, repository: &RepositoryName) -> bool {
         self.open
             .as_ref()
@@ -251,13 +262,13 @@ impl Syncs {
     fn position(&self, repository: &RepositoryName) -> Option<usize> {
         self.queue
             .iter()
-            .position(|queued| queued.sync.repository.is_same(repository))
+            .position(|queued| queued.sync.settings.name.is_same(repository))
     }
 
     fn queued_mut(&mut self, repository: &RepositoryName) -> Option<&mut Queued> {
         self.queue
             .iter_mut()
-            .find(|queued| queued.sync.repository.is_same(repository))
+            .find(|queued| queued.sync.settings.name.is_same(repository))
     }
 
     /// Takes `repository`'s sync out of the queue.
@@ -272,7 +283,7 @@ impl Syncs {
         let now = Instant::now();
         let ready = |open: bool| {
             self.queue.iter().find(|queued| {
-                self.is_open(&queued.sync.repository) == open && queued.is_ready(now)
+                self.is_open(&queued.sync.settings.name) == open && queued.is_ready(now)
             })
         };
         let next = match (ready(true), ready(false)) {
@@ -280,7 +291,7 @@ impl Syncs {
             (Some(ready), _) | (None, Some(ready)) => ready,
             (None, None) => self.queue.iter().min_by_key(|queued| queued.held_until)?,
         };
-        self.position(&next.sync.repository)
+        self.position(&next.sync.settings.name)
     }
 
     /// The time the next step can run, if there is one.
@@ -360,7 +371,7 @@ impl Syncs {
                 {
                     log::error!(
                         "Tsugiki gave up syncing {}: {}",
-                        queued.sync.repository,
+                        queued.sync.settings.name,
                         problem.message
                     );
                 }
@@ -423,7 +434,7 @@ impl Syncs {
             }
         };
         tree.failures = 0;
-        let repository = tree.sync.repository.clone();
+        let repository = tree.sync.settings.name.clone();
         // A tree isn't a whole sync, so it doesn't move the time of the last one.
         let Some(stepped) = unfinished(step) else {
             return Ok(None);
@@ -441,7 +452,7 @@ impl Syncs {
         store: &Store,
     ) -> Result<Option<Progress>, StepFailure> {
         self.not_before = None;
-        let is_open = self.is_open(&queued.sync.repository);
+        let is_open = self.is_open(&queued.sync.settings.name);
         queued.held_until = None;
         let stepped = match queued.sync.step(github, store).map(unfinished) {
             Ok(Some(stepped)) => stepped,
@@ -456,7 +467,7 @@ impl Syncs {
         };
         self.open_went_last = is_open;
         queued.failures = 0;
-        let repository = queued.sync.repository.clone();
+        let repository = queued.sync.settings.name.clone();
         self.queue.push_back(queued);
         Ok(self.after_step(repository, stepped, github))
     }
@@ -464,7 +475,7 @@ impl Syncs {
     /// Puts back a sync whose step failed, at `at`. The status bar shows the problem beside the open
     /// Repository, so it names another Repository's, unless the problem speaks for all of GitHub.
     fn put_back(&mut self, at: usize, queued: Queued, problem: Error) -> StepFailure {
-        let repository = queued.sync.repository.clone();
+        let repository = queued.sync.settings.name.clone();
         self.queue.insert(at, queued);
         let problem = if self.is_open(&repository) || problem.kind.speaks_for_all_of_github() {
             problem

@@ -15,6 +15,7 @@ use crate::status::{Change, LastSync, Status, StatusBoard};
 use crate::store::{self, OpenReader, ReaderToOpen, Store, StoreReader};
 use crate::sync::{Progress, Syncs};
 use crate::token::Token;
+use crate::workbench::Workbench;
 
 // `run` catches a panic in its thread, to keep the window up and say that checking stopped. Tests unwind
 // whatever the release profile says, so only this line can catch the setting (docs/build-costs.md).
@@ -402,7 +403,12 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                 syncs.wait_until(due.status);
             }
             Turn::SyncStep => match syncs.step(&github, store) {
-                Ok(Some(Progress::Changed(change))) => board.changed(&change),
+                Ok(Some(Progress::Changed(change))) => {
+                    if !change.items.is_empty() {
+                        hand_over_heads(board, store, &syncs, &change.repository);
+                    }
+                    board.changed(&change);
+                }
                 Ok(Some(Progress::Finished(last_sync))) => board.last_sync(&last_sync),
                 Ok(None) => {}
                 // The next refresh shows whether GitHub is back, and the sync carries on from there.
@@ -413,6 +419,21 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             },
         }
         board.sync_activity(syncs.activity());
+    }
+}
+
+/// Hands the mirrors the heads of the PRs the user's work reaches in `repository`, after a step saved its
+/// facts. The mirror fetches only the heads that moved. A store that can't answer just saved, and the next
+/// step that saves says if it is in trouble, and hands the heads.
+fn hand_over_heads(
+    board: &mut StatusBoard,
+    store: &Store,
+    syncs: &Syncs,
+    repository: &RepositoryName,
+) {
+    if let (Some(settings), Ok(facts)) = (syncs.settings(repository), store.work_facts(repository))
+    {
+        board.reached_heads(repository, Workbench::reached_heads(facts, settings));
     }
 }
 

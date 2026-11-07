@@ -47,7 +47,7 @@ fn search_query(operation: &str) -> String {
 /// asks for CI on its own, because CI rollups are slow and `commits` can run to 100. The last 50 items of a
 /// timeline are enough for New activity, which has to say that someone did something lately.
 pub(super) const PULL_REQUEST_FIELDS: &str = "number title state isDraft updatedAt baseRefName body \
-                                   mergeCommit { oid } \
+                                   mergeCommit { oid } headRefOid \
                                    repository { nameWithOwner defaultBranchRef { name } } \
                                    closingIssuesReferences(first: 100) { nodes { number \
                                    repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } \
@@ -213,8 +213,18 @@ pub struct PullRequestFacts {
     pub closing_issues: Vec<u32>,
     /// The commit a merged PR became. GitHub gives one only for a merged PR.
     pub merge_commit: Option<CommitSha>,
+    /// The commit the PR's branch is at, which the Repository's mirror fetches. Nothing for a PR stored
+    /// before Tsugiki read heads.
+    pub head: Option<CommitSha>,
     /// The facts the link rules read on a PR that doesn't target the default branch (ADR 0011).
     pub off_default: Option<OffDefault>,
+}
+
+/// The commit a PR's branch is at, which the Repository's mirror fetches.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrHead {
+    pub number: u32,
+    pub commit: CommitSha,
 }
 
 /// The facts only a PR off the default branch needs, for the link rules (ADR 0011).
@@ -397,6 +407,7 @@ pub(super) struct PullRequestWire {
     base_ref_name: String,
     body: String,
     merge_commit: Option<MergeCommitWire>,
+    head_ref_oid: String,
     repository: RepositoryWire,
     closing_issues_references: Nodes<ClosingReference>,
     author: Option<Person>,
@@ -525,6 +536,7 @@ impl From<PullRequestWire> for (PullRequestFacts, ItemActivity) {
                 .merge_commit
                 .filter(|_| wire.state == PrState::Merged)
                 .and_then(|commit| CommitSha::parse(&commit.oid)),
+            head: CommitSha::parse(&wire.head_ref_oid),
             off_default: (!on_default).then(|| wire.commits.off_default(wire.body)),
         };
         (facts, activity)

@@ -55,10 +55,13 @@ const ready = (count: number): PrFiles => ({
   rows: count,
 });
 
+/** A HUD that times nothing, as these tests don't look at the jumps. */
+const untimed = { jumped: () => ({ rowsShown: () => undefined, spansShown: () => undefined }) };
+
 /** The Files tab of PR 11 once the core answered `answer`. */
 const shown = async (answer: PrFiles | null) => {
   core.pullRequestFiles.mockResolvedValue(ok(answer));
-  const files = new PrFilesState("python/cpython", 11);
+  const files = new PrFilesState("python/cpython", 11, untimed);
   await files.load();
   render(FilesTab, { files });
   return files;
@@ -109,7 +112,7 @@ it("shows nothing for a PR Tsugiki doesn't hold", async () => {
 
 it("says why it can't show the files", async () => {
   core.pullRequestFiles.mockResolvedValue({ status: "error", error: { message: "The mirror has no main" } });
-  const files = new PrFilesState("python/cpython", 11);
+  const files = new PrFilesState("python/cpython", 11, untimed);
   await files.load();
   render(FilesTab, { files });
 
@@ -149,6 +152,8 @@ it("draws each kind of row once the core sends them", async () => {
 });
 
 it("draws rows near what shows, and asks for the chunks there as it scrolls", async () => {
+  // The chunk after those that show waits for their spans.
+  core.pullRequestSpans.mockResolvedValue(ok([]));
   await shown(ready(10 * CHUNK));
   // Nothing is visible in a test, so it draws only the rows above and below.
   await vi.waitFor(() => {

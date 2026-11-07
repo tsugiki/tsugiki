@@ -498,6 +498,16 @@ export type IssueView_Serialize = {
 	content: IssueContent_Serialize | null,
 } & IssueItem_Serialize;
 
+/**
+ *  The jumps in a PR's diff while recording: each scroll that showed rows the window didn't hold, until
+ *  they were on screen (#180).
+ */
+export type Jumps = {
+	rows: Slowest,
+	/**  How many showed their rows plain, as their spans hadn't come in time. */
+	plain: number,
+};
+
 /**  When the open Repository last finished a sync. */
 export type LastSync = LastSync_Serialize | LastSync_Deserialize;
 
@@ -614,6 +624,8 @@ export type Measurement_Deserialize = {
 	refreshes?: Refreshes | null,
 	/**  The Issues opened while recording, if any. */
 	issues?: IssueOpenings_Deserialize | null,
+	/**  The jumps in a PR's diff while recording, if any. */
+	jumps?: Jumps | null,
 	/**  Each frame over the limit, in the order they came. */
 	long_frames: LongFrame_Deserialize[],
 };
@@ -632,6 +644,8 @@ export type Measurement_Serialize = {
 	refreshes: Refreshes | null,
 	/**  The Issues opened while recording, if any. */
 	issues: IssueOpenings_Serialize | null,
+	/**  The jumps in a PR's diff while recording, if any. */
+	jumps: Jumps | null,
 	/**  Each frame over the limit, in the order they came. */
 	long_frames: LongFrame_Serialize[],
 };
@@ -643,7 +657,7 @@ export type Measurement_Serialize = {
 export type Miss = Miss_Serialize | Miss_Deserialize;
 
 /**  A kind of miss that can repeat. A launch has one start-up. */
-export type MissKind = "view_query" | "issue_from_database" | "issue_from_github" | "input" | "long_frame";
+export type MissKind = "view_query" | "issue_from_database" | "issue_from_github" | "jump" | "input" | "long_frame";
 
 /**
  *  One budget the window missed, or the start-up time, which it logs each launch. Each time is in
@@ -658,6 +672,8 @@ export type Miss_Deserialize =
 { kind: "issue_from_database"; number: number; ms: number | null } | 
 /**  From the click on an Issue to its text arriving from GitHub. */
 { kind: "issue_from_github"; number: number; ms: number | null } | 
+/**  From a scroll in a PR's diff to the rows it hadn't held on screen (#180). */
+{ kind: "jump"; ms: number | null } | 
 /**  From a key or click to the next paint. */
 { kind: "input"; input: Input; ms: number | null } | 
 /**  A frame the browser reports as long, with the scripts that ran in it, longest first. */
@@ -678,6 +694,8 @@ export type Miss_Serialize =
 { kind: "issue_from_database"; number: number; ms: number | null } | 
 /**  From the click on an Issue to its text arriving from GitHub. */
 { kind: "issue_from_github"; number: number; ms: number | null } | 
+/**  From a scroll in a PR's diff to the rows it hadn't held on screen (#180). */
+{ kind: "jump"; ms: number | null } | 
 /**  From a key or click to the next paint. */
 { kind: "input"; input: Input; ms: number | null } | 
 /**  A frame the browser reports as long, with the scripts that ran in it, longest first. */

@@ -293,6 +293,7 @@ describe("recording", () => {
       view_queries: { count: 2, worst_ms: 30 },
       refreshes: { count: 1, dropped_frames: 2 },
       issues: null,
+      jumps: null,
       long_frames: [
         { at_s: 0.056, ms: 40, cause: null },
         { at_s: 0.12, ms: 48, cause: { kind: "view_query" } },
@@ -322,6 +323,7 @@ describe("recording", () => {
       view_queries: null,
       refreshes: null,
       issues: null,
+      jumps: null,
       long_frames: [],
     });
   });
@@ -690,5 +692,84 @@ describe("the misses it logs, shown or not", () => {
     hud.issueShown(7, true);
     expect(waiting.size).toBe(0);
     expect(core.recordMiss).not.toHaveBeenCalled();
+  });
+});
+
+describe("jumps in a diff", () => {
+  it("times a jump until its rows are painted, highlighted at once or plain until their spans are", () => {
+    const { hud, frame, setNow } = harness();
+    hud.toggle();
+    frame(0);
+    setNow(4);
+    const highlighted = hud.jumped();
+    highlighted.rowsShown(true);
+    frame(16);
+    expect(hud.jump).toEqual({ rows: 12, spans: 12 });
+
+    const plain = hud.jumped();
+    setNow(80);
+    plain.rowsShown(false);
+    frame(96);
+    expect(hud.jump).toEqual({ rows: 80, spans: null });
+    setNow(130);
+    plain.spansShown();
+    frame(144);
+    expect(hud.jump).toEqual({ rows: 80, spans: 128 });
+  });
+
+  it("shows only the last jump, whatever comes of one before it", () => {
+    const { hud, frame } = harness();
+    hud.toggle();
+    frame(0);
+    const older = hud.jumped();
+    older.rowsShown(false);
+    frame(16);
+    const newer = hud.jumped();
+    older.spansShown();
+    frame(32);
+    expect(hud.jump).toEqual({ rows: 16, spans: null });
+    newer.rowsShown(true);
+    frame(48);
+    expect(hud.jump).toEqual({ rows: 32, spans: 32 });
+  });
+
+  it("logs a jump over 100 ms, and a recording says the slowest and how many showed plain", async () => {
+    const { hud, core, frame } = harness();
+    hud.toggle();
+    frame(0);
+    hud.start();
+    hud.jumped().rowsShown(true);
+    frame(30);
+    const slow = hud.jumped();
+    slow.rowsShown(false);
+    frame(150);
+    await hud.stop();
+
+    expect(core.recordMiss).toHaveBeenCalledExactlyOnceWith({ kind: "jump", ms: 120 });
+    expect(core.recordMeasurement).toHaveBeenCalledWith(
+      expect.objectContaining({ jumps: { rows: { count: 2, worst_ms: 120 }, plain: 1 } }),
+    );
+  });
+
+  it("doesn't time a jump the window hid during", () => {
+    const { hud, frame, core } = harness();
+    const hidden = vi.spyOn(document, "hidden", "get");
+    const jump = hud.jumped();
+    hidden.mockReturnValue(true);
+    document.dispatchEvent(new Event("visibilitychange"));
+    hidden.mockReturnValue(false);
+    document.dispatchEvent(new Event("visibilitychange"));
+    jump.rowsShown(true);
+    frame(30_000);
+    expect(hud.jump).toBeUndefined();
+    expect(core.recordMiss).not.toHaveBeenCalled();
+    hidden.mockRestore();
+  });
+
+  it("times a jump while hidden, without a frame loop", () => {
+    const { hud, frame } = harness();
+    hud.jumped().rowsShown(true);
+    frame(20);
+    expect(hud.jump).toEqual({ rows: 20, spans: 20 });
   });
 });

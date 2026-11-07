@@ -311,13 +311,11 @@ fn each_row_is_highlighted_from_its_version_and_a_removed_line_from_the_merge_ba
         .unwrap();
     let all = 0..open.diff.row_count();
 
-    let spans = open.spans(&mirrored.mirror, all.clone());
-    let chunk = open.spans(&mirrored.mirror, 3..9);
-    // A diff of its own, as this one keeps each version it parsed.
-    let fresh = Diffs::default()
-        .get_or_read(&pr, || Ok(mirrored.read()))
-        .unwrap();
-    let unreadable = fresh.spans(Path::new("no-mirror"), all.clone());
+    let highlighter = Highlighter::start();
+    let spans = highlighter.spans(&open, &mirrored.mirror, all.clone());
+    let chunk = highlighter.spans(&open, &mirrored.mirror, 3..9);
+    // A highlighter of its own, as this one keeps each version it parsed.
+    let unreadable = Highlighter::start().spans(&open, Path::new("no-mirror"), all.clone());
 
     let drawn: Vec<String> = (open.diff.rows(all).iter().zip(&spans))
         .filter_map(|(row, spans)| match row {

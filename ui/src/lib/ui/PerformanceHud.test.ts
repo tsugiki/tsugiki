@@ -111,3 +111,18 @@ it("shows the last long frame, how long ago it was, and its cause", async () => 
     "Last long frame: 40.1 ms, 3 s ago, after a click",
   );
 });
+
+it("shows the last jump in a diff, and how long its rows showed plain", async () => {
+  const { hud } = shownHud();
+  render(PerformanceHud, { hud, refreshing: false });
+  expect(line("Jump in a diff")).toEqual({ value: "—", budget: "100 ms", missed: false });
+  hud.jump = { rows: 42, spans: 42 };
+  await Promise.resolve();
+  expect(line("Jump in a diff")).toEqual({ value: "42.0 ms", budget: "100 ms", missed: false });
+  hud.jump = { rows: 120, spans: null };
+  await Promise.resolve();
+  expect(line("Jump in a diff")).toEqual({ value: "120.0 ms, plain so far", budget: "100 ms", missed: true });
+  hud.jump = { rows: 60, spans: 140 };
+  await Promise.resolve();
+  expect(line("Jump in a diff").value).toBe("60.0 ms, plain until 140.0 ms");
+});

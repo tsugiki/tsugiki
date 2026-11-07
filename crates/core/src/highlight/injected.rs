@@ -76,8 +76,13 @@ struct Found {
 }
 
 impl Parsed {
-    /// Parses the code in other languages inside each layer, and adds it as a layer after the layers so far.
-    pub(super) fn inject(&mut self, parser: &mut Parser) {
+    /// Parses the code in other languages inside each layer, and adds it as a layer after the layers so far,
+    /// while `go_on` says to. It gives nothing if it stopped.
+    pub(super) fn inject(
+        &mut self,
+        parser: &mut Parser,
+        go_on: &mut dyn FnMut() -> bool,
+    ) -> Option<()> {
         let mut next = 0;
         while let Some(layer) = self.layers.get(next) {
             next += 1;
@@ -86,11 +91,15 @@ impl Parsed {
             }
             let depth = layer.depth + 1;
             for found in self.found(layer) {
+                if !go_on() {
+                    return None;
+                }
                 if let Some(layer) = self.parse_inside(parser, found, depth) {
                     self.layers.push(layer);
                 }
             }
         }
+        Some(())
     }
 
     /// The code in other languages that `layer`'s injections query finds, in the order it comes. Where

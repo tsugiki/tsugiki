@@ -20,6 +20,8 @@ pub struct Measurement {
     pub refreshes: Option<Refreshes>,
     /// The Issues opened while recording, if any.
     pub issues: Option<IssueOpenings>,
+    /// The jumps in a PR's diff while recording, if any.
+    pub jumps: Option<Jumps>,
     /// Each frame over the limit, in the order they came.
     pub long_frames: Vec<LongFrame>,
 }
@@ -55,6 +57,15 @@ pub struct IssueOpenings {
     pub from_database: Slowest,
     /// The ones whose text the database didn't hold, until that text arrived from GitHub.
     pub from_github: Option<Slowest>,
+}
+
+/// The jumps in a PR's diff while recording: each scroll that showed rows the window didn't hold, until
+/// they were on screen (#180).
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, Type)]
+pub struct Jumps {
+    pub rows: Slowest,
+    /// How many showed their rows plain, as their spans hadn't come in time.
+    pub plain: u32,
 }
 
 /// The most long frames the log lists from one recording, so the summary line stays easy to find.
@@ -177,11 +188,22 @@ impl Measurement {
                 )
             },
         );
+        let jumps = self.jumps.map_or_else(
+            || "no jumps in a diff".to_owned(),
+            |jumps| {
+                format!(
+                    "slowest jump in a diff {:.1} ms of {}, {} plain",
+                    jumps.rows.worst_ms,
+                    counted(jumps.rows.count, "jump", "jumps"),
+                    jumps.plain
+                )
+            },
+        );
         format!(
             "Performance of Tsugiki {} over {:.1} s: {}",
             env!("CARGO_PKG_VERSION"),
             self.seconds,
-            [frames, startup, keys, queries, refreshes, issues].join("; ")
+            [frames, startup, keys, queries, refreshes, issues, jumps].join("; ")
         )
     }
 }
@@ -228,6 +250,13 @@ mod tests {
                     worst_ms: 640.0,
                 }),
             }),
+            jumps: Some(Jumps {
+                rows: Slowest {
+                    count: 3,
+                    worst_ms: 61.04,
+                },
+                plain: 1,
+            }),
             long_frames: Vec::new(),
         };
 
@@ -237,7 +266,7 @@ mod tests {
                 "Performance of Tsugiki {} over 42.3 s: frame p95 12.1 ms, worst frame 31.0 ms, 2 of 2530 \
                  frames over 25 ms; start-up 812 ms; worst key to frame 9.0 ms of 14 keys; worst view query \
                  31.2 ms of 1 query; 0 frames dropped in 1 refresh; slowest Issue from the database 12.0 ms of \
-                 5 Issues, from GitHub 640.0 ms of 2",
+                 5 Issues, from GitHub 640.0 ms of 2; slowest jump in a diff 61.0 ms of 3 jumps, 1 plain",
                 env!("CARGO_PKG_VERSION")
             )
         );
@@ -253,6 +282,7 @@ mod tests {
             view_queries: None,
             refreshes: None,
             issues: None,
+            jumps: None,
             long_frames: Vec::new(),
         };
 
@@ -260,7 +290,7 @@ mod tests {
         assert!(
             summary.ends_with(
                 "over 0.5 s: no frames; start-up not seen; no keys; no view queries; no refresh; no Issues \
-                 opened"
+                 opened; no jumps in a diff"
             ),
             "{summary}"
         );
@@ -279,7 +309,7 @@ mod tests {
         assert!(
             summary.ends_with(
                 "1 frame dropped in 2 refreshes; slowest Issue from the database 8.0 ms of 1 Issue, none \
-                 from GitHub"
+                 from GitHub; no jumps in a diff"
             ),
             "{summary}"
         );
@@ -304,6 +334,7 @@ mod tests {
             view_queries: None,
             refreshes: None,
             issues: None,
+            jumps: None,
             long_frames: vec![
                 frame(1.0, Some(Cause::Key)),
                 frame(2.0, Some(Cause::Click)),
@@ -342,6 +373,7 @@ mod tests {
             view_queries: None,
             refreshes: None,
             issues: None,
+            jumps: None,
             long_frames: frames(101),
         };
 

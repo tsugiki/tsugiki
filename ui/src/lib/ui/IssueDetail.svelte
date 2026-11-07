@@ -1,10 +1,15 @@
 <script lang="ts">
   import { openLink, openOnGitHub, type GitHubItem } from "$lib/state/browser";
   import type { IssueViewState } from "$lib/state/issue-view.svelte";
-  import RenderedHtml from "./RenderedHtml.svelte";
-  import { ago, backportWords, headline, prStateWords } from "./workbench-row";
+  import Conversation from "./Conversation.svelte";
+  import { backportWords, headline, prStateWords } from "./workbench-row";
 
-  let { repository, issue, now }: { repository: string; issue: IssueViewState; now: Date } = $props();
+  let {
+    repository,
+    issue,
+    now,
+    onopenpr,
+  }: { repository: string; issue: IssueViewState; now: Date; onopenpr: (number: number) => void } = $props();
 
   let browserProblem = $state<string>();
 
@@ -14,9 +19,9 @@
   const followLink = async (address: string) => {
     browserProblem = await openLink(address);
   };
-  const earlierComments = (count: number) =>
-    count === 1 ? "1 earlier comment is on GitHub." : `${String(count)} earlier comments are on GitHub.`;
-  const openPr = (number: number) => () => void onGitHub({ kind: "pull_request", number });
+  const openPr = (number: number) => () => {
+    onopenpr(number);
+  };
 </script>
 
 <section class="detail" aria-label="Issue view">
@@ -57,18 +62,7 @@
     {/if}
 
     {#if view.content}
-      <RenderedHtml html={view.content.body_html} onlink={(address) => void followLink(address)} />
-      {#if view.content.earlier_comments > 0}
-        <p class="by">
-          {earlierComments(view.content.earlier_comments)}
-        </p>
-      {/if}
-      {#each view.content.comments as comment, position (position)}
-        <article>
-          <p class="by">{`${comment.author ?? "deleted user"} · ${ago(comment.created_at, now)}`}</p>
-          <RenderedHtml html={comment.body_html} onlink={(address) => void followLink(address)} />
-        </article>
-      {/each}
+      <Conversation content={view.content} {now} onlink={(address) => void followLink(address)} />
     {:else}
       <p class="by">Tsugiki hasn't read what this Issue says yet.</p>
     {/if}
@@ -119,10 +113,5 @@
     flex-direction: column;
     gap: 2px;
     padding: 4px 0;
-  }
-
-  article {
-    border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
-    margin-top: 12px;
   }
 </style>

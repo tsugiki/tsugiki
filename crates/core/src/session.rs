@@ -76,7 +76,14 @@ enum Message {
         item: Item,
         at: OffsetDateTime,
     },
-    FetchIssue(Item),
+    Fetch(Fetched),
+}
+
+/// An Issue or a PR on screen, whose conversation the session reads from GitHub.
+#[derive(Debug, PartialEq, Eq)]
+enum Fetched {
+    Issue(Item),
+    PullRequest(Item),
 }
 
 /// Asks the session about Repositories, from any thread. A check waits for what the session is doing first,
@@ -111,7 +118,24 @@ impl SessionRequests {
     /// where it is, since a window left open doesn't mean the user read what came in.
     pub fn fetch_issue(&self, repository: RepositoryName, number: u32) {
         let item = Item { repository, number };
-        drop(self.messages.send(Message::FetchIssue(item)));
+        drop(self.messages.send(Message::Fetch(Fetched::Issue(item))));
+    }
+
+    /// Tells the session the user opened PR `number`, which moves its Last seen and reads its Conversation
+    /// from GitHub, and returns at once. A session that can't ask GitHub still records Last seen.
+    pub fn open_pull_request(&self, repository: RepositoryName, number: u32) {
+        self.seen(repository.clone(), number);
+        self.fetch_pull_request(repository, number);
+    }
+
+    /// Asks the session to read a PR's Conversation on screen now, and returns at once. Like
+    /// `fetch_issue`, this leaves Last seen where it is.
+    pub fn fetch_pull_request(&self, repository: RepositoryName, number: u32) {
+        let item = Item { repository, number };
+        drop(
+            self.messages
+                .send(Message::Fetch(Fetched::PullRequest(item))),
+        );
     }
 
     /// Tells the session the user opened item `number`, which moves its Last seen, and returns at once.
@@ -236,8 +260,8 @@ enum Turn {
     Opened(RepositoryName),
     /// The user opened this item at this moment.
     Seen(Item, OffsetDateTime),
-    /// An Issue on screen needs what it says read from GitHub.
-    FetchIssue(Item),
+    /// An Issue or a PR on screen needs its conversation read from GitHub.
+    Fetch(Fetched),
     SyncStep,
     Stop,
 }
@@ -253,7 +277,7 @@ impl Refreshes {
                 Message::Check { .. }
                 | Message::Sync { .. }
                 | Message::Refresh
-                | Message::FetchIssue(_) => {}
+                | Message::Fetch(_) => {}
             }
         }
     }
@@ -277,7 +301,7 @@ impl Refreshes {
                 }
                 Ok(Message::Refresh) => return Turn::RefreshNow,
                 Ok(Message::Seen { item, at }) => return Turn::Seen(item, at),
-                Ok(Message::FetchIssue(item)) => return Turn::FetchIssue(item),
+                Ok(Message::Fetch(fetched)) => return Turn::Fetch(fetched),
                 Ok(Message::Check { name, reply }) => {
                     let today = github.clock().now().date();
                     #[expect(
@@ -363,9 +387,11 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             }
             Turn::Opened(repository) => show_last_sync(board, store, repository),
             Turn::Seen(item, at) => mark_seen(board, store, &item, at),
-            Turn::FetchIssue(item) => {
-                syncs.open_issue(&item.repository, item.number);
-                if let Err(problem) = fetch_issue(board, store, &github, item) {
+            Turn::Fetch(fetched) => {
+                if let Fetched::Issue(item) = &fetched {
+                    syncs.open_issue(&item.repository, item.number);
+                }
+                if let Err(problem) = fetch_conversation(board, store, &github, fetched) {
                     syncs.after_fetch_failure(&problem, due.status, github.clock());
                     board.set(status_after(problem, store));
                 }
@@ -401,21 +427,34 @@ fn mark_seen(board: &mut StatusBoard, store: &Store, item: &Item, at: OffsetDate
     }
 }
 
-/// Reads what an Issue says from GitHub, keeps it, and tells the window. The view goes on showing what was
-/// last read if this fails. An error returned here speaks for all of GitHub, so the status bar and the syncs
-/// need to hear it. Any other trouble is this one Issue's, and goes to the log.
-fn fetch_issue(
+/// Reads what an Issue or a PR says from GitHub, keeps it, and tells the window. GitHub numbers both from
+/// one sequence, so they share where they are kept. The view goes on showing what was last read if this
+/// fails. An error returned here speaks for all of GitHub, so the status bar and the syncs need to hear it.
+/// Any other trouble is this one item's, and goes to the log.
+fn fetch_conversation(
     board: &mut StatusBoard,
     store: &Store,
     github: &GitHub,
-    item: Item,
+    fetched: Fetched,
 ) -> Result<(), Error> {
-    let Item { repository, number } = item;
-    let content = match github.issue_content(&repository, number) {
+    let (Item { repository, number }, noun, read) = match fetched {
+        Fetched::Issue(item) => {
+            let read = github.issue_content(&item.repository, item.number);
+            (item, "Issue", read)
+        }
+        Fetched::PullRequest(item) => {
+            let read = github.pull_request_content(&item.repository, item.number);
+            (item, "PR", read)
+        }
+    };
+    let content = match read {
         Ok(content) => content,
         Err(problem) if problem.kind.speaks_for_all_of_github() => return Err(problem),
         Err(problem) => {
-            log::warn!("Tsugiki couldn't read Issue #{number}: {}", problem.message);
+            log::warn!(
+                "Tsugiki couldn't read {noun} #{number} in {repository}: {}",
+                problem.message
+            );
             return Ok(());
         }
     };

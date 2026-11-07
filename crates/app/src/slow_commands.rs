@@ -18,6 +18,7 @@ use tsugiki_core::settings::SettingsOwner;
 use tsugiki_core::store::StoreReader;
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
+use tsugiki_core::workbench::pr_view::PrView;
 use tsugiki_core::workbench::{Workbench, WorkbenchView};
 
 /// What adding the Repository the user typed would load. A check can wait out a stuck request to GitHub, so
@@ -78,6 +79,19 @@ pub(crate) fn issue(
     reader: State<'_, StoreReader>,
 ) -> Result<Option<IssueView>, Error> {
     crate::read_issue(repository, number, &owner, &reader)
+}
+
+/// The PR view of PR `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and never
+/// on GitHub (ADR 0018).
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn pull_request(
+    repository: &str,
+    number: u32,
+    owner: State<'_, SettingsOwner>,
+    reader: State<'_, StoreReader>,
+) -> Result<Option<PrView>, Error> {
+    crate::read_pull_request(repository, number, &owner, &reader)
 }
 
 /// Opens an Issue or a PR on GitHub in the system browser.

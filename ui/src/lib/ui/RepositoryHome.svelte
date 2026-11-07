@@ -2,9 +2,18 @@
   import { openOnGitHub, type GitHubItem } from "$lib/state/browser";
   import { hud } from "$lib/state/hud.svelte";
   import { IssueViewState } from "$lib/state/issue-view.svelte";
-  import { WorkbenchState, type BackportRow, type ListedItem } from "$lib/state/workbench.svelte";
+  import { PrViewState } from "$lib/state/pr-view.svelte";
+  import {
+    sameStop,
+    WorkbenchState,
+    type BackportRow,
+    type ListedItem,
+    type Stop,
+    type WorkbenchRow,
+  } from "$lib/state/workbench.svelte";
   import IssueDetail from "./IssueDetail.svelte";
   import { currentOs, isTextBox, keyName } from "./keys";
+  import PrDetail from "./PrDetail.svelte";
   import Sidebar from "./Sidebar.svelte";
   import { details, headline, issueDetails, preview, standaloneDetails } from "./workbench-row";
 
@@ -41,8 +50,8 @@
     void opened.load();
     return () => {
       opened.stop();
-      issue?.stop();
-      issue = undefined;
+      detail?.stop();
+      detail = undefined;
     };
   });
 
@@ -52,8 +61,8 @@
     if (workbench.items !== undefined) void hud.markUsable();
   });
 
-  /** The Issue in the Detail pane. */
-  let issue = $state<IssueViewState>();
+  /** The Issue or the PR in the Detail pane. */
+  let detail = $state<IssueViewState | PrViewState>();
   let browserProblem = $state<string>();
   let list = $state<HTMLElement>();
 
@@ -61,35 +70,54 @@
     browserProblem = await openOnGitHub(name, item);
   };
 
-  /** Shows an Issue in the Detail pane. A PR has no view of its own until stage 2, so it opens on GitHub. */
-  function open(item: ListedItem) {
-    workbench.cursor = item.number;
-    if (item.kind !== "issue") {
-      void onGitHub({ kind: "pull_request", number: item.number });
+  /**
+   * Shows the Issue or PR on line `stop` in the Detail pane. The PR already on show switches tabs instead,
+   * and the Issue already on show reads GitHub again.
+   */
+  function open(stop: Stop) {
+    workbench.cursor = stop;
+    if (stop.kind === "pull_request" && detail instanceof PrViewState && sameStop(detail.line, stop)) {
+      detail.switchTab();
       return;
     }
-    hud.issueOpened(item.number);
-    if (issue?.number === item.number) {
-      void issue.open();
+    hud.issueOpened(stop.number);
+    if (stop.kind === "issue" && detail instanceof IssueViewState && detail.number === stop.number) {
+      void detail.open();
+      return;
+    }
+    detail?.stop();
+    detail =
+      stop.kind === "issue"
+        ? new IssueViewState(name, stop.number)
+        : new PrViewState(name, stop.number, stop.issue);
+    void detail.load();
+  }
+
+  /** Leaves the PR view for the Issue the user opened it from, or for an empty Detail pane. */
+  function back(pr: PrViewState) {
+    if (pr.issue === undefined) {
+      pr.stop();
+      detail = undefined;
     } else {
-      issue?.stop();
-      issue = new IssueViewState(name, item.number);
-      void issue.load();
+      open({ number: pr.issue, kind: "issue", issue: undefined });
     }
   }
 
-  /** The Issue in the Detail pane, or else the item under the cursor. */
+  /** The Issue or PR in the Detail pane, or else the line under the cursor. */
   function currentOnGitHub(): GitHubItem | undefined {
-    if (issue) return { kind: "issue", number: issue.number };
-    const item = workbench.underCursor;
-    if (!item) return undefined;
-    return { kind: item.kind === "issue" ? "issue" : "pull_request", number: item.number };
+    if (detail instanceof IssueViewState) return { kind: "issue", number: detail.number };
+    if (detail) return { kind: "pull_request", number: detail.number };
+    const stop = workbench.underCursor;
+    return stop && { kind: stop.kind, number: stop.number };
   }
+
+  /** Names a line for the page, which can list a PR under two Issues. */
+  const lineName = (stop: Stop | undefined) => `${String(stop?.issue ?? "")}#${String(stop?.number)}`;
 
   function moveCursor(step: 1 | -1) {
     workbench.moveCursor(step);
     // Focus follows, so the row scrolls into view, and Enter presses its button.
-    list?.querySelector<HTMLElement>(`[data-item="${String(workbench.cursor)}"]`)?.focus();
+    list?.querySelector<HTMLElement>(`[data-item="${lineName(workbench.cursor)}"]`)?.focus();
   }
 
   /**
@@ -113,16 +141,43 @@
     } else if (key === "enter" && e.target === document.body && workbench.underCursor) {
       e.preventDefault();
       open(workbench.underCursor);
+    } else if (key === "escape" && detail instanceof PrViewState) {
+      e.preventDefault();
+      back(detail);
+    } else if ((key === "ctrl+pagedown" || key === "ctrl+pageup") && detail instanceof PrViewState) {
+      e.preventDefault();
+      detail.switchTab();
     }
   }
 </script>
 
-{#snippet backports(rows: BackportRow[])}
+{#snippet line(stop: Stop, text: string, strong: boolean)}
+  <button
+    class="open"
+    data-item={lineName(stop)}
+    aria-current={sameStop(workbench.cursor, stop) ? "true" : undefined}
+    onclick={() => {
+      open(stop);
+    }}
+  >
+    {#if strong}
+      <strong>{text}</strong>
+    {:else}
+      <span>{text}</span>
+    {/if}
+  </button>
+{/snippet}
+
+{#snippet pullRequest(row: WorkbenchRow, issue: number | undefined)}
+  {@render line({ number: row.number, kind: "pull_request", issue }, headline(row), false)}
+{/snippet}
+
+{#snippet backports(rows: BackportRow[], issue: number | undefined)}
   {#if rows.length > 0}
     <ul class="pull-requests">
       {#each rows as row (row.number)}
         <li>
-          <span>{headline(row)}</span>
+          {@render pullRequest(row, issue)}
           <small>{details(row)}</small>
         </li>
       {/each}
@@ -132,20 +187,11 @@
 
 {#snippet listed(item: ListedItem)}
   <li>
-    <button
-      class="open"
-      data-item={item.number}
-      aria-current={workbench.cursor === item.number ? "true" : undefined}
-      onclick={() => {
-        open(item);
-      }}
-    >
-      {#if item.attention}
-        <strong>{headline(item)}</strong>
-      {:else}
-        <span>{headline(item)}</span>
-      {/if}
-    </button>
+    {@render line(
+      { number: item.number, kind: item.kind === "issue" ? "issue" : "pull_request", issue: undefined },
+      headline(item),
+      item.attention !== null,
+    )}
     {#if item.attention}
       <small class="preview">{preview(item.attention)}</small>
     {/if}
@@ -154,10 +200,10 @@
       <ul class="pull-requests">
         {#each item.pull_requests as entry (entry.number)}
           <li>
-            <span>{headline(entry)}</span>
+            {@render pullRequest(entry, item.number)}
             <small>{details(entry)}</small>
             {#if entry.kind === "pr"}
-              {@render backports(entry.backports)}
+              {@render backports(entry.backports, item.number)}
             {/if}
           </li>
         {/each}
@@ -165,7 +211,7 @@
     {:else}
       <small>{standaloneDetails(item, now)}</small>
       {#if item.kind === "standalone_pr"}
-        {@render backports(item.backports)}
+        {@render backports(item.backports, undefined)}
       {/if}
     {/if}
   </li>
@@ -209,9 +255,29 @@
       {/if}
     {/if}
   </section>
-  {#if issue}
+  {#if detail instanceof IssueViewState}
+    {@const issue = detail}
     {#key issue}
-      <IssueDetail repository={name} {issue} {now} />
+      <IssueDetail
+        repository={name}
+        {issue}
+        {now}
+        onopenpr={(number) => {
+          open({ number, kind: "pull_request", issue: issue.number });
+        }}
+      />
+    {/key}
+  {:else if detail}
+    {@const pr = detail}
+    {#key pr}
+      <PrDetail
+        repository={name}
+        {pr}
+        {now}
+        onback={() => {
+          back(pr);
+        }}
+      />
     {/key}
   {/if}
 </div>

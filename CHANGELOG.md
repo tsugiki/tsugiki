@@ -7,6 +7,13 @@ release's body, and fails without it
 
 ## WIP
 
+### Added
+
+- A PR opens in the Detail pane, on a Conversation tab with its description and recent comments, and a Files
+  tab that stays empty until the diff arrives. The arrows stop on each PR and Backport in an Issue's tree.
+  `Enter` or a click opens one, as does a PR in the Issue view, and `Esc` or the `gh-N` link goes back to the
+  Issue. `Ctrl+PageDown` and `Ctrl+PageUp` switch tabs, and so do `Enter` and a click on the open PR's line.
+
 ## Version 0.1.1 (2026-11-07)
 
 Repositories sync in turns, so a first sync of a large Repository no longer holds back the one you have open.

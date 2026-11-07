@@ -20,6 +20,8 @@ const OWNED_KEYS = [
   "ctrl+f",
   "ctrl+b",
   "ctrl+alt+u",
+  "ctrl+pagedown",
+  "ctrl+pageup",
   "ctrl+enter",
   "ctrl+shift+e",
   "ctrl+k",

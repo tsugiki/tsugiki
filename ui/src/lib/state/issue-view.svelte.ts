@@ -1,92 +1,23 @@
-// The Issue on show in the Detail pane: opened once, asked for again each time the core says its Repository
-// changed (ADR 0008), and read from GitHub about once a minute while it's on screen (ADR 0015).
-import { commands, events, type IssueComment_Serialize, type IssueView_Serialize } from "$lib/data/bindings";
-import { hud } from "./hud.svelte";
+// The Issue on show in the Detail pane.
+import {
+  commands,
+  type IssueComment_Serialize,
+  type IssueContent_Serialize,
+  type IssueView_Serialize,
+} from "$lib/data/bindings";
+import { DetailState } from "./detail-view.svelte";
 
 export type IssueComment = IssueComment_Serialize;
+/** The description and recent comments of an Issue or a PR. */
+export type IssueContent = IssueContent_Serialize;
 export type IssueView = IssueView_Serialize;
 
-const MINUTE = 60_000;
-
-export class IssueViewState {
-  /** Undefined until the core answers, and null if Tsugiki doesn't hold this Issue. */
-  view = $state<IssueView | null>();
-  error = $state<string>();
-  readonly number: number;
-  #repository: string;
-  #lastQuestion = 0;
-  #stopListening: (() => void) | undefined;
-  #stopped = false;
-  #reading: ReturnType<typeof setInterval> | undefined;
-
+export class IssueViewState extends DetailState<IssueView> {
   constructor(repository: string, number: number) {
-    this.#repository = repository;
-    this.number = number;
-  }
-
-  /** Listens before it opens the Issue, so it hears the core saving what GitHub says. */
-  async load() {
-    try {
-      // A change can touch a PR in this Issue's tree, or give the Issue a new one, so any change asks again.
-      const stopListening = await events.changed.listen(({ payload }) => {
-        if (payload.repository === this.#repository) void this.#ask();
-      });
-      if (this.#stopped) {
-        stopListening();
-        return;
-      }
-      this.#stopListening = stopListening;
-    } catch (e) {
-      // With no listener the view would go stale, and the next good answer would clear this error.
-      this.error = String(e);
-      return;
-    }
-    this.#reading = setInterval(() => {
-      if (!document.hidden) void this.#fetch();
-    }, MINUTE);
-    await this.open();
-  }
-
-  /** Tells the core the user opened this Issue, then shows what it holds until GitHub answers. */
-  async open() {
-    await this.#say(commands.openIssue(this.#repository, this.number));
-    await this.#ask();
-  }
-
-  stop() {
-    this.#stopped = true;
-    this.#stopListening?.();
-    clearInterval(this.#reading);
-  }
-
-  #fetch = () => this.#say(commands.fetchIssue(this.#repository, this.number));
-
-  async #say(asked: ReturnType<typeof commands.openIssue>) {
-    const answer = await asked.catch((e: unknown) => ({
-      status: "error" as const,
-      error: { message: String(e) },
-    }));
-    if (answer.status === "error") this.error = answer.error.message;
-  }
-
-  async #ask() {
-    this.#lastQuestion += 1;
-    const question = this.#lastQuestion;
-    const answer = await hud
-      .timed(() => commands.issue(this.#repository, this.number))
-      .catch((e: unknown) => ({
-        status: "error" as const,
-        error: { message: String(e) },
-      }));
-    // A newer question reads newer facts, so this drops an older answer that arrives late.
-    if (question !== this.#lastQuestion) return;
-    if (answer.status === "ok") {
-      this.view = answer.data;
-      this.error = undefined;
-      // A view that has stopped is no longer on screen, though its last answer can still arrive.
-      if (!this.#stopped) hud.issueShown(this.number, answer.data !== null && answer.data.content !== null);
-    } else {
-      this.error = answer.error.message;
-    }
+    super(repository, number, {
+      open: (repository, number) => commands.openIssue(repository, number),
+      fetch: (repository, number) => commands.fetchIssue(repository, number),
+      read: (repository, number) => commands.issue(repository, number),
+    });
   }
 }

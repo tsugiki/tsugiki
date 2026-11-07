@@ -1,5 +1,6 @@
 //! Record mode (ADR 0009): `npm run record` asks real GitHub the client's read-only queries, with gh's
 //! token, and writes the scrubbed answers to `tests/fixtures/github`. Read them before you commit them.
+//! `npm run record -- conversation` records only a PR's Conversation.
 
 #![expect(
     clippy::expect_used,
@@ -35,6 +36,8 @@ const WORK_REPOSITORY: &str = "python/cpython";
 const CHECKED_REPOSITORY: &str = "tsugiki/tsugiki";
 /// How far back the refresh's recordings look, far enough that CPython has something to list.
 const REFRESH_WINDOW: Duration = Duration::days(1);
+/// A PR of Tsugiki's own with a description and comments, for the PR view's Conversation.
+const CONVERSATION: u32 = 162;
 /// A recording's page of a refresh, kept short because each answer goes in the repo.
 const REFRESH_PAGE: usize = 10;
 const ONLY_PAGE: PageRequest<'static> = PageRequest {
@@ -51,12 +54,29 @@ fn main() {
     );
     let recorder = Recorder::new(Box::new(Https::new()), fixtures.clone());
     let github = GitHub::new(Box::new(recorder), token);
+    if std::env::args().nth(1).as_deref() == Some("conversation") {
+        record_a_conversation(&github);
+        println!("Recorded to {}", fixtures.display());
+        return;
+    }
     let _ = github.viewer().expect("ask GitHub who the user is");
     let repository = RepositoryName::parse(WORK_REPOSITORY).expect("a Repository's name");
     record_a_refresh(&github, &repository);
     record_first_sync(&github, &scout);
     check_a_list(&scout);
     println!("Recorded to {}", fixtures.display());
+}
+
+/// Reads the Conversation of one of Tsugiki's own PRs.
+fn record_a_conversation(github: &GitHub) {
+    let repository = RepositoryName::parse(CHECKED_REPOSITORY).expect("a Repository's name");
+    let content = github
+        .pull_request_content(&repository, CONVERSATION)
+        .expect("read a PR's Conversation");
+    println!(
+        "PR #{CONVERSATION}'s Conversation has {} comments",
+        content.comments.len()
+    );
 }
 
 /// Asks for the list's tag and asks again with it, which real GitHub answers with a 304.

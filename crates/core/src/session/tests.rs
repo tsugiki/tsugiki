@@ -378,6 +378,62 @@ fn opening_a_pr_records_last_seen_and_asks_github_nothing() {
 }
 
 #[test]
+fn opening_a_pr_records_last_seen_and_keeps_its_recorded_conversation() {
+    let recordings = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
+    let access = GitHubAccess {
+        transport: Box::new(Replayer::new(recordings)),
+        run_gh: signed_in_gh,
+    };
+    let folders = temp_folders("open-pr");
+    let (board, changes) = changes_board();
+    let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
+    let tsugiki = RepositoryName::parse("tsugiki/tsugiki").unwrap();
+
+    session.requests().open_pull_request(tsugiki.clone(), 162);
+    // Last seen moves, and then the Conversation comes from GitHub.
+    for _ in 0..2 {
+        let _change = changes.recv_timeout(PLENTY).unwrap();
+    }
+    let (facts, content) = session.reader().issue_facts(&tsugiki, 162).unwrap();
+    session.stop(PLENTY);
+    fs::remove_dir_all(folders.data).unwrap();
+
+    let content = content.unwrap();
+    assert!(
+        content.body_html.contains("Closes"),
+        "{}",
+        content.body_html
+    );
+    let authors: Vec<_> = content
+        .comments
+        .iter()
+        .map(|comment| comment.author.clone())
+        .collect();
+    assert_eq!(
+        authors,
+        [Some(Login::new("user-0")), Some(Login::new("user-1"))]
+    );
+    assert_eq!(content.earlier_comments, 0);
+    assert!(facts.activity.last_seen.contains_key(&162));
+}
+
+#[test]
+fn reading_a_pr_on_screen_again_leaves_last_seen_where_it_is() {
+    let reply = reply_ok(
+        r#"{"data":{"repository":{"pullRequest":{"bodyHTML":"<p>Fixes the crash</p>",
+            "comments":{"totalCount":0,"nodes":[]}}}}}"#,
+    );
+    let access = replying(vec![signed_in(), reply]);
+
+    let (content, last_seen, _) = after_asking("fetch-pr", access, |asked| {
+        asked.fetch_pull_request(gcmon(), 7)
+    });
+
+    assert_eq!(content.unwrap().body_html, "<p>Fixes the crash</p>");
+    assert_eq!(last_seen, None);
+}
+
+#[test]
 fn opening_an_issue_with_no_token_still_records_last_seen() {
     let access = GitHubAccess {
         transport: Box::new(Canned(Err(Unreachable::Offline))),
@@ -467,7 +523,13 @@ fn what_an_issue_says_that_cant_be_stored_is_a_problem() {
     let access = replying(vec![signed_in(), issue_content_reply()]);
     let github = connect(&mut quiet_board(), &empty_store(), access).unwrap();
 
-    fetch_issue(&mut board, &Store::stopped(), &github, issue_7()).unwrap();
+    fetch_conversation(
+        &mut board,
+        &Store::stopped(),
+        &github,
+        Fetched::Issue(issue_7()),
+    )
+    .unwrap();
 
     assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
 }

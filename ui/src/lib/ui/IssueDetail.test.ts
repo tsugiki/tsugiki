@@ -70,11 +70,11 @@ const view: IssueView = {
 
 const NOW = new Date("2026-11-04T11:00:00Z");
 
-const shown = async (answer: IssueView | null) => {
+const shown = async (answer: IssueView | null, onopenpr = vi.fn()) => {
   core.issue.mockResolvedValue({ status: "ok", data: answer });
   const state = new IssueViewState("python/cpython", 7);
   await state.load();
-  render(IssueDetail, { repository: "python/cpython", issue: state, now: NOW });
+  render(IssueDetail, { repository: "python/cpython", issue: state, now: NOW, onopenpr });
   state.stop();
   return state;
 };
@@ -128,15 +128,16 @@ it("opens the title on GitHub", async () => {
   expect(core.openOnGithub).toHaveBeenCalledExactlyOnceWith("python/cpython", { kind: "issue", number: 7 });
 });
 
-it("opens a PR row and a Backport on GitHub", async () => {
-  await shown(view);
+it("opens a PR row and a Backport in the PR view", async () => {
+  const onopenpr = vi.fn();
+  await shown(view, onopenpr);
 
   await fireEvent.click(screen.getByRole("button", { name: "#10 gh-7: Fix it" }));
   await fireEvent.click(screen.getByRole("button", { name: "3.13 Open" }));
   await fireEvent.click(screen.getByRole("button", { name: "#14 gh-7: Fix it" }));
 
-  const opened = (number: number) => ["python/cpython", { kind: "pull_request", number }];
-  expect(core.openOnGithub.mock.calls).toEqual([opened(10), opened(12), opened(14)]);
+  expect(onopenpr.mock.calls).toEqual([[10], [12], [14]]);
+  expect(core.openOnGithub).not.toHaveBeenCalled();
 });
 
 it("sends a link in a comment to the browser, and says if that fails", async () => {
@@ -183,7 +184,7 @@ it("says why it can't show the Issue", async () => {
   core.issue.mockResolvedValue({ status: "error", error: { kind: "internal", message: "no database" } });
   const state = new IssueViewState("python/cpython", 7);
   await state.load();
-  render(IssueDetail, { repository: "python/cpython", issue: state, now: NOW });
+  render(IssueDetail, { repository: "python/cpython", issue: state, now: NOW, onopenpr: vi.fn() });
   state.stop();
 
   expect(screen.getByRole("alert").textContent).toContain("Tsugiki can't show this Issue: no database");

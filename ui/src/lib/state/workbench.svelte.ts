@@ -29,6 +29,27 @@ export type TreeEntry = TreeEntry_Serialize;
 export type WorkbenchRow = WorkbenchRow_Serialize;
 export type { BackportKind, CiState, PrState, ReviewState, WorkbenchView, WorkReason, Why };
 
+/** A line the cursor stops on: an item of the list, or a PR or Backport in its tree, with the Issue above. */
+export type Stop = { number: number; kind: "issue" | "pull_request"; issue: number | undefined };
+
+/** Whether two stops are the same line. A PR that fixes two Issues has a line under each. */
+export const sameStop = (a: Stop | undefined, b: Stop) => a?.number === b.number && a.issue === b.issue;
+
+/** The lines of `item` the cursor stops on, in the order the list shows them. */
+function stopsOf(item: ListedItem): Stop[] {
+  if (item.kind === "issue") {
+    const rows = item.pull_requests.flatMap((entry) =>
+      entry.kind === "pr" ? [entry.number, ...entry.backports.map((b) => b.number)] : [entry.number],
+    );
+    return [
+      { number: item.number, kind: "issue", issue: undefined },
+      ...rows.map((number) => ({ number, kind: "pull_request" as const, issue: item.number })),
+    ];
+  }
+  const backports = item.kind === "standalone_pr" ? item.backports.map((b) => b.number) : [];
+  return [item.number, ...backports].map((number) => ({ number, kind: "pull_request", issue: undefined }));
+}
+
 export class WorkbenchState {
   items = $state<ListedItem[]>();
   quiet = $state<ListedItem[]>([]);
@@ -37,8 +58,8 @@ export class WorkbenchState {
   filters = $state<FilterLine[]>([]);
   selected = $state<WorkbenchView>({ kind: "whole" });
   error = $state<string>();
-  /** The number of the item the list's keys act on. A re-query leaves it in place (ADR 0008). */
-  cursor = $state<number>();
+  /** The line the list's keys act on. A re-query leaves it in place (ADR 0008). */
+  cursor = $state<Stop>();
   #repository: string;
   #lastQuestion = 0;
   #stopListening: (() => void) | undefined;
@@ -74,17 +95,17 @@ export class WorkbenchState {
     await this.#ask();
   }
 
-  /** The item under the cursor, wherever the list now has it. */
-  get underCursor() {
-    return this.#listed().find((item) => item.number === this.cursor);
+  /** The line under the cursor, wherever the list now has it. */
+  get underCursor(): Stop | undefined {
+    return this.#stops().find((stop) => sameStop(this.cursor, stop));
   }
 
   /** Moves the cursor down the list, or up it, stopping at each end. With none yet it starts at the top. */
   moveCursor(step: 1 | -1) {
-    const numbers = this.#listed().map((item) => item.number);
-    const at = this.cursor === undefined ? -1 : numbers.indexOf(this.cursor);
-    const next = at === -1 ? 0 : Math.min(Math.max(at + step, 0), numbers.length - 1);
-    this.cursor = numbers[next] ?? this.cursor;
+    const stops = this.#stops();
+    const at = stops.findIndex((stop) => sameStop(this.cursor, stop));
+    const next = at === -1 ? 0 : Math.min(Math.max(at + step, 0), stops.length - 1);
+    this.cursor = stops[next] ?? this.cursor;
   }
 
   stop() {
@@ -92,8 +113,16 @@ export class WorkbenchState {
     this.#stopListening?.();
   }
 
-  #listed() {
-    return [...(this.items ?? []), ...this.quiet];
+  /** Moves the cursor after a PR that a change put under an Issue, or took out from under one. */
+  #followCursor() {
+    const cursor = this.cursor;
+    const stops = this.#stops();
+    if (cursor === undefined || stops.some((stop) => sameStop(cursor, stop))) return;
+    this.cursor = stops.find((stop) => stop.number === cursor.number) ?? cursor;
+  }
+
+  #stops() {
+    return [...(this.items ?? []), ...this.quiet].flatMap(stopsOf);
   }
 
   async #ask() {
@@ -110,6 +139,7 @@ export class WorkbenchState {
     if (answer.status === "ok") {
       this.items = answer.data.items;
       this.quiet = answer.data.quiet;
+      this.#followCursor();
       this.count = answer.data.count;
       this.reviewRequests = answer.data.review_requests;
       this.filters = answer.data.filters;

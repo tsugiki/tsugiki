@@ -17,6 +17,7 @@ use tsugiki_core::github::{CommitSha, Login};
 use tsugiki_core::repository::{RepositoryAccess, RepositoryName, RepositorySettings};
 use tsugiki_core::store::{self, FilterResults, OpenReader, Store, StoreReader};
 use tsugiki_core::workbench::issue_view::IssueView;
+use tsugiki_core::workbench::pr_view::PrView;
 use tsugiki_core::workbench::{Workbench, WorkbenchView};
 
 fn main() {
@@ -105,6 +106,25 @@ fn issue_view(bencher: divan::Bencher<'_, '_>) {
 /// The Issue the Issue view benchmark opens. PRs name Issues by their number modulo `ISSUES`, so PRs 7 and
 /// 2,375 name this one.
 const VIEWED_ISSUE: u32 = FIRST_ISSUE + 7;
+
+/// The PR the PR view benchmark opens, in the viewed Issue's tree.
+const VIEWED_PR: u32 = 7;
+
+/// The PR view of a PR in an Issue's tree, with its description and comments.
+#[divan::bench]
+#[expect(
+    clippy::expect_used,
+    reason = "a benchmark that timed a PR the store doesn't hold would measure an early return"
+)]
+fn pr_view(bencher: divan::Bencher<'_, '_>) {
+    let held = Held::with_views("pr-view");
+    let shown = PrView::read(&held.reader, &held.settings, VIEWED_PR)
+        .expect("the view")
+        .expect("a PR the store holds");
+    assert!(shown.content.is_some());
+    bencher.bench(|| PrView::read(&held.reader, &held.settings, VIEWED_PR));
+    held.close();
+}
 
 /// The settings of `repository`, with the starter Filters of a Repository the user maintains.
 fn settings(repository: &RepositoryName) -> RepositorySettings {
@@ -200,6 +220,9 @@ impl Held {
         held.store
             .save_issue_content(&held.repository, VIEWED_ISSUE, content())
             .expect("what the Issue says");
+        held.store
+            .save_issue_content(&held.repository, VIEWED_PR, content())
+            .expect("what the PR says");
         held
     }
 

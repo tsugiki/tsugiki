@@ -379,6 +379,37 @@ mod tests {
     }
 
     #[test]
+    fn opening_a_pr_shows_its_row_at_once_and_its_conversation_once_github_answers() {
+        let (folders, root) = temp_folders("wired-open-pr");
+        let wired = Wired::start(Ok(folders), recordings());
+        let _ = wired.ask("add_repository", add_cpython()).unwrap();
+        let workbench = workbench_after_sync(&wired);
+        let number = workbench["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find_map(|item| item["pull_requests"][0]["number"].as_u64())
+            .unwrap();
+        let pr = json!({ "repository": CPYTHON, "number": number });
+
+        let before = wired.ask("pull_request", pr.clone()).unwrap();
+        drop(wired.ask("open_pull_request", pr.clone()).unwrap());
+        let mut after = Value::Null;
+        while after["content"].is_null() {
+            let _changed = wired.workbenches.recv_timeout(PLENTY).unwrap();
+            after = wired.ask("pull_request", pr.clone()).unwrap();
+        }
+        drop(wired.ask("fetch_pull_request", pr).unwrap());
+        drop(wired.stop());
+        std::fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(before["number"], number);
+        assert_eq!(before["content"], Value::Null);
+        let description = after["content"]["body_html"].as_str().unwrap();
+        assert!(description.contains("Closes"), "{description}");
+    }
+
+    #[test]
     fn a_name_that_isnt_a_repository_opens_nothing() {
         let (folders, root) = temp_folders("wired-open-bad-name");
         let wired = Wired::start(Ok(folders), no_network());
@@ -386,7 +417,11 @@ mod tests {
 
         let open = wired.ask("open_issue", bad.clone()).unwrap_err();
         let fetch = wired.ask("fetch_issue", bad.clone()).unwrap_err();
-        let read = wired.ask("issue", bad).unwrap_err();
+        let read = wired.ask("issue", bad.clone()).unwrap_err();
+        let pr_errors: Vec<Value> = ["open_pull_request", "fetch_pull_request", "pull_request"]
+            .into_iter()
+            .map(|command| wired.ask(command, bad.clone()).unwrap_err()["kind"].clone())
+            .collect();
         let requests = wired.session.requests();
         let page = crate::open_github_page(
             "not a name",
@@ -400,6 +435,7 @@ mod tests {
         assert_eq!(open["kind"], "not_found");
         assert_eq!(fetch["kind"], "not_found");
         assert_eq!(read["kind"], "not_found");
+        assert_eq!(pr_errors, ["not_found", "not_found", "not_found"]);
         assert!(page.is_err());
     }
 

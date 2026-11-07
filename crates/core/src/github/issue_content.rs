@@ -1,5 +1,6 @@
-//! The description and recent comments of one Issue, as GitHub renders them. Only the Issue view shows them,
-//! so Tsugiki asks when an Issue opens and while it's on screen, and no sync pays for them (ADR 0015).
+//! The description and recent comments of one Issue or PR, as GitHub renders them. Only the Issue view and
+//! the PR view's Conversation show them, so Tsugiki asks when one opens and while it's on screen, and no sync
+//! pays for them (ADR 0015).
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -11,9 +12,46 @@ use super::{GitHub, Login, Request};
 use crate::error::{Error, ErrorKind};
 use crate::repository::RepositoryName;
 
-const FETCH_ISSUE_CONTENT: &str = "query FetchIssueContent($owner: String!, $name: String!, $number: Int!) { \
-     repository(owner: $owner, name: $name) { issue(number: $number) { bodyHTML \
-     comments(last: 30) { totalCount nodes { author { login } createdAt bodyHTML } } } } }";
+/// Whose conversation a query reads. GitHub gives an Issue and a PR the same description and comments.
+#[derive(Debug, Clone, Copy)]
+enum Thread {
+    Issue,
+    PullRequest,
+}
+
+impl Thread {
+    const fn operation(self) -> &'static str {
+        match self {
+            Self::Issue => "FetchIssueContent",
+            Self::PullRequest => "FetchPullRequestContent",
+        }
+    }
+
+    /// The field of `repository` that holds it.
+    const fn field(self) -> &'static str {
+        match self {
+            Self::Issue => "issue",
+            Self::PullRequest => "pullRequest",
+        }
+    }
+
+    const fn noun(self) -> &'static str {
+        match self {
+            Self::Issue => "Issue",
+            Self::PullRequest => "PR",
+        }
+    }
+
+    fn query(self) -> String {
+        format!(
+            "query {}($owner: String!, $name: String!, $number: Int!) {{ \
+             repository(owner: $owner, name: $name) {{ {}(number: $number) {{ bodyHTML \
+             comments(last: 30) {{ totalCount nodes {{ author {{ login }} createdAt bodyHTML }} }} }} }} }}",
+            self.operation(),
+            self.field(),
+        )
+    }
+}
 
 /// A comment on an Issue.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -91,30 +129,49 @@ impl GitHub {
         repository: &RepositoryName,
         number: u32,
     ) -> Result<IssueContent, Error> {
+        self.conversation(Thread::Issue, repository, number)
+    }
+
+    /// The description and recent comments of PR `number`: its Conversation, without its review threads.
+    pub fn pull_request_content(
+        &self,
+        repository: &RepositoryName,
+        number: u32,
+    ) -> Result<IssueContent, Error> {
+        self.conversation(Thread::PullRequest, repository, number)
+    }
+
+    fn conversation(
+        &self,
+        thread: Thread,
+        repository: &RepositoryName,
+        number: u32,
+    ) -> Result<IssueContent, Error> {
         #[derive(Deserialize)]
         struct Data {
             repository: RepositoryWire,
         }
         #[derive(Deserialize)]
         struct RepositoryWire {
+            #[serde(alias = "pullRequest")]
             issue: Option<IssueWire>,
         }
         let data: Data = self.query(&Request {
-            operation: "FetchIssueContent",
-            query: FETCH_ISSUE_CONTENT.into(),
+            operation: thread.operation(),
+            query: thread.query().into(),
             variables: json!({
                 "owner": repository.owner(),
                 "name": repository.name(),
                 "number": number,
             }),
         })?;
-        let issue = data.repository.issue.ok_or_else(|| {
+        let wire = data.repository.issue.ok_or_else(|| {
             Error::new(
                 ErrorKind::NotFound,
-                &format!("GitHub has no Issue #{number} in {repository}."),
+                &format!("GitHub has no {} #{number} in {repository}.", thread.noun()),
             )
         })?;
-        Ok(issue.into())
+        Ok(wire.into())
     }
 }
 
@@ -195,5 +252,17 @@ mod tests {
 
         assert_eq!(problem.kind, ErrorKind::NotFound);
         assert!(problem.message.contains("#7"), "{}", problem.message);
+    }
+    #[test]
+    fn a_pr_github_doesnt_have_is_not_found() {
+        let body = json!({ "data": { "repository": { "pullRequest": null } } }).to_string();
+        let (script, asked) = Scripted::new(vec![reply_ok(&body)]);
+        let github = GitHub::new(Box::new(script), token());
+
+        let problem = github.pull_request_content(&cpython(), 7).unwrap_err();
+
+        assert_eq!(problem.kind, ErrorKind::NotFound);
+        assert!(problem.message.contains("PR #7"), "{}", problem.message);
+        assert_eq!(asked.recv().unwrap().0, "FetchPullRequestContent");
     }
 }

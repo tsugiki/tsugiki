@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands, events } from "$lib/data/bindings";
-import { WorkbenchState, type ListedItem } from "./workbench.svelte";
+import { WorkbenchState, type ListedItem, type WorkbenchRow } from "./workbench.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
   commands: { workbench: vi.fn() },
@@ -22,6 +22,20 @@ const item = (number: number): ListedItem => ({
   your_review: null,
   backports: [],
 });
+
+/** A PR in an Issue's tree. */
+const row: WorkbenchRow = {
+  number: 0,
+  title: "PR",
+  author: "octocat",
+  state: "OPEN",
+  is_draft: false,
+  target_branch: "main",
+  ci: null,
+  updated_at: "2026-11-04T10:00:00Z",
+  reasons: [],
+  your_review: null,
+};
 
 const mine = { name: "Mine", query: "is:open author:@me", count: 1, problem: null };
 const whole = { kind: "whole" } as const;
@@ -65,14 +79,144 @@ describe("WorkbenchState", () => {
     expect(state.underCursor).toBeUndefined();
 
     state.moveCursor(-1);
-    expect(state.cursor).toBe(3);
+    expect(state.cursor?.number).toBe(3);
     state.moveCursor(-1);
-    expect(state.cursor).toBe(3);
+    expect(state.cursor?.number).toBe(3);
     state.moveCursor(1);
     state.moveCursor(1);
     expect(state.underCursor?.number).toBe(1);
     state.moveCursor(1);
-    expect(state.cursor).toBe(1);
+    expect(state.cursor?.number).toBe(1);
+    state.stop();
+  });
+
+  it("stops on each PR and Backport in an Issue's tree, and knows the Issue", async () => {
+    catchListener();
+    const tree: ListedItem = {
+      attention: null,
+      kind: "issue",
+      number: 10,
+      title: "Issue 10",
+      people: [],
+      updated_at: "2026-11-04T10:00:00Z",
+      pull_requests: [
+        { ...row, kind: "pr", number: 11, backports: [{ ...row, number: 12, backport: "bot" }] },
+        { ...row, kind: "backport", number: 13, backport: "manual" },
+      ],
+    };
+    const standalone = { ...item(20), backports: [{ ...row, number: 21, backport: "bot" as const }] };
+    const lone: ListedItem = {
+      ...row,
+      kind: "standalone_backport",
+      number: 30,
+      backport: "manual",
+      attention: null,
+    };
+    vi.mocked(commands.workbench).mockResolvedValue({
+      status: "ok",
+      data: { items: [tree, standalone, lone], quiet: [], count: 3, review_requests: 0, filters: [] },
+    });
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    const stops = [];
+    for (let step = 0; step < 7; step += 1) {
+      state.moveCursor(1);
+      stops.push(state.underCursor);
+    }
+
+    expect(stops).toEqual([
+      { number: 10, kind: "issue", issue: undefined },
+      { number: 11, kind: "pull_request", issue: 10 },
+      { number: 12, kind: "pull_request", issue: 10 },
+      { number: 13, kind: "pull_request", issue: 10 },
+      { number: 20, kind: "pull_request", issue: undefined },
+      { number: 21, kind: "pull_request", issue: undefined },
+      { number: 30, kind: "pull_request", issue: undefined },
+    ]);
+    state.stop();
+  });
+
+  it("passes a PR that fixes two Issues once under each", async () => {
+    catchListener();
+    const tree = (number: number): ListedItem => ({
+      attention: null,
+      kind: "issue",
+      number,
+      title: `Issue ${String(number)}`,
+      people: [],
+      updated_at: "2026-11-04T10:00:00Z",
+      pull_requests: [{ ...row, kind: "pr", number: 5, backports: [] }],
+    });
+    vi.mocked(commands.workbench).mockResolvedValue({
+      status: "ok",
+      data: { items: [tree(10), tree(20), item(30)], quiet: [], count: 3, review_requests: 0, filters: [] },
+    });
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    const stops = [];
+    for (let step = 0; step < 5; step += 1) {
+      state.moveCursor(1);
+      stops.push([state.underCursor?.number, state.underCursor?.issue]);
+    }
+
+    expect(stops).toEqual([
+      [10, undefined],
+      [5, 10],
+      [20, undefined],
+      [5, 20],
+      [30, undefined],
+    ]);
+    state.stop();
+  });
+
+  it("follows a PR to its new line when a change puts it under an Issue", async () => {
+    const { send } = catchListener();
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(5, 6));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    state.moveCursor(1);
+    const tree: ListedItem = {
+      attention: null,
+      kind: "issue",
+      number: 10,
+      title: "Issue 10",
+      people: [],
+      updated_at: "2026-11-04T10:00:00Z",
+      pull_requests: [{ ...row, kind: "pr", number: 5, backports: [] }],
+    };
+    vi.mocked(commands.workbench).mockResolvedValueOnce({
+      status: "ok",
+      data: { items: [tree, item(6)], quiet: [], count: 2, review_requests: 0, filters: [] },
+    });
+
+    send("python/cpython");
+
+    await vi.waitFor(() => {
+      expect(state.cursor).toEqual({ number: 5, kind: "pull_request", issue: 10 });
+    });
+    state.moveCursor(1);
+    expect(state.cursor?.number).toBe(6);
+    state.stop();
+  });
+
+  it("starts the cursor over when a change takes its item off the list", async () => {
+    const { send } = catchListener();
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(5, 6));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    state.moveCursor(1);
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(6, 7));
+
+    send("python/cpython");
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([6, 7]);
+    });
+
+    expect(state.underCursor).toBeUndefined();
+    state.moveCursor(1);
+    expect(state.cursor?.number).toBe(6);
     state.stop();
   });
 
@@ -81,11 +225,11 @@ describe("WorkbenchState", () => {
     vi.mocked(commands.workbench).mockResolvedValue(answer(2, 1));
     const state = new WorkbenchState("python/cpython");
     await state.load();
-    state.cursor = 99;
+    state.cursor = { number: 99, kind: "issue", issue: undefined };
 
     state.moveCursor(1);
 
-    expect(state.cursor).toBe(2);
+    expect(state.cursor?.number).toBe(2);
     state.stop();
   });
 

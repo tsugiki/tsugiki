@@ -18,6 +18,7 @@ use tauri_specta::{Builder, Event, collect_commands, collect_events};
 use tsugiki_core::error::Error;
 use tsugiki_core::latest::LatestReader;
 use tsugiki_core::measurement::Measurement;
+use tsugiki_core::mirror::{Cloning, MirrorRequests};
 use tsugiki_core::misses::Miss;
 use tsugiki_core::repository::{Home, RepositoryAccess, RepositoryCheck, RepositoryName};
 use tsugiki_core::session::SessionRequests;
@@ -59,6 +60,15 @@ type LatestSyncActivity = LatestReader<Option<SyncActivity>>;
 #[tauri::command]
 #[specta::specta]
 fn sync_activity(latest: State<'_, LatestSyncActivity>) -> Option<SyncActivity> {
+    latest.get()
+}
+
+type LatestCloning = LatestReader<Option<Cloning>>;
+
+/// The clone of a mirror under way, for a window that has just loaded.
+#[tauri::command]
+#[specta::specta]
+fn cloning(latest: State<'_, LatestCloning>) -> Option<Cloning> {
     latest.get()
 }
 
@@ -153,26 +163,38 @@ fn check_typed_repository(
     requests.check(RepositoryName::parse(input)?)
 }
 
-/// Adds the Repository and starts its first sync (ADR 0015).
+/// Adds the Repository, and starts its first sync (ADR 0015) and its mirror's clone.
 fn add_named_repository(
     name: &str,
     access: RepositoryAccess,
     owner: &SettingsOwner,
-    requests: &SessionRequests,
+    work: &RepositoryWork,
 ) -> Result<Home, Error> {
     let home = owner
         .add_repository(RepositoryName::parse(name)?, access)?
         .home;
-    sync_home(&home, requests);
+    work.start(&home);
     Ok(home)
 }
 
-/// Loads the user's work in the Repository the window opens on, under the name the window knows it by, so the
-/// window recognises the changes.
-fn sync_home(home: &Home, requests: &SessionRequests) {
-    match home {
-        Home::Repository { repository } => requests.sync(repository.clone()),
-        Home::Onboarding { .. } => {}
+/// The threads that work on Repositories: the session's sync queue, and the mirrors' one writer.
+struct RepositoryWork {
+    session: SessionRequests,
+    mirrors: MirrorRequests,
+}
+
+impl RepositoryWork {
+    /// Loads the user's work in the Repository the window opens on, under the name the window knows it by,
+    /// so the window recognises the changes. Its mirror's clone goes ahead of the other Repositories', and
+    /// neither waits on the other.
+    fn start(&self, home: &Home) {
+        match home {
+            Home::Repository { repository } => {
+                self.session.sync(repository.clone());
+                self.mirrors.clone_mirror_next(repository.name.clone());
+            }
+            Home::Onboarding { .. } => {}
+        }
     }
 }
 
@@ -228,6 +250,10 @@ struct LastSyncChanged(LastSync);
 #[derive(Clone, Serialize, Type, Event)]
 struct SyncActivityChanged(Option<SyncActivity>);
 
+/// Sent when a mirror's clone moves on, and when it ends, so the status bar can say.
+#[derive(Clone, Serialize, Type, Event)]
+struct CloningChanged(Option<Cloning>);
+
 /// Every command and event the webview can use. The TypeScript bindings are generated from it (ADR 0008).
 pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
     Builder::<R>::new()
@@ -236,6 +262,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             status,
             last_sync,
             sync_activity,
+            cloning,
             refresh,
             open_issue,
             fetch_issue,
@@ -255,7 +282,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             StatusChanged,
             Changed,
             LastSyncChanged,
-            SyncActivityChanged
+            SyncActivityChanged,
+            CloningChanged
         ])
 }
 
@@ -273,6 +301,7 @@ mod tests {
     use tsugiki_core::github::GitHubAccess;
     use tsugiki_core::github::live::{Https, run_gh};
     use tsugiki_core::latest::channel;
+    use tsugiki_core::mirror::{Mirrors, Remotes};
     use tsugiki_core::repository::RepositorySettings;
     use tsugiki_core::session::{Intervals, Session};
     use tsugiki_core::settings::SettingsFiles;
@@ -373,17 +402,25 @@ mod tests {
     fn a_repository_added_is_what_the_window_opens_on() {
         let (folders, root) = temp_folders("add");
         let app = mock_app();
-        assert!(app.manage(SettingsOwner::start(Ok(SettingsFiles::load(folders)))));
+        assert!(app.manage(SettingsOwner::start(Ok(SettingsFiles::load(
+            folders.clone()
+        )))));
         assert_eq!(home(app.state()), Home::default());
 
         let session = ended_session();
+        let mirrors = mirrors_cloning_nothing(Ok(folders.clone()));
+        let work = RepositoryWork {
+            session: session.requests(),
+            mirrors: mirrors.requests(),
+        };
         let added = add_named_repository(
             "https://github.com/python/cpython",
             RepositoryAccess::Other,
             &app.state(),
-            &session.requests(),
+            &work,
         );
         let after = home(app.state());
+        mirrors.stop(Duration::from_secs(10));
         std::fs::remove_dir_all(root).unwrap();
 
         assert_eq!(added.unwrap(), cpython());
@@ -394,14 +431,14 @@ mod tests {
     fn a_name_that_isnt_one_is_refused_before_anything_else_happens() {
         let owner = SettingsOwner::start(Err(no_folders()));
         let session = ended_session();
+        let mirrors = mirrors_cloning_nothing(Err(no_folders()));
+        let work = RepositoryWork {
+            session: session.requests(),
+            mirrors: mirrors.requests(),
+        };
 
-        let adding = add_named_repository(
-            "nonsense",
-            RepositoryAccess::Other,
-            &owner,
-            &session.requests(),
-        )
-        .unwrap_err();
+        let adding =
+            add_named_repository("nonsense", RepositoryAccess::Other, &owner, &work).unwrap_err();
         let checking = check_typed_repository("nonsense", &session.requests()).unwrap_err();
         let reading = read_workbench("nonsense", &WorkbenchView::Whole, &owner, &session.reader())
             .unwrap_err();
@@ -409,6 +446,15 @@ mod tests {
         assert_eq!(adding.kind, ErrorKind::NotFound);
         assert_eq!(checking.kind, ErrorKind::NotFound);
         assert_eq!(reading.kind, ErrorKind::NotFound);
+    }
+
+    /// Mirrors whose clones fail at once, from a folder of remotes that isn't there.
+    fn mirrors_cloning_nothing(folders: Result<Folders, Error>) -> Mirrors {
+        Mirrors::start(
+            folders,
+            Remotes::under("no-remotes/".to_owned()),
+            Box::new(|_| {}),
+        )
     }
 
     /// A session with no folders, which ends as soon as it starts, without asking anything of `Https`.

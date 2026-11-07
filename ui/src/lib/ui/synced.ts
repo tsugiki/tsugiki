@@ -1,6 +1,6 @@
-// The status bar's words for when the open Repository last synced, for a sync under way, and for the other
-// Repositories syncing.
-import type { SyncActivity } from "$lib/state/status.svelte";
+// The status bar's words for when the open Repository last synced, for a sync under way, for the other
+// Repositories syncing, and for a mirror's clone.
+import type { Cloning, SyncActivity } from "$lib/state/status.svelte";
 
 type OpenSync = NonNullable<SyncActivity["open"]>;
 
@@ -47,6 +47,15 @@ export function elsewhereWords(activity: SyncActivity | null): string | null {
   const [next, ...rest] = activity?.elsewhere ?? [];
   if (next === undefined) return null;
   return rest.length === 0 ? `${next} syncing` : `${next} and ${String(rest.length)} more syncing`;
+}
+
+/** A mirror's clone and how far it has got. Indexing what came down takes about as long as receiving it. */
+export function cloningWords(cloning: Cloning | null): string | null {
+  if (cloning === null) return null;
+  const { repository, progress } = cloning;
+  if (progress.stage === "starting") return `Cloning ${repository}`;
+  const stage = progress.stage === "receiving" ? "Cloning" : "Indexing";
+  return `${stage} ${repository} ${String(progress.percent)}%`;
 }
 
 /** The wait for GitHub's points, while there is one. */

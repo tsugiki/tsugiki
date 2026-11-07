@@ -7,6 +7,13 @@ release's body, and fails without it
 
 ## WIP
 
+### Added
+
+- Each Repository gets a **Mirror**, a bare git clone in its folder, which later changes read diffs from.
+  Adding a Repository starts its clone beside its first sync, and Repositories added before get theirs at the
+  next launch, the open one first. The status bar shows "Cloning python/cpython 42%" beside the sync time.
+  Quitting stops a clone, and the next launch starts it again. Tsugiki needs `git` on the `PATH` for this.
+
 ## Version 0.1.1 (2026-11-07)
 
 Repositories sync in turns, so a first sync of a large Repository no longer holds back the one you have open.

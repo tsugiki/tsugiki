@@ -1,13 +1,15 @@
-//! What touches the outside world: the real network and the real `gh`. Tests replace both (ADR 0009),
-//! so this file is left out of the coverage gate, and the release checks exercise it against GitHub.
+//! What touches the outside world: the real network, the real `gh` and the real `git`. Tests replace the
+//! network and `gh` (ADR 0009), so this file is left out of the coverage gate, and the release checks
+//! exercise it against GitHub. Tests run the real `git` through it.
 
 #![expect(
     clippy::disallowed_types,
     reason = "this is the one file clippy.toml lets use the real network and real programs"
 )]
 
+use std::ffi::OsStr;
 use std::io;
-use std::process::{Command, Stdio};
+use std::process::{Child, ChildStderr, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use rustls::CertificateError;
@@ -163,6 +165,83 @@ fn is_outside_certificate_dates(cause: &ureq::Error) -> bool {
     )
 }
 
+/// Starts `git` with `args`, its error output piped for its progress, which it writes in English.
+///
+/// A Repository git can't read fails rather than asking for a password nobody sees: no terminal prompt, and
+/// no credential helper, since Git Credential Manager on Windows would open a sign-in window.
+pub(crate) fn start_git(args: &[&OsStr]) -> io::Result<(Child, ChildStderr)> {
+    let mut command = Command::new("git");
+    let _ = command
+        .args(["-c", "credential.helper="])
+        .args(args)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GCM_INTERACTIVE", "never")
+        .env("LC_ALL", "C")
+        .env("LANGUAGE", "C")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    without_window(&mut command);
+    // Its own process group, so `stop_git` can end the helpers it starts along with it.
+    #[cfg(unix)]
+    let _ = std::os::unix::process::CommandExt::process_group(&mut command, 0);
+    let mut git = command.spawn()?;
+    match git.stderr.take() {
+        Some(progress) => Ok((git, progress)),
+        None => {
+            stop_git(&mut git);
+            Err(io::Error::other("git's error output wasn't piped"))
+        }
+    }
+}
+
+/// Ends `git` and waits for it. git hands a download to helpers (`git-remote-https`, `index-pack`), which
+/// would otherwise go on downloading after Tsugiki quits, so this ends them too. A failure leaves a trace.
+pub(crate) fn stop_git(git: &mut Child) {
+    if let Err(cause) = end_git_and_helpers(git) {
+        log::warn!("Tsugiki can't stop git: {cause}");
+    }
+}
+
+fn end_git_and_helpers(git: &mut Child) -> io::Result<()> {
+    let id = git.id().to_string();
+    #[cfg(windows)]
+    let mut tree = {
+        let mut taskkill = Command::new("taskkill");
+        let _ = taskkill.args(["/F", "/T", "/PID", &id]);
+        taskkill
+    };
+    #[cfg(not(windows))]
+    let mut tree = {
+        let mut kill = Command::new("kill");
+        let _ = kill.args(["-s", "KILL", "--", &format!("-{id}")]);
+        kill
+    };
+    let _ = tree
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    without_window(&mut tree);
+    let ended = tree.status()?;
+    if !ended.success() {
+        // git ended between the two calls, or the tree couldn't be ended, so end git at least.
+        git.kill()?;
+    }
+    git.wait().map(drop)
+}
+
+/// Keeps a console program from opening a window on Windows, where Tsugiki itself has no console.
+fn without_window(command: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let _ = command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    let _ = command;
+}
+
 /// Runs one program, with no console window on Windows, and gives up on it after `GH_TIMEOUT`.
 fn run_program(program: &str, args: &[&str]) -> io::Result<GhOutput> {
     let mut command = Command::new(program);
@@ -171,12 +250,7 @@ fn run_program(program: &str, args: &[&str]) -> io::Result<GhOutput> {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let _ = command.creation_flags(CREATE_NO_WINDOW);
-    }
+    without_window(&mut command);
     let mut child = command.spawn()?;
     let deadline = Instant::now() + GH_TIMEOUT;
     while child.try_wait()?.is_none() {

@@ -16,6 +16,8 @@ export const commands = {
 	lastSync: () => __TAURI_INVOKE<LastSync_Serialize | null>("last_sync"),
 	/**  What the queue of syncs is doing, for a window that has just loaded. */
 	syncActivity: () => __TAURI_INVOKE<SyncActivity_Serialize | null>("sync_activity"),
+	/**  The clone of a mirror under way, for a window that has just loaded. */
+	cloning: () => __TAURI_INVOKE<Cloning | null>("cloning"),
 	/**  Refreshes the open Repository now, and returns at once. */
 	refresh: () => __TAURI_INVOKE<void>("refresh"),
 	/**
@@ -42,8 +44,8 @@ export const commands = {
 	 */
 	checkRepository: (input: string) => typedError<RepositoryCheck_Serialize, Error_Serialize>(__TAURI_INVOKE("check_repository", { input })),
 	/**
-	 *  Adds a Repository the user has seen the check for, starts its first sync, and says what the window opens
-	 *  on now. This waits on a small file and never on GitHub.
+	 *  Adds a Repository the user has seen the check for, starts its first sync and its mirror's clone, and says
+	 *  what the window opens on now. This waits on a small file and never on GitHub or git.
 	 */
 	addRepository: (name: string, access: RepositoryAccess) => typedError<Home_Serialize, Error_Serialize>(__TAURI_INVOKE("add_repository", { name, access })),
 	/**
@@ -68,6 +70,7 @@ export const commands = {
 /** Events */
 export const events = {
 	changed: makeEvent<Changed, Changed>("changed"),
+	cloningChanged: makeEvent<CloningChanged_Serialize, CloningChanged_Deserialize>("cloning-changed"),
 	lastSyncChanged: makeEvent<LastSyncChanged_Serialize, LastSyncChanged_Deserialize>("last-sync-changed"),
 	statusChanged: makeEvent<StatusChanged_Serialize, StatusChanged_Deserialize>("status-changed"),
 	syncActivityChanged: makeEvent<SyncActivityChanged_Serialize, SyncActivityChanged_Deserialize>("sync-activity-changed"),
@@ -139,6 +142,30 @@ export type Changed = Change;
 
 /**  A commit's CI, as GitHub rolls its checks up. */
 export type CiState = "EXPECTED" | "ERROR" | "FAILURE" | "PENDING" | "SUCCESS";
+
+/**  How far a clone has got, from what `git clone --progress` writes. */
+export type CloneProgress = 
+/**  GitHub is still counting and packing what it sends. */
+{ stage: "starting" } | 
+/**  The objects coming down. */
+{ stage: "receiving"; percent: number } | 
+/**  Indexing what came down, which takes about as long again. */
+{ stage: "resolving"; percent: number };
+
+/**  The clone under way, for the status bar. */
+export type Cloning = {
+	repository: RepositoryName,
+	progress: CloneProgress,
+};
+
+/**  Sent when a mirror's clone moves on, and when it ends, so the status bar can say. */
+export type CloningChanged = CloningChanged_Serialize | CloningChanged_Deserialize;
+
+/**  Sent when a mirror's clone moves on, and when it ends, so the status bar can say. */
+export type CloningChanged_Deserialize = Cloning | null;
+
+/**  Sent when a mirror's clone moves on, and when it ends, so the status bar can say. */
+export type CloningChanged_Serialize = Cloning | null;
 
 /**  How a Repository's PRs name their Issues and Backports (ADR 0011). `links.rs` reads this. */
 export type Conventions = "cpython" | "github";

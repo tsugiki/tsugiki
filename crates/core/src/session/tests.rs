@@ -440,8 +440,9 @@ fn opening_an_issue_with_no_token_still_records_last_seen() {
         run_gh: without_gh,
     };
 
-    let (content, last_seen, _) =
-        after_asking("no-token", access, |asked| asked.open_issue(gcmon(), 7));
+    let (content, last_seen, _) = after_asking("no-token-last-seen", access, |asked| {
+        asked.open_issue(gcmon(), 7)
+    });
 
     assert_eq!(content, None);
     assert!(last_seen.is_some());
@@ -901,7 +902,7 @@ fn with_no_token_what_is_stored_stays_readable() {
         transport: Box::new(Canned(Err(Unreachable::Offline))),
         run_gh: without_gh,
     };
-    let folders = temp_folders("no-token");
+    let folders = temp_folders("no-token-readable");
     let session = Session::start(quiet_board(), Ok(folders.clone()), access, HOURLY);
     let requests = session.requests();
 

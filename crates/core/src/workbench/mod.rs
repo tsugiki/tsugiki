@@ -7,6 +7,7 @@ mod filters;
 pub mod issue_view;
 mod issues;
 mod links;
+pub mod pr_files;
 pub mod pr_view;
 mod rows;
 
@@ -25,7 +26,6 @@ use time::OffsetDateTime;
 
 use crate::error::Error;
 use crate::filters::FilterQuery;
-use crate::github::CommitSha;
 use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::PrHead;
 use crate::links::BackportKind;
@@ -146,17 +146,21 @@ impl Workbench {
     /// The heads of the PRs the user's work reaches: each PR on the whole Workbench, the quiet items' and
     /// those in Issues' trees too. A PR stored before Tsugiki read heads has none to give.
     pub fn reached_heads(facts: WorkFacts, repository: &RepositorySettings) -> Vec<PrHead> {
-        let heads: BTreeMap<u32, CommitSha> = facts
+        let mut heads: BTreeMap<u32, PrHead> = facts
             .pull_requests
             .iter()
-            .filter_map(|pr| Some((pr.number, pr.head.clone()?)))
+            .filter_map(|pr| {
+                let head = PrHead {
+                    number: pr.number,
+                    commit: pr.head.clone()?,
+                    target_branch: pr.target_branch.clone(),
+                };
+                Some((pr.number, head))
+            })
             .collect();
         Self::reached(facts, repository)
             .into_iter()
-            .filter_map(|number| {
-                let commit = heads.get(&number)?.clone();
-                Some(PrHead { number, commit })
-            })
+            .filter_map(|number| heads.remove(&number))
             .collect()
     }
 

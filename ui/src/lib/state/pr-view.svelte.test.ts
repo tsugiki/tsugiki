@@ -3,8 +3,18 @@ import { commands } from "$lib/data/bindings";
 import { PrViewState, type PrView } from "./pr-view.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
-  commands: { pullRequest: vi.fn(), openPullRequest: vi.fn(), fetchPullRequest: vi.fn() },
-  events: { changed: { listen: vi.fn(async () => () => {}) } },
+  commands: {
+    pullRequest: vi.fn(),
+    openPullRequest: vi.fn(),
+    fetchPullRequest: vi.fn(),
+    pullRequestFiles: vi.fn(),
+    cloning: vi.fn(),
+  },
+  events: {
+    changed: { listen: vi.fn(async () => () => {}) },
+    headsFetched: { listen: vi.fn(async () => () => {}) },
+    cloningChanged: { listen: vi.fn(async () => () => {}) },
+  },
 }));
 
 const view: PrView = {
@@ -28,6 +38,8 @@ describe("PrViewState", () => {
     vi.mocked(commands.openPullRequest).mockResolvedValue(done);
     vi.mocked(commands.fetchPullRequest).mockResolvedValue(done);
     vi.mocked(commands.pullRequest).mockResolvedValue({ status: "ok", data: view });
+    vi.mocked(commands.pullRequestFiles).mockResolvedValue({ status: "ok", data: { state: "fetching" } });
+    vi.mocked(commands.cloning).mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -44,6 +56,7 @@ describe("PrViewState", () => {
     expect(commands.pullRequest).toHaveBeenCalledWith("python/cpython", 11);
     expect(state.view?.title).toBe("gh-10: Fix the crash");
     expect(state.issue).toBe(10);
+    expect(state.files.view).toEqual({ state: "fetching" });
     state.stop();
   });
 

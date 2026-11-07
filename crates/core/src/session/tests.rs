@@ -868,6 +868,7 @@ fn a_sync_hands_the_mirror_the_heads_it_saved_of_the_prs_the_users_work_reaches(
             vec![PrHead {
                 number: 7,
                 commit: moved,
+                target_branch: "main".to_owned(),
             }]
         )
     );

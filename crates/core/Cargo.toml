@@ -32,6 +32,10 @@ name = "about"
 harness = false
 
 [[bench]]
+name = "diff"
+harness = false
+
+[[bench]]
 name = "store"
 harness = false
 

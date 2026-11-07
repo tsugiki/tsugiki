@@ -11,6 +11,8 @@ const core = vi.hoisted(() => ({
   openPullRequest: vi.fn(),
   fetchPullRequest: vi.fn(),
   openOnGithub: vi.fn(),
+  pullRequestFiles: vi.fn(),
+  cloning: vi.fn(),
   // The HUD logs a slow opening of an Issue whether or not it shows.
   recordMiss: vi.fn(() => Promise.resolve("a miss")),
   listen: vi.fn(),
@@ -27,9 +29,15 @@ vi.mock("$lib/data/bindings", () => ({
     openPullRequest: core.openPullRequest,
     fetchPullRequest: core.fetchPullRequest,
     openOnGithub: core.openOnGithub,
+    pullRequestFiles: core.pullRequestFiles,
+    cloning: core.cloning,
     recordMiss: core.recordMiss,
   },
-  events: { changed: { listen: core.listen } },
+  events: {
+    changed: { listen: core.listen },
+    headsFetched: { listen: core.listen },
+    cloningChanged: { listen: core.listen },
+  },
 }));
 
 const row = {
@@ -59,6 +67,8 @@ beforeEach(() => {
   core.listen.mockResolvedValue(core.stopListening);
   core.openIssue.mockResolvedValue({ status: "ok", data: null });
   core.openPullRequest.mockResolvedValue({ status: "ok", data: null });
+  core.pullRequestFiles.mockResolvedValue({ status: "ok", data: { state: "fetching" } });
+  core.cloning.mockResolvedValue(null);
   core.pullRequest.mockImplementation((_repository: string, number: number) =>
     Promise.resolve({ status: "ok", data: { ...row, number, title: `PR ${String(number)}`, content: null } }),
   );

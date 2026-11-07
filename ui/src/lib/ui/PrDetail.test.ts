@@ -9,6 +9,8 @@ const core = vi.hoisted(() => ({
   fetchPullRequest: vi.fn(),
   openOnGithub: vi.fn(),
   openLink: vi.fn(),
+  pullRequestFiles: vi.fn(),
+  cloning: vi.fn(),
   listen: vi.fn(),
 }));
 
@@ -19,8 +21,14 @@ vi.mock("$lib/data/bindings", () => ({
     fetchPullRequest: core.fetchPullRequest,
     openOnGithub: core.openOnGithub,
     openLink: core.openLink,
+    pullRequestFiles: core.pullRequestFiles,
+    cloning: core.cloning,
   },
-  events: { changed: { listen: core.listen } },
+  events: {
+    changed: { listen: core.listen },
+    headsFetched: { listen: core.listen },
+    cloningChanged: { listen: core.listen },
+  },
 }));
 
 const view: PrView = {
@@ -78,6 +86,8 @@ beforeEach(() => {
   core.openPullRequest.mockResolvedValue({ status: "ok", data: null });
   core.openOnGithub.mockResolvedValue({ status: "ok", data: null });
   core.openLink.mockResolvedValue({ status: "ok", data: null });
+  core.pullRequestFiles.mockResolvedValue({ status: "ok", data: { state: "fetching" } });
+  core.cloning.mockResolvedValue(null);
 });
 
 it("opens on the Conversation: the title and author, the description, comments and Reviews", async () => {
@@ -101,14 +111,16 @@ it("says it's reading from GitHub until the first read lands", async () => {
   expect(screen.getByText("deleted user")).toBeTruthy();
 });
 
-it("switches to the Files tab on a click, which holds nothing yet", async () => {
+it("switches to the Files tab on a click, which waits for the PR's commits", async () => {
   const state = await shown(view, 10);
 
   await fireEvent.click(screen.getByRole("tab", { name: "Files" }));
 
   expect(state.tab).toBe("files");
   expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("true");
-  expect(screen.getByRole("tabpanel", { name: "Files" }).textContent?.trim()).toBe("");
+  expect(screen.getByRole("tabpanel", { name: "Files" }).textContent?.trim()).toBe(
+    "Fetching the PR's commits…",
+  );
   expect(screen.queryByText("The description")).toBeNull();
 
   await fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));

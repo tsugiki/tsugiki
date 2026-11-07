@@ -1,0 +1,35 @@
+---
+source: crates/core/src/diff/tests.rs
+expression: drawn(&diff)
+---
+=== Doc/notes.txt → Doc/news.txt Lines { added: 1, removed: 1 } at row 0, 11 wide
+@@ -17,4 +17,4 @@ line 16
+ 17  17   line 17
+ 18  18   line 18
+ 19  19   line 19
+ 20     - line 20
+     20 + line twenty
+=== Lib/ast.py Lines { added: 2, removed: 1 } at row 7, 9 wide
+@@ -2,9 +2,10 @@ line 1
+  2   2   line 2
+  3   3   line 3
+  4   4   line 4
+  5     - line 5
+      5 + line five
+  6   6   line 6
+  7   7   line 7
+  8   8   line 8
+  9   9   line 9
+ 10  10   line 10
+     11 + line 11
+        (No newline at end of file)
+=== Lib/spaced name ü.py Lines { added: 1, removed: 0 } at row 21, 4 wide
+@@ -0,0 +1 @@
+      1 + pass
+=== Modules/old.c Lines { added: 0, removed: 1 } at row 24, 6 wide
+@@ -1 +0,0 @@
+  1     - int x;
+=== Tools/run.sh Lines { added: 0, removed: 0 } at row 27, 0 wide
+        (File mode changed from 100644 to 100755)
+=== logo.png Binary at row 29, 0 wide
+        (Binary file not shown)

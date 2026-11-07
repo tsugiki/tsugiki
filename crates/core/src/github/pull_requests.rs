@@ -220,11 +220,13 @@ pub struct PullRequestFacts {
     pub off_default: Option<OffDefault>,
 }
 
-/// The commit a PR's branch is at, which the Repository's mirror fetches.
+/// The commit a PR's branch is at, which the Repository's mirror fetches, with the branch its diff starts
+/// from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrHead {
     pub number: u32,
     pub commit: CommitSha,
+    pub target_branch: String,
 }
 
 /// The facts only a PR off the default branch needs, for the link rules (ADR 0011).

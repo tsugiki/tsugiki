@@ -70,6 +70,31 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
     openPullRequest: done,
     fetchPullRequest: done,
     pullRequest: { status: "ok", data: view },
+    pullRequestFiles: {
+      status: "ok",
+      data: {
+        state: "ready",
+        head: "0123abcdef",
+        files: [
+          {
+            path: "NEWS",
+            old_path: null,
+            change: { kind: "lines", added: 1, removed: 0 },
+            row: 0,
+            columns: 8,
+          },
+        ],
+        rows: 3,
+      },
+    },
+    pullRequestRows: {
+      status: "ok",
+      data: [
+        { kind: "file", path: "NEWS", old_path: null, change: { kind: "lines", added: 1, removed: 0 } },
+        { kind: "hunk", text: "@@ -0,0 +1 @@" },
+        { kind: "added", new: 1, text: "The fix" },
+      ],
+    },
   });
   await page.goto("/");
   await expect(page.getByRole("button", { name: "#7 Issue 7" })).toBeVisible();
@@ -84,6 +109,9 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
   await expect(pane).toContainText("some-reviewer approved at 0123abc");
   await page.keyboard.press("ControlOrMeta+PageDown");
   await expect(pane.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
+  const diff = pane.getByRole("region", { name: "Diff" });
+  await expect(diff).toContainText("NEWS+1 −0");
+  await expect(diff).toContainText("1+The fix");
   await page.keyboard.press("ControlOrMeta+PageUp");
   await expect(pane).toContainText("The fix");
 

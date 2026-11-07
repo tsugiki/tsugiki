@@ -5,6 +5,7 @@
 pub mod activity;
 pub mod build;
 pub mod conventions;
+pub mod diff;
 pub mod error;
 pub mod filters;
 pub mod folders;

@@ -12,6 +12,17 @@ Expanding context would cost an extra API call each time. Local git makes diffs 
 for offline reading, and makes the later interdiff essentially `git range-diff`. Keeping the mirror separate
 means Tsugiki cannot disturb the user's branches, remotes or worktrees.
 
+## Considered Options
+
+- **`gh pr checkout N`.** It is the quickest way for a person to run a PR on their machine, and Tsugiki
+  doesn't use it. It makes a branch and checks it out, but the mirror is bare: the diff, `git grep` and the
+  merge-base read commits, so a working tree adds nothing. Run in the user's clone, it would move their branch
+  and working tree, which this ADR rules out. It asks GitHub's API about the PR with the user's token, and its
+  fetch uses whatever credentials git has, while the mirror fetches a public Repository anonymously with no
+  credential helper (ADR 0005). If the author allows maintainer edits, it points the branch at the
+  contributor's fork, so a push lands there. Fetching `pull/N/head` asks the base repository alone, and no
+  fork becomes a remote.
+
 ## Consequences
 
 - Symbol lookup in v1 runs `git grep` against the PR's head commit (and its base commit for removed lines),

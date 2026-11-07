@@ -16,7 +16,7 @@ use crate::error::{Error, ErrorKind};
 use crate::github::{CommitSha, live};
 use crate::repository::RepositoryName;
 
-pub use highlighter::{Chunk, Highlighter};
+pub use highlighter::{Chunk, FileLines, HeadLine, Highlighter};
 pub use news::{LinkTo, NewsBlock, NewsEntry, NewsLink, NewsPiece};
 
 /// A file the diff changes, as the Files tab lists it.
@@ -34,7 +34,37 @@ pub struct DiffFile {
     /// Whether `.gitattributes` on the Target branch marks it `linguist-generated`, which the Files tab
     /// starts collapsed.
     pub generated: bool,
+    /// The lines its hunks leave out above each of them, which the window can show (#182).
+    pub gaps: Vec<Gap>,
+    /// Where the lines after its last hunk start, if the file may go on there.
+    pub rest: Option<Rest>,
 }
+
+/// The lines of a file that a diff leaves out above one of its hunks: the same lines at the merge base and
+/// at the head, so either number counts on from the gap's first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+pub struct Gap {
+    /// The row of the hunk below the gap.
+    pub row: u32,
+    /// The gap's first line at the merge base.
+    pub old: u32,
+    /// The gap's first line at the head.
+    pub new: u32,
+    /// How many lines it leaves out.
+    pub lines: u32,
+}
+
+/// The first line after a file's last hunk. git ends a hunk with 3 lines of context where the file goes
+/// on, so a hunk that ends with fewer, or with the file's missing newline, ends the file. How many lines
+/// follow only the file at the head says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+pub struct Rest {
+    pub old: u32,
+    pub new: u32,
+}
+
+/// The lines of context git puts around each change, which `--unified=3` asks for.
+const CONTEXT: usize = 3;
 
 /// How much a file changed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
@@ -126,7 +156,7 @@ impl Diff {
                 change: file.change,
             });
             let first = rows.len();
-            parse_section(section, &mut rows)?;
+            (file.gaps, file.rest) = parse_section(section, &mut rows)?;
             file.columns = rows.get(first..).map_or(0, widest);
         }
         Ok(Self { files, rows })
@@ -191,6 +221,8 @@ fn parse_numstat(numstat: &str) -> Result<Vec<DiffFile>, Error> {
             row: 0,
             columns: 0,
             generated: false,
+            gaps: Vec::new(),
+            rest: None,
         });
     }
     Ok(files)
@@ -208,8 +240,12 @@ fn sections(patch: &str) -> Vec<Vec<&str>> {
     sections
 }
 
-/// The rows of one file's section: notes from its header, then its hunks.
-fn parse_section(section: Vec<&str>, rows: &mut Vec<DiffRow>) -> Result<(), Error> {
+/// The rows of one file's section: notes from its header, then its hunks. It gives the lines the hunks leave
+/// out above each, and where the lines after the last start, if the file goes on there.
+fn parse_section(
+    section: Vec<&str>,
+    rows: &mut Vec<DiffRow>,
+) -> Result<(Vec<Gap>, Option<Rest>), Error> {
     let mut lines = section.into_iter().skip(1).peekable();
     let mut old_mode = None;
     while let Some(line) = lines.next_if(|line| !line.starts_with("@@")) {
@@ -223,6 +259,10 @@ fn parse_section(section: Vec<&str>, rows: &mut Vec<DiffRow>) -> Result<(), Erro
         }
     }
     let (mut old, mut new) = (0, 0);
+    let mut gaps = Vec::new();
+    // The first line after the hunks so far, on each side, and the rows of context the last ends with.
+    let (mut old_end, mut new_end, mut trailing) = (1, 1, 0);
+    let mut hunks = false;
     for line in lines {
         let mut chars = line.chars();
         let marker = chars.next();
@@ -237,6 +277,17 @@ fn parse_section(section: Vec<&str>, rows: &mut Vec<DiffRow>) -> Result<(), Erro
             },
             Some(_) => {
                 (old, new) = hunk_starts(line)?;
+                let lines = new.saturating_sub(new_end);
+                if lines > 0 {
+                    let (old, new, row) = (old_end, new_end, count(rows.len()));
+                    gaps.push(Gap {
+                        row,
+                        old,
+                        new,
+                        lines,
+                    });
+                }
+                hunks = true;
                 rows.push(DiffRow::Hunk {
                     text: line.to_owned(),
                 });
@@ -249,9 +300,19 @@ fn parse_section(section: Vec<&str>, rows: &mut Vec<DiffRow>) -> Result<(), Erro
             DiffRow::Removed { .. } => old += 1,
             DiffRow::File { .. } | DiffRow::Hunk { .. } | DiffRow::Note { .. } => {}
         }
+        trailing = if matches!(row, DiffRow::Context { .. }) {
+            trailing + 1
+        } else {
+            0
+        };
+        (old_end, new_end) = (old, new);
         rows.push(row);
     }
-    Ok(())
+    let rest = (hunks && trailing >= CONTEXT).then_some(Rest {
+        old: old_end,
+        new: new_end,
+    });
+    Ok((gaps, rest))
 }
 
 /// How many characters the longest line of `rows` has.

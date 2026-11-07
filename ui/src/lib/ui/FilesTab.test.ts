@@ -14,6 +14,7 @@ const core = vi.hoisted(() => ({
   pullRequestFiles: vi.fn(),
   pullRequestRows: vi.fn<(chunk: { start: number }) => Promise<unknown>>(),
   pullRequestSpans: vi.fn(),
+  pullRequestLines: vi.fn<(lines: { file: number; start: number; end: number }) => Promise<unknown>>(),
   cloning: vi.fn(),
   listen: vi.fn(),
 }));
@@ -23,6 +24,7 @@ vi.mock("$lib/data/bindings", () => ({
     pullRequestFiles: core.pullRequestFiles,
     pullRequestRows: core.pullRequestRows,
     pullRequestSpans: core.pullRequestSpans,
+    pullRequestLines: core.pullRequestLines,
     cloning: core.cloning,
   },
   events: {
@@ -60,8 +62,19 @@ const ready = (count: number, more: Partial<{ files: DiffFile[]; news: NewsEntry
       row: 0,
       columns: 8,
       generated: false,
+      gaps: [],
+      rest: null,
     },
-    { path: "logo.png", old_path: null, change: { kind: "binary" }, row: 5, columns: 19, generated: false },
+    {
+      path: "logo.png",
+      old_path: null,
+      change: { kind: "binary" },
+      row: 5,
+      columns: 19,
+      generated: false,
+      gaps: [],
+      rest: null,
+    },
   ],
   ...more,
 });
@@ -217,6 +230,8 @@ it("starts a Generated file collapsed to its header, and opens it on a click", a
     row,
     columns: 8,
     generated,
+    gaps: [],
+    rest: null,
   });
   const files = [file("news.txt", 0, false), file("logo.png", 5, true), file("ast.py", 7, false)];
   await shown(ready(rows.length, { files }));
@@ -325,4 +340,111 @@ it("shows no NEWS entries for a PR that has none", async () => {
   await shown(ready(rows.length));
 
   expect(screen.queryByRole("region", { name: "NEWS entries" })).toBeNull();
+});
+
+/** A file whose hunks leave out 49 lines above the first, 53 between the two, and maybe more after, which
+ * has 150 lines at the head. */
+const gapped: DiffRow[] = [
+  { kind: "file", path: "a.py", old_path: null, change: { kind: "lines", added: 1, removed: 1 } },
+  { kind: "hunk", text: "@@ -50,3 +50,3 @@" },
+  { kind: "context", old: 50, new: 50, text: "a" },
+  { kind: "removed", old: 51, text: "b" },
+  { kind: "added", new: 51, text: "B" },
+  { kind: "context", old: 52, new: 52, text: "c" },
+  { kind: "hunk", text: "@@ -106,3 +106,3 @@" },
+  { kind: "context", old: 106, new: 106, text: "d" },
+  { kind: "context", old: 107, new: 107, text: "e" },
+  { kind: "context", old: 108, new: 108, text: "f" },
+];
+const gappedFile: DiffFile = {
+  path: "a.py",
+  old_path: null,
+  change: { kind: "lines", added: 1, removed: 1 },
+  row: 0,
+  columns: 8,
+  generated: false,
+  gaps: [
+    { row: 1, old: 1, new: 1, lines: 49 },
+    { row: 6, old: 53, new: 53, lines: 53 },
+  ],
+  rest: { old: 109, new: 109 },
+};
+
+/** The fake core sends `gapped`'s rows, and its lines with their first word a keyword. */
+const setUpGapped = () => {
+  core.pullRequestRows.mockResolvedValue(ok(gapped));
+  core.pullRequestLines.mockImplementation(({ start, end }) =>
+    Promise.resolve(
+      ok(
+        Array.from({ length: Math.min(end, 151) - start }, (_, at) => ({
+          text: `def f${String(start + at)}`,
+          spans: [{ start: 0, end: 3, highlight: "keyword" }],
+        })),
+      ),
+    ),
+  );
+};
+
+it("offers to show the lines each gap leaves out, and draws them highlighted once they come", async () => {
+  setUpGapped();
+  const files = await shown(ready(gapped.length, { files: [gappedFile] }));
+  await vi.waitFor(() => {
+    expect(lines()[1]).toBe("↑Whole file@@ -50,3 +50,3 @@");
+  });
+  const named = (name: string) => screen.getAllByRole("button", { name });
+  const before = lines();
+
+  await fireEvent.click(named("Show 20 more lines")[0] as HTMLElement);
+  await vi.waitFor(() => {
+    expect(lines()).toContain("109109 def f109");
+  });
+  await fireEvent.click(named("Show 20 lines below")[0] as HTMLElement);
+  await vi.waitFor(() => {
+    expect(lines()[6]).toBe("5353 def f53");
+  });
+  // The first gap's comes first.
+  await fireEvent.click(named("Show 20 lines above")[1] as HTMLElement);
+  await fireEvent.click((await screen.findByRole("button", { name: "Show 13 hidden lines" })) as HTMLElement);
+  await vi.waitFor(() => {
+    expect(files.layout.gapAt(6)).toBeUndefined();
+  });
+  await fireEvent.click(named("Show 20 lines above")[0] as HTMLElement);
+  await fireEvent.click(named("Whole file")[0] as HTMLElement);
+  await vi.waitFor(() => {
+    expect(screen.queryByRole("button", { name: "Whole file" })).toBeNull();
+  });
+
+  expect(before.slice(6)).toEqual([
+    "↑↓Whole file@@ -106,3 +106,3 @@",
+    "106106 d",
+    "107107 e",
+    "108108 f",
+    "↓Whole file",
+  ]);
+  expect(document.querySelector(".expanded .hl-keyword")?.textContent).toBe("def");
+  expect(core.pullRequestLines.mock.calls.map(([lines]) => [lines.file, lines.start, lines.end])).toEqual([
+    [0, 109, 129],
+    [0, 53, 73],
+    [0, 86, 106],
+    [0, 73, 86],
+    [0, 30, 50],
+    [0, 1, 2 ** 32 - 1],
+  ]);
+});
+
+it("shows the whole file from the row after its last hunk", async () => {
+  setUpGapped();
+  await shown(ready(gapped.length, { files: [gappedFile] }));
+  await vi.waitFor(() => {
+    expect(lines()[10]).toBe("↓Whole file");
+  });
+
+  await fireEvent.click(screen.getAllByRole("button", { name: "Whole file" }).at(-1) as HTMLElement);
+
+  await vi.waitFor(() => {
+    expect(screen.queryByRole("button", { name: "Whole file" })).toBeNull();
+  });
+  expect(core.pullRequestLines.mock.calls.map(([lines]) => [lines.start, lines.end])).toEqual([
+    [1, 2 ** 32 - 1],
+  ]);
 });

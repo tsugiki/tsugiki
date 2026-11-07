@@ -2,7 +2,8 @@
 // core, and this asks for them in chunks near what the tab shows (ADR 0001), with the spans that highlight
 // them (#178). A chunk's rows wait a moment for their spans, so a jump into a file the core has parsed shows
 // it highlighted at once (#180). Generated files start collapsed, and their rows aren't asked for until the
-// user opens one (#181).
+// user opens one (#181). The user can expand the lines a gap between hunks leaves out, which the core reads
+// from the file at the PR's head (#182).
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import {
   commands,
@@ -11,15 +12,18 @@ import {
   type DiffFile_Serialize,
   type DiffRow_Serialize,
   type FileChange,
+  type Gap,
+  type HeadLine,
   type Highlight,
   type LinkTo,
+  type Rest,
   type NewsBlock,
   type NewsEntry_Serialize,
   type NewsPiece,
   type PrFiles_Serialize,
   type Span,
 } from "$lib/data/bindings";
-import { DiffLayout } from "./diff-layout";
+import { DiffLayout, type Shown } from "./diff-layout";
 import { hud, type Jump, type JumpTimer } from "./hud.svelte";
 
 export type PrFiles = PrFiles_Serialize;
@@ -28,10 +32,16 @@ export type DiffRow = DiffRow_Serialize;
 export type NewsEntry = NewsEntry_Serialize;
 /** A diff the tab shows, from its merge base to its head. */
 type Ready = Extract<PrFiles, { state: "ready" }>;
-export type { Cloning, FileChange, Highlight, LinkTo, NewsBlock, NewsPiece, Span };
+export type { Cloning, FileChange, Gap, HeadLine, Highlight, LinkTo, NewsBlock, NewsPiece, Shown, Span };
 
 /** Rows asked for at a time: about 25 screens, as the diff prototype found best. */
 export const CHUNK = 512;
+
+/** Lines a click shows above or below a gap, as on GitHub. */
+export const EXPAND = 20;
+
+/** The line past any file's last, to ask for a file to its end. */
+const END = 2 ** 32 - 1;
 
 /** How long a chunk's rows wait for their spans before they show plain. The spans repaint the chunk when
  * they come. */
@@ -43,12 +53,18 @@ export class PrFilesState {
   error = $state<string>();
   /** The mirror's clone under way, which a Repository's first diff waits for. */
   cloning = $state<Cloning | null>(null);
-  /** The rows that show, and where: a Generated file the user hasn't opened shows only its header. */
+  /** The rows that show, and where: a Generated file the user hasn't opened shows only its header, and a
+   * gap the user expanded shows the lines it left out. */
   layout = $derived.by(() => {
     const view = this.view;
     const ready = view?.state === "ready";
-    return new DiffLayout(ready ? view.rows : 0, ready ? view.files : [], (file) => this.collapsed(file));
+    return new DiffLayout(ready ? view.rows : 0, ready ? view.files : [], (file) => this.collapsed(file), {
+      gap: (file, gap) => this.#shown(file, gap),
+      rest: (file, rest) => this.#after(file, rest),
+    });
   });
+  /** How many characters the longest expanded line has, so the tab makes room for it as for the diff's. */
+  columns = $state(0);
   readonly #repository: string;
   readonly #number: number;
   readonly #jumps: JumpTimer;
@@ -58,6 +74,12 @@ export class PrFilesState {
   #spans = new SvelteMap<number, Span[][]>();
   /** The Generated files the user has opened, by their place among the files. */
   #opened = new SvelteSet<number>();
+  /** The lines expanded gaps show, by `file:line` at the head, once the core sends them. A gap shows the
+   * lines held from each of its ends, so a click that fails shows nothing, and two that overlap ask for
+   * the same lines. */
+  #lines = new SvelteMap<string, HeadLine>();
+  /** How many lines each file has at the head, by its place, once an answer stopped short at its end. */
+  #lengths = new SvelteMap<number, number>();
   /** The chunks asked for. Nothing draws from it, and the effect that asks shouldn't rerun on it. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   #asked = new Set<number>();
@@ -125,6 +147,9 @@ export class PrFilesState {
       this.#spans.clear();
       this.#asked.clear();
       this.#opened.clear();
+      this.#lines.clear();
+      this.#lengths.clear();
+      this.columns = 0;
     }
     this.view = answer;
   }
@@ -153,6 +178,91 @@ export class PrFilesState {
   async #respan(diff: Ready, chunk: number) {
     const spans = await this.#fetchSpans(diff, chunk);
     if (spans !== undefined && this.#wanted(diff, chunk)) this.#spans.set(chunk, spans);
+  }
+
+  /** Line `line` at the head of file `file`, which an expanded gap shows. The layout shows only lines the
+   * core has sent, so one it hasn't is blank. */
+  line(file: number, line: number): HeadLine {
+    return this.#lines.get(`${String(file)}:${String(line)}`) ?? { text: "", spans: [] };
+  }
+
+  /** How many of `gap`'s lines show from its top and from its bottom: those the core has sent, which
+   * follow on from each end. */
+  #shown(file: number, gap: Gap): { top: number; bottom: number } {
+    const top = this.#run(file, gap.new, 1, gap.lines);
+    const bottom = this.#run(file, gap.new + gap.lines - 1, -1, gap.lines - top);
+    return { top, bottom };
+  }
+
+  /** How many lines of file `file` the tab holds one after another from `line` on, going by `step`, up to
+   * `most`. */
+  #run(file: number, line: number, step: 1 | -1, most: number): number {
+    let held = 0;
+    while (held < most && this.#lines.has(`${String(file)}:${String(line + step * held)}`)) held += 1;
+    return held;
+  }
+
+  /** The lines that show after file `file`'s last hunk, from `rest` on, and whether the file ends there. */
+  #after(file: number, rest: Rest): { lines: number; ended: boolean } {
+    const length = this.#lengths.get(file);
+    const lines = this.#run(file, rest.new, 1, length === undefined ? Infinity : length - rest.new + 1);
+    return { lines, ended: length !== undefined && rest.new + lines > length };
+  }
+
+  /** Shows `EXPAND` more lines of `gap` in file `file`, from its bottom up, above its hunk. */
+  expandAbove(file: number, gap: Gap) {
+    const { top, bottom } = this.#shown(file, gap);
+    const end = gap.new + gap.lines;
+    void this.#fetchLines(file, end - Math.min(bottom + EXPAND, gap.lines - top), end - bottom);
+  }
+
+  /** Shows `EXPAND` more lines of `gap` in file `file`, from its top down, below the hunk before. */
+  expandBelow(file: number, gap: Gap) {
+    const { top, bottom } = this.#shown(file, gap);
+    void this.#fetchLines(file, gap.new + top, gap.new + Math.min(top + EXPAND, gap.lines - bottom));
+  }
+
+  /** Shows every line `gap` in file `file` still hides. */
+  expandGap(file: number, gap: Gap) {
+    const { top, bottom } = this.#shown(file, gap);
+    void this.#fetchLines(file, gap.new + top, gap.new + gap.lines - bottom);
+  }
+
+  /** Shows `EXPAND` more lines after file `file`'s last hunk. Fewer than asked for end the file, and the
+   * button goes. */
+  async expandRest(file: number) {
+    const view = this.view;
+    const rest = view?.state === "ready" ? view.files[file]?.rest : undefined;
+    if (rest === undefined || rest === null) return;
+    const start = rest.new + this.#after(file, rest).lines;
+    await this.#fetchLines(file, start, start + EXPAND);
+  }
+
+  /** Shows the whole of file `file`: every gap, and the lines after its last hunk. */
+  async expandFile(file: number) {
+    await this.#fetchLines(file, 1, END);
+  }
+
+  /** Asks the core for lines `start` up to `end` of file `file` at the head, and keeps those that come
+   * while the tab still shows the same diff. Fewer than asked for say where the file ends. */
+  async #fetchLines(file: number, start: number, end: number) {
+    const view = this.view;
+    if (view?.state !== "ready" || start >= end) return;
+    const lines = await this.#safely(() =>
+      commands.pullRequestLines({
+        repository: this.#repository,
+        number: this.#number,
+        head: view.head,
+        base: view.base,
+        file,
+        start,
+        end,
+      }),
+    );
+    if (lines === undefined || this.#diff(this.view) !== this.#diff(view)) return;
+    lines.forEach((line, at) => this.#lines.set(`${String(file)}:${String(start + at)}`, line));
+    this.columns = lines.reduce((widest, line) => Math.max(widest, [...line.text].length), this.columns);
+    if (start + lines.length < end) this.#lengths.set(file, start + lines.length - 1);
   }
 
   /** Row `index` of the diff, once the core has sent it. */

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   CHUNK,
+  EXPAND,
   PrFilesState,
   SPANS_WAIT,
   type DiffFile,
@@ -15,6 +16,7 @@ const core = vi.hoisted(() => {
     pullRequestFiles: vi.fn(),
     pullRequestRows: vi.fn<(chunk: { start: number }) => Promise<unknown>>(),
     pullRequestSpans: vi.fn<(chunk: { start: number }, opened?: number[]) => Promise<unknown>>(),
+    pullRequestLines: vi.fn<(lines: { file: number; start: number; end: number }) => Promise<unknown>>(),
     cloning: vi.fn(),
     heard: {} as Record<string, Heard>,
     stopped: [] as string[],
@@ -34,6 +36,7 @@ vi.mock("$lib/data/bindings", () => ({
     pullRequestFiles: core.pullRequestFiles,
     pullRequestRows: core.pullRequestRows,
     pullRequestSpans: core.pullRequestSpans,
+    pullRequestLines: core.pullRequestLines,
     cloning: core.cloning,
   },
   events: {
@@ -51,6 +54,8 @@ const file = (path: string, row: number, generated = false): DiffFile => ({
   row,
   columns: 4,
   generated,
+  gaps: [],
+  rest: null,
 });
 
 /** A diff from `base` to `head`. */
@@ -142,6 +147,7 @@ beforeEach(() => {
   core.pullRequestSpans.mockImplementation(({ start }: { start: number }) =>
     Promise.resolve(ok([keyword(start)])),
   );
+  core.pullRequestLines.mockImplementation(({ start, end }) => Promise.resolve(ok(headLines(start, end))));
 });
 
 afterEach(() => {
@@ -633,4 +639,165 @@ it("forgets the rows of an older head, and drops them if they arrive late", asyn
     expect(core.pullRequestRows).toHaveBeenCalledTimes(2);
   });
   expect(files.row(0)).toBeUndefined();
+});
+
+/** How many lines the fake core's files have at the head. */
+const LENGTH = 70;
+
+/** The lines from `start` up to `end` of a file `LENGTH` lines long, as the fake core sends them. */
+const headLines = (start: number, end: number) =>
+  Array.from({ length: Math.max(0, Math.min(end, LENGTH + 1) - start) }, (_, at) => ({
+    text: `line ${String(start + at)}`,
+    spans: [],
+  }));
+
+/** A diff of one file, whose hunks start at rows 1 and 6: 5 lines left out above the first and 45 above
+ * the second, which sit 2 lines further down at the head. Lines may follow the last hunk. A second file,
+ * from row 20, ends with its only hunk. */
+const gapped = (base = "base") =>
+  ready(
+    "abc",
+    30,
+    [
+      {
+        ...file("a.py", 0),
+        gaps: [
+          { row: 1, old: 1, new: 1, lines: 5 },
+          { row: 6, old: 10, new: 12, lines: 45 },
+        ],
+        rest: { old: 60, new: 62 },
+      },
+      file("b.py", 20),
+    ],
+    base,
+  );
+const [small, large] = [
+  { row: 1, old: 1, new: 1, lines: 5 },
+  { row: 6, old: 10, new: 12, lines: 45 },
+];
+
+/** Where each ask for lines started and ended. */
+const asked = () => core.pullRequestLines.mock.calls.map(([lines]) => [lines.start, lines.end]);
+
+it("shows 20 more lines above a hunk or below the one before, and then the rest of a short gap", async () => {
+  const files = await loaded(gapped());
+
+  files.expandAbove(0, large);
+  await vi.waitFor(() => {
+    expect(files.line(0, 56)).toEqual({ text: "line 56", spans: [] });
+  });
+  files.expandBelow(0, large);
+  await vi.waitFor(() => {
+    expect(files.layout.gapAt(6)?.hidden).toBe(45 - 2 * EXPAND);
+  });
+  files.expandGap(0, large);
+  await vi.waitFor(() => {
+    expect(files.layout.gapAt(6)).toBeUndefined();
+  });
+
+  expect(asked()).toEqual([
+    [37, 57],
+    [12, 32],
+    [32, 37],
+  ]);
+  // The hunk's row goes, and the gap's 45 lines show.
+  expect(files.layout.count).toBe(30 + 1 - 1 + 45);
+  expect(files.layout.at(6)).toEqual({ kind: "line", file: 0, old: 10, new: 12 });
+  expect(files.columns).toBe("line 56".length);
+});
+
+it("stops a gap's lines at its ends, and asks for none once it shows them all", async () => {
+  const files = await loaded(gapped());
+
+  files.expandBelow(0, small);
+  await vi.waitFor(() => {
+    expect(files.layout.gapAt(1)).toBeUndefined();
+  });
+  files.expandAbove(0, small);
+  files.expandGap(0, small);
+
+  expect(asked()).toEqual([[1, 6]]);
+});
+
+it("shows 20 more lines after a file's last hunk, and drops the button once the file ends", async () => {
+  const files = await loaded(gapped());
+  core.pullRequestLines.mockResolvedValueOnce(ok(headLines(1, 1 + EXPAND)));
+
+  await files.expandRest(0);
+  expect(files.layout.at(20 + EXPAND)).toEqual({ kind: "more", file: 0 });
+  await files.expandRest(0);
+
+  expect(asked()).toEqual([
+    [62, 82],
+    [82, 102],
+  ]);
+  // The second ask came back empty, so the file ends after the first 20.
+  expect(files.layout.count).toBe(30 + EXPAND);
+  expect(files.layout.at(20 + EXPAND)).toEqual({ kind: "row", row: 20 });
+});
+
+it("shows a whole file in one ask, every gap and the lines after its last hunk", async () => {
+  const files = await loaded(gapped());
+
+  await files.expandFile(0);
+  await files.expandFile(1);
+
+  expect(asked()).toEqual([
+    [1, 2 ** 32 - 1],
+    [1, 2 ** 32 - 1],
+  ]);
+  // Both hunk rows go, and the 5 and 45 lines of the gaps and the 9 to line 70 show.
+  expect(files.layout.count).toBe(30 - 2 + 5 + 45 + (LENGTH - 62 + 1));
+  expect(files.line(0, 70)).toEqual({ text: "line 70", spans: [] });
+});
+
+it("forgets what it expanded on a new diff, and drops lines that come for an older one", async () => {
+  const files = await loaded(gapped("on-main"));
+  files.expandAbove(0, large);
+  await vi.waitFor(() => {
+    expect(files.line(0, 56)).toEqual({ text: "line 56", spans: [] });
+  });
+  let answerLate: (answer: unknown) => void = () => {};
+  core.pullRequestLines.mockReturnValueOnce(
+    new Promise((resolve) => {
+      answerLate = resolve;
+    }),
+  );
+  const late = files.expandRest(0);
+  core.pullRequestFiles.mockResolvedValue(ok(gapped("on-3.14")));
+  await files.ask();
+  answerLate(ok(headLines(62, 82)));
+  await late;
+
+  expect(files.line(0, 56)).toEqual({ text: "", spans: [] });
+  expect(files.line(0, 62)).toEqual({ text: "", spans: [] });
+  expect(files.layout.gapAt(6)?.hidden).toBe(45);
+  expect(files.layout.at(20)).toEqual({ kind: "more", file: 0 });
+});
+
+it("keeps the button when the core can't send lines, and says why", async () => {
+  const files = await loaded(gapped());
+  const failed = { status: "error", error: { message: "gone" } };
+  core.pullRequestLines.mockResolvedValue(failed);
+
+  files.expandAbove(0, large);
+  await files.expandRest(0);
+  await files.expandFile(0);
+
+  expect(files.error).toBe("gone");
+  expect(files.layout.at(20)).toEqual({ kind: "more", file: 0 });
+  expect(files.layout.gapAt(6)?.hidden).toBe(45);
+});
+
+it("expands nothing until the diff is ready, nor after a file that ends with its last hunk", async () => {
+  const files = await loaded();
+
+  files.expandAbove(0, large);
+  await files.expandRest(0);
+  await files.expandFile(0);
+  core.pullRequestFiles.mockResolvedValue(ok(gapped()));
+  await files.ask();
+  await files.expandRest(1);
+
+  expect(asked()).toEqual([]);
 });

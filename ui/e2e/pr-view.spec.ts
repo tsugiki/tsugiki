@@ -65,9 +65,9 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
 
   const pane = page.getByRole("region", { name: "PR view" });
   await expect(pane).toContainText("The fix");
-  await page.keyboard.press("Control+PageDown");
+  await page.keyboard.press("ControlOrMeta+PageDown");
   await expect(pane.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
-  await page.keyboard.press("Control+PageUp");
+  await page.keyboard.press("ControlOrMeta+PageUp");
   await expect(pane).toContainText("The fix");
 
   await page.keyboard.press("Escape");

@@ -21,10 +21,9 @@ type Arrivals = Receiver<(String, Vec<u32>)>;
 
 /// Announcements that pass on each clone, and nothing of fetches.
 fn cloning_only(announcing: Sender<Option<Cloning>>) -> Announce {
-    Announce {
-        cloning: Box::new(move |cloning| drop(announcing.send(cloning.cloned()))),
-        fetched: Box::new(|_, _| {}),
-    }
+    Announce::cloning_only(Box::new(move |cloning| {
+        drop(announcing.send(cloning.cloned()));
+    }))
 }
 
 fn named(name: &str) -> RepositoryName {
@@ -628,13 +627,28 @@ impl Place {
 
     /// The worker with the fake git, whose heads that are behind wait `patience` to be fetched once more.
     fn start_faked_with(&self, patience: Duration) -> (Mirrors, Receiver<FakeStart>) {
-        let (mirrors, starts, _arrivals) = self.start_faked_hearing(patience);
-        (mirrors, starts)
+        self.start_faked_announcing(patience, Announce::cloning_only(Box::new(|_| {})))
     }
 
     /// The worker with the fake git, each start of it, and each Repository's heads that arrived.
     fn start_faked_hearing(&self, patience: Duration) -> (Mirrors, Receiver<FakeStart>, Arrivals) {
         let (arriving, arrivals) = channel();
+        let announce = Announce {
+            cloning: Box::new(|_| {}),
+            fetched: Box::new(move |repository, numbers| {
+                drop(arriving.send((repository.to_string(), numbers.to_vec())));
+            }),
+        };
+        let (mirrors, starts) = self.start_faked_announcing(patience, announce);
+        (mirrors, starts, arrivals)
+    }
+
+    /// The worker with the fake git, which tells `announce` as it goes, and each start of it.
+    fn start_faked_announcing(
+        &self,
+        patience: Duration,
+        announce: Announce,
+    ) -> (Mirrors, Receiver<FakeStart>) {
         let (starting, starts) = channel();
         let (landed, refs) = channel();
         let mirrors = Mirrors::with_git(
@@ -645,14 +659,9 @@ impl Place {
             }),
             Ok(self.folders.clone()),
             self.clone_source().patient(patience),
-            Announce {
-                cloning: Box::new(|_| {}),
-                fetched: Box::new(move |repository, numbers| {
-                    drop(arriving.send((repository.to_string(), numbers.to_vec())));
-                }),
-            },
+            announce,
         );
-        (mirrors, starts, arrivals)
+        (mirrors, starts)
     }
 
     /// A mirror that is already there, as far as the worker can tell.
@@ -965,6 +974,35 @@ fn an_opened_prs_head_goes_ahead_of_the_other_repositories_heads() {
 }
 
 #[test]
+fn repositories_take_turns_with_their_heads() {
+    let place = Place::new("heads-turns");
+    let (cpython, hello) = (named("python/cpython"), named("octo-org/hello"));
+    place.mirrored(&cpython);
+    place.mirrored(&hello);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+    let hello_mirror = place.folders.mirror(&hello);
+
+    requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    let first = starts.recv_timeout(PLENTY).unwrap();
+    requests.fetch_heads(hello, vec![head(5)]);
+    requests.fetch_heads(cpython, vec![head(2)]);
+    first.succeed();
+    let next = starts.recv_timeout(PLENTY).unwrap();
+
+    assert!(
+        next.args
+            .contains(&hello_mirror.to_string_lossy().into_owned())
+    );
+    assert_eq!(next.refspecs(), [refspec(5)]);
+    next.succeed();
+    let last = starts.recv_timeout(PLENTY).unwrap();
+    assert_eq!(last.refspecs(), [refspec(2)]);
+    last.succeed();
+    mirrors.stop(PLENTY);
+}
+
+#[test]
 fn an_opened_prs_head_is_fetched_whatever_the_worker_noted_of_it() {
     let place = Place::new("opened-again");
     let cpython = named("python/cpython");
@@ -1192,4 +1230,15 @@ not a commit          refs/tsugiki/pull/3/head
     );
 
     assert_eq!(pull_refs(&listing), BTreeMap::from([(1, head(1).commit)]));
+}
+
+#[test]
+fn the_heard_requests_keep_only_the_opened_prs_heads() {
+    let (requests, heard) = HeardRequests::new();
+    let cpython = named("python/cpython");
+
+    requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    requests.fetch_first(cpython.clone(), head(2));
+
+    assert_eq!(heard.firsts(), [(cpython, head(2))]);
 }

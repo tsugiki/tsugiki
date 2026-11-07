@@ -20,15 +20,18 @@ pub struct DiffFile {
     pub path: String,
     /// Where a renamed file was.
     pub old_path: Option<String>,
-    pub change: Change,
+    pub change: FileChange,
     /// Its header's row. Its own rows follow, up to the next file's header.
     pub row: u32,
+    /// How many characters its longest line has, so the window can make room for it before it scrolls
+    /// there.
+    pub columns: u32,
 }
 
 /// How much a file changed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Change {
+pub enum FileChange {
     Lines {
         added: u32,
         removed: u32,
@@ -41,9 +44,11 @@ pub enum Change {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DiffRow {
-    /// A file's header, naming the file by where it is in the list of files.
+    /// A file's header, as the list of files has it.
     File {
-        file: u32,
+        path: String,
+        old_path: Option<String>,
+        change: FileChange,
     },
     /// A hunk's `@@` line, with the function git found around it.
     Hunk {
@@ -105,10 +110,16 @@ impl Diff {
                 files.len()
             )));
         }
-        for (index, (file, section)) in files.iter_mut().zip(sections).enumerate() {
+        for (file, section) in files.iter_mut().zip(sections) {
             file.row = count(rows.len());
-            rows.push(DiffRow::File { file: count(index) });
+            rows.push(DiffRow::File {
+                path: file.path.clone(),
+                old_path: file.old_path.clone(),
+                change: file.change,
+            });
+            let first = rows.len();
             parse_section(section, &mut rows)?;
+            file.columns = rows.get(first..).map_or(0, widest);
         }
         Ok(Self { files, rows })
     }
@@ -136,8 +147,8 @@ fn parse_numstat(numstat: &str) -> Result<Vec<DiffFile>, Error> {
             return Err(unreadable(&format!("a file's counts read {entry:?}")));
         };
         let change = match (added.parse(), removed.parse()) {
-            (Ok(added), Ok(removed)) => Change::Lines { added, removed },
-            _ if (added, removed) == ("-", "-") => Change::Binary,
+            (Ok(added), Ok(removed)) => FileChange::Lines { added, removed },
+            _ if (added, removed) == ("-", "-") => FileChange::Binary,
             _ => return Err(unreadable(&format!("a file's counts read {entry:?}"))),
         };
         let (path, old_path) = if path.is_empty() {
@@ -154,6 +165,7 @@ fn parse_numstat(numstat: &str) -> Result<Vec<DiffFile>, Error> {
             old_path,
             change,
             row: 0,
+            columns: 0,
         });
     }
     Ok(files)
@@ -217,6 +229,17 @@ fn parse_section(section: Vec<&str>, rows: &mut Vec<DiffRow>) -> Result<(), Erro
     Ok(())
 }
 
+/// How many characters the longest line of `rows` has.
+fn widest(rows: &[DiffRow]) -> u32 {
+    let line = |row: &DiffRow| match row {
+        DiffRow::Context { text, .. }
+        | DiffRow::Added { text, .. }
+        | DiffRow::Removed { text, .. } => text.chars().count(),
+        DiffRow::File { .. } | DiffRow::Hunk { .. } | DiffRow::Note { .. } => 0,
+    };
+    count(rows.iter().map(line).max().unwrap_or(0))
+}
+
 fn note(rows: &mut Vec<DiffRow>, text: &str) {
     rows.push(DiffRow::Note {
         text: text.to_owned(),
@@ -261,12 +284,18 @@ pub fn held(mirror: &Path, target: &str, head: &CommitSha) -> Held {
 /// Reads the diff from the merge base of `head` and the branch `target` to `head`, with renames found as
 /// GitHub finds them. Both have to be in `mirror`, as `held` says.
 pub fn read(mirror: &Path, target: &str, head: &CommitSha) -> Result<Diff, Error> {
+    let (numstat, patch) =
+        run_diff(mirror, target, head).map_err(|cause| cant_read(mirror, &cause))?;
+    Diff::parse(&numstat, &patch)
+}
+
+/// What `git diff --numstat -z` and `git diff` print for the diff `read` reads.
+fn run_diff(mirror: &Path, target: &str, head: &CommitSha) -> std::io::Result<(String, String)> {
     let head = head.as_str();
     let base = git(
         mirror,
         &["merge-base", &format!("refs/heads/{target}"), head],
-    )
-    .map_err(|cause| cant_read(mirror, &cause))?;
+    )?;
     let base = base.trim();
     // A user's git config can change how a diff looks, so these say each choice outright.
     let options = [
@@ -276,6 +305,8 @@ pub fn read(mirror: &Path, target: &str, head: &CommitSha) -> Result<Diff, Error
         "--no-relative",
         "--find-renames",
         "--unified=3",
+        // `diff.submodule=log` prints a submodule without its `diff --git` line, which the list still has.
+        "--submodule=short",
     ];
     let numstat = [
         ["diff", "--numstat", "-z"].as_slice(),
@@ -284,9 +315,13 @@ pub fn read(mirror: &Path, target: &str, head: &CommitSha) -> Result<Diff, Error
     ]
     .concat();
     let patch = [["diff"].as_slice(), &options, &[base, head]].concat();
-    let numstat = git(mirror, &numstat).map_err(|cause| cant_read(mirror, &cause))?;
-    let patch = git(mirror, &patch).map_err(|cause| cant_read(mirror, &cause))?;
-    Diff::parse(&numstat, &patch)
+    // The two run side by side: a diff of 800 files takes each most of a second.
+    let (numstat, patch) = std::thread::scope(|scope| {
+        let numstat = scope.spawn(|| git(mirror, &numstat));
+        (numstat.join(), git(mirror, &patch))
+    });
+    let stopped = std::io::Error::other("git's reader stopped");
+    Ok((numstat.unwrap_or(Err(stopped))?, patch?))
 }
 
 fn git(mirror: &Path, args: &[&str]) -> std::io::Result<String> {
@@ -296,10 +331,8 @@ fn git(mirror: &Path, args: &[&str]) -> std::io::Result<String> {
 }
 
 fn cant_read(mirror: &Path, cause: &std::io::Error) -> Error {
-    log::warn!(
-        "Tsugiki can't read a diff from {}: {cause}",
-        mirror.display()
-    );
+    let mirror = mirror.display();
+    log::warn!("Tsugiki can't read a diff from {mirror}: {cause}");
     Error::new(
         ErrorKind::Internal,
         "Tsugiki couldn't read this PR's diff from its mirror.",
@@ -333,31 +366,56 @@ pub struct OpenDiff {
 /// their own, so the lock is held only to look or to swap, and never while git runs.
 #[derive(Debug, Default)]
 pub struct Diffs {
-    open: Mutex<Option<Arc<OpenDiff>>>,
+    shown: Mutex<Shown>,
+}
+
+/// The diff on show, and the read that put it there.
+#[derive(Debug, Default)]
+struct Shown {
+    /// How many reads have started.
+    reads: u64,
+    /// Which of them put `open` there.
+    read: u64,
+    open: Option<Arc<OpenDiff>>,
 }
 
 impl Diffs {
-    /// The diff of `pr`: the one on show, or else what `read` gives, which takes its place.
+    /// The diff of `pr`, if it is the one on show.
+    pub fn shown(&self, pr: &PrAt) -> Option<Arc<OpenDiff>> {
+        self.lock().open.clone().filter(|open| open.pr.is(pr))
+    }
+
+    /// The diff of `pr`: the one on show, or else what `read` gives, which takes its place unless a read
+    /// that started later got there first. That one is of the PR the user opened since.
     pub fn get_or_read(
         &self,
         pr: &PrAt,
         read: impl FnOnce() -> Result<Diff, Error>,
     ) -> Result<Arc<OpenDiff>, Error> {
-        let open = self.lock().clone();
-        if let Some(open) = open.filter(|open| open.pr.is(pr)) {
-            return Ok(open);
-        }
+        let started = {
+            let mut shown = self.lock();
+            if let Some(open) = shown.open.clone().filter(|open| open.pr.is(pr)) {
+                return Ok(open);
+            }
+            shown.reads += 1;
+            shown.reads
+        };
         let read = Arc::new(OpenDiff {
             pr: pr.clone(),
             diff: read()?,
         });
-        *self.lock() = Some(Arc::clone(&read));
+        let mut shown = self.lock();
+        if started > shown.read {
+            shown.read = started;
+            shown.open = Some(Arc::clone(&read));
+        }
+        drop(shown);
         Ok(read)
     }
 
-    /// A panic while the lock was held left nothing half done: the lock only guards a swap.
-    fn lock(&self) -> std::sync::MutexGuard<'_, Option<Arc<OpenDiff>>> {
-        self.open.lock().unwrap_or_else(PoisonError::into_inner)
+    /// A panic while the lock was held left nothing half done: the lock only guards a look or a swap.
+    fn lock(&self) -> std::sync::MutexGuard<'_, Shown> {
+        self.shown.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 

@@ -11,6 +11,7 @@
 
 use tauri::State;
 use tauri::async_runtime::spawn_blocking;
+use tsugiki_core::diff::DiffRow;
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::repository::{Home, RepositoryAccess, RepositoryCheck};
 use tsugiki_core::session::SessionRequests;
@@ -18,6 +19,7 @@ use tsugiki_core::settings::SettingsOwner;
 use tsugiki_core::store::StoreReader;
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
+use tsugiki_core::workbench::pr_files::PrFiles;
 use tsugiki_core::workbench::pr_view::PrView;
 use tsugiki_core::workbench::{Workbench, WorkbenchView};
 
@@ -123,4 +125,28 @@ fn show_in_browser(address: &WebAddress) -> Result<(), Error> {
             "Tsugiki couldn't open the system browser.",
         )
     })
+}
+
+/// What a PR's Files tab shows: its diff's files, or why they aren't there yet. A diff that isn't on show
+/// waits on git, and never on GitHub.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn pull_request_files(
+    repository: &str,
+    number: u32,
+    work: State<'_, crate::DiffWork>,
+    reader: State<'_, StoreReader>,
+) -> Result<Option<PrFiles>, Error> {
+    crate::read_pull_request_files(repository, number, &work, &reader)
+}
+
+/// Rows of a PR's diff, which come from the diff on show unless the user has opened another PR since.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn pull_request_rows(
+    chunk: crate::DiffChunk,
+    work: State<'_, crate::DiffWork>,
+    reader: State<'_, StoreReader>,
+) -> Result<Vec<DiffRow>, Error> {
+    crate::read_pull_request_rows(chunk, &work, &reader)
 }

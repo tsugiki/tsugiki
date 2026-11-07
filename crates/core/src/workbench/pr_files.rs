@@ -6,7 +6,7 @@ use std::ops::Range;
 use serde::Serialize;
 use specta::Type;
 
-use crate::diff::{self, DiffFile, DiffRow, Diffs, Held, PrAt};
+use crate::diff::{self, DiffFile, DiffRow, Diffs, Held, OpenDiff, PrAt};
 use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
 use crate::github::CommitSha;
@@ -62,6 +62,15 @@ impl PrFiles {
         let Some(head) = pr.head else {
             return Ok(Some(Self::Fetching));
         };
+        let at = PrAt {
+            repository: repository.clone(),
+            number,
+            head: head.clone(),
+        };
+        // The diff on show is in the mirror, so asking git again would only cost a moment.
+        if let Some(open) = sources.diffs.shown(&at) {
+            return Ok(Some(Self::ready(head, &open)));
+        }
         match diff::held(&mirror, &pr.target_branch, &head) {
             Held::NoHead => {
                 let head = PrHead {
@@ -80,21 +89,20 @@ impl PrFiles {
                 ),
             )),
             Held::Both => {
-                let at = PrAt {
-                    repository: repository.clone(),
-                    number,
-                    head: head.clone(),
-                };
                 let target = &pr.target_branch;
                 let open = sources
                     .diffs
                     .get_or_read(&at, || diff::read(&mirror, target, &head))?;
-                Ok(Some(Self::Ready {
-                    head,
-                    files: open.diff.files().to_vec(),
-                    rows: open.diff.row_count(),
-                }))
+                Ok(Some(Self::ready(head, &open)))
             }
+        }
+    }
+
+    fn ready(head: CommitSha, open: &OpenDiff) -> Self {
+        Self::Ready {
+            head,
+            files: open.diff.files().to_vec(),
+            rows: open.diff.row_count(),
         }
     }
 
@@ -137,7 +145,7 @@ fn facts(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diff::tests::Mirrored;
+    use crate::diff::tests::{Mirrored, git_in};
     use crate::mirror::HeardRequests;
     use crate::workbench::testing::{ViewWorld, mine};
 
@@ -298,6 +306,23 @@ mod tests {
         };
         assert_eq!(files, expected);
         assert_eq!(rows, whole.rows(0..3));
+        mirrored.finish();
+        world.finish();
+    }
+
+    #[test]
+    fn the_diff_on_show_answers_without_asking_git_again() {
+        let world = World::new("on-show");
+        let mirrored = Mirrored::new("pr-files-on-show");
+        world.mirrors(&mirrored);
+        world.has_pr(Some(mirrored.head.clone()), "main");
+        let first = world.files();
+        let mirror = world.folders.mirror(&world.repository());
+
+        // git would now say the mirror has no Target branch.
+        let _ = git_in(&mirror, &["update-ref", "-d", "refs/heads/main"]);
+
+        assert_eq!(world.files(), first);
         mirrored.finish();
         world.finish();
     }

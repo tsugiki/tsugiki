@@ -2,6 +2,7 @@
   import { openLink, openOnGitHub, type GitHubItem } from "$lib/state/browser";
   import type { PrTab, PrViewState } from "$lib/state/pr-view.svelte";
   import Conversation from "./Conversation.svelte";
+  import FilesTab from "./FilesTab.svelte";
   import { headline } from "./workbench-row";
 
   let {
@@ -26,7 +27,7 @@
   };
 </script>
 
-<section class="detail" aria-label="PR view">
+<section class="detail" class:files={pr.tab === "files"} aria-label="PR view">
   {#if pr.error}
     <p role="alert">{`Tsugiki can't show this PR: ${pr.error}`}</p>
   {/if}
@@ -69,6 +70,8 @@
         {:else}
           <p class="by">Reading from GitHub…</p>
         {/if}
+      {:else}
+        <FilesTab files={pr.files} />
       {/if}
     </div>
   {/if}
@@ -84,6 +87,21 @@
     align-self: flex-start;
     max-height: calc(100vh - 48px);
     overflow-y: auto;
+  }
+
+  /* The diff scrolls by itself, so the pane takes the window's height and doesn't scroll. */
+  .detail.files {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 48px);
+    overflow: hidden;
+  }
+
+  .detail.files [role="tabpanel"] {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
   }
 
   h2 {

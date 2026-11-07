@@ -12,7 +12,7 @@ fn sha(text: &str) -> CommitSha {
     clippy::disallowed_types,
     reason = "tests build their repositories with the real git (ADR 0009)"
 )]
-fn git_in(dir: &Path, args: &[&str]) -> String {
+pub(crate) fn git_in(dir: &Path, args: &[&str]) -> String {
     let output = std::process::Command::new("git")
         .args([
             "-c",
@@ -108,17 +108,19 @@ fn drawn(diff: &Diff) -> String {
     let mut out = String::new();
     for row in diff.rows(0..diff.row_count()) {
         let line = match row {
-            DiffRow::File { file } => {
-                let file = &diff.files()[usize::try_from(*file).unwrap()];
-                let from = file
-                    .old_path
+            DiffRow::File {
+                path,
+                old_path,
+                change,
+            } => {
+                let file = diff.files().iter().find(|file| file.path == *path).unwrap();
+                assert_eq!((&file.old_path, file.change), (old_path, *change));
+                let from = old_path
                     .as_ref()
                     .map(|old| format!("{old} → "))
                     .unwrap_or_default();
-                format!(
-                    "=== {from}{} {:?} at row {}",
-                    file.path, file.change, file.row
-                )
+                let (row, columns) = (file.row, file.columns);
+                format!("=== {from}{path} {change:?} at row {row}, {columns} wide")
             }
             DiffRow::Hunk { text } => text.clone(),
             DiffRow::Context { old, new, text } => format!("{old:>3} {new:>3}   {text}"),
@@ -213,6 +215,28 @@ fn the_diff_on_show_answers_each_chunk_and_another_head_is_read_again() {
     let failed = diffs.get_or_read(&other_pr, || Err(Error::new(ErrorKind::Internal, "no")));
     assert!(failed.is_err());
     mirrored.finish();
+}
+
+#[test]
+fn a_read_that_ends_after_a_later_one_leaves_the_later_on_show() {
+    let diffs = Diffs::default();
+    let pr = |number| PrAt {
+        repository: RepositoryName::parse("python/cpython").unwrap(),
+        number,
+        head: sha(&"1".repeat(40)),
+    };
+    let empty = || Diff::parse("", "");
+
+    // The user opens PR 8 while PR 7's diff is still being read.
+    let earlier = diffs.get_or_read(&pr(7), || {
+        let later = diffs.get_or_read(&pr(8), empty).unwrap();
+        assert_eq!(later.pr.number, 8);
+        empty()
+    });
+
+    assert_eq!(earlier.unwrap().pr.number, 7);
+    assert!(diffs.shown(&pr(8)).is_some());
+    assert!(diffs.shown(&pr(7)).is_none());
 }
 
 #[test]

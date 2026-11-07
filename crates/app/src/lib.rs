@@ -10,12 +10,15 @@ mod wiring;
 
 use std::time::Instant;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
 pub use startup::run;
 use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
-use tsugiki_core::error::Error;
+use tsugiki_core::diff::{DiffRow, Diffs, PrAt};
+use tsugiki_core::error::{Error, ErrorKind};
+use tsugiki_core::folders::Folders;
+use tsugiki_core::github::CommitSha;
 use tsugiki_core::latest::LatestReader;
 use tsugiki_core::measurement::Measurement;
 use tsugiki_core::mirror::{Cloning, MirrorRequests};
@@ -27,6 +30,7 @@ use tsugiki_core::status::{Change, LastSync, Status, SyncActivity};
 use tsugiki_core::store::StoreReader;
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
+use tsugiki_core::workbench::pr_files::{DiffSources, PrFiles};
 use tsugiki_core::workbench::pr_view::PrView;
 use tsugiki_core::workbench::{Workbench, WorkbenchView};
 
@@ -257,6 +261,64 @@ fn read_pull_request(
     PrView::read(reader, &repository, number)
 }
 
+/// What the Files tab reads besides the database: where the mirrors are, the diff on show, and the mirrors'
+/// worker, which fetches a head a mirror lacks.
+pub(crate) struct DiffWork {
+    pub(crate) folders: Result<Folders, Error>,
+    pub(crate) diffs: Diffs,
+    pub(crate) mirrors: MirrorRequests,
+}
+
+impl DiffWork {
+    fn sources<'a>(&'a self, reader: &'a StoreReader) -> Result<DiffSources<'a>, Error> {
+        let folders = self.folders.as_ref().map_err(Clone::clone)?;
+        Ok(DiffSources {
+            reader,
+            folders,
+            diffs: &self.diffs,
+            mirrors: &self.mirrors,
+        })
+    }
+}
+
+/// Rows of a PR's diff, as the window asks for them.
+#[derive(Debug, Clone, Deserialize, Type)]
+pub(crate) struct DiffChunk {
+    repository: String,
+    number: u32,
+    /// The commit the diff ends at, as the Files tab was told.
+    head: String,
+    start: u32,
+    end: u32,
+}
+
+fn read_pull_request_files(
+    repository: &str,
+    number: u32,
+    work: &DiffWork,
+    reader: &StoreReader,
+) -> Result<Option<PrFiles>, Error> {
+    let name = RepositoryName::parse(repository)?;
+    PrFiles::read(&work.sources(reader)?, &name, number)
+}
+
+fn read_pull_request_rows(
+    chunk: DiffChunk,
+    work: &DiffWork,
+    reader: &StoreReader,
+) -> Result<Vec<DiffRow>, Error> {
+    let Some(head) = CommitSha::parse(&chunk.head) else {
+        let message = format!("{:?} isn't a commit.", chunk.head);
+        return Err(Error::new(ErrorKind::NotFound, &message));
+    };
+    let pr = PrAt {
+        repository: RepositoryName::parse(&chunk.repository)?,
+        number: chunk.number,
+        head,
+    };
+    PrFiles::rows(&work.sources(reader)?, &pr, chunk.start..chunk.end)
+}
+
 /// Opens the page of `item` on GitHub with `show`, and then moves its Last seen, since the user has it in
 /// front of them. If the browser didn't open, they haven't seen it.
 fn open_github_page(
@@ -291,6 +353,10 @@ struct SyncActivityChanged(Option<SyncActivity>);
 #[derive(Clone, Serialize, Type, Event)]
 struct CloningChanged(Option<Cloning>);
 
+/// Sent when PR heads arrive in a Repository's mirror, so a Files tab waiting for one asks again.
+#[derive(Clone, Serialize, Type, Event)]
+struct HeadsFetched(Change);
+
 /// Every command and event the webview can use. The TypeScript bindings are generated from it (ADR 0008).
 pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
     Builder::<R>::new()
@@ -315,6 +381,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::workbench,
             slow_commands::issue,
             slow_commands::pull_request,
+            slow_commands::pull_request_files,
+            slow_commands::pull_request_rows,
             slow_commands::open_on_github,
             slow_commands::open_link
         ])
@@ -323,7 +391,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             Changed,
             LastSyncChanged,
             SyncActivityChanged,
-            CloningChanged
+            CloningChanged,
+            HeadsFetched
         ])
 }
 
@@ -341,7 +410,7 @@ mod tests {
     use tsugiki_core::github::GitHubAccess;
     use tsugiki_core::github::live::{Https, run_gh};
     use tsugiki_core::latest::channel;
-    use tsugiki_core::mirror::{Mirrors, Remotes};
+    use tsugiki_core::mirror::{Announce, Mirrors, Remotes};
     use tsugiki_core::repository::RepositorySettings;
     use tsugiki_core::session::{Intervals, Session};
     use tsugiki_core::settings::SettingsFiles;
@@ -493,7 +562,7 @@ mod tests {
         Mirrors::start(
             folders,
             Remotes::under("no-remotes/".to_owned()),
-            Box::new(|_| {}),
+            Announce::cloning_only(Box::new(|_| {})),
         )
     }
 

@@ -70,6 +70,13 @@ export const commands = {
 	 *  on GitHub (ADR 0018).
 	 */
 	pullRequest: (repository: string, number: number) => typedError<PrView_Serialize | null, Error_Serialize>(__TAURI_INVOKE("pull_request", { repository, number })),
+	/**
+	 *  What a PR's Files tab shows: its diff's files, or why they aren't there yet. A diff that isn't on show
+	 *  waits on git, and never on GitHub.
+	 */
+	pullRequestFiles: (repository: string, number: number) => typedError<PrFiles_Serialize | null, Error_Serialize>(__TAURI_INVOKE("pull_request_files", { repository, number })),
+	/**  Rows of a PR's diff, which come from the diff on show unless the user has opened another PR since. */
+	pullRequestRows: (chunk: DiffChunk) => typedError<DiffRow_Serialize[], Error_Serialize>(__TAURI_INVOKE("pull_request_rows", { chunk })),
 	/**  Opens an Issue or a PR on GitHub in the system browser. */
 	openOnGithub: (repository: string, item: GitHubItem) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_on_github", { repository, item })),
 	/**
@@ -83,6 +90,7 @@ export const commands = {
 export const events = {
 	changed: makeEvent<Changed, Changed>("changed"),
 	cloningChanged: makeEvent<CloningChanged_Serialize, CloningChanged_Deserialize>("cloning-changed"),
+	headsFetched: makeEvent<HeadsFetched, HeadsFetched>("heads-fetched"),
 	lastSyncChanged: makeEvent<LastSyncChanged_Serialize, LastSyncChanged_Deserialize>("last-sync-changed"),
 	statusChanged: makeEvent<StatusChanged_Serialize, StatusChanged_Deserialize>("status-changed"),
 	syncActivityChanged: makeEvent<SyncActivityChanged_Serialize, SyncActivityChanged_Deserialize>("sync-activity-changed"),
@@ -185,6 +193,70 @@ export type CloningChanged_Serialize = Cloning | null;
 /**  How a Repository's PRs name their Issues and Backports (ADR 0011). `links.rs` reads this. */
 export type Conventions = "cpython" | "github";
 
+/**  Rows of a PR's diff, as the window asks for them. */
+export type DiffChunk = {
+	repository: string,
+	number: number,
+	/**  The commit the diff ends at, as the Files tab was told. */
+	head: string,
+	start: number,
+	end: number,
+};
+
+/**  A file the diff changes, as the Files tab lists it. */
+export type DiffFile = DiffFile_Serialize | DiffFile_Deserialize;
+
+/**  A file the diff changes, as the Files tab lists it. */
+export type DiffFile_Deserialize = {
+	path: string,
+	/**  Where a renamed file was. */
+	old_path?: string | null,
+	change: FileChange,
+	/**  Its header's row. Its own rows follow, up to the next file's header. */
+	row: number,
+	/**
+	 *  How many characters its longest line has, so the window can make room for it before it scrolls
+	 *  there.
+	 */
+	columns: number,
+};
+
+/**  A file the diff changes, as the Files tab lists it. */
+export type DiffFile_Serialize = {
+	path: string,
+	/**  Where a renamed file was. */
+	old_path: string | null,
+	change: FileChange,
+	/**  Its header's row. Its own rows follow, up to the next file's header. */
+	row: number,
+	/**
+	 *  How many characters its longest line has, so the window can make room for it before it scrolls
+	 *  there.
+	 */
+	columns: number,
+};
+
+/**  One row of the diff, as the window draws it. */
+export type DiffRow = DiffRow_Serialize | DiffRow_Deserialize;
+
+/**  One row of the diff, as the window draws it. */
+export type DiffRow_Deserialize = 
+/**  A file's header, as the list of files has it. */
+{ kind: "file"; path: string; old_path?: string | null; change: FileChange } | 
+/**  A hunk's `@@` line, with the function git found around it. */
+{ kind: "hunk"; text: string } | { kind: "context"; old: number; new: number; text: string } | { kind: "added"; new: number; text: string } | { kind: "removed"; old: number; text: string } | 
+/**  What git says in place of lines: a binary file, a new mode, a missing newline at the end. */
+{ kind: "note"; text: string };
+
+/**  One row of the diff, as the window draws it. */
+export type DiffRow_Serialize = 
+/**  A file's header, as the list of files has it. */
+{ kind: "file"; path: string; old_path: string | null; change: FileChange } | 
+/**  A hunk's `@@` line, with the function git found around it. */
+{ kind: "hunk"; text: string } | { kind: "context"; old: number; new: number; text: string } | { kind: "added"; new: number; text: string } | { kind: "removed"; old: number; text: string } | 
+/**  What git says in place of lines: a binary file, a new mode, a missing newline at the end. */
+{ kind: "note"; text: string };
+
 /**  A failure in plain words. Details go only to a local log, with tokens scrubbed. */
 export type Error = Error_Serialize | Error_Deserialize;
 
@@ -218,6 +290,11 @@ export type Error_Deserialize = {
 export type Error_Serialize = {
 	message: string,
 } & ErrorKind_Serialize;
+
+/**  How much a file changed. */
+export type FileChange = { kind: "lines"; added: number; removed: number } | 
+/**  git doesn't count the lines of a binary file. */
+{ kind: "binary" };
 
 /**  A saved GitHub search, as `settings.toml` holds it. */
 export type Filter = {
@@ -269,6 +346,9 @@ export type Frames = {
 
 /**  An Issue or a PR, as the window names it to open on GitHub. */
 export type GitHubItem = { kind: "issue"; number: number } | { kind: "pull_request"; number: number };
+
+/**  Sent when PR heads arrive in a Repository's mirror, so a Files tab waiting for one asks again. */
+export type HeadsFetched = Change;
 
 /**  The reason someone gave for hiding a comment on GitHub. The comment folds to it until the user opens it. */
 export type HiddenReason = "abuse" | "off_topic" | "outdated" | "resolved" | "duplicate" | "spam" | 
@@ -618,6 +698,31 @@ export type OpenSync_Serialize = {
 
 /**  The start of a thread's line: the first words of its first comment, or the reason that comment is hidden. */
 export type Opening = { kind: "words"; words: string } | { kind: "hidden"; reason: HiddenReason };
+
+/**  What the Files tab shows. */
+export type PrFiles = PrFiles_Serialize | PrFiles_Deserialize;
+
+/**  What the Files tab shows. */
+export type PrFiles_Deserialize = 
+/**  The Repository's mirror is still being cloned, and the clone says how far it is. */
+{ state: "cloning" } | 
+/**  The mirror lacks the PR's commits, and is fetching them. */
+{ state: "fetching" } | 
+/**  The diff, whose rows the window asks for by number. */
+{ state: "ready"; 
+/**  The commit the diff ends at, which each chunk names. */
+head: string; files: DiffFile_Deserialize[]; rows: number };
+
+/**  What the Files tab shows. */
+export type PrFiles_Serialize = 
+/**  The Repository's mirror is still being cloned, and the clone says how far it is. */
+{ state: "cloning" } | 
+/**  The mirror lacks the PR's commits, and is fetching them. */
+{ state: "fetching" } | 
+/**  The diff, whose rows the window asks for by number. */
+{ state: "ready"; 
+/**  The commit the diff ends at, which each chunk names. */
+head: string; files: DiffFile_Serialize[]; rows: number };
 
 export type PrState = "OPEN" | "CLOSED" | "MERGED";
 

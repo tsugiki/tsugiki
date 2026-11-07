@@ -56,6 +56,16 @@ pub struct Announce {
     pub fetched: AnnounceFetched,
 }
 
+impl Announce {
+    /// Says only the clone under way, for an app or a test that shows nothing of the heads fetched.
+    pub fn cloning_only(cloning: AnnounceCloning) -> Self {
+        Self {
+            cloning,
+            fetched: Box::new(|_, _| {}),
+        }
+    }
+}
+
 /// Where clones come from: GitHub, or in tests a folder of bare repositories laid out as GitHub's are.
 pub struct Remotes {
     base: String,
@@ -380,6 +390,9 @@ struct Heads {
     /// The heads fetched since Tsugiki started, and those GitHub didn't have. A head that moves on is
     /// fetched again.
     settled: BTreeMap<u32, CommitSha>,
+    /// An opened PR's head waits, which goes ahead of the other Repositories' heads, even when this
+    /// Repository's fetch is under way. The next fetch takes it.
+    opened: bool,
 }
 
 impl Heads {
@@ -540,6 +553,7 @@ impl Worker {
                 branches: BTreeSet::new(),
                 behind: BTreeMap::new(),
                 settled: BTreeMap::new(),
+                opened: false,
             })
     }
 
@@ -579,6 +593,7 @@ impl Worker {
         drop(known.settled.remove(&head.number));
         drop(known.waiting.insert(head.number, head.commit));
         let _ = known.branches.insert(head.target_branch);
+        known.opened = true;
         self.heads.push_front(known);
     }
 
@@ -662,6 +677,7 @@ impl Worker {
             !heads.waiting.is_empty() && folders.mirror(&heads.repository).exists()
         })?;
         let mirror = folders.mirror(&heads.repository);
+        heads.opened = false;
         let batch = Batch {
             heads: mem::take(&mut heads.waiting),
             branches: mem::take(&mut heads.branches),
@@ -723,7 +739,17 @@ impl Worker {
             let _ = known.waiting.entry(number).or_insert(commit);
         }
         known.branches.extend(batch.branches);
-        self.heads.push_back(known);
+        self.requeue(known);
+    }
+
+    /// Puts a Repository's heads back after its fetch: behind the other Repositories', so each takes its
+    /// turn, unless an opened PR's head waits.
+    fn requeue(&mut self, known: Heads) {
+        if known.opened {
+            self.heads.push_front(known);
+        } else {
+            self.heads.push_back(known);
+        }
     }
 
     /// Notes the heads a fetch brought, which no longer wait. A failed fetch leaves the refs it had, and its
@@ -759,14 +785,9 @@ impl Worker {
             }
         };
         let retry = Instant::now() + self.remotes.patience;
-        // Back where it was, so an opened PR's head handed over meanwhile still goes first.
-        let at = self
-            .heads
-            .iter()
-            .position(|known| known.repository.is_same(&repository));
         let mut known = self.take_heads(&repository);
         let arrived = known.note_fetched(batch.heads, landed.as_ref(), retry);
-        self.heads.insert(at.unwrap_or(self.heads.len()), known);
+        self.requeue(known);
         if !arrived.is_empty() {
             (self.announce.fetched)(&repository, &arrived);
         }

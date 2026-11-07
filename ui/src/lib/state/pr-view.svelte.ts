@@ -8,6 +8,7 @@ import {
   type ThreadLine_Serialize,
 } from "$lib/data/bindings";
 import { DetailState } from "./detail-view.svelte";
+import { PrFilesState } from "./pr-files.svelte";
 import type { Stop } from "./workbench.svelte";
 
 export type PrView = PrView_Serialize;
@@ -23,6 +24,8 @@ export class PrViewState extends DetailState<PrView> {
   tab = $state<PrTab>("conversation");
   /** The Issue the user opened this PR from, which Esc and its `gh-N` link go back to. */
   readonly issue: number | undefined;
+  /** Its Files tab, which asks for the diff as the PR opens, so a head the mirror lacks is fetched first. */
+  readonly files: PrFilesState;
 
   constructor(repository: string, number: number, issue: number | undefined) {
     super(repository, number, {
@@ -31,6 +34,16 @@ export class PrViewState extends DetailState<PrView> {
       read: (repository, number) => commands.pullRequest(repository, number),
     });
     this.issue = issue;
+    this.files = new PrFilesState(repository, number);
+  }
+
+  override async load() {
+    await Promise.all([super.load(), this.files.load()]);
+  }
+
+  override stop() {
+    super.stop();
+    this.files.stop();
   }
 
   /** The line of the list the user opened this PR from. A PR that fixes two Issues has a line under each. */

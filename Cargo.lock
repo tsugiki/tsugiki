@@ -4450,6 +4450,7 @@ dependencies = [
  "tauri-plugin-deep-link",
  "tauri-plugin-single-instance",
  "tauri-specta",
+ "time",
  "tsugiki-core",
  "tsugiki-webview-keys",
 ]

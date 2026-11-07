@@ -5,17 +5,19 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_specta::Event;
+use tsugiki_core::diff::Diffs;
 use tsugiki_core::error::Error;
 use tsugiki_core::folders::Folders;
 use tsugiki_core::github::GitHubAccess;
 use tsugiki_core::latest;
-use tsugiki_core::mirror::{Mirrors, Remotes};
+use tsugiki_core::mirror::{Announce, Mirrors, Remotes};
 use tsugiki_core::session::{Intervals, Session};
 use tsugiki_core::settings::{SettingsFiles, SettingsOwner};
-use tsugiki_core::status::{Status, StatusBoard};
+use tsugiki_core::status::{Change, Status, StatusBoard};
 
 use crate::{
-    Changed, CloningChanged, LastSyncChanged, RepositoryWork, StatusChanged, SyncActivityChanged,
+    Changed, CloningChanged, DiffWork, HeadsFetched, LastSyncChanged, RepositoryWork,
+    StatusChanged, SyncActivityChanged,
 };
 
 /// How often the open Repository refreshes: a refresh costs a few points, and this is about 60 points an
@@ -76,16 +78,23 @@ pub(crate) fn connect_core<R: Runtime>(
     let last_sync_handle = app.clone();
     let activity_handle = app.clone();
     let cloning_handle = app.clone();
-    let mirrors = Mirrors::start(
-        folders.clone(),
-        outside.remotes,
-        Box::new(move |cloning| {
+    let heads_handle = app.clone();
+    let announce = Announce {
+        cloning: Box::new(move |cloning| {
             // Before the event, for the reason the status gives below.
             let cloning = cloning.cloned();
             latest_cloning.set(&cloning);
             log_if_unsent(CloningChanged(cloning).emit(&cloning_handle));
         }),
-    );
+        fetched: Box::new(move |repository, numbers| {
+            let change = Change {
+                repository: repository.clone(),
+                items: numbers.to_vec(),
+            };
+            log_if_unsent(HeadsFetched(change).emit(&heads_handle));
+        }),
+    };
+    let mirrors = Mirrors::start(folders.clone(), outside.remotes, announce);
     let (following, fetching) = (mirrors.requests(), mirrors.requests());
     let board = StatusBoard::new(Box::new(move |status| {
         following.follow(status);
@@ -116,6 +125,12 @@ pub(crate) fn connect_core<R: Runtime>(
         status: refresh,
         repository: REPOSITORY_REFRESH,
     };
+    let diffs = DiffWork {
+        folders: folders.clone(),
+        diffs: Diffs::default(),
+        mirrors: mirrors.requests(),
+    };
+    assert!(app.manage(diffs), "only this manages the diffs");
     let session = Session::start(board, folders, outside.github, intervals);
     let requests = session.requests();
     let work = RepositoryWork {
@@ -156,7 +171,9 @@ mod tests {
     use std::sync::mpsc::{Receiver, Sender, channel};
     use tauri::test::{MockRuntime, mock_builder, mock_context, noop_assets};
     use tauri::{App, Listener, WebviewWindow};
+    use tsugiki_core::github::pull_requests::{PrState, PullRequestFacts};
     use tsugiki_core::github::replay::Replayer;
+    use tsugiki_core::github::{CommitSha, Login};
     use tsugiki_core::github::{Reply, Request, Transport, Unreachable};
     use tsugiki_core::repository::RepositoryAccess;
     use tsugiki_core::settings::SettingsFiles;
@@ -222,6 +239,7 @@ mod tests {
         last_syncs: Receiver<Value>,
         activities: Receiver<Value>,
         clonings: Receiver<Value>,
+        heads: Receiver<Value>,
         _app: App<MockRuntime>,
     }
 
@@ -247,6 +265,7 @@ mod tests {
             let last_syncs = hear(&app, "last-sync-changed");
             let activities = hear(&app, "sync-activity-changed");
             let clonings = hear(&app, "cloning-changed");
+            let heads = hear(&app, "heads-fetched");
             let outside = Outside { github, remotes };
             let core = connect_core(app.handle(), folders, outside, Duration::from_secs(3600));
             let webview =
@@ -261,6 +280,7 @@ mod tests {
                 last_syncs,
                 activities,
                 clonings,
+                heads,
                 _app: app,
             }
         }
@@ -321,6 +341,10 @@ mod tests {
             "workbench",
             json!({ "repository": "a/b", "view": { "kind": "whole" } }),
         );
+        let files = wired.ask(
+            "pull_request_files",
+            json!({ "repository": "a/b", "number": 1 }),
+        );
         drop(wired.stop());
 
         let checking = checking.unwrap_err();
@@ -335,6 +359,7 @@ mod tests {
         assert_eq!(adding["kind"], "internal");
         assert_eq!(adding["message"], no_folders().message);
         assert_eq!(reading.unwrap_err()["kind"], "internal");
+        assert_eq!(files.unwrap_err()["message"], no_folders().message);
     }
 
     #[test]
@@ -879,7 +904,7 @@ mod tests {
         for name in names {
             let work = remotes.join("work").join(name);
             std::fs::create_dir_all(&work).unwrap();
-            git(&work, &["init", "-q"]);
+            git(&work, &["init", "-q", "-b", "main"]);
             std::fs::write(
                 work.join("README.rst"),
                 "This is Python version 3.15.0 alpha 0\n",
@@ -1034,5 +1059,84 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
 
         assert_eq!(head.trim(), commit);
+    }
+
+    #[test]
+    fn a_prs_files_tab_fetches_its_head_first_and_then_reads_its_diff_in_chunks() {
+        let (folders, root) = temp_folders("wiring-files");
+        let remotes = remotes(&root, &[CPYTHON]);
+        let commit = pull_request_on(&root, CPYTHON, 1);
+        // A PR of someone else's, at the commit on the remote, which no sync step reads.
+        let pr = PullRequestFacts {
+            number: 1,
+            title: "gh-1: Fix it".to_owned(),
+            state: PrState::Open,
+            is_draft: false,
+            author: Some(Login::new("some-author")),
+            target_branch: "main".to_owned(),
+            ci: None,
+            updated_at: time::OffsetDateTime::UNIX_EPOCH,
+            review_requests: vec![],
+            latest_reviews: vec![],
+            assignees: vec![],
+            closing_issues: vec![],
+            merge_commit: None,
+            head: CommitSha::parse(&commit),
+            off_default: None,
+        };
+        let name = tsugiki_core::repository::RepositoryName::parse(CPYTHON).unwrap();
+        let store = tsugiki_core::store::Store::open(&folders.database()).unwrap();
+        store.save_pull_requests(&name, vec![pr]).unwrap();
+        store.close();
+        let wired = Wired::start_cloning_from(Ok(folders.clone()), recordings(), remotes);
+        let _ = wired.ask("add_repository", add_cpython()).unwrap();
+        let _clone = clones(&wired, 1);
+        let files = || {
+            wired.ask(
+                "pull_request_files",
+                json!({ "repository": CPYTHON, "number": 1 }),
+            )
+        };
+        let chunk = |head: &str| {
+            let chunk =
+                json!({ "repository": CPYTHON, "number": 1, "head": head, "start": 0, "end": 512 });
+            wired.ask("pull_request_rows", json!({ "chunk": chunk }))
+        };
+
+        let fetching = files().unwrap();
+        let heard = wired.heads.recv_timeout(PLENTY).unwrap();
+        let ready = files().unwrap();
+        let rows = chunk(&commit).unwrap();
+        let no_commit = chunk("main").unwrap_err();
+        drop(wired.stop());
+        std::fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(fetching, json!({ "state": "fetching" }));
+        assert_eq!(heard, json!({ "repository": CPYTHON, "items": [1] }));
+        let news = json!({
+            "path": "NEWS",
+            "old_path": null,
+            "change": { "kind": "lines", "added": 1, "removed": 0 },
+            "row": 0,
+            "columns": 4
+        });
+        assert_eq!(
+            ready,
+            json!({ "state": "ready", "head": commit, "files": [news], "rows": 3 })
+        );
+        assert_eq!(
+            rows,
+            json!([
+                {
+                    "kind": "file",
+                    "path": "NEWS",
+                    "old_path": null,
+                    "change": { "kind": "lines", "added": 1, "removed": 0 }
+                },
+                { "kind": "hunk", "text": "@@ -0,0 +1 @@" },
+                { "kind": "added", "new": 1, "text": "PR 1" }
+            ])
+        );
+        assert_eq!(no_commit["message"], "\"main\" isn't a commit.");
     }
 }

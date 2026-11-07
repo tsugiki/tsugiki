@@ -2,6 +2,7 @@
 //! 0008). The window asks for the rows in chunks (ADR 0001).
 
 use std::ops::Range;
+use std::sync::Arc;
 
 use serde::Serialize;
 use specta::Type;
@@ -11,6 +12,7 @@ use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
 use crate::github::CommitSha;
 use crate::github::pull_requests::{PrHead, PullRequestFacts};
+use crate::highlight::Span;
 use crate::mirror::MirrorRequests;
 use crate::repository::RepositoryName;
 use crate::store::StoreReader;
@@ -113,7 +115,22 @@ impl PrFiles {
         pr: &PrAt,
         range: Range<u32>,
     ) -> Result<Vec<DiffRow>, Error> {
-        let open = sources.diffs.get_or_read(pr, || {
+        Ok(Self::open(sources, pr)?.diff.rows(range).to_vec())
+    }
+
+    /// The spans of the rows in `range`, which highlight their code (#178).
+    pub fn spans(
+        sources: &DiffSources<'_>,
+        pr: &PrAt,
+        range: Range<u32>,
+    ) -> Result<Vec<Vec<Span>>, Error> {
+        let mirror = sources.folders.mirror(&pr.repository);
+        Ok(Self::open(sources, pr)?.spans(&mirror, range))
+    }
+
+    /// The diff of `pr`: the one on show, or else read again, as when the user has opened another PR since.
+    fn open(sources: &DiffSources<'_>, pr: &PrAt) -> Result<Arc<OpenDiff>, Error> {
+        sources.diffs.get_or_read(pr, || {
             let facts = facts(sources.reader, &pr.repository, pr.number)?;
             let Some(facts) = facts else {
                 return Err(Error::new(
@@ -123,8 +140,7 @@ impl PrFiles {
             };
             let mirror = sources.folders.mirror(&pr.repository);
             diff::read(&mirror, &facts.target_branch, &pr.head)
-        })?;
-        Ok(open.diff.rows(range).to_vec())
+        })
     }
 }
 
@@ -298,6 +314,7 @@ mod tests {
             head: head.clone(),
         };
         let rows = PrFiles::rows(&world.sources(), &pr, 0..3).unwrap();
+        let spans = PrFiles::spans(&world.sources(), &pr, 0..whole.row_count()).unwrap();
 
         let expected = PrFiles::Ready {
             head,
@@ -306,6 +323,8 @@ mod tests {
         };
         assert_eq!(files, expected);
         assert_eq!(rows, whole.rows(0..3));
+        assert_eq!(spans.len(), whole.rows(0..whole.row_count()).len());
+        assert_eq!(spans.iter().filter(|spans| !spans.is_empty()).count(), 13);
         mirrored.finish();
         world.finish();
     }

@@ -36,6 +36,11 @@ fn numbered(lines: std::ops::RangeInclusive<u32>) -> String {
     lines.map(|n| format!("line {n}\n")).collect()
 }
 
+/// Python that sets `x1` to 1, and so on.
+fn assigned(lines: std::ops::RangeInclusive<u32>) -> String {
+    lines.map(|n| format!("x{n} = {n}\n")).collect()
+}
+
 /// A mirror with a branch `main`, and a PR branch `pr` started from main's first commit. main has moved on
 /// since, in a file the PR doesn't touch.
 pub(crate) struct Mirrored {
@@ -54,7 +59,7 @@ impl Mirrored {
         let _ = git_in(&work, &["init", "-q", "-b", "main"]);
         // The PR sets run.sh's mode in the index only, which macOS's git would then see as a change on disk.
         let _ = git_in(&work, &["config", "core.fileMode", "false"]);
-        fs::write(work.join("Lib/ast.py"), numbered(1..=10)).unwrap();
+        fs::write(work.join("Lib/ast.py"), assigned(1..=10)).unwrap();
         fs::write(work.join("Modules/old.c"), "int x;\n").unwrap();
         fs::write(work.join("Doc/notes.txt"), numbered(1..=20)).unwrap();
         fs::write(work.join("logo.png"), b"\x89PNG\0\x01").unwrap();
@@ -63,7 +68,7 @@ impl Mirrored {
         let _ = git_in(&work, &["commit", "-qm", "One"]);
 
         let _ = git_in(&work, &["switch", "-qc", "pr"]);
-        let ast = numbered(1..=10).replace("line 5\n", "line five\n") + "line 11";
+        let ast = assigned(1..=10).replace("x5 = 5\n", "x5 = 'five'\n") + "x11 = 11";
         fs::write(work.join("Lib/ast.py"), ast).unwrap();
         let _ = git_in(&work, &["rm", "-q", "Modules/old.c"]);
         let _ = git_in(&work, &["mv", "Doc/notes.txt", "Doc/news.txt"]);
@@ -97,6 +102,11 @@ impl Mirrored {
 
     /// Its diff, read from where it was made.
     pub(crate) fn diff(&self) -> Diff {
+        self.read().diff
+    }
+
+    /// Its diff and the merge base it starts from.
+    pub(crate) fn read(&self) -> MirrorDiff {
         read(&self.mirror, "main", &self.head).unwrap()
     }
 
@@ -208,9 +218,9 @@ fn the_diff_on_show_answers_each_chunk_and_another_head_is_read_again() {
         ..pr.clone()
     };
 
-    let first = diffs.get_or_read(&pr, || Ok(mirrored.diff())).unwrap();
+    let first = diffs.get_or_read(&pr, || Ok(mirrored.read())).unwrap();
     let again = diffs.get_or_read(&pr, || panic!("read again")).unwrap();
-    let other = diffs.get_or_read(&moved, || Ok(mirrored.diff())).unwrap();
+    let other = diffs.get_or_read(&moved, || Ok(mirrored.read())).unwrap();
 
     assert!(Arc::ptr_eq(&first, &again));
     assert_eq!(other.pr.head, moved.head);
@@ -227,7 +237,12 @@ fn a_read_that_ends_after_a_later_one_leaves_the_later_on_show() {
         number,
         head: sha(&"1".repeat(40)),
     };
-    let empty = || Diff::parse("", "");
+    let empty = || {
+        Ok(MirrorDiff {
+            base: sha(&"0".repeat(40)),
+            diff: Diff::parse("", "")?,
+        })
+    };
 
     // The user opens PR 8 while PR 7's diff is still being read.
     let earlier = diffs.get_or_read(&pr(7), || {
@@ -279,4 +294,41 @@ fn an_empty_line_of_context_without_its_space_is_still_context() {
             text: String::new()
         }]
     );
+}
+
+#[test]
+fn each_row_is_highlighted_from_its_version_and_a_removed_line_from_the_merge_base() {
+    use crate::highlight::tests::with_spans;
+
+    let mirrored = Mirrored::new("spans");
+    let pr = PrAt {
+        repository: RepositoryName::parse("python/cpython").unwrap(),
+        number: 7,
+        head: mirrored.head.clone(),
+    };
+    let open = Diffs::default()
+        .get_or_read(&pr, || Ok(mirrored.read()))
+        .unwrap();
+    let all = 0..open.diff.row_count();
+
+    let spans = open.spans(&mirrored.mirror, all.clone());
+    let chunk = open.spans(&mirrored.mirror, 3..9);
+    // A diff of its own, as this one keeps each version it parsed.
+    let fresh = Diffs::default()
+        .get_or_read(&pr, || Ok(mirrored.read()))
+        .unwrap();
+    let unreadable = fresh.spans(Path::new("no-mirror"), all.clone());
+
+    let drawn: Vec<String> = (open.diff.rows(all).iter().zip(&spans))
+        .filter_map(|(row, spans)| match row {
+            DiffRow::Context { text, .. } => Some(format!(" {}", with_spans(text, spans))),
+            DiffRow::Added { text, .. } => Some(format!("+{}", with_spans(text, spans))),
+            DiffRow::Removed { text, .. } => Some(format!("-{}", with_spans(text, spans))),
+            DiffRow::File { .. } | DiffRow::Hunk { .. } | DiffRow::Note { .. } => None,
+        })
+        .collect();
+    insta::assert_snapshot!(drawn.join("\n"));
+    assert_eq!(chunk, spans.get(3..9).unwrap());
+    assert!(unreadable.iter().all(Vec::is_empty));
+    mirrored.finish();
 }

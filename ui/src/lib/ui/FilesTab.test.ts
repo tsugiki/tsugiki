@@ -6,6 +6,7 @@ import FilesTab from "./FilesTab.svelte";
 const core = vi.hoisted(() => ({
   pullRequestFiles: vi.fn(),
   pullRequestRows: vi.fn<(chunk: { start: number }) => Promise<unknown>>(),
+  pullRequestSpans: vi.fn(),
   cloning: vi.fn(),
   listen: vi.fn(),
 }));
@@ -14,6 +15,7 @@ vi.mock("$lib/data/bindings", () => ({
   commands: {
     pullRequestFiles: core.pullRequestFiles,
     pullRequestRows: core.pullRequestRows,
+    pullRequestSpans: core.pullRequestSpans,
     cloning: core.cloning,
   },
   events: {
@@ -78,6 +80,7 @@ beforeEach(() => {
   core.listen.mockResolvedValue(vi.fn());
   core.cloning.mockResolvedValue(null);
   core.pullRequestRows.mockResolvedValue(ok(rows));
+  core.pullRequestSpans.mockReturnValue(new Promise(() => {}));
 });
 
 it("waits for the mirror's clone, and says how far it got", async () => {
@@ -164,4 +167,25 @@ it("draws rows near what shows, and asks for the chunks there as it scrolls", as
   const starts = core.pullRequestRows.mock.calls.map(([chunk]) => chunk.start / CHUNK);
   expect(starts).toEqual([0, 1, 3, 4, 5]);
   expect(lines()).toHaveLength(81);
+});
+
+it("paints each line of code in its spans' colors once they come", async () => {
+  const spans = [
+    [],
+    [],
+    [{ start: 0, end: 5, highlight: "constant" }],
+    [{ start: 4, end: 8, highlight: "keyword" }],
+    [{ start: 0, end: 3, highlight: "function" }],
+  ];
+  core.pullRequestSpans.mockResolvedValue(ok(spans));
+
+  await shown(ready(rows.length));
+
+  await vi.waitFor(() => {
+    expect(document.querySelector(".hl-keyword")?.textContent).toBe("line");
+  });
+  expect(document.querySelector(".hl-constant")?.textContent).toBe("Notes");
+  expect(document.querySelector(".hl-function")?.textContent).toBe("new");
+  // The text reads as it did before the spans came.
+  expect(lines()[3]).toBe("2-old line");
 });

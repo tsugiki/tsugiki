@@ -1097,16 +1097,14 @@ mod tests {
                 json!({ "repository": CPYTHON, "number": 1 }),
             )
         };
-        let chunk = |head: &str| {
-            let chunk =
-                json!({ "repository": CPYTHON, "number": 1, "head": head, "start": 0, "end": 512 });
-            wired.ask("pull_request_rows", json!({ "chunk": chunk }))
-        };
+        let chunk_of = |head: &str| json!({ "repository": CPYTHON, "number": 1, "head": head, "start": 0, "end": 512 });
+        let chunk = |head: &str| wired.ask("pull_request_rows", json!({ "chunk": chunk_of(head) }));
 
         let fetching = files().unwrap();
         let heard = wired.heads.recv_timeout(PLENTY).unwrap();
         let ready = files().unwrap();
         let rows = chunk(&commit).unwrap();
+        let spans = wired.ask("pull_request_spans", json!({ "chunk": chunk_of(&commit) }));
         let no_commit = chunk("main").unwrap_err();
         drop(wired.stop());
         std::fs::remove_dir_all(root).unwrap();
@@ -1138,5 +1136,7 @@ mod tests {
             ])
         );
         assert_eq!(no_commit["message"], "\"main\" isn't a commit.");
+        // NEWS is in no language Tsugiki highlights.
+        assert_eq!(spans.unwrap(), json!([[], [], []]));
     }
 }

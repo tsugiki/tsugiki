@@ -95,6 +95,7 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
         { kind: "added", new: 1, text: "The fix" },
       ],
     },
+    pullRequestSpans: { status: "ok", data: [[], [], [{ start: 4, end: 7, highlight: "keyword" }]] },
   });
   await page.goto("/");
   await expect(page.getByRole("button", { name: "#7 Issue 7" })).toBeVisible();
@@ -112,6 +113,14 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
   const diff = pane.getByRole("region", { name: "Diff" });
   await expect(diff).toContainText("NEWS+1 −0");
   await expect(diff).toContainText("1+The fix");
+  // github.com's colors, light as the window is now, and dark under a dark theme.
+  const keyword = diff.locator(".hl-keyword");
+  await expect(keyword).toHaveText("fix");
+  await expect(keyword).toHaveCSS("color", "rgb(207, 34, 46)");
+  await page.evaluate(() => {
+    document.documentElement.dataset["theme"] = "dark";
+  });
+  await expect(keyword).toHaveCSS("color", "rgb(255, 123, 114)");
   await page.keyboard.press("ControlOrMeta+PageUp");
   await expect(pane).toContainText("The fix");
 

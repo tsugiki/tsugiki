@@ -283,20 +283,38 @@ pub fn held(mirror: &Path, target: &str, head: &CommitSha) -> Held {
 
 /// Reads the diff from the merge base of `head` and the branch `target` to `head`, with renames found as
 /// GitHub finds them. Both have to be in `mirror`, as `held` says.
-pub fn read(mirror: &Path, target: &str, head: &CommitSha) -> Result<Diff, Error> {
-    let (numstat, patch) =
+pub fn read(mirror: &Path, target: &str, head: &CommitSha) -> Result<MirrorDiff, Error> {
+    let (base, numstat, patch) =
         run_diff(mirror, target, head).map_err(|cause| cant_read(mirror, &cause))?;
-    Diff::parse(&numstat, &patch)
+    Ok(MirrorDiff {
+        base,
+        diff: Diff::parse(&numstat, &patch)?,
+    })
 }
 
-/// What `git diff --numstat -z` and `git diff` print for the diff `read` reads.
-fn run_diff(mirror: &Path, target: &str, head: &CommitSha) -> std::io::Result<(String, String)> {
+/// A PR's diff as read from its mirror, and the merge base it starts from.
+#[derive(Debug)]
+pub struct MirrorDiff {
+    /// The commit whose versions of the files the removed lines come from.
+    pub base: CommitSha,
+    pub diff: Diff,
+}
+
+/// The merge base `read` starts from, and what `git diff --numstat -z` and `git diff` print from it.
+fn run_diff(
+    mirror: &Path,
+    target: &str,
+    head: &CommitSha,
+) -> std::io::Result<(CommitSha, String, String)> {
     let head = head.as_str();
     let base = git(
         mirror,
         &["merge-base", &format!("refs/heads/{target}"), head],
     )?;
     let base = base.trim();
+    // Built every time, as a closure that never runs would fail the coverage gate (ADR 0009).
+    let not_a_commit = std::io::Error::other(format!("merge-base gave {base:?}"));
+    let base_commit = CommitSha::parse(base).ok_or(not_a_commit)?;
     // A user's git config can change how a diff looks, so these say each choice outright.
     let options = [
         "--no-color",
@@ -321,7 +339,7 @@ fn run_diff(mirror: &Path, target: &str, head: &CommitSha) -> std::io::Result<(S
         (numstat.join(), git(mirror, &patch))
     });
     let stopped = std::io::Error::other("git's reader stopped");
-    Ok((numstat.unwrap_or(Err(stopped))?, patch?))
+    Ok((base_commit, numstat.unwrap_or(Err(stopped))?, patch?))
 }
 
 fn git(mirror: &Path, args: &[&str]) -> std::io::Result<String> {
@@ -355,11 +373,13 @@ impl PrAt {
     }
 }
 
-/// A diff the window reads in chunks, and the PR it belongs to.
+/// A diff the window reads in chunks, the PR it belongs to, and the versions of its files parsed so far.
 #[derive(Debug)]
 pub struct OpenDiff {
     pub pr: PrAt,
+    pub base: CommitSha,
     pub diff: Diff,
+    trees: highlighted::Trees,
 }
 
 /// The diff of the PR on show, which each chunk the window asks for comes from. Commands run on threads of
@@ -390,7 +410,7 @@ impl Diffs {
     pub fn get_or_read(
         &self,
         pr: &PrAt,
-        read: impl FnOnce() -> Result<Diff, Error>,
+        read: impl FnOnce() -> Result<MirrorDiff, Error>,
     ) -> Result<Arc<OpenDiff>, Error> {
         let started = {
             let mut shown = self.lock();
@@ -400,9 +420,12 @@ impl Diffs {
             shown.reads += 1;
             shown.reads
         };
+        let MirrorDiff { base, diff } = read()?;
         let read = Arc::new(OpenDiff {
             pr: pr.clone(),
-            diff: read()?,
+            base,
+            diff,
+            trees: highlighted::Trees::default(),
         });
         let mut shown = self.lock();
         if started > shown.read {
@@ -418,6 +441,8 @@ impl Diffs {
         self.shown.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
+
+mod highlighted;
 
 #[cfg(test)]
 pub(crate) mod tests;

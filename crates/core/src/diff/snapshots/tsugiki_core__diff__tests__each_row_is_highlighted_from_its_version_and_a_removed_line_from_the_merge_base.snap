@@ -1,0 +1,22 @@
+---
+source: crates/core/src/diff/tests.rs
+expression: "drawn.join(\"\\n\")"
+---
+ line 17
+ line 18
+ line 19
+-line 20
++line twenty
+ x2 [Keyword =] [Constant 2]
+ x3 [Keyword =] [Constant 3]
+ x4 [Keyword =] [Constant 4]
+-x5 [Keyword =] [Constant 5]
++x5 [Keyword =] [String 'five']
+ x6 [Keyword =] [Constant 6]
+ x7 [Keyword =] [Constant 7]
+ x8 [Keyword =] [Constant 8]
+ x9 [Keyword =] [Constant 9]
+ x10 [Keyword =] [Constant 10]
++x11 [Keyword =] [Constant 11]
++[Keyword pass]
+-[Type int] x;

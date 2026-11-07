@@ -77,6 +77,11 @@ export const commands = {
 	pullRequestFiles: (repository: string, number: number) => typedError<PrFiles_Serialize | null, Error_Serialize>(__TAURI_INVOKE("pull_request_files", { repository, number })),
 	/**  Rows of a PR's diff, which come from the diff on show unless the user has opened another PR since. */
 	pullRequestRows: (chunk: DiffChunk) => typedError<DiffRow_Serialize[], Error_Serialize>(__TAURI_INVOKE("pull_request_rows", { chunk })),
+	/**
+	 *  The spans that highlight the code in a chunk of a PR's diff, which the Files tab asks for with its rows
+	 *  and paints when they come.
+	 */
+	pullRequestSpans: (chunk: DiffChunk) => typedError<Span[][], Error_Serialize>(__TAURI_INVOKE("pull_request_spans", { chunk })),
 	/**  Opens an Issue or a PR on GitHub in the system browser. */
 	openOnGithub: (repository: string, item: GitHubItem) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_on_github", { repository, item })),
 	/**
@@ -354,6 +359,9 @@ export type HeadsFetched = Change;
 export type HiddenReason = "abuse" | "off_topic" | "outdated" | "resolved" | "duplicate" | "spam" | 
 /**  GitHub gave a reason Tsugiki doesn't know, or none. */
 "unstated";
+
+/**  What a run of text shows as, in colors that look like github.com's. */
+export type Highlight = "keyword" | "string" | "comment" | "constant" | "function" | "type";
 
 /**  What the window opens on. */
 export type Home = Home_Serialize | Home_Deserialize;
@@ -969,6 +977,13 @@ export type Settings_Serialize = {
 export type Slowest = {
 	count: number,
 	worst_ms: number | null,
+};
+
+/**  A run of one line's text in one color, from `start` to `end` in UTF-16 code units, as the webview counts. */
+export type Span = {
+	start: number,
+	end: number,
+	highlight: Highlight,
 };
 
 /**  The app's state, shown in the status bar. */

@@ -2,6 +2,7 @@
   import { openOnGitHub, type GitHubItem } from "$lib/state/browser";
   import { hud } from "$lib/state/hud.svelte";
   import { IssueViewState } from "$lib/state/issue-view.svelte";
+  import { DiffViewChoice } from "$lib/state/pr-files.svelte";
   import { PrViewState } from "$lib/state/pr-view.svelte";
   import {
     sameStop,
@@ -18,6 +19,8 @@
   import { details, headline, issueDetails, preview, standaloneDetails } from "./workbench-row";
 
   const MINUTE = 60_000;
+  /** The view of every PR's diff, unified or side by side, which `Ctrl+Alt+U` switches. */
+  const diffView = new DiffViewChoice();
   const EMPTY = {
     whole: "Nothing here yet. The first sync lists what waits on you as it finds it.",
     filter:
@@ -89,7 +92,7 @@
     detail =
       stop.kind === "issue"
         ? new IssueViewState(name, stop.number)
-        : new PrViewState(name, stop.number, stop.issue);
+        : new PrViewState(name, stop.number, stop.issue, diffView);
     void detail.load();
   }
 
@@ -122,7 +125,8 @@
 
   /**
    * The list's keys. A dialog on top keeps them, and a text box or a focused control keeps its own. The
-   * window's guard has already stopped the browser for Ctrl+Shift+G.
+   * window's guard has already stopped the browser for Ctrl+Shift+G and Ctrl+Alt+U, which work in a text
+   * box too.
    */
   function onkeydown(e: KeyboardEvent) {
     if (!keysActive) return;
@@ -130,6 +134,9 @@
     if (key === "ctrl+shift+g") {
       const current = currentOnGitHub();
       if (current) void onGitHub(current);
+    } else if (key === "ctrl+alt+u" && detail instanceof PrViewState && detail.tab === "files") {
+      e.preventDefault();
+      diffView.toggle();
     } else if (isTextBox(e.target)) {
       return;
     } else if (key === "enter" && e.repeat) {

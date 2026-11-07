@@ -1,15 +1,22 @@
 // Which rows of a diff the Files tab shows, and in what order. A collapsed file keeps its header and hides
-// its other rows (#181), and an expanded gap shows lines of the file between them (#182), so the tab counts
-// and places rows by where they show, and asks the core for the diff's rows by where they are in the diff.
+// its other rows (#181), an expanded gap shows lines of the file between them (#182), and the side-by-side
+// view shows a change's removed rows beside its added ones (#183). So the tab counts and places rows by
+// where they show, and asks the core for the diff's rows by where they are in the diff.
 
-import type { Gap, Rest } from "$lib/data/bindings";
+import type { Gap, Pair, Rest } from "$lib/data/bindings";
 
-/** What shows at one place: a row of the diff, a line a gap left out, or the button that shows the lines
- * after a file's last hunk. */
+/** The two views of a diff: each row under the one before, or the old lines beside the new. */
+export type DiffView = "unified" | "side-by-side";
+
+/** What shows at one place: a row of the diff, a line a gap left out, the button that shows the lines
+ * after a file's last hunk, or side by side a change's removed row and the added row beside it, of which
+ * one may be missing. */
 export type Shown =
   | { kind: "row"; row: number }
   | { kind: "line"; file: number; old: number; new: number }
-  | { kind: "more"; file: number };
+  | { kind: "more"; file: number }
+  | { kind: "pair"; removed: number; added: number | null }
+  | { kind: "pair"; removed: null; added: number };
 
 /** How much of each gap the user has expanded. */
 export interface Expanded {
@@ -19,11 +26,12 @@ export interface Expanded {
   rest(file: number, rest: Rest): { lines: number; ended: boolean };
 }
 
-/** A file as the layout needs it: where its header is, and the lines its hunks leave out. */
+/** A file as the layout needs it: where its header is, the lines its hunks leave out, and its changes. */
 export interface LaidFile {
   row: number;
   gaps: readonly Gap[];
   rest: Rest | null;
+  pairs: readonly Pair[];
 }
 
 /** A gap above a hunk that still hides lines, and the file it's in. */
@@ -39,6 +47,7 @@ type Run = { shown: number; length: number } & (
   | { kind: "row"; row: number }
   | { kind: "line"; file: number; old: number; new: number }
   | { kind: "more"; file: number }
+  | { kind: "pair"; row: number; removed: number; added: number }
 );
 
 const nothing: Expanded = {
@@ -49,6 +58,7 @@ const nothing: Expanded = {
 export class DiffLayout {
   /** How many places show. */
   readonly count: number;
+  readonly view: DiffView;
   readonly #rows: number;
   readonly #runs: Run[] = [];
   readonly #files = new Map<number, number>();
@@ -56,18 +66,35 @@ export class DiffLayout {
 
   /** The layout of a diff `rows` long, whose files' headers sit at `files[i].row`, with the files that
    * `collapsed` names folded to their headers and the gaps `expanded` names opened. A gap opened all the
-   * way leaves out the row of its hunk, as its lines then run on into the hunk's. */
+   * way leaves out the row of its hunk, as its lines then run on into the hunk's. Side by side, each change
+   * takes as many places as its longer side. */
   constructor(
     rows: number,
     files: readonly LaidFile[],
     collapsed: (file: number) => boolean,
     expanded: Expanded = nothing,
+    view: DiffView = "unified",
   ) {
     this.#rows = rows;
+    this.view = view;
     let row = 0;
-    const rowsTo = (end: number) => {
+    // The changes of the file being laid out that show side by side, and the next to lay out.
+    let pairs: readonly Pair[] = [];
+    let next = 0;
+    const plainTo = (end: number) => {
       if (end > row) this.#add({ kind: "row", row, shown: 0, length: end - row });
       row = end;
+    };
+    const rowsTo = (end: number) => {
+      for (; ; next += 1) {
+        const pair = pairs[next];
+        if (pair === undefined || pair.row >= end) break;
+        plainTo(pair.row);
+        const length = Math.max(pair.removed, pair.added);
+        this.#add({ kind: "pair", ...pair, shown: 0, length });
+        row = pair.row + pair.removed + pair.added;
+      }
+      plainTo(end);
     };
     const lines = (file: number, old: number, line: number, length: number) => {
       if (length > 0) this.#add({ kind: "line", file, old, new: line, shown: 0, length });
@@ -75,7 +102,12 @@ export class DiffLayout {
     files.forEach((file, index) => {
       this.#files.set(file.row, index);
       const end = files[index + 1]?.row ?? rows;
-      if (collapsed(index)) {
+      // The rows the file before left, with its pairs.
+      rowsTo(file.row);
+      const folded = collapsed(index);
+      pairs = view === "side-by-side" && !folded ? file.pairs : [];
+      next = 0;
+      if (folded) {
         rowsTo(file.row + 1);
         row = end;
         return;
@@ -115,9 +147,9 @@ export class DiffLayout {
     this.#runs.push({ ...run, shown });
   }
 
-  /** The run that place `index` is in, or nothing outside the places. A file the diff goes on past adds a
-   * run, so this halves the runs, which start in order. */
-  #runAt(index: number): Run | undefined {
+  /** How many runs start at or before place `index`. Each gap and pair can add a run, so this halves the
+   * runs, which start in order. */
+  #starting(index: number): number {
     let low = 0;
     let high = this.#runs.length;
     while (low < high) {
@@ -125,7 +157,12 @@ export class DiffLayout {
       if (this.#runs.slice(middle, middle + 1).every((run) => run.shown <= index)) low = middle + 1;
       else high = middle;
     }
-    // The last run that starts at or before `index`.
+    return low;
+  }
+
+  /** The run that place `index` is in, or nothing outside the places. */
+  #runAt(index: number): Run | undefined {
+    const low = this.#starting(index);
     const [run] = this.#runs.slice(low - 1, low);
     return run !== undefined && index < run.shown + run.length ? run : undefined;
   }
@@ -143,21 +180,81 @@ export class DiffLayout {
         return { kind: "line", file: run.file, old: run.old + into, new: run.new + into };
       case "more":
         return { kind: "more", file: run.file };
+      case "pair": {
+        const added = run.row + run.removed + into;
+        if (into < run.removed)
+          return { kind: "pair", removed: run.row + into, added: into < run.added ? added : null };
+        return { kind: "pair", removed: null, added };
+      }
     }
   }
 
   /** The runs of the diff's rows that places `first` to `last` show, each from its first row to the row
-   * after its last. */
+   * after its last. A change's places show rows from both its sides. */
   pieces(first: number, last: number): [number, number][] {
     const end = Math.min(last, this.count - 1);
     const pieces: [number, number][] = [];
-    for (const run of this.#runs) {
-      if (run.kind !== "row") continue;
-      const from = Math.max(first, run.shown);
-      const to = Math.min(end, run.shown + run.length - 1);
-      if (from <= to) pieces.push([run.row + from - run.shown, run.row + to - run.shown + 1]);
+    const add = (from: number, to: number) => {
+      const before = pieces.at(-1);
+      if (before?.[1] === from) before[1] = to;
+      else if (from < to) pieces.push([from, to]);
+    };
+    for (const run of this.#runs.slice(Math.max(0, this.#starting(first) - 1))) {
+      if (run.shown > end) break;
+      if (run.kind !== "row" && run.kind !== "pair") continue;
+      // The first and last places it shows, counted from its own first.
+      const from = Math.max(first, run.shown) - run.shown;
+      const to = Math.min(end, run.shown + run.length - 1) - run.shown + 1;
+      if (run.kind === "row") {
+        add(run.row + from, run.row + to);
+        continue;
+      }
+      add(run.row + from, run.row + Math.min(to, run.removed));
+      const added = run.row + run.removed;
+      add(added + from, added + Math.min(to, run.added));
     }
     return pieces;
+  }
+
+  /** The place that shows what place `place` of `from` shows, a layout of the other view: the same row,
+   * the row a pair starts from, the same line, or the same button. If none does, `place` itself. */
+  moved(from: DiffLayout, place: number): number {
+    return this.#placeOf(from.at(place)) ?? place;
+  }
+
+  /** The place that shows what `shown` names, if one does. */
+  #placeOf(shown: Shown): number | undefined {
+    switch (shown.kind) {
+      case "row":
+        return this.#placeOfRow(shown.row);
+      case "pair":
+        return this.#placeOfRow(shown.removed === null ? shown.added : shown.removed);
+      case "line": {
+        const run = this.#runs.find(
+          (run) =>
+            run.kind === "line" &&
+            run.file === shown.file &&
+            run.new <= shown.new &&
+            shown.new < run.new + run.length,
+        );
+        return run?.kind === "line" ? run.shown + shown.new - run.new : undefined;
+      }
+      case "more":
+        return this.#runs.find((run) => run.kind === "more" && run.file === shown.file)?.shown;
+    }
+  }
+
+  /** The place that shows the diff's row `row`, if one does. */
+  #placeOfRow(row: number): number | undefined {
+    for (const run of this.#runs) {
+      if (run.kind === "row" && run.row <= row && row < run.row + run.length)
+        return run.shown + row - run.row;
+      if (run.kind === "pair" && run.row <= row && row < run.row + run.removed + run.added) {
+        const into = row - run.row;
+        return run.shown + (into < run.removed ? into : into - run.removed);
+      }
+    }
+    return undefined;
   }
 
   /** The file whose header is the diff's row `row`, if it is one. */

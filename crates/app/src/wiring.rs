@@ -1139,7 +1139,8 @@ mod tests {
             "columns": 4,
             "generated": false,
             "gaps": [],
-            "rest": null
+            "rest": null,
+            "pairs": [{ "row": 2, "removed": 0, "added": 1 }]
         });
         assert_eq!(
             ready,

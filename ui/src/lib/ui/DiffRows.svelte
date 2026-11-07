@@ -1,9 +1,12 @@
 <!-- The rows of a PR's diff, drawn only near what the tab shows, below its NEWS entries. Every row has the
      same height, so a row's place follows from where it shows, and the core sends the rows in chunks as they
      come near (ADR 0001). A collapsed Generated file shows only its header (#181). A hunk's row offers to
-     show the lines its gap leaves out, and the row after a file's last hunk the lines after it (#182). -->
+     show the lines its gap leaves out, and the row after a file's last hunk the lines after it (#182).
+     Side by side, a line of context shows on both sides, and a change shows its removed rows on the left
+     beside its added ones on the right (#183). -->
 <script lang="ts">
-  import type { HiddenGap } from "$lib/state/diff-layout";
+  import { untrack } from "svelte";
+  import type { DiffLayout, HiddenGap } from "$lib/state/diff-layout";
   import {
     EXPAND,
     type DiffFile,
@@ -28,8 +31,11 @@
   /** Rows drawn above and below the visible ones, so a quick scroll doesn't show blanks. */
   const OVERSCAN = 40;
 
+  let scroller = $state<HTMLElement>();
   let scrollTop = $state(0);
+  let scrollLeft = $state(0);
   let height = $state(0);
+  let width = $state(0);
   /** How tall the NEWS entries above the rows are. */
   let newsHeight = $state(0);
   const rows = $derived(diff.layout.count);
@@ -38,9 +44,27 @@
   const shown = $derived(Array.from({ length: Math.max(0, last - first + 1) }, (_, i) => first + i));
   /** Room for the longest line, so the scroll width doesn't change as rows come and go. */
   const columns = $derived(files.reduce((widest, file) => Math.max(widest, file.columns), diff.columns));
+  const sideBySide = $derived(diff.shownAs === "side-by-side");
 
   $effect(() => {
     diff.need(first, last);
+  });
+
+  /** The layout the rows were last drawn from, which a switch of view starts from. */
+  let drawn: DiffLayout | undefined;
+  /** Keeps the place at the top in view as the view switches: the same row, line or button, as far into
+   * it as it was. */
+  $effect(() => {
+    const layout = diff.layout;
+    const before = drawn;
+    drawn = layout;
+    untrack(() => {
+      const into = scrollTop - newsHeight;
+      if (before === undefined || before.view === layout.view || into <= 0 || scroller === undefined) return;
+      scroller.scrollTop = newsHeight + layout.moved(before, Math.floor(into / ROW)) * ROW + (into % ROW);
+      // The rows to draw follow at once, as the scroll event comes after the next frame.
+      scrollTop = scroller.scrollTop;
+    });
   });
 
   const counted = (change: FileChange) =>
@@ -59,6 +83,37 @@
      row keeps its text's spaces. -->
 <!-- prettier-ignore -->
 {#snippet code(marker: string, text: string, spans: Span[])}<span class="text">{marker}{#each pieces(text, spans) as piece, at (at)}{#if piece.highlight}<span class={`hl-${piece.highlight}`}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</span>{/snippet}
+
+<!-- One side of a row side by side: a line's number and its code. -->
+<!-- prettier-ignore -->
+{#snippet side(kind: string, number: number, marker: string, text: string, spans: Span[])}<span class={`side ${kind}`}><span class="number">{number}</span><span class="clip">{@render code(marker, text, spans)}</span></span>{/snippet}
+
+<!-- A side with nothing on it, as the right side of a removed row has, or one whose row hasn't come. -->
+{#snippet blank(kind: string)}<span class={`side ${kind}`}></span>{/snippet}
+
+<!-- A line of context side by side: its old number and its new, with its code on both sides. -->
+{#snippet both(kind: string, old: number, line: number, text: string, spans: Span[])}
+  {@render side(kind, old, " ", text, spans)}{@render side(kind, line, " ", text, spans)}
+{/snippet}
+
+<!-- Side by side, one side of a change: row `index` of the diff, removed or added, the note that the line
+     above has no newline, or nothing. -->
+{#snippet paired(index: number | null)}
+  {@const row = index === null ? undefined : diff.row(index)}
+  {#if index === null}
+    {@render blank("")}
+  {:else if row?.kind === "removed"}
+    {@render side("removed", row.old, "-", row.text, diff.spans(index) ?? [])}
+  {:else if row?.kind === "added"}
+    {@render side("added", row.new, "+", row.text, diff.spans(index) ?? [])}
+  {:else if row?.kind === "note"}
+    <span class="side note"
+      ><span class="number"></span><span class="clip"><span class="text">{row.text}</span></span></span
+    >
+  {:else}
+    {@render blank("waiting")}
+  {/if}
+{/snippet}
 
 <!-- The button that shows the whole file. -->
 {#snippet whole(file: number)}
@@ -113,11 +168,14 @@
 <div
   class="scroller"
   role="region"
-  aria-label="Diff"
+  aria-label={sideBySide ? "Side-by-side diff" : "Diff"}
   tabindex="0"
+  bind:this={scroller}
   bind:clientHeight={height}
+  bind:clientWidth={width}
   onscroll={(event) => {
     scrollTop = event.currentTarget.scrollTop;
+    scrollLeft = event.currentTarget.scrollLeft;
   }}
 >
   <div bind:clientHeight={newsHeight}>
@@ -126,11 +184,20 @@
   <div
     class="spacer"
     style:height={`${String(rows * ROW)}px`}
-    style:min-width={`calc(${String(columns)}ch + 112px)`}
+    style:min-width={sideBySide
+      ? `calc(${String(width)}px + max(0px, ${String(columns + 1)}ch + 56px - ${String(width / 2)}px))`
+      : `calc(${String(columns)}ch + 112px)`}
+    style:--across={`${String(scrollLeft)}px`}
+    style:--width={`${String(width)}px`}
   >
     {#each shown as place (place)}
       {@const at = diff.layout.at(place)}
-      {#if at.kind === "line"}
+      {#if at.kind === "line" && sideBySide}
+        {@const line = diff.line(at.file, at.new)}
+        <div class="row split" style:top={`${String(place * ROW)}px`}>
+          {@render both("context expanded", at.old, at.new, line.text, line.spans)}
+        </div>
+      {:else if at.kind === "line"}
         {@const line = diff.line(at.file, at.new)}
         <div class="row context expanded" style:top={`${String(place * ROW)}px`}>
           <span class="number">{at.old}</span><span class="number">{at.new}</span>{@render code(
@@ -138,6 +205,10 @@
             line.text,
             line.spans,
           )}
+        </div>
+      {:else if at.kind === "pair"}
+        <div class="row split" style:top={`${String(place * ROW)}px`}>
+          {@render paired(at.removed)}{@render paired(at.added)}
         </div>
       {:else if at.kind === "more"}
         {@const file = at.file}
@@ -157,53 +228,59 @@
       {:else}
         {@const index = at.row}
         {@const row = diff.row(index)}
-        <div class={`row ${row?.kind ?? "waiting"}`} style:top={`${String(place * ROW)}px`}>
-          {#if row?.kind === "file"}
-            {@const file = generated(index)}
-            {#if file === undefined}
-              <span class="path">{named(row)}</span><span class="count">{counted(row.change)}</span>
-            {:else}
-              <button
-                type="button"
-                class="toggle"
-                aria-expanded={!diff.collapsed(file)}
-                onclick={() => {
-                  diff.toggle(file);
-                }}
-                ><span class="chevron">{diff.collapsed(file) ? "▸" : "▾"}</span><span class="path"
-                  >{named(row)}</span
-                ></button
-              ><span class="count">{counted(row.change)}</span><span class="count">Generated</span>
+        {#if sideBySide && row?.kind === "context"}
+          <div class="row split" style:top={`${String(place * ROW)}px`}>
+            {@render both("context", row.old, row.new, row.text, diff.spans(index) ?? [])}
+          </div>
+        {:else}
+          <div class={`row ${row?.kind ?? "waiting"}`} style:top={`${String(place * ROW)}px`}>
+            {#if row?.kind === "file"}
+              {@const file = generated(index)}
+              {#if file === undefined}
+                <span class="path">{named(row)}</span><span class="count">{counted(row.change)}</span>
+              {:else}
+                <button
+                  type="button"
+                  class="toggle"
+                  aria-expanded={!diff.collapsed(file)}
+                  onclick={() => {
+                    diff.toggle(file);
+                  }}
+                  ><span class="chevron">{diff.collapsed(file) ? "▸" : "▾"}</span><span class="path"
+                    >{named(row)}</span
+                  ></button
+                ><span class="count">{counted(row.change)}</span><span class="count">Generated</span>
+              {/if}
+            {:else if row?.kind === "hunk"}
+              {@const hidden = diff.layout.gapAt(index)}
+              {#if hidden === undefined}
+                <span class="number"></span><span class="number"></span>
+              {:else}
+                {@render gap(hidden)}
+              {/if}<span class="text">{row.text}</span>
+            {:else if row?.kind === "note"}
+              <span class="number"></span><span class="number"></span><span class="text">{row.text}</span>
+            {:else if row?.kind === "context"}
+              <span class="number">{row.old}</span><span class="number">{row.new}</span>{@render code(
+                " ",
+                row.text,
+                diff.spans(index) ?? [],
+              )}
+            {:else if row?.kind === "added"}
+              <span class="number"></span><span class="number">{row.new}</span>{@render code(
+                "+",
+                row.text,
+                diff.spans(index) ?? [],
+              )}
+            {:else if row?.kind === "removed"}
+              <span class="number">{row.old}</span><span class="number"></span>{@render code(
+                "-",
+                row.text,
+                diff.spans(index) ?? [],
+              )}
             {/if}
-          {:else if row?.kind === "hunk"}
-            {@const hidden = diff.layout.gapAt(index)}
-            {#if hidden === undefined}
-              <span class="number"></span><span class="number"></span>
-            {:else}
-              {@render gap(hidden)}
-            {/if}<span class="text">{row.text}</span>
-          {:else if row?.kind === "note"}
-            <span class="number"></span><span class="number"></span><span class="text">{row.text}</span>
-          {:else if row?.kind === "context"}
-            <span class="number">{row.old}</span><span class="number">{row.new}</span>{@render code(
-              " ",
-              row.text,
-              diff.spans(index) ?? [],
-            )}
-          {:else if row?.kind === "added"}
-            <span class="number"></span><span class="number">{row.new}</span>{@render code(
-              "+",
-              row.text,
-              diff.spans(index) ?? [],
-            )}
-          {:else if row?.kind === "removed"}
-            <span class="number">{row.old}</span><span class="number"></span>{@render code(
-              "-",
-              row.text,
-              diff.spans(index) ?? [],
-            )}
-          {/if}
-        </div>
+          </div>
+        {/if}
       {/if}
     {/each}
   </div>
@@ -313,6 +390,37 @@
   .step:hover,
   .whole:hover {
     background: color-mix(in srgb, #0969da 20%, transparent);
+  }
+
+  /* Side by side, each side takes half the row, and keeps its own background. */
+  .side {
+    display: flex;
+    flex: 1 1 50%;
+    min-width: 0;
+  }
+
+  /* Side by side, a row stays as wide as the tab, and scrolling across moves the code on both sides while
+     the line numbers stay. Each side holds as much of its line as fits, so the halves stay in view however
+     long the PR's longest line is. */
+  .split {
+    left: var(--across);
+    right: auto;
+    width: var(--width);
+  }
+
+  .clip {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  /* The code moves across inside its side's clip, the only clip a side has. */
+  .clip > .text {
+    margin-left: calc(-1 * var(--across));
+  }
+
+  .side + .side {
+    border-left: 1px solid color-mix(in srgb, currentColor 15%, transparent);
   }
 
   .note {

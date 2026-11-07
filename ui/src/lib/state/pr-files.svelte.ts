@@ -3,7 +3,7 @@
 // them (#178). A chunk's rows wait a moment for their spans, so a jump into a file the core has parsed shows
 // it highlighted at once (#180). Generated files start collapsed, and their rows aren't asked for until the
 // user opens one (#181). The user can expand the lines a gap between hunks leaves out, which the core reads
-// from the file at the PR's head (#182).
+// from the file at the PR's head (#182), and switch between the unified and side-by-side views (#183).
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import {
   commands,
@@ -23,7 +23,7 @@ import {
   type PrFiles_Serialize,
   type Span,
 } from "$lib/data/bindings";
-import { DiffLayout, type Shown } from "./diff-layout";
+import { DiffLayout, type DiffView, type Shown } from "./diff-layout";
 import { hud, type Jump, type JumpTimer } from "./hud.svelte";
 
 export type PrFiles = PrFiles_Serialize;
@@ -32,7 +32,19 @@ export type DiffRow = DiffRow_Serialize;
 export type NewsEntry = NewsEntry_Serialize;
 /** A diff the tab shows, from its merge base to its head. */
 type Ready = Extract<PrFiles, { state: "ready" }>;
-export type { Cloning, FileChange, Gap, HeadLine, Highlight, LinkTo, NewsBlock, NewsPiece, Shown, Span };
+export type {
+  Cloning,
+  DiffView,
+  FileChange,
+  Gap,
+  HeadLine,
+  Highlight,
+  LinkTo,
+  NewsBlock,
+  NewsPiece,
+  Shown,
+  Span,
+};
 
 /** Rows asked for at a time: about 25 screens, as the diff prototype found best. */
 export const CHUNK = 512;
@@ -47,6 +59,17 @@ const END = 2 ** 32 - 1;
  * they come. */
 export const SPANS_WAIT = 50;
 
+/** The view the Files tab shows diffs in. A Repository's page keeps one for all its PRs, so the view stays
+ * as the user moves from PR to PR. */
+export class DiffViewChoice {
+  view = $state<DiffView>("unified");
+
+  /** Switches to the other view. */
+  toggle() {
+    this.view = this.view === "unified" ? "side-by-side" : "unified";
+  }
+}
+
 export class PrFilesState {
   /** Undefined until the core answers, and null if Tsugiki doesn't hold this PR. */
   view = $state<PrFiles | null>();
@@ -58,16 +81,20 @@ export class PrFilesState {
   layout = $derived.by(() => {
     const view = this.view;
     const ready = view?.state === "ready";
-    return new DiffLayout(ready ? view.rows : 0, ready ? view.files : [], (file) => this.collapsed(file), {
-      gap: (file, gap) => this.#shown(file, gap),
-      rest: (file, rest) => this.#after(file, rest),
-    });
+    return new DiffLayout(
+      ready ? view.rows : 0,
+      ready ? view.files : [],
+      (file) => this.collapsed(file),
+      { gap: (file, gap) => this.#shown(file, gap), rest: (file, rest) => this.#after(file, rest) },
+      this.#choice.view,
+    );
   });
   /** How many characters the longest expanded line has, so the tab makes room for it as for the diff's. */
   columns = $state(0);
   readonly #repository: string;
   readonly #number: number;
   readonly #jumps: JumpTimer;
+  readonly #choice: DiffViewChoice;
   /** The rows the core has sent, by chunk, for the diff `view` shows. */
   #chunks = new SvelteMap<number, DiffRow[]>();
   /** The spans of each row, by chunk, which come after its rows. */
@@ -87,10 +114,21 @@ export class PrFilesState {
   #stopListening: (() => void)[] = [];
   #stopped = false;
 
-  constructor(repository: string, number: number, jumps: JumpTimer = hud) {
+  constructor(
+    repository: string,
+    number: number,
+    jumps: JumpTimer = hud,
+    choice: DiffViewChoice = new DiffViewChoice(),
+  ) {
     this.#repository = repository;
     this.#number = number;
     this.#jumps = jumps;
+    this.#choice = choice;
+  }
+
+  /** Whether the tab shows the diff unified or side by side. */
+  get shownAs(): DiffView {
+    return this.#choice.view;
   }
 
   /** Listens first, so it hears the head arrive or the clone end while it asks. */

@@ -401,6 +401,34 @@ fn each_file_names_the_lines_its_hunks_leave_out() {
 }
 
 #[test]
+fn each_file_names_its_changes_so_side_by_side_can_pair_their_removed_and_added_rows() {
+    let numstat = "4\t5\ta.py\x001\t2\tb.py\x00";
+    // Rows 2 to 4 pair two removed lines with one added; row 6 is removed alone, and row 8 added alone;
+    // rows 10 to 12 pair one with two.
+    let a =
+        "diff --git a/a.py b/a.py\n@@ -1,8 +1,7 @@\n-a\n-b\n+B\n c\n-d\n e\n+f\n g\n-h\n+H\n+I\n";
+    // Each side ends with the note about its last line.
+    let b = "diff --git a/b.py b/b.py\n@@ -1 +1,2 @@\n-a\n\\ No newline at end of file\n+a\n+b\n\
+             \\ No newline at end of file\n";
+
+    let diff = Diff::parse(numstat, &format!("{a}{b}")).unwrap();
+
+    let [a, b] = diff.files() else {
+        panic!("two files");
+    };
+    let pair = |row, removed, added| Pair {
+        row,
+        removed,
+        added,
+    };
+    assert_eq!(
+        a.pairs,
+        [pair(2, 2, 1), pair(6, 1, 0), pair(8, 0, 1), pair(10, 1, 2)]
+    );
+    assert_eq!(b.pairs, [pair(15, 2, 3)]);
+}
+
+#[test]
 fn an_empty_line_of_context_without_its_space_is_still_context() {
     let patch = "diff --git a/a.py b/a.py\n@@ -1,2 +1,2 @@\n\n-x\n+y\n";
 

@@ -1,18 +1,34 @@
 import { describe, expect, it } from "vitest";
-import type { Gap, Rest } from "$lib/data/bindings";
+import type { Gap, Pair, Rest } from "$lib/data/bindings";
 import { DiffLayout, type Expanded, type LaidFile } from "./diff-layout";
 
-/** Files whose headers sit at `rows`, with no gaps. */
-const at = (...rows: number[]): LaidFile[] => rows.map((row) => ({ row, gaps: [], rest: null }));
+/** Files whose headers sit at `rows`, with no gaps and no changes to pair. */
+const at = (...rows: number[]): LaidFile[] => rows.map((row) => ({ row, gaps: [], rest: null, pairs: [] }));
 
-/** What places `first` to `last` show, as row numbers, `old/new` for a line, and `more:file`. */
+/** What places `first` to `last` show, as row numbers, `old/new` for a line, `more:file`, and
+ * `removed|added` for a pair, with `-` for a side that shows nothing. */
 const places = (layout: DiffLayout, first = 0, last = layout.count - 1) =>
   Array.from({ length: last - first + 1 }, (_, index) => {
     const shown = layout.at(first + index);
     if (shown.kind === "row") return shown.row;
     if (shown.kind === "line") return `${String(shown.old)}/${String(shown.new)}`;
+    if (shown.kind === "pair") return `${String(shown.removed ?? "-")}|${String(shown.added ?? "-")}`;
     return `more:${String(shown.file)}`;
   });
+
+/** A file at row 0 of 13 whose hunk at row 1 replaces 2 lines with 1 at rows 2 to 4, removes a line at
+ * row 6, adds one at row 8, and replaces 1 line with 2 at rows 10 to 12. */
+const changed: LaidFile = {
+  row: 0,
+  gaps: [],
+  rest: null,
+  pairs: [
+    { row: 2, removed: 2, added: 1 },
+    { row: 6, removed: 1, added: 0 },
+    { row: 8, removed: 0, added: 1 },
+    { row: 10, removed: 1, added: 2 },
+  ] satisfies Pair[],
+};
 
 /** A file at row 0 whose two hunks start at rows 1 and 6, with 5 lines left out above the first and 30
  * above the second, which sit 2 lines further down at the head; and lines may follow the last hunk. */
@@ -23,6 +39,7 @@ const gapped = (rest: Rest | null = { old: 50, new: 52 }): LaidFile => ({
     { row: 6, old: 10, new: 12, lines: 30 },
   ] satisfies Gap[],
   rest,
+  pairs: [],
 });
 
 /** Gaps opened as `gaps` says, by their hunk's row, and the lines after each file's last hunk as `rests`
@@ -89,10 +106,8 @@ describe("DiffLayout", () => {
     expect(places(layout)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, "more:0", 8, 9]);
     expect(layout.gapAt(6)).toEqual({ file: 0, gap: gapped().gaps[1], hidden: 30 });
     expect(layout.gapAt(2)).toBeUndefined();
-    expect(layout.pieces(0, 99)).toEqual([
-      [0, 8],
-      [8, 10],
-    ]);
+    // The rows follow on around the button, so they ask as one.
+    expect(layout.pieces(0, 99)).toEqual([[0, 10]]);
   });
 
   it("shows a gap's lines from its top below the hunk before, and from its bottom above its hunk", () => {
@@ -102,11 +117,8 @@ describe("DiffLayout", () => {
     // lines above its own.
     expect(places(layout)).toEqual([0, 1, 2, 3, 4, 5, "10/12", "11/13", 6, "37/39", "38/40", "39/41", 7]);
     expect(layout.gapAt(6)?.hidden).toBe(25);
-    expect(layout.pieces(0, 99)).toEqual([
-      [0, 6],
-      [6, 7],
-      [7, 8],
-    ]);
+    expect(layout.pieces(0, 99)).toEqual([[0, 8]]);
+    expect(layout.pieces(7, 9)).toEqual([[6, 7]]);
   });
 
   it("leaves out a hunk's row once its gap shows every line, and never shows a line twice", () => {
@@ -134,6 +146,68 @@ describe("DiffLayout", () => {
 
     expect(places(layout)).toEqual([0, 8, 9]);
     expect(layout.gapAt(1)).toBeUndefined();
+  });
+
+  it("shows each row at its own place in the unified view, a change's pairs included", () => {
+    const layout = new DiffLayout(13, [changed], () => false);
+
+    expect(places(layout)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  });
+
+  it("shows a change's removed rows beside its added ones side by side, as many places as the longer side", () => {
+    const layout = new DiffLayout(13, [changed], () => false, undefined, "side-by-side");
+
+    expect(places(layout)).toEqual([0, 1, "2|4", "3|-", 5, "6|-", 7, "-|8", 9, "10|11", "-|12"]);
+    expect(layout.count).toBe(11);
+    // A place asks for the rows it shows, of a change as much as of rows that follow on.
+    expect(layout.pieces(3, 3)).toEqual([[3, 4]]);
+    expect(layout.pieces(2, 2)).toEqual([
+      [2, 3],
+      [4, 5],
+    ]);
+    expect(layout.pieces(10, 10)).toEqual([[12, 13]]);
+    expect(layout.pieces(0, 99)).toEqual([[0, 13]]);
+  });
+
+  it("pairs no rows of a collapsed file side by side", () => {
+    const layout = new DiffLayout(15, [changed, ...at(13)], (file) => file === 0, undefined, "side-by-side");
+
+    expect(places(layout)).toEqual([0, 13, 14]);
+  });
+
+  it("finds where a place of the other view shows, so switching views keeps the place", () => {
+    // The second file is `gapped` 13 rows down, with a line showing after its last hunk.
+    const second: LaidFile = {
+      ...gapped(),
+      row: 13,
+      gaps: gapped().gaps.map((gap) => ({ ...gap, row: gap.row + 13 })),
+    };
+    const opened = expanded({}, { 1: { lines: 1, ended: false } });
+    const unified = new DiffLayout(21, [changed, second], () => false, opened);
+    const sideBySide = new DiffLayout(21, [changed, second], () => false, opened, "side-by-side");
+    const there = (from: DiffLayout, to: DiffLayout, place: number) => to.moved(from, place);
+
+    expect([0, 2, 3, 4, 5, 12].map((place) => there(unified, sideBySide, place))).toEqual([
+      0, 2, 3, 2, 4, 10,
+    ]);
+    expect([2, 3, 9, 10].map((place) => there(sideBySide, unified, place))).toEqual([2, 3, 10, 12]);
+    // The line after the second file's last hunk, and the button after it.
+    expect([21, 22].map((place) => there(unified, sideBySide, place))).toEqual([19, 20]);
+  });
+
+  it("keeps the place where it was when the other view shows nothing there", () => {
+    // The second file is `gapped` 13 rows down, with a line showing after its last hunk.
+    const second: LaidFile = {
+      ...gapped(),
+      row: 13,
+      gaps: gapped().gaps.map((gap) => ({ ...gap, row: gap.row + 13 })),
+    };
+    const opened = expanded({}, { 1: { lines: 1, ended: false } });
+    const open = new DiffLayout(21, [changed, second], () => false, opened, "side-by-side");
+    const collapsed = new DiffLayout(21, [changed, second], () => true, opened);
+
+    // A row, a pair, the line after the second file's last hunk, and the button after it.
+    expect([4, 10, 19, 20].map((place) => collapsed.moved(open, place))).toEqual([4, 10, 19, 20]);
   });
 
   it("shows nothing for an empty diff", () => {

@@ -4,6 +4,7 @@
 // it highlighted at once (#180). Generated files start collapsed, and their rows aren't asked for until the
 // user opens one (#181). The user can expand the lines a gap between hunks leaves out, which the core reads
 // from the file at the PR's head (#182), and switch between the unified and side-by-side views (#183).
+// Review threads sit under their lines, and a resolved one starts folded to a line (#184).
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import {
   commands,
@@ -11,6 +12,7 @@ import {
   type Cloning,
   type DiffFile_Serialize,
   type DiffRow_Serialize,
+  type DiffThread_Serialize,
   type FileChange,
   type Gap,
   type HeadLine,
@@ -30,6 +32,7 @@ export type PrFiles = PrFiles_Serialize;
 export type DiffFile = DiffFile_Serialize;
 export type DiffRow = DiffRow_Serialize;
 export type NewsEntry = NewsEntry_Serialize;
+export type DiffThread = DiffThread_Serialize;
 /** A diff the tab shows, from its merge base to its head. */
 type Ready = Extract<PrFiles, { state: "ready" }>;
 export type {
@@ -51,6 +54,10 @@ export const CHUNK = 512;
 
 /** Lines a click shows above or below a gap, as on GitHub. */
 export const EXPAND = 20;
+
+/** How many places an open thread takes before the tab measures it: its header, and a line of who wrote
+ * each comment and two of its words. */
+const guessPlaces = (thread: DiffThread) => 1 + 3 * thread.comments.length;
 
 /** The line past any file's last, to ask for a file to its end. */
 const END = 2 ** 32 - 1;
@@ -87,8 +94,17 @@ export class PrFilesState {
       (file) => this.collapsed(file),
       { gap: (file, gap) => this.#shown(file, gap), rest: (file, rest) => this.#after(file, rest) },
       this.#choice.view,
+      this.threads.map((thread, at) => ({
+        row: thread.row,
+        places: this.#places(thread, at),
+        id: thread.id,
+        thread,
+      })),
     );
   });
+  /** The thread to scroll to, until the diff has scrolled there. Each move is a new one, so a move back to
+   * the same thread scrolls again. */
+  jump = $state<{ id: string }>();
   /** How many characters the longest expanded line has, so the tab makes room for it as for the diff's. */
   columns = $state(0);
   readonly #repository: string;
@@ -107,6 +123,14 @@ export class PrFilesState {
   #lines = new SvelteMap<string, HeadLine>();
   /** How many lines each file has at the head, by its place, once an answer stopped short at its end. */
   #lengths = new SvelteMap<number, number>();
+  /** The threads the user folded or opened, against how each starts: open, or folded once resolved. */
+  #flipped = new SvelteSet<string>();
+  /** How many places each open thread takes, by its id, once the tab has measured it. */
+  #measured = new SvelteMap<string, number>();
+  /** The thread to move to once the diff comes, as one opened from the Conversation before it did. */
+  #revealing: string | undefined;
+  /** The thread the tab last moved to, which F8 goes on from. */
+  #current: string | undefined;
   /** The chunks asked for. Nothing draws from it, and the effect that asks shouldn't rerun on it. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   #asked = new Set<number>();
@@ -190,6 +214,70 @@ export class PrFilesState {
       this.columns = 0;
     }
     this.view = answer;
+    if (this.#revealing !== undefined && answer?.state === "ready") this.reveal(this.#revealing);
+  }
+
+  /** The review threads under the diff's lines, in the order of their rows. */
+  get threads(): DiffThread[] {
+    const view = this.view;
+    return view?.state === "ready" ? view.threads : [];
+  }
+
+  /** Whether thread `thread`, by its place among the threads, shows only its first line. */
+  folded(thread: number): boolean {
+    const shown = this.threads[thread];
+    return shown !== undefined && (shown.resolution === "resolved") !== this.#flipped.has(shown.id);
+  }
+
+  /** Folds thread `thread`, by its place among the threads, or opens it. */
+  toggleThread(thread: number) {
+    const id = this.threads[thread]?.id;
+    if (id !== undefined && !this.#flipped.delete(id)) this.#flipped.add(id);
+  }
+
+  /** Notes that open thread `id` takes `places` places, as the tab measured it. */
+  measured(id: string, places: number) {
+    if (this.#measured.get(id) !== places) this.#measured.set(id, places);
+  }
+
+  /** How many places thread `thread`, at `at` among the threads, takes: one when folded. */
+  #places(thread: DiffThread, at: number): number {
+    return this.folded(at) ? 1 : (this.#measured.get(thread.id) ?? guessPlaces(thread));
+  }
+
+  /** Moves to thread `id`, open, and opens the Generated file it is in. Before the diff comes, it moves
+   * there once the diff does. A thread the tab doesn't show stays where it is. */
+  reveal(id: string) {
+    const view = this.view;
+    if (view?.state !== "ready") {
+      this.#revealing = id;
+      return;
+    }
+    this.#revealing = undefined;
+    const thread = view.threads.findIndex((shown) => shown.id === id);
+    const row = view.threads[thread]?.row;
+    if (row === undefined) return;
+    if (this.folded(thread)) this.toggleThread(thread);
+    const file = view.files.findLastIndex((file) => file.row < row);
+    if (this.collapsed(file)) this.toggle(file);
+    this.#current = id;
+    this.jump = { id };
+  }
+
+  /** Moves to the next unresolved thread after the one the tab last moved to, or by `step` -1 to the one
+   * before, round from the end to the start. Without one, or once a new diff dropped it, it starts from the
+   * end it moves away from. */
+  nextThread(step: 1 | -1) {
+    const threads = this.threads;
+    const open = threads.flatMap((thread, at) => (thread.resolution === "open" ? [at] : []));
+    const current = threads.findIndex((thread) => thread.id === this.#current);
+    const from = current !== -1 ? current : step === 1 ? -1 : threads.length;
+    const next =
+      step === 1
+        ? (open.find((at) => at > from) ?? open[0])
+        : (open.findLast((at) => at < from) ?? open.at(-1));
+    const id = next === undefined ? undefined : threads[next]?.id;
+    if (id !== undefined) this.reveal(id);
   }
 
   /** Whether the file at `file` among the diff's files shows only its header: a Generated file starts so. */

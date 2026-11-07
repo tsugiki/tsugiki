@@ -127,6 +127,27 @@ it("switches to the Files tab on a click, which waits for the PR's commits", asy
   expect(state.tab).toBe("conversation");
 });
 
+it("opens a thread's place in the Files tab", async () => {
+  const thread = {
+    id: "T1",
+    path: "Lib/ast.py",
+    subject: { kind: "line" as const, side: "RIGHT" as const, line: 12, original: 12 },
+    opening: { kind: "words" as const, words: "Why not a set?" },
+    replies: 0,
+    resolution: "open" as const,
+    anchor: "current" as const,
+  };
+  const reviews = view.content?.reviews.map((review) => ({ ...review, threads: [thread] })) ?? [];
+  const content = view.content === null ? null : { ...view.content, reviews };
+  const state = await shown({ ...view, content }, 10);
+  const reveal = vi.spyOn(state.files, "reveal");
+
+  await fireEvent.click(screen.getByRole("button", { name: "Lib/ast.py:12" }));
+
+  expect(state.tab).toBe("files");
+  expect(reveal).toHaveBeenCalledExactlyOnceWith("T1");
+});
+
 it("leaves a click on the tab already open alone", async () => {
   const state = await shown(view, 10);
 
@@ -197,7 +218,7 @@ it("sends a link in a NEWS entry to the browser", async () => {
   ];
   core.pullRequestFiles.mockResolvedValue({
     status: "ok",
-    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news },
+    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news, threads: [] },
   });
   await shown(view, 10);
   await fireEvent.click(screen.getByRole("tab", { name: "Files" }));

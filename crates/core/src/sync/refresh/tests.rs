@@ -784,6 +784,7 @@ fn approved() -> Result<Reply, Unreachable> {
         "comments": { "totalCount": 0, "nodes": [] },
         "reviews": { "totalCount": 1, "nodes": [review] },
         "reviewThreads": { "nodes": [] },
+        "headRefOid": "0123abc",
     });
     let rate_limit = json!({ "remaining": 4000, "resetAt": "2999-01-01T00:00:00Z" });
     let data = json!({ "repository": { "pullRequest": pull_request }, "rateLimit": rate_limit });

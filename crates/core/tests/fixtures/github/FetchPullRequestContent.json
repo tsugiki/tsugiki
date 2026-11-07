@@ -2,8 +2,8 @@
   "body": {
     "data": {
       "rateLimit": {
-        "remaining": 4991,
-        "resetAt": "2026-11-07T11:02:38Z"
+        "remaining": 4999,
+        "resetAt": "2026-11-08T00:20:33Z"
       },
       "repository": {
         "pullRequest": {
@@ -103,22 +103,69 @@
             ],
             "totalCount": 10
           },
+          "headRefOid": "a4c2623368acdf75d3c088f2f84c3ddc6d78c75e",
           "reviewThreads": {
             "nodes": [
               {
                 "comments": {
                   "nodes": [
                     {
+                      "author": {
+                        "login": "user-6"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">I agree with <a class=\"user-mention notranslate\" data-hovercard-type=\"user\" data-hovercard-url=\"/users/user-5/hovercard\" data-octo-click=\"hovercard-link-click\" data-octo-dimensions=\"link_type:self\" href=\"https://github.com/user-5\">@user-5</a>: self is only a naming convention. What matters is that the first parameter receives the instance. Consider something like:</p>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"&quot;. Did you forget the instance parameter (e.g. self) in the function definition?&quot;\"><pre class=\"notranslate\"><span class=\"pl-s\">\". Did you forget the instance parameter (e.g. self) in the function definition?\"</span></pre></div>\n<p dir=\"auto\">This avoids misleading beginners into adding a parameter named self in the wrong position.</p>",
                       "bodyText": "I agree with @user-5: self is only a naming convention. What matters is that the first parameter receives the instance. Consider something like:\n\". Did you forget the instance parameter (e.g. self) in the function definition?\"\nThis avoids misleading beginners into adding a parameter named self in the wrong position.",
+                      "createdAt": "2026-06-26T19:20:55Z",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
                         "id": "PRR_kwDOBN0Z8c8AAAABER3R8g"
                       }
+                    },
+                    {
+                      "author": {
+                        "login": "user-7"
+                      },
+                      "bodyHTML": "<blockquote>\n<p dir=\"auto\">This avoids misleading beginners into adding a parameter named self in the wrong position.</p>\n</blockquote>\n<p dir=\"auto\">I'm not so sure that \"instance parameter\" means anything more to a beginner than a \"self\" parameter. \"Self\" has the advantage of being a very, <em>very</em> common pattern in Python, and I think that's more easily searchable than \"instance parameter\". For reference, our docs use \"self\" hundreds of times, whereas \"instance parameter\" does not appear once.</p>\n<p dir=\"auto\">I would lean more towards this:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"Did you forget the 'self' parameter in the function definition?\"><pre class=\"notranslate\"><code class=\"notranslate\">Did you forget the 'self' parameter in the function definition?\n</code></pre></div>\n<p dir=\"auto\">\"self parameter python\" on Google will yield millions of results describing exactly what the user wants, whereas \"instance parameter python\" returns some unrelated results about class methods vs. instance methods and similar.</p>",
+                      "bodyText": "This avoids misleading beginners into adding a parameter named self in the wrong position.\n\nI'm not so sure that \"instance parameter\" means anything more to a beginner than a \"self\" parameter. \"Self\" has the advantage of being a very, very common pattern in Python, and I think that's more easily searchable than \"instance parameter\". For reference, our docs use \"self\" hundreds of times, whereas \"instance parameter\" does not appear once.\nI would lean more towards this:\nDid you forget the 'self' parameter in the function definition?\n\n\"self parameter python\" on Google will yield millions of results describing exactly what the user wants, whereas \"instance parameter python\" returns some unrelated results about class methods vs. instance methods and similar.",
+                      "createdAt": "2026-06-26T21:51:24Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABESpDJg"
+                      }
+                    },
+                    {
+                      "author": {
+                        "login": "user-6"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">I must agree with<br>\n'\"self parameter python\"' on Google will yield millions of results'.</p>",
+                      "bodyText": "I must agree with\n'\"self parameter python\"' on Google will yield millions of results'.",
+                      "createdAt": "2026-06-26T22:12:38Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABEStl4A"
+                      }
+                    },
+                    {
+                      "author": {
+                        "login": "user-3"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">I've updated the error message to include the self parameter:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"        self_hint = &quot;. Did you forget the 'self' parameter &quot;\n                    &quot;in the function definition?&quot;;\"><pre class=\"notranslate\"><code class=\"notranslate\">        self_hint = \". Did you forget the 'self' parameter \"\n                    \"in the function definition?\";\n</code></pre></div>",
+                      "bodyText": "I've updated the error message to include the self parameter:\n        self_hint = \". Did you forget the 'self' parameter \"\n                    \"in the function definition?\";",
+                      "createdAt": "2026-07-03T04:53:42Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABE4tzfw"
+                      }
                     }
                   ],
                   "totalCount": 4
                 },
+                "diffSide": "RIGHT",
+                "id": "PRRT_kwDOBN0Z8c6MnTKh",
                 "isOutdated": true,
                 "isResolved": false,
                 "line": null,
@@ -130,16 +177,49 @@
                 "comments": {
                   "nodes": [
                     {
+                      "author": {
+                        "login": "user-6"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">If PyUnicode_FromString fails, the original TypeError is never raised and the user gets no error message. Better to skip the hint and still emit the normal _PyErr_Format.</p>",
                       "bodyText": "If PyUnicode_FromString fails, the original TypeError is never raised and the user gets no error message. Better to skip the hint and still emit the normal _PyErr_Format.",
+                      "createdAt": "2026-06-26T19:22:28Z",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
                         "id": "PRR_kwDOBN0Z8c8AAAABER3R8g"
                       }
+                    },
+                    {
+                      "author": {
+                        "login": "user-4"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">We should actually propagate the exception in this case, and not suggest anything at all. This is already the case when creating <code class=\"notranslate\">kwonly_sig</code></p>",
+                      "bodyText": "We should actually propagate the exception in this case, and not suggest anything at all. This is already the case when creating kwonly_sig",
+                      "createdAt": "2026-06-27T09:11:37Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABEUZutA"
+                      }
+                    },
+                    {
+                      "author": {
+                        "login": "user-3"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">I've switched it to a char*. Does that suffice?</p>",
+                      "bodyText": "I've switched it to a char*. Does that suffice?",
+                      "createdAt": "2026-07-03T04:55:12Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABE4uIBg"
+                      }
                     }
                   ],
                   "totalCount": 3
                 },
+                "diffSide": "RIGHT",
+                "id": "PRRT_kwDOBN0Z8c6MnUm5",
                 "isOutdated": true,
                 "isResolved": false,
                 "line": null,
@@ -151,16 +231,36 @@
                 "comments": {
                   "nodes": [
                     {
+                      "author": {
+                        "login": "user-6"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">Good setup for the happy path. If possible, add a def method_with_self(self, x) on the same class A to cover the false positive case.</p>",
                       "bodyText": "Good setup for the happy path. If possible, add a def method_with_self(self, x) on the same class A to cover the false positive case.",
+                      "createdAt": "2026-06-26T19:24:20Z",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
                         "id": "PRR_kwDOBN0Z8c8AAAABER3R8g"
                       }
+                    },
+                    {
+                      "author": {
+                        "login": "user-3"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">Can you take another look: <a href=\"https://github.com/python/cpython/pull/152326/changes#diff-f27c08f13ff54ee9a69325f9291a3a2510a05b82ff8d813a8ab2e0072af632bb\">https://github.com/python/cpython/pull/152326/changes#diff-f27c08f13ff54ee9a69325f9291a3a2510a05b82ff8d813a8ab2e0072af632bb</a></p>\n<p dir=\"auto\">I've added coverage for common cases.</p>",
+                      "bodyText": "Can you take another look: https://github.com/python/cpython/pull/152326/changes#diff-f27c08f13ff54ee9a69325f9291a3a2510a05b82ff8d813a8ab2e0072af632bb\nI've added coverage for common cases.",
+                      "createdAt": "2026-07-03T04:56:57Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABE4udzA"
+                      }
                     }
                   ],
                   "totalCount": 2
                 },
+                "diffSide": "RIGHT",
+                "id": "PRRT_kwDOBN0Z8c6MnWMf",
                 "isOutdated": true,
                 "isResolved": false,
                 "line": null,
@@ -172,16 +272,36 @@
                 "comments": {
                   "nodes": [
                     {
+                      "author": {
+                        "login": "user-6"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">The heuristic of matching tp_name against the class segment in qualname is solid. A negative test for a <a class=\"user-mention notranslate\" data-hovercard-type=\"organization\" data-hovercard-url=\"/orgs/classmethod/hovercard\" data-octo-click=\"hovercard-link-click\" data-octo-dimensions=\"link_type:self\" href=\"https://github.com/classmethod\">@user-10</a> missing cls would be useful, it probably shouldnt trigger the hint, and that would document the expected behavior.</p>",
                       "bodyText": "The heuristic of matching tp_name against the class segment in qualname is solid. A negative test for a @user-10 missing cls would be useful, it probably shouldnt trigger the hint, and that would document the expected behavior.",
+                      "createdAt": "2026-06-26T19:25:19Z",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
                         "id": "PRR_kwDOBN0Z8c8AAAABER3R8g"
                       }
+                    },
+                    {
+                      "author": {
+                        "login": "user-3"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">I've switched it to checking function name matching the self dictionary. Please take a fresh look at the PR and lmk if it suffices.</p>",
+                      "bodyText": "I've switched it to checking function name matching the self dictionary. Please take a fresh look at the PR and lmk if it suffices.",
+                      "createdAt": "2026-07-03T04:57:02Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABE4ufKQ"
+                      }
                     }
                   ],
                   "totalCount": 2
                 },
+                "diffSide": "RIGHT",
+                "id": "PRRT_kwDOBN0Z8c6MnXCm",
                 "isOutdated": true,
                 "isResolved": false,
                 "line": null,
@@ -193,16 +313,36 @@
                 "comments": {
                   "nodes": [
                     {
+                      "author": {
+                        "login": "user-6"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">Hmm, this fires whenever argcount &gt; co_argcount and the first argument's type matches the class in qualname. That's broader than the beginner mistake this PR targets.</p>\n<p dir=\"auto\">Ex:</p>\n<p dir=\"auto\">This should hint</p>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"def lol(a): ...\nA().lol(1)   \"><pre class=\"notranslate\"><span class=\"pl-k\">def</span> <span class=\"pl-en\">lol</span>(<span class=\"pl-s1\">a</span>): ...\n<span class=\"pl-en\">A</span>().<span class=\"pl-c1\">lol</span>(<span class=\"pl-c1\">1</span>)   </pre></div>\n<p dir=\"auto\">but his should not:</p>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"def method(self, x): ...\nA().method(1, 2, 3) \"><pre class=\"notranslate\"><span class=\"pl-k\">def</span> <span class=\"pl-en\">method</span>(<span class=\"pl-s1\">self</span>, <span class=\"pl-s1\">x</span>): ...\n<span class=\"pl-en\">A</span>().<span class=\"pl-c1\">method</span>(<span class=\"pl-c1\">1</span>, <span class=\"pl-c1\">2</span>, <span class=\"pl-c1\">3</span>) </pre></div>\n<p dir=\"auto\">I'd suggest combining argcount == co_argcount + 1 with a second check, like, the first declared parameter is not named \"self\", or verifying via _PyType_Lookup that this code object is the function bound on the instance's type.</p>",
                       "bodyText": "Hmm, this fires whenever argcount > co_argcount and the first argument's type matches the class in qualname. That's broader than the beginner mistake this PR targets.\nEx:\nThis should hint\ndef lol(a): ...\nA().lol(1)   \nbut his should not:\ndef method(self, x): ...\nA().method(1, 2, 3) \nI'd suggest combining argcount == co_argcount + 1 with a second check, like, the first declared parameter is not named \"self\", or verifying via _PyType_Lookup that this code object is the function bound on the instance's type.",
+                      "createdAt": "2026-06-26T19:27:35Z",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
                         "id": "PRR_kwDOBN0Z8c8AAAABER3R8g"
                       }
+                    },
+                    {
+                      "author": {
+                        "login": "user-3"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">ok, I've included your runtime arg count == defined arg count + 1 check. It also does both of your suggested checks on the first parameter. Please review it again</p>",
+                      "bodyText": "ok, I've included your runtime arg count == defined arg count + 1 check. It also does both of your suggested checks on the first parameter. Please review it again",
+                      "createdAt": "2026-07-03T05:00:29Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABE4vObw"
+                      }
                     }
                   ],
                   "totalCount": 2
                 },
+                "diffSide": "RIGHT",
+                "id": "PRRT_kwDOBN0Z8c6MnY5M",
                 "isOutdated": true,
                 "isResolved": false,
                 "line": null,
@@ -214,16 +354,36 @@
                 "comments": {
                   "nodes": [
                     {
+                      "author": {
+                        "login": "user-7"
+                      },
+                      "bodyHTML": "  <div class=\"my-2 border rounded-2 js-suggested-changes-blob diff-view js-check-hidden-unicode\" id=\"\">\n    <div class=\"f6 p-2 lh-condensed border-bottom d-flex\">\n      <div class=\"flex-auto flex-items-center color-fg-muted\">\n        Suggested change\n      </div>\n    </div>\n    <div itemprop=\"text\" class=\"blob-wrapper data file rounded-0\" style=\"margin: 0; border: none; overflow-y: visible; overflow-x: auto;\">\n      <table class=\"d-table tab-size mb-0 width-full\" data-paste-markdown-skip=\"\">\n          <tbody><tr class=\"border-0\">\n            <td class=\"blob-num blob-num-deletion text-right border-0 px-2 py-1 lh-default blob-num-hidden\" data-line-number=\"·\"></td>\n            <td class=\"border-0 px-2 py-1 blob-code-inner blob-code-deletion js-blob-code-deletion blob-code-marker-deletion\">        <span class=\"pl-c\">// When first arg is NULL, <span class=\"x x-first x-last\">its</span> not really about self</span></td>\n          </tr>\n          <tr class=\"border-0\">\n            <td class=\"blob-num blob-num-addition text-right border-0 px-2 py-1 lh-default blob-num-hidden\" data-line-number=\"·\"></td>\n            <td class=\"border-0 px-2 py-1 blob-code-inner blob-code-addition js-blob-code-addition blob-code-marker-addition\">        <span class=\"pl-c\">// When first arg is NULL, <span class=\"x x-first x-last\">it's</span> not really about self</span></td>\n          </tr>\n      </tbody></table>\n    </div>\n    <div class=\"js-apply-changes\"></div>\n  </div>\n",
                       "bodyText": "Suggested change\n      \n    \n    \n      \n          \n            \n                    // When first arg is NULL, its not really about self\n          \n          \n            \n                    // When first arg is NULL, it's not really about self",
+                      "createdAt": "2026-06-26T21:53:25Z",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
                         "id": "PRR_kwDOBN0Z8c8AAAABESpc-Q"
                       }
+                    },
+                    {
+                      "author": {
+                        "login": "user-3"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">Added it in the HEAD</p>",
+                      "bodyText": "Added it in the HEAD",
+                      "createdAt": "2026-07-03T05:08:07Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABE4w7Eg"
+                      }
                     }
                   ],
                   "totalCount": 2
                 },
+                "diffSide": "RIGHT",
+                "id": "PRRT_kwDOBN0Z8c6MpLQ_",
                 "isOutdated": true,
                 "isResolved": false,
                 "line": null,
@@ -235,16 +395,36 @@
                 "comments": {
                   "nodes": [
                     {
+                      "author": {
+                        "login": "user-7"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">This feels like a nasty hack. Relying on the <code class=\"notranslate\">__qualname__</code> feels very icky. I need to look into this more, but it's probably possible to determine whether this is an instance method earlier in the eval loop. That would be much cleaner.</p>",
                       "bodyText": "This feels like a nasty hack. Relying on the __qualname__ feels very icky. I need to look into this more, but it's probably possible to determine whether this is an instance method earlier in the eval loop. That would be much cleaner.",
+                      "createdAt": "2026-06-26T22:08:08Z",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
                         "id": "PRR_kwDOBN0Z8c8AAAABESpc-Q"
                       }
+                    },
+                    {
+                      "author": {
+                        "login": "user-3"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">I asked AI on other options. Please review this approach</p>",
+                      "bodyText": "I asked AI on other options. Please review this approach",
+                      "createdAt": "2026-07-03T05:07:51Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABE4w36g"
+                      }
                     }
                   ],
                   "totalCount": 2
                 },
+                "diffSide": "RIGHT",
+                "id": "PRRT_kwDOBN0Z8c6MpUpQ",
                 "isOutdated": true,
                 "isResolved": false,
                 "line": null,
@@ -256,16 +436,49 @@
                 "comments": {
                   "nodes": [
                     {
+                      "author": {
+                        "login": "user-8"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">There's no real need for this test. We test method calling in many other test cases in CPython. It does not add any real value.</p>",
                       "bodyText": "There's no real need for this test. We test method calling in many other test cases in CPython. It does not add any real value.",
+                      "createdAt": "2026-06-27T07:09:24Z",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
                         "id": "PRR_kwDOBN0Z8c8AAAABEUHyyQ"
                       }
+                    },
+                    {
+                      "author": {
+                        "login": "user-3"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">This was my response to <a class=\"issue-link js-issue-link\" data-error-text=\"Failed to load title\" data-id=\"4754297745\" data-permission-text=\"Title is private\" data-url=\"https://github.com/python/cpython/issues/152326\" data-hovercard-type=\"pull_request\" data-hovercard-url=\"/python/cpython/pull/152326/hovercard?comment_id=3483641252&amp;comment_type=review_comment\" href=\"https://github.com/python/cpython/pull/152326#discussion_r3483641252\">#152326 (comment)</a> . I think I interpreted the happy path incorrectly</p>",
+                      "bodyText": "This was my response to #152326 (comment) . I think I interpreted the happy path incorrectly",
+                      "createdAt": "2026-06-27T21:41:11Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABEV2O2w"
+                      }
+                    },
+                    {
+                      "author": {
+                        "login": "user-3"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">Removed it.</p>",
+                      "bodyText": "Removed it.",
+                      "createdAt": "2026-07-03T05:09:04Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABE4xF0w"
+                      }
                     }
                   ],
                   "totalCount": 3
                 },
+                "diffSide": "RIGHT",
+                "id": "PRRT_kwDOBN0Z8c6MsgJ-",
                 "isOutdated": true,
                 "isResolved": false,
                 "line": null,
@@ -277,16 +490,36 @@
                 "comments": {
                   "nodes": [
                     {
+                      "author": {
+                        "login": "user-8"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">Please, add a test case for <code class=\"notranslate\">def method_with_self_arg(x, self): ...</code></p>\n<p dir=\"auto\">and then call it like <code class=\"notranslate\">inst.method_with_self()</code>.</p>\n<p dir=\"auto\">Also: you can add <code class=\"notranslate\">def zero_args_self(self): ...</code> and call it like: <code class=\"notranslate\">A.zero_args_self()</code> and check that error message is also correct.</p>",
                       "bodyText": "Please, add a test case for def method_with_self_arg(x, self): ...\nand then call it like inst.method_with_self().\nAlso: you can add def zero_args_self(self): ... and call it like: A.zero_args_self() and check that error message is also correct.",
+                      "createdAt": "2026-06-27T07:12:17Z",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
                         "id": "PRR_kwDOBN0Z8c8AAAABEUHyyQ"
                       }
+                    },
+                    {
+                      "author": {
+                        "login": "user-3"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">added bark_with_self_arg and test_unbound_method_with_self_keeps_missing_argument_error for this.</p>",
+                      "bodyText": "added bark_with_self_arg and test_unbound_method_with_self_keeps_missing_argument_error for this.",
+                      "createdAt": "2026-07-03T05:47:13Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABE47XhQ"
+                      }
                     }
                   ],
                   "totalCount": 2
                 },
+                "diffSide": "RIGHT",
+                "id": "PRRT_kwDOBN0Z8c6MshbE",
                 "isOutdated": true,
                 "isResolved": false,
                 "line": null,
@@ -298,16 +531,62 @@
                 "comments": {
                   "nodes": [
                     {
+                      "author": {
+                        "login": "user-4"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">Your <code class=\"notranslate\">self_hint</code> is non NULL (before assignment). While empty strings are immortal, you still need to decref it if this ever changes. For that use <code class=\"notranslate\">Py_SETREF</code>.</p>",
                       "bodyText": "Your self_hint is non NULL (before assignment). While empty strings are immortal, you still need to decref it if this ever changes. For that use Py_SETREF.",
+                      "createdAt": "2026-06-27T09:08:58Z",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
                         "id": "PRR_kwDOBN0Z8c8AAAABEUZutA"
                       }
+                    },
+                    {
+                      "author": {
+                        "login": "user-7"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">I don't feel super strongly about this, but I disagree with refcounting immortal objects. I've expressed before that too many users rely on certain things being immortal (such as empty strings), so changing that would be very difficult anyway. We might as well enjoy the performance boost rather than trying to maintain forward compatibility with a seemingly impossible case.</p>",
+                      "bodyText": "I don't feel super strongly about this, but I disagree with refcounting immortal objects. I've expressed before that too many users rely on certain things being immortal (such as empty strings), so changing that would be very difficult anyway. We might as well enjoy the performance boost rather than trying to maintain forward compatibility with a seemingly impossible case.",
+                      "createdAt": "2026-06-27T13:35:55Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABEU6SeA"
+                      }
+                    },
+                    {
+                      "author": {
+                        "login": "user-4"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">I'm ok with not changing this path though I would prefer to have it initialized to NULL instead in this case and before constructing the message we would put it to something. But I won't be strongly opposed to keep things as is.</p>",
+                      "bodyText": "I'm ok with not changing this path though I would prefer to have it initialized to NULL instead in this case and before constructing the message we would put it to something. But I won't be strongly opposed to keep things as is.",
+                      "createdAt": "2026-06-27T15:06:23Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABEVG93A"
+                      }
+                    },
+                    {
+                      "author": {
+                        "login": "user-3"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">I've switched it to char*. Does that suffice?</p>",
+                      "bodyText": "I've switched it to char*. Does that suffice?",
+                      "createdAt": "2026-07-03T05:48:33Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABE470IA"
+                      }
                     }
                   ],
                   "totalCount": 4
                 },
+                "diffSide": "RIGHT",
+                "id": "PRRT_kwDOBN0Z8c6MtEaK",
                 "isOutdated": true,
                 "isResolved": false,
                 "line": null,
@@ -319,16 +598,36 @@
                 "comments": {
                   "nodes": [
                     {
+                      "author": {
+                        "login": "user-4"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">Would this suggestion be also there if we are using classmethods? Or what about methodws on metaclasses? they can have <code class=\"notranslate\">cls</code> as the first parameter name.</p>",
                       "bodyText": "Would this suggestion be also there if we are using classmethods? Or what about methodws on metaclasses? they can have cls as the first parameter name.",
+                      "createdAt": "2026-06-27T09:12:21Z",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
                         "id": "PRR_kwDOBN0Z8c8AAAABEUZutA"
                       }
+                    },
+                    {
+                      "author": {
+                        "login": "user-3"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">I've added exemption for those cases.</p>",
+                      "bodyText": "I've added exemption for those cases.",
+                      "createdAt": "2026-07-03T05:50:50Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABE48ubA"
+                      }
                     }
                   ],
                   "totalCount": 2
                 },
+                "diffSide": "RIGHT",
+                "id": "PRRT_kwDOBN0Z8c6MtFDa",
                 "isOutdated": true,
                 "isResolved": false,
                 "line": null,
@@ -340,16 +639,36 @@
                 "comments": {
                   "nodes": [
                     {
+                      "author": {
+                        "login": "user-9"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">The argcount == 0 condition is redundant, right?</p>",
                       "bodyText": "The argcount == 0 condition is redundant, right?",
+                      "createdAt": "2026-08-10T02:53:09Z",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
                         "id": "PRR_kwDOBN0Z8c8AAAABI6tMGQ"
                       }
+                    },
+                    {
+                      "author": {
+                        "login": "user-3"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">Yes, I missed that.</p>\n<p dir=\"auto\">Fixed it.</p>",
+                      "bodyText": "Yes, I missed that.\nFixed it.",
+                      "createdAt": "2026-08-23T04:53:46Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABKh-mKw"
+                      }
                     }
                   ],
                   "totalCount": 2
                 },
+                "diffSide": "RIGHT",
+                "id": "PRRT_kwDOBN0Z8c6XukDV",
                 "isOutdated": true,
                 "isResolved": false,
                 "line": null,
@@ -361,16 +680,49 @@
                 "comments": {
                   "nodes": [
                     {
+                      "author": {
+                        "login": "user-9"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">Why are we calling this here instead of only in the error path below on line 1939?</p>",
                       "bodyText": "Why are we calling this here instead of only in the error path below on line 1939?",
+                      "createdAt": "2026-08-24T00:36:32Z",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
                         "id": "PRR_kwDOBN0Z8c8AAAABKkAUjg"
                       }
+                    },
+                    {
+                      "author": {
+                        "login": "user-3"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">We close the args parameter here. I can extract what I need from args and then pass it when I need it if you'd like</p>",
+                      "bodyText": "We close the args parameter here. I can extract what I need from args and then pass it when I need it if you'd like",
+                      "createdAt": "2026-08-24T03:17:31Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABKkeBTw"
+                      }
+                    },
+                    {
+                      "author": {
+                        "login": "user-3"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">This is ready for review now.</p>",
+                      "bodyText": "This is ready for review now.",
+                      "createdAt": "2026-09-14T01:40:24Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABNYmtqw"
+                      }
                     }
                   ],
                   "totalCount": 3
                 },
+                "diffSide": "RIGHT",
+                "id": "PRRT_kwDOBN0Z8c6bjSO_",
                 "isOutdated": true,
                 "isResolved": false,
                 "line": null,
@@ -382,16 +734,36 @@
                 "comments": {
                   "nodes": [
                     {
+                      "author": {
+                        "login": "user-7"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">We like to keep type hints out of unchecked files:</p>\n  <div class=\"my-2 border rounded-2 js-suggested-changes-blob diff-view js-check-hidden-unicode\" id=\"\">\n    <div class=\"f6 p-2 lh-condensed border-bottom d-flex\">\n      <div class=\"flex-auto flex-items-center color-fg-muted\">\n        Suggested change\n      </div>\n    </div>\n    <div itemprop=\"text\" class=\"blob-wrapper data file rounded-0\" style=\"margin: 0; border: none; overflow-y: visible; overflow-x: auto;\">\n      <table class=\"d-table tab-size mb-0 width-full\" data-paste-markdown-skip=\"\">\n          <tbody><tr class=\"border-0\">\n            <td class=\"blob-num blob-num-deletion text-right border-0 px-2 py-1 lh-default blob-num-hidden\" data-line-number=\"·\"></td>\n            <td class=\"border-0 px-2 py-1 blob-code-inner blob-code-deletion js-blob-code-deletion blob-code-marker-deletion\">    <span class=\"pl-k\">def</span> <span class=\"pl-en\">assert_type_error_and_msg_in</span>(<span class=\"pl-s1\">self</span>, <span class=\"pl-s1\">message</span><span class=\"x x-first\">: </span><span class=\"pl-smi x x-last\">str</span>):</td>\n          </tr>\n          <tr class=\"border-0\">\n            <td class=\"blob-num blob-num-addition text-right border-0 px-2 py-1 lh-default blob-num-hidden\" data-line-number=\"·\"></td>\n            <td class=\"border-0 px-2 py-1 blob-code-inner blob-code-addition js-blob-code-addition blob-code-marker-addition\">    <span class=\"pl-k\">def</span> <span class=\"pl-en\">assert_type_error_and_msg_in</span>(<span class=\"pl-s1\">self</span>, <span class=\"pl-s1\">message</span>):</td>\n          </tr>\n      </tbody></table>\n    </div>\n    <div class=\"js-apply-changes\"></div>\n  </div>\n",
                       "bodyText": "We like to keep type hints out of unchecked files:\n  \n    \n      \n        Suggested change\n      \n    \n    \n      \n          \n            \n                def assert_type_error_and_msg_in(self, message: str):\n          \n          \n            \n                def assert_type_error_and_msg_in(self, message):",
+                      "createdAt": "2026-10-08T20:54:16Z",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
                         "id": "PRR_kwDOBN0Z8c8AAAABRZqe3w"
                       }
+                    },
+                    {
+                      "author": {
+                        "login": "user-3"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">ack. removed. There was only one. Please rereview.</p>",
+                      "bodyText": "ack. removed. There was only one. Please rereview.",
+                      "createdAt": "2026-10-11T03:55:09Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABRr1_OQ"
+                      }
                     }
                   ],
                   "totalCount": 2
                 },
+                "diffSide": "RIGHT",
+                "id": "PRRT_kwDOBN0Z8c6qjJrr",
                 "isOutdated": true,
                 "isResolved": true,
                 "line": null,
@@ -403,16 +775,36 @@
                 "comments": {
                   "nodes": [
                     {
+                      "author": {
+                        "login": "user-7"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">I find these docstrings really distracting. Tests don't really need docstrings; nobody is calling them and the name or behavior of the test should document what it's looking for.</p>",
                       "bodyText": "I find these docstrings really distracting. Tests don't really need docstrings; nobody is calling them and the name or behavior of the test should document what it's looking for.",
+                      "createdAt": "2026-10-08T20:56:01Z",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
                         "id": "PRR_kwDOBN0Z8c8AAAABRZqe3w"
                       }
+                    },
+                    {
+                      "author": {
+                        "login": "user-3"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">Removed</p>",
+                      "bodyText": "Removed",
+                      "createdAt": "2026-10-11T03:55:58Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABRr2FgQ"
+                      }
                     }
                   ],
                   "totalCount": 2
                 },
+                "diffSide": "RIGHT",
+                "id": "PRRT_kwDOBN0Z8c6qjMAH",
                 "isOutdated": true,
                 "isResolved": true,
                 "line": null,
@@ -424,16 +816,36 @@
                 "comments": {
                   "nodes": [
                     {
+                      "author": {
+                        "login": "user-7"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">I think we should use <code class=\"notranslate\">assertRaisesRegex</code> instead of brewing our own helper for this.</p>",
                       "bodyText": "I think we should use assertRaisesRegex instead of brewing our own helper for this.",
+                      "createdAt": "2026-10-08T20:58:45Z",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
                         "id": "PRR_kwDOBN0Z8c8AAAABRZqe3w"
                       }
+                    },
+                    {
+                      "author": {
+                        "login": "user-3"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">Migrated. It reads good enough to not warrant its own helper. Please rereview</p>",
+                      "bodyText": "Migrated. It reads good enough to not warrant its own helper. Please rereview",
+                      "createdAt": "2026-10-11T03:56:43Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABRr2PAA"
+                      }
                     }
                   ],
                   "totalCount": 2
                 },
+                "diffSide": "RIGHT",
+                "id": "PRRT_kwDOBN0Z8c6qjPoE",
                 "isOutdated": true,
                 "isResolved": true,
                 "line": null,
@@ -445,16 +857,36 @@
                 "comments": {
                   "nodes": [
                     {
+                      "author": {
+                        "login": "user-7"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">I think we can use <code class=\"notranslate\">PyStackRef_AsPyObjectNew</code> instead?</p>",
                       "bodyText": "I think we can use PyStackRef_AsPyObjectNew instead?",
+                      "createdAt": "2026-10-08T21:00:00Z",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
                         "id": "PRR_kwDOBN0Z8c8AAAABRZqe3w"
                       }
+                    },
+                    {
+                      "author": {
+                        "login": "user-3"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">Yes. Fixed.</p>",
+                      "bodyText": "Yes. Fixed.",
+                      "createdAt": "2026-10-11T03:56:48Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABRr2QXw"
+                      }
                     }
                   ],
                   "totalCount": 2
                 },
+                "diffSide": "RIGHT",
+                "id": "PRRT_kwDOBN0Z8c6qjRQL",
                 "isOutdated": true,
                 "isResolved": true,
                 "line": null,
@@ -466,16 +898,36 @@
                 "comments": {
                   "nodes": [
                     {
+                      "author": {
+                        "login": "user-7"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">This comment is long and very LLM-esque. Let's be simple:</p>\n  <div class=\"my-2 border rounded-2 js-suggested-changes-blob diff-view js-check-hidden-unicode\" id=\"\">\n    <div class=\"f6 p-2 lh-condensed border-bottom d-flex\">\n      <div class=\"flex-auto flex-items-center color-fg-muted\">\n        Suggested change\n      </div>\n    </div>\n    <div itemprop=\"text\" class=\"blob-wrapper data file rounded-0\" style=\"margin: 0; border: none; overflow-y: visible; overflow-x: auto;\">\n      <table class=\"d-table tab-size mb-0 width-full\" data-paste-markdown-skip=\"\">\n          <tbody><tr class=\"border-0\">\n            <td class=\"blob-num blob-num-deletion text-right border-0 px-2 py-1 lh-default blob-num-hidden\" data-line-number=\"·\"></td>\n            <td class=\"border-0 px-2 py-1 blob-code-inner blob-code-deletion js-blob-code-deletion blob-code-marker-deletion\">    /<span class=\"pl-c1\">*</span> <span class=\"pl-s1\">Pin</span> <span class=\"pl-s1\">the</span> <span class=\"pl-smi\">first</span> <span class=\"pl-s1\">argument</span> <span class=\"pl-s1\">for</span> <span class=\"pl-s1\">the</span> <span class=\"pl-s\">\"missing self\"</span> <span class=\"pl-s1\">hint</span>: <span class=\"pl-smi\">the</span> <span class=\"pl-s1\">surplus</span></td>\n          </tr>\n          <tr class=\"border-0\">\n            <td class=\"blob-num blob-num-deletion text-right border-0 px-2 py-1 lh-default blob-num-hidden\" data-line-number=\"·\"></td>\n            <td class=\"border-0 px-2 py-1 blob-code-inner blob-code-deletion js-blob-code-deletion blob-code-marker-deletion\">       <span class=\"pl-smi\">argument</span> <span class=\"pl-s1\">cleanup</span> <span class=\"pl-smi\">below</span> <span class=\"pl-s1\">may</span> <span class=\"pl-smi\">close</span> <span class=\"pl-s1\">args</span>[<span class=\"pl-c1\">0</span>] <span class=\"pl-smi\">before</span> <span class=\"pl-s1\">the</span> <span class=\"pl-smi\">hint</span> <span class=\"pl-s1\">is</span> <span class=\"pl-s1\">computed</span>.</td>\n          </tr>\n          <tr class=\"border-0\">\n            <td class=\"blob-num blob-num-deletion text-right border-0 px-2 py-1 lh-default blob-num-hidden\" data-line-number=\"·\"></td>\n            <td class=\"border-0 px-2 py-1 blob-code-inner blob-code-deletion js-blob-code-deletion blob-code-marker-deletion\">       <span class=\"pl-smi\">The</span> <span class=\"pl-s1\">pin</span> <span class=\"pl-smi\">is</span> <span class=\"pl-s1\">only</span> <span class=\"pl-smi\">needed</span> <span class=\"pl-s1\">when</span> <span class=\"pl-s1\">the</span> <span class=\"pl-s\">\"too many positional arguments\"</span></td>\n          </tr>\n          <tr class=\"border-0\">\n            <td class=\"blob-num blob-num-deletion text-right border-0 px-2 py-1 lh-default blob-num-hidden\" data-line-number=\"·\"></td>\n            <td class=\"border-0 px-2 py-1 blob-code-inner blob-code-deletion js-blob-code-deletion blob-code-marker-deletion\">       <span class=\"pl-smi\">error</span> <span class=\"pl-s1\">is</span> <span class=\"pl-smi\">about</span> <span class=\"pl-s1\">to</span> <span class=\"pl-smi\">be</span> <span class=\"pl-s1\">raised</span>. <span class=\"pl-c1\">*</span>/</td>\n          </tr>\n          <tr class=\"border-0\">\n            <td class=\"blob-num blob-num-addition text-right border-0 px-2 py-1 lh-default blob-num-hidden\" data-line-number=\"·\"></td>\n            <td class=\"border-0 px-2 py-1 blob-code-inner blob-code-addition js-blob-code-addition blob-code-marker-addition\">    <span class=\"pl-c\">// We need to keep the argument alive for a missing \"self\" hint later.</span></td>\n          </tr>\n      </tbody></table>\n    </div>\n    <div class=\"js-apply-changes\"></div>\n  </div>\n\n<p dir=\"auto\">Or, just remove the comment entirely:</p>\n  <div class=\"my-2 border rounded-2 js-suggested-changes-blob diff-view js-check-hidden-unicode\" id=\"\">\n    <div class=\"f6 p-2 lh-condensed border-bottom d-flex\">\n      <div class=\"flex-auto flex-items-center color-fg-muted\">\n        Suggested change\n      </div>\n    </div>\n    <div itemprop=\"text\" class=\"blob-wrapper data file rounded-0\" style=\"margin: 0; border: none; overflow-y: visible; overflow-x: auto;\">\n      <table class=\"d-table tab-size mb-0 width-full\" data-paste-markdown-skip=\"\">\n          <tbody><tr class=\"border-0\">\n            <td class=\"blob-num blob-num-deletion text-right border-0 px-2 py-1 lh-default blob-num-hidden\" data-line-number=\"·\"></td>\n            <td class=\"border-0 px-2 py-1 blob-code-inner blob-code-deletion js-blob-code-deletion blob-code-marker-deletion\">    /<span class=\"pl-c1\">*</span> <span class=\"pl-s1\">Pin</span> <span class=\"pl-s1\">the</span> <span class=\"pl-smi\">first</span> <span class=\"pl-s1\">argument</span> <span class=\"pl-s1\">for</span> <span class=\"pl-s1\">the</span> <span class=\"pl-s\">\"missing self\"</span> <span class=\"pl-s1\">hint</span>: <span class=\"pl-smi\">the</span> <span class=\"pl-s1\">surplus</span></td>\n          </tr>\n          <tr class=\"border-0\">\n            <td class=\"blob-num blob-num-deletion text-right border-0 px-2 py-1 lh-default blob-num-hidden\" data-line-number=\"·\"></td>\n            <td class=\"border-0 px-2 py-1 blob-code-inner blob-code-deletion js-blob-code-deletion blob-code-marker-deletion\">       <span class=\"pl-smi\">argument</span> <span class=\"pl-s1\">cleanup</span> <span class=\"pl-smi\">below</span> <span class=\"pl-s1\">may</span> <span class=\"pl-smi\">close</span> <span class=\"pl-s1\">args</span>[<span class=\"pl-c1\">0</span>] <span class=\"pl-smi\">before</span> <span class=\"pl-s1\">the</span> <span class=\"pl-smi\">hint</span> <span class=\"pl-s1\">is</span> <span class=\"pl-s1\">computed</span>.</td>\n          </tr>\n          <tr class=\"border-0\">\n            <td class=\"blob-num blob-num-deletion text-right border-0 px-2 py-1 lh-default blob-num-hidden\" data-line-number=\"·\"></td>\n            <td class=\"border-0 px-2 py-1 blob-code-inner blob-code-deletion js-blob-code-deletion blob-code-marker-deletion\">       <span class=\"pl-smi\">The</span> <span class=\"pl-s1\">pin</span> <span class=\"pl-smi\">is</span> <span class=\"pl-s1\">only</span> <span class=\"pl-smi\">needed</span> <span class=\"pl-s1\">when</span> <span class=\"pl-s1\">the</span> <span class=\"pl-s\">\"too many positional arguments\"</span></td>\n          </tr>\n          <tr class=\"border-0\">\n            <td class=\"blob-num blob-num-deletion text-right border-0 px-2 py-1 lh-default blob-num-hidden\" data-line-number=\"·\"></td>\n            <td class=\"border-0 px-2 py-1 blob-code-inner blob-code-deletion js-blob-code-deletion blob-code-marker-deletion\">       <span class=\"pl-smi\">error</span> <span class=\"pl-s1\">is</span> <span class=\"pl-smi\">about</span> <span class=\"pl-s1\">to</span> <span class=\"pl-smi\">be</span> <span class=\"pl-s1\">raised</span>. <span class=\"pl-c1\">*</span>/</td>\n          </tr>\n      </tbody></table>\n    </div>\n    <div class=\"js-apply-changes\"></div>\n  </div>\n",
                       "bodyText": "This comment is long and very LLM-esque. Let's be simple:\n  \n    \n      \n        Suggested change\n      \n    \n    \n      \n          \n            \n                /* Pin the first argument for the \"missing self\" hint: the surplus\n          \n          \n            \n                   argument cleanup below may close args[0] before the hint is computed.\n          \n          \n            \n                   The pin is only needed when the \"too many positional arguments\"\n          \n          \n            \n                   error is about to be raised. */\n          \n          \n            \n                // We need to keep the argument alive for a missing \"self\" hint later.\n          \n      \n    \n    \n  \n\nOr, just remove the comment entirely:\n  \n    \n      \n        Suggested change\n      \n    \n    \n      \n          \n            \n                /* Pin the first argument for the \"missing self\" hint: the surplus\n          \n          \n            \n                   argument cleanup below may close args[0] before the hint is computed.\n          \n          \n            \n                   The pin is only needed when the \"too many positional arguments\"\n          \n          \n            \n                   error is about to be raised. */",
+                      "createdAt": "2026-10-08T21:02:17Z",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
                         "id": "PRR_kwDOBN0Z8c8AAAABRZqe3w"
                       }
+                    },
+                    {
+                      "author": {
+                        "login": "user-3"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">done</p>",
+                      "bodyText": "done",
+                      "createdAt": "2026-10-11T03:56:56Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABRr2SYA"
+                      }
                     }
                   ],
                   "totalCount": 2
                 },
+                "diffSide": "RIGHT",
+                "id": "PRRT_kwDOBN0Z8c6qjUX3",
                 "isOutdated": true,
                 "isResolved": true,
                 "line": null,
@@ -487,16 +939,36 @@
                 "comments": {
                   "nodes": [
                     {
+                      "author": {
+                        "login": "user-7"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">This comment should be combined with the one above.</p>",
                       "bodyText": "This comment should be combined with the one above.",
+                      "createdAt": "2026-10-08T21:03:21Z",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
                         "id": "PRR_kwDOBN0Z8c8AAAABRZqe3w"
                       }
+                    },
+                    {
+                      "author": {
+                        "login": "user-3"
+                      },
+                      "bodyHTML": "<p dir=\"auto\">fixed</p>",
+                      "bodyText": "fixed",
+                      "createdAt": "2026-10-11T03:57:00Z",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABRr2S8A"
+                      }
                     }
                   ],
                   "totalCount": 2
                 },
+                "diffSide": "RIGHT",
+                "id": "PRRT_kwDOBN0Z8c6qjVrP",
                 "isOutdated": false,
                 "isResolved": true,
                 "line": 1690,
@@ -977,7 +1449,7 @@
       }
     }
   },
-  "query": "query FetchPullRequestContent($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { bodyHTML comments(last: 30) { totalCount nodes { author { login } createdAt bodyHTML isMinimized minimizedReason } } reviews(last: 100) { totalCount nodes { id author { login } state submittedAt bodyHTML isMinimized minimizedReason commit { oid } } } reviewThreads(last: 100) { nodes { path line originalLine subjectType isResolved isOutdated comments(first: 1) { totalCount nodes { pullRequestReview { id } bodyText isMinimized minimizedReason } } } } } } rateLimit { remaining resetAt } }",
-  "reset": 1794049358,
+  "query": "query FetchPullRequestContent($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { bodyHTML comments(last: 30) { totalCount nodes { author { login } createdAt bodyHTML isMinimized minimizedReason } } headRefOid reviews(last: 100) { totalCount nodes { id author { login } state submittedAt bodyHTML isMinimized minimizedReason commit { oid } } } reviewThreads(last: 100) { nodes { id path line originalLine diffSide subjectType isResolved isOutdated comments(first: 100) { totalCount nodes { pullRequestReview { id } author { login } createdAt bodyHTML bodyText isMinimized minimizedReason } } } } } } rateLimit { remaining resetAt } }",
+  "reset": 1794097233,
   "status": 200
 }

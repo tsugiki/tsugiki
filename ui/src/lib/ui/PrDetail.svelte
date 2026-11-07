@@ -66,12 +66,19 @@
     <div role="tabpanel" id="pr-tab-panel" aria-labelledby={`pr-tab-${pr.tab}`}>
       {#if pr.tab === "conversation"}
         {#if view.content}
-          <Conversation content={view.content} {now} onlink={(address) => void followLink(address)} />
+          <Conversation
+            content={view.content}
+            {now}
+            onlink={(address) => void followLink(address)}
+            onthread={(id) => {
+              pr.openThread(id);
+            }}
+          />
         {:else}
           <p class="by">Reading from GitHub…</p>
         {/if}
       {:else}
-        <FilesTab files={pr.files} onlink={(address) => void followLink(address)} />
+        <FilesTab files={pr.files} {now} onlink={(address) => void followLink(address)} />
       {/if}
     </div>
   {/if}

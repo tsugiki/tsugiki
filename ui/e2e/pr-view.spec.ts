@@ -92,6 +92,7 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
         ],
         rows: 3,
         news: [],
+        threads: [],
       },
     },
     pullRequestRows: {
@@ -160,6 +161,14 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
   await sideBySide.evaluate((region) => {
     region.scrollLeft = 200;
   });
+  // The rows move across once the scroll event has come, a frame after the scroll.
+  await expect
+    .poll(() =>
+      sideBySide.evaluate((region) =>
+        region.querySelector<HTMLElement>(".spacer")?.style.getPropertyValue("--across"),
+      ),
+    )
+    .toBe("200px");
   await expect
     .poll(() => added.locator(".text").evaluate((text) => text.getBoundingClientRect().x))
     .toBeLessThan(await added.evaluate((side) => side.getBoundingClientRect().x));
@@ -176,4 +185,119 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
 
   await expect(page.getByRole("region", { name: "Issue view" })).toContainText("Issue 7");
   await expect(pane).toHaveCount(0);
+});
+
+test("a thread's place in the Conversation opens it in Files, under its line in either view", async ({
+  page,
+}) => {
+  const thread = {
+    id: "T1",
+    path: "NEWS",
+    subject: { kind: "line", side: "RIGHT", line: 1, original: 1 },
+    opening: { kind: "words", words: "Say what it fixes" },
+    replies: 0,
+    resolution: "open",
+    anchor: "current",
+  } as const;
+  const reviewed: PrView = {
+    ...view,
+    content: view.content && {
+      ...view.content,
+      reviews: view.content.reviews.map((review) => ({ ...review, threads: [thread] })),
+    },
+  };
+  const words = "Say what it fixes. ".repeat(40);
+  await mockCore(page, {
+    home: { screen: "repository", repository },
+    workbench: {
+      status: "ok",
+      data: { items: [issue], quiet: [], count: 0, review_requests: 0, filters: [] },
+    },
+    openIssue: done,
+    fetchIssue: done,
+    issue: { status: "ok", data: { ...issue, author: "issue-author", content: null } },
+    openPullRequest: done,
+    fetchPullRequest: done,
+    pullRequest: { status: "ok", data: reviewed },
+    pullRequestFiles: {
+      status: "ok",
+      data: {
+        state: "ready",
+        head: "0123abcdef",
+        base: "fedcba3210",
+        files: [
+          {
+            path: "NEWS",
+            old_path: null,
+            change: { kind: "lines", added: 2, removed: 0 },
+            row: 0,
+            columns: 9,
+            generated: false,
+            gaps: [],
+            rest: null,
+            pairs: [{ row: 2, removed: 0, added: 2 }],
+          },
+        ],
+        rows: 4,
+        news: [],
+        threads: [
+          {
+            id: "T1",
+            row: 2,
+            resolution: "open",
+            comments: [
+              {
+                author: "some-reviewer",
+                created_at: "2026-11-04T10:00:00Z",
+                body_html: `<p>${words}</p>`,
+                hidden: null,
+              },
+            ],
+            later_comments: 0,
+          },
+        ],
+      },
+    },
+    pullRequestRows: {
+      status: "ok",
+      data: [
+        { kind: "file", path: "NEWS", old_path: null, change: { kind: "lines", added: 2, removed: 0 } },
+        { kind: "hunk", text: "@@ -0,0 +1,2 @@" },
+        { kind: "added", new: 1, text: "The fix" },
+        { kind: "added", new: 2, text: "And more" },
+      ],
+    },
+    pullRequestSpans: { status: "ok", data: [[], [], [], []] },
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "#10 gh-7: Fix it" }).click();
+  const pane = page.getByRole("region", { name: "PR view" });
+
+  await pane.getByRole("button", { name: "NEWS:1" }).click();
+
+  await expect(pane.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
+  const box = pane.getByRole("group", { name: "Review thread" });
+  await expect(box).toContainText("Say what it fixes.");
+  /** Where the thread starts below its line, and where the next line starts below the thread, in pixels. */
+  const gaps = (line: string, next: string) =>
+    box.evaluate(
+      (thread, [line, next]) => {
+        const rows = [...document.querySelectorAll(".row")];
+        const top = (text: string) =>
+          rows.find((row) => row.textContent.includes(text))?.getBoundingClientRect();
+        const own = thread.getBoundingClientRect();
+        return [own.top - (top(line)?.bottom ?? 0), (top(next)?.top ?? 0) - own.bottom];
+      },
+      [line, next] as const,
+    );
+  // The thread wraps to several rows' height, and the next line clears it by less than a row.
+  await expect.poll(() => gaps("The fix", "And more")).toEqual([0, expect.any(Number)]);
+  const [, below = -1] = await gaps("The fix", "And more");
+  expect(below).toBeGreaterThanOrEqual(0);
+  expect(below).toBeLessThan(20);
+  expect(await box.evaluate((thread) => thread.getBoundingClientRect().height)).toBeGreaterThan(40);
+
+  await page.keyboard.press("ControlOrMeta+Alt+u");
+  await expect(pane.getByRole("region", { name: "Side-by-side diff" })).toBeVisible();
+  await expect.poll(() => gaps("The fix", "And more")).toEqual([0, expect.any(Number)]);
 });

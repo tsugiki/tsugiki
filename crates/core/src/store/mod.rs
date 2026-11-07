@@ -746,7 +746,10 @@ mod tests {
     use super::testing::{V1, V2, backups, has_table, temp_database, user_version};
     use super::*;
     use crate::github::CommitSha;
-    use crate::github::pull_request_content::{Anchor, Opening, Resolution, Review, ThreadLine};
+    use crate::github::issue_content::IssueComment;
+    use crate::github::pull_request_content::{
+        Anchor, Opening, Resolution, Review, Subject, ThreadId, ThreadLine,
+    };
     use crate::github::pull_requests::{CiState, LatestReview, OffDefault, PrState, ReviewState};
     use rusqlite::trace::{TraceEvent, TraceEventCodes};
     use time::OffsetDateTime;
@@ -977,20 +980,28 @@ mod tests {
             body_html: String::new(),
             hidden: None,
             threads: vec![ThreadLine {
+                id: ThreadId::new("T1"),
                 path: "Lib/ast.py".to_owned(),
-                line: Some(1),
                 opening: Opening::Words {
                     words: "Why?".to_owned(),
                 },
                 replies: 0,
                 resolution: Resolution::Open,
                 anchor: Anchor::Current,
+                subject: Subject::File,
+                comments: vec![IssueComment {
+                    author: None,
+                    created_at: saved_at,
+                    body_html: "<p>Why?</p>".to_owned(),
+                    hidden: None,
+                }],
             }],
         };
         let reviewed = PullRequestContent {
             conversation: content.clone(),
             reviews: vec![review],
             earlier_reviews: 0,
+            head: CommitSha::parse("0123abc"),
         };
         pull_request_content::save(connection, &cpython, 1, &reviewed).unwrap();
         let (seen, statements) = mpsc::channel();
@@ -1049,8 +1060,9 @@ mod tests {
             "filter_problems",
             "pr_reviews",
             "review_threads",
+            "review_thread_comments",
         ];
-        assert_eq!(tables.map(reads), [true; 14]);
+        assert_eq!(tables.map(reads), [true; 15]);
     }
 
     #[test]
@@ -1067,7 +1079,9 @@ mod tests {
             "INSERT INTO issue_assignees VALUES ('python/cpython', 7, 'someone')",
             "INSERT INTO issue_comments VALUES ('python/cpython', 7, 0, 'someone', 0, '<p>Hi</p>', NULL)",
             "INSERT INTO pr_reviews VALUES ('python/cpython', 1, 0, 'someone', 'APPROVED', NULL, 0, '', NULL)",
-            "INSERT INTO review_threads VALUES ('python/cpython', 1, 0, 0, 'a.py', 1, 'Hm', NULL, 0, 'open', 'current')",
+            "INSERT INTO review_threads VALUES ('python/cpython', 1, 0, 0, 'T1', 'a.py', 1, 'RIGHT', 1, 'Hm', NULL, 0,
+                                                'open', 'current')",
+            "INSERT INTO review_thread_comments VALUES ('python/cpython', 1, 0, 0, 0, 'someone', 0, '<p>Hm</p>', NULL)",
         ];
         let refused = orphans.map(|sql| {
             let refusal = connection.execute(sql, []).err();
@@ -1075,7 +1089,7 @@ mod tests {
         });
         assert_eq!(
             refused,
-            [Some(rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY); 10]
+            [Some(rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY); 11]
         );
     }
 

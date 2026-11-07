@@ -61,13 +61,19 @@ const file = (path: string, row: number, generated = false): DiffFile => ({
 });
 
 /** A diff from `base` to `head`. */
-const ready = (head: string, rows: number, files = [file("NEWS", 0)], base = "base"): PrFiles => ({
+const ready = (
+  head: string,
+  rows: number,
+  files = [file("NEWS", 0)],
+  base = "base",
+): Extract<PrFiles, { state: "ready" }> => ({
   state: "ready",
   head,
   base,
   files,
   rows,
   news: [],
+  threads: [],
 });
 
 /** A file, a Generated one from row 10 to the third chunk, and a file in the third chunk. */
@@ -820,4 +826,118 @@ it("lays the diff out in the view the window chose, which one choice holds for e
   expect([one.shownAs, other.shownAs]).toEqual(["side-by-side", "side-by-side"]);
   choice.toggle();
   expect(one.shownAs).toBe("unified");
+});
+
+/** An open thread `id` under row `row`, with `comments` comments. */
+const thread = (id: string, row: number, resolution: "open" | "resolved" = "open", comments = 1) => ({
+  id,
+  row,
+  resolution,
+  comments: Array.from({ length: comments }, () => ({
+    author: "some-reviewer",
+    created_at: "2026-11-04T10:00:00Z",
+    body_html: "<p>Why?</p>",
+    hidden: null,
+  })),
+  later_comments: 0,
+});
+
+/** A diff of 40 rows: a file, a Generated one from row 20, and threads under rows 2, 5, 9 and 25, the
+ * second resolved. */
+const threaded = (): Extract<PrFiles, { state: "ready" }> => ({
+  ...ready("abc", 40, [file("Lib/ast.py", 0), file("Python/generated.c.h", 20, true)]),
+  threads: [thread("T2", 2, "open", 2), thread("T5", 5, "resolved"), thread("T9", 9), thread("T25", 25)],
+});
+
+/** The places each thread takes, by its id, and `-` for one that doesn't show. */
+const threadPlaces = (files: PrFilesState) =>
+  files.threads.map((shown) => {
+    const place = files.layout.threadAt(shown.id);
+    return place === undefined ? `${shown.id} -` : `${shown.id} ${String(place)}`;
+  });
+
+it("folds a resolved thread to a line and leaves an open one open, as the user turns either", async () => {
+  const files = await loaded(threaded());
+
+  expect([0, 1, 2, 4].map((at) => files.folded(at))).toEqual([false, true, false, false]);
+  // A guess until the tab measures it: a header, and three places for each comment.
+  expect(files.layout.threadsIn(0, 99).map((placed) => placed.length)).toEqual([7, 1, 4]);
+  files.toggleThread(0);
+  files.toggleThread(1);
+  files.toggleThread(9);
+  expect([0, 1].map((at) => files.folded(at))).toEqual([true, false]);
+  files.measured("T5", 3);
+  files.measured("T5", 3);
+  files.measured("T2", 9);
+  expect(files.layout.threadsIn(0, 99).map((placed) => placed.length)).toEqual([1, 3, 4]);
+  files.toggleThread(0);
+  expect(files.layout.threadsIn(0, 99).map((placed) => placed.length)).toEqual([9, 3, 4]);
+});
+
+it("moves through the open threads with F8 and back with Shift+F8, round from either end", async () => {
+  const files = await loaded(threaded());
+  const visited: string[] = [];
+  const press = (step: 1 | -1) => {
+    files.nextThread(step);
+    visited.push(files.jump?.id ?? "none");
+  };
+
+  press(1);
+  press(1);
+  press(1);
+  press(1);
+  press(-1);
+  expect(visited).toEqual(["T2", "T9", "T25", "T2", "T25"]);
+  // The thread under row 25 is in the Generated file, which the move opened.
+  expect(files.collapsed(1)).toBe(false);
+  expect(threadPlaces(files).at(-1)).toBe("T25 38");
+});
+
+it("starts from the last thread going back, and goes nowhere without an open thread", async () => {
+  const files = await loaded(threaded());
+  files.nextThread(-1);
+  expect(files.jump).toEqual({ id: "T25" });
+  // A new diff without the thread starts from the end again.
+  core.pullRequestFiles.mockResolvedValue(ok({ ...threaded(), threads: [thread("T2", 2), thread("T9", 9)] }));
+  await files.ask();
+  files.nextThread(1);
+  expect(files.jump).toEqual({ id: "T2" });
+
+  const none = await loaded({ ...threaded(), threads: [thread("T5", 5, "resolved")] });
+  none.nextThread(1);
+  expect(none.jump).toBeUndefined();
+});
+
+it("reveals a thread open, even a resolved one, and one asked for before the diff came once it does", async () => {
+  let answer: (answer: unknown) => void = () => {};
+  core.pullRequestFiles.mockReturnValue(
+    new Promise((resolve) => {
+      answer = resolve;
+    }),
+  );
+  const files = new PrFilesState("python/cpython", 11, timer());
+  const loading = files.load();
+  await settled();
+
+  files.reveal("T5");
+  expect(files.jump).toBeUndefined();
+  answer(ok(threaded()));
+  await loading;
+
+  expect(files.jump).toEqual({ id: "T5" });
+  expect(files.folded(1)).toBe(false);
+  files.reveal("T2");
+  const moved = files.jump;
+  files.reveal("gone");
+  expect(files.jump).toBe(moved);
+  core.pullRequestFiles.mockResolvedValue(ok(threaded()));
+  await files.ask();
+  expect(files.jump).toBe(moved);
+});
+
+it("has no threads before the diff comes", async () => {
+  const files = await loaded();
+
+  expect(files.threads).toEqual([]);
+  expect(files.folded(0)).toBe(false);
 });

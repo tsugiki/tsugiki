@@ -1,6 +1,8 @@
 //! The PR view's Files tab: the PR's diff from its Repository's mirror, or why it isn't there yet (ADR
 //! 0008). The window asks for the rows in chunks (ADR 0001).
 
+mod threads;
+
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -14,11 +16,13 @@ use crate::diff::{
 use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
 use crate::github::CommitSha;
+use crate::github::pull_request_content::PullRequestContent;
 use crate::github::pull_requests::{PrHead, PullRequestFacts};
 use crate::highlight::Span;
 use crate::mirror::MirrorRequests;
 use crate::repository::RepositoryName;
 use crate::store::StoreReader;
+pub use threads::DiffThread;
 
 /// What the Files tab shows.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -41,6 +45,9 @@ pub enum PrFiles {
         rows: u32,
         /// The PR's NEWS entries, rendered above the rows.
         news: Vec<NewsEntry>,
+        /// The review threads on its lines, in the order of their rows, from the PR's Conversation as
+        /// Tsugiki last read it.
+        threads: Vec<DiffThread>,
     },
 }
 
@@ -63,7 +70,7 @@ impl PrFiles {
         repository: &RepositoryName,
         number: u32,
     ) -> Result<Option<Self>, Error> {
-        let Some(pr) = facts(sources.reader, repository, number)? else {
+        let Some((pr, content)) = facts(sources.reader, repository, number)? else {
             return Ok(None);
         };
         let mirror = sources.folders.mirror(repository);
@@ -82,7 +89,7 @@ impl PrFiles {
         let target = Against::Branch(&pr.target_branch);
         // The diff on show is in the mirror, so asking git again would only cost a moment.
         if let Some(open) = sources.diffs.shown(&at, target) {
-            return Ok(Some(Self::ready(&open)));
+            return Ok(Some(Self::ready(&open, content.as_ref())));
         }
         match diff::held(&mirror, &pr.target_branch, &head) {
             Held::NoHead => {
@@ -104,18 +111,24 @@ impl PrFiles {
             Held::Both => {
                 let read = || diff::read(&mirror, &pr.target_branch, &head);
                 let open = sources.diffs.get_or_read(&at, target, read)?;
-                Ok(Some(Self::ready(&open)))
+                Ok(Some(Self::ready(&open, content.as_ref())))
             }
         }
     }
 
-    fn ready(open: &OpenDiff) -> Self {
+    /// The diff `open`, with the threads of `content` on its lines. Their lines count in the head GitHub had
+    /// when Tsugiki last read the Conversation, so a diff that ends elsewhere has them once the two agree.
+    fn ready(open: &OpenDiff, content: Option<&PullRequestContent>) -> Self {
+        let threads = content
+            .filter(|content| content.head.as_ref() == Some(&open.pr.head))
+            .map(|content| threads::place(&open.diff, &content.reviews));
         Self::Ready {
             head: open.pr.head.clone(),
             base: open.base.clone(),
             files: open.diff.files().to_vec(),
             rows: open.diff.row_count(),
             news: open.news.clone(),
+            threads: threads.unwrap_or_default(),
         }
     }
 
@@ -168,7 +181,7 @@ impl PrFiles {
         let DiffOf { pr, base } = of;
         sources.diffs.get_or_read(pr, Against::Base(base), || {
             let facts = facts(sources.reader, &pr.repository, pr.number)?;
-            let Some(facts) = facts else {
+            let Some((facts, _content)) = facts else {
                 return Err(Error::new(
                     ErrorKind::NotFound,
                     &format!("Tsugiki doesn't hold PR #{}.", pr.number),
@@ -180,24 +193,25 @@ impl PrFiles {
     }
 }
 
-/// PR `number`'s facts, as the database last had them.
+/// PR `number`'s facts, and its Conversation once Tsugiki has read it, as the database last had them.
 fn facts(
     reader: &StoreReader,
     repository: &RepositoryName,
     number: u32,
-) -> Result<Option<PullRequestFacts>, Error> {
-    let (facts, _content) = reader.pull_request_facts(repository, number)?;
+) -> Result<Option<(PullRequestFacts, Option<PullRequestContent>)>, Error> {
+    let (facts, content) = reader.pull_request_facts(repository, number)?;
     let pr = facts
         .pull_requests
         .into_iter()
         .find(|pr| pr.number == number);
-    Ok(pr)
+    Ok(pr.map(|pr| (pr, content)))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::diff::tests::{Mirrored, git_in};
+    use crate::github::pull_request_content::{Side, Subject};
     use crate::mirror::HeardRequests;
     use crate::workbench::testing::{ViewWorld, mine};
 
@@ -373,11 +387,67 @@ mod tests {
             files: whole.files().to_vec(),
             rows: whole.row_count(),
             news: read.news,
+            threads: Vec::new(),
         };
         assert_eq!(files, expected);
         assert_eq!(rows, whole.rows(0..3));
         assert_eq!(spans.len(), whole.rows(0..whole.row_count()).len());
         assert_eq!(spans.iter().filter(|spans| !spans.is_empty()).count(), 13);
+        mirrored.finish();
+        world.finish();
+    }
+
+    #[test]
+    fn a_thread_tsugiki_read_in_the_conversation_sits_under_its_line() {
+        let world = World::new("threads");
+        let mirrored = Mirrored::new("pr-files-threads");
+        let head = mirrored.head.clone();
+        let whole = mirrored.read().diff;
+        world.mirrors(&mirrored);
+        world.has_pr(Some(head.clone()), "main");
+        let all = whole.rows(0..whole.row_count());
+        let added = (0..).zip(all).find_map(|(row, line)| {
+            if let DiffRow::Added { new, .. } = line {
+                Some((row, *new))
+            } else {
+                None
+            }
+        });
+        let (row, line) = added.unwrap();
+        let file = whole.files().iter().rfind(|file| file.row < row).unwrap();
+        let mut content = crate::workbench::pr_view::tests::reviewed();
+        let thread = content.reviews[0].threads.get_mut(0).unwrap();
+        thread.path.clone_from(&file.path);
+        thread.subject = Subject::Line {
+            side: Side::Right,
+            line: Some(line),
+            original: Some(line),
+        };
+        let name = world.repository();
+        let save = |content| {
+            world
+                .view
+                .store
+                .save_pull_request_content(&name, 7, content)
+                .unwrap();
+        };
+        // GitHub had another head when Tsugiki read the Conversation, so its lines count elsewhere.
+        save(content.clone());
+        let elsewhere = world.files();
+        content.head = Some(head);
+        save(content);
+
+        // The threads, as the window reads them.
+        let threads =
+            |files: Option<PrFiles>| serde_json::to_value(files).unwrap()["threads"].clone();
+        let placed = threads(world.files());
+
+        assert_eq!(
+            (placed[0]["id"].clone(), placed[0]["row"].clone()),
+            (serde_json::json!("TSome(12)"), serde_json::json!(row))
+        );
+        assert_eq!(placed.as_array().map(Vec::len), Some(1));
+        assert_eq!(threads(elsewhere), serde_json::json!([]));
         mirrored.finish();
         world.finish();
     }
@@ -487,6 +557,7 @@ mod tests {
             files: Vec::new(),
             rows: 0,
             news: Vec::new(),
+            threads: Vec::new(),
         };
         assert_ne!(before, Some(expected.clone()));
         assert_eq!(world.files(), Some(expected));

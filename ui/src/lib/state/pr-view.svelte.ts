@@ -58,6 +58,12 @@ export class PrViewState extends DetailState<PrView> {
     return { number: this.number, kind: "pull_request", issue: this.issue };
   }
 
+  /** Opens review thread `id` in the Files tab, unfolded (#184). */
+  openThread(id: string) {
+    this.tab = "files";
+    this.files.reveal(id);
+  }
+
   /** Moves to the other tab. With two tabs, the next one and the one before are the same. */
   switchTab() {
     this.tab = this.tab === "conversation" ? "files" : "conversation";

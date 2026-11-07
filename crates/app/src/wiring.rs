@@ -1144,7 +1144,7 @@ mod tests {
         });
         assert_eq!(
             ready,
-            json!({ "state": "ready", "head": commit, "base": base, "files": [news], "rows": 3, "news": [] })
+            json!({ "state": "ready", "head": commit, "base": base, "files": [news], "rows": 3, "news": [], "threads": [] })
         );
         assert!(CommitSha::parse(&base).is_some_and(|base| base.as_str() != commit));
         assert_eq!(

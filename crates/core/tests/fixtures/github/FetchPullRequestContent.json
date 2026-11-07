@@ -1,33 +1,983 @@
 {
   "body": {
     "data": {
+      "rateLimit": {
+        "remaining": 4991,
+        "resetAt": "2026-11-07T11:02:38Z"
+      },
       "repository": {
         "pullRequest": {
-          "bodyHTML": "<p dir=\"auto\"><span class=\"issue-keyword tooltipped tooltipped-se\" aria-label=\"This pull request closes issue #161.\">Closes</span> <a class=\"issue-link js-issue-link\" data-error-text=\"Failed to load title\" data-id=\"6249544553\" data-permission-text=\"Title is private\" data-url=\"https://github.com/tsugiki/tsugiki/issues/161\" data-hovercard-type=\"issue\" data-hovercard-url=\"/tsugiki/tsugiki/issues/161/hovercard\" href=\"https://github.com/tsugiki/tsugiki/issues/161\">#161</a>.</p>\n<p dir=\"auto\">The queue ran its front sync to the end, so the open Repository's timed refresh waited behind a first sync of CPython, and a new PR took 12 minutes to show. Now each queued sync takes one step at a time. The open Repository gets every other step, and the others take theirs in the order you asked for them. A step that saves sends <code class=\"notranslate\">changed</code> at once, so the Workbench shows a refresh's first batch while CPython still syncs.</p>\n<p dir=\"auto\">A failure that speaks for all of GitHub (Offline, a rate limit, certificate dates, Unauthorized) still holds back every step. Any other failure holds back only its own Repository until the next status refresh, and counts toward that sync's 10 tries. If that Repository isn't the open one, the status bar message starts with its name. An Issue fetch that fails holds back no sync, unless all of GitHub is out.</p>\n<p dir=\"auto\"><code class=\"notranslate\">SyncActivity</code> now carries the open Repository's progress under <code class=\"notranslate\">open</code>, and lists the other Repositories syncing in <code class=\"notranslate\">elsewhere</code>, sorted by name so the turns don't reorder it. The status bar shows them beside the sync time: <code class=\"notranslate\">Synced 3 min ago · python/peps syncing</code>, or <code class=\"notranslate\">python/peps and 2 more syncing</code>.</p>\n<p dir=\"auto\">ADR 0015 gains a paragraph on the turns and a considered option: the open Repository's sync first, to its end. The CHANGELOG's WIP section gets a Fixed entry.</p>\n<p dir=\"auto\">Tests: the <code class=\"notranslate\">Syncs</code> methods against the Harness with recorded replies, for the order of turns, a refresh beside another sync, the two kinds of hold, the activity and a named failure. <code class=\"notranslate\">StatusBar</code> and <code class=\"notranslate\">synced.ts</code> tests cover the words. <code class=\"notranslate\">just check</code> passes on Windows.</p>",
+          "bodyHTML": "\n\n<ul dir=\"auto\">\n<li>Issue: <a class=\"issue-link js-issue-link\" data-error-text=\"Failed to load title\" data-id=\"4753850385\" data-permission-text=\"Title is private\" data-url=\"https://github.com/python/cpython/issues/152315\" data-hovercard-type=\"issue\" data-hovercard-url=\"/python/cpython/issues/152315/hovercard\" href=\"https://github.com/python/cpython/issues/152315\">gh-152315</a></li>\n</ul>\n",
           "comments": {
             "nodes": [
               {
                 "author": {
                   "login": "user-0"
                 },
-                "bodyHTML": "<h2 dir=\"auto\"><a href=\"https://app.user-0.io/gh/tsugiki/tsugiki/pull/162?dropdown=coverage&amp;src=pr&amp;el=h1&amp;utm_medium=referral&amp;utm_source=github&amp;utm_content=comment&amp;utm_campaign=pr+comments&amp;utm_term=tsugiki\" rel=\"nofollow\">user-0</a> Report</h2>\n<p dir=\"auto\">✅ All modified and coverable lines are covered by tests.</p>\n<p dir=\"auto\">📢 Thoughts on this report? <a href=\"https://github.com/user-0/feedback/issues/255\" data-hovercard-type=\"issue\" data-hovercard-url=\"/user-0/feedback/issues/255/hovercard\">Let us know!</a></p>",
-                "createdAt": "2026-11-06T21:29:24Z"
+                "bodyHTML": "<p dir=\"auto\">All commit authors signed the Contributor License Agreement.</p>\n<p dir=\"auto\"><a href=\"https://cla.python.org/\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/1c7e7ec4141b7323ee376d8a3a48e6acfaa33577216949150bd85c32e231b8db/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f434c412532305369676e65642d4641453038353f7374796c653d666c61742d737175617265266c6f676f3d507974686f6e\" alt=\"CLA signed\" data-canonical-src=\"https://img.shields.io/badge/CLA%20Signed-FAE085?style=flat-square&amp;logo=Python\" style=\"max-width: 100%;\"></a></p>",
+                "createdAt": "2026-06-26T18:36:17Z",
+                "isMinimized": false,
+                "minimizedReason": null
               },
               {
                 "author": {
                   "login": "user-1"
                 },
-                "bodyHTML": "\n<h2 dir=\"auto\">Merging this PR will <strong>not alter performance</strong></h2>\n<details>\n<summary><b>1 warning</b></summary>\n<blockquote>\n<p dir=\"auto\"><g-emoji class=\"g-emoji\" alias=\"warning\">⚠️</g-emoji> <strong>7 benchmarks are dominated by system calls</strong></p>\n<p dir=\"auto\">System calls cannot be simulated consistently and are left out of the measure. The reported value understates the real cost. Switch to the Walltime instrument to measure them.</p>\n<p dir=\"auto\"><a href=\"https://user-1.io/docs/instruments/cpu?utm_source=github&amp;utm_medium=comment-v2&amp;utm_content=significant_sys_time#system-calls\" rel=\"nofollow\">Learn more about system calls</a></p>\n<p dir=\"auto\"><a href=\"https://app.user-1.io/tsugiki/tsugiki/branches/stage1%2F161-sync-turns?q=has%3Asignificant_sys_time&amp;utm_source=github&amp;utm_medium=comment-v2&amp;utm_content=affected_benchmarks\" rel=\"nofollow\">See affected benchmarks</a></p>\n</blockquote>\n</details>\n<p dir=\"auto\"><code class=\"notranslate\">✅ 8</code> untouched benchmarks</p>\n<hr>\n<p dir=\"auto\"><sub>Comparing <code class=\"notranslate\">stage1/161-sync-turns</code> (<a class=\"commit-link\" data-hovercard-type=\"commit\" data-hovercard-url=\"https://github.com/tsugiki/tsugiki/commit/d418293c091664bf6e9a12ed54b9a322ecceb6ec/hovercard\" href=\"https://github.com/tsugiki/tsugiki/commit/d418293c091664bf6e9a12ed54b9a322ecceb6ec\"><tt>d418293</tt></a>) with <code class=\"notranslate\">main</code> (<a class=\"commit-link\" data-hovercard-type=\"commit\" data-hovercard-url=\"https://github.com/tsugiki/tsugiki/commit/473307be6af279f39b5404805c2e8a265b189ad2/hovercard\" href=\"https://github.com/tsugiki/tsugiki/commit/473307be6af279f39b5404805c2e8a265b189ad2\"><tt>473307b</tt></a>)</sub></p>\n<a href=\"https://app.user-1.io/tsugiki/tsugiki/branches/stage1%2F161-sync-turns?utm_source=github&amp;utm_medium=comment-v2&amp;utm_content=button\" rel=\"nofollow\">\n  <themed-picture data-catalyst-inline=\"true\"><picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://camo.githubusercontent.com/66830c830b488aed84a2fca66f0df1c16a3cbb6f20441ecedd5ab4d7aedbbc96/68747470733a2f2f636f6473706565642e696f2f70722d7265706f72742f6f70656e2d696e2d636f6473706565642d6461726b2e737667\" data-canonical-src=\"https://user-1.io/pr-report/open-in-codspeed-dark.svg\">\n    <source media=\"(prefers-color-scheme: light)\" srcset=\"https://camo.githubusercontent.com/37ec631e3e98c9a0e8ed01a340059281ec37e84dd0e0315c80b4a48df69dfdc2/68747470733a2f2f636f6473706565642e696f2f70722d7265706f72742f6f70656e2d696e2d636f6473706565642d6c696768742e737667\" data-canonical-src=\"https://user-1.io/pr-report/open-in-codspeed-light.svg\">\n    <img alt=\"Open in user-1\" src=\"https://camo.githubusercontent.com/37ec631e3e98c9a0e8ed01a340059281ec37e84dd0e0315c80b4a48df69dfdc2/68747470733a2f2f636f6473706565642e696f2f70722d7265706f72742f6f70656e2d696e2d636f6473706565642d6c696768742e737667\" width=\"169\" height=\"32\" data-canonical-src=\"https://user-1.io/pr-report/open-in-codspeed-light.svg\">\n  </picture></themed-picture>\n</a>",
-                "createdAt": "2026-11-06T21:30:48Z"
+                "bodyHTML": "\n<p dir=\"auto\">A Python core developer has requested some changes be made to your pull request before we can consider merging it. If you could please address their requests along with any other requests in other reviews from core developers that would be appreciated.</p>\n<p dir=\"auto\">Once you have made the requested changes, please leave a comment on this pull request containing the phrase <code class=\"notranslate\">I have made the requested changes; please review again</code>. I will then notify any core developers who have left a review that you're ready for them to take another look at this pull request.</p>\n",
+                "createdAt": "2026-06-27T09:16:15Z",
+                "isMinimized": false,
+                "minimizedReason": null
+              },
+              {
+                "author": {
+                  "login": "user-2"
+                },
+                "bodyHTML": "\n<h3 dir=\"auto\">Documentation build overview</h3>\n<blockquote>\n<p dir=\"auto\">📚 <a href=\"https://app.readthedocs.org/projects/cpython-previews/\" rel=\"nofollow\">cpython-previews</a> | 🛠️ Build <a href=\"https://app.readthedocs.org/projects/cpython-previews/builds/35068046/\" rel=\"nofollow\">#35068046</a> | 📁 Comparing <a class=\"commit-link\" data-hovercard-type=\"commit\" data-hovercard-url=\"https://github.com/python/cpython/commit/a4c2623368acdf75d3c088f2f84c3ddc6d78c75e/hovercard\" href=\"https://github.com/python/cpython/commit/a4c2623368acdf75d3c088f2f84c3ddc6d78c75e\"><tt>a4c2623</tt></a> against <a href=\"https://cpython-previews.readthedocs.io/en/main/\" rel=\"nofollow\">main</a> (<a class=\"commit-link\" data-hovercard-type=\"commit\" data-hovercard-url=\"https://github.com/python/cpython/commit/0a13efc3fb0bf0896612ed20decce3ce4eb5e05b/hovercard\" href=\"https://github.com/python/cpython/commit/0a13efc3fb0bf0896612ed20decce3ce4eb5e05b\"><tt>0a13efc</tt></a>)</p>\n</blockquote>\n<p dir=\"auto\"><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/\" rel=\"nofollow\"><kbd>   🔍 Preview build   </kbd></a></p>\n<details>\n<summary>427 files changed · <code class=\"notranslate\">+</code> 12 added · <code class=\"notranslate\">±</code> 415 modified</summary>\n<br>\n<p dir=\"auto\"><code class=\"notranslate\">+</code> <strong>Added</strong></p>\n<ul dir=\"auto\">\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/builtins/constants.html\" rel=\"nofollow\"><code class=\"notranslate\">builtins/constants.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/builtins/exceptions.html\" rel=\"nofollow\"><code class=\"notranslate\">builtins/exceptions.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/builtins/functions.html\" rel=\"nofollow\"><code class=\"notranslate\">builtins/functions.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/builtins/index.html\" rel=\"nofollow\"><code class=\"notranslate\">builtins/index.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/builtins/stdtypes.html\" rel=\"nofollow\"><code class=\"notranslate\">builtins/stdtypes.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/builtins/threadsafety.html\" rel=\"nofollow\"><code class=\"notranslate\">builtins/threadsafety.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/builtins/time-complexity.html\" rel=\"nofollow\"><code class=\"notranslate\">builtins/time-complexity.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/library/asyncio-tools.html\" rel=\"nofollow\"><code class=\"notranslate\">library/asyncio-tools.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/library/time-complexity.html\" rel=\"nofollow\"><code class=\"notranslate\">library/time-complexity.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/library/tkinter.dialogs.html\" rel=\"nofollow\"><code class=\"notranslate\">library/tkinter.dialogs.html</code></a></li>\n<li><em>and 2 more...</em></li>\n</ul>\n<p dir=\"auto\"><code class=\"notranslate\">±</code> <strong>Modified</strong></p>\n<ul dir=\"auto\">\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/glossary.html\" rel=\"nofollow\"><code class=\"notranslate\">glossary.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/index.html\" rel=\"nofollow\"><code class=\"notranslate\">index.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/license.html\" rel=\"nofollow\"><code class=\"notranslate\">license.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/py-modindex.html\" rel=\"nofollow\"><code class=\"notranslate\">py-modindex.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/_static/tachyon-example-heatmap.html\" rel=\"nofollow\"><code class=\"notranslate\">_static/tachyon-example-heatmap.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/c-api/arg.html\" rel=\"nofollow\"><code class=\"notranslate\">c-api/arg.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/c-api/bool.html\" rel=\"nofollow\"><code class=\"notranslate\">c-api/bool.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/c-api/buffer.html\" rel=\"nofollow\"><code class=\"notranslate\">c-api/buffer.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/c-api/bytearray.html\" rel=\"nofollow\"><code class=\"notranslate\">c-api/bytearray.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/c-api/bytes.html\" rel=\"nofollow\"><code class=\"notranslate\">c-api/bytes.html</code></a></li>\n<li><em>and 405 more...</em></li>\n</ul>\n</details>",
+                "createdAt": "2026-07-03T04:09:10Z",
+                "isMinimized": false,
+                "minimizedReason": null
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "<p dir=\"auto\"><a class=\"user-mention notranslate\" data-hovercard-type=\"user\" data-hovercard-url=\"/users/user-4/hovercard\" data-octo-click=\"hovercard-link-click\" data-octo-dimensions=\"link_type:self\" href=\"https://github.com/user-4\">@user-4</a> , I've added tests with classmethods, staticmethods and instancemethods with classes/metaclasses.</p>\n<p dir=\"auto\"><a class=\"user-mention notranslate\" data-hovercard-type=\"user\" data-hovercard-url=\"/users/user-8/hovercard\" data-octo-click=\"hovercard-link-click\" data-octo-dimensions=\"link_type:self\" href=\"https://github.com/user-8\">@user-8</a>, I've added tests.</p>\n<p dir=\"auto\"><a class=\"user-mention notranslate\" data-hovercard-type=\"user\" data-hovercard-url=\"/users/user-7/hovercard\" data-octo-click=\"hovercard-link-click\" data-octo-dimensions=\"link_type:self\" href=\"https://github.com/user-7\">@user-7</a> , I've added news.</p>\n<p dir=\"auto\">At a high level, I feel like I've taken on too much complexity in one PR. If people can chime on what feels good enough, that'd be great.</p>\n<p dir=\"auto\">This is ready for next round of review.</p>",
+                "createdAt": "2026-07-03T05:54:36Z",
+                "isMinimized": false,
+                "minimizedReason": null
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "<p dir=\"auto\">I have made the requested changes; please review again</p>",
+                "createdAt": "2026-07-03T19:34:04Z",
+                "isMinimized": false,
+                "minimizedReason": null
+              },
+              {
+                "author": {
+                  "login": "user-1"
+                },
+                "bodyHTML": "<p dir=\"auto\">Thanks for making the requested changes!</p>\n<p dir=\"auto\"><a class=\"user-mention notranslate\" data-hovercard-type=\"user\" data-hovercard-url=\"/users/user-4/hovercard\" data-octo-click=\"hovercard-link-click\" data-octo-dimensions=\"link_type:self\" href=\"https://github.com/user-4\">@user-4</a>: please review the changes made to this pull request.</p>",
+                "createdAt": "2026-07-03T19:34:09Z",
+                "isMinimized": false,
+                "minimizedReason": null
+              },
+              {
+                "author": {
+                  "login": "user-4"
+                },
+                "bodyHTML": "<p dir=\"auto\"><a class=\"user-mention notranslate\" data-hovercard-type=\"user\" data-hovercard-url=\"/users/user-3/hovercard\" data-octo-click=\"hovercard-link-click\" data-octo-dimensions=\"link_type:self\" href=\"https://github.com/user-3\">@user-3</a> Please, don't force-push. It's impossible to make incremental reviews otherwise.</p>",
+                "createdAt": "2026-08-23T09:15:38Z",
+                "isMinimized": false,
+                "minimizedReason": null
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "<p dir=\"auto\">reminder to review</p>",
+                "createdAt": "2026-10-08T15:49:03Z",
+                "isMinimized": false,
+                "minimizedReason": null
+              },
+              {
+                "author": {
+                  "login": "user-5"
+                },
+                "bodyHTML": "<blockquote>\n<p dir=\"auto\">reminder to review</p>\n</blockquote>\n<p dir=\"auto\">If you get a hard time getting reviews, you can request one in <a href=\"https://discuss.python.org/c/core-dev/23\" rel=\"nofollow\">https://discuss.python.org/c/core-dev/23</a> under the tag #review-request</p>",
+                "createdAt": "2026-10-08T17:10:02Z",
+                "isMinimized": false,
+                "minimizedReason": null
+              },
+              {
+                "author": {
+                  "login": "bedevere-bot"
+                },
+                "bodyHTML": "<p dir=\"auto\">🤖 New build scheduled with the buildbot fleet by <a class=\"user-mention notranslate\" data-hovercard-type=\"user\" data-hovercard-url=\"/users/user-7/hovercard\" data-octo-click=\"hovercard-link-click\" data-octo-dimensions=\"link_type:self\" href=\"https://github.com/user-7\">@user-7</a> for commit <a class=\"commit-link\" data-hovercard-type=\"commit\" data-hovercard-url=\"https://github.com/python/cpython/commit/a4c2623368acdf75d3c088f2f84c3ddc6d78c75e/hovercard\" href=\"https://github.com/python/cpython/commit/a4c2623368acdf75d3c088f2f84c3ddc6d78c75e\"><tt>a4c2623</tt></a> 🤖</p>\n<p dir=\"auto\">Results will be shown at:</p>\n<p dir=\"auto\"><a href=\"https://buildbot.python.org/all/#/grid?branch=refs%2Fpull%2F152326%2Fmerge\" rel=\"nofollow\">https://buildbot.python.org/all/#/grid?branch=refs%2Fpull%2F152326%2Fmerge</a></p>\n<p dir=\"auto\">If you want to schedule another build, you need to add the <kbd>🔨 test-with-buildbots</kbd> label again.</p>",
+                "createdAt": "2026-10-11T18:43:40Z",
+                "isMinimized": false,
+                "minimizedReason": null
               }
             ],
-            "totalCount": 2
+            "totalCount": 10
+          },
+          "reviewThreads": {
+            "nodes": [
+              {
+                "comments": {
+                  "nodes": [
+                    {
+                      "bodyText": "I agree with @user-5: self is only a naming convention. What matters is that the first parameter receives the instance. Consider something like:\n\". Did you forget the instance parameter (e.g. self) in the function definition?\"\nThis avoids misleading beginners into adding a parameter named self in the wrong position.",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABER3R8g"
+                      }
+                    }
+                  ],
+                  "totalCount": 4
+                },
+                "isOutdated": true,
+                "isResolved": false,
+                "line": null,
+                "originalLine": 1623,
+                "path": "Python/ceval.c",
+                "subjectType": "LINE"
+              },
+              {
+                "comments": {
+                  "nodes": [
+                    {
+                      "bodyText": "If PyUnicode_FromString fails, the original TypeError is never raised and the user gets no error message. Better to skip the hint and still emit the normal _PyErr_Format.",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABER3R8g"
+                      }
+                    }
+                  ],
+                  "totalCount": 3
+                },
+                "isOutdated": true,
+                "isResolved": false,
+                "line": null,
+                "originalLine": 1624,
+                "path": "Python/ceval.c",
+                "subjectType": "LINE"
+              },
+              {
+                "comments": {
+                  "nodes": [
+                    {
+                      "bodyText": "Good setup for the happy path. If possible, add a def method_with_self(self, x) on the same class A to cover the false positive case.",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABER3R8g"
+                      }
+                    }
+                  ],
+                  "totalCount": 2
+                },
+                "isOutdated": true,
+                "isResolved": false,
+                "line": null,
+                "originalLine": 913,
+                "path": "Lib/test/test_call.py",
+                "subjectType": "LINE"
+              },
+              {
+                "comments": {
+                  "nodes": [
+                    {
+                      "bodyText": "The heuristic of matching tp_name against the class segment in qualname is solid. A negative test for a @user-10 missing cls would be useful, it probably shouldnt trigger the hint, and that would document the expected behavior.",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABER3R8g"
+                      }
+                    }
+                  ],
+                  "totalCount": 2
+                },
+                "isOutdated": true,
+                "isResolved": false,
+                "line": null,
+                "originalLine": 1778,
+                "path": "Python/ceval.c",
+                "subjectType": "LINE"
+              },
+              {
+                "comments": {
+                  "nodes": [
+                    {
+                      "bodyText": "Hmm, this fires whenever argcount > co_argcount and the first argument's type matches the class in qualname. That's broader than the beginner mistake this PR targets.\nEx:\nThis should hint\ndef lol(a): ...\nA().lol(1)   \nbut his should not:\ndef method(self, x): ...\nA().method(1, 2, 3) \nI'd suggest combining argcount == co_argcount + 1 with a second check, like, the first declared parameter is not named \"self\", or verifying via _PyType_Lookup that this code object is the function bound on the instance's type.",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABER3R8g"
+                      }
+                    }
+                  ],
+                  "totalCount": 2
+                },
+                "isOutdated": true,
+                "isResolved": false,
+                "line": null,
+                "originalLine": 1649,
+                "path": "Python/ceval.c",
+                "subjectType": "LINE"
+              },
+              {
+                "comments": {
+                  "nodes": [
+                    {
+                      "bodyText": "Suggested change\n      \n    \n    \n      \n          \n            \n                    // When first arg is NULL, its not really about self\n          \n          \n            \n                    // When first arg is NULL, it's not really about self",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABESpc-Q"
+                      }
+                    }
+                  ],
+                  "totalCount": 2
+                },
+                "isOutdated": true,
+                "isResolved": false,
+                "line": null,
+                "originalLine": 1656,
+                "path": "Python/ceval.c",
+                "subjectType": "LINE"
+              },
+              {
+                "comments": {
+                  "nodes": [
+                    {
+                      "bodyText": "This feels like a nasty hack. Relying on the __qualname__ feels very icky. I need to look into this more, but it's probably possible to determine whether this is an instance method earlier in the eval loop. That would be much cleaner.",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABESpc-Q"
+                      }
+                    }
+                  ],
+                  "totalCount": 2
+                },
+                "isOutdated": true,
+                "isResolved": false,
+                "line": null,
+                "originalLine": 1684,
+                "path": "Python/ceval.c",
+                "subjectType": "LINE"
+              },
+              {
+                "comments": {
+                  "nodes": [
+                    {
+                      "bodyText": "There's no real need for this test. We test method calling in many other test cases in CPython. It does not add any real value.",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABEUHyyQ"
+                      }
+                    }
+                  ],
+                  "totalCount": 3
+                },
+                "isOutdated": true,
+                "isResolved": false,
+                "line": null,
+                "originalLine": 931,
+                "path": "Lib/test/test_call.py",
+                "subjectType": "LINE"
+              },
+              {
+                "comments": {
+                  "nodes": [
+                    {
+                      "bodyText": "Please, add a test case for def method_with_self_arg(x, self): ...\nand then call it like inst.method_with_self().\nAlso: you can add def zero_args_self(self): ... and call it like: A.zero_args_self() and check that error message is also correct.",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABEUHyyQ"
+                      }
+                    }
+                  ],
+                  "totalCount": 2
+                },
+                "isOutdated": true,
+                "isResolved": false,
+                "line": null,
+                "originalLine": 919,
+                "path": "Lib/test/test_call.py",
+                "subjectType": "LINE"
+              },
+              {
+                "comments": {
+                  "nodes": [
+                    {
+                      "bodyText": "Your self_hint is non NULL (before assignment). While empty strings are immortal, you still need to decref it if this ever changes. For that use Py_SETREF.",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABEUZutA"
+                      }
+                    }
+                  ],
+                  "totalCount": 4
+                },
+                "isOutdated": true,
+                "isResolved": false,
+                "line": null,
+                "originalLine": 1622,
+                "path": "Python/ceval.c",
+                "subjectType": "LINE"
+              },
+              {
+                "comments": {
+                  "nodes": [
+                    {
+                      "bodyText": "Would this suggestion be also there if we are using classmethods? Or what about methodws on metaclasses? they can have cls as the first parameter name.",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABEUZutA"
+                      }
+                    }
+                  ],
+                  "totalCount": 2
+                },
+                "isOutdated": true,
+                "isResolved": false,
+                "line": null,
+                "originalLine": 1623,
+                "path": "Python/ceval.c",
+                "subjectType": "LINE"
+              },
+              {
+                "comments": {
+                  "nodes": [
+                    {
+                      "bodyText": "The argcount == 0 condition is redundant, right?",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABI6tMGQ"
+                      }
+                    }
+                  ],
+                  "totalCount": 2
+                },
+                "isOutdated": true,
+                "isResolved": false,
+                "line": null,
+                "originalLine": 1675,
+                "path": "Python/ceval.c",
+                "subjectType": "LINE"
+              },
+              {
+                "comments": {
+                  "nodes": [
+                    {
+                      "bodyText": "Why are we calling this here instead of only in the error path below on line 1939?",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABKkAUjg"
+                      }
+                    }
+                  ],
+                  "totalCount": 3
+                },
+                "isOutdated": true,
+                "isResolved": false,
+                "line": null,
+                "originalLine": 1796,
+                "path": "Python/ceval.c",
+                "subjectType": "LINE"
+              },
+              {
+                "comments": {
+                  "nodes": [
+                    {
+                      "bodyText": "We like to keep type hints out of unchecked files:\n  \n    \n      \n        Suggested change\n      \n    \n    \n      \n          \n            \n                def assert_type_error_and_msg_in(self, message: str):\n          \n          \n            \n                def assert_type_error_and_msg_in(self, message):",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABRZqe3w"
+                      }
+                    }
+                  ],
+                  "totalCount": 2
+                },
+                "isOutdated": true,
+                "isResolved": true,
+                "line": null,
+                "originalLine": 1007,
+                "path": "Lib/test/test_call.py",
+                "subjectType": "LINE"
+              },
+              {
+                "comments": {
+                  "nodes": [
+                    {
+                      "bodyText": "I find these docstrings really distracting. Tests don't really need docstrings; nobody is calling them and the name or behavior of the test should document what it's looking for.",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABRZqe3w"
+                      }
+                    }
+                  ],
+                  "totalCount": 2
+                },
+                "isOutdated": true,
+                "isResolved": true,
+                "line": null,
+                "originalLine": 1013,
+                "path": "Lib/test/test_call.py",
+                "subjectType": "LINE"
+              },
+              {
+                "comments": {
+                  "nodes": [
+                    {
+                      "bodyText": "I think we should use assertRaisesRegex instead of brewing our own helper for this.",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABRZqe3w"
+                      }
+                    }
+                  ],
+                  "totalCount": 2
+                },
+                "isOutdated": true,
+                "isResolved": true,
+                "line": null,
+                "originalLine": 1015,
+                "path": "Lib/test/test_call.py",
+                "subjectType": "LINE"
+              },
+              {
+                "comments": {
+                  "nodes": [
+                    {
+                      "bodyText": "I think we can use PyStackRef_AsPyObjectNew instead?",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABRZqe3w"
+                      }
+                    }
+                  ],
+                  "totalCount": 2
+                },
+                "isOutdated": true,
+                "isResolved": true,
+                "line": null,
+                "originalLine": 1802,
+                "path": "Python/ceval.c",
+                "subjectType": "LINE"
+              },
+              {
+                "comments": {
+                  "nodes": [
+                    {
+                      "bodyText": "This comment is long and very LLM-esque. Let's be simple:\n  \n    \n      \n        Suggested change\n      \n    \n    \n      \n          \n            \n                /* Pin the first argument for the \"missing self\" hint: the surplus\n          \n          \n            \n                   argument cleanup below may close args[0] before the hint is computed.\n          \n          \n            \n                   The pin is only needed when the \"too many positional arguments\"\n          \n          \n            \n                   error is about to be raised. */\n          \n          \n            \n                // We need to keep the argument alive for a missing \"self\" hint later.\n          \n      \n    \n    \n  \n\nOr, just remove the comment entirely:\n  \n    \n      \n        Suggested change\n      \n    \n    \n      \n          \n            \n                /* Pin the first argument for the \"missing self\" hint: the surplus\n          \n          \n            \n                   argument cleanup below may close args[0] before the hint is computed.\n          \n          \n            \n                   The pin is only needed when the \"too many positional arguments\"\n          \n          \n            \n                   error is about to be raised. */",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABRZqe3w"
+                      }
+                    }
+                  ],
+                  "totalCount": 2
+                },
+                "isOutdated": true,
+                "isResolved": true,
+                "line": null,
+                "originalLine": 1800,
+                "path": "Python/ceval.c",
+                "subjectType": "LINE"
+              },
+              {
+                "comments": {
+                  "nodes": [
+                    {
+                      "bodyText": "This comment should be combined with the one above.",
+                      "isMinimized": false,
+                      "minimizedReason": null,
+                      "pullRequestReview": {
+                        "id": "PRR_kwDOBN0Z8c8AAAABRZqe3w"
+                      }
+                    }
+                  ],
+                  "totalCount": 2
+                },
+                "isOutdated": false,
+                "isResolved": true,
+                "line": 1690,
+                "originalLine": 1692,
+                "path": "Python/ceval.c",
+                "subjectType": "LINE"
+              }
+            ]
+          },
+          "reviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "user-6"
+                },
+                "bodyHTML": "<p dir=\"auto\">My two cents, if they're valid &lt;3</p>",
+                "commit": {
+                  "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABER3R8g",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-06-26T19:34:26Z"
+              },
+              {
+                "author": {
+                  "login": "user-7"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABESpDJg",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-06-26T21:51:24Z"
+              },
+              {
+                "author": {
+                  "login": "user-7"
+                },
+                "bodyHTML": "<p dir=\"auto\">This needs a news entry and a note in \"What's New in Python 3.16\".</p>",
+                "commit": {
+                  "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABESpc-Q",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-06-26T22:08:32Z"
+              },
+              {
+                "author": {
+                  "login": "user-6"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABEStl4A",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-06-26T22:12:38Z"
+              },
+              {
+                "author": {
+                  "login": "user-8"
+                },
+                "bodyHTML": "<p dir=\"auto\">(not a full review)</p>\n<p dir=\"auto\">I think the important part of this issue is to find cases where <code class=\"notranslate\">self</code> (as a concept, not as a name) is really missing from the func definition.</p>\n<p dir=\"auto\">So, we can clearly tell apart cases where we just forgot a parameter vs where we forgot to add <code class=\"notranslate\">self</code> to the function definition.</p>",
+                "commit": {
+                  "oid": "febd510542f57ac638be3e9f307afc7b5486c530"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABEUHyyQ",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-06-27T07:16:30Z"
+              },
+              {
+                "author": {
+                  "login": "user-4"
+                },
+                "bodyHTML": "<p dir=\"auto\">You should add tests with classmethods, staticmethods (whether on regular classes or metaclasses)</p>",
+                "commit": {
+                  "oid": "febd510542f57ac638be3e9f307afc7b5486c530"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABEUZutA",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "CHANGES_REQUESTED",
+                "submittedAt": "2026-06-27T09:16:10Z"
+              },
+              {
+                "author": {
+                  "login": "user-7"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "febd510542f57ac638be3e9f307afc7b5486c530"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABEU6SeA",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-06-27T13:35:55Z"
+              },
+              {
+                "author": {
+                  "login": "user-4"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "febd510542f57ac638be3e9f307afc7b5486c530"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABEVG93A",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-06-27T15:06:23Z"
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "febd510542f57ac638be3e9f307afc7b5486c530"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABEV2O2w",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-06-27T21:41:11Z"
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABE4tzfw",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-07-03T04:53:43Z"
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABE4uIBg",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-07-03T04:55:12Z"
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABE4udzA",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-07-03T04:56:58Z"
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABE4ufKQ",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-07-03T04:57:02Z"
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABE4vObw",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-07-03T05:00:29Z"
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABE4w36g",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-07-03T05:07:52Z"
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABE4w7Eg",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-07-03T05:08:07Z"
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "febd510542f57ac638be3e9f307afc7b5486c530"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABE4xF0w",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-07-03T05:09:04Z"
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "febd510542f57ac638be3e9f307afc7b5486c530"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABE47XhQ",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-07-03T05:47:13Z"
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "febd510542f57ac638be3e9f307afc7b5486c530"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABE470IA",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-07-03T05:48:33Z"
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "febd510542f57ac638be3e9f307afc7b5486c530"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABE48ubA",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-07-03T05:50:50Z"
+              },
+              {
+                "author": {
+                  "login": "user-9"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "2b80cb293b51f2fda4709782abddb03dcecef53e"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABI6tMGQ",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-08-10T02:53:09Z"
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "2b80cb293b51f2fda4709782abddb03dcecef53e"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABKh-mKw",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-08-23T04:53:46Z"
+              },
+              {
+                "author": {
+                  "login": "user-9"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "f9fd4da670bfeef4c7a98479c308c003327cad58"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABKkAUjg",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-08-24T00:36:31Z"
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "f9fd4da670bfeef4c7a98479c308c003327cad58"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABKkeBTw",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-08-24T03:17:32Z"
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "f9fd4da670bfeef4c7a98479c308c003327cad58"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABNYmtqw",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-09-14T01:40:25Z"
+              },
+              {
+                "author": {
+                  "login": "user-7"
+                },
+                "bodyHTML": "<p dir=\"auto\">Sorry for the delay!</p>\n<p dir=\"auto\">The crux of the change looks pretty good. I left a number of housekeeping comments below.</p>",
+                "commit": {
+                  "oid": "f6b4c696a6dad81b48b37233db2a96fa3f7bc4b8"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABRZqe3w",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-10-08T21:34:13Z"
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "f6b4c696a6dad81b48b37233db2a96fa3f7bc4b8"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABRr1_OQ",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-10-11T03:55:09Z"
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "f6b4c696a6dad81b48b37233db2a96fa3f7bc4b8"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABRr2FgQ",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-10-11T03:55:58Z"
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "f6b4c696a6dad81b48b37233db2a96fa3f7bc4b8"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABRr2PAA",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-10-11T03:56:43Z"
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "f6b4c696a6dad81b48b37233db2a96fa3f7bc4b8"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABRr2QXw",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-10-11T03:56:48Z"
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "f6b4c696a6dad81b48b37233db2a96fa3f7bc4b8"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABRr2SYA",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-10-11T03:56:57Z"
+              },
+              {
+                "author": {
+                  "login": "user-3"
+                },
+                "bodyHTML": "",
+                "commit": {
+                  "oid": "f6b4c696a6dad81b48b37233db2a96fa3f7bc4b8"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABRr2S8A",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "COMMENTED",
+                "submittedAt": "2026-10-11T03:57:01Z"
+              },
+              {
+                "author": {
+                  "login": "user-7"
+                },
+                "bodyHTML": "<p dir=\"auto\">LGTM. I'll run the buildbots before merging.</p>",
+                "commit": {
+                  "oid": "a4c2623368acdf75d3c088f2f84c3ddc6d78c75e"
+                },
+                "id": "PRR_kwDOBN0Z8c8AAAABRuZSUg",
+                "isMinimized": false,
+                "minimizedReason": null,
+                "state": "APPROVED",
+                "submittedAt": "2026-10-11T18:43:17Z"
+              }
+            ],
+            "totalCount": 33
           }
         }
       }
     }
   },
-  "query": "query FetchPullRequestContent($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { bodyHTML comments(last: 30) { totalCount nodes { author { login } createdAt bodyHTML } } } } }",
-  "reset": 1794036560,
+  "query": "query FetchPullRequestContent($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { bodyHTML comments(last: 30) { totalCount nodes { author { login } createdAt bodyHTML isMinimized minimizedReason } } reviews(last: 100) { totalCount nodes { id author { login } state submittedAt bodyHTML isMinimized minimizedReason commit { oid } } } reviewThreads(last: 100) { nodes { path line originalLine subjectType isResolved isOutdated comments(first: 1) { totalCount nodes { pullRequestReview { id } bodyText isMinimized minimizedReason } } } } } } rateLimit { remaining resetAt } }",
+  "reset": 1794049358,
   "status": 200
 }

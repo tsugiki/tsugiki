@@ -2,7 +2,7 @@
 //! replaces the last. These rows hold long HTML, so unlike the other tables they keep a rowid: SQLite advises
 //! against `WITHOUT ROWID` for large rows.
 
-use rusqlite::{Connection, Row, named_params};
+use rusqlite::{Connection, Row, Transaction, named_params};
 
 use super::columns::UnixTime;
 use crate::github::issue_content::{IssueComment, IssueContent};
@@ -36,12 +36,23 @@ pub(super) fn save(
     content: &IssueContent,
 ) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
-    save_body(&transaction, repository, number, content)?;
-    forget_comments(&transaction, repository, number)?;
-    for (position, comment) in (0_u32..).zip(&content.comments) {
-        save_comment(&transaction, repository, (number, position), comment)?;
-    }
+    save_in(&transaction, repository, number, content)?;
     transaction.commit()
+}
+
+/// Replaces what's kept of item `number` with `content`, in `transaction`.
+pub(super) fn save_in(
+    transaction: &Transaction<'_>,
+    repository: &RepositoryName,
+    number: u32,
+    content: &IssueContent,
+) -> rusqlite::Result<()> {
+    save_body(transaction, repository, number, content)?;
+    forget_comments(transaction, repository, number)?;
+    for (position, comment) in (0_u32..).zip(&content.comments) {
+        save_comment(transaction, repository, (number, position), comment)?;
+    }
+    Ok(())
 }
 
 fn save_body(
@@ -88,8 +99,9 @@ fn save_comment(
 ) -> rusqlite::Result<()> {
     connection
         .execute(
-            "INSERT INTO issue_comments (repository, number, position, author, created_at, body_html)
-             VALUES (:repository, :number, :position, :author, :created_at, :body_html)",
+            "INSERT INTO issue_comments
+                 (repository, number, position, author, created_at, body_html, hidden)
+             VALUES (:repository, :number, :position, :author, :created_at, :body_html, :hidden)",
             named_params! {
                 ":repository": repository,
                 ":number": number,
@@ -97,6 +109,7 @@ fn save_comment(
                 ":author": comment.author,
                 ":created_at": comment.created_at.unix_timestamp(),
                 ":body_html": comment.body_html,
+                ":hidden": comment.hidden,
             },
         )
         .map(drop)
@@ -108,12 +121,13 @@ fn comment_in(row: &Row<'_>) -> rusqlite::Result<IssueComment> {
         author: row.get("author")?,
         created_at,
         body_html: row.get("body_html")?,
+        hidden: row.get("hidden")?,
     })
 }
 
 const SELECT_BODY: &str = "SELECT body_html, earlier_comments FROM issue_content
      WHERE repository = :repository AND number = :number";
-const SELECT_COMMENTS: &str = "SELECT author, created_at, body_html FROM issue_comments
+const SELECT_COMMENTS: &str = "SELECT author, created_at, body_html, hidden FROM issue_comments
      WHERE repository = :repository AND number = :number ORDER BY position";
 
 /// The content kept for Issue `number`. Nothing, until Tsugiki has read it once.
@@ -158,6 +172,7 @@ mod tests {
             author: Some(Login::new("some-reviewer")),
             created_at: OffsetDateTime::UNIX_EPOCH,
             body_html: body_html.to_owned(),
+            hidden: None,
         }
     }
 

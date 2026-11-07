@@ -1,0 +1,32 @@
+---
+source: crates/core/src/github/pull_request_content/tests.rs
+expression: outline
+---
+10 comments, 0 earlier; 0 earlier Reviews
+Some("user-6") Commented at Some("5c6f5c1") with a body
+  Python/ceval.c:Some(1623) "I agree with @user-5: self is " +3 resolved=false outdated=true
+  Python/ceval.c:Some(1624) "If PyUnicode_FromString fails," +2 resolved=false outdated=true
+  Lib/test/test_call.py:Some(913) "Good setup for the happy path." +1 resolved=false outdated=true
+  Python/ceval.c:Some(1778) "The heuristic of matching tp_n" +1 resolved=false outdated=true
+  Python/ceval.c:Some(1649) "Hmm, this fires whenever argco" +1 resolved=false outdated=true
+Some("user-7") Commented at Some("5c6f5c1") with a body
+  Python/ceval.c:Some(1656) "Suggested change" +1 resolved=false outdated=true
+  Python/ceval.c:Some(1684) "This feels like a nasty hack. " +1 resolved=false outdated=true
+Some("user-8") Commented at Some("febd510") with a body
+  Lib/test/test_call.py:Some(931) "There's no real need for this " +2 resolved=false outdated=true
+  Lib/test/test_call.py:Some(919) "Please, add a test case for de" +1 resolved=false outdated=true
+Some("user-4") ChangesRequested at Some("febd510") with a body
+  Python/ceval.c:Some(1622) "Your self_hint is non NULL (be" +3 resolved=false outdated=true
+  Python/ceval.c:Some(1623) "Would this suggestion be also " +1 resolved=false outdated=true
+Some("user-9") Commented at Some("2b80cb2")
+  Python/ceval.c:Some(1675) "The argcount == 0 condition is" +1 resolved=false outdated=true
+Some("user-9") Commented at Some("f9fd4da")
+  Python/ceval.c:Some(1796) "Why are we calling this here i" +2 resolved=false outdated=true
+Some("user-7") Commented at Some("f6b4c69") with a body
+  Lib/test/test_call.py:Some(1007) "We like to keep type hints out" +1 resolved=true outdated=true
+  Lib/test/test_call.py:Some(1013) "I find these docstrings really" +1 resolved=true outdated=true
+  Lib/test/test_call.py:Some(1015) "I think we should use assertRa" +1 resolved=true outdated=true
+  Python/ceval.c:Some(1802) "I think we can use PyStackRef_" +1 resolved=true outdated=true
+  Python/ceval.c:Some(1800) "This comment is long and very " +1 resolved=true outdated=true
+  Python/ceval.c:Some(1690) "This comment should be combine" +1 resolved=true outdated=false
+Some("user-7") Approved at Some("a4c2623") with a body

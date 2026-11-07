@@ -95,6 +95,9 @@ export type About = {
 	version: string,
 };
 
+/**  Whether the code under a thread has changed since it began. */
+export type Anchor = "current" | "outdated";
+
 /**  The reasons an item Needs attention, and since when. */
 export type Attention = Attention_Serialize | Attention_Deserialize;
 
@@ -267,6 +270,11 @@ export type Frames = {
 /**  An Issue or a PR, as the window names it to open on GitHub. */
 export type GitHubItem = { kind: "issue"; number: number } | { kind: "pull_request"; number: number };
 
+/**  The reason someone gave for hiding a comment on GitHub. The comment folds to it until the user opens it. */
+export type HiddenReason = "abuse" | "off_topic" | "outdated" | "resolved" | "duplicate" | "spam" | 
+/**  GitHub gave a reason Tsugiki doesn't know, or none. */
+"unstated";
+
 /**  What the window opens on. */
 export type Home = Home_Serialize | Home_Deserialize;
 
@@ -297,6 +305,8 @@ export type IssueComment_Deserialize = {
 	created_at: string,
 	/**  GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005). */
 	body_html: string,
+	/**  The reason it is hidden on GitHub. Nothing, for a comment that isn't. */
+	hidden?: HiddenReason | null,
 };
 
 /**  A comment on an Issue. */
@@ -306,6 +316,8 @@ export type IssueComment_Serialize = {
 	created_at: string,
 	/**  GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005). */
 	body_html: string,
+	/**  The reason it is hidden on GitHub. Nothing, for a comment that isn't. */
+	hidden: HiddenReason | null,
 };
 
 /**  An Issue's description and its recent comments. */
@@ -604,6 +616,9 @@ export type OpenSync_Serialize = {
 	load: LoadProgress_Serialize | null,
 };
 
+/**  The start of a thread's line: the first words of its first comment, or the reason that comment is hidden. */
+export type Opening = { kind: "words"; words: string } | { kind: "hidden"; reason: HiddenReason };
+
 export type PrState = "OPEN" | "CLOSED" | "MERGED";
 
 /**  A PR with its Backports beneath it. */
@@ -624,15 +639,46 @@ export type PrView = PrView_Serialize | PrView_Deserialize;
 
 /**  A PR as the Detail pane shows it. */
 export type PrView_Deserialize = {
-	/**  Its description and comments. Nothing, until Tsugiki has read this PR from GitHub once. */
-	content?: IssueContent_Deserialize | null,
+	/**  Its description, comments and Reviews. Nothing, until Tsugiki has read this PR from GitHub once. */
+	content?: PullRequestContent_Deserialize | null,
 } & WorkbenchRow_Deserialize;
 
 /**  A PR as the Detail pane shows it. */
 export type PrView_Serialize = {
-	/**  Its description and comments. Nothing, until Tsugiki has read this PR from GitHub once. */
-	content: IssueContent_Serialize | null,
+	/**  Its description, comments and Reviews. Nothing, until Tsugiki has read this PR from GitHub once. */
+	content: PullRequestContent_Serialize | null,
 } & WorkbenchRow_Serialize;
+
+/**  A PR's description, its recent comments, and its Reviews. */
+export type PullRequestContent = PullRequestContent_Serialize | PullRequestContent_Deserialize;
+
+/**  A PR's description, its recent comments, and its Reviews. */
+export type PullRequestContent_Deserialize = {
+	/**
+	 *  Its Reviews, oldest first. A Review that only replied in threads others started isn't one here, as
+	 *  GitHub doesn't show it either. Nor is the user's own Review before they submit it.
+	 */
+	reviews: Review_Deserialize[],
+	/**
+	 *  The count of older Reviews that only GitHub holds. Some may only have replied in threads, which GitHub
+	 *  doesn't show as Reviews, so the view says there are more without the count.
+	 */
+	earlier_reviews: number,
+} & IssueContent_Deserialize;
+
+/**  A PR's description, its recent comments, and its Reviews. */
+export type PullRequestContent_Serialize = {
+	/**
+	 *  Its Reviews, oldest first. A Review that only replied in threads others started isn't one here, as
+	 *  GitHub doesn't show it either. Nor is the user's own Review before they submit it.
+	 */
+	reviews: Review_Serialize[],
+	/**
+	 *  The count of older Reviews that only GitHub holds. Some may only have replied in threads, which GitHub
+	 *  doesn't show as Reviews, so the view says there are more without the count.
+	 */
+	earlier_reviews: number,
+} & IssueContent_Serialize;
 
 /**  The background refreshes that ran while the window drew frames. */
 export type Refreshes = {
@@ -728,7 +774,51 @@ export type RepositorySize =
 /**  What was updated in the window. */
 "large";
 
+/**  Whether someone marked a thread resolved. */
+export type Resolution = "open" | "resolved";
+
+/**  Someone's Review of a PR, as the Conversation shows it. */
+export type Review = Review_Serialize | Review_Deserialize;
+
 export type ReviewState = "PENDING" | "COMMENTED" | "APPROVED" | "CHANGES_REQUESTED" | "DISMISSED";
+
+/**  Someone's Review of a PR, as the Conversation shows it. */
+export type Review_Deserialize = {
+	/**  Nothing, for a Review whose author's account has gone. */
+	author?: Login | null,
+	state: ReviewState,
+	/**  The commit it reviewed. Nothing, when GitHub no longer has it. */
+	commit?: string | null,
+	submitted_at: string,
+	/**
+	 *  GitHub's rendering, written by a stranger, and empty for a Review that says nothing beyond its state.
+	 *  The webview's content security policy holds it (ADR 0005).
+	 */
+	body_html: string,
+	/**  The reason its body is hidden on GitHub. Nothing, for one that isn't. */
+	hidden?: HiddenReason | null,
+	/**  A line for each thread it started, in the order GitHub gives them. */
+	threads: ThreadLine_Deserialize[],
+};
+
+/**  Someone's Review of a PR, as the Conversation shows it. */
+export type Review_Serialize = {
+	/**  Nothing, for a Review whose author's account has gone. */
+	author: Login | null,
+	state: ReviewState,
+	/**  The commit it reviewed. Nothing, when GitHub no longer has it. */
+	commit: string | null,
+	submitted_at: string,
+	/**
+	 *  GitHub's rendering, written by a stranger, and empty for a Review that says nothing beyond its state.
+	 *  The webview's content security policy holds it (ADR 0005).
+	 */
+	body_html: string,
+	/**  The reason its body is hidden on GitHub. Nothing, for one that isn't. */
+	hidden: HiddenReason | null,
+	/**  A line for each thread it started, in the order GitHub gives them. */
+	threads: ThreadLine_Serialize[],
+};
 
 /**  A script that ran in a long frame, as the browser names it. */
 export type Script = Script_Serialize | Script_Deserialize;
@@ -873,6 +963,35 @@ export type SyncPart = "your_work" |
  *  when it has to wait.
  */
 "refresh";
+
+/**  One thread a Review started, as one line of the Conversation. */
+export type ThreadLine = ThreadLine_Serialize | ThreadLine_Deserialize;
+
+/**  One thread a Review started, as one line of the Conversation. */
+export type ThreadLine_Deserialize = {
+	/**  The file, as GitHub names it. */
+	path: string,
+	/**  The line it is on, or was on when the code under it moved. Nothing, for a thread on the whole file. */
+	line?: number | null,
+	opening: Opening,
+	/**  The comments after the first. */
+	replies: number,
+	resolution: Resolution,
+	anchor: Anchor,
+};
+
+/**  One thread a Review started, as one line of the Conversation. */
+export type ThreadLine_Serialize = {
+	/**  The file, as GitHub names it. */
+	path: string,
+	/**  The line it is on, or was on when the code under it moved. Nothing, for a thread on the whole file. */
+	line: number | null,
+	opening: Opening,
+	/**  The comments after the first. */
+	replies: number,
+	resolution: Resolution,
+	anchor: Anchor,
+};
 
 /**  Where the token comes from. A personal access token joins this with the Account page (ADR 0004). */
 export type TokenSource = "gh";

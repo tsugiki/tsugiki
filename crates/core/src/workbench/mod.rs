@@ -151,20 +151,25 @@ impl Workbench {
             .iter()
             .filter_map(|pr| Some((pr.number, pr.head.clone()?)))
             .collect();
-        let whole = Self::from_facts(facts, repository, &WorkbenchView::Whole);
-        let reached: BTreeSet<u32> = whole
-            .items
-            .iter()
-            .chain(&whole.quiet)
-            .flat_map(|listed| listed.item.rows())
-            .map(|row| row.number)
-            .collect();
-        reached
+        Self::reached(facts, repository)
             .into_iter()
             .filter_map(|number| {
                 let commit = heads.get(&number)?.clone();
                 Some(PrHead { number, commit })
             })
+            .collect()
+    }
+
+    /// The numbers of the Issues and PRs the user's work reaches: each on the whole Workbench, the quiet
+    /// items and those in Issues' trees too.
+    pub(crate) fn reached(facts: WorkFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
+        let whole = Self::from_facts(facts, repository, &WorkbenchView::Whole);
+        whole
+            .items
+            .iter()
+            .chain(&whole.quiet)
+            .flat_map(|listed| listed.item.rows())
+            .map(|row| row.number)
             .collect()
     }
 

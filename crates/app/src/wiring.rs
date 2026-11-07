@@ -477,7 +477,13 @@ mod tests {
         assert_eq!(before["number"], number);
         assert_eq!(before["content"], Value::Null);
         let description = after["content"]["body_html"].as_str().unwrap();
-        assert!(description.contains("Closes"), "{description}");
+        assert!(description.contains("gh-152315"), "{description}");
+        let first = &after["content"]["reviews"][0];
+        assert_eq!(
+            (&first["state"], first["threads"].as_array().map(Vec::len)),
+            (&json!("COMMENTED"), Some(5)),
+            "the recorded PR's oldest Review, with the threads it started"
+        );
     }
 
     #[test]

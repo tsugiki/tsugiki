@@ -1,9 +1,21 @@
 // The PR on show in the Detail pane, on its Conversation or its Files tab.
-import { commands, type PrView_Serialize } from "$lib/data/bindings";
+import {
+  commands,
+  type PrView_Serialize,
+  type PullRequestContent_Serialize,
+  type ReviewState as ReviewStateData,
+  type Review_Serialize,
+  type ThreadLine_Serialize,
+} from "$lib/data/bindings";
 import { DetailState } from "./detail-view.svelte";
 import type { Stop } from "./workbench.svelte";
 
 export type PrView = PrView_Serialize;
+/** A PR's description, recent comments and Reviews. */
+export type PullRequestContent = PullRequestContent_Serialize;
+export type Review = Review_Serialize;
+export type ReviewState = ReviewStateData;
+export type ThreadLine = ThreadLine_Serialize;
 export type PrTab = "conversation" | "files";
 
 export class PrViewState extends DetailState<PrView> {

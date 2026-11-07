@@ -7,6 +7,7 @@ pub mod filters;
 pub mod issue_content;
 pub mod issues;
 pub mod live;
+pub mod pull_request_content;
 pub mod pull_requests;
 pub mod record;
 pub mod references;
@@ -113,6 +114,13 @@ pub(crate) fn gh_number(word: &str) -> Option<u32> {
 /// A commit's SHA in lower case, whole or cut short as a person wrote it.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CommitSha(String);
+
+/// The window reads a SHA as its text.
+impl Serialize for CommitSha {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0)
+    }
+}
 
 impl CommitSha {
     /// Git's shortest default abbreviation, and the length of a whole SHA-1.

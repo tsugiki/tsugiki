@@ -769,7 +769,7 @@ fn a_head_that_is_behind_is_fetched_once_more_after_a_moment_then_waits_for_a_ha
     let place = Place::new("behind-retry");
     let cpython = named("python/cpython");
     place.mirrored(&cpython);
-    let (mirrors, starts) = place.start_faked_with(Duration::ZERO);
+    let (mirrors, starts) = place.start_faked_with(Duration::from_millis(50));
     let requests = mirrors.requests();
     let older = PrHead {
         number: 1,

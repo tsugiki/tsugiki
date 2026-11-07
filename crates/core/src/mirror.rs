@@ -358,12 +358,9 @@ impl Heads {
                 continue;
             };
             if landed.is_some() {
-                log::info!(
-                    "GitHub had PR #{number} of {} at {} rather than {}",
-                    self.repository,
-                    elsewhere.as_str(),
-                    commit.as_str()
-                );
+                let (repository, had, handed) =
+                    (&self.repository, elsewhere.as_str(), commit.as_str());
+                log::info!("GitHub had PR #{number} of {repository} at {had} rather than {handed}");
             }
             let retried = Behind::Retried {
                 commit: commit.clone(),

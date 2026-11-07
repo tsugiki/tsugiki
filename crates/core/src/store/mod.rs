@@ -21,6 +21,7 @@ use std::path::Path;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Weak};
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, named_params};
 use time::OffsetDateTime;
@@ -594,6 +595,16 @@ fn open_with(path: &Path, migrations: &[Migration]) -> Result<Store, Error> {
     Ok(Store { jobs, thread })
 }
 
+/// How long a start waits for the lock before it says another Tsugiki has it. Another Tsugiki holds it for as
+/// long as it runs. A program that another thread is starting holds a copy of the lock file for a moment,
+/// until the system closes the files the program doesn't inherit. On macOS and Linux the lock belongs to the
+/// open file and lasts while any copy is open, so a Store that has just closed can still look locked then
+/// (#198). Windows starts a program with only the files it inherits.
+const LOCK_PATIENCE: Duration = Duration::from_secs(1);
+
+/// How long a start sleeps between two tries at the lock.
+const LOCK_RETRY: Duration = Duration::from_millis(20);
+
 /// Takes the lock beside the database at `path`, which one Tsugiki at a time holds while it writes (ADR
 /// 0018). It belongs to the folder, so an installed Tsugiki, a development build and a portable copy each
 /// hold their own. The system lets go of it when the file closes or the process ends, so a crash can't leave
@@ -609,9 +620,13 @@ fn lock(path: &Path) -> Result<Option<File>, Error> {
         .write(true)
         .open(migrate::with_suffix(path, ".lock"))
         .map_err(saying(CANT_OPEN))?;
-    match file.try_lock() {
-        Err(TryLockError::WouldBlock) => Err(Error::new(ErrorKind::Internal, IN_USE)),
-        locked => locked.map(|()| Some(file)).map_err(saying(CANT_OPEN)),
+    let deadline = Instant::now() + LOCK_PATIENCE;
+    loop {
+        match file.try_lock() {
+            Err(TryLockError::WouldBlock) if Instant::now() < deadline => thread::sleep(LOCK_RETRY),
+            Err(TryLockError::WouldBlock) => return Err(Error::new(ErrorKind::Internal, IN_USE)),
+            locked => return locked.map(|()| Some(file)).map_err(saying(CANT_OPEN)),
+        }
     }
 }
 
@@ -698,6 +713,25 @@ mod tests {
         assert!(has_table(&path, "viewer"));
         assert_eq!(backups(&folder), [""; 0]);
         fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn a_store_waits_a_moment_for_a_lock_that_is_letting_go() {
+        let (path, folder) = temp_database("letting-go");
+        let first = open_with(&path, &[V1]).unwrap();
+        let closing = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(200));
+            first.close();
+        });
+        let started = Instant::now();
+
+        let second = open_with(&path, &[V1]);
+
+        let waited = started.elapsed();
+        closing.join().unwrap();
+        second.unwrap().close();
+        fs::remove_dir_all(folder).unwrap();
+        assert!(waited >= Duration::from_millis(100), "{waited:?}");
     }
 
     #[test]

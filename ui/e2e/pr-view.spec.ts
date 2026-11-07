@@ -82,9 +82,11 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
             change: { kind: "lines", added: 1, removed: 0 },
             row: 0,
             columns: 8,
+            generated: false,
           },
         ],
         rows: 3,
+        news: [],
       },
     },
     pullRequestRows: {

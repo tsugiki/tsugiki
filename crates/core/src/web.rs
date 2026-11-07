@@ -2,7 +2,7 @@
 //! it asks to open counts as untrusted input (ADR 0005): only a web page gets through, never a file or an
 //! installed app's scheme.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
 use url::Url;
 
@@ -27,7 +27,8 @@ impl GitHubItem {
 }
 
 /// A web page's address.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(transparent)]
 pub struct WebAddress(String);
 
 impl WebAddress {

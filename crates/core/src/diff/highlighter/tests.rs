@@ -59,6 +59,7 @@ impl Repo {
             pr: pr(number, &self.head),
             base: read.base,
             diff: read.diff,
+            news: read.news,
         };
         Source {
             diff: Arc::new(diff),
@@ -196,6 +197,83 @@ fn news_entries_are_parsed_ahead_first_then_the_files_in_the_diff_s_order() {
 
     // Doc/notes.txt comes first, but Tsugiki doesn't highlight it.
     assert_eq!(ahead, [(2, Side::Head), (1, Side::Base), (1, Side::Head)]);
+    repo.finish();
+}
+
+#[test]
+fn generated_files_are_parsed_only_when_a_chunk_asks_for_them() {
+    let base = [
+        (
+            ".gitattributes",
+            "Lib/gen.py linguist-generated
+",
+        ),
+        (
+            "Lib/ast.py",
+            "x = 1
+",
+        ),
+        (
+            "Lib/gen.py",
+            "y = 1
+",
+        ),
+    ];
+    let head = [
+        (
+            "Lib/ast.py",
+            "x = 2
+",
+        ),
+        (
+            "Lib/gen.py",
+            "y = 2
+",
+        ),
+    ];
+    let repo = Repo::new("generated", &base, &head);
+    let generated = [(1, Side::Base), (1, Side::Head)];
+    let (mut worker, shelf) = worker(CAP);
+    let diff = Arc::clone(&repo.source(7).diff);
+
+    let ahead = diff.ahead();
+    drop(ask(&mut worker, repo.source(7), &generated));
+
+    assert_eq!(ahead, [(0, Side::Base), (0, Side::Head)]);
+    assert_eq!(shelved(&shelf, &diff, &generated), generated);
+    repo.finish();
+}
+
+#[test]
+fn a_collapsed_generated_file_s_rows_get_no_spans_until_the_window_opens_it() {
+    let base = [
+        (".gitattributes", "Lib/gen.py linguist-generated\n"),
+        ("Lib/ast.py", "x = 1\n"),
+        ("Lib/gen.py", "y = 1\n"),
+    ];
+    let head = [("Lib/ast.py", "x = 2\n"), ("Lib/gen.py", "y = 2\n")];
+    let repo = Repo::new("collapsed", &base, &head);
+    let highlighter = Highlighter::start();
+    let diff = repo.source(7).diff;
+    let rows = diff.diff.row_count();
+    // Each file's header, hunk, removed line and added line.
+    let painted = |spans: &[Vec<Span>]| {
+        spans
+            .iter()
+            .map(|spans| !spans.is_empty())
+            .collect::<Vec<_>>()
+    };
+
+    let chunk = |opened| Chunk {
+        rows: 0..rows,
+        opened,
+    };
+    let collapsed = highlighter.spans(&diff, &repo.mirror, chunk(&[]));
+    let opened = highlighter.spans(&diff, &repo.mirror, chunk(&[1]));
+
+    let ast = [false, false, true, true];
+    assert_eq!(painted(&collapsed), [ast, [false; 4]].concat());
+    assert_eq!(painted(&opened), [ast, [false, false, true, true]].concat());
     repo.finish();
 }
 
@@ -349,6 +427,7 @@ fn a_retargeted_pr_s_diff_keeps_trees_of_its_own() {
             pr: pr(7, &repo.head),
             base: other,
             diff: first.diff.clone(),
+            news: Vec::new(),
         }),
         ..source
     };
@@ -408,7 +487,11 @@ fn a_highlighter_whose_thread_has_stopped_shows_the_diff_plain() {
         shelf: shelf().1,
     };
 
-    let spans = highlighter.spans(&repo.source(7).diff, &repo.mirror, 0..100);
+    let chunk = Chunk {
+        rows: 0..100,
+        opened: &[],
+    };
+    let spans = highlighter.spans(&repo.source(7).diff, &repo.mirror, chunk);
 
     assert!(spans.iter().all(Vec::is_empty));
     repo.finish();

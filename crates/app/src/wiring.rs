@@ -1105,7 +1105,10 @@ mod tests {
         let heard = wired.heads.recv_timeout(PLENTY).unwrap();
         let ready = files().unwrap();
         let rows = chunk(&commit).unwrap();
-        let spans = wired.ask("pull_request_spans", json!({ "chunk": chunk_of(&commit) }));
+        let spans = wired.ask(
+            "pull_request_spans",
+            json!({ "chunk": chunk_of(&commit), "opened": [] }),
+        );
         let no_commit = chunk("main").unwrap_err();
         drop(wired.stop());
         std::fs::remove_dir_all(root).unwrap();
@@ -1117,11 +1120,12 @@ mod tests {
             "old_path": null,
             "change": { "kind": "lines", "added": 1, "removed": 0 },
             "row": 0,
-            "columns": 4
+            "columns": 4,
+            "generated": false
         });
         assert_eq!(
             ready,
-            json!({ "state": "ready", "head": commit, "files": [news], "rows": 3 })
+            json!({ "state": "ready", "head": commit, "files": [news], "rows": 3, "news": [] })
         );
         assert_eq!(
             rows,

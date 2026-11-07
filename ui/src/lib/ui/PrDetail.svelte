@@ -71,7 +71,7 @@
           <p class="by">Reading from GitHub…</p>
         {/if}
       {:else}
-        <FilesTab files={pr.files} />
+        <FilesTab files={pr.files} onlink={(address) => void followLink(address)} />
       {/if}
     </div>
   {/if}

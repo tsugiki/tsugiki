@@ -79,9 +79,10 @@ export const commands = {
 	pullRequestRows: (chunk: DiffChunk) => typedError<DiffRow_Serialize[], Error_Serialize>(__TAURI_INVOKE("pull_request_rows", { chunk })),
 	/**
 	 *  The spans that highlight the code in a chunk of a PR's diff, which the Files tab asks for with its rows
-	 *  and paints when they come.
+	 *  and paints when they come. `opened` names the Generated files it shows open, by their place among the
+	 *  files: the rows of the others get none.
 	 */
-	pullRequestSpans: (chunk: DiffChunk) => typedError<Span[][], Error_Serialize>(__TAURI_INVOKE("pull_request_spans", { chunk })),
+	pullRequestSpans: (chunk: DiffChunk, opened: number[]) => typedError<Span[][], Error_Serialize>(__TAURI_INVOKE("pull_request_spans", { chunk, opened })),
 	/**  Opens an Issue or a PR on GitHub in the system browser. */
 	openOnGithub: (repository: string, item: GitHubItem) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_on_github", { repository, item })),
 	/**
@@ -224,6 +225,11 @@ export type DiffFile_Deserialize = {
 	 *  there.
 	 */
 	columns: number,
+	/**
+	 *  Whether `.gitattributes` on the Target branch marks it `linguist-generated`, which the Files tab
+	 *  starts collapsed.
+	 */
+	generated: boolean,
 };
 
 /**  A file the diff changes, as the Files tab lists it. */
@@ -239,6 +245,11 @@ export type DiffFile_Serialize = {
 	 *  there.
 	 */
 	columns: number,
+	/**
+	 *  Whether `.gitattributes` on the Target branch marks it `linguist-generated`, which the Files tab
+	 *  starts collapsed.
+	 */
+	generated: boolean,
 };
 
 /**  One row of the diff, as the window draws it. */
@@ -534,6 +545,20 @@ export type LastSync_Serialize = {
 	at: string | null,
 };
 
+/**
+ *  What a link goes to. The window knows the address of each kind, as CPython's docs build does, so the core
+ *  names no site but GitHub (ADR 0005).
+ */
+export type LinkTo = 
+/**  A web page the entry gives the address of. */
+{ site: "web"; url: WebAddress } | { site: "pep"; number: number } | 
+/**  An issue in CPython's GitHub repository. */
+{ site: "gh_issue"; number: number } | 
+/**  An issue in bugs.python.org, CPython's tracker before GitHub. */
+{ site: "bpo"; number: number } | { site: "rfc"; number: number } | { site: "cve"; id: string } | 
+/**  A project on the Python Package Index. */
+{ site: "pypi"; project: string };
+
 /**  A top-level entry of the list, with why it Needs attention, if it does. */
 export type ListedItem = ListedItem_Serialize | ListedItem_Deserialize;
 
@@ -703,6 +728,45 @@ export type Miss_Serialize =
 /**  The window logged `limit` misses of one kind within a minute, and logs no more of them until it ends. */
 { kind: "capped"; of: MissKind; limit: number };
 
+/**  A paragraph, a list or a block of code. */
+export type NewsBlock = { kind: "paragraph"; pieces: NewsPiece[] } | 
+/**  Each item holds blocks of its own. */
+{ kind: "list"; items: NewsBlock[][] } | { kind: "code"; text: string };
+
+/**  A NEWS entry the PR adds or changes, as its head has it. */
+export type NewsEntry = NewsEntry_Serialize | NewsEntry_Deserialize;
+
+/**  A NEWS entry the PR adds or changes, as its head has it. */
+export type NewsEntry_Deserialize = {
+	/**  Its path in the diff. */
+	path: string,
+	/**  The changelog's section, as Sphinx titles it: "Core and Builtins" from `Core_and_Builtins`. */
+	section: string,
+	/**  The issue its file name gives. */
+	issue?: NewsLink | null,
+	blocks: NewsBlock[],
+};
+
+/**  A NEWS entry the PR adds or changes, as its head has it. */
+export type NewsEntry_Serialize = {
+	/**  Its path in the diff. */
+	path: string,
+	/**  The changelog's section, as Sphinx titles it: "Core and Builtins" from `Core_and_Builtins`. */
+	section: string,
+	/**  The issue its file name gives. */
+	issue: NewsLink | null,
+	blocks: NewsBlock[],
+};
+
+/**  A link's text and what it goes to. */
+export type NewsLink = {
+	text: string,
+	to: LinkTo,
+};
+
+/**  A run of a paragraph's text, all shown one way. */
+export type NewsPiece = { kind: "text"; text: string } | { kind: "emphasis"; text: string } | { kind: "strong"; text: string } | { kind: "code"; text: string } | { kind: "link"; text: string; to: LinkTo };
+
 /**  How far the open Repository's sync has got. */
 export type OpenSync = OpenSync_Serialize | OpenSync_Deserialize;
 
@@ -741,7 +805,9 @@ export type PrFiles_Deserialize =
 /**  The diff, whose rows the window asks for by number. */
 { state: "ready"; 
 /**  The commit the diff ends at, which each chunk names. */
-head: string; files: DiffFile_Deserialize[]; rows: number };
+head: string; files: DiffFile_Deserialize[]; rows: number; 
+/**  The PR's NEWS entries, rendered above the rows. */
+news: NewsEntry_Deserialize[] };
 
 /**  What the Files tab shows. */
 export type PrFiles_Serialize = 
@@ -752,7 +818,9 @@ export type PrFiles_Serialize =
 /**  The diff, whose rows the window asks for by number. */
 { state: "ready"; 
 /**  The commit the diff ends at, which each chunk names. */
-head: string; files: DiffFile_Serialize[]; rows: number };
+head: string; files: DiffFile_Serialize[]; rows: number; 
+/**  The PR's NEWS entries, rendered above the rows. */
+news: NewsEntry_Serialize[] };
 
 export type PrState = "OPEN" | "CLOSED" | "MERGED";
 
@@ -1158,6 +1226,9 @@ export type TreeEntry_Serialize = {
 {
 	kind: "backport",
 } & BackportRow_Serialize;
+
+/**  A web page's address. */
+export type WebAddress = string;
 
 /**  One reason an item Needs attention. */
 export type Why = { kind: "review_requested" } | 

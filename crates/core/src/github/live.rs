@@ -215,7 +215,21 @@ pub(crate) fn read_git(args: &[&OsStr]) -> io::Result<String> {
 /// Runs a `git` that only reads local files, with `args` and `input` on its standard input, and gives its
 /// output as git wrote it. Its last line of error output says why it failed.
 pub(crate) fn read_git_bytes(args: &[&OsStr], input: Vec<u8>) -> io::Result<Vec<u8>> {
+    git_bytes(local_git(args), input)
+}
+
+/// The same, with the environment variables `envs` set for git.
+pub(crate) fn read_git_bytes_with_env(
+    args: &[&OsStr],
+    input: Vec<u8>,
+    envs: &[(&str, &OsStr)],
+) -> io::Result<Vec<u8>> {
     let mut command = local_git(args);
+    let _ = command.envs(envs.iter().copied());
+    git_bytes(command, input)
+}
+
+fn git_bytes(mut command: Command, input: Vec<u8>) -> io::Result<Vec<u8>> {
     let _ = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

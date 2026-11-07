@@ -2,9 +2,11 @@
 //! branch to its head, through the git CLI (ADR 0003). The rows stay in the core, and the window asks for
 //! them in chunks, so it holds only those near what it shows (ADR 0001).
 
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use serde::Serialize;
@@ -14,7 +16,8 @@ use crate::error::{Error, ErrorKind};
 use crate::github::{CommitSha, live};
 use crate::repository::RepositoryName;
 
-pub use highlighter::Highlighter;
+pub use highlighter::{Chunk, Highlighter};
+pub use news::{LinkTo, NewsBlock, NewsEntry, NewsLink, NewsPiece};
 
 /// A file the diff changes, as the Files tab lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -28,6 +31,9 @@ pub struct DiffFile {
     /// How many characters its longest line has, so the window can make room for it before it scrolls
     /// there.
     pub columns: u32,
+    /// Whether `.gitattributes` on the Target branch marks it `linguist-generated`, which the Files tab
+    /// starts collapsed.
+    pub generated: bool,
 }
 
 /// How much a file changed.
@@ -125,6 +131,22 @@ impl Diff {
         }
         Ok(Self { files, rows })
     }
+
+    /// Marks the files `generated` says are, one answer a file, and no others. Without answers it marks
+    /// none, and says why in the log.
+    fn mark_generated(&mut self, generated: std::io::Result<Vec<bool>>, mirror: &Path) {
+        let generated = generated.unwrap_or_else(|cause| {
+            let mirror = mirror.display();
+            log::warn!(
+                "Tsugiki can't tell which files of a diff in {mirror} are generated, so it shows them all: \
+                 {cause}"
+            );
+            Vec::new()
+        });
+        for (at, file) in self.files.iter_mut().enumerate() {
+            file.generated = generated.get(at).copied().unwrap_or(false);
+        }
+    }
 }
 
 /// A count of rows or files. A diff never comes near `u32::MAX` of either.
@@ -168,6 +190,7 @@ fn parse_numstat(numstat: &str) -> Result<Vec<DiffFile>, Error> {
             change,
             row: 0,
             columns: 0,
+            generated: false,
         });
     }
     Ok(files)
@@ -284,22 +307,154 @@ pub fn held(mirror: &Path, target: &str, head: &CommitSha) -> Held {
 }
 
 /// Reads the diff from the merge base of `head` and the branch `target` to `head`, with renames found as
-/// GitHub finds them. Both have to be in `mirror`, as `held` says.
+/// GitHub finds them, the files `target` marks generated, and the NEWS entries at `head`. Both have to be
+/// in `mirror`, as `held` says.
 pub fn read(mirror: &Path, target: &str, head: &CommitSha) -> Result<MirrorDiff, Error> {
-    let (base, numstat, patch) =
-        run_diff(mirror, target, head).map_err(|cause| cant_read(mirror, &cause))?;
-    Ok(MirrorDiff {
-        base,
-        diff: Diff::parse(&numstat, &patch)?,
-    })
+    let index = TargetIndex::new(mirror);
+    // The index takes as long as a small diff, so the two run side by side.
+    let (diff, made) = std::thread::scope(|scope| {
+        let made = scope.spawn(|| index.make(target));
+        (run_diff(mirror, target, head), made.join())
+    });
+    let (base, numstat, patch) = diff.map_err(|cause| cant_read(mirror, &cause))?;
+    let mut diff = Diff::parse(&numstat, &patch)?;
+    let stopped = std::io::Error::other("the index's reader stopped");
+    let made = made.unwrap_or(Err(stopped));
+    // Both need the list of files, and each starts a git.
+    let (generated, news) = std::thread::scope(|scope| {
+        let news = scope.spawn(|| news(mirror, head, diff.files()));
+        let generated = made.and_then(|()| index.generated(diff.files()));
+        (generated, news.join().unwrap_or_default())
+    });
+    diff.mark_generated(generated, mirror);
+    Ok(MirrorDiff { base, diff, news })
 }
 
-/// A PR's diff as read from its mirror, and the merge base it starts from.
+/// A PR's diff as read from its mirror, the merge base it starts from, and its NEWS entries.
 #[derive(Debug)]
 pub struct MirrorDiff {
     /// The commit whose versions of the files the removed lines come from.
     pub base: CommitSha,
     pub diff: Diff,
+    pub news: Vec<NewsEntry>,
+}
+
+/// An index of the Target branch's files, made for a moment so `git check-attr` can read the
+/// `.gitattributes` there. git reads them from a commit only since 2.40 (`--source`), and Tsugiki asks
+/// for 2.30. It lives in the mirror's folder, and goes when this does. One a run left when it stopped
+/// short goes with the next read.
+struct TargetIndex<'a> {
+    mirror: &'a Path,
+    path: PathBuf,
+}
+
+impl<'a> TargetIndex<'a> {
+    /// An index of a name no other is using, as reads run side by side. Only one Tsugiki runs at a time,
+    /// so the indexes another run named are left over, and this removes them.
+    fn new(mirror: &'a Path) -> Self {
+        static MADE: AtomicU64 = AtomicU64::new(0);
+        let made = MADE.fetch_add(1, Ordering::Relaxed);
+        let run = format!("{INDEX}{}-", std::process::id());
+        for entry in std::fs::read_dir(mirror).into_iter().flatten().flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with(INDEX) && !name.starts_with(&run) {
+                remove(&entry.path());
+            }
+        }
+        Self {
+            mirror,
+            path: mirror.join(format!("{run}{made}.index")),
+        }
+    }
+
+    /// Fills the index from the branch `target`.
+    fn make(&self, target: &str) -> std::io::Result<()> {
+        let tree = format!("refs/heads/{target}");
+        self.git(&["read-tree", &tree], Vec::new()).map(drop)
+    }
+
+    /// Whether each of `files` is marked `linguist-generated`, set or `true`, as `make` left the index.
+    fn generated(&self, files: &[DiffFile]) -> std::io::Result<Vec<bool>> {
+        let input: Vec<u8> = files
+            .iter()
+            .flat_map(|file| file.path.bytes().chain([0]))
+            .collect();
+        let args = [
+            "check-attr",
+            "--cached",
+            "--stdin",
+            "-z",
+            "linguist-generated",
+        ];
+        let output = self.git(&args, input)?;
+        let output = String::from_utf8_lossy(&output);
+        // Each answer is the path, the attribute and its value, each ended by a NUL.
+        let fields: Vec<&str> = output.split('\0').collect();
+        let marked: HashMap<&str, bool> = fields
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .map(|[path, _, value]| (*path, matches!(*value, "set" | "true")))
+            .collect();
+        Ok(files
+            .iter()
+            .map(|file| marked.get(file.path.as_str()).copied().unwrap_or(false))
+            .collect())
+    }
+
+    /// A git in the mirror with `args`, which reads and writes this index. It reads only the attributes
+    /// the index holds: not the user's own file, nor the computer's.
+    fn git(&self, args: &[&str], input: Vec<u8>) -> std::io::Result<Vec<u8>> {
+        let mut all = ["-C", "", "-c", "core.attributesFile="].map(OsStr::new);
+        all[1] = self.mirror.as_os_str();
+        let all: Vec<&OsStr> = all.into_iter().chain(args.iter().map(OsStr::new)).collect();
+        let envs = [
+            ("GIT_INDEX_FILE", self.path.as_os_str()),
+            ("GIT_ATTR_NOSYSTEM", OsStr::new("1")),
+        ];
+        live::read_git_bytes_with_env(&all, input, &envs)
+    }
+}
+
+/// How the name of each index of a Target branch starts.
+const INDEX: &str = "tsugiki-attributes-";
+
+impl Drop for TargetIndex<'_> {
+    fn drop(&mut self) {
+        remove(&self.path);
+    }
+}
+
+/// Removes the file at `path`, if it's there.
+fn remove(path: &Path) {
+    match std::fs::remove_file(path) {
+        Err(cause) if cause.kind() != std::io::ErrorKind::NotFound => {
+            let path = path.display();
+            log::warn!("Tsugiki can't remove {path}: {cause}");
+        }
+        _ => {}
+    }
+}
+
+/// The NEWS entries among `files`, rendered from `head`. Those git can't read stay out.
+fn news(mirror: &Path, head: &CommitSha, files: &[DiffFile]) -> Vec<NewsEntry> {
+    // git reads a name a line.
+    let paths: Vec<&str> = files
+        .iter()
+        .map(|file| file.path.as_str())
+        .filter(|path| NewsEntry::is_entry(path) && !path.contains('\n'))
+        .collect();
+    let names: Vec<String> = paths
+        .iter()
+        .map(|path| format!("{}:{path}", head.as_str()))
+        .collect();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    highlighter::blobs(mirror, &names)
+        .into_iter()
+        .zip(paths)
+        .filter_map(|(text, path)| Some(NewsEntry::render(path, &text?)))
+        .collect()
 }
 
 /// The merge base `read` starts from, and what `git diff --numstat -z` and `git diff` print from it.
@@ -381,6 +536,7 @@ pub struct OpenDiff {
     pub pr: PrAt,
     pub base: CommitSha,
     pub diff: Diff,
+    pub news: Vec<NewsEntry>,
 }
 
 /// The diff of the PR on show, which each chunk the window asks for comes from. Commands run on threads of
@@ -421,11 +577,12 @@ impl Diffs {
             shown.reads += 1;
             shown.reads
         };
-        let MirrorDiff { base, diff } = read()?;
+        let MirrorDiff { base, diff, news } = read()?;
         let read = Arc::new(OpenDiff {
             pr: pr.clone(),
             base,
             diff,
+            news,
         });
         let mut shown = self.lock();
         if started > shown.read {
@@ -443,6 +600,7 @@ impl Diffs {
 }
 
 mod highlighter;
+mod news;
 
 #[cfg(test)]
 pub(crate) mod tests;

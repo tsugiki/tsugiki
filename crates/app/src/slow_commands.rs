@@ -153,13 +153,15 @@ pub(crate) fn pull_request_rows(
 }
 
 /// The spans that highlight the code in a chunk of a PR's diff, which the Files tab asks for with its rows
-/// and paints when they come.
+/// and paints when they come. `opened` names the Generated files it shows open, by their place among the
+/// files: the rows of the others get none.
 #[tauri::command(async)]
 #[specta::specta]
 pub(crate) fn pull_request_spans(
     chunk: crate::DiffChunk,
+    opened: Vec<u32>,
     work: State<'_, crate::DiffWork>,
     reader: State<'_, StoreReader>,
 ) -> Result<Vec<Vec<Span>>, Error> {
-    crate::read_pull_request_spans(chunk, &work, &reader)
+    crate::read_pull_request_spans(chunk, &opened, &work, &reader)
 }

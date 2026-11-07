@@ -1,10 +1,18 @@
-<!-- The rows of a PR's diff, drawn only near what the tab shows. Every row has the same height, so a row's
-     place follows from its number, and the core sends the rows in chunks as they come near (ADR 0001). -->
+<!-- The rows of a PR's diff, drawn only near what the tab shows, below its NEWS entries. Every row has the
+     same height, so a row's place follows from where it shows, and the core sends the rows in chunks as they
+     come near (ADR 0001). A collapsed Generated file shows only its header (#181). -->
 <script lang="ts">
-  import type { DiffFile, FileChange, PrFilesState } from "$lib/state/pr-files.svelte";
+  import type { DiffFile, FileChange, NewsEntry, PrFilesState } from "$lib/state/pr-files.svelte";
+  import NewsEntries from "./NewsEntries.svelte";
   import { pieces } from "./spans";
 
-  let { diff, rows, files }: { diff: PrFilesState; rows: number; files: DiffFile[] } = $props();
+  let {
+    diff,
+    files,
+    news,
+    onlink,
+  }: { diff: PrFilesState; files: DiffFile[]; news: NewsEntry[]; onlink: (address: string) => void } =
+    $props();
 
   /** A row's height in pixels. */
   const ROW = 20;
@@ -13,8 +21,11 @@
 
   let scrollTop = $state(0);
   let height = $state(0);
-  const first = $derived(Math.max(0, Math.floor(scrollTop / ROW) - OVERSCAN));
-  const last = $derived(Math.min(rows - 1, Math.ceil((scrollTop + height) / ROW) + OVERSCAN));
+  /** How tall the NEWS entries above the rows are. */
+  let newsHeight = $state(0);
+  const rows = $derived(diff.layout.count);
+  const first = $derived(Math.max(0, Math.floor((scrollTop - newsHeight) / ROW) - OVERSCAN));
+  const last = $derived(Math.min(rows - 1, Math.ceil((scrollTop + height - newsHeight) / ROW) + OVERSCAN));
   const shown = $derived(Array.from({ length: Math.max(0, last - first + 1) }, (_, i) => first + i));
   /** Room for the longest line, so the scroll width doesn't change as rows come and go. */
   const columns = $derived(files.reduce((widest, file) => Math.max(widest, file.columns), 0));
@@ -27,6 +38,12 @@
     change.kind === "binary" ? "binary" : `+${String(change.added)} −${String(change.removed)}`;
   const named = (file: { path: string; old_path: string | null }) =>
     file.old_path === null ? file.path : `${file.old_path} → ${file.path}`;
+  /** The place among the files of the Generated file whose header is row `index` of the diff, if it is
+   * one. */
+  const generated = (index: number) => {
+    const at = diff.layout.fileAt(index);
+    return at !== undefined && files[at]?.generated ? at : undefined;
+  };
 </script>
 
 <!-- A line of code after its marker, highlighted once its spans come. Each piece sits on one line, as the
@@ -46,16 +63,35 @@
     scrollTop = event.currentTarget.scrollTop;
   }}
 >
+  <div bind:clientHeight={newsHeight}>
+    <NewsEntries {news} {onlink} />
+  </div>
   <div
     class="spacer"
     style:height={`${String(rows * ROW)}px`}
     style:min-width={`calc(${String(columns)}ch + 112px)`}
   >
-    {#each shown as index (index)}
+    {#each shown as place (place)}
+      {@const index = diff.layout.row(place)}
       {@const row = diff.row(index)}
-      <div class={`row ${row?.kind ?? "waiting"}`} style:top={`${String(index * ROW)}px`}>
+      <div class={`row ${row?.kind ?? "waiting"}`} style:top={`${String(place * ROW)}px`}>
         {#if row?.kind === "file"}
-          <span class="path">{named(row)}</span><span class="count">{counted(row.change)}</span>
+          {@const file = generated(index)}
+          {#if file === undefined}
+            <span class="path">{named(row)}</span><span class="count">{counted(row.change)}</span>
+          {:else}
+            <button
+              type="button"
+              class="toggle"
+              aria-expanded={!diff.collapsed(file)}
+              onclick={() => {
+                diff.toggle(file);
+              }}
+              ><span class="chevron">{diff.collapsed(file) ? "▸" : "▾"}</span><span class="path"
+                >{named(row)}</span
+              ></button
+            ><span class="count">{counted(row.change)}</span><span class="count">Generated</span>
+          {/if}
         {:else if row?.kind === "hunk" || row?.kind === "note"}
           <span class="number"></span><span class="number"></span><span class="text">{row.text}</span>
         {:else if row?.kind === "context"}
@@ -131,6 +167,22 @@
   .count {
     font-weight: normal;
     opacity: 0.7;
+  }
+
+  /* A Generated file's header opens and closes it, and looks like any other header. */
+  .toggle {
+    display: flex;
+    gap: 4px;
+    padding: 0;
+    border: 0;
+    font: inherit;
+    color: inherit;
+    background: none;
+    cursor: pointer;
+  }
+
+  .chevron {
+    width: 1ch;
   }
 
   .hunk {

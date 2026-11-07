@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { CHUNK, PrFilesState, SPANS_WAIT, type DiffRow, type PrFiles } from "./pr-files.svelte";
+import {
+  CHUNK,
+  PrFilesState,
+  SPANS_WAIT,
+  type DiffFile,
+  type DiffRow,
+  type PrFiles,
+} from "./pr-files.svelte";
 
 type Heard = (event: { payload: unknown }) => void;
 
@@ -7,7 +14,7 @@ const core = vi.hoisted(() => {
   const core = {
     pullRequestFiles: vi.fn(),
     pullRequestRows: vi.fn<(chunk: { start: number }) => Promise<unknown>>(),
-    pullRequestSpans: vi.fn<(chunk: { start: number }) => Promise<unknown>>(),
+    pullRequestSpans: vi.fn<(chunk: { start: number }, opened?: number[]) => Promise<unknown>>(),
     cloning: vi.fn(),
     heard: {} as Record<string, Heard>,
     stopped: [] as string[],
@@ -36,14 +43,34 @@ vi.mock("$lib/data/bindings", () => ({
   },
 }));
 
-const ready = (head: string, rows: number): PrFiles => ({
+/** A file of the diff whose header is row `row`. */
+const file = (path: string, row: number, generated = false): DiffFile => ({
+  path,
+  old_path: null,
+  change: { kind: "lines", added: 1, removed: 0 },
+  row,
+  columns: 4,
+  generated,
+});
+
+const ready = (head: string, rows: number, files = [file("NEWS", 0)]): PrFiles => ({
   state: "ready",
   head,
-  files: [
-    { path: "NEWS", old_path: null, change: { kind: "lines", added: 1, removed: 0 }, row: 0, columns: 4 },
-  ],
+  files,
   rows,
+  news: [],
 });
+
+/** A file, a Generated one from row 10 to the third chunk, and a file in the third chunk. */
+const withGenerated = (head: string) =>
+  ready(head, 3 * CHUNK, [
+    file("Lib/ast.py", 0),
+    file("Python/generated_cases.c.h", 10, true),
+    file("Lib/os.py", 2 * CHUNK),
+  ]);
+
+/** Where each chunk asked for starts. */
+const starts = () => core.pullRequestRows.mock.calls.map(([chunk]) => chunk.start);
 
 const ok = <T>(data: T) => ({ status: "ok" as const, data });
 const added = (text: string): DiffRow => ({ kind: "added", new: 1, text });
@@ -115,13 +142,10 @@ it("shows a chunk's rows with their spans when the spans come in time, and times
   expect(files.row(0)).toEqual(added("row 0"));
   expect(files.spans(0)).toEqual(keyword(0));
   expect(files.spans(1)).toBeUndefined();
-  expect(core.pullRequestSpans).toHaveBeenCalledWith({
-    repository: "python/cpython",
-    number: 11,
-    head: "abc",
-    start: 0,
-    end: CHUNK,
-  });
+  expect(core.pullRequestSpans).toHaveBeenCalledWith(
+    { repository: "python/cpython", number: 11, head: "abc", start: 0, end: CHUNK },
+    [],
+  );
   // The chunk after only comes near, so it isn't a jump.
   expect(jumps.seen).toEqual(["1: rows highlighted"]);
   files.need(5, 20);
@@ -369,6 +393,97 @@ it("asks for no rows until the diff is ready", async () => {
   files.need(0, 10);
 
   expect(core.pullRequestRows).not.toHaveBeenCalled();
+  expect(files.layout.count).toBe(0);
+  expect(files.collapsed(0)).toBe(false);
+  files.toggle(0);
+  expect(core.pullRequestSpans).not.toHaveBeenCalled();
+});
+
+it("starts a Generated file collapsed, asks for none of its rows, and opens it on a toggle", async () => {
+  const files = await loaded(withGenerated("abc"));
+
+  const collapsed = [0, 1, 2].map((at) => files.collapsed(at));
+  const shown = files.layout.count;
+  files.need(0, 20);
+  await vi.waitFor(() => {
+    expect(core.pullRequestRows).toHaveBeenCalledTimes(2);
+  });
+  const asked = starts();
+  files.toggle(1);
+  files.need(0, 20);
+  await vi.waitFor(() => {
+    expect(core.pullRequestRows).toHaveBeenCalledTimes(3);
+  });
+
+  expect(collapsed).toEqual([false, true, false]);
+  expect(shown).toBe(11 + CHUNK);
+  expect(asked).toEqual([0, 2 * CHUNK]);
+  expect(starts()).toEqual([0, 2 * CHUNK, CHUNK]);
+  expect(files.layout.count).toBe(3 * CHUNK);
+  files.toggle(1);
+  expect(files.collapsed(1)).toBe(true);
+});
+
+it("asks again for the spans of the chunks it holds once a Generated file opens, naming it", async () => {
+  // Spans that name the files the window has opened, so the test can tell an answer to a later ask.
+  core.pullRequestSpans.mockImplementation(({ start }, opened = []) =>
+    Promise.resolve(ok([keyword(start + opened.length)])),
+  );
+  const files = await loaded(withGenerated("abc"));
+  files.need(0, 20);
+  await vi.waitFor(() => {
+    expect(files.spans(2 * CHUNK)).toEqual(keyword(2 * CHUNK));
+  });
+
+  files.toggle(1);
+  files.need(0, 20);
+
+  await vi.waitFor(() => {
+    expect(core.pullRequestSpans).toHaveBeenCalledTimes(5);
+  });
+  const asked = core.pullRequestSpans.mock.calls.map(([chunk, opened]) => [chunk.start, opened]);
+  expect(asked).toEqual([
+    [0, []],
+    [2 * CHUNK, []],
+    [0, [1]],
+    [2 * CHUNK, [1]],
+    [CHUNK, [1]],
+  ]);
+  await vi.waitFor(() => {
+    expect(files.spans(0)).toEqual(keyword(1));
+  });
+});
+
+it("keeps a chunk's spans when asking again fails, and drops those that come once it's gone", async () => {
+  const files = await loaded(withGenerated("abc"));
+  files.need(0, 5);
+  await vi.waitFor(() => {
+    expect(files.spans(2 * CHUNK)).toEqual(keyword(2 * CHUNK));
+  });
+  core.pullRequestSpans.mockResolvedValueOnce({ status: "error", error: { message: "No tree" } });
+  const answerLate = heldSpans();
+
+  files.toggle(1);
+  core.pullRequestFiles.mockResolvedValue(ok(withGenerated("def")));
+  const failed = files.spans(0);
+  await files.ask();
+  answerLate(ok([keyword(99)]));
+
+  await vi.waitFor(() => {
+    expect(core.pullRequestSpans).toHaveBeenCalledTimes(4);
+  });
+  expect(failed).toEqual(keyword(0));
+  expect(files.spans(2 * CHUNK)).toBeUndefined();
+});
+
+it("collapses the Generated files of a new head again", async () => {
+  const files = await loaded(withGenerated("abc"));
+  files.toggle(1);
+  core.pullRequestFiles.mockResolvedValue(ok(withGenerated("def")));
+
+  await files.ask();
+
+  expect(files.collapsed(1)).toBe(true);
 });
 
 it("lets go of the chunks far from what shows, and of those that arrive once far", async () => {

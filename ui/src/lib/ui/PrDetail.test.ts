@@ -176,6 +176,38 @@ it("sends a link in a comment to the browser, and says if that fails", async () 
   );
 });
 
+it("sends a link in a NEWS entry to the browser", async () => {
+  // jsdom lays nothing out, so bind:clientHeight has nothing to observe.
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const url = "https://github.com/python/cpython/issues/1";
+  const news = [
+    {
+      path: "Misc/NEWS.d/next/Library/a.rst",
+      section: "Library",
+      issue: { text: "gh-1", to: { site: "gh_issue" as const, number: 1 } },
+      blocks: [],
+    },
+  ];
+  core.pullRequestFiles.mockResolvedValue({
+    status: "ok",
+    data: { state: "ready", head: "abc", files: [], rows: 0, news },
+  });
+  await shown(view, 10);
+  await fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+
+  await fireEvent.click(await screen.findByRole("link", { name: "gh-1" }));
+
+  expect(core.openLink).toHaveBeenCalledExactlyOnceWith(url);
+  vi.unstubAllGlobals();
+});
+
 it("says so for a PR Tsugiki doesn't hold", async () => {
   await shown(null, 10);
 

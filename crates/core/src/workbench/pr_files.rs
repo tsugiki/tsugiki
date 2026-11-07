@@ -7,7 +7,9 @@ use std::sync::Arc;
 use serde::Serialize;
 use specta::Type;
 
-use crate::diff::{self, DiffFile, DiffRow, Diffs, Held, Highlighter, OpenDiff, PrAt};
+use crate::diff::{
+    self, Chunk, DiffFile, DiffRow, Diffs, Held, Highlighter, NewsEntry, OpenDiff, PrAt,
+};
 use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
 use crate::github::CommitSha;
@@ -32,6 +34,8 @@ pub enum PrFiles {
         head: CommitSha,
         files: Vec<DiffFile>,
         rows: u32,
+        /// The PR's NEWS entries, rendered above the rows.
+        news: Vec<NewsEntry>,
     },
 }
 
@@ -106,6 +110,7 @@ impl PrFiles {
             head,
             files: open.diff.files().to_vec(),
             rows: open.diff.row_count(),
+            news: open.news.clone(),
         }
     }
 
@@ -119,15 +124,21 @@ impl PrFiles {
         Ok(Self::open(sources, pr)?.diff.rows(range).to_vec())
     }
 
-    /// The spans of the rows in `range`, which highlight their code (#178).
+    /// The spans of the rows in `range`, which highlight their code (#178). Those of a Generated file come
+    /// only once the window opens it, and `opened` names those, by their place among the files (#181).
     pub fn spans(
         sources: &DiffSources<'_>,
         pr: &PrAt,
         range: Range<u32>,
+        opened: &[u32],
     ) -> Result<Vec<Vec<Span>>, Error> {
         let mirror = sources.folders.mirror(&pr.repository);
         let open = Self::open(sources, pr)?;
-        Ok(sources.highlighter.spans(&open, &mirror, range))
+        let chunk = Chunk {
+            rows: range,
+            opened,
+        };
+        Ok(sources.highlighter.spans(&open, &mirror, chunk))
     }
 
     /// The diff of `pr`: the one on show, or else read again, as when the user has opened another PR since.
@@ -308,7 +319,8 @@ mod tests {
         let world = World::new("ready");
         let mirrored = Mirrored::new("pr-files-ready");
         let head = mirrored.head.clone();
-        let whole = mirrored.diff();
+        let read = mirrored.read();
+        let whole = read.diff;
         world.mirrors(&mirrored);
         world.has_pr(Some(head.clone()), "main");
 
@@ -319,12 +331,15 @@ mod tests {
             head: head.clone(),
         };
         let rows = PrFiles::rows(&world.sources(), &pr, 0..3).unwrap();
-        let spans = PrFiles::spans(&world.sources(), &pr, 0..whole.row_count()).unwrap();
+        // main marks Lib/ast.py generated, and the window has opened each file.
+        let opened: Vec<u32> = (0..).take(whole.files().len()).collect();
+        let spans = PrFiles::spans(&world.sources(), &pr, 0..whole.row_count(), &opened).unwrap();
 
         let expected = PrFiles::Ready {
             head,
             files: whole.files().to_vec(),
             rows: whole.row_count(),
+            news: read.news,
         };
         assert_eq!(files, expected);
         assert_eq!(rows, whole.rows(0..3));

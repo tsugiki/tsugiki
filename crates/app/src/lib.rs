@@ -332,11 +332,12 @@ fn read_pull_request_rows(
 
 fn read_pull_request_spans(
     chunk: DiffChunk,
+    opened: &[u32],
     work: &DiffWork,
     reader: &StoreReader,
 ) -> Result<Vec<Vec<Span>>, Error> {
     let (pr, rows) = chunk.parse()?;
-    PrFiles::spans(&work.sources(reader)?, &pr, rows)
+    PrFiles::spans(&work.sources(reader)?, &pr, rows, opened)
 }
 
 /// Opens the page of `item` on GitHub with `show`, and then moves its Last seen, since the user has it in

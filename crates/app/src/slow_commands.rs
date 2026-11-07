@@ -13,6 +13,7 @@ use tauri::State;
 use tauri::async_runtime::spawn_blocking;
 use tsugiki_core::diff::DiffRow;
 use tsugiki_core::error::{Error, ErrorKind};
+use tsugiki_core::highlight::Span;
 use tsugiki_core::repository::{Home, RepositoryAccess, RepositoryCheck};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::SettingsOwner;
@@ -149,4 +150,16 @@ pub(crate) fn pull_request_rows(
     reader: State<'_, StoreReader>,
 ) -> Result<Vec<DiffRow>, Error> {
     crate::read_pull_request_rows(chunk, &work, &reader)
+}
+
+/// The spans that highlight the code in a chunk of a PR's diff, which the Files tab asks for with its rows
+/// and paints when they come.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn pull_request_spans(
+    chunk: crate::DiffChunk,
+    work: State<'_, crate::DiffWork>,
+    reader: State<'_, StoreReader>,
+) -> Result<Vec<Vec<Span>>, Error> {
+    crate::read_pull_request_spans(chunk, &work, &reader)
 }

@@ -20,6 +20,9 @@ serde_json.workspace = true
 specta.workspace = true
 time.workspace = true
 toml_edit.workspace = true
+tree-sitter.workspace = true
+tree-sitter-c.workspace = true
+tree-sitter-python.workspace = true
 ureq.workspace = true
 url.workspace = true
 
@@ -33,6 +36,10 @@ harness = false
 
 [[bench]]
 name = "diff"
+harness = false
+
+[[bench]]
+name = "highlight"
 harness = false
 
 [[bench]]

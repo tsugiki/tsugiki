@@ -7,6 +7,7 @@ const core = vi.hoisted(() => {
   const core = {
     pullRequestFiles: vi.fn(),
     pullRequestRows: vi.fn<(chunk: { start: number }) => Promise<unknown>>(),
+    pullRequestSpans: vi.fn<(chunk: { start: number }) => Promise<unknown>>(),
     cloning: vi.fn(),
     heard: {} as Record<string, Heard>,
     stopped: [] as string[],
@@ -25,6 +26,7 @@ vi.mock("$lib/data/bindings", () => ({
   commands: {
     pullRequestFiles: core.pullRequestFiles,
     pullRequestRows: core.pullRequestRows,
+    pullRequestSpans: core.pullRequestSpans,
     cloning: core.cloning,
   },
   events: {
@@ -45,6 +47,8 @@ const ready = (head: string, rows: number): PrFiles => ({
 
 const ok = <T>(data: T) => ({ status: "ok" as const, data });
 const added = (text: string): DiffRow => ({ kind: "added", new: 1, text });
+/** The spans the fake core sends for the first row of the chunk at `start`. */
+const keyword = (start: number) => [{ start: 0, end: start + 1, highlight: "keyword" as const }];
 const cloning = { repository: "python/cpython", progress: { stage: "receiving", percent: 40 } } as const;
 
 /** A Files tab for PR 11 that has loaded, with the core answering `answer`. */
@@ -63,6 +67,82 @@ beforeEach(() => {
   core.pullRequestRows.mockImplementation(({ start }: { start: number }) =>
     Promise.resolve(ok([added(`row ${String(start)}`)])),
   );
+  core.pullRequestSpans.mockImplementation(({ start }: { start: number }) =>
+    Promise.resolve(ok([keyword(start)])),
+  );
+});
+
+it("asks for each chunk's spans with its rows, and shows the rows before the spans come", async () => {
+  const files = await loaded(ready("abc", 10));
+  let answerSpans: (answer: unknown) => void = () => {};
+  core.pullRequestSpans.mockReturnValueOnce(
+    new Promise((resolve) => {
+      answerSpans = resolve;
+    }),
+  );
+
+  files.need(0, 9);
+  await vi.waitFor(() => {
+    expect(files.row(0)).toEqual(added("row 0"));
+  });
+  expect(files.spans(0)).toBeUndefined();
+  answerSpans(ok([keyword(0)]));
+
+  await vi.waitFor(() => {
+    expect(files.spans(0)).toEqual(keyword(0));
+  });
+  expect(files.spans(1)).toBeUndefined();
+  expect(core.pullRequestSpans).toHaveBeenCalledExactlyOnceWith({
+    repository: "python/cpython",
+    number: 11,
+    head: "abc",
+    start: 0,
+    end: CHUNK,
+  });
+});
+
+it("lets go of a chunk's spans with its rows, and drops those that come once it's gone", async () => {
+  const files = await loaded(ready("abc", 20 * CHUNK));
+  files.need(0, 10);
+  await vi.waitFor(() => {
+    expect(files.spans(0)).toEqual(keyword(0));
+  });
+  let answerLate: (answer: unknown) => void = () => {};
+  core.pullRequestSpans.mockReturnValueOnce(
+    new Promise((resolve) => {
+      answerLate = resolve;
+    }),
+  );
+  files.need(5 * CHUNK, 5 * CHUNK + 10);
+  files.need(10 * CHUNK, 10 * CHUNK + 10);
+  answerLate(ok([keyword(5 * CHUNK)]));
+
+  await vi.waitFor(() => {
+    expect(files.spans(10 * CHUNK)).toEqual(keyword(10 * CHUNK));
+  });
+  expect(files.spans(0)).toBeUndefined();
+  expect(files.spans(5 * CHUNK)).toBeUndefined();
+  core.pullRequestFiles.mockResolvedValue(ok(ready("new", 10)));
+  await files.ask();
+  expect(files.spans(10 * CHUNK)).toBeUndefined();
+});
+
+it("shows a chunk whose spans don't come plain, and leaves its rows to say what went wrong", async () => {
+  const files = await loaded(ready("abc", 2 * CHUNK));
+  core.pullRequestSpans.mockResolvedValueOnce({
+    status: "error",
+    error: { message: '"abc" isn\'t a commit.' },
+  });
+  core.pullRequestSpans.mockRejectedValueOnce(new Error("gone"));
+
+  files.need(0, 9);
+
+  await vi.waitFor(() => {
+    expect(files.row(CHUNK)).toEqual(added(`row ${String(CHUNK)}`));
+  });
+  expect(files.spans(0)).toBeUndefined();
+  expect(files.spans(CHUNK)).toBeUndefined();
+  expect(files.error).toBeUndefined();
 });
 
 it("asks the core for the PR's files and the clone under way", async () => {

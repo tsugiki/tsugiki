@@ -19,6 +19,7 @@ use tsugiki_core::diff::{DiffRow, Diffs, PrAt};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::folders::Folders;
 use tsugiki_core::github::CommitSha;
+use tsugiki_core::highlight::Span;
 use tsugiki_core::latest::LatestReader;
 use tsugiki_core::measurement::Measurement;
 use tsugiki_core::mirror::{Cloning, MirrorRequests};
@@ -292,6 +293,22 @@ pub(crate) struct DiffChunk {
     end: u32,
 }
 
+impl DiffChunk {
+    /// The PR at the head the chunk names, and its rows.
+    fn parse(self) -> Result<(PrAt, std::ops::Range<u32>), Error> {
+        let Some(head) = CommitSha::parse(&self.head) else {
+            let message = format!("{:?} isn't a commit.", self.head);
+            return Err(Error::new(ErrorKind::NotFound, &message));
+        };
+        let pr = PrAt {
+            repository: RepositoryName::parse(&self.repository)?,
+            number: self.number,
+            head,
+        };
+        Ok((pr, self.start..self.end))
+    }
+}
+
 fn read_pull_request_files(
     repository: &str,
     number: u32,
@@ -307,16 +324,17 @@ fn read_pull_request_rows(
     work: &DiffWork,
     reader: &StoreReader,
 ) -> Result<Vec<DiffRow>, Error> {
-    let Some(head) = CommitSha::parse(&chunk.head) else {
-        let message = format!("{:?} isn't a commit.", chunk.head);
-        return Err(Error::new(ErrorKind::NotFound, &message));
-    };
-    let pr = PrAt {
-        repository: RepositoryName::parse(&chunk.repository)?,
-        number: chunk.number,
-        head,
-    };
-    PrFiles::rows(&work.sources(reader)?, &pr, chunk.start..chunk.end)
+    let (pr, rows) = chunk.parse()?;
+    PrFiles::rows(&work.sources(reader)?, &pr, rows)
+}
+
+fn read_pull_request_spans(
+    chunk: DiffChunk,
+    work: &DiffWork,
+    reader: &StoreReader,
+) -> Result<Vec<Vec<Span>>, Error> {
+    let (pr, rows) = chunk.parse()?;
+    PrFiles::spans(&work.sources(reader)?, &pr, rows)
 }
 
 /// Opens the page of `item` on GitHub with `show`, and then moves its Last seen, since the user has it in
@@ -383,6 +401,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::pull_request,
             slow_commands::pull_request_files,
             slow_commands::pull_request_rows,
+            slow_commands::pull_request_spans,
             slow_commands::open_on_github,
             slow_commands::open_link
         ])

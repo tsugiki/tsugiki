@@ -2,6 +2,7 @@
      place follows from its number, and the core sends the rows in chunks as they come near (ADR 0001). -->
 <script lang="ts">
   import type { DiffFile, FileChange, PrFilesState } from "$lib/state/pr-files.svelte";
+  import { pieces } from "./spans";
 
   let { diff, rows, files }: { diff: PrFilesState; rows: number; files: DiffFile[] } = $props();
 
@@ -28,6 +29,11 @@
     file.old_path === null ? file.path : `${file.old_path} → ${file.path}`;
 </script>
 
+<!-- A line of code after its marker, highlighted once its spans come. Each piece sits on one line, as the
+     row keeps its text's spaces. -->
+<!-- prettier-ignore -->
+{#snippet code(marker: string, text: string, index: number)}<span class="text">{marker}{#each pieces(text, diff.spans(index) ?? []) as piece, at (at)}{#if piece.highlight}<span class={`hl-${piece.highlight}`}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</span>{/snippet}
+
 <!-- A region that scrolls takes focus, so the keys scroll it (axe's scrollable-region-focusable). -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
@@ -53,17 +59,23 @@
         {:else if row?.kind === "hunk" || row?.kind === "note"}
           <span class="number"></span><span class="number"></span><span class="text">{row.text}</span>
         {:else if row?.kind === "context"}
-          <span class="number">{row.old}</span><span class="number">{row.new}</span><span class="text"
-            >{` ${row.text}`}</span
-          >
+          <span class="number">{row.old}</span><span class="number">{row.new}</span>{@render code(
+            " ",
+            row.text,
+            index,
+          )}
         {:else if row?.kind === "added"}
-          <span class="number"></span><span class="number">{row.new}</span><span class="text"
-            >{`+${row.text}`}</span
-          >
+          <span class="number"></span><span class="number">{row.new}</span>{@render code(
+            "+",
+            row.text,
+            index,
+          )}
         {:else if row?.kind === "removed"}
-          <span class="number">{row.old}</span><span class="number"></span><span class="text"
-            >{`-${row.text}`}</span
-          >
+          <span class="number">{row.old}</span><span class="number"></span>{@render code(
+            "-",
+            row.text,
+            index,
+          )}
         {/if}
       </div>
     {/each}
@@ -137,5 +149,46 @@
 
   .removed {
     background: color-mix(in srgb, #cf222e 18%, transparent);
+  }
+
+  /* github.com's colors for code. The classes come from the spans, which Svelte can't see, so they're global
+     within a row's text. */
+  .text :global(.hl-keyword) {
+    color: var(--hl-keyword);
+  }
+
+  .text :global(.hl-string) {
+    color: var(--hl-string);
+  }
+
+  .text :global(.hl-comment) {
+    color: var(--hl-comment);
+  }
+
+  .text :global(.hl-constant) {
+    color: var(--hl-constant);
+  }
+
+  .text :global(.hl-function),
+  .text :global(.hl-type) {
+    color: var(--hl-entity);
+  }
+
+  /* github.com's light palette. The window has no dark theme yet: one that sets `data-theme="dark"` on the
+     root gets github.com's dark palette below. */
+  .scroller {
+    --hl-keyword: #cf222e;
+    --hl-string: #0a3069;
+    --hl-comment: #59636e;
+    --hl-constant: #0550ae;
+    --hl-entity: #6639ba;
+  }
+
+  :global(:root[data-theme="dark"]) .scroller {
+    --hl-keyword: #ff7b72;
+    --hl-string: #a5d6ff;
+    --hl-comment: #9198a1;
+    --hl-constant: #79c0ff;
+    --hl-entity: #d2a8ff;
   }
 </style>

@@ -10,6 +10,7 @@ pub mod error;
 pub mod filters;
 pub mod folders;
 pub mod github;
+pub mod highlight;
 pub mod latest;
 pub mod launch;
 pub mod links;

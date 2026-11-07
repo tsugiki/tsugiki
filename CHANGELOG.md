@@ -9,6 +9,10 @@ release's body, and fails without it
 
 ### Added
 
+- A PR opens in the Detail pane, on a Conversation tab with its description and recent comments, and a Files
+  tab that stays empty until the diff arrives. The arrows stop on each PR and Backport in an Issue's tree.
+  `Enter` or a click opens one, as does a PR in the Issue view, and `Esc` or the `gh-N` link goes back to the
+  Issue. `Ctrl+PageDown` and `Ctrl+PageUp` switch tabs, and so do `Enter` and a click on the open PR's line.
 - Each Repository gets a **Mirror**, a bare git clone in its folder, which later changes read diffs from.
   Adding a Repository starts its clone beside its first sync, and Repositories added before get theirs at the
   next launch, the open one first. The status bar shows "Cloning python/cpython 42%" beside the sync time.

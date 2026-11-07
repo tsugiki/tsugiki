@@ -27,6 +27,13 @@ export const commands = {
 	openIssue: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_issue", { repository, number })),
 	/**  Asks the core to read what an Issue on screen says now, and returns at once (ADR 0015). */
 	fetchIssue: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("fetch_issue", { repository, number })),
+	/**
+	 *  Tells the core the user opened a PR, which moves its Last seen and reads its Conversation from GitHub, and
+	 *  returns at once.
+	 */
+	openPullRequest: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_pull_request", { repository, number })),
+	/**  Asks the core to read a PR's Conversation on screen now, and returns at once (ADR 0015). */
+	fetchPullRequest: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("fetch_pull_request", { repository, number })),
 	/**  The settings Tsugiki last read, and what was wrong with their files (ADR 0014). */
 	settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
 	/**  What the window opens on. */
@@ -58,6 +65,11 @@ export const commands = {
 	 *  never on GitHub (ADR 0018).
 	 */
 	issue: (repository: string, number: number) => typedError<IssueView_Serialize | null, Error_Serialize>(__TAURI_INVOKE("issue", { repository, number })),
+	/**
+	 *  The PR view of PR `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and never
+	 *  on GitHub (ADR 0018).
+	 */
+	pullRequest: (repository: string, number: number) => typedError<PrView_Serialize | null, Error_Serialize>(__TAURI_INVOKE("pull_request", { repository, number })),
 	/**  Opens an Issue or a PR on GitHub in the system browser. */
 	openOnGithub: (repository: string, item: GitHubItem) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_on_github", { repository, item })),
 	/**
@@ -605,6 +617,21 @@ export type PrTree_Deserialize = {
 /**  A PR with its Backports beneath it. */
 export type PrTree_Serialize = {
 	backports: BackportRow_Serialize[],
+} & WorkbenchRow_Serialize;
+
+/**  A PR as the Detail pane shows it. */
+export type PrView = PrView_Serialize | PrView_Deserialize;
+
+/**  A PR as the Detail pane shows it. */
+export type PrView_Deserialize = {
+	/**  Its description and comments. Nothing, until Tsugiki has read this PR from GitHub once. */
+	content?: IssueContent_Deserialize | null,
+} & WorkbenchRow_Deserialize;
+
+/**  A PR as the Detail pane shows it. */
+export type PrView_Serialize = {
+	/**  Its description and comments. Nothing, until Tsugiki has read this PR from GitHub once. */
+	content: IssueContent_Serialize | null,
 } & WorkbenchRow_Serialize;
 
 /**  The background refreshes that ran while the window drew frames. */

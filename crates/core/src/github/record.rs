@@ -27,7 +27,7 @@ const RECORDED_OWNER: &str = "python";
 /// The start of the one line Tsugiki reads in a commit message.
 const CHERRY_PICK: &str = "(cherry picked from commit ";
 /// The fields of an answer that people write, where a login can sit inside the text.
-const PROSE_FIELDS: [&str; 3] = ["title", "body", "bodyText"];
+const PROSE_FIELDS: [&str; 4] = ["title", "body", "bodyText", "bodyHTML"];
 
 fn is_token_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'

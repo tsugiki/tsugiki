@@ -7,6 +7,7 @@ mod filters;
 pub mod issue_view;
 mod issues;
 mod links;
+pub mod pr_view;
 mod rows;
 
 pub use attention::{Attention, Why};

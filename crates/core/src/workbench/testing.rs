@@ -159,3 +159,45 @@ pub(super) fn own(facts: PullRequestFacts) -> PullRequestFacts {
         ..facts
     }
 }
+
+/// A database with the user signed in, and a reader of it, for the Detail pane's views.
+pub(super) struct ViewWorld {
+    pub(super) store: crate::store::Store,
+    pub(super) reader: crate::store::StoreReader,
+    open: crate::store::OpenReader,
+    folder: std::path::PathBuf,
+}
+
+impl ViewWorld {
+    pub(super) fn new(name: &str) -> Self {
+        let folder = crate::testing::temp_path(name);
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("tsugiki.db");
+        let store = crate::store::Store::open(&path).unwrap();
+        store.remember_login(&me()).unwrap();
+        let (to_open, reader) = crate::store::reader();
+        let open = to_open.open(&path).unwrap();
+        Self {
+            store,
+            reader,
+            open,
+            folder,
+        }
+    }
+
+    pub(super) fn settings(&self) -> RepositorySettings {
+        cpython()
+    }
+
+    pub(super) fn has(&self, pull_requests: Vec<PullRequestFacts>, issues: Vec<IssueFacts>) {
+        let name = cpython().name;
+        self.store.save_pull_requests(&name, pull_requests).unwrap();
+        self.store.save_issues(&name, issues).unwrap();
+    }
+
+    pub(super) fn finish(self) {
+        self.open.close();
+        self.store.close();
+        std::fs::remove_dir_all(self.folder).unwrap();
+    }
+}

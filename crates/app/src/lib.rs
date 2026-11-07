@@ -27,6 +27,7 @@ use tsugiki_core::status::{Change, LastSync, Status, SyncActivity};
 use tsugiki_core::store::StoreReader;
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
+use tsugiki_core::workbench::pr_view::PrView;
 use tsugiki_core::workbench::{Workbench, WorkbenchView};
 
 #[tauri::command]
@@ -89,6 +90,31 @@ fn open_issue(
     requests: State<'_, SessionRequests>,
 ) -> Result<(), Error> {
     requests.open_issue(RepositoryName::parse(repository)?, number);
+    Ok(())
+}
+
+/// Tells the core the user opened a PR, which moves its Last seen and reads its Conversation from GitHub, and
+/// returns at once.
+#[tauri::command]
+#[specta::specta]
+fn open_pull_request(
+    repository: &str,
+    number: u32,
+    requests: State<'_, SessionRequests>,
+) -> Result<(), Error> {
+    requests.open_pull_request(RepositoryName::parse(repository)?, number);
+    Ok(())
+}
+
+/// Asks the core to read a PR's Conversation on screen now, and returns at once (ADR 0015).
+#[tauri::command]
+#[specta::specta]
+fn fetch_pull_request(
+    repository: &str,
+    number: u32,
+    requests: State<'_, SessionRequests>,
+) -> Result<(), Error> {
+    requests.fetch_pull_request(RepositoryName::parse(repository)?, number);
     Ok(())
 }
 
@@ -220,6 +246,17 @@ fn read_issue(
     IssueView::read(reader, &repository, number)
 }
 
+fn read_pull_request(
+    repository: &str,
+    number: u32,
+    owner: &SettingsOwner,
+    reader: &StoreReader,
+) -> Result<Option<PrView>, Error> {
+    let name = RepositoryName::parse(repository)?;
+    let repository = owner.view().loaded.settings.repository(name);
+    PrView::read(reader, &repository, number)
+}
+
 /// Opens the page of `item` on GitHub with `show`, and then moves its Last seen, since the user has it in
 /// front of them. If the browser didn't open, they haven't seen it.
 fn open_github_page(
@@ -266,6 +303,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             refresh,
             open_issue,
             fetch_issue,
+            open_pull_request,
+            fetch_pull_request,
             settings,
             home,
             time_running,
@@ -275,6 +314,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::add_repository,
             slow_commands::workbench,
             slow_commands::issue,
+            slow_commands::pull_request,
             slow_commands::open_on_github,
             slow_commands::open_link
         ])

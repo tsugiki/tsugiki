@@ -7,6 +7,9 @@ const core = vi.hoisted(() => ({
   issue: vi.fn(),
   openIssue: vi.fn(),
   fetchIssue: vi.fn(),
+  pullRequest: vi.fn(),
+  openPullRequest: vi.fn(),
+  fetchPullRequest: vi.fn(),
   openOnGithub: vi.fn(),
   // The HUD logs a slow opening of an Issue whether or not it shows.
   recordMiss: vi.fn(() => Promise.resolve("a miss")),
@@ -20,6 +23,9 @@ vi.mock("$lib/data/bindings", () => ({
     issue: core.issue,
     openIssue: core.openIssue,
     fetchIssue: core.fetchIssue,
+    pullRequest: core.pullRequest,
+    openPullRequest: core.openPullRequest,
+    fetchPullRequest: core.fetchPullRequest,
     openOnGithub: core.openOnGithub,
     recordMiss: core.recordMiss,
   },
@@ -52,6 +58,10 @@ beforeEach(() => {
   vi.resetAllMocks();
   core.listen.mockResolvedValue(core.stopListening);
   core.openIssue.mockResolvedValue({ status: "ok", data: null });
+  core.openPullRequest.mockResolvedValue({ status: "ok", data: null });
+  core.pullRequest.mockImplementation((_repository: string, number: number) =>
+    Promise.resolve({ status: "ok", data: { ...row, number, title: `PR ${String(number)}`, content: null } }),
+  );
   core.openOnGithub.mockResolvedValue({ status: "ok", data: null });
   core.issue.mockResolvedValue({
     status: "ok",
@@ -348,6 +358,7 @@ const listing = async () => {
   render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
   return {
     issueRow: await screen.findByRole("button", { name: "#112564 GIL drop during collection" }),
+    treeRow: screen.getByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" }),
     prRow: screen.getByRole("button", { name: "#5 Alone" }),
   };
 };
@@ -426,16 +437,167 @@ it("swaps the Detail pane for the next Issue", async () => {
   });
 });
 
-it("opens a Standalone PR on GitHub, since it has no view yet", async () => {
+it("opens a Standalone PR in the Detail pane on a click, on its Conversation, and moves Last seen", async () => {
+  vi.setSystemTime("2026-11-04T12:00:00Z");
+  core.pullRequest.mockResolvedValue({
+    status: "ok",
+    data: {
+      ...standalone,
+      content: {
+        body_html: "<p>Why it fails</p>",
+        comments: [{ author: "some-reviewer", created_at: "2026-11-04T10:00:00Z", body_html: "<p>LGTM</p>" }],
+        earlier_comments: 0,
+      },
+    },
+  });
   const { prRow } = await listing();
 
   await fireEvent.click(prRow);
 
-  expect(core.openOnGithub).toHaveBeenCalledExactlyOnceWith("python/cpython", {
-    kind: "pull_request",
-    number: 5,
-  });
+  const conversation = await screen.findByRole("tab", { name: "Conversation" });
+  expect(conversation.getAttribute("aria-selected")).toBe("true");
+  expect(screen.getByText("Why it fails")).toBeTruthy();
+  expect(screen.getByText("some-reviewer · 2h ago")).toBeTruthy();
+  expect(core.openPullRequest).toHaveBeenCalledExactlyOnceWith("python/cpython", 5);
+  expect(core.openOnGithub).not.toHaveBeenCalled();
+  expect(prRow.getAttribute("aria-current")).toBe("true");
+  expect(screen.queryByRole("button", { name: /^gh-/ })).toBeNull();
+});
+
+it("opens a PR in an Issue's tree with the way back to its Issue, and Esc goes back", async () => {
+  const { issueRow, treeRow } = await listing();
+  await fireEvent.click(treeRow);
+  expect(await screen.findByRole("button", { name: "gh-112564" })).toBeTruthy();
+  expect(core.openPullRequest).toHaveBeenCalledExactlyOnceWith("python/cpython", 160662);
   expect(screen.queryByRole("region", { name: "Issue view" })).toBeNull();
+
+  await press("Escape");
+
+  expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
+  expect(screen.queryByRole("region", { name: "PR view" })).toBeNull();
+  expect(core.openIssue).toHaveBeenCalledExactlyOnceWith("python/cpython", 112564);
+  expect(issueRow.getAttribute("aria-current")).toBe("true");
+});
+
+it("opens a PR that fixes two Issues again from its line under the other one", async () => {
+  answering(issue, { ...issue, number: 112565, title: "Another crash" });
+  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  const [first, second] = await screen.findAllByRole("button", { name: /^#160662 / });
+
+  await fireEvent.click(first as HTMLElement);
+  await screen.findByRole("button", { name: "gh-112564" });
+  await fireEvent.click(second as HTMLElement);
+
+  expect(await screen.findByRole("button", { name: "gh-112565" })).toBeTruthy();
+  expect((await screen.findByRole("tab", { name: "Conversation" })).getAttribute("aria-selected")).toBe(
+    "true",
+  );
+  expect(second?.getAttribute("aria-current")).toBe("true");
+  expect(first?.getAttribute("aria-current")).toBeNull();
+});
+
+it("goes back to the Issue with the PR view's gh-N link", async () => {
+  const { treeRow } = await listing();
+  await fireEvent.click(treeRow);
+
+  await fireEvent.click(await screen.findByRole("button", { name: "gh-112564" }));
+
+  expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
+});
+
+it("opens a Backport in the list in the PR view, with its Issue to go back to", async () => {
+  answering({ ...issue, pull_requests: [{ kind: "pr", ...row, backports: [backportRow] }] });
+  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+
+  await fireEvent.click(await screen.findByRole("button", { name: /^#160700 / }));
+
+  expect(await screen.findByRole("button", { name: "gh-112564" })).toBeTruthy();
+  expect(core.openPullRequest).toHaveBeenCalledExactlyOnceWith("python/cpython", 160700);
+});
+
+it("opens a Standalone PR's Backport in the PR view, with no Issue to go back to", async () => {
+  answering({ kind: "standalone_pr", ...row, backports: [backportRow] });
+  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+
+  await fireEvent.click(await screen.findByRole("button", { name: /^#160700 / }));
+
+  expect(await screen.findByRole("tab", { name: "Conversation" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /^gh-/ })).toBeNull();
+});
+
+it("opens a PR from the Issue view, and puts the cursor on its line in the tree", async () => {
+  core.issue.mockResolvedValue({
+    status: "ok",
+    data: { ...issue, author: "issue-author", content: null },
+  });
+  const { issueRow, treeRow } = await listing();
+  await fireEvent.click(issueRow);
+  const issueView = await screen.findByRole("region", { name: "Issue view" });
+
+  await fireEvent.click(await within(issueView).findByRole("button", { name: /^#160662 / }));
+
+  expect(await screen.findByRole("button", { name: "gh-112564" })).toBeTruthy();
+  expect(core.openPullRequest).toHaveBeenCalledExactlyOnceWith("python/cpython", 160662);
+  expect(treeRow.getAttribute("aria-current")).toBe("true");
+});
+
+it("closes a Standalone PR's view with Esc, and leaves Esc alone with no PR on show", async () => {
+  const { prRow, issueRow } = await listing();
+  await fireEvent.click(prRow);
+  await screen.findByRole("tab", { name: "Conversation" });
+
+  await press("Escape");
+  expect(screen.queryByRole("region", { name: "PR view" })).toBeNull();
+  expect(core.openIssue).not.toHaveBeenCalled();
+
+  await fireEvent.click(issueRow);
+  await press("Escape");
+  expect(screen.getByRole("region", { name: "Issue view" })).toBeTruthy();
+});
+
+it("switches the PR view's tabs with Ctrl+PageDown and Ctrl+PageUp", async () => {
+  const { prRow } = await listing();
+  await fireEvent.click(prRow);
+  const files = await screen.findByRole("tab", { name: "Files" });
+  const pageDown = new KeyboardEvent("keydown", {
+    key: "PageDown",
+    ctrlKey: true,
+    bubbles: true,
+    cancelable: true,
+  });
+
+  await fireEvent(document.body, pageDown);
+  expect(files.getAttribute("aria-selected")).toBe("true");
+  expect(pageDown.defaultPrevented).toBe(true);
+  await press("PageUp", { ctrlKey: true });
+  expect(files.getAttribute("aria-selected")).toBe("false");
+});
+
+it("leaves Ctrl+PageDown alone with no PR on show", async () => {
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  const pageDown = new KeyboardEvent("keydown", {
+    key: "PageDown",
+    ctrlKey: true,
+    bubbles: true,
+    cancelable: true,
+  });
+
+  await fireEvent(document.body, pageDown);
+
+  expect(pageDown.defaultPrevented).toBe(false);
+});
+
+it("switches tabs on a click and on Enter on the open PR's line, and reads it once", async () => {
+  const { prRow } = await listing();
+  await fireEvent.click(prRow);
+  const files = await screen.findByRole("tab", { name: "Files" });
+
+  await fireEvent.click(prRow);
+  expect(files.getAttribute("aria-selected")).toBe("true");
+  await press("Enter");
+  expect(files.getAttribute("aria-selected")).toBe("false");
+  expect(core.openPullRequest).toHaveBeenCalledOnce();
 });
 
 it("says so when the browser won't open", async () => {
@@ -443,25 +605,29 @@ it("says so when the browser won't open", async () => {
     status: "error",
     error: { kind: "internal", message: "Tsugiki couldn't open the system browser." },
   });
-  const { prRow } = await listing();
+  await listing();
 
-  await fireEvent.click(prRow);
+  await press("ArrowDown");
+  await press("G", { ctrlKey: true, shiftKey: true });
 
   expect((await screen.findByRole("alert")).textContent).toContain(
     "Tsugiki couldn't open the system browser.",
   );
 });
 
-it("moves through the list with the arrows, and focus follows", async () => {
-  const { issueRow, prRow } = await listing();
+it("moves through the list and the PRs in its trees with the arrows, and focus follows", async () => {
+  const { issueRow, treeRow, prRow } = await listing();
 
   await press("ArrowDown");
   expect(document.activeElement).toBe(issueRow);
   await press("ArrowDown");
+  expect(document.activeElement).toBe(treeRow);
+  await press("ArrowDown");
   expect(document.activeElement).toBe(prRow);
   await press("ArrowUp");
-  expect(document.activeElement).toBe(issueRow);
+  expect(document.activeElement).toBe(treeRow);
   expect(core.openIssue).not.toHaveBeenCalled();
+  expect(core.openPullRequest).not.toHaveBeenCalled();
 });
 
 it("does nothing on the arrows with an empty list", async () => {
@@ -577,7 +743,23 @@ it("Ctrl+Shift+G opens what's under the cursor when no Issue is on show", async 
 
   await press("ArrowDown");
   await press("G", { ctrlKey: true, shiftKey: true });
-  expect(core.openOnGithub).toHaveBeenLastCalledWith("python/cpython", { kind: "pull_request", number: 5 });
+  expect(core.openOnGithub).toHaveBeenLastCalledWith("python/cpython", {
+    kind: "pull_request",
+    number: 160662,
+  });
+});
+
+it("Ctrl+Shift+G opens the PR on show on GitHub", async () => {
+  const { treeRow } = await listing();
+  await fireEvent.click(treeRow);
+  await screen.findByRole("button", { name: "gh-112564" });
+
+  await press("G", { ctrlKey: true, shiftKey: true });
+
+  expect(core.openOnGithub).toHaveBeenCalledExactlyOnceWith("python/cpython", {
+    kind: "pull_request",
+    number: 160662,
+  });
 });
 
 it("closes the Detail pane when the Repository changes", async () => {

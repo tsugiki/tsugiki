@@ -1,27 +1,136 @@
 <script lang="ts">
-  import type { IssueContent } from "$lib/state/issue-view.svelte";
+  import { SvelteSet } from "svelte/reactivity";
+  import type { HiddenReason, IssueComment, IssueContent } from "$lib/state/issue-view.svelte";
+  import type { PullRequestContent, Review, ReviewState, ThreadLine } from "$lib/state/pr-view.svelte";
   import RenderedHtml from "./RenderedHtml.svelte";
   import { ago } from "./workbench-row";
 
-  // An Issue's or a PR's description and its recent comments, as GitHub renders them.
-  let { content, now, onlink }: { content: IssueContent; now: Date; onlink: (address: string) => void } =
-    $props();
+  // An Issue's or a PR's description, then its recent comments and a PR's Reviews in time order (#156).
+  let {
+    content,
+    now,
+    onlink,
+  }: { content: IssueContent | PullRequestContent; now: Date; onlink: (address: string) => void } = $props();
+
+  // `key` is unique on this screen. `id` names the comment or Review through a read that brings more, which
+  // moves each one's place.
+  type Entry =
+    | { kind: "comment"; key: string; id: string; at: string; comment: IssueComment }
+    | { kind: "review"; key: string; id: string; at: string; review: Review };
+
+  const entries = $derived.by((): Entry[] => {
+    const comments = content.comments.map((comment, position): Entry => ({
+      kind: "comment",
+      key: `c${String(position)}`,
+      id: `comment ${comment.author ?? ""} ${comment.created_at}`,
+      at: comment.created_at,
+      comment,
+    }));
+    const reviews = ("reviews" in content ? content.reviews : []).map((review, position): Entry => ({
+      kind: "review",
+      key: `r${String(position)}`,
+      id: `review ${review.author ?? ""} ${review.submitted_at}`,
+      at: review.submitted_at,
+      review,
+    }));
+    return [...comments, ...reviews].sort((one, other) => Date.parse(one.at) - Date.parse(other.at));
+  });
+  const earlierReviews = $derived("earlier_reviews" in content ? content.earlier_reviews : 0);
+
+  /** The hidden comments and Reviews the user opened, by their entry's `id`. */
+  const opened = new SvelteSet<string>();
+  const toggle = (id: string) => {
+    if (!opened.delete(id)) opened.add(id);
+  };
 
   const earlierComments = (count: number) =>
     count === 1 ? "1 earlier comment is on GitHub." : `${String(count)} earlier comments are on GitHub.`;
+
+  const DID: Record<ReviewState, string> = {
+    APPROVED: "approved",
+    CHANGES_REQUESTED: "requested changes",
+    COMMENTED: "reviewed",
+    DISMISSED: "reviewed",
+    PENDING: "has a pending Review",
+  };
+  const reviewLine = (review: Review) => {
+    const at = review.commit === null ? "" : ` at ${review.commit.slice(0, 7)}`;
+    const dismissed = review.state === "DISMISSED" ? ", since dismissed" : "";
+    const when = ago(review.submitted_at, now);
+    return `${review.author ?? "deleted user"} ${DID[review.state]}${at}${dismissed} · ${when}`;
+  };
+
+  const REASONS: Record<HiddenReason, string> = {
+    abuse: "Hidden as abuse",
+    off_topic: "Hidden as off-topic",
+    outdated: "Hidden as outdated",
+    resolved: "Hidden as resolved",
+    duplicate: "Hidden as duplicate",
+    spam: "Hidden as spam",
+    unstated: "Hidden",
+  };
+
+  const place = (thread: ThreadLine) =>
+    thread.line === null ? thread.path : `${thread.path}:${String(thread.line)}`;
+  const replies = (count: number) => (count === 1 ? "1 reply" : `${String(count)} replies`);
 </script>
+
+{#snippet body(id: string, html: string, hidden: HiddenReason | null)}
+  {#if hidden === null}
+    <RenderedHtml {html} {onlink} />
+  {:else}
+    <button class="fold" aria-expanded={opened.has(id)} onclick={() => toggle(id)}>{REASONS[hidden]}</button>
+    {#if opened.has(id)}
+      <RenderedHtml {html} {onlink} />
+    {/if}
+  {/if}
+{/snippet}
 
 <RenderedHtml html={content.body_html} {onlink} />
 {#if content.earlier_comments > 0}
-  <p class="by">
-    {earlierComments(content.earlier_comments)}
-  </p>
+  <p class="by">{earlierComments(content.earlier_comments)}</p>
 {/if}
-{#each content.comments as comment, position (position)}
-  <article>
-    <p class="by">{`${comment.author ?? "deleted user"} · ${ago(comment.created_at, now)}`}</p>
-    <RenderedHtml html={comment.body_html} {onlink} />
-  </article>
+{#if earlierReviews > 0}
+  <!-- Some of them may only have replied in threads, which GitHub doesn't show as Reviews. -->
+  <p class="by">Older Reviews are on GitHub.</p>
+{/if}
+{#each entries as entry (entry.key)}
+  {#if entry.kind === "comment"}
+    <article>
+      <p class="by">{`${entry.comment.author ?? "deleted user"} · ${ago(entry.comment.created_at, now)}`}</p>
+      {@render body(entry.id, entry.comment.body_html, entry.comment.hidden)}
+    </article>
+  {:else if entry.review.body_html === "" && entry.review.threads.length === 0}
+    <p class="by review">{reviewLine(entry.review)}</p>
+  {:else}
+    <article>
+      <p class="by">{reviewLine(entry.review)}</p>
+      {#if entry.review.body_html !== ""}
+        {@render body(entry.id, entry.review.body_html, entry.review.hidden)}
+      {/if}
+      <ul class="threads">
+        {#each entry.review.threads as thread, position (position)}
+          <li>
+            <span class="place">{place(thread)}</span>
+            {#if thread.opening.kind === "words"}
+              <span>{thread.opening.words}</span>
+            {:else}
+              <span class="by">{REASONS[thread.opening.reason]}</span>
+            {/if}
+            {#if thread.replies > 0}
+              <span class="by">{replies(thread.replies)}</span>
+            {/if}
+            {#if thread.resolution === "resolved"}
+              <span class="mark">Resolved</span>
+            {/if}
+            {#if thread.anchor === "outdated"}
+              <span class="mark">Outdated</span>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    </article>
+  {/if}
 {/each}
 
 <style>
@@ -31,8 +140,59 @@
     opacity: 0.75;
   }
 
+  .review {
+    border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+    margin-top: 12px;
+    padding-top: 8px;
+  }
+
   article {
     border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
     margin-top: 12px;
+  }
+
+  .fold {
+    all: unset;
+    cursor: pointer;
+    display: block;
+    font-size: 12px;
+    margin: 4px 0;
+    opacity: 0.75;
+  }
+
+  .fold:hover,
+  .fold:focus-visible {
+    text-decoration: underline;
+  }
+
+  .threads {
+    list-style: none;
+    margin: 4px 0 8px;
+    padding: 0;
+  }
+
+  .threads li {
+    display: flex;
+    gap: 8px;
+    font-size: 12px;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .threads li > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .place {
+    flex: none;
+    font-family: ui-monospace, Consolas, monospace;
+  }
+
+  .mark {
+    flex: none;
+    border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+    border-radius: 4px;
+    padding: 0 4px;
   }
 </style>

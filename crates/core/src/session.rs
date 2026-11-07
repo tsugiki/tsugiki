@@ -9,6 +9,8 @@ use time::OffsetDateTime;
 
 use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
+use crate::github::issue_content::IssueContent;
+use crate::github::pull_request_content::PullRequestContent;
 use crate::github::{GitHub, GitHubAccess};
 use crate::repository::{RepositoryCheck, RepositoryName, RepositorySettings};
 use crate::status::{Change, LastSync, Status, StatusBoard};
@@ -448,6 +450,12 @@ fn mark_seen(board: &mut StatusBoard, store: &Store, item: &Item, at: OffsetDate
     }
 }
 
+/// An Issue's or a PR's content, as GitHub answered.
+enum Content {
+    Issue(IssueContent),
+    PullRequest(PullRequestContent),
+}
+
 /// Reads what an Issue or a PR says from GitHub, keeps it, and tells the window. GitHub numbers both from
 /// one sequence, so they share where they are kept. The view goes on showing what was last read if this
 /// fails. An error returned here speaks for all of GitHub, so the status bar and the syncs need to hear it.
@@ -461,11 +469,15 @@ fn fetch_conversation(
     let (Item { repository, number }, noun, read) = match fetched {
         Fetched::Issue(item) => {
             let read = github.issue_content(&item.repository, item.number);
-            (item, "Issue", read)
+            (item, "Issue", read.map(Content::Issue))
         }
         Fetched::PullRequest(item) => {
             let read = github.pull_request_content(&item.repository, item.number);
-            (item, "PR", read)
+            (
+                item,
+                "PR",
+                read.map(|read| Content::PullRequest(read.content)),
+            )
         }
     };
     let content = match read {
@@ -479,7 +491,13 @@ fn fetch_conversation(
             return Ok(());
         }
     };
-    match store.save_issue_content(&repository, number, content) {
+    let saved = match content {
+        Content::Issue(content) => store.save_issue_content(&repository, number, content),
+        Content::PullRequest(content) => {
+            store.save_pull_request_content(&repository, number, content)
+        }
+    };
+    match saved {
         Ok(()) => board.changed(&Change {
             repository,
             items: vec![number],

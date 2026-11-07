@@ -41,9 +41,22 @@ const view: PrView = {
         author: "some-reviewer",
         created_at: "2026-11-04T09:00:00Z",
         body_html: '<p><a href="https://github.com/python/cpython/pull/1">A link</a></p>',
+        hidden: null,
       },
     ],
     earlier_comments: 2,
+    reviews: [
+      {
+        author: "some-reviewer",
+        state: "APPROVED",
+        commit: "0123abcdef",
+        submitted_at: "2026-11-04T10:00:00Z",
+        body_html: "",
+        hidden: null,
+        threads: [],
+      },
+    ],
+    earlier_reviews: 0,
   },
 };
 
@@ -67,7 +80,7 @@ beforeEach(() => {
   core.openLink.mockResolvedValue({ status: "ok", data: null });
 });
 
-it("opens on the Conversation: the title and author, the description and the recent comments", async () => {
+it("opens on the Conversation: the title and author, the description, comments and Reviews", async () => {
   await shown(view, 10);
 
   expect(screen.getByRole("region", { name: "PR view" })).toBeTruthy();
@@ -78,6 +91,7 @@ it("opens on the Conversation: the title and author, the description and the rec
   expect(screen.getByText("The description").tagName).toBe("P");
   expect(screen.getByText("some-reviewer · 2h ago")).toBeTruthy();
   expect(screen.getByText("2 earlier comments are on GitHub.")).toBeTruthy();
+  expect(screen.getByText("some-reviewer approved at 0123abc · 1h ago")).toBeTruthy();
 });
 
 it("says it's reading from GitHub until the first read lands", async () => {

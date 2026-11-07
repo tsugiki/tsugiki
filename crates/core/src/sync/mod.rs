@@ -67,6 +67,9 @@ struct UserWorkSync {
     first_sync: Option<FirstSync>,
     /// A step that worked and whose place couldn't be saved, which the next try reports once it can.
     unsaved: Option<Step>,
+    /// The PRs a refresh found changed, whose Conversations it reads before it finishes if the user's work
+    /// reaches them. A first sync finds none.
+    changed_prs: BTreeSet<u32>,
 }
 
 enum Phase {
@@ -79,6 +82,9 @@ enum Phase {
     FetchingChanged(Changed),
     Probing(Probing),
     Resumable(Resumable),
+    /// A refresh that would finish reads the Conversations of the changed PRs the user's work reaches,
+    /// lowest number first (#157).
+    ReadingAhead(BTreeSet<u32>),
 }
 
 /// The phases a first sync goes through, and so the ones it can stop in and come back to (ADR 0015). A
@@ -273,6 +279,7 @@ impl UserWorkSync {
             check: ChangeCheck::Skipped,
             first_sync: None,
             unsaved: None,
+            changed_prs: BTreeSet::new(),
         }
     }
 
@@ -368,7 +375,8 @@ impl UserWorkSync {
             | Phase::Polling(_)
             | Phase::FetchingChanged(_)
             | Phase::Probing(_)
-            | Phase::Resumable(_) => None,
+            | Phase::Resumable(_)
+            | Phase::ReadingAhead(_) => None,
         }
     }
 
@@ -396,6 +404,7 @@ impl UserWorkSync {
                 .map(|_| self.started_at - Duration::days(WINDOW_DAYS.into())),
         };
         let fetched = &mut self.fetched;
+        let changed_prs = &mut self.changed_prs;
         let (step, next) = match &mut self.phase {
             // Asking the store is no request to GitHub, so this goes straight on to the first one.
             Phase::Starting => {
@@ -408,8 +417,11 @@ impl UserWorkSync {
             }
             Phase::CheckingList(poll) => refresh::check_list(&link, poll, &self.check)?,
             Phase::Polling(poll) => refresh::poll(&link, poll, &mut self.check)?,
-            Phase::FetchingChanged(changed) => refresh::fetch_changed(&link, changed, fetched)?,
-            Phase::Probing(probing) => refresh::probe(&link, probing)?,
+            Phase::FetchingChanged(changed) => {
+                refresh::fetch_changed(&link, changed, fetched, changed_prs)?
+            }
+            Phase::Probing(probing) => refresh::probe(&link, probing, changed_prs)?,
+            Phase::ReadingAhead(numbers) => refresh::read_ahead(&link, numbers)?,
             Phase::Resumable(Resumable::Searching {
                 next_search,
                 cursor,
@@ -433,6 +445,15 @@ impl UserWorkSync {
         };
         if let Some(next) = next {
             self.phase = next;
+        }
+        if matches!(step, Step::Finished) && !changed_prs.is_empty() {
+            // A failure here keeps the PRs, for the retry to read.
+            let numbers = refresh::to_read_ahead(&link, &self.settings, changed_prs)?;
+            changed_prs.clear();
+            if !numbers.is_empty() {
+                self.phase = Phase::ReadingAhead(numbers);
+                return Ok(Step::Moved);
+            }
         }
         if let (Some(first_sync), Step::Searched { .. } | Step::Saved { .. }) =
             (self.first_sync.as_mut(), &step)

@@ -21,6 +21,12 @@ release's body, and fails without it
   PRs and those you reviewed, your Filters' PRs and the PRs in your Issues' trees. One `git fetch` takes all
   the PRs whose branch moved, and a PR GitHub has dropped fails nothing. While Tsugiki is offline the mirror
   waits.
+- A PR's Conversation shows its Reviews among the comments, oldest first. Each Review is a block with its
+  author, state, commit and body, and a line for each thread it started: the file and line, the first words,
+  the replies, and whether it's Resolved or Outdated. A Review that says nothing beyond its state, such as a
+  bare approval, takes one line. A comment hidden on GitHub folds to its reason, and a click opens it.
+- A refresh reads the Conversation of each changed PR your work reaches, so its Reviews are there when you
+  open it. Each PR costs about one point of GitHub's hourly 5,000.
 
 ## Version 0.1.1 (2026-11-07)
 

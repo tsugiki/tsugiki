@@ -11,6 +11,7 @@ mod filters;
 mod issue_content;
 mod issues;
 mod migrate;
+mod pull_request_content;
 mod pull_requests;
 mod sync_state;
 
@@ -32,6 +33,7 @@ use crate::github::Login;
 use crate::github::activity::ItemActivity;
 use crate::github::issue_content::IssueContent;
 use crate::github::issues::IssueFacts;
+use crate::github::pull_request_content::PullRequestContent;
 use crate::github::pull_requests::PullRequestFacts;
 use crate::repository::RepositoryName;
 pub use activity::ActivityFacts;
@@ -318,6 +320,20 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
+    /// Keeps what PR `number` says, its Reviews included, in place of what was kept before.
+    pub fn save_pull_request_content(
+        &self,
+        repository: &RepositoryName,
+        number: u32,
+        content: PullRequestContent,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| {
+            pull_request_content::save(connection, &repository, number, &content)
+        })?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
     /// Records that the user looked at item `number` at `at`.
     pub fn mark_seen(
         &self,
@@ -459,6 +475,18 @@ fn read_issue_facts(
     Ok((facts, content))
 }
 
+/// The facts behind the PR view of PR `number`, from one transaction (ADR 0018).
+fn read_pull_request_facts(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<(WorkFacts, Option<PullRequestContent>)> {
+    let transaction = connection.transaction()?;
+    let facts = work_facts_in(&transaction, repository)?;
+    let content = pull_request_content::read(&transaction, repository, number)?;
+    Ok((facts, content))
+}
+
 /// Asks the read-only connection, from any thread. A question asked before the database opens waits for it.
 #[derive(Clone)]
 pub struct StoreReader {
@@ -482,6 +510,18 @@ impl StoreReader {
         let repository = repository.clone();
         let read =
             self.call(move |connection| read_issue_facts(connection, &repository, number))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    /// The facts behind the PR view of PR `number`.
+    pub fn pull_request_facts(
+        &self,
+        repository: &RepositoryName,
+        number: u32,
+    ) -> Result<(WorkFacts, Option<PullRequestContent>), Error> {
+        let repository = repository.clone();
+        let read =
+            self.call(move |connection| read_pull_request_facts(connection, &repository, number))?;
         read.map_err(saying(CANT_READ))
     }
 
@@ -706,6 +746,7 @@ mod tests {
     use super::testing::{V1, V2, backups, has_table, temp_database, user_version};
     use super::*;
     use crate::github::CommitSha;
+    use crate::github::pull_request_content::{Anchor, Opening, Resolution, Review, ThreadLine};
     use crate::github::pull_requests::{CiState, LatestReview, OffDefault, PrState, ReviewState};
     use rusqlite::trace::{TraceEvent, TraceEventCodes};
     use time::OffsetDateTime;
@@ -928,7 +969,30 @@ mod tests {
             comments: Vec::new(),
             earlier_comments: 0,
         };
-        issue_content::save(connection, &cpython, 1, &content).unwrap();
+        let review = Review {
+            author: Some(Login::new("some-reviewer")),
+            state: ReviewState::Approved,
+            commit: CommitSha::parse("0123abc"),
+            submitted_at: saved_at,
+            body_html: String::new(),
+            hidden: None,
+            threads: vec![ThreadLine {
+                path: "Lib/ast.py".to_owned(),
+                line: Some(1),
+                opening: Opening::Words {
+                    words: "Why?".to_owned(),
+                },
+                replies: 0,
+                resolution: Resolution::Open,
+                anchor: Anchor::Current,
+            }],
+        };
+        let reviewed = PullRequestContent {
+            conversation: content.clone(),
+            reviews: vec![review],
+            earlier_reviews: 0,
+        };
+        pull_request_content::save(connection, &cpython, 1, &reviewed).unwrap();
         let (seen, statements) = mpsc::channel();
         let trace = move |event: TraceEvent<'_>| {
             if let TraceEvent::Stmt(_, sql) = event {
@@ -940,6 +1004,8 @@ mod tests {
         let (read, kept) = read_issue_facts(connection, &cpython, 1).unwrap();
         assert_eq!(read.pull_requests.len(), 1);
         assert_eq!(kept, Some(content));
+        let (_, kept) = read_pull_request_facts(connection, &cpython, 1).unwrap();
+        assert_eq!(kept, Some(reviewed));
         let no_trace = None::<fn(TraceEvent<'_>)>;
         connection.trace_v2(codes, no_trace).unwrap();
         statements.try_iter().collect()
@@ -981,8 +1047,10 @@ mod tests {
             "issue_assignees",
             "filter_matches",
             "filter_problems",
+            "pr_reviews",
+            "review_threads",
         ];
-        assert_eq!(tables.map(reads), [true; 12]);
+        assert_eq!(tables.map(reads), [true; 14]);
     }
 
     #[test]
@@ -997,7 +1065,9 @@ mod tests {
             "INSERT INTO cherry_picks VALUES ('python/cpython', 1, '0123abc')",
             "INSERT INTO committers VALUES ('python/cpython', 1, 0, 'someone')",
             "INSERT INTO issue_assignees VALUES ('python/cpython', 7, 'someone')",
-            "INSERT INTO issue_comments VALUES ('python/cpython', 7, 0, 'someone', 0, '<p>Hi</p>')",
+            "INSERT INTO issue_comments VALUES ('python/cpython', 7, 0, 'someone', 0, '<p>Hi</p>', NULL)",
+            "INSERT INTO pr_reviews VALUES ('python/cpython', 1, 0, 'someone', 'APPROVED', NULL, 0, '', NULL)",
+            "INSERT INTO review_threads VALUES ('python/cpython', 1, 0, 0, 'a.py', 1, 'Hm', NULL, 0, 'open', 'current')",
         ];
         let refused = orphans.map(|sql| {
             let refusal = connection.execute(sql, []).err();
@@ -1005,7 +1075,7 @@ mod tests {
         });
         assert_eq!(
             refused,
-            [Some(rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY); 8]
+            [Some(rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY); 10]
         );
     }
 

@@ -36,8 +36,9 @@ const WORK_REPOSITORY: &str = "python/cpython";
 const CHECKED_REPOSITORY: &str = "tsugiki/tsugiki";
 /// How far back the refresh's recordings look, far enough that CPython has something to list.
 const REFRESH_WINDOW: Duration = Duration::days(1);
-/// A PR of Tsugiki's own with a description and comments, for the PR view's Conversation.
-const CONVERSATION: u32 = 162;
+/// A merged CPython PR with comments, Reviews of each kind and resolved and Outdated threads, for the PR
+/// view's Conversation.
+const CONVERSATION: u32 = 152_326;
 /// A recording's page of a refresh, kept short because each answer goes in the repo.
 const REFRESH_PAGE: usize = 10;
 const ONLY_PAGE: PageRequest<'static> = PageRequest {
@@ -67,15 +68,17 @@ fn main() {
     println!("Recorded to {}", fixtures.display());
 }
 
-/// Reads the Conversation of one of Tsugiki's own PRs.
+/// Reads the Conversation of a CPython PR, with its Reviews and their threads.
 fn record_a_conversation(github: &GitHub) {
-    let repository = RepositoryName::parse(CHECKED_REPOSITORY).expect("a Repository's name");
+    let repository = RepositoryName::parse(WORK_REPOSITORY).expect("a Repository's name");
     let content = github
         .pull_request_content(&repository, CONVERSATION)
-        .expect("read a PR's Conversation");
+        .expect("read a PR's Conversation")
+        .content;
     println!(
-        "PR #{CONVERSATION}'s Conversation has {} comments",
-        content.comments.len()
+        "PR #{CONVERSATION}'s Conversation has {} comments and {} Reviews",
+        content.conversation.comments.len(),
+        content.reviews.len()
     );
 }
 

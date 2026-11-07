@@ -348,6 +348,7 @@ fn content() -> IssueContent {
                 author: Some(someone("core-dev", at, 30)),
                 created_at: updated(at),
                 body_html: paragraph.repeat(3),
+                hidden: None,
             })
             .collect(),
         earlier_comments: 40,

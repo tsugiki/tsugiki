@@ -104,6 +104,7 @@ mod tests {
                 author: None,
                 created_at: OffsetDateTime::UNIX_EPOCH,
                 body_html: "<p>Which build?</p>".to_owned(),
+                hidden: None,
             }],
             earlier_comments: 0,
         };

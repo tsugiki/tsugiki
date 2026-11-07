@@ -1,6 +1,7 @@
 //! A sync after the first (ADR 0015). It asks what changed since the last one, fetches that, and probes the
 //! user's open PRs for what changes without moving `updatedAt`. It then joins a first sync's later phases, so
-//! each Issue it found changed or newly reached gets its tree read.
+//! each Issue it found changed or newly reached gets its tree read. Before it finishes, it reads the
+//! Conversation of each changed PR the user's work reaches, so the PR view opens on its Reviews (#157).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -18,9 +19,9 @@ use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::{NodeId, PrFetch, PrState, PullRequestFacts};
 use crate::github::refresh::{ChangedPr, Etag, ListCheck, ListPlace, PollRequest};
 use crate::links::{BackportKind, MergeCommits, backport_of};
-use crate::repository::SMALL_UP_TO;
+use crate::repository::{RepositorySettings, SMALL_UP_TO};
 use crate::store::{ChangeCheck, NarrowedResults, SyncState};
-use crate::workbench::reasons;
+use crate::workbench::{Workbench, reasons};
 
 /// GitHub's search can lag behind what it changed, so a refresh also asks about the minutes before the last
 /// one (ADR 0015). The fetches skip what Tsugiki already holds. A change this new can't yet say an item left
@@ -85,6 +86,9 @@ impl Default for Poll {
 pub(super) struct Changed {
     ids: Vec<NodeId>,
     walk: FilterWalk,
+    /// The changed PRs Tsugiki held when it redoes a refresh that stopped partway. That one may have saved
+    /// them, so the fetch can't tell they changed, and their Conversations still need reading.
+    redone: BTreeSet<u32>,
 }
 
 /// The user's open PRs left to probe, with the walk that follows them.
@@ -149,6 +153,7 @@ pub(super) fn check_list(
             Phase::FetchingChanged(Changed {
                 ids: Vec::new(),
                 walk,
+                redone: BTreeSet::new(),
             })
         }
         ListCheck::Moved(tag) => {
@@ -308,16 +313,18 @@ fn plan_the_rest(link: &Link<'_>, poll: &mut Poll) -> Result<Changed, Error> {
         hits: std::mem::take(&mut poll.hits),
     });
     walk.hold_issues(std::mem::take(&mut poll.moved_issues));
+    let mut redone = BTreeSet::new();
     if poll.redo {
         let held = poll
             .changed_prs
             .iter()
             .filter_map(|pr| stored.get(&pr.number));
+        redone.extend(held.clone().map(|pr| pr.number));
         for pull_request in held.filter(|pr| is_work(pr, viewer.as_ref())) {
             walk.learn_from(pull_request, link.repository);
         }
     }
-    Ok(Changed { ids, walk })
+    Ok(Changed { ids, walk, redone })
 }
 
 /// True when `pull_request` is on one of the user's own lists.
@@ -336,8 +343,10 @@ pub(super) fn fetch_changed(
     link: &Link<'_>,
     changed: &mut Changed,
     fetched: &mut BTreeSet<u32>,
+    changed_prs: &mut BTreeSet<u32>,
 ) -> Result<Moved, Error> {
     if changed.ids.is_empty() {
+        changed_prs.append(&mut changed.redone);
         let next = Probing {
             numbers: tracked_pull_requests(link, fetched)?,
             walk: std::mem::take(&mut changed.walk),
@@ -366,6 +375,7 @@ pub(super) fn fetch_changed(
         }
     }
     drop(changed.ids.drain(..batch.asked_for));
+    changed_prs.extend(&touched);
     let pause_until = pause_until(batch.rate_limit);
     Ok((Step::saved_if_any(touched, pause_until), None))
 }
@@ -428,7 +438,11 @@ fn read_failed_checks(link: &Link<'_>) -> Result<Step, Error> {
 }
 
 /// Probes the next batch of the user's open PRs, for the CI and Reviews that don't move `updatedAt`.
-pub(super) fn probe(link: &Link<'_>, probing: &mut Probing) -> Result<Moved, Error> {
+pub(super) fn probe(
+    link: &Link<'_>,
+    probing: &mut Probing,
+    changed_prs: &mut BTreeSet<u32>,
+) -> Result<Moved, Error> {
     if probing.numbers.is_empty() {
         let read = read_failed_checks(link)?;
         let walk = std::mem::take(&mut probing.walk);
@@ -451,8 +465,49 @@ pub(super) fn probe(link: &Link<'_>, probing: &mut Probing) -> Result<Moved, Err
     link.store
         .save_fetched_pull_requests(link.repository, updated, batch.activity)?;
     drop(probing.numbers.drain(..batch.asked_for));
+    changed_prs.extend(&touched);
     let pause_until = pause_until(batch.rate_limit);
     Ok((Step::saved_if_any(touched, pause_until), None))
+}
+
+/// The PRs among `changed` that the user's work reaches. Their Conversations are worth reading before the
+/// user opens them, and a stranger's PR waits until then.
+pub(super) fn to_read_ahead(
+    link: &Link<'_>,
+    repository: &RepositorySettings,
+    changed: &BTreeSet<u32>,
+) -> Result<BTreeSet<u32>, Error> {
+    let reached = Workbench::reached(link.store.work_facts(link.repository)?, repository);
+    Ok(changed.intersection(&reached).copied().collect())
+}
+
+/// Reads the Conversation of the next PR in `numbers`, with its Reviews and their threads: about a point
+/// each. Trouble with one PR leaves the rest to read, and the PR view reads that one when it opens. Only
+/// trouble that speaks for all of GitHub stops the refresh.
+pub(super) fn read_ahead(link: &Link<'_>, numbers: &mut BTreeSet<u32>) -> Result<Moved, Error> {
+    let Some(number) = numbers.first().copied() else {
+        return Ok((Step::Finished, None));
+    };
+    let step = match link.github.pull_request_content(link.repository, number) {
+        Ok(read) => {
+            link.store
+                .save_pull_request_content(link.repository, number, read.content)?;
+            Step::Saved {
+                touched: vec![number],
+                pause_until: pause_until(read.rate_limit),
+            }
+        }
+        Err(problem) if !problem.kind.speaks_for_all_of_github() => {
+            log::warn!(
+                "GitHub wouldn't give PR {number}'s Conversation: {}",
+                problem.message
+            );
+            Step::Searched { pause_until: None }
+        }
+        Err(problem) => return Err(problem),
+    };
+    let _read = numbers.remove(&number);
+    Ok((step, None))
 }
 
 #[cfg(test)]

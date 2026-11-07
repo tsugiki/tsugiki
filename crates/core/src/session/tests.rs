@@ -1,6 +1,6 @@
 use super::*;
 use crate::github::issue_content::IssueContent;
-use crate::github::pull_requests::{PrHead, PrState, PullRequestFacts};
+use crate::github::pull_requests::{PrHead, PrState, PullRequestFacts, ReviewState};
 use crate::github::replay::Replayer;
 use crate::github::testing::{Canned, Scripted, answered, reply_ok, signed_in_as, signed_in_gh};
 use crate::github::{CommitSha, Login, Reply, Request, Transport, Unreachable};
@@ -315,7 +315,8 @@ fn watching_follows_github_until_told_to_stop() {
 fn issue_content_reply() -> Result<Reply, Unreachable> {
     reply_ok(
         r#"{"data":{"repository":{"issue":{"bodyHTML":"<p>It crashes</p>",
-            "comments":{"totalCount":0,"nodes":[]}}}}}"#,
+            "comments":{"totalCount":0,"nodes":[]}}},
+            "rateLimit":{"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
     )
 }
 
@@ -390,41 +391,59 @@ fn opening_a_pr_records_last_seen_and_keeps_its_recorded_conversation() {
     let folders = temp_folders("open-pr");
     let (board, changes) = changes_board();
     let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
-    let tsugiki = RepositoryName::parse("tsugiki/tsugiki").unwrap();
+    let cpython = RepositoryName::parse("python/cpython").unwrap();
 
-    session.requests().open_pull_request(tsugiki.clone(), 162);
+    session
+        .requests()
+        .open_pull_request(cpython.clone(), 152_326);
     // Last seen moves, and then the Conversation comes from GitHub.
     for _ in 0..2 {
         let _change = changes.recv_timeout(PLENTY).unwrap();
     }
-    let (facts, content) = session.reader().issue_facts(&tsugiki, 162).unwrap();
+    let (facts, content) = session
+        .reader()
+        .pull_request_facts(&cpython, 152_326)
+        .unwrap();
     session.stop(PLENTY);
     fs::remove_dir_all(folders.data).unwrap();
 
     let content = content.unwrap();
+    let conversation = &content.conversation;
     assert!(
-        content.body_html.contains("Closes"),
+        conversation.body_html.contains("gh-152315"),
         "{}",
-        content.body_html
+        conversation.body_html
     );
-    let authors: Vec<_> = content
-        .comments
-        .iter()
-        .map(|comment| comment.author.clone())
-        .collect();
     assert_eq!(
-        authors,
-        [Some(Login::new("user-0")), Some(Login::new("user-1"))]
+        (conversation.comments.len(), conversation.earlier_comments),
+        (10, 0)
     );
-    assert_eq!(content.earlier_comments, 0);
-    assert!(facts.activity.last_seen.contains_key(&162));
+    let reviewers: Vec<_> = content
+        .reviews
+        .iter()
+        .map(|review| (review.author.clone(), review.state, review.threads.len()))
+        .collect();
+    let some = |login| Some(Login::new(login));
+    assert_eq!(
+        reviewers.first(),
+        Some(&(some("user-6"), ReviewState::Commented, 5)),
+        "the oldest Review comes first, with its threads"
+    );
+    assert_eq!(
+        reviewers.last(),
+        Some(&(some("user-7"), ReviewState::Approved, 0))
+    );
+    assert_eq!((reviewers.len(), content.earlier_reviews), (8, 0));
+    assert!(facts.activity.last_seen.contains_key(&152_326));
 }
 
 #[test]
 fn reading_a_pr_on_screen_again_leaves_last_seen_where_it_is() {
     let reply = reply_ok(
         r#"{"data":{"repository":{"pullRequest":{"bodyHTML":"<p>Fixes the crash</p>",
-            "comments":{"totalCount":0,"nodes":[]}}}}}"#,
+            "comments":{"totalCount":0,"nodes":[]},"reviews":{"totalCount":0,"nodes":[]},
+            "reviewThreads":{"nodes":[]}}},
+            "rateLimit":{"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
     );
     let access = replying(vec![signed_in(), reply]);
 
@@ -477,7 +496,10 @@ fn opening_an_issue_tells_the_window_each_time_its_facts_change() {
 
 #[test]
 fn an_issue_github_has_lost_troubles_only_the_log() {
-    let gone = reply_ok(r#"{"data":{"repository":{"issue":null}}}"#);
+    let gone = reply_ok(
+        r#"{"data":{"repository":{"issue":null},
+            "rateLimit":{"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
+    );
     let access = replying(vec![signed_in(), gone]);
 
     let (content, last_seen, shown) =

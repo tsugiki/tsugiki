@@ -2,7 +2,7 @@ use super::*;
 use crate::error::ErrorKind;
 use crate::filters::Filter;
 use crate::github::activity::{Activity, ActivityKind};
-use crate::github::pull_requests::CiState;
+use crate::github::pull_requests::{CiState, ReviewState};
 use crate::github::testing::{dated, reply_ok, signed_in_as};
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::repository::{RepositoryName, RepositorySettings};
@@ -280,6 +280,7 @@ fn a_refresh_recovers_from_a_failure_at_each_point() {
         no_cross_references(LOTS),
         no_cross_references(LOTS),
         fetched_nodes(&[strangers_pr(7, AFTER_IT)], LOTS),
+        approved(),
     ];
     let scenario = Scenario {
         name: "recovery-refresh",
@@ -306,6 +307,7 @@ fn a_refresh_recovers_from_a_failure_at_each_point() {
             "FetchCrossReferences",
             "FetchCrossReferences",
             "FetchTreePullRequests",
+            "FetchPullRequestContent",
         ]
     );
 }
@@ -322,6 +324,7 @@ fn a_refresh_that_redoes_an_interrupted_one_recovers_from_a_failure_at_each_poin
         fetched_nodes(&[pr_node(4, &json!({ "updatedAt": AFTER_IT }))], LOTS),
         issues(&[1], LOTS),
         no_cross_references(LOTS),
+        approved(),
     ];
     let scenario = Scenario {
         name: "recovery-redo",
@@ -352,6 +355,7 @@ fn a_refresh_that_redoes_an_interrupted_one_recovers_from_a_failure_at_each_poin
             "FetchChangedPullRequests",
             "FetchIssues",
             "FetchCrossReferences",
+            "FetchPullRequestContent",
         ]
     );
 }
@@ -367,7 +371,11 @@ fn a_refresh_of_a_small_repository_recovers_from_a_failure_at_each_point() {
             holding_pr(harness, &own_open_pr(1, &json!({})));
             stored_filter(harness, "a", &[]);
         },
-        posts: vec![probed(&[(1, "FAILURE")]), failed_checks(1, &["Tests"])],
+        posts: vec![
+            probed(&[(1, "FAILURE")]),
+            failed_checks(1, &["Tests"]),
+            approved(),
+        ],
         checks: vec![check_reply(304, None)],
     };
 
@@ -618,7 +626,7 @@ fn the_users_changed_pr_brings_its_issue_and_a_strangers_doesnt() {
 #[test]
 fn github_refusing_to_name_the_failed_checks_leaves_them_for_the_next_refresh() {
     let refused = reply_ok(r#"{"errors":[{"message":"Resource not accessible"}]}"#);
-    let replies = vec![quiet_poll(), probed(&[(1, "FAILURE")]), refused];
+    let replies = vec![quiet_poll(), probed(&[(1, "FAILURE")]), refused, approved()];
     let harness = after_a_sync("checks-refused", replies);
     holding_pr(&harness, &own_open_pr(1, &json!({})));
     let mut syncs = refreshing(filtering(&[]));
@@ -630,10 +638,15 @@ fn github_refusing_to_name_the_failed_checks_leaves_them_for_the_next_refresh() 
         [
             "RefreshRepository",
             "ProbePullRequests",
-            "FetchFailedChecks"
+            "FetchFailedChecks",
+            "FetchPullRequestContent",
         ]
     );
-    assert_eq!(changes.len(), 1);
+    assert_eq!(
+        changes.len(),
+        2,
+        "the probe's CI, and then the Conversation"
+    );
     let unread = harness
         .store
         .pull_requests_with_unread_checks(&cpython(), &me())
@@ -648,6 +661,7 @@ fn a_probe_of_the_users_open_prs_saves_ci_and_names_only_what_moved() {
         quiet_poll(),
         probed(&[(1, "SUCCESS"), (2, "FAILURE")]),
         failed_checks(2, &["Tests", "Docs"]),
+        approved(),
     ];
     let harness = after_a_sync("probe", replies);
     let green = json!({
@@ -667,7 +681,8 @@ fn a_probe_of_the_users_open_prs_saves_ci_and_names_only_what_moved() {
         [
             "RefreshRepository",
             "ProbePullRequests",
-            "FetchFailedChecks"
+            "FetchFailedChecks",
+            "FetchPullRequestContent",
         ]
     );
     let read = harness.reader.work_facts(&cpython()).unwrap();
@@ -675,20 +690,12 @@ fn a_probe_of_the_users_open_prs_saves_ci_and_names_only_what_moved() {
         read.activity.failed_checks.get(&2).unwrap(),
         &["Docs", "Tests"]
     );
-    // The probe's CI, and then the names of the checks that failed.
-    assert_eq!(
-        changes,
-        [
-            Change {
-                repository: cpython(),
-                items: vec![2],
-            },
-            Change {
-                repository: cpython(),
-                items: vec![2],
-            }
-        ]
-    );
+    // The probe's CI, the names of the checks that failed, and then its Conversation.
+    let only_2 = Change {
+        repository: cpython(),
+        items: vec![2],
+    };
+    assert_eq!(changes, [only_2.clone(), only_2.clone(), only_2]);
     harness.finish();
 }
 
@@ -742,6 +749,7 @@ fn a_pr_the_refresh_just_fetched_skips_the_probe() {
             )],
             LOTS,
         ),
+        approved(),
     ];
     let harness = after_a_sync("probe-skips", replies);
     let mut syncs = refreshing(filtering(&[]));
@@ -750,8 +758,121 @@ fn a_pr_the_refresh_just_fetched_skips_the_probe() {
 
     assert_eq!(
         harness.operations(),
-        ["RefreshRepository", "FetchChangedPullRequests"]
+        [
+            "RefreshRepository",
+            "FetchChangedPullRequests",
+            "FetchPullRequestContent"
+        ]
     );
+    harness.finish();
+}
+
+/// GitHub's answer about a PR's Conversation: no comments, and an approval from `some-reviewer`.
+fn approved() -> Result<Reply, Unreachable> {
+    let review = json!({
+        "id": "review",
+        "author": { "login": "some-reviewer" },
+        "state": "APPROVED",
+        "submittedAt": AFTER_IT,
+        "bodyHTML": "",
+        "isMinimized": false,
+        "minimizedReason": null,
+        "commit": { "oid": "0123abc" },
+    });
+    let pull_request = json!({
+        "bodyHTML": "<p>A change</p>",
+        "comments": { "totalCount": 0, "nodes": [] },
+        "reviews": { "totalCount": 1, "nodes": [review] },
+        "reviewThreads": { "nodes": [] },
+    });
+    let rate_limit = json!({ "remaining": 4000, "resetAt": "2999-01-01T00:00:00Z" });
+    let data = json!({ "repository": { "pullRequest": pull_request }, "rateLimit": rate_limit });
+    reply_ok(&json!({ "data": data }).to_string())
+}
+
+/// The states of the Reviews Tsugiki holds of PR `number`, or nothing if it hasn't read its Conversation.
+fn reviews_held(harness: &Harness, number: u32) -> Option<Vec<ReviewState>> {
+    let (_, content) = harness
+        .reader
+        .pull_request_facts(&cpython(), number)
+        .unwrap();
+    content.map(|content| content.reviews.iter().map(|review| review.state).collect())
+}
+
+#[test]
+fn a_changed_pr_the_users_work_reaches_has_its_reviews_read_before_it_opens() {
+    let replies = vec![
+        polled(
+            &list(&[], None),
+            &list(&[changed_pr(1, AFTER_IT), changed_pr(2, AFTER_IT)], None),
+            &[],
+        ),
+        fetched_nodes(
+            &[
+                own_open_pr(1, &json!({ "title": "A change", "updatedAt": AFTER_IT })),
+                strangers_pr(2, AFTER_IT),
+            ],
+            LOTS,
+        ),
+        approved(),
+    ];
+    let harness = after_a_sync("read-ahead", replies);
+    let mut syncs = refreshing(filtering(&[]));
+
+    let changes = run(&mut syncs, &harness);
+
+    assert_eq!(
+        harness.operations(),
+        [
+            "RefreshRepository",
+            "FetchChangedPullRequests",
+            "FetchPullRequestContent"
+        ]
+    );
+    assert_eq!(reviews_held(&harness, 1), Some(vec![ReviewState::Approved]));
+    assert_eq!(
+        reviews_held(&harness, 2),
+        None,
+        "the user's work doesn't reach a stranger's PR"
+    );
+    let last = changes.last().map(|change| change.items.clone());
+    assert_eq!(last, Some(vec![1]), "an open PR view reads it again");
+    harness.finish();
+}
+
+#[test]
+fn a_pr_github_wont_give_the_conversation_of_leaves_the_rest_to_read() {
+    let replies = vec![
+        polled(
+            &list(&[], None),
+            &list(&[changed_pr(1, AFTER_IT), changed_pr(2, AFTER_IT)], None),
+            &[],
+        ),
+        fetched_nodes(
+            &[
+                own_open_pr(1, &json!({ "title": "A change", "updatedAt": AFTER_IT })),
+                own_open_pr(2, &json!({ "title": "Another", "updatedAt": AFTER_IT })),
+            ],
+            LOTS,
+        ),
+        // The query ran out of its 10 seconds on this PR.
+        Ok(Reply {
+            status: 502,
+            reset: None,
+            date: None,
+            body: String::new(),
+        }),
+        approved(),
+    ];
+    let harness = after_a_sync("read-ahead-refused", replies);
+    let mut syncs = refreshing(filtering(&[]));
+
+    drop(run(&mut syncs, &harness));
+
+    assert_eq!(reviews_held(&harness, 1), None);
+    assert_eq!(reviews_held(&harness, 2), Some(vec![ReviewState::Approved]));
+    let state = harness.store.sync_state(&cpython()).unwrap().unwrap();
+    assert!(!state.refresh_under_way, "the refresh finished");
     harness.finish();
 }
 
@@ -802,6 +923,7 @@ fn a_change_too_new_for_the_search_keeps_its_item_in_the_filter() {
             &[search(&[], None)],
         ),
         fetched_nodes(&[strangers_pr(2, &now)], LOTS),
+        approved(),
     ];
     let harness = after_a_sync("too-new", replies);
     stored_filter(&harness, "a", &[1, 2]);
@@ -893,6 +1015,7 @@ fn a_refresh_that_stopped_follows_the_users_pr_it_had_saved() {
         probed(&[]),
         issues(&[40], LOTS),
         no_cross_references(LOTS),
+        approved(),
     ];
     let harness = after_a_sync("stopped-pr", replies);
     holding_pr(&harness, &mine);
@@ -914,9 +1037,13 @@ fn a_refresh_that_stopped_follows_the_users_pr_it_had_saved() {
             "RefreshRepository",
             "ProbePullRequests",
             "FetchIssues",
-            "FetchCrossReferences"
+            "FetchCrossReferences",
+            "FetchPullRequestContent",
         ]
     );
+    // The refresh that stopped may have saved PR 1 before it read its Conversation.
+    assert_eq!(reviews_held(&harness, 1), Some(vec![ReviewState::Approved]));
+    assert_eq!(reviews_held(&harness, 2), None);
     harness.finish();
 }
 
@@ -1280,7 +1407,11 @@ fn a_304_skips_the_poll_and_the_probe_still_runs() {
     let (harness, tags) = small_repository(
         "small-same",
         vec![check_reply(304, None)],
-        vec![probed(&[(1, "FAILURE")]), failed_checks(1, &["Tests"])],
+        vec![
+            probed(&[(1, "FAILURE")]),
+            failed_checks(1, &["Tests"]),
+            approved(),
+        ],
     );
     synced(&harness, ChangeCheck::Tagged(Etag::new("\"same\"")));
     holding_pr(&harness, &own_open_pr(1, &json!({})));
@@ -1475,7 +1606,7 @@ fn a_refresh_probes_the_ci_of_an_open_bot_backport_of_what_the_user_wrote() {
             }),
         )
     };
-    let replies = vec![quiet_poll(), probed(&[(10, "FAILURE")])];
+    let replies = vec![quiet_poll(), probed(&[(10, "FAILURE")]), approved()];
     let harness = after_a_sync("probe-backport", replies);
     holding_pr(&harness, &merged(1, "octocat"));
     holding_pr(&harness, &backport(10, 1));
@@ -1617,6 +1748,7 @@ fn a_change_under_two_minutes_old_by_githubs_clock_keeps_its_item_in_the_filter(
             &[search(&[], None)],
         ),
         fetched_nodes(&[strangers_pr(2, &changed)], LOTS),
+        approved(),
     ];
     let harness = on_githubs_clock("github-clock-settled", github_time, replies);
     stored_filter(&harness, "a", &[1, 2]);

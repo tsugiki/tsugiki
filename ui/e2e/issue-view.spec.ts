@@ -63,7 +63,12 @@ const view = (bodyHtml: string): IssueView => ({
   content: {
     body_html: bodyHtml,
     comments: [
-      { author: "some-reviewer", created_at: "2026-11-04T09:00:00Z", body_html: "<p>Which build?</p>" },
+      {
+        author: "some-reviewer",
+        created_at: "2026-11-04T09:00:00Z",
+        body_html: "<p>Which build?</p>",
+        hidden: null,
+      },
     ],
     earlier_comments: 0,
   },

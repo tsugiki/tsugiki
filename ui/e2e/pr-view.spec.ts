@@ -34,7 +34,23 @@ const issue: ListedItem = {
 
 const view: PrView = {
   ...row,
-  content: { body_html: "<p>The fix</p>", comments: [], earlier_comments: 0 },
+  content: {
+    body_html: "<p>The fix</p>",
+    comments: [],
+    earlier_comments: 0,
+    reviews: [
+      {
+        author: "some-reviewer",
+        state: "APPROVED",
+        commit: "0123abcdef",
+        submitted_at: "2026-11-04T10:00:00Z",
+        body_html: "",
+        hidden: null,
+        threads: [],
+      },
+    ],
+    earlier_reviews: 0,
+  },
 };
 
 const done = { status: "ok", data: null } as const;
@@ -65,6 +81,7 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
 
   const pane = page.getByRole("region", { name: "PR view" });
   await expect(pane).toContainText("The fix");
+  await expect(pane).toContainText("some-reviewer approved at 0123abc");
   await page.keyboard.press("ControlOrMeta+PageDown");
   await expect(pane.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("ControlOrMeta+PageUp");

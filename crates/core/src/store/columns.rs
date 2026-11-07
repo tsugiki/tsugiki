@@ -6,6 +6,8 @@ use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRe
 use time::OffsetDateTime;
 
 use crate::filters::FilterQuery;
+use crate::github::issue_content::HiddenReason;
+use crate::github::pull_request_content::{Anchor, Resolution};
 use crate::github::pull_requests::{CiState, PrState, ReviewState};
 use crate::github::refresh::Etag;
 use crate::github::{CommitSha, Login};
@@ -121,6 +123,26 @@ text_column!(CiState {
     Success => "SUCCESS",
 });
 
+text_column!(HiddenReason {
+    Abuse => "abuse",
+    OffTopic => "off-topic",
+    Outdated => "outdated",
+    Resolved => "resolved",
+    Duplicate => "duplicate",
+    Spam => "spam",
+    Unstated => "unstated",
+});
+
+text_column!(Resolution {
+    Open => "open",
+    Resolved => "resolved",
+});
+
+text_column!(Anchor {
+    Current => "current",
+    Outdated => "outdated",
+});
+
 text_column!(ReviewState {
     Pending => "PENDING",
     Commented => "COMMENTED",
@@ -155,6 +177,28 @@ mod tests {
             text
         };
         all.iter().map(through).collect()
+    }
+
+    #[test]
+    fn each_mark_on_a_thread_keeps_its_text() {
+        assert_eq!(stored_texts(Resolution::ALL), ["open", "resolved"]);
+        assert_eq!(stored_texts(Anchor::ALL), ["current", "outdated"]);
+    }
+
+    #[test]
+    fn each_reason_to_hide_a_comment_keeps_its_text() {
+        assert_eq!(
+            stored_texts(HiddenReason::ALL),
+            [
+                "abuse",
+                "off-topic",
+                "outdated",
+                "resolved",
+                "duplicate",
+                "spam",
+                "unstated"
+            ]
+        );
     }
 
     #[test]

@@ -1,20 +1,22 @@
 //! The description and recent comments of one Issue or PR, as GitHub renders them. Only the Issue view and
-//! the PR view's Conversation show them, so Tsugiki asks when one opens and while it's on screen, and no sync
-//! pays for them (ADR 0015).
+//! the PR view's Conversation show them, so Tsugiki asks when one opens and while it's on screen. A refresh
+//! reads ahead only the Conversations of the PRs the user's work reaches (ADR 0015).
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use specta::Type;
 use time::OffsetDateTime;
 
-use super::pull_requests::Person;
+use super::pull_requests::{Person, RateLimit};
 use super::{GitHub, Login, Request};
 use crate::error::{Error, ErrorKind};
 use crate::repository::RepositoryName;
 
-/// Whose conversation a query reads. GitHub gives an Issue and a PR the same description and comments.
+/// Whose conversation a query reads. GitHub gives an Issue and a PR the same description and comments, and
+/// a PR its Reviews as well.
 #[derive(Debug, Clone, Copy)]
-enum Thread {
+pub(super) enum Thread {
     Issue,
     PullRequest,
 }
@@ -42,13 +44,69 @@ impl Thread {
         }
     }
 
-    fn query(self) -> String {
+    const fn more_fields(self) -> &'static str {
+        match self {
+            Self::Issue => "",
+            Self::PullRequest => super::pull_request_content::REVIEW_FIELDS,
+        }
+    }
+
+    pub(super) fn query(self) -> String {
         format!(
             "query {}($owner: String!, $name: String!, $number: Int!) {{ \
-             repository(owner: $owner, name: $name) {{ {}(number: $number) {{ bodyHTML \
-             comments(last: 30) {{ totalCount nodes {{ author {{ login }} createdAt bodyHTML }} }} }} }} }}",
+             repository(owner: $owner, name: $name) {{ {}(number: $number) {{ {CONVERSATION_FIELDS}{} }} }} \
+             rateLimit {{ remaining resetAt }} }}",
             self.operation(),
             self.field(),
+            self.more_fields(),
+        )
+    }
+}
+
+/// The fields an Issue and a PR share: the description and the last 30 comments.
+pub(super) const CONVERSATION_FIELDS: &str = "bodyHTML comments(last: 30) { totalCount nodes { author { login } \
+                                              createdAt bodyHTML isMinimized minimizedReason } }";
+
+/// The reason someone gave for hiding a comment on GitHub. The comment folds to it until the user opens it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum HiddenReason {
+    Abuse,
+    OffTopic,
+    Outdated,
+    Resolved,
+    Duplicate,
+    Spam,
+    /// GitHub gave a reason Tsugiki doesn't know, or none.
+    Unstated,
+}
+
+/// GitHub's word on whether a comment, a Review or a thread's first comment is hidden, and the reason.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct MinimizedWire {
+    is_minimized: bool,
+    minimized_reason: Option<String>,
+}
+
+impl MinimizedWire {
+    /// The reason GitHub gives in `minimizedReason`, which it spells in lower case, as "off-topic". Nothing
+    /// for a comment that isn't hidden.
+    pub(super) fn reason(&self) -> Option<HiddenReason> {
+        if !self.is_minimized {
+            return None;
+        }
+        let reason = self.minimized_reason.as_deref().unwrap_or_default();
+        Some(
+            match reason.to_ascii_lowercase().replace('_', "-").as_str() {
+                "abuse" => HiddenReason::Abuse,
+                "off-topic" => HiddenReason::OffTopic,
+                "outdated" => HiddenReason::Outdated,
+                "resolved" => HiddenReason::Resolved,
+                "duplicate" => HiddenReason::Duplicate,
+                "spam" => HiddenReason::Spam,
+                _ => HiddenReason::Unstated,
+            },
         )
     }
 }
@@ -63,6 +121,8 @@ pub struct IssueComment {
     pub created_at: OffsetDateTime,
     /// GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005).
     pub body_html: String,
+    /// The reason it is hidden on GitHub. Nothing, for a comment that isn't.
+    pub hidden: Option<HiddenReason>,
 }
 
 /// An Issue's description and its recent comments.
@@ -84,6 +144,8 @@ struct CommentWire {
     created_at: OffsetDateTime,
     #[serde(rename = "bodyHTML")]
     body_html: String,
+    #[serde(flatten)]
+    minimized: MinimizedWire,
 }
 
 #[derive(Deserialize)]
@@ -93,8 +155,9 @@ struct CommentsWire {
     nodes: Vec<Option<CommentWire>>,
 }
 
+/// The answer to [`CONVERSATION_FIELDS`].
 #[derive(Deserialize)]
-struct IssueWire {
+pub(super) struct IssueWire {
     #[serde(rename = "bodyHTML")]
     body_html: String,
     comments: CommentsWire,
@@ -111,6 +174,7 @@ impl From<IssueWire> for IssueContent {
                 author: comment.author.map(|person| person.login),
                 created_at: comment.created_at,
                 body_html: comment.body_html,
+                hidden: comment.minimized.reason(),
             })
             .collect();
         let held = u32::try_from(comments.len()).unwrap_or(u32::MAX);
@@ -129,34 +193,31 @@ impl GitHub {
         repository: &RepositoryName,
         number: u32,
     ) -> Result<IssueContent, Error> {
-        self.conversation(Thread::Issue, repository, number)
+        let (wire, _points): (IssueWire, RateLimit) =
+            self.conversation(Thread::Issue, repository, number)?;
+        Ok(wire.into())
     }
 
-    /// The description and recent comments of PR `number`: its Conversation, without its review threads.
-    pub fn pull_request_content(
-        &self,
-        repository: &RepositoryName,
-        number: u32,
-    ) -> Result<IssueContent, Error> {
-        self.conversation(Thread::PullRequest, repository, number)
-    }
-
-    fn conversation(
+    /// The content of `thread` `number`, as `W` reads it, and the points GitHub has left.
+    pub(super) fn conversation<W: DeserializeOwned>(
         &self,
         thread: Thread,
         repository: &RepositoryName,
         number: u32,
-    ) -> Result<IssueContent, Error> {
+    ) -> Result<(W, RateLimit), Error> {
         #[derive(Deserialize)]
-        struct Data {
-            repository: RepositoryWire,
+        #[serde(bound = "W: DeserializeOwned", rename_all = "camelCase")]
+        struct Data<W> {
+            repository: RepositoryWire<W>,
+            rate_limit: RateLimit,
         }
         #[derive(Deserialize)]
-        struct RepositoryWire {
+        #[serde(bound = "W: DeserializeOwned")]
+        struct RepositoryWire<W> {
             #[serde(alias = "pullRequest")]
-            issue: Option<IssueWire>,
+            issue: Option<W>,
         }
-        let data: Data = self.query(&Request {
+        let data: Data<W> = self.query(&Request {
             operation: thread.operation(),
             query: thread.query().into(),
             variables: json!({
@@ -165,13 +226,13 @@ impl GitHub {
                 "number": number,
             }),
         })?;
-        let wire = data.repository.issue.ok_or_else(|| {
+        let read = data.repository.issue.ok_or_else(|| {
             Error::new(
                 ErrorKind::NotFound,
                 &format!("GitHub has no {} #{number} in {repository}.", thread.noun()),
             )
         })?;
-        Ok(wire.into())
+        Ok((read, data.rate_limit))
     }
 }
 
@@ -194,7 +255,9 @@ mod tests {
 
     /// A `GitHub` that gives one `issue`, and what it was asked.
     fn answering(issue: &Value) -> (GitHub, Receiver<(String, Value)>) {
-        let body = json!({ "data": { "repository": { "issue": issue } } }).to_string();
+        let rate_limit = json!({ "remaining": 4000, "resetAt": "2999-01-01T00:00:00Z" });
+        let data = json!({ "repository": { "issue": issue }, "rateLimit": rate_limit });
+        let body = json!({ "data": data }).to_string();
         let (script, asked) = Scripted::new(vec![reply_ok(&body)]);
         (GitHub::new(Box::new(script), token()), asked)
     }
@@ -210,9 +273,17 @@ mod tests {
                         "author": { "login": "some-reviewer" },
                         "createdAt": "2026-11-04T10:00:00Z",
                         "bodyHTML": "<p>Which build?</p>",
+                        "isMinimized": false,
+                        "minimizedReason": null,
                     },
                     null,
-                    { "author": null, "createdAt": "2026-11-04T11:00:00Z", "bodyHTML": "<p>Debug</p>" },
+                    {
+                        "author": null,
+                        "createdAt": "2026-11-04T11:00:00Z",
+                        "bodyHTML": "<p>Debug</p>",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                    },
                 ],
             },
         }));
@@ -228,11 +299,13 @@ mod tests {
                         author: Some(Login::new("some-reviewer")),
                         created_at: moment("2026-11-04T10:00:00Z"),
                         body_html: "<p>Which build?</p>".to_owned(),
+                        hidden: None,
                     },
                     IssueComment {
                         author: None,
                         created_at: moment("2026-11-04T11:00:00Z"),
                         body_html: "<p>Debug</p>".to_owned(),
+                        hidden: None,
                     },
                 ],
                 earlier_comments: 30,
@@ -252,17 +325,5 @@ mod tests {
 
         assert_eq!(problem.kind, ErrorKind::NotFound);
         assert!(problem.message.contains("#7"), "{}", problem.message);
-    }
-    #[test]
-    fn a_pr_github_doesnt_have_is_not_found() {
-        let body = json!({ "data": { "repository": { "pullRequest": null } } }).to_string();
-        let (script, asked) = Scripted::new(vec![reply_ok(&body)]);
-        let github = GitHub::new(Box::new(script), token());
-
-        let problem = github.pull_request_content(&cpython(), 7).unwrap_err();
-
-        assert_eq!(problem.kind, ErrorKind::NotFound);
-        assert!(problem.message.contains("PR #7"), "{}", problem.message);
-        assert_eq!(asked.recv().unwrap().0, "FetchPullRequestContent");
     }
 }

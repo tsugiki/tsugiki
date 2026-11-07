@@ -1,0 +1,15 @@
+---
+source: crates/core/src/highlight/tests.rs
+expression: drawn
+---
+{
+  [Constant "name"]: [String "tsugiki"],
+  [Constant "version"]: [String "0.2.0"],
+  [Constant "private"]: [Constant true],
+  [Constant "scripts"]: {
+    [Constant "dev"]: [String "vite --port 1420"]
+  },
+  [Constant "files"]: [[String "dist"], [String "src][Constant \/][String lib"]],
+  [Constant "rows"]: [Constant null],
+  [Constant "limit"]: [Constant 1.5e3]
+}

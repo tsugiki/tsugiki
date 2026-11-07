@@ -1,0 +1,17 @@
+---
+source: crates/core/src/highlight/tests.rs
+expression: drawn
+---
+[Comment /* The rows of the diff. */]
+[Keyword @media] ([Constant prefers-color-scheme]: dark) {
+  :[Function root] {
+    [Constant --row-height]: [Constant 20][Type px];
+  }
+}
+
+.[Function scroller] [Keyword >] .[Function row]:[Function hover],
+#[Function files] .[Function file][[Function data-open][Keyword =][String "true"]] {
+  [Constant color]: [String #0a3069];
+  [Constant margin]: [Constant 0] [Function calc]([Function var](--row-height) [Keyword *] [Constant 2]) [Keyword !important];
+  [Constant font-family]: [String "Cascadia Code"], monospace;
+}

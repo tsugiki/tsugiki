@@ -1,0 +1,25 @@
+---
+source: crates/core/src/highlight/tests.rs
+expression: drawn
+---
+[Comment //! Reads a diff.]
+
+[Keyword use] std::fmt;
+
+[Comment /// A line of a diff.]
+[Function #[derive(][Type Debug][Function , ][Type Clone][Function )]]
+[Keyword pub] [Keyword enum] [Type Row]<[Keyword ']a> {
+    [Type Added] { new: [Type u32], text: [Keyword &']a [Type str] },
+    [Type Removed]([Type u32]),
+}
+
+[Keyword impl] fmt::[Type Display] [Keyword for] [Type Row]<[Keyword ']_> {
+    [Keyword fn] [Function fmt]([Keyword &]self, formatter: [Keyword &mut] fmt::[Type Formatter]<[Keyword ']_>) -> fmt::[Type Result] {
+        [Keyword match] self {
+            [Type Self]::[Type Added] { new, text } => [Function write!](formatter, [String "+{new} {text}"]),
+            [Type Self]::[Type Removed](old) => [Function write!](formatter, [String "-{old}"]),
+        }
+    }
+}
+
+[Keyword const] [Constant LIMIT]: [Type usize] = [Constant 512];

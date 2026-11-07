@@ -1,0 +1,19 @@
+---
+source: crates/core/src/highlight/tests.rs
+expression: drawn
+---
+[Comment # The checks CI runs.]
+[Tag name]: [String CI]
+[Tag on]:
+  [Tag push]:
+    [Tag branches]: [[String main]]
+[Tag jobs]:
+  [Tag check]:
+    [Tag runs-on]: [String windows-latest]
+    [Tag timeout-minutes]: [Constant 30]
+    [Tag steps]:
+      - [Tag uses]: [String actions/checkout@v4]
+      - [Tag run]: [String just check]
+        [Tag env]:
+          [Tag CARGO_BUILD_JOBS]: [Constant 4]
+          [Tag DEBUG]: [Constant true]

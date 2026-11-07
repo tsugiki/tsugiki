@@ -1,43 +1,132 @@
 //! Syntax highlighting for the diff (ADR 0001, #153). Each version of a file is parsed whole once with
 //! tree-sitter, and the lines a chunk shows are highlighted by running the language's highlights query over
 //! those lines' bytes only, so a chunk costs about a millisecond whatever the file's length.
+//!
+//! Code in one language inside another, such as a Markdown code fence or an HTML `<script>`, is parsed as
+//! a layer of its own, and its captures paint over the file's (#179). The languages are a table in
+//! `languages.rs`, and `docs/highlighting.md` says how to add one.
+
+mod injected;
+mod languages;
 
 use std::cmp::Reverse;
 use std::fmt;
 use std::ops::Range;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, OnceLock};
 
 use serde::Serialize;
 use specta::Type;
 use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator, Tree};
+use tree_sitter_language::LanguageFn;
 
-/// A language Tsugiki highlights.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Language {
-    C,
-    Python,
+use languages::LANGUAGES;
+
+/// What Tsugiki knows of a language: an entry in the table in `languages.rs`.
+struct Spec {
+    /// What a code fence or an injection query calls the language, in lower case.
+    name: &'static str,
+    /// The other names a code fence or a reST `code-block` may give it, in lower case. A name that's one
+    /// of the extensions in `files`, such as `py`, needs no entry here.
+    aliases: &'static [&'static str],
+    /// The files in the language.
+    files: &'static [File],
+    /// The grammar, as its crate exports it.
+    grammar: LanguageFn,
+    /// The highlights queries, read as one in this order. Of the patterns that capture one node, the last
+    /// wins, so a query that adds to another's comes after it.
+    highlights: &'static [&'static str],
+    /// The injections queries, read as one, which say where code in another language is.
+    injections: &'static [&'static str],
+    /// What some captures paint in this language, where it isn't what `Paint::shared` says: YAML's
+    /// `@property` is a key, which github.com shows green. `None` leaves the capture unpainted.
+    paints: &'static [(&'static str, Option<Highlight>)],
+}
+
+/// Files in a language: those with an extension, such as `Extension("rs")`, or with a whole name, such as
+/// `Name("Makefile")`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum File {
+    Extension(&'static str),
+    Name(&'static str),
+}
+
+impl File {
+    /// Whether the file named `name` is one of these.
+    fn holds(self, name: &str) -> bool {
+        match self {
+            Self::Extension(extension) => name
+                .strip_suffix(extension)
+                .and_then(|stem| stem.strip_suffix('.'))
+                .is_some_and(|stem| !stem.is_empty()),
+            Self::Name(whole) => name == whole,
+        }
+    }
+}
+
+/// A language Tsugiki highlights: an entry in the table, and its place there.
+#[derive(Clone, Copy)]
+pub struct Language {
+    spec: &'static Spec,
+    index: usize,
+}
+
+impl PartialEq for Language {
+    fn eq(&self, other: &Self) -> bool {
+        self.index == other.index
+    }
+}
+
+impl Eq for Language {}
+
+impl fmt::Debug for Language {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.spec.name)
+    }
 }
 
 impl Language {
-    /// The language of the file at `path`, by its extension, if Tsugiki highlights it.
-    pub fn of(path: &str) -> Option<Self> {
-        let name = path.rsplit('/').next().unwrap_or(path);
-        match name.rsplit_once('.')?.1 {
-            "c" | "h" => Some(Self::C),
-            "py" | "pyi" | "pyw" => Some(Self::Python),
-            _ => None,
-        }
+    /// The first language in the table that `wanted` picks.
+    fn find(wanted: impl Fn(&Spec) -> bool) -> Option<Self> {
+        let (index, spec) = LANGUAGES
+            .iter()
+            .enumerate()
+            .find(|(_, spec)| wanted(spec))?;
+        Some(Self { spec, index })
     }
 
-    fn grammar(self) -> &'static Grammar {
-        match self {
-            Self::C => &C,
-            Self::Python => &PYTHON,
-        }
+    /// The language of the file at `path`, by its name or extension, if Tsugiki highlights it.
+    pub fn of(path: &str) -> Option<Self> {
+        let name = path.rsplit('/').next().unwrap_or(path);
+        Self::find(|spec| spec.files.iter().any(|file| file.holds(name)))
+    }
+
+    /// The language a code fence or an injection query names, such as `python`, `py` or `Python3`, if
+    /// Tsugiki highlights it.
+    pub fn named(name: &str) -> Option<Self> {
+        let name = name.trim();
+        let called = |other: &str| other.eq_ignore_ascii_case(name);
+        let extension =
+            |file: &File| matches!(*file, File::Extension(extension) if called(extension));
+        Self::find(|spec| {
+            called(spec.name)
+                || spec.aliases.iter().any(|alias| called(alias))
+                || spec.files.iter().any(extension)
+        })
+    }
+
+    /// The language's grammar and queries, compiled the first time a file in it is parsed. A query that
+    /// doesn't compile leaves the language plain; a test compiles each one.
+    fn grammar(self) -> Option<&'static Grammar> {
+        static GRAMMARS: LazyLock<Vec<OnceLock<Option<Grammar>>>> =
+            LazyLock::new(|| LANGUAGES.iter().map(|_| OnceLock::new()).collect());
+        let compiled = GRAMMARS.get(self.index)?;
+        compiled
+            .get_or_init(|| Grammar::compile(self.spec))
+            .as_ref()
     }
 }
 
-/// What a run of text shows as, in colors that look like github.com's.
+/// What a run of text shows as, in colors and styles that look like github.com's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum Highlight {
@@ -47,6 +136,12 @@ pub enum Highlight {
     Constant,
     Function,
     Type,
+    /// An HTML tag's name, or a key in YAML or TOML.
+    Tag,
+    /// A heading in Markdown or reST.
+    Heading,
+    Strong,
+    Emphasis,
 }
 
 /// What a capture paints: a color, or the plain text of code inside a string, such as an f-string's `{x}`.
@@ -57,65 +152,118 @@ enum Paint {
 }
 
 impl Paint {
-    /// What a highlights query's capture paints, or `None` for one Tsugiki leaves alone, such as `@variable`
-    /// or `@punctuation.delimiter`. The part before the first dot decides: `@function.builtin` is a function.
-    fn of(capture: &str) -> Option<Self> {
-        let kind = capture.split('.').next().unwrap_or(capture);
-        let color = match kind {
-            "keyword" | "operator" => Highlight::Keyword,
-            "string" => Highlight::String,
+    /// What a highlights query's capture paints in a language with the overrides `paints`, or `None` for one
+    /// Tsugiki leaves alone, such as `@variable` or `@punctuation.delimiter`. The longest leading part of
+    /// the name that has a rule decides: `@function.builtin` paints as `function` does.
+    fn of(capture: &str, paints: &[(&str, Option<Highlight>)]) -> Option<Self> {
+        let mut part = capture;
+        loop {
+            if let Some((_, highlight)) = paints.iter().find(|(name, _)| *name == part) {
+                return highlight.map(Self::Color);
+            }
+            if let Some(paint) = Self::shared(part) {
+                return paint;
+            }
+            part = part.rsplit_once('.')?.0;
+        }
+    }
+
+    /// The rule for a capture name, or its leading part, in every language: `Some(None)` leaves it alone,
+    /// and `None` means there's no rule. The names are those of Helix's, Neovim's and the grammars' own
+    /// queries.
+    fn shared(name: &str) -> Option<Option<Self>> {
+        let highlight = match name {
+            "keyword" | "operator" | "conditional" | "repeat" | "include" | "exception"
+            | "type.qualifier" => Highlight::Keyword,
+            "string" | "character" | "constant.character" | "markup.link" | "text.uri"
+            | "text.reference" => Highlight::String,
             "comment" => Highlight::Comment,
-            "number" | "constant" | "escape" => Highlight::Constant,
-            "function" | "attribute" => Highlight::Function,
+            "constant"
+            | "number"
+            | "float"
+            | "boolean"
+            | "escape"
+            | "string.escape"
+            | "string.special.key"
+            | "string.special.symbol"
+            | "constant.character.escape"
+            | "markup.raw"
+            | "text.literal" => Highlight::Constant,
+            "function" | "method" | "attribute" | "decorator" | "tag.attribute" => {
+                Highlight::Function
+            }
             "type" | "constructor" => Highlight::Type,
-            "embedded" => return Some(Self::Plain),
+            "tag" => Highlight::Tag,
+            "markup.heading" | "text.title" => Highlight::Heading,
+            "markup.bold" | "text.strong" => Highlight::Strong,
+            "markup.italic" | "text.emphasis" => Highlight::Emphasis,
+            "embedded" | "none" => return Some(Some(Self::Plain)),
+            "tag.delimiter" => return Some(None),
             _ => return None,
         };
-        Some(Self::Color(color))
+        Some(Some(Self::Color(highlight)))
     }
 }
 
-/// A language's grammar and its highlights query, with what each of the query's captures paints.
+/// What one of a highlights query's captures says of the node it captures.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Capture {
+    /// The node shows as this paints it, or, with `None`, as the nodes around it show: `@variable`. Of the
+    /// patterns that capture one node, the last decides, even when it leaves the node unpainted.
+    Shows(Option<Paint>),
+    /// A capture whose name starts with `_`, which only a predicate reads: `@_type`.
+    Predicate,
+}
+
+/// A language's grammar and queries, with what each of the highlights query's captures says.
 struct Grammar {
     language: tree_sitter::Language,
-    query: Query,
-    paints: Vec<Option<Paint>>,
+    highlights: Query,
+    captures: Vec<Capture>,
+    injections: Option<injected::Injections>,
 }
 
 impl Grammar {
-    #[expect(
-        clippy::expect_used,
-        reason = "the query ships with its grammar's crate, and a test compiles each one"
-    )]
-    fn new(language: tree_sitter::Language, highlights: &str) -> Self {
-        let query =
-            Query::new(&language, highlights).expect("a grammar's own highlights query compiles");
-        let paints = query
+    /// The grammar of `spec`, with its queries compiled, or `None`, logged, if one doesn't compile.
+    fn compile(spec: &Spec) -> Option<Self> {
+        let language = tree_sitter::Language::new(spec.grammar);
+        let highlights = compile(spec, &language, spec.highlights)?;
+        let captures = highlights
             .capture_names()
             .iter()
-            .map(|name| Paint::of(name))
+            .map(|name| match name.strip_prefix('_') {
+                Some(_) => Capture::Predicate,
+                None => Capture::Shows(Paint::of(name, spec.paints)),
+            })
             .collect();
-        Self {
+        let injections = match spec.injections {
+            [] => None,
+            queries => Some(injected::Injections::new(compile(
+                spec, &language, queries,
+            )?)?),
+        };
+        Some(Self {
             language,
-            query,
-            paints,
-        }
+            highlights,
+            captures,
+            injections,
+        })
     }
 }
 
-static C: LazyLock<Grammar> = LazyLock::new(|| {
-    Grammar::new(
-        tree_sitter_c::LANGUAGE.into(),
-        tree_sitter_c::HIGHLIGHT_QUERY,
-    )
-});
-
-static PYTHON: LazyLock<Grammar> = LazyLock::new(|| {
-    Grammar::new(
-        tree_sitter_python::LANGUAGE.into(),
-        tree_sitter_python::HIGHLIGHTS_QUERY,
-    )
-});
+/// `queries` read as one query of `spec`'s language, or `None`, logged, if it doesn't compile.
+fn compile(spec: &Spec, language: &tree_sitter::Language, queries: &[&str]) -> Option<Query> {
+    match Query::new(language, &queries.join("\n")) {
+        Ok(query) => Some(query),
+        Err(error) => {
+            let name = spec.name;
+            log::error!(
+                "Tsugiki can't compile a query of {name}'s, so it shows {name} plain: {error}"
+            );
+            None
+        }
+    }
+}
 
 /// A run of one line's text in one color, from `start` to `end` in UTF-16 code units, as the webview counts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -131,7 +279,20 @@ pub struct Parsed {
     source: String,
     /// Where each line starts, in bytes.
     lines: Vec<usize>,
+    /// The file's own tree first, then the trees of the code in other languages inside it, each after the
+    /// layer it's inside.
+    layers: Vec<Layer>,
+}
+
+/// The tree of a file, or of the code in one language inside it.
+struct Layer {
+    grammar: &'static Grammar,
     tree: Tree,
+    /// The bytes of the file the tree was parsed from, in order. A node of an inner layer can span bytes
+    /// left out between them, such as the `>` of a quote around a Markdown fence, which it doesn't paint.
+    ranges: Vec<Range<usize>>,
+    /// How many layers it's inside: none for the file's own.
+    depth: usize,
 }
 
 impl fmt::Debug for Parsed {
@@ -140,25 +301,35 @@ impl fmt::Debug for Parsed {
             .debug_struct("Parsed")
             .field("language", &self.language)
             .field("lines", &self.lines.len())
+            .field("layers", &self.layers.len())
             .finish_non_exhaustive()
     }
 }
 
 impl Parsed {
-    /// Parses `source` whole. Code tree-sitter can't make sense of, such as a macro the C grammar doesn't
-    /// know, still parses, with an error node around it.
+    /// Parses `source` whole, and the code in other languages inside it. Code tree-sitter can't make sense
+    /// of, such as a macro the C grammar doesn't know, still parses, with an error node around it.
     pub fn parse(language: Language, source: String) -> Option<Self> {
+        let grammar = language.grammar()?;
         let mut parser = Parser::new();
-        parser.set_language(&language.grammar().language).ok()?;
+        parser.set_language(&grammar.language).ok()?;
         let tree = parser.parse(&source, None)?;
         let ends = source.match_indices('\n').map(|(at, _)| at + 1);
         let lines = std::iter::once(0).chain(ends).collect();
-        Some(Self {
+        let whole = Layer {
+            grammar,
+            tree,
+            ranges: std::iter::once(0..source.len()).collect(),
+            depth: 0,
+        };
+        let mut parsed = Self {
             language,
             source,
             lines,
-            tree,
-        })
+            layers: vec![whole],
+        };
+        parsed.inject(&mut parser);
+        Some(parsed)
     }
 
     /// The spans of each line in `lines`, numbered from 1 as a diff numbers them. A line past the end has
@@ -178,50 +349,20 @@ impl Parsed {
         self.lines.get(index).copied().unwrap_or(self.source.len())
     }
 
-    /// What paints each byte of `bytes`. Where captures overlap, the innermost node paints, and of the
-    /// patterns that capture one node and paint it, the last in the query wins, as in tree-sitter's own
-    /// highlighter. The grammars' queries rely on it: they list `(identifier) @variable` first, and the
-    /// patterns for more particular names after it.
+    /// What paints each byte of `bytes`: each layer over them in turn, so code inside another language
+    /// paints over the code around it.
     fn paint(&self, bytes: Range<usize>) -> Vec<Option<Paint>> {
-        let mut paint = vec![None; bytes.len()];
-        if bytes.is_empty() {
-            return paint;
-        }
-        let grammar = self.language.grammar();
+        let mut canvas = Canvas {
+            paint: vec![None; bytes.len()],
+            bytes,
+        };
         let mut cursor = QueryCursor::new();
-        let root = self.tree.root_node();
-        let mut captures = (cursor.set_byte_range(bytes.clone())).captures(
-            &grammar.query,
-            root,
-            self.source.as_bytes(),
-        );
-        let mut found = Vec::new();
-        while let Some((found_match, index)) = captures.next() {
-            let capture = found_match.captures().get(*index);
-            let at = capture.map(|capture| usize::try_from(capture.index).unwrap_or(usize::MAX));
-            if let Some(capture) = capture
-                && let Some(Some(painted)) = at.and_then(|at| grammar.paints.get(at))
-            {
-                let node = capture.node;
-                found.push((
-                    node.start_byte(),
-                    node.end_byte(),
-                    found_match.pattern_index,
-                    *painted,
-                ));
+        for layer in &self.layers {
+            if layer.within(&canvas.bytes).next().is_some() {
+                layer.paint(&mut cursor, &self.source, &mut canvas);
             }
         }
-        // Outer nodes before the nodes inside them, so the inner ones paint over them.
-        found.sort_by_key(|&(start, end, pattern, _)| (start, Reverse(end), Reverse(pattern)));
-        found.dedup_by_key(|&mut (start, end, _, _)| (start, end));
-        for (start, end, _, painted) in found {
-            let from = start.max(bytes.start) - bytes.start;
-            let to = end.min(bytes.end).saturating_sub(bytes.start);
-            if let Some(run) = paint.get_mut(from..to) {
-                run.fill(Some(painted));
-            }
-        }
-        paint
+        canvas.paint
     }
 
     /// The spans of line `line`, where `paint` covers the bytes from `start`.
@@ -250,6 +391,73 @@ impl Parsed {
             at += width;
         }
         spans
+    }
+}
+
+/// What paints each byte of a run of the file's bytes.
+struct Canvas {
+    bytes: Range<usize>,
+    paint: Vec<Option<Paint>>,
+}
+
+impl Layer {
+    /// The parts of `bytes` the layer was parsed from.
+    fn within(&self, bytes: &Range<usize>) -> impl Iterator<Item = Range<usize>> {
+        let (start, end) = (bytes.start, bytes.end);
+        let first = self.ranges.partition_point(|range| range.end <= start);
+        let after = self.ranges.get(first..).unwrap_or_default();
+        after
+            .iter()
+            .take_while(move |range| range.start < end)
+            .map(move |range| range.start.max(start)..range.end.min(end))
+            .filter(|range| !range.is_empty())
+    }
+
+    /// Paints `canvas`, which covers bytes of `source`, with this layer's captures over them. Where
+    /// captures overlap, the innermost node paints, and of the patterns that capture one node, the last in
+    /// the query decides, as in Helix and Neovim. The queries rely on it: they list `(identifier) @variable`
+    /// first, and the patterns for more particular names after it.
+    fn paint(&self, cursor: &mut QueryCursor, source: &str, canvas: &mut Canvas) {
+        let bytes = canvas.bytes.clone();
+        let grammar = self.grammar;
+        let root = self.tree.root_node();
+        let mut captures = (cursor.set_byte_range(bytes.clone())).captures(
+            &grammar.highlights,
+            root,
+            source.as_bytes(),
+        );
+        let mut found = Vec::new();
+        while let Some((found_match, index)) = captures.next() {
+            let capture = found_match.captures().get(*index);
+            let at = capture.map(|capture| usize::try_from(capture.index).unwrap_or(usize::MAX));
+            if let Some(capture) = capture
+                && let Some(Capture::Shows(shows)) = at.and_then(|at| grammar.captures.get(at))
+            {
+                let node = capture.node;
+                found.push((
+                    node.start_byte(),
+                    node.end_byte(),
+                    found_match.pattern_index,
+                    *shows,
+                ));
+            }
+        }
+        // Outer nodes before the nodes inside them, so the inner ones paint over them.
+        found.sort_by_key(|&(start, end, pattern, _)| (start, Reverse(end), Reverse(pattern)));
+        found.dedup_by_key(|&mut (start, end, _, _)| (start, end));
+        let painted = found
+            .into_iter()
+            .filter_map(|(start, end, _, shows)| Some((start..end, shows?)));
+        for (node, shows) in painted {
+            for part in self.within(&node) {
+                let part = part.start.max(bytes.start)..part.end.min(bytes.end);
+                let run =
+                    part.start.saturating_sub(bytes.start)..part.end.saturating_sub(bytes.start);
+                if let Some(run) = canvas.paint.get_mut(run) {
+                    run.fill(Some(shows));
+                }
+            }
+        }
     }
 }
 

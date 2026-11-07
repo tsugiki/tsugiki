@@ -74,6 +74,10 @@ stale-bindings:
 bindings:
     npm run bindings
 
+# Write the snapshot of each sample in crates/core/src/highlight/samples afresh, for you to read in git's diff
+highlight-samples $INSTA_UPDATE="always" $INSTA_FORCE_PASS="1":
+    npm run highlight-samples
+
 # Run the Rust tests with their coverage gate
 rust-coverage:
     npm run rust-coverage

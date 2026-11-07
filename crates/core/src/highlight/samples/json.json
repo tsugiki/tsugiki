@@ -1,0 +1,11 @@
+{
+  "name": "tsugiki",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite --port 1420"
+  },
+  "files": ["dist", "src\/lib"],
+  "rows": null,
+  "limit": 1.5e3
+}

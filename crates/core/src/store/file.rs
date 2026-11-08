@@ -143,9 +143,9 @@ mod tests {
     #[test]
     fn a_signature_without_a_whole_header_doesnt_make_a_database() {
         let (path, folder) = temp_database("signature-only");
-        // Long enough to hold the user version, and short of the 100 bytes a header takes.
+        // Long enough to hold the user version, and one byte short of a header.
         let mut short = SIGNATURE.to_vec();
-        short.resize(80, 0);
+        short.resize(usize::from(HEADER_LENGTH) - 1, 0);
         fs::write(&path, short).unwrap();
 
         let problem = Store::open(&path).err().unwrap();

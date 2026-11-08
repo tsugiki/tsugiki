@@ -238,7 +238,8 @@ fn database(folders: Result<Folders, Error>) -> Database {
     Database { folders, to_open }
 }
 
-/// Refreshes told to stop before they began, for a test that shouldn't get as far as a second request.
+/// Refreshes whose sender is already gone, so they stop before they begin, for a test that shouldn't get as
+/// far as a second request. A session with no token ends on that too.
 fn stopped_refreshes() -> Refreshes {
     Refreshes {
         intervals: Intervals {
@@ -1154,6 +1155,18 @@ fn a_session_with_no_token_ignores_a_refresh_until_it_stops() {
     messages.send(Message::Stop).unwrap();
 
     refreshes.wait_for_stop(&mut quiet_board(), &empty_store());
+}
+
+#[test]
+fn a_reader_answers_once_the_session_has_opened_the_database() {
+    let folders = temp_folders("reader");
+    let session = Session::start(quiet_board(), Ok(folders.clone()), offline(), HOURLY);
+
+    let facts = session.reader().work_facts(&gcmon());
+    session.stop(PLENTY);
+    fs::remove_dir_all(folders.data).unwrap();
+
+    assert_eq!(facts.unwrap().pull_requests, []);
 }
 
 #[test]

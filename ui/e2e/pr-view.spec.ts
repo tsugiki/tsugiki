@@ -1,5 +1,6 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import type {
+  DiffThread_Serialize as DiffThread,
   Filter,
   ListedItem_Serialize as ListedItem,
   PrView_Serialize as PrView,
@@ -92,7 +93,7 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
         ],
         rows: 3,
         news: [],
-        threads: [],
+        threads: { kind: "shown", threads: [] },
       },
     },
     pullRequestRows: {
@@ -187,9 +188,9 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
   await expect(pane).toHaveCount(0);
 });
 
-test("a thread's place in the Conversation opens it in Files, under its line in either view", async ({
-  page,
-}) => {
+/** Opens a PR whose diff adds two lines to `NEWS` and has a thread at `at` with the comment `words`, and
+ * whose Conversation lists the thread under `NEWS:1`. Returns the PR view's pane. */
+const threaded = async (page: Page, at: DiffThread["at"], words: string) => {
   const thread = {
     id: "T1",
     path: "NEWS",
@@ -206,7 +207,6 @@ test("a thread's place in the Conversation opens it in Files, under its line in 
       reviews: view.content.reviews.map((review) => ({ ...review, threads: [thread] })),
     },
   };
-  const words = "Say what it fixes. ".repeat(40);
   await mockCore(page, {
     home: { screen: "repository", repository },
     workbench: {
@@ -240,22 +240,26 @@ test("a thread's place in the Conversation opens it in Files, under its line in 
         ],
         rows: 4,
         news: [],
-        threads: [
-          {
-            id: "T1",
-            row: 2,
-            resolution: "open",
-            comments: [
-              {
-                author: "some-reviewer",
-                created_at: "2026-11-04T10:00:00Z",
-                body_html: `<p>${words}</p>`,
-                hidden: null,
-              },
-            ],
-            later_comments: 0,
-          },
-        ],
+        threads: {
+          kind: "shown",
+          threads: [
+            {
+              id: "T1",
+              at,
+              resolution: "open",
+              comments: [
+                {
+                  author: "some-reviewer",
+                  created_at: "2026-11-04T10:00:00Z",
+                  body_html: `<p>${words}</p>`,
+                  hidden: null,
+                  submission: "submitted",
+                },
+              ],
+              later_comments: 0,
+            },
+          ],
+        },
       },
     },
     pullRequestRows: {
@@ -271,7 +275,13 @@ test("a thread's place in the Conversation opens it in Files, under its line in 
   });
   await page.goto("/");
   await page.getByRole("button", { name: "#10 gh-7: Fix it" }).click();
-  const pane = page.getByRole("region", { name: "PR view" });
+  return page.getByRole("region", { name: "PR view" });
+};
+
+test("a thread's place in the Conversation opens it in Files, under its line in either view", async ({
+  page,
+}) => {
+  const pane = await threaded(page, { kind: "row", row: 2 }, "Say what it fixes. ".repeat(40));
 
   await pane.getByRole("button", { name: "NEWS:1" }).click();
 
@@ -300,4 +310,38 @@ test("a thread's place in the Conversation opens it in Files, under its line in 
   await page.keyboard.press("ControlOrMeta+Alt+u");
   await expect(pane.getByRole("region", { name: "Side-by-side diff" })).toBeVisible();
   await expect.poll(() => gaps("The fix", "And more")).toEqual([0, expect.any(Number)]);
+});
+
+test("an Outdated thread sits at the top of its file with the last lines of its code, all of them on Show more", async ({
+  page,
+}) => {
+  const rows = (count: number) =>
+    Array.from({ length: count }, (_, at) => ({
+      kind: "added" as const,
+      new: at + 1,
+      text: `Line ${String(at + 1)}`,
+    }));
+  const code = { rows: [{ kind: "hunk" as const, text: "@@ -0,0 +1,6 @@" }, ...rows(6)], spans: [] };
+  const pane = await threaded(page, { kind: "outdated", file: 0, code }, "Say what it fixes.");
+
+  await pane.getByRole("button", { name: "NEWS:1" }).click();
+
+  const box = pane.getByRole("group", { name: "Review thread" });
+  await expect(box.locator(".code .row")).toHaveText(["3+Line 3", "4+Line 4", "5+Line 5", "6+Line 6"]);
+  /** The pixels from the top of the file's header to the thread, a row with the header's border overhanging
+   * it, and from the thread to the hunk's row. */
+  const gaps = () =>
+    box.evaluate((thread) => {
+      const [header, hunk] = [".row.file", ".row.hunk"].map((row) =>
+        document.querySelector(row)?.getBoundingClientRect(),
+      );
+      const own = thread.getBoundingClientRect();
+      return [own.top - (header?.top ?? 0), (hunk?.top ?? 0) - own.bottom];
+    });
+  await expect.poll(gaps).toEqual([20, expect.any(Number)]);
+  await box.getByRole("button", { name: "Show more" }).click();
+  await expect(box.locator(".code .row")).toHaveCount(7);
+  // The hunk's row moves down to clear the whole code, by less than a row.
+  await expect.poll(async () => (await gaps())[1]).toBeGreaterThanOrEqual(0);
+  expect((await gaps())[1]).toBeLessThan(20);
 });

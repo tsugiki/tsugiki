@@ -108,7 +108,7 @@ it("opens a thread from its place, for a PR", async () => {
   expect(onthread).toHaveBeenCalledExactlyOnceWith("T7");
 });
 
-it("offers no link to a thread Files can't place by its line yet", () => {
+it("links every thread to Files, an Outdated one and one on the whole file too", () => {
   const moved = { kind: "line", side: "RIGHT", line: null, original: 7 } as const;
   shown(
     reviewed([
@@ -124,8 +124,7 @@ it("offers no link to a thread Files can't place by its line yet", () => {
     vi.fn(),
   );
 
-  expect(screen.queryAllByRole("button")).toEqual([]);
-  expect([...document.querySelectorAll(".place")].map((place) => place.textContent)).toEqual([
+  expect(screen.getAllByRole("button").map((place) => place.textContent)).toEqual([
     "Lib/ast.py:7",
     "Lib/ast.py:7",
     "Lib/ast.py",

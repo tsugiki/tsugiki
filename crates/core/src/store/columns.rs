@@ -7,7 +7,7 @@ use time::OffsetDateTime;
 
 use crate::filters::FilterQuery;
 use crate::github::issue_content::HiddenReason;
-use crate::github::pull_request_content::{Anchor, Resolution, Side};
+use crate::github::pull_request_content::{Anchor, Resolution, Side, Submission};
 use crate::github::pull_requests::{CiState, PrState, ReviewState};
 use crate::github::refresh::Etag;
 use crate::github::{CommitSha, Login};
@@ -148,6 +148,11 @@ text_column!(Side {
     Right => "RIGHT",
 });
 
+text_column!(Submission {
+    Submitted => "submitted",
+    Pending => "pending",
+});
+
 text_column!(ReviewState {
     Pending => "PENDING",
     Commented => "COMMENTED",
@@ -189,6 +194,7 @@ mod tests {
         assert_eq!(stored_texts(Resolution::ALL), ["open", "resolved"]);
         assert_eq!(stored_texts(Anchor::ALL), ["current", "outdated"]);
         assert_eq!(stored_texts(Side::ALL), ["LEFT", "RIGHT"]);
+        assert_eq!(stored_texts(Submission::ALL), ["submitted", "pending"]);
     }
 
     #[test]

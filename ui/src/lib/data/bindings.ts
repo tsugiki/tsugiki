@@ -202,6 +202,12 @@ export type CloningChanged_Deserialize = Cloning | null;
 /**  Sent when a mirror's clone moves on, and when it ends, so the status bar can say. */
 export type CloningChanged_Serialize = Cloning | null;
 
+/**
+ *  A row of a stored hunk: its `@@` line, a line of the diff, or what git says in place of a line, such as
+ *  a missing newline at the end.
+ */
+export type CodeRow = { kind: "hunk"; text: string } | { kind: "context"; old: number; new: number; text: string } | { kind: "added"; new: number; text: string } | { kind: "removed"; old: number; text: string } | { kind: "note"; text: string };
+
 /**  How a Repository's PRs name their Issues and Backports (ADR 0011). `links.rs` reads this. */
 export type Conventions = "cpython" | "github";
 
@@ -299,34 +305,55 @@ export type DiffRow_Serialize =
 /**  What git says in place of lines: a binary file, a new mode, a missing newline at the end. */
 { kind: "note"; text: string };
 
-/**  A review thread under a row of the diff. */
+/**  A review thread, and where Files shows it. */
 export type DiffThread = DiffThread_Serialize | DiffThread_Deserialize;
 
-/**  A review thread under a row of the diff. */
+/**  A review thread, and where Files shows it. */
 export type DiffThread_Deserialize = {
 	id: ThreadId,
-	/**  The row of the line it is on, which it sits under. */
-	row: number,
+	at: Placement_Deserialize,
 	/**  Resolved also when GitHub hides each of its comments, which leaves nothing in it to answer. */
 	resolution: Resolution,
-	/**  Its first 100 comments, oldest first. */
-	comments: IssueComment_Deserialize[],
+	/**  Its first 100 comments, oldest first, with the user's drafts among them. */
+	comments: ThreadComment_Deserialize[],
 	/**  The count of later comments that only GitHub holds. */
 	later_comments: number,
 };
 
-/**  A review thread under a row of the diff. */
+/**  A review thread, and where Files shows it. */
 export type DiffThread_Serialize = {
 	id: ThreadId,
-	/**  The row of the line it is on, which it sits under. */
-	row: number,
+	at: Placement_Serialize,
 	/**  Resolved also when GitHub hides each of its comments, which leaves nothing in it to answer. */
 	resolution: Resolution,
-	/**  Its first 100 comments, oldest first. */
-	comments: IssueComment_Serialize[],
+	/**  Its first 100 comments, oldest first, with the user's drafts among them. */
+	comments: ThreadComment_Serialize[],
 	/**  The count of later comments that only GitHub holds. */
 	later_comments: number,
 };
+
+/**  The review threads the Files tab shows with a diff. */
+export type DiffThreads = DiffThreads_Serialize | DiffThreads_Deserialize;
+
+/**  The review threads the Files tab shows with a diff. */
+export type DiffThreads_Deserialize = 
+/**  The threads, in the order the tab shows them, from the PR's Conversation as Tsugiki last read it. */
+{ kind: "shown"; threads: DiffThread_Deserialize[] } | 
+/**
+ *  The PR has moved on to `newer`, which the mirror is fetching, and the diff is the one before. The
+ *  threads' lines count in `newer`, so the tab holds back all `count` of them until its diff comes.
+ */
+{ kind: "held_back"; newer: string; count: number };
+
+/**  The review threads the Files tab shows with a diff. */
+export type DiffThreads_Serialize = 
+/**  The threads, in the order the tab shows them, from the PR's Conversation as Tsugiki last read it. */
+{ kind: "shown"; threads: DiffThread_Serialize[] } | 
+/**
+ *  The PR has moved on to `newer`, which the mirror is fetching, and the diff is the one before. The
+ *  threads' lines count in `newer`, so the tab holds back all `count` of them until its diff comes.
+ */
+{ kind: "held_back"; newer: string; count: number };
 
 /**  A failure in plain words. Details go only to a local log, with tokens scrubbed. */
 export type Error = Error_Serialize | Error_Deserialize;
@@ -905,6 +932,53 @@ export type Pair = {
 	added: number,
 };
 
+/**  Where Files shows a thread. A file is named by its place among the diff's files. */
+export type Placement = Placement_Serialize | Placement_Deserialize;
+
+/**  Where Files shows a thread. A file is named by its place among the diff's files. */
+export type Placement_Deserialize = 
+/**  Under the diff's row `row`, which shows its line. */
+{ kind: "row"; row: number } | 
+/**  At the top of file `file`, as it is on the whole file, above the file's Outdated threads. */
+{ kind: "file"; file: number } | 
+/**
+ *  At the top of file `file`, as the code under it has changed since, with the code it was written
+ *  against.
+ */
+{ kind: "outdated"; file: number; code?: ThreadCode | null } | 
+/**
+ *  Under line `head_line` of file `file` at the head, which no hunk shows, so the gap or the end of the
+ *  file around it opens to show it. `line` is the line as the thread's side counts it.
+ */
+{ kind: "outside"; file: number; line: number; head_line: number } | 
+/**
+ *  After the last file, on file `path`, which the diff no longer holds, with the code it was written
+ *  against.
+ */
+{ kind: "gone"; path: string; code?: ThreadCode | null };
+
+/**  Where Files shows a thread. A file is named by its place among the diff's files. */
+export type Placement_Serialize = 
+/**  Under the diff's row `row`, which shows its line. */
+{ kind: "row"; row: number } | 
+/**  At the top of file `file`, as it is on the whole file, above the file's Outdated threads. */
+{ kind: "file"; file: number } | 
+/**
+ *  At the top of file `file`, as the code under it has changed since, with the code it was written
+ *  against.
+ */
+{ kind: "outdated"; file: number; code: ThreadCode | null } | 
+/**
+ *  Under line `head_line` of file `file` at the head, which no hunk shows, so the gap or the end of the
+ *  file around it opens to show it. `line` is the line as the thread's side counts it.
+ */
+{ kind: "outside"; file: number; line: number; head_line: number } | 
+/**
+ *  After the last file, on file `path`, which the diff no longer holds, with the code it was written
+ *  against.
+ */
+{ kind: "gone"; path: string; code: ThreadCode | null };
+
 /**  What the Files tab shows. */
 export type PrFiles = PrFiles_Serialize | PrFiles_Deserialize;
 
@@ -924,12 +998,7 @@ head: string;
  */
 base: string; files: DiffFile_Deserialize[]; rows: number; 
 /**  The PR's NEWS entries, rendered above the rows. */
-news: NewsEntry_Deserialize[]; 
-/**
- *  The review threads on its lines, in the order of their rows, from the PR's Conversation as
- *  Tsugiki last read it.
- */
-threads: DiffThread_Deserialize[] };
+news: NewsEntry_Deserialize[]; threads: DiffThreads_Deserialize };
 
 /**  What the Files tab shows. */
 export type PrFiles_Serialize = 
@@ -947,12 +1016,7 @@ head: string;
  */
 base: string; files: DiffFile_Serialize[]; rows: number; 
 /**  The PR's NEWS entries, rendered above the rows. */
-news: NewsEntry_Serialize[]; 
-/**
- *  The review threads on its lines, in the order of their rows, from the PR's Conversation as
- *  Tsugiki last read it.
- */
-threads: DiffThread_Serialize[] };
+news: NewsEntry_Serialize[]; threads: DiffThreads_Serialize };
 
 export type PrState = "OPEN" | "CLOSED" | "MERGED";
 
@@ -1310,6 +1374,12 @@ line: number | null;
 /**  The line it was on when it began. */
 original: number | null };
 
+/**
+ *  Whether others can read a comment, or it is a draft in the user's Pending review, which only they see
+ *  until they submit it on github.com.
+ */
+export type Submission = "submitted" | "pending";
+
 /**  The work under way in the queue of syncs. */
 export type SyncActivity = SyncActivity_Serialize | SyncActivity_Deserialize;
 
@@ -1353,6 +1423,28 @@ export type SyncPart = "your_work" |
  *  when it has to wait.
  */
 "refresh";
+
+/**
+ *  The code a thread was written against, from the hunk GitHub stored with it: its rows, the last of them
+ *  the thread's line, and the spans that highlight each row.
+ */
+export type ThreadCode = {
+	rows: CodeRow[],
+	spans: Span[][],
+};
+
+/**  A comment in a review thread. */
+export type ThreadComment = ThreadComment_Serialize | ThreadComment_Deserialize;
+
+/**  A comment in a review thread. */
+export type ThreadComment_Deserialize = {
+	submission: Submission,
+} & IssueComment_Deserialize;
+
+/**  A comment in a review thread. */
+export type ThreadComment_Serialize = {
+	submission: Submission,
+} & IssueComment_Serialize;
 
 /**  GitHub's id of a review thread, which a thread's line in the Conversation names to open it in Files. */
 export type ThreadId = string;

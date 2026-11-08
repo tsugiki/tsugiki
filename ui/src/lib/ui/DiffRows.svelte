@@ -4,14 +4,16 @@
      show the lines its gap leaves out, and the row after a file's last hunk the lines after it (#182).
      Side by side, a line of context shows on both sides, and a change shows its removed rows on the left
      beside its added ones on the right (#183). A review thread takes as many rows' places under its line
-     as it is tall, and the tab measures it once drawn (#184). -->
+     as it is tall, and the tab measures it once drawn (#184). A thread on a line no hunk shows opens the
+     lines around it, with buttons above and below for the lines still hidden, and the threads on files no
+     longer in the diff come under a heading after the last file (#185). -->
 <script lang="ts">
   import { untrack } from "svelte";
-  import type { HiddenGap } from "$lib/state/diff-layout";
   import {
     EXPAND,
     type DiffFile,
     type FileChange,
+    type HiddenLines,
     type NewsEntry,
     type PrFilesState,
     type Span,
@@ -171,41 +173,41 @@
   >
 {/snippet}
 
-<!-- The buttons of a gap that still hides lines, in the place of a hunk row's line numbers: 20 more above the
-     hunk or below the one before, or the rest of a short gap. As on GitHub, the gap at a file's start has
-     no hunk before it, so it shows lines only above its hunk. -->
-{#snippet gap({ file, gap, hidden }: HiddenGap)}
+<!-- The buttons for lines a gap or the end of a file still hides, in the place of the line numbers: 20 more
+     from the bottom up or from the top down, or all of a short run. As on GitHub, lines from a file's start
+     have nothing above them, so they show only from the bottom up. -->
+{#snippet gap(hidden: HiddenLines)}
   <span class="expand">
-    {#if hidden > EXPAND}
+    {#if hidden.lines > EXPAND}
       <button
         type="button"
         class="step"
         aria-label={`Show ${String(EXPAND)} lines above`}
         title={`Show ${String(EXPAND)} lines above`}
         onclick={() => {
-          diff.expandAbove(file, gap);
+          diff.expandAbove(hidden);
         }}>↑</button
-      >{#if gap.new > 1}<button
+      >{#if hidden.new > 1}<button
           type="button"
           class="step"
           aria-label={`Show ${String(EXPAND)} lines below`}
           title={`Show ${String(EXPAND)} lines below`}
           onclick={() => {
-            diff.expandBelow(file, gap);
+            diff.expandBelow(hidden);
           }}>↓</button
         >{/if}
     {:else}
       <button
         type="button"
         class="step"
-        aria-label={`Show ${String(hidden)} hidden lines`}
-        title={`Show ${String(hidden)} hidden lines`}
+        aria-label={`Show ${String(hidden.lines)} hidden lines`}
+        title={`Show ${String(hidden.lines)} hidden lines`}
         onclick={() => {
-          diff.expandGap(file, gap);
+          diff.expandGap(hidden);
         }}>↕</button
       >
     {/if}
-  </span>{@render whole(file)}
+  </span>{@render whole(hidden.file)}
 {/snippet}
 
 <!-- A region that scrolls takes focus, so the keys scroll it (axe's scrollable-region-focusable). -->
@@ -256,6 +258,12 @@
       {:else if at.kind === "pair"}
         <div class="row split" style:top={`${String(place * ROW)}px`}>
           {@render paired(at.removed)}{@render paired(at.added)}
+        </div>
+      {:else if at.kind === "hidden"}
+        <div class="row hunk" style:top={`${String(place * ROW)}px`}>{@render gap(at)}</div>
+      {:else if at.kind === "gone"}
+        <div class="row file" style:top={`${String(place * ROW)}px`}>
+          <span class="path">On files no longer in the diff</span>
         </div>
       {:else if at.kind === "more"}
         {@const file = at.file}
@@ -515,43 +523,43 @@
     background: color-mix(in srgb, #cf222e 18%, transparent);
   }
 
-  /* github.com's colors for code. The classes come from the spans, which Svelte can't see, so they're global
-     within a row's text. */
-  .text :global(.hl-keyword) {
+  /* github.com's colors for code, in the rows and in the code of a thread. The classes come from the spans,
+     which Svelte can't see, so they're global within the scroller. */
+  .scroller :global(.hl-keyword) {
     color: var(--hl-keyword);
   }
 
-  .text :global(.hl-string) {
+  .scroller :global(.hl-string) {
     color: var(--hl-string);
   }
 
-  .text :global(.hl-comment) {
+  .scroller :global(.hl-comment) {
     color: var(--hl-comment);
   }
 
-  .text :global(.hl-constant) {
+  .scroller :global(.hl-constant) {
     color: var(--hl-constant);
   }
 
-  .text :global(.hl-function),
-  .text :global(.hl-type) {
+  .scroller :global(.hl-function),
+  .scroller :global(.hl-type) {
     color: var(--hl-entity);
   }
 
-  .text :global(.hl-tag) {
+  .scroller :global(.hl-tag) {
     color: var(--hl-tag);
   }
 
-  .text :global(.hl-heading) {
+  .scroller :global(.hl-heading) {
     color: var(--hl-constant);
     font-weight: 600;
   }
 
-  .text :global(.hl-strong) {
+  .scroller :global(.hl-strong) {
     font-weight: 600;
   }
 
-  .text :global(.hl-emphasis) {
+  .scroller :global(.hl-emphasis) {
     font-style: italic;
   }
 

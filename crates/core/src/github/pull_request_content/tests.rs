@@ -57,16 +57,23 @@ fn comment(review: &str, words: &str) -> Value {
         "bodyText": words,
         "isMinimized": false,
         "minimizedReason": null,
+        "diffHunk": HUNK,
     })
 }
 
+/// The hunk GitHub stores with each comment in [`thread`]'s threads.
+const HUNK: &str = "@@ -1,2 +1,2 @@\n x = 1\n-y = 2\n+y = 3";
+
 /// The comment `comment` reads as, by `some-reviewer`.
-fn read_comment(words: &str) -> IssueComment {
-    IssueComment {
-        author: Some(Login::new("some-reviewer")),
-        created_at: moment("2026-11-04T10:00:00Z"),
-        body_html: format!("<p>{words}</p>"),
-        hidden: None,
+fn read_comment(words: &str) -> ThreadComment {
+    ThreadComment {
+        comment: IssueComment {
+            author: Some(Login::new("some-reviewer")),
+            created_at: moment("2026-11-04T10:00:00Z"),
+            body_html: format!("<p>{words}</p>"),
+            hidden: None,
+        },
+        submission: Submission::Submitted,
     }
 }
 
@@ -147,6 +154,7 @@ fn reviews_read_oldest_first_each_with_the_threads_it_started() {
                     original: Some(12)
                 },
                 comments: vec![read_comment("Why not a set?\nIt reads better.")],
+                hunk: DiffHunk::parse(HUNK),
             },
             ThreadLine {
                 id: ThreadId::new("T40"),
@@ -163,6 +171,7 @@ fn reviews_read_oldest_first_each_with_the_threads_it_started() {
                     original: Some(40)
                 },
                 comments: vec![read_comment("Typo")],
+                hunk: DiffHunk::parse(HUNK),
             },
         ]
     );
@@ -208,7 +217,7 @@ fn a_thread_holds_its_replies_from_other_reviews_and_its_side() {
         }
     );
     let mut reply = read_comment("It was dead code");
-    reply.hidden = Some(HiddenReason::Resolved);
+    reply.comment.hidden = Some(HiddenReason::Resolved);
     assert_eq!(
         thread.comments,
         [read_comment("Why remove this?"), reply],
@@ -323,6 +332,59 @@ fn an_outdated_thread_keeps_its_old_line_and_a_thread_on_a_file_has_none() {
         "an Outdated thread keeps the line it began on, and Files can't place it by its line"
     );
     assert_eq!(threads[1].subject, Subject::File);
+    assert_eq!(
+        (threads[0].hunk.as_ref(), threads[1].hunk.as_ref()),
+        (DiffHunk::parse(HUNK).as_ref(), None),
+        "an Outdated thread keeps the code it was written against, and a thread on a file has none"
+    );
+}
+
+#[test]
+fn the_users_pending_review_keeps_its_threads_and_its_drafts_in_others_threads() {
+    let mut pending = review("R2", "PENDING", "", "");
+    pending["submittedAt"] = Value::Null;
+    let mut answered = thread("R1", 3, "Why?", 2);
+    answered["comments"]["nodes"] = json!([comment("R1", "Why?"), comment("R2", "Because")]);
+
+    let content = read(
+        json!([]),
+        (
+            2,
+            json!([
+                review("R1", "COMMENTED", "2026-11-04T10:00:00Z", ""),
+                pending
+            ]),
+        ),
+        json!([thread("R2", 9, "A draft", 1), answered]),
+    );
+
+    let states: Vec<ReviewState> = content.reviews.iter().map(|review| review.state).collect();
+    assert_eq!(
+        states,
+        [ReviewState::Commented],
+        "only the user sees a Pending review"
+    );
+    let drafted: Vec<(&str, Submission)> = content
+        .pending
+        .iter()
+        .flat_map(|thread| &thread.comments)
+        .map(|comment| (comment.comment.body_html.as_str(), comment.submission))
+        .collect();
+    assert_eq!(drafted, [("<p>A draft</p>", Submission::Pending)]);
+    let answers: Vec<Submission> = content.reviews[0].threads[0]
+        .comments
+        .iter()
+        .map(|comment| comment.submission)
+        .collect();
+    assert_eq!(
+        answers,
+        [Submission::Submitted, Submission::Pending],
+        "a draft reply sits in the thread it answers"
+    );
+    assert_eq!(
+        content.reviews[0].threads[0].replies, 0,
+        "the Conversation counts no draft among the replies"
+    );
 }
 
 #[test]
@@ -432,4 +494,28 @@ fn a_recorded_pr_reads_as_its_reviews_and_their_threads() {
         }
     }
     insta::assert_snapshot!(outline);
+}
+
+#[test]
+fn a_hunk_without_its_start_has_no_rows_and_an_empty_line_is_context() {
+    assert_eq!(DiffHunk::parse("@@ nothing here @@\n x"), None);
+    assert_eq!(DiffHunk::parse(""), None);
+    let rows = DiffHunk::parse("@@ -1,2 +1,2 @@\n\n+y").map(|hunk| hunk.rows().to_vec());
+    assert_eq!(
+        rows,
+        Some(vec![
+            CodeRow::Hunk {
+                text: "@@ -1,2 +1,2 @@".to_owned()
+            },
+            CodeRow::Context {
+                old: 1,
+                new: 1,
+                text: String::new()
+            },
+            CodeRow::Added {
+                new: 2,
+                text: "y".to_owned()
+            },
+        ])
+    );
 }

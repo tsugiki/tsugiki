@@ -49,7 +49,8 @@ pub(crate) mod tests {
     use crate::github::issue_content::IssueComment;
     use crate::github::issue_content::{HiddenReason, IssueContent};
     use crate::github::pull_request_content::{
-        Anchor, Opening, Resolution, Review, Side, Subject, ThreadId, ThreadLine,
+        Anchor, DiffHunk, Opening, Resolution, Review, Side, Subject, Submission, ThreadComment,
+        ThreadId, ThreadLine,
     };
     use crate::github::pull_requests::{PullRequestFacts, ReviewState};
     use crate::github::{CommitSha, Login};
@@ -100,12 +101,16 @@ pub(crate) mod tests {
                 line,
                 original: Some(7),
             },
-            comments: vec![IssueComment {
-                author: Some(Login::new("some-reviewer")),
-                created_at: OffsetDateTime::UNIX_EPOCH,
-                body_html: "<p>Why?</p>".to_owned(),
-                hidden: line.is_none().then_some(HiddenReason::Abuse),
+            comments: vec![ThreadComment {
+                comment: IssueComment {
+                    author: Some(Login::new("some-reviewer")),
+                    created_at: OffsetDateTime::UNIX_EPOCH,
+                    body_html: "<p>Why?</p>".to_owned(),
+                    hidden: line.is_none().then_some(HiddenReason::Abuse),
+                },
+                submission: Submission::Submitted,
             }],
+            hunk: DiffHunk::parse("@@ -6,2 +6,2 @@\n x = 1\n-y = 2\n+y = 3"),
         };
         PullRequestContent {
             conversation: IssueContent {
@@ -153,6 +158,7 @@ pub(crate) mod tests {
             ],
             earlier_reviews: 3,
             head: CommitSha::parse("0123abc"),
+            pending: Vec::new(),
         }
     }
 

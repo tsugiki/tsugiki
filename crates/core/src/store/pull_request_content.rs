@@ -10,8 +10,10 @@ use super::issue_content;
 use crate::github::CommitSha;
 use crate::github::issue_content::IssueComment;
 use crate::github::pull_request_content::{
-    Opening, PullRequestContent, Review, Side, Subject, ThreadId, ThreadLine,
+    DiffHunk, Opening, PullRequestContent, Review, Side, Subject, ThreadComment, ThreadId,
+    ThreadLine,
 };
+use crate::github::pull_requests::ReviewState;
 use crate::repository::RepositoryName;
 
 /// The Reviews, and a line for each thread one started (#156). A comment hidden on GitHub keeps its reason.
@@ -90,6 +92,14 @@ pub(super) const THREAD_COMMENTS: &str = "
     ) WITHOUT ROWID;
 ";
 
+/// The hunk GitHub stored with each thread, and the user's Pending review (#185): a Review row in state
+/// `PENDING`, after the others, holding the threads it started. A draft reply in another thread is a
+/// comment there. A PR read before this shows its Outdated threads without their code until the next read.
+pub(super) const PENDING_REVIEW: &str = "
+    ALTER TABLE review_threads ADD COLUMN diff_hunk TEXT;
+    ALTER TABLE review_thread_comments ADD COLUMN submission TEXT NOT NULL DEFAULT 'submitted';
+";
+
 /// Replaces what's kept of PR `number` with `content`, in one transaction.
 pub(super) fn save(
     connection: &mut Connection,
@@ -122,8 +132,24 @@ pub(super) fn save(
             ":head": content.head,
         },
     )?;
-    for (position, review) in (0_u32..).zip(&content.reviews) {
+    let mut position = 0_u32;
+    for review in &content.reviews {
         save_review(&transaction, repository, (number, position), review)?;
+        position += 1;
+    }
+    if !content.pending.is_empty() {
+        let _ = transaction.execute(
+            "INSERT INTO pr_reviews (repository, number, position, state, submitted_at, body_html)
+             VALUES (:repository, :number, :position, :state, 0, '')",
+            named_params! {
+                ":repository": repository,
+                ":number": number,
+                ":position": position,
+                ":state": ReviewState::Pending,
+            },
+        )?;
+        let pending = (number, position);
+        save_threads(&transaction, repository, pending, &content.pending)?;
     }
     transaction.commit()
 }
@@ -151,8 +177,18 @@ fn save_review(
             ":hidden": review.hidden,
         },
     )?;
-    for (at, thread) in (0_u32..).zip(&review.threads) {
-        save_thread(transaction, repository, (number, position, at), thread)?;
+    save_threads(transaction, repository, (number, position), &review.threads)
+}
+
+/// Keeps `threads`, which Review `review` started.
+fn save_threads(
+    transaction: &Transaction<'_>,
+    repository: &RepositoryName,
+    (number, review): (u32, u32),
+    threads: &[ThreadLine],
+) -> rusqlite::Result<()> {
+    for (at, thread) in (0_u32..).zip(threads) {
+        save_thread(transaction, repository, (number, review, at), thread)?;
     }
     Ok(())
 }
@@ -177,9 +213,9 @@ fn save_thread(
     };
     let _ = transaction.execute(
         "INSERT INTO review_threads (repository, number, review, position, node_id, path, side, line,
-                                     original_line, words, hidden, replies, resolution, anchor)
+                                     original_line, words, hidden, replies, resolution, anchor, diff_hunk)
          VALUES (:repository, :number, :review, :position, :node_id, :path, :side, :line, :original,
-                 :words, :hidden, :replies, :resolution, :anchor)",
+                 :words, :hidden, :replies, :resolution, :anchor, :diff_hunk)",
         named_params! {
             ":repository": repository,
             ":number": number,
@@ -195,14 +231,22 @@ fn save_thread(
             ":replies": thread.replies,
             ":resolution": thread.resolution,
             ":anchor": thread.anchor,
+            ":diff_hunk": thread.hunk.as_ref().map(DiffHunk::as_str),
         },
     )?;
-    for (at, comment) in (0_u32..).zip(&thread.comments) {
+    for (
+        at,
+        ThreadComment {
+            comment,
+            submission,
+        },
+    ) in (0_u32..).zip(&thread.comments)
+    {
         let _ = transaction.execute(
             "INSERT INTO review_thread_comments (repository, number, review, thread, position, author,
-                                                 created_at, body_html, hidden)
+                                                 created_at, body_html, hidden, submission)
              VALUES (:repository, :number, :review, :thread, :position, :author, :created_at, :body_html,
-                     :hidden)",
+                     :hidden, :submission)",
             named_params! {
                 ":repository": repository,
                 ":number": number,
@@ -213,6 +257,7 @@ fn save_thread(
                 ":created_at": comment.created_at.unix_timestamp(),
                 ":body_html": comment.body_html,
                 ":hidden": comment.hidden,
+                ":submission": submission,
             },
         )?;
     }
@@ -257,17 +302,24 @@ fn thread_in(row: &Row<'_>) -> rusqlite::Result<((u32, u32), ThreadLine)> {
         anchor: row.get("anchor")?,
         subject,
         comments: Vec::new(),
+        hunk: row
+            .get_ref("diff_hunk")?
+            .as_str_or_null()?
+            .and_then(DiffHunk::parse),
     };
     Ok(((row.get("review")?, row.get("position")?), thread))
 }
 
-fn comment_in(row: &Row<'_>) -> rusqlite::Result<((u32, u32), IssueComment)> {
+fn comment_in(row: &Row<'_>) -> rusqlite::Result<((u32, u32), ThreadComment)> {
     let UnixTime(created_at) = row.get("created_at")?;
-    let comment = IssueComment {
-        author: row.get("author")?,
-        created_at,
-        body_html: row.get("body_html")?,
-        hidden: row.get("hidden")?,
+    let comment = ThreadComment {
+        comment: IssueComment {
+            author: row.get("author")?,
+            created_at,
+            body_html: row.get("body_html")?,
+            hidden: row.get("hidden")?,
+        },
+        submission: row.get("submission")?,
     };
     Ok(((row.get("review")?, row.get("thread")?), comment))
 }
@@ -285,14 +337,15 @@ const SELECT_REVIEWS: &str =
 
 const SELECT_THREADS: &str =
     "SELECT review, position, node_id, path, side, line, original_line, words, hidden, replies, resolution,
-            anchor FROM review_threads
+            anchor, diff_hunk FROM review_threads
      WHERE repository = :repository AND number = :number ORDER BY review, position";
 
 const SELECT_COMMENTS: &str =
-    "SELECT review, thread, author, created_at, body_html, hidden FROM review_thread_comments
+    "SELECT review, thread, author, created_at, body_html, hidden, submission FROM review_thread_comments
      WHERE repository = :repository AND number = :number ORDER BY review, thread, position";
 
-/// The content kept for PR `number`, oldest Review first. Nothing, until Tsugiki has read it once.
+/// The content kept for PR `number`, oldest Review first, with the threads of the user's Pending review.
+/// Nothing, until Tsugiki has read it once.
 pub(super) fn read(
     connection: &Connection,
     repository: &RepositoryName,
@@ -303,7 +356,7 @@ pub(super) fn read(
     };
     let asked = named_params! { ":repository": repository, ":number": number };
     let (earlier_reviews, head) = connection.query_row(SELECT_EARLIER, asked, earlier_in)?;
-    let mut comments: BTreeMap<(u32, u32), Vec<IssueComment>> = BTreeMap::new();
+    let mut comments: BTreeMap<(u32, u32), Vec<ThreadComment>> = BTreeMap::new();
     let mut statement = connection.prepare(SELECT_COMMENTS)?;
     for read in statement.query_map(asked, comment_in)? {
         let (thread, comment) = read?;
@@ -317,16 +370,23 @@ pub(super) fn read(
         threads.entry(review).or_default().push(thread);
     }
     let mut statement = connection.prepare(SELECT_REVIEWS)?;
-    let reviews = statement.query_map(asked, review_in)?.map(|read| {
+    let mut reviews = Vec::new();
+    let mut pending = Vec::new();
+    for read in statement.query_map(asked, review_in)? {
         let (position, mut review) = read?;
-        review.threads = threads.remove(&position).unwrap_or_default();
-        Ok(review)
-    });
-    let reviews = reviews.collect::<rusqlite::Result<_>>()?;
+        let started = threads.remove(&position).unwrap_or_default();
+        if review.state == ReviewState::Pending {
+            pending = started;
+        } else {
+            review.threads = started;
+            reviews.push(review);
+        }
+    }
     Ok(Some(PullRequestContent {
         conversation,
         reviews,
         earlier_reviews,
         head,
+        pending,
     }))
 }

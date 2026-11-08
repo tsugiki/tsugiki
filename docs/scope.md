@@ -78,6 +78,21 @@ The order in which v1 is built is in [build-order.md](build-order.md).
     the item or PR under the cursor in the Detail pane. Any item can be **Archived** or **Muted**, and its
     author **Muted**. A footer under the list gives the legend and the list's keys (↑ ↓, E, M, `Alt+←`, `?`
     for all); it can be switched off.
+
+    `Ctrl+Alt+B`, or "Hide Issue List" in the command palette, hides the list with its footer and its edge,
+    so the Detail pane gets its room. The same key, or "Show Issue List", brings it back at its width. In a
+    text box the key types as usual, since AltGr sends it too. While the list is hidden:
+    - ↑ ↓ scroll the Detail pane, and the cursor stays where it was. `Alt+←` and `Alt+→` still go through
+      history.
+    - E and M act on the Detail pane's item; with a PR open, on the item the PR belongs to. With nothing open
+      they do nothing.
+    - A click on a view in the Sidebar brings the list back, showing that view.
+    - With nothing open, the Detail pane says "Nothing open. Ctrl+Alt+B shows the Issue list.", naming the
+      current binding, and a click on the key runs it.
+
+    Hiding the list moves the focus to the Detail pane. Bringing it back moves the cursor and the focus to the
+    row of the item the Detail pane shows, or to the cursor's row when that item isn't in the list or nothing
+    is open.
   - **Detail pane** (right): the selected item. That is either an **Issue view** or a **PR view**.
     - The Issue view shows the title and its author, the Origin PRs, the description, and recent comments,
       with a box to comment. Each Origin PR's Backports are folded into one line that gives their branches and
@@ -89,7 +104,8 @@ The order in which v1 is built is in [build-order.md](build-order.md).
 
     The edges between the panes can be dragged; a double-click puts the default back. The Issue list has a
     minimum width, and so does the Detail pane, so in a narrow window the Issue list gives way first. Pane
-    sizes and the Sidebar's state belong to the machine, like the window's position, and are not synced.
+    sizes, the Sidebar's state and whether the Issue list shows belong to the machine, like the window's
+    position, and are not synced.
 - A **status bar** runs along the bottom of every screen, the Home page included, for what is app-wide and has
   no other place. It stays when the Sidebar is hidden.
   - Left, where the eye spends its time: sync status ("Synced 2 min ago", a click refreshes) with the
@@ -314,6 +330,7 @@ The order in which v1 is built is in [build-order.md](build-order.md).
 | Next / previous comment thread | `F8` / `Shift+F8` |
 | Find in diff | `Ctrl+F` |
 | Hide / show the Sidebar | `Ctrl+B` |
+| Hide / show the Issue list | `Ctrl+Alt+B` |
 | Unified ↔ side-by-side | `Ctrl+Alt+U` |
 | Next / previous tab in the PR view | `Ctrl+PageDown` / `Ctrl+PageUp` |
 | Send comment | `Ctrl+Enter` |

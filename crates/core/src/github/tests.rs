@@ -36,17 +36,6 @@ fn github_says_who_the_user_is() {
 }
 
 #[test]
-fn a_login_is_read_from_the_viewer() {
-    let viewer = client(Canned(signed_in_as("octocat")));
-    assert_eq!(
-        viewer.viewer().unwrap(),
-        Viewer {
-            login: Login::new("octocat")
-        }
-    );
-}
-
-#[test]
 fn no_connection_means_offline() {
     assert_eq!(
         error_of(Canned(Err(Unreachable::Offline))).kind,

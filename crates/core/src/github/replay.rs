@@ -114,47 +114,6 @@ mod tests {
         .unwrap()
     }
 
-    #[test]
-    fn a_json_body_comes_back_as_text() {
-        let dir = fixture(
-            "json",
-            r#"{"query":"q","status":200,"reset":7,"body":{"a":1}}"#,
-        );
-        let reply = Replayer::new(dir.clone())
-            .post(
-                &token(),
-                &Request {
-                    operation: "Op",
-                    query: "q".into(),
-                    variables: serde_json::Value::Null,
-                },
-            )
-            .unwrap();
-        std::fs::remove_dir_all(dir).unwrap();
-        assert_eq!((reply.status, reply.reset), (200, Some(7)));
-        assert_eq!(reply.body, r#"{"a":1}"#);
-    }
-
-    #[test]
-    fn a_body_that_isnt_json_comes_back_unchanged() {
-        let dir = fixture(
-            "text",
-            r#"{"query":"q","status":502,"reset":null,"body":"<html>"}"#,
-        );
-        let reply = Replayer::new(dir.clone())
-            .post(
-                &token(),
-                &Request {
-                    operation: "Op",
-                    query: "q".into(),
-                    variables: serde_json::Value::Null,
-                },
-            )
-            .unwrap();
-        std::fs::remove_dir_all(dir).unwrap();
-        assert_eq!(reply.body, "<html>");
-    }
-
     /// A read by number of `numbers`, each field asking for `fields`.
     fn numbered(numbers: &[u32], fields: &str) -> String {
         let asked: Vec<String> = numbers

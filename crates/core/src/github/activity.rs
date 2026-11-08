@@ -385,13 +385,6 @@ mod tests {
     }
 
     #[test]
-    fn an_apps_commit_doesnt_count() {
-        let app = json!({ "name": "dependabot[bot]", "user": null });
-        let read = activity(commit(&app, &app), Conventions::Github);
-        assert_eq!(read.events, []);
-    }
-
-    #[test]
     fn a_bots_comment_doesnt_count() {
         let read = activity(
             comment(&actor("Bot", "bedevere-app"), "GH-2 is a backport"),

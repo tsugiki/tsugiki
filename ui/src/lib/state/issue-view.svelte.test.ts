@@ -10,6 +10,7 @@ vi.mock("$lib/data/bindings", () => ({
 const view = (title: string): IssueView => ({
   number: 7,
   title,
+  state: "OPEN",
   people: ["issue-author"],
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [],

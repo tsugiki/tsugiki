@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/svelte";
+import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { beforeEach, expect, it, vi } from "vitest";
 import { IssueViewState, type IssueView } from "$lib/state/issue-view.svelte";
 import IssueDetail from "./IssueDetail.svelte";
@@ -38,6 +38,7 @@ const row = {
 const view: IssueView = {
   number: 7,
   title: "It crashes",
+  state: "OPEN",
   people: ["issue-author"],
   updated_at: "2026-11-04T10:00:00Z",
   author: "issue-author",
@@ -119,6 +120,22 @@ it("shows each Origin PR's state, CI and review state, and folds its Backports i
   const backports = screen.getByText(/Backports:/);
   expect(backports.textContent).toContain("3.14 Merged");
   expect(backports.textContent).toContain("3.13 Open");
+});
+
+it("marks the Issue, each PR in its tree and each Backport with the icon of its state", async () => {
+  await shown({ ...view, state: "CLOSED" });
+
+  const heading = screen.getByRole("heading");
+  const icons = screen.getAllByRole("img").map((icon) => icon.getAttribute("title"));
+
+  expect(heading.querySelector("[role=img]")?.getAttribute("title")).toBe("Closed issue");
+  expect(icons).toEqual(["Closed issue", "Merged PR", "Merged PR", "Open PR", "Open PR", "Merged PR"]);
+});
+
+it("leaves the icon out for an Issue Tsugiki stored before it kept states", async () => {
+  await shown({ ...view, state: null });
+
+  expect(within(screen.getByRole("heading")).queryByRole("img")).toBeNull();
 });
 
 it("opens the title on GitHub", async () => {

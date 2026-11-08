@@ -97,6 +97,7 @@ describe("WorkbenchState", () => {
       kind: "issue",
       number: 10,
       title: "Issue 10",
+      state: "OPEN",
       people: [],
       updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [
@@ -144,6 +145,7 @@ describe("WorkbenchState", () => {
       kind: "issue",
       number,
       title: `Issue ${String(number)}`,
+      state: "OPEN",
       people: [],
       updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [{ ...row, kind: "pr", number: 5, backports: [] }],
@@ -182,6 +184,7 @@ describe("WorkbenchState", () => {
       kind: "issue",
       number: 10,
       title: "Issue 10",
+      state: "OPEN",
       people: [],
       updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [{ ...row, kind: "pr", number: 5, backports: [] }],

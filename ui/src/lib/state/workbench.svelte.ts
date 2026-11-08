@@ -9,6 +9,7 @@ import {
   type CiState,
   type FilterLine_Serialize,
   type IssueItem_Serialize,
+  type IssueState,
   type ListedItem_Serialize,
   type PrState,
   type ReviewState,
@@ -27,7 +28,7 @@ export type IssueItem = IssueItem_Serialize;
 export type ListedItem = ListedItem_Serialize;
 export type TreeEntry = TreeEntry_Serialize;
 export type WorkbenchRow = WorkbenchRow_Serialize;
-export type { BackportKind, CiState, PrState, ReviewState, WorkbenchView, WorkReason, Why };
+export type { BackportKind, CiState, IssueState, PrState, ReviewState, WorkbenchView, WorkReason, Why };
 
 /** A line the cursor stops on: an item of the list, or a PR or Backport in its tree, with the Issue above. */
 export type Stop = { number: number; kind: "issue" | "pull_request"; issue: number | undefined };

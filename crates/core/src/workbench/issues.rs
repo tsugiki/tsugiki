@@ -7,13 +7,15 @@ use time::OffsetDateTime;
 use super::{TreeEntry, WorkbenchItem};
 use crate::conventions::Conventions;
 use crate::github::Login;
-use crate::github::issues::IssueFacts;
+use crate::github::issues::{IssueFacts, IssueState};
 
 /// An Issue on the Workbench, with its tree: each PR Tsugiki knows that fixes it, whatever its state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct IssueItem {
     pub number: u32,
     pub title: String,
+    /// Nothing for an Issue stored before Tsugiki kept states, until GitHub sends it again.
+    pub state: Option<IssueState>,
     /// The Issue's author, then the PRs' authors, with each person once and no backport bot.
     pub people: Vec<Login>,
     /// The latest update of the Issue and its PRs.
@@ -37,6 +39,7 @@ pub(super) fn issue_item(
     WorkbenchItem::Issue(IssueItem {
         number: issue.number,
         title: issue.title,
+        state: issue.state,
         people,
         updated_at,
         pull_requests,
@@ -60,7 +63,7 @@ fn people(issue: &IssueFacts, pull_requests: &[TreeEntry], conventions: Conventi
 #[cfg(test)]
 mod tests {
     use crate::github::Login;
-    use crate::github::issues::IssueFacts;
+    use crate::github::issues::{IssueFacts, IssueState};
     use crate::github::pull_requests::PullRequestFacts;
     use crate::workbench::testing::{
         at, backport, bots_backport, first_issue, fixing, issue, me, stranger, workbench,
@@ -91,6 +94,16 @@ mod tests {
             first_issue(&found).people,
             [Login::new("issue-author"), me()],
         );
+    }
+
+    #[test]
+    fn an_issue_on_the_workbench_says_how_it_closed() {
+        let closed = IssueFacts {
+            state: Some(IssueState::NotPlanned),
+            ..issue(1)
+        };
+        let found = workbench(vec![fixing(10, 1)], vec![closed]);
+        assert_eq!(first_issue(&found).state, Some(IssueState::NotPlanned));
     }
 
     #[test]

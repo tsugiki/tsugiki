@@ -64,6 +64,7 @@ const issue = {
   kind: "issue",
   number: 112564,
   title: "GIL drop during collection",
+  state: "OPEN",
   people: ["issue-author", "some-author"],
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [{ kind: "pr", ...row, backports: [] }],
@@ -88,6 +89,7 @@ beforeEach(() => {
     data: {
       number: 112564,
       title: "GIL drop during collection",
+      state: "OPEN",
       people: [],
       updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [],
@@ -403,6 +405,7 @@ it("says how long ago each comment in the Detail pane came", async () => {
     data: {
       number: 112564,
       title: "GIL drop during collection",
+      state: "OPEN",
       people: [],
       updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [],
@@ -1106,4 +1109,26 @@ it("opens with the widths saved on this machine, and says when it can't save the
 
   expect(home().style.getPropertyValue("--list-width")).toBe("500px");
   expect((await screen.findByRole("alert")).textContent).toBe("Tsugiki can't save the panes' widths: locked");
+});
+
+it("marks each Issue and PR in the list with the icon of its state", async () => {
+  core.workbench.mockResolvedValue({
+    status: "ok",
+    data: {
+      items: [
+        { ...issue, state: "NOT_PLANNED", attention: null },
+        { ...issue, number: 1, state: null, pull_requests: [], attention: null },
+      ],
+      quiet: [{ ...standalone, is_draft: true, attention: null }],
+      count: 0,
+      review_requests: 0,
+      filters: [],
+    },
+  });
+  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
+
+  const icons = screen.getAllByRole("img").map((icon) => icon.getAttribute("title"));
+
+  expect(icons).toEqual(["Closed as not planned", "Open PR", "Draft PR"]);
 });

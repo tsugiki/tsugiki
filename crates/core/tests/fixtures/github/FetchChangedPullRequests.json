@@ -7,10 +7,10 @@
             "nodes": []
           },
           "author": {
-            "login": "user-14"
+            "login": "user-40"
           },
           "baseRefName": "main",
-          "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consec",
+          "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -20,7 +20,247 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-14"
+                      "login": "user-40"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 1
+          },
+          "headRefOid": "eb1cbd42e6589a5c8e2ba89847f8e5e5f8397924",
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "user-2"
+                },
+                "state": "CHANGES_REQUESTED"
+              }
+            ]
+          },
+          "mergeCommit": null,
+          "number": 161536,
+          "repository": {
+            "defaultBranchRef": {
+              "name": "main"
+            },
+            "nameWithOwner": "python/cpython"
+          },
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "user-41"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "user-3"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-40"
+                    }
+                  },
+                  "committedDate": "2026-11-07T05:29:42Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-40"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-42"
+                },
+                "createdAt": "2026-11-07T06:38:53Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-43"
+                },
+                "createdAt": "2026-11-07T06:38:54Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-44"
+                },
+                "bodyText": "All commit authors signed the Contributor License Agreement.",
+                "createdAt": "2026-11-07T06:38:57Z"
+              },
+              {
+                "__typename": "ReadyForReviewEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-40"
+                },
+                "createdAt": "2026-11-07T07:16:40Z"
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-11-07T07:16:40Z",
+                "requestedReviewer": {
+                  "login": "user-35"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-11-07T07:16:40Z",
+                "requestedReviewer": {
+                  "login": "user-41"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-11-07T07:16:41Z",
+                "requestedReviewer": {
+                  "login": "user-3"
+                }
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-2"
+                },
+                "submittedAt": "2026-11-07T17:56:12Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-45"
+                },
+                "bodyText": "A Python core developer has requested some changes be made to your pull request before we can consider merging it. If you could please address their requests along with any other requests in other reviews from core developers that would be appreciated.\nOnce you have made the requested changes, please leave a comment on this pull request containing the phrase I have made the requested changes; please review again. I will then notify any core developers who have left a review that you're ready for them to take another look at this pull request.\n\nAnd if you don't make the requested changes, you will be poked with soft cushions!",
+                "createdAt": "2026-11-07T17:56:19Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-42"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ",
+                "createdAt": "2026-11-07T19:20:44Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-2"
+                },
+                "createdAt": "2026-11-07T19:20:46Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-40"
+                },
+                "createdAt": "2026-11-07T19:20:47Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-2"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n",
+                "createdAt": "2026-11-07T19:43:18Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-40"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ip",
+                "createdAt": "2026-11-08T03:01:56Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-2"
+                },
+                "createdAt": "2026-11-08T03:01:57Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-40"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipi",
+                "createdAt": "2026-11-08T03:02:04Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-42"
+                },
+                "createdAt": "2026-11-08T03:02:06Z"
+              }
+            ]
+          },
+          "title": "gh-149313: Keep hash error details for dict keys and set elements",
+          "updatedAt": "2026-11-08T06:38:26Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "user-46"
+          },
+          "baseRefName": "main",
+          "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet",
+          "closingIssuesReferences": {
+            "nodes": []
+          },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-46"
                     }
                   },
                   "message": "",
@@ -33,7 +273,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-14"
+                      "login": "user-46"
                     }
                   },
                   "message": "",
@@ -45,7 +285,7 @@
             ],
             "totalCount": 2
           },
-          "headRefOid": "28f445c9b95c68906a7fdbbe1e36106b4f4ee820",
+          "headRefOid": "d864c6ed8374989c2e8d85dda3d0387d52e7450d",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -62,7 +302,7 @@
             "nodes": []
           },
           "mergeCommit": null,
-          "number": 153021,
+          "number": 161321,
           "repository": {
             "defaultBranchRef": {
               "name": "main"
@@ -73,486 +313,28 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-28"
+                  "login": "user-16"
                 }
               },
               {
                 "requestedReviewer": {
-                  "login": "user-29"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-30"
-                }
-              }
-            ]
-          },
-          "state": "OPEN",
-          "timelineItems": {
-            "nodes": [
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-07-04T11:39:33Z",
-                "requestedReviewer": {
-                  "login": "user-28"
-                }
-              },
-              {
-                "__typename": "HeadRefForcePushedEvent",
-                "actor": {
-                  "__typename": "User",
-                  "login": "user-14"
-                },
-                "createdAt": "2026-07-17T14:40:11Z"
-              },
-              {
-                "__typename": "HeadRefForcePushedEvent",
-                "actor": {
-                  "__typename": "User",
-                  "login": "user-14"
-                },
-                "createdAt": "2026-07-17T14:47:26Z"
-              },
-              {
-                "__typename": "HeadRefForcePushedEvent",
-                "actor": {
-                  "__typename": "User",
-                  "login": "user-14"
-                },
-                "createdAt": "2026-08-03T10:04:35Z"
-              },
-              {
-                "__typename": "IssueComment",
-                "author": {
-                  "__typename": "Bot",
-                  "login": "user-31"
-                },
-                "bodyText": "This PR is stale because it has been open for 90 days with no activity.",
-                "createdAt": "2026-11-06T06:06:52Z"
-              },
-              {
-                "__typename": "PullRequestCommit",
-                "commit": {
-                  "author": {
-                    "name": null,
-                    "user": {
-                      "login": "user-14"
-                    }
-                  },
-                  "committedDate": "2026-11-07T08:52:10Z",
-                  "committer": {
-                    "name": null,
-                    "user": {
-                      "login": "user-14"
-                    }
-                  }
-                }
-              },
-              {
-                "__typename": "PullRequestCommit",
-                "commit": {
-                  "author": {
-                    "name": null,
-                    "user": {
-                      "login": "user-14"
-                    }
-                  },
-                  "committedDate": "2026-11-07T09:00:17Z",
-                  "committer": {
-                    "name": null,
-                    "user": {
-                      "login": "user-14"
-                    }
-                  }
-                }
-              },
-              {
-                "__typename": "HeadRefForcePushedEvent",
-                "actor": {
-                  "__typename": "User",
-                  "login": "user-14"
-                },
-                "createdAt": "2026-11-07T09:00:39Z"
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-07T09:00:39Z",
-                "requestedReviewer": {
-                  "login": "user-29"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-07T09:00:39Z",
-                "requestedReviewer": {
-                  "login": "user-30"
-                }
-              }
-            ]
-          },
-          "title": "gh-152433: Windows: use ``CreateFile2`` on Windows UWP build",
-          "updatedAt": "2026-11-07T09:05:08Z"
-        },
-        {
-          "assignees": {
-            "nodes": []
-          },
-          "author": {
-            "login": "miss-islington"
-          },
-          "baseRefName": "3.15",
-          "body": "* docs: Fix typos in API references and examples\n* docs: Revert turtle example change\n* docs: Fix unresolved ensure_value references in optparse\n* docs: Match tracemalloc example traceback order to its output\n* Apply batched suggestions from code review\n\n---------\n(cherry picked from commit cbaba022cf2778c5f02445ae231a8af1f1db53a1)\n\n",
-          "closingIssuesReferences": {
-            "nodes": []
-          },
-          "commits": {
-            "nodes": [
-              {
-                "commit": {
-                  "committer": {
-                    "user": {
-                      "login": "miss-islington"
-                    }
-                  },
-                  "message": "(cherry picked from commit cbaba022cf2778c5f02445ae231a8af1f1db53a1)\n",
-                  "parents": {
-                    "totalCount": 1
-                  }
-                }
-              }
-            ],
-            "totalCount": 1
-          },
-          "headRefOid": "bc67a83a3bc3443541c62426f254254a0059c6c4",
-          "isDraft": false,
-          "lastCommit": {
-            "nodes": [
-              {
-                "commit": {
-                  "statusCheckRollup": {
-                    "state": "SUCCESS"
-                  }
-                }
-              }
-            ]
-          },
-          "latestReviews": {
-            "nodes": []
-          },
-          "mergeCommit": {
-            "oid": "33f8ba42da4d5baf99513984a4e96d19eeac0cb5"
-          },
-          "number": 161544,
-          "repository": {
-            "defaultBranchRef": {
-              "name": "main"
-            },
-            "nameWithOwner": "python/cpython"
-          },
-          "reviewRequests": {
-            "nodes": [
-              {
-                "requestedReviewer": {
-                  "login": "user-32"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-33"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-34"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-35"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-36"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-37"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-5"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-38"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-39"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-23"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-40"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-41"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-42"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-30"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-43"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-44"
-                }
-              }
-            ]
-          },
-          "state": "MERGED",
-          "timelineItems": {
-            "nodes": [
-              {
-                "__typename": "PullRequestCommit",
-                "commit": {
-                  "author": {
-                    "name": null,
-                    "user": {
-                      "login": "user-45"
-                    }
-                  },
-                  "committedDate": "2026-11-07T08:47:18Z",
-                  "committer": {
-                    "name": null,
-                    "user": {
-                      "login": "miss-islington"
-                    }
-                  }
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-07T08:47:22Z",
-                "requestedReviewer": {
-                  "login": "user-32"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-07T08:47:22Z",
-                "requestedReviewer": {
-                  "login": "user-33"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-07T08:47:22Z",
-                "requestedReviewer": {
-                  "login": "user-34"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-07T08:47:22Z",
-                "requestedReviewer": {
-                  "login": "user-35"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-07T08:47:23Z",
-                "requestedReviewer": {
-                  "login": "user-36"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-07T08:47:23Z",
-                "requestedReviewer": {
-                  "login": "user-37"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-07T08:47:23Z",
-                "requestedReviewer": {
-                  "login": "user-5"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-07T08:47:23Z",
-                "requestedReviewer": {
-                  "login": "user-38"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-07T08:47:23Z",
-                "requestedReviewer": {
-                  "login": "user-39"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-07T08:47:23Z",
-                "requestedReviewer": {
-                  "login": "user-23"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-07T08:47:23Z",
-                "requestedReviewer": {
-                  "login": "user-40"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-07T08:47:23Z",
-                "requestedReviewer": {
-                  "login": "user-41"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-07T08:47:23Z",
-                "requestedReviewer": {
-                  "login": "user-42"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-07T08:47:23Z",
-                "requestedReviewer": {
-                  "login": "user-30"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-07T08:47:24Z",
-                "requestedReviewer": {
-                  "login": "user-43"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-07T08:47:24Z",
-                "requestedReviewer": {
-                  "login": "user-44"
-                }
-              },
-              {
-                "__typename": "IssueComment",
-                "author": {
-                  "__typename": "Bot",
-                  "login": "user-46"
-                },
-                "bodyText": "Documentation build overview\n\n📚 cpython-previews | 🛠️ Build #35716248 | 📁 Comparing bc67a83 against main (cbaba02)\n\n   🔍 Preview build   \n\n166 files changed · + 1 added · ± 160 modified · - 5 deleted\n\n+ Added\n\nlibrary/asyncio-policy.html\n\n± Modified\n\nindex.html\nlicense.html\npy-modindex.html\nbuiltins/exceptions.html\nbuiltins/functions.html\nbuiltins/stdtypes.html\nbuiltins/threadsafety.html\nc-api/bytes.html\nc-api/capsule.html\nc-api/code.html\nand 150 more...\n\n- Deleted\n\ndeprecations/pending-removal-in-3.21.html\nlibrary/tkinter.dialogs.html\nlibrary/tkinter.fontchooser.html\nlibrary/tkinter.systray.html\nwhatsnew/3.16.html",
-                "createdAt": "2026-11-07T08:50:45Z"
-              }
-            ]
-          },
-          "title": "[3.15] docs: Fix typos and obvious errors (GH-161386)",
-          "updatedAt": "2026-11-07T08:55:17Z"
-        },
-        {
-          "assignees": {
-            "nodes": []
-          },
-          "author": {
-            "login": "user-47"
-          },
-          "baseRefName": "main",
-          "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\n",
-          "closingIssuesReferences": {
-            "nodes": [
-              {
-                "number": 161540,
-                "repository": {
-                  "nameWithOwner": "python/cpython"
-                }
-              }
-            ]
-          },
-          "commits": {
-            "nodes": [
-              {
-                "commit": {
-                  "committer": {
-                    "user": {
-                      "login": "user-47"
-                    }
-                  },
-                  "message": "",
-                  "parents": {
-                    "totalCount": 1
-                  }
-                }
-              }
-            ],
-            "totalCount": 1
-          },
-          "headRefOid": "2ab38d705d31caf0824b5df31305fddbaf7d369e",
-          "isDraft": false,
-          "lastCommit": {
-            "nodes": [
-              {
-                "commit": {
-                  "statusCheckRollup": {
-                    "state": "PENDING"
-                  }
-                }
-              }
-            ]
-          },
-          "latestReviews": {
-            "nodes": []
-          },
-          "mergeCommit": null,
-          "number": 161545,
-          "repository": {
-            "defaultBranchRef": {
-              "name": "main"
-            },
-            "nameWithOwner": "python/cpython"
-          },
-          "reviewRequests": {
-            "nodes": [
-              {
-                "requestedReviewer": {
-                  "login": "user-45"
+                  "login": "user-47"
                 }
               },
               {
                 "requestedReviewer": {
                   "login": "user-48"
                 }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "user-14"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "user-49"
+                }
               }
             ]
           },
@@ -565,670 +347,144 @@
                   "author": {
                     "name": null,
                     "user": {
-                      "login": "user-47"
+                      "login": "user-46"
                     }
                   },
-                  "committedDate": "2026-11-07T08:48:44Z",
+                  "committedDate": "2026-11-04T15:34:42Z",
                   "committer": {
                     "name": null,
                     "user": {
-                      "login": "user-47"
+                      "login": "user-46"
                     }
                   }
                 }
               },
               {
                 "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-07T08:48:55Z",
+                "createdAt": "2026-11-04T15:40:03Z",
                 "requestedReviewer": {
-                  "login": "user-45"
+                  "login": "user-16"
                 }
               },
               {
                 "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-07T08:48:55Z",
+                "createdAt": "2026-11-04T15:40:04Z",
+                "requestedReviewer": {
+                  "login": "user-47"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-11-04T15:40:04Z",
                 "requestedReviewer": {
                   "login": "user-48"
                 }
-              }
-            ]
-          },
-          "title": "gh-161540: Add a debug assert for out-of-range indices in dict lookups",
-          "updatedAt": "2026-11-07T08:49:01Z"
-        },
-        {
-          "assignees": {
-            "nodes": [
-              {
-                "login": "user-35"
-              }
-            ]
-          },
-          "author": {
-            "login": "user-45"
-          },
-          "baseRefName": "main",
-          "body": "",
-          "closingIssuesReferences": {
-            "nodes": []
-          },
-          "commits": {
-            "nodes": [
-              {
-                "commit": {
-                  "committer": {
-                    "user": {
-                      "login": "user-45"
-                    }
-                  },
-                  "message": "",
-                  "parents": {
-                    "totalCount": 1
-                  }
-                }
               },
               {
-                "commit": {
-                  "committer": {
-                    "user": {
-                      "login": "user-45"
-                    }
-                  },
-                  "message": "",
-                  "parents": {
-                    "totalCount": 1
-                  }
-                }
-              },
-              {
-                "commit": {
-                  "committer": {
-                    "user": {
-                      "login": "user-45"
-                    }
-                  },
-                  "message": "",
-                  "parents": {
-                    "totalCount": 1
-                  }
-                }
-              },
-              {
-                "commit": {
-                  "committer": {
-                    "user": {
-                      "login": "user-45"
-                    }
-                  },
-                  "message": "",
-                  "parents": {
-                    "totalCount": 1
-                  }
-                }
-              },
-              {
-                "commit": {
-                  "committer": {
-                    "user": null
-                  },
-                  "message": "",
-                  "parents": {
-                    "totalCount": 1
-                  }
-                }
-              }
-            ],
-            "totalCount": 5
-          },
-          "headRefOid": "3799a54c806ed750ac6561c9aeb9908bfe4ee0ac",
-          "isDraft": false,
-          "lastCommit": {
-            "nodes": [
-              {
-                "commit": {
-                  "statusCheckRollup": {
-                    "state": "SUCCESS"
-                  }
-                }
-              }
-            ]
-          },
-          "latestReviews": {
-            "nodes": [
-              {
-                "author": {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-11-04T15:40:04Z",
+                "requestedReviewer": {
                   "login": "user-49"
-                },
-                "state": "COMMENTED"
-              },
-              {
-                "author": {
-                  "login": "user-35"
-                },
-                "state": "APPROVED"
-              },
-              {
-                "author": {
-                  "login": "user-42"
-                },
-                "state": "APPROVED"
-              },
-              {
-                "author": {
-                  "login": "user-41"
-                },
-                "state": "APPROVED"
-              },
-              {
-                "author": {
-                  "login": "user-50"
-                },
-                "state": "APPROVED"
-              }
-            ]
-          },
-          "mergeCommit": {
-            "oid": "cbaba022cf2778c5f02445ae231a8af1f1db53a1"
-          },
-          "number": 161386,
-          "repository": {
-            "defaultBranchRef": {
-              "name": "main"
-            },
-            "nameWithOwner": "python/cpython"
-          },
-          "reviewRequests": {
-            "nodes": [
-              {
-                "requestedReviewer": {
-                  "login": "user-32"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-33"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-34"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-36"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-29"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-37"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-5"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-38"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-39"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-23"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-40"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-30"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-43"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-44"
-                }
-              }
-            ]
-          },
-          "state": "MERGED",
-          "timelineItems": {
-            "nodes": [
-              {
-                "__typename": "PullRequestCommit",
-                "commit": {
-                  "author": {
-                    "name": null,
-                    "user": {
-                      "login": "user-45"
-                    }
-                  },
-                  "committedDate": "2026-11-05T08:04:02Z",
-                  "committer": {
-                    "name": null,
-                    "user": {
-                      "login": "user-45"
-                    }
-                  }
                 }
               },
               {
                 "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T08:04:55Z",
+                "createdAt": "2026-11-04T15:40:04Z",
                 "requestedReviewer": {
-                  "login": "user-50"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T08:04:55Z",
-                "requestedReviewer": {
-                  "login": "user-32"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T08:04:55Z",
-                "requestedReviewer": {
-                  "login": "user-33"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T08:04:55Z",
-                "requestedReviewer": {
-                  "login": "user-34"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T08:04:55Z",
-                "requestedReviewer": {
-                  "login": "user-35"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T08:04:56Z",
-                "requestedReviewer": {
-                  "login": "user-36"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T08:04:56Z",
-                "requestedReviewer": {
-                  "login": "user-29"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T08:04:56Z",
-                "requestedReviewer": {
-                  "login": "user-37"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T08:04:56Z",
-                "requestedReviewer": {
-                  "login": "user-5"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T08:04:56Z",
-                "requestedReviewer": {
-                  "login": "user-38"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T08:04:56Z",
-                "requestedReviewer": {
-                  "login": "user-39"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T08:04:56Z",
-                "requestedReviewer": {
-                  "login": "user-23"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T08:04:56Z",
-                "requestedReviewer": {
-                  "login": "user-40"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T08:04:56Z",
-                "requestedReviewer": {
-                  "login": "user-41"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T08:04:56Z",
-                "requestedReviewer": {
-                  "login": "user-42"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T08:04:57Z",
-                "requestedReviewer": {
-                  "login": "user-30"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T08:04:57Z",
-                "requestedReviewer": {
-                  "login": "user-43"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T08:04:57Z",
-                "requestedReviewer": {
-                  "login": "user-44"
+                  "login": "user-14"
                 }
               },
               {
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "Bot",
+                  "login": "user-44"
+                },
+                "bodyText": "All commit authors signed the Contributor License Agreement.",
+                "createdAt": "2026-11-04T15:40:08Z"
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-49"
+                },
+                "submittedAt": "2026-11-08T00:59:25Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-45"
+                },
+                "bodyText": "A Python core developer has requested some changes be made to your pull request before we can consider merging it. If you could please address their requests along with any other requests in other reviews from core developers that would be appreciated.\nOnce you have made the requested changes, please leave a comment on this pull request containing the phrase I have made the requested changes; please review again. I will then notify any core developers who have left a review that you're ready for them to take another look at this pull request.",
+                "createdAt": "2026-11-08T00:59:31Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-46"
+                    }
+                  },
+                  "committedDate": "2026-11-08T04:32:58Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-46"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
                   "login": "user-46"
                 },
-                "bodyText": "Documentation build overview\n\n📚 cpython-previews | 🛠️ Build #35676127 | 📁 Comparing 3799a54 against main (aaaf61c)\n\n   🔍 Preview build   \n\n61 files changed · ± 61 modified\n\n± Modified\n\nc-api/frame.html\nc-api/gcsupport.html\nc-api/gen.html\nc-api/module.html\nc-api/object.html\nc-api/tuple.html\nc-api/typeobj.html\nextending/embedding.html\nextending/extending.html\nhowto/descriptor.html\nand 51 more...",
-                "createdAt": "2026-11-05T08:08:36Z"
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit a",
+                "createdAt": "2026-11-08T06:27:18Z"
               },
               {
-                "__typename": "PullRequestReview",
+                "__typename": "IssueComment",
                 "author": {
-                  "__typename": "User",
-                  "login": "user-50"
+                  "__typename": "Bot",
+                  "login": "user-45"
                 },
-                "submittedAt": "2026-11-05T08:09:16Z"
+                "bodyText": "Thanks for making the requested changes!\n@user-49: please review the changes made to this pull request.",
+                "createdAt": "2026-11-08T06:27:23Z"
               },
               {
-                "__typename": "PullRequestReview",
-                "author": {
+                "__typename": "MentionedEvent",
+                "actor": {
                   "__typename": "User",
-                  "login": "user-50"
+                  "login": "user-49"
                 },
-                "submittedAt": "2026-11-05T08:10:03Z"
-              },
-              {
-                "__typename": "PullRequestCommit",
-                "commit": {
-                  "author": {
-                    "name": null,
-                    "user": {
-                      "login": "user-45"
-                    }
-                  },
-                  "committedDate": "2026-11-05T08:56:49Z",
-                  "committer": {
-                    "name": null,
-                    "user": {
-                      "login": "user-45"
-                    }
-                  }
-                }
-              },
-              {
-                "__typename": "PullRequestCommit",
-                "commit": {
-                  "author": {
-                    "name": null,
-                    "user": {
-                      "login": "user-45"
-                    }
-                  },
-                  "committedDate": "2026-11-05T08:58:03Z",
-                  "committer": {
-                    "name": null,
-                    "user": {
-                      "login": "user-45"
-                    }
-                  }
-                }
+                "createdAt": "2026-11-08T06:27:25Z"
               },
               {
                 "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T09:23:08Z",
+                "createdAt": "2026-11-08T06:27:25Z",
                 "requestedReviewer": {
                   "login": "user-49"
                 }
-              },
-              {
-                "__typename": "PullRequestReview",
-                "author": {
-                  "__typename": "Bot",
-                  "login": "user-49"
-                },
-                "submittedAt": "2026-11-05T09:27:06Z"
-              },
-              {
-                "__typename": "PullRequestCommit",
-                "commit": {
-                  "author": {
-                    "name": null,
-                    "user": {
-                      "login": "user-45"
-                    }
-                  },
-                  "committedDate": "2026-11-05T09:36:00Z",
-                  "committer": {
-                    "name": null,
-                    "user": {
-                      "login": "user-45"
-                    }
-                  }
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T11:45:23Z",
-                "requestedReviewer": {
-                  "login": "user-49"
-                }
-              },
-              {
-                "__typename": "PullRequestReview",
-                "author": {
-                  "__typename": "Bot",
-                  "login": "user-49"
-                },
-                "submittedAt": "2026-11-05T11:48:12Z"
-              },
-              {
-                "__typename": "IssueComment",
-                "author": {
-                  "__typename": "User",
-                  "login": "user-6"
-                },
-                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur ",
-                "createdAt": "2026-11-05T16:20:18Z"
-              },
-              {
-                "__typename": "PullRequestReview",
-                "author": {
-                  "__typename": "User",
-                  "login": "user-50"
-                },
-                "submittedAt": "2026-11-05T16:39:39Z"
-              },
-              {
-                "__typename": "PullRequestCommit",
-                "commit": {
-                  "author": {
-                    "name": null,
-                    "user": {
-                      "login": "user-45"
-                    }
-                  },
-                  "committedDate": "2026-11-05T16:43:09Z",
-                  "committer": {
-                    "name": null,
-                    "user": null
-                  }
-                }
-              },
-              {
-                "__typename": "PullRequestReview",
-                "author": {
-                  "__typename": "User",
-                  "login": "user-50"
-                },
-                "submittedAt": "2026-11-05T16:45:38Z"
-              },
-              {
-                "__typename": "IssueComment",
-                "author": {
-                  "__typename": "User",
-                  "login": "user-45"
-                },
-                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipis",
-                "createdAt": "2026-11-05T18:21:12Z"
-              },
-              {
-                "__typename": "MentionedEvent",
-                "actor": {
-                  "__typename": "User",
-                  "login": "user-6"
-                },
-                "createdAt": "2026-11-05T18:21:14Z"
-              },
-              {
-                "__typename": "PullRequestReview",
-                "author": {
-                  "__typename": "User",
-                  "login": "user-42"
-                },
-                "submittedAt": "2026-11-06T05:05:29Z"
-              },
-              {
-                "__typename": "PullRequestReview",
-                "author": {
-                  "__typename": "User",
-                  "login": "user-35"
-                },
-                "submittedAt": "2026-11-06T18:23:44Z"
-              },
-              {
-                "__typename": "PullRequestReview",
-                "author": {
-                  "__typename": "User",
-                  "login": "user-41"
-                },
-                "submittedAt": "2026-11-06T18:52:55Z"
-              },
-              {
-                "__typename": "IssueComment",
-                "author": {
-                  "__typename": "Bot",
-                  "login": "miss-islington-app"
-                },
-                "bodyText": "Thanks @user-45 for the PR, and @user-35 for merging it 🌮🎉.. I'm working now to backport this PR to: 3.14, 3.15.\n🐍🍒⛏🤖",
-                "createdAt": "2026-11-07T08:47:16Z"
-              },
-              {
-                "__typename": "MentionedEvent",
-                "actor": {
-                  "__typename": "User",
-                  "login": "user-35"
-                },
-                "createdAt": "2026-11-07T08:47:17Z"
-              },
-              {
-                "__typename": "MentionedEvent",
-                "actor": {
-                  "__typename": "User",
-                  "login": "user-45"
-                },
-                "createdAt": "2026-11-07T08:47:18Z"
-              },
-              {
-                "__typename": "IssueComment",
-                "author": {
-                  "__typename": "Bot",
-                  "login": "miss-islington-app"
-                },
-                "bodyText": "Sorry, @user-45 and @user-35, I could not cleanly backport this to 3.14 due to a conflict.\nPlease backport manually with cherry_picker, see the devguide for more information.\ncherry_picker cbaba022cf2778c5f02445ae231a8af1f1db53a1 3.14",
-                "createdAt": "2026-11-07T08:47:24Z"
-              },
-              {
-                "__typename": "AssignedEvent",
-                "assignee": {
-                  "login": "user-35"
-                },
-                "createdAt": "2026-11-07T08:47:25Z"
-              },
-              {
-                "__typename": "MentionedEvent",
-                "actor": {
-                  "__typename": "User",
-                  "login": "user-35"
-                },
-                "createdAt": "2026-11-07T08:47:25Z"
-              },
-              {
-                "__typename": "MentionedEvent",
-                "actor": {
-                  "__typename": "User",
-                  "login": "user-45"
-                },
-                "createdAt": "2026-11-07T08:47:26Z"
-              },
-              {
-                "__typename": "IssueComment",
-                "author": {
-                  "__typename": "Bot",
-                  "login": "user-51"
-                },
-                "bodyText": "GH-161544 is a backport of this pull request to the 3.15 branch.",
-                "createdAt": "2026-11-07T08:47:30Z"
               }
             ]
           },
-          "title": "docs: Fix typos and obvious errors",
-          "updatedAt": "2026-11-07T08:47:54Z"
+          "title": "gh-160924: Don't run the build Python with RUNSHARED when cross-compiling",
+          "updatedAt": "2026-11-08T06:27:25Z"
         },
         {
           "assignees": {
             "nodes": []
           },
           "author": {
-            "login": "user-13"
+            "login": "user-50"
           },
           "baseRefName": "main",
-          "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit a",
+          "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\n",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -1238,42 +494,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-13"
-                    }
-                  },
-                  "message": "",
-                  "parents": {
-                    "totalCount": 1
-                  }
-                }
-              },
-              {
-                "commit": {
-                  "committer": {
-                    "user": null
-                  },
-                  "message": "",
-                  "parents": {
-                    "totalCount": 1
-                  }
-                }
-              },
-              {
-                "commit": {
-                  "committer": {
-                    "user": null
-                  },
-                  "message": "",
-                  "parents": {
-                    "totalCount": 1
-                  }
-                }
-              },
-              {
-                "commit": {
-                  "committer": {
-                    "user": {
-                      "login": "user-13"
+                      "login": "user-50"
                     }
                   },
                   "message": "",
@@ -1286,240 +507,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-13"
-                    }
-                  },
-                  "message": "",
-                  "parents": {
-                    "totalCount": 1
-                  }
-                }
-              }
-            ],
-            "totalCount": 5
-          },
-          "headRefOid": "81c1b2e790cf74b2aa86f0fb220eb84cd9a25837",
-          "isDraft": false,
-          "lastCommit": {
-            "nodes": [
-              {
-                "commit": {
-                  "statusCheckRollup": {
-                    "state": "FAILURE"
-                  }
-                }
-              }
-            ]
-          },
-          "latestReviews": {
-            "nodes": [
-              {
-                "author": {
-                  "login": "user-24"
-                },
-                "state": "COMMENTED"
-              },
-              {
-                "author": {
-                  "login": "user-50"
-                },
-                "state": "APPROVED"
-              }
-            ]
-          },
-          "mergeCommit": null,
-          "number": 161397,
-          "repository": {
-            "defaultBranchRef": {
-              "name": "main"
-            },
-            "nameWithOwner": "python/cpython"
-          },
-          "reviewRequests": {
-            "nodes": [
-              {
-                "requestedReviewer": {
-                  "login": "user-35"
-                }
-              }
-            ]
-          },
-          "state": "OPEN",
-          "timelineItems": {
-            "nodes": [
-              {
-                "__typename": "PullRequestCommit",
-                "commit": {
-                  "author": {
-                    "name": null,
-                    "user": {
-                      "login": "user-13"
-                    }
-                  },
-                  "committedDate": "2026-11-05T09:30:26Z",
-                  "committer": {
-                    "name": null,
-                    "user": {
-                      "login": "user-13"
-                    }
-                  }
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T09:31:31Z",
-                "requestedReviewer": {
-                  "login": "user-35"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T09:31:31Z",
-                "requestedReviewer": {
-                  "login": "user-24"
-                }
-              },
-              {
-                "__typename": "PullRequestReview",
-                "author": {
-                  "__typename": "User",
-                  "login": "user-50"
-                },
-                "submittedAt": "2026-11-05T16:53:25Z"
-              },
-              {
-                "__typename": "PullRequestReview",
-                "author": {
-                  "__typename": "User",
-                  "login": "user-13"
-                },
-                "submittedAt": "2026-11-05T18:44:04Z"
-              },
-              {
-                "__typename": "PullRequestCommit",
-                "commit": {
-                  "author": {
-                    "name": null,
-                    "user": {
-                      "login": "user-13"
-                    }
-                  },
-                  "committedDate": "2026-11-05T18:44:32Z",
-                  "committer": {
-                    "name": null,
-                    "user": null
-                  }
-                }
-              },
-              {
-                "__typename": "PullRequestReview",
-                "author": {
-                  "__typename": "User",
-                  "login": "user-13"
-                },
-                "submittedAt": "2026-11-05T18:54:32Z"
-              },
-              {
-                "__typename": "PullRequestCommit",
-                "commit": {
-                  "author": {
-                    "name": null,
-                    "user": {
-                      "login": "user-13"
-                    }
-                  },
-                  "committedDate": "2026-11-05T18:54:41Z",
-                  "committer": {
-                    "name": null,
-                    "user": null
-                  }
-                }
-              },
-              {
-                "__typename": "PullRequestReview",
-                "author": {
-                  "__typename": "User",
-                  "login": "user-24"
-                },
-                "submittedAt": "2026-11-05T20:02:54Z"
-              },
-              {
-                "__typename": "IssueComment",
-                "author": {
-                  "__typename": "User",
-                  "login": "user-24"
-                },
-                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscin",
-                "createdAt": "2026-11-05T20:03:36Z"
-              },
-              {
-                "__typename": "PullRequestCommit",
-                "commit": {
-                  "author": {
-                    "name": null,
-                    "user": {
-                      "login": "user-13"
-                    }
-                  },
-                  "committedDate": "2026-11-05T20:41:13Z",
-                  "committer": {
-                    "name": null,
-                    "user": {
-                      "login": "user-13"
-                    }
-                  }
-                }
-              },
-              {
-                "__typename": "PullRequestReview",
-                "author": {
-                  "__typename": "User",
-                  "login": "user-24"
-                },
-                "submittedAt": "2026-11-06T13:23:07Z"
-              },
-              {
-                "__typename": "PullRequestCommit",
-                "commit": {
-                  "author": {
-                    "name": null,
-                    "user": {
-                      "login": "user-13"
-                    }
-                  },
-                  "committedDate": "2026-11-07T08:44:55Z",
-                  "committer": {
-                    "name": null,
-                    "user": {
-                      "login": "user-13"
-                    }
-                  }
-                }
-              }
-            ]
-          },
-          "title": "gh-161388: [tkinter] Fix crash on raising `__str__` method passed to `setvar`",
-          "updatedAt": "2026-11-07T08:45:02Z"
-        },
-        {
-          "assignees": {
-            "nodes": []
-          },
-          "author": {
-            "login": "user-52"
-          },
-          "baseRefName": "main",
-          "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit a",
-          "closingIssuesReferences": {
-            "nodes": []
-          },
-          "commits": {
-            "nodes": [
-              {
-                "commit": {
-                  "committer": {
-                    "user": {
-                      "login": "user-52"
+                      "login": "user-50"
                     }
                   },
                   "message": "",
@@ -1532,20 +520,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-52"
-                    }
-                  },
-                  "message": "",
-                  "parents": {
-                    "totalCount": 1
-                  }
-                }
-              },
-              {
-                "commit": {
-                  "committer": {
-                    "user": {
-                      "login": "user-52"
+                      "login": "user-50"
                     }
                   },
                   "message": "",
@@ -1557,7 +532,7 @@
             ],
             "totalCount": 3
           },
-          "headRefOid": "e05d00345f8c44defc2093581e1a1e88b0bcfef4",
+          "headRefOid": "e9b09d41dbc824eacf8401e5fb18f7605e0422d7",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -1574,20 +549,20 @@
             "nodes": [
               {
                 "author": {
-                  "login": "user-35"
+                  "login": "user-51"
                 },
-                "state": "APPROVED"
+                "state": "COMMENTED"
               },
               {
                 "author": {
-                  "login": "user-53"
+                  "login": "user-52"
                 },
-                "state": "APPROVED"
+                "state": "COMMENTED"
               }
             ]
           },
           "mergeCommit": null,
-          "number": 161507,
+          "number": 13269,
           "repository": {
             "defaultBranchRef": {
               "name": "main"
@@ -1598,12 +573,7 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-5"
-                }
-              },
-              {
-                "requestedReviewer": {
-                  "login": "user-50"
+                  "login": "user-53"
                 }
               }
             ]
@@ -1612,44 +582,79 @@
           "timelineItems": {
             "nodes": [
               {
-                "__typename": "PullRequestCommit",
-                "commit": {
-                  "author": {
-                    "name": null,
-                    "user": {
-                      "login": "user-52"
-                    }
-                  },
-                  "committedDate": "2026-11-06T16:56:29Z",
-                  "committer": {
-                    "name": null,
-                    "user": {
-                      "login": "user-52"
-                    }
-                  }
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-06T16:58:27Z",
-                "requestedReviewer": {
-                  "login": "user-35"
-                }
-              },
-              {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-06T16:58:27Z",
-                "requestedReviewer": {
-                  "login": "user-5"
-                }
-              },
-              {
-                "__typename": "MentionedEvent",
-                "actor": {
+                "__typename": "PullRequestReview",
+                "author": {
                   "__typename": "User",
+                  "login": "user-51"
+                },
+                "submittedAt": "2019-05-12T23:02:00Z"
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2019-05-13T02:31:03Z",
+                "requestedReviewer": {
                   "login": "user-53"
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-50"
                 },
-                "createdAt": "2026-11-06T16:58:27Z"
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, ",
+                "createdAt": "2019-05-13T04:35:14Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-51"
+                },
+                "createdAt": "2019-05-13T04:35:14Z"
+              },
+              {
+                "__typename": "HeadRefForcePushedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-50"
+                },
+                "createdAt": "2019-05-18T17:09:28Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-50"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing ",
+                "createdAt": "2019-05-18T17:42:59Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-50"
+                },
+                "bodyText": "Lorem ipsu",
+                "createdAt": "2019-05-28T02:43:06Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-51"
+                },
+                "createdAt": "2019-05-28T02:43:06Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-51"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\n",
+                "createdAt": "2019-05-28T03:07:23Z"
               },
               {
                 "__typename": "MentionedEvent",
@@ -1657,66 +662,86 @@
                   "__typename": "User",
                   "login": "user-50"
                 },
-                "createdAt": "2026-11-06T16:58:29Z"
+                "createdAt": "2019-05-28T03:07:24Z"
               },
               {
-                "__typename": "PullRequestReview",
+                "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
                   "login": "user-50"
                 },
-                "submittedAt": "2026-11-06T17:18:31Z"
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum",
+                "createdAt": "2019-07-07T09:34:50Z"
               },
               {
-                "__typename": "PullRequestCommit",
-                "commit": {
-                  "author": {
-                    "name": null,
-                    "user": {
-                      "login": "user-52"
-                    }
-                  },
-                  "committedDate": "2026-11-06T17:34:14Z",
-                  "committer": {
-                    "name": null,
-                    "user": {
-                      "login": "user-52"
-                    }
-                  }
-                }
-              },
-              {
-                "__typename": "PullRequestReview",
-                "author": {
+                "__typename": "MentionedEvent",
+                "actor": {
                   "__typename": "User",
-                  "login": "user-50"
+                  "login": "user-54"
                 },
-                "submittedAt": "2026-11-06T17:36:14Z"
-              },
-              {
-                "__typename": "PullRequestReview",
-                "author": {
-                  "__typename": "User",
-                  "login": "user-50"
-                },
-                "submittedAt": "2026-11-06T17:36:38Z"
-              },
-              {
-                "__typename": "PullRequestReview",
-                "author": {
-                  "__typename": "User",
-                  "login": "user-50"
-                },
-                "submittedAt": "2026-11-06T17:37:28Z"
+                "createdAt": "2019-07-07T09:34:50Z"
               },
               {
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "Bot",
-                  "login": "user-46"
+                  "login": "user-55"
                 },
-                "bodyText": "Documentation build overview\n\n📚 cpython-previews | 🛠️ Build #35707548 | 📁 Comparing e05d003 against main (2781ffe)\n\n   🔍 Preview build   \n\n2 files changed\n\n± library/ssl.html\n± whatsnew/changelog.html",
-                "createdAt": "2026-11-06T17:38:09Z"
+                "bodyText": "This PR is stale because it has been open for 30 days with no activity.",
+                "createdAt": "2026-02-20T06:17:27Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-50"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ip",
+                "createdAt": "2026-10-19T08:49:42Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-52"
+                },
+                "createdAt": "2026-10-19T08:49:44Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-52"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit",
+                "createdAt": "2026-10-19T19:24:04Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-50"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ips",
+                "createdAt": "2026-10-21T19:27:23Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-52"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipi",
+                "createdAt": "2026-10-21T19:41:12Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-50"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum",
+                "createdAt": "2026-10-22T02:37:38Z"
               },
               {
                 "__typename": "PullRequestCommit",
@@ -1724,55 +749,153 @@
                   "author": {
                     "name": null,
                     "user": {
-                      "login": "user-52"
+                      "login": "user-50"
                     }
                   },
-                  "committedDate": "2026-11-06T20:31:57Z",
+                  "committedDate": "2026-10-28T15:23:26Z",
                   "committer": {
                     "name": null,
                     "user": {
-                      "login": "user-52"
+                      "login": "user-50"
                     }
                   }
                 }
               },
               {
-                "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-06T20:33:14Z",
-                "requestedReviewer": {
+                "__typename": "HeadRefForcePushedEvent",
+                "actor": {
+                  "__typename": "User",
                   "login": "user-50"
+                },
+                "createdAt": "2026-10-28T15:31:38Z"
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-10-28T15:31:38Z",
+                "requestedReviewer": {
+                  "login": "user-52"
                 }
               },
               {
-                "__typename": "PullRequestReview",
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-44"
+                },
+                "bodyText": "All commit authors signed the Contributor License Agreement.",
+                "createdAt": "2026-10-28T15:31:42Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-56"
+                },
+                "bodyText": "Documentation build overview\n\n📚 cpython-previews | 🛠️ Build #35729216 | 📁 Comparing e9b09d4 against main (d7ea5ba)\n\n   🔍 Preview build   \n\n143 files changed · ± 143 modified\n\n± Modified\n\nbuiltins/exceptions.html\nbuiltins/functions.html\nbuiltins/stdtypes.html\nbuiltins/threadsafety.html\nc-api/bool.html\nc-api/code.html\nc-api/codec.html\nc-api/dict.html\nc-api/extension-modules.html\nc-api/frame.html\nand 133 more...",
+                "createdAt": "2026-10-28T15:35:11Z"
+              },
+              {
+                "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-53"
+                  "login": "user-50"
                 },
-                "submittedAt": "2026-11-06T22:54:53Z"
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipis",
+                "createdAt": "2026-10-28T16:24:31Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-52"
+                },
+                "createdAt": "2026-10-28T16:24:34Z"
               },
               {
                 "__typename": "PullRequestReview",
                 "author": {
                   "__typename": "User",
-                  "login": "user-35"
+                  "login": "user-52"
                 },
-                "submittedAt": "2026-11-07T08:42:22Z"
+                "submittedAt": "2026-10-30T03:43:55Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-50"
+                    }
+                  },
+                  "committedDate": "2026-11-06T07:04:28Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-50"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-50"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit",
+                "createdAt": "2026-11-06T08:03:04Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-52"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, conse",
+                "createdAt": "2026-11-07T20:33:21Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-50"
+                    }
+                  },
+                  "committedDate": "2026-11-08T06:06:53Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-50"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-50"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing el",
+                "createdAt": "2026-11-08T06:19:14Z"
               }
             ]
           },
-          "title": "gh-161503: Check hostname in ssl.get_server_certificate with custom ca_certs",
-          "updatedAt": "2026-11-07T08:44:00Z"
+          "title": "gh-66333: Allow to break into pdb with Ctrl-C for all the commands t…",
+          "updatedAt": "2026-11-08T06:19:14Z"
         },
         {
           "assignees": {
             "nodes": []
           },
           "author": {
-            "login": "user-54"
+            "login": "miss-islington"
           },
-          "baseRefName": "main",
-          "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r",
+          "baseRefName": "3.15",
+          "body": "With `--with-lto` on macOS, linker flags include Make's `$@` target variable.\nImmediate expansion in `PY_CORE_EXE_LDFLAGS` erased the target name,\ncausing executable links to share an LTO object path. Parallel links\ncould then produce incorrect executables and cause `test_embed` failures.\n\nUse recursive assignment (`=` instead of `:=`) so `$@` expands when each\nlink recipe runs.\n(cherry picked from commit a497a11c46c2bf096dd544e7a422cc457e806916)\n\n\n<!-- gh-issue-number: gh-153285 -->\n* Issue: gh-153285\n<!-- /gh-issue-number -->\n",
           "closingIssuesReferences": {
             "nodes": []
           },
@@ -1782,10 +905,10 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-54"
+                      "login": "user-49"
                     }
                   },
-                  "message": "",
+                  "message": "(cherry picked from commit a497a11c46c2bf096dd544e7a422cc457e806916)\n",
                   "parents": {
                     "totalCount": 1
                   }
@@ -1794,7 +917,7 @@
             ],
             "totalCount": 1
           },
-          "headRefOid": "b17d6e4391a512d1157552318bc87680fa8f5f79",
+          "headRefOid": "f5a48edde22613b2cf2f7f13b4602ac8060dcb72",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -1810,8 +933,10 @@
           "latestReviews": {
             "nodes": []
           },
-          "mergeCommit": null,
-          "number": 155070,
+          "mergeCommit": {
+            "oid": "dab5e65edc350377a774d56abed4e4adf65bfa78"
+          },
+          "number": 161599,
           "repository": {
             "defaultBranchRef": {
               "name": "main"
@@ -1822,28 +947,53 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-35"
+                  "login": "user-16"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "user-47"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "user-48"
                 }
               }
             ]
           },
-          "state": "OPEN",
+          "state": "MERGED",
           "timelineItems": {
             "nodes": [
               {
                 "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-08-02T07:51:20Z",
+                "createdAt": "2026-11-08T02:46:59Z",
                 "requestedReviewer": {
-                  "login": "user-35"
+                  "login": "user-16"
                 }
               },
               {
-                "__typename": "HeadRefForcePushedEvent",
-                "actor": {
-                  "__typename": "User",
-                  "login": "user-54"
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-11-08T02:46:59Z",
+                "requestedReviewer": {
+                  "login": "user-47"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-11-08T02:46:59Z",
+                "requestedReviewer": {
+                  "login": "user-48"
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-44"
                 },
-                "createdAt": "2026-09-12T17:59:52Z"
+                "bodyText": "All commit authors signed the Contributor License Agreement.",
+                "createdAt": "2026-11-08T02:47:03Z"
               },
               {
                 "__typename": "PullRequestCommit",
@@ -1851,14 +1001,14 @@
                   "author": {
                     "name": null,
                     "user": {
-                      "login": "user-54"
+                      "login": "user-9"
                     }
                   },
-                  "committedDate": "2026-11-07T08:42:23Z",
+                  "committedDate": "2026-11-08T05:25:50Z",
                   "committer": {
                     "name": null,
                     "user": {
-                      "login": "user-54"
+                      "login": "user-49"
                     }
                   }
                 }
@@ -1867,37 +1017,28 @@
                 "__typename": "HeadRefForcePushedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-54"
+                  "login": "user-49"
                 },
-                "createdAt": "2026-11-07T08:42:25Z"
-              },
-              {
-                "__typename": "IssueComment",
-                "author": {
-                  "__typename": "User",
-                  "login": "user-54"
-                },
-                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscin",
-                "createdAt": "2026-11-07T08:42:36Z"
+                "createdAt": "2026-11-08T05:25:59Z"
               }
             ]
           },
-          "title": "gh-155003: Don't try to close mmap in SharedMemory.__del__",
-          "updatedAt": "2026-11-07T08:42:36Z"
+          "title": "[3.15] gh-153285: Preserve LTO target names on macOS (GH-153532)",
+          "updatedAt": "2026-11-08T06:10:45Z"
         },
         {
           "assignees": {
             "nodes": []
           },
           "author": {
-            "login": "user-55"
+            "login": "user-57"
           },
           "baseRefName": "main",
-          "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem",
+          "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit ",
           "closingIssuesReferences": {
             "nodes": [
               {
-                "number": 161513,
+                "number": 102618,
                 "repository": {
                   "nameWithOwner": "python/cpython"
                 }
@@ -1910,199 +1051,7 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-55"
-                    }
-                  },
-                  "message": "",
-                  "parents": {
-                    "totalCount": 1
-                  }
-                }
-              }
-            ],
-            "totalCount": 1
-          },
-          "headRefOid": "1b92fa897de21e05a02f9d5c019f651f1d6226da",
-          "isDraft": false,
-          "lastCommit": {
-            "nodes": [
-              {
-                "commit": {
-                  "statusCheckRollup": {
-                    "state": "FAILURE"
-                  }
-                }
-              }
-            ]
-          },
-          "latestReviews": {
-            "nodes": []
-          },
-          "mergeCommit": null,
-          "number": 161543,
-          "repository": {
-            "defaultBranchRef": {
-              "name": "main"
-            },
-            "nameWithOwner": "python/cpython"
-          },
-          "reviewRequests": {
-            "nodes": []
-          },
-          "state": "OPEN",
-          "timelineItems": {
-            "nodes": [
-              {
-                "__typename": "PullRequestCommit",
-                "commit": {
-                  "author": {
-                    "name": null,
-                    "user": {
-                      "login": "user-55"
-                    }
-                  },
-                  "committedDate": "2026-11-07T08:37:07Z",
-                  "committer": {
-                    "name": null,
-                    "user": {
-                      "login": "user-55"
-                    }
-                  }
-                }
-              },
-              {
-                "__typename": "IssueComment",
-                "author": {
-                  "__typename": "Bot",
-                  "login": "user-56"
-                },
-                "bodyText": "The following commit authors need to sign the Contributor License Agreement:\n\n96341168+user-55@users.noreply.github.com",
-                "createdAt": "2026-11-07T08:37:15Z"
-              },
-              {
-                "__typename": "IssueComment",
-                "author": {
-                  "__typename": "Bot",
-                  "login": "user-51"
-                },
-                "bodyText": "Most changes to Python require a NEWS entry. Add one using the blurb_it web app or the blurb command-line tool.\nIf this change has little impact on Python users, wait for a maintainer to apply the skip news label instead.",
-                "createdAt": "2026-11-07T08:37:17Z"
-              }
-            ]
-          },
-          "title": "fix: platform: import _wmi on first use",
-          "updatedAt": "2026-11-07T08:37:18Z"
-        },
-        {
-          "assignees": {
-            "nodes": []
-          },
-          "author": {
-            "login": "user-14"
-          },
-          "baseRefName": "main",
-          "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, cons",
-          "closingIssuesReferences": {
-            "nodes": []
-          },
-          "commits": {
-            "nodes": [
-              {
-                "commit": {
-                  "committer": {
-                    "user": {
-                      "login": "user-14"
-                    }
-                  },
-                  "message": "",
-                  "parents": {
-                    "totalCount": 1
-                  }
-                }
-              }
-            ],
-            "totalCount": 1
-          },
-          "headRefOid": "de86e829277232766e8d1c72e90f447897689e23",
-          "isDraft": false,
-          "lastCommit": {
-            "nodes": [
-              {
-                "commit": {
-                  "statusCheckRollup": {
-                    "state": "FAILURE"
-                  }
-                }
-              }
-            ]
-          },
-          "latestReviews": {
-            "nodes": []
-          },
-          "mergeCommit": null,
-          "number": 161539,
-          "repository": {
-            "defaultBranchRef": {
-              "name": "main"
-            },
-            "nameWithOwner": "python/cpython"
-          },
-          "reviewRequests": {
-            "nodes": []
-          },
-          "state": "OPEN",
-          "timelineItems": {
-            "nodes": [
-              {
-                "__typename": "PullRequestCommit",
-                "commit": {
-                  "author": {
-                    "name": null,
-                    "user": {
-                      "login": "user-14"
-                    }
-                  },
-                  "committedDate": "2026-11-07T08:33:04Z",
-                  "committer": {
-                    "name": null,
-                    "user": {
-                      "login": "user-14"
-                    }
-                  }
-                }
-              },
-              {
-                "__typename": "HeadRefForcePushedEvent",
-                "actor": {
-                  "__typename": "User",
-                  "login": "user-14"
-                },
-                "createdAt": "2026-11-07T08:33:19Z"
-              }
-            ]
-          },
-          "title": "gh-152433: Make ctypes callbacks work on Windows UWP builds",
-          "updatedAt": "2026-11-07T08:33:19Z"
-        },
-        {
-          "assignees": {
-            "nodes": []
-          },
-          "author": {
-            "login": "user-11"
-          },
-          "baseRefName": "main",
-          "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, con",
-          "closingIssuesReferences": {
-            "nodes": []
-          },
-          "commits": {
-            "nodes": [
-              {
-                "commit": {
-                  "committer": {
-                    "user": {
-                      "login": "user-11"
+                      "login": "user-57"
                     }
                   },
                   "message": "",
@@ -2115,7 +1064,96 @@
                 "commit": {
                   "committer": {
                     "user": {
-                      "login": "user-11"
+                      "login": "user-57"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-57"
                     }
                   },
                   "message": "",
@@ -2138,8 +1176,93 @@
               {
                 "commit": {
                   "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
                     "user": {
-                      "login": "user-11"
+                      "login": "user-57"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-57"
                     }
                   },
                   "message": "",
@@ -2149,9 +1272,9 @@
                 }
               }
             ],
-            "totalCount": 4
+            "totalCount": 18
           },
-          "headRefOid": "65767db71e49c2c88f4d95ca4a3db6a4dcc58633",
+          "headRefOid": "4901223c91f6bf0bbad7b612317043e684e363f2",
           "isDraft": false,
           "lastCommit": {
             "nodes": [
@@ -2168,16 +1291,50 @@
             "nodes": [
               {
                 "author": {
-                  "login": "user-13"
+                  "login": "user-58"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "user-35"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "user-59"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "user-60"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "user-61"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "user-21"
+                },
+                "state": "COMMENTED"
+              },
+              {
+                "author": {
+                  "login": "user-62"
                 },
                 "state": "APPROVED"
               }
             ]
           },
-          "mergeCommit": {
-            "oid": "301643a9e331679d50fba596a32d3119f99dc1bf"
-          },
-          "number": 161417,
+          "mergeCommit": null,
+          "number": 150002,
           "repository": {
             "defaultBranchRef": {
               "name": "main"
@@ -2188,7 +1345,905 @@
             "nodes": [
               {
                 "requestedReviewer": {
-                  "login": "user-43"
+                  "login": "user-47"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-05-18T16:31:58Z",
+                "requestedReviewer": {
+                  "login": "user-35"
+                }
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-35"
+                },
+                "createdAt": "2026-05-18T16:31:59Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-63"
+                },
+                "createdAt": "2026-05-18T16:32:00Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-64"
+                },
+                "createdAt": "2026-05-18T16:32:00Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-65"
+                },
+                "createdAt": "2026-05-18T16:32:00Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-62"
+                },
+                "createdAt": "2026-05-18T16:32:00Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-56"
+                },
+                "bodyText": "Documentation build overview\n\n📚 cpython-previews | 🛠️ Build #33816994 | 📁 Comparing 126cfa5 against main (1692854)\n\n   🔍 Preview build   \n\n252 files changed · + 6 added · ± 245 modified · - 1 deleted\n\n+ Added\n\ndeprecations/pending-removal-in-3.21.html\nhowto/abi3t-migration.html\nlibrary/asyncio-threading.html\nlibrary/asyncio-tools.html\nlibrary/tkinter.fontchooser.html\nlibrary/tkinter.systray.html\n\n± Modified\n\nbugs.html\nglossary.html\nindex.html\nlicense.html\npy-modindex.html\nc-api/bytes.html\nc-api/complex.html\nc-api/coro.html\nc-api/dict.html\nc-api/exceptions.html\nand 235 more...\n\n- Deleted\n\nlibrary/asyncio-policy.html",
+                "createdAt": "2026-05-18T16:35:39Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "committedDate": "2026-05-18T16:38:59Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "HeadRefForcePushedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-57"
+                },
+                "createdAt": "2026-05-18T16:39:08Z"
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-62"
+                },
+                "submittedAt": "2026-05-18T18:07:35Z"
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-62"
+                },
+                "submittedAt": "2026-05-18T18:11:47Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "committedDate": "2026-05-18T21:51:05Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "committedDate": "2026-05-18T21:57:46Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-57"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum ",
+                "createdAt": "2026-05-18T22:56:52Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-57"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consecte",
+                "createdAt": "2026-05-19T00:55:49Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-66"
+                },
+                "createdAt": "2026-05-19T00:55:51Z"
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-59"
+                },
+                "submittedAt": "2026-05-19T09:40:03Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "committedDate": "2026-05-19T16:02:26Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "committedDate": "2026-05-19T16:02:26Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "HeadRefForcePushedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-57"
+                },
+                "createdAt": "2026-05-19T16:02:36Z"
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-21"
+                },
+                "submittedAt": "2026-05-19T21:26:38Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "committedDate": "2026-05-19T21:31:32Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-67"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor",
+                "createdAt": "2026-05-24T03:55:20Z"
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-60"
+                },
+                "submittedAt": "2026-05-28T04:34:54Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "committedDate": "2026-05-28T16:02:12Z",
+                  "committer": {
+                    "name": null,
+                    "user": null
+                  }
+                }
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-62"
+                },
+                "submittedAt": "2026-07-14T09:52:32Z"
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-21"
+                },
+                "submittedAt": "2026-07-15T17:29:11Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "committedDate": "2026-07-17T01:58:36Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "committedDate": "2026-07-17T02:10:43Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-17T02:11:18Z",
+                "requestedReviewer": {
+                  "login": "user-47"
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-57"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum do",
+                "createdAt": "2026-07-17T02:15:59Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "committedDate": "2026-07-18T09:47:02Z",
+                  "committer": {
+                    "name": null,
+                    "user": null
+                  }
+                }
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-58"
+                },
+                "submittedAt": "2026-07-19T12:22:26Z"
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-21"
+                },
+                "submittedAt": "2026-07-19T14:23:36Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "committedDate": "2026-07-21T18:55:57Z",
+                  "committer": {
+                    "name": null,
+                    "user": null
+                  }
+                }
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "committedDate": "2026-07-21T19:04:50Z",
+                  "committer": {
+                    "name": null,
+                    "user": null
+                  }
+                }
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "committedDate": "2026-07-21T19:06:14Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "committedDate": "2026-07-21T19:12:37Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "committedDate": "2026-07-21T19:14:50Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "committedDate": "2026-07-28T20:34:21Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "committedDate": "2026-07-29T13:30:49Z",
+                  "committer": {
+                    "name": null,
+                    "user": null
+                  }
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-57"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing",
+                "createdAt": "2026-08-06T17:26:18Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-55"
+                },
+                "bodyText": "This PR is stale because it has been open for 90 days with no activity.",
+                "createdAt": "2026-11-05T12:06:06Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-35"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem i",
+                "createdAt": "2026-11-06T05:44:54Z"
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-35"
+                },
+                "submittedAt": "2026-11-06T05:48:47Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  },
+                  "committedDate": "2026-11-07T02:46:13Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-57"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-57"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r",
+                "createdAt": "2026-11-07T02:56:11Z"
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-11-07T23:45:25Z",
+                "requestedReviewer": {
+                  "login": "user-61"
+                }
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-61"
+                },
+                "submittedAt": "2026-11-08T04:37:58Z"
+              }
+            ]
+          },
+          "title": "gh-102618: Introduce a `functools.cached_method` decorator",
+          "updatedAt": "2026-11-08T04:50:27Z"
+        },
+        {
+          "assignees": {
+            "nodes": [
+              {
+                "login": "user-68"
+              }
+            ]
+          },
+          "author": {
+            "login": "user-68"
+          },
+          "baseRefName": "main",
+          "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipis",
+          "closingIssuesReferences": {
+            "nodes": []
+          },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-68"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              }
+            ],
+            "totalCount": 2
+          },
+          "headRefOid": "049a57c265e835ab2f1999281d63885781a6a4e9",
+          "isDraft": true,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": []
+          },
+          "mergeCommit": null,
+          "number": 161457,
+          "repository": {
+            "defaultBranchRef": {
+              "name": "main"
+            },
+            "nameWithOwner": "python/cpython"
+          },
+          "reviewRequests": {
+            "nodes": []
+          },
+          "state": "OPEN",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-68"
+                    }
+                  },
+                  "committedDate": "2026-11-06T02:47:40Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-68"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "AssignedEvent",
+                "assignee": {
+                  "login": "user-68"
+                },
+                "createdAt": "2026-11-06T02:47:50Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-68"
+                    }
+                  },
+                  "committedDate": "2026-11-08T04:18:41Z",
+                  "committer": {
+                    "name": null,
+                    "user": null
+                  }
+                }
+              }
+            ]
+          },
+          "title": "gh-129724: Intern code object names before merging them with constants",
+          "updatedAt": "2026-11-08T04:18:43Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "user-69"
+          },
+          "baseRefName": "3.15",
+          "body": "(cherry picked from commit 0e98aea32593e39c647c2b3d7054ec4e36bf643a)\n\n<!--\nThanks for your contribution!\nPlease read this comment in its entirety. It's quite important.\n\n# Pull Request title\n\nIt should be in the following format:\n\n```\ngh-NNNNNN: Summary of the changes made\n```\n\nWhere: gh-NNNNNN refers to the GitHub issue number.\n\nMost PRs will require an issue number. Trivial changes, like fixing a typo, do not need an issue.\n\n# Backport Pull Request title\n\nIf this is a backport PR (PR made against branches other than `main`),\nplease ensure that the PR title is in the following format:\n\n```\n[X.Y] <title from the original PR> (GH-NNNNNN)\n```\n\nWhere: [X.Y] is the branch name, for example: [3.13].\n\nGH-NNNNNN refers to the PR number from `main`.\n\n-->\n\n\n<!-- gh-issue-number: gh-161555 -->\n* Issue: gh-161555\n<!-- /gh-issue-number -->\n",
+          "closingIssuesReferences": {
+            "nodes": []
+          },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-69"
+                    }
+                  },
+                  "message": "(cherry picked from commit 0e98aea32593e39c647c2b3d7054ec4e36bf643a)\n",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 1
+          },
+          "headRefOid": "bce4d3763bb8fe5d5d20516d0c8e8ba133ba33c3",
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": []
+          },
+          "mergeCommit": null,
+          "number": 161598,
+          "repository": {
+            "defaultBranchRef": {
+              "name": "main"
+            },
+            "nameWithOwner": "python/cpython"
+          },
+          "reviewRequests": {
+            "nodes": []
+          },
+          "state": "OPEN",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-10"
+                    }
+                  },
+                  "committedDate": "2026-11-08T02:37:05Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-69"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-11-08T02:40:50Z",
+                "requestedReviewer": {
+                  "login": "user-35"
+                }
+              }
+            ]
+          },
+          "title": "[3.15] gh-161555: Fix `test_heapq` under global lazy imports (GH-161556)",
+          "updatedAt": "2026-11-08T03:28:15Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "user-9"
+          },
+          "baseRefName": "main",
+          "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipisc",
+          "closingIssuesReferences": {
+            "nodes": [
+              {
+                "number": 153285,
+                "repository": {
+                  "nameWithOwner": "python/cpython"
+                }
+              }
+            ]
+          },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-9"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 2
+                  }
+                }
+              }
+            ],
+            "totalCount": 3
+          },
+          "headRefOid": "4546e36e3a86a03ac81c4f9bbbd9f123276980e1",
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "user-49"
+                },
+                "state": "APPROVED"
+              }
+            ]
+          },
+          "mergeCommit": {
+            "oid": "a497a11c46c2bf096dd544e7a422cc457e806916"
+          },
+          "number": 153532,
+          "repository": {
+            "defaultBranchRef": {
+              "name": "main"
+            },
+            "nameWithOwner": "python/cpython"
+          },
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "user-16"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "user-47"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "user-48"
                 }
               }
             ]
@@ -2202,32 +2257,80 @@
                   "author": {
                     "name": null,
                     "user": {
-                      "login": "user-11"
+                      "login": "user-9"
                     }
                   },
-                  "committedDate": "2026-11-05T12:00:24Z",
+                  "committedDate": "2026-07-10T20:39:31Z",
                   "committer": {
                     "name": null,
                     "user": {
-                      "login": "user-11"
+                      "login": "user-9"
                     }
                   }
                 }
               },
               {
                 "__typename": "ReviewRequestedEvent",
-                "createdAt": "2026-11-05T12:00:59Z",
+                "createdAt": "2026-07-10T20:40:21Z",
                 "requestedReviewer": {
-                  "login": "user-43"
+                  "login": "user-16"
                 }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-10T20:40:21Z",
+                "requestedReviewer": {
+                  "login": "user-47"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-10T20:40:21Z",
+                "requestedReviewer": {
+                  "login": "user-48"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-07-10T20:40:21Z",
+                "requestedReviewer": {
+                  "login": "user-49"
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-44"
+                },
+                "bodyText": "All commit authors signed the Contributor License Agreement.",
+                "createdAt": "2026-07-10T20:40:24Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-9"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing eli",
+                "createdAt": "2026-08-02T06:17:14Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-55"
+                },
+                "bodyText": "This PR is stale because it has been open for 90 days with no activity.",
+                "createdAt": "2026-11-06T06:07:12Z"
               },
               {
                 "__typename": "PullRequestReview",
                 "author": {
                   "__typename": "User",
-                  "login": "user-13"
+                  "login": "user-49"
                 },
-                "submittedAt": "2026-11-05T13:34:59Z"
+                "submittedAt": "2026-11-08T02:10:56Z"
               },
               {
                 "__typename": "PullRequestCommit",
@@ -2235,15 +2338,13 @@
                   "author": {
                     "name": null,
                     "user": {
-                      "login": "user-11"
+                      "login": "user-49"
                     }
                   },
-                  "committedDate": "2026-11-05T22:05:06Z",
+                  "committedDate": "2026-11-08T02:11:25Z",
                   "committer": {
                     "name": null,
-                    "user": {
-                      "login": "user-11"
-                    }
+                    "user": null
                   }
                 }
               },
@@ -2253,10 +2354,203 @@
                   "author": {
                     "name": null,
                     "user": {
-                      "login": "user-11"
+                      "login": "user-49"
                     }
                   },
-                  "committedDate": "2026-11-05T22:06:36Z",
+                  "committedDate": "2026-11-08T02:11:40Z",
+                  "committer": {
+                    "name": null,
+                    "user": null
+                  }
+                }
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "miss-islington-app"
+                },
+                "bodyText": "Thanks @user-9 for the PR, and @user-49 for merging it 🌮🎉.. I'm working now to backport this PR to: 3.15.\n🐍🍒⛏🤖",
+                "createdAt": "2026-11-08T02:46:52Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-49"
+                },
+                "createdAt": "2026-11-08T02:46:54Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-9"
+                },
+                "createdAt": "2026-11-08T02:46:55Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "Bot",
+                  "login": "user-45"
+                },
+                "bodyText": "GH-161599 is a backport of this pull request to the 3.15 branch.",
+                "createdAt": "2026-11-08T02:47:08Z"
+              }
+            ]
+          },
+          "title": "gh-153285: Preserve LTO target names on macOS",
+          "updatedAt": "2026-11-08T02:47:09Z"
+        },
+        {
+          "assignees": {
+            "nodes": [
+              {
+                "login": "user-21"
+              }
+            ]
+          },
+          "author": {
+            "login": "user-10"
+          },
+          "baseRefName": "main",
+          "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor",
+          "closingIssuesReferences": {
+            "nodes": []
+          },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-10"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": null
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 2
+          },
+          "headRefOid": "95c92660c7d8e05feffc04b2e3d85888bbd61e2c",
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "user-69"
+                },
+                "state": "APPROVED"
+              },
+              {
+                "author": {
+                  "login": "user-21"
+                },
+                "state": "APPROVED"
+              }
+            ]
+          },
+          "mergeCommit": {
+            "oid": "0e98aea32593e39c647c2b3d7054ec4e36bf643a"
+          },
+          "number": 161556,
+          "repository": {
+            "defaultBranchRef": {
+              "name": "main"
+            },
+            "nameWithOwner": "python/cpython"
+          },
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "user-35"
+                }
+              }
+            ]
+          },
+          "state": "MERGED",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-10"
+                    }
+                  },
+                  "committedDate": "2026-11-07T13:56:17Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-10"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-11-07T13:56:49Z",
+                "requestedReviewer": {
+                  "login": "user-35"
+                }
+              },
+              {
+                "__typename": "PullRequestReview",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-69"
+                },
+                "submittedAt": "2026-11-07T15:17:05Z"
+              },
+              {
+                "__typename": "IssueComment",
+                "author": {
+                  "__typename": "User",
+                  "login": "user-21"
+                },
+                "bodyText": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipis",
+                "createdAt": "2026-11-07T19:17:58Z"
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-21"
+                    }
+                  },
+                  "committedDate": "2026-11-07T19:23:24Z",
                   "committer": {
                     "name": null,
                     "user": null
@@ -2267,44 +2561,9 @@
                 "__typename": "PullRequestReview",
                 "author": {
                   "__typename": "User",
-                  "login": "user-13"
+                  "login": "user-21"
                 },
-                "submittedAt": "2026-11-06T08:08:42Z"
-              },
-              {
-                "__typename": "PullRequestCommit",
-                "commit": {
-                  "author": {
-                    "name": null,
-                    "user": {
-                      "login": "user-11"
-                    }
-                  },
-                  "committedDate": "2026-11-07T00:25:35Z",
-                  "committer": {
-                    "name": null,
-                    "user": {
-                      "login": "user-11"
-                    }
-                  }
-                }
-              },
-              {
-                "__typename": "PullRequestReview",
-                "author": {
-                  "__typename": "User",
-                  "login": "user-13"
-                },
-                "submittedAt": "2026-11-07T08:09:10Z"
-              },
-              {
-                "__typename": "IssueComment",
-                "author": {
-                  "__typename": "User",
-                  "login": "user-13"
-                },
-                "bodyText": "Lorem ipsu",
-                "createdAt": "2026-11-07T08:10:07Z"
+                "submittedAt": "2026-11-07T19:25:25Z"
               },
               {
                 "__typename": "IssueComment",
@@ -2312,56 +2571,262 @@
                   "__typename": "Bot",
                   "login": "miss-islington-app"
                 },
-                "bodyText": "Thanks @user-11 for the PR, and @user-13 for merging it 🌮🎉.. I'm working now to backport this PR to: 3.14, 3.15.\n🐍🍒⛏🤖",
-                "createdAt": "2026-11-07T08:28:32Z"
+                "bodyText": "Thanks @user-10 for the PR, and @user-21 for merging it 🌮🎉.. I'm working now to backport this PR to: 3.15.\n🐍🍒⛏🤖",
+                "createdAt": "2026-11-07T20:01:02Z"
               },
               {
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-13"
+                  "login": "user-10"
                 },
-                "createdAt": "2026-11-07T08:28:34Z"
+                "createdAt": "2026-11-07T20:01:04Z"
               },
               {
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-11"
+                  "login": "user-21"
                 },
-                "createdAt": "2026-11-07T08:28:35Z"
+                "createdAt": "2026-11-07T20:01:05Z"
               },
               {
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "Bot",
-                  "login": "user-51"
+                  "login": "miss-islington-app"
                 },
-                "bodyText": "GH-161541 is a backport of this pull request to the 3.15 branch.",
-                "createdAt": "2026-11-07T08:28:47Z"
+                "bodyText": "Sorry, @user-10 and @user-21, I could not cleanly backport this to 3.15 due to a conflict.\nPlease backport manually with cherry_picker, see the devguide for more information.\ncherry_picker 0e98aea32593e39c647c2b3d7054ec4e36bf643a 3.15",
+                "createdAt": "2026-11-07T20:01:06Z"
+              },
+              {
+                "__typename": "AssignedEvent",
+                "assignee": {
+                  "login": "user-21"
+                },
+                "createdAt": "2026-11-07T20:01:08Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-10"
+                },
+                "createdAt": "2026-11-07T20:01:08Z"
+              },
+              {
+                "__typename": "MentionedEvent",
+                "actor": {
+                  "__typename": "User",
+                  "login": "user-21"
+                },
+                "createdAt": "2026-11-07T20:01:09Z"
               },
               {
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "Bot",
-                  "login": "user-51"
+                  "login": "user-45"
                 },
-                "bodyText": "GH-161542 is a backport of this pull request to the 3.14 branch.",
-                "createdAt": "2026-11-07T08:28:54Z"
+                "bodyText": "GH-161598 is a backport of this pull request to the 3.15 branch.",
+                "createdAt": "2026-11-08T02:41:00Z"
               }
             ]
           },
-          "title": "gh-161415: Remove nonexistent related help topics in `pydoc`",
-          "updatedAt": "2026-11-07T08:28:55Z"
+          "title": "gh-161555: Fix test_heapq under global lazy imports",
+          "updatedAt": "2026-11-08T02:41:00Z"
+        },
+        {
+          "assignees": {
+            "nodes": []
+          },
+          "author": {
+            "login": "user-19"
+          },
+          "baseRefName": "main",
+          "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\nLorem ipsum dolor sit amet, consectetur adipiscing elit.\r\n\r\n",
+          "closingIssuesReferences": {
+            "nodes": []
+          },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-19"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-19"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "committer": {
+                    "user": {
+                      "login": "user-19"
+                    }
+                  },
+                  "message": "",
+                  "parents": {
+                    "totalCount": 1
+                  }
+                }
+              }
+            ],
+            "totalCount": 3
+          },
+          "headRefOid": "e49ac0926d184e9d3610abcd1f7d731d6d79854b",
+          "isDraft": false,
+          "lastCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE"
+                  }
+                }
+              }
+            ]
+          },
+          "latestReviews": {
+            "nodes": []
+          },
+          "mergeCommit": null,
+          "number": 161597,
+          "repository": {
+            "defaultBranchRef": {
+              "name": "main"
+            },
+            "nameWithOwner": "python/cpython"
+          },
+          "reviewRequests": {
+            "nodes": [
+              {
+                "requestedReviewer": {
+                  "login": "user-16"
+                }
+              },
+              {
+                "requestedReviewer": {
+                  "login": "user-47"
+                }
+              }
+            ]
+          },
+          "state": "OPEN",
+          "timelineItems": {
+            "nodes": [
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-19"
+                    }
+                  },
+                  "committedDate": "2026-11-08T00:51:54Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-19"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-19"
+                    }
+                  },
+                  "committedDate": "2026-11-08T01:34:59Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-19"
+                    }
+                  }
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-11-08T01:54:16Z",
+                "requestedReviewer": {
+                  "login": "user-16"
+                }
+              },
+              {
+                "__typename": "ReviewRequestedEvent",
+                "createdAt": "2026-11-08T01:54:16Z",
+                "requestedReviewer": {
+                  "login": "user-47"
+                }
+              },
+              {
+                "__typename": "PullRequestCommit",
+                "commit": {
+                  "author": {
+                    "name": null,
+                    "user": {
+                      "login": "user-19"
+                    }
+                  },
+                  "committedDate": "2026-11-08T01:57:43Z",
+                  "committer": {
+                    "name": null,
+                    "user": {
+                      "login": "user-19"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "title": "gh-87613: Supprt **kwargs in AC VC and use for xml.etree.ElementTree.Element",
+          "updatedAt": "2026-11-08T02:00:41Z"
         }
       ],
       "rateLimit": {
-        "remaining": 4951,
-        "resetAt": "2026-11-07T09:29:53Z"
+        "remaining": 4993,
+        "resetAt": "2026-11-08T07:55:34Z"
       }
+    },
+    "extensions": {
+      "warnings": [
+        {
+          "data": {
+            "legacy_global_id": "MDExOlB1bGxSZXF1ZXN0Mjc4MDgxOTY4",
+            "next_global_id": "PR_kwDOBN0Z8c4QkzGw"
+          },
+          "link": "https://docs.github.com",
+          "message": "The id MDExOlB1bGxSZXF1ZXN0Mjc4MDgxOTY4 is deprecated. Update your cache to use the next_global_id from the data payload.",
+          "type": "DEPRECATION"
+        }
+      ]
     }
   },
   "query": "query FetchChangedPullRequests($ids: [ID!]!) { nodes(ids: $ids) { ... on PullRequest { number title state isDraft updatedAt baseRefName body mergeCommit { oid } headRefOid repository { nameWithOwner defaultBranchRef { name } } closingIssuesReferences(first: 100) { nodes { number repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } commits(first: 100) { totalCount nodes { commit { message parents { totalCount } committer { user { login } } } } } timelineItems(last: 50, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW, READY_FOR_REVIEW_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, MENTIONED_EVENT, REVIEW_REQUESTED_EVENT, ASSIGNED_EVENT]) { nodes { __typename ... on PullRequestCommit { commit { committedDate author { name user { login } } committer { name user { login } } } } ... on IssueComment { createdAt author { __typename login } bodyText } ... on PullRequestReview { submittedAt author { __typename login } } ... on ReadyForReviewEvent { createdAt actor { __typename login } } ... on HeadRefForcePushedEvent { createdAt actor { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } ... on ReviewRequestedEvent { createdAt requestedReviewer { ... on User { login } ... on Bot { login } } } ... on AssignedEvent { createdAt assignee { ... on User { login } ... on Bot { login } } } } } } } rateLimit { remaining resetAt } }",
-  "reset": 1794043793,
+  "reset": 1794124534,
   "status": 200
 }

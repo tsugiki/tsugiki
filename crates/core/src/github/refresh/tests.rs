@@ -39,6 +39,8 @@ fn issue(number: u32) -> Value {
         "number": number,
         "title": format!("Issue {number}"),
         "updatedAt": NEWER,
+        "state": "OPEN",
+        "stateReason": null,
         "assignees": { "nodes": [] },
         "timelineItems": { "nodes": [] },
         "author": { "login": "some-author" },

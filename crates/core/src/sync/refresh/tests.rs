@@ -2,6 +2,7 @@ use super::*;
 use crate::error::ErrorKind;
 use crate::filters::Filter;
 use crate::github::activity::{Activity, ActivityKind};
+use crate::github::issues::IssueState;
 use crate::github::pull_requests::{CiState, ReviewState};
 use crate::github::testing::{dated, reply_ok, signed_in_as};
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
@@ -75,6 +76,7 @@ fn holding_issue(harness: &Harness, number: u32, updated_at: &str) {
         author: None,
         assignees: vec![],
         updated_at: at(updated_at),
+        state: Some(IssueState::Open),
     };
     harness.store.save_issues(&cpython(), vec![issue]).unwrap();
 }
@@ -114,6 +116,8 @@ fn issue_node(number: u32, updated_at: &str) -> Value {
         "number": number,
         "title": format!("Issue {number} now"),
         "updatedAt": updated_at,
+        "state": "OPEN",
+        "stateReason": null,
         "assignees": { "nodes": [] },
         "timelineItems": { "nodes": [] },
         "author": null,
@@ -471,6 +475,7 @@ fn an_issue_nothing_shows_stays_out_and_an_unchanged_one_says_nothing() {
         author: None,
         assignees: vec![],
         updated_at: at(LONG_BEFORE),
+        state: Some(IssueState::Open),
     };
     harness.store.save_issues(&cpython(), vec![same]).unwrap();
     let mut syncs = refreshing(filtering(&[]));

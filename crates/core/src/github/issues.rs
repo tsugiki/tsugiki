@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use specta::Type;
 use time::OffsetDateTime;
 
 use super::activity::{IssueTimelineWire, ItemActivity, issue_activity};
@@ -25,6 +26,48 @@ pub struct IssueFacts {
     pub author: Option<Login>,
     pub assignees: Vec<Login>,
     pub updated_at: OffsetDateTime,
+    /// Nothing for an Issue stored before Tsugiki kept states, until GitHub sends it again.
+    pub state: Option<IssueState>,
+}
+
+/// Whether an Issue is open, and how it closed, as GitHub draws it (#188).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum IssueState {
+    Open,
+    /// Closed as completed, or closed before GitHub said why.
+    Closed,
+    NotPlanned,
+    /// Closed as a duplicate, which GitHub draws as it draws not planned.
+    Duplicate,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum StateWire {
+    Open,
+    Closed,
+}
+
+/// Why GitHub says an Issue closed, or reopened. A reason GitHub adds later reads as a plain close.
+#[derive(Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum StateReason {
+    NotPlanned,
+    Duplicate,
+    #[serde(other)]
+    Other,
+}
+
+impl IssueState {
+    fn of(state: StateWire, reason: Option<StateReason>) -> Self {
+        match (state, reason) {
+            (StateWire::Open, _) => Self::Open,
+            (StateWire::Closed, Some(StateReason::NotPlanned)) => Self::NotPlanned,
+            (StateWire::Closed, Some(StateReason::Duplicate)) => Self::Duplicate,
+            (StateWire::Closed, _) => Self::Closed,
+        }
+    }
 }
 
 /// One answer to a fetch by number.
@@ -47,6 +90,8 @@ pub(super) struct IssueWire {
     updated_at: OffsetDateTime,
     author: Option<Person>,
     assignees: Nodes<Person>,
+    state: StateWire,
+    state_reason: Option<StateReason>,
     timeline_items: Nodes<IssueTimelineWire>,
 }
 
@@ -65,6 +110,7 @@ impl From<IssueWire> for (IssueFacts, ItemActivity) {
                 .map(|person| person.login)
                 .collect(),
             updated_at: wire.updated_at,
+            state: Some(IssueState::of(wire.state, wire.state_reason)),
         };
         (facts, activity)
     }
@@ -72,7 +118,7 @@ impl From<IssueWire> for (IssueFacts, ItemActivity) {
 
 /// The fields of an Issue that `IssueWire` reads. The last comments and mentions are enough to say that
 /// someone posted, and whether the post named the user.
-pub(super) const ISSUE_FIELDS: &str = "number title updatedAt author { login } \
+pub(super) const ISSUE_FIELDS: &str = "number title updatedAt state stateReason author { login } \
      assignees(first: 20) { nodes { login } } \
      timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename \
      ... on IssueComment { createdAt author { __typename login } } \

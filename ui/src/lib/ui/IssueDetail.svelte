@@ -2,6 +2,8 @@
   import { openLink, openOnGitHub, type GitHubItem } from "$lib/state/browser";
   import type { IssueViewState } from "$lib/state/issue-view.svelte";
   import Conversation from "./Conversation.svelte";
+  import { issueIcon, prIcon } from "./octicons";
+  import StateIcon from "./StateIcon.svelte";
   import { backportWords, headline, prStateWords } from "./workbench-row";
 
   let {
@@ -35,7 +37,11 @@
     <p>{`Tsugiki doesn't hold Issue #${String(issue.number)}.`}</p>
   {:else if issue.view}
     {@const view = issue.view}
+    {@const icon = issueIcon(view.state)}
     <h2>
+      {#if icon}
+        <StateIcon {icon} />
+      {/if}
       <button class="link" onclick={() => void onGitHub({ kind: "issue", number: view.number })}>
         {headline(view)}
       </button>
@@ -46,13 +52,19 @@
       <ul class="prs">
         {#each view.pull_requests as entry (entry.number)}
           <li>
-            <button class="link" onclick={openPr(entry.number)}>{headline(entry)}</button>
+            <span>
+              <StateIcon icon={prIcon(entry)} />
+              <button class="link" onclick={openPr(entry.number)}>{headline(entry)}</button>
+            </span>
             <small>{prStateWords(entry)}</small>
             {#if entry.kind === "pr" && entry.backports.length > 0}
               <small class="backports">
                 Backports:
                 {#each entry.backports as backport (backport.number)}
-                  <button class="link" onclick={openPr(backport.number)}>{backportWords(backport)}</button>
+                  <span>
+                    <StateIcon icon={prIcon(backport)} />
+                    <button class="link" onclick={openPr(backport.number)}>{backportWords(backport)}</button>
+                  </span>
                 {/each}
               </small>
             {/if}

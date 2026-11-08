@@ -77,6 +77,7 @@ test("the HUD times an Issue whose text comes from GitHub", async ({ page }) => 
     kind: "issue",
     number: 7,
     title: "Issue 7",
+    state: "OPEN",
     people: ["issue-author"],
     updated_at: "2026-11-04T10:00:00Z",
     pull_requests: [],

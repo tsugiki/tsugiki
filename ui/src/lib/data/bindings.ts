@@ -38,6 +38,8 @@ export const commands = {
 	settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
 	/**  What the window opens on. */
 	home: () => __TAURI_INVOKE<Home_Serialize>("home"),
+	/**  How wide the user dragged the Sidebar and the Workbench list on this machine (#187). */
+	paneWidths: () => __TAURI_INVOKE<PaneWidths_Serialize>("pane_widths"),
 	/**  The milliseconds since Tsugiki started running. */
 	timeRunning: () => __TAURI_INVOKE<number | null>("time_running"),
 	/**  Writes what the performance HUD measured to `tsugiki.log`, and says the summary line it wrote. */
@@ -55,6 +57,11 @@ export const commands = {
 	 *  what the window opens on now. This waits on a small file and never on GitHub or git.
 	 */
 	addRepository: (name: string, access: RepositoryAccess) => typedError<Home_Serialize, Error_Serialize>(__TAURI_INVOKE("add_repository", { name, access })),
+	/**
+	 *  Saves how wide the user dragged the Sidebar and the Workbench list in `machine.toml`, and says the widths
+	 *  the window keeps now. This waits on a small file.
+	 */
+	savePaneWidths: (widths: PaneWidths_Deserialize) => typedError<PaneWidths_Serialize, Error_Serialize>(__TAURI_INVOKE("save_pane_widths", { widths })),
 	/**
 	 *  The rows of a view of a Repository's Workbench, with what its Sidebar shows. This waits
 	 *  on the database and never on GitHub (ADR 0018).
@@ -963,6 +970,33 @@ export type Pair = {
 	removed: number,
 	/**  How many rows the added side has. */
 	added: number,
+};
+
+/**
+ *  How wide the user dragged the Sidebar and the Workbench list, in CSS pixels (#187). Each stays on this
+ *  machine, like the window's place, and a pane left out takes its default. So does a width that isn't a
+ *  whole number of pixels: a pane's width is too small a thing to lose the rest of `machine.toml` over.
+ */
+export type PaneWidths = PaneWidths_Serialize | PaneWidths_Deserialize;
+
+/**
+ *  How wide the user dragged the Sidebar and the Workbench list, in CSS pixels (#187). Each stays on this
+ *  machine, like the window's place, and a pane left out takes its default. So does a width that isn't a
+ *  whole number of pixels: a pane's width is too small a thing to lose the rest of `machine.toml` over.
+ */
+export type PaneWidths_Deserialize = {
+	sidebar?: number | null,
+	list?: number | null,
+};
+
+/**
+ *  How wide the user dragged the Sidebar and the Workbench list, in CSS pixels (#187). Each stays on this
+ *  machine, like the window's place, and a pane left out takes its default. So does a width that isn't a
+ *  whole number of pixels: a pane's width is too small a thing to lose the rest of `machine.toml` over.
+ */
+export type PaneWidths_Serialize = {
+	sidebar: number | null,
+	list: number | null,
 };
 
 /**  Where Files shows a thread. A file is named by its place among the diff's files. */

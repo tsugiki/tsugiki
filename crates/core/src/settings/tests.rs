@@ -836,7 +836,7 @@ fn additions_that_overlap_all_reach_the_view() {
 #[test]
 fn an_owner_whose_thread_has_gone_says_so() {
     let owner = SettingsOwner {
-        additions: mpsc::channel().0,
+        requests: mpsc::channel().0,
         view: latest::channel(SettingsView::default()).1,
     };
 
@@ -845,6 +845,122 @@ fn an_owner_whose_thread_has_gone_says_so() {
         .unwrap_err();
 
     assert_eq!(refused.message, STOPPED_SAVING);
+}
+
+const WIDE: PaneWidths = PaneWidths {
+    sidebar: Some(240),
+    list: Some(500),
+};
+
+#[test]
+fn the_panes_widths_stay_on_this_machine_beside_what_the_user_wrote() {
+    let (folders, root) = temp_folders("panes");
+    let mine = "# This laptop.\nlast_repository = \"a/old\" # Mine.\n";
+    fs::write(folders.machine_file(), mine).unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+
+    files.save_panes(WIDE).unwrap();
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    let synced = folders.settings_file().exists();
+    let read_again = SettingsFiles::load(folders).view().panes;
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(
+        machine,
+        format!("{mine}\n[panes]\nsidebar = 240\nlist = 500\n")
+    );
+    assert_eq!(
+        (synced, files.view().panes, read_again),
+        (false, WIDE, WIDE)
+    );
+}
+
+#[test]
+fn a_pane_back_at_its_default_leaves_machine_toml() {
+    let (folders, root) = temp_folders("panes-default");
+    let mine = "last_repository = \"a/old\"\n";
+    fs::write(folders.machine_file(), mine).unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+    files.save_panes(WIDE).unwrap();
+
+    let sidebar = PaneWidths {
+        sidebar: Some(240),
+        list: None,
+    };
+    files.save_panes(sidebar).unwrap();
+    let one = fs::read_to_string(folders.machine_file()).unwrap();
+    files.save_panes(PaneWidths::default()).unwrap();
+    let none = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(one, format!("{mine}\n[panes]\nsidebar = 240\n"));
+    assert_eq!(
+        (none.as_str(), files.view().panes),
+        (mine, PaneWidths::default())
+    );
+}
+
+#[test]
+fn a_pane_width_it_cant_read_takes_the_default_and_keeps_the_rest_of_machine_toml() {
+    let (folders, root) = temp_folders("panes-unreadable");
+    let text = "last_repository = \"a/b\"
+
+[panes]
+sidebar = -1
+list = 500
+";
+    fs::write(folders.machine_file(), text).unwrap();
+
+    let files = SettingsFiles::load(folders);
+    fs::remove_dir_all(root).unwrap();
+
+    let list = PaneWidths {
+        sidebar: None,
+        list: Some(500),
+    };
+    assert_eq!(
+        (files.view().panes, files.loaded().problems.len()),
+        (list, 0)
+    );
+}
+
+#[test]
+fn a_broken_machine_toml_keeps_the_panes_widths() {
+    let (folders, root) = temp_folders("panes-broken");
+    fs::write(folders.machine_file(), "settings_path =\n").unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+
+    let refused = files.save_panes(WIDE).unwrap_err();
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(machine, "settings_path =\n");
+    assert!(
+        refused.message.contains("machine.toml, line 1"),
+        "{}",
+        refused.message
+    );
+}
+
+#[test]
+fn the_owner_saves_the_panes_widths_and_shows_them_in_the_view() {
+    let (folders, root) = temp_folders("owner-panes");
+    let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
+
+    let saved = owner.save_panes(WIDE).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!((saved.panes, owner.view().panes), (WIDE, WIDE));
+}
+
+#[test]
+fn without_folders_the_owner_cant_save_the_panes_widths() {
+    let lost = Error::new(ErrorKind::Internal, "HOME isn't a full path.");
+    let owner = SettingsOwner::start(Err(lost));
+
+    let refused = owner.save_panes(WIDE).unwrap_err();
+
+    assert_eq!(refused.message, "HOME isn't a full path.");
 }
 
 #[test]

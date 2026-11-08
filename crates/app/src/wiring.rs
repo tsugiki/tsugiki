@@ -403,6 +403,38 @@ mod tests {
     }
 
     #[test]
+    fn the_panes_widths_stay_on_this_machine_across_a_restart() {
+        let (folders, root) = temp_folders("wired-panes");
+        let wired = Wired::start(Ok(folders.clone()), no_network());
+        let before = wired.ask("pane_widths", json!({})).unwrap();
+        let widths = json!({ "sidebar": 240, "list": null });
+        let saved = wired.ask("save_pane_widths", json!({ "widths": widths }));
+        drop(wired.stop());
+
+        let restarted = Wired::start(Ok(folders.clone()), no_network());
+        let reopened = restarted.ask("pane_widths", json!({})).unwrap();
+        drop(restarted.stop());
+        let synced = folders.settings_file().exists();
+        std::fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(before, json!({ "sidebar": null, "list": null }));
+        assert_eq!(
+            (saved.unwrap(), reopened, synced),
+            (widths.clone(), widths, false)
+        );
+    }
+
+    #[test]
+    fn with_no_folders_the_panes_widths_arent_saved() {
+        let wired = Wired::start(Err(no_folders()), no_network());
+
+        let saved = wired.ask("save_pane_widths", json!({ "widths": { "sidebar": 240 } }));
+        drop(wired.stop());
+
+        assert_eq!(saved.unwrap_err()["kind"], "internal");
+    }
+
+    #[test]
     fn a_repository_added_reaches_both_files_and_opens_after_a_restart() {
         let (folders, root) = temp_folders("wired-restart");
         let wired = Wired::start(Ok(folders.clone()), no_network());

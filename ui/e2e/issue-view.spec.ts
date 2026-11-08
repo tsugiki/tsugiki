@@ -211,3 +211,37 @@ test("the content security policy stops what a description tries to run or load"
   expect(await page.evaluate(() => "ranFromDescription" in window)).toBe(false);
   expect(asked).toEqual([]);
 });
+
+test("the edges between the panes drag, a double-click resets one, and the list gives way first", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1200, height: 600 });
+  await mockCore(page, answers("<p>It crashes</p>"));
+  await page.goto("/");
+  await page.getByRole("button", { name: "#7 Issue 7" }).click();
+  const sidebar = page.getByRole("navigation", { name: "Sidebar" });
+  const list = page.locator(".list");
+  const pane = page.getByRole("region", { name: "Issue view" });
+  const width = async (part: typeof list) => (await part.boundingBox())?.width ?? 0;
+  const drag = async (name: string, by: number) => {
+    const edge = (await page.getByRole("separator", { name }).boundingBox()) ?? { x: 0, y: 0 };
+    await page.mouse.move(edge.x + 8, edge.y + 20);
+    await page.mouse.down();
+    await page.mouse.move(edge.x + 8 + by, edge.y + 20, { steps: 4 });
+    await page.mouse.up();
+  };
+  await drag("Sidebar width", 60);
+  const even = await width(list);
+
+  await drag("Workbench width", 100);
+  const dragged = [await width(sidebar), await width(list)];
+  await page.setViewportSize({ width: 900, height: 600 });
+  const narrow = [await width(list), await width(pane)];
+  await page.setViewportSize({ width: 1200, height: 600 });
+  await page.getByRole("separator", { name: "Workbench width" }).dblclick();
+
+  expect(dragged).toEqual([260, Math.round(even) + 100]);
+  expect(narrow[0]).toBeLessThan(dragged[1] ?? 0);
+  expect(narrow[1]).toBeGreaterThanOrEqual(320);
+  expect(Math.abs((await width(list)) - (await width(pane)))).toBeLessThan(2);
+});

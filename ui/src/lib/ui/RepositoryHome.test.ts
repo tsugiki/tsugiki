@@ -15,6 +15,8 @@ const core = vi.hoisted(() => ({
   pullRequestFiles: vi.fn(),
   pullRequestFind: vi.fn(),
   cloning: vi.fn(),
+  paneWidths: vi.fn(),
+  savePaneWidths: vi.fn(),
   // The HUD logs a slow opening of an Issue whether or not it shows.
   recordMiss: vi.fn(() => Promise.resolve("a miss")),
   listen: vi.fn(),
@@ -34,6 +36,8 @@ vi.mock("$lib/data/bindings", () => ({
     pullRequestFiles: core.pullRequestFiles,
     pullRequestFind: core.pullRequestFind,
     cloning: core.cloning,
+    paneWidths: core.paneWidths,
+    savePaneWidths: core.savePaneWidths,
     recordMiss: core.recordMiss,
   },
   events: {
@@ -73,6 +77,8 @@ beforeEach(() => {
   core.pullRequestFiles.mockResolvedValue({ status: "ok", data: { state: "fetching" } });
   core.pullRequestFind.mockResolvedValue({ status: "ok", data: { matches: [], more: false } });
   core.cloning.mockResolvedValue(null);
+  core.paneWidths.mockResolvedValue({ sidebar: null, list: null });
+  core.savePaneWidths.mockResolvedValue({ status: "ok", data: { sidebar: null, list: null } });
   core.pullRequest.mockImplementation((_repository: string, number: number) =>
     Promise.resolve({ status: "ok", data: { ...row, number, title: `PR ${String(number)}`, content: null } }),
   );
@@ -962,4 +968,142 @@ it("closes the Detail pane when the Repository changes", async () => {
   await rerender({ name: "python/other" });
 
   expect(screen.queryByRole("region", { name: "Issue view" })).toBeNull();
+});
+
+/** Lays the panes out `sidebar`, `list` and `detail` pixels wide, as jsdom lays nothing out. */
+const laidOut = (sidebar: number, list: number, detail: number) => {
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    const width = this.matches("nav") ? sidebar : this.matches(".list") ? list : detail;
+    return { width } as DOMRect;
+  });
+  // jsdom has no pointer capture.
+  HTMLElement.prototype.setPointerCapture = vi.fn();
+};
+
+const home = () => document.querySelector<HTMLElement>(".home") as HTMLElement;
+
+it("drags the Sidebar's edge between its minimum and maximum, saves where it stops, and resets on a double-click", async () => {
+  laidOut(200, 600, 0);
+  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  const edge = await screen.findByRole("separator", { name: "Sidebar width" });
+  // A click that doesn't move the edge has nothing to save.
+  await fireEvent.pointerDown(edge, { button: 0, clientX: 300, pointerId: 1 });
+  await fireEvent.pointerUp(edge);
+
+  await fireEvent.pointerDown(edge, { button: 0, clientX: 300, pointerId: 1 });
+  await fireEvent.pointerMove(edge, { clientX: 340 });
+  const dragged = [home().style.getPropertyValue("--sidebar-width"), edge.getAttribute("aria-valuenow")];
+  await fireEvent.pointerMove(edge, { clientX: 2000 });
+  const widest = home().style.getPropertyValue("--sidebar-width");
+  await fireEvent.pointerMove(edge, { clientX: 0 });
+  await fireEvent.pointerUp(edge);
+  // After the drag, the pointer moves the edge no more, and the other button never does.
+  await fireEvent.pointerMove(edge, { clientX: 340 });
+  await fireEvent.pointerUp(edge);
+  await fireEvent.pointerDown(edge, { button: 2, clientX: 300, pointerId: 1 });
+  await fireEvent.pointerMove(edge, { clientX: 340 });
+  const narrowest = home().style.getPropertyValue("--sidebar-width");
+
+  await fireEvent.dblClick(edge);
+
+  expect([dragged, widest, narrowest]).toEqual([["240px", "240"], "480px", "140px"]);
+  await vi.waitFor(() => {
+    expect(core.savePaneWidths.mock.calls).toEqual([
+      [{ sidebar: 140, list: null }],
+      [{ sidebar: null, list: null }],
+    ]);
+  });
+  expect(home().style.getPropertyValue("--sidebar-width")).toBe("200px");
+});
+
+it("stops the Sidebar's edge where the list would go under its minimum", async () => {
+  laidOut(200, 300, 0);
+  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  const edge = await screen.findByRole("separator", { name: "Sidebar width" });
+
+  await fireEvent.pointerDown(edge, { button: 0, clientX: 300, pointerId: 1 });
+  await fireEvent.pointerMove(edge, { clientX: 400 });
+
+  expect(home().style.getPropertyValue("--sidebar-width")).toBe("220px");
+});
+
+it("offers the list's edge beside a Detail pane, and keeps the Detail pane's minimum", async () => {
+  laidOut(200, 600, 500);
+  const { issueRow } = await listing();
+  const before = screen.queryByRole("separator", { name: "Workbench width" });
+  await fireEvent.click(issueRow);
+  await screen.findByRole("region", { name: "Issue view" });
+  const edge = screen.getByRole("separator", { name: "Workbench width" });
+  const list = document.querySelector(".list") as HTMLElement;
+  const even = [list.classList.contains("sized"), home().style.getPropertyValue("--list-width")];
+
+  await fireEvent.pointerDown(edge, { button: 0, clientX: 800, pointerId: 1 });
+  await fireEvent.pointerMove(edge, { clientX: 2000 });
+  const widest = home().style.getPropertyValue("--list-width");
+  await fireEvent.pointerMove(edge, { clientX: 0 });
+  await fireEvent.pointerUp(edge);
+
+  expect([before, even, widest]).toEqual([null, [false, ""], "780px"]);
+  expect([home().style.getPropertyValue("--list-width"), list.classList.contains("sized")]).toEqual([
+    "280px",
+    true,
+  ]);
+  expect(core.savePaneWidths).toHaveBeenCalledExactlyOnceWith({ sidebar: null, list: 280 });
+  await fireEvent.dblClick(edge);
+  expect(list.classList.contains("sized")).toBe(false);
+});
+
+it("lets the Sidebar grow into the room the Detail pane has to spare", async () => {
+  laidOut(200, 280, 700);
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  await screen.findByRole("region", { name: "Issue view" });
+  const edge = screen.getByRole("separator", { name: "Sidebar width" });
+
+  await fireEvent.pointerDown(edge, { button: 0, clientX: 200, pointerId: 1 });
+  await fireEvent.pointerMove(edge, { clientX: 400 });
+
+  expect(home().style.getPropertyValue("--sidebar-width")).toBe("400px");
+});
+
+it("moves an edge with the bare arrow keys, and saves a held key once, as it comes up", async () => {
+  laidOut(200, 600, 0);
+  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  const edge = await screen.findByRole("separator", { name: "Sidebar width" });
+
+  await fireEvent.keyDown(edge, { key: "ArrowRight" });
+  const right = [home().style.getPropertyValue("--sidebar-width"), core.savePaneWidths.mock.calls.length];
+  await fireEvent.keyUp(edge, { key: "ArrowRight" });
+  // The layout jsdom stands in for still says 200 px, so both presses land on 184 px.
+  await fireEvent.keyDown(edge, { key: "ArrowLeft" });
+  await fireEvent.keyDown(edge, { key: "ArrowLeft", repeat: true });
+  await fireEvent.keyUp(edge, { key: "ArrowLeft" });
+  await fireEvent.keyDown(edge, { key: "ArrowLeft", altKey: true });
+  await fireEvent.keyDown(edge, { key: "Enter" });
+  await fireEvent.keyUp(edge, { key: "Enter" });
+
+  expect([right, home().style.getPropertyValue("--sidebar-width")]).toEqual([["216px", 0], "184px"]);
+  await vi.waitFor(() => {
+    expect(core.savePaneWidths.mock.calls).toEqual([
+      [{ sidebar: 216, list: null }],
+      [{ sidebar: 184, list: null }],
+    ]);
+  });
+});
+
+it("opens with the widths saved on this machine, and says when it can't save them", async () => {
+  core.paneWidths.mockResolvedValue({ sidebar: 260, list: 500 });
+  core.savePaneWidths.mockResolvedValue({ status: "error", error: { kind: "internal", message: "locked" } });
+  laidOut(260, 500, 0);
+  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  const edge = await screen.findByRole("separator", { name: "Sidebar width" });
+  await vi.waitFor(() => {
+    expect(edge.getAttribute("aria-valuenow")).toBe("260");
+  });
+
+  await fireEvent.keyDown(edge, { key: "ArrowRight" });
+  await fireEvent.keyUp(edge, { key: "ArrowRight" });
+
+  expect(home().style.getPropertyValue("--list-width")).toBe("500px");
+  expect((await screen.findByRole("alert")).textContent).toBe("Tsugiki can't save the panes' widths: locked");
 });

@@ -1,9 +1,9 @@
 // Rust's coverage gate (ADR 0009): runs the tests on this OS and fails below 100% of lines and functions.
 // It leaves the report at target/coverage/lcov.info, for Codecov.
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 
-import { filesWithGaps, unrunRegions } from "./coverage-gaps.ts";
+import { filesWithGaps, hasStaleBuilds, unrunRegions } from "./coverage-gaps.ts";
 
 // Stable Rust can't exclude a single function, so an exclusion is a whole file.
 const EXCLUDED = [
@@ -62,10 +62,41 @@ function printGaps(): void {
   }
 }
 
-const started = Date.now();
-const result = spawnSync("cargo", args, { stdio: "inherit" });
-if (result.error) console.error(result.error.message);
-if (result.status !== 0) {
+const DEPS = "target/llvm-cov-target/debug/deps";
+
+/** Says whether a build made under another toolchain, `Cargo.lock` or set of flags sits beside this one. */
+function staleBuildsThere(): boolean {
+  return existsSync(DEPS) && hasStaleBuilds(readdirSync(DEPS));
+}
+
+/**
+ * Runs the tests and the gate. `cargo llvm-cov` cleans the build first, and recompiling takes about 30
+ * seconds, so `keep` drops only the last run's line counts and keeps the instrumented build.
+ */
+function cover(keep: boolean): number {
+  if (keep) {
+    const cleaned = spawnSync("cargo", ["llvm-cov", "clean", "--profraw-only"], { stdio: "inherit" });
+    if (cleaned.status !== 0) return cleaned.status ?? 1;
+  }
+  const result = spawnSync("cargo", keep ? [...args, "--no-clean"] : args, { stdio: "inherit" });
+  if (result.error) console.error(result.error.message);
+  return result.status ?? 1;
+}
+
+// Locally the build stays between runs. In #252's runs that neither hid a gap nor added a false one, as long
+// as no build from another configuration was there. One with no line counts can only add false gaps, so a
+// failed run with one there runs again clean. CI always cleans, as the backstop.
+const keep = process.env.CI !== "true" && !staleBuildsThere();
+let started = Date.now();
+let status = cover(keep);
+if (status !== 0 && keep && staleBuildsThere()) {
+  console.error(
+    "A build from another toolchain, Cargo.lock or set of flags was in the report. Running clean.",
+  );
+  started = Date.now();
+  status = cover(false);
+}
+if (status !== 0) {
   // A failed test leaves the last run's report in place, so only a fresh report says anything about now.
   const fresh = statSync("target/coverage/lcov.info", { throwIfNoEntry: false });
   if (fresh !== undefined && fresh.mtimeMs >= started) {
@@ -75,4 +106,4 @@ if (result.status !== 0) {
     console.error("A test failed, so there is no new coverage report.");
   }
 }
-process.exit(result.status ?? 1);
+process.exit(status);

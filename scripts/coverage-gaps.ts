@@ -1,5 +1,6 @@
 // Finds what the Rust coverage gate fell short on. cargo-llvm-cov can fail with no line to show: a closure or
-// a `?` that never ran can sit on a line that did. `rust-coverage.ts` prints these when the gate fails.
+// a `?` that never ran can sit on a line that did. `rust-coverage.ts` prints these when the gate fails. It
+// also asks here whether an old build sits beside the new one, which adds false gaps.
 
 /** A file short of 100%, with its counts as covered/found. */
 export interface FileGap {
@@ -60,4 +61,21 @@ export function unrunRegions(report: string, path: string): UnrunRegion[] {
     }
   }
   return regions;
+}
+
+/**
+ * Says whether `deps` holds two builds of one test target, which Cargo names `<target>-<hash>`, with `.exe`
+ * on Windows. One configuration gives each target one hash, so a second comes from another toolchain,
+ * `Cargo.lock` or set of flags. cargo-llvm-cov reads every build there, and code removed since the old one
+ * shows up as never run.
+ */
+export function hasStaleBuilds(names: string[]): boolean {
+  const targets = new Set<string>();
+  for (const name of names) {
+    const target = /^(.+)-[0-9a-f]{16}(?:\.exe)?$/.exec(name)?.[1];
+    if (target === undefined) continue;
+    if (targets.has(target)) return true;
+    targets.add(target);
+  }
+  return false;
 }

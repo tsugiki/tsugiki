@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { filesWithGaps, unrunRegions } from "./coverage-gaps.ts";
+import { filesWithGaps, hasStaleBuilds, unrunRegions } from "./coverage-gaps.ts";
 
 const LCOV = [
   "SF:X:\\repo\\crates\\core\\src\\whole.rs",
@@ -71,5 +71,36 @@ describe("unrunRegions", () => {
 
   it("skips a marker with no line above it", () => {
     expect(unrunRegions("a.rs:\n    ^0\n", "a.rs")).toEqual([]);
+  });
+});
+
+describe("hasStaleBuilds", () => {
+  it("finds none with one build of each test target", () => {
+    const names = [
+      "tsg.exe",
+      "tsg-944889e675d53f23.exe",
+      "tsg-944889e675d53f23.pdb",
+      "bindings-726471474903105c",
+    ];
+    expect(hasStaleBuilds(names)).toBe(false);
+  });
+
+  it("finds two builds of one test target, on Windows and on macOS", () => {
+    expect(hasStaleBuilds(["rules-1b61ab4e94669168.exe", "rules-fc63e6f15bc67e64.exe"])).toBe(true);
+    expect(hasStaleBuilds(["rules-1b61ab4e94669168", "rules-fc63e6f15bc67e64"])).toBe(true);
+  });
+
+  it("leaves out libraries, debug info and dependency files", () => {
+    const names = [
+      "libtsugiki_core-14a9ae7b2a4111d5.rlib",
+      "libtsugiki_core-f7df2a47c1d0fe7e.rlib",
+      "tsugiki_core-002a78f72a78c9da.pdb",
+      "tsugiki_core-7852f04603a0c7b2.pdb",
+      "tsugiki_core-002a78f72a78c9da.d",
+      "tsugiki_core-7852f04603a0c7b2.d",
+      "tsugiki_core-002a78f72a78c9da.dSYM",
+      "tsugiki_core-7852f04603a0c7b2.dSYM",
+    ];
+    expect(hasStaleBuilds(names)).toBe(false);
   });
 });

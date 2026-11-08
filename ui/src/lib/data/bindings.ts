@@ -299,6 +299,35 @@ export type DiffRow_Serialize =
 /**  What git says in place of lines: a binary file, a new mode, a missing newline at the end. */
 { kind: "note"; text: string };
 
+/**  A review thread under a row of the diff. */
+export type DiffThread = DiffThread_Serialize | DiffThread_Deserialize;
+
+/**  A review thread under a row of the diff. */
+export type DiffThread_Deserialize = {
+	id: ThreadId,
+	/**  The row of the line it is on, which it sits under. */
+	row: number,
+	/**  Resolved also when GitHub hides each of its comments, which leaves nothing in it to answer. */
+	resolution: Resolution,
+	/**  Its first 100 comments, oldest first. */
+	comments: IssueComment_Deserialize[],
+	/**  The count of later comments that only GitHub holds. */
+	later_comments: number,
+};
+
+/**  A review thread under a row of the diff. */
+export type DiffThread_Serialize = {
+	id: ThreadId,
+	/**  The row of the line it is on, which it sits under. */
+	row: number,
+	/**  Resolved also when GitHub hides each of its comments, which leaves nothing in it to answer. */
+	resolution: Resolution,
+	/**  Its first 100 comments, oldest first. */
+	comments: IssueComment_Serialize[],
+	/**  The count of later comments that only GitHub holds. */
+	later_comments: number,
+};
+
 /**  A failure in plain words. Details go only to a local log, with tokens scrubbed. */
 export type Error = Error_Serialize | Error_Deserialize;
 
@@ -895,7 +924,12 @@ head: string;
  */
 base: string; files: DiffFile_Deserialize[]; rows: number; 
 /**  The PR's NEWS entries, rendered above the rows. */
-news: NewsEntry_Deserialize[] };
+news: NewsEntry_Deserialize[]; 
+/**
+ *  The review threads on its lines, in the order of their rows, from the PR's Conversation as
+ *  Tsugiki last read it.
+ */
+threads: DiffThread_Deserialize[] };
 
 /**  What the Files tab shows. */
 export type PrFiles_Serialize = 
@@ -913,7 +947,12 @@ head: string;
  */
 base: string; files: DiffFile_Serialize[]; rows: number; 
 /**  The PR's NEWS entries, rendered above the rows. */
-news: NewsEntry_Serialize[] };
+news: NewsEntry_Serialize[]; 
+/**
+ *  The review threads on its lines, in the order of their rows, from the PR's Conversation as
+ *  Tsugiki last read it.
+ */
+threads: DiffThread_Serialize[] };
 
 export type PrState = "OPEN" | "CLOSED" | "MERGED";
 
@@ -1166,6 +1205,13 @@ export type Settings_Serialize = {
 	repositories: RepositorySettings_Serialize[],
 };
 
+/**  The version of the file a thread's line is in, as GitHub's `diffSide` names it. */
+export type Side = 
+/**  The merge base's. */
+"LEFT" | 
+/**  The head's. */
+"RIGHT";
+
 /**  The slowest of `count` timings. */
 export type Slowest = {
 	count: number,
@@ -1233,6 +1279,37 @@ export type Status_Serialize =
 /**  Something stops Tsugiki reading, such as a refused token. */
 { state: "problem"; problem: Error_Serialize };
 
+/**  A thread's subject: a whole file, or a line on one side of the diff. */
+export type Subject = Subject_Serialize | Subject_Deserialize;
+
+/**  A thread's subject: a whole file, or a line on one side of the diff. */
+export type Subject_Deserialize = 
+/**  The whole file. */
+{ kind: "file" } | 
+/**  Lines of the file at the head, on the right, or at the merge base, on the left. */
+{ kind: "line"; side: Side; 
+/**
+ *  The line it is on now. Nothing, when the code under it has changed and GitHub can't place it in
+ *  the diff any more.
+ */
+line?: number | null; 
+/**  The line it was on when it began. */
+original?: number | null };
+
+/**  A thread's subject: a whole file, or a line on one side of the diff. */
+export type Subject_Serialize = 
+/**  The whole file. */
+{ kind: "file" } | 
+/**  Lines of the file at the head, on the right, or at the merge base, on the left. */
+{ kind: "line"; side: Side; 
+/**
+ *  The line it is on now. Nothing, when the code under it has changed and GitHub can't place it in
+ *  the diff any more.
+ */
+line: number | null; 
+/**  The line it was on when it began. */
+original: number | null };
+
 /**  The work under way in the queue of syncs. */
 export type SyncActivity = SyncActivity_Serialize | SyncActivity_Deserialize;
 
@@ -1277,15 +1354,20 @@ export type SyncPart = "your_work" |
  */
 "refresh";
 
-/**  One thread a Review started, as one line of the Conversation. */
+/**  GitHub's id of a review thread, which a thread's line in the Conversation names to open it in Files. */
+export type ThreadId = string;
+
+/**  One thread a Review started: a line of the Conversation, and the comments Files shows under the code. */
 export type ThreadLine = ThreadLine_Serialize | ThreadLine_Deserialize;
 
-/**  One thread a Review started, as one line of the Conversation. */
+/**  One thread a Review started: a line of the Conversation, and the comments Files shows under the code. */
 export type ThreadLine_Deserialize = {
+	/**  The thread, which a click on the line opens in Files. */
+	id: ThreadId,
 	/**  The file, as GitHub names it. */
 	path: string,
-	/**  The line it is on, or was on when the code under it moved. Nothing, for a thread on the whole file. */
-	line?: number | null,
+	/**  The whole file, or the line it is on and the line it began on. */
+	subject: Subject_Deserialize,
 	opening: Opening,
 	/**  The comments after the first. */
 	replies: number,
@@ -1293,12 +1375,14 @@ export type ThreadLine_Deserialize = {
 	anchor: Anchor,
 };
 
-/**  One thread a Review started, as one line of the Conversation. */
+/**  One thread a Review started: a line of the Conversation, and the comments Files shows under the code. */
 export type ThreadLine_Serialize = {
+	/**  The thread, which a click on the line opens in Files. */
+	id: ThreadId,
 	/**  The file, as GitHub names it. */
 	path: string,
-	/**  The line it is on, or was on when the code under it moved. Nothing, for a thread on the whole file. */
-	line: number | null,
+	/**  The whole file, or the line it is on and the line it began on. */
+	subject: Subject_Serialize,
 	opening: Opening,
 	/**  The comments after the first. */
 	replies: number,

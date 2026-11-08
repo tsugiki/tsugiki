@@ -81,4 +81,14 @@ describe("PrViewState", () => {
     state.switchTab();
     expect(state.tab).toBe("conversation");
   });
+
+  it("opens a thread on the Files tab", () => {
+    const state = new PrViewState("python/cpython", 11, undefined);
+    const reveal = vi.spyOn(state.files, "reveal");
+
+    state.openThread("T1");
+
+    expect(state.tab).toBe("files");
+    expect(reveal).toHaveBeenCalledExactlyOnceWith("T1");
+  });
 });

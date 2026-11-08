@@ -31,22 +31,43 @@ fn review(id: &str, state: &str, at: &str, body_html: &str) -> Value {
     })
 }
 
-/// A thread on line `line` of `Lib/ast.py`, started by Review `review`.
+/// A thread on line `line` of `Lib/ast.py` at the head, started by Review `review`, with `comments` in all
+/// and its first one read.
 fn thread(review: &str, line: u32, words: &str, comments: u32) -> Value {
     json!({
+        "id": format!("T{line}"),
         "path": "Lib/ast.py",
         "line": line,
         "originalLine": line,
+        "diffSide": "RIGHT",
         "subjectType": "LINE",
         "isResolved": false,
         "isOutdated": false,
-        "comments": { "totalCount": comments, "nodes": [{
-            "pullRequestReview": { "id": review },
-            "bodyText": words,
-            "isMinimized": false,
-            "minimizedReason": null,
-        }] },
+        "comments": { "totalCount": comments, "nodes": [comment(review, words)] },
     })
+}
+
+/// A comment in a thread, as GitHub answers with it.
+fn comment(review: &str, words: &str) -> Value {
+    json!({
+        "pullRequestReview": { "id": review },
+        "author": { "login": "some-reviewer" },
+        "createdAt": "2026-11-04T10:00:00Z",
+        "bodyHTML": format!("<p>{words}</p>"),
+        "bodyText": words,
+        "isMinimized": false,
+        "minimizedReason": null,
+    })
+}
+
+/// The comment `comment` reads as, by `some-reviewer`.
+fn read_comment(words: &str) -> IssueComment {
+    IssueComment {
+        author: Some(Login::new("some-reviewer")),
+        created_at: moment("2026-11-04T10:00:00Z"),
+        body_html: format!("<p>{words}</p>"),
+        hidden: None,
+    }
 }
 
 /// Tsugiki's read of a PR with these comments, Reviews and threads.
@@ -56,6 +77,7 @@ fn read(comments: Value, reviews: (u32, Value), threads: Value) -> PullRequestCo
         "comments": { "totalCount": comments.as_array().unwrap().len(), "nodes": comments },
         "reviews": { "totalCount": reviews.0, "nodes": reviews.1 },
         "reviewThreads": { "nodes": threads },
+        "headRefOid": "0123abcdef0123abcdef0123abcdef0123abcdef",
     });
     let body =
         json!({ "data": { "repository": { "pullRequest": pr }, "rateLimit": rate_limit() } })
@@ -111,29 +133,88 @@ fn reviews_read_oldest_first_each_with_the_threads_it_started() {
         first.threads,
         [
             ThreadLine {
+                id: ThreadId::new("T12"),
                 path: "Lib/ast.py".to_owned(),
-                line: Some(12),
                 opening: Opening::Words {
                     words: "Why not a set?".to_owned()
                 },
                 replies: 2,
                 resolution: Resolution::Open,
                 anchor: Anchor::Current,
+                subject: Subject::Line {
+                    side: Side::Right,
+                    line: Some(12),
+                    original: Some(12)
+                },
+                comments: vec![read_comment("Why not a set?\nIt reads better.")],
             },
             ThreadLine {
+                id: ThreadId::new("T40"),
                 path: "Lib/ast.py".to_owned(),
-                line: Some(40),
                 opening: Opening::Words {
                     words: "Typo".to_owned()
                 },
                 replies: 0,
                 resolution: Resolution::Open,
                 anchor: Anchor::Current,
+                subject: Subject::Line {
+                    side: Side::Right,
+                    line: Some(40),
+                    original: Some(40)
+                },
+                comments: vec![read_comment("Typo")],
             },
         ]
     );
     assert!(content.reviews[1].threads.is_empty());
     assert_eq!(content.earlier_reviews, 0);
+    assert_eq!(
+        content.head.as_ref().map(CommitSha::as_str),
+        Some("0123abcdef0123abcdef0123abcdef0123abcdef"),
+        "the threads' lines count in this head"
+    );
+    assert_eq!(first.threads[0].later_comments(), 2);
+    assert_eq!(first.threads[1].later_comments(), 0);
+}
+
+#[test]
+fn a_thread_holds_its_replies_from_other_reviews_and_its_side() {
+    let mut on_the_base = thread("R1", 5, "Why remove this?", 3);
+    on_the_base["diffSide"] = json!("LEFT");
+    on_the_base["comments"]["nodes"] = json!([
+        comment("R1", "Why remove this?"),
+        comment("R2", "It was dead code"),
+        null,
+    ]);
+    on_the_base["comments"]["nodes"][1]["isMinimized"] = json!(true);
+    on_the_base["comments"]["nodes"][1]["minimizedReason"] = json!("resolved");
+
+    let content = read(
+        json!([]),
+        (
+            1,
+            json!([review("R1", "COMMENTED", "2026-11-04T10:00:00Z", "")]),
+        ),
+        json!([on_the_base]),
+    );
+
+    let thread = &content.reviews[0].threads[0];
+    assert_eq!(
+        thread.subject,
+        Subject::Line {
+            side: Side::Left,
+            line: Some(5),
+            original: Some(5)
+        }
+    );
+    let mut reply = read_comment("It was dead code");
+    reply.hidden = Some(HiddenReason::Resolved);
+    assert_eq!(
+        thread.comments,
+        [read_comment("Why remove this?"), reply],
+        "a reply belongs to the thread, not to the Review that wrote it"
+    );
+    assert_eq!(thread.later_comments(), 1);
 }
 
 #[test]
@@ -229,10 +310,19 @@ fn an_outdated_thread_keeps_its_old_line_and_a_thread_on_a_file_has_none() {
         "a thread whose Review wasn't read has nowhere to go"
     );
     assert_eq!(
-        (threads[0].line, threads[0].anchor, threads[0].resolution),
-        (Some(7), Anchor::Outdated, Resolution::Resolved)
+        (threads[0].subject, threads[0].anchor, threads[0].resolution),
+        (
+            Subject::Line {
+                side: Side::Right,
+                line: None,
+                original: Some(7)
+            },
+            Anchor::Outdated,
+            Resolution::Resolved
+        ),
+        "an Outdated thread keeps the line it began on, and Files can't place it by its line"
     );
-    assert_eq!(threads[1].line, None);
+    assert_eq!(threads[1].subject, Subject::File);
 }
 
 #[test]
@@ -270,7 +360,7 @@ fn a_pr_github_doesnt_have_is_not_found() {
 }
 
 /// Reading a Conversation ahead costs a point a PR: GitHub counts a request per connection it walks, so the
-/// last 100 threads with a first comment each are about 100 requests, and the rest a few more.
+/// last 100 threads with their first 100 comments each are about 100 requests, and the rest a few more.
 #[test]
 fn a_conversation_asks_for_pages_that_cost_about_a_point() {
     let query = Thread::PullRequest.query();
@@ -279,7 +369,7 @@ fn a_conversation_asks_for_pages_that_cost_about_a_point() {
         "comments(last: 30)",
         "reviews(last: 100)",
         "reviewThreads(last: 100)",
-        "comments(first: 1)",
+        "comments(first: 100)",
     ] {
         assert!(query.contains(page), "{query}");
     }
@@ -321,14 +411,22 @@ fn a_recorded_pr_reads_as_its_reviews_and_their_threads() {
                 Opening::Words { words } => words.chars().take(30).collect::<String>(),
                 Opening::Hidden { reason } => format!("hidden as {reason:?}"),
             };
+            let placed = match thread.subject {
+                Subject::File => "file".to_owned(),
+                Subject::Line {
+                    side,
+                    line,
+                    original,
+                } => format!("{side:?} {line:?}, began at {original:?}"),
+            };
             writeln!(
                 outline,
-                "  {}:{:?} {opening:?} +{} resolved={} outdated={}",
+                "  {} {opening:?} +{} resolved={} outdated={} at {placed}, {} read",
                 thread.path,
-                thread.line,
                 thread.replies,
                 thread.resolution == Resolution::Resolved,
-                thread.anchor == Anchor::Outdated
+                thread.anchor == Anchor::Outdated,
+                thread.comments.len()
             )
             .unwrap();
         }

@@ -1,20 +1,25 @@
 import { describe, expect, it } from "vitest";
 import type { Gap, Pair, Rest } from "$lib/data/bindings";
-import { DiffLayout, type Expanded, type LaidFile } from "./diff-layout";
+import { DiffLayout, type Expanded, type LaidFile, type LaidThread } from "./diff-layout";
 
 /** Files whose headers sit at `rows`, with no gaps and no changes to pair. */
 const at = (...rows: number[]): LaidFile[] => rows.map((row) => ({ row, gaps: [], rest: null, pairs: [] }));
 
-/** What places `first` to `last` show, as row numbers, `old/new` for a line, `more:file`, and
- * `removed|added` for a pair, with `-` for a side that shows nothing. */
+/** Places `first` to `last` of `layout`, as row numbers, `old/new` for a line, `more:file`, `removed|added`
+ * for a pair, with `-` for a side that shows nothing, and `tN` for thread N. */
 const places = (layout: DiffLayout, first = 0, last = layout.count - 1) =>
   Array.from({ length: last - first + 1 }, (_, index) => {
     const shown = layout.at(first + index);
     if (shown.kind === "row") return shown.row;
     if (shown.kind === "line") return `${String(shown.old)}/${String(shown.new)}`;
     if (shown.kind === "pair") return `${String(shown.removed ?? "-")}|${String(shown.added ?? "-")}`;
+    if (shown.kind === "thread") return shown.id;
     return `more:${String(shown.file)}`;
   });
+
+/** Threads under rows `rows`, each taking `places` places. */
+const threads = (places: number, ...rows: number[]): LaidThread[] =>
+  rows.map((row, at) => ({ row, places, id: `t${String(at)}` }));
 
 /** A file at row 0 of 13 whose hunk at row 1 replaces 2 lines with 1 at rows 2 to 4, removes a line at
  * row 6, adds one at row 8, and replaces 1 line with 2 at rows 10 to 12. */
@@ -208,6 +213,75 @@ describe("DiffLayout", () => {
 
     // A row, a pair, the line after the second file's last hunk, and the button after it.
     expect([4, 10, 19, 20].map((place) => collapsed.moved(open, place))).toEqual([4, 10, 19, 20]);
+  });
+
+  it("shows each thread under its row, and asks for the rows around it as one", () => {
+    const layout = new DiffLayout(6, at(0), () => false, undefined, "unified", threads(2, 2, 2, 4));
+
+    expect(places(layout)).toEqual([0, 1, 2, "t0", "t0", "t1", "t1", 3, 4, "t2", "t2", 5]);
+    expect(layout.at(4)).toEqual({ kind: "thread", id: "t0", into: 1 });
+    expect(layout.pieces(0, 99)).toEqual([[0, 6]]);
+    expect(layout.pieces(3, 4)).toEqual([]);
+    expect(layout.threadsIn(4, 9)).toEqual([
+      { thread: 0, laid: { row: 2, places: 2, id: "t0" }, shown: 3, length: 2 },
+      { thread: 1, laid: { row: 2, places: 2, id: "t1" }, shown: 5, length: 2 },
+      { thread: 2, laid: { row: 4, places: 2, id: "t2" }, shown: 9, length: 2 },
+    ]);
+    expect(layout.threadsIn(7, 8)).toEqual([]);
+    expect(["t0", "t2"].map((id) => layout.threadAt(id))).toEqual([3, 9]);
+  });
+
+  it("shows no thread under a row a collapsed file hides", () => {
+    const layout = new DiffLayout(8, at(0, 4), (file) => file === 0, undefined, "unified", threads(1, 2, 5));
+
+    expect(places(layout)).toEqual([0, 4, 5, "t1", 6, 7]);
+    expect(layout.threadAt("t0")).toBeUndefined();
+  });
+
+  it("shows a thread side by side under the place that shows its row, splitting a change", () => {
+    // Under the removed row 3, the added row 4 beside row 2, and the added row 12 at the change's end.
+    const layout = new DiffLayout(13, [changed], () => false, undefined, "side-by-side", [
+      { row: 3, places: 1, id: "t0" },
+      { row: 4, places: 2, id: "t1" },
+      { row: 4, places: 1, id: "t2" },
+      { row: 12, places: 1, id: "t3" },
+    ]);
+
+    expect(places(layout)).toEqual([
+      0,
+      1,
+      "2|4",
+      "t1",
+      "t1",
+      "t2",
+      "3|-",
+      "t0",
+      5,
+      "6|-",
+      7,
+      "-|8",
+      9,
+      "10|11",
+      "-|12",
+      "t3",
+    ]);
+    expect(layout.pieces(6, 6)).toEqual([[3, 4]]);
+    expect(layout.pieces(0, 99)).toEqual([[0, 13]]);
+  });
+
+  it("keeps the place in a thread, or as far into it as it still goes, as it grows or shrinks", () => {
+    const tall = new DiffLayout(6, at(0), () => false, undefined, "unified", threads(4, 1));
+    const short = new DiffLayout(6, at(0), () => false, undefined, "unified", threads(2, 1));
+    const sideBySide = new DiffLayout(13, [changed], () => false, undefined, "side-by-side", threads(1, 3));
+    const unified = new DiffLayout(13, [changed], () => false);
+
+    // Row 3 below the thread, the thread's second place, and its fourth.
+    expect([6, 3, 5].map((place) => short.moved(tall, place))).toEqual([4, 3, 3]);
+    // Row 3 after its change's first place, row 5 after the thread, and the thread, which goes.
+    expect([3, 5, 4].map((place) => unified.moved(sideBySide, place))).toEqual([3, 5, 4]);
+    // Row 3 after a thread that splits its change, under row 2.
+    const split = new DiffLayout(13, [changed], () => false, undefined, "side-by-side", threads(1, 2));
+    expect(split.moved(unified, 3)).toBe(4);
   });
 
   it("shows nothing for an empty diff", () => {

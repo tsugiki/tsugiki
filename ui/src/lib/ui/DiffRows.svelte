@@ -3,10 +3,11 @@
      come near (ADR 0001). A collapsed Generated file shows only its header (#181). A hunk's row offers to
      show the lines its gap leaves out, and the row after a file's last hunk the lines after it (#182).
      Side by side, a line of context shows on both sides, and a change shows its removed rows on the left
-     beside its added ones on the right (#183). -->
+     beside its added ones on the right (#183). A review thread takes as many rows' places under its line
+     as it is tall, and the tab measures it once drawn (#184). -->
 <script lang="ts">
   import { untrack } from "svelte";
-  import type { DiffLayout, HiddenGap } from "$lib/state/diff-layout";
+  import type { HiddenGap } from "$lib/state/diff-layout";
   import {
     EXPAND,
     type DiffFile,
@@ -16,20 +17,29 @@
     type Span,
   } from "$lib/state/pr-files.svelte";
   import NewsEntries from "./NewsEntries.svelte";
+  import ReviewThread from "./ReviewThread.svelte";
   import { pieces } from "./spans";
 
   let {
     diff,
     files,
     news,
+    now,
     onlink,
-  }: { diff: PrFilesState; files: DiffFile[]; news: NewsEntry[]; onlink: (address: string) => void } =
-    $props();
+  }: {
+    diff: PrFilesState;
+    files: DiffFile[];
+    news: NewsEntry[];
+    now: Date;
+    onlink: (address: string) => void;
+  } = $props();
 
   /** A row's height in pixels. */
   const ROW = 20;
   /** Rows drawn above and below the visible ones, so a quick scroll doesn't show blanks. */
   const OVERSCAN = 40;
+  /** Rows of code that show above a thread the tab moves to. */
+  const LEAD = 3;
 
   let scroller = $state<HTMLElement>();
   let scrollTop = $state(0);
@@ -38,6 +48,8 @@
   let width = $state(0);
   /** How tall the NEWS entries above the rows are. */
   let newsHeight = $state(0);
+  /** The NEWS entries, whose height a scroll right after the tab opens reads before `newsHeight` has it. */
+  let newsBox = $state<HTMLElement>();
   const rows = $derived(diff.layout.count);
   const first = $derived(Math.max(0, Math.floor((scrollTop - newsHeight) / ROW) - OVERSCAN));
   const last = $derived(Math.min(rows - 1, Math.ceil((scrollTop + height - newsHeight) / ROW) + OVERSCAN));
@@ -50,22 +62,55 @@
     diff.need(first, last);
   });
 
-  /** The layout the rows were last drawn from, which a switch of view starts from. */
-  let drawn: DiffLayout | undefined;
-  /** Keeps the place at the top in view as the view switches: the same row, line or button, as far into
-   * it as it was. */
+  /** The layout the rows were last drawn from, which a new layout starts from. */
+  let drawn: PrFilesState["layout"] | undefined;
+  /** Scrolls to the thread the user moved to, with a few rows of its code above it. Otherwise, keeps the
+   * place at the top in view as the layout changes, as the view switches or a thread above it grows: the
+   * same row, line, button or thread, as far into it as it was. */
   $effect(() => {
     const layout = diff.layout;
+    const jump = diff.jump;
     const before = drawn;
     drawn = layout;
     untrack(() => {
-      const into = scrollTop - newsHeight;
-      if (before === undefined || before.view === layout.view || into <= 0 || scroller === undefined) return;
-      scroller.scrollTop = newsHeight + layout.moved(before, Math.floor(into / ROW)) * ROW + (into % ROW);
+      const target = scrolledTo(layout, before, jump);
+      if (target === undefined || scroller === undefined || newsBox === undefined) return;
+      scroller.scrollTop = newsBox.offsetHeight + target.place * ROW + target.into;
       // The rows to draw follow at once, as the scroll event comes after the next frame.
       scrollTop = scroller.scrollTop;
     });
   });
+
+  /** The place the tab scrolls to as `layout` replaces `before` or the user moves to a thread, and how many
+   * pixels into it, if it scrolls. It takes the move, so a later layout doesn't scroll back to it. */
+  function scrolledTo(
+    layout: PrFilesState["layout"],
+    before: PrFilesState["layout"] | undefined,
+    jump: PrFilesState["jump"],
+  ): { place: number; into: number } | undefined {
+    if (jump !== undefined) {
+      diff.jump = undefined;
+      const place = layout.threadAt(jump.id);
+      return place === undefined ? undefined : { place: Math.max(0, place - LEAD), into: 0 };
+    }
+    const into = scrollTop - newsHeight;
+    if (before === undefined || into <= 0) return undefined;
+    const place = Math.floor(into / ROW);
+    const moved = layout.moved(before, place);
+    return moved === place ? undefined : { place: moved, into: into % ROW };
+  }
+
+  /** Tells the tab how many places open thread `thread`, by its place among the threads, takes, as it
+   * draws and whenever its height changes. */
+  const measure = (id: string, thread: number) => (element: HTMLElement) => {
+    const observer = new ResizeObserver(() => {
+      if (!diff.folded(thread)) diff.measured(id, Math.max(1, Math.ceil(element.offsetHeight / ROW)));
+    });
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+    };
+  };
 
   const counted = (change: FileChange) =>
     change.kind === "binary" ? "binary" : `+${String(change.added)} −${String(change.removed)}`;
@@ -178,7 +223,7 @@
     scrollLeft = event.currentTarget.scrollLeft;
   }}
 >
-  <div bind:clientHeight={newsHeight}>
+  <div bind:this={newsBox} bind:clientHeight={newsHeight}>
     <NewsEntries {news} {onlink} />
   </div>
   <div
@@ -192,7 +237,9 @@
   >
     {#each shown as place (place)}
       {@const at = diff.layout.at(place)}
-      {#if at.kind === "line" && sideBySide}
+      {#if at.kind === "thread"}
+        <!-- Drawn below, once for all its places. -->
+      {:else if at.kind === "line" && sideBySide}
         {@const line = diff.line(at.file, at.new)}
         <div class="row split" style:top={`${String(place * ROW)}px`}>
           {@render both("context expanded", at.old, at.new, line.text, line.spans)}
@@ -283,6 +330,25 @@
         {/if}
       {/if}
     {/each}
+    {#each diff.layout.threadsIn(first, last) as placed (placed.laid.thread.id)}
+      <div
+        class="thread"
+        role="group"
+        aria-label="Review thread"
+        style:top={`${String(placed.shown * ROW)}px`}
+        {@attach measure(placed.laid.thread.id, placed.thread)}
+      >
+        <ReviewThread
+          thread={placed.laid.thread}
+          folded={diff.folded(placed.thread)}
+          {now}
+          ontoggle={() => {
+            diff.toggleThread(placed.thread);
+          }}
+          {onlink}
+        />
+      </div>
+    {/each}
   </div>
 </div>
 
@@ -297,6 +363,19 @@
 
   .scroller:focus-visible {
     outline: 1px solid currentColor;
+  }
+
+  /* A thread stays as wide as the tab, however far across the code scrolls, and reads as prose. */
+  .thread {
+    position: absolute;
+    left: var(--across);
+    width: var(--width);
+    box-sizing: border-box;
+    padding-left: 96px;
+    font-family: system-ui, sans-serif;
+    border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+    background: color-mix(in srgb, currentColor 4%, transparent);
   }
 
   .spacer {

@@ -7,8 +7,9 @@ import Conversation from "./Conversation.svelte";
 const NOW = new Date("2026-11-04T12:00:00Z");
 
 const thread = (changes: Partial<ThreadLine>): ThreadLine => ({
+  id: "T1",
   path: "Lib/ast.py",
-  line: 12,
+  subject: { kind: "line", side: "RIGHT", line: 12, original: 12 },
   opening: { kind: "words", words: "Why not a set?" },
   replies: 0,
   resolution: "open",
@@ -36,9 +37,10 @@ const reviewed = (reviews: Review[], changes: Partial<PullRequestContent> = {}):
   ...changes,
 });
 
-const shown = (content: IssueContent | PullRequestContent) => {
+const shown = (content: IssueContent | PullRequestContent, onthread?: (id: string) => void) => {
   const onlink = vi.fn();
-  const { container } = render(Conversation, { content, now: NOW, onlink });
+  const props = { content, now: NOW, onlink };
+  const { container } = render(Conversation, onthread === undefined ? props : { ...props, onthread });
   return container;
 };
 
@@ -57,10 +59,18 @@ it("shows each Review as a block in time order among the comments, with a line f
           body_html: "<p>A few notes</p>",
           threads: [
             thread({ replies: 2, resolution: "resolved" }),
-            thread({ path: "Lib/test/test_ast.py", line: null, replies: 1, anchor: "outdated" }),
+            thread({
+              path: "Lib/test/test_ast.py",
+              subject: { kind: "file" },
+              replies: 1,
+              anchor: "outdated",
+            }),
           ],
         }),
-        review({ submitted_at: "2026-11-04T09:00:00Z", threads: [thread({ line: 30 })] }),
+        review({
+          submitted_at: "2026-11-04T09:00:00Z",
+          threads: [thread({ subject: { kind: "line", side: "LEFT", line: 30, original: 28 } })],
+        }),
       ],
       {
         comments: [
@@ -86,6 +96,40 @@ it("shows each Review as a block in time order among the comments, with a line f
     "Lib/ast.py:30 Why not a set?",
     "Lib/ast.py:12 Why not a set? 2 replies Resolved",
     "Lib/test/test_ast.py Why not a set? 1 reply Outdated",
+  ]);
+});
+
+it("opens a thread from its place, for a PR", async () => {
+  const onthread = vi.fn();
+  shown(reviewed([review({ threads: [thread({ id: "T7" })] })]), onthread);
+
+  await fireEvent.click(screen.getByRole("button", { name: "Lib/ast.py:12" }));
+
+  expect(onthread).toHaveBeenCalledExactlyOnceWith("T7");
+});
+
+it("offers no link to a thread Files can't place by its line yet", () => {
+  const moved = { kind: "line", side: "RIGHT", line: null, original: 7 } as const;
+  shown(
+    reviewed([
+      review({
+        threads: [
+          thread({ anchor: "outdated", subject: moved }),
+          thread({ subject: moved }),
+          thread({ subject: { kind: "file" } }),
+          thread({ subject: { kind: "line", side: "RIGHT", line: null, original: null } }),
+        ],
+      }),
+    ]),
+    vi.fn(),
+  );
+
+  expect(screen.queryAllByRole("button")).toEqual([]);
+  expect([...document.querySelectorAll(".place")].map((place) => place.textContent)).toEqual([
+    "Lib/ast.py:7",
+    "Lib/ast.py:7",
+    "Lib/ast.py",
+    "Lib/ast.py",
   ]);
 });
 

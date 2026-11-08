@@ -6,6 +6,7 @@ import {
   PrFilesState,
   type DiffFile,
   type DiffRow,
+  type DiffThread,
   type NewsEntry,
   type PrFiles,
 } from "$lib/state/pr-files.svelte";
@@ -49,12 +50,16 @@ const rows: DiffRow[] = [
   { kind: "file", path: "ast.py", old_path: null, change: { kind: "lines", added: 0, removed: 0 } },
 ];
 
-const ready = (count: number, more: Partial<{ files: DiffFile[]; news: NewsEntry[] }> = {}): PrFiles => ({
+const ready = (
+  count: number,
+  more: Partial<{ files: DiffFile[]; news: NewsEntry[]; threads: DiffThread[] }> = {},
+): PrFiles => ({
   state: "ready",
   head: "abc",
   base: "base",
   rows: count,
   news: [],
+  threads: [],
   files: [
     {
       path: "news.txt",
@@ -83,6 +88,7 @@ const ready = (count: number, more: Partial<{ files: DiffFile[]; news: NewsEntry
 });
 
 const onlink = vi.fn();
+const NOW = new Date("2026-11-04T12:00:00Z");
 
 /** A HUD that times nothing, as these tests don't look at the jumps. */
 const untimed = { jumped: () => ({ rowsShown: () => undefined, spansShown: () => undefined }) };
@@ -92,7 +98,7 @@ const shown = async (answer: PrFiles | null, choice = new DiffViewChoice()) => {
   core.pullRequestFiles.mockResolvedValue(ok(answer));
   const files = new PrFilesState("python/cpython", 11, untimed, choice);
   await files.load();
-  render(FilesTab, { files, onlink });
+  render(FilesTab, { files, now: NOW, onlink });
   return files;
 };
 
@@ -143,7 +149,7 @@ it("says why it can't show the files", async () => {
   core.pullRequestFiles.mockResolvedValue({ status: "error", error: { message: "The mirror has no main" } });
   const files = new PrFilesState("python/cpython", 11, untimed);
   await files.load();
-  render(FilesTab, { files, onlink });
+  render(FilesTab, { files, now: NOW, onlink });
 
   expect(screen.getByRole("alert").textContent).toBe(
     "Tsugiki can't show this PR's files: The mirror has no main",
@@ -572,4 +578,110 @@ it("keeps the row at the top in view as the view switches", async () => {
     expect(screen.getByRole("region", { name: "Side-by-side diff" })).toBe(diff);
   });
   expect(diff.scrollTop).toBe(0);
+});
+
+/** Thread `id` under row `row`, with `comments` comments. */
+const threadAt = (id: string, row: number, resolution: "open" | "resolved", comments = 1): DiffThread => ({
+  id,
+  row,
+  resolution,
+  comments: Array.from({ length: comments }, () => ({
+    author: "some-reviewer",
+    created_at: "2026-11-04T10:00:00Z",
+    body_html: "<p>Why?</p>",
+    hidden: null,
+  })),
+  later_comments: 0,
+});
+
+/** The diff of `rows` with an open thread of two comments under row 2, which takes 7 places until it's
+ * measured, and a resolved one under row 4, folded to one place: row 5 shows at place 13. */
+const threadedDiff = () =>
+  ready(rows.length, { threads: [threadAt("T1", 2, "open", 2), threadAt("T2", 4, "resolved")] });
+
+/** Waits until what the last change set going has drawn. */
+const settledTab = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+const threadBoxes = () => screen.getAllByRole("group", { name: "Review thread" });
+
+it("draws each thread under its line, and a resolved one folded until a click opens it", async () => {
+  await shown(threadedDiff());
+  await vi.waitFor(() => {
+    expect(lines()[0]).toBe("notes.txt → news.txt+1 −1");
+  });
+
+  expect(threadBoxes().map((box) => box.style.top)).toEqual([`${String(3 * 20)}px`, `${String(12 * 20)}px`]);
+  const rowAt = (text: string) =>
+    [...document.querySelectorAll<HTMLElement>(".row")].find((row) => row.textContent === text);
+  expect(rowAt("2-old line")?.style.top).toBe(`${String(10 * 20)}px`);
+  const folded = screen.getByRole("button", { name: "some-reviewer · 1 comment, resolved" });
+  expect(folded.getAttribute("aria-expanded")).toBe("false");
+
+  await fireEvent.click(folded);
+
+  expect(folded.getAttribute("aria-expanded")).toBe("true");
+  expect(threadBoxes()[1]?.textContent).toContain("Why?");
+});
+
+it("measures each open thread, and keeps the row at the top in view as a thread above it shrinks", async () => {
+  const observed: { element: Element; heard: () => void }[] = [];
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      readonly #heard: () => void;
+      constructor(heard: () => void) {
+        this.#heard = heard;
+      }
+      observe(element: Element) {
+        observed.push({ element, heard: this.#heard });
+      }
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  await shown(threadedDiff());
+  await vi.waitFor(() => {
+    expect(lines()[0]).toBe("notes.txt → news.txt+1 −1");
+  });
+  const diff = screen.getByRole("region", { name: "Diff" });
+  // A thread below the top that opens leaves the tab where it is.
+  diff.scrollTop = 20 + 5;
+  await fireEvent.scroll(diff);
+  await fireEvent.click(screen.getByRole("button", { name: "some-reviewer · 1 comment, resolved" }));
+  await settledTab();
+  expect(diff.scrollTop).toBe(20 + 5);
+  await fireEvent.click(screen.getByRole("button", { name: "some-reviewer · 1 comment, resolved" }));
+  // Five pixels into row 5, the second file's header.
+  diff.scrollTop = 13 * 20 + 5;
+  await fireEvent.scroll(diff);
+  const [open] = threadBoxes();
+  Object.defineProperty(open, "offsetHeight", { value: 95 });
+
+  // The open thread now takes 5 places, and the folded one stays at one.
+  for (const { heard } of observed) heard();
+
+  await vi.waitFor(() => {
+    expect(diff.scrollTop).toBe(11 * 20 + 5);
+  });
+  expect(threadBoxes()[1]?.style.top).toBe(`${String(10 * 20)}px`);
+});
+
+it("scrolls to the thread it moves to, with a few rows of its code above it", async () => {
+  const files = await shown(threadedDiff());
+  await vi.waitFor(() => {
+    expect(lines()[0]).toBe("notes.txt → news.txt+1 −1");
+  });
+  const diff = screen.getByRole("region", { name: "Diff" });
+
+  // The resolved thread opens, and takes 4 places from place 12.
+  files.reveal("T2");
+  await vi.waitFor(() => {
+    expect(diff.scrollTop).toBe((12 - 3) * 20);
+  });
+  expect(files.jump).toBeUndefined();
+  // A thread the layout doesn't show leaves the tab where it is.
+  files.jump = { id: "gone" };
+  await settledTab();
+  expect(diff.scrollTop).toBe((12 - 3) * 20);
+  expect(files.jump).toBeUndefined();
 });

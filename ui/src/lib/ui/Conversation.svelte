@@ -2,15 +2,23 @@
   import { SvelteSet } from "svelte/reactivity";
   import type { HiddenReason, IssueComment, IssueContent } from "$lib/state/issue-view.svelte";
   import type { PullRequestContent, Review, ReviewState, ThreadLine } from "$lib/state/pr-view.svelte";
+  import { REASONS } from "./hidden";
   import RenderedHtml from "./RenderedHtml.svelte";
   import { ago } from "./workbench-row";
 
-  // An Issue's or a PR's description, then its recent comments and a PR's Reviews in time order (#156).
+  // An Issue's or a PR's description, then its recent comments and a PR's Reviews in time order (#156). A
+  // thread's place opens the thread in Files, given `onthread` (#184).
   let {
     content,
     now,
     onlink,
-  }: { content: IssueContent | PullRequestContent; now: Date; onlink: (address: string) => void } = $props();
+    onthread,
+  }: {
+    content: IssueContent | PullRequestContent;
+    now: Date;
+    onlink: (address: string) => void;
+    onthread?: (id: string) => void;
+  } = $props();
 
   // `key` is unique on this screen. `id` names the comment or Review through a read that brings more, which
   // moves each one's place.
@@ -60,18 +68,15 @@
     return `${review.author ?? "deleted user"} ${DID[review.state]}${at}${dismissed} · ${when}`;
   };
 
-  const REASONS: Record<HiddenReason, string> = {
-    abuse: "Hidden as abuse",
-    off_topic: "Hidden as off-topic",
-    outdated: "Hidden as outdated",
-    resolved: "Hidden as resolved",
-    duplicate: "Hidden as duplicate",
-    spam: "Hidden as spam",
-    unstated: "Hidden",
+  /** The file, and the line the thread is on, or began on once the code under it changed. */
+  const place = ({ path, subject }: ThreadLine) => {
+    const line = subject.kind === "line" ? (subject.line ?? subject.original) : null;
+    return line === null ? path : `${path}:${String(line)}`;
   };
-
-  const place = (thread: ThreadLine) =>
-    thread.line === null ? thread.path : `${thread.path}:${String(thread.line)}`;
+  /** Whether Files shows the thread under its line. Outdated threads, threads on a whole file and threads
+   * outside the diff wait for #185. */
+  const inFiles = ({ anchor, subject }: ThreadLine) =>
+    anchor === "current" && subject.kind === "line" && subject.line !== null;
   const replies = (count: number) => (count === 1 ? "1 reply" : `${String(count)} replies`);
 </script>
 
@@ -111,7 +116,11 @@
       <ul class="threads">
         {#each entry.review.threads as thread, position (position)}
           <li>
-            <span class="place">{place(thread)}</span>
+            {#if onthread && inFiles(thread)}
+              <button class="place" onclick={() => onthread(thread.id)}>{place(thread)}</button>
+            {:else}
+              <span class="place">{place(thread)}</span>
+            {/if}
             {#if thread.opening.kind === "words"}
               <span>{thread.opening.words}</span>
             {:else}
@@ -187,6 +196,19 @@
   .place {
     flex: none;
     font-family: ui-monospace, Consolas, monospace;
+  }
+
+  /* A thread's place opens it in Files, and looks like a link. */
+  button.place {
+    all: unset;
+    flex: none;
+    font-family: ui-monospace, Consolas, monospace;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+
+  button.place:focus-visible {
+    outline: 1px solid currentColor;
   }
 
   .mark {

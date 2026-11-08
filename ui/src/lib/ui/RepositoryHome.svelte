@@ -154,6 +154,13 @@
     } else if ((key === "ctrl+pagedown" || key === "ctrl+pageup") && detail instanceof PrViewState) {
       e.preventDefault();
       detail.switchTab();
+    } else if (
+      (key === "f8" || key === "shift+f8") &&
+      detail instanceof PrViewState &&
+      detail.tab === "files"
+    ) {
+      e.preventDefault();
+      detail.files.nextThread(key === "f8" ? 1 : -1);
     }
   }
 </script>

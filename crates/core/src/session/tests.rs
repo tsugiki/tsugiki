@@ -442,7 +442,7 @@ fn reading_a_pr_on_screen_again_leaves_last_seen_where_it_is() {
     let reply = reply_ok(
         r#"{"data":{"repository":{"pullRequest":{"bodyHTML":"<p>Fixes the crash</p>",
             "comments":{"totalCount":0,"nodes":[]},"reviews":{"totalCount":0,"nodes":[]},
-            "reviewThreads":{"nodes":[]}}},
+            "reviewThreads":{"nodes":[]},"headRefOid":"0123abc"}},
             "rateLimit":{"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
     );
     let access = replying(vec![signed_in(), reply]);

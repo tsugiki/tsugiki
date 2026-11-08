@@ -76,4 +76,45 @@
     padding: 2px 8px;
     border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
   }
+
+  /* A suggested change, as GitHub renders one: the lines it replaces, then the lines it suggests. */
+  .rendered :global(.js-suggested-changes-blob) {
+    margin: 8px 0;
+    border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+    border-radius: 6px;
+    font-size: 12px;
+  }
+
+  .rendered :global(.js-suggested-changes-blob table) {
+    width: 100%;
+  }
+
+  .rendered :global(.js-suggested-changes-blob td) {
+    border: 0;
+  }
+
+  .rendered :global(.blob-num) {
+    display: none;
+  }
+
+  .rendered :global(.blob-code-inner) {
+    font-family: ui-monospace, Consolas, monospace;
+    white-space: pre;
+  }
+
+  .rendered :global(.blob-code-deletion) {
+    background: color-mix(in srgb, #cf222e 18%, transparent);
+  }
+
+  .rendered :global(.blob-code-addition) {
+    background: color-mix(in srgb, #2da44e 18%, transparent);
+  }
+
+  .rendered :global(.blob-code-deletion .x) {
+    background: color-mix(in srgb, #cf222e 35%, transparent);
+  }
+
+  .rendered :global(.blob-code-addition .x) {
+    background: color-mix(in srgb, #2da44e 35%, transparent);
+  }
 </style>

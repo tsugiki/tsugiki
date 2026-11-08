@@ -42,13 +42,15 @@ impl PrView {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use time::OffsetDateTime;
 
     use super::*;
     use crate::github::issue_content::IssueComment;
     use crate::github::issue_content::{HiddenReason, IssueContent};
-    use crate::github::pull_request_content::{Anchor, Opening, Resolution, Review, ThreadLine};
+    use crate::github::pull_request_content::{
+        Anchor, Opening, Resolution, Review, Side, Subject, ThreadId, ThreadLine,
+    };
     use crate::github::pull_requests::{PullRequestFacts, ReviewState};
     use crate::github::{CommitSha, Login};
     use crate::workbench::testing::{ViewWorld, fixing, issue, stranger};
@@ -82,9 +84,9 @@ mod tests {
 
     /// A PR's Conversation with two Reviews, oldest first, one of them hidden and with two threads.
     pub(crate) fn reviewed() -> PullRequestContent {
-        let thread = |line, opening| ThreadLine {
+        let thread = |line: Option<u32>, opening| ThreadLine {
+            id: ThreadId::new(&format!("T{line:?}")),
             path: "Lib/ast.py".to_owned(),
-            line,
             opening,
             replies: 1,
             resolution: Resolution::Open,
@@ -93,6 +95,17 @@ mod tests {
             } else {
                 Anchor::Current
             },
+            subject: Subject::Line {
+                side: Side::Right,
+                line,
+                original: Some(7),
+            },
+            comments: vec![IssueComment {
+                author: Some(Login::new("some-reviewer")),
+                created_at: OffsetDateTime::UNIX_EPOCH,
+                body_html: "<p>Why?</p>".to_owned(),
+                hidden: line.is_none().then_some(HiddenReason::Abuse),
+            }],
         };
         PullRequestContent {
             conversation: IssueContent {
@@ -139,6 +152,7 @@ mod tests {
                 },
             ],
             earlier_reviews: 3,
+            head: CommitSha::parse("0123abc"),
         }
     }
 

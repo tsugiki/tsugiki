@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { PrFilesState } from "$lib/state/pr-files.svelte";
 import RepositoryHome from "./RepositoryHome.svelte";
 
 const core = vi.hoisted(() => ({
@@ -587,7 +588,7 @@ it("switches the PR view's tabs with Ctrl+PageDown and Ctrl+PageUp", async () =>
 it("switches the Files tab between unified and side by side with Ctrl+Alt+U, for each PR after", async () => {
   core.pullRequestFiles.mockResolvedValue({
     status: "ok",
-    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [] },
+    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
   });
   // jsdom lays nothing out, so the diff's bind:clientHeight has nothing to observe.
   vi.stubGlobal(
@@ -618,6 +619,34 @@ it("switches the Files tab between unified and side by side with Ctrl+Alt+U, for
 
   expect(await screen.findByRole("region", { name: "Side-by-side diff" })).toBeTruthy();
   expect([onConversation.defaultPrevented, onFiles.defaultPrevented]).toEqual([false, true]);
+});
+
+it("moves through a PR's open threads with F8 and Shift+F8 on its Files tab", async () => {
+  core.pullRequestFiles.mockResolvedValue({
+    status: "ok",
+    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
+  });
+  // jsdom lays nothing out, so the diff's bind:clientHeight has nothing to observe.
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const next = vi.spyOn(PrFilesState.prototype, "nextThread");
+  const { prRow } = await listing();
+  await fireEvent.click(prRow);
+  const files = await screen.findByRole("tab", { name: "Files" });
+  // The Conversation tab has no threads to move through.
+  await press("F8");
+  await fireEvent.click(files);
+
+  await press("F8");
+  await press("F8", { shiftKey: true });
+
+  expect(next.mock.calls).toEqual([[1], [-1]]);
 });
 
 it("leaves Ctrl+PageDown alone with no PR on show", async () => {

@@ -15,7 +15,7 @@ use specta::Type;
 pub use startup::run;
 use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
-use tsugiki_core::diff::{DiffOf, DiffRow, Diffs, HeadLine, Highlighter, PrAt};
+use tsugiki_core::diff::{DiffOf, DiffRow, Diffs, Found, HeadLine, Highlighter, PrAt};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::folders::Folders;
 use tsugiki_core::github::CommitSha;
@@ -305,6 +305,26 @@ impl DiffChunk {
     }
 }
 
+/// A search in a PR's diff, as the window asks for it when the user types in the Files tab's search (#186).
+#[derive(Debug, Clone, Deserialize, Type)]
+pub(crate) struct DiffSearch {
+    repository: String,
+    number: u32,
+    /// The commit the diff ends at, as the Files tab was told.
+    head: String,
+    /// The merge base the diff starts from, as the Files tab was told.
+    base: String,
+    query: String,
+}
+
+impl DiffSearch {
+    /// The diff between the commits it names, and the text to find.
+    fn parse(self) -> Result<(DiffOf, String), Error> {
+        let of = diff_of(&self.repository, self.number, &self.head, &self.base)?;
+        Ok((of, self.query))
+    }
+}
+
 /// Lines of a file at a PR's head that a gap of its diff leaves out, as the window asks for them when the
 /// user expands the gap (#182).
 #[derive(Debug, Clone, Deserialize, Type)]
@@ -377,6 +397,15 @@ fn read_pull_request_rows(
 ) -> Result<Vec<DiffRow>, Error> {
     let (of, rows) = chunk.parse()?;
     PrFiles::rows(&work.sources(reader)?, &of, rows)
+}
+
+fn find_in_pull_request(
+    search: DiffSearch,
+    work: &DiffWork,
+    reader: &StoreReader,
+) -> Result<Found, Error> {
+    let (of, query) = search.parse()?;
+    PrFiles::find(&work.sources(reader)?, &of, &query)
 }
 
 fn read_pull_request_spans(
@@ -464,6 +493,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::pull_request_rows,
             slow_commands::pull_request_spans,
             slow_commands::pull_request_lines,
+            slow_commands::pull_request_find,
             slow_commands::open_on_github,
             slow_commands::open_link
         ])

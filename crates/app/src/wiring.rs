@@ -1006,6 +1006,16 @@ mod tests {
         assert_eq!(order, [json!(CPYTHON), json!("octo-org/first")]);
     }
 
+    /// Searches the diff of PR 1 in python/cpython between `head` and `base` for `query`.
+    fn find_in_pr_1(
+        wired: &Wired,
+        (head, base): (&str, &str),
+        query: &str,
+    ) -> Result<Value, Value> {
+        let search = json!({ "repository": CPYTHON, "number": 1, "head": head, "base": base, "query": query });
+        wired.ask("pull_request_find", json!({ "search": search }))
+    }
+
     /// Puts a commit of PR `number`'s own on the remote for `name`, under `refs/pull/N/head` as GitHub
     /// keeps it, and gives the commit.
     fn pull_request_on(root: &Path, name: &str, number: u32) -> String {
@@ -1122,6 +1132,7 @@ mod tests {
             )
         };
         let lines = lines_of(1, 21);
+        let found = find_in_pr_1(&wired, (&commit, &base), "pr");
         let from_0 = lines_of(0, 21).unwrap_err();
         let backwards = lines_of(21, 1).unwrap_err();
         let no_commit = chunk("main", &base).unwrap_err();
@@ -1165,7 +1176,12 @@ mod tests {
         // NEWS is in no language Tsugiki highlights.
         assert_eq!(spans.unwrap(), json!([[], [], []]));
         // The file has one line, read from the mirror.
-        assert_eq!(lines.unwrap(), json!([{ "text": "PR 1", "spans": [] }]));
+        // A search finds the line too, whatever the case.
+        let found_line = json!({ "matches": [{ "row": 2, "start": 0, "end": 2 }], "more": false });
+        assert_eq!(
+            (lines.unwrap(), found.unwrap()),
+            (json!([{ "text": "PR 1", "spans": [] }]), found_line)
+        );
         assert_eq!(from_0["message"], "Lines 0 to 21 aren't lines of a file.");
         assert_eq!(
             backwards["message"],

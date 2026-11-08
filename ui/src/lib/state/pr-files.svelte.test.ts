@@ -19,6 +19,7 @@ const core = vi.hoisted(() => {
     pullRequestRows: vi.fn<(chunk: { start: number }) => Promise<unknown>>(),
     pullRequestSpans: vi.fn<(chunk: { start: number }, opened?: number[]) => Promise<unknown>>(),
     pullRequestLines: vi.fn<(lines: { file: number; start: number; end: number }) => Promise<unknown>>(),
+    pullRequestFind: vi.fn<(search: { query: string }) => Promise<unknown>>(),
     cloning: vi.fn(),
     heard: {} as Record<string, Heard>,
     stopped: [] as string[],
@@ -39,6 +40,7 @@ vi.mock("$lib/data/bindings", () => ({
     pullRequestRows: core.pullRequestRows,
     pullRequestSpans: core.pullRequestSpans,
     pullRequestLines: core.pullRequestLines,
+    pullRequestFind: core.pullRequestFind,
     cloning: core.cloning,
   },
   events: {
@@ -892,7 +894,8 @@ it("moves through the open threads with F8 and back with Shift+F8, round from ei
   const visited: string[] = [];
   const press = (step: 1 | -1) => {
     files.nextThread(step);
-    visited.push(files.jump?.id ?? "none");
+    const jump = files.jump;
+    visited.push(jump !== undefined && "id" in jump ? jump.id : "none");
   };
 
   press(1);
@@ -1049,4 +1052,225 @@ it("reveals a thread asked for while the older diff holds its threads back, once
   core.pullRequestFiles.mockResolvedValue(ok(threaded()));
   await files.ask();
   expect(files.jump).toEqual({ id: "T9" });
+});
+
+/** A diff of 40 rows: `Lib/ast.py` with changes from rows 2 and 6, and a Generated file from row 20 with one
+ * from row 23. */
+const changed = () =>
+  ready("abc", 40, [
+    {
+      ...file("Lib/ast.py", 0),
+      pairs: [
+        { row: 2, removed: 1, added: 1 },
+        { row: 6, removed: 0, added: 2 },
+      ],
+    },
+    { ...file("Python/generated.c.h", 20, true), pairs: [{ row: 23, removed: 1, added: 0 }] },
+  ]);
+
+/** Where the tab moves on each of `times` presses of F7, or of Shift+F7 for `step` -1. */
+const changes = (files: PrFilesState, step: 1 | -1, times: number) =>
+  Array.from({ length: times }, () => {
+    files.nextChange(step);
+    return files.jump;
+  });
+
+it("moves to the next change across files with F7, opening a Generated file, and round from the end", async () => {
+  const files = await loaded(changed());
+
+  expect(changes(files, 1, 4)).toEqual([{ row: 2 }, { row: 6 }, { row: 23 }, { row: 2 }]);
+  expect(files.collapsed(1)).toBe(false);
+  expect(changes(files, -1, 2)).toEqual([{ row: 23 }, { row: 6 }]);
+});
+
+it("moves to the last change first with Shift+F7, and nowhere in a diff without changes or before it comes", async () => {
+  expect(changes(await loaded(changed()), -1, 1)).toEqual([{ row: 23 }]);
+  expect(changes(await loaded(ready("abc", 3)), 1, 1)).toEqual([undefined]);
+  expect(changes(await loaded(), 1, 1)).toEqual([undefined]);
+});
+
+/** The core's answer to a search, which found `matches`, each a row and where in it the text starts and
+ * ends. */
+const found = (matches: [number, number, number][], more = false) =>
+  ok({ matches: matches.map(([row, start, end]) => ({ row, start, end })), more });
+
+it("finds text in every row through the core, moves to the first match, and goes round the matches", async () => {
+  const files = await loaded(changed());
+  core.pullRequestFind.mockResolvedValue(
+    found([
+      [3, 0, 2],
+      [3, 4, 6],
+      [24, 1, 3],
+    ]),
+  );
+
+  files.openSearch();
+  await files.find("ab");
+
+  expect(core.pullRequestFind).toHaveBeenCalledExactlyOnceWith({
+    repository: "python/cpython",
+    number: 11,
+    head: "abc",
+    base: "base",
+    query: "ab",
+  });
+  expect([files.searching, files.query, files.search, files.jump]).toEqual([
+    true,
+    "ab",
+    { at: 0, count: 3, more: false },
+    { row: 3 },
+  ]);
+  expect([files.foundIn(3), files.foundIn(4)]).toEqual([
+    [
+      { start: 0, end: 2, current: true },
+      { start: 4, end: 6, current: false },
+    ],
+    [],
+  ]);
+  files.nextMatch(1);
+  files.nextMatch(1);
+  expect([files.search?.at, files.jump, files.collapsed(1)]).toEqual([2, { row: 24 }, false]);
+  files.nextMatch(1);
+  expect(files.search?.at).toBe(0);
+  files.nextMatch(-1);
+  expect(files.search?.at).toBe(2);
+});
+
+it("keeps to the match it was on, or the first after it, as the query grows", async () => {
+  const files = await loaded(changed());
+  core.pullRequestFind.mockResolvedValueOnce(
+    found([
+      [3, 0, 1],
+      [9, 0, 1],
+      [24, 0, 1],
+    ]),
+  );
+  await files.find("a");
+  files.nextMatch(1);
+
+  core.pullRequestFind.mockResolvedValueOnce(
+    found([
+      [3, 0, 2],
+      [12, 0, 2],
+    ]),
+  );
+  await files.find("ab");
+
+  expect([files.search?.at, files.jump]).toEqual([1, { row: 12 }]);
+});
+
+it("says when it finds nothing or more than the core sends, and an empty query asks nothing", async () => {
+  const files = await loaded(changed());
+  core.pullRequestFind.mockResolvedValueOnce(found([]));
+  await files.find("zz");
+  const none = files.search;
+  // Nowhere to move to.
+  files.nextMatch(1);
+  expect(files.jump).toBeUndefined();
+  core.pullRequestFind.mockResolvedValueOnce(found([[3, 0, 1]], true));
+  await files.find("z");
+  const more = files.search;
+
+  await files.find("");
+  files.nextMatch(1);
+
+  expect([none, more, files.search]).toEqual([
+    { at: undefined, count: 0, more: false },
+    { at: 0, count: 1, more: true },
+    undefined,
+  ]);
+  expect(core.pullRequestFind).toHaveBeenCalledTimes(2);
+});
+
+it("drops the answer to an older query that comes after a newer one", async () => {
+  const files = await loaded(changed());
+  let answer: (answer: unknown) => void = () => {};
+  core.pullRequestFind.mockReturnValueOnce(
+    new Promise((resolve) => {
+      answer = resolve;
+    }),
+  );
+  const older = files.find("a");
+  core.pullRequestFind.mockResolvedValueOnce(found([[9, 0, 2]]));
+  await files.find("ab");
+
+  answer(found([[3, 0, 1]]));
+  await older;
+
+  expect([files.query, files.search?.count, files.jump]).toEqual(["ab", 1, { row: 9 }]);
+});
+
+it("searches the newer diff again for the same text, and asks nothing before a diff comes", async () => {
+  const files = await loaded();
+  await files.find("ab");
+  expect(core.pullRequestFind).not.toHaveBeenCalled();
+
+  core.pullRequestFind.mockResolvedValue(found([[3, 0, 2]]));
+  core.pullRequestFiles.mockResolvedValue(ok(changed()));
+  await files.ask();
+  await vi.waitFor(() => {
+    expect(files.search?.count).toBe(1);
+  });
+  await files.ask();
+  expect(core.pullRequestFind).toHaveBeenCalledTimes(1);
+});
+
+it("says in the search why it failed, and leaves the tab's error to the diff", async () => {
+  const files = await loaded(changed());
+  core.pullRequestFind.mockResolvedValueOnce({
+    status: "error",
+    error: { kind: "internal", message: "gone" },
+  });
+  await files.find("ab");
+  const failed = [files.error, files.searchProblem, files.search];
+  core.pullRequestFind.mockRejectedValueOnce(new Error("no core"));
+  await files.find("abc");
+  const rejected = files.searchProblem;
+
+  core.pullRequestFind.mockResolvedValueOnce(found([[3, 0, 2]]));
+  await files.find("ab");
+
+  expect(failed).toEqual([undefined, "gone", undefined]);
+  expect(rejected).toBe("Error: no core");
+  expect([files.searchProblem, files.search?.count]).toEqual([undefined, 1]);
+});
+
+it("searches a new diff again without moving, and drops the matches of the diff before at once", async () => {
+  const files = await loaded(changed());
+  core.pullRequestFind.mockResolvedValueOnce(found([[24, 0, 2]]));
+  await files.find("ab");
+  files.jump = undefined;
+  let answer: (answer: unknown) => void = () => {};
+  core.pullRequestFind.mockReturnValueOnce(
+    new Promise((resolve) => {
+      answer = resolve;
+    }),
+  );
+
+  core.pullRequestFiles.mockResolvedValue(ok({ ...changed(), head: "def" }));
+  await files.ask();
+  const meanwhile = [files.search, files.foundIn(24)];
+  answer(found([[3, 0, 2]]));
+  await vi.waitFor(() => {
+    expect(files.search?.count).toBe(1);
+  });
+
+  expect(meanwhile).toEqual([undefined, []]);
+  expect([files.search?.at, files.foundIn(3), files.jump]).toEqual([
+    0,
+    [{ start: 0, end: 2, current: true }],
+    undefined,
+  ]);
+});
+
+it("closes the search, forgetting its text and its matches", async () => {
+  const files = await loaded(changed());
+  core.pullRequestFind.mockResolvedValue(found([[3, 0, 2]]));
+  files.openSearch();
+  await files.find("ab");
+
+  files.closeSearch();
+
+  expect([files.searching, files.query, files.search, files.foundIn(3)]).toEqual([false, "", undefined, []]);
+  expect(files.diffWantsFocus).toBe(true);
 });

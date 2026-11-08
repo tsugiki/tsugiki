@@ -17,6 +17,7 @@ const core = vi.hoisted(() => ({
   pullRequestRows: vi.fn<(chunk: { start: number }) => Promise<unknown>>(),
   pullRequestSpans: vi.fn(),
   pullRequestLines: vi.fn<(lines: { file: number; start: number; end: number }) => Promise<unknown>>(),
+  pullRequestFind: vi.fn(),
   cloning: vi.fn(),
   listen: vi.fn(),
 }));
@@ -27,6 +28,7 @@ vi.mock("$lib/data/bindings", () => ({
     pullRequestRows: core.pullRequestRows,
     pullRequestSpans: core.pullRequestSpans,
     pullRequestLines: core.pullRequestLines,
+    pullRequestFind: core.pullRequestFind,
     cloning: core.cloning,
   },
   events: {
@@ -736,4 +738,167 @@ it("scrolls to the thread it moves to, with a few rows of its code above it", as
   await settledTab();
   expect(diff.scrollTop).toBe((12 - 3) * 20);
   expect(files.jump).toBeUndefined();
+});
+
+it("scrolls to the change it moves to, with a few rows of code above it", async () => {
+  core.pullRequestRows.mockResolvedValue(ok(changed));
+  const files = await shown(ready(changed.length, { files: [changedFile] }));
+  await vi.waitFor(() => {
+    expect(lines()[0]).toBe("a.py+2 −3");
+  });
+
+  files.nextChange(1);
+  files.nextChange(1);
+
+  await vi.waitFor(() => {
+    expect(screen.getByRole("region", { name: "Diff" }).scrollTop).toBe((8 - 3) * 20);
+  });
+});
+
+/** The core's answer to a search, which found `matches`, each a row and where in it the text starts and
+ * ends. */
+const found = (matches: [number, number, number][], more = false) =>
+  ok({ matches: matches.map(([row, start, end]) => ({ row, start, end })), more });
+
+/** The text of each match the rows mark, and whether it is the one the tab is on. */
+const marks = () =>
+  [...document.querySelectorAll(".row .match, .row .current")].map((mark) => [
+    mark.textContent,
+    mark.classList.contains("current"),
+  ]);
+
+/** The Files tab of `changed`, in the view `choice` holds, with its search open, once its rows came. */
+const searching = async (choice = new DiffViewChoice()) => {
+  core.pullRequestRows.mockResolvedValue(ok(changed));
+  const files = await shown(ready(changed.length, { files: [changedFile] }), choice);
+  await vi.waitFor(() => {
+    expect(lines()[0]).toBe("a.py+2 −3");
+  });
+  files.openSearch();
+  return { files, box: await screen.findByRole("textbox", { name: "Find" }) };
+};
+
+it("searches every row from its box, marks the matches, and moves between them with Enter and its buttons", async () => {
+  core.pullRequestFind.mockResolvedValue(
+    found([
+      [3, 0, 1],
+      [6, 0, 1],
+    ]),
+  );
+  const { box } = await searching();
+  const status = () => screen.getByRole("search").querySelector(".count")?.textContent;
+
+  await fireEvent.input(box, { target: { value: "b" } });
+  await vi.waitFor(() => {
+    expect(status()).toBe("1 of 2");
+  });
+  expect(marks()).toEqual([
+    ["b", true],
+    ["B", false],
+  ]);
+  await fireEvent.keyDown(box, { key: "Enter" });
+  expect([status(), marks()]).toEqual([
+    "2 of 2",
+    [
+      ["b", false],
+      ["B", true],
+    ],
+  ]);
+  await fireEvent.keyDown(box, { key: "Enter", shiftKey: true });
+  expect(status()).toBe("1 of 2");
+  await fireEvent.click(screen.getByRole("button", { name: "Next match" }));
+  expect(status()).toBe("2 of 2");
+  await fireEvent.click(screen.getByRole("button", { name: "Previous match" }));
+  expect(status()).toBe("1 of 2");
+  await fireEvent.keyDown(box, { key: "a" });
+  expect(status()).toBe("1 of 2");
+});
+
+it("says when it finds nothing, with nowhere to move, and when the core stopped counting", async () => {
+  core.pullRequestFind.mockResolvedValueOnce(found([]));
+  const { box } = await searching();
+  const status = () => screen.getByRole("search").querySelector(".count")?.textContent;
+
+  await fireEvent.input(box, { target: { value: "zz" } });
+  await vi.waitFor(() => {
+    expect(status()).toBe("No results");
+  });
+  const moves = ["Previous match", "Next match"].map((name) => screen.getByRole("button", { name }));
+  expect(moves.map((button) => (button as HTMLButtonElement).disabled)).toEqual([true, true]);
+  core.pullRequestFind.mockResolvedValueOnce(found([[3, 0, 1]], true));
+  await fireEvent.input(box, { target: { value: "b" } });
+  await vi.waitFor(() => {
+    expect(status()).toBe("1 of 1+");
+  });
+});
+
+it("closes the search on Escape or its button, handing the diff its focus back", async () => {
+  const { files, box } = await searching();
+
+  await fireEvent.keyDown(box, { key: "Escape" });
+  expect(screen.queryByRole("search")).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("region", { name: "Diff" }));
+  files.openSearch();
+  await fireEvent.click(await screen.findByRole("button", { name: "Close" }));
+  expect(screen.queryByRole("search")).toBeNull();
+});
+
+it("marks the matches side by side, a line of context's on both sides", async () => {
+  core.pullRequestFind.mockResolvedValue(
+    found([
+      [2, 0, 1],
+      [3, 0, 1],
+      [6, 0, 1],
+    ]),
+  );
+  const { box } = await searching(sideBySide());
+
+  await fireEvent.input(box, { target: { value: "x" } });
+
+  await vi.waitFor(() => {
+    expect(marks()).toEqual([
+      ["a", true],
+      ["a", true],
+      ["b", false],
+      ["B", false],
+    ]);
+  });
+});
+
+it("says in the box why it couldn't search", async () => {
+  core.pullRequestFind.mockResolvedValue({ status: "error", error: { kind: "internal", message: "gone" } });
+  const { box } = await searching();
+
+  await fireEvent.input(box, { target: { value: "b" } });
+
+  await vi.waitFor(() => {
+    expect(screen.getByRole("search").querySelector(".count")?.textContent).toBe("Can't search: gone");
+  });
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("leaves a match it shows in place, and scrolls to one it doesn't", async () => {
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(100);
+  core.pullRequestFind.mockResolvedValue(
+    found([
+      [3, 0, 1],
+      [10, 0, 1],
+    ]),
+  );
+  const { box } = await searching();
+  const diff = screen.getByRole("region", { name: "Diff" });
+
+  // Rows 0 to 4 show in 100 pixels, and the tab draws the rest near them.
+  await fireEvent.input(box, { target: { value: "x" } });
+  await vi.waitFor(() => {
+    expect(marks()).toEqual([
+      ["b", true],
+      ["g", false],
+    ]);
+  });
+  expect(diff.scrollTop).toBe(0);
+  await fireEvent.keyDown(box, { key: "Enter" });
+  await vi.waitFor(() => {
+    expect(diff.scrollTop).toBe((10 - 3) * 20);
+  });
 });

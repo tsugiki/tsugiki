@@ -20,7 +20,7 @@
   } from "$lib/state/pr-files.svelte";
   import NewsEntries from "./NewsEntries.svelte";
   import ReviewThread from "./ReviewThread.svelte";
-  import { pieces } from "./spans";
+  import { pieces, type Match } from "./spans";
 
   let {
     diff,
@@ -40,7 +40,7 @@
   const ROW = 20;
   /** Rows drawn above and below the visible ones, so a quick scroll doesn't show blanks. */
   const OVERSCAN = 40;
-  /** Rows of code that show above a thread the tab moves to. */
+  /** Rows of code that show above a thread, a change or a match the tab moves to. */
   const LEAD = 3;
 
   let scroller = $state<HTMLElement>();
@@ -66,9 +66,9 @@
 
   /** The layout the rows were last drawn from, which a new layout starts from. */
   let drawn: PrFilesState["layout"] | undefined;
-  /** Scrolls to the thread the user moved to, with a few rows of its code above it. Otherwise, keeps the
-   * place at the top in view as the layout changes, as the view switches or a thread above it grows: the
-   * same row, line, button or thread, as far into it as it was. */
+  /** Scrolls to the thread, the change or the match the user moved to, with a few rows of code above it.
+   * Otherwise, keeps the place at the top in view as the layout changes, as the view switches or a thread
+   * above it grows: the same row, line, button or thread, as far into it as it was. */
   $effect(() => {
     const layout = diff.layout;
     const jump = diff.jump;
@@ -83,8 +83,9 @@
     });
   });
 
-  /** The place the tab scrolls to as `layout` replaces `before` or the user moves to a thread, and how many
-   * pixels into it, if it scrolls. It takes the move, so a later layout doesn't scroll back to it. */
+  /** The place the tab scrolls to as `layout` replaces `before` or the user moves to a thread, a change or a
+   * match, and how many pixels into it, if it scrolls. It takes the move, so a later layout doesn't scroll
+   * back to it. */
   function scrolledTo(
     layout: PrFilesState["layout"],
     before: PrFilesState["layout"] | undefined,
@@ -92,8 +93,9 @@
   ): { place: number; into: number } | undefined {
     if (jump !== undefined) {
       diff.jump = undefined;
-      const place = layout.threadAt(jump.id);
-      return place === undefined ? undefined : { place: Math.max(0, place - LEAD), into: 0 };
+      const place = "id" in jump ? layout.threadAt(jump.id) : layout.placeOfRow(jump.row);
+      if (place === undefined || ("row" in jump && inView(place))) return undefined;
+      return { place: Math.max(0, place - LEAD), into: 0 };
     }
     const into = scrollTop - newsHeight;
     if (before === undefined || into <= 0) return undefined;
@@ -101,6 +103,13 @@
     const moved = layout.moved(before, place);
     return moved === place ? undefined : { place: moved, into: into % ROW };
   }
+
+  /** Whether place `place` shows whole: a change or a match there stays where it is, as VS Code leaves a
+   * match it shows. */
+  const inView = (place: number) => {
+    const top = scrollTop - newsHeight;
+    return place * ROW >= top && (place + 1) * ROW <= top + height;
+  };
 
   /** Tells the tab how many places open thread `thread`, by its place among the threads, takes, as it
    * draws and whenever its height changes. */
@@ -126,21 +135,22 @@
   };
 </script>
 
-<!-- A line of code after its marker, highlighted once its spans come. Each piece sits on one line, as the
-     row keeps its text's spaces. -->
+<!-- A line of code after its marker, highlighted once its spans come, with the search's matches in it
+     marked. Each piece sits on one line, as the row keeps its text's spaces. -->
 <!-- prettier-ignore -->
-{#snippet code(marker: string, text: string, spans: Span[])}<span class="text">{marker}{#each pieces(text, spans) as piece, at (at)}{#if piece.highlight}<span class={`hl-${piece.highlight}`}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</span>{/snippet}
+{#snippet code(marker: string, text: string, spans: Span[], found: Match[])}<span class="text">{marker}{#each pieces(text, spans, found) as piece, at (at)}{#if piece.highlight || piece.found}<span class={[piece.highlight && `hl-${piece.highlight}`, piece.found]}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</span>{/snippet}
 
 <!-- One side of a row side by side: a line's number and its code. -->
 <!-- prettier-ignore -->
-{#snippet side(kind: string, number: number, marker: string, text: string, spans: Span[])}<span class={`side ${kind}`}><span class="number">{number}</span><span class="clip">{@render code(marker, text, spans)}</span></span>{/snippet}
+{#snippet side(kind: string, number: number, marker: string, text: string, spans: Span[], found: Match[])}<span class={`side ${kind}`}><span class="number">{number}</span><span class="clip">{@render code(marker, text, spans, found)}</span></span>{/snippet}
 
 <!-- A side with nothing on it, as the right side of a removed row has, or one whose row hasn't come. -->
 {#snippet blank(kind: string)}<span class={`side ${kind}`}></span>{/snippet}
 
-<!-- A line of context side by side: its old number and its new, with its code on both sides. -->
-{#snippet both(kind: string, old: number, line: number, text: string, spans: Span[])}
-  {@render side(kind, old, " ", text, spans)}{@render side(kind, line, " ", text, spans)}
+<!-- A line of context side by side: its old number and its new, with its code and its matches on both
+     sides. -->
+{#snippet both(kind: string, old: number, line: number, text: string, spans: Span[], found: Match[])}
+  {@render side(kind, old, " ", text, spans, found)}{@render side(kind, line, " ", text, spans, found)}
 {/snippet}
 
 <!-- Side by side, one side of a change: row `index` of the diff, removed or added, the note that the line
@@ -150,9 +160,9 @@
   {#if index === null}
     {@render blank("")}
   {:else if row?.kind === "removed"}
-    {@render side("removed", row.old, "-", row.text, diff.spans(index) ?? [])}
+    {@render side("removed", row.old, "-", row.text, diff.spans(index) ?? [], diff.foundIn(index))}
   {:else if row?.kind === "added"}
-    {@render side("added", row.new, "+", row.text, diff.spans(index) ?? [])}
+    {@render side("added", row.new, "+", row.text, diff.spans(index) ?? [], diff.foundIn(index))}
   {:else if row?.kind === "note"}
     <span class="side note"
       ><span class="number"></span><span class="clip"><span class="text">{row.text}</span></span></span
@@ -218,6 +228,12 @@
   aria-label={sideBySide ? "Side-by-side diff" : "Diff"}
   tabindex="0"
   bind:this={scroller}
+  {@attach (region) => {
+    // The search hands the diff its focus back as it closes, so the keys scroll the diff again.
+    if (!diff.diffWantsFocus) return;
+    diff.diffWantsFocus = false;
+    region.focus();
+  }}
   bind:clientHeight={height}
   bind:clientWidth={width}
   onscroll={(event) => {
@@ -244,7 +260,7 @@
       {:else if at.kind === "line" && sideBySide}
         {@const line = diff.line(at.file, at.new)}
         <div class="row split" style:top={`${String(place * ROW)}px`}>
-          {@render both("context expanded", at.old, at.new, line.text, line.spans)}
+          {@render both("context expanded", at.old, at.new, line.text, line.spans, [])}
         </div>
       {:else if at.kind === "line"}
         {@const line = diff.line(at.file, at.new)}
@@ -253,6 +269,7 @@
             " ",
             line.text,
             line.spans,
+            [],
           )}
         </div>
       {:else if at.kind === "pair"}
@@ -285,7 +302,14 @@
         {@const row = diff.row(index)}
         {#if sideBySide && row?.kind === "context"}
           <div class="row split" style:top={`${String(place * ROW)}px`}>
-            {@render both("context", row.old, row.new, row.text, diff.spans(index) ?? [])}
+            {@render both(
+              "context",
+              row.old,
+              row.new,
+              row.text,
+              diff.spans(index) ?? [],
+              diff.foundIn(index),
+            )}
           </div>
         {:else}
           <div class={`row ${row?.kind ?? "waiting"}`} style:top={`${String(place * ROW)}px`}>
@@ -320,18 +344,21 @@
                 " ",
                 row.text,
                 diff.spans(index) ?? [],
+                diff.foundIn(index),
               )}
             {:else if row?.kind === "added"}
               <span class="number"></span><span class="number">{row.new}</span>{@render code(
                 "+",
                 row.text,
                 diff.spans(index) ?? [],
+                diff.foundIn(index),
               )}
             {:else if row?.kind === "removed"}
               <span class="number">{row.old}</span><span class="number"></span>{@render code(
                 "-",
                 row.text,
                 diff.spans(index) ?? [],
+                diff.foundIn(index),
               )}
             {/if}
           </div>
@@ -521,6 +548,17 @@
 
   .removed {
     background: color-mix(in srgb, #cf222e 18%, transparent);
+  }
+
+  /* The search's matches show on yellow, and the one the tab is on on orange, dark text on it in either
+     theme. */
+  .text :global(.match) {
+    background: color-mix(in srgb, #d4a72c 40%, transparent);
+  }
+
+  .text :global(.current) {
+    background: #ff9632;
+    color: #1f2328;
   }
 
   /* github.com's colors for code, in the rows and in the code of a thread. The classes come from the spans,

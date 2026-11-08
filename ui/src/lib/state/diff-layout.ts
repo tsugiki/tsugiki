@@ -418,7 +418,7 @@ export class DiffLayout<T extends LaidThread = LaidThread> {
     if (from.diff !== this.diff) {
       const path = from.#fileAt(place);
       const file = this.#laidFiles.find((file) => file.path === path);
-      const header = file === undefined ? undefined : this.#placeOfRow(file.row);
+      const header = file === undefined ? undefined : this.placeOfRow(file.row);
       return header ?? place;
     }
     return this.#placeOf(from.at(place)) ?? place;
@@ -452,9 +452,9 @@ export class DiffLayout<T extends LaidThread = LaidThread> {
   #placeOf(shown: Shown): number | undefined {
     switch (shown.kind) {
       case "row":
-        return this.#placeOfRow(shown.row);
+        return this.placeOfRow(shown.row);
       case "pair":
-        return this.#placeOfRow(shown.removed ?? shown.added);
+        return this.placeOfRow(shown.removed ?? shown.added);
       case "line": {
         const run = this.#runs.find(
           (run) =>
@@ -481,7 +481,7 @@ export class DiffLayout<T extends LaidThread = LaidThread> {
   }
 
   /** The place that shows the diff's row `row`, if one does. */
-  #placeOfRow(row: number): number | undefined {
+  placeOfRow(row: number): number | undefined {
     for (const run of this.#runs) {
       if (run.kind === "row" && run.row <= row && row < run.row + run.length)
         return run.shown + row - run.row;

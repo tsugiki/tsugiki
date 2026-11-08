@@ -6,7 +6,7 @@ import type {
   PrView_Serialize as PrView,
   WorkbenchRow_Serialize as WorkbenchRow,
 } from "../src/lib/data/bindings.ts";
-import { mockCore } from "./mock-core.ts";
+import { changeAnswer, mockCore } from "./mock-core.ts";
 
 const repository = { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] } as const;
 
@@ -344,4 +344,26 @@ test("an Outdated thread sits at the top of its file with the last lines of its 
   // The hunk's row moves down to clear the whole code, by less than a row.
   await expect.poll(async () => (await gaps())[1]).toBeGreaterThanOrEqual(0);
   expect((await gaps())[1]).toBeLessThan(20);
+});
+
+test("Ctrl+F searches the diff, marks the match it moves to, and Escape gives the diff its focus back", async ({
+  page,
+}) => {
+  const pane = await threaded(page, { kind: "row", row: 2 }, "Say what it fixes.");
+  await changeAnswer(page, "pullRequestFind", {
+    status: "ok",
+    data: { matches: [{ row: 3, start: 4, end: 8 }], more: false },
+  });
+  await pane.getByRole("tab", { name: "Files" }).click();
+  await expect(pane.getByRole("region", { name: "Diff" })).toContainText("And more");
+
+  await page.keyboard.press("ControlOrMeta+f");
+  await page.keyboard.type("more");
+
+  const search = pane.getByRole("search", { name: "Find in the diff" });
+  await expect(search).toContainText("1 of 1");
+  await expect(pane.locator(".row .current")).toHaveText("more");
+  await page.keyboard.press("Escape");
+  await expect(search).toHaveCount(0);
+  await expect(pane.getByRole("region", { name: "Diff" })).toBeFocused();
 });

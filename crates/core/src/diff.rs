@@ -413,14 +413,19 @@ pub enum Held {
 
 /// Says whether `mirror` holds `head` and the branch `target`, which a diff needs both of.
 pub fn held(mirror: &Path, target: &str, head: &CommitSha) -> Held {
-    let has = |object: &str| git(mirror, &["cat-file", "-e", object]).is_ok();
-    if !has(&format!("{}^{{commit}}", head.as_str())) {
+    if !holds_commit(mirror, head) {
         Held::NoHead
-    } else if !has(&format!("refs/heads/{target}")) {
+    } else if git(mirror, &["cat-file", "-e", &format!("refs/heads/{target}")]).is_err() {
         Held::NoTarget
     } else {
         Held::Both
     }
+}
+
+/// Says whether `mirror` holds `commit`, with one git.
+pub fn holds_commit(mirror: &Path, commit: &CommitSha) -> bool {
+    let object = format!("{}^{{commit}}", commit.as_str());
+    git(mirror, &["cat-file", "-e", &object]).is_ok()
 }
 
 /// The commit `mirror` last fetched as PR `number`'s head, if it holds one. It stays there when the PR moves

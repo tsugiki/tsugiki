@@ -60,6 +60,16 @@ describe("PrViewState", () => {
     state.stop();
   });
 
+  it("shows the Conversation while opening the PR still waits for git", async () => {
+    vi.mocked(commands.openPullRequest).mockReturnValue(new Promise(() => {}));
+    const state = new PrViewState("python/cpython", 11, undefined);
+
+    void state.load();
+
+    await vi.waitFor(() => expect(state.view?.title).toBe("gh-10: Fix the crash"));
+    state.stop();
+  });
+
   it("leaves the diff unread while the PR is on its Conversation", async () => {
     const state = new PrViewState("python/cpython", 11, undefined);
 

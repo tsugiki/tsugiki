@@ -56,10 +56,12 @@ export class DetailState<View extends { content: unknown }> {
     await this.open();
   }
 
-  /** Tells the core the user opened this item, then shows what it holds until GitHub answers. */
+  /** Shows what the core holds until GitHub answers, and tells the core the user opened this item. The
+   * view asks first, as opening a PR waits for git to say whether the mirror holds its head. */
   async open() {
+    const asking = this.#ask();
     await this.#say(this.#commands.open(this.#repository, this.number));
-    await this.#ask();
+    await asking;
   }
 
   stop() {

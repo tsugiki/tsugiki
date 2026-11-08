@@ -140,8 +140,9 @@ impl PrFiles {
     }
 
     /// Hands PR `number`'s head to the mirrors' worker ahead of the heads waiting, if its mirror lacks it,
-    /// as the user has opened the PR. It asks git only whether the mirror holds the head, so a PR left on
-    /// its Conversation costs no diff, and the head is there or on its way once the Files tab shows.
+    /// as the user has opened the PR. It runs one git, which says whether the mirror holds the head, so a
+    /// PR left on its Conversation costs no diff, and the head is there or on its way once the Files tab
+    /// shows.
     pub fn fetch_missing_head(
         sources: &DiffSources<'_>,
         repository: &RepositoryName,
@@ -157,7 +158,7 @@ impl PrFiles {
         sources.mirrors.opened(repository.clone(), number);
         // The sync reads a PR's head the next time it reads the PR.
         if let Some(head) = &pr.head
-            && matches!(diff::held(&mirror, &pr.target_branch, head), Held::NoHead)
+            && !diff::holds_commit(&mirror, head)
         {
             fetch_first(sources.mirrors, repository, &pr, head);
         }

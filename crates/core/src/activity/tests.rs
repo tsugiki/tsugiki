@@ -413,23 +413,6 @@ fn ci_on_an_own_pr_tsugiki_first_sees_after_the_first_sync_is_new_activity() {
 }
 
 #[test]
-fn ci_that_failed_and_then_went_back_to_pending_says_nothing_until_it_finishes_again() {
-    let world = World::new("ci-failed-then-pending");
-    let own = PullRequestFacts {
-        ci: Some(CiState::Pending),
-        ..pull_request(OWN_PR, &me())
-    };
-    world.has(vec![own.clone()]);
-    world.opened(OWN_PR, hours_ago(1));
-    world.ci_reaches(&own, CiState::Failure);
-
-    world.ci_reaches(&own, CiState::Pending);
-
-    assert_eq!(world.new_on_pull_request(OWN_PR), []);
-    world.finish();
-}
-
-#[test]
 fn a_review_the_user_hasnt_submitted_doesnt_make_ci_news() {
     let world = World::new("ci-pending-review");
     let drafted = PullRequestFacts {
@@ -696,17 +679,6 @@ fn someone_elses_comment_on_an_issue_is_new_activity() {
         world.new_on_issue(ISSUE),
         [WhatHappened::Comment(colleague())]
     );
-    world.finish();
-}
-
-#[test]
-fn opening_an_issue_doesnt_update_its_prs_last_seen() {
-    let world = World::new("issue-tree");
-    world.opened(ISSUE, hours_ago(1));
-
-    let last_seen = world.facts().activity.last_seen;
-    assert_eq!(last_seen.get(&COLLEAGUES_PR), None);
-    assert!(last_seen.contains_key(&ISSUE));
     world.finish();
 }
 

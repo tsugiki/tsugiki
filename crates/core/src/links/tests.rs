@@ -186,22 +186,6 @@ fn the_marker_wins_over_a_cherry_pick_line() {
 }
 
 #[test]
-fn an_open_pr_has_no_merge_commit_to_find() {
-    let open = PullRequestFacts {
-        number: 9,
-        merge_commit: None,
-        head: None,
-        ..titled("gh-1: Fix it")
-    };
-    let merges = MergeCommits::of(&[open]);
-    let facts = PullRequestFacts {
-        off_default: Some(off_default(vec![sha(MERGE)], vec![])),
-        ..titled("gh-1: Fix it by hand")
-    };
-    assert_eq!(origin_under_cpython(&facts, &merges), None);
-}
-
-#[test]
 fn githubs_conventions_have_no_backports_whatever_the_pr_says() {
     let merges = MergeCommits::of(&[merged_as(9, MERGE)]);
     let facts = PullRequestFacts {

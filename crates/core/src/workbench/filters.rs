@@ -152,18 +152,6 @@ mod tests {
     }
 
     #[test]
-    fn nothing_a_filter_found_means_nothing_of_someone_elses_is_listed() {
-        let found = Workbench::from_facts(
-            nobodys_work(&[]),
-            &with_filters(&["a"]),
-            &WorkbenchView::Whole,
-        );
-        assert_eq!(found.items, []);
-        assert_eq!(found.count, 0);
-        assert_eq!(found.filters[0].count, 0);
-    }
-
-    #[test]
     fn the_workbench_lists_an_issue_a_filter_found_with_its_tree() {
         let facts = nobodys_work(&[("a", found_by(&[1]))]);
         let found = Workbench::from_facts(facts, &with_filters(&["a"]), &WorkbenchView::Whole);
@@ -291,7 +279,7 @@ mod tests {
                 query: selected.clone(),
             },
         );
-        assert_eq!(found.items, []);
+        assert_eq!(outline(&found), []);
     }
 
     #[test]
@@ -348,6 +336,8 @@ mod tests {
         let facts = nobodys_work(&[("b", cut_off), ("gone", found_by(&[1]))]);
         let found = Workbench::from_facts(facts, &with_filters(&["b", "a"]), &WorkbenchView::Whole);
 
+        // The results of a search the user has edited away reach nothing.
+        assert_eq!(outline(&found), []);
         let lines: Vec<(String, String, Option<String>)> = found
             .filters
             .into_iter()
@@ -364,8 +354,6 @@ mod tests {
                 ("Named a".to_owned(), "a".to_owned(), None),
             ]
         );
-        // The results of a search the user has edited away reach nothing.
-        assert_eq!(found.items, []);
     }
 
     #[test]

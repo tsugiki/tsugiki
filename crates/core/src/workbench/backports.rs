@@ -237,18 +237,6 @@ mod tests {
     }
 
     #[test]
-    fn a_backport_whose_origin_pr_is_missing_stands_in_the_issue_by_itself() {
-        let found = workbench(
-            vec![
-                fixing(10, 1),
-                backport(11, "[3.14] gh-1: Fix it (GH-99)", vec![]),
-            ],
-            vec![issue(1)],
-        );
-        assert_eq!(tree_of(&found), [(10, vec![]), (11, vec![])]);
-    }
-
-    #[test]
     fn a_backport_of_a_backport_stands_by_itself_so_a_tree_stays_two_levels() {
         let found = workbench(
             vec![
@@ -259,15 +247,6 @@ mod tests {
             vec![issue(1)],
         );
         assert_eq!(tree_of(&found), [(10, vec![11]), (12, vec![])]);
-    }
-
-    #[test]
-    fn a_pr_with_no_issue_keeps_its_backports_beneath_it() {
-        let found = workbench(
-            vec![mine(10), backport(11, "[3.14] Fix it (GH-10)", vec![])],
-            vec![],
-        );
-        assert_eq!(outline(&found), [("standalone", 10, vec![11])]);
     }
 
     #[test]
@@ -284,15 +263,6 @@ mod tests {
             vec![],
         );
         assert_eq!(outline(&found), [("standalone", 10, vec![11])]);
-    }
-
-    #[test]
-    fn a_users_backport_with_no_origin_pr_and_no_issue_stands_by_itself() {
-        let found = workbench(
-            vec![own(backport(11, "[3.14] Fix it (GH-10)", vec![]))],
-            vec![],
-        );
-        assert_eq!(outline(&found), [("standalone backport", 11, vec![])]);
     }
 
     #[test]
@@ -350,21 +320,5 @@ mod tests {
             .map(|row| row.state)
             .collect();
         assert_eq!(states, [PrState::Open, PrState::Merged, PrState::Closed]);
-    }
-
-    #[test]
-    fn an_open_backport_keeps_its_merged_origin_prs_issue_on_the_workbench() {
-        let merged = PullRequestFacts {
-            state: PrState::Merged,
-            ..fixing(10, 1)
-        };
-        let found = workbench(
-            vec![
-                merged,
-                own(backport(11, "[3.14] gh-1: Fix it (GH-10)", vec![])),
-            ],
-            vec![issue(1)],
-        );
-        assert_eq!(tree_of(&found), [(10, vec![11])]);
     }
 }

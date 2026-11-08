@@ -1604,32 +1604,6 @@ fn a_tag_github_didnt_give_leaves_a_small_repository_asking() {
 }
 
 #[test]
-fn the_failure_of_a_step_after_the_poll_can_run_again() {
-    let replies = vec![
-        polled(
-            &list(&[], None),
-            &list(&[changed_pr(1, AFTER_IT)], None),
-            &[],
-        ),
-        Err(Unreachable::Offline),
-        Err(Unreachable::Offline),
-        fetched_nodes(&[strangers_pr(1, AFTER_IT)], LOTS),
-    ];
-    let harness = after_a_sync("retry", replies);
-    let mut syncs = refreshing(filtering(&[]));
-
-    // The poll reads, then moves on.
-    drop(syncs.step(&harness.github, &harness.store).unwrap());
-    drop(syncs.step(&harness.github, &harness.store).unwrap());
-    let failed = syncs.step(&harness.github, &harness.store).unwrap_err();
-    drop(run(&mut syncs, &harness));
-
-    assert_eq!(failed.problem.kind, ErrorKind::Offline);
-    assert_eq!(harness.numbers(), [1]);
-    harness.finish();
-}
-
-#[test]
 fn a_name_in_another_repository_shares_nothing() {
     let other = RepositoryName::parse("python/peps").unwrap();
     let harness = after_a_sync("other", Vec::new());

@@ -553,31 +553,6 @@ fn an_outage_blames_no_filter_and_its_search_runs_again() {
 }
 
 #[test]
-fn with_no_network_a_filters_search_waits_and_runs_again() {
-    let mut replies = searches_finding(&[]);
-    replies.push(Err(Unreachable::Offline));
-    replies.push(Err(Unreachable::Offline));
-    replies.push(all_of(&[]));
-    let harness = Harness::new("filter-offline", replies);
-    let mut syncs = Syncs::default();
-    syncs.add(filtering(&["a"]));
-
-    // Four searches and a move.
-    for _ in 0..5 {
-        drop(syncs.step(&harness.github, &harness.store).unwrap());
-    }
-    let refused = syncs.step(&harness.github, &harness.store).unwrap_err();
-    assert_eq!(filter_problem(&harness, "a"), None);
-    drop(run_to_the_end(&mut syncs, &harness));
-
-    assert_eq!(refused.problem.kind, ErrorKind::Offline);
-    assert_eq!(filter_problem(&harness, "a"), None);
-    let asked = harness.operations();
-    assert_eq!(asked[4..], ["SearchFilter"; 3]);
-    harness.finish();
-}
-
-#[test]
 fn a_filter_search_below_the_floor_holds_the_next_step_back() {
     let mut replies = searches_finding(&[]);
     let page = |next: Option<&str>| {

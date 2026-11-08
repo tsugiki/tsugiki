@@ -578,3 +578,21 @@ fn a_pr_that_merges_while_its_diff_shows_starts_where_github_compared_it() {
     mirrored.finish();
     world.finish();
 }
+
+#[test]
+fn a_fast_forward_stored_before_tsugiki_read_its_base_has_nothing_to_show() {
+    let world = World::new("fast-forward-before");
+    let mirrored = Mirrored::new("pr-files-fast-forward-before");
+    let head = mirrored.head.clone();
+    let _ = git_in(
+        &mirrored.mirror,
+        &["update-ref", "refs/heads/main", head.as_str()],
+    );
+    world.mirrors(&mirrored);
+
+    world.has_merged(&head, head.clone(), None);
+
+    assert!(matches!(world.files(), Some(PrFiles::Ready { files, .. }) if files.is_empty()));
+    mirrored.finish();
+    world.finish();
+}

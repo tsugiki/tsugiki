@@ -29,6 +29,7 @@ fn titled(title: &str) -> PullRequestFacts {
         assignees: vec![],
         closing_issues: vec![],
         merge_commit: None,
+        base: None,
         head: None,
         off_default: None,
     }
@@ -42,6 +43,7 @@ fn numbers(facts: &PullRequestFacts, repository: &RepositorySettings) -> Vec<u32
 fn in_description(text: &str) -> Vec<u32> {
     let facts = PullRequestFacts {
         merge_commit: None,
+        base: None,
         head: None,
         off_default: Some(OffDefault::described(text)),
         ..titled("Fix it")
@@ -69,6 +71,7 @@ fn every_signal_adds_up_and_a_number_counts_once() {
     let facts = PullRequestFacts {
         closing_issues: vec![1, 2],
         merge_commit: None,
+        base: None,
         head: None,
         off_default: Some(OffDefault::described("Fixes #2\nCloses #3")),
         ..titled("gh-1: Fix it")
@@ -114,6 +117,7 @@ fn merged_as(number: u32, oid: &str) -> PullRequestFacts {
         number,
         state: PrState::Merged,
         merge_commit: Some(sha(oid)),
+        base: None,
         head: None,
         ..titled("gh-1: Fix it")
     }
@@ -266,6 +270,7 @@ fn a_backport_names_what_its_title_and_its_live_keywords_name() {
     let facts = PullRequestFacts {
         target_branch: "3.14".to_owned(),
         merge_commit: None,
+        base: None,
         head: None,
         off_default: Some(OffDefault::described(description)),
         ..titled("[3.14] gh-1: Fix it (GH-9)")
@@ -379,6 +384,7 @@ fn a_sync_asks_for_what_any_conventions_could_name() {
     let facts = PullRequestFacts {
         closing_issues: vec![2],
         merge_commit: None,
+        base: None,
         head: None,
         off_default: Some(OffDefault::described("Fixes #3")),
         ..titled("gh-1: Fix it")

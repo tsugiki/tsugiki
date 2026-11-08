@@ -1,6 +1,7 @@
 //! A PR's diff, read from its Repository's mirror (ADR 0002): `git diff` from the merge base with its Target
-//! branch to its head, through the git CLI (ADR 0003). The rows stay in the core, and the window asks for
-//! them in chunks, so it holds only those near what it shows (ADR 0001).
+//! branch, or for a merged PR with the commit GitHub compared it with, to its head, through the git CLI
+//! (ADR 0003). The rows stay in the core, and the window asks for them in chunks, so it holds only those
+//! near what it shows (ADR 0001).
 
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -430,34 +431,27 @@ pub fn last_head(mirror: &Path, number: u32) -> Option<CommitSha> {
     CommitSha::parse(found.trim())
 }
 
-/// Reads the diff from the merge base of `head` and the branch `target` to `head`, with renames found as
-/// GitHub finds them, the files `target` marks generated, and the NEWS entries at `head`. Both have to be
-/// in `mirror`, as `held` says.
-pub fn read(mirror: &Path, target: &str, head: &CommitSha) -> Result<MirrorDiff, Error> {
-    read_from(mirror, target, Start::MergeBase, head)
-}
-
-/// Reads the diff from `base` to `head` as `read` does, with the files `target` marks generated. A chunk
-/// of a diff the window holds comes from the commits it was read between, whatever the Target branch is
-/// now (#211).
-pub fn read_between(
-    mirror: &Path,
-    target: &str,
-    base: &CommitSha,
-    head: &CommitSha,
-) -> Result<MirrorDiff, Error> {
-    read_from(mirror, target, Start::Base(base), head)
-}
-
-/// Where a diff starts.
+/// Where a PR's diff starts: at the merge base of its head and another commit, or at a commit the window
+/// holds.
 #[derive(Debug, Clone, Copy)]
-enum Start<'a> {
-    /// The merge base of the head and the Target branch.
-    MergeBase,
+pub enum Start<'a> {
+    /// The merge base with the Target branch, as for an open PR.
+    TargetBranch,
+    /// The merge base with this commit, the one GitHub compared a merged PR with. The PR's head can be in
+    /// the Target branch by then, which would leave nothing to show (#212).
+    MergeBaseWith(&'a CommitSha),
+    /// The merge base with the first parent of this merge commit, for a merged PR stored before Tsugiki
+    /// read the commit GitHub compared it with.
+    MergeBaseWithParentOf(&'a CommitSha),
+    /// This commit. A chunk of a diff the window holds comes from the commits it was read between,
+    /// whatever the Target branch is now (#211).
     Base(&'a CommitSha),
 }
 
-fn read_from(
+/// Reads the diff from `start` to `head`, with renames found as GitHub finds them, the files the branch
+/// `target` marks generated, and the NEWS entries at `head`. The head and the branch have to be in
+/// `mirror`, as `held` says.
+pub fn read(
     mirror: &Path,
     target: &str,
     start: Start<'_>,
@@ -618,7 +612,11 @@ fn run_diff(
     head: &CommitSha,
 ) -> std::io::Result<(CommitSha, String, String)> {
     let base_commit = match start {
-        Start::MergeBase => merge_base(mirror, target, head)?,
+        Start::TargetBranch => merge_base(mirror, &format!("refs/heads/{target}"), head)?,
+        Start::MergeBaseWith(commit) => merge_base(mirror, commit.as_str(), head)?,
+        Start::MergeBaseWithParentOf(merge) => {
+            merge_base(mirror, &format!("{}^1", merge.as_str()), head)?
+        }
         Start::Base(base) => base.clone(),
     };
     let base = base_commit.as_str();
@@ -650,10 +648,9 @@ fn run_diff(
     Ok((base_commit, numstat.unwrap_or(Err(stopped))?, patch?))
 }
 
-/// The merge base of `head` and the branch `target`.
-fn merge_base(mirror: &Path, target: &str, head: &CommitSha) -> std::io::Result<CommitSha> {
-    let branch = format!("refs/heads/{target}");
-    let base = git(mirror, &["merge-base", &branch, head.as_str()])?;
+/// The merge base of `head` and the commit git's revision `other` names.
+fn merge_base(mirror: &Path, other: &str, head: &CommitSha) -> std::io::Result<CommitSha> {
+    let base = git(mirror, &["merge-base", other, head.as_str()])?;
     let base = base.trim();
     // Built every time, as a closure that never runs would fail the coverage gate (ADR 0009).
     let not_a_commit = std::io::Error::other(format!("merge-base gave {base:?}"));

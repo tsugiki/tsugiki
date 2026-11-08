@@ -689,6 +689,7 @@ fn work_fetch() -> Result<Reply, Unreachable> {
         "latestReviews": { "nodes": [] },
         "lastCommit": { "nodes": [] },
         "mergeCommit": null,
+        "baseRefOid": "0123456789abcdef0123456789abcdef01234567",
         "headRefOid": "89abcdef0123456789abcdef0123456789abcdef",
         "commits": { "totalCount": 0, "nodes": [] },
     });
@@ -793,6 +794,7 @@ fn stored_pr(number: u32, author: &str, head: &str) -> PullRequestFacts {
         assignees: vec![],
         closing_issues: vec![],
         merge_commit: None,
+        base: None,
         head: CommitSha::parse(head),
         off_default: None,
     }

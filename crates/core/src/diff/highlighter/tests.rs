@@ -2,7 +2,7 @@ use std::fs;
 
 use super::*;
 use crate::diff::tests::git_in;
-use crate::diff::{Diff, PrAt, read};
+use crate::diff::{Diff, PrAt, Start, read};
 use crate::github::CommitSha;
 use crate::repository::RepositoryName;
 
@@ -54,7 +54,7 @@ impl Repo {
 
     /// The diff of PR `number`, whose head is the PR branch.
     fn source(&self, number: u32) -> Source {
-        let read = read(&self.mirror, "main", &self.head).unwrap();
+        let read = read(&self.mirror, "main", Start::TargetBranch, &self.head).unwrap();
         let diff = OpenDiff {
             pr: pr(number, &self.head),
             target: Some("main".to_owned()),

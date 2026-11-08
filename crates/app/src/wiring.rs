@@ -1338,6 +1338,7 @@ mod tests {
             assignees: vec![],
             closing_issues: vec![],
             merge_commit: None,
+            base: None,
             head: CommitSha::parse(commit),
             off_default: None,
         };

@@ -136,6 +136,7 @@ mod tests {
             assignees: vec![],
             closing_issues: vec![],
             merge_commit: None,
+            base: None,
             head: None,
             off_default: None,
         }

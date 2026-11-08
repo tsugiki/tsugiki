@@ -11,14 +11,14 @@ use specta::Type;
 
 use crate::diff::{
     self, Against, Chunk, DiffFile, DiffOf, DiffRow, Diffs, FileLines, Found, HeadLine, Held,
-    Highlighter, NewsEntry, OpenDiff, PrAt,
+    Highlighter, NewsEntry, OpenDiff, PrAt, Start,
 };
 use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
 use crate::github::CommitSha;
 pub use crate::github::pull_request_content::CodeRow;
 use crate::github::pull_request_content::PullRequestContent;
-use crate::github::pull_requests::{PrHead, PullRequestFacts};
+use crate::github::pull_requests::{PrHead, PrState, PullRequestFacts};
 use crate::highlight::Span;
 use crate::mirror::MirrorRequests;
 use crate::repository::RepositoryName;
@@ -93,7 +93,7 @@ impl PrFiles {
         }
         sources.mirrors.opened(repository.clone(), number);
         // The sync reads a PR's head the next time it reads the PR.
-        let Some(head) = pr.head else {
+        let Some(head) = pr.head.clone() else {
             return Ok(Some(Self::Fetching));
         };
         let at = PrAt {
@@ -120,7 +120,7 @@ impl PrFiles {
                 let Some(older) = older else {
                     return Ok(Some(Self::Fetching));
                 };
-                let read = || diff::read(&mirror, &pr.target_branch, &older);
+                let read = || diff::read(&mirror, &pr.target_branch, start(&pr, &older), &older);
                 let at = PrAt {
                     head: older.clone(),
                     ..at
@@ -136,7 +136,7 @@ impl PrFiles {
                 ),
             )),
             Held::Both => {
-                let read = || diff::read(&mirror, &pr.target_branch, &head);
+                let read = || diff::read(&mirror, &pr.target_branch, start(&pr, &head), &head);
                 let open = sources.diffs.get_or_read(&at, target, read)?;
                 Ok(Some(Self::ready(&open, content.as_ref(), None)))
             }
@@ -240,8 +240,22 @@ impl PrFiles {
                 ));
             };
             let mirror = sources.folders.mirror(&pr.repository);
-            diff::read_between(&mirror, &facts.target_branch, base, &pr.head)
+            diff::read(&mirror, &facts.target_branch, Start::Base(base), &pr.head)
         })
+    }
+}
+
+/// Where the diff of `pr` at `head` starts. A merged PR's starts where GitHub's does, as its head can be
+/// in the Target branch by now. One stored before Tsugiki read where that is starts from its merge
+/// commit's first parent, unless the merge was a fast-forward (#212).
+fn start<'a>(pr: &'a PullRequestFacts, head: &CommitSha) -> Start<'a> {
+    if pr.state != PrState::Merged {
+        return Start::TargetBranch;
+    }
+    match (&pr.base, &pr.merge_commit) {
+        (Some(base), _) => Start::MergeBaseWith(base),
+        (None, Some(merge)) if merge != head => Start::MergeBaseWithParentOf(merge),
+        (None, _) => Start::TargetBranch,
     }
 }
 

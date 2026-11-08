@@ -10,7 +10,7 @@ release's body, and fails without it
 ### Added
 
 - A PR opens in the Detail pane, on a Conversation tab with its description and recent comments, and a Files
-  tab that stays empty until the diff arrives. The arrows stop on each PR and Backport in an Issue's tree.
+  tab with its diff. The arrows stop on each PR and Backport in an Issue's tree.
   `Enter` or a click opens one, as does a PR in the Issue view, and `Esc` or the `gh-N` link goes back to the
   Issue. `Ctrl+PageDown` and `Ctrl+PageUp` switch tabs, and so do `Enter` and a click on the open PR's line.
 - Each Repository gets a **Mirror**, a bare git clone in its folder, which later changes read diffs from.
@@ -27,6 +27,29 @@ release's body, and fails without it
   bare approval, takes one line. A comment hidden on GitHub folds to its reason, and a click opens it.
 - A refresh reads the Conversation of each changed PR your work reaches, so its Reviews are there when you
   open it. Each PR costs about one point of GitHub's hourly 5,000.
+- The Files tab shows a PR's diff, read from its Mirror, so it asks GitHub for nothing. A PR moved to
+  another Target branch shows its diff against the new one.
+- The diff highlights C, Python, Rust, TypeScript, JavaScript, Svelte, JSON, CSS, HTML, Markdown, reST, TOML,
+  YAML and Makefiles, and code inside other code, such as a Markdown fence or an HTML `<script>`. Tsugiki
+  parses a PR's files ahead, so a jump to another file finds it highlighted.
+- Generated files start collapsed to their headers, and a click opens one. The Files tab renders the NEWS
+  entries a PR adds above the diff, with Sphinx's roles as CPython's docs show them.
+- Buttons on a hunk's row show 20 more lines above or below it, the rest of a short gap, or the whole file.
+- `Ctrl+Alt+U` switches between the unified and side-by-side views, and the view holds for every PR in the
+  Repository.
+- Review threads sit under their lines in the diff. A resolved thread folds to one line, and `F8` and
+  `Shift+F8` move through the open ones. An Outdated thread sits at the top of its file with the last lines
+  of the hunk it was written against, and a thread on a line the diff leaves out opens the gap to it.
+  Threads on files the diff no longer holds come last. Your Pending review's comments show in their
+  threads, marked as yours, and a thread's line in the Conversation opens it in Files.
+- A PR whose head has moved past the Mirror's copy shows the older diff, says it's fetching the newer one,
+  and swaps it in at the same file.
+- `F7` and `Shift+F7` move between the diff's changes. `Ctrl+F` finds text in the diff, the rows not drawn
+  yet included. `Alt+←` and `Alt+→` go back and forward through the Issues and PRs you opened.
+- The edges between the panes drag, and a focused edge moves with the arrow keys. A double-click puts the
+  default width back. The widths stay on this machine, in `machine.toml`.
+- Each Issue and PR shows GitHub's Octicon for its state, in GitHub's colors. The first sync after the
+  upgrade fetches the state of the Issues 0.1 stored.
 
 ## Version 0.1.1 (2026-11-07)
 

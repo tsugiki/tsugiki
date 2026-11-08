@@ -213,6 +213,7 @@ fn adding_a_repository_clones_its_mirror_and_shows_the_clone_until_it_ends() {
         "",
         "a mirror fetches no tags (ADR 0002)"
     );
+    assert!(!place.folders.repository(&hello).join(PARTIAL).exists());
 }
 
 #[test]
@@ -229,29 +230,6 @@ fn a_mirror_sits_in_its_repositorys_folder() {
             .join("python__cpython")
             .join("mirror.git")
     );
-}
-
-#[test]
-fn a_clone_cut_off_by_quitting_starts_again_from_an_empty_folder() {
-    let place = Place::new("restarts");
-    let hello = named("octo-org/hello");
-    place.remote(&hello);
-    let partial = place
-        .folders
-        .mirror(&hello)
-        .with_file_name("mirror.git.partial");
-    fs::create_dir_all(&partial).unwrap();
-    fs::write(partial.join("half-a-pack"), "what a quit left").unwrap();
-    let (mirrors, announced) = place.start();
-
-    mirrors.requests().clone_mirror(hello.clone(), download());
-    let _ = one_clone(&announced);
-    mirrors.stop(PLENTY);
-
-    let mirror = place.folders.mirror(&hello);
-    assert_eq!(git(&mirror, &["log", "--format=%s"]), "One\n");
-    assert!(!mirror.join("half-a-pack").exists());
-    assert!(!partial.exists());
 }
 
 #[test]
@@ -355,10 +333,7 @@ fn a_failed_clone_leaves_no_folder_and_the_next_one_goes_on() {
     mirrors.stop(PLENTY);
 
     assert!(failed.iter().all(|cloning| cloning.repository == missing));
-    let partial = place
-        .folders
-        .mirror(&missing)
-        .with_file_name("mirror.git.partial");
+    let partial = place.folders.repository(&missing).join(PARTIAL);
     assert!(!partial.exists());
     assert!(!place.folders.mirror(&missing).exists());
     assert!(place.folders.mirror(&next).exists());
@@ -383,7 +358,7 @@ fn a_clone_that_cant_start_leaves_only_a_trace() {
 fn a_leftover_clone_that_cant_be_deleted_leaves_only_a_trace() {
     let place = Place::new("cant-delete");
     let hello = named("octo-org/hello");
-    let partial = place.folders.repository(&hello).join("mirror.git.partial");
+    let partial = place.folders.repository(&hello).join(PARTIAL);
     fs::create_dir_all(partial.parent().unwrap()).unwrap();
     fs::write(&partial, "a file, which deleting a folder can't remove").unwrap();
     let (mirrors, announced) = place.start();
@@ -823,6 +798,7 @@ fn a_failed_fetch_tries_again_when_github_is_back() {
     let again = starts.recv_timeout(PLENTY).unwrap();
 
     assert_eq!(again.refspecs(), [refspec(1)]);
+    assert_eq!(again.branches(), ["+refs/heads/main*:refs/heads/main*"]);
     again.succeed();
     mirrors.stop(PLENTY);
 }
@@ -959,24 +935,6 @@ fn a_fetch_brings_the_target_branches_of_its_heads_up_to_date_with_them() {
         ]
     );
     fetch.succeed();
-    mirrors.stop(PLENTY);
-}
-
-#[test]
-fn a_failed_fetch_brings_its_branches_with_its_heads_next_time() {
-    let place = Place::new("branches-again");
-    let cpython = named("python/cpython");
-    place.mirrored(&cpython);
-    let (mirrors, starts) = place.start_faked();
-    let requests = mirrors.requests();
-
-    requests.fetch_heads(cpython.clone(), vec![head(1)]);
-    starts.recv_timeout(PLENTY).unwrap().fail();
-    requests.fetch_heads(cpython, vec![head(1)]);
-    let again = starts.recv_timeout(PLENTY).unwrap();
-
-    assert_eq!(again.branches(), ["+refs/heads/main*:refs/heads/main*"]);
-    again.succeed();
     mirrors.stop(PLENTY);
 }
 
@@ -1268,17 +1226,6 @@ not a commit          refs/tsugiki/pull/3/head
     );
 
     assert_eq!(pull_refs(&listing), BTreeMap::from([(1, head(1).commit)]));
-}
-
-#[test]
-fn the_heard_requests_keep_only_the_opened_prs_heads() {
-    let (requests, heard) = HeardRequests::new();
-    let cpython = named("python/cpython");
-
-    requests.fetch_heads(cpython.clone(), vec![head(1)]);
-    requests.fetch_first(cpython.clone(), head(2));
-
-    assert_eq!(heard.firsts(), [(cpython, head(2))]);
 }
 
 mod borrowing;

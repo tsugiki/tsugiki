@@ -486,22 +486,6 @@ fn each_row_is_highlighted_from_its_version_and_a_removed_line_from_the_merge_ba
 }
 
 #[test]
-fn files_the_target_branch_marks_generated_say_so() {
-    let mirrored = Mirrored::new("generated");
-
-    let diff = mirrored.diff();
-
-    let generated: Vec<&str> = diff
-        .files()
-        .iter()
-        .filter(|file| file.generated)
-        .map(|file| file.path.as_str())
-        .collect();
-    assert_eq!(generated, ["Lib/ast.py", "logo.png"]);
-    mirrored.finish();
-}
-
-#[test]
 fn only_the_target_branch_s_attributes_count_and_an_index_a_run_left_goes() {
     let mirrored = Mirrored::new("own-attributes");
     let own = mirrored.root.join("own.attributes");

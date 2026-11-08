@@ -185,7 +185,7 @@ fn mirror_announcements<R: Runtime>(app: &AppHandle<R>) -> Announce {
                     repository: repository.clone(),
                     items: numbers.to_vec(),
                 },
-                why: why.to_owned(),
+                why: why.clone(),
             };
             log_if_unsent(HeadsFetchFailed(failed).emit(&failed_handle));
         }),
@@ -1475,6 +1475,8 @@ mod tests {
         assert_eq!(fetching.unwrap(), json!({ "state": "fetching" }));
         let heard = heard.unwrap();
         assert_eq!(heard["repository"], CPYTHON);
-        assert!(heard["why"].as_str().is_some_and(|why| !why.is_empty()));
+        assert_eq!(heard["why"]["kind"], "git");
+        let words = heard["why"]["words"].as_str();
+        assert!(words.is_some_and(|words| !words.is_empty()));
     }
 }

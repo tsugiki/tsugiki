@@ -495,7 +495,10 @@ it("says one thread waits for the newer diff, and counts none when there are non
 
 it("says why the newer head failed to come over the diff before, and fetches it again on Try again", async () => {
   const files = await shown(ready(rows.length, { waiting: 2 }));
-  files.fetchFailed = "fatal: unable to access 'https://github.com/python/cpython.git/'";
+  files.unfetched = {
+    kind: "git",
+    words: "fatal: unable to access 'https://github.com/python/cpython.git/'",
+  };
   await tick();
 
   expect(screen.getByRole("alert").textContent).toBe(
@@ -514,7 +517,7 @@ it("says why the newer head failed to come over the diff before, and fetches it 
 
 it("counts no threads beside a failed fetch of the newer head when none wait", async () => {
   const files = await shown(ready(rows.length, { waiting: 0 }));
-  files.fetchFailed = "";
+  files.unfetched = { kind: "git", words: "" };
   await tick();
 
   expect(screen.getByRole("alert").textContent).toBe(
@@ -522,14 +525,44 @@ it("counts no threads beside a failed fetch of the newer head when none wait", a
   );
 });
 
+it("says GitHub's copy of the branch isn't at the newer head, or isn't there, over the diff before", async () => {
+  const files = await shown(ready(rows.length, { waiting: 2 }));
+  const alerts: (string | null)[] = [];
+  for (const why of [{ kind: "behind" }, { kind: "not_on_github" }] as const) {
+    files.unfetched = why;
+    await tick();
+    alerts.push(screen.getByRole("alert").textContent);
+  }
+
+  expect(alerts).toEqual([
+    "Showing abc · GitHub's copy of this PR's branch isn't at def5678. 2 threads wait for it. Try again",
+    "Showing abc · GitHub has no copy of this PR's branch. 2 threads wait for it. Try again",
+  ]);
+});
+
 it("says why the PR's commits failed to come, and fetches them again on Try again", async () => {
   const files = await shown({ state: "fetching" });
-  files.fetchFailed = "";
+  files.unfetched = { kind: "git", words: "" };
   await tick();
 
   expect(screen.getByRole("alert").textContent).toBe("Tsugiki couldn't fetch the PR's commits. Try again");
   await fireEvent.click(screen.getByRole("button", { name: "Try again" }));
   expect(screen.getByText("Fetching the PR's commits…")).toBeTruthy();
+});
+
+it("says GitHub's copy of the branch isn't at the PR's head, or isn't there, in place of fetching", async () => {
+  const files = await shown({ state: "fetching" });
+  const alerts: (string | null)[] = [];
+  for (const why of [{ kind: "behind" }, { kind: "not_on_github" }] as const) {
+    files.unfetched = why;
+    await tick();
+    alerts.push(screen.getByRole("alert").textContent);
+  }
+
+  expect(alerts).toEqual([
+    "GitHub's copy of this PR's branch isn't at the commit Tsugiki last synced. Try again",
+    "GitHub has no copy of this PR's branch. Try again",
+  ]);
 });
 
 it("shows the whole file from the row after its last hunk", async () => {

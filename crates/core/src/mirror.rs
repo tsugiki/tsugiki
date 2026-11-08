@@ -112,8 +112,23 @@ pub type AnnounceCloning = Box<dyn FnMut(Option<&Cloning>) + Send>;
 pub type AnnounceFetched = Box<dyn FnMut(&RepositoryName, &[u32]) + Send>;
 
 /// Says which PRs' heads a fetch into a Repository's mirror failed to bring, and why, once they wait for
-/// news before the next fetch.
-pub type AnnounceFailed = Box<dyn FnMut(&RepositoryName, &[u32], &str) + Send>;
+/// news or a hand-over before the next fetch.
+pub type AnnounceFailed = Box<dyn FnMut(&RepositoryName, &[u32], &Unfetched) + Send>;
+
+/// The reason PR heads aren't in a mirror once the worker stopped fetching them, for a Files tab waiting for
+/// one (#233, #213).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Unfetched {
+    /// git failed, with its last line in `words`: the fetch, or reading back where its refs landed.
+    Git { words: String },
+    /// GitHub's ref for the PR points at another commit. GitHub hadn't moved it yet (#201), or the head
+    /// the last sync stored is no longer on the PR's branch.
+    Behind,
+    /// GitHub has no ref for the PR.
+    #[serde(rename = "not_on_github")]
+    NotOnGitHub,
+}
 
 /// Says why no mirror can be made, and `None` once one can.
 pub type AnnounceProblem = Box<dyn FnMut(Option<&MirrorProblem>) + Send>;
@@ -575,53 +590,74 @@ struct Heads {
     viewed: BTreeSet<u32>,
 }
 
+/// The outcome of a fetch that succeeded, for the heads it asked for.
+#[derive(Debug, Default)]
+struct Noted {
+    /// The PRs whose heads landed.
+    arrived: Vec<u32>,
+    /// The PRs whose heads didn't land once more, by why, which now wait for a hand-over.
+    stuck: BTreeMap<Unfetched, Vec<u32>>,
+}
+
 impl Heads {
-    /// Notes where the heads of a fetch that succeeded `landed`, or nothing if that couldn't be read, and
-    /// gives the PRs whose heads landed. One that is behind for the first time since it was handed over is
-    /// fetched once more at `retry`.
+    /// Notes where the heads of a fetch that succeeded `landed`, or git's words if that couldn't be read.
+    /// A head that didn't land for the first time since it was handed over is fetched once more at `retry`.
     fn note_fetched(
         &mut self,
         batch: BTreeMap<u32, CommitSha>,
-        landed: Option<&BTreeMap<u32, CommitSha>>,
+        landed: Result<&BTreeMap<u32, CommitSha>, &str>,
         retry: Instant,
-    ) -> Vec<u32> {
-        let mut arrived = Vec::new();
+    ) -> Noted {
+        let mut noted = Noted::default();
         for (number, commit) in batch {
             // The same head handed over during the fetch asks for nothing more.
             if self.waiting.get(&number) == Some(&commit) {
                 drop(self.waiting.remove(&number));
             }
-            let elsewhere = match landed {
-                Some(landed) => landed.get(&number).filter(|&at| *at != commit),
-                None => Some(&commit),
+            let why = match landed {
+                Ok(landed) => match landed.get(&number) {
+                    Some(at) if *at == commit => {
+                        noted.arrived.push(number);
+                        drop(self.behind.remove(&number));
+                        drop(self.settled.insert(number, commit));
+                        continue;
+                    }
+                    Some(at) => {
+                        let (repository, had, handed) =
+                            (&self.repository, at.as_str(), commit.as_str());
+                        log::info!(
+                            "GitHub had PR #{number} of {repository} at {had} rather than {handed}"
+                        );
+                        Unfetched::Behind
+                    }
+                    None => Unfetched::NotOnGitHub,
+                },
+                Err(words) => Unfetched::Git {
+                    words: words.to_owned(),
+                },
             };
-            let Some(elsewhere) = elsewhere else {
-                if landed.is_some_and(|landed| landed.contains_key(&number)) {
-                    arrived.push(number);
-                }
-                drop(self.behind.remove(&number));
-                drop(self.settled.insert(number, commit));
-                continue;
-            };
-            if landed.is_some() {
-                let (repository, had, handed) =
-                    (&self.repository, elsewhere.as_str(), commit.as_str());
-                log::info!("GitHub had PR #{number} of {repository} at {had} rather than {handed}");
-            }
             let retried = Behind::Retried {
                 commit: commit.clone(),
             };
             if self.behind.get(&number) != Some(&retried) {
                 let due = Behind::Due { commit, at: retry };
                 drop(self.behind.insert(number, due));
+                continue;
             }
+            // A head GitHub doesn't have is settled until it moves on, so a hand-over doesn't fetch it.
+            if why == Unfetched::NotOnGitHub {
+                drop(self.behind.remove(&number));
+                drop(self.settled.insert(number, commit));
+            }
+            noted.stuck.entry(why).or_default().push(number);
         }
-        arrived
+        noted
     }
 }
 
 /// A head whose fetch didn't bring it. It is fetched once more after a moment, and after that only when
-/// it is handed over again, so a ref GitHub never moves doesn't keep a fetch going.
+/// it is handed over again, so a ref GitHub never moves doesn't keep a fetch going. The app hears of it
+/// after that second fetch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Behind {
     Due { commit: CommitSha, at: Instant },
@@ -1152,7 +1188,10 @@ impl Worker {
                 let numbers: Vec<u32> = batch.heads.keys().copied().collect();
                 self.try_again_later(&repository, batch);
                 self.pace = Pace::Stalled;
-                (self.announce.failed)(&repository, &numbers, &cause.to_string());
+                let why = Unfetched::Git {
+                    words: cause.to_string(),
+                };
+                (self.announce.failed)(&repository, &numbers, &why);
             }
         }
     }
@@ -1183,8 +1222,9 @@ impl Worker {
     ///
     /// GitHub moves `refs/pull/N/head` a moment after a push, so a fetch can bring the commit before the
     /// one handed over (#201). A head whose ref doesn't point at its commit is behind, and so is each head
-    /// of a fetch whose refs can't be read back. A head whose glob matched nothing has no ref, as it isn't
-    /// on GitHub, and is settled until it moves on.
+    /// of a fetch whose refs can't be read back, and a head whose glob matched nothing, as GitHub has no
+    /// ref for it. Each is fetched once more after a moment. If that fetch doesn't bring it either, the app
+    /// hears why (#213), and a head with no ref is settled until it moves on.
     fn finish_fetch(&mut self, fetch: Fetch, last_words: &str) {
         let Fetch {
             repository,
@@ -1205,23 +1245,26 @@ impl Worker {
             // hear of it, as news means another fetch.
             if !news {
                 self.pace = Pace::Stalled;
-                (self.announce.failed)(&repository, &numbers, last_words);
+                let why = Unfetched::Git {
+                    words: last_words.to_owned(),
+                };
+                (self.announce.failed)(&repository, &numbers, &why);
             }
             return;
         }
-        let landed = match self.read_pull_refs(&mirror) {
-            Ok(landed) => Some(landed),
-            Err(cause) => {
-                log::warn!("Tsugiki can't read which PR heads of {repository} it fetched: {cause}");
-                None
-            }
-        };
+        let landed = self.read_pull_refs(&mirror).map_err(|cause| {
+            log::warn!("Tsugiki can't read which PR heads of {repository} it fetched: {cause}");
+            cause.to_string()
+        });
         let retry = Instant::now() + self.remotes.patience;
         let mut known = self.take_heads(&repository);
-        let arrived = known.note_fetched(batch.heads, landed.as_ref(), retry);
+        let noted = known.note_fetched(batch.heads, landed.as_ref().map_err(String::as_str), retry);
         self.requeue(known);
-        if !arrived.is_empty() {
-            (self.announce.fetched)(&repository, &arrived);
+        if !noted.arrived.is_empty() {
+            (self.announce.fetched)(&repository, &noted.arrived);
+        }
+        for (why, numbers) in &noted.stuck {
+            (self.announce.failed)(&repository, numbers, why);
         }
     }
 

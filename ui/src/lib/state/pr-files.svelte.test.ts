@@ -1048,19 +1048,22 @@ it("shows the diff before a moved head with its threads held back, then the newe
 it("says why the fetch of a moved head failed until it asks again, which fetches it once more", async () => {
   const before = { ...gapped("older"), threads: { kind: "held_back" as const, newer: "newer", count: 3 } };
   const files = await loaded(before);
-  const unreachable =
-    "fatal: unable to access 'https://github.com/python/cpython.git/': Could not resolve host";
+  const unreachable = {
+    kind: "git" as const,
+    words: "fatal: unable to access 'https://github.com/python/cpython.git/': Could not resolve host",
+  };
+  const other = { kind: "git" as const, words: "other" };
 
-  core.heard.headsFetchFailed?.({ payload: { repository: "python/peps", items: [11], why: "other" } });
-  core.heard.headsFetchFailed?.({ payload: { repository: "python/cpython", items: [12], why: "other" } });
-  expect(files.fetchFailed).toBeUndefined();
+  core.heard.headsFetchFailed?.({ payload: { repository: "python/peps", items: [11], why: other } });
+  core.heard.headsFetchFailed?.({ payload: { repository: "python/cpython", items: [12], why: other } });
+  expect(files.unfetched).toBeUndefined();
   core.heard.headsFetchFailed?.({
     payload: { repository: "python/cpython", items: [11, 12], why: unreachable },
   });
-  expect([files.fetchFailed, files.heldBack]).toEqual([unreachable, { newer: "newer", count: 3 }]);
+  expect([files.unfetched, files.heldBack]).toEqual([unreachable, { newer: "newer", count: 3 }]);
   const asking = files.ask();
   // The core hands the head to the mirror again as it answers.
-  expect(files.fetchFailed).toBeUndefined();
+  expect(files.unfetched).toBeUndefined();
   await asking;
   expect(core.pullRequestFiles).toHaveBeenCalledTimes(2);
   core.pullRequestFiles.mockResolvedValue(ok(gapped("newer")));
@@ -1068,6 +1071,17 @@ it("says why the fetch of a moved head failed until it asks again, which fetches
   await vi.waitFor(() => {
     expect([files.heldBack, files.layout.diff]).toEqual([undefined, "newer..abc"]);
   });
+});
+
+it("hears that GitHub's ref for the PR is elsewhere without asking again, so no fetch follows", async () => {
+  const files = await loaded({ state: "fetching" });
+
+  core.heard.headsFetchFailed?.({
+    payload: { repository: "python/cpython", items: [11], why: { kind: "behind" } },
+  });
+
+  expect(files.unfetched).toEqual({ kind: "behind" });
+  expect(core.pullRequestFiles).toHaveBeenCalledTimes(1);
 });
 
 it("reveals a thread asked for while the older diff holds its threads back, once the newer diff comes", async () => {

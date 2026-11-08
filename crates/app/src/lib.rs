@@ -25,7 +25,7 @@ use tsugiki_core::highlight::Span;
 use tsugiki_core::latest::LatestReader;
 use tsugiki_core::measurement::Measurement;
 use tsugiki_core::mirror::{
-    CloneRefusal, Cloning, MirrorProblem, MirrorRequests, MirrorSource, MirrorSources,
+    CloneRefusal, Cloning, MirrorProblem, MirrorRequests, MirrorSource, MirrorSources, Unfetched,
 };
 use tsugiki_core::misses::Miss;
 use tsugiki_core::repository::{Home, RepositoryAccess, RepositoryCheck, RepositoryName};
@@ -556,16 +556,16 @@ struct MirrorQuestionChanged(Option<RepositoryName>);
 #[derive(Clone, Serialize, Type, Event)]
 struct HeadsFetched(Change);
 
-/// The PR heads a fetch into a Repository's mirror failed to bring, and git's words for why.
+/// The PR heads that aren't in a Repository's mirror once the worker stopped fetching them, and why.
 #[derive(Clone, Serialize, Type)]
 struct FailedHeads {
     #[serde(flatten)]
     heads: Change,
-    why: String,
+    why: Unfetched,
 }
 
-/// Sent when a fetch of PR heads fails and they wait for news, so a Files tab waiting for one says why and
-/// offers to try again (#233).
+/// Sent when PR heads aren't in the mirror and wait for news or a hand-over, so a Files tab waiting for one
+/// says why and offers to try again (#233, #213).
 #[derive(Clone, Serialize, Type, Event)]
 struct HeadsFetchFailed(FailedHeads);
 

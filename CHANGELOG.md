@@ -45,7 +45,8 @@ release's body, and fails without it
   threads, marked as yours, and a thread's line in the Conversation opens it in Files.
 - A PR whose head has moved past the Mirror's copy shows the older diff, says it's fetching the newer one,
   and swaps it in at the same file. If that fetch fails, the tab says why, keeps the older diff and offers
-  "Try again".
+  "Try again". So it does when GitHub's copy of the PR's branch still isn't at that head 10 s later, rather
+  than saying it's fetching until the next sync.
 - `F7` and `Shift+F7` move between the diff's changes. `Ctrl+F` finds text in the diff, the rows not drawn
   yet included. `Alt+←` and `Alt+→` go back and forward through the Issues and PRs you opened.
 - The edges between the panes drag, and a focused edge moves with the arrow keys. A double-click puts the

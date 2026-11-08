@@ -19,8 +19,9 @@ const RECORDED: &str = include_str!("../../tests/fixtures/git/clone-progress.txt
 /// Each Repository whose heads arrived, by name, with the PRs whose heads they were.
 type Arrivals = Receiver<(String, Vec<u32>)>;
 
-/// Each Repository whose fetch of heads failed, by name, with the PRs whose heads they were and why.
-type Failures = Receiver<(String, Vec<u32>, String)>;
+/// Each Repository with heads the worker stopped fetching, by name, with the PRs whose heads they were and
+/// why.
+type Failures = Receiver<(String, Vec<u32>, Unfetched)>;
 
 /// Announcements that pass on each clone, and nothing of fetches.
 fn cloning_only(announcing: Sender<Option<Cloning>>) -> Announce {
@@ -648,17 +649,20 @@ impl Place {
         (mirrors, starts, arrivals)
     }
 
-    /// The worker with the fake git, each start of it, and each Repository's heads whose fetch failed, with
-    /// why.
-    fn start_faked_hearing_failures(&self) -> (Mirrors, Receiver<FakeStart>, Failures) {
+    /// The worker with the fake git, each start of it, and each Repository's heads it stopped fetching, with
+    /// why. Heads that are behind wait `patience` to be fetched once more.
+    fn start_faked_hearing_failures(
+        &self,
+        patience: Duration,
+    ) -> (Mirrors, Receiver<FakeStart>, Failures) {
         let (failing, failures) = channel();
         let announce = Announce {
             failed: Box::new(move |repository, numbers, why| {
-                drop(failing.send((repository.to_string(), numbers.to_vec(), why.to_owned())));
+                drop(failing.send((repository.to_string(), numbers.to_vec(), why.clone())));
             }),
             ..Announce::cloning_only(Box::new(|_| {}))
         };
-        let (mirrors, starts) = self.start_faked_announcing(PLENTY, announce);
+        let (mirrors, starts) = self.start_faked_announcing(patience, announce);
         (mirrors, starts, failures)
     }
 
@@ -896,11 +900,11 @@ fn a_head_handed_over_during_its_fetch_that_comes_back_behind_isnt_asked_for_at_
 }
 
 #[test]
-fn a_head_github_doesnt_have_isnt_fetched_again() {
+fn a_head_github_doesnt_have_is_fetched_once_more_then_not_at_a_hand_over() {
     let place = Place::new("missing-head");
     let cpython = named("python/cpython");
     place.mirrored(&cpython);
-    let (mirrors, starts) = place.start_faked();
+    let (mirrors, starts) = place.start_faked_with(Duration::from_millis(50));
     let requests = mirrors.requests();
 
     requests.fetch_heads(cpython.clone(), vec![head(1), head(2)]);
@@ -908,6 +912,9 @@ fn a_head_github_doesnt_have_isnt_fetched_again() {
         .recv_timeout(PLENTY)
         .unwrap()
         .succeed_with(vec![head(1)]);
+    let again = starts.recv_timeout(PLENTY).unwrap();
+    assert_eq!(again.refspecs(), [refspec(2)]);
+    again.succeed_with(vec![head(1)]);
     requests.fetch_heads(cpython, vec![head(1), head(2)]);
     mirrors.stop(PLENTY);
 
@@ -1078,11 +1085,63 @@ fn the_app_hears_which_heads_arrived_and_not_those_behind_or_missing() {
 }
 
 #[test]
+fn the_app_hears_which_heads_are_behind_or_not_on_github_once_they_were_fetched_once_more() {
+    let place = Place::new("stuck-heads");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts, failures) = place.start_faked_hearing_failures(Duration::from_millis(50));
+
+    mirrors
+        .requests()
+        .fetch_heads(cpython, vec![head(1), head(2), head(3)]);
+    starts
+        .recv_timeout(PLENTY)
+        .unwrap()
+        .succeed_with(vec![head(1), older(2)]);
+    let again = starts.recv_timeout(PLENTY).unwrap();
+    assert_eq!(again.refspecs(), [refspec(2), refspec(3)]);
+    assert!(failures.try_recv().is_err(), "nothing before the retry");
+    again.succeed_with(vec![head(1), older(2)]);
+    mirrors.stop(PLENTY);
+
+    let heard: Vec<_> = failures.iter().collect();
+    let cpython = "python/cpython".to_owned();
+    assert_eq!(
+        heard,
+        [
+            (cpython.clone(), vec![2], Unfetched::Behind),
+            (cpython, vec![3], Unfetched::NotOnGitHub),
+        ]
+    );
+}
+
+#[test]
+fn the_app_hears_why_refs_cant_be_read_back_once_their_heads_were_fetched_once_more() {
+    let place = Place::new("unread-heard");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts, failures) = place.start_faked_hearing_failures(Duration::from_millis(50));
+
+    mirrors.requests().fetch_heads(cpython, vec![head(1)]);
+    starts.recv_timeout(PLENTY).unwrap().succeed_unread();
+    let again = starts.recv_timeout(PLENTY).unwrap();
+    assert!(failures.try_recv().is_err(), "nothing before the retry");
+    again.succeed_unread();
+    mirrors.stop(PLENTY);
+
+    let heard: Vec<_> = failures.iter().collect();
+    let why = Unfetched::Git {
+        words: "the test gave no refs".to_owned(),
+    };
+    assert_eq!(heard, [("python/cpython".to_owned(), vec![1], why)]);
+}
+
+#[test]
 fn the_app_hears_which_heads_failed_and_why_once_they_wait_for_news() {
     let place = Place::new("failures");
     let cpython = named("python/cpython");
     place.mirrored(&cpython);
-    let (mirrors, starts, failures) = place.start_faked_hearing_failures();
+    let (mirrors, starts, failures) = place.start_faked_hearing_failures(PLENTY);
     let requests = mirrors.requests();
     let unreachable = "fatal: unable to access 'https://github.com/python/cpython.git/': \
                        Could not resolve host: github.com";
@@ -1097,7 +1156,9 @@ fn the_app_hears_which_heads_failed_and_why_once_they_wait_for_news() {
     mirrors.stop(PLENTY);
 
     let heard: Vec<_> = failures.iter().collect();
-    let why = unreachable.to_owned();
+    let why = Unfetched::Git {
+        words: unreachable.to_owned(),
+    };
     assert_eq!(heard, [("python/cpython".to_owned(), vec![1, 2], why)]);
 }
 

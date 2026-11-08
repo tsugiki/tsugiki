@@ -153,6 +153,58 @@ fn a_head_the_mirror_lacks_is_fetched_first() {
 }
 
 #[test]
+fn opening_a_pr_fetches_a_head_the_mirror_lacks_without_reading_a_diff() {
+    let world = World::new("open-fetching");
+    let mirrored = Mirrored::new("pr-files-open-fetching");
+    world.mirrors(&mirrored);
+    let elsewhere = CommitSha::parse(&"3".repeat(40)).unwrap();
+    world.has_pr(Some(elsewhere.clone()), "main");
+
+    PrFiles::fetch_missing_head(&world.sources(), &world.repository(), 7).unwrap();
+
+    let head = PrHead {
+        number: 7,
+        commit: elsewhere,
+        target_branch: "main".to_owned(),
+    };
+    assert_eq!(world.heard.firsts(), [(world.repository(), head)]);
+    mirrored.finish();
+    world.finish();
+}
+
+#[test]
+fn opening_a_pr_whose_head_the_mirror_holds_asks_for_nothing_and_reads_no_diff() {
+    let world = World::new("open-held");
+    let mirrored = Mirrored::new("pr-files-open-held");
+    world.mirrors(&mirrored);
+    world.has_pr(Some(mirrored.head.clone()), "main");
+
+    PrFiles::fetch_missing_head(&world.sources(), &world.repository(), 7).unwrap();
+
+    assert_eq!(world.heard.firsts(), []);
+    let at = PrAt {
+        repository: world.repository(),
+        number: 7,
+        head: mirrored.head.clone(),
+    };
+    let target = Against::Branch("main", &Start::TargetBranch);
+    assert!(world.diffs.shown(&at, target).is_none());
+    mirrored.finish();
+    world.finish();
+}
+
+#[test]
+fn opening_a_pr_before_its_mirror_is_cloned_asks_for_nothing() {
+    let world = World::new("open-cloning");
+    world.has_pr(Some(CommitSha::parse(&"3".repeat(40)).unwrap()), "main");
+
+    PrFiles::fetch_missing_head(&world.sources(), &world.repository(), 7).unwrap();
+
+    assert_eq!(world.heard.firsts(), []);
+    world.finish();
+}
+
+#[test]
 fn a_moved_head_shows_the_diff_before_with_its_threads_held_back_until_the_newer_comes() {
     let world = World::new("moved");
     let mirrored = Mirrored::new("pr-files-moved");

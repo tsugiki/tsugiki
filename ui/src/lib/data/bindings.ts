@@ -49,8 +49,8 @@ export const commands = {
 	/**  Asks the core to read what an Issue on screen says now, and returns at once (ADR 0015). */
 	fetchIssue: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("fetch_issue", { repository, number })),
 	/**
-	 *  Tells the core the user opened a PR, which moves its Last seen and reads its Conversation from GitHub, and
-	 *  returns at once.
+	 *  Tells the core the user opened a PR, and returns once git has said whether the mirror holds its head.
+	 *  GitHub's answer comes later.
 	 */
 	openPullRequest: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_pull_request", { repository, number })),
 	/**  Asks the core to read a PR's Conversation on screen now, and returns at once (ADR 0015). */

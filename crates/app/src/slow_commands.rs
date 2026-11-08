@@ -140,6 +140,19 @@ pub(crate) fn issue(
     crate::read_issue(repository, number, &owner, &reader)
 }
 
+/// Tells the core the user opened a PR, and returns once git has said whether the mirror holds its head.
+/// GitHub's answer comes later.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn open_pull_request(
+    repository: &str,
+    number: u32,
+    requests: State<'_, SessionRequests>,
+    work: State<'_, crate::DiffWork>,
+) -> Result<(), Error> {
+    crate::open_pull_request(repository, number, &requests, &work)
+}
+
 /// The PR view of PR `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and never
 /// on GitHub (ADR 0018).
 #[tauri::command(async)]
@@ -192,9 +205,8 @@ pub(crate) fn pull_request_files(
     repository: &str,
     number: u32,
     work: State<'_, crate::DiffWork>,
-    reader: State<'_, StoreReader>,
 ) -> Result<Option<PrFiles>, Error> {
-    crate::read_pull_request_files(repository, number, &work, &reader)
+    crate::read_pull_request_files(repository, number, &work)
 }
 
 /// Rows of a PR's diff, which come from the diff on show unless the user has opened another PR since.
@@ -203,9 +215,8 @@ pub(crate) fn pull_request_files(
 pub(crate) fn pull_request_rows(
     chunk: crate::DiffChunk,
     work: State<'_, crate::DiffWork>,
-    reader: State<'_, StoreReader>,
 ) -> Result<Vec<DiffRow>, Error> {
-    crate::read_pull_request_rows(chunk, &work, &reader)
+    crate::read_pull_request_rows(chunk, &work)
 }
 
 /// The spans that highlight the code in a chunk of a PR's diff, which the Files tab asks for with its rows
@@ -217,9 +228,8 @@ pub(crate) fn pull_request_spans(
     chunk: crate::DiffChunk,
     opened: Vec<u32>,
     work: State<'_, crate::DiffWork>,
-    reader: State<'_, StoreReader>,
 ) -> Result<Vec<Vec<Span>>, Error> {
-    crate::read_pull_request_spans(chunk, &opened, &work, &reader)
+    crate::read_pull_request_spans(chunk, &opened, &work)
 }
 
 /// Where the code of a PR's diff holds the text the user searches for, whatever the case, in every row:
@@ -229,9 +239,8 @@ pub(crate) fn pull_request_spans(
 pub(crate) fn pull_request_find(
     search: crate::DiffSearch,
     work: State<'_, crate::DiffWork>,
-    reader: State<'_, StoreReader>,
 ) -> Result<tsugiki_core::diff::Found, Error> {
-    crate::find_in_pull_request(search, &work, &reader)
+    crate::find_in_pull_request(search, &work)
 }
 
 /// The lines a gap of a PR's diff leaves out, read from the file at the PR's head in its mirror with their
@@ -242,7 +251,6 @@ pub(crate) fn pull_request_find(
 pub(crate) fn pull_request_lines(
     lines: crate::GapLines,
     work: State<'_, crate::DiffWork>,
-    reader: State<'_, StoreReader>,
 ) -> Result<Vec<HeadLine>, Error> {
-    crate::read_pull_request_lines(lines, &work, &reader)
+    crate::read_pull_request_lines(lines, &work)
 }

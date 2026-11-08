@@ -114,14 +114,16 @@ pub(crate) fn connect_core<R: Runtime>(
         status: refresh,
         repository: REPOSITORY_REFRESH,
     };
+    let diff_folders = folders.clone();
+    let session = Session::start(board, folders, outside.github, intervals);
     let diffs = DiffWork {
-        folders: folders.clone(),
+        folders: diff_folders,
+        reader: session.reader(),
         diffs: Diffs::default(),
         mirrors: mirrors.requests(),
         highlighter: Highlighter::start(),
     };
     assert!(app.manage(diffs), "only this manages the diffs");
-    let session = Session::start(board, folders, outside.github, intervals);
     let requests = session.requests();
     let work = RepositoryWork {
         session: requests.clone(),
@@ -1349,7 +1351,7 @@ mod tests {
     }
 
     #[test]
-    fn a_prs_files_tab_fetches_its_head_first_and_then_reads_its_diff_in_chunks() {
+    fn opening_a_pr_fetches_its_head_first_and_its_files_tab_then_reads_its_diff_in_chunks() {
         let (folders, root) = temp_folders("wiring-files");
         let remotes = remotes(&root, &[CPYTHON]);
         let commit = pull_request_on(&root, CPYTHON, 1);
@@ -1371,7 +1373,7 @@ mod tests {
             )
         };
 
-        let fetching = files().unwrap();
+        drop(wired.ask("open_pull_request", json!({ "repository": CPYTHON, "number": 1 })).unwrap());
         let heard = wired.heads.recv_timeout(PLENTY).unwrap();
         let ready = files().unwrap();
         let base = ready["base"].as_str().unwrap_or_default().to_owned();
@@ -1395,7 +1397,6 @@ mod tests {
         drop(wired.stop());
         std::fs::remove_dir_all(root).unwrap();
 
-        assert_eq!(fetching, json!({ "state": "fetching" }));
         assert_eq!(heard, json!({ "repository": CPYTHON, "items": [1] }));
         let news = json!({
             "path": "NEWS",

@@ -8,13 +8,16 @@ vi.mock("$lib/data/bindings", () => ({
     lastSync: vi.fn(),
     syncActivity: vi.fn(),
     cloning: vi.fn(),
+    mirrorProblem: vi.fn(),
     refresh: vi.fn(),
+    checkMirrorsAgain: vi.fn(),
   },
   events: {
     statusChanged: { listen: vi.fn() },
     lastSyncChanged: { listen: vi.fn() },
     syncActivityChanged: { listen: vi.fn() },
     cloningChanged: { listen: vi.fn() },
+    mirrorProblemChanged: { listen: vi.fn() },
   },
 }));
 
@@ -145,6 +148,72 @@ describe("StatusState's last sync", () => {
       const state = new StatusState();
       await state.load();
       expect(state.cloning).toBeNull();
+    });
+  });
+
+  describe("why no mirror can be made", () => {
+    const short = {
+      kind: "disk_short",
+      repository: "python/cpython",
+      folder: "D:\\Tsugiki",
+      needed_mb: 6144,
+      free_mb: 1024,
+    } as const;
+    const catchProblem = () => {
+      const listener = vi.fn<(payload: typeof short | null) => void>();
+      vi.mocked(events.mirrorProblemChanged.listen).mockImplementation(async (callback) => {
+        listener.mockImplementation((payload) => {
+          callback({ event: "mirror-problem-changed", id: 1, payload });
+        });
+        return () => {};
+      });
+      return listener;
+    };
+
+    it("holds what the core says when the window loads", async () => {
+      catchLastSync();
+      catchProblem();
+      vi.mocked(commands.mirrorProblem).mockResolvedValue(short);
+      const state = new StatusState();
+      await state.load();
+      expect(state.mirrorProblem).toEqual(short);
+    });
+
+    it("follows the core, down to nothing", async () => {
+      catchLastSync();
+      const problemChanged = catchProblem();
+      vi.mocked(commands.mirrorProblem).mockResolvedValue(short);
+      const state = new StatusState();
+      await state.load();
+      problemChanged(null);
+      expect(state.mirrorProblem).toBeNull();
+    });
+
+    it("lets an event that arrives while asking win, even one that says nothing", async () => {
+      catchLastSync();
+      const problemChanged = catchProblem();
+      vi.mocked(commands.mirrorProblem).mockImplementation(async () => {
+        problemChanged(null);
+        return short;
+      });
+      const state = new StatusState();
+      await state.load();
+      expect(state.mirrorProblem).toBeNull();
+    });
+
+    it("asks the core to look again", async () => {
+      vi.mocked(commands.checkMirrorsAgain).mockResolvedValue(undefined);
+      const state = new StatusState();
+      await state.checkMirrorsAgain();
+      expect(commands.checkMirrorsAgain).toHaveBeenCalledOnce();
+      expect(state.error).toBeUndefined();
+    });
+
+    it("says when it can't ask to look again", async () => {
+      vi.mocked(commands.checkMirrorsAgain).mockRejectedValue(new Error("no IPC"));
+      const state = new StatusState();
+      await state.checkMirrorsAgain();
+      expect(state.error).toBe("Error: no IPC");
     });
   });
 

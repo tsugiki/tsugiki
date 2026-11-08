@@ -67,3 +67,15 @@ test("a settings file that doesn't parse brings a hidden status bar back", async
   await page.goto("/");
   await expect(page.getByRole("status")).toHaveText("settings.toml, line 3: expected a value");
 });
+
+test("a hidden status bar says git is missing until the core finds it", async ({ page }) => {
+  await mockCore(page, { settings: hidden, status: online, mirrorProblem: { kind: "no_git" } });
+  await page.goto("/");
+  await expect(page.getByRole("status")).toHaveText(
+    "The Files tab needs git 2.30 or newer, and Tsugiki can't find git",
+  );
+  await page.getByRole("button", { name: "Check again" }).click();
+  await emitFromCore(page, "mirror-problem-changed", null);
+  await expect(page.getByRole("button", { name: "Check again" })).toHaveCount(0);
+  await expect(page.getByRole("status")).toHaveText("");
+});

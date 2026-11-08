@@ -1,8 +1,17 @@
 <script lang="ts">
-  import type { Cloning, LastSync, Status, SyncActivity } from "$lib/state/status.svelte";
-  import { cloningWords, elsewhereWords, pausedWords, syncedWords, syncingWords } from "./synced";
+  import { openLink } from "$lib/state/browser";
+  import type { Cloning, LastSync, MirrorProblem, Status, SyncActivity } from "$lib/state/status.svelte";
+  import {
+    cloningWords,
+    elsewhereWords,
+    mirrorWords,
+    pausedWords,
+    syncedWords,
+    syncingWords,
+  } from "./synced";
 
   const MINUTE = 60_000;
+  const GIT_DOWNLOADS = "https://git-scm.com/downloads";
 
   let {
     status,
@@ -12,7 +21,9 @@
     lastSync = null,
     syncActivity = null,
     cloning = null,
+    mirrorProblem = null,
     onrefresh = () => {},
+    oncheckagain = () => {},
   }: {
     status: Status | undefined;
     error?: string | undefined;
@@ -21,8 +32,16 @@
     lastSync?: LastSync | null;
     syncActivity?: SyncActivity | null;
     cloning?: Cloning | null;
+    mirrorProblem?: MirrorProblem | null;
     onrefresh?: () => void;
+    oncheckagain?: () => void;
   } = $props();
+
+  /** The problem that kept the browser from opening git's downloads, until the next try. */
+  let browserProblem = $state<string>();
+  const getGit = async () => {
+    browserProblem = await openLink(GIT_DOWNLOADS);
+  };
 
   // "Synced 2 min ago" has to move on by itself between syncs.
   let now = $state(new Date());
@@ -39,7 +58,15 @@
   // Hiding the bar can't hide these: nothing else would tell the user.
   const showStatus = $derived(visible || offline || status?.state === "problem" || Boolean(error));
   const paused = $derived(pausedWords(syncActivity));
-  const listedProblems = $derived([...problems, ...(paused ? [paused] : [])].join(" · "));
+  // Hiding the bar can't hide why the Files tab has no diff either.
+  const mirror = $derived(mirrorWords(mirrorProblem));
+  const needsGit = $derived(mirrorProblem?.kind === "no_git" || mirrorProblem?.kind === "old_git");
+  // The browser's problem goes with the button that met it.
+  const listedProblems = $derived(
+    [...problems, paused, mirror, needsGit ? browserProblem : undefined]
+      .filter((words) => Boolean(words))
+      .join(" · "),
+  );
   // A sync of the Repository open before the window switched says nothing about the one open now.
   const syncing = $derived(
     syncActivity?.open?.repository === lastSync?.repository ? syncingWords(syncActivity) : null,
@@ -77,6 +104,12 @@
     {/if}
     <span>{showStatus && listedProblems ? `· ${listedProblems}` : listedProblems}</span>
   </footer>
+  {#if needsGit}
+    <button onclick={() => void getGit()}>Get git</button>
+  {/if}
+  {#if mirrorProblem !== null}
+    <button onclick={oncheckagain}>Check again</button>
+  {/if}
   <!-- Outside the live region, or a screen reader would read this out each minute, and each page of a
        sync. -->
   {#if lastSync !== null && showStatus}

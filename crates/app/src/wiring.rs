@@ -16,8 +16,8 @@ use tsugiki_core::settings::{SettingsFiles, SettingsOwner};
 use tsugiki_core::status::{Change, Status, StatusBoard};
 
 use crate::{
-    Changed, CloningChanged, DiffWork, HeadsFetched, LastSyncChanged, RepositoryWork,
-    StatusChanged, SyncActivityChanged,
+    Changed, CloningChanged, DiffWork, HeadsFetched, LastSyncChanged, MirrorProblemChanged,
+    RepositoryWork, StatusChanged, SyncActivityChanged,
 };
 
 /// How often the open Repository refreshes: a refresh costs a few points, and this is about 60 points an
@@ -69,6 +69,11 @@ pub(crate) fn connect_core<R: Runtime>(
     );
     let (mut latest_cloning, cloning_reader) = latest::channel(None);
     assert!(app.manage(cloning_reader), "only this manages the clone");
+    let (mut latest_problem, problem_reader) = latest::channel(None);
+    assert!(
+        app.manage(problem_reader),
+        "only this manages the mirror's problem"
+    );
     // Two small files, read before the window exists so `settings` and `home` can always answer. A
     // `settings_path` on a slow drive would delay the window. Without folders the defaults apply, and the
     // session shows why. A thread of their own owns the files from here, so saving doesn't wait on GitHub.
@@ -78,6 +83,7 @@ pub(crate) fn connect_core<R: Runtime>(
     let last_sync_handle = app.clone();
     let activity_handle = app.clone();
     let cloning_handle = app.clone();
+    let problem_handle = app.clone();
     let heads_handle = app.clone();
     let announce = Announce {
         cloning: Box::new(move |cloning| {
@@ -92,6 +98,12 @@ pub(crate) fn connect_core<R: Runtime>(
                 items: numbers.to_vec(),
             };
             log_if_unsent(HeadsFetched(change).emit(&heads_handle));
+        }),
+        problem: Box::new(move |problem| {
+            // Before the event, for the reason the status gives below.
+            let problem = problem.cloned();
+            latest_problem.set(&problem);
+            log_if_unsent(MirrorProblemChanged(problem).emit(&problem_handle));
         }),
     };
     let mirrors = Mirrors::start(folders.clone(), outside.remotes, announce);
@@ -240,6 +252,7 @@ mod tests {
         last_syncs: Receiver<Value>,
         activities: Receiver<Value>,
         clonings: Receiver<Value>,
+        problems: Receiver<Value>,
         heads: Receiver<Value>,
         _app: App<MockRuntime>,
     }
@@ -266,6 +279,7 @@ mod tests {
             let last_syncs = hear(&app, "last-sync-changed");
             let activities = hear(&app, "sync-activity-changed");
             let clonings = hear(&app, "cloning-changed");
+            let problems = hear(&app, "mirror-problem-changed");
             let heads = hear(&app, "heads-fetched");
             let outside = Outside { github, remotes };
             let core = connect_core(app.handle(), folders, outside, Duration::from_secs(3600));
@@ -281,6 +295,7 @@ mod tests {
                 last_syncs,
                 activities,
                 clonings,
+                problems,
                 heads,
                 _app: app,
             }
@@ -1015,6 +1030,43 @@ mod tests {
         ));
         assert_eq!(asked, Value::Null);
         assert!(cloned);
+    }
+
+    #[test]
+    fn a_disk_short_of_room_for_a_clone_says_so_and_check_again_looks_once_more() {
+        let (folders, root) = temp_folders("wiring-disk-short");
+        let (measuring, measures) = channel();
+        let remotes = Remotes::under("no-remotes/".to_owned()).on_disk(
+            Box::new(|_| Ok(5 << 30)),
+            Box::new(move |_| {
+                measuring.send(()).unwrap_or_default();
+                Ok(1 << 30)
+            }),
+        );
+        let wired = Wired::start_cloning_from(Ok(folders), recordings(), remotes);
+
+        let _ = wired.ask("add_repository", add_cpython()).unwrap();
+        let short = wired.problems.recv_timeout(PLENTY).unwrap();
+        let asked = wired.ask("mirror_problem", json!({})).unwrap();
+        let _ = wired.ask("check_mirrors_again", json!({})).unwrap();
+        let measured = measures
+            .recv_timeout(PLENTY)
+            .and(measures.recv_timeout(PLENTY));
+        // The check before Check again's measure would have said so by now.
+        let heard = wired.problems.try_recv();
+        drop(wired.stop());
+        std::fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(short["kind"], "disk_short");
+        assert_eq!(short["repository"], CPYTHON);
+        assert_eq!(short["needed_mb"], 6 * 1024);
+        assert_eq!(short["free_mb"], 1024);
+        assert_eq!(asked, short);
+        assert!(measured.is_ok(), "Check again measures the disk once more");
+        assert!(
+            heard.is_err(),
+            "a disk still short is nothing new: {heard:?}"
+        );
     }
 
     #[test]

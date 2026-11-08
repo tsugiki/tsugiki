@@ -465,6 +465,8 @@ struct FakeGit {
     landed: Sender<String>,
     /// What each read of the mirror's refs gives, which a fetch that succeeds sends first.
     refs: Receiver<String>,
+    /// The answer to each `git --version`, or nothing for a git that isn't there.
+    versions: Receiver<Option<String>>,
 }
 
 /// One start of the fake git.
@@ -612,7 +614,14 @@ impl Git for FakeGit {
         })
     }
 
-    fn read(&self, _args: &[&OsStr]) -> io::Result<String> {
+    fn read(&self, args: &[&OsStr]) -> io::Result<String> {
+        if args == [OsStr::new("--version")] {
+            return match self.versions.try_recv() {
+                Ok(Some(version)) => Ok(version),
+                Ok(None) => Err(io::Error::from(io::ErrorKind::NotFound)),
+                Err(_none) => Ok("git version 2.43.0.windows.1".to_owned()),
+            };
+        }
         self.refs
             .try_recv()
             .map_err(|_none| io::Error::other("the test gave no refs"))
@@ -638,6 +647,7 @@ impl Place {
             fetched: Box::new(move |repository, numbers| {
                 drop(arriving.send((repository.to_string(), numbers.to_vec())));
             }),
+            problem: Box::new(|_| {}),
         };
         let (mirrors, starts) = self.start_faked_announcing(patience, announce);
         (mirrors, starts, arrivals)
@@ -649,6 +659,18 @@ impl Place {
         patience: Duration,
         announce: Announce,
     ) -> (Mirrors, Receiver<FakeStart>) {
+        let (_versions, answers) = channel();
+        self.start_faked_from(self.clone_source().patient(patience), announce, answers)
+    }
+
+    /// The worker with the fake git, cloning from `remotes`, and each start of it. Each `git --version`
+    /// takes the next of `versions`, where nothing is a git that isn't there, or git 2.43 once they run out.
+    fn start_faked_from(
+        &self,
+        remotes: Remotes,
+        announce: Announce,
+        versions: Receiver<Option<String>>,
+    ) -> (Mirrors, Receiver<FakeStart>) {
         let (starting, starts) = channel();
         let (landed, refs) = channel();
         let mirrors = Mirrors::with_git(
@@ -656,9 +678,10 @@ impl Place {
                 starts: starting,
                 landed,
                 refs,
+                versions,
             }),
             Ok(self.folders.clone()),
-            self.clone_source().patient(patience),
+            remotes,
             announce,
         );
         (mirrors, starts)
@@ -1241,4 +1264,358 @@ fn the_heard_requests_keep_only_the_opened_prs_heads() {
     requests.fetch_first(cpython.clone(), head(2));
 
     assert_eq!(heard.firsts(), [(cpython, head(2))]);
+}
+
+mod problems {
+    use super::*;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+    const GIB: u64 = 1 << 30;
+    /// Long enough for a git that would start to have started.
+    const A_MOMENT: Duration = Duration::from_millis(300);
+
+    /// Announces each problem the worker finds, and nothing else.
+    fn hearing_problems() -> (Announce, Receiver<Option<MirrorProblem>>) {
+        let (telling, told) = channel();
+        let announce = Announce {
+            cloning: Box::new(|_| {}),
+            fetched: Box::new(|_, _| {}),
+            problem: Box::new(move |problem| drop(telling.send(problem.cloned()))),
+        };
+        (announce, told)
+    }
+
+    /// Whether `start` runs `git clone`. A fetch runs `git fetch`.
+    fn clones(start: &FakeStart) -> bool {
+        start.args.first().is_some_and(|arg| arg == "clone")
+    }
+
+    fn two_kilobytes() -> Box<dyn Transport> {
+        Box::new(crate::github::testing::answered(
+            200,
+            r#"{"data":{"repository":{"diskUsage":2}}}"#,
+        ))
+    }
+
+    fn empty() -> Box<dyn Transport> {
+        Box::new(crate::github::testing::answered(
+            200,
+            r#"{"data":{"repository":{"diskUsage":null}}}"#,
+        ))
+    }
+
+    #[test]
+    fn github_gives_a_repositorys_size_in_kilobytes_or_nothing_when_its_empty() {
+        let signed_in = crate::github::testing::signed_in_gh;
+        let mut sized = sizes_on_github(two_kilobytes, signed_in);
+        let mut empty = sizes_on_github(empty, signed_in);
+
+        assert_eq!(sized(&named("octo-org/hello")).unwrap(), 2048);
+        assert_eq!(empty(&named("octo-org/hello")).unwrap(), 0);
+    }
+
+    #[test]
+    fn githubs_remotes_measure_the_disk_their_folder_is_on() {
+        let place = Place::new("live-room");
+
+        let free = (Remotes::github().free_space)(&place.folders.data).unwrap();
+        // A connection to the API, which asks nothing until a size is wanted.
+        drop(https());
+
+        assert!(free > 0);
+    }
+
+    #[test]
+    fn git_version_reads_the_major_and_minor_version() {
+        assert_eq!(git_version("git version 2.43.0.windows.1\n"), Some((2, 43)));
+        assert_eq!(
+            git_version("git version 2.39.3 (Apple Git-146)"),
+            Some((2, 39))
+        );
+        assert_eq!(git_version("git version 3"), None);
+        assert_eq!(git_version("hub version 2.14.2"), None);
+    }
+
+    #[test]
+    fn without_git_no_git_starts_until_a_check_finds_one() {
+        let place = Place::new("no-git");
+        let cpython = named("python/cpython");
+        place.mirrored(&cpython);
+        let (versions, answers) = channel();
+        versions.send(None).unwrap();
+        let (announce, told) = hearing_problems();
+        let (mirrors, starts) = place.start_faked_from(place.clone_source(), announce, answers);
+
+        mirrors.requests().clone_mirror(named("octo-org/hello"));
+        mirrors.requests().fetch_heads(cpython, vec![head(1)]);
+        let missing = told.recv_timeout(PLENTY).unwrap();
+        let held = starts.recv_timeout(A_MOMENT).is_err();
+        mirrors.requests().check_again();
+        let found = told.recv_timeout(PLENTY).unwrap();
+        let fetch = starts.recv_timeout(PLENTY).unwrap();
+        mirrors.stop(PLENTY);
+
+        assert_eq!(missing, Some(MirrorProblem::NoGit));
+        assert!(held);
+        assert_eq!(found, None);
+        assert!(!clones(&fetch), "{:?}", fetch.args);
+    }
+
+    #[test]
+    fn a_git_older_than_2_30_is_named_by_what_it_says() {
+        let place = Place::new("old-git");
+        let (versions, answers) = channel();
+        versions
+            .send(Some("git version 2.29.2\n".to_owned()))
+            .unwrap();
+        let (announce, told) = hearing_problems();
+        let (mirrors, starts) = place.start_faked_from(place.clone_source(), announce, answers);
+
+        mirrors.requests().clone_mirror(named("octo-org/hello"));
+        let old = told.recv_timeout(PLENTY).unwrap();
+        let held = starts.recv_timeout(A_MOMENT).is_err();
+        mirrors.stop(PLENTY);
+
+        let version = "git version 2.29.2".to_owned();
+        assert_eq!(old, Some(MirrorProblem::OldGit { version }));
+        assert!(held);
+    }
+
+    #[test]
+    fn short_of_disk_a_clone_waits_for_a_check_and_a_fetch_goes_on() {
+        let place = Place::new("disk-short");
+        let [cpython, hello] = [named("python/cpython"), named("octo-org/hello")];
+        place.mirrored(&cpython);
+        let free = Arc::new(AtomicU64::new(GIB));
+        let measured = Arc::clone(&free);
+        let remotes = place.clone_source().on_disk(
+            Box::new(|_| Ok(5 * GIB)),
+            Box::new(move |_| Ok(measured.load(Ordering::SeqCst))),
+        );
+        let (announce, told) = hearing_problems();
+        let (_versions, answers) = channel();
+        let (mirrors, starts) = place.start_faked_from(remotes, announce, answers);
+
+        mirrors.requests().clone_mirror(hello.clone());
+        let short = told.recv_timeout(PLENTY).unwrap();
+        mirrors.requests().fetch_heads(cpython, vec![head(1)]);
+        let fetch = starts.recv_timeout(PLENTY).unwrap();
+        let fetched = !clones(&fetch);
+        fetch.fail();
+        free.store(10 * GIB, Ordering::SeqCst);
+        mirrors.requests().check_again();
+        let cleared = told.recv_timeout(PLENTY).unwrap();
+        let clone = starts.recv_timeout(PLENTY).unwrap();
+        mirrors.stop(PLENTY);
+
+        let folder = place.folders.data.display().to_string();
+        let needed = MirrorProblem::DiskShort {
+            repository: hello,
+            folder,
+            needed_mb: 6 * 1024,
+            free_mb: 1024,
+        };
+        assert_eq!(short, Some(needed));
+        assert!(fetched);
+        assert_eq!(cleared, None);
+        assert!(clones(&clone), "{:?}", clone.args);
+    }
+
+    #[test]
+    fn a_check_that_finds_the_disk_still_short_tells_the_window_nothing_new() {
+        let place = Place::new("disk-still-short");
+        let [cpython, hello] = [named("python/cpython"), named("octo-org/hello")];
+        place.mirrored(&cpython);
+        let remotes = place
+            .clone_source()
+            .on_disk(Box::new(|_| Ok(5 * GIB)), Box::new(|_| Ok(GIB)));
+        let (announce, told) = hearing_problems();
+        let (_versions, answers) = channel();
+        let (mirrors, starts) = place.start_faked_from(remotes, announce, answers);
+
+        mirrors.requests().clone_mirror(hello);
+        let short = told.recv_timeout(PLENTY).unwrap();
+        mirrors.requests().check_again();
+        // The worker looks again before it reads the next request, so the fetch starts after the check.
+        mirrors.requests().fetch_heads(cpython, vec![head(1)]);
+        let fetch = starts.recv_timeout(PLENTY).unwrap();
+        let heard = told.try_recv();
+        let fetched = !clones(&fetch);
+        fetch.fail();
+        mirrors.stop(PLENTY);
+
+        assert!(short.is_some());
+        assert!(fetched);
+        assert!(heard.is_err(), "{heard:?}");
+    }
+
+    #[test]
+    fn a_clone_cut_off_by_quitting_is_deleted_before_the_disk_is_measured() {
+        let place = Place::new("partial-measured");
+        let hello = named("octo-org/hello");
+        let partial = place.folders.repository(&hello).join(PARTIAL);
+        fs::create_dir_all(&partial).unwrap();
+        fs::write(partial.join("half-a-pack"), "what a quit left").unwrap();
+        let left = Arc::new(AtomicBool::new(true));
+        let seen = Arc::clone(&left);
+        let looked = partial.clone();
+        let remotes = place.clone_source().on_disk(
+            Box::new(|_| Ok(0)),
+            Box::new(move |_| {
+                seen.store(looked.exists(), Ordering::SeqCst);
+                Ok(u64::MAX)
+            }),
+        );
+        let (_versions, answers) = channel();
+        let (mirrors, starts) =
+            place.start_faked_from(remotes, Announce::cloning_only(Box::new(|_| {})), answers);
+
+        mirrors.requests().clone_mirror(hello);
+        let clone = starts.recv_timeout(PLENTY).unwrap();
+        clone.fail();
+        mirrors.stop(PLENTY);
+
+        assert!(!left.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn a_clone_waiting_after_a_failure_starts_when_its_repository_opens_and_waits_in_one_place() {
+        let place = Place::new("clone-one-place");
+        let [cpython, hello] = [named("python/cpython"), named("octo-org/hello")];
+        place.mirrored(&cpython);
+        let remotes = place.clone_source().retrying(PLENTY * 10);
+        let (_versions, answers) = channel();
+        let (mirrors, starts) =
+            place.start_faked_from(remotes, Announce::cloning_only(Box::new(|_| {})), answers);
+        let requests = mirrors.requests();
+
+        requests.clone_mirror(hello.clone());
+        let first = starts.recv_timeout(PLENTY).unwrap();
+        let first_cloned = clones(&first);
+        first.fail();
+        requests.clone_mirror(hello.clone());
+        requests.clone_mirror_next(hello);
+        let opened = starts.recv_timeout(PLENTY).unwrap();
+        let opened_cloned = clones(&opened);
+        opened.fail();
+        requests.check_again();
+        let checked = starts.recv_timeout(PLENTY).unwrap();
+        let checked_cloned = clones(&checked);
+        checked.fail();
+        // A second place in line would start its clone before the worker reads this.
+        requests.fetch_heads(cpython, vec![head(1)]);
+        let next = starts.recv_timeout(PLENTY).unwrap();
+        let next_cloned = clones(&next);
+        let next_args = format!("{:?}", next.args);
+        next.fail();
+        mirrors.stop(PLENTY);
+
+        assert!(first_cloned && opened_cloned && checked_cloned);
+        assert!(!next_cloned, "{next_args}");
+    }
+
+    #[test]
+    fn a_clone_that_keeps_failing_waits_twice_as_long_each_time_up_to_an_hour() {
+        let minute = Duration::from_secs(60);
+
+        assert_eq!(clone_wait(minute, 1), minute);
+        assert_eq!(clone_wait(minute, 2), minute * 2);
+        assert_eq!(clone_wait(minute, 3), minute * 4);
+        assert_eq!(clone_wait(minute, 7), minute * 64);
+        assert_eq!(clone_wait(minute, u32::MAX), minute * 64);
+    }
+
+    #[test]
+    fn a_clone_that_fails_is_tried_again_after_a_while() {
+        let place = Place::new("clone-retry");
+        let remotes = place.clone_source().retrying(Duration::from_millis(10));
+        let (_versions, answers) = channel();
+        let (mirrors, starts) =
+            place.start_faked_from(remotes, Announce::cloning_only(Box::new(|_| {})), answers);
+
+        mirrors.requests().clone_mirror(named("octo-org/hello"));
+        let first = starts.recv_timeout(PLENTY).unwrap();
+        let cloned = clones(&first);
+        first.fail();
+        let again = starts.recv_timeout(PLENTY).unwrap();
+        mirrors.stop(PLENTY);
+
+        assert!(cloned && clones(&again));
+    }
+
+    #[test]
+    fn a_size_github_cant_give_tries_the_clone_again_later() {
+        let place = Place::new("size-retry");
+        let mut asked = 0;
+        let remotes = place
+            .clone_source()
+            .retrying(Duration::from_millis(10))
+            .on_disk(
+                Box::new(move |_| {
+                    asked += 1;
+                    if asked == 1 {
+                        Err(Error::new(ErrorKind::Offline, "offline"))
+                    } else {
+                        Ok(0)
+                    }
+                }),
+                Box::new(|_| Ok(u64::MAX)),
+            );
+        let (_versions, answers) = channel();
+        let (mirrors, starts) =
+            place.start_faked_from(remotes, Announce::cloning_only(Box::new(|_| {})), answers);
+
+        mirrors.requests().clone_mirror(named("octo-org/hello"));
+        let clone = starts.recv_timeout(PLENTY).unwrap();
+        mirrors.stop(PLENTY);
+
+        assert!(clones(&clone), "{:?}", clone.args);
+    }
+
+    #[test]
+    fn a_disk_that_cant_be_measured_tries_the_clone_again_later() {
+        let place = Place::new("free-retry");
+        let asked = AtomicU64::new(0);
+        let remotes = place
+            .clone_source()
+            .retrying(Duration::from_millis(10))
+            .on_disk(
+                Box::new(|_| Ok(0)),
+                Box::new(move |_| {
+                    if asked.fetch_add(1, Ordering::SeqCst) == 0 {
+                        Err(io::Error::other("the disk went away"))
+                    } else {
+                        Ok(u64::MAX)
+                    }
+                }),
+            );
+        let (_versions, answers) = channel();
+        let (mirrors, starts) =
+            place.start_faked_from(remotes, Announce::cloning_only(Box::new(|_| {})), answers);
+
+        mirrors.requests().clone_mirror(named("octo-org/hello"));
+        let clone = starts.recv_timeout(PLENTY).unwrap();
+        mirrors.stop(PLENTY);
+
+        assert!(clones(&clone), "{:?}", clone.args);
+    }
+
+    #[test]
+    fn an_app_that_hears_only_of_clones_still_starts_none_without_git() {
+        let place = Place::new("no-git-quiet");
+        let (versions, answers) = channel();
+        versions.send(None).unwrap();
+        let (mirrors, starts) = place.start_faked_from(
+            place.clone_source(),
+            Announce::cloning_only(Box::new(|_| {})),
+            answers,
+        );
+
+        mirrors.requests().clone_mirror(named("octo-org/hello"));
+        let held = starts.recv_timeout(A_MOMENT).is_err();
+        mirrors.stop(PLENTY);
+
+        assert!(held);
+    }
 }

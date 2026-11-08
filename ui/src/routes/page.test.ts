@@ -8,6 +8,8 @@ const core = vi.hoisted(() => ({
   checkRepository: vi.fn(),
   addRepository: vi.fn(),
   workbench: vi.fn(),
+  mirrorProblem: vi.fn(),
+  checkMirrorsAgain: vi.fn(),
 }));
 
 vi.mock("$lib/data/bindings", () => ({
@@ -25,6 +27,7 @@ vi.mock("$lib/data/bindings", () => ({
     lastSyncChanged: { listen: async () => () => {} },
     syncActivityChanged: { listen: async () => () => {} },
     cloningChanged: { listen: async () => () => {} },
+    mirrorProblemChanged: { listen: async () => () => {} },
     changed: { listen: async () => () => {} },
   },
 }));
@@ -34,6 +37,7 @@ const gcmon = { name: "some-maintainer/gcmon", conventions: "github", filters: [
 
 beforeEach(() => {
   core.home.mockResolvedValue(onboarding);
+  core.mirrorProblem.mockResolvedValue(null);
   core.workbench.mockResolvedValue({
     status: "ok",
     data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [] },
@@ -52,6 +56,14 @@ it("says when the Repository last synced, and a click asks again", async () => {
   render(Page);
   await fireEvent.click(await screen.findByRole("button", { name: "Not synced yet" }));
   expect(await screen.findByRole("button", { name: "Not synced yet" })).toBeTruthy();
+});
+
+it("says why no mirror can be made, and a click asks the core to look again", async () => {
+  core.mirrorProblem.mockResolvedValue({ kind: "no_git" });
+  render(Page);
+  await fireEvent.click(await screen.findByRole("button", { name: "Check again" }));
+  expect(screen.getByRole("status").textContent).toContain("can't find git");
+  expect(core.checkMirrorsAgain).toHaveBeenCalledOnce();
 });
 
 it("opens on onboarding with no Repositories", async () => {

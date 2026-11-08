@@ -12,6 +12,7 @@ repository.workspace = true
 bench = false
 
 [dependencies]
+fs4.workspace = true
 log.workspace = true
 rusqlite.workspace = true
 rustls.workspace = true

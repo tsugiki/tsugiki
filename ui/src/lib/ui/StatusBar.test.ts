@@ -1,6 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { openLink } from "$lib/state/browser";
 import StatusBar from "./StatusBar.svelte";
+
+vi.mock("$lib/state/browser", () => ({ openLink: vi.fn() }));
 
 const bar = () => screen.getByRole("status");
 
@@ -176,6 +179,74 @@ describe("StatusBar", () => {
         "Offline: read-only · machine.toml, line 1: bad · settings.toml, line 3: bad",
       );
     });
+  });
+});
+
+describe("StatusBar's word on the mirror", () => {
+  const online = { state: "online", login: "octocat" } as const;
+  const short = {
+    kind: "disk_short",
+    repository: "python/cpython",
+    folder: "D:\\Tsugiki",
+    needed_mb: 6144,
+    free_mb: 1024,
+  } as const;
+
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("says nothing and offers nothing while a mirror can be made", () => {
+    render(StatusBar, { status: online });
+    expect(bar().textContent?.trim()).toBe("octocat");
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("says what's short in the live region, and offers Check again outside it", async () => {
+    const oncheckagain = vi.fn();
+    render(StatusBar, { status: online, mirrorProblem: short, oncheckagain });
+    expect(bar().textContent).toContain("No room to clone python/cpython: it needs 6.0 GB");
+    expect(screen.queryByRole("button", { name: "Get git" })).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+    expect(oncheckagain).toHaveBeenCalledOnce();
+  });
+
+  it("has nothing to do at Check again unless the page says", async () => {
+    render(StatusBar, { status: online, mirrorProblem: short });
+    await fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+    expect(screen.getByRole("button", { name: "Check again" })).toBeTruthy();
+  });
+
+  it("comes back when the settings hide it, since nothing else says", () => {
+    render(StatusBar, { status: online, mirrorProblem: short, visible: false });
+    expect(bar().textContent?.trim()).toMatch(/^No room to clone/);
+    expect(screen.getByRole("button", { name: "Check again" })).toBeTruthy();
+  });
+
+  it.each([{ kind: "no_git" }, { kind: "old_git", version: "git version 2.25.1" }] as const)(
+    "opens git's downloads in the browser for %o",
+    async (mirrorProblem) => {
+      vi.mocked(openLink).mockResolvedValue(undefined);
+      render(StatusBar, { status: online, mirrorProblem });
+      await fireEvent.click(screen.getByRole("button", { name: "Get git" }));
+      expect(openLink).toHaveBeenCalledWith("https://git-scm.com/downloads");
+      expect(bar().textContent).toContain("git 2.30 or newer");
+    },
+  );
+
+  it("says when the browser didn't open", async () => {
+    vi.mocked(openLink).mockResolvedValue("Error: no browser");
+    render(StatusBar, { status: online, mirrorProblem: { kind: "no_git" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Get git" }));
+    expect(bar().textContent).toContain("can't find git · Error: no browser");
+  });
+
+  it("drops the browser's problem once git is found", async () => {
+    vi.mocked(openLink).mockResolvedValue("Error: no browser");
+    const { rerender } = render(StatusBar, { status: online, mirrorProblem: { kind: "no_git" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Get git" }));
+    await rerender({ mirrorProblem: null });
+    expect(bar().textContent?.trim()).toBe("octocat");
   });
 });
 

@@ -22,7 +22,7 @@ use tsugiki_core::github::CommitSha;
 use tsugiki_core::highlight::Span;
 use tsugiki_core::latest::LatestReader;
 use tsugiki_core::measurement::Measurement;
-use tsugiki_core::mirror::{Cloning, MirrorRequests};
+use tsugiki_core::mirror::{Cloning, MirrorProblem, MirrorRequests};
 use tsugiki_core::misses::Miss;
 use tsugiki_core::repository::{Home, RepositoryAccess, RepositoryCheck, RepositoryName};
 use tsugiki_core::session::SessionRequests;
@@ -76,6 +76,22 @@ type LatestCloning = LatestReader<Option<Cloning>>;
 #[specta::specta]
 fn cloning(latest: State<'_, LatestCloning>) -> Option<Cloning> {
     latest.get()
+}
+
+type LatestMirrorProblem = LatestReader<Option<MirrorProblem>>;
+
+/// The latest reason no mirror can be made, for a window as it loads.
+#[tauri::command]
+#[specta::specta]
+fn mirror_problem(latest: State<'_, LatestMirrorProblem>) -> Option<MirrorProblem> {
+    latest.get()
+}
+
+/// Looks at git and the disk again, and tries the clones that waited for them, and returns at once.
+#[tauri::command]
+#[specta::specta]
+fn check_mirrors_again(work: State<'_, RepositoryWork>) {
+    work.mirrors.check_again();
 }
 
 /// Refreshes the open Repository now, and returns at once.
@@ -468,6 +484,10 @@ struct SyncActivityChanged(Option<SyncActivity>);
 #[derive(Clone, Serialize, Type, Event)]
 struct CloningChanged(Option<Cloning>);
 
+/// Sent when the worker finds no mirror can be made, and when one can again, so the status bar can say.
+#[derive(Clone, Serialize, Type, Event)]
+struct MirrorProblemChanged(Option<MirrorProblem>);
+
 /// Sent when PR heads arrive in a Repository's mirror, so a Files tab waiting for one asks again.
 #[derive(Clone, Serialize, Type, Event)]
 struct HeadsFetched(Change);
@@ -481,6 +501,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             last_sync,
             sync_activity,
             cloning,
+            mirror_problem,
+            check_mirrors_again,
             refresh,
             open_issue,
             fetch_issue,
@@ -512,6 +534,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             LastSyncChanged,
             SyncActivityChanged,
             CloningChanged,
+            MirrorProblemChanged,
             HeadsFetched
         ])
 }

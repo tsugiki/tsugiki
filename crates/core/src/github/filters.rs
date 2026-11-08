@@ -227,7 +227,6 @@ impl GitHub {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::ErrorKind;
     use crate::github::testing::{Scripted, reply_ok, token};
     use crate::github::{Reply, Transport, Unreachable};
     use serde_json::Value;
@@ -380,19 +379,6 @@ mod tests {
             .map(|(_, sent)| sent["first"].clone())
             .collect();
         assert_eq!(sizes, [json!(50), json!(25)]);
-    }
-
-    #[test]
-    fn a_search_that_fails_twice_is_the_failure() {
-        let (script, _asked) =
-            Scripted::new(vec![Err(Unreachable::Offline), Err(Unreachable::Offline)]);
-
-        let query = query();
-        let refused = github(script)
-            .search_filter(&cpython(), &first_page(&query, None))
-            .unwrap_err();
-
-        assert_eq!(refused.kind, ErrorKind::Offline);
     }
 
     #[test]

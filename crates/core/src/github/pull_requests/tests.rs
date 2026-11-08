@@ -403,18 +403,6 @@ fn a_pr_with_no_checks_and_no_author_says_so() {
 }
 
 #[test]
-fn an_id_github_no_longer_knows_is_left_out() {
-    let (script, _asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([null])))]);
-
-    let batch = github(script)
-        .fetch_pull_requests(PrFetch::Work, &ids(&["gone"]), 25)
-        .unwrap();
-
-    assert_eq!(batch.pull_requests, []);
-    assert_eq!(batch.asked_for, 1);
-}
-
-#[test]
 fn a_batch_keeps_the_rest_when_github_no_longer_knows_an_id() {
     // The shape real GitHub sends for an ID it can't resolve.
     let body = r#"{"data":{"nodes":[null],"rateLimit":{"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}},

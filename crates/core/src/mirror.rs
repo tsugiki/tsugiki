@@ -25,8 +25,10 @@ use crate::status::Status;
 use crate::token::{RunGh, Token};
 
 mod source;
+mod upkeep;
 pub use source::{CloneRefusal, MirrorSource, MirrorSources};
 use source::{GITHUB_PREFIXES, lender};
+use upkeep::{Schedule, Upkeep, Upkept, delete_broken, says_broken};
 
 /// How far a clone has got, from what `git clone --progress` writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
@@ -148,6 +150,8 @@ pub struct Remotes {
     retry: Duration,
     size_of: SizeOf,
     free_space: FreeSpace,
+    /// The schedule of each mirror's upkeep, or nothing for mirrors left as they are.
+    upkeep: Option<Schedule>,
 }
 
 impl Remotes {
@@ -157,11 +161,12 @@ impl Remotes {
             size_of: sizes_on_github(https, live::run_gh),
             free_space: Box::new(|folder| fs4::available_space(folder)),
             prefixes: GITHUB_PREFIXES.map(str::to_owned).to_vec(),
+            upkeep: Some(Schedule::DAILY_AND_WEEKLY),
             ..Self::under("https://github.com/".to_owned())
         }
     }
 
-    /// Remotes at `base` followed by `owner/name.git`, which take no room.
+    /// Remotes at `base` followed by `owner/name.git`, which take no room, with mirrors left as they are.
     pub fn under(base: String) -> Self {
         Self {
             prefixes: vec![base.clone()],
@@ -170,6 +175,7 @@ impl Remotes {
             retry: CLONE_RETRY,
             size_of: Box::new(|_| Ok(0)),
             free_space: Box::new(|_| Ok(u64::MAX)),
+            upkeep: None,
         }
     }
 
@@ -183,6 +189,15 @@ impl Remotes {
     #[cfg(test)]
     fn retrying(self, retry: Duration) -> Self {
         Self { retry, ..self }
+    }
+
+    /// The same remotes, with each mirror's upkeep on `schedule`.
+    #[cfg(test)]
+    fn keeping(self, schedule: Schedule) -> Self {
+        Self {
+            upkeep: Some(schedule),
+            ..self
+        }
     }
 
     /// The same remotes, sized by `size_of` on a disk that `free_space` measures, for tests.
@@ -212,6 +227,8 @@ enum Message {
     Heads(RepositoryName, Vec<PrHead>),
     /// The head of a PR the user opened, which the mirror lacks.
     First(RepositoryName, PrHead),
+    /// A PR the user opened, whose ref stays until the next launch.
+    Opened(RepositoryName, u32),
     /// Whether to hold back the next git, while GitHub can't be reached.
     Hold(bool),
     /// The user asks the worker to look at git and the disk again.
@@ -282,6 +299,11 @@ impl MirrorRequests {
         self.send(Message::First(repository, head));
     }
 
+    /// Keeps the ref of a PR the user opened until the next launch, though the user's work may not reach it.
+    pub fn opened(&self, repository: RepositoryName, number: u32) {
+        self.send(Message::Opened(repository, number));
+    }
+
     /// Looks at git and the disk again, and tries each clone that waits for them or failed.
     pub fn check_again(&self) {
         self.send(Message::CheckAgain);
@@ -328,6 +350,7 @@ impl HeardRequests {
             Message::First(repository, head) => Some((repository, head)),
             Message::Clone(..)
             | Message::Heads(..)
+            | Message::Opened(..)
             | Message::Hold(_)
             | Message::CheckAgain
             | Message::Progress(_)
@@ -371,6 +394,8 @@ impl Mirrors {
             sources: MirrorSources::default(),
             asking: Vec::new(),
             told_asking: None,
+            upkept: Vec::new(),
+            replaced: Vec::new(),
         };
         let _ = thread::spawn(move || {
             // `stop` learns the worker is over when this goes, however the thread ends. Locals go in reverse
@@ -480,6 +505,7 @@ impl Run for Child {
 enum Job {
     Clone(Clone),
     Fetch(Fetch),
+    Upkeep(Upkeep),
 }
 
 /// A clone under way.
@@ -537,6 +563,10 @@ struct Heads {
     /// An opened PR's head waits, which goes ahead of the other Repositories' heads, even when this
     /// Repository's fetch is under way. The next fetch takes it.
     opened: bool,
+    /// The PRs of the last hand-over: those the user's work reaches. Nothing before the first one.
+    handed: Option<BTreeSet<u32>>,
+    /// The PRs the user opened since launch, whose refs stay though the user's work doesn't reach them.
+    viewed: BTreeSet<u32>,
 }
 
 impl Heads {
@@ -622,6 +652,10 @@ struct Worker {
     asking: Vec<RepositoryName>,
     /// The first of `asking` the window last heard of.
     told_asking: Option<RepositoryName>,
+    /// The times each Repository's mirror last had its upkeep, for those the worker has heard of.
+    upkept: Vec<(RepositoryName, Upkept)>,
+    /// The Repositories whose broken mirror the worker cloned again since launch.
+    replaced: Vec<RepositoryName>,
 }
 
 impl Worker {
@@ -653,6 +687,7 @@ impl Worker {
                     }
                     self.put_first(&repository, head);
                 }
+                Ok(Message::Opened(repository, number)) => self.note_opened(&repository, number),
                 Ok(Message::Hold(held)) => {
                     self.heard_news();
                     self.pace = if held { Pace::Held } else { Pace::Going };
@@ -669,9 +704,11 @@ impl Worker {
             }
         }
         match self.job.take() {
-            Some(Job::Clone(Clone { mut git, .. }) | Job::Fetch(Fetch { mut git, .. })) => {
-                git.stop()
-            }
+            Some(
+                Job::Clone(Clone { mut git, .. })
+                | Job::Fetch(Fetch { mut git, .. })
+                | Job::Upkeep(Upkeep { mut git, .. }),
+            ) => git.stop(),
             None => {}
         }
     }
@@ -680,6 +717,7 @@ impl Worker {
         if let Some(source) = source {
             self.sources.set(repository.clone(), source);
         }
+        self.note_for_upkeep(&repository);
         if let Some(index) = self.asking.iter().position(|one| one.is_same(&repository)) {
             if self.sources.get(&repository).is_none() {
                 return;
@@ -689,7 +727,7 @@ impl Worker {
         }
         let cloning = match &self.job {
             Some(Job::Clone(clone)) => Some(&clone.cloning.repository),
-            Some(Job::Fetch(_)) | None => None,
+            Some(Job::Fetch(_) | Job::Upkeep(_)) | None => None,
         };
         if cloning.is_some_and(|cloning| cloning.is_same(&repository)) {
             return;
@@ -723,6 +761,7 @@ impl Worker {
         match job {
             Job::Clone(clone) => self.finish(clone, last_words),
             Job::Fetch(fetch) => self.finish_fetch(fetch, last_words),
+            Job::Upkeep(upkeep) => self.finish_upkeep(upkeep, last_words),
         }
     }
 
@@ -739,6 +778,8 @@ impl Worker {
                 behind: BTreeMap::new(),
                 settled: BTreeMap::new(),
                 opened: false,
+                handed: None,
+                viewed: BTreeSet::new(),
             })
     }
 
@@ -752,6 +793,7 @@ impl Worker {
     /// under way asks for too waits, in case that fetch fails.
     fn hand_over(&mut self, repository: &RepositoryName, heads: Vec<PrHead>) {
         let mut known = self.take_heads(repository);
+        known.handed = Some(heads.iter().map(|head| head.number).collect());
         for PrHead {
             number,
             commit,
@@ -770,6 +812,18 @@ impl Worker {
         self.heads.push_front(known);
     }
 
+    /// Keeps the ref of PR `number` in `repository`'s mirror until the next launch.
+    fn note_opened(&mut self, repository: &RepositoryName, number: u32) {
+        match (self.heads.iter_mut()).find(|known| known.repository.is_same(repository)) {
+            Some(known) => drop(known.viewed.insert(number)),
+            None => {
+                let mut known = self.take_heads(repository);
+                let _ = known.viewed.insert(number);
+                self.heads.push_back(known);
+            }
+        }
+    }
+
     /// Puts the head of a PR the user opened in the next fetch, whatever the worker noted of it, and its
     /// Repository ahead of the others.
     fn put_first(&mut self, repository: &RepositoryName, head: PrHead) {
@@ -778,13 +832,14 @@ impl Worker {
         drop(known.settled.remove(&head.number));
         drop(known.waiting.insert(head.number, head.commit));
         let _ = known.branches.insert(head.target_branch);
+        let _ = known.viewed.insert(head.number);
         known.opened = true;
         self.heads.push_front(known);
     }
 
-    /// Starts the next git, unless one is under way or GitHub can't be reached. A fetch goes ahead of a
-    /// clone, as it takes a moment and a clone can take minutes. Nothing starts without a usable git, and
-    /// short of disk only fetches do.
+    /// Starts the next git, unless one is under way. A fetch goes ahead of a clone, as it takes a moment
+    /// and a clone can take minutes, and both go ahead of a mirror's upkeep, which can wait. Nothing starts
+    /// without a usable git, and short of disk only fetches and upkeep do.
     fn start_next(&mut self) {
         // Before the checks, so a wait that is over leaves `next_due` even while nothing can start.
         self.retry_due();
@@ -798,6 +853,14 @@ impl Worker {
         ) {
             return;
         }
+        self.start_fetch_or_clone();
+        if self.job.is_none() {
+            self.start_upkeep();
+        }
+    }
+
+    /// Starts a fetch, or else a clone, unless GitHub can't be reached.
+    fn start_fetch_or_clone(&mut self) {
         while self.job.is_none() && self.pace != Pace::Held {
             if let Some((repository, batch, mirror)) = self.next_batch() {
                 self.start_fetch(repository, batch, mirror);
@@ -851,7 +914,7 @@ impl Worker {
             return ControlFlow::Continue(());
         }
         let root = folders.data.clone();
-        match self.room_for(&repository, &root) {
+        match self.room_for(&repository, &root, &folders.mirror(&repository)) {
             Ok(None) => self.set_problem(None),
             Ok(Some(short)) => {
                 self.waiting.push_front(repository);
@@ -921,21 +984,30 @@ impl Worker {
         self.problem = problem;
     }
 
-    /// Says what a clone of `repository` lacks on the disk that holds `root`, if anything.
+    /// Says what a clone of `repository` at `mirror` lacks on the disk that holds `root`, if anything. A
+    /// broken mirror waiting for this clone gives back its room when the disk is short.
     fn room_for(
         &mut self,
         repository: &RepositoryName,
         root: &Path,
+        mirror: &Path,
     ) -> Result<Option<MirrorProblem>, String> {
         let size = (self.remotes.size_of)(repository).map_err(|problem| problem.message)?;
-        let free = (self.remotes.free_space)(root).map_err(|cause| cause.to_string())?;
         let needed = size.saturating_add(ROOM_TO_SPARE);
+        let mut free = self.free_space(root)?;
+        if free < needed && delete_broken(repository, mirror) {
+            free = self.free_space(root)?;
+        }
         Ok((free < needed).then(|| MirrorProblem::DiskShort {
             repository: repository.clone(),
             folder: root.display().to_string(),
             needed_mb: megabytes(needed),
             free_mb: megabytes(free),
         }))
+    }
+
+    fn free_space(&self, root: &Path) -> Result<u64, String> {
+        (self.remotes.free_space)(root).map_err(|cause| cause.to_string())
     }
 
     /// Tries a clone of `repository` again after a wait, which doubles each time it fails in a row.
@@ -969,8 +1041,8 @@ impl Worker {
             .extend(due.into_iter().map(|(repository, _)| repository));
     }
 
-    /// The time the first head that is behind is due to be fetched once more, or the first clone that
-    /// failed is due to go back in line.
+    /// The time the first head that is behind is due to be fetched once more, the first clone that failed
+    /// is due to go back in line, or the first mirror's upkeep falls due.
     fn next_due(&self) -> Option<Instant> {
         let heads = self
             .heads
@@ -981,7 +1053,13 @@ impl Worker {
                 Behind::Retried { .. } => None,
             });
         let clones = self.failed.iter().map(|(_, at)| *at);
-        heads.chain(clones).min()
+        // Only an idle worker with a usable git starts an upkeep, so only it wakes for one.
+        let git_unusable = matches!(
+            self.problem,
+            Some(MirrorProblem::NoGit | MirrorProblem::OldGit { .. })
+        );
+        let upkeep = (self.job.is_none() && !git_unusable).then(|| self.upkeep_due());
+        heads.chain(clones).chain(upkeep.flatten()).min()
     }
 
     /// Puts each head that is due to be fetched once more with the waiting ones. A newer one handed over
@@ -1036,6 +1114,9 @@ impl Worker {
             .map(|branch| format!("+refs/heads/{branch}*:refs/heads/{branch}*\n"));
         let refspecs: String = heads.chain(branches).collect();
         let args = [
+            // A mirror cloned before Tsugiki kept it has no `maintenance.auto=false` of its own.
+            OsStr::new("-c"),
+            OsStr::new("maintenance.auto=false"),
             OsStr::new("-c"),
             OsStr::new("http.lowSpeedLimit=1"),
             OsStr::new("-c"),
@@ -1105,8 +1186,11 @@ impl Worker {
             news,
         } = fetch;
         if !git.succeeded() {
-            log::warn!("Tsugiki couldn't fetch PR heads of {repository}: {last_words}");
             self.try_again_later(&repository, batch);
+            if says_broken(last_words) && self.replace_broken(&repository, &mirror, last_words) {
+                return;
+            }
+            log::warn!("Tsugiki couldn't fetch PR heads of {repository}: {last_words}");
             // A fetch starts only while the worker is going, and no news since means it still is. Fetches
             // wait for some, so one that can't work doesn't run again and again.
             if !news {
@@ -1211,7 +1295,16 @@ impl Worker {
         partial: &Path,
         reference: Option<&Path>,
     ) -> io::Result<Started> {
-        let args = ["clone", "--bare", "--no-tags", "--progress"].map(OsStr::new);
+        // The worker runs each mirror's upkeep itself, at a time of its choosing.
+        let args = [
+            "clone",
+            "--bare",
+            "--no-tags",
+            "--progress",
+            "--config",
+            "maintenance.auto=false",
+        ]
+        .map(OsStr::new);
         let borrow = reference.map_or_else(Vec::new, |reference| {
             vec![
                 OsStr::new("--reference"),
@@ -1252,6 +1345,7 @@ impl Worker {
                 log::info!("Tsugiki cloned {repository}'s mirror");
                 self.clone_tries
                     .retain(|(one, _)| !one.is_same(&repository));
+                self.cloned_afresh(&repository, &clone.mirror);
             }
             Err(why) => {
                 log::warn!("Tsugiki couldn't clone {repository}'s mirror: {why}");
@@ -1302,9 +1396,11 @@ fn pull_refs(listing: &str) -> BTreeMap<u32, CommitSha> {
 }
 
 /// Passes on each line of progress git writes, until git closes its error output. git ends a line of
-/// progress with a carriage return, and other lines with a newline.
+/// progress with a carriage return, and other lines with a newline. Its last words are its last `fatal:`
+/// or `error:` line, as hints follow the reason, or else its last line.
 fn read_progress_until_done(progress: Box<dyn Read + Send>, messages: &Sender<Message>) {
     let mut last_words = String::new();
+    let mut last_error = String::new();
     let mut line = Vec::new();
     for byte in BufReader::new(progress).bytes().map_while(Result::ok) {
         if byte != b'\r' && byte != b'\n' {
@@ -1314,10 +1410,16 @@ fn read_progress_until_done(progress: Box<dyn Read + Send>, messages: &Sender<Me
         let text = String::from_utf8_lossy(&line);
         match read_progress(&text) {
             Some(progress) => drop(messages.send(Message::Progress(progress))),
+            None if text.starts_with("fatal: ") || text.starts_with("error: ") => {
+                last_error = text.trim().to_owned();
+            }
             None if !text.trim().is_empty() => last_words = text.trim().to_owned(),
             None => {}
         }
         line.clear();
+    }
+    if !last_error.is_empty() {
+        last_words = last_error;
     }
     drop(messages.send(Message::Ended { last_words }));
 }

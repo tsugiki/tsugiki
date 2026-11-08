@@ -325,6 +325,11 @@ The order in which v1 is built is in [build-order.md](build-order.md).
   `machine.toml`, so a new clone after a broken one borrows again. A Repository added before Tsugiki asked
   waits for its clone until the user answers in the status bar, once on each machine. A clone that fails is
   deleted and tried again, and one cut off by quitting starts again at the next launch.
+- Tsugiki keeps each mirror in shape itself, and never changes the user's git config. Each day it deletes the
+  refs of PRs the Workbench no longer reaches, apart from those opened since launch, and runs git's
+  incremental maintenance; each week it runs `git gc`. A mirror git says is broken is moved aside and cloned
+  again, borrowing again where it can, while the status bar shows the clone. Its PRs' heads are then fetched
+  again.
 - While a Repository's mirror is still being cloned, the diff, the definitions and Open in editor say how far
   it has got. The Conversation tab works meanwhile.
 - Without git 2.30 or newer, or without room on the disk for the clone, the diff says what is missing, with a

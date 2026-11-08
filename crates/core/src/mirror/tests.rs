@@ -518,11 +518,7 @@ impl FakeStart {
         let refs: String = landed
             .iter()
             .map(|PrHead { number, commit, .. }| {
-                format!(
-                    "{} refs/tsugiki/pull/{number}/head
-",
-                    commit.as_str()
-                )
+                format!("{} refs/tsugiki/pull/{number}/head\n", commit.as_str())
             })
             .collect();
         self.refs.send(refs).unwrap();
@@ -747,6 +743,8 @@ fn the_heads_handed_over_together_go_in_one_fetch_into_the_mirror() {
     assert_eq!(
         fetch.args,
         [
+            "-c",
+            "maintenance.auto=false",
             "-c",
             "http.lowSpeedLimit=1",
             "-c",
@@ -1284,6 +1282,7 @@ fn the_heard_requests_keep_only_the_opened_prs_heads() {
 }
 
 mod borrowing;
+mod upkeep;
 
 mod problems {
     use super::*;

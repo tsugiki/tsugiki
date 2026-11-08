@@ -81,7 +81,11 @@ mod tests {
     fn a_folder_a_failed_run_left_at_a_test_path_is_gone() {
         let leftover = testing::temp_path("leftover-folder");
         std::fs::create_dir_all(leftover.join("below")).unwrap();
-        std::fs::write(leftover.join("below/file"), "what a test that panicked left").unwrap();
+        std::fs::write(
+            leftover.join("below/file"),
+            "what a test that panicked left",
+        )
+        .unwrap();
         assert!(!testing::temp_path("leftover-folder").exists());
     }
 

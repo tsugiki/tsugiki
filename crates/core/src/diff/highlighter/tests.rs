@@ -54,10 +54,10 @@ impl Repo {
 
     /// The diff of PR `number`, whose head is the PR branch.
     fn source(&self, number: u32) -> Source {
-        let read = read(&self.mirror, "main", Start::TargetBranch, &self.head).unwrap();
+        let read = read(&self.mirror, "main", &Start::TargetBranch, &self.head).unwrap();
         let diff = OpenDiff {
             pr: pr(number, &self.head),
-            target: Some("main".to_owned()),
+            target: Some(("main".to_owned(), Start::TargetBranch)),
             base: read.base,
             diff: read.diff,
             news: read.news,
@@ -426,7 +426,7 @@ fn a_retargeted_pr_s_diff_keeps_trees_of_its_own() {
     let retargeted = Source {
         diff: Arc::new(OpenDiff {
             pr: pr(7, &repo.head),
-            target: Some("3.14".to_owned()),
+            target: Some(("3.14".to_owned(), Start::TargetBranch)),
             base: other,
             diff: first.diff.clone(),
             news: Vec::new(),

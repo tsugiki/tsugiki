@@ -538,22 +538,43 @@ fn a_squashed_pr_stored_before_tsugiki_read_its_base_shows_its_diff() {
 }
 
 #[test]
-fn a_base_the_mirror_lacks_fails_as_a_diff_it_cant_read() {
-    let world = World::new("base-missing");
-    let mirrored = Mirrored::new("pr-files-base-missing");
+fn a_merge_the_mirror_hasnt_fetched_yet_shows_the_diff_against_the_target_branch() {
+    let world = World::new("merge-unfetched");
+    let mirrored = Mirrored::new("pr-files-merge-unfetched");
     let head = mirrored.head.clone();
-    let main = main_tip(&mirrored.mirror);
-    let merge_commit = commit_onto_main(&mirrored.mirror, &[&main, &head]);
+    let before = mirrored.read();
     world.mirrors(&mirrored);
-    let gone = CommitSha::parse("0123456789abcdef0123456789abcdef01234567").unwrap();
+    // main moved on and took the merge after the mirror last fetched it.
+    let base = CommitSha::parse("0123456789abcdef0123456789abcdef01234567").unwrap();
+    let merge_commit = CommitSha::parse("456789abcdef0123456789abcdef0123456789ab").unwrap();
 
-    world.has_merged(&head, merge_commit, Some(gone));
+    world.has_merged(&head, merge_commit.clone(), Some(base));
+    let with_base = world.files();
+    world.has_merged(&head, merge_commit, None);
 
-    let problem = PrFiles::read(&world.sources(), &world.repository(), 7).unwrap_err();
-    assert_eq!(
-        problem.message,
-        "Tsugiki couldn't read this PR's diff from its mirror."
-    );
+    assert_eq!(with_base, Some(ready(head.clone(), before)));
+    assert_eq!(world.files(), with_base);
+    mirrored.finish();
+    world.finish();
+}
+
+#[test]
+fn a_pr_that_merges_while_its_diff_shows_starts_where_github_compared_it() {
+    let world = World::new("merges-on-show");
+    let mirrored = Mirrored::new("pr-files-merges-on-show");
+    let head = mirrored.head.clone();
+    let before = mirrored.read();
+    let base = main_tip(&mirrored.mirror);
+    let merge_commit = commit_onto_main(&mirrored.mirror, &[&base, &head]);
+    world.mirrors(&mirrored);
+    // The mirror has the merge before the sync learns of it, so the open PR's diff is empty.
+    world.has_pr(Some(head.clone()), "main");
+    let open = world.files();
+
+    world.has_merged(&head, merge_commit, Some(base));
+
+    assert!(matches!(open, Some(PrFiles::Ready { files, .. }) if files.is_empty()));
+    assert_eq!(world.files(), Some(ready(head, before)));
     mirrored.finish();
     world.finish();
 }

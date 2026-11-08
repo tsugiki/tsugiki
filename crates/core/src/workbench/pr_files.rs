@@ -101,7 +101,8 @@ impl PrFiles {
             number,
             head: head.clone(),
         };
-        let target = Against::Branch(&pr.target_branch);
+        let start = start(&pr);
+        let target = Against::Branch(&pr.target_branch, &start);
         // The diff on show is in the mirror, so asking git again would only cost a moment.
         if let Some(open) = sources.diffs.shown(&at, target) {
             return Ok(Some(Self::ready(&open, content.as_ref(), None)));
@@ -120,7 +121,7 @@ impl PrFiles {
                 let Some(older) = older else {
                     return Ok(Some(Self::Fetching));
                 };
-                let read = || diff::read(&mirror, &pr.target_branch, start(&pr, &older), &older);
+                let read = || diff::read(&mirror, &pr.target_branch, &start, &older);
                 let at = PrAt {
                     head: older.clone(),
                     ..at
@@ -136,7 +137,7 @@ impl PrFiles {
                 ),
             )),
             Held::Both => {
-                let read = || diff::read(&mirror, &pr.target_branch, start(&pr, &head), &head);
+                let read = || diff::read(&mirror, &pr.target_branch, &start, &head);
                 let open = sources.diffs.get_or_read(&at, target, read)?;
                 Ok(Some(Self::ready(&open, content.as_ref(), None)))
             }
@@ -240,21 +241,29 @@ impl PrFiles {
                 ));
             };
             let mirror = sources.folders.mirror(&pr.repository);
-            diff::read(&mirror, &facts.target_branch, Start::Base(base), &pr.head)
+            diff::read(
+                &mirror,
+                &facts.target_branch,
+                &Start::Base(base.clone()),
+                &pr.head,
+            )
         })
     }
 }
 
-/// Where the diff of `pr` at `head` starts. A merged PR's starts where GitHub's does, as its head can be
-/// in the Target branch by now. One stored before Tsugiki read where that is starts from its merge
-/// commit's first parent, unless the merge was a fast-forward (#212).
-fn start<'a>(pr: &'a PullRequestFacts, head: &CommitSha) -> Start<'a> {
+/// Where the diff of `pr` starts. A merged PR's starts where GitHub's does, as its head can be in the
+/// Target branch by now. One stored before Tsugiki read where that is starts from its merge commit's
+/// first parent, unless the merge was a fast-forward to its head (#212). A diff at an older head the
+/// mirror holds starts there too.
+fn start(pr: &PullRequestFacts) -> Start {
     if pr.state != PrState::Merged {
         return Start::TargetBranch;
     }
     match (&pr.base, &pr.merge_commit) {
-        (Some(base), _) => Start::MergeBaseWith(base),
-        (None, Some(merge)) if merge != head => Start::MergeBaseWithParentOf(merge),
+        (Some(base), _) => Start::MergeBaseWith(base.clone()),
+        (None, Some(merge)) if pr.head.as_ref() != Some(merge) => {
+            Start::MergeBaseWithParentOf(merge.clone())
+        }
         (None, _) => Start::TargetBranch,
     }
 }

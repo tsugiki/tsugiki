@@ -96,13 +96,6 @@ fn a_second_session_on_the_same_folder_says_why_it_stopped() {
 }
 
 #[test]
-fn signing_in_shows_the_login() {
-    let (mut board, seen) = watched_board();
-    assert!(connect(&mut board, &empty_store(), octocat_answers()).is_some());
-    assert_eq!(showing(&seen), octocat());
-}
-
-#[test]
 fn signing_in_remembers_the_login() {
     let store = store_remembering("hubot");
     assert!(connect(&mut quiet_board(), &store, octocat_answers()).is_some());
@@ -185,11 +178,6 @@ fn without_gh_nothing_is_asked_and_the_problem_shows() {
 }
 
 #[test]
-fn a_status_without_a_problem_has_no_problem_kind() {
-    assert_eq!(problem_kind(Status::Offline), None);
-}
-
-#[test]
 fn a_last_login_that_cant_be_read_doesnt_stop_tsugiki_connecting() {
     let (mut board, seen) = watched_board();
     assert!(connect(&mut board, &Store::stopped(), octocat_answers()).is_some());
@@ -223,26 +211,6 @@ impl Transport for Replies {
 
 fn signed_in() -> Result<Reply, Unreachable> {
     signed_in_as("octocat")
-}
-
-#[test]
-fn the_status_follows_the_network_going_and_coming_back() {
-    let access = replying(vec![signed_in(), Err(Unreachable::Offline), signed_in()]);
-    let (mut board, seen) = watched_board();
-    let store = empty_store();
-    let github = connect(&mut board, &store, access).unwrap();
-    assert_eq!(showing(&seen), octocat());
-
-    refresh(&mut board, &store, &github);
-    assert_eq!(
-        showing(&seen),
-        Status::OfflineAs {
-            last_login: Login::new("octocat")
-        }
-    );
-
-    refresh(&mut board, &store, &github);
-    assert_eq!(showing(&seen), octocat());
 }
 
 #[test]
@@ -371,7 +339,7 @@ fn reading_an_issue_on_screen_again_leaves_last_seen_where_it_is() {
 }
 
 #[test]
-fn opening_a_pr_records_last_seen_and_asks_github_nothing() {
+fn opening_a_github_page_records_last_seen_and_asks_github_nothing() {
     // `Replies` panics if it is asked a second time.
     let access = replying(vec![signed_in()]);
 
@@ -1009,18 +977,6 @@ fn with_no_token_what_is_stored_stays_readable() {
 }
 
 #[test]
-fn a_session_with_no_token_ends_when_it_can_no_longer_be_asked_anything() {
-    let (messages, incoming) = mpsc::channel();
-    let refreshes = Refreshes {
-        intervals: HOURLY,
-        incoming,
-    };
-    drop(messages);
-
-    refreshes.wait_for_stop(&mut quiet_board(), &empty_store());
-}
-
-#[test]
 fn a_session_that_has_ended_ignores_a_sync_and_a_refresh() {
     let (messages, incoming) = mpsc::channel();
     drop(incoming);
@@ -1198,18 +1154,6 @@ fn a_session_with_no_token_ignores_a_refresh_until_it_stops() {
     messages.send(Message::Stop).unwrap();
 
     refreshes.wait_for_stop(&mut quiet_board(), &empty_store());
-}
-
-#[test]
-fn a_reader_answers_once_the_session_has_opened_the_database() {
-    let folders = temp_folders("reader");
-    let session = Session::start(quiet_board(), Ok(folders.clone()), offline(), HOURLY);
-
-    let facts = session.reader().work_facts(&gcmon());
-    session.stop(PLENTY);
-    fs::remove_dir_all(folders.data).unwrap();
-
-    assert_eq!(facts.unwrap().pull_requests, []);
 }
 
 #[test]

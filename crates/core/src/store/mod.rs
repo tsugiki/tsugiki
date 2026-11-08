@@ -112,6 +112,14 @@ impl Store {
         read.map_err(saying(CANT_READ))
     }
 
+    /// The Issues of `repository` saved before Tsugiki kept states, which a sync fetches once (#231).
+    pub fn issues_without_state(&self, repository: &RepositoryName) -> Result<Vec<u32>, Error> {
+        let repository = repository.clone();
+        let read =
+            self.call(move |connection| issues::numbers_without_state(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
     /// The merged and closed PRs of `repository`, which a sync doesn't fetch again (ADR 0011).
     pub fn frozen_pull_requests(
         &self,

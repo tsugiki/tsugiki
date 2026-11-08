@@ -8,7 +8,7 @@ use crate::github::testing::{dated, reply_ok, signed_in_as};
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::repository::{RepositoryName, RepositorySettings};
 use crate::status::Change;
-use crate::store::{FilterProblem, WorkFacts};
+use crate::store::{FilterProblem, Store, WorkFacts};
 use crate::sync::recovery::{Scenario, recovers_from_each_failure};
 use crate::sync::testing::{
     FEW, Harness, LOTS, cpython, cross_references, fetched_nodes, issues, no_cross_references,
@@ -400,6 +400,123 @@ fn a_later_sync_asks_only_what_changed_since_the_last_one() {
     assert_eq!(asked[0].0, "RefreshRepository");
     assert_eq!(asked[0].1["since"], "2026-11-04T09:58:00Z");
     assert_eq!(changes, []);
+    harness.finish();
+}
+
+/// Saves Issue `number` with no state, as the migration that added states left the Issues saved before it.
+fn holding_issue_with_no_state(harness: &Harness, number: u32) {
+    let issue = IssueFacts {
+        number,
+        title: format!("Issue {number}"),
+        author: None,
+        assignees: vec![],
+        updated_at: at(LONG_BEFORE),
+        state: None,
+    };
+    harness.store.save_issues(&cpython(), vec![issue]).unwrap();
+}
+
+#[test]
+fn a_refresh_fetches_the_issues_saved_before_tsugiki_kept_states_once() {
+    let harness = after_a_sync(
+        "states",
+        vec![quiet_poll(), issues(&[1, 2], LOTS), quiet_poll()],
+    );
+    holding_issue_with_no_state(&harness, 1);
+    holding_issue_with_no_state(&harness, 2);
+    holding_issue(&harness, 3, LONG_BEFORE);
+    let mut syncs = refreshing(filtering(&[]));
+
+    let changes = run(&mut syncs, &harness);
+    let first = harness.operations();
+    syncs.add(filtering(&[]));
+    drop(run(&mut syncs, &harness));
+
+    let states: Vec<Option<IssueState>> = harness
+        .store
+        .issues(&cpython())
+        .unwrap()
+        .into_iter()
+        .map(|issue| issue.state)
+        .collect();
+    assert_eq!(first, ["RefreshRepository", "FetchIssues"]);
+    assert_eq!(changes.len(), 1, "{changes:?}");
+    assert_eq!(states, [Some(IssueState::Open); 3]);
+    assert_eq!(harness.operations(), ["RefreshRepository"]);
+    harness.finish();
+}
+
+#[test]
+fn an_issue_github_no_longer_has_is_asked_for_once_a_launch() {
+    let harness = after_a_sync(
+        "states-gone",
+        vec![quiet_poll(), issues(&[1], LOTS), quiet_poll()],
+    );
+    holding_issue_with_no_state(&harness, 1);
+    holding_issue_with_no_state(&harness, 2);
+    let mut syncs = refreshing(filtering(&[]));
+
+    drop(run(&mut syncs, &harness));
+    syncs.add(filtering(&[]));
+    drop(run(&mut syncs, &harness));
+
+    let states: Vec<Option<IssueState>> = harness
+        .store
+        .issues(&cpython())
+        .unwrap()
+        .into_iter()
+        .map(|issue| issue.state)
+        .collect();
+    assert_eq!(states, [Some(IssueState::Open), None]);
+    assert_eq!(
+        harness.operations(),
+        ["RefreshRepository", "FetchIssues", "RefreshRepository"]
+    );
+    harness.finish();
+}
+
+/// Steps the open Repository's sync until it finishes.
+fn until_finished(syncs: &mut Syncs, harness: &Harness) {
+    while !matches!(
+        syncs.step(&harness.github, &harness.store).unwrap(),
+        Some(Progress::Finished(_))
+    ) {}
+}
+
+#[test]
+fn a_refresh_goes_before_the_fetch_of_the_issues_with_no_state() {
+    let harness = after_a_sync(
+        "states-behind",
+        vec![quiet_poll(), quiet_poll(), issues(&[1], LOTS)],
+    );
+    holding_issue_with_no_state(&harness, 1);
+    let mut syncs = refreshing(filtering(&[]));
+
+    until_finished(&mut syncs, &harness);
+    syncs.add(filtering(&[]));
+    drop(run(&mut syncs, &harness));
+
+    assert_eq!(
+        harness.operations(),
+        ["RefreshRepository", "RefreshRepository", "FetchIssues"]
+    );
+    harness.finish();
+}
+
+#[test]
+fn a_store_that_cant_say_which_issues_have_no_state_leaves_them_for_the_next_launch() {
+    let harness = after_a_sync("states-unread", vec![quiet_poll()]);
+    holding_issue_with_no_state(&harness, 1);
+    let mut syncs = refreshing(filtering(&[]));
+    until_finished(&mut syncs, &harness);
+    let stopped = Store::stopped();
+
+    let stepped = syncs.step(&harness.github, &stopped).unwrap();
+    stopped.close();
+
+    assert_eq!(stepped, None);
+    assert_eq!(syncs.ready_at(), None);
+    assert_eq!(harness.operations(), ["RefreshRepository"]);
     harness.finish();
 }
 

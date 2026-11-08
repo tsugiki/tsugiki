@@ -118,6 +118,22 @@ fn assignees(
     )
 }
 
+/// The numbers of the Issues of `repository` saved with no state, which the migration that added states
+/// left (#231).
+pub(super) fn numbers_without_state(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<Vec<u32>> {
+    let query = "SELECT number FROM issues
+                 WHERE repository = :repository AND state IS NULL
+                 ORDER BY number";
+    let mut statement = connection.prepare(query)?;
+    let numbers = statement.query_map(named_params! { ":repository": repository }, |row| {
+        row.get("number")
+    });
+    numbers?.collect()
+}
+
 /// The Issues of `repository` that Tsugiki keeps.
 pub(super) fn read_all(
     connection: &Connection,

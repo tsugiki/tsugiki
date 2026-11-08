@@ -30,8 +30,8 @@ For the **Repositories** you add, such as `python/cpython` and your own projects
 ## Status
 
 Tsugiki 0.1 is the first version for daily work. It lists the Issues that wait on you, and you answer them
-on GitHub. Reviewing PRs in the app comes in the later stages of
-[docs/build-order.md](docs/build-order.md). These files record the decisions behind it:
+on GitHub. 0.2, on main and not released yet, reads PRs in the app. Writing to GitHub comes in a later stage
+of [docs/build-order.md](docs/build-order.md). These files record the decisions behind it:
 
 - [CONTEXT.md](CONTEXT.md): the glossary. Terms in **bold** are defined there.
 - [docs/scope.md](docs/scope.md): what v1 does, and what it leaves out.
@@ -40,6 +40,61 @@ on GitHub. Reviewing PRs in the app comes in the later stages of
 
 It is a [Tauri](https://tauri.app/) app (Rust with Svelte 5 and TypeScript) for Windows and macOS. Its
 command-line name is `tsg`.
+
+## Features
+
+### In 0.1
+
+- Add a Repository by its name or its link. Tsugiki reads GitHub with the GitHub CLI's token.
+- A first sync loads what waits on you before anything else, then the rest, and resumes where you quit it.
+  After that Tsugiki refreshes on its own, and when you click the status bar. Repositories sync in turns, the
+  open one first.
+- The Sidebar: the Workbench, Review requests, the starter Filters and the Filters you write in
+  `settings.toml`, each with its count.
+- The Workbench lists Issues by Needs attention, says why each one waits on you, and shows its Origin PRs
+  with their Backports beneath them.
+- The Issue view: the description, the comments, and each PR with its state, CI and Reviews.
+- An Issue you've read stops looking unread until something new happens on it.
+- `↑`/`↓` and `Enter` move through the list, and `Ctrl+Shift+G` opens an Issue or PR on GitHub. The
+  webview's browser shortcuts stay off.
+- `tsg` runs one Tsugiki and hands it `tsugiki://` links.
+- A performance HUD on `Ctrl+Shift+H`, and a line in the log for each performance budget the window misses.
+- A portable `.zip` for Windows and a `.dmg` for Apple silicon Macs.
+
+### In 0.2, on main
+
+- Each Repository gets a Mirror, a bare git clone, and each sync fetches the branches of the PRs your work
+  reaches.
+- A PR opens in the Detail pane. Its Conversation tab shows the Reviews with their threads, and its Files tab
+  shows the diff, read from the Mirror.
+- The diff highlights C, Python, Rust, TypeScript, Svelte and 9 more languages, with code inside other code
+  ([docs/highlighting.md](docs/highlighting.md)). Generated files start collapsed, the Files tab
+  renders a PR's NEWS entries above the diff, and you can expand the context around each hunk.
+- Unified or side-by-side diffs on `Ctrl+Alt+U`.
+- Review threads in the diff, Outdated ones and those on lines outside the diff included.
+- `F7` and `F8` move between changes and threads, `Ctrl+F` finds text in the diff, and `Alt+←` and `Alt+→`
+  go back and forward.
+- The edges between the panes drag, and their widths stay on the machine.
+- Each Issue and PR shows GitHub's Octicon for its state, in GitHub's colors.
+
+### Planned
+
+The [Issues](https://github.com/tsugiki/tsugiki/issues) hold the work in flight, and
+[docs/build-order.md](docs/build-order.md) the stages after it:
+
+- The rest of 0.2: borrowing objects from a clone you have
+  ([#172](https://github.com/tsugiki/tsugiki/issues/172)), saying when git is missing or the disk is short
+  ([#171](https://github.com/tsugiki/tsugiki/issues/171)), and hiding the Sidebar
+  ([#234](https://github.com/tsugiki/tsugiki/issues/234)).
+- Reading PRs, continued: Stale reviews, Go to definition and Definition peek, the file view, the Review
+  checkout, Open in editor, and reading offline.
+- Writing: comments, line comments in a Pending review, replies, resolving threads, `suggestion` blocks and
+  submitting a review; Local marks; a token of your own in the keychain.
+- Workbench breadth: All issues, Pinned issues, Archive and Mute, the Built-in views, Stacked PRs, Dependency
+  updates, the Peek, Alerts, a Windows installer and a `.dmg` for Intel Macs.
+- Settings: the Settings dialog, remapping keys, the whole command palette, the Home page with several
+  Repositories, editing Conventions, exporting the database, zoom and the macOS menu.
+- 1.0: every performance budget met in the real window, on Windows and macOS.
 
 ## Installing
 

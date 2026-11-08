@@ -192,6 +192,7 @@ mod tests {
         let origin = PullRequestFacts {
             state: PrState::Merged,
             merge_commit: Some(sha.clone()),
+            base: None,
             head: None,
             ..fixing(10, 1)
         };

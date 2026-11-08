@@ -953,6 +953,7 @@ mod tests {
             assignees: vec![Login::new("some-assignee")],
             closing_issues: vec![7],
             merge_commit: CommitSha::parse("0123abc"),
+            base: None,
             head: None,
             off_default: Some(OffDefault {
                 description: String::new(),

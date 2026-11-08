@@ -1,4 +1,7 @@
+use std::path::Path;
+
 use super::*;
+use crate::diff::MirrorDiff;
 use crate::diff::tests::{Mirrored, git_in};
 use crate::github::pull_request_content::{Side, Subject};
 use crate::mirror::HeardRequests;
@@ -48,6 +51,20 @@ impl World {
         let pr = PullRequestFacts {
             head,
             target_branch: target.to_owned(),
+            ..mine(7)
+        };
+        self.view.has(vec![pr], vec![]);
+    }
+
+    /// PR 7, merged into main as `merge_commit`, from `head`. GitHub compared it with `base` at the
+    /// merge, and a PR stored before Tsugiki read that has none.
+    fn has_merged(&self, head: &CommitSha, merge_commit: CommitSha, base: Option<CommitSha>) {
+        let pr = PullRequestFacts {
+            state: PrState::Merged,
+            merge_commit: Some(merge_commit),
+            base,
+            head: Some(head.clone()),
+            target_branch: "main".to_owned(),
             ..mine(7)
         };
         self.view.has(vec![pr], vec![]);
@@ -406,6 +423,176 @@ fn a_pr_moved_to_another_branch_shows_its_diff_against_that_branch() {
     };
     assert_ne!(before, Some(expected.clone()));
     assert_eq!(world.files(), Some(expected));
+    mirrored.finish();
+    world.finish();
+}
+
+/// The commit main is at in `mirror`.
+fn main_tip(mirror: &Path) -> CommitSha {
+    CommitSha::parse(git_in(mirror, &["rev-parse", "main"]).trim()).unwrap()
+}
+
+/// Moves main in `mirror` to a new commit with `parents` and main's files, as a merge does, and gives it.
+fn commit_onto_main(mirror: &Path, parents: &[&CommitSha]) -> CommitSha {
+    let mut args = vec!["commit-tree", "main^{tree}", "-m", "Merged"];
+    for parent in parents {
+        args.extend(["-p", parent.as_str()]);
+    }
+    let commit = CommitSha::parse(git_in(mirror, &args).trim()).unwrap();
+    let _ = git_in(mirror, &["update-ref", "refs/heads/main", commit.as_str()]);
+    commit
+}
+
+/// What the Files tab shows of the diff `read` at `head`, with no threads.
+fn ready(head: CommitSha, read: MirrorDiff) -> PrFiles {
+    PrFiles::Ready {
+        head,
+        base: read.base,
+        files: read.diff.files().to_vec(),
+        rows: read.diff.row_count(),
+        news: read.news,
+        threads: DiffThreads::Shown {
+            threads: Vec::new(),
+        },
+    }
+}
+
+#[test]
+fn a_pr_merged_with_a_merge_commit_shows_the_diff_it_had() {
+    let world = World::new("merge-commit");
+    let mirrored = Mirrored::new("pr-files-merge-commit");
+    let head = mirrored.head.clone();
+    let before = mirrored.read();
+    let base = main_tip(&mirrored.mirror);
+    let merge_commit = commit_onto_main(&mirrored.mirror, &[&base, &head]);
+    world.mirrors(&mirrored);
+
+    world.has_merged(&head, merge_commit, Some(base));
+
+    assert_eq!(world.files(), Some(ready(head, before)));
+    mirrored.finish();
+    world.finish();
+}
+
+#[test]
+fn a_pr_merged_by_fast_forward_shows_the_diff_from_where_main_was() {
+    let world = World::new("fast-forward");
+    let mirrored = Mirrored::new("pr-files-fast-forward");
+    let before = mirrored.read();
+    // The PR merges main in, and main then moves to its head.
+    let base = main_tip(&mirrored.mirror);
+    let tree = git_in(
+        &mirrored.mirror,
+        &["merge-tree", "--write-tree", "main", mirrored.head.as_str()],
+    );
+    let args = ["commit-tree", tree.trim(), "-m", "Merged main"];
+    let parents = ["-p", base.as_str(), "-p", mirrored.head.as_str()];
+    let head =
+        CommitSha::parse(git_in(&mirrored.mirror, &[&args[..], &parents].concat()).trim()).unwrap();
+    let _ = git_in(
+        &mirrored.mirror,
+        &["update-ref", "refs/heads/main", head.as_str()],
+    );
+    world.mirrors(&mirrored);
+
+    world.has_merged(&head, head.clone(), Some(base.clone()));
+
+    let expected = ready(head, MirrorDiff { base, ..before });
+    assert_eq!(world.files(), Some(expected));
+    mirrored.finish();
+    world.finish();
+}
+
+#[test]
+fn a_merged_pr_stored_before_tsugiki_read_its_base_starts_from_its_merge_commits_parent() {
+    let world = World::new("merged-before");
+    let mirrored = Mirrored::new("pr-files-merged-before");
+    let head = mirrored.head.clone();
+    let before = mirrored.read();
+    let main = main_tip(&mirrored.mirror);
+    let merge_commit = commit_onto_main(&mirrored.mirror, &[&main, &head]);
+    world.mirrors(&mirrored);
+
+    world.has_merged(&head, merge_commit, None);
+
+    assert_eq!(world.files(), Some(ready(head, before)));
+    mirrored.finish();
+    world.finish();
+}
+
+#[test]
+fn a_squashed_pr_stored_before_tsugiki_read_its_base_shows_its_diff() {
+    let world = World::new("squashed-before");
+    let mirrored = Mirrored::new("pr-files-squashed-before");
+    let head = mirrored.head.clone();
+    let before = mirrored.read();
+    let main = main_tip(&mirrored.mirror);
+    let squashed = commit_onto_main(&mirrored.mirror, &[&main]);
+    world.mirrors(&mirrored);
+
+    world.has_merged(&head, squashed, None);
+
+    assert_eq!(world.files(), Some(ready(head, before)));
+    mirrored.finish();
+    world.finish();
+}
+
+#[test]
+fn a_merge_the_mirror_hasnt_fetched_yet_shows_the_diff_against_the_target_branch() {
+    let world = World::new("merge-unfetched");
+    let mirrored = Mirrored::new("pr-files-merge-unfetched");
+    let head = mirrored.head.clone();
+    let before = mirrored.read();
+    world.mirrors(&mirrored);
+    // main moved on and took the merge after the mirror last fetched it.
+    let base = CommitSha::parse("0123456789abcdef0123456789abcdef01234567").unwrap();
+    let merge_commit = CommitSha::parse("456789abcdef0123456789abcdef0123456789ab").unwrap();
+
+    world.has_merged(&head, merge_commit.clone(), Some(base));
+    let with_base = world.files();
+    world.has_merged(&head, merge_commit, None);
+
+    assert_eq!(with_base, Some(ready(head.clone(), before)));
+    assert_eq!(world.files(), with_base);
+    mirrored.finish();
+    world.finish();
+}
+
+#[test]
+fn a_pr_that_merges_while_its_diff_shows_starts_where_github_compared_it() {
+    let world = World::new("merges-on-show");
+    let mirrored = Mirrored::new("pr-files-merges-on-show");
+    let head = mirrored.head.clone();
+    let before = mirrored.read();
+    let base = main_tip(&mirrored.mirror);
+    let merge_commit = commit_onto_main(&mirrored.mirror, &[&base, &head]);
+    world.mirrors(&mirrored);
+    // The mirror has the merge before the sync learns of it, so the open PR's diff is empty.
+    world.has_pr(Some(head.clone()), "main");
+    let open = world.files();
+
+    world.has_merged(&head, merge_commit, Some(base));
+
+    assert!(matches!(open, Some(PrFiles::Ready { files, .. }) if files.is_empty()));
+    assert_eq!(world.files(), Some(ready(head, before)));
+    mirrored.finish();
+    world.finish();
+}
+
+#[test]
+fn a_fast_forward_stored_before_tsugiki_read_its_base_has_nothing_to_show() {
+    let world = World::new("fast-forward-before");
+    let mirrored = Mirrored::new("pr-files-fast-forward-before");
+    let head = mirrored.head.clone();
+    let _ = git_in(
+        &mirrored.mirror,
+        &["update-ref", "refs/heads/main", head.as_str()],
+    );
+    world.mirrors(&mirrored);
+
+    world.has_merged(&head, head.clone(), None);
+
+    assert!(matches!(world.files(), Some(PrFiles::Ready { files, .. }) if files.is_empty()));
     mirrored.finish();
     world.finish();
 }

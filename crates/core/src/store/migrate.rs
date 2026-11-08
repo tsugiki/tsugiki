@@ -91,6 +91,10 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         version: 17,
         sql: super::issues::STATES,
     },
+    Migration {
+        version: 18,
+        sql: super::pull_requests::BASES,
+    },
 ];
 
 /// The version a file has after all of `migrations`.

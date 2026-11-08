@@ -74,6 +74,7 @@ fn pr_json() -> serde_json::Value {
         ] },
         "lastCommit": { "nodes": [{ "commit": { "statusCheckRollup": { "state": "FAILURE" } } }] },
         "mergeCommit": null,
+        "baseRefOid": "0123456789abcdef0123456789abcdef01234567",
         "headRefOid": "89abcdef0123456789abcdef0123456789abcdef",
         "commits": { "totalCount": 0, "nodes": [] },
     })
@@ -353,6 +354,7 @@ fn a_fetched_pr_is_read_into_its_facts() {
             assignees: vec![Login::new("some-reviewer")],
             closing_issues: vec![7],
             merge_commit: None,
+            base: Some(sha("0123456789abcdef0123456789abcdef01234567")),
             head: Some(sha("89abcdef0123456789abcdef0123456789abcdef")),
             off_default: None,
         }
@@ -450,6 +452,7 @@ fn a_null_in_a_pull_requests_lists_is_left_out() {
         "latestReviews": { "nodes": [null] },
         "lastCommit": { "nodes": [null] },
         "mergeCommit": null,
+        "baseRefOid": "0123456789abcdef0123456789abcdef01234567",
         "headRefOid": "89abcdef0123456789abcdef0123456789abcdef",
         "commits": { "totalCount": 0, "nodes": [] },
     });

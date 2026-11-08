@@ -294,6 +294,7 @@ fn pull_request(number: u32) -> (PullRequestFacts, ItemActivity) {
         number,
         title: format!("gh-{}: Fix the thing", FIRST_ISSUE + number % ISSUES),
         merge_commit: (state == PrState::Merged).then(|| sha(u64::from(number) << 8)),
+        base: None,
         head: None,
         state,
         is_draft: number.is_multiple_of(9),

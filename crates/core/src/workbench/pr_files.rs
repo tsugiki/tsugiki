@@ -91,6 +91,7 @@ impl PrFiles {
         if !mirror.exists() {
             return Ok(Some(Self::Cloning));
         }
+        sources.mirrors.opened(repository.clone(), number);
         // The sync reads a PR's head the next time it reads the PR.
         let Some(head) = pr.head else {
             return Ok(Some(Self::Fetching));

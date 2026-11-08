@@ -588,10 +588,11 @@ fn no_network_a_rate_limit_or_a_wrong_clock_never_ends_a_sync() {
         ErrorKind::RateLimited { resets_at: None },
         ErrorKind::CertificateDates,
     ];
-    for kind in kinds {
-        let problem = Error::new(kind, "waits");
-        assert!(queued_after(u8::MAX, &problem), "{kind:?}");
-    }
+    let ended: Vec<ErrorKind> = kinds
+        .into_iter()
+        .filter(|&kind| !queued_after(u8::MAX, &Error::new(kind, "waits")))
+        .collect();
+    assert!(ended.is_empty(), "{ended:?}");
 }
 
 #[test]

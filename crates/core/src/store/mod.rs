@@ -748,7 +748,8 @@ mod tests {
     use crate::github::CommitSha;
     use crate::github::issue_content::IssueComment;
     use crate::github::pull_request_content::{
-        Anchor, Opening, Resolution, Review, Subject, ThreadId, ThreadLine,
+        Anchor, DiffHunk, Opening, Resolution, Review, Side, Subject, Submission, ThreadComment,
+        ThreadId, ThreadLine,
     };
     use crate::github::pull_requests::{CiState, LatestReview, OffDefault, PrState, ReviewState};
     use rusqlite::trace::{TraceEvent, TraceEventCodes};
@@ -989,19 +990,50 @@ mod tests {
                 resolution: Resolution::Open,
                 anchor: Anchor::Current,
                 subject: Subject::File,
-                comments: vec![IssueComment {
-                    author: None,
-                    created_at: saved_at,
-                    body_html: "<p>Why?</p>".to_owned(),
-                    hidden: None,
+                comments: vec![ThreadComment {
+                    comment: IssueComment {
+                        author: None,
+                        created_at: saved_at,
+                        body_html: "<p>Why?</p>".to_owned(),
+                        hidden: None,
+                    },
+                    submission: Submission::Submitted,
                 }],
+                hunk: None,
             }],
+        };
+        // The user's draft, on a line, with the code it was written against.
+        let drafted = ThreadLine {
+            id: ThreadId::new("T2"),
+            path: "Lib/ast.py".to_owned(),
+            opening: Opening::Words {
+                words: "A draft".to_owned(),
+            },
+            replies: 0,
+            resolution: Resolution::Open,
+            anchor: Anchor::Current,
+            subject: Subject::Line {
+                side: Side::Right,
+                line: Some(2),
+                original: Some(2),
+            },
+            comments: vec![ThreadComment {
+                comment: IssueComment {
+                    author: Some(Login::new("the-user")),
+                    created_at: saved_at,
+                    body_html: "<p>A draft</p>".to_owned(),
+                    hidden: None,
+                },
+                submission: Submission::Pending,
+            }],
+            hunk: DiffHunk::parse("@@ -1,2 +1,2 @@\n x\n+y"),
         };
         let reviewed = PullRequestContent {
             conversation: content.clone(),
             reviews: vec![review],
             earlier_reviews: 0,
             head: CommitSha::parse("0123abc"),
+            pending: vec![drafted],
         };
         pull_request_content::save(connection, &cpython, 1, &reviewed).unwrap();
         let (seen, statements) = mpsc::channel();
@@ -1080,8 +1112,9 @@ mod tests {
             "INSERT INTO issue_comments VALUES ('python/cpython', 7, 0, 'someone', 0, '<p>Hi</p>', NULL)",
             "INSERT INTO pr_reviews VALUES ('python/cpython', 1, 0, 'someone', 'APPROVED', NULL, 0, '', NULL)",
             "INSERT INTO review_threads VALUES ('python/cpython', 1, 0, 0, 'T1', 'a.py', 1, 'RIGHT', 1, 'Hm', NULL, 0,
-                                                'open', 'current')",
-            "INSERT INTO review_thread_comments VALUES ('python/cpython', 1, 0, 0, 0, 'someone', 0, '<p>Hm</p>', NULL)",
+                                                'open', 'current', NULL)",
+            "INSERT INTO review_thread_comments VALUES ('python/cpython', 1, 0, 0, 0, 'someone', 0, '<p>Hm</p>', NULL,
+                                                        'submitted')",
         ];
         let refused = orphans.map(|sql| {
             let refusal = connection.execute(sql, []).err();

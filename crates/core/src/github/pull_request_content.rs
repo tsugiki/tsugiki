@@ -22,7 +22,7 @@ pub(super) const REVIEW_FIELDS: &str = " headRefOid reviews(last: 100) { totalCo
                                         reviewThreads(last: 100) { nodes { id path line originalLine \
                                         diffSide subjectType isResolved isOutdated comments(first: 100) { \
                                         totalCount nodes { pullRequestReview { id } author { login } \
-                                        createdAt bodyHTML bodyText isMinimized minimizedReason } } } }";
+                                        createdAt bodyHTML bodyText isMinimized minimizedReason diffHunk } } } }";
 
 /// The longest start of a thread's first comment that Tsugiki keeps. The line cuts it again to fit the
 /// pane.
@@ -44,6 +44,19 @@ pub struct PullRequestContent {
     #[serde(skip)]
     #[specta(skip)]
     pub head: Option<CommitSha>,
+    /// The threads the user's Pending review started, which only they see until they submit it on
+    /// github.com. Files shows them, and the Conversation leaves them out until Tsugiki can submit them.
+    #[serde(skip)]
+    #[specta(skip)]
+    pub pending: Vec<ThreadLine>,
+}
+
+impl PullRequestContent {
+    /// Every thread: those of each Review, then those of the user's Pending review.
+    pub fn threads(&self) -> impl Iterator<Item = &ThreadLine> {
+        let reviews = self.reviews.iter().flat_map(|review| &review.threads);
+        reviews.chain(&self.pending)
+    }
 }
 
 /// GitHub's id of a review thread, which a thread's line in the Conversation names to open it in Files.
@@ -127,7 +140,115 @@ pub struct ThreadLine {
     /// the diff, not with the Conversation.
     #[serde(skip)]
     #[specta(skip)]
-    pub comments: Vec<IssueComment>,
+    pub comments: Vec<ThreadComment>,
+    /// The code it was written against, which Files shows with an Outdated thread. Nothing, for a thread
+    /// on a whole file, whose hunk GitHub fills with a placeholder.
+    #[serde(skip)]
+    #[specta(skip)]
+    pub hunk: Option<DiffHunk>,
+}
+
+/// A comment in a review thread.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct ThreadComment {
+    #[serde(flatten)]
+    pub comment: IssueComment,
+    pub submission: Submission,
+}
+
+/// Whether others can read a comment, or it is a draft in the user's Pending review, which only they see
+/// until they submit it on github.com.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum Submission {
+    Submitted,
+    Pending,
+}
+
+/// The hunk GitHub stores with a thread's first comment: its `@@` line, then the lines of the diff down to
+/// the line the thread began on. It keeps the text it was read from, to store, and its rows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiffHunk {
+    text: String,
+    rows: Vec<CodeRow>,
+}
+
+/// A row of a stored hunk: its `@@` line, a line of the diff, or what git says in place of a line, such as
+/// a missing newline at the end.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CodeRow {
+    Hunk { text: String },
+    Context { old: u32, new: u32, text: String },
+    Added { new: u32, text: String },
+    Removed { old: u32, text: String },
+    Note { text: String },
+}
+
+impl DiffHunk {
+    /// The hunk `text` holds. Nothing, if its `@@` line doesn't say where it starts.
+    pub fn parse(text: &str) -> Option<Self> {
+        let mut lines = text.lines();
+        let header = lines.next()?;
+        let (mut old, mut new) = starts(header)?;
+        let mut rows = vec![CodeRow::Hunk {
+            text: header.to_owned(),
+        }];
+        for line in lines {
+            let (marker, code) = line.split_at_checked(1).unwrap_or((" ", line));
+            let code = code.to_owned();
+            rows.push(match marker {
+                "+" => {
+                    new = new.saturating_add(1);
+                    CodeRow::Added {
+                        new: new - 1,
+                        text: code,
+                    }
+                }
+                "-" => {
+                    old = old.saturating_add(1);
+                    CodeRow::Removed {
+                        old: old - 1,
+                        text: code,
+                    }
+                }
+                "\\" => CodeRow::Note {
+                    text: line.to_owned(),
+                },
+                _ => {
+                    old = old.saturating_add(1);
+                    new = new.saturating_add(1);
+                    CodeRow::Context {
+                        old: old - 1,
+                        new: new - 1,
+                        text: code,
+                    }
+                }
+            });
+        }
+        Some(Self {
+            text: text.to_owned(),
+            rows,
+        })
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.text
+    }
+
+    /// Its rows, the `@@` line first.
+    pub fn rows(&self) -> &[CodeRow] {
+        &self.rows
+    }
+}
+
+/// The first lines at the merge base and at the head that a `@@ -a,b +c,d @@` line names.
+fn starts(header: &str) -> Option<(u32, u32)> {
+    let ranges = header.strip_prefix("@@ -")?;
+    let (old, rest) = ranges.split_once(" +")?;
+    let (new, _) = rest.split_once(' ')?;
+    let first = |range: &str| range.split(',').next()?.parse::<u32>().ok();
+    Some((first(old)?, first(new)?))
 }
 
 impl ThreadLine {
@@ -231,6 +352,7 @@ struct ThreadCommentWire {
     body_text: String,
     #[serde(flatten)]
     minimized: MinimizedWire,
+    diff_hunk: String,
 }
 
 #[derive(Deserialize)]
@@ -284,8 +406,9 @@ fn first_words(text: &str) -> String {
 
 impl ThreadWire {
     /// The id of the Review that started it, and the thread. Nothing, for a thread with no first comment.
-    fn into_line(self) -> Option<(ReviewId, ThreadLine)> {
-        let replies = self.comments.total_count.saturating_sub(1);
+    /// A comment of the user's Pending review, `pending`, is a draft, which the replies don't count.
+    fn into_line(self, pending: Option<&ReviewId>) -> Option<(ReviewId, ThreadLine)> {
+        let total = self.comments.total_count;
         let comments: Vec<ThreadCommentWire> = self.comments.nodes.into_iter().flatten().collect();
         let first = comments.first()?;
         let review = first.pull_request_review.as_ref()?.id.clone();
@@ -295,20 +418,42 @@ impl ThreadWire {
                 words: first_words(&first.body_text),
             },
         };
-        let subject = match self.subject_type {
-            SubjectType::Line => Subject::Line {
-                side: self.diff_side,
-                line: self.line,
-                original: self.original_line,
-            },
-            SubjectType::File => Subject::File,
+        let (subject, hunk) = match self.subject_type {
+            SubjectType::Line => (
+                Subject::Line {
+                    side: self.diff_side,
+                    line: self.line,
+                    original: self.original_line,
+                },
+                DiffHunk::parse(&first.diff_hunk),
+            ),
+            SubjectType::File => (Subject::File, None),
         };
-        let comments = comments.into_iter().map(|comment| IssueComment {
-            author: comment.author.map(|person| person.login),
-            created_at: comment.created_at,
-            body_html: comment.body_html,
-            hidden: comment.minimized.reason(),
+        let comments = comments.into_iter().map(|comment| {
+            let drafted = comment
+                .pull_request_review
+                .is_some_and(|review| Some(&review.id) == pending);
+            ThreadComment {
+                comment: IssueComment {
+                    author: comment.author.map(|person| person.login),
+                    created_at: comment.created_at,
+                    body_html: comment.body_html,
+                    hidden: comment.minimized.reason(),
+                },
+                submission: if drafted {
+                    Submission::Pending
+                } else {
+                    Submission::Submitted
+                },
+            }
         });
+        let comments: Vec<ThreadComment> = comments.collect();
+        let drafts = comments
+            .iter()
+            .skip(1)
+            .filter(|comment| comment.submission == Submission::Pending);
+        let drafts = u32::try_from(drafts.count()).unwrap_or(u32::MAX);
+        let replies = total.saturating_sub(1).saturating_sub(drafts);
         let thread = ThreadLine {
             id: self.id,
             path: self.path,
@@ -317,7 +462,8 @@ impl ThreadWire {
             resolution: self.resolution,
             anchor: self.anchor,
             subject,
-            comments: comments.collect(),
+            comments,
+            hunk,
         };
         Some((review, thread))
     }
@@ -325,14 +471,21 @@ impl ThreadWire {
 
 impl From<PullRequestWire> for PullRequestContent {
     fn from(wire: PullRequestWire) -> Self {
+        let read: Vec<ReviewWire> = wire.reviews.nodes.into_iter().flatten().collect();
+        // GitHub shows a Pending review to its author alone, so one here is the user's.
+        let pending = read
+            .iter()
+            .find(|review| review.state == ReviewState::Pending)
+            .map(|review| review.id.clone());
         let mut threads: Vec<(ReviewId, ThreadLine)> = wire
             .review_threads
             .nodes
             .into_iter()
             .flatten()
-            .filter_map(ThreadWire::into_line)
+            .filter_map(|thread| thread.into_line(pending.as_ref()))
             .collect();
-        let read: Vec<ReviewWire> = wire.reviews.nodes.into_iter().flatten().collect();
+        let drafts = threads.extract_if(.., |(id, _)| Some(&*id) == pending.as_ref());
+        let drafts: Vec<ThreadLine> = drafts.map(|(_, thread)| thread).collect();
         let held = u32::try_from(read.len()).unwrap_or(u32::MAX);
         let mut reviews: Vec<Review> = read
             .into_iter()
@@ -362,6 +515,7 @@ impl From<PullRequestWire> for PullRequestContent {
             reviews,
             earlier_reviews: wire.reviews.total_count.saturating_sub(held),
             head: CommitSha::parse(&wire.head_ref_oid),
+            pending: drafts,
         }
     }
 }

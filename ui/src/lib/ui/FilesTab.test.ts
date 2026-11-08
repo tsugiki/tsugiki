@@ -52,15 +52,18 @@ const rows: DiffRow[] = [
 
 const ready = (
   count: number,
-  more: Partial<{ files: DiffFile[]; news: NewsEntry[]; threads: DiffThread[] }> = {},
+  more: Partial<{ files: DiffFile[]; news: NewsEntry[]; threads: DiffThread[]; waiting: number }> = {},
 ): PrFiles => ({
   state: "ready",
   head: "abc",
   base: "base",
   rows: count,
-  news: [],
-  threads: [],
-  files: [
+  news: more.news ?? [],
+  threads:
+    more.waiting === undefined
+      ? { kind: "shown", threads: more.threads ?? [] }
+      : { kind: "held_back", newer: "def5678def", count: more.waiting },
+  files: more.files ?? [
     {
       path: "news.txt",
       old_path: "notes.txt",
@@ -84,7 +87,6 @@ const ready = (
       pairs: [],
     },
   ],
-  ...more,
 });
 
 const onlink = vi.fn();
@@ -443,6 +445,50 @@ it("offers to show the lines each gap leaves out, and draws them highlighted onc
   ]);
 });
 
+it("opens the lines around a thread on a line no hunk shows, with buttons for those hidden around them", async () => {
+  setUpGapped();
+  const threads = [
+    threadAt("T1", { kind: "outside", file: 0, line: 80, head_line: 80 }, "open"),
+    threadAt("T2", { kind: "gone", path: "Lib/old.py", code: null }, "open"),
+  ];
+  await shown(ready(gapped.length, { files: [gappedFile], threads }));
+  await vi.waitFor(() => {
+    expect(lines()).toContain("8080 def f80");
+  });
+
+  // Lines 53 to 76 hide above the window, and 84 to 105 below it, under the hunk's row.
+  const above = lines().indexOf("7777 def f77");
+  expect(lines()[above - 1]).toBe("↑↓Whole file");
+  expect(lines().at(-1)).toBe("On files no longer in the diff");
+  expect(screen.getAllByRole("group", { name: "Review thread" })).toHaveLength(2);
+  await fireEvent.click(screen.getAllByRole("button", { name: "Show 20 lines below" })[0] as HTMLElement);
+  await vi.waitFor(() => {
+    expect(lines()).toContain("5353 def f53");
+  });
+  expect(core.pullRequestLines.mock.calls.map(([lines]) => [lines.start, lines.end])).toEqual([
+    [77, 84],
+    [53, 73],
+  ]);
+});
+
+it("shows the diff before a moved head under a line that says so, with its threads counted", async () => {
+  await shown(ready(rows.length, { waiting: 2 }));
+
+  expect(screen.getByRole("status").textContent).toBe(
+    "Showing abc · fetching the newer def5678. 2 threads wait for it.",
+  );
+});
+
+it("says one thread waits for the newer diff, and counts none when there are none", async () => {
+  await shown(ready(rows.length, { waiting: 1 }));
+  await shown(ready(rows.length, { waiting: 0 }));
+
+  expect(screen.getAllByRole("status").map((status) => status.textContent)).toEqual([
+    "Showing abc · fetching the newer def5678. 1 thread waits for it.",
+    "Showing abc · fetching the newer def5678. ",
+  ]);
+});
+
 it("shows the whole file from the row after its last hunk", async () => {
   setUpGapped();
   await shown(ready(gapped.length, { files: [gappedFile] }));
@@ -580,16 +626,22 @@ it("keeps the row at the top in view as the view switches", async () => {
   expect(diff.scrollTop).toBe(0);
 });
 
-/** Thread `id` under row `row`, with `comments` comments. */
-const threadAt = (id: string, row: number, resolution: "open" | "resolved", comments = 1): DiffThread => ({
+/** Thread `id` under row `row`, or at `row` when it isn't a number, with `comments` comments. */
+const threadAt = (
+  id: string,
+  row: number | DiffThread["at"],
+  resolution: "open" | "resolved",
+  comments = 1,
+): DiffThread => ({
   id,
-  row,
+  at: typeof row === "number" ? { kind: "row", row } : row,
   resolution,
   comments: Array.from({ length: comments }, () => ({
     author: "some-reviewer",
     created_at: "2026-11-04T10:00:00Z",
     body_html: "<p>Why?</p>",
     hidden: null,
+    submission: "submitted",
   })),
   later_comments: 0,
 });
@@ -614,7 +666,7 @@ it("draws each thread under its line, and a resolved one folded until a click op
   const rowAt = (text: string) =>
     [...document.querySelectorAll<HTMLElement>(".row")].find((row) => row.textContent === text);
   expect(rowAt("2-old line")?.style.top).toBe(`${String(10 * 20)}px`);
-  const folded = screen.getByRole("button", { name: "some-reviewer · 1 comment, resolved" });
+  const folded = screen.getByRole("button", { name: "some-reviewer · 1 comment, Resolved" });
   expect(folded.getAttribute("aria-expanded")).toBe("false");
 
   await fireEvent.click(folded);
@@ -647,10 +699,10 @@ it("measures each open thread, and keeps the row at the top in view as a thread 
   // A thread below the top that opens leaves the tab where it is.
   diff.scrollTop = 20 + 5;
   await fireEvent.scroll(diff);
-  await fireEvent.click(screen.getByRole("button", { name: "some-reviewer · 1 comment, resolved" }));
+  await fireEvent.click(screen.getByRole("button", { name: "some-reviewer · 1 comment, Resolved" }));
   await settledTab();
   expect(diff.scrollTop).toBe(20 + 5);
-  await fireEvent.click(screen.getByRole("button", { name: "some-reviewer · 1 comment, resolved" }));
+  await fireEvent.click(screen.getByRole("button", { name: "some-reviewer · 1 comment, Resolved" }));
   // Five pixels into row 5, the second file's header.
   diff.scrollTop = 13 * 20 + 5;
   await fireEvent.scroll(diff);

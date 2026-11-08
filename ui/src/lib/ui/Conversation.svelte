@@ -73,10 +73,6 @@
     const line = subject.kind === "line" ? (subject.line ?? subject.original) : null;
     return line === null ? path : `${path}:${String(line)}`;
   };
-  /** Whether Files shows the thread under its line. Outdated threads, threads on a whole file and threads
-   * outside the diff wait for #185. */
-  const inFiles = ({ anchor, subject }: ThreadLine) =>
-    anchor === "current" && subject.kind === "line" && subject.line !== null;
   const replies = (count: number) => (count === 1 ? "1 reply" : `${String(count)} replies`);
 </script>
 
@@ -116,7 +112,7 @@
       <ul class="threads">
         {#each entry.review.threads as thread, position (position)}
           <li>
-            {#if onthread && inFiles(thread)}
+            {#if onthread}
               <button class="place" onclick={() => onthread(thread.id)}>{place(thread)}</button>
             {:else}
               <span class="place">{place(thread)}</span>

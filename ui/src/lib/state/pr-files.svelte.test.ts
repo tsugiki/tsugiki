@@ -7,6 +7,7 @@ import {
   SPANS_WAIT,
   type DiffFile,
   type DiffRow,
+  type DiffThread,
   type PrFiles,
 } from "./pr-files.svelte";
 
@@ -73,7 +74,7 @@ const ready = (
   files,
   rows,
   news: [],
-  threads: [],
+  threads: { kind: "shown", threads: [] },
 });
 
 /** A file, a Generated one from row 10 to the third chunk, and a file in the third chunk. */
@@ -681,9 +682,12 @@ const gapped = (base = "base") =>
     base,
   );
 const [small, large] = [
-  { row: 1, old: 1, new: 1, lines: 5 },
-  { row: 6, old: 10, new: 12, lines: 45 },
+  { file: 0, old: 1, new: 1, lines: 5 },
+  { file: 0, old: 10, new: 12, lines: 45 },
 ];
+
+/** The lines the gap above the hunk at row `row` still hides nearest it, which its buttons show. */
+const hiddenAt = (files: PrFilesState, row: number) => files.layout.gapAt(row) ?? large;
 
 /** Where each ask for lines started and ended. */
 const asked = () => core.pullRequestLines.mock.calls.map(([lines]) => [lines.start, lines.end]);
@@ -691,15 +695,15 @@ const asked = () => core.pullRequestLines.mock.calls.map(([lines]) => [lines.sta
 it("shows 20 more lines above a hunk or below the one before, and then the rest of a short gap", async () => {
   const files = await loaded(gapped());
 
-  files.expandAbove(0, large);
+  files.expandAbove(hiddenAt(files, 6));
   await vi.waitFor(() => {
     expect(files.line(0, 56)).toEqual({ text: "line 56", spans: [] });
   });
-  files.expandBelow(0, large);
+  files.expandBelow(hiddenAt(files, 6));
   await vi.waitFor(() => {
-    expect(files.layout.gapAt(6)?.hidden).toBe(45 - 2 * EXPAND);
+    expect(files.layout.gapAt(6)?.lines).toBe(45 - 2 * EXPAND);
   });
-  files.expandGap(0, large);
+  files.expandGap(hiddenAt(files, 6));
   await vi.waitFor(() => {
     expect(files.layout.gapAt(6)).toBeUndefined();
   });
@@ -718,12 +722,12 @@ it("shows 20 more lines above a hunk or below the one before, and then the rest 
 it("stops a gap's lines at its ends, and asks for none once it shows them all", async () => {
   const files = await loaded(gapped());
 
-  files.expandBelow(0, small);
+  files.expandBelow(small);
   await vi.waitFor(() => {
     expect(files.layout.gapAt(1)).toBeUndefined();
   });
-  files.expandAbove(0, small);
-  files.expandGap(0, small);
+  files.expandAbove(small);
+  files.expandGap(small);
 
   expect(asked()).toEqual([[1, 6]]);
 });
@@ -762,7 +766,7 @@ it("shows a whole file in one ask, every gap and the lines after its last hunk",
 
 it("forgets what it expanded on a new diff, and drops lines that come for an older one", async () => {
   const files = await loaded(gapped("on-main"));
-  files.expandAbove(0, large);
+  files.expandAbove(large);
   await vi.waitFor(() => {
     expect(files.line(0, 56)).toEqual({ text: "line 56", spans: [] });
   });
@@ -780,7 +784,7 @@ it("forgets what it expanded on a new diff, and drops lines that come for an old
 
   expect(files.line(0, 56)).toEqual({ text: "", spans: [] });
   expect(files.line(0, 62)).toEqual({ text: "", spans: [] });
-  expect(files.layout.gapAt(6)?.hidden).toBe(45);
+  expect(files.layout.gapAt(6)?.lines).toBe(45);
   expect(files.layout.at(20)).toEqual({ kind: "more", file: 0 });
 });
 
@@ -789,19 +793,19 @@ it("keeps the button when the core can't send lines, and says why", async () => 
   const failed = { status: "error", error: { message: "gone" } };
   core.pullRequestLines.mockResolvedValue(failed);
 
-  files.expandAbove(0, large);
+  files.expandAbove(large);
   await files.expandRest(0);
   await files.expandFile(0);
 
   expect(files.error).toBe("gone");
   expect(files.layout.at(20)).toEqual({ kind: "more", file: 0 });
-  expect(files.layout.gapAt(6)?.hidden).toBe(45);
+  expect(files.layout.gapAt(6)?.lines).toBe(45);
 });
 
 it("expands nothing until the diff is ready, nor after a file that ends with its last hunk", async () => {
   const files = await loaded();
 
-  files.expandAbove(0, large);
+  files.expandAbove(large);
   await files.expandRest(0);
   await files.expandFile(0);
   core.pullRequestFiles.mockResolvedValue(ok(gapped()));
@@ -828,25 +832,34 @@ it("lays the diff out in the view the window chose, which one choice holds for e
   expect(one.shownAs).toBe("unified");
 });
 
-/** An open thread `id` under row `row`, with `comments` comments. */
-const thread = (id: string, row: number, resolution: "open" | "resolved" = "open", comments = 1) => ({
+/** An open thread `id` at `at`, a row of the diff when a number, with `comments` comments. */
+const thread = (
+  id: string,
+  at: number | DiffThread["at"],
+  resolution: "open" | "resolved" = "open",
+  comments = 1,
+): DiffThread => ({
   id,
-  row,
+  at: typeof at === "number" ? { kind: "row", row: at } : at,
   resolution,
   comments: Array.from({ length: comments }, () => ({
     author: "some-reviewer",
     created_at: "2026-11-04T10:00:00Z",
     body_html: "<p>Why?</p>",
     hidden: null,
+    submission: "submitted",
   })),
   later_comments: 0,
 });
+
+/** The threads `threads`, as the core sends them with a diff. */
+const shown = (...threads: DiffThread[]) => ({ kind: "shown" as const, threads });
 
 /** A diff of 40 rows: a file, a Generated one from row 20, and threads under rows 2, 5, 9 and 25, the
  * second resolved. */
 const threaded = (): Extract<PrFiles, { state: "ready" }> => ({
   ...ready("abc", 40, [file("Lib/ast.py", 0), file("Python/generated.c.h", 20, true)]),
-  threads: [thread("T2", 2, "open", 2), thread("T5", 5, "resolved"), thread("T9", 9), thread("T25", 25)],
+  threads: shown(thread("T2", 2, "open", 2), thread("T5", 5, "resolved"), thread("T9", 9), thread("T25", 25)),
 });
 
 /** The places each thread takes, by its id, and `-` for one that doesn't show. */
@@ -898,12 +911,14 @@ it("starts from the last thread going back, and goes nowhere without an open thr
   files.nextThread(-1);
   expect(files.jump).toEqual({ id: "T25" });
   // A new diff without the thread starts from the end again.
-  core.pullRequestFiles.mockResolvedValue(ok({ ...threaded(), threads: [thread("T2", 2), thread("T9", 9)] }));
+  core.pullRequestFiles.mockResolvedValue(
+    ok({ ...threaded(), threads: shown(thread("T2", 2), thread("T9", 9)) }),
+  );
   await files.ask();
   files.nextThread(1);
   expect(files.jump).toEqual({ id: "T2" });
 
-  const none = await loaded({ ...threaded(), threads: [thread("T5", 5, "resolved")] });
+  const none = await loaded({ ...threaded(), threads: shown(thread("T5", 5, "resolved")) });
   none.nextThread(1);
   expect(none.jump).toBeUndefined();
 });
@@ -940,4 +955,98 @@ it("has no threads before the diff comes", async () => {
 
   expect(files.threads).toEqual([]);
   expect(files.folded(0)).toBe(false);
+  expect(files.heldBack).toBeUndefined();
+});
+
+/** The code an Outdated thread was written against, `rows` rows of it. */
+const code = (rows: number) => ({
+  rows: Array.from({ length: rows }, (_, at) => ({ kind: "context" as const, old: at, new: at, text: "x" })),
+  spans: Array.from({ length: rows }, () => []),
+});
+
+it("puts a file's own threads at its top, its Outdated ones after them, and threads on no file at the end", async () => {
+  const files = await loaded({
+    ...threaded(),
+    threads: shown(
+      thread("whole", { kind: "file", file: 1 }),
+      thread("outdated", { kind: "outdated", file: 1, code: code(9) }),
+      thread("bare", { kind: "outdated", file: 1, code: null }),
+      thread("in it", 25),
+      thread("gone", { kind: "gone", path: "Lib/old.py", code: null }),
+    ),
+  });
+  files.toggle(1);
+
+  // Row 20 heads the Generated file, and the heading of the threads on no file follows the last row.
+  expect(threadPlaces(files)).toEqual(["whole 21", "outdated 25", "bare 34", "in it 43", "gone 62"]);
+  expect(files.layout.at(61)).toEqual({ kind: "gone" });
+  // A guess until the tab measures it: a header, the last rows of its code and a line above them, and three
+  // places for each comment.
+  expect(files.layout.threadsIn(0, 99).map((placed) => placed.length)).toEqual([4, 9, 4, 4, 4]);
+});
+
+it("puts a thread on a file the diff doesn't have at the top, should a payload name one", async () => {
+  const files = await loaded({ ...threaded(), threads: shown(thread("lost", { kind: "file", file: 9 })) });
+
+  expect(threadPlaces(files)).toEqual(["lost 1"]);
+});
+
+it("reveals a thread at the top of a collapsed file, opening the file, and one on no file", async () => {
+  const files = await loaded({
+    ...threaded(),
+    threads: shown(
+      thread("outdated", { kind: "outdated", file: 1, code: null }),
+      thread("gone", { kind: "gone", path: "Lib/old.py", code: null }),
+    ),
+  });
+
+  files.reveal("outdated");
+  expect([files.jump, files.collapsed(1)]).toEqual([{ id: "outdated" }, false]);
+  files.reveal("gone");
+  expect(files.jump).toEqual({ id: "gone" });
+});
+
+it("opens the lines around a thread on a line no hunk shows, once, and its thread sits under the line", async () => {
+  const outside = thread("outside", { kind: "outside", file: 0, line: 28, head_line: 30 });
+  const files = await loaded({ ...gapped(), threads: shown(outside) });
+  await vi.waitFor(() => {
+    expect(files.line(0, 33)).toEqual({ text: "line 33", spans: [] });
+  });
+  await files.ask();
+  core.pullRequestFiles.mockResolvedValue(
+    ok({
+      ...gapped(),
+      threads: shown(outside, thread("near", { kind: "outside", file: 0, line: 1, head_line: 2 })),
+    }),
+  );
+  await files.ask();
+
+  expect(asked()).toEqual([
+    [27, 34],
+    [1, 6],
+  ]);
+  // Lines 12 to 26 hide above the window, under their buttons, and the rest of the gap below it.
+  expect(files.layout.at(6)).toEqual({ kind: "hidden", file: 0, old: 10, new: 12, lines: 15 });
+  expect(files.layout.at(10)).toEqual({ kind: "line", file: 0, old: 28, new: 30 });
+  expect(files.layout.at(11)).toEqual({ kind: "thread", id: "outside", into: 0 });
+});
+
+it("shows the diff before a moved head with its threads held back, then the newer diff at the same lines", async () => {
+  const before = { ...gapped("older"), threads: { kind: "held_back" as const, newer: "newer", count: 3 } };
+  const files = await loaded(before);
+
+  expect([files.threads, files.heldBack]).toEqual([[], { newer: "newer", count: 3 }]);
+  core.pullRequestFiles.mockResolvedValue(ok(gapped("newer")));
+  await files.ask();
+  expect([files.heldBack, files.layout.diff]).toEqual([undefined, "newer..abc"]);
+});
+
+it("reveals a thread asked for while the older diff holds its threads back, once the newer diff comes", async () => {
+  const files = await loaded({ ...threaded(), threads: { kind: "held_back", newer: "newer", count: 4 } });
+
+  files.reveal("T9");
+  expect(files.jump).toBeUndefined();
+  core.pullRequestFiles.mockResolvedValue(ok(threaded()));
+  await files.ask();
+  expect(files.jump).toEqual({ id: "T9" });
 });

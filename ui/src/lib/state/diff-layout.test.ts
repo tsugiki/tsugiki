@@ -1,12 +1,21 @@
 import { describe, expect, it } from "vitest";
 import type { Gap, Pair, Rest } from "$lib/data/bindings";
-import { DiffLayout, type Expanded, type LaidFile, type LaidThread } from "./diff-layout";
+import {
+  DiffLayout,
+  type Expanded,
+  type LaidFile,
+  type LaidThread,
+  type Lines,
+  type ThreadAnchor,
+} from "./diff-layout";
 
 /** Files whose headers sit at `rows`, with no gaps and no changes to pair. */
-const at = (...rows: number[]): LaidFile[] => rows.map((row) => ({ row, gaps: [], rest: null, pairs: [] }));
+const at = (...rows: number[]): LaidFile[] =>
+  rows.map((row) => ({ path: `f${String(row)}.py`, row, gaps: [], rest: null, pairs: [] }));
 
-/** Places `first` to `last` of `layout`, as row numbers, `old/new` for a line, `more:file`, `removed|added`
- * for a pair, with `-` for a side that shows nothing, and `tN` for thread N. */
+/** Places `first` to `last` of `layout`, as row numbers, `old/new` for a line, `hidden:new+lines` for the
+ * buttons of hidden lines, `more:file`, `removed|added` for a pair, with `-` for a side that shows nothing,
+ * `gone` for the heading of the threads on files no longer in the diff, and `tN` for thread N. */
 const places = (layout: DiffLayout, first = 0, last = layout.count - 1) =>
   Array.from({ length: last - first + 1 }, (_, index) => {
     const shown = layout.at(first + index);
@@ -14,16 +23,23 @@ const places = (layout: DiffLayout, first = 0, last = layout.count - 1) =>
     if (shown.kind === "line") return `${String(shown.old)}/${String(shown.new)}`;
     if (shown.kind === "pair") return `${String(shown.removed ?? "-")}|${String(shown.added ?? "-")}`;
     if (shown.kind === "thread") return shown.id;
+    if (shown.kind === "hidden") return `hidden:${String(shown.new)}+${String(shown.lines)}`;
+    if (shown.kind === "gone") return "gone";
     return `more:${String(shown.file)}`;
   });
 
 /** Threads under rows `rows`, each taking `places` places. */
 const threads = (places: number, ...rows: number[]): LaidThread[] =>
-  rows.map((row, at) => ({ row, places, id: `t${String(at)}` }));
+  rows.map((row, at) => ({ at: { kind: "row", row }, places, id: `t${String(at)}` }));
+
+/** Threads that sit at `anchors`, each taking one place. */
+const anchored = (...anchors: ThreadAnchor[]): LaidThread[] =>
+  anchors.map((anchor, at) => ({ at: anchor, places: 1, id: `t${String(at)}` }));
 
 /** A file at row 0 of 13 whose hunk at row 1 replaces 2 lines with 1 at rows 2 to 4, removes a line at
  * row 6, adds one at row 8, and replaces 1 line with 2 at rows 10 to 12. */
 const changed: LaidFile = {
+  path: "changed.py",
   row: 0,
   gaps: [],
   rest: null,
@@ -38,6 +54,7 @@ const changed: LaidFile = {
 /** A file at row 0 whose two hunks start at rows 1 and 6, with 5 lines left out above the first and 30
  * above the second, which sit 2 lines further down at the head; and lines may follow the last hunk. */
 const gapped = (rest: Rest | null = { old: 50, new: 52 }): LaidFile => ({
+  path: "gapped.py",
   row: 0,
   gaps: [
     { row: 1, old: 1, new: 1, lines: 5 },
@@ -47,14 +64,30 @@ const gapped = (rest: Rest | null = { old: 50, new: 52 }): LaidFile => ({
   pairs: [],
 });
 
-/** Gaps opened as `gaps` says, by their hunk's row, and the lines after each file's last hunk as `rests`
- * says. */
+/** Gaps opened as `gaps` says, by their hunk's row, from their top and from their bottom, and the lines
+ * after each file's last hunk as `rests` says. */
 const expanded = (
   gaps: Record<number, { top: number; bottom: number }>,
   rests: Record<number, { lines: number; ended: boolean }> = {},
 ): Expanded => ({
-  gap: (_, gap) => gaps[gap.row] ?? { top: 0, bottom: 0 },
-  rest: (file) => rests[file] ?? { lines: 0, ended: false },
+  gap: (_, gap) => {
+    const { top, bottom } = gaps[gap.row] ?? { top: 0, bottom: 0 };
+    return [
+      { from: gap.new, length: top },
+      { from: gap.new + gap.lines - bottom, length: bottom },
+    ];
+  },
+  rest: (file, rest) => {
+    const { lines, ended } = rests[file] ?? { lines: 0, ended: false };
+    return { runs: [{ from: rest.new, length: lines }], ended };
+  },
+});
+
+/** The runs of lines `runs` held in every file, the lines after a file's last hunk too, whose file ends
+ * with the last run if `ended`. */
+const holding = (runs: Lines[], ended = false): Expanded => ({
+  gap: () => runs,
+  rest: () => ({ runs, ended }),
 });
 
 describe("DiffLayout", () => {
@@ -109,7 +142,7 @@ describe("DiffLayout", () => {
     const layout = new DiffLayout(10, [gapped(), ...at(8)], () => false);
 
     expect(places(layout)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, "more:0", 8, 9]);
-    expect(layout.gapAt(6)).toEqual({ file: 0, gap: gapped().gaps[1], hidden: 30 });
+    expect(layout.gapAt(6)).toEqual({ file: 0, old: 10, new: 12, lines: 30 });
     expect(layout.gapAt(2)).toBeUndefined();
     // The rows follow on around the button, so they ask as one.
     expect(layout.pieces(0, 99)).toEqual([[0, 10]]);
@@ -121,7 +154,7 @@ describe("DiffLayout", () => {
     // Rows 1 to 5 are the first hunk; row 6 heads the second, after 2 lines below the first and before 3
     // lines above its own.
     expect(places(layout)).toEqual([0, 1, 2, 3, 4, 5, "10/12", "11/13", 6, "37/39", "38/40", "39/41", 7]);
-    expect(layout.gapAt(6)?.hidden).toBe(25);
+    expect(layout.gapAt(6)).toEqual({ file: 0, old: 12, new: 14, lines: 25 });
     expect(layout.pieces(0, 99)).toEqual([[0, 8]]);
     expect(layout.pieces(7, 9)).toEqual([[6, 7]]);
   });
@@ -223,9 +256,9 @@ describe("DiffLayout", () => {
     expect(layout.pieces(0, 99)).toEqual([[0, 6]]);
     expect(layout.pieces(3, 4)).toEqual([]);
     expect(layout.threadsIn(4, 9)).toEqual([
-      { thread: 0, laid: { row: 2, places: 2, id: "t0" }, shown: 3, length: 2 },
-      { thread: 1, laid: { row: 2, places: 2, id: "t1" }, shown: 5, length: 2 },
-      { thread: 2, laid: { row: 4, places: 2, id: "t2" }, shown: 9, length: 2 },
+      { thread: 0, laid: { at: { kind: "row", row: 2 }, places: 2, id: "t0" }, shown: 3, length: 2 },
+      { thread: 1, laid: { at: { kind: "row", row: 2 }, places: 2, id: "t1" }, shown: 5, length: 2 },
+      { thread: 2, laid: { at: { kind: "row", row: 4 }, places: 2, id: "t2" }, shown: 9, length: 2 },
     ]);
     expect(layout.threadsIn(7, 8)).toEqual([]);
     expect(["t0", "t2"].map((id) => layout.threadAt(id))).toEqual([3, 9]);
@@ -241,10 +274,10 @@ describe("DiffLayout", () => {
   it("shows a thread side by side under the place that shows its row, splitting a change", () => {
     // Under the removed row 3, the added row 4 beside row 2, and the added row 12 at the change's end.
     const layout = new DiffLayout(13, [changed], () => false, undefined, "side-by-side", [
-      { row: 3, places: 1, id: "t0" },
-      { row: 4, places: 2, id: "t1" },
-      { row: 4, places: 1, id: "t2" },
-      { row: 12, places: 1, id: "t3" },
+      { at: { kind: "row", row: 3 }, places: 1, id: "t0" },
+      { at: { kind: "row", row: 4 }, places: 2, id: "t1" },
+      { at: { kind: "row", row: 4 }, places: 1, id: "t2" },
+      { at: { kind: "row", row: 12 }, places: 1, id: "t3" },
     ]);
 
     expect(places(layout)).toEqual([
@@ -282,6 +315,154 @@ describe("DiffLayout", () => {
     // Row 3 after a thread that splits its change, under row 2.
     const split = new DiffLayout(13, [changed], () => false, undefined, "side-by-side", threads(1, 2));
     expect(split.moved(unified, 3)).toBe(4);
+  });
+
+  it("shows a file's own threads under its header, and none of a collapsed file's", () => {
+    const top = anchored({ kind: "row", row: 0 }, { kind: "row", row: 0 }, { kind: "row", row: 4 });
+
+    const open = new DiffLayout(8, at(0, 4), () => false, undefined, "unified", top);
+    const collapsed = new DiffLayout(8, at(0, 4), (file) => file === 0, undefined, "unified", top);
+
+    expect(places(open)).toEqual([0, "t0", "t1", 1, 2, 3, 4, "t2", 5, 6, 7]);
+    expect(places(collapsed)).toEqual([0, 4, "t2", 5, 6, 7]);
+  });
+
+  it("opens the lines around a thread in a gap, with buttons for those still hidden above and below", () => {
+    const layout = new DiffLayout(
+      8,
+      [gapped(null)],
+      () => false,
+      holding([{ from: 20, length: 7 }]),
+      "unified",
+      anchored({ kind: "line", file: 0, line: 23 }),
+    );
+
+    // Lines 12 to 19 hide above the window, and 27 to 41 below it, nearest the hunk at row 6.
+    expect(places(layout, 6)).toEqual([
+      "hidden:12+8",
+      "18/20",
+      "19/21",
+      "20/22",
+      "21/23",
+      "t0",
+      "22/24",
+      "23/25",
+      "24/26",
+      6,
+      7,
+    ]);
+    expect(layout.gapAt(6)).toEqual({ file: 0, old: 25, new: 27, lines: 15 });
+    expect(layout.at(6)).toEqual({ kind: "hidden", file: 0, old: 10, new: 12, lines: 8 });
+  });
+
+  it("puts a thread under a line that doesn't show under the buttons that show it", () => {
+    const layout = new DiffLayout(
+      8,
+      [gapped()],
+      () => false,
+      holding([{ from: 30, length: 2 }]),
+      "unified",
+      anchored(
+        { kind: "line", file: 0, line: 15 },
+        { kind: "line", file: 0, line: 40 },
+        { kind: "line", file: 0, line: 90 },
+      ),
+    );
+
+    expect(places(layout, 6)).toEqual(["hidden:12+18", "t0", "28/30", "29/31", 6, "t1", 7, "more:0", "t2"]);
+  });
+
+  it("opens the lines around a thread after a file's last hunk, and the buttons for those between", () => {
+    const thread = anchored({ kind: "line", file: 0, line: 58 });
+    const runs = [
+      { from: 52, length: 2 },
+      { from: 57, length: 3 },
+    ];
+
+    const more = new DiffLayout(8, [gapped()], () => false, holding(runs), "unified", thread);
+    const ended = new DiffLayout(8, [gapped()], () => false, holding(runs, true), "unified", thread);
+
+    expect(places(more, 8)).toEqual([
+      "50/52",
+      "51/53",
+      "hidden:54+3",
+      "55/57",
+      "56/58",
+      "t0",
+      "57/59",
+      "more:0",
+    ]);
+    expect(places(ended, 8)).toEqual(["50/52", "51/53", "hidden:54+3", "55/57", "56/58", "t0", "57/59"]);
+  });
+
+  it("puts the threads on files no longer in the diff under a heading after the last file", () => {
+    const layout = new DiffLayout(
+      3,
+      at(0),
+      () => false,
+      undefined,
+      "unified",
+      anchored({ kind: "end" }, { kind: "row", row: 1 }, { kind: "end" }),
+    );
+
+    expect(places(layout)).toEqual([0, 1, "t1", 2, "gone", "t0", "t2"]);
+    expect(layout.moved(layout, 4)).toBe(4);
+  });
+
+  it("finds the same buttons in a layout of the same diff, as more lines show", () => {
+    const before = new DiffLayout(8, [gapped()], () => false, holding([{ from: 30, length: 2 }]));
+    const after = new DiffLayout(8, [gapped()], () => false, holding([{ from: 30, length: 4 }]));
+
+    // The buttons of lines 12 to 29, and the hunk's row, which stands for the lines after the window.
+    expect([6, 9].map((place) => after.moved(before, place))).toEqual([6, 11]);
+    expect(after.at(9)).toEqual({ kind: "line", file: 0, old: 30, new: 32 });
+  });
+
+  it("shows the header of the file that was at the top when another diff takes the layout's place", () => {
+    // `gapped` moves to the top, `changed` follows it, and a third file goes.
+    const second: LaidFile = {
+      ...gapped(),
+      row: 13,
+      gaps: gapped().gaps.map((gap) => ({ ...gap, row: gap.row + 13 })),
+    };
+    const before = new DiffLayout(
+      23,
+      [changed, second, ...at(21)],
+      () => false,
+      holding([{ from: 20, length: 2 }]),
+      "side-by-side",
+      anchored(
+        { kind: "row", row: 3 },
+        { kind: "line", file: 1, line: 21 },
+        { kind: "row", row: 22 },
+        { kind: "end" },
+      ),
+      "base..old",
+    );
+    const after = new DiffLayout<LaidThread>(
+      21,
+      [gapped(), { ...changed, row: 8 }],
+      () => false,
+      undefined,
+      "unified",
+      [],
+      "base..new",
+    );
+    const kinds = Array.from({ length: before.count }, (_, place) => before.at(place).kind);
+    const first = (kind: string) => kinds.indexOf(kind as (typeof kinds)[number]);
+
+    // Two pairs and a thread of `changed`, one of them with no removed row; a line, its thread and the
+    // buttons of `gapped`, and the button after its last hunk.
+    expect(
+      [2, 7, first("thread"), first("line"), first("line") + 2, first("hidden"), first("more")].map((place) =>
+        after.moved(before, place),
+      ),
+    ).toEqual([9, 9, 9, 0, 0, 0, 0]);
+    const gone = first("gone");
+    // A row of the third file, a thread under it, the heading of the threads on no file, one of them, and a
+    // place past the end.
+    const tried = [gone - 3, gone - 1, gone, gone + 1, gone + 9];
+    expect(tried.map((place) => after.moved(before, place))).toEqual(tried);
   });
 
   it("shows nothing for an empty diff", () => {

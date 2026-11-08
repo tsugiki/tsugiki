@@ -1,43 +1,84 @@
-//! The review threads Files shows under their code (#184). Threads that Files can't place by their line,
-//! such as Outdated ones and those on a whole file, are #185's.
+//! Where Files shows each review thread: under its line (#184), at the top of its file when it is on the
+//! whole file or Outdated, in the gap around a line no hunk shows, or after the last file when the diff no
+//! longer holds its file (#185). The threads come in the order Files shows them, which `F8` follows.
 
 use serde::Serialize;
 use specta::Type;
 
 use crate::diff::{Diff, DiffFile, DiffRow};
-use crate::github::issue_content::IssueComment;
 use crate::github::pull_request_content::{
-    Anchor, Resolution, Review, Side, Subject, ThreadId, ThreadLine,
+    Anchor, CodeRow, DiffHunk, Resolution, Side, Subject, ThreadComment, ThreadId, ThreadLine,
 };
+use crate::highlight::{Language, Parsed, Span};
 
-/// A review thread under a row of the diff.
+/// A review thread, and where Files shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct DiffThread {
     pub id: ThreadId,
-    /// The row of the line it is on, which it sits under.
-    pub row: u32,
+    pub at: Placement,
     /// Resolved also when GitHub hides each of its comments, which leaves nothing in it to answer.
     pub resolution: Resolution,
-    /// Its first 100 comments, oldest first.
-    pub comments: Vec<IssueComment>,
+    /// Its first 100 comments, oldest first, with the user's drafts among them.
+    pub comments: Vec<ThreadComment>,
     /// The count of later comments that only GitHub holds.
     pub later_comments: u32,
 }
 
-/// The threads of `reviews` on a line of `diff`, in the order of their rows. A thread names its file as it
-/// is at the head, or else as it was before a rename: a PR can rename a file and add another by its old
-/// name.
-pub(super) fn place(diff: &Diff, reviews: &[Review]) -> Vec<DiffThread> {
-    let threads = reviews.iter().flat_map(|review| &review.threads);
-    let mut placed: Vec<DiffThread> = threads
-        .filter_map(|thread| {
+/// Where Files shows a thread. A file is named by its place among the diff's files.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Placement {
+    /// Under the diff's row `row`, which shows its line.
+    Row { row: u32 },
+    /// At the top of file `file`, as it is on the whole file, above the file's Outdated threads.
+    File { file: u32 },
+    /// At the top of file `file`, as the code under it has changed since, with the code it was written
+    /// against.
+    Outdated { file: u32, code: Option<ThreadCode> },
+    /// Under line `head_line` of file `file` at the head, which no hunk shows, so the gap or the end of the
+    /// file around it opens to show it. `line` is the line as the thread's side counts it.
+    Outside {
+        file: u32,
+        line: u32,
+        head_line: u32,
+    },
+    /// After the last file, on file `path`, which the diff no longer holds, with the code it was written
+    /// against.
+    Gone {
+        path: String,
+        code: Option<ThreadCode>,
+    },
+}
+
+/// The code a thread was written against, from the hunk GitHub stored with it: its rows, the last of them
+/// the thread's line, and the spans that highlight each row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct ThreadCode {
+    pub rows: Vec<CodeRow>,
+    pub spans: Vec<Vec<Span>>,
+}
+
+/// Where a thread comes among the others: the diff's row it follows, its rank among the threads after that
+/// row, its line at the head, and for a thread on a file the diff no longer holds, that file's name.
+type Order = (u32, u8, u32, String);
+
+/// `threads` in the order Files shows them. In each file come the threads on the file, then the Outdated
+/// ones, then those on its lines; after the last file, the threads on files the diff no longer holds, by
+/// file.
+pub(super) fn place<'a>(
+    diff: &Diff,
+    threads: impl Iterator<Item = &'a ThreadLine>,
+) -> Vec<DiffThread> {
+    let mut placed: Vec<(Order, DiffThread)> = threads
+        .map(|thread| {
             let all_hidden = thread
                 .comments
                 .iter()
-                .all(|comment| comment.hidden.is_some());
-            Some(DiffThread {
+                .all(|comment| comment.comment.hidden.is_some());
+            let (order, at) = placement(diff, thread);
+            let shown = DiffThread {
                 id: thread.id.clone(),
-                row: row_of(diff, thread)?,
+                at,
                 resolution: if all_hidden {
                     Resolution::Resolved
                 } else {
@@ -45,37 +86,72 @@ pub(super) fn place(diff: &Diff, reviews: &[Review]) -> Vec<DiffThread> {
                 },
                 comments: thread.comments.clone(),
                 later_comments: thread.later_comments(),
-            })
+            };
+            (order, shown)
         })
         .collect();
-    placed.sort_by_key(|thread| thread.row);
-    placed
+    placed.sort_by(|(one, _), (other, _)| one.cmp(other));
+    placed.into_iter().map(|(_, thread)| thread).collect()
 }
 
-/// The row of the line `thread` is on, if the diff shows it.
-fn row_of(diff: &Diff, thread: &ThreadLine) -> Option<u32> {
-    let Subject::Line {
-        side,
-        line: Some(line),
-        ..
-    } = thread.subject
-    else {
-        return None;
-    };
-    if thread.anchor == Anchor::Outdated {
-        return None;
-    }
+/// Where Files shows `thread`, and where that comes among the others. A thread names its file as it is at
+/// the head, or else as it was before a rename: a PR can rename a file and add another by its old name.
+fn placement(diff: &Diff, thread: &ThreadLine) -> (Order, Placement) {
     let files = diff.files();
-    let at = files
+    let named =
+        |matches: &dyn Fn(&DiffFile) -> bool| (0_u32..).zip(files).find(|(_, file)| matches(file));
+    let found = named(&|file| file.path == thread.path)
+        .or_else(|| named(&|file| file.old_path.as_deref() == Some(thread.path.as_str())));
+    let code = || thread.hunk.as_ref().map(|hunk| code_of(hunk, &thread.path));
+    let Some((index, file)) = found else {
+        let order = (u32::MAX, 0, 0, thread.path.clone());
+        let path = thread.path.clone();
+        return (order, Placement::Gone { path, code: code() });
+    };
+    let end = files
         .iter()
-        .position(|file| file.path == thread.path)
-        .or_else(|| {
-            let renamed = |file: &DiffFile| file.old_path.as_deref() == Some(thread.path.as_str());
-            files.iter().position(renamed)
-        })?;
-    let start = files.get(at)?.row.checked_add(1)?;
-    let end = files.get(at + 1).map_or(diff.row_count(), |next| next.row);
-    let found = diff.rows(start..end).iter().position(|row| match row {
+        .find(|next| next.row > file.row)
+        .map_or(diff.row_count(), |next| next.row);
+    let outdated = || {
+        let at = Placement::Outdated {
+            file: index,
+            code: code(),
+        };
+        ((file.row, 1, 0, String::new()), at)
+    };
+    let (side, line) = match thread.subject {
+        Subject::File => {
+            return (
+                (file.row, 0, 0, String::new()),
+                Placement::File { file: index },
+            );
+        }
+        Subject::Line {
+            side,
+            line: Some(line),
+            ..
+        } if thread.anchor == Anchor::Current => (side, line),
+        Subject::Line { .. } => return outdated(),
+    };
+    if let Some(row) = row_of(diff, file.row.saturating_add(1)..end, side, line) {
+        return ((row, 2, 0, String::new()), Placement::Row { row });
+    }
+    // A line in no row, no gap and not after the last hunk has nowhere to show, so it counts as Outdated.
+    let Some((row, rank, head_line)) = outside(file, end, side, line) else {
+        return outdated();
+    };
+    let at = Placement::Outside {
+        file: index,
+        line,
+        head_line,
+    };
+    ((row, rank, head_line, String::new()), at)
+}
+
+/// The row among `rows` that shows line `line` of `side`, if one does.
+fn row_of(diff: &Diff, rows: std::ops::Range<u32>, side: Side, line: u32) -> Option<u32> {
+    let start = rows.start;
+    let found = diff.rows(rows).iter().position(|row| match row {
         DiffRow::Context { old, new, .. } => match side {
             Side::Left => *old == line,
             Side::Right => *new == line,
@@ -87,178 +163,48 @@ fn row_of(diff: &Diff, thread: &ThreadLine) -> Option<u32> {
     start.checked_add(u32::try_from(found).ok()?)
 }
 
-#[cfg(test)]
-mod tests {
-    use time::OffsetDateTime;
-
-    use super::*;
-    use crate::github::issue_content::HiddenReason;
-    use crate::github::pull_request_content::Opening;
-    use crate::github::pull_requests::ReviewState;
-
-    /// `Lib/ast.py` with one line changed, and `Lib/old.py` renamed to `Lib/new.py` with a line added.
-    ///
-    /// | Row | What |
-    /// |---|---|
-    /// | 0, 1 | `Lib/ast.py`'s header and hunk |
-    /// | 2 | line 1 at both |
-    /// | 3, 4 | line 2 removed, line 2 added |
-    /// | 5 | line 3 at both |
-    /// | 6, 7 | `Lib/new.py`'s header and hunk |
-    /// | 8 | line 4 at both |
-    /// | 9 | line 5 added |
-    /// | 10 | line 5 at the base, 6 at the head |
-    fn diff() -> Diff {
-        let numstat = "1\t1\tLib/ast.py\0\
-                       1\t0\t\0Lib/old.py\0Lib/new.py\0";
-        let patch = "diff --git a/Lib/ast.py b/Lib/ast.py\n\
-                     @@ -1,3 +1,3 @@\n a\n-b\n+B\n c\n\
-                     diff --git a/Lib/old.py b/Lib/new.py\n\
-                     @@ -4,2 +4,3 @@\n d\n+e\n f\n";
-        Diff::parse(numstat, patch).unwrap()
-    }
-
-    fn comment(hidden: Option<HiddenReason>) -> IssueComment {
-        IssueComment {
-            author: None,
-            created_at: OffsetDateTime::UNIX_EPOCH,
-            body_html: "<p>Why?</p>".to_owned(),
-            hidden,
+/// The gap or the end of `file` that holds line `line` of `side`, which no hunk shows: the row the thread
+/// comes before or after, its rank there, and the line at the head. A gap's lines show above its hunk's
+/// rows, and the end of a file after its last row, whose rows end at `end`.
+fn outside(file: &DiffFile, end: u32, side: Side, line: u32) -> Option<(u32, u8, u32)> {
+    let on_side = |old: u32, new: u32| match side {
+        Side::Left => old,
+        Side::Right => new,
+    };
+    for gap in &file.gaps {
+        let first = on_side(gap.old, gap.new);
+        if (first..first.saturating_add(gap.lines)).contains(&line) {
+            return Some((gap.row, 2, gap.new.saturating_add(line - first)));
         }
     }
-
-    /// An open thread `id` on line `line` of `path`, on `side`, with one comment.
-    fn thread(id: &str, path: &str, side: Side, line: u32) -> ThreadLine {
-        ThreadLine {
-            id: ThreadId::new(id),
-            path: path.to_owned(),
-            opening: Opening::Words {
-                words: "Why?".to_owned(),
-            },
-            replies: 0,
-            resolution: Resolution::Open,
-            anchor: Anchor::Current,
-            subject: Subject::Line {
-                side,
-                line: Some(line),
-                original: Some(line),
-            },
-            comments: vec![comment(None)],
-        }
-    }
-
-    fn reviews(threads: Vec<ThreadLine>) -> Vec<Review> {
-        vec![Review {
-            author: None,
-            state: ReviewState::Commented,
-            commit: None,
-            submitted_at: OffsetDateTime::UNIX_EPOCH,
-            body_html: String::new(),
-            hidden: None,
-            threads,
-        }]
-    }
-
-    fn rows(placed: &[DiffThread]) -> Vec<(&str, u32)> {
-        placed
-            .iter()
-            .map(|thread| (thread.id.as_str(), thread.row))
-            .collect()
-    }
-
-    #[test]
-    fn a_thread_sits_under_its_line_at_the_head_or_at_the_merge_base_in_row_order() {
-        let threads = vec![
-            thread("added", "Lib/ast.py", Side::Right, 2),
-            thread("removed", "Lib/ast.py", Side::Left, 2),
-            thread("context at the head", "Lib/new.py", Side::Right, 6),
-            thread("context at the base", "Lib/ast.py", Side::Left, 3),
-        ];
-
-        let placed = place(&diff(), &reviews(threads));
-
-        assert_eq!(
-            rows(&placed),
-            [
-                ("removed", 3),
-                ("added", 4),
-                ("context at the base", 5),
-                ("context at the head", 10)
-            ]
-        );
-    }
-
-    #[test]
-    fn a_renamed_file_s_threads_name_it_either_way() {
-        let threads = vec![
-            thread("new name", "Lib/new.py", Side::Right, 5),
-            thread("old name", "Lib/old.py", Side::Left, 4),
-        ];
-
-        let placed = place(&diff(), &reviews(threads));
-
-        assert_eq!(rows(&placed), [("old name", 8), ("new name", 9)]);
-    }
-
-    #[test]
-    fn a_thread_on_a_file_that_took_a_renamed_file_s_old_name_stays_on_it() {
-        // `Lib/a.py` moved to `Lib/b.py`, and a new `Lib/a.py` came after it.
-        let numstat = "1\t0\t\0Lib/a.py\0Lib/b.py\0\
-                       1\t0\tLib/a.py\0";
-        let patch = "diff --git a/Lib/a.py b/Lib/b.py\n\
-                     @@ -1 +1,2 @@\n x\n+y\n\
-                     diff --git a/Lib/a.py b/Lib/a.py\n\
-                     @@ -0,0 +1,2 @@\n+new\n+file\n";
-        let diff = Diff::parse(numstat, patch).unwrap();
-        let threads = vec![
-            thread("new file", "Lib/a.py", Side::Right, 2),
-            thread("before the rename", "Lib/a.py", Side::Left, 1),
-        ];
-
-        let placed = place(&diff, &reviews(threads));
-
-        // The rename's rows are 0 to 3, and the new file's 4 to 7.
-        assert_eq!(rows(&placed), [("new file", 7)]);
-    }
-
-    #[test]
-    fn a_thread_files_cant_place_by_its_line_waits_for_185() {
-        let mut outdated = thread("outdated", "Lib/ast.py", Side::Right, 1);
-        outdated.anchor = Anchor::Outdated;
-        let mut on_the_file = thread("file", "Lib/ast.py", Side::Right, 1);
-        on_the_file.subject = Subject::File;
-        let mut moved = thread("moved", "Lib/ast.py", Side::Right, 1);
-        moved.subject = Subject::Line {
-            side: Side::Right,
-            line: None,
-            original: Some(1),
-        };
-        let threads = vec![
-            outdated,
-            on_the_file,
-            moved,
-            thread("outside the hunks", "Lib/ast.py", Side::Right, 9),
-            thread("an added line at the base", "Lib/new.py", Side::Left, 6),
-            thread("another file", "Lib/re.py", Side::Right, 1),
-        ];
-
-        assert_eq!(place(&diff(), &reviews(threads)), []);
-    }
-
-    #[test]
-    fn a_thread_of_only_hidden_comments_counts_as_resolved() {
-        let mut hidden = thread("hidden", "Lib/ast.py", Side::Right, 1);
-        hidden.comments = vec![comment(Some(HiddenReason::Spam))];
-        let mut partly = thread("partly", "Lib/ast.py", Side::Right, 3);
-        partly.comments = vec![comment(Some(HiddenReason::Spam)), comment(None)];
-        partly.replies = 4;
-
-        let placed = place(&diff(), &reviews(vec![hidden, partly]));
-
-        let marks: Vec<(Resolution, u32)> = placed
-            .iter()
-            .map(|thread| (thread.resolution, thread.later_comments))
-            .collect();
-        assert_eq!(marks, [(Resolution::Resolved, 0), (Resolution::Open, 3)]);
-    }
+    let rest = file.rest?;
+    let first = on_side(rest.old, rest.new);
+    let head_line = rest.new.saturating_add(line.checked_sub(first)?);
+    Some((end.saturating_sub(1), 3, head_line))
 }
+
+/// The rows of `hunk`, highlighted as code of file `path`.
+fn code_of(hunk: &DiffHunk, path: &str) -> ThreadCode {
+    let rows = hunk.rows().to_vec();
+    // The code of the rows after the `@@` line, one line each, which parses as one piece.
+    let mut source = String::new();
+    for row in rows.iter().skip(1) {
+        if let CodeRow::Context { text, .. }
+        | CodeRow::Added { text, .. }
+        | CodeRow::Removed { text, .. } = row
+        {
+            source.push_str(text);
+        }
+        source.push('\n');
+    }
+    let count = u32::try_from(rows.len()).unwrap_or(u32::MAX);
+    let parsed = Language::of(path).and_then(|language| Parsed::parse(language, source));
+    // The `@@` line has no code, so the code's line 1 is row 1.
+    let mut spans = vec![Vec::new()];
+    spans.extend(parsed.map_or_else(Vec::new, |parsed| parsed.spans(1..count)));
+    spans.resize(rows.len(), Vec::new());
+    ThreadCode { rows, spans }
+}
+
+#[cfg(test)]
+mod tests;

@@ -422,6 +422,14 @@ pub fn held(mirror: &Path, target: &str, head: &CommitSha) -> Held {
     }
 }
 
+/// The commit `mirror` last fetched as PR `number`'s head, if it holds one. It stays there when the PR moves
+/// on, until the mirror fetches the newer head.
+pub fn last_head(mirror: &Path, number: u32) -> Option<CommitSha> {
+    let named = format!("refs/tsugiki/pull/{number}/head^{{commit}}");
+    let found = git(mirror, &["rev-parse", "--verify", "--quiet", &named]).ok()?;
+    CommitSha::parse(found.trim())
+}
+
 /// Reads the diff from the merge base of `head` and the branch `target` to `head`, with renames found as
 /// GitHub finds them, the files `target` marks generated, and the NEWS entries at `head`. Both have to be
 /// in `mirror`, as `held` says.

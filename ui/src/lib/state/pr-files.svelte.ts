@@ -4,12 +4,15 @@
 // it highlighted at once (#180). Generated files start collapsed, and their rows aren't asked for until the
 // user opens one (#181). The user can expand the lines a gap between hunks leaves out, which the core reads
 // from the file at the PR's head (#182), and switch between the unified and side-by-side views (#183).
-// Review threads sit under their lines, and a resolved one starts folded to a line (#184).
+// Review threads sit under their lines, and a resolved one starts folded to a line (#184). A thread on a
+// whole file or an Outdated one sits at the top of its file, a thread on a line no hunk shows opens the lines
+// around it, and those on files no longer in the diff come after the last file (#185).
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import {
   commands,
   events,
   type Cloning,
+  type CodeRow,
   type DiffFile_Serialize,
   type DiffRow_Serialize,
   type DiffThread_Serialize,
@@ -25,7 +28,14 @@ import {
   type PrFiles_Serialize,
   type Span,
 } from "$lib/data/bindings";
-import { DiffLayout, type DiffView, type Shown } from "./diff-layout";
+import {
+  DiffLayout,
+  type DiffView,
+  type HiddenLines,
+  type Lines,
+  type Shown,
+  type ThreadAnchor,
+} from "./diff-layout";
 import { hud, type Jump, type JumpTimer } from "./hud.svelte";
 
 export type PrFiles = PrFiles_Serialize;
@@ -37,10 +47,12 @@ export type DiffThread = DiffThread_Serialize;
 type Ready = Extract<PrFiles, { state: "ready" }>;
 export type {
   Cloning,
+  CodeRow,
   DiffView,
   FileChange,
   Gap,
   HeadLine,
+  HiddenLines,
   Highlight,
   LinkTo,
   NewsBlock,
@@ -55,9 +67,18 @@ export const CHUNK = 512;
 /** Lines a click shows above or below a gap, as on GitHub. */
 export const EXPAND = 20;
 
-/** The tab's guess at an open thread's places before it measures the thread: its header, and a line of
- * who wrote each comment and two of its words. */
-const guessPlaces = (thread: DiffThread) => 1 + 3 * thread.comments.length;
+/** Lines that show on either side of a line no hunk shows, under which a thread sits, as on GitHub. */
+export const AROUND = 3;
+
+/** The rows of code an Outdated thread shows before the user asks for its whole hunk. */
+export const CODE_ROWS = 4;
+
+/** The tab's guess at an open thread's places before it measures the thread: its header, the code it was
+ * written against, and a line of who wrote each comment and two of its words. */
+const guessPlaces = (thread: DiffThread) => {
+  const code = "code" in thread.at && thread.at.code !== null ? CODE_ROWS + 1 : 0;
+  return 1 + code + 3 * thread.comments.length;
+};
 
 /** The line past any file's last, to ask for a file to its end. */
 const END = 2 ** 32 - 1;
@@ -88,18 +109,20 @@ export class PrFilesState {
   layout = $derived.by(() => {
     const view = this.view;
     const ready = view?.state === "ready";
+    const files = ready ? view.files : [];
     return new DiffLayout(
       ready ? view.rows : 0,
-      ready ? view.files : [],
+      files,
       (file) => this.collapsed(file),
-      { gap: (file, gap) => this.#shown(file, gap), rest: (file, rest) => this.#after(file, rest) },
+      { gap: (file) => this.#held.get(file) ?? [], rest: (file, rest) => this.#after(file, rest) },
       this.#choice.view,
       this.threads.map((thread, at) => ({
-        row: thread.row,
+        at: anchor(thread, files),
         places: this.#places(thread, at),
         id: thread.id,
         thread,
       })),
+      this.#diff(view) ?? "",
     );
   });
   /** The thread to scroll to, until the diff has scrolled there. Each move is a new one, so a move back to
@@ -118,9 +141,11 @@ export class PrFilesState {
   /** The Generated files the user has opened, by their place among the files. */
   #opened = new SvelteSet<number>();
   /** The lines expanded gaps show, by `file:line` at the head, once the core sends them. A gap shows the
-   * lines held from each of its ends, so a click that fails shows nothing, and two that overlap ask for
-   * the same lines. */
+   * lines held, so a click that fails shows nothing, and two that overlap ask for the same lines. */
   #lines = new SvelteMap<string, HeadLine>();
+  /** The runs of lines held, by the file's place, in order, which the layout shows where gaps and the ends
+   * of files leave them out. */
+  #held = new SvelteMap<number, Lines[]>();
   /** How many lines each file has at the head, by its place, once an answer stopped short at its end. */
   #lengths = new SvelteMap<number, number>();
   /** The threads the user folded or opened, against how each starts: open, or folded once resolved. */
@@ -204,23 +229,42 @@ export class PrFilesState {
     const answer = await this.#safely(() => commands.pullRequestFiles(this.#repository, this.#number));
     // A newer question reads newer facts, so this drops an older answer that arrives late.
     if (question !== this.#lastQuestion || answer === undefined) return;
-    if (this.#diff(answer) !== this.#diff(this.view)) {
+    const anew = this.#diff(answer) !== this.#diff(this.view);
+    if (anew) {
       this.#chunks.clear();
       this.#spans.clear();
       this.#asked.clear();
       this.#opened.clear();
       this.#lines.clear();
+      this.#held.clear();
       this.#lengths.clear();
       this.columns = 0;
     }
+    // The threads the tab showed with the same diff, whose lines it has opened.
+    const before = anew ? [] : this.threads;
     this.view = answer;
+    // A thread on a line no hunk shows opens the lines around it, once.
+    for (const thread of this.threads) {
+      if (thread.at.kind !== "outside" || before.some((shown) => shown.id === thread.id)) continue;
+      const { file, head_line: line } = thread.at;
+      void this.#fetchLines(file, Math.max(1, line - AROUND), line + AROUND + 1);
+    }
     if (this.#revealing !== undefined && answer?.state === "ready") this.reveal(this.#revealing);
   }
 
-  /** The review threads under the diff's lines, in the order of their rows. */
+  /** The review threads, in the order the tab shows them. */
   get threads(): DiffThread[] {
     const view = this.view;
-    return view?.state === "ready" ? view.threads : [];
+    return view?.state === "ready" && view.threads.kind === "shown" ? view.threads.threads : [];
+  }
+
+  /** The PR's newer head the mirror is fetching, and how many threads wait for its diff, while the tab
+   * shows the diff before. */
+  get heldBack(): { newer: string; count: number } | undefined {
+    const view = this.view;
+    if (view?.state !== "ready" || view.threads.kind !== "held_back") return undefined;
+    const { newer, count } = view.threads;
+    return { newer, count };
   }
 
   /** Whether thread `thread`, by its place among the threads, shows only its first line. */
@@ -245,20 +289,22 @@ export class PrFilesState {
     return this.folded(at) ? 1 : (this.#measured.get(thread.id) ?? guessPlaces(thread));
   }
 
-  /** Moves to thread `id`, open, and opens the Generated file it is in. Before the diff comes, it moves
-   * there once the diff does. A thread the tab doesn't show stays where it is. */
+  /** Moves to thread `id`, open, and opens the Generated file it is in. Before the diff comes, or while the
+   * older diff of a moved head holds the threads back, it moves there once the threads come. A thread the tab
+   * doesn't show stays where it is. */
   reveal(id: string) {
     const view = this.view;
-    if (view?.state !== "ready") {
+    if (view?.state !== "ready" || view.threads.kind === "held_back") {
       this.#revealing = id;
       return;
     }
     this.#revealing = undefined;
-    const thread = view.threads.findIndex((shown) => shown.id === id);
-    const row = view.threads[thread]?.row;
-    if (row === undefined) return;
+    const thread = this.threads.findIndex((shown) => shown.id === id);
+    const at = this.threads[thread]?.at;
+    if (at === undefined) return;
     if (this.folded(thread)) this.toggleThread(thread);
-    const file = view.files.findLastIndex((file) => file.row < row);
+    const file =
+      at.kind === "row" ? view.files.findLastIndex((file) => file.row < at.row) : "file" in at ? at.file : -1;
     if (this.collapsed(file)) this.toggle(file);
     this.#current = id;
     this.jump = { id };
@@ -312,55 +358,40 @@ export class PrFilesState {
     return this.#lines.get(`${String(file)}:${String(line)}`) ?? { text: "", spans: [] };
   }
 
-  /** How many of `gap`'s lines show from its top and from its bottom: those the core has sent, which
-   * follow on from each end. */
-  #shown(file: number, gap: Gap): { top: number; bottom: number } {
-    const top = this.#run(file, gap.new, 1, gap.lines);
-    const bottom = this.#run(file, gap.new + gap.lines - 1, -1, gap.lines - top);
-    return { top, bottom };
-  }
-
-  /** How many lines of file `file` the tab holds one after another from `line` on, going by `step`, up to
-   * `most`. */
-  #run(file: number, line: number, step: 1 | -1, most: number): number {
-    let held = 0;
-    while (held < most && this.#lines.has(`${String(file)}:${String(line + step * held)}`)) held += 1;
-    return held;
-  }
-
-  /** The lines that show after file `file`'s last hunk, from `rest` on, and whether the file ends there. */
-  #after(file: number, rest: Rest): { lines: number; ended: boolean } {
+  /** The lines that show after file `file`'s last hunk, from `rest` on, and whether the file ends with
+   * them: once an answer stopped short at its end, and its last line is held. */
+  #after(file: number, rest: Rest): { runs: readonly Lines[]; ended: boolean } {
+    const runs = this.#held.get(file) ?? [];
     const length = this.#lengths.get(file);
-    const lines = this.#run(file, rest.new, 1, length === undefined ? Infinity : length - rest.new + 1);
-    return { lines, ended: length !== undefined && rest.new + lines > length };
+    const ended =
+      length !== undefined && runs.some((run) => run.from <= length && length < run.from + run.length);
+    return { runs: runs.filter((run) => run.from + run.length > rest.new), ended };
   }
 
-  /** Shows `EXPAND` more lines of `gap` in file `file`, from its bottom up, above its hunk. */
-  expandAbove(file: number, gap: Gap) {
-    const { top, bottom } = this.#shown(file, gap);
-    const end = gap.new + gap.lines;
-    void this.#fetchLines(file, end - Math.min(bottom + EXPAND, gap.lines - top), end - bottom);
+  /** Shows `EXPAND` more of the lines `hidden`, from its bottom up. */
+  expandAbove(hidden: HiddenLines) {
+    const end = hidden.new + hidden.lines;
+    void this.#fetchLines(hidden.file, Math.max(hidden.new, end - EXPAND), end);
   }
 
-  /** Shows `EXPAND` more lines of `gap` in file `file`, from its top down, below the hunk before. */
-  expandBelow(file: number, gap: Gap) {
-    const { top, bottom } = this.#shown(file, gap);
-    void this.#fetchLines(file, gap.new + top, gap.new + Math.min(top + EXPAND, gap.lines - bottom));
+  /** Shows `EXPAND` more of the lines `hidden`, from its top down. */
+  expandBelow(hidden: HiddenLines) {
+    void this.#fetchLines(hidden.file, hidden.new, Math.min(hidden.new + EXPAND, hidden.new + hidden.lines));
   }
 
-  /** Shows every line `gap` in file `file` still hides. */
-  expandGap(file: number, gap: Gap) {
-    const { top, bottom } = this.#shown(file, gap);
-    void this.#fetchLines(file, gap.new + top, gap.new + gap.lines - bottom);
+  /** Shows every line of `hidden`. */
+  expandGap(hidden: HiddenLines) {
+    void this.#fetchLines(hidden.file, hidden.new, hidden.new + hidden.lines);
   }
 
-  /** Shows `EXPAND` more lines after file `file`'s last hunk. Fewer than asked for end the file, and the
-   * button goes. */
+  /** Shows `EXPAND` more lines after the last that shows after file `file`'s last hunk. Fewer than asked
+   * for end the file, and the button goes. */
   async expandRest(file: number) {
     const view = this.view;
     const rest = view?.state === "ready" ? view.files[file]?.rest : undefined;
     if (rest === undefined || rest === null) return;
-    const start = rest.new + this.#after(file, rest).lines;
+    const last = this.#after(file, rest).runs.at(-1);
+    const start = last === undefined ? rest.new : last.from + last.length;
     await this.#fetchLines(file, start, start + EXPAND);
   }
 
@@ -373,7 +404,10 @@ export class PrFilesState {
    * while the tab still shows the same diff. Fewer than asked for say where the file ends. */
   async #fetchLines(file: number, start: number, end: number) {
     const view = this.view;
-    if (view?.state !== "ready" || start >= end) return;
+    const held = (this.#held.get(file) ?? []).some(
+      (run) => run.from <= start && end <= run.from + run.length,
+    );
+    if (view?.state !== "ready" || start >= end || held) return;
     const lines = await this.#safely(() =>
       commands.pullRequestLines({
         repository: this.#repository,
@@ -387,6 +421,8 @@ export class PrFilesState {
     );
     if (lines === undefined || this.#diff(this.view) !== this.#diff(view)) return;
     lines.forEach((line, at) => this.#lines.set(`${String(file)}:${String(start + at)}`, line));
+    if (lines.length > 0)
+      this.#held.set(file, joined(this.#held.get(file) ?? [], { from: start, length: lines.length }));
     this.columns = lines.reduce((widest, line) => Math.max(widest, [...line.text].length), this.columns);
     if (start + lines.length < end) this.#lengths.set(file, start + lines.length - 1);
   }
@@ -506,6 +542,37 @@ export class PrFilesState {
     this.error = undefined;
     return answer.data;
   }
+}
+
+/** Where `thread` sits among the diff's `files`: under its row, under its file's header when it is on the
+ * whole file or Outdated, under its line at the head when no hunk shows it, or after the last file. */
+function anchor(thread: DiffThread, files: readonly DiffFile[]): ThreadAnchor {
+  const at = thread.at;
+  switch (at.kind) {
+    case "row":
+      return { kind: "row", row: at.row };
+    case "file":
+    case "outdated":
+      // At the top, should a payload name a file the diff doesn't have.
+      return { kind: "row", row: files[at.file]?.row ?? 0 };
+    case "outside":
+      return { kind: "line", file: at.file, line: at.head_line };
+    case "gone":
+      return { kind: "end" };
+  }
+}
+
+/** `runs` with `added` among them, in order, as one with any it overlaps or follows on from. */
+function joined(runs: readonly Lines[], added: Lines): Lines[] {
+  const all = [...runs, added].sort((one, other) => one.from - other.from);
+  const merged: Lines[] = [];
+  for (const run of all) {
+    const before = merged.at(-1);
+    if (before !== undefined && before.from + before.length >= run.from)
+      before.length = Math.max(before.length, run.from + run.length - before.from);
+    else merged.push({ ...run });
+  }
+  return merged;
 }
 
 /** The chunks that hold the diff's rows `pieces` cover, in order. */

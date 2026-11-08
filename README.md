@@ -36,6 +36,7 @@ of [docs/build-order.md](docs/build-order.md). These files record the decisions 
 - [CONTEXT.md](CONTEXT.md): the glossary. Terms in **bold** are defined there.
 - [docs/scope.md](docs/scope.md): what v1 does, and what it leaves out.
 - [docs/adr](docs/adr/): architecture decisions, each with its reasons.
+- [docs/architecture.md](docs/architecture.md): where the code is, and how its threads talk.
 - [Issues](https://github.com/tsugiki/tsugiki/issues): open points and planned work.
 
 It is a [Tauri](https://tauri.app/) app (Rust with Svelte 5 and TypeScript) for Windows and macOS. Its

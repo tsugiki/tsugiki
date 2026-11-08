@@ -17,6 +17,7 @@ import {
   type DiffRow_Serialize,
   type DiffThread_Serialize,
   type FileChange,
+  type Found,
   type Gap,
   type HeadLine,
   type Highlight,
@@ -125,9 +126,19 @@ export class PrFilesState {
       this.#diff(view) ?? "",
     );
   });
-  /** The thread to scroll to, until the diff has scrolled there. Each move is a new one, so a move back to
-   * the same thread scrolls again. */
-  jump = $state<{ id: string }>();
+  /** The thread or the diff's row to scroll to, until the diff has scrolled there. Each move is a new one,
+   * so a move back to the same place scrolls again. */
+  jump = $state<{ id: string } | { row: number }>();
+  /** Whether the search in the diff shows, which Ctrl+F opens (#186). */
+  searching = $state(false);
+  /** The text the user searches the diff for. */
+  query = $state("");
+  /** Whether Ctrl+F has asked the search box for focus, until the box takes it. */
+  searchWantsFocus = $state(false);
+  /** Whether the search has closed and handed the diff its focus back, until the diff takes it. */
+  diffWantsFocus = $state(false);
+  /** Why the core couldn't search, which the search box says. */
+  searchProblem = $state<string>();
   /** How many characters the longest expanded line has, so the tab makes room for it as for the diff's. */
   columns = $state(0);
   readonly #repository: string;
@@ -156,6 +167,28 @@ export class PrFilesState {
   #revealing: string | undefined;
   /** The thread the tab last moved to, which F8 goes on from. */
   #current: string | undefined;
+  /** The row of the change the tab last moved to, which F7 goes on from. */
+  #change: number | undefined;
+  /** What the search found in the diff `view` shows, and the files of that diff. The matches are many and
+   * don't change, so they aren't deeply reactive. */
+  #found = $state.raw<{ found: Found; files: DiffFile[] }>();
+  /** Which match the tab is on: none when the search found nothing. */
+  #at = $state<number>();
+  /** The row of the match the tab last moved to, which a new query moves on from. */
+  #matchRow: number | undefined;
+  /** The matches in each row, by the row, with each one's place among the matches. */
+  #byRow = $derived.by(() => {
+    // Made anew whenever the matches change, so it needn't be reactive itself.
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
+    const byRow = new Map<number, { start: number; end: number; index: number }[]>();
+    this.#found?.found.matches.forEach(({ row, start, end }, index) => {
+      const matches = byRow.get(row) ?? [];
+      matches.push({ start, end, index });
+      byRow.set(row, matches);
+    });
+    return byRow;
+  });
+  #lastSearch = 0;
   /** The chunks asked for. Nothing draws from it, and the effect that asks shouldn't rerun on it. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   #asked = new Set<number>();
@@ -239,6 +272,11 @@ export class PrFilesState {
       this.#held.clear();
       this.#lengths.clear();
       this.columns = 0;
+      this.#change = undefined;
+      // The matches name rows of the diff before.
+      this.#found = undefined;
+      this.#at = undefined;
+      this.#matchRow = undefined;
     }
     // The threads the tab showed with the same diff, whose lines it has opened.
     const before = anew ? [] : this.threads;
@@ -250,6 +288,8 @@ export class PrFilesState {
       void this.#fetchLines(file, Math.max(1, line - AROUND), line + AROUND + 1);
     }
     if (this.#revealing !== undefined && answer?.state === "ready") this.reveal(this.#revealing);
+    // The rows of a new diff hold other matches, and the tab stays where the user is.
+    if (anew && this.query !== "") void this.#search(this.query, false);
   }
 
   /** The review threads, in the order the tab shows them. */
@@ -303,8 +343,7 @@ export class PrFilesState {
     const at = this.threads[thread]?.at;
     if (at === undefined) return;
     if (this.folded(thread)) this.toggleThread(thread);
-    const file =
-      at.kind === "row" ? view.files.findLastIndex((file) => file.row < at.row) : "file" in at ? at.file : -1;
+    const file = at.kind === "row" ? fileOf(view.files, at.row) : "file" in at ? at.file : -1;
     if (this.collapsed(file)) this.toggle(file);
     this.#current = id;
     this.jump = { id };
@@ -318,12 +357,119 @@ export class PrFilesState {
     const open = threads.flatMap((thread, at) => (thread.resolution === "open" ? [at] : []));
     const current = threads.findIndex((thread) => thread.id === this.#current);
     const from = current !== -1 ? current : step === 1 ? -1 : threads.length;
-    const next =
-      step === 1
-        ? (open.find((at) => at > from) ?? open[0])
-        : (open.findLast((at) => at < from) ?? open.at(-1));
+    const next = cycle(open, from, step);
     const id = next === undefined ? undefined : threads[next]?.id;
     if (id !== undefined) this.reveal(id);
+  }
+
+  /** Moves to the change after the one the tab last moved to, or by `step` -1 to the one before, round from
+   * the end to the start, and opens the Generated file it is in. Without one, it starts from the end it
+   * moves away from. */
+  nextChange(step: 1 | -1) {
+    const view = this.view;
+    if (view?.state !== "ready") return;
+    const rows = view.files.flatMap((file) => file.pairs.map((pair) => pair.row));
+    const row = cycle(rows, this.#change ?? (step === 1 ? -1 : Infinity), step);
+    if (row === undefined) return;
+    this.#change = row;
+    this.#moveTo(view.files, row);
+  }
+
+  /** Shows the search, or gives its box focus again. */
+  openSearch() {
+    this.searching = true;
+    this.searchWantsFocus = true;
+  }
+
+  /** Hides the search, forgets its text and its matches, and hands the diff its focus back. */
+  closeSearch() {
+    this.searching = false;
+    this.query = "";
+    this.#found = undefined;
+    this.#at = undefined;
+    this.#matchRow = undefined;
+    this.searchProblem = undefined;
+    this.#lastSearch += 1;
+    this.diffWantsFocus = true;
+  }
+
+  /** Searches every row of the diff for `query`, whatever the case, through the core, which holds the rows
+   * the tab doesn't, as the user types. It moves to the match it was on, or else the first after it. */
+  find(query: string): Promise<void> {
+    return this.#search(query, true);
+  }
+
+  /** Searches for `query`, and moves to the match it lands on when `move` says so. */
+  async #search(query: string, move: boolean) {
+    this.query = query;
+    this.#lastSearch += 1;
+    const asked = this.#lastSearch;
+    const view = this.view;
+    if (query === "" || view?.state !== "ready") {
+      this.#found = undefined;
+      this.#at = undefined;
+      return;
+    }
+    const { head, base } = view;
+    const search = { repository: this.#repository, number: this.#number, head, base, query };
+    // The search's own problem shows in its box, and leaves the tab's error to the diff.
+    const answer = await commands.pullRequestFind(search).catch((e: unknown) => ({
+      status: "error" as const,
+      error: { message: String(e) },
+    }));
+    // A newer query, or a closed search, drops an older answer that arrives late.
+    if (asked !== this.#lastSearch) return;
+    if (answer.status === "error") {
+      this.searchProblem = answer.error.message;
+      this.#found = undefined;
+      this.#at = undefined;
+      return;
+    }
+    const found = answer.data;
+    this.searchProblem = undefined;
+    const after = found.matches.findIndex((match) => match.row >= (this.#matchRow ?? 0));
+    this.#found = { found, files: view.files };
+    this.#at = found.matches.length === 0 ? undefined : Math.max(0, after);
+    if (move) this.#moveToMatch();
+  }
+
+  /** How many matches the search found, more when the core stopped counting, and which the tab is on. */
+  get search(): { at: number | undefined; count: number; more: boolean } | undefined {
+    const found = this.#found?.found;
+    return found && { at: this.#at, count: found.matches.length, more: found.more };
+  }
+
+  /** Where the search found its text in the diff's row `row`, and which is the match the tab is on. */
+  foundIn(row: number): { start: number; end: number; current: boolean }[] {
+    const at = this.#at;
+    return (this.#byRow.get(row) ?? []).map(({ start, end, index }) => ({
+      start,
+      end,
+      current: index === at,
+    }));
+  }
+
+  /** Moves to the next match, or by `step` -1 to the one before, round from the end to the start. */
+  nextMatch(step: 1 | -1) {
+    const count = this.#found?.found.matches.length;
+    if (count === undefined || this.#at === undefined) return;
+    this.#at = (this.#at + step + count) % count;
+    this.#moveToMatch();
+  }
+
+  #moveToMatch() {
+    const found = this.#found;
+    const match = this.#at === undefined ? undefined : found?.found.matches[this.#at];
+    if (found === undefined || match === undefined) return;
+    this.#matchRow = match.row;
+    this.#moveTo(found.files, match.row);
+  }
+
+  /** Scrolls to the diff's row `row`, and opens the Generated file among `files` it is in. */
+  #moveTo(files: DiffFile[], row: number) {
+    const file = fileOf(files, row);
+    if (this.collapsed(file)) this.toggle(file);
+    this.jump = { row };
   }
 
   /** Whether the file at `file` among the diff's files shows only its header: a Generated file starts so. */
@@ -542,6 +688,19 @@ export class PrFilesState {
     this.error = undefined;
     return answer.data;
   }
+}
+
+/** The item of `items` after `from`, or by `step` -1 the one before, round from the end to the start: the
+ * thread F8 moves to, or the change F7 does. Nothing, for no items. */
+function cycle(items: readonly number[], from: number, step: 1 | -1): number | undefined {
+  return step === 1
+    ? (items.find((at) => at > from) ?? items[0])
+    : (items.findLast((at) => at < from) ?? items.at(-1));
+}
+
+/** The place among `files` of the file a code row `row` of the diff is in. */
+function fileOf(files: readonly DiffFile[], row: number): number {
+  return files.findLastIndex((file) => file.row < row);
 }
 
 /** Where `thread` sits among the diff's `files`: under its row, under its file's header when it is on the

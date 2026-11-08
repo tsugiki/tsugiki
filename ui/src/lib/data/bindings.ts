@@ -89,6 +89,11 @@ export const commands = {
 	 *  the file's end don't come.
 	 */
 	pullRequestLines: (lines: GapLines) => typedError<HeadLine[], Error_Serialize>(__TAURI_INVOKE("pull_request_lines", { lines })),
+	/**
+	 *  Where the code of a PR's diff holds the text the user searches for, whatever the case, in every row:
+	 *  the window holds only those it shows. It asks GitHub for nothing.
+	 */
+	pullRequestFind: (search: DiffSearch) => typedError<Found, Error_Serialize>(__TAURI_INVOKE("pull_request_find", { search })),
 	/**  Opens an Issue or a PR on GitHub in the system browser. */
 	openOnGithub: (repository: string, item: GitHubItem) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_on_github", { repository, item })),
 	/**
@@ -305,6 +310,17 @@ export type DiffRow_Serialize =
 /**  What git says in place of lines: a binary file, a new mode, a missing newline at the end. */
 { kind: "note"; text: string };
 
+/**  A search in a PR's diff, as the window asks for it when the user types in the Files tab's search (#186). */
+export type DiffSearch = {
+	repository: string,
+	number: number,
+	/**  The commit the diff ends at, as the Files tab was told. */
+	head: string,
+	/**  The merge base the diff starts from, as the Files tab was told. */
+	base: string,
+	query: string,
+};
+
 /**  A review thread, and where Files shows it. */
 export type DiffThread = DiffThread_Serialize | DiffThread_Deserialize;
 
@@ -432,6 +448,13 @@ export type FilterName = string;
  *  plain string.
  */
 export type FilterQuery = string;
+
+/**  What a search found, in the order the rows come. */
+export type Found = {
+	matches: Match[],
+	/**  Whether the diff holds more than [`MOST_MATCHES`] matches, and the search stopped there. */
+	more: boolean,
+};
 
 export type Frames = {
 	count: number,
@@ -755,6 +778,16 @@ export type LongFrame_Serialize = {
 	ms: number | null,
 	/**  Nothing, if Tsugiki did nothing the HUD knows of during it or right before. */
 	cause: Cause | null,
+};
+
+/**
+ *  Where a search found its text: the diff's row, and from `start` to `end` in the row's code in UTF-16
+ *  code units, as the webview and a [`crate::highlight::Span`] count.
+ */
+export type Match = {
+	row: number,
+	start: number,
+	end: number,
 };
 
 /**  One recording, as the window sends it. Each time is in milliseconds. */

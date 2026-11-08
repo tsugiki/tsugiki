@@ -4,6 +4,7 @@
   import { IssueViewState } from "$lib/state/issue-view.svelte";
   import { DiffViewChoice } from "$lib/state/pr-files.svelte";
   import { PrViewState } from "$lib/state/pr-view.svelte";
+  import { Visits } from "$lib/state/visits";
   import {
     sameStop,
     WorkbenchState,
@@ -47,6 +48,12 @@
 
   // Another Repository has its own Workbench, so a new name starts a new state and stops the last one.
   const workbench = $derived(new WorkbenchState(name));
+  /** The Issues and PRs the Detail pane has shown, which Alt+← and Alt+→ go back and forward through. Each
+   * Repository has its own. */
+  const visits = $derived.by(() => {
+    void name;
+    return new Visits<Stop>(sameStop);
+  });
   $effect(() => {
     // By the time this cleans up, `workbench` is already the next Repository's.
     const opened = workbench;
@@ -75,9 +82,11 @@
 
   /**
    * Shows the Issue or PR on line `stop` in the Detail pane. The PR already on show switches tabs instead,
-   * and the Issue already on show reads GitHub again.
+   * and the Issue already on show reads GitHub again. Each counts as a visit, unless Alt+← or Alt+→ went
+   * back or forward to it.
    */
-  function open(stop: Stop) {
+  function open(stop: Stop, visit = true) {
+    if (visit) visits.visit(stop);
     workbench.cursor = stop;
     if (stop.kind === "pull_request" && detail instanceof PrViewState && sameStop(detail.line, stop)) {
       detail.switchTab();
@@ -124,19 +133,22 @@
   }
 
   /**
-   * The list's keys. A dialog on top keeps them, and a text box or a focused control keeps its own. The
-   * window's guard has already stopped the browser for Ctrl+Shift+G and Ctrl+Alt+U, which work in a text
-   * box too.
+   * The list's keys and the PR view's. A dialog on top keeps them, and a text box or a focused control
+   * keeps its own. The window's guard has already stopped the browser for Ctrl+Shift+G, Ctrl+Alt+U and
+   * Ctrl+F, which work in a text box too.
    */
   function onkeydown(e: KeyboardEvent) {
     if (!keysActive) return;
     const key = keyName(e, currentOs());
+    const files = detail instanceof PrViewState && detail.tab === "files" ? detail.files : undefined;
     if (key === "ctrl+shift+g") {
       const current = currentOnGitHub();
       if (current) void onGitHub(current);
-    } else if (key === "ctrl+alt+u" && detail instanceof PrViewState && detail.tab === "files") {
+    } else if (key === "ctrl+alt+u" && files) {
       e.preventDefault();
       diffView.toggle();
+    } else if (key === "ctrl+f" && files) {
+      files.openSearch();
     } else if (isTextBox(e.target)) {
       return;
     } else if (key === "enter" && e.repeat) {
@@ -148,19 +160,26 @@
     } else if (key === "enter" && e.target === document.body && workbench.underCursor) {
       e.preventDefault();
       open(workbench.underCursor);
+    } else if (key === "escape" && files?.searching) {
+      // Escape closes the search first, wherever the focus is, as in VS Code.
+      e.preventDefault();
+      files.closeSearch();
     } else if (key === "escape" && detail instanceof PrViewState) {
       e.preventDefault();
       back(detail);
     } else if ((key === "ctrl+pagedown" || key === "ctrl+pageup") && detail instanceof PrViewState) {
       e.preventDefault();
       detail.switchTab();
-    } else if (
-      (key === "f8" || key === "shift+f8") &&
-      detail instanceof PrViewState &&
-      detail.tab === "files"
-    ) {
+    } else if ((key === "f8" || key === "shift+f8") && files) {
       e.preventDefault();
-      detail.files.nextThread(key === "f8" ? 1 : -1);
+      files.nextThread(key === "f8" ? 1 : -1);
+    } else if ((key === "f7" || key === "shift+f7") && files) {
+      e.preventDefault();
+      files.nextChange(key === "f7" ? 1 : -1);
+    } else if (key === "alt+arrowleft" || key === "alt+arrowright") {
+      e.preventDefault();
+      const place = key === "alt+arrowleft" ? visits.back() : visits.forward();
+      if (place) open(place, false);
     }
   }
 </script>

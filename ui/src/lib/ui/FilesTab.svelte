@@ -1,9 +1,10 @@
 <!-- A PR's Files tab: its diff, or what it waits for, the mirror's clone or the PR's commits. When the PR
      has moved on since the mirror's copy, the diff before shows while the mirror fetches the newer one, with
-     its threads held back and counted (#185). -->
+     its threads held back and counted (#185). Ctrl+F opens a search over the diff's rows (#186). -->
 <script lang="ts">
   import type { PrFilesState } from "$lib/state/pr-files.svelte";
   import DiffRows from "./DiffRows.svelte";
+  import FindBar from "./FindBar.svelte";
   import { cloningWords } from "./synced";
 
   let { files, now, onlink }: { files: PrFilesState; now: Date; onlink: (address: string) => void } =
@@ -28,6 +29,9 @@
       {`Showing ${short(files.view.head)} · fetching the newer ${short(files.heldBack.newer)}.`}
       {#if files.heldBack.count > 0}{waiting(files.heldBack.count)}{/if}
     </p>
+  {/if}
+  {#if files.searching}
+    <FindBar {files} />
   {/if}
   <div class="diff">
     <DiffRows diff={files} files={files.view.files} news={files.view.news} {now} {onlink} />

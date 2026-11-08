@@ -13,6 +13,7 @@ const core = vi.hoisted(() => ({
   fetchPullRequest: vi.fn(),
   openOnGithub: vi.fn(),
   pullRequestFiles: vi.fn(),
+  pullRequestFind: vi.fn(),
   cloning: vi.fn(),
   // The HUD logs a slow opening of an Issue whether or not it shows.
   recordMiss: vi.fn(() => Promise.resolve("a miss")),
@@ -31,6 +32,7 @@ vi.mock("$lib/data/bindings", () => ({
     fetchPullRequest: core.fetchPullRequest,
     openOnGithub: core.openOnGithub,
     pullRequestFiles: core.pullRequestFiles,
+    pullRequestFind: core.pullRequestFind,
     cloning: core.cloning,
     recordMiss: core.recordMiss,
   },
@@ -69,6 +71,7 @@ beforeEach(() => {
   core.openIssue.mockResolvedValue({ status: "ok", data: null });
   core.openPullRequest.mockResolvedValue({ status: "ok", data: null });
   core.pullRequestFiles.mockResolvedValue({ status: "ok", data: { state: "fetching" } });
+  core.pullRequestFind.mockResolvedValue({ status: "ok", data: { matches: [], more: false } });
   core.cloning.mockResolvedValue(null);
   core.pullRequest.mockImplementation((_repository: string, number: number) =>
     Promise.resolve({ status: "ok", data: { ...row, number, title: `PR ${String(number)}`, content: null } }),
@@ -647,6 +650,115 @@ it("moves through a PR's open threads with F8 and Shift+F8 on its Files tab", as
   await press("F8", { shiftKey: true });
 
   expect(next.mock.calls).toEqual([[1], [-1]]);
+});
+
+/** Opens the Files tab of the Standalone PR #5, whose diff is empty, and returns the tab. */
+const onFiles = async () => {
+  core.pullRequestFiles.mockResolvedValue({
+    status: "ok",
+    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
+  });
+  // jsdom lays nothing out, so the diff's bind:clientHeight has nothing to observe.
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const { prRow } = await listing();
+  await fireEvent.click(prRow);
+  return screen.findByRole("tab", { name: "Files" });
+};
+
+it("moves through a PR's changes with F7 and Shift+F7 on its Files tab", async () => {
+  const next = vi.spyOn(PrFilesState.prototype, "nextChange");
+  const files = await onFiles();
+  // The Conversation tab has no changes to move through.
+  await press("F7");
+  await fireEvent.click(files);
+
+  await press("F7");
+  await press("F7", { shiftKey: true });
+
+  expect(next.mock.calls).toEqual([[1], [-1]]);
+});
+
+it("opens the search in the diff with Ctrl+F on the Files tab, and gives its box focus again from it", async () => {
+  const files = await onFiles();
+  await press("f", { ctrlKey: true });
+  expect(screen.queryByRole("search")).toBeNull();
+  await fireEvent.click(files);
+
+  await press("f", { ctrlKey: true });
+  const box = screen.getByRole<HTMLInputElement>("textbox", { name: "Find" });
+  await fireEvent.input(box, { target: { value: "gc" } });
+  await fireEvent.keyDown(box, { key: "f", ctrlKey: true });
+
+  expect(screen.getByRole("search", { name: "Find in the diff" })).toBeTruthy();
+  expect(document.activeElement).toBe(box);
+  expect([box.selectionStart, box.selectionEnd]).toEqual([0, 2]);
+});
+
+it("closes the search with Escape from anywhere, before Escape leaves the PR", async () => {
+  const files = await onFiles();
+  await fireEvent.click(files);
+  await press("f", { ctrlKey: true });
+  screen.getByRole("region", { name: "Diff" }).focus();
+
+  await press("Escape");
+  expect(screen.queryByRole("search")).toBeNull();
+  expect(screen.getByRole("region", { name: "PR view" })).toBeTruthy();
+  await press("Escape");
+  expect(screen.queryByRole("region", { name: "PR view" })).toBeNull();
+});
+
+it("leaves the focus where it is when the Files tab is drawn again with the search open", async () => {
+  const files = await onFiles();
+  await fireEvent.click(files);
+  await press("f", { ctrlKey: true });
+  const conversation = screen.getByRole("tab", { name: "Conversation" });
+  await fireEvent.click(conversation);
+  conversation.focus();
+
+  await fireEvent.click(files);
+
+  expect(screen.getByRole("search")).toBeTruthy();
+  expect(document.activeElement).toBe(conversation);
+});
+
+it("goes back and forward through the Issues and PRs it opened with Alt+← and Alt+→", async () => {
+  const { issueRow, prRow } = await listing();
+  await fireEvent.click(issueRow);
+  await fireEvent.click(prRow);
+  await screen.findByRole("region", { name: "PR view" });
+
+  await press("ArrowLeft", { altKey: true });
+  expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
+  expect(issueRow.getAttribute("aria-current")).toBe("true");
+  await press("ArrowLeft", { altKey: true });
+  expect(screen.getByRole("region", { name: "Issue view" })).toBeTruthy();
+  await press("ArrowRight", { altKey: true });
+  expect(await screen.findByRole("region", { name: "PR view" })).toBeTruthy();
+  await press("ArrowRight", { altKey: true });
+  expect(screen.getByRole("region", { name: "PR view" })).toBeTruthy();
+});
+
+it("starts the way back fresh in another Repository", async () => {
+  answering({ ...issue, attention: null });
+  const { rerender } = render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
+  await rerender({ name: "python/other" });
+  await fireEvent.click(
+    await screen.findByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" }),
+  );
+  await screen.findByRole("region", { name: "PR view" });
+
+  await press("ArrowLeft", { altKey: true });
+
+  expect(screen.getByRole("region", { name: "PR view" })).toBeTruthy();
+  expect(screen.queryByRole("region", { name: "Issue view" })).toBeNull();
 });
 
 it("leaves Ctrl+PageDown alone with no PR on show", async () => {

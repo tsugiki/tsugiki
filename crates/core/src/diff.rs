@@ -806,6 +806,9 @@ impl Diffs {
     }
 }
 
+pub use find::{Found, MOST_MATCHES, Match};
+
+mod find;
 mod highlighter;
 mod news;
 

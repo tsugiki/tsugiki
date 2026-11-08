@@ -166,6 +166,18 @@ pub(crate) fn pull_request_spans(
     crate::read_pull_request_spans(chunk, &opened, &work, &reader)
 }
 
+/// Where the code of a PR's diff holds the text the user searches for, whatever the case, in every row:
+/// the window holds only those it shows. It asks GitHub for nothing.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn pull_request_find(
+    search: crate::DiffSearch,
+    work: State<'_, crate::DiffWork>,
+    reader: State<'_, StoreReader>,
+) -> Result<tsugiki_core::diff::Found, Error> {
+    crate::find_in_pull_request(search, &work, &reader)
+}
+
 /// The lines a gap of a PR's diff leaves out, read from the file at the PR's head in its mirror with their
 /// spans, which the Files tab shows when the user expands the gap. It asks GitHub for nothing. Those past
 /// the file's end don't come.

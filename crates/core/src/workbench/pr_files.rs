@@ -10,8 +10,8 @@ use serde::Serialize;
 use specta::Type;
 
 use crate::diff::{
-    self, Against, Chunk, DiffFile, DiffOf, DiffRow, Diffs, FileLines, HeadLine, Held, Highlighter,
-    NewsEntry, OpenDiff, PrAt,
+    self, Against, Chunk, DiffFile, DiffOf, DiffRow, Diffs, FileLines, Found, HeadLine, Held,
+    Highlighter, NewsEntry, OpenDiff, PrAt,
 };
 use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
@@ -185,6 +185,12 @@ impl PrFiles {
         range: Range<u32>,
     ) -> Result<Vec<DiffRow>, Error> {
         Ok(Self::open(sources, of)?.diff.rows(range).to_vec())
+    }
+
+    /// Where the code of the rows of the diff `of` holds `query`, whatever the case: in every row, those the
+    /// window hasn't asked for too (#186).
+    pub fn find(sources: &DiffSources<'_>, of: &DiffOf, query: &str) -> Result<Found, Error> {
+        Ok(Self::open(sources, of)?.diff.find(query))
     }
 
     /// The spans of the rows in `range`, which highlight their code (#178). Those of a Generated file come

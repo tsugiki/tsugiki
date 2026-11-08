@@ -472,18 +472,12 @@ fn read_pull_request_files(
     PrFiles::read(&work.sources()?, &name, number)
 }
 
-fn read_pull_request_rows(
-    chunk: DiffChunk,
-    work: &DiffWork,
-) -> Result<Vec<DiffRow>, Error> {
+fn read_pull_request_rows(chunk: DiffChunk, work: &DiffWork) -> Result<Vec<DiffRow>, Error> {
     let (of, rows) = chunk.parse()?;
     PrFiles::rows(&work.sources()?, &of, rows)
 }
 
-fn find_in_pull_request(
-    search: DiffSearch,
-    work: &DiffWork,
-) -> Result<Found, Error> {
+fn find_in_pull_request(search: DiffSearch, work: &DiffWork) -> Result<Found, Error> {
     let (of, query) = search.parse()?;
     PrFiles::find(&work.sources()?, &of, &query)
 }
@@ -497,10 +491,7 @@ fn read_pull_request_spans(
     PrFiles::spans(&work.sources()?, &of, rows, opened)
 }
 
-fn read_pull_request_lines(
-    lines: GapLines,
-    work: &DiffWork,
-) -> Result<Vec<HeadLine>, Error> {
+fn read_pull_request_lines(lines: GapLines, work: &DiffWork) -> Result<Vec<HeadLine>, Error> {
     let (of, file, lines) = lines.parse()?;
     PrFiles::lines(&work.sources()?, &of, file, lines)
 }

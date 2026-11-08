@@ -194,6 +194,16 @@ fn opening_a_pr_whose_head_the_mirror_holds_asks_for_nothing_and_reads_no_diff()
 }
 
 #[test]
+fn opening_a_pr_tsugiki_doesnt_hold_asks_for_nothing() {
+    let world = World::new("open-none");
+
+    PrFiles::fetch_missing_head(&world.sources(), &world.repository(), 7).unwrap();
+
+    assert_eq!(world.heard.firsts(), []);
+    world.finish();
+}
+
+#[test]
 fn opening_a_pr_before_its_mirror_is_cloned_asks_for_nothing() {
     let world = World::new("open-cloning");
     world.has_pr(Some(CommitSha::parse(&"3".repeat(40)).unwrap()), "main");
@@ -244,6 +254,26 @@ fn a_moved_head_shows_the_diff_before_with_its_threads_held_back_until_the_newer
         target_branch: "main".to_owned(),
     };
     assert_eq!(world.heard.firsts(), [(world.repository(), head)]);
+    mirrored.finish();
+    world.finish();
+}
+
+#[test]
+fn a_moved_head_whose_older_diff_has_no_target_branch_waits_for_the_newer() {
+    let world = World::new("moved-no-target");
+    let mirrored = Mirrored::new("pr-files-moved-no-target");
+    let _ = git_in(
+        &mirrored.mirror,
+        &[
+            "update-ref",
+            "refs/tsugiki/pull/7/head",
+            mirrored.head.as_str(),
+        ],
+    );
+    world.mirrors(&mirrored);
+    world.has_pr(Some(CommitSha::parse(&"3".repeat(40)).unwrap()), "3.14");
+
+    assert_eq!(world.files(), Some(PrFiles::Fetching));
     mirrored.finish();
     world.finish();
 }

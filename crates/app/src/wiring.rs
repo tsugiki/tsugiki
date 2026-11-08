@@ -1373,7 +1373,14 @@ mod tests {
             )
         };
 
-        drop(wired.ask("open_pull_request", json!({ "repository": CPYTHON, "number": 1 })).unwrap());
+        drop(
+            wired
+                .ask(
+                    "open_pull_request",
+                    json!({ "repository": CPYTHON, "number": 1 }),
+                )
+                .unwrap(),
+        );
         let heard = wired.heads.recv_timeout(PLENTY).unwrap();
         let ready = files().unwrap();
         let base = ready["base"].as_str().unwrap_or_default().to_owned();

@@ -582,15 +582,17 @@ fn asking_again_starts_the_count_again() {
 }
 
 #[test]
-fn no_network_never_ends_a_sync() {
-    let offline = Error::new(ErrorKind::Offline, "no network");
-    assert!(queued_after(u8::MAX, &offline));
-}
-
-#[test]
-fn a_certificate_outside_its_dates_never_ends_a_sync() {
-    let clock = Error::new(ErrorKind::CertificateDates, "check the clock");
-    assert!(queued_after(u8::MAX, &clock));
+fn no_network_a_rate_limit_or_a_wrong_clock_never_ends_a_sync() {
+    let kinds = [
+        ErrorKind::Offline,
+        ErrorKind::RateLimited { resets_at: None },
+        ErrorKind::CertificateDates,
+    ];
+    let ended: Vec<ErrorKind> = kinds
+        .into_iter()
+        .filter(|&kind| !queued_after(u8::MAX, &Error::new(kind, "waits")))
+        .collect();
+    assert!(ended.is_empty(), "{ended:?}");
 }
 
 #[test]
@@ -614,12 +616,6 @@ fn a_sync_held_by_a_certificate_outside_its_dates_carries_on_from_its_place() {
     );
     assert!(harness.store.sync_state(&cpython()).unwrap().is_some());
     harness.finish();
-}
-
-#[test]
-fn a_rate_limit_never_ends_a_sync() {
-    let limited = Error::new(ErrorKind::RateLimited { resets_at: None }, "limited");
-    assert!(queued_after(u8::MAX, &limited));
 }
 
 #[test]

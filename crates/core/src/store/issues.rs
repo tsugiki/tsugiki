@@ -30,6 +30,9 @@ pub(super) const SCHEMA: &str = "
     ) WITHOUT ROWID;
 ";
 
+/// Whether each Issue is open, and how it closed (#188).
+pub(super) const STATES: &str = "ALTER TABLE issues ADD COLUMN state TEXT;";
+
 /// Stores `issues` in one transaction, each replacing what Tsugiki knew about it (ADR 0010).
 pub(super) fn save(
     connection: &mut Connection,
@@ -56,18 +59,20 @@ fn save_issue(
 ) -> rusqlite::Result<()> {
     connection
         .execute(
-            "INSERT INTO issues (repository, number, title, author, updated_at)
-             VALUES (:repository, :number, :title, :author, :updated_at)
+            "INSERT INTO issues (repository, number, title, author, updated_at, state)
+             VALUES (:repository, :number, :title, :author, :updated_at, :state)
              ON CONFLICT (repository, number) DO UPDATE SET
                  title = excluded.title,
                  author = excluded.author,
-                 updated_at = excluded.updated_at",
+                 updated_at = excluded.updated_at,
+                 state = excluded.state",
             named_params! {
                 ":repository": repository,
                 ":number": issue.number,
                 ":title": issue.title,
                 ":author": issue.author,
                 ":updated_at": issue.updated_at.unix_timestamp(),
+                ":state": issue.state,
             },
         )
         .map(drop)
@@ -118,7 +123,7 @@ pub(super) fn read_all(
     connection: &Connection,
     repository: &RepositoryName,
 ) -> rusqlite::Result<Vec<IssueFacts>> {
-    let query = "SELECT number, title, author, updated_at FROM issues
+    let query = "SELECT number, title, author, updated_at, state FROM issues
                  WHERE repository = :repository
                  ORDER BY number";
     let mut statement = connection.prepare(query)?;
@@ -134,6 +139,7 @@ pub(super) fn read_all(
             author: row.get("author")?,
             assignees: assignees.remove(&number).unwrap_or_default(),
             updated_at,
+            state: row.get("state")?,
         });
     }
     Ok(found)
@@ -144,6 +150,7 @@ mod tests {
     use super::super::testing::temp_database;
     use super::super::*;
     use crate::github::Login;
+    use crate::github::issues::IssueState;
     use time::OffsetDateTime;
 
     fn cpython() -> RepositoryName {
@@ -157,6 +164,7 @@ mod tests {
             author: Some(Login::new("some-author")),
             assignees: vec![],
             updated_at: OffsetDateTime::from_unix_timestamp(7).unwrap(),
+            state: Some(IssueState::Open),
         }
     }
 
@@ -218,6 +226,58 @@ mod tests {
             vec![(cpython(), vec![sparse.clone()])],
         );
         assert_eq!(read, [sparse]);
+    }
+
+    #[test]
+    fn each_state_reads_back_the_same() {
+        let states = [
+            IssueState::Open,
+            IssueState::Closed,
+            IssueState::NotPlanned,
+            IssueState::Duplicate,
+        ];
+        let issues: Vec<IssueFacts> = states
+            .into_iter()
+            .zip(1..)
+            .map(|(state, number)| IssueFacts {
+                state: Some(state),
+                ..issue(number)
+            })
+            .collect();
+        let read = saved(
+            "issues-states",
+            &cpython(),
+            vec![(cpython(), issues.clone())],
+        );
+        assert_eq!(read, issues);
+    }
+
+    #[test]
+    fn an_issue_saved_before_tsugiki_kept_states_has_none() {
+        let (path, folder) = temp_database("issues-no-state");
+        let store = Store::open(&path).unwrap();
+        let closed = IssueFacts {
+            state: Some(IssueState::Closed),
+            ..issue(1)
+        };
+        store.save_issues(&cpython(), vec![closed]).unwrap();
+        store.close();
+        // Only SQL can leave the column empty, as the migration leaves the rows saved before it.
+        let emptied = Connection::open(&path)
+            .unwrap()
+            .execute("UPDATE issues SET state = NULL", [])
+            .unwrap();
+        assert_eq!(emptied, 1);
+
+        let store = Store::open(&path).unwrap();
+        let read = store.issues(&cpython()).unwrap();
+        store.close();
+        fs::remove_dir_all(folder).unwrap();
+        let unknown = IssueFacts {
+            state: None,
+            ..issue(1)
+        };
+        assert_eq!(read, [unknown]);
     }
 
     #[test]

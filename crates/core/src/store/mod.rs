@@ -747,6 +747,7 @@ mod tests {
     use super::*;
     use crate::github::CommitSha;
     use crate::github::issue_content::IssueComment;
+    use crate::github::issues::IssueState;
     use crate::github::pull_request_content::{
         Anchor, DiffHunk, Opening, Resolution, Review, Side, Subject, Submission, ThreadComment,
         ThreadId, ThreadLine,
@@ -957,6 +958,7 @@ mod tests {
             author: Some(Login::new("some-author")),
             assignees: vec![],
             updated_at: saved_at,
+            state: Some(IssueState::Open),
         };
         write_last_login(connection, &viewer).unwrap();
         pull_requests::save(connection, &cpython, &[pull_request], &[]).unwrap();

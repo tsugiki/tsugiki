@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/svelte";
+import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { beforeEach, expect, it, vi } from "vitest";
 import { PrViewState, type PrView } from "$lib/state/pr-view.svelte";
 import PrDetail from "./PrDetail.svelte";
@@ -102,6 +102,12 @@ it("opens on the Conversation: the title and author, the description, comments a
   expect(screen.getByText("some-reviewer · 2h ago")).toBeTruthy();
   expect(screen.getByText("2 earlier comments are on GitHub.")).toBeTruthy();
   expect(screen.getByText("some-reviewer approved at 0123abc · 1h ago")).toBeTruthy();
+});
+
+it("marks the PR's title with the icon of its state", async () => {
+  await shown({ ...view, state: "OPEN", is_draft: true }, 10);
+
+  expect(within(screen.getByRole("heading")).getByRole("img").getAttribute("title")).toBe("Draft PR");
 });
 
 it("says it's reading from GitHub until the first read lands", async () => {

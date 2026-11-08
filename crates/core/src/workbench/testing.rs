@@ -6,7 +6,7 @@ use time::OffsetDateTime;
 
 use super::{IssueItem, TreeEntry, WorkReason, Workbench, WorkbenchItem, WorkbenchView, reasons};
 use crate::github::Login;
-use crate::github::issues::IssueFacts;
+use crate::github::issues::{IssueFacts, IssueState};
 use crate::github::pull_requests::{OffDefault, PrState, PullRequestFacts};
 use crate::repository::{RepositoryName, RepositorySettings};
 use crate::store::{ActivityFacts, WorkFacts};
@@ -59,6 +59,7 @@ pub(super) fn issue(number: u32) -> IssueFacts {
         author: Some(Login::new("issue-author")),
         assignees: vec![],
         updated_at: at(1),
+        state: Some(IssueState::Open),
     }
 }
 

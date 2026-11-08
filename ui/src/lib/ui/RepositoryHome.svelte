@@ -23,9 +23,11 @@
   } from "$lib/state/workbench.svelte";
   import IssueDetail from "./IssueDetail.svelte";
   import { currentOs, isTextBox, keyName } from "./keys";
+  import { issueIcon, prIcon, type Octicon } from "./octicons";
   import PaneEdge from "./PaneEdge.svelte";
   import PrDetail from "./PrDetail.svelte";
   import Sidebar from "./Sidebar.svelte";
+  import StateIcon from "./StateIcon.svelte";
   import { details, headline, issueDetails, preview, standaloneDetails } from "./workbench-row";
 
   const MINUTE = 60_000;
@@ -197,25 +199,31 @@
   }
 </script>
 
-{#snippet line(stop: Stop, text: string, strong: boolean)}
-  <button
-    class="open"
-    data-item={lineName(stop)}
-    aria-current={sameStop(workbench.cursor, stop) ? "true" : undefined}
-    onclick={() => {
-      open(stop);
-    }}
-  >
-    {#if strong}
-      <strong>{text}</strong>
-    {:else}
-      <span>{text}</span>
+{#snippet line(stop: Stop, text: string, strong: boolean, icon: Octicon | undefined)}
+  <!-- The icon sits beside the button, so the button's name stays the item's headline. -->
+  <span>
+    {#if icon}
+      <StateIcon {icon} />
     {/if}
-  </button>
+    <button
+      class="open"
+      data-item={lineName(stop)}
+      aria-current={sameStop(workbench.cursor, stop) ? "true" : undefined}
+      onclick={() => {
+        open(stop);
+      }}
+    >
+      {#if strong}
+        <strong>{text}</strong>
+      {:else}
+        <span>{text}</span>
+      {/if}
+    </button>
+  </span>
 {/snippet}
 
 {#snippet pullRequest(row: WorkbenchRow, issue: number | undefined)}
-  {@render line({ number: row.number, kind: "pull_request", issue }, headline(row), false)}
+  {@render line({ number: row.number, kind: "pull_request", issue }, headline(row), false, prIcon(row))}
 {/snippet}
 
 {#snippet backports(rows: BackportRow[], issue: number | undefined)}
@@ -237,6 +245,7 @@
       { number: item.number, kind: item.kind === "issue" ? "issue" : "pull_request", issue: undefined },
       headline(item),
       item.attention !== null,
+      item.kind === "issue" ? issueIcon(item.state) : prIcon(item),
     )}
     {#if item.attention}
       <small class="preview">{preview(item.attention)}</small>

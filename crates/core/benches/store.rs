@@ -9,7 +9,7 @@ use tsugiki_core::conventions::Conventions;
 use tsugiki_core::filters::Filter;
 use tsugiki_core::github::activity::{Activity, ActivityKind, ItemActivity};
 use tsugiki_core::github::issue_content::{IssueComment, IssueContent};
-use tsugiki_core::github::issues::IssueFacts;
+use tsugiki_core::github::issues::{IssueFacts, IssueState};
 use tsugiki_core::github::pull_requests::{
     CiState, LatestReview, OffDefault, PrState, PullRequestFacts, ReviewState,
 };
@@ -330,6 +330,7 @@ fn issue(offset: u32) -> (IssueFacts, ItemActivity) {
             .into_iter()
             .collect(),
         updated_at: updated(offset),
+        state: Some(IssueState::Open),
     };
     (facts, events(number, &author))
 }

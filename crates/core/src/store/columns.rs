@@ -7,6 +7,7 @@ use time::OffsetDateTime;
 
 use crate::filters::FilterQuery;
 use crate::github::issue_content::HiddenReason;
+use crate::github::issues::IssueState;
 use crate::github::pull_request_content::{Anchor, Resolution, Side, Submission};
 use crate::github::pull_requests::{CiState, PrState, ReviewState};
 use crate::github::refresh::Etag;
@@ -115,6 +116,13 @@ text_column!(PrState {
     Merged => "MERGED",
 });
 
+text_column!(IssueState {
+    Open => "OPEN",
+    Closed => "CLOSED",
+    NotPlanned => "NOT_PLANNED",
+    Duplicate => "DUPLICATE",
+});
+
 text_column!(CiState {
     Expected => "EXPECTED",
     Error => "ERROR",
@@ -216,6 +224,10 @@ mod tests {
     #[test]
     fn each_state_keeps_the_text_earlier_versions_stored() {
         assert_eq!(stored_texts(PrState::ALL), ["OPEN", "CLOSED", "MERGED"]);
+        assert_eq!(
+            stored_texts(IssueState::ALL),
+            ["OPEN", "CLOSED", "NOT_PLANNED", "DUPLICATE"]
+        );
         assert_eq!(
             stored_texts(CiState::ALL),
             ["EXPECTED", "ERROR", "FAILURE", "PENDING", "SUCCESS"]

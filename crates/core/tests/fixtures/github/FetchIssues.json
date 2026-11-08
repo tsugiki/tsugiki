@@ -2,8 +2,8 @@
   "body": {
     "data": {
       "rateLimit": {
-        "remaining": 4947,
-        "resetAt": "2026-11-07T09:29:53Z"
+        "remaining": 4987,
+        "resetAt": "2026-11-08T07:55:34Z"
       },
       "repository": {
         "i112564": {
@@ -12,16 +12,18 @@
             "nodes": []
           },
           "author": {
-            "login": "user-88"
+            "login": "user-104"
           },
           "number": 112564,
+          "state": "OPEN",
+          "stateReason": null,
           "timelineItems": {
             "nodes": [
               {
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-7"
+                  "login": "user-14"
                 },
                 "createdAt": "2023-12-03T11:09:14Z"
               },
@@ -29,7 +31,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-88"
+                  "login": "user-104"
                 },
                 "createdAt": "2023-12-03T17:21:28Z"
               },
@@ -37,7 +39,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-7"
+                  "login": "user-14"
                 },
                 "createdAt": "2023-12-03T17:21:29Z"
               },
@@ -45,7 +47,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-89"
+                  "login": "user-105"
                 },
                 "createdAt": "2026-09-24T10:57:52Z"
               },
@@ -53,7 +55,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-88"
+                  "login": "user-104"
                 },
                 "createdAt": "2026-09-25T02:19:00Z"
               },
@@ -61,7 +63,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-3"
+                  "login": "user-70"
                 },
                 "createdAt": "2026-10-25T12:49:00Z"
               }
@@ -76,16 +78,18 @@
             "nodes": []
           },
           "author": {
-            "login": "user-86"
+            "login": "user-103"
           },
           "number": 128942,
+          "state": "OPEN",
+          "stateReason": "REOPENED",
           "timelineItems": {
             "nodes": [
               {
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-23"
+                  "login": "user-17"
                 },
                 "createdAt": "2025-02-27T14:05:29Z"
               },
@@ -93,7 +97,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-59"
+                  "login": "user-73"
                 },
                 "createdAt": "2025-02-28T20:42:29Z"
               }
@@ -107,21 +111,23 @@
           "assignees": {
             "nodes": [
               {
-                "login": "user-13"
+                "login": "user-63"
               }
             ]
           },
           "author": {
-            "login": "user-13"
+            "login": "user-63"
           },
           "number": 138864,
+          "state": "OPEN",
+          "stateReason": null,
           "timelineItems": {
             "nodes": [
               {
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-20"
+                  "login": "user-106"
                 },
                 "createdAt": "2025-09-13T19:04:00Z"
               },
@@ -129,7 +135,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-13"
+                  "login": "user-63"
                 },
                 "createdAt": "2025-09-13T20:39:45Z"
               },
@@ -137,7 +143,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-64"
+                  "login": "user-81"
                 },
                 "createdAt": "2025-09-14T07:51:16Z"
               },
@@ -145,7 +151,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-20"
+                  "login": "user-106"
                 },
                 "createdAt": "2025-09-15T09:37:35Z"
               },
@@ -153,7 +159,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-58"
+                  "login": "user-72"
                 },
                 "createdAt": "2025-10-04T12:57:44Z"
               }
@@ -171,13 +177,15 @@
             "login": "octocat"
           },
           "number": 139389,
+          "state": "OPEN",
+          "stateReason": null,
           "timelineItems": {
             "nodes": [
               {
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-5"
+                  "login": "user-2"
                 },
                 "createdAt": "2025-09-28T07:48:52Z"
               },
@@ -193,7 +201,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-5"
+                  "login": "user-2"
                 },
                 "createdAt": "2025-09-28T07:59:15Z"
               },
@@ -209,7 +217,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-76"
+                  "login": "user-91"
                 },
                 "createdAt": "2025-09-28T14:25:47Z"
               },
@@ -217,7 +225,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-5"
+                  "login": "user-2"
                 },
                 "createdAt": "2025-09-28T14:31:28Z"
               },
@@ -225,7 +233,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-76"
+                  "login": "user-91"
                 },
                 "createdAt": "2025-09-28T14:45:39Z"
               },
@@ -233,7 +241,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-5"
+                  "login": "user-2"
                 },
                 "createdAt": "2025-09-28T15:07:36Z"
               },
@@ -241,7 +249,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-76"
+                  "login": "user-91"
                 },
                 "createdAt": "2025-09-28T15:13:40Z"
               },
@@ -249,7 +257,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-24"
+                  "login": "user-15"
                 },
                 "createdAt": "2025-09-29T06:32:06Z"
               },
@@ -265,7 +273,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-48"
+                  "login": "user-3"
                 },
                 "createdAt": "2025-10-09T08:42:02Z"
               },
@@ -273,7 +281,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-48"
+                  "login": "user-3"
                 },
                 "createdAt": "2025-10-09T08:48:56Z"
               },
@@ -281,7 +289,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-5"
+                  "login": "user-2"
                 },
                 "createdAt": "2025-10-09T08:48:58Z"
               },
@@ -311,21 +319,23 @@
           "assignees": {
             "nodes": [
               {
-                "login": "user-58"
+                "login": "user-72"
               }
             ]
           },
           "author": {
-            "login": "user-58"
+            "login": "user-72"
           },
           "number": 139778,
+          "state": "OPEN",
+          "stateReason": null,
           "timelineItems": {
             "nodes": [
               {
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-5"
+                  "login": "user-2"
                 },
                 "createdAt": "2025-10-08T14:09:04Z"
               },
@@ -333,7 +343,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-58"
+                  "login": "user-72"
                 },
                 "createdAt": "2025-10-08T14:22:46Z"
               }
@@ -348,9 +358,11 @@
             "nodes": []
           },
           "author": {
-            "login": "user-83"
+            "login": "user-99"
           },
           "number": 140256,
+          "state": "OPEN",
+          "stateReason": null,
           "timelineItems": {
             "nodes": [
               {
@@ -365,7 +377,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-83"
+                  "login": "user-99"
                 },
                 "createdAt": "2025-10-17T14:48:10Z"
               },
@@ -373,7 +385,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-83"
+                  "login": "user-99"
                 },
                 "createdAt": "2025-10-17T14:50:33Z"
               },
@@ -397,7 +409,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-58"
+                  "login": "user-72"
                 },
                 "createdAt": "2025-10-17T14:53:40Z"
               },
@@ -405,7 +417,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-83"
+                  "login": "user-99"
                 },
                 "createdAt": "2025-10-17T14:54:22Z"
               },
@@ -421,7 +433,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-58"
+                  "login": "user-72"
                 },
                 "createdAt": "2025-10-17T14:54:24Z"
               },
@@ -429,7 +441,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-83"
+                  "login": "user-99"
                 },
                 "createdAt": "2025-10-17T15:23:38Z"
               },
@@ -445,7 +457,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-83"
+                  "login": "user-99"
                 },
                 "createdAt": "2025-10-17T15:30:20Z"
               }
@@ -460,16 +472,18 @@
             "nodes": []
           },
           "author": {
-            "login": "user-58"
+            "login": "user-72"
           },
           "number": 140328,
+          "state": "OPEN",
+          "stateReason": null,
           "timelineItems": {
             "nodes": [
               {
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-58"
+                  "login": "user-72"
                 },
                 "createdAt": "2025-10-19T10:32:58Z"
               },
@@ -477,7 +491,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-82"
+                  "login": "user-98"
                 },
                 "createdAt": "2025-10-19T10:40:48Z"
               },
@@ -485,7 +499,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-58"
+                  "login": "user-72"
                 },
                 "createdAt": "2025-10-19T10:43:25Z"
               },
@@ -493,7 +507,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-82"
+                  "login": "user-98"
                 },
                 "createdAt": "2025-10-19T10:43:27Z"
               },
@@ -501,7 +515,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-90"
+                  "login": "user-107"
                 },
                 "createdAt": "2025-10-20T18:10:35Z"
               },
@@ -509,7 +523,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-82"
+                  "login": "user-98"
                 },
                 "createdAt": "2026-03-26T19:14:22Z"
               },
@@ -517,7 +531,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-91"
+                  "login": "user-108"
                 },
                 "createdAt": "2026-04-22T22:37:44Z"
               }
@@ -531,21 +545,23 @@
           "assignees": {
             "nodes": [
               {
-                "login": "user-58"
+                "login": "user-72"
               }
             ]
           },
           "author": {
-            "login": "user-92"
+            "login": "user-109"
           },
           "number": 140798,
+          "state": "OPEN",
+          "stateReason": null,
           "timelineItems": {
             "nodes": [
               {
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-58"
+                  "login": "user-72"
                 },
                 "createdAt": "2025-10-31T10:44:01Z"
               }
@@ -560,16 +576,18 @@
             "nodes": []
           },
           "author": {
-            "login": "user-76"
+            "login": "user-91"
           },
           "number": 140928,
+          "state": "OPEN",
+          "stateReason": "REOPENED",
           "timelineItems": {
             "nodes": [
               {
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-76"
+                  "login": "user-91"
                 },
                 "createdAt": "2026-01-09T21:42:35Z"
               }
@@ -584,16 +602,18 @@
             "nodes": []
           },
           "author": {
-            "login": "user-76"
+            "login": "user-91"
           },
           "number": 141594,
+          "state": "OPEN",
+          "stateReason": null,
           "timelineItems": {
             "nodes": [
               {
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-48"
+                  "login": "user-3"
                 },
                 "createdAt": "2025-11-17T11:55:09Z"
               },
@@ -601,7 +621,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-76"
+                  "login": "user-91"
                 },
                 "createdAt": "2025-11-17T12:01:26Z"
               }
@@ -619,13 +639,15 @@
             "login": "octocat"
           },
           "number": 145970,
+          "state": "OPEN",
+          "stateReason": null,
           "timelineItems": {
             "nodes": [
               {
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-33"
+                  "login": "user-78"
                 },
                 "createdAt": "2026-03-15T09:46:04Z"
               }
@@ -640,16 +662,18 @@
             "nodes": []
           },
           "author": {
-            "login": "user-57"
+            "login": "user-71"
           },
           "number": 148937,
+          "state": "CLOSED",
+          "stateReason": "COMPLETED",
           "timelineItems": {
             "nodes": [
               {
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-57"
+                  "login": "user-71"
                 },
                 "createdAt": "2026-05-06T16:20:13Z"
               },
@@ -657,7 +681,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-59"
+                  "login": "user-73"
                 },
                 "createdAt": "2026-05-06T17:40:26Z"
               },
@@ -665,7 +689,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-57"
+                  "login": "user-71"
                 },
                 "createdAt": "2026-05-06T19:11:39Z"
               },
@@ -673,7 +697,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-93"
+                  "login": "user-110"
                 },
                 "createdAt": "2026-10-21T20:54:20Z"
               }
@@ -687,21 +711,23 @@
           "assignees": {
             "nodes": [
               {
-                "login": "user-13"
+                "login": "user-63"
               }
             ]
           },
           "author": {
-            "login": "user-13"
+            "login": "user-63"
           },
           "number": 149532,
+          "state": "OPEN",
+          "stateReason": null,
           "timelineItems": {
             "nodes": [
               {
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-24"
+                  "login": "user-15"
                 },
                 "createdAt": "2026-05-08T20:46:21Z"
               },
@@ -709,7 +735,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-13"
+                  "login": "user-63"
                 },
                 "createdAt": "2026-05-09T07:36:16Z"
               }
@@ -724,16 +750,18 @@
             "nodes": []
           },
           "author": {
-            "login": "user-94"
+            "login": "user-111"
           },
           "number": 151763,
+          "state": "OPEN",
+          "stateReason": null,
           "timelineItems": {
             "nodes": [
               {
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-10"
+                  "login": "user-7"
                 },
                 "createdAt": "2026-06-20T00:55:45Z"
               },
@@ -741,7 +769,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-95"
+                  "login": "user-112"
                 },
                 "createdAt": "2026-06-20T07:48:20Z"
               },
@@ -749,7 +777,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-94"
+                  "login": "user-111"
                 },
                 "createdAt": "2026-06-20T07:48:22Z"
               },
@@ -757,7 +785,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-69"
+                  "login": "user-84"
                 },
                 "createdAt": "2026-06-20T08:02:37Z"
               },
@@ -765,7 +793,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-96"
+                  "login": "user-113"
                 },
                 "createdAt": "2026-06-21T12:49:44Z"
               },
@@ -773,7 +801,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-95"
+                  "login": "user-112"
                 },
                 "createdAt": "2026-06-21T15:15:27Z"
               },
@@ -781,7 +809,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-97"
+                  "login": "user-114"
                 },
                 "createdAt": "2026-06-22T03:30:08Z"
               },
@@ -789,7 +817,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-94"
+                  "login": "user-111"
                 },
                 "createdAt": "2026-06-22T14:21:47Z"
               },
@@ -797,7 +825,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-70"
+                  "login": "user-10"
                 },
                 "createdAt": "2026-06-23T07:24:44Z"
               },
@@ -805,7 +833,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-95"
+                  "login": "user-112"
                 },
                 "createdAt": "2026-06-24T19:27:37Z"
               },
@@ -813,7 +841,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-94"
+                  "login": "user-111"
                 },
                 "createdAt": "2026-06-24T19:27:38Z"
               },
@@ -821,7 +849,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-50"
+                  "login": "user-21"
                 },
                 "createdAt": "2026-06-24T19:27:38Z"
               },
@@ -837,7 +865,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-95"
+                  "login": "user-112"
                 },
                 "createdAt": "2026-06-25T06:28:37Z"
               },
@@ -845,7 +873,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-94"
+                  "login": "user-111"
                 },
                 "createdAt": "2026-06-25T06:28:38Z"
               },
@@ -853,7 +881,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-95"
+                  "login": "user-112"
                 },
                 "createdAt": "2026-06-25T07:43:49Z"
               },
@@ -861,7 +889,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-94"
+                  "login": "user-111"
                 },
                 "createdAt": "2026-06-25T07:43:51Z"
               },
@@ -869,7 +897,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-70"
+                  "login": "user-10"
                 },
                 "createdAt": "2026-06-25T08:11:41Z"
               },
@@ -877,7 +905,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-94"
+                  "login": "user-111"
                 },
                 "createdAt": "2026-06-25T08:11:43Z"
               },
@@ -885,7 +913,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-94"
+                  "login": "user-111"
                 },
                 "createdAt": "2026-06-25T12:47:40Z"
               },
@@ -893,7 +921,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-94"
+                  "login": "user-111"
                 },
                 "createdAt": "2026-06-25T17:56:34Z"
               },
@@ -901,7 +929,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-67"
+                  "login": "user-82"
                 },
                 "createdAt": "2026-06-25T18:14:52Z"
               },
@@ -909,7 +937,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-67"
+                  "login": "user-82"
                 },
                 "createdAt": "2026-06-27T14:04:58Z"
               },
@@ -917,7 +945,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-94"
+                  "login": "user-111"
                 },
                 "createdAt": "2026-06-27T14:04:59Z"
               },
@@ -925,7 +953,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-94"
+                  "login": "user-111"
                 },
                 "createdAt": "2026-07-04T01:11:16Z"
               },
@@ -933,7 +961,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-67"
+                  "login": "user-82"
                 },
                 "createdAt": "2026-07-04T01:11:17Z"
               },
@@ -941,7 +969,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-67"
+                  "login": "user-82"
                 },
                 "createdAt": "2026-07-11T09:27:32Z"
               },
@@ -949,7 +977,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-94"
+                  "login": "user-111"
                 },
                 "createdAt": "2026-07-11T09:27:34Z"
               },
@@ -957,7 +985,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-94"
+                  "login": "user-111"
                 },
                 "createdAt": "2026-07-11T15:06:28Z"
               },
@@ -965,7 +993,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-67"
+                  "login": "user-82"
                 },
                 "createdAt": "2026-07-11T15:06:30Z"
               },
@@ -973,7 +1001,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-98"
+                  "login": "user-115"
                 },
                 "createdAt": "2026-07-11T15:24:26Z"
               },
@@ -981,7 +1009,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-89"
+                  "login": "user-105"
                 },
                 "createdAt": "2026-10-09T22:19:49Z"
               },
@@ -989,7 +1017,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-94"
+                  "login": "user-111"
                 },
                 "createdAt": "2026-10-09T22:19:51Z"
               }
@@ -1004,9 +1032,11 @@
             "nodes": []
           },
           "author": {
-            "login": "user-96"
+            "login": "user-113"
           },
           "number": 151815,
+          "state": "OPEN",
+          "stateReason": null,
           "timelineItems": {
             "nodes": []
           },
@@ -1019,9 +1049,11 @@
             "nodes": []
           },
           "author": {
-            "login": "user-70"
+            "login": "user-10"
           },
           "number": 151862,
+          "state": "OPEN",
+          "stateReason": null,
           "timelineItems": {
             "nodes": []
           },
@@ -1041,13 +1073,15 @@
             "login": "octocat"
           },
           "number": 152125,
+          "state": "OPEN",
+          "stateReason": null,
           "timelineItems": {
             "nodes": [
               {
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-67"
+                  "login": "user-82"
                 },
                 "createdAt": "2026-07-18T17:59:16Z"
               },
@@ -1055,7 +1089,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-94"
+                  "login": "user-111"
                 },
                 "createdAt": "2026-07-18T17:59:18Z"
               },
@@ -1063,7 +1097,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-94"
+                  "login": "user-111"
                 },
                 "createdAt": "2026-07-18T19:09:06Z"
               },
@@ -1071,7 +1105,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-94"
+                  "login": "user-111"
                 },
                 "createdAt": "2026-07-21T14:33:07Z"
               }
@@ -1086,9 +1120,11 @@
             "nodes": []
           },
           "author": {
-            "login": "user-65"
+            "login": "user-69"
           },
           "number": 153058,
+          "state": "OPEN",
+          "stateReason": null,
           "timelineItems": {
             "nodes": []
           },
@@ -1101,9 +1137,11 @@
             "nodes": []
           },
           "author": {
-            "login": "user-65"
+            "login": "user-69"
           },
           "number": 155176,
+          "state": "OPEN",
+          "stateReason": null,
           "timelineItems": {
             "nodes": []
           },
@@ -1116,9 +1154,11 @@
             "nodes": []
           },
           "author": {
-            "login": "user-65"
+            "login": "user-69"
           },
           "number": 155181,
+          "state": "OPEN",
+          "stateReason": null,
           "timelineItems": {
             "nodes": []
           },
@@ -1135,16 +1175,18 @@
             ]
           },
           "author": {
-            "login": "user-24"
+            "login": "user-15"
           },
           "number": 155728,
+          "state": "OPEN",
+          "stateReason": null,
           "timelineItems": {
             "nodes": [
               {
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-24"
+                  "login": "user-15"
                 },
                 "createdAt": "2026-08-13T16:26:13Z"
               },
@@ -1152,7 +1194,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-10"
+                  "login": "user-7"
                 },
                 "createdAt": "2026-08-13T16:26:14Z"
               },
@@ -1160,7 +1202,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-58"
+                  "login": "user-72"
                 },
                 "createdAt": "2026-08-13T16:26:14Z"
               },
@@ -1176,7 +1218,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-24"
+                  "login": "user-15"
                 },
                 "createdAt": "2026-08-13T16:37:48Z"
               },
@@ -1184,7 +1226,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-10"
+                  "login": "user-7"
                 },
                 "createdAt": "2026-08-13T19:20:35Z"
               },
@@ -1192,7 +1234,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-24"
+                  "login": "user-15"
                 },
                 "createdAt": "2026-08-13T19:31:40Z"
               },
@@ -1200,7 +1242,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-10"
+                  "login": "user-7"
                 },
                 "createdAt": "2026-08-13T19:42:21Z"
               },
@@ -1216,7 +1258,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-10"
+                  "login": "user-7"
                 },
                 "createdAt": "2026-08-24T13:41:46Z"
               },
@@ -1224,7 +1266,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-24"
+                  "login": "user-15"
                 },
                 "createdAt": "2026-08-24T13:41:47Z"
               }
@@ -1246,13 +1288,15 @@
             "login": "octocat"
           },
           "number": 156425,
+          "state": "OPEN",
+          "stateReason": null,
           "timelineItems": {
             "nodes": [
               {
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-48"
+                  "login": "user-3"
                 },
                 "createdAt": "2026-08-26T16:44:42Z"
               },
@@ -1260,7 +1304,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-33"
+                  "login": "user-78"
                 },
                 "createdAt": "2026-08-26T16:44:42Z"
               }
@@ -1275,9 +1319,11 @@
             "nodes": []
           },
           "author": {
-            "login": "user-3"
+            "login": "user-70"
           },
           "number": 160663,
+          "state": "OPEN",
+          "stateReason": null,
           "timelineItems": {
             "nodes": [
               {
@@ -1292,7 +1338,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-3"
+                  "login": "user-70"
                 },
                 "createdAt": "2026-10-25T13:30:31Z"
               },
@@ -1300,7 +1346,7 @@
                 "__typename": "IssueComment",
                 "author": {
                   "__typename": "User",
-                  "login": "user-57"
+                  "login": "user-71"
                 },
                 "createdAt": "2026-10-30T19:09:14Z"
               },
@@ -1308,7 +1354,7 @@
                 "__typename": "MentionedEvent",
                 "actor": {
                   "__typename": "User",
-                  "login": "user-2"
+                  "login": "user-5"
                 },
                 "createdAt": "2026-10-30T19:09:16Z"
               }
@@ -1320,7 +1366,7 @@
       }
     }
   },
-  "query": "query FetchIssues($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { i112564: issueOrPullRequest(number: 112564) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i128942: issueOrPullRequest(number: 128942) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i138864: issueOrPullRequest(number: 138864) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i139389: issueOrPullRequest(number: 139389) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i139778: issueOrPullRequest(number: 139778) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i140256: issueOrPullRequest(number: 140256) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i140328: issueOrPullRequest(number: 140328) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i140798: issueOrPullRequest(number: 140798) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i140928: issueOrPullRequest(number: 140928) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i141594: issueOrPullRequest(number: 141594) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i145970: issueOrPullRequest(number: 145970) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i148937: issueOrPullRequest(number: 148937) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i149532: issueOrPullRequest(number: 149532) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i151763: issueOrPullRequest(number: 151763) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i151815: issueOrPullRequest(number: 151815) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i151862: issueOrPullRequest(number: 151862) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i152125: issueOrPullRequest(number: 152125) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i153058: issueOrPullRequest(number: 153058) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i155176: issueOrPullRequest(number: 155176) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i155181: issueOrPullRequest(number: 155181) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i155728: issueOrPullRequest(number: 155728) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i156425: issueOrPullRequest(number: 156425) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i160663: issueOrPullRequest(number: 160663) { __typename ... on Issue { number title updatedAt author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } } rateLimit { remaining resetAt } }",
-  "reset": 1794043793,
+  "query": "query FetchIssues($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { i112564: issueOrPullRequest(number: 112564) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i128942: issueOrPullRequest(number: 128942) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i138864: issueOrPullRequest(number: 138864) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i139389: issueOrPullRequest(number: 139389) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i139778: issueOrPullRequest(number: 139778) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i140256: issueOrPullRequest(number: 140256) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i140328: issueOrPullRequest(number: 140328) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i140798: issueOrPullRequest(number: 140798) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i140928: issueOrPullRequest(number: 140928) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i141594: issueOrPullRequest(number: 141594) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i145970: issueOrPullRequest(number: 145970) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i148937: issueOrPullRequest(number: 148937) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i149532: issueOrPullRequest(number: 149532) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i151763: issueOrPullRequest(number: 151763) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i151815: issueOrPullRequest(number: 151815) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i151862: issueOrPullRequest(number: 151862) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i152125: issueOrPullRequest(number: 152125) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i153058: issueOrPullRequest(number: 153058) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i155176: issueOrPullRequest(number: 155176) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i155181: issueOrPullRequest(number: 155181) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i155728: issueOrPullRequest(number: 155728) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i156425: issueOrPullRequest(number: 156425) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } i160663: issueOrPullRequest(number: 160663) { __typename ... on Issue { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } } rateLimit { remaining resetAt } }",
+  "reset": 1794124534,
   "status": 200
 }

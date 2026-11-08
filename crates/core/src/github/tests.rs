@@ -163,9 +163,9 @@ fn checking_a_repository_reads_a_recorded_answer() {
     assert_eq!(check.repository.name, name("python/cpython"));
     assert_eq!(check.repository.conventions, Conventions::Cpython);
     assert_eq!(check.access, RepositoryAccess::Other);
-    assert_eq!((check.open_issues, check.open_prs), (6947, 2317));
+    assert_eq!((check.open_issues, check.open_prs), (6945, 2324));
     assert_eq!(check.size, RepositorySize::Large);
-    assert_eq!(check.first_sync_items, 4874);
+    assert_eq!(check.first_sync_items, 4886);
 }
 
 #[test]

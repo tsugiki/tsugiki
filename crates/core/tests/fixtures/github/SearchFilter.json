@@ -2,8 +2,8 @@
   "body": {
     "data": {
       "rateLimit": {
-        "remaining": 4977,
-        "resetAt": "2026-11-07T09:33:19Z"
+        "remaining": 4988,
+        "resetAt": "2026-11-08T07:55:34Z"
       },
       "search": {
         "issueCount": 7,
@@ -76,6 +76,6 @@
     }
   },
   "query": "query SearchFilter($query: String!, $first: Int!, $after: String) { search(query: $query, type: ISSUE_ADVANCED, first: $first, after: $after) { issueCount pageInfo { hasNextPage endCursor } nodes { __typename ... on Issue { number updatedAt repository { nameWithOwner } } ... on PullRequest { id number updatedAt repository { nameWithOwner } } } } rateLimit { remaining resetAt } }",
-  "reset": 1794043999,
+  "reset": 1794124534,
   "status": 200
 }

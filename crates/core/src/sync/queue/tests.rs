@@ -752,7 +752,8 @@ mod activity {
         let mut seen = Vec::new();
         while syncs.ready_at().is_some() {
             drop(syncs.step(&harness.github, &harness.store).unwrap());
-            if syncs.ready_at().is_some() {
+            // The fill that follows the sync isn't part of it, and shows nothing.
+            if syncs.activity().is_some() {
                 seen.push(part_and_pages(&syncs));
             }
         }
@@ -1054,4 +1055,54 @@ fn a_tree_that_keeps_failing_gives_way_to_the_sync_behind_it() {
     assert_eq!(syncs.queue.len(), 1);
     syncs.open_issue(&cpython(), 7);
     assert_eq!(syncs.trees.len(), 1);
+}
+
+#[test]
+fn a_fill_that_fails_for_all_of_github_waits_and_tries_again() {
+    let mut replies = searches_finding(&["a"]);
+    replies.push(fetched(&[1], LOTS));
+    replies.extend([
+        Err(Unreachable::Offline),
+        Err(Unreachable::Offline),
+        issues(&[7], LOTS),
+    ]);
+    let harness = Harness::new("fill-offline", replies);
+    let issue = IssueFacts {
+        number: 7,
+        title: "Issue 7".to_owned(),
+        author: None,
+        assignees: vec![],
+        updated_at: OffsetDateTime::UNIX_EPOCH,
+        state: None,
+    };
+    harness.store.save_issues(&cpython(), vec![issue]).unwrap();
+    let mut syncs = Syncs::default();
+    syncs.add(plain(cpython()));
+    while !matches!(
+        syncs.step(&harness.github, &harness.store).unwrap(),
+        Some(Progress::Finished(_))
+    ) {}
+    // The fill's first step asks the store which Issues to fetch.
+    assert_eq!(syncs.step(&harness.github, &harness.store).unwrap(), None);
+
+    let failure = syncs.step(&harness.github, &harness.store).unwrap_err();
+    syncs.after_failure(&failure, soon(), GitHubClock::default());
+    let held = syncs.ready_at().unwrap();
+    // A failure that counts towards giving up doesn't end a fill.
+    let refused = StepFailure {
+        problem: Error::new(ErrorKind::Unauthorized, "refused"),
+        turn: Turn::Fill,
+    };
+    for _ in 0..TRIES {
+        syncs.after_failure(&refused, soon(), GitHubClock::default());
+    }
+    let retried = syncs.step(&harness.github, &harness.store).unwrap();
+
+    assert_eq!(failure.problem.kind, ErrorKind::Offline);
+    assert!(held > Instant::now(), "{held:?}");
+    assert!(matches!(retried, Some(Progress::Changed(_))), "{retried:?}");
+    assert_eq!(syncs.ready_at(), None);
+    let stored = harness.store.issues(&cpython()).unwrap();
+    assert_eq!(stored[0].state, Some(IssueState::Open));
+    harness.finish();
 }

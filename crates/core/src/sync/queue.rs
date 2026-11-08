@@ -5,7 +5,8 @@ use std::time::{Duration, Instant};
 
 use time::OffsetDateTime;
 
-use super::{Step, UserWorkSync};
+use super::issues::fetch_issue_batch;
+use super::{Link, Step, UserWorkSync};
 use crate::error::{Error, ErrorKind};
 use crate::github::GitHub;
 use crate::github::clock::GitHubClock;
@@ -87,11 +88,21 @@ struct OpenedTree {
     failures: u8,
 }
 
+/// The fetch of the Issues of a Repository saved before Tsugiki kept states (#231). It runs once a launch,
+/// after the Repository's first sync finishes, in the steps no sync is ready for.
+struct StateFill {
+    repository: RepositoryName,
+    /// The Issues still to fetch, lowest number first. Nothing, until the store says which they are.
+    numbers: Option<Vec<u32>>,
+}
+
 /// The work that takes a step.
 #[derive(Debug)]
 enum Turn {
     /// The first of the opened Issues' trees.
     Tree,
+    /// The first of the fetches of Issues with no state.
+    Fill,
     /// The queued sync of this Repository.
     Sync(RepositoryName),
 }
@@ -139,6 +150,11 @@ pub struct Syncs {
     open_went_last: bool,
     /// The Repository the window has open, which alone keeps refreshing.
     open: Option<RepositorySettings>,
+    /// The fetches of Issues with no state still to run, each behind the syncs that are ready.
+    fills: VecDeque<StateFill>,
+    /// The Repositories whose fetch of Issues with no state has been queued since launch. An Issue GitHub no
+    /// longer has keeps no state, so each launch asks for it once.
+    fills_queued: Vec<RepositoryName>,
 }
 
 impl Syncs {
@@ -296,7 +312,7 @@ impl Syncs {
 
     /// The time the next step can run, if there is one.
     pub fn ready_at(&self) -> Option<Instant> {
-        let free = if self.trees.is_empty() {
+        let free = if self.trees.is_empty() && self.fills.is_empty() {
             self.queue
                 .iter()
                 .map(|queued| queued.held_until.unwrap_or_else(Instant::now))
@@ -332,8 +348,8 @@ impl Syncs {
                     queued.held_until = Some(hold.until());
                 }
             }
-            // A tree's own trouble ends its read in the step, so a tree fails only for all of GitHub.
-            Turn::Sync(_) | Turn::Tree => self.not_before = Some(hold),
+            // A tree's or a fill's own trouble ends it in the step, so they fail only for all of GitHub.
+            Turn::Sync(_) | Turn::Tree | Turn::Fill => self.not_before = Some(hold),
         }
     }
 
@@ -352,6 +368,8 @@ impl Syncs {
 
     fn count_failure(&mut self, turn: &Turn, problem: &Error) {
         match turn {
+            // A fill costs a request a try, and waits for the next refresh like the rest.
+            Turn::Fill => {}
             Turn::Tree => {
                 let gave_up = self.trees.front_mut().is_some_and(|tree| {
                     tree.failures += 1;
@@ -397,9 +415,15 @@ impl Syncs {
         github: &GitHub,
         store: &Store,
     ) -> Result<Option<Progress>, StepFailure> {
-        // A tree goes first.
+        // A tree goes first, and a fill only when no sync is ready.
         if let Some(tree) = self.trees.pop_front() {
             return self.step_tree(tree, github, store);
+        }
+        let now = Instant::now();
+        if !self.queue.iter().any(|queued| queued.is_ready(now))
+            && let Some(fill) = self.fills.pop_front()
+        {
+            return self.step_fill(fill, github, store);
         }
         let Some(taken) = self
             .next_sync()
@@ -458,6 +482,7 @@ impl Syncs {
             Ok(Some(stepped)) => stepped,
             Ok(None) => match queued.sync.finish(store) {
                 Ok(finished) => {
+                    self.queue_fill(&finished.repository);
                     self.open_went_last = is_open;
                     return Ok(is_open.then_some(Progress::Finished(finished)));
                 }
@@ -491,6 +516,56 @@ impl Syncs {
         }
     }
 
+    /// Queues the fetch of `repository`'s Issues with no state, unless one was queued since launch.
+    fn queue_fill(&mut self, repository: &RepositoryName) {
+        if self
+            .fills_queued
+            .iter()
+            .any(|queued| queued.is_same(repository))
+        {
+            return;
+        }
+        self.fills_queued.push(repository.clone());
+        self.fills.push_back(StateFill {
+            repository: repository.clone(),
+            numbers: None,
+        });
+    }
+
+    /// Runs a step of `fill`, which goes back to the front of the fills until it has no Issue left.
+    fn step_fill(
+        &mut self,
+        mut fill: StateFill,
+        github: &GitHub,
+        store: &Store,
+    ) -> Result<Option<Progress>, StepFailure> {
+        self.not_before = None;
+        let stepped = match fill_step(&mut fill, github, store) {
+            Ok(stepped) => stepped,
+            // The Issues' own trouble mustn't stand in the way of the syncs, so it waits for the next launch.
+            Err(problem) if !problem.kind.speaks_for_all_of_github() => {
+                log::warn!(
+                    "Tsugiki couldn't fetch the states of {}'s Issues: {}",
+                    fill.repository,
+                    problem.message
+                );
+                return Ok(None);
+            }
+            Err(problem) => {
+                self.fills.push_front(fill);
+                return Err(StepFailure {
+                    problem,
+                    turn: Turn::Fill,
+                });
+            }
+        };
+        let repository = fill.repository.clone();
+        if !fill.numbers.as_ref().is_some_and(Vec::is_empty) {
+            self.fills.push_front(fill);
+        }
+        Ok(self.after_step(repository, stepped, github))
+    }
+
     /// Passes on what a step saved, and any wait for GitHub's points it asked for.
     fn after_step(
         &mut self,
@@ -506,6 +581,29 @@ impl Syncs {
             .touched
             .map(|items| Progress::Changed(Change { repository, items }))
     }
+}
+
+/// One step of `fill`: the store's list of the Issues with no state, or GitHub's answer for the next batch.
+fn fill_step(fill: &mut StateFill, github: &GitHub, store: &Store) -> Result<Stepped, Error> {
+    let Some(numbers) = &mut fill.numbers else {
+        fill.numbers = Some(store.issues_without_state(&fill.repository)?);
+        return Ok(Stepped {
+            touched: None,
+            pause_until: None,
+        });
+    };
+    let link = Link {
+        github,
+        store,
+        repository: &fill.repository,
+        filters: &[],
+        window_since: None,
+    };
+    let (touched, pause_until) = fetch_issue_batch(&link, numbers)?;
+    Ok(Stepped {
+        touched: (!touched.is_empty()).then_some(touched),
+        pause_until,
+    })
 }
 
 /// The wait after `problem`, at least until `next_refresh`.

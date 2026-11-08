@@ -133,6 +133,7 @@ struct Ended {
 struct Run {
     ended: Ended,
     problems: Vec<String>,
+    /// The steps taken while the sync was queued, before the work that follows it, such as a fill.
     steps: usize,
 }
 
@@ -157,12 +158,16 @@ fn run(
     syncs.add(settings.clone());
     let mut told_the_window = Vec::new();
     let mut steps = 0;
+    let mut sync_steps = 0;
     let mut problems = Vec::new();
     while syncs.ready_at().is_some() {
         assert!(steps < MOST_STEPS, "the sync doesn't end");
         if quit_before == Some(steps) {
             syncs = Syncs::default();
             syncs.add(settings.clone());
+        }
+        if syncs.activity().is_some() {
+            sync_steps += 1;
         }
         match syncs.step(&harness.github, store) {
             Ok(Some(Progress::Changed(change))) => told_the_window.push(change.items),
@@ -188,7 +193,7 @@ fn run(
     Run {
         ended,
         problems,
-        steps,
+        steps: sync_steps,
     }
 }
 

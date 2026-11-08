@@ -21,12 +21,14 @@ export type ThreadLine = ThreadLine_Serialize;
 export type PrTab = "conversation" | "files";
 
 export class PrViewState extends DetailState<PrView> {
-  /** A PR opens on its Conversation. */
-  tab = $state<PrTab>("conversation");
   /** The Issue the user opened this PR from, which Esc and its `gh-N` link go back to. */
   readonly issue: number | undefined;
-  /** Its Files tab, which asks for the diff as the PR opens, so a head the mirror lacks is fetched first. */
+  /** Its Files tab, which reads the diff the first time it shows. Opening the PR has already handed a head
+   * the mirror lacks to the mirror. */
   readonly files: PrFilesState;
+  /** A PR opens on its Conversation. */
+  #tab = $state<PrTab>("conversation");
+  #filesLoaded = false;
 
   /** `choice` is the view of the diff, which the Repository's page keeps from PR to PR. */
   constructor(
@@ -44,8 +46,16 @@ export class PrViewState extends DetailState<PrView> {
     this.files = new PrFilesState(repository, number, hud, choice);
   }
 
-  override async load() {
-    await Promise.all([super.load(), this.files.load()]);
+  get tab(): PrTab {
+    return this.#tab;
+  }
+
+  set tab(tab: PrTab) {
+    this.#tab = tab;
+    if (tab === "files" && !this.#filesLoaded) {
+      this.#filesLoaded = true;
+      void this.files.load();
+    }
   }
 
   override stop() {

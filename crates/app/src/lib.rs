@@ -159,17 +159,17 @@ fn open_issue(
     Ok(())
 }
 
-/// Tells the core the user opened a PR, which moves its Last seen and reads its Conversation from GitHub, and
-/// returns at once.
-#[tauri::command]
-#[specta::specta]
+/// Tells the core the user opened PR `number`, which moves its Last seen, reads its Conversation from GitHub
+/// and hands its head to the mirror if the mirror lacks it. The Files tab reads the diff once it shows.
 fn open_pull_request(
     repository: &str,
     number: u32,
-    requests: State<'_, SessionRequests>,
+    requests: &SessionRequests,
+    work: &DiffWork,
 ) -> Result<(), Error> {
-    requests.open_pull_request(RepositoryName::parse(repository)?, number);
-    Ok(())
+    let name = RepositoryName::parse(repository)?;
+    requests.open_pull_request(name.clone(), number);
+    PrFiles::fetch_missing_head(&work.sources()?, &name, number)
 }
 
 /// Asks the core to read a PR's Conversation on screen now, and returns at once (ADR 0015).
@@ -348,16 +348,17 @@ fn read_pull_request(
 /// worker, which fetches a head a mirror lacks, and the highlighter, which parses the files.
 pub(crate) struct DiffWork {
     pub(crate) folders: Result<Folders, Error>,
+    pub(crate) reader: StoreReader,
     pub(crate) diffs: Diffs,
     pub(crate) mirrors: MirrorRequests,
     pub(crate) highlighter: Highlighter,
 }
 
 impl DiffWork {
-    fn sources<'a>(&'a self, reader: &'a StoreReader) -> Result<DiffSources<'a>, Error> {
+    fn sources(&self) -> Result<DiffSources<'_>, Error> {
         let folders = self.folders.as_ref().map_err(Clone::clone)?;
         Ok(DiffSources {
-            reader,
+            reader: &self.reader,
             folders,
             diffs: &self.diffs,
             mirrors: &self.mirrors,
@@ -466,47 +467,33 @@ fn read_pull_request_files(
     repository: &str,
     number: u32,
     work: &DiffWork,
-    reader: &StoreReader,
 ) -> Result<Option<PrFiles>, Error> {
     let name = RepositoryName::parse(repository)?;
-    PrFiles::read(&work.sources(reader)?, &name, number)
+    PrFiles::read(&work.sources()?, &name, number)
 }
 
-fn read_pull_request_rows(
-    chunk: DiffChunk,
-    work: &DiffWork,
-    reader: &StoreReader,
-) -> Result<Vec<DiffRow>, Error> {
+fn read_pull_request_rows(chunk: DiffChunk, work: &DiffWork) -> Result<Vec<DiffRow>, Error> {
     let (of, rows) = chunk.parse()?;
-    PrFiles::rows(&work.sources(reader)?, &of, rows)
+    PrFiles::rows(&work.sources()?, &of, rows)
 }
 
-fn find_in_pull_request(
-    search: DiffSearch,
-    work: &DiffWork,
-    reader: &StoreReader,
-) -> Result<Found, Error> {
+fn find_in_pull_request(search: DiffSearch, work: &DiffWork) -> Result<Found, Error> {
     let (of, query) = search.parse()?;
-    PrFiles::find(&work.sources(reader)?, &of, &query)
+    PrFiles::find(&work.sources()?, &of, &query)
 }
 
 fn read_pull_request_spans(
     chunk: DiffChunk,
     opened: &[u32],
     work: &DiffWork,
-    reader: &StoreReader,
 ) -> Result<Vec<Vec<Span>>, Error> {
     let (of, rows) = chunk.parse()?;
-    PrFiles::spans(&work.sources(reader)?, &of, rows, opened)
+    PrFiles::spans(&work.sources()?, &of, rows, opened)
 }
 
-fn read_pull_request_lines(
-    lines: GapLines,
-    work: &DiffWork,
-    reader: &StoreReader,
-) -> Result<Vec<HeadLine>, Error> {
+fn read_pull_request_lines(lines: GapLines, work: &DiffWork) -> Result<Vec<HeadLine>, Error> {
     let (of, file, lines) = lines.parse()?;
-    PrFiles::lines(&work.sources(reader)?, &of, file, lines)
+    PrFiles::lines(&work.sources()?, &of, file, lines)
 }
 
 /// Opens the page of `item` on GitHub with `show`, and then moves its Last seen, since the user has it in
@@ -587,7 +574,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             refresh,
             open_issue,
             fetch_issue,
-            open_pull_request,
+            slow_commands::open_pull_request,
             fetch_pull_request,
             settings,
             home,

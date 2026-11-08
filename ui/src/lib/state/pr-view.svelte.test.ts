@@ -57,7 +57,50 @@ describe("PrViewState", () => {
     expect(commands.pullRequest).toHaveBeenCalledWith("python/cpython", 11);
     expect(state.view?.title).toBe("gh-10: Fix the crash");
     expect(state.issue).toBe(10);
-    expect(state.files.view).toEqual({ state: "fetching" });
+    state.stop();
+  });
+
+  it("shows the Conversation while opening the PR still waits for git", async () => {
+    vi.mocked(commands.openPullRequest).mockReturnValue(new Promise(() => {}));
+    const state = new PrViewState("python/cpython", 11, undefined);
+
+    void state.load();
+
+    await vi.waitFor(() => expect(state.view?.title).toBe("gh-10: Fix the crash"));
+    state.stop();
+  });
+
+  it("leaves the diff unread while the PR is on its Conversation", async () => {
+    const state = new PrViewState("python/cpython", 11, undefined);
+
+    await state.load();
+
+    expect(commands.pullRequestFiles).not.toHaveBeenCalled();
+    expect(state.files.view).toBeUndefined();
+    state.stop();
+  });
+
+  it("reads the diff the first time the Files tab shows, and keeps it after", async () => {
+    const state = new PrViewState("python/cpython", 11, undefined);
+    await state.load();
+
+    state.switchTab();
+    await vi.waitFor(() => expect(state.files.view).toEqual({ state: "fetching" }));
+    state.switchTab();
+    state.switchTab();
+
+    expect(commands.pullRequestFiles).toHaveBeenCalledExactlyOnceWith("python/cpython", 11);
+    state.stop();
+  });
+
+  it("reads the diff of a PR opened on a thread", async () => {
+    const state = new PrViewState("python/cpython", 11, undefined);
+
+    state.openThread("T1");
+    await state.load();
+
+    await vi.waitFor(() => expect(state.files.view).toEqual({ state: "fetching" }));
+    expect(commands.pullRequestFiles).toHaveBeenCalledOnce();
     state.stop();
   });
 

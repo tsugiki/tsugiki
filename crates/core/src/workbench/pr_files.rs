@@ -109,12 +109,7 @@ impl PrFiles {
         }
         match diff::held(&mirror, &pr.target_branch, &head) {
             Held::NoHead => {
-                let newer = PrHead {
-                    number,
-                    commit: head.clone(),
-                    target_branch: pr.target_branch.clone(),
-                };
-                sources.mirrors.fetch_first(repository.clone(), newer);
+                fetch_first(sources.mirrors, repository, &pr, &head);
                 let older = diff::last_head(&mirror, number).filter(|older| {
                     matches!(diff::held(&mirror, &pr.target_branch, older), Held::Both)
                 });
@@ -142,6 +137,32 @@ impl PrFiles {
                 Ok(Some(Self::ready(&open, content.as_ref(), None)))
             }
         }
+    }
+
+    /// Hands PR `number`'s head to the mirrors' worker ahead of the heads waiting, if its mirror lacks it,
+    /// as the user has opened the PR. It runs one git, which says whether the mirror holds the head, so a
+    /// PR left on its Conversation costs no diff, and the head is there or on its way once the Files tab
+    /// shows.
+    pub fn fetch_missing_head(
+        sources: &DiffSources<'_>,
+        repository: &RepositoryName,
+        number: u32,
+    ) -> Result<(), Error> {
+        let Some((pr, _content)) = facts(sources.reader, repository, number)? else {
+            return Ok(());
+        };
+        let mirror = sources.folders.mirror(repository);
+        if !mirror.exists() {
+            return Ok(());
+        }
+        sources.mirrors.opened(repository.clone(), number);
+        // The sync reads a PR's head the next time it reads the PR.
+        if let Some(head) = &pr.head
+            && !diff::holds_commit(&mirror, head)
+        {
+            fetch_first(sources.mirrors, repository, &pr, head);
+        }
+        Ok(())
     }
 
     /// The diff `open`, with the threads of `content`. Their lines count in the head GitHub had when Tsugiki
@@ -266,6 +287,21 @@ fn start(pr: &PullRequestFacts) -> Start {
         }
         (None, _) => Start::TargetBranch,
     }
+}
+
+/// Hands `head`, the head of `pr` its mirror lacks, to the mirrors' worker ahead of the heads waiting.
+fn fetch_first(
+    mirrors: &MirrorRequests,
+    repository: &RepositoryName,
+    pr: &PullRequestFacts,
+    head: &CommitSha,
+) {
+    let head = PrHead {
+        number: pr.number,
+        commit: head.clone(),
+        target_branch: pr.target_branch.clone(),
+    };
+    mirrors.fetch_first(repository.clone(), head);
 }
 
 /// PR `number`'s facts, and its Conversation once Tsugiki has read it, as the database last had them.

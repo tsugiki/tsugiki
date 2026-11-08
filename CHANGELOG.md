@@ -29,7 +29,9 @@ release's body, and fails without it
   open it. Each PR costs about one point of GitHub's hourly 5,000.
 - The Files tab shows a PR's diff, read from its Mirror, so it asks GitHub for nothing. A PR moved to
   another Target branch shows its diff against the new one. A merged PR shows the diff GitHub shows,
-  whether it merged with a merge commit, a squash or a fast-forward.
+  whether it merged with a merge commit, a squash or a fast-forward. The tab reads the diff the first time
+  it shows, so stepping through PRs on their Conversations runs no `git diff`. Opening a PR still starts
+  fetching a head the Mirror lacks.
 - The diff highlights C, Python, Rust, TypeScript, JavaScript, Svelte, JSON, CSS, HTML, Markdown, reST, TOML,
   YAML and Makefiles, and code inside other code, such as a Markdown fence or an HTML `<script>`. Tsugiki
   parses a PR's files ahead, so a jump to another file finds it highlighted.

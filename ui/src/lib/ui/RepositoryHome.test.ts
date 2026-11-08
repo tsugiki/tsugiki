@@ -700,6 +700,8 @@ it("opens the search in the diff with Ctrl+F on the Files tab, and gives its box
   await press("f", { ctrlKey: true });
   expect(screen.queryByRole("search")).toBeNull();
   await fireEvent.click(files);
+  // The tab reads the diff the first time it shows.
+  await screen.findByRole("region", { name: "Diff" });
 
   await press("f", { ctrlKey: true });
   const box = screen.getByRole<HTMLInputElement>("textbox", { name: "Find" });
@@ -714,8 +716,9 @@ it("opens the search in the diff with Ctrl+F on the Files tab, and gives its box
 it("closes the search with Escape from anywhere, before Escape leaves the PR", async () => {
   const files = await onFiles();
   await fireEvent.click(files);
+  const diff = await screen.findByRole("region", { name: "Diff" });
   await press("f", { ctrlKey: true });
-  screen.getByRole("region", { name: "Diff" }).focus();
+  diff.focus();
 
   await press("Escape");
   expect(screen.queryByRole("search")).toBeNull();

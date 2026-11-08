@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { PrViewState, type PrView } from "$lib/state/pr-view.svelte";
 import PrDetail from "./PrDetail.svelte";
 
@@ -71,15 +71,23 @@ const view: PrView = {
 
 const NOW = new Date("2026-11-04T11:00:00Z");
 
+/** The PR on show, which stops after each test, as its Files tab loads once it shows. */
+let onShow: PrViewState | undefined;
+
 /** Shows the PR as opened from Issue `issue`. */
 const shown = async (answer: PrView | null, issue: number | undefined, onback = vi.fn()) => {
   core.pullRequest.mockResolvedValue({ status: "ok", data: answer });
   const state = new PrViewState("python/cpython", 11, issue);
+  onShow = state;
   await state.load();
   render(PrDetail, { repository: "python/cpython", pr: state, now: NOW, onback });
-  state.stop();
   return state;
 };
+
+afterEach(() => {
+  onShow?.stop();
+  onShow = undefined;
+});
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -125,8 +133,10 @@ it("switches to the Files tab on a click, which waits for the PR's commits", asy
 
   expect(state.tab).toBe("files");
   expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("true");
-  expect(screen.getByRole("tabpanel", { name: "Files" }).textContent?.trim()).toBe(
-    "Fetching the PR's commits…",
+  await vi.waitFor(() =>
+    expect(screen.getByRole("tabpanel", { name: "Files" }).textContent?.trim()).toBe(
+      "Fetching the PR's commits…",
+    ),
   );
   expect(screen.queryByText("The description")).toBeNull();
 

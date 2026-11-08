@@ -114,6 +114,11 @@ The order in which v1 is built is in [build-order.md](build-order.md).
 
     Pane sizes, the Sidebar's state, whether the Issue list shows and what `Ctrl+K Z` remembers belong to the
     machine, like the window's position, and are not synced.
+
+    "Reset Layout" in the command palette puts all of that back to the defaults at once, without asking: both
+    pane sizes, the Sidebar full and on show, the Issue list on show, and nothing remembered by `Ctrl+K Z`.
+    The status bar, the list's footer, zoom, the diff view, the performance HUD and the window stay as they
+    are. It has no key until the user gives it one.
 - A **status bar** runs along the bottom of every screen, the Home page included, for what is app-wide and has
   no other place. It stays when the Sidebar is hidden.
   - Left, where the eye spends its time: sync status ("Synced 2 min ago", a click refreshes) with the
@@ -349,6 +354,7 @@ The order in which v1 is built is in [build-order.md](build-order.md).
 | Back / forward | `Alt+←` / `Alt+→` |
 | Open on GitHub | `Ctrl+Shift+G` |
 | Switch Repository | `Ctrl+R`, or the command palette |
+| Reset the layout | the command palette |
 | Archive / Mute the selected item | `E` / `M` |
 | Settings | `Ctrl+,` |
 | Zoom in / out / reset | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |

@@ -18,6 +18,10 @@ export const commands = {
 	syncActivity: () => __TAURI_INVOKE<SyncActivity_Serialize | null>("sync_activity"),
 	/**  The clone of a mirror under way, for a window that has just loaded. */
 	cloning: () => __TAURI_INVOKE<Cloning | null>("cloning"),
+	/**  The latest reason no mirror can be made, for a window as it loads. */
+	mirrorProblem: () => __TAURI_INVOKE<MirrorProblem | null>("mirror_problem"),
+	/**  Looks at git and the disk again, and tries the clones that waited for them, and returns at once. */
+	checkMirrorsAgain: () => __TAURI_INVOKE<void>("check_mirrors_again"),
 	/**  Refreshes the open Repository now, and returns at once. */
 	refresh: () => __TAURI_INVOKE<void>("refresh"),
 	/**
@@ -116,6 +120,7 @@ export const events = {
 	cloningChanged: makeEvent<CloningChanged_Serialize, CloningChanged_Deserialize>("cloning-changed"),
 	headsFetched: makeEvent<HeadsFetched, HeadsFetched>("heads-fetched"),
 	lastSyncChanged: makeEvent<LastSyncChanged_Serialize, LastSyncChanged_Deserialize>("last-sync-changed"),
+	mirrorProblemChanged: makeEvent<MirrorProblemChanged_Serialize, MirrorProblemChanged_Deserialize>("mirror-problem-changed"),
 	statusChanged: makeEvent<StatusChanged_Serialize, StatusChanged_Deserialize>("status-changed"),
 	syncActivityChanged: makeEvent<SyncActivityChanged_Serialize, SyncActivityChanged_Deserialize>("sync-activity-changed"),
 };
@@ -850,6 +855,27 @@ export type Measurement_Serialize = {
 	/**  Each frame over the limit, in the order they came. */
 	long_frames: LongFrame_Serialize[],
 };
+
+/**  The reason no mirror can be made, for the status bar (#171). The rest of Tsugiki works without one. */
+export type MirrorProblem = 
+/**  git isn't on the `PATH`. */
+{ kind: "no_git" } | 
+/**  git is older than 2.30, as `git --version` says in `version`. */
+{ kind: "old_git"; version: string } | 
+/**
+ *  The disk that holds `folder` has `free_mb` megabytes free, short of the `needed_mb` a clone of
+ *  `repository` takes.
+ */
+{ kind: "disk_short"; repository: RepositoryName; folder: string; needed_mb: number; free_mb: number };
+
+/**  Sent when the worker finds no mirror can be made, and when one can again, so the status bar can say. */
+export type MirrorProblemChanged = MirrorProblemChanged_Serialize | MirrorProblemChanged_Deserialize;
+
+/**  Sent when the worker finds no mirror can be made, and when one can again, so the status bar can say. */
+export type MirrorProblemChanged_Deserialize = MirrorProblem | null;
+
+/**  Sent when the worker finds no mirror can be made, and when one can again, so the status bar can say. */
+export type MirrorProblemChanged_Serialize = MirrorProblem | null;
 
 /**
  *  One budget the window missed, or the start-up time, which it logs each launch. Each time is in

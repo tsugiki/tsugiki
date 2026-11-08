@@ -206,6 +206,9 @@ const CHECK_REPOSITORY: &str = "query CheckRepository($owner: String!, $name: St
                                 updated: search(query: $updated, type: ISSUE_ADVANCED, first: 0) { issueCount } \
                                 closed: search(query: $closed, type: ISSUE_ADVANCED, first: 0) { issueCount } }";
 
+const REPOSITORY_SIZE: &str = "query RepositorySize($owner: String!, $name: String!) { \
+                               repository(owner: $owner, name: $name) { diskUsage } }";
+
 /// A GraphQL client that holds the token, so no caller has to.
 pub struct GitHub {
     transport: Box<dyn Transport>,
@@ -249,6 +252,26 @@ impl GitHub {
         if let Some(skew) = skew {
             log::warn!("{}", skew_warning(skew));
         }
+    }
+
+    /// The size of `repository` on GitHub in bytes, about what a clone of it takes. GitHub gives kilobytes,
+    /// or nothing for a repository with no commits.
+    pub fn repository_size(&self, repository: &RepositoryName) -> Result<u64, Error> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Holder {
+            disk_usage: Option<u64>,
+        }
+        #[derive(Deserialize)]
+        struct Data {
+            repository: Holder,
+        }
+        let data: Data = self.query(&Request {
+            operation: "RepositorySize",
+            query: Cow::Borrowed(REPOSITORY_SIZE),
+            variables: json!({ "owner": repository.owner(), "name": repository.name() }),
+        })?;
+        Ok(data.repository.disk_usage.unwrap_or(0).saturating_mul(1024))
     }
 
     /// Asks GitHub who the token belongs to.

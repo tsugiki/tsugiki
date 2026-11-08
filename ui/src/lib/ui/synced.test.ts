@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cloningWords, elsewhereWords, syncedWords } from "./synced";
+import { cloningWords, elsewhereWords, mirrorWords, syncedWords } from "./synced";
 
 const now = new Date("2026-11-05T12:00:00Z");
 
@@ -41,6 +41,37 @@ describe("elsewhereWords", () => {
   it("names the next of several and counts the rest", () => {
     const several = ["python/peps", "python/devguide", "python/typeshed"];
     expect(elsewhereWords(activity(several))).toBe("python/peps and 2 more syncing");
+  });
+});
+
+describe("mirrorWords", () => {
+  const short = { kind: "disk_short", repository: "python/cpython", folder: "D:\\Tsugiki" } as const;
+
+  it("says nothing while a mirror can be made", () => {
+    expect(mirrorWords(null)).toBeNull();
+  });
+
+  it("says git is missing", () => {
+    expect(mirrorWords({ kind: "no_git" })).toBe(
+      "The Files tab needs git 2.30 or newer, and Tsugiki can't find git",
+    );
+  });
+
+  it("names the old git in its own words", () => {
+    expect(mirrorWords({ kind: "old_git", version: "git version 2.25.1" })).toBe(
+      "The Files tab needs git 2.30 or newer: git version 2.25.1",
+    );
+  });
+
+  it("gives the room a clone needs and has, and the folder", () => {
+    expect(mirrorWords({ ...short, needed_mb: 6144, free_mb: 512 })).toBe(
+      "No room to clone python/cpython: it needs 6.0 GB on the disk with D:\\Tsugiki, which has 512 MB free",
+    );
+  });
+
+  it("counts gigabytes from one up", () => {
+    expect(mirrorWords({ ...short, needed_mb: 1023, free_mb: 1536 })).toContain("needs 1023 MB");
+    expect(mirrorWords({ ...short, needed_mb: 1023, free_mb: 1536 })).toContain("has 1.5 GB free");
   });
 });
 

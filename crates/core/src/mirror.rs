@@ -6,6 +6,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::io::{self, BufReader, Read};
 use std::mem;
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::process::Child;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -18,9 +19,10 @@ use specta::Type;
 use crate::error::Error;
 use crate::folders::Folders;
 use crate::github::pull_requests::PrHead;
-use crate::github::{CommitSha, live};
+use crate::github::{CommitSha, GitHub, Transport, live};
 use crate::repository::RepositoryName;
 use crate::status::Status;
+use crate::token::{RunGh, Token};
 
 /// How far a clone has got, from what `git clone --progress` writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
@@ -41,6 +43,59 @@ pub struct Cloning {
     pub progress: CloneProgress,
 }
 
+/// The reason no mirror can be made, for the status bar (#171). The rest of Tsugiki works without one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum MirrorProblem {
+    /// git isn't on the `PATH`.
+    NoGit,
+    /// git is older than 2.30, as `git --version` says in `version`.
+    OldGit { version: String },
+    /// The disk that holds `folder` has `free_mb` megabytes free, short of the `needed_mb` a clone of
+    /// `repository` takes.
+    DiskShort {
+        repository: RepositoryName,
+        folder: String,
+        needed_mb: u32,
+        free_mb: u32,
+    },
+}
+
+/// The oldest git a mirror works with (ADR 0003): `git check-attr --source` and the partial clone's
+/// options came in 2.30 (#166).
+const OLDEST_GIT: (u32, u32) = (2, 30);
+
+/// The room a clone needs beyond the Repository's size on GitHub: git's index of the pack, and the temporary
+/// files it writes as it goes.
+const ROOM_TO_SPARE: u64 = 1 << 30;
+
+/// The wait before a clone that failed goes back in line, about as long as the status takes to look at
+/// GitHub again.
+const CLONE_RETRY: Duration = Duration::from_secs(60);
+
+/// How many times a clone's wait doubles as it keeps failing: 60 s grows to about an hour.
+const MAX_DOUBLINGS: u32 = 6;
+
+/// The size in bytes of a Repository on GitHub.
+pub type SizeOf = Box<dyn FnMut(&RepositoryName) -> Result<u64, Error> + Send>;
+
+/// The bytes free on the disk that holds a folder.
+pub type FreeSpace = Box<dyn Fn(&Path) -> io::Result<u64> + Send>;
+
+/// Asks GitHub for a Repository's size, through a new connection signed in with gh's token each time, as a
+/// clone is rare and the session owns the other one.
+pub fn sizes_on_github(new_transport: fn() -> Box<dyn Transport>, run_gh: RunGh) -> SizeOf {
+    Box::new(move |repository| {
+        let token = Token::from_gh(run_gh)?;
+        GitHub::new(new_transport(), token).repository_size(repository)
+    })
+}
+
+/// A connection to GitHub's API, for a Repository's size.
+fn https() -> Box<dyn Transport> {
+    Box::new(live::Https::new())
+}
+
 /// Where git clones to, in the Repository's folder, so a clone cut off never looks like a mirror.
 const PARTIAL: &str = "mirror.git.partial";
 
@@ -50,10 +105,14 @@ pub type AnnounceCloning = Box<dyn FnMut(Option<&Cloning>) + Send>;
 /// Says which PRs' heads a fetch brought into a Repository's mirror.
 pub type AnnounceFetched = Box<dyn FnMut(&RepositoryName, &[u32]) + Send>;
 
+/// Says why no mirror can be made, and `None` once one can.
+pub type AnnounceProblem = Box<dyn FnMut(Option<&MirrorProblem>) + Send>;
+
 /// What the worker tells the app as it goes.
 pub struct Announce {
     pub cloning: AnnounceCloning,
     pub fetched: AnnounceFetched,
+    pub problem: AnnounceProblem,
 }
 
 impl Announce {
@@ -62,27 +121,41 @@ impl Announce {
         Self {
             cloning,
             fetched: Box::new(|_, _| {}),
+            problem: Box::new(|_| {}),
         }
     }
 }
 
-/// Where clones come from: GitHub, or in tests a folder of bare repositories laid out as GitHub's are.
+/// Where clones come from: GitHub, or in tests a folder of bare repositories laid out as GitHub's are. It
+/// also says how big a clone is, and how much room its disk has.
 pub struct Remotes {
     base: String,
     /// How long a head whose fetch brought another commit waits before it is fetched once more.
     patience: Duration,
+    /// The wait before a clone that failed goes back in line.
+    retry: Duration,
+    size_of: SizeOf,
+    free_space: FreeSpace,
 }
 
 impl Remotes {
+    /// GitHub's remotes, whose sizes its API gives, signed in with gh's token.
     pub fn github() -> Self {
-        Self::under("https://github.com/".to_owned())
+        Self {
+            size_of: sizes_on_github(https, live::run_gh),
+            free_space: Box::new(|folder| fs4::available_space(folder)),
+            ..Self::under("https://github.com/".to_owned())
+        }
     }
 
-    /// Remotes at `base` followed by `owner/name.git`.
+    /// Remotes at `base` followed by `owner/name.git`, which take no room.
     pub fn under(base: String) -> Self {
         Self {
             base,
             patience: BEHIND_PATIENCE,
+            retry: CLONE_RETRY,
+            size_of: Box::new(|_| Ok(0)),
+            free_space: Box::new(|_| Ok(u64::MAX)),
         }
     }
 
@@ -90,6 +163,21 @@ impl Remotes {
     #[cfg(test)]
     fn patient(self, patience: Duration) -> Self {
         Self { patience, ..self }
+    }
+
+    /// The same remotes, with a clone that failed waiting `retry`.
+    #[cfg(test)]
+    fn retrying(self, retry: Duration) -> Self {
+        Self { retry, ..self }
+    }
+
+    /// The same remotes, sized by `size_of` on a disk that `free_space` measures, for tests.
+    pub fn on_disk(self, size_of: SizeOf, free_space: FreeSpace) -> Self {
+        Self {
+            size_of,
+            free_space,
+            ..self
+        }
     }
 
     fn url(&self, repository: &RepositoryName) -> String {
@@ -110,6 +198,8 @@ enum Message {
     First(RepositoryName, PrHead),
     /// Whether to hold back the next git, while GitHub can't be reached.
     Hold(bool),
+    /// The user asks the worker to look at git and the disk again.
+    CheckAgain,
     Progress(CloneProgress),
     /// git closed its error output, so it has ended or is about to. Its last line that wasn't progress says
     /// why it failed.
@@ -162,6 +252,11 @@ impl MirrorRequests {
         self.send(Message::First(repository, head));
     }
 
+    /// Looks at git and the disk again, and tries each clone that waits for them or failed.
+    pub fn check_again(&self) {
+        self.send(Message::CheckAgain);
+    }
+
     /// Holds back the next git while `status` says GitHub can't be reached. A rate limit is the API's, and
     /// git doesn't use the API, so it holds back nothing.
     pub fn follow(&self, status: &Status) {
@@ -200,6 +295,7 @@ impl HeardRequests {
             Message::Clone(..)
             | Message::Heads(..)
             | Message::Hold(_)
+            | Message::CheckAgain
             | Message::Progress(_)
             | Message::Ended { .. }
             | Message::Stop => None,
@@ -229,9 +325,14 @@ impl Mirrors {
             announce,
             messages: messages.clone(),
             waiting: VecDeque::new(),
+            failed: Vec::new(),
+            clone_tries: Vec::new(),
             heads: VecDeque::new(),
             pace: Pace::Going,
             job: None,
+            git_checked: false,
+            problem: None,
+            told: None,
         };
         let _ = thread::spawn(move || {
             // `stop` learns the worker is over when this goes, however the thread ends. Locals go in reverse
@@ -456,10 +557,22 @@ struct Worker {
     /// For the thread that reads each git's progress.
     messages: Sender<Message>,
     waiting: VecDeque<RepositoryName>,
+    /// The Repositories whose clone failed, each with the time it goes back in line. A Repository is in
+    /// one of `waiting`, `failed` and the clone under way at most.
+    failed: Vec<(RepositoryName, Instant)>,
+    /// How many times in a row each Repository's clone has failed, which sets its next wait.
+    clone_tries: Vec<(RepositoryName, u32)>,
     /// The Repository handed heads last comes first.
     heads: VecDeque<Heads>,
     pace: Pace,
     job: Option<Job>,
+    /// Whether `git --version` has run since launch or the last Check again.
+    git_checked: bool,
+    /// The reason no mirror can be made. Without a usable git no git starts; short of disk, only clones wait.
+    problem: Option<MirrorProblem>,
+    /// The problem the window last heard of. A Check again forgets `problem` but keeps this, so the window
+    /// hears only of a change.
+    told: Option<MirrorProblem>,
 }
 
 impl Worker {
@@ -495,6 +608,7 @@ impl Worker {
                     self.heard_news();
                     self.pace = if held { Pace::Held } else { Pace::Going };
                 }
+                Ok(Message::CheckAgain) => self.check_again(),
                 Ok(Message::Progress(progress)) => self.moved_on(progress),
                 // Each git's end comes while its job is the one under way.
                 Ok(Message::Ended { last_words }) => {
@@ -522,12 +636,24 @@ impl Worker {
             return;
         }
         let waiting = self.waiting.iter().position(|one| one.is_same(&repository));
-        match (turn, waiting) {
-            (Turn::Last, Some(_)) => {}
-            (Turn::Last, None) => self.waiting.push_back(repository),
-            (Turn::Next, waiting) => {
+        let failed = self
+            .failed
+            .iter()
+            .position(|(one, _)| one.is_same(&repository));
+        match turn {
+            // A clone that failed goes back in line once its wait is over.
+            Turn::Last => {
+                if waiting.is_none() && failed.is_none() {
+                    self.waiting.push_back(repository);
+                }
+            }
+            // The user wants this one now, so its wait is over.
+            Turn::Next => {
                 if let Some(index) = waiting {
                     drop(self.waiting.remove(index));
+                }
+                if let Some(index) = failed {
+                    drop(self.failed.remove(index));
                 }
                 self.waiting.push_front(repository);
             }
@@ -598,53 +724,199 @@ impl Worker {
     }
 
     /// Starts the next git, unless one is under way or GitHub can't be reached. A fetch goes ahead of a
-    /// clone, as it takes a moment and a clone can take minutes.
+    /// clone, as it takes a moment and a clone can take minutes. Nothing starts without a usable git, and
+    /// short of disk only fetches do.
     fn start_next(&mut self) {
+        // Before the checks, so a wait that is over leaves `next_due` even while nothing can start.
         self.retry_due();
+        self.retry_failed(Instant::now());
+        if !self.git_checked {
+            self.check_git();
+        }
+        if matches!(
+            self.problem,
+            Some(MirrorProblem::NoGit | MirrorProblem::OldGit { .. })
+        ) {
+            return;
+        }
         while self.job.is_none() && self.pace != Pace::Held {
             if let Some((repository, batch, mirror)) = self.next_batch() {
                 self.start_fetch(repository, batch, mirror);
                 continue;
             }
+            if self.problem.is_some() {
+                return;
+            }
             let Some(repository) = self.waiting.pop_front() else {
+                // A Check again found nothing left to clone, so nothing is short.
+                self.set_problem(None);
                 return;
             };
-            let folders = match &self.folders {
-                Ok(folders) => folders,
-                Err(problem) => {
-                    log::warn!(
-                        "Tsugiki can't clone {repository}'s mirror: {}",
-                        problem.message
-                    );
-                    continue;
-                }
-            };
-            let folder = folders.repository(&repository);
-            if folders.mirror(&repository).exists() {
-                continue;
-            }
-            match self.start_clone(repository, folder) {
-                Ok(clone) => {
-                    (self.announce.cloning)(Some(&clone.cloning));
-                    self.job = Some(Job::Clone(clone));
-                }
-                Err((repository, cause)) => {
-                    log::warn!("Tsugiki can't start cloning {repository}'s mirror: {cause}");
-                }
+            if self.try_clone(repository).is_break() {
+                return;
             }
         }
     }
 
-    /// When the first head that is behind is due to be fetched once more.
+    /// Starts a clone of `repository` unless it has its mirror, or can't have one yet. Breaks when the disk
+    /// is short, which holds back the clones after it too.
+    fn try_clone(&mut self, repository: RepositoryName) -> ControlFlow<()> {
+        let folders = match &self.folders {
+            Ok(folders) => folders,
+            Err(problem) => {
+                log::warn!(
+                    "Tsugiki can't clone {repository}'s mirror: {}",
+                    problem.message
+                );
+                return ControlFlow::Continue(());
+            }
+        };
+        let folder = folders.repository(&repository);
+        if folders.mirror(&repository).exists() {
+            return ControlFlow::Continue(());
+        }
+        // What a clone cut off by quitting left goes first, or the disk would count it as taken.
+        let partial = folder.join(PARTIAL);
+        if partial.exists()
+            && let Err(cause) = fs::remove_dir_all(&partial)
+        {
+            log::warn!(
+                "Tsugiki can't delete the clone of {repository} that a quit cut off: {cause}"
+            );
+            self.fail_clone(repository);
+            return ControlFlow::Continue(());
+        }
+        let root = folders.data.clone();
+        match self.room_for(&repository, &root) {
+            Ok(None) => self.set_problem(None),
+            Ok(Some(short)) => {
+                self.waiting.push_front(repository);
+                self.set_problem(Some(short));
+                return ControlFlow::Break(());
+            }
+            Err(cause) => {
+                log::warn!("Tsugiki can't say if {repository}'s mirror has room: {cause}");
+                self.fail_clone(repository);
+                return ControlFlow::Continue(());
+            }
+        }
+        match self.start_clone(repository, folder) {
+            Ok(clone) => {
+                (self.announce.cloning)(Some(&clone.cloning));
+                self.job = Some(Job::Clone(clone));
+            }
+            Err((repository, cause)) => {
+                log::warn!("Tsugiki can't start cloning {repository}'s mirror: {cause}");
+                self.fail_clone(repository);
+            }
+        }
+        ControlFlow::Continue(())
+    }
+
+    /// Runs `git --version`, and notes git as missing or too old if it is.
+    fn check_git(&mut self) {
+        self.git_checked = true;
+        let problem = match self.git.read(&[OsStr::new("--version")]) {
+            Ok(said) => match git_version(&said) {
+                Some(version) if version >= OLDEST_GIT => None,
+                Some(_) | None => Some(MirrorProblem::OldGit {
+                    version: said.trim().to_owned(),
+                }),
+            },
+            Err(cause) => {
+                log::warn!("Tsugiki can't run git: {cause}");
+                Some(MirrorProblem::NoGit)
+            }
+        };
+        // A good git says nothing of a short disk the window heard of: the next clone does.
+        let told_of_git = matches!(
+            self.told,
+            Some(MirrorProblem::NoGit | MirrorProblem::OldGit { .. })
+        );
+        if problem.is_some() || told_of_git {
+            self.set_problem(problem);
+        }
+    }
+
+    /// Forgets what the worker found of git and the disk, and puts the clones that failed back in line.
+    fn check_again(&mut self) {
+        self.git_checked = false;
+        self.problem = None;
+        let failed = mem::take(&mut self.failed);
+        self.waiting
+            .extend(failed.into_iter().map(|(repository, _)| repository));
+    }
+
+    /// Notes `problem`, and tells the window if it hasn't heard of it.
+    fn set_problem(&mut self, problem: Option<MirrorProblem>) {
+        if self.told != problem {
+            (self.announce.problem)(problem.as_ref());
+            self.told.clone_from(&problem);
+        }
+        self.problem = problem;
+    }
+
+    /// Says what a clone of `repository` lacks on the disk that holds `root`, if anything.
+    fn room_for(
+        &mut self,
+        repository: &RepositoryName,
+        root: &Path,
+    ) -> Result<Option<MirrorProblem>, String> {
+        let size = (self.remotes.size_of)(repository).map_err(|problem| problem.message)?;
+        let free = (self.remotes.free_space)(root).map_err(|cause| cause.to_string())?;
+        let needed = size.saturating_add(ROOM_TO_SPARE);
+        Ok((free < needed).then(|| MirrorProblem::DiskShort {
+            repository: repository.clone(),
+            folder: root.display().to_string(),
+            needed_mb: megabytes(needed),
+            free_mb: megabytes(free),
+        }))
+    }
+
+    /// Tries a clone of `repository` again after a wait, which doubles each time it fails in a row.
+    fn fail_clone(&mut self, repository: RepositoryName) {
+        let tries = match self
+            .clone_tries
+            .iter_mut()
+            .find(|(one, _)| one.is_same(&repository))
+        {
+            Some((_, tries)) => {
+                *tries = tries.saturating_add(1);
+                *tries
+            }
+            None => {
+                self.clone_tries.push((repository.clone(), 1));
+                1
+            }
+        };
+        let at = Instant::now() + clone_wait(self.remotes.retry, tries);
+        self.failed.push((repository, at));
+    }
+
+    /// Puts each clone that failed back in line once its wait is over.
+    fn retry_failed(&mut self, now: Instant) {
+        let (due, later) = mem::take(&mut self.failed)
+            .into_iter()
+            .partition(|(_, at)| *at <= now);
+        self.failed = later;
+        let due: Vec<(RepositoryName, Instant)> = due;
+        self.waiting
+            .extend(due.into_iter().map(|(repository, _)| repository));
+    }
+
+    /// The time the first head that is behind is due to be fetched once more, or the first clone that
+    /// failed is due to go back in line.
     fn next_due(&self) -> Option<Instant> {
-        self.heads
+        let heads = self
+            .heads
             .iter()
             .flat_map(|heads| heads.behind.values())
             .filter_map(|behind| match behind {
                 Behind::Due { at, .. } => Some(*at),
                 Behind::Retried { .. } => None,
-            })
-            .min()
+            });
+        let clones = self.failed.iter().map(|(_, at)| *at);
+        heads.chain(clones).min()
     }
 
     /// Puts each head that is due to be fetched once more with the waiting ones. A newer one handed over
@@ -829,12 +1101,8 @@ impl Worker {
         }
     }
 
-    /// Starts `git clone` into `partial`, in the Repository's `folder`, deleting what a clone cut off by
-    /// quitting left there.
+    /// Starts `git clone` into `partial`, in the Repository's `folder`.
     fn start_clone_git(&self, url: &str, folder: &Path, partial: &Path) -> io::Result<Started> {
-        if partial.exists() {
-            fs::remove_dir_all(partial)?;
-        }
         fs::create_dir_all(folder)?;
         let args = ["clone", "--bare", "--no-tags", "--progress", url].map(OsStr::new);
         self.git
@@ -856,25 +1124,50 @@ impl Worker {
         }
     }
 
-    /// Moves a finished clone to where a mirror goes, or deletes what a failed one left. git's last words
-    /// say why it failed.
+    /// Moves a finished clone to where a mirror goes, or deletes what a failed one left and tries it again
+    /// later. git's last words say why it failed.
     fn finish(&mut self, mut clone: Clone, last_words: &str) {
-        let repository = &clone.cloning.repository;
+        let repository = clone.cloning.repository.clone();
         let ended = if clone.git.succeeded() {
             fs::rename(&clone.partial, &clone.mirror)
         } else {
             Err(io::Error::other(last_words.to_owned()))
         };
         match ended {
-            Ok(()) => log::info!("Tsugiki cloned {repository}'s mirror"),
+            Ok(()) => {
+                log::info!("Tsugiki cloned {repository}'s mirror");
+                self.clone_tries
+                    .retain(|(one, _)| !one.is_same(&repository));
+            }
             Err(why) => {
                 log::warn!("Tsugiki couldn't clone {repository}'s mirror: {why}");
                 // What is left goes before the next clone of this Repository, which says if it can't.
                 drop(fs::remove_dir_all(&clone.partial));
+                self.fail_clone(repository);
             }
         }
         (self.announce.cloning)(None);
     }
+}
+
+/// The wait before a clone that failed `tries` times in a row goes back in line: `retry`, doubled for each
+/// failure before the last, up to `MAX_DOUBLINGS` times.
+fn clone_wait(retry: Duration, tries: u32) -> Duration {
+    retry.saturating_mul(1 << tries.saturating_sub(1).min(MAX_DOUBLINGS))
+}
+
+/// The major and minor version in `git --version`'s answer, such as `git version 2.43.0.windows.1`.
+fn git_version(said: &str) -> Option<(u32, u32)> {
+    let version = said.trim().strip_prefix("git version ")?;
+    let mut parts = version.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    Some((major, minor))
+}
+
+/// `bytes` in whole megabytes, at most `u32::MAX`, which the window shows as it is.
+fn megabytes(bytes: u64) -> u32 {
+    u32::try_from(bytes >> 20).unwrap_or(u32::MAX)
 }
 
 /// Reads `git for-each-ref`'s lines of a commit and a ref. A ref the glob matched beside the head, such as

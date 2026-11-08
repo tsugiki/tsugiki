@@ -1,6 +1,6 @@
 // The status bar's words for when the open Repository last synced, for a sync under way, for the other
-// Repositories syncing, and for a mirror's clone.
-import type { Cloning, SyncActivity } from "$lib/state/status.svelte";
+// Repositories syncing, and for a mirror's clone and what keeps one from starting.
+import type { Cloning, MirrorProblem, SyncActivity } from "$lib/state/status.svelte";
 
 type OpenSync = NonNullable<SyncActivity["open"]>;
 
@@ -56,6 +56,22 @@ export function cloningWords(cloning: Cloning | null): string | null {
   if (progress.stage === "starting") return `Cloning ${repository}`;
   const stage = progress.stage === "receiving" ? "Cloning" : "Indexing";
   return `${stage} ${repository} ${String(progress.percent)}%`;
+}
+
+const MB_IN_GB = 1024;
+
+/** A size in megabytes, in gigabytes from one up. */
+function sizeWords(mb: number): string {
+  return mb < MB_IN_GB ? `${String(mb)} MB` : `${(mb / MB_IN_GB).toFixed(1)} GB`;
+}
+
+/** The words for what keeps a mirror from being made. The Files tab needs one. */
+export function mirrorWords(problem: MirrorProblem | null): string | null {
+  if (problem === null) return null;
+  if (problem.kind === "no_git") return "The Files tab needs git 2.30 or newer, and Tsugiki can't find git";
+  if (problem.kind === "old_git") return `The Files tab needs git 2.30 or newer: ${problem.version}`;
+  const { repository, folder, needed_mb, free_mb } = problem;
+  return `No room to clone ${repository}: it needs ${sizeWords(needed_mb)} on the disk with ${folder}, which has ${sizeWords(free_mb)} free`;
 }
 
 /** The wait for GitHub's points, while there is one. */

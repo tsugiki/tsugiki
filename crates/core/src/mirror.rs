@@ -111,8 +111,9 @@ pub type AnnounceCloning = Box<dyn FnMut(Option<&Cloning>) + Send>;
 /// Says which PRs' heads a fetch brought into a Repository's mirror.
 pub type AnnounceFetched = Box<dyn FnMut(&RepositoryName, &[u32]) + Send>;
 
-/// Says which PRs' heads a fetch into a Repository's mirror failed to bring, and why, once they wait for
-/// news or a hand-over before the next fetch.
+/// Says which PRs' heads a fetch into a Repository's mirror failed to bring, and why, once the worker
+/// stopped fetching them: a failed fetch waits for news, and a head that didn't land at its retry waits for
+/// a hand-over, or for its head to move on if GitHub has no ref for it.
 pub type AnnounceFailed = Box<dyn FnMut(&RepositoryName, &[u32], &Unfetched) + Send>;
 
 /// The reason PR heads aren't in a mirror once the worker stopped fetching them, for a Files tab waiting for
@@ -575,11 +576,11 @@ struct Heads {
     waiting: BTreeMap<u32, CommitSha>,
     /// The Target branches of the heads waiting, which the next fetch brings up to date with them.
     branches: BTreeSet<String>,
-    /// Heads whose fetch left their ref somewhere else, as GitHub hadn't moved it yet (#201), or whose ref
-    /// couldn't be read back.
+    /// Heads whose fetch left their ref somewhere else, as GitHub hadn't moved it yet (#201), found no ref,
+    /// or whose ref couldn't be read back. One with no ref is here only until its retry.
     behind: BTreeMap<u32, Behind>,
-    /// The heads fetched since Tsugiki started, and those GitHub didn't have. A head that moves on is
-    /// fetched again.
+    /// The heads fetched since Tsugiki started, and those GitHub had no ref for at their retry. A head that
+    /// moves on is fetched again.
     settled: BTreeMap<u32, CommitSha>,
     /// An opened PR's head waits, which goes ahead of the other Repositories' heads, even when this
     /// Repository's fetch is under way. The next fetch takes it.
@@ -595,17 +596,18 @@ struct Heads {
 struct Noted {
     /// The PRs whose heads landed.
     arrived: Vec<u32>,
-    /// The PRs whose heads didn't land once more, by why, which now wait for a hand-over.
+    /// The PRs whose heads didn't land at their retry either, by why. One with no ref is settled; the others
+    /// wait for a hand-over.
     stuck: BTreeMap<Unfetched, Vec<u32>>,
 }
 
 impl Heads {
-    /// Notes where the heads of a fetch that succeeded `landed`, or git's words if that couldn't be read.
-    /// A head that didn't land for the first time since it was handed over is fetched once more at `retry`.
+    /// Notes where the heads of a fetch that succeeded `landed`, or why that couldn't be read. A head that
+    /// didn't land for the first time since it was handed over is fetched once more at `retry`.
     fn note_fetched(
         &mut self,
         batch: BTreeMap<u32, CommitSha>,
-        landed: Result<&BTreeMap<u32, CommitSha>, &str>,
+        landed: Result<&BTreeMap<u32, CommitSha>, &Unfetched>,
         retry: Instant,
     ) -> Noted {
         let mut noted = Noted::default();
@@ -632,9 +634,7 @@ impl Heads {
                     }
                     None => Unfetched::NotOnGitHub,
                 },
-                Err(words) => Unfetched::Git {
-                    words: words.to_owned(),
-                },
+                Err(unread) => unread.clone(),
             };
             let retried = Behind::Retried {
                 commit: commit.clone(),
@@ -1254,11 +1254,13 @@ impl Worker {
         }
         let landed = self.read_pull_refs(&mirror).map_err(|cause| {
             log::warn!("Tsugiki can't read which PR heads of {repository} it fetched: {cause}");
-            cause.to_string()
+            Unfetched::Git {
+                words: cause.to_string(),
+            }
         });
         let retry = Instant::now() + self.remotes.patience;
         let mut known = self.take_heads(&repository);
-        let noted = known.note_fetched(batch.heads, landed.as_ref().map_err(String::as_str), retry);
+        let noted = known.note_fetched(batch.heads, landed.as_ref(), retry);
         self.requeue(known);
         if !noted.arrived.is_empty() {
             (self.announce.fetched)(&repository, &noted.arrived);

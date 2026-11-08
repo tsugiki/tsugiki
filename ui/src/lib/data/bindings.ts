@@ -557,7 +557,7 @@ export type HeadLine = {
 };
 
 /**
- *  Sent when PR heads aren't in the mirror and wait for news or a hand-over, so a Files tab waiting for one
+ *  Sent when the mirror's worker stopped fetching PR heads it didn't bring, so a Files tab waiting for one
  *  says why and offers to try again (#233, #213).
  */
 export type HeadsFetchFailed = FailedHeads;

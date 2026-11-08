@@ -33,8 +33,6 @@ import {
   type Span,
   type Unfetched,
 } from "$lib/data/bindings";
-
-export type { Unfetched };
 import {
   DiffLayout,
   type DiffView,
@@ -66,6 +64,7 @@ export type {
   NewsPiece,
   Shown,
   Span,
+  Unfetched,
 };
 
 /** Rows asked for at a time: about 25 screens, as the diff prototype found best. */

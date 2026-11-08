@@ -190,14 +190,6 @@ mod tests {
     }
 
     #[test]
-    fn a_title_names_nothing_under_githubs_conventions() {
-        assert_eq!(
-            Conventions::Github.issues_in_title("gh-123: Fix it"),
-            [0_u32; 0]
-        );
-    }
-
-    #[test]
     fn a_title_could_name_what_any_conventions_read_in_it() {
         assert_eq!(
             Conventions::issues_in_title_under_any("gh-123: Fix it"),

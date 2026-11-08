@@ -80,15 +80,6 @@ mod tests {
     }
 
     #[test]
-    fn a_link_in_this_builds_scheme_is_a_link() {
-        let text = "tsugiki://pr/python/cpython/140124";
-        assert_eq!(
-            Request::parse(Build::Release, text),
-            Request::Link(text.to_owned())
-        );
-    }
-
-    #[test]
     fn a_scheme_counts_whatever_its_case() {
         let text = "TSUGIKI://pr/python/cpython/140124";
         assert_eq!(

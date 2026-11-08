@@ -4,7 +4,9 @@ The Rust side is a Cargo workspace with two main crates. `crates/core` (package 
 everything that isn't the window: the mirror and git, the GitHub client, the local store, and the domain logic
 (Issue trees, review state, Needs attention). `crates/app` (package `tsugiki-app`) is the Tauri app: it maps
 commands and events onto the core and owns the windows. `crates/webview-keys` holds one unsafe call until
-Tauri offers it ([ADR 0013](0013-webview2-browser-shortcuts-off-tsugiki-owns-its-keys.md)). The frontend is a
+Tauri offers it ([ADR 0013](0013-webview2-browser-shortcuts-off-tsugiki-owns-its-keys.md)). `crates/token`
+(package `tsugiki-token`) holds the GitHub token and the only code that sends it
+([ADR 0019](0019-the-token-and-the-only-code-that-sends-it-have-a-crate-of-their-own.md)). The frontend is a
 SvelteKit single-page app in `ui/`. The core is tested with plain `cargo test`, with no Tauri and no webview.
 That matters because, after [ADR 0005](0005-token-stays-in-the-rust-core.md), almost all of the logic lives in
 Rust.

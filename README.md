@@ -75,16 +75,17 @@ command-line name is `tsg`.
 - `F7` and `F8` move between changes and threads, `Ctrl+F` finds text in the diff, and `Alt+←` and `Alt+→`
   go back and forward.
 - The edges between the panes drag, and their widths stay on the machine.
+- Each Issue and PR shows GitHub's Octicon for its state, in GitHub's colors.
 
 ### Planned
 
 The [Issues](https://github.com/tsugiki/tsugiki/issues) hold the work in flight, and
 [docs/build-order.md](docs/build-order.md) the stages after it:
 
-- The rest of 0.2: Octicons for Issues and PRs ([#188](https://github.com/tsugiki/tsugiki/issues/188)),
-  borrowing objects from a clone you have ([#172](https://github.com/tsugiki/tsugiki/issues/172)), saying
-  when git is missing or the disk is short ([#171](https://github.com/tsugiki/tsugiki/issues/171)), and
-  hiding the Sidebar ([#234](https://github.com/tsugiki/tsugiki/issues/234)).
+- The rest of 0.2: borrowing objects from a clone you have
+  ([#172](https://github.com/tsugiki/tsugiki/issues/172)), saying when git is missing or the disk is short
+  ([#171](https://github.com/tsugiki/tsugiki/issues/171)), and hiding the Sidebar
+  ([#234](https://github.com/tsugiki/tsugiki/issues/234)).
 - Reading PRs, continued: Stale reviews, Go to definition and Definition peek, the file view, the Review
   checkout, Open in editor, and reading offline.
 - Writing: comments, line comments in a Pending review, replies, resolving threads, `suggestion` blocks and

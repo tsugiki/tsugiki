@@ -8,7 +8,7 @@ use time::{Duration, OffsetDateTime};
 use super::{Attention, Why};
 use crate::github::Login;
 use crate::github::activity::{Activity, ActivityKind, ItemActivity};
-use crate::github::issues::IssueFacts;
+use crate::github::issues::{IssueFacts, IssueState};
 use crate::github::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
 use crate::repository::{RepositoryName, RepositorySettings};
 use crate::store::{ChangeCheck, OpenReader, Store, StoreReader, SyncState, reader};
@@ -95,6 +95,7 @@ fn issue(number: u32) -> IssueFacts {
         author: Some(Login::new("issue-author")),
         assignees: vec![],
         updated_at: hours_ago(100),
+        state: Some(IssueState::Open),
     }
 }
 

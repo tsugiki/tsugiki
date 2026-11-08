@@ -1,6 +1,6 @@
 use super::*;
 use crate::github::clock::GitHubClock;
-use crate::github::issues::IssueFacts;
+use crate::github::issues::{IssueFacts, IssueState};
 use crate::github::pull_requests::RateLimit;
 use crate::github::testing::{dated, reply_ok, signed_in_as};
 use crate::github::{Reply, Unreachable};
@@ -928,6 +928,7 @@ fn facts_of_issue(number: u32) -> Vec<IssueFacts> {
         author: None,
         assignees: Vec::new(),
         updated_at: OffsetDateTime::now_utc(),
+        state: Some(IssueState::Open),
     }]
 }
 

@@ -608,6 +608,8 @@ export type IssueItem = IssueItem_Serialize | IssueItem_Deserialize;
 export type IssueItem_Deserialize = {
 	number: number,
 	title: string,
+	/**  Nothing for an Issue stored before Tsugiki kept states, until GitHub sends it again. */
+	state?: IssueState | null,
 	/**  The Issue's author, then the PRs' authors, with each person once and no backport bot. */
 	people: Login[],
 	/**  The latest update of the Issue and its PRs. */
@@ -619,6 +621,8 @@ export type IssueItem_Deserialize = {
 export type IssueItem_Serialize = {
 	number: number,
 	title: string,
+	/**  Nothing for an Issue stored before Tsugiki kept states, until GitHub sends it again. */
+	state: IssueState | null,
 	/**  The Issue's author, then the PRs' authors, with each person once and no backport bot. */
 	people: Login[],
 	/**  The latest update of the Issue and its PRs. */
@@ -644,6 +648,13 @@ export type IssueOpenings_Serialize = {
 	/**  The ones whose text the database didn't hold, until that text arrived from GitHub. */
 	from_github: Slowest | null,
 };
+
+/**  Whether an Issue is open, and how it closed, as GitHub draws it (#188). */
+export type IssueState = "OPEN" | 
+/**  Closed as completed, or closed before GitHub said why. */
+"CLOSED" | "NOT_PLANNED" | 
+/**  Closed as a duplicate, which GitHub draws as it draws not planned. */
+"DUPLICATE";
 
 /**  An Issue as the Detail pane shows it. */
 export type IssueView = IssueView_Serialize | IssueView_Deserialize;

@@ -27,6 +27,7 @@ const issue = (number: number, waiting: boolean): ListedItem => ({
   kind: "issue",
   number,
   title: `Issue ${String(number)}`,
+  state: "OPEN",
   people: ["issue-author"],
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [],
@@ -49,6 +50,7 @@ const listing = (waiting: boolean) => ({
 const view = (bodyHtml: string): IssueView => ({
   number: 7,
   title: "Issue 7",
+  state: "OPEN",
   people: ["issue-author"],
   updated_at: "2026-11-04T10:00:00Z",
   author: "issue-author",
@@ -244,4 +246,26 @@ test("the edges between the panes drag, a double-click resets one, and the list 
   expect(narrow[0]).toBeLessThan(dragged[1] ?? 0);
   expect(narrow[1]).toBeGreaterThanOrEqual(320);
   expect(Math.abs((await width(list)) - (await width(pane)))).toBeLessThan(2);
+});
+
+test("the Octicons take GitHub's colors in the light theme and the dark one", async ({ page }) => {
+  await mockCore(page, answers("<p>It crashes</p>"));
+  await page.goto("/");
+  await page.getByRole("button", { name: "#7 Issue 7" }).click();
+  const pane = page.getByRole("region", { name: "Issue view" });
+  const issue = pane.getByRole("img", { name: "Open issue" });
+  const merged = pane.getByRole("img", { name: "Merged PR" }).first();
+  const colors = async () => [
+    await issue.evaluate((icon) => getComputedStyle(icon).color),
+    await merged.evaluate((icon) => getComputedStyle(icon).color),
+  ];
+  const light = await colors();
+
+  // The window has no dark theme yet; one sets this, as the diff's highlighting expects.
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = "dark";
+  });
+
+  expect(light).toEqual(["rgb(26, 127, 55)", "rgb(130, 80, 223)"]);
+  expect(await colors()).toEqual(["rgb(63, 185, 80)", "rgb(171, 125, 248)"]);
 });

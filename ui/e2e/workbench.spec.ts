@@ -28,6 +28,7 @@ const review: ListedItem = {
   kind: "issue",
   number: 112564,
   title: "GIL drop during collection",
+  state: "OPEN",
   people: ["issue-author", "some-author"],
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [

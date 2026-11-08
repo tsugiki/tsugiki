@@ -90,4 +90,6 @@ the links Tsugiki was asked to open, and quote what GitHub sent, so read it befo
 ## License
 
 [MIT](LICENSE). The wordmark is outlined from [Zen Kaku Gothic
-New](https://github.com/googlefonts/zen-kakugothic), under the SIL Open Font License 1.1.
+New](https://github.com/googlefonts/zen-kakugothic), under the SIL Open Font License 1.1. The icons of Issues
+and PRs are GitHub's [Octicons](https://github.com/primer/octicons), under the MIT License, copyright GitHub,
+Inc.; `ui/src/lib/ui/octicons.ts` holds them.

@@ -147,6 +147,7 @@ it("gives the list's keys to a dialog on top of it", async () => {
           kind: "issue",
           number: 7,
           title: "It crashes",
+          state: "OPEN",
           people: [],
           updated_at: "2026-11-04T10:00:00Z",
           pull_requests: [],

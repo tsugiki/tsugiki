@@ -28,6 +28,8 @@ fn issue_json(number: u32) -> Value {
         "number": number,
         "title": format!("Issue {number}"),
         "updatedAt": "2026-11-04T10:00:00Z",
+        "state": "OPEN",
+        "stateReason": null,
         "assignees": { "nodes": [] },
         "timelineItems": { "nodes": [] },
         "author": { "login": "some-author" },
@@ -177,6 +179,7 @@ fn a_fetched_issue_is_read_into_its_facts() {
             author: Some(Login::new("some-author")),
             assignees: vec![],
             updated_at: OffsetDateTime::parse("2026-11-04T10:00:00Z", &Rfc3339).unwrap(),
+            state: Some(IssueState::Open),
         }]
     );
     assert_eq!(fetched.asked_for, 1);
@@ -184,6 +187,51 @@ fn a_fetched_issue_is_read_into_its_facts() {
     let (operation, variables) = asked.recv().unwrap();
     assert_eq!(operation, "FetchIssues");
     assert_eq!(variables, json!({ "owner": "python", "name": "cpython" }));
+}
+
+#[test]
+fn a_closed_issue_keeps_how_it_closed_as_github_draws_it() {
+    let closed = |number: u32, reason: Value| {
+        let mut issue = issue_json(number);
+        issue["state"] = json!("CLOSED");
+        issue["stateReason"] = reason;
+        issue
+    };
+    let mut reopened = issue_json(6);
+    reopened["stateReason"] = json!("REOPENED");
+    let mut repository = json!({ "i6": reopened });
+    for (number, reason) in [
+        (7, json!("COMPLETED")),
+        (8, json!("NOT_PLANNED")),
+        (9, json!("DUPLICATE")),
+        (10, Value::Null),
+        (11, json!("A_REASON_FROM_LATER")),
+    ] {
+        repository[format!("i{number}")] = closed(number, reason);
+    }
+    let (script, _asked) = Scripted::new(vec![answer(&repository)]);
+
+    let fetched = github(script)
+        .fetch_issues(&cpython(), &[6, 7, 8, 9, 10, 11], 25)
+        .unwrap();
+
+    let mut states: Vec<(u32, Option<IssueState>)> = fetched
+        .issues
+        .iter()
+        .map(|issue| (issue.number, issue.state))
+        .collect();
+    states.sort_by_key(|&(number, _)| number);
+    assert_eq!(
+        states,
+        [
+            (6, Some(IssueState::Open)),
+            (7, Some(IssueState::Closed)),
+            (8, Some(IssueState::NotPlanned)),
+            (9, Some(IssueState::Duplicate)),
+            (10, Some(IssueState::Closed)),
+            (11, Some(IssueState::Closed)),
+        ]
+    );
 }
 
 #[test]

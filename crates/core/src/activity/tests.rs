@@ -9,7 +9,7 @@ use super::{NewActivity, News, WhatHappened};
 use crate::conventions::{CPYTHON_BACKPORT_BOT, Conventions};
 use crate::github::Login;
 use crate::github::activity::{Activity, ActivityKind, ItemActivity};
-use crate::github::issues::IssueFacts;
+use crate::github::issues::{IssueFacts, IssueState};
 use crate::github::pull_requests::{
     CiState, LatestReview, OffDefault, PrState, PullRequestFacts, ReviewState,
 };
@@ -677,6 +677,7 @@ fn someone_elses_comment_on_an_issue_is_new_activity() {
         author: Some(colleague()),
         assignees: vec![],
         updated_at: hours_ago(1),
+        state: Some(IssueState::Open),
     };
     let activity = vec![ItemActivity {
         number: ISSUE,

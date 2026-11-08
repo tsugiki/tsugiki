@@ -3,6 +3,8 @@
   import type { PrTab, PrViewState } from "$lib/state/pr-view.svelte";
   import Conversation from "./Conversation.svelte";
   import FilesTab from "./FilesTab.svelte";
+  import { prIcon } from "./octicons";
+  import StateIcon from "./StateIcon.svelte";
   import { headline } from "./workbench-row";
 
   let {
@@ -42,6 +44,7 @@
   {:else if pr.view}
     {@const view = pr.view}
     <h2>
+      <StateIcon icon={prIcon(view)} />
       <button class="link" onclick={() => void onGitHub({ kind: "pull_request", number: view.number })}>
         {headline(view)}
       </button>

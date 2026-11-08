@@ -81,7 +81,9 @@ GitHub.
   0008](adr/0008-view-models-and-invalidation-over-ipc.md)).
 - Refused writes, `write_refused`, and **Read-only** Repositories, with Copy and open on GitHub.
 - A personal access token in the keychain, and the Account page with its guides ([ADR
-  0004](adr/0004-auth-via-gh-cli-token.md), [ADR 0005](adr/0005-token-stays-in-the-rust-core.md)).
+  0004](adr/0004-auth-via-gh-cli-token.md), [ADR 0005](adr/0005-token-stays-in-the-rust-core.md)). The
+  keychain code goes in `tsugiki-token`
+  ([ADR 0019](adr/0019-the-token-and-the-only-code-that-sends-it-have-a-crate-of-their-own.md)).
 
 ## 4. Workbench breadth
 

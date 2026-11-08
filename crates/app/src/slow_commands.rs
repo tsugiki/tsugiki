@@ -9,12 +9,16 @@
     reason = "Tauri's macro writes it in a compile-time check on `async fn` commands, which never runs"
 )]
 
+use std::path::PathBuf;
+use std::sync::Arc;
+
 use tauri::State;
 use tauri::async_runtime::spawn_blocking;
 use tsugiki_core::diff::{DiffRow, HeadLine};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::highlight::Span;
-use tsugiki_core::repository::{Home, RepositoryAccess, RepositoryCheck};
+use tsugiki_core::mirror::{CloneRefusal, MirrorSource};
+use tsugiki_core::repository::{Home, RepositoryCheck};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{PaneWidths, SettingsOwner};
 use tsugiki_core::store::StoreReader;
@@ -50,12 +54,53 @@ pub(crate) async fn check_repository(
 #[tauri::command(async)]
 #[specta::specta]
 pub(crate) fn add_repository(
-    name: &str,
-    access: RepositoryAccess,
+    repository: crate::NewRepository,
     owner: State<'_, SettingsOwner>,
     work: State<'_, crate::RepositoryWork>,
 ) -> Result<Home, Error> {
-    crate::add_named_repository(name, access, &owner, &work)
+    crate::add_named_repository(repository, &owner, &work)
+}
+
+/// Says why the clone in `folder` can't lend its objects to `repository`'s mirror, or nothing if it can.
+/// This waits on git commands that only read the clone.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn check_clone(
+    repository: &str,
+    folder: PathBuf,
+    work: State<'_, crate::RepositoryWork>,
+) -> Result<Option<CloneRefusal>, Error> {
+    crate::check_named_clone(repository, &folder, &work)
+}
+
+/// Starts `repository`'s clone ahead of the others, with its objects from `source`, and saves the answer in
+/// `machine.toml`. This waits on a small file.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn choose_mirror_source(
+    repository: &str,
+    source: MirrorSource,
+    owner: State<'_, SettingsOwner>,
+    work: State<'_, crate::RepositoryWork>,
+) -> Result<(), Error> {
+    crate::choose_named_source(repository, source, &owner, &work)
+}
+
+/// Opens the system's folder picker, and gives the folder the user picked, or nothing if they cancelled. It
+/// waits on the user, so it waits on a thread meant for blocking.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn pick_folder(
+    picker: State<'_, crate::FolderPicker>,
+) -> Result<Option<PathBuf>, Error> {
+    let pick = Arc::clone(&picker.0);
+    spawn_blocking(move || pick()).await.map_err(|cause| {
+        log::error!("The folder picker stopped: {cause}");
+        Error::new(
+            ErrorKind::Internal,
+            "Tsugiki couldn't open the folder picker.",
+        )
+    })
 }
 
 /// Saves how wide the user dragged the Sidebar and the Workbench list in `machine.toml`, and says the widths

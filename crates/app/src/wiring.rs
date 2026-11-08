@@ -16,18 +16,21 @@ use tsugiki_core::settings::{SettingsFiles, SettingsOwner};
 use tsugiki_core::status::{Change, Status, StatusBoard};
 
 use crate::{
-    Changed, CloningChanged, DiffWork, HeadsFetched, LastSyncChanged, MirrorProblemChanged,
-    RepositoryWork, StatusChanged, SyncActivityChanged,
+    Changed, CloningChanged, DiffWork, FolderPicker, HeadsFetched, LastSyncChanged,
+    MirrorProblemChanged, MirrorQuestionChanged, PickFolder, RepositoryWork, StatusChanged,
+    SyncActivityChanged,
 };
 
 /// How often the open Repository refreshes: a refresh costs a few points, and this is about 60 points an
 /// hour, out of 5,000 (ADR 0015).
 const REPOSITORY_REFRESH: Duration = Duration::from_secs(180);
 
-/// What Tsugiki reaches outside the computer: GitHub's API and `gh`, and where mirrors are cloned from.
+/// The world outside the window that Tsugiki reaches: GitHub's API and `gh`, where mirrors are cloned from,
+/// and the system's folder picker.
 pub(crate) struct Outside {
     pub(crate) github: GitHubAccess,
     pub(crate) remotes: Remotes,
+    pub(crate) pick_folder: PickFolder,
 }
 
 /// The threads that work for the window: the session, and the mirrors' one writer.
@@ -67,12 +70,9 @@ pub(crate) fn connect_core<R: Runtime>(
         app.manage(activity_reader),
         "only this manages the sync activity"
     );
-    let (mut latest_cloning, cloning_reader) = latest::channel(None);
-    assert!(app.manage(cloning_reader), "only this manages the clone");
-    let (mut latest_problem, problem_reader) = latest::channel(None);
     assert!(
-        app.manage(problem_reader),
-        "only this manages the mirror's problem"
+        app.manage(FolderPicker(outside.pick_folder)),
+        "only this manages the folder picker"
     );
     // Two small files, read before the window exists so `settings` and `home` can always answer. A
     // `settings_path` on a slow drive would delay the window. Without folders the defaults apply, and the
@@ -82,30 +82,7 @@ pub(crate) fn connect_core<R: Runtime>(
     let changes_handle = app.clone();
     let last_sync_handle = app.clone();
     let activity_handle = app.clone();
-    let cloning_handle = app.clone();
-    let problem_handle = app.clone();
-    let heads_handle = app.clone();
-    let announce = Announce {
-        cloning: Box::new(move |cloning| {
-            // Before the event, for the reason the status gives below.
-            let cloning = cloning.cloned();
-            latest_cloning.set(&cloning);
-            log_if_unsent(CloningChanged(cloning).emit(&cloning_handle));
-        }),
-        fetched: Box::new(move |repository, numbers| {
-            let change = Change {
-                repository: repository.clone(),
-                items: numbers.to_vec(),
-            };
-            log_if_unsent(HeadsFetched(change).emit(&heads_handle));
-        }),
-        problem: Box::new(move |problem| {
-            // Before the event, for the reason the status gives below.
-            let problem = problem.cloned();
-            latest_problem.set(&problem);
-            log_if_unsent(MirrorProblemChanged(problem).emit(&problem_handle));
-        }),
-    };
+    let announce = mirror_announcements(app);
     let mirrors = Mirrors::start(folders.clone(), outside.remotes, announce);
     let (following, fetching) = (mirrors.requests(), mirrors.requests());
     let board = StatusBoard::new(Box::new(move |status| {
@@ -151,10 +128,12 @@ pub(crate) fn connect_core<R: Runtime>(
         mirrors: mirrors.requests(),
     };
     let view = settings.view();
-    work.start(&view.home);
-    // The Repositories added before 0.2 have no mirror yet, and get theirs after the open one's.
+    work.start(&view.home, &view.mirror_sources);
+    // The Repositories added before 0.2 have no mirror yet, and get theirs after the open one's. One the user
+    // hasn't said where its objects come from asks when its turn comes.
     for repository in &view.loaded.settings.repositories {
-        work.mirrors.clone_mirror(repository.name.clone());
+        let source = view.mirror_sources.get(&repository.name).cloned();
+        work.mirrors.clone_mirror(repository.name.clone(), source);
     }
     assert!(app.manage(settings), "only this manages the settings");
     assert!(app.manage(requests), "only this manages the requests");
@@ -165,6 +144,51 @@ pub(crate) fn connect_core<R: Runtime>(
     let reader = session.reader();
     assert!(app.manage(reader), "only this manages the reader");
     Core { session, mirrors }
+}
+
+/// Tells the window what the mirrors' one writer says. Each change is set for the commands that ask before it
+/// goes out as an event, for the reason `connect_core` gives for the status.
+fn mirror_announcements<R: Runtime>(app: &AppHandle<R>) -> Announce {
+    let (mut latest_cloning, cloning_reader) = latest::channel(None);
+    assert!(app.manage(cloning_reader), "only this manages the clone");
+    let (mut latest_problem, problem_reader) = latest::channel(None);
+    assert!(
+        app.manage(problem_reader),
+        "only this manages the mirror's problem"
+    );
+    let (mut latest_question, question_reader) = latest::channel(None);
+    assert!(
+        app.manage(question_reader),
+        "only this manages the mirror's question"
+    );
+    let cloning_handle = app.clone();
+    let problem_handle = app.clone();
+    let question_handle = app.clone();
+    let heads_handle = app.clone();
+    Announce {
+        cloning: Box::new(move |cloning| {
+            let cloning = cloning.cloned();
+            latest_cloning.set(&cloning);
+            log_if_unsent(CloningChanged(cloning).emit(&cloning_handle));
+        }),
+        fetched: Box::new(move |repository, numbers| {
+            let change = Change {
+                repository: repository.clone(),
+                items: numbers.to_vec(),
+            };
+            log_if_unsent(HeadsFetched(change).emit(&heads_handle));
+        }),
+        problem: Box::new(move |problem| {
+            let problem = problem.cloned();
+            latest_problem.set(&problem);
+            log_if_unsent(MirrorProblemChanged(problem).emit(&problem_handle));
+        }),
+        question: Box::new(move |repository| {
+            let repository = repository.cloned();
+            latest_question.set(&repository);
+            log_if_unsent(MirrorQuestionChanged(repository).emit(&question_handle));
+        }),
+    }
 }
 
 /// A window that misses an event catches up when it next asks, so this only leaves a trace in the log.
@@ -181,6 +205,7 @@ mod tests {
     use crate::tests::{cpython, no_folders, temp_folders};
     use serde_json::{Value, json};
     use std::path::Path;
+    use std::sync::Arc;
     use std::sync::mpsc::{Receiver, Sender, channel};
     use tauri::test::{MockRuntime, mock_builder, mock_context, noop_assets};
     use tauri::{App, Listener, WebviewWindow};
@@ -188,6 +213,7 @@ mod tests {
     use tsugiki_core::github::replay::Replayer;
     use tsugiki_core::github::{CommitSha, Login};
     use tsugiki_core::github::{Reply, Request, Transport, Unreachable};
+    use tsugiki_core::mirror::MirrorSource;
     use tsugiki_core::repository::RepositoryAccess;
     use tsugiki_core::settings::SettingsFiles;
     use tsugiki_core::token::{GhOutput, Token};
@@ -253,6 +279,7 @@ mod tests {
         activities: Receiver<Value>,
         clonings: Receiver<Value>,
         problems: Receiver<Value>,
+        questions: Receiver<Value>,
         heads: Receiver<Value>,
         _app: App<MockRuntime>,
     }
@@ -268,6 +295,16 @@ mod tests {
             github: GitHubAccess,
             remotes: Remotes,
         ) -> Self {
+            Self::start_picking(folders, github, remotes, Arc::new(|| None))
+        }
+
+        /// The app whose folder picker gives what `pick_folder` gives.
+        fn start_picking(
+            folders: Result<Folders, Error>,
+            github: GitHubAccess,
+            remotes: Remotes,
+            pick_folder: PickFolder,
+        ) -> Self {
             let builder = specta_builder();
             let app = mock_builder()
                 .invoke_handler(builder.invoke_handler())
@@ -280,8 +317,13 @@ mod tests {
             let activities = hear(&app, "sync-activity-changed");
             let clonings = hear(&app, "cloning-changed");
             let problems = hear(&app, "mirror-problem-changed");
+            let questions = hear(&app, "mirror-question-changed");
             let heads = hear(&app, "heads-fetched");
-            let outside = Outside { github, remotes };
+            let outside = Outside {
+                github,
+                remotes,
+                pick_folder,
+            };
             let core = connect_core(app.handle(), folders, outside, Duration::from_secs(3600));
             let webview =
                 tauri::WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::default())
@@ -296,6 +338,7 @@ mod tests {
                 activities,
                 clonings,
                 problems,
+                questions,
                 heads,
                 _app: app,
             }
@@ -340,7 +383,7 @@ mod tests {
     const CPYTHON: &str = "python/cpython";
 
     fn add_cpython() -> Value {
-        json!({ "name": CPYTHON, "access": "other" })
+        json!({ "repository": { "name": CPYTHON, "access": "other", "source": { "kind": "download" } } })
     }
 
     fn the_whole_workbench() -> Value {
@@ -778,7 +821,9 @@ mod tests {
     fn a_maintained_repository_starts_with_its_own_filters() {
         let (folders, root) = temp_folders("wired-maintained");
         let wired = Wired::start(Ok(folders.clone()), no_network());
-        let adding = json!({ "name": CPYTHON, "access": "maintained" });
+        let adding = json!({
+            "repository": { "name": CPYTHON, "access": "maintained", "source": { "kind": "download" } },
+        });
 
         let added = wired.ask("add_repository", adding).unwrap();
         drop(wired.stop());
@@ -1070,13 +1115,120 @@ mod tests {
     }
 
     #[test]
+    fn a_repository_from_before_asks_where_its_mirror_gets_objects_and_borrows_on_the_answer() {
+        let (folders, root) = temp_folders("wiring-borrow");
+        let mut files = SettingsFiles::load(folders.clone());
+        let cpython = tsugiki_core::repository::RepositoryName::parse(CPYTHON).unwrap();
+        let _ = files
+            .add_repository(&cpython, RepositoryAccess::Other, &MirrorSource::Download)
+            .unwrap();
+        // As 0.1 left it: the Repository, and no answer.
+        std::fs::write(
+            folders.machine_file(),
+            "last_repository = \"python/cpython\"\n",
+        )
+        .unwrap();
+        let remotes = remotes(&root, &[CPYTHON]);
+        let lender = root.join("user-cpython");
+        let url = remotes.url(&cpython);
+        git(&root, &["clone", "-q", &url, &lender.to_string_lossy()]);
+        let picked = lender.clone();
+        let wired = Wired::start_picking(
+            Ok(folders.clone()),
+            recordings(),
+            remotes,
+            Arc::new(move || Some(picked.clone())),
+        );
+
+        let question = wired.questions.recv_timeout(PLENTY).unwrap();
+        let asked = wired.ask("mirror_question", json!({})).unwrap();
+        let picked = wired.ask("pick_folder", json!({})).unwrap();
+        let folder = |path: &Path| json!({ "repository": CPYTHON, "folder": path });
+        let refused = wired
+            .ask("check_clone", folder(&root.join("gone")))
+            .unwrap();
+        let lends = wired.ask("check_clone", folder(&lender)).unwrap();
+        let borrow = json!({ "kind": "borrow", "folder": lender });
+        let chose = wired.ask(
+            "choose_mirror_source",
+            json!({ "repository": CPYTHON, "source": borrow }),
+        );
+        let answered = wired.questions.recv_timeout(PLENTY).unwrap();
+        let cloned = clones(&wired, 1);
+        drop(wired.stop());
+        let machine = std::fs::read_to_string(folders.machine_file()).unwrap();
+        let alternates = folders
+            .mirror(&cpython)
+            .join("objects/info/alternates")
+            .exists();
+        std::fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(question, json!(CPYTHON));
+        assert_eq!(asked, json!(CPYTHON));
+        assert_eq!(picked, json!(lender));
+        assert_eq!(refused, json!({ "kind": "not_a_folder" }));
+        assert_eq!(lends, Value::Null);
+        assert_eq!(chose, Ok(Value::Null));
+        assert_eq!(answered, Value::Null);
+        assert_eq!(cloned.len(), 1);
+        assert!(machine.contains("[mirrors]"), "{machine}");
+        assert!(!alternates);
+    }
+
+    #[test]
+    fn an_answer_machine_toml_cant_keep_still_starts_the_clone() {
+        let (folders, root) = temp_folders("wiring-answer-unsaved");
+        let mut files = SettingsFiles::load(folders.clone());
+        let cpython = tsugiki_core::repository::RepositoryName::parse(CPYTHON).unwrap();
+        let _ = files
+            .add_repository(&cpython, RepositoryAccess::Other, &MirrorSource::Download)
+            .unwrap();
+        std::fs::write(
+            folders.machine_file(),
+            "last_repository = \"python/cpython\"\n",
+        )
+        .unwrap();
+        let wired = Wired::start_cloning_from(
+            Ok(folders.clone()),
+            recordings(),
+            remotes(&root, &[CPYTHON]),
+        );
+
+        let _ = wired.questions.recv_timeout(PLENTY).unwrap();
+        // Broken after the launch read it, as a user's edit in another window would leave it.
+        std::fs::write(folders.machine_file(), "last_repository = \n").unwrap();
+        let chose = wired.ask(
+            "choose_mirror_source",
+            json!({ "repository": CPYTHON, "source": { "kind": "download" } }),
+        );
+        let answered = wired.questions.recv_timeout(PLENTY).unwrap();
+        let cloned = clones(&wired, 1);
+        drop(wired.stop());
+        std::fs::remove_dir_all(root).unwrap();
+
+        assert!(chose.is_err(), "{chose:?}");
+        assert_eq!(answered, Value::Null);
+        assert_eq!(cloned.len(), 1);
+    }
+
+    #[test]
+    fn a_picker_the_user_cancels_gives_nothing() {
+        let wired = Wired::start(Err(no_folders()), no_network());
+
+        let picked = wired.ask("pick_folder", json!({}));
+        drop(wired.stop());
+
+        assert_eq!(picked, Ok(Value::Null));
+    }
+
+    #[test]
     fn repositories_added_before_get_their_mirrors_at_launch_the_open_one_first() {
         let (folders, root) = temp_folders("wiring-clones-at-launch");
         let mut files = SettingsFiles::load(folders.clone());
         for name in ["octo-org/first", CPYTHON] {
             let name = tsugiki_core::repository::RepositoryName::parse(name).unwrap();
             let _ = files
-                .add_repository(&name, RepositoryAccess::Other)
+                .add_repository(&name, RepositoryAccess::Other, &MirrorSource::Download)
                 .unwrap();
         }
         let remotes = remotes(&root, &["octo-org/first", CPYTHON]);

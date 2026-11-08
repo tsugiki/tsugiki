@@ -4,6 +4,7 @@
 //! for one of those. That window's Apply saves what changed in it. A file that can't be used stays as it is,
 //! `problems` says why, and the last good values stay.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -18,12 +19,14 @@ use toml_edit::{ArrayOfTables, DocumentMut, Item, Key, RawString, Table, TableLi
 use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
 use crate::latest::{self, LatestReader};
+use crate::mirror::{MirrorSource, MirrorSources};
 use crate::repository::{Home, RepositoryAccess, RepositoryName, RepositorySettings};
 
 const REPOSITORIES: &str = "repositories";
 const FILTERS: &str = "filters";
 const LAST_REPOSITORY: &str = "last_repository";
 const PANES: &str = "panes";
+const MIRRORS: &str = "mirrors";
 const STOPPED_SAVING: &str =
     "Tsugiki stopped saving its settings. Restart Tsugiki to save them again.";
 
@@ -72,6 +75,8 @@ pub struct SettingsView {
     pub loaded: LoadedSettings,
     pub home: Home,
     pub panes: PaneWidths,
+    /// The user's answer, on this machine, of where each Repository's mirror gets its objects.
+    pub mirror_sources: MirrorSources,
 }
 
 /// How wide the user dragged the Sidebar and the Workbench list, in CSS pixels (#187). Each stays on this
@@ -102,6 +107,26 @@ fn width_or_default<'de, D: Deserializer<'de>>(given: D) -> Result<Option<u32>, 
     })
 }
 
+/// Each Repository's answer of where its mirror gets its objects, leaving out an entry Tsugiki can't read:
+/// one answer is too small a thing to lose the rest of `machine.toml` over. Its Repository asks again.
+fn sources_or_skip<'de, D: Deserializer<'de>>(given: D) -> Result<MirrorSources, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Answer {
+        Text(String),
+        Other(IgnoredAny),
+    }
+    let answers = BTreeMap::<String, Answer>::deserialize(given)?;
+    let read = answers.into_iter().filter_map(|(name, answer)| {
+        let name = RepositoryName::parse(&name).ok()?;
+        match answer {
+            Answer::Text(text) => Some((name, MirrorSource::from_text(&text))),
+            Answer::Other(_) => None,
+        }
+    });
+    Ok(MirrorSources::new(read.collect()))
+}
+
 /// What `machine.toml` holds, as far as this file needs it.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
@@ -113,6 +138,8 @@ struct Machine {
     /// normal launch knows what to reopen before the window exists.
     last_repository: Option<RepositoryName>,
     panes: PaneWidths,
+    #[serde(deserialize_with = "sources_or_skip")]
+    mirrors: MirrorSources,
 }
 
 /// The two files and what was last read from them.
@@ -147,6 +174,10 @@ impl SettingsFiles {
                 .machine
                 .as_ref()
                 .map_or_else(PaneWidths::default, |machine| machine.panes),
+            mirror_sources: self
+                .machine
+                .as_ref()
+                .map_or_else(MirrorSources::default, |machine| machine.mirrors.clone()),
         }
     }
 
@@ -214,6 +245,7 @@ impl SettingsFiles {
         &mut self,
         name: &RepositoryName,
         access: RepositoryAccess,
+        source: &MirrorSource,
     ) -> Result<Home, Error> {
         let machine = self.machine_to_edit()?;
         let path = settings_file(&self.folders, &machine);
@@ -226,7 +258,7 @@ impl SettingsFiles {
         if !held {
             edit.append(&RepositorySettings::added(name.clone(), access));
         }
-        remember_last_repository(&self.folders.machine_file(), name)?;
+        remember_added(&self.folders.machine_file(), name, source)?;
         edit.save()?;
         self.reload();
         Ok(self.home())
@@ -253,6 +285,21 @@ impl SettingsFiles {
         Ok(())
     }
 
+    /// Saves where `name`'s mirror gets its objects in `machine.toml`, keeping everything else in it, and
+    /// reads the files again.
+    pub fn save_mirror_source(
+        &mut self,
+        name: &RepositoryName,
+        source: &MirrorSource,
+    ) -> Result<(), Error> {
+        let path = self.folders.machine_file();
+        let mut edit = TomlEdit::<Machine>::open(&path)?;
+        set_mirror_source(edit.document.as_table_mut(), name, source);
+        edit.save()?;
+        self.reload();
+        Ok(())
+    }
+
     fn machine_to_edit(&self) -> Result<Machine, Error> {
         read_machine(&self.folders.machine_file()).map_err(|problem| refused(&problem))
     }
@@ -273,6 +320,12 @@ enum Request {
     Add {
         name: RepositoryName,
         access: RepositoryAccess,
+        source: MirrorSource,
+        reply: Sender<Result<SettingsView, Error>>,
+    },
+    MirrorSource {
+        name: RepositoryName,
+        source: MirrorSource,
         reply: Sender<Result<SettingsView, Error>>,
     },
     Panes {
@@ -295,18 +348,33 @@ impl SettingsOwner {
                         Request::Add {
                             name,
                             access,
+                            source,
                             reply,
                         },
                     ) => {
-                        let saved = files.add_repository(&name, access).map(|_| files.view());
-                        (saved, reply)
+                        let saved = files.add_repository(&name, access, &source);
+                        (saved.map(|_| files.view()), reply)
+                    }
+                    (
+                        Ok(files),
+                        Request::MirrorSource {
+                            name,
+                            source,
+                            reply,
+                        },
+                    ) => {
+                        let saved = files.save_mirror_source(&name, &source);
+                        (saved.map(|()| files.view()), reply)
                     }
                     (Ok(files), Request::Panes { widths, reply }) => {
                         (files.save_panes(widths).map(|()| files.view()), reply)
                     }
-                    (Err(problem), Request::Add { reply, .. } | Request::Panes { reply, .. }) => {
-                        (Err(problem.clone()), reply)
-                    }
+                    (
+                        Err(problem),
+                        Request::Add { reply, .. }
+                        | Request::MirrorSource { reply, .. }
+                        | Request::Panes { reply, .. },
+                    ) => (Err(problem.clone()), reply),
                 };
                 // Before the answer, so whoever asked finds the change in `view`. Changes come through here
                 // one at a time, so an older one can't replace a newer one.
@@ -333,12 +401,32 @@ impl SettingsOwner {
         &self,
         name: RepositoryName,
         access: RepositoryAccess,
+        source: MirrorSource,
     ) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
         self.ask(
             Request::Add {
                 name,
                 access,
+                source,
+                reply,
+            },
+            &answer,
+        )
+    }
+
+    /// Saves where `name`'s mirror gets its objects in `machine.toml`, and answers with what the settings say
+    /// now.
+    pub fn save_mirror_source(
+        &self,
+        name: RepositoryName,
+        source: MirrorSource,
+    ) -> Result<SettingsView, Error> {
+        let (reply, answer) = mpsc::channel();
+        self.ask(
+            Request::MirrorSource {
+                name,
+                source,
                 reply,
             },
             &answer,
@@ -440,11 +528,31 @@ fn without_repositories(mut document: DocumentMut) -> DocumentMut {
     document
 }
 
-fn remember_last_repository(path: &Path, name: &RepositoryName) -> Result<(), Error> {
+/// Notes in `machine.toml` that `name` was added last, and where its mirror gets its objects.
+fn remember_added(path: &Path, name: &RepositoryName, source: &MirrorSource) -> Result<(), Error> {
     let mut edit = TomlEdit::<Machine>::open(path)?;
     let wanted = toml_edit::value(name.to_string());
     merge_value(edit.document.as_table_mut(), LAST_REPOSITORY, &wanted, None);
+    set_mirror_source(edit.document.as_table_mut(), name, source);
     edit.save()
+}
+
+/// Makes `file`'s `[mirrors]` hold `source` for `name`, under one key: one written in another case goes.
+fn set_mirror_source(file: &mut dyn TableLike, name: &RepositoryName, source: &MirrorSource) {
+    let key = name.to_string();
+    edit_section(file, MIRRORS, |section| {
+        let others: Vec<String> = section
+            .iter()
+            .map(|(one, _)| one.to_owned())
+            .filter(|one| {
+                *one != key && RepositoryName::parse(one).is_ok_and(|one| one.is_same(name))
+            })
+            .collect();
+        for other in others {
+            drop(section.remove(&other));
+        }
+        merge_value(section, &key, &toml_edit::value(source.to_text()), None);
+    });
 }
 
 fn refused(problem: &str) -> Error {

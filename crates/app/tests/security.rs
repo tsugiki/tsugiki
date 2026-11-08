@@ -34,14 +34,17 @@ fn rust_sources(dir: &Path) -> Vec<PathBuf> {
     sources
 }
 
-/// The hosts of the `http://` and `https://` addresses in `text`.
+/// The hosts of the `http://` and `https://` addresses in `text`, past a user such as `someone@`.
 fn hosts(text: &str) -> Vec<String> {
+    let is_host = |c: char| c.is_ascii_alphanumeric() || c == '.' || c == '-';
     text.split("://")
         .zip(text.split("://").skip(1))
         .filter(|(before, _)| before.ends_with("http") || before.ends_with("https"))
         .map(|(_, after)| {
-            let is_host = |c: char| c.is_ascii_alphanumeric() || c == '.' || c == '-';
-            after.chars().take_while(|c| is_host(*c)).collect()
+            let user = after.find(|c: char| !is_host(c) && c != '@');
+            let address = after.get(..user.unwrap_or(after.len())).unwrap_or(after);
+            let host = address.rsplit_once('@').map_or(address, |(_, host)| host);
+            host.chars().take_while(|c| is_host(*c)).collect()
         })
         .collect()
 }
@@ -57,11 +60,12 @@ fn rust_names_only_github_as_a_host() {
     assert!(found.contains("api.github.com"), "the scan found {found:?}");
     // Tauri serves the window's own pages from `tauri.localhost` on Windows, and `navigation.rs` names it to
     // keep the window there, so naming it connects to nothing. A mirror's test clones from a server of its
-    // own on this computer, at `127.0.0.1`.
+    // own on this computer, at `127.0.0.1`. A clone the user has may name GitHub as `www.github.com`.
     let allowed = BTreeSet::from(
         [
             "api.github.com",
             "github.com",
+            "www.github.com",
             "tauri.localhost",
             "127.0.0.1",
         ]

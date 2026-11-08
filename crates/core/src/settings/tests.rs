@@ -1,6 +1,7 @@
 use super::*;
 use crate::conventions::Conventions;
 use crate::filters::Filter;
+use crate::mirror::MirrorSource;
 
 const HIDDEN: Settings = Settings {
     status_bar: StatusBarSettings { visible: false },
@@ -231,7 +232,11 @@ fn adding_a_repository_writes_its_starter_filters_where_the_user_can_edit_them()
 
     drop(
         files
-            .add_repository(&repository("a/b"), RepositoryAccess::Maintained)
+            .add_repository(
+                &repository("a/b"),
+                RepositoryAccess::Maintained,
+                &MirrorSource::Download,
+            )
             .unwrap(),
     );
     let written = fs::read_to_string(folders.settings_file()).unwrap();
@@ -259,7 +264,11 @@ fn adding_to_a_list_written_inline_keeps_it_inline_with_its_filters() {
 
     drop(
         files
-            .add_repository(&repository("a/second"), RepositoryAccess::Other)
+            .add_repository(
+                &repository("a/second"),
+                RepositoryAccess::Other,
+                &MirrorSource::Download,
+            )
             .unwrap(),
     );
     let problems = files.loaded().problems.clone();
@@ -725,7 +734,11 @@ fn the_owner_saves_an_addition_and_answers_with_what_the_files_say() {
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
 
     let saved = owner
-        .add_repository(repository("python/cpython"), RepositoryAccess::Other)
+        .add_repository(
+            repository("python/cpython"),
+            RepositoryAccess::Other,
+            MirrorSource::Download,
+        )
         .unwrap();
     let text = fs::read_to_string(folders.settings_file()).unwrap();
     fs::remove_dir_all(root).unwrap();
@@ -742,7 +755,11 @@ fn the_owner_passes_on_why_a_file_refused_an_addition() {
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
 
     let refused = owner
-        .add_repository(repository("a/b"), RepositoryAccess::Other)
+        .add_repository(
+            repository("a/b"),
+            RepositoryAccess::Other,
+            MirrorSource::Download,
+        )
         .unwrap_err();
     fs::remove_dir_all(root).unwrap();
 
@@ -759,7 +776,11 @@ fn without_folders_the_owner_says_what_went_wrong_with_them() {
     let owner = SettingsOwner::start(Err(lost));
 
     let refused = owner
-        .add_repository(repository("a/b"), RepositoryAccess::Other)
+        .add_repository(
+            repository("a/b"),
+            RepositoryAccess::Other,
+            MirrorSource::Download,
+        )
         .unwrap_err();
 
     assert_eq!(refused.message, "HOME isn't a full path.");
@@ -792,7 +813,11 @@ fn an_addition_is_in_the_view_by_the_time_the_owner_answers() {
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
 
     let saved = owner
-        .add_repository(repository("python/cpython"), RepositoryAccess::Other)
+        .add_repository(
+            repository("python/cpython"),
+            RepositoryAccess::Other,
+            MirrorSource::Download,
+        )
         .unwrap();
     fs::remove_dir_all(root).unwrap();
 
@@ -806,7 +831,11 @@ fn an_addition_that_fails_leaves_the_view_alone() {
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
     let before = owner.view();
 
-    let refused = owner.add_repository(repository("a/b"), RepositoryAccess::Other);
+    let refused = owner.add_repository(
+        repository("a/b"),
+        RepositoryAccess::Other,
+        MirrorSource::Download,
+    );
     fs::remove_dir_all(root).unwrap();
 
     assert!(refused.is_err());
@@ -823,7 +852,11 @@ fn additions_that_overlap_all_reach_the_view() {
             let owner = owner.clone();
             let _ = scope.spawn(move || {
                 owner
-                    .add_repository(repository(name), RepositoryAccess::Other)
+                    .add_repository(
+                        repository(name),
+                        RepositoryAccess::Other,
+                        MirrorSource::Download,
+                    )
                     .unwrap()
             });
         }
@@ -841,7 +874,11 @@ fn an_owner_whose_thread_has_gone_says_so() {
     };
 
     let refused = owner
-        .add_repository(repository("a/b"), RepositoryAccess::Other)
+        .add_repository(
+            repository("a/b"),
+            RepositoryAccess::Other,
+            MirrorSource::Download,
+        )
         .unwrap_err();
 
     assert_eq!(refused.message, STOPPED_SAVING);
@@ -964,6 +1001,122 @@ fn without_folders_the_owner_cant_save_the_panes_widths() {
 }
 
 #[test]
+fn machine_toml_says_where_each_mirror_gets_its_objects_and_skips_what_it_cant_read() {
+    let (folders, root) = temp_folders("mirror-sources");
+    let mine = r#"[mirrors]
+"python/cpython" = 'D:\cpython'
+"octo-org/hello" = "download"
+"not a name" = "download"
+"octo-org/odd" = 3
+"#;
+    fs::write(folders.machine_file(), mine).unwrap();
+
+    let files = SettingsFiles::load(folders);
+    let sources = files.view().mirror_sources;
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(files.loaded().problems, Vec::<String>::new());
+    assert_eq!(
+        sources.get(&repository("Python/CPython")),
+        Some(&MirrorSource::Borrow {
+            folder: PathBuf::from(r"D:\cpython")
+        })
+    );
+    assert_eq!(
+        sources.get(&repository("octo-org/hello")),
+        Some(&MirrorSource::Download)
+    );
+    assert_eq!(sources.get(&repository("octo-org/odd")), None);
+}
+
+#[test]
+fn a_mirrors_answer_saves_under_one_key_beside_what_the_user_wrote() {
+    let (folders, root) = temp_folders("mirror-source-saved");
+    let mine = r#"# This laptop.
+
+[mirrors]
+"Python/CPython" = "download"
+"a/b" = "download" # Mine.
+"#;
+    fs::write(folders.machine_file(), mine).unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+    let lender = MirrorSource::Borrow {
+        folder: PathBuf::from(r"D:\cpython"),
+    };
+
+    files
+        .save_mirror_source(&repository("python/cpython"), &lender)
+        .unwrap();
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    let wanted = r#"# This laptop.
+
+[mirrors]
+"a/b" = "download" # Mine.
+"python/cpython" = 'D:\cpython'
+"#;
+    assert_eq!(machine, wanted);
+    assert_eq!(
+        files
+            .view()
+            .mirror_sources
+            .get(&repository("python/cpython")),
+        Some(&lender)
+    );
+}
+
+#[test]
+fn a_broken_machine_toml_keeps_a_mirrors_answer_out() {
+    let (folders, root) = temp_folders("mirror-source-broken");
+    fs::write(folders.machine_file(), "settings_path =\n").unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+
+    let refused = files
+        .save_mirror_source(&repository("a/b"), &MirrorSource::Download)
+        .unwrap_err();
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(machine, "settings_path =\n");
+    assert!(
+        refused.message.contains("machine.toml, line 1"),
+        "{}",
+        refused.message
+    );
+}
+
+#[test]
+fn the_owner_saves_a_mirrors_answer_and_shows_it_in_the_view() {
+    let (folders, root) = temp_folders("owner-mirror-source");
+    let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
+    let cpython = repository("python/cpython");
+
+    let saved = owner
+        .save_mirror_source(cpython.clone(), MirrorSource::Download)
+        .unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(
+        saved.mirror_sources.get(&cpython),
+        Some(&MirrorSource::Download)
+    );
+    assert_eq!(owner.view().mirror_sources, saved.mirror_sources);
+}
+
+#[test]
+fn without_folders_the_owner_cant_save_a_mirrors_answer() {
+    let lost = Error::new(ErrorKind::Internal, "HOME isn't a full path.");
+    let owner = SettingsOwner::start(Err(lost));
+
+    let refused = owner
+        .save_mirror_source(repository("a/b"), MirrorSource::Download)
+        .unwrap_err();
+
+    assert_eq!(refused.message, "HOME isn't a full path.");
+}
+
+#[test]
 fn with_no_repositories_the_window_opens_on_onboarding() {
     let (folders, root) = temp_folders("home-none");
     let files = SettingsFiles::load(folders);
@@ -977,7 +1130,11 @@ fn adding_a_repository_saves_it_with_its_conventions() {
     let mut files = SettingsFiles::load(folders.clone());
 
     let home = files
-        .add_repository(&repository("python/cpython"), RepositoryAccess::Other)
+        .add_repository(
+            &repository("python/cpython"),
+            RepositoryAccess::Other,
+            &MirrorSource::Download,
+        )
         .unwrap();
     let text = fs::read_to_string(folders.settings_file()).unwrap();
     fs::remove_dir_all(root).unwrap();
@@ -1012,6 +1169,7 @@ visible = false
         .add_repository(
             &repository("some-maintainer/gcmon"),
             RepositoryAccess::Other,
+            &MirrorSource::Download,
         )
         .unwrap();
     let after = fs::read_to_string(folders.settings_file()).unwrap();
@@ -1057,7 +1215,11 @@ fn a_list_written_inline_stays_inline() {
 
     drop(
         files
-            .add_repository(&repository("c/d"), RepositoryAccess::Other)
+            .add_repository(
+                &repository("c/d"),
+                RepositoryAccess::Other,
+                &MirrorSource::Download,
+            )
             .unwrap(),
     );
     let names: Vec<_> = files
@@ -1080,18 +1242,30 @@ fn adding_a_repository_twice_keeps_one_and_opens_it() {
     let mut files = SettingsFiles::load(folders.clone());
     drop(
         files
-            .add_repository(&repository("python/cpython"), RepositoryAccess::Other)
+            .add_repository(
+                &repository("python/cpython"),
+                RepositoryAccess::Other,
+                &MirrorSource::Download,
+            )
             .unwrap(),
     );
     drop(
         files
-            .add_repository(&repository("a/b"), RepositoryAccess::Other)
+            .add_repository(
+                &repository("a/b"),
+                RepositoryAccess::Other,
+                &MirrorSource::Download,
+            )
             .unwrap(),
     );
     let before = fs::read_to_string(folders.settings_file()).unwrap();
 
     let home = files
-        .add_repository(&repository("Python/CPython"), RepositoryAccess::Other)
+        .add_repository(
+            &repository("Python/CPython"),
+            RepositoryAccess::Other,
+            &MirrorSource::Download,
+        )
         .unwrap();
     let after = fs::read_to_string(folders.settings_file()).unwrap();
     fs::remove_dir_all(root).unwrap();
@@ -1106,12 +1280,20 @@ fn a_normal_launch_reopens_the_last_repository() {
     let mut files = SettingsFiles::load(folders.clone());
     drop(
         files
-            .add_repository(&repository("a/first"), RepositoryAccess::Other)
+            .add_repository(
+                &repository("a/first"),
+                RepositoryAccess::Other,
+                &MirrorSource::Download,
+            )
             .unwrap(),
     );
     drop(
         files
-            .add_repository(&repository("a/second"), RepositoryAccess::Other)
+            .add_repository(
+                &repository("a/second"),
+                RepositoryAccess::Other,
+                &MirrorSource::Download,
+            )
             .unwrap(),
     );
 
@@ -1149,7 +1331,11 @@ fn the_last_repository_stays_on_this_machine_beside_what_the_user_wrote() {
 
     drop(
         files
-            .add_repository(&repository("a/new"), RepositoryAccess::Other)
+            .add_repository(
+                &repository("a/new"),
+                RepositoryAccess::Other,
+                &MirrorSource::Download,
+            )
             .unwrap(),
     );
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
@@ -1158,7 +1344,7 @@ fn the_last_repository_stays_on_this_machine_beside_what_the_user_wrote() {
 
     assert_eq!(
         machine,
-        "# This laptop.\nlast_repository = \"a/new\" # Mine.\neditor = \"code\"\n"
+        "# This laptop.\nlast_repository = \"a/new\" # Mine.\neditor = \"code\"\n\n[mirrors]\n\"a/new\" = \"download\"\n"
     );
     assert!(!settings.contains(LAST_REPOSITORY), "{settings}");
 }
@@ -1172,7 +1358,11 @@ fn adding_follows_settings_path() {
 
     drop(
         files
-            .add_repository(&repository("a/b"), RepositoryAccess::Other)
+            .add_repository(
+                &repository("a/b"),
+                RepositoryAccess::Other,
+                &MirrorSource::Download,
+            )
             .unwrap(),
     );
     let text = fs::read_to_string(&moved).unwrap();
@@ -1201,7 +1391,11 @@ fn adding_refuses_while_either_file_cant_be_used() {
         let mut files = SettingsFiles::load(folders.clone());
 
         let refused = files
-            .add_repository(&repository("a/b"), RepositoryAccess::Other)
+            .add_repository(
+                &repository("a/b"),
+                RepositoryAccess::Other,
+                &MirrorSource::Download,
+            )
             .unwrap_err();
         let after = fs::read_to_string(folders.settings_file()).unwrap();
         fs::remove_dir_all(root).unwrap();
@@ -1226,7 +1420,11 @@ fn an_add_that_cant_save_machine_toml_says_so_and_adds_nothing() {
     let mut files = SettingsFiles::load(folders.clone());
 
     let refused = files
-        .add_repository(&repository("a/b"), RepositoryAccess::Other)
+        .add_repository(
+            &repository("a/b"),
+            RepositoryAccess::Other,
+            &MirrorSource::Download,
+        )
         .unwrap_err();
     let added = folders.settings_file().exists();
     permissions.set_readonly(false);
@@ -1249,7 +1447,11 @@ fn a_settings_file_that_cant_be_read_refuses_the_add() {
     let mut files = SettingsFiles::load(folders.clone());
 
     let refused = files
-        .add_repository(&repository("a/b"), RepositoryAccess::Other)
+        .add_repository(
+            &repository("a/b"),
+            RepositoryAccess::Other,
+            &MirrorSource::Download,
+        )
         .unwrap_err();
     fs::remove_dir_all(root).unwrap();
 

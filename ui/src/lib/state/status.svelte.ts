@@ -25,6 +25,9 @@ export class StatusState {
   /** The reason no mirror can be made. Nothing, while one can. */
   mirrorProblem = $state<MirrorProblem | null>(null);
   #heardProblem = false;
+  /** The first Repository whose mirror waits to hear where it gets its objects. Nothing, while none waits. */
+  mirrorQuestion = $state<string | null>(null);
+  #heardQuestion = false;
   error = $state<string>();
 
   async load() {
@@ -48,17 +51,23 @@ export class StatusState {
         this.mirrorProblem = payload;
         this.#heardProblem = true;
       });
+      await events.mirrorQuestionChanged.listen(({ payload }) => {
+        this.mirrorQuestion = payload;
+        this.#heardQuestion = true;
+      });
       const current = await commands.status();
       const lastSync = await commands.lastSync();
       const syncActivity = await commands.syncActivity();
       const cloning = await commands.cloning();
       const mirrorProblem = await commands.mirrorProblem();
+      const mirrorQuestion = await commands.mirrorQuestion();
       // An event that arrived while asking is newer than these answers.
       this.status ??= current;
       this.lastSync ??= lastSync;
       if (!this.#heardActivity) this.syncActivity = syncActivity;
       if (!this.#heardCloning) this.cloning = cloning;
       if (!this.#heardProblem) this.mirrorProblem = mirrorProblem;
+      if (!this.#heardQuestion) this.mirrorQuestion = mirrorQuestion;
     } catch (e) {
       this.error = String(e);
     }

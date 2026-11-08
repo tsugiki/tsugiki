@@ -30,6 +30,11 @@ fn named(name: &str) -> RepositoryName {
     RepositoryName::parse(name).unwrap()
 }
 
+/// The answer of a user who has the mirror download everything.
+fn download() -> Option<MirrorSource> {
+    Some(MirrorSource::Download)
+}
+
 #[expect(
     clippy::disallowed_types,
     reason = "tests build their repositories with the real git (ADR 0009)"
@@ -182,7 +187,7 @@ fn adding_a_repository_clones_its_mirror_and_shows_the_clone_until_it_ends() {
     place.remote(&hello);
     let (mirrors, announced) = place.start();
 
-    mirrors.requests().clone_mirror(hello.clone());
+    mirrors.requests().clone_mirror(hello.clone(), download());
     let clone = one_clone(&announced);
     mirrors.stop(PLENTY);
 
@@ -239,7 +244,7 @@ fn a_clone_cut_off_by_quitting_starts_again_from_an_empty_folder() {
     fs::write(partial.join("half-a-pack"), "what a quit left").unwrap();
     let (mirrors, announced) = place.start();
 
-    mirrors.requests().clone_mirror(hello.clone());
+    mirrors.requests().clone_mirror(hello.clone(), download());
     let _ = one_clone(&announced);
     mirrors.stop(PLENTY);
 
@@ -263,7 +268,7 @@ fn quitting_stops_a_clone_under_way() {
     );
     let hello = named("octo-org/hello");
 
-    mirrors.requests().clone_mirror(hello.clone());
+    mirrors.requests().clone_mirror(hello.clone(), download());
     let (mut waiting_git, _) = server.accept().unwrap();
     waiting_git
         .set_read_timeout(Some(Duration::from_secs(10)))
@@ -304,12 +309,12 @@ fn the_open_repositorys_mirror_goes_ahead_of_those_waiting() {
     let (mirrors, announced) = place.start();
     let requests = mirrors.requests();
 
-    requests.clone_mirror(first.clone());
-    requests.clone_mirror(second.clone());
-    requests.clone_mirror(second.clone());
-    requests.clone_mirror_next(first.clone());
-    requests.clone_mirror(open.clone());
-    requests.clone_mirror_next(open.clone());
+    requests.clone_mirror(first.clone(), download());
+    requests.clone_mirror(second.clone(), download());
+    requests.clone_mirror(second.clone(), download());
+    requests.clone_mirror_next(first.clone(), download());
+    requests.clone_mirror(open.clone(), download());
+    requests.clone_mirror_next(open.clone(), download());
     let order: Vec<RepositoryName> = (0..3)
         .map(|_| one_clone(&announced).remove(0).repository)
         .collect();
@@ -326,8 +331,10 @@ fn a_repository_whose_mirror_is_there_isnt_cloned_again() {
     fs::create_dir_all(place.folders.mirror(&cloned)).unwrap();
     let (mirrors, announced) = place.start();
 
-    mirrors.requests().clone_mirror(cloned);
-    mirrors.requests().clone_mirror_next(next.clone());
+    mirrors.requests().clone_mirror(cloned, download());
+    mirrors
+        .requests()
+        .clone_mirror_next(next.clone(), download());
     let clone = one_clone(&announced);
     mirrors.stop(PLENTY);
 
@@ -341,8 +348,8 @@ fn a_failed_clone_leaves_no_folder_and_the_next_one_goes_on() {
     place.remote(&next);
     let (mirrors, announced) = place.start();
 
-    mirrors.requests().clone_mirror(missing.clone());
-    mirrors.requests().clone_mirror(next.clone());
+    mirrors.requests().clone_mirror(missing.clone(), download());
+    mirrors.requests().clone_mirror(next.clone(), download());
     let failed = one_clone(&announced);
     let _ = one_clone(&announced);
     mirrors.stop(PLENTY);
@@ -364,7 +371,9 @@ fn a_clone_that_cant_start_leaves_only_a_trace() {
     fs::write(place.folders.data.join("repos"), "not a folder").unwrap();
     let (mirrors, announced) = place.start();
 
-    mirrors.requests().clone_mirror(named("octo-org/hello"));
+    mirrors
+        .requests()
+        .clone_mirror(named("octo-org/hello"), download());
     mirrors.stop(PLENTY);
 
     assert!(announced.try_recv().is_err());
@@ -379,7 +388,7 @@ fn a_leftover_clone_that_cant_be_deleted_leaves_only_a_trace() {
     fs::write(&partial, "a file, which deleting a folder can't remove").unwrap();
     let (mirrors, announced) = place.start();
 
-    mirrors.requests().clone_mirror(hello.clone());
+    mirrors.requests().clone_mirror(hello.clone(), download());
     mirrors.stop(PLENTY);
 
     assert!(announced.try_recv().is_err());
@@ -393,7 +402,7 @@ fn asking_after_quitting_only_leaves_a_trace() {
     let requests = mirrors.requests();
 
     mirrors.stop(PLENTY);
-    requests.clone_mirror(named("octo-org/hello"));
+    requests.clone_mirror(named("octo-org/hello"), download());
 
     assert!(announced.try_recv().is_err());
 }
@@ -407,7 +416,9 @@ fn without_its_data_folder_tsugiki_clones_nothing() {
         cloning_only(announcing),
     );
 
-    mirrors.requests().clone_mirror(named("python/cpython"));
+    mirrors
+        .requests()
+        .clone_mirror(named("python/cpython"), download());
     mirrors.stop(PLENTY);
 
     assert!(announced.try_recv().is_err());
@@ -622,6 +633,11 @@ impl Git for FakeGit {
                 Err(_none) => Ok("git version 2.43.0.windows.1".to_owned()),
             };
         }
+        // A look at a clone the user has goes to the real git, which reads it as the worker would.
+        let looks = [OsStr::new("rev-parse"), OsStr::new("config")];
+        if args.get(2).is_some_and(|command| looks.contains(command)) {
+            return live::read_git(args);
+        }
         self.refs
             .try_recv()
             .map_err(|_none| io::Error::other("the test gave no refs"))
@@ -648,6 +664,7 @@ impl Place {
                 drop(arriving.send((repository.to_string(), numbers.to_vec())));
             }),
             problem: Box::new(|_| {}),
+            question: Box::new(|_| {}),
         };
         let (mirrors, starts) = self.start_faked_announcing(patience, announce);
         (mirrors, starts, arrivals)
@@ -1090,7 +1107,7 @@ fn heads_wait_for_their_mirror_to_be_cloned() {
     let (mirrors, starts) = place.start_faked();
     let requests = mirrors.requests();
 
-    requests.clone_mirror(cpython.clone());
+    requests.clone_mirror(cpython.clone(), download());
     let clone = starts.recv_timeout(PLENTY).unwrap();
     requests.fetch_heads(cpython.clone(), vec![head(1)]);
     // What a real clone leaves, for the worker to move into place.
@@ -1155,7 +1172,7 @@ fn offline_holds_the_worker() {
 
     requests.follow(&Status::Offline);
     requests.fetch_heads(cpython.clone(), vec![head(1)]);
-    requests.clone_mirror(named("octo-org/hello"));
+    requests.clone_mirror(named("octo-org/hello"), download());
     mirrors.stop(PLENTY);
 
     assert!(starts.recv().is_err());
@@ -1193,7 +1210,7 @@ fn a_fetch_brings_a_prs_head_into_the_mirror_and_a_head_github_lacks_fails_nothi
     let hello = named("octo-org/hello");
     place.remote(&hello);
     let (mirrors, announced) = place.start();
-    mirrors.requests().clone_mirror(hello.clone());
+    mirrors.requests().clone_mirror(hello.clone(), download());
     let _clone = one_clone(&announced);
     let commit = place.pull_request(&hello, 1);
     let mirror = place.folders.mirror(&hello);
@@ -1266,6 +1283,8 @@ fn the_heard_requests_keep_only_the_opened_prs_heads() {
     assert_eq!(heard.firsts(), [(cpython, head(2))]);
 }
 
+mod borrowing;
+
 mod problems {
     use super::*;
     use std::sync::Arc;
@@ -1282,6 +1301,7 @@ mod problems {
             cloning: Box::new(|_| {}),
             fetched: Box::new(|_, _| {}),
             problem: Box::new(move |problem| drop(telling.send(problem.cloned()))),
+            question: Box::new(|_| {}),
         };
         (announce, told)
     }
@@ -1347,7 +1367,9 @@ mod problems {
         let (announce, told) = hearing_problems();
         let (mirrors, starts) = place.start_faked_from(place.clone_source(), announce, answers);
 
-        mirrors.requests().clone_mirror(named("octo-org/hello"));
+        mirrors
+            .requests()
+            .clone_mirror(named("octo-org/hello"), download());
         mirrors.requests().fetch_heads(cpython, vec![head(1)]);
         let missing = told.recv_timeout(PLENTY).unwrap();
         let held = starts.recv_timeout(A_MOMENT).is_err();
@@ -1372,7 +1394,9 @@ mod problems {
         let (announce, told) = hearing_problems();
         let (mirrors, starts) = place.start_faked_from(place.clone_source(), announce, answers);
 
-        mirrors.requests().clone_mirror(named("octo-org/hello"));
+        mirrors
+            .requests()
+            .clone_mirror(named("octo-org/hello"), download());
         let old = told.recv_timeout(PLENTY).unwrap();
         let held = starts.recv_timeout(A_MOMENT).is_err();
         mirrors.stop(PLENTY);
@@ -1397,7 +1421,7 @@ mod problems {
         let (_versions, answers) = channel();
         let (mirrors, starts) = place.start_faked_from(remotes, announce, answers);
 
-        mirrors.requests().clone_mirror(hello.clone());
+        mirrors.requests().clone_mirror(hello.clone(), download());
         let short = told.recv_timeout(PLENTY).unwrap();
         mirrors.requests().fetch_heads(cpython, vec![head(1)]);
         let fetch = starts.recv_timeout(PLENTY).unwrap();
@@ -1434,7 +1458,7 @@ mod problems {
         let (_versions, answers) = channel();
         let (mirrors, starts) = place.start_faked_from(remotes, announce, answers);
 
-        mirrors.requests().clone_mirror(hello);
+        mirrors.requests().clone_mirror(hello, download());
         let short = told.recv_timeout(PLENTY).unwrap();
         mirrors.requests().check_again();
         // The worker looks again before it reads the next request, so the fetch starts after the check.
@@ -1471,7 +1495,7 @@ mod problems {
         let (mirrors, starts) =
             place.start_faked_from(remotes, Announce::cloning_only(Box::new(|_| {})), answers);
 
-        mirrors.requests().clone_mirror(hello);
+        mirrors.requests().clone_mirror(hello, download());
         let clone = starts.recv_timeout(PLENTY).unwrap();
         clone.fail();
         mirrors.stop(PLENTY);
@@ -1490,12 +1514,12 @@ mod problems {
             place.start_faked_from(remotes, Announce::cloning_only(Box::new(|_| {})), answers);
         let requests = mirrors.requests();
 
-        requests.clone_mirror(hello.clone());
+        requests.clone_mirror(hello.clone(), download());
         let first = starts.recv_timeout(PLENTY).unwrap();
         let first_cloned = clones(&first);
         first.fail();
-        requests.clone_mirror(hello.clone());
-        requests.clone_mirror_next(hello);
+        requests.clone_mirror(hello.clone(), download());
+        requests.clone_mirror_next(hello, download());
         let opened = starts.recv_timeout(PLENTY).unwrap();
         let opened_cloned = clones(&opened);
         opened.fail();
@@ -1534,7 +1558,9 @@ mod problems {
         let (mirrors, starts) =
             place.start_faked_from(remotes, Announce::cloning_only(Box::new(|_| {})), answers);
 
-        mirrors.requests().clone_mirror(named("octo-org/hello"));
+        mirrors
+            .requests()
+            .clone_mirror(named("octo-org/hello"), download());
         let first = starts.recv_timeout(PLENTY).unwrap();
         let cloned = clones(&first);
         first.fail();
@@ -1566,7 +1592,9 @@ mod problems {
         let (mirrors, starts) =
             place.start_faked_from(remotes, Announce::cloning_only(Box::new(|_| {})), answers);
 
-        mirrors.requests().clone_mirror(named("octo-org/hello"));
+        mirrors
+            .requests()
+            .clone_mirror(named("octo-org/hello"), download());
         let clone = starts.recv_timeout(PLENTY).unwrap();
         mirrors.stop(PLENTY);
 
@@ -1594,7 +1622,9 @@ mod problems {
         let (mirrors, starts) =
             place.start_faked_from(remotes, Announce::cloning_only(Box::new(|_| {})), answers);
 
-        mirrors.requests().clone_mirror(named("octo-org/hello"));
+        mirrors
+            .requests()
+            .clone_mirror(named("octo-org/hello"), download());
         let clone = starts.recv_timeout(PLENTY).unwrap();
         mirrors.stop(PLENTY);
 
@@ -1612,7 +1642,9 @@ mod problems {
             answers,
         );
 
-        mirrors.requests().clone_mirror(named("octo-org/hello"));
+        mirrors
+            .requests()
+            .clone_mirror(named("octo-org/hello"), download());
         let held = starts.recv_timeout(A_MOMENT).is_err();
         mirrors.stop(PLENTY);
 

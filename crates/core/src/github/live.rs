@@ -252,16 +252,25 @@ fn local_git(args: &[&OsStr]) -> Command {
     command
 }
 
-/// What a `git` printed, or the last line of its error output if it failed.
+/// The output of a `git`, or the gist of its error output if it failed.
 fn git_output(output: &std::process::Output) -> io::Result<&[u8]> {
     if output.status.success() {
         Ok(&output.stdout)
     } else {
         let errors = String::from_utf8_lossy(&output.stderr);
-        Err(io::Error::other(
-            errors.lines().last().unwrap_or("").to_owned(),
-        ))
+        Err(io::Error::other(gist(&errors).to_owned()))
     }
+}
+
+/// git's last `fatal:` or `error:` line, or else its last line. Hints follow the reason, as in
+/// `fatal: detected dubious ownership`, whose last line is the command that adds a `safe.directory`.
+fn gist(errors: &str) -> &str {
+    errors
+        .lines()
+        .rev()
+        .find(|line| line.starts_with("fatal: ") || line.starts_with("error: "))
+        .or_else(|| errors.lines().last())
+        .unwrap_or("")
 }
 
 /// Ends `git` and waits for it. git hands a download to helpers (`git-remote-https`, `index-pack`), which
@@ -381,5 +390,21 @@ mod tests {
         for cause in causes {
             assert_eq!(unreachable(cause), Unreachable::Offline);
         }
+    }
+
+    #[test]
+    fn a_failed_git_says_its_reason_rather_than_the_hint_after_it() {
+        let dubious = "fatal: detected dubious ownership in repository at 'D:/cpython'\n\
+            To add an exception for this directory, call:\n\
+            \n\
+            \tgit config --global --add safe.directory D:/cpython\n";
+
+        assert_eq!(
+            gist(dubious),
+            "fatal: detected dubious ownership in repository at 'D:/cpython'"
+        );
+        assert_eq!(gist("warning: one\nerror: two\nhint: three"), "error: two");
+        assert_eq!(gist("Connection reset\nby peer"), "by peer");
+        assert_eq!(gist(""), "");
     }
 }

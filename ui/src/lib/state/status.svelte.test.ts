@@ -9,6 +9,7 @@ vi.mock("$lib/data/bindings", () => ({
     syncActivity: vi.fn(),
     cloning: vi.fn(),
     mirrorProblem: vi.fn(),
+    mirrorQuestion: vi.fn(),
     refresh: vi.fn(),
     checkMirrorsAgain: vi.fn(),
   },
@@ -18,6 +19,7 @@ vi.mock("$lib/data/bindings", () => ({
     syncActivityChanged: { listen: vi.fn() },
     cloningChanged: { listen: vi.fn() },
     mirrorProblemChanged: { listen: vi.fn() },
+    mirrorQuestionChanged: { listen: vi.fn() },
   },
 }));
 
@@ -148,6 +150,50 @@ describe("StatusState's last sync", () => {
       const state = new StatusState();
       await state.load();
       expect(state.cloning).toBeNull();
+    });
+  });
+
+  describe("the question of where a mirror gets its objects", () => {
+    const catchQuestion = () => {
+      const listener = vi.fn<(payload: string | null) => void>();
+      vi.mocked(events.mirrorQuestionChanged.listen).mockImplementation(async (callback) => {
+        listener.mockImplementation((payload) => {
+          callback({ event: "mirror-question-changed", id: 1, payload });
+        });
+        return () => {};
+      });
+      return listener;
+    };
+
+    it("holds what the core says when the window loads", async () => {
+      catchLastSync();
+      catchQuestion();
+      vi.mocked(commands.mirrorQuestion).mockResolvedValue("python/cpython");
+      const state = new StatusState();
+      await state.load();
+      expect(state.mirrorQuestion).toBe("python/cpython");
+    });
+
+    it("follows the core, down to nothing", async () => {
+      catchLastSync();
+      const questionChanged = catchQuestion();
+      vi.mocked(commands.mirrorQuestion).mockResolvedValue("python/cpython");
+      const state = new StatusState();
+      await state.load();
+      questionChanged(null);
+      expect(state.mirrorQuestion).toBeNull();
+    });
+
+    it("lets an event that arrives while asking win, even one that says nothing", async () => {
+      catchLastSync();
+      const questionChanged = catchQuestion();
+      vi.mocked(commands.mirrorQuestion).mockImplementation(async () => {
+        questionChanged(null);
+        return "python/cpython";
+      });
+      const state = new StatusState();
+      await state.load();
+      expect(state.mirrorQuestion).toBeNull();
     });
   });
 

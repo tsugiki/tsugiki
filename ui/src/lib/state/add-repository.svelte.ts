@@ -5,7 +5,9 @@ import {
   type RepositoryCheck_Serialize,
   type RepositorySize,
 } from "$lib/data/bindings";
+import { ask } from "./answer";
 import type { Home } from "./home.svelte";
+import { pickClone, type MirrorSource, type PickedClone } from "./mirror-source";
 
 export type RepositoryCheck = RepositoryCheck_Serialize;
 export type { Conventions, RepositorySize };
@@ -17,20 +19,16 @@ export type AddStep =
   | { step: "adding"; check: RepositoryCheck }
   | { step: "failed"; problem: string };
 
-type Answer<T> = { status: "ok"; data: T } | { status: "error"; error: { message: string } };
+/** The mirror's source of objects: all from GitHub, or borrowed from a clone the user picks. While the
+ * picker is open nothing is picked yet. */
+export type MirrorChoice = { kind: "download" } | { kind: "borrow"; picked: PickedClone | undefined };
 
-/** The core's refusals come back as answers. Only a broken call rejects, and it reads the same. */
-async function ask<T>(asking: Promise<Answer<T>>): Promise<Answer<T>> {
-  try {
-    return await asking;
-  } catch (e) {
-    return { status: "error", error: { message: String(e) } };
-  }
-}
+const DOWNLOAD: MirrorChoice = { kind: "download" };
 
 export class AddRepositoryState {
   #input = $state("");
   step = $state<AddStep>({ step: "typing" });
+  mirror = $state<MirrorChoice>(DOWNLOAD);
 
   get input() {
     return this.#input;
@@ -40,6 +38,27 @@ export class AddRepositoryState {
   set input(text: string) {
     this.#input = text;
     this.step = { step: "typing" };
+    this.mirror = DOWNLOAD;
+  }
+
+  /** The mirror's source of objects, or nothing while the user is still picking a clone that lends
+   * them. */
+  get source(): MirrorSource | undefined {
+    if (this.mirror.kind === "download") return { kind: "download" };
+    const { picked } = this.mirror;
+    return picked?.kind === "lends" ? { kind: "borrow", folder: picked.folder } : undefined;
+  }
+
+  chooseDownload() {
+    this.mirror = DOWNLOAD;
+  }
+
+  /** Opens the folder picker for a clone of `repository`. Cancelling keeps what was chosen before. */
+  async chooseClone(repository: string) {
+    const before = this.mirror;
+    this.mirror = { kind: "borrow", picked: undefined };
+    const picked = await pickClone(repository);
+    this.mirror = picked.kind === "cancelled" ? before : { kind: "borrow", picked };
   }
 
   async check() {
@@ -55,10 +74,15 @@ export class AddRepositoryState {
         : { step: "failed", problem: answer.error.message };
   }
 
-  /** Adds what was checked, by the name GitHub gave, and returns what the window opens on now. */
+  /** Adds what was checked, by the name GitHub gave, and returns what the window opens on now. It adds
+   * nothing while the user is still picking a clone, or the one they picked can't lend. */
   async add(check: RepositoryCheck): Promise<Home | undefined> {
+    const source = this.source;
+    if (source === undefined) return undefined;
     this.step = { step: "adding", check };
-    const answer = await ask(commands.addRepository(check.repository.name, check.access));
+    const answer = await ask(
+      commands.addRepository({ name: check.repository.name, access: check.access, source }),
+    );
     if (answer.status === "ok") {
       return answer.data;
     }

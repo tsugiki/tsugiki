@@ -10,6 +10,8 @@ const core = vi.hoisted(() => ({
   workbench: vi.fn(),
   mirrorProblem: vi.fn(),
   checkMirrorsAgain: vi.fn(),
+  mirrorQuestion: vi.fn(),
+  chooseMirrorSource: vi.fn(),
 }));
 
 vi.mock("$lib/data/bindings", () => ({
@@ -28,6 +30,7 @@ vi.mock("$lib/data/bindings", () => ({
     syncActivityChanged: { listen: async () => () => {} },
     cloningChanged: { listen: async () => () => {} },
     mirrorProblemChanged: { listen: async () => () => {} },
+    mirrorQuestionChanged: { listen: async () => () => {} },
     changed: { listen: async () => () => {} },
   },
 }));
@@ -38,6 +41,8 @@ const gcmon = { name: "some-maintainer/gcmon", conventions: "github", filters: [
 beforeEach(() => {
   core.home.mockResolvedValue(onboarding);
   core.mirrorProblem.mockResolvedValue(null);
+  core.mirrorQuestion.mockResolvedValue(null);
+  core.chooseMirrorSource.mockResolvedValue({ status: "ok", data: null });
   core.workbench.mockResolvedValue({
     status: "ok",
     data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [] },
@@ -64,6 +69,13 @@ it("says why no mirror can be made, and a click asks the core to look again", as
   await fireEvent.click(await screen.findByRole("button", { name: "Check again" }));
   expect(screen.getByRole("status").textContent).toContain("can't find git");
   expect(core.checkMirrorsAgain).toHaveBeenCalledOnce();
+});
+
+it("asks where a mirror gets its objects, and hands the core the answer", async () => {
+  core.mirrorQuestion.mockResolvedValue("python/cpython");
+  render(Page);
+  await fireEvent.click(await screen.findByRole("button", { name: "Download" }));
+  expect(core.chooseMirrorSource).toHaveBeenCalledWith("python/cpython", { kind: "download" });
 });
 
 it("opens on onboarding with no Repositories", async () => {

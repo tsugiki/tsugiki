@@ -2,6 +2,7 @@
 //! coverage gate leaves it out and the smoke tests cover it (ADR 0009).
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use tauri::webview::NewWindowResponse;
@@ -53,6 +54,7 @@ pub fn run() {
             launch::open_command_line(Build::CURRENT, &argv);
             bring_forward(app);
         }))
+        .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             open_window(app.handle(), webview_data)?;
             turn_off_browser_keys(app.handle());
@@ -76,6 +78,10 @@ pub fn run() {
             run_gh,
         },
         remotes: Remotes::github(),
+        pick_folder: {
+            let app = app.handle().clone();
+            Arc::new(move || pick_folder(&app))
+        },
     };
     let core = connect_core(app.handle(), folders, outside, REFRESH);
     app.run(move |_app, event| {
@@ -180,4 +186,15 @@ fn log_panics() {
         log::logger().flush();
         print(panic);
     }));
+}
+
+/// The folder the user picks in the system's picker, over the window, or nothing if they cancel. It waits
+/// for the user, so it runs off the main thread.
+fn pick_folder(app: &AppHandle) -> Option<PathBuf> {
+    use tauri_plugin_dialog::DialogExt;
+    let mut picker = app.dialog().file();
+    if let Some(window) = app.get_webview_window("main") {
+        picker = picker.set_parent(&window);
+    }
+    picker.blocking_pick_folder()?.into_path().ok()
 }

@@ -112,6 +112,7 @@ pub(super) fn counted(open: u32) -> Result<Reply, Unreachable> {
         open_prs: 0,
         updated_in_window: 0,
         closed_in_window: 0,
+        disk_kb: 0,
     })
 }
 
@@ -121,6 +122,7 @@ pub(super) fn counted_as(counts: RepositoryCounts) -> Result<Reply, Unreachable>
         "repository": {
             "nameWithOwner": "python/cpython",
             "viewerPermission": "READ",
+            "diskUsage": counts.disk_kb,
             "issues": { "totalCount": counts.open_issues },
             "pullRequests": { "totalCount": counts.open_prs },
         },

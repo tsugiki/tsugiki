@@ -1096,6 +1096,7 @@ fn small_repository() -> (RepositoryCounts, Vec<Result<Reply, Unreachable>>) {
         open_prs: 2,
         updated_in_window: 3,
         closed_in_window: 1,
+        disk_kb: 0,
     };
     let mut replies = searches_finding(&[]);
     replies.push(counted_as(counts));

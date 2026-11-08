@@ -22,6 +22,23 @@ export const commands = {
 	mirrorProblem: () => __TAURI_INVOKE<MirrorProblem | null>("mirror_problem"),
 	/**  Looks at git and the disk again, and tries the clones that waited for them, and returns at once. */
 	checkMirrorsAgain: () => __TAURI_INVOKE<void>("check_mirrors_again"),
+	/**  The first Repository whose mirror waits to hear where it gets its objects, for a window as it loads. */
+	mirrorQuestion: () => __TAURI_INVOKE<RepositoryName | null>("mirror_question"),
+	/**
+	 *  Says why the clone in `folder` can't lend its objects to `repository`'s mirror, or nothing if it can.
+	 *  This waits on git commands that only read the clone.
+	 */
+	checkClone: (repository: string, folder: string) => typedError<CloneRefusal | null, Error_Serialize>(__TAURI_INVOKE("check_clone", { repository, folder })),
+	/**
+	 *  Starts `repository`'s clone ahead of the others, with its objects from `source`, and saves the answer in
+	 *  `machine.toml`. This waits on a small file.
+	 */
+	chooseMirrorSource: (repository: string, source: MirrorSource) => typedError<null, Error_Serialize>(__TAURI_INVOKE("choose_mirror_source", { repository, source })),
+	/**
+	 *  Opens the system's folder picker, and gives the folder the user picked, or nothing if they cancelled. It
+	 *  waits on the user, so it waits on a thread meant for blocking.
+	 */
+	pickFolder: () => typedError<string | null, Error_Serialize>(__TAURI_INVOKE("pick_folder")),
 	/**  Refreshes the open Repository now, and returns at once. */
 	refresh: () => __TAURI_INVOKE<void>("refresh"),
 	/**
@@ -60,7 +77,7 @@ export const commands = {
 	 *  Adds a Repository the user has seen the check for, starts its first sync and its mirror's clone, and says
 	 *  what the window opens on now. This waits on a small file and never on GitHub or git.
 	 */
-	addRepository: (name: string, access: RepositoryAccess) => typedError<Home_Serialize, Error_Serialize>(__TAURI_INVOKE("add_repository", { name, access })),
+	addRepository: (repository: NewRepository) => typedError<Home_Serialize, Error_Serialize>(__TAURI_INVOKE("add_repository", { repository })),
 	/**
 	 *  Saves how wide the user dragged the Sidebar and the Workbench list in `machine.toml`, and says the widths
 	 *  the window keeps now. This waits on a small file.
@@ -121,6 +138,7 @@ export const events = {
 	headsFetched: makeEvent<HeadsFetched, HeadsFetched>("heads-fetched"),
 	lastSyncChanged: makeEvent<LastSyncChanged_Serialize, LastSyncChanged_Deserialize>("last-sync-changed"),
 	mirrorProblemChanged: makeEvent<MirrorProblemChanged_Serialize, MirrorProblemChanged_Deserialize>("mirror-problem-changed"),
+	mirrorQuestionChanged: makeEvent<MirrorQuestionChanged_Serialize, MirrorQuestionChanged_Deserialize>("mirror-question-changed"),
 	statusChanged: makeEvent<StatusChanged_Serialize, StatusChanged_Deserialize>("status-changed"),
 	syncActivityChanged: makeEvent<SyncActivityChanged_Serialize, SyncActivityChanged_Deserialize>("sync-activity-changed"),
 };
@@ -203,6 +221,15 @@ export type CloneProgress =
 { stage: "receiving"; percent: number } | 
 /**  Indexing what came down, which takes about as long again. */
 { stage: "resolving"; percent: number };
+
+/**  The reason a folder can't lend its objects to a Repository's mirror. */
+export type CloneRefusal = { kind: "not_a_folder" } | 
+/**  git can't read a clone there, for the reason it gives in `git_says`. */
+{ kind: "not_a_clone"; git_says: string } | 
+/**  None of its remotes is the Repository on GitHub. */
+{ kind: "no_remote" } | 
+/**  A shallow or grafted clone, which `git clone --reference` refuses. */
+{ kind: "shallow" };
 
 /**  The clone under way, for the status bar. */
 export type Cloning = {
@@ -878,6 +905,31 @@ export type MirrorProblemChanged_Deserialize = MirrorProblem | null;
 export type MirrorProblemChanged_Serialize = MirrorProblem | null;
 
 /**
+ *  Sent when the first Repository whose mirror waits to hear where it gets its objects changes, so the
+ *  status bar can ask.
+ */
+export type MirrorQuestionChanged = MirrorQuestionChanged_Serialize | MirrorQuestionChanged_Deserialize;
+
+/**
+ *  Sent when the first Repository whose mirror waits to hear where it gets its objects changes, so the
+ *  status bar can ask.
+ */
+export type MirrorQuestionChanged_Deserialize = RepositoryName | null;
+
+/**
+ *  Sent when the first Repository whose mirror waits to hear where it gets its objects changes, so the
+ *  status bar can ask.
+ */
+export type MirrorQuestionChanged_Serialize = RepositoryName | null;
+
+/**  The user's answer of where a Repository's mirror gets its objects. */
+export type MirrorSource = 
+/**  All from GitHub. */
+{ kind: "download" } | 
+/**  Objects from the clone in `folder` where it has them, and the rest from GitHub. */
+{ kind: "borrow"; folder: string };
+
+/**
  *  One budget the window missed, or the start-up time, which it logs each launch. Each time is in
  *  milliseconds.
  */
@@ -929,6 +981,17 @@ export type Miss_Serialize =
 { kind: "long_frame"; ms: number | null; scripts: Script_Serialize[] } | 
 /**  The window logged `limit` misses of one kind within a minute, and logs no more of them until it ends. */
 { kind: "capped"; of: MissKind; limit: number };
+
+/**
+ *  The user's choice in Add repository: the Repository, by the name GitHub gave it, what they may do in it,
+ *  and where its mirror gets its objects. The name stays text until the core parses it, so a name that isn't
+ *  one gets the same refusal as everywhere else.
+ */
+export type NewRepository = {
+	name: string,
+	access: RepositoryAccess,
+	source: MirrorSource,
+};
 
 /**  A paragraph, a list or a block of code. */
 export type NewsBlock = { kind: "paragraph"; pieces: NewsPiece[] } | 
@@ -1209,6 +1272,11 @@ export type RepositoryCheck_Deserialize = {
 	first_sync_items: number,
 	first_sync_seconds: number,
 	first_sync_points: number,
+	/**  The size of its mirror on the disk, whether it borrows objects or not: `--dissociate` copies them. */
+	mirror_mb: number,
+	/**  About how long its mirror's clone takes from GitHub alone, and borrowing from a clone the user has. */
+	download_seconds: number,
+	borrow_seconds: number,
 };
 
 /**  What the add dialog shows before the user decides. */
@@ -1223,6 +1291,11 @@ export type RepositoryCheck_Serialize = {
 	first_sync_items: number,
 	first_sync_seconds: number,
 	first_sync_points: number,
+	/**  The size of its mirror on the disk, whether it borrows objects or not: `--dissociate` copies them. */
+	mirror_mb: number,
+	/**  About how long its mirror's clone takes from GitHub alone, and borrowing from a clone the user has. */
+	download_seconds: number,
+	borrow_seconds: number,
 };
 
 /**

@@ -1,8 +1,9 @@
 <script lang="ts">
   import { AddRepositoryState } from "$lib/state/add-repository.svelte";
   import type { Home } from "$lib/state/home.svelte";
+  import { pickedWords } from "./clone-words";
   import { takeFocus } from "./focus";
-  import { describeCheck } from "./repository-check";
+  import { describeCheck, describeMirror } from "./repository-check";
 
   let { onclose, onadded }: { onclose: () => void; onadded: (home: Home) => void } = $props();
 
@@ -10,6 +11,8 @@
   const step = $derived(adding.step);
   const check = $derived(step.step === "checked" || step.step === "adding" ? step.check : undefined);
   const waiting = $derived(step.step === "checking" || step.step === "adding");
+  // A clone that can't lend, or one still being picked, leaves nothing to add with until the user decides.
+  const undecided = $derived(check !== undefined && adding.source === undefined);
 
   // The one button does the next thing, so Enter takes the user from typing to checked to added.
   async function submit(e: SubmitEvent) {
@@ -68,10 +71,44 @@
         {#each describeCheck(check) as line (line)}
           <p>{line}</p>
         {/each}
+        {@const repository = check.repository.name}
+        {@const mirror = describeMirror(check)}
+        {@const picked = adding.mirror.kind === "borrow" ? adding.mirror.picked : undefined}
+        <fieldset disabled={step.step === "adding"}>
+          <legend>{mirror.disk}</legend>
+          <label>
+            <input
+              type="radio"
+              name="mirror"
+              checked={adding.mirror.kind === "download"}
+              onchange={() => {
+                adding.chooseDownload();
+              }}
+            />
+            <span>{mirror.download}</span>
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="mirror"
+              checked={adding.mirror.kind === "borrow"}
+              onchange={() => void adding.chooseClone(repository)}
+            />
+            <span>{mirror.borrow}</span>
+          </label>
+          {#if picked}
+            <p class="picked">
+              <span>{pickedWords(picked, repository)}</span>
+              <button type="button" onclick={() => void adding.chooseClone(repository)}
+                >Choose another clone…</button
+              >
+            </p>
+          {/if}
+        </fieldset>
       {/if}
       <div class="buttons">
         <button type="button" onclick={onclose}>Cancel</button>
-        <button type="submit" disabled={waiting}>{check ? "Add" : "Check"}</button>
+        <button type="submit" disabled={waiting || undecided}>{check ? "Add" : "Check"}</button>
       </div>
     </form>
   </div>
@@ -116,6 +153,23 @@
   p {
     margin: 8px 0 0;
     overflow-wrap: anywhere;
+  }
+
+  fieldset {
+    margin: 12px 0 0;
+    padding: 4px 8px 8px;
+    border: 1px solid #ddd;
+  }
+
+  fieldset label {
+    margin-top: 4px;
+  }
+
+  .picked {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    margin-left: 24px;
   }
 
   .buttons {

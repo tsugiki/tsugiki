@@ -16,7 +16,7 @@ use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::highlight::Span;
 use tsugiki_core::repository::{Home, RepositoryAccess, RepositoryCheck};
 use tsugiki_core::session::SessionRequests;
-use tsugiki_core::settings::SettingsOwner;
+use tsugiki_core::settings::{PaneWidths, SettingsOwner};
 use tsugiki_core::store::StoreReader;
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
@@ -56,6 +56,17 @@ pub(crate) fn add_repository(
     work: State<'_, crate::RepositoryWork>,
 ) -> Result<Home, Error> {
     crate::add_named_repository(name, access, &owner, &work)
+}
+
+/// Saves how wide the user dragged the Sidebar and the Workbench list in `machine.toml`, and says the widths
+/// the window keeps now. This waits on a small file.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn save_pane_widths(
+    widths: PaneWidths,
+    owner: State<'_, SettingsOwner>,
+) -> Result<PaneWidths, Error> {
+    Ok(owner.save_panes(widths)?.panes)
 }
 
 /// The rows of a view of a Repository's Workbench, with what its Sidebar shows. This waits

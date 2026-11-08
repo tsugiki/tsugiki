@@ -7,11 +7,11 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::de::{DeserializeOwned, IgnoredAny};
+use serde::{Deserialize, Deserializer, Serialize};
 use specta::Type;
 use toml_edit::{ArrayOfTables, DocumentMut, Item, Key, RawString, Table, TableLike, Value};
 
@@ -23,6 +23,7 @@ use crate::repository::{Home, RepositoryAccess, RepositoryName, RepositorySettin
 const REPOSITORIES: &str = "repositories";
 const FILTERS: &str = "filters";
 const LAST_REPOSITORY: &str = "last_repository";
+const PANES: &str = "panes";
 const STOPPED_SAVING: &str =
     "Tsugiki stopped saving its settings. Restart Tsugiki to save them again.";
 
@@ -70,6 +71,35 @@ pub struct LoadedSettings {
 pub struct SettingsView {
     pub loaded: LoadedSettings,
     pub home: Home,
+    pub panes: PaneWidths,
+}
+
+/// How wide the user dragged the Sidebar and the Workbench list, in CSS pixels (#187). Each stays on this
+/// machine, like the window's place, and a pane left out takes its default. So does a width that isn't a
+/// whole number of pixels: a pane's width is too small a thing to lose the rest of `machine.toml` over.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(default)]
+pub struct PaneWidths {
+    #[serde(deserialize_with = "width_or_default")]
+    #[specta(type = Option<u32>)]
+    pub sidebar: Option<u32>,
+    #[serde(deserialize_with = "width_or_default")]
+    #[specta(type = Option<u32>)]
+    pub list: Option<u32>,
+}
+
+/// A pane's width, or nothing for one Tsugiki can't read.
+fn width_or_default<'de, D: Deserializer<'de>>(given: D) -> Result<Option<u32>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Width {
+        Pixels(u32),
+        Other(IgnoredAny),
+    }
+    Ok(match Width::deserialize(given)? {
+        Width::Pixels(pixels) => Some(pixels),
+        Width::Other(_) => None,
+    })
 }
 
 /// What `machine.toml` holds, as far as this file needs it.
@@ -82,6 +112,7 @@ struct Machine {
     /// The Repository the window last showed. It stays on this machine and is read with the settings, so a
     /// normal launch knows what to reopen before the window exists.
     last_repository: Option<RepositoryName>,
+    panes: PaneWidths,
 }
 
 /// The two files and what was last read from them.
@@ -112,6 +143,10 @@ impl SettingsFiles {
         SettingsView {
             loaded: self.loaded.clone(),
             home: self.home(),
+            panes: self
+                .machine
+                .as_ref()
+                .map_or_else(PaneWidths::default, |machine| machine.panes),
         }
     }
 
@@ -197,6 +232,27 @@ impl SettingsFiles {
         Ok(self.home())
     }
 
+    /// Saves the panes' widths in `machine.toml`, keeping everything else in it, and reads the files again.
+    /// It refuses while `machine.toml` can't be used.
+    pub fn save_panes(&mut self, panes: PaneWidths) -> Result<(), Error> {
+        let path = self.folders.machine_file();
+        let mut edit = TomlEdit::<Machine>::open(&path)?;
+        edit_section(edit.document.as_table_mut(), PANES, |section| {
+            for (key, width) in [("sidebar", panes.sidebar), ("list", panes.list)] {
+                // A reset takes the comment on its key too: kept, the key would hold the old width.
+                match width {
+                    Some(width) => {
+                        merge_value(section, key, &toml_edit::value(i64::from(width)), None)
+                    }
+                    None => drop(section.remove(key)),
+                }
+            }
+        });
+        edit.save()?;
+        self.reload();
+        Ok(())
+    }
+
     fn machine_to_edit(&self) -> Result<Machine, Error> {
         read_machine(&self.folders.machine_file()).map_err(|problem| refused(&problem))
     }
@@ -208,14 +264,21 @@ impl SettingsFiles {
 /// Ending the process while it writes can leave a file cut short, as it could on any thread.
 #[derive(Clone)]
 pub struct SettingsOwner {
-    additions: Sender<Addition>,
+    requests: Sender<Request>,
     view: LatestReader<SettingsView>,
 }
 
-struct Addition {
-    name: RepositoryName,
-    access: RepositoryAccess,
-    reply: Sender<Result<SettingsView, Error>>,
+/// What the owner's thread saves, and where it answers with what the settings say after.
+enum Request {
+    Add {
+        name: RepositoryName,
+        access: RepositoryAccess,
+        reply: Sender<Result<SettingsView, Error>>,
+    },
+    Panes {
+        widths: PaneWidths,
+        reply: Sender<Result<SettingsView, Error>>,
+    },
 }
 
 impl SettingsOwner {
@@ -223,20 +286,30 @@ impl SettingsOwner {
     pub fn start(mut files: Result<SettingsFiles, Error>) -> Self {
         let first = files.as_ref().map(SettingsFiles::view).unwrap_or_default();
         let (mut writer, view) = latest::channel(first);
-        let (additions, incoming) = mpsc::channel::<Addition>();
+        let (requests, incoming) = mpsc::channel::<Request>();
         let _ = thread::spawn(move || {
-            for Addition {
-                name,
-                access,
-                reply,
-            } in incoming
-            {
-                let saved = match &mut files {
-                    Ok(files) => files.add_repository(&name, access).map(|_| files.view()),
-                    Err(problem) => Err(problem.clone()),
+            for request in incoming {
+                let (saved, reply) = match (&mut files, request) {
+                    (
+                        Ok(files),
+                        Request::Add {
+                            name,
+                            access,
+                            reply,
+                        },
+                    ) => {
+                        let saved = files.add_repository(&name, access).map(|_| files.view());
+                        (saved, reply)
+                    }
+                    (Ok(files), Request::Panes { widths, reply }) => {
+                        (files.save_panes(widths).map(|()| files.view()), reply)
+                    }
+                    (Err(problem), Request::Add { reply, .. } | Request::Panes { reply, .. }) => {
+                        (Err(problem.clone()), reply)
+                    }
                 };
-                // Before the answer, so whoever asked finds the addition in `view`. Additions come through
-                // here one at a time, so an older one can't replace a newer one.
+                // Before the answer, so whoever asked finds the change in `view`. Changes come through here
+                // one at a time, so an older one can't replace a newer one.
                 if let Ok(saved) = &saved {
                     writer.set(saved);
                 }
@@ -247,10 +320,10 @@ impl SettingsOwner {
                 let _ = reply.send(saved);
             }
         });
-        Self { additions, view }
+        Self { requests, view }
     }
 
-    /// What the settings said after the last addition saved. This never waits on a file.
+    /// What the settings said after the last change saved. This never waits on a file.
     pub fn view(&self) -> SettingsView {
         self.view.get()
     }
@@ -262,12 +335,29 @@ impl SettingsOwner {
         access: RepositoryAccess,
     ) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
-        self.additions
-            .send(Addition {
+        self.ask(
+            Request::Add {
                 name,
                 access,
                 reply,
-            })
+            },
+            &answer,
+        )
+    }
+
+    /// Saves the panes' widths in `machine.toml`, and answers with what the settings say now.
+    pub fn save_panes(&self, widths: PaneWidths) -> Result<SettingsView, Error> {
+        let (reply, answer) = mpsc::channel();
+        self.ask(Request::Panes { widths, reply }, &answer)
+    }
+
+    fn ask(
+        &self,
+        request: Request,
+        answer: &Receiver<Result<SettingsView, Error>>,
+    ) -> Result<SettingsView, Error> {
+        self.requests
+            .send(request)
             .ok()
             .and_then(|()| answer.recv().ok())
             .unwrap_or_else(|| Err(Error::new(ErrorKind::Internal, STOPPED_SAVING)))
@@ -387,13 +477,23 @@ fn merge_section(
     wanted: &dyn TableLike,
     defaults: &dyn TableLike,
 ) {
+    edit_section(file, key, |section| merge(section, wanted, defaults));
+}
+
+/// Hands `change` the section `key` of `file`, made first if `file` has none, and drops the section again
+/// if `change` leaves it empty.
+fn edit_section(file: &mut dyn TableLike, key: &str, change: impl FnOnce(&mut dyn TableLike)) {
     if file.get(key).is_none() {
         drop(file.insert(key, Item::Table(Table::new())));
     }
     if let Some(section) = file.get_mut(key).and_then(Item::as_table_like_mut) {
-        merge(section, wanted, defaults);
+        change(section);
     }
-    // A section with nothing left in it goes, unless the user wrote a comment on it.
+    drop_if_empty(file, key);
+}
+
+/// A section with nothing left in it goes, unless the user wrote a comment on it.
+fn drop_if_empty(file: &mut dyn TableLike, key: &str) {
     let empty = file
         .get(key)
         .and_then(Item::as_table_like)

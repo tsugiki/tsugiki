@@ -2,6 +2,14 @@
   import { openOnGitHub, type GitHubItem } from "$lib/state/browser";
   import { hud } from "$lib/state/hud.svelte";
   import { IssueViewState } from "$lib/state/issue-view.svelte";
+  import {
+    DETAIL_LEAST,
+    LIST_LEAST,
+    PanesState,
+    SIDEBAR_LEAST,
+    SIDEBAR_MOST,
+    SIDEBAR_WIDTH,
+  } from "$lib/state/panes.svelte";
   import { DiffViewChoice } from "$lib/state/pr-files.svelte";
   import { PrViewState } from "$lib/state/pr-view.svelte";
   import { Visits } from "$lib/state/visits";
@@ -15,6 +23,7 @@
   } from "$lib/state/workbench.svelte";
   import IssueDetail from "./IssueDetail.svelte";
   import { currentOs, isTextBox, keyName } from "./keys";
+  import PaneEdge from "./PaneEdge.svelte";
   import PrDetail from "./PrDetail.svelte";
   import Sidebar from "./Sidebar.svelte";
   import { details, headline, issueDetails, preview, standaloneDetails } from "./workbench-row";
@@ -22,6 +31,10 @@
   const MINUTE = 60_000;
   /** The view of every PR's diff, unified or side by side, which `Ctrl+Alt+U` switches. */
   const diffView = new DiffViewChoice();
+  /** How wide the user dragged the Sidebar and the list, which stays the same from one Repository to the
+   * next. */
+  const panes = new PanesState();
+  void panes.load();
   const EMPTY = {
     whole: "Nothing here yet. The first sync lists what waits on you as it finds it.",
     filter:
@@ -252,7 +265,11 @@
 
 <svelte:window {onkeydown} />
 
-<div class="home">
+<div
+  class="home"
+  style:--sidebar-width={`${String(panes.sidebar ?? SIDEBAR_WIDTH)}px`}
+  style:--list-width={panes.list === null ? undefined : `${String(panes.list)}px`}
+>
   <Sidebar
     count={workbench.count}
     reviewRequests={workbench.reviewRequests}
@@ -260,7 +277,18 @@
     selected={workbench.selected}
     onselect={(view) => void workbench.select(view)}
   />
-  <section class="list" bind:this={list}>
+  <PaneEdge
+    label="Sidebar width"
+    value={panes.sidebar ?? SIDEBAR_WIDTH}
+    least={SIDEBAR_LEAST}
+    most={SIDEBAR_MOST}
+    nextLeast={LIST_LEAST + (detail ? DETAIL_LEAST : 0)}
+    onresize={(width) => (panes.sidebar = width)}
+    ondone={() => void panes.save()}
+    onreset={() => void panes.reset("sidebar")}
+  />
+  <!-- The list keeps the width the user gave it beside the Detail pane, and fills the window without one. -->
+  <section class={["list", { sized: panes.list !== null && detail !== undefined }]} bind:this={list}>
     <h1>{name}</h1>
     <button onclick={onadd}>Add repository</button>
     {#if workbench.error}
@@ -269,6 +297,9 @@
     {/if}
     {#if browserProblem}
       <p role="alert">{browserProblem}</p>
+    {/if}
+    {#if panes.problem}
+      <p role="alert">{panes.problem}</p>
     {/if}
     {#if workbench.items?.length === 0 && workbench.quiet.length === 0}
       <p>{EMPTY[workbench.selected.kind]}</p>
@@ -288,6 +319,17 @@
       {/if}
     {/if}
   </section>
+  {#if detail}
+    <PaneEdge
+      label="Workbench width"
+      value={panes.list ?? undefined}
+      least={LIST_LEAST}
+      nextLeast={DETAIL_LEAST}
+      onresize={(width) => (panes.list = width)}
+      ondone={() => void panes.save()}
+      onreset={() => void panes.reset("list")}
+    />
+  {/if}
   {#if detail instanceof IssueViewState}
     {@const issue = detail}
     {#key issue}
@@ -318,12 +360,16 @@
 <style>
   .home {
     display: flex;
-    gap: 16px;
   }
 
+  /* The Detail pane grows from nothing, so the list keeps its width and is the first to shrink. */
   .list {
     flex: 1;
     min-width: 280px;
+  }
+
+  .list.sized {
+    flex: 0 1 var(--list-width);
   }
 
   h1 {

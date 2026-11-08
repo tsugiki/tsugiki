@@ -7,7 +7,7 @@ lives in `tsugiki.db` ([ADR 0010](0010-one-sqlite-database-and-per-repository-mi
   **Conventions** ([ADR 0011](0011-pr-links-from-github-signals-by-repository-conventions.md)) and Filters.
   Only values that differ from the defaults are written.
 - **`machine.toml`** stays on its machine: the token source, the editor command, paths, the clone each
-  Repository borrows objects from, the Repository to reopen, window places and zoom. It may set
+  Repository borrows objects from, the Repository to reopen, window places, pane widths and zoom. It may set
   `settings_path`, which puts `settings.toml` anywhere, such as a dotfiles repository or a synced folder. That
   is how the user syncs it.
 - **`tsugiki.db`** holds the user's state with the cache: Pinned issues, Muted authors, Muted and Archived

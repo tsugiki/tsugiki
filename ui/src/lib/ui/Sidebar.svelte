@@ -51,7 +51,7 @@
     flex: none;
     flex-direction: column;
     gap: 2px;
-    width: 200px;
+    width: var(--sidebar-width, 200px);
   }
 
   button {

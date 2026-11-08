@@ -1,8 +1,9 @@
 import type { Page } from "@playwright/test";
 import type { commands } from "../src/lib/data/bindings.ts";
 
-/** What each command answers. A command left out rejects, as it would if the core failed, except for the two
- * every page asks: a Repository isn't open yet, and a refresh has nothing to say. */
+/** What each command answers. A command left out rejects, as it would if the core failed, except for those
+ * every page asks: a Repository isn't open yet, a refresh has nothing to say, and the panes take their
+ * default widths. */
 export type CoreAnswers = { [C in keyof typeof commands]?: Awaited<ReturnType<(typeof commands)[C]>> };
 
 type Listener = (message: { event: string; id: number; payload: unknown }) => void;
@@ -11,7 +12,16 @@ type MockWindow = { mockEventListeners: Record<string, Listener[]>; mockAnswers:
 /** Stands in for Tauri's IPC: the page's generated bindings get these answers instead of the core's. */
 export const mockCore = (page: Page, answers: CoreAnswers) =>
   page.addInitScript((given: Record<string, unknown>) => {
-    const answers = { lastSync: null, syncActivity: null, cloning: null, refresh: null, ...given };
+    const panes = { sidebar: null, list: null };
+    const answers = {
+      lastSync: null,
+      syncActivity: null,
+      cloning: null,
+      refresh: null,
+      paneWidths: panes,
+      savePaneWidths: { status: "ok", data: panes },
+      ...given,
+    };
     const listeners: MockWindow["mockEventListeners"] = {};
     const callbacks = new Map<number, Listener>();
     Object.assign(window, {

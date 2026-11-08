@@ -26,7 +26,7 @@ use tsugiki_core::mirror::{Cloning, MirrorRequests};
 use tsugiki_core::misses::Miss;
 use tsugiki_core::repository::{Home, RepositoryAccess, RepositoryCheck, RepositoryName};
 use tsugiki_core::session::SessionRequests;
-use tsugiki_core::settings::{LoadedSettings, SettingsOwner};
+use tsugiki_core::settings::{LoadedSettings, PaneWidths, SettingsOwner};
 use tsugiki_core::status::{Change, LastSync, Status, SyncActivity};
 use tsugiki_core::store::StoreReader;
 use tsugiki_core::web::{GitHubItem, WebAddress};
@@ -147,6 +147,13 @@ fn settings(owner: State<'_, SettingsOwner>) -> LoadedSettings {
 #[specta::specta]
 fn home(owner: State<'_, SettingsOwner>) -> Home {
     owner.view().home
+}
+
+/// How wide the user dragged the Sidebar and the Workbench list on this machine (#187).
+#[tauri::command]
+#[specta::specta]
+fn pane_widths(owner: State<'_, SettingsOwner>) -> PaneWidths {
+    owner.view().panes
 }
 
 /// The moment Tsugiki's code started running, for the performance HUD's start-up time (ADR 0017). The
@@ -481,11 +488,13 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             fetch_pull_request,
             settings,
             home,
+            pane_widths,
             time_running,
             record_measurement,
             record_miss,
             slow_commands::check_repository,
             slow_commands::add_repository,
+            slow_commands::save_pane_widths,
             slow_commands::workbench,
             slow_commands::issue,
             slow_commands::pull_request,

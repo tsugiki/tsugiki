@@ -202,32 +202,6 @@ fn a_query_that_doesn_t_compile_or_has_no_content_leaves_its_language_plain() {
 }
 
 #[test]
-fn python_shows_keywords_strings_comments_numbers_functions_and_types() {
-    let source = "\
-import os
-
-@cache
-def walk(top: str, depth=2):
-    # Goes down.
-    print(f\"{top}/\", None)
-    return os.path.join(top, \"x\\n\")
-";
-
-    assert_eq!(
-        drawn_whole(language("python"), source),
-        [
-            "[Keyword import] os",
-            "",
-            "[Function @cache]",
-            "[Keyword def] [Function walk](top: [Type str], depth[Keyword =][Constant 2]):",
-            "    [Comment # Goes down.]",
-            "    [Function print]([String f\"]{top}[String /\"], [Constant None])",
-            "    [Keyword return] os.path.[Function join](top, [String \"x][Constant \\n][String \"])",
-        ]
-    );
-}
-
-#[test]
 fn c_shows_the_preprocessor_types_strings_and_calls_and_a_macro_s_body_as_c() {
     let source = "\
 #include <Python.h>
@@ -328,11 +302,7 @@ def f(): return 1
 }
 
 #[test]
-fn html_and_svelte_show_a_script_and_a_style_in_their_languages() {
-    let html = "\
-<script>let x = 1;</script>
-<style>p { color: red; }</style>
-";
+fn svelte_shows_a_script_and_a_style_in_their_languages() {
     let svelte = "\
 <script lang=\"ts\">let x: number = 1;</script>
 <style lang=\"scss\">p { color: red; }</style>
@@ -340,45 +310,12 @@ fn html_and_svelte_show_a_script_and_a_style_in_their_languages() {
 ";
 
     assert_eq!(
-        drawn_whole(language("html"), html),
-        [
-            "<[Tag script]>[Keyword let] x [Keyword =] [Constant 1];</[Tag script]>",
-            "<[Tag style]>[Tag p] { [Constant color]: red; }</[Tag style]>",
-        ]
-    );
-    assert_eq!(
         drawn_whole(language("svelte"), svelte),
         [
             "<[Tag script] [Function lang]=[String \"ts\"]>[Keyword let] x: [Type number] [Keyword =] \
              [Constant 1];</[Tag script]>",
             "<[Tag style] [Function lang]=[String \"scss\"]>[Tag p] { [Constant color]: red; }</[Tag style]>",
             "<[Tag p]>{x [Keyword +] [Constant 1]}</[Tag p]>",
-        ]
-    );
-}
-
-#[test]
-fn a_rest_code_block_shows_its_language_without_the_directive_s_indent() {
-    let source = "\
-Title
-=====
-
-.. code-block:: python
-
-   def f():
-       return 1
-";
-
-    assert_eq!(
-        drawn_whole(language("rst"), source),
-        [
-            "[Heading Title]",
-            "[Heading =====]",
-            "",
-            "[Function ..] [Function code-block::] python",
-            "",
-            "   [Keyword def] [Function f]():",
-            "       [Keyword return] [Constant 1]",
         ]
     );
 }

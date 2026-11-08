@@ -14,10 +14,14 @@ expression: drawn
     [Function @staticmethod]
     [Keyword def] [Function walk](top: [Type str], [Keyword *], depth: [Type int] [Keyword =] [Constant 2]) [Keyword ->] [Type Iterator][[Type str]]:
         [Comment # Goes down at most `depth` levels.]
-        [Keyword for] name [Keyword in] os.[Function listdir](top):
+        [Keyword for] name [Keyword in] [Function sorted](os.[Function listdir](top)):
             path [Keyword =] os.path.[Function join](top, name)
             [Keyword if] os.path.[Function isdir](path) [Keyword and] depth [Keyword >] [Constant 0]:
                 [Keyword yield] [Keyword from] [Type Walker].[Function walk](path, depth[Keyword =]depth [Keyword -] [Constant 1])
             [Keyword else]:
                 [Keyword yield] [String f"]{path!r}[Constant \n][String "]
         [Keyword raise] [Type ValueError]([Constant None])
+
+
+[Keyword def] [Function walk_all](top, depth[Keyword =][Constant LIMIT]):
+    [Keyword return] [String "][Constant \n][String "].[Function join]([Type Walker].[Function walk](top, depth[Keyword =]depth))

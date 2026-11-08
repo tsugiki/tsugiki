@@ -6,9 +6,7 @@ expression: drawn
 <[Tag html] [Function lang]=[String "en"]>
   <[Tag head]>
     [Comment <!-- The page the docs open. -->]
-    <[Tag style]>
-      [Tag body] { [Constant margin]: [Constant 0]; }
-    </[Tag style]>
+    <[Tag style]>[Tag body] { [Constant margin]: [Constant 0]; }</[Tag style]>
   </[Tag head]>
   <[Tag body]>
     <[Tag p] [Function class]=[String "note"]>Tsugiki &amp; you</[Tag p]>

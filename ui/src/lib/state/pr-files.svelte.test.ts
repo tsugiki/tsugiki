@@ -45,6 +45,7 @@ vi.mock("$lib/data/bindings", () => ({
   },
   events: {
     headsFetched: core.listener("headsFetched"),
+    headsFetchFailed: core.listener("headsFetchFailed"),
     changed: core.listener("changed"),
     cloningChanged: core.listener("cloningChanged"),
   },
@@ -340,7 +341,7 @@ it("keeps a clone it heard of while asking over the older answer", async () => {
 it("stops listening, even when it stops before it started", async () => {
   const files = await loaded();
   files.stop();
-  expect(core.stopped.toSorted()).toEqual(["changed", "cloningChanged", "headsFetched"]);
+  expect(core.stopped.toSorted()).toEqual(["changed", "cloningChanged", "headsFetchFailed", "headsFetched"]);
 
   core.stopped = [];
   const early = new PrFilesState("python/cpython", 11);
@@ -348,7 +349,7 @@ it("stops listening, even when it stops before it started", async () => {
   early.stop();
   await loading;
 
-  expect(core.stopped).toHaveLength(3);
+  expect(core.stopped).toHaveLength(4);
   expect(core.cloning).toHaveBeenCalledTimes(1);
 });
 
@@ -1042,6 +1043,31 @@ it("shows the diff before a moved head with its threads held back, then the newe
   core.pullRequestFiles.mockResolvedValue(ok(gapped("newer")));
   await files.ask();
   expect([files.heldBack, files.layout.diff]).toEqual([undefined, "newer..abc"]);
+});
+
+it("says why the fetch of a moved head failed until it asks again, which fetches it once more", async () => {
+  const before = { ...gapped("older"), threads: { kind: "held_back" as const, newer: "newer", count: 3 } };
+  const files = await loaded(before);
+  const unreachable =
+    "fatal: unable to access 'https://github.com/python/cpython.git/': Could not resolve host";
+
+  core.heard.headsFetchFailed?.({ payload: { repository: "python/peps", items: [11], why: "other" } });
+  core.heard.headsFetchFailed?.({ payload: { repository: "python/cpython", items: [12], why: "other" } });
+  expect(files.fetchFailed).toBeUndefined();
+  core.heard.headsFetchFailed?.({
+    payload: { repository: "python/cpython", items: [11, 12], why: unreachable },
+  });
+  expect([files.fetchFailed, files.heldBack]).toEqual([unreachable, { newer: "newer", count: 3 }]);
+  const asking = files.ask();
+  // The core hands the head to the mirror again as it answers.
+  expect(files.fetchFailed).toBeUndefined();
+  await asking;
+  expect(core.pullRequestFiles).toHaveBeenCalledTimes(2);
+  core.pullRequestFiles.mockResolvedValue(ok(gapped("newer")));
+  core.heard.headsFetched?.({ payload: { repository: "python/cpython", items: [11] } });
+  await vi.waitFor(() => {
+    expect([files.heldBack, files.layout.diff]).toEqual([undefined, "newer..abc"]);
+  });
 });
 
 it("reveals a thread asked for while the older diff holds its threads back, once the newer diff comes", async () => {

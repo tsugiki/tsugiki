@@ -13,6 +13,7 @@ vi.mock("$lib/data/bindings", () => ({
   events: {
     changed: { listen: vi.fn(async () => () => {}) },
     headsFetched: { listen: vi.fn(async () => () => {}) },
+    headsFetchFailed: { listen: vi.fn(async () => () => {}) },
     cloningChanged: { listen: vi.fn(async () => () => {}) },
   },
 }));

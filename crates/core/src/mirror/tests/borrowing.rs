@@ -49,12 +49,10 @@ fn snapshot(folder: &Path) -> BTreeMap<PathBuf, (u64, SystemTime)> {
 fn start_asking(place: &Place) -> (Mirrors, Receiver<FakeStart>, Receiver<Option<String>>) {
     let (asking, asked) = channel();
     let announce = Announce {
-        cloning: Box::new(|_| {}),
-        fetched: Box::new(|_, _| {}),
-        problem: Box::new(|_| {}),
         question: Box::new(move |repository| {
             drop(asking.send(repository.map(ToString::to_string)));
         }),
+        ..Announce::cloning_only(Box::new(|_| {}))
     };
     let (_versions, answers) = channel();
     let (mirrors, starts) = place.start_faked_from(place.clone_source(), announce, answers);

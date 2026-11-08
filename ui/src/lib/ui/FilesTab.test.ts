@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
+import { tick } from "svelte";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
   CHUNK,
@@ -33,6 +34,7 @@ vi.mock("$lib/data/bindings", () => ({
   },
   events: {
     headsFetched: { listen: core.listen },
+    headsFetchFailed: { listen: core.listen },
     changed: { listen: core.listen },
     cloningChanged: { listen: core.listen },
   },
@@ -489,6 +491,45 @@ it("says one thread waits for the newer diff, and counts none when there are non
     "Showing abc · fetching the newer def5678. 1 thread waits for it.",
     "Showing abc · fetching the newer def5678. ",
   ]);
+});
+
+it("says why the newer head failed to come over the diff before, and fetches it again on Try again", async () => {
+  const files = await shown(ready(rows.length, { waiting: 2 }));
+  files.fetchFailed = "fatal: unable to access 'https://github.com/python/cpython.git/'";
+  await tick();
+
+  expect(screen.getByRole("alert").textContent).toBe(
+    "Showing abc · Tsugiki couldn't fetch the newer def5678 " +
+      "(fatal: unable to access 'https://github.com/python/cpython.git/'). 2 threads wait for it. Try again",
+  );
+  await vi.waitFor(() => {
+    expect(lines()).toContain("2+new line");
+  });
+  await fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  expect(core.pullRequestFiles).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole("status").textContent).toBe(
+    "Showing abc · fetching the newer def5678. 2 threads wait for it.",
+  );
+});
+
+it("counts no threads beside a failed fetch of the newer head when none wait", async () => {
+  const files = await shown(ready(rows.length, { waiting: 0 }));
+  files.fetchFailed = "";
+  await tick();
+
+  expect(screen.getByRole("alert").textContent).toBe(
+    "Showing abc · Tsugiki couldn't fetch the newer def5678.  Try again",
+  );
+});
+
+it("says why the PR's commits failed to come, and fetches them again on Try again", async () => {
+  const files = await shown({ state: "fetching" });
+  files.fetchFailed = "";
+  await tick();
+
+  expect(screen.getByRole("alert").textContent).toBe("Tsugiki couldn't fetch the PR's commits. Try again");
+  await fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  expect(screen.getByText("Fetching the PR's commits…")).toBeTruthy();
 });
 
 it("shows the whole file from the row after its last hunk", async () => {

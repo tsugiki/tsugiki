@@ -1,6 +1,5 @@
 //! Each mirror's upkeep, and a broken mirror cloned again (#174).
 
-use std::io::Write as _;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -86,12 +85,6 @@ fn wait_until(mut done: impl FnMut() -> bool) {
     while !done() && Instant::now() < deadline {
         thread::sleep(Duration::from_millis(20));
     }
-}
-
-/// Ends `start` as git does when it fails, with these lines of error output.
-fn fail_saying(mut start: FakeStart, lines: &str) {
-    start.output.write_all(lines.as_bytes()).unwrap();
-    start.fail();
 }
 
 #[test]

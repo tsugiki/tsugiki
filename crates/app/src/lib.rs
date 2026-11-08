@@ -556,6 +556,19 @@ struct MirrorQuestionChanged(Option<RepositoryName>);
 #[derive(Clone, Serialize, Type, Event)]
 struct HeadsFetched(Change);
 
+/// The PR heads a fetch into a Repository's mirror failed to bring, and git's words for why.
+#[derive(Clone, Serialize, Type)]
+struct FailedHeads {
+    #[serde(flatten)]
+    heads: Change,
+    why: String,
+}
+
+/// Sent when a fetch of PR heads fails and they wait for news, so a Files tab waiting for one says why and
+/// offers to try again (#233).
+#[derive(Clone, Serialize, Type, Event)]
+struct HeadsFetchFailed(FailedHeads);
+
 /// Every command and event the webview can use. The TypeScript bindings are generated from it (ADR 0008).
 pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
     Builder::<R>::new()
@@ -604,7 +617,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             CloningChanged,
             MirrorProblemChanged,
             MirrorQuestionChanged,
-            HeadsFetched
+            HeadsFetched,
+            HeadsFetchFailed
         ])
 }
 

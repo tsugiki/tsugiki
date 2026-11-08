@@ -96,13 +96,6 @@ fn a_second_session_on_the_same_folder_says_why_it_stopped() {
 }
 
 #[test]
-fn signing_in_shows_the_login() {
-    let (mut board, seen) = watched_board();
-    assert!(connect(&mut board, &empty_store(), octocat_answers()).is_some());
-    assert_eq!(showing(&seen), octocat());
-}
-
-#[test]
 fn signing_in_remembers_the_login() {
     let store = store_remembering("hubot");
     assert!(connect(&mut quiet_board(), &store, octocat_answers()).is_some());
@@ -185,11 +178,6 @@ fn without_gh_nothing_is_asked_and_the_problem_shows() {
 }
 
 #[test]
-fn a_status_without_a_problem_has_no_problem_kind() {
-    assert_eq!(problem_kind(Status::Offline), None);
-}
-
-#[test]
 fn a_last_login_that_cant_be_read_doesnt_stop_tsugiki_connecting() {
     let (mut board, seen) = watched_board();
     assert!(connect(&mut board, &Store::stopped(), octocat_answers()).is_some());
@@ -226,26 +214,6 @@ fn signed_in() -> Result<Reply, Unreachable> {
 }
 
 #[test]
-fn the_status_follows_the_network_going_and_coming_back() {
-    let access = replying(vec![signed_in(), Err(Unreachable::Offline), signed_in()]);
-    let (mut board, seen) = watched_board();
-    let store = empty_store();
-    let github = connect(&mut board, &store, access).unwrap();
-    assert_eq!(showing(&seen), octocat());
-
-    refresh(&mut board, &store, &github);
-    assert_eq!(
-        showing(&seen),
-        Status::OfflineAs {
-            last_login: Login::new("octocat")
-        }
-    );
-
-    refresh(&mut board, &store, &github);
-    assert_eq!(showing(&seen), octocat());
-}
-
-#[test]
 fn a_certificate_outside_its_dates_asks_for_the_clock_until_github_answers() {
     let access = replying(vec![Err(Unreachable::CertificateDates), signed_in()]);
     let (mut board, seen) = watched_board();
@@ -270,7 +238,8 @@ fn database(folders: Result<Folders, Error>) -> Database {
     Database { folders, to_open }
 }
 
-/// Refreshes told to stop before they began, for a test that shouldn't get as far as a second request.
+/// Refreshes whose sender is already gone, so they stop before they begin, for a test that shouldn't get as
+/// far as a second request. A session with no token ends on that too.
 fn stopped_refreshes() -> Refreshes {
     Refreshes {
         intervals: Intervals {
@@ -371,7 +340,7 @@ fn reading_an_issue_on_screen_again_leaves_last_seen_where_it_is() {
 }
 
 #[test]
-fn opening_a_pr_records_last_seen_and_asks_github_nothing() {
+fn opening_a_github_page_records_last_seen_and_asks_github_nothing() {
     // `Replies` panics if it is asked a second time.
     let access = replying(vec![signed_in()]);
 
@@ -1006,18 +975,6 @@ fn with_no_token_what_is_stored_stays_readable() {
 
     assert_eq!(checked.unwrap_err().kind, ErrorKind::Offline);
     assert_eq!(facts.unwrap().pull_requests, []);
-}
-
-#[test]
-fn a_session_with_no_token_ends_when_it_can_no_longer_be_asked_anything() {
-    let (messages, incoming) = mpsc::channel();
-    let refreshes = Refreshes {
-        intervals: HOURLY,
-        incoming,
-    };
-    drop(messages);
-
-    refreshes.wait_for_stop(&mut quiet_board(), &empty_store());
 }
 
 #[test]

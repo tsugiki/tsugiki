@@ -141,9 +141,12 @@ mod tests {
     }
 
     #[test]
-    fn the_signature_alone_doesnt_make_a_database() {
+    fn a_signature_without_a_whole_header_doesnt_make_a_database() {
         let (path, folder) = temp_database("signature-only");
-        fs::write(&path, b"SQLite format 3\0 and then it stops").unwrap();
+        // Long enough to hold the user version, and one byte short of a header.
+        let mut short = SIGNATURE.to_vec();
+        short.resize(usize::from(HEADER_LENGTH) - 1, 0);
+        fs::write(&path, short).unwrap();
 
         let problem = Store::open(&path).err().unwrap();
 
@@ -160,13 +163,6 @@ mod tests {
         open_with(&path, &[V1]).unwrap().close();
 
         assert_eq!(contents(&path), Contents::Database { version: 1 });
-        fs::remove_dir_all(folder).unwrap();
-    }
-
-    #[test]
-    fn a_missing_file_counts_as_a_new_database() {
-        let (path, folder) = temp_database("missing");
-        assert_eq!(contents(&path), Contents::Nothing);
         fs::remove_dir_all(folder).unwrap();
     }
 

@@ -78,6 +78,18 @@ mod tests {
     }
 
     #[test]
+    fn a_folder_a_failed_run_left_at_a_test_path_is_gone() {
+        let leftover = testing::temp_path("leftover-folder");
+        std::fs::create_dir_all(leftover.join("below")).unwrap();
+        std::fs::write(
+            leftover.join("below/file"),
+            "what a test that panicked left",
+        )
+        .unwrap();
+        assert!(!testing::temp_path("leftover-folder").exists());
+    }
+
+    #[test]
     fn a_backtrace_keeps_the_file_and_line() {
         // `[profile.dev]` keeps only line tables, and this is what they're for. Only this test's own frame
         // counts, because libtest's frames have a `lib.rs` of their own, and they keep their lines.

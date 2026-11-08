@@ -7,7 +7,9 @@
 // Review threads sit under their lines, and a resolved one starts folded to a line (#184). A thread on a
 // whole file or an Outdated one sits at the top of its file, a thread on a line no hunk shows opens the lines
 // around it, and those on files no longer in the diff come after the last file (#185). A fetch of the PR's
-// head that fails says why, until the tab asks again, which hands the head to the mirror once more (#233).
+// head that fails, or that the mirror stops fetching because GitHub has no ref for it at that commit, says
+// why until the tab asks again, which hands the head to the mirror once more (#233, #213). Hearing that
+// doesn't make the tab ask, so a ref GitHub leaves where it is starts no loop of fetches.
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import {
   commands,
@@ -29,6 +31,7 @@ import {
   type NewsPiece,
   type PrFiles_Serialize,
   type Span,
+  type Unfetched,
 } from "$lib/data/bindings";
 import {
   DiffLayout,
@@ -61,6 +64,7 @@ export type {
   NewsPiece,
   Shown,
   Span,
+  Unfetched,
 };
 
 /** Rows asked for at a time: about 25 screens, as the diff prototype found best. */
@@ -106,8 +110,9 @@ export class PrFilesState {
   error = $state<string>();
   /** The mirror's clone under way, which a Repository's first diff waits for. */
   cloning = $state<Cloning | null>(null);
-  /** git's words for why the mirror's fetch of the PR's head failed, kept until the tab asks again. */
-  fetchFailed = $state<string>();
+  /** The reason the mirror stopped fetching the PR's head without bringing it, kept until the tab asks
+   * again. */
+  unfetched = $state<Unfetched>();
   /** The rows that show, and where: a Generated file the user hasn't opened shows only its header, and a
    * gap the user expanded shows the lines it left out. */
   layout = $derived.by(() => {
@@ -227,7 +232,7 @@ export class PrFilesState {
           if (mine(payload.repository, payload.items)) void this.ask();
         }),
         events.headsFetchFailed.listen(({ payload }) => {
-          if (mine(payload.repository, payload.items)) this.fetchFailed = payload.why;
+          if (mine(payload.repository, payload.items)) this.unfetched = payload.why;
         }),
         // A sync that moves the PR's head changes its diff.
         events.changed.listen(({ payload }) => {
@@ -266,7 +271,7 @@ export class PrFilesState {
   async ask() {
     // The core hands the head to the mirror again, so a failure heard before is of a fetch that's over. One
     // the mirror sent before this can land after it, and shows until the next answer or failure.
-    this.fetchFailed = undefined;
+    this.unfetched = undefined;
     this.#lastQuestion += 1;
     const question = this.#lastQuestion;
     const answer = await this.#safely(() => commands.pullRequestFiles(this.#repository, this.#number));

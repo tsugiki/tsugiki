@@ -445,9 +445,9 @@ export type Error_Serialize = {
 	message: string,
 } & ErrorKind_Serialize;
 
-/**  The PR heads a fetch into a Repository's mirror failed to bring, and git's words for why. */
+/**  The PR heads that aren't in a Repository's mirror once the worker stopped fetching them, and why. */
 export type FailedHeads = {
-	why: string,
+	why: Unfetched,
 } & Change;
 
 /**  How much a file changed. */
@@ -557,8 +557,8 @@ export type HeadLine = {
 };
 
 /**
- *  Sent when a fetch of PR heads fails and they wait for news, so a Files tab waiting for one says why and
- *  offers to try again (#233).
+ *  Sent when the mirror's worker stopped fetching PR heads it didn't bring, so a Files tab waiting for one
+ *  says why and offers to try again (#233, #213).
  */
 export type HeadsFetchFailed = FailedHeads;
 
@@ -1694,6 +1694,21 @@ export type TreeEntry_Serialize = {
 {
 	kind: "backport",
 } & BackportRow_Serialize;
+
+/**
+ *  The reason PR heads aren't in a mirror once the worker stopped fetching them, for a Files tab waiting for
+ *  one (#233, #213).
+ */
+export type Unfetched = 
+/**  git failed, with its last line in `words`: the fetch, or reading back where its refs landed. */
+{ kind: "git"; words: string } | 
+/**
+ *  GitHub's ref for the PR points at another commit. GitHub hadn't moved it yet (#201), or the head
+ *  the last sync stored is no longer on the PR's branch.
+ */
+{ kind: "behind" } | 
+/**  GitHub has no ref for the PR. */
+{ kind: "not_on_github" };
 
 /**  A web page's address. */
 export type WebAddress = string;

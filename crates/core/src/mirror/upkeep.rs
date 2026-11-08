@@ -343,11 +343,10 @@ impl Worker {
         }
         if succeeded {
             // A PR that comes back in reach has its head fetched again.
-            let known = self
-                .heads
-                .iter_mut()
-                .find(|heads| heads.repository.is_same(repository));
-            if let Some(known) = known {
+            // Only a Repository with heads handed over has refs to prune.
+            let known =
+                (self.heads.iter_mut()).filter(|heads| heads.repository.is_same(repository));
+            for known in known {
                 for number in &plan.pruning {
                     drop(known.settled.remove(number));
                     drop(known.behind.remove(number));

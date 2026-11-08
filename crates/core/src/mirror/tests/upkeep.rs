@@ -653,7 +653,8 @@ fn a_head_due_another_fetch_waits_for_the_new_clone_too() {
         .recv_timeout(PLENTY)
         .unwrap()
         .succeed_with(vec![older(1)]);
-    requests.fetch_heads(cpython.clone(), vec![head(1), head(2)]);
+    // A hand-over without PR 1 leaves it due another fetch.
+    requests.fetch_heads(cpython.clone(), vec![head(2)]);
     let fetch = starts.recv_timeout(PLENTY).unwrap();
     fail_saying(fetch, "fatal: bad object HEAD\n");
     let clone = starts.recv_timeout(PLENTY).unwrap();

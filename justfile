@@ -20,6 +20,10 @@ default:
 install:
     npm ci
 
+# After GitHub merges a PR, switch to main, pull, and delete the PR's local branch, by default the current one
+merged branch="":
+    node scripts/merged.ts {{quote(branch)}}
+
 # Run the app with hot reload
 dev:
     npm run dev

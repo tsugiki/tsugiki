@@ -17,8 +17,9 @@ See `docs/agents/domain.md`.
 ## Commands
 
 Use [`just`](https://github.com/casey/just), and the `justfile` says how to install it. `just check` runs
-every check CI runs, one at a time on a few cores, because someone is working on this computer while it runs.
-`just` lists the rest.
+every test CI runs, once each, one at a time on a few cores, because someone is working on this computer while
+it runs. The Rust tests and the bindings check run inside `just coverage`, and `just cargo-test` and
+`just stale-bindings` run them without coverage. `just` lists the rest.
 
 Run `just check` once per PR, at the end, after `/code-review` and its fixes. Before that, run single test
 files, `just typecheck`, `just doc-width` and the tests of each crate the change touches. If a gate fails, fix

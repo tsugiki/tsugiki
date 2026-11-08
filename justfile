@@ -36,8 +36,10 @@ portable-zip: build
 fmt:
     npm run fmt
 
-# Run every check CI runs, one at a time. `smoke` isn't one: it opens a window and presses real keys.
-check: lint doc-width typecheck test rust-coverage deny machete release-check e2e
+# Run every test CI runs, once each, one at a time. The coverage gate runs the Rust tests and checks the
+# bindings, so `cargo-test` and `stale-bindings` stay out. It runs no doctests, and the workspace has none.
+# `smoke` isn't one: it opens a window and presses real keys.
+check: lint doc-width typecheck vitest rust-coverage deny machete release-check e2e
 
 # Check the formatting and lint with ESLint
 lint:
@@ -78,7 +80,9 @@ bindings:
 highlight-samples $INSTA_UPDATE="always" $INSTA_FORCE_PASS="1":
     npm run highlight-samples
 
-# Run the Rust tests with their coverage gate
+alias coverage := rust-coverage
+
+# Run the Rust tests with their coverage gate, and check the generated bindings
 rust-coverage:
     npm run rust-coverage
 

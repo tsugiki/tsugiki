@@ -87,6 +87,66 @@ Cargo keeps them: `deps` held 14 copies of the `bindings` test and 11 of `tsg`. 
 and the next test build costs about 75 seconds. `cargo-sweep` could remove only old builds, but we haven't
 tried it here.
 
+## Time of `just check`
+
+On 2026-11-08, after a change to `tsugiki-core`, with `CARGO_BUILD_JOBS=4` and `RUST_TEST_THREADS=2`,
+`just check` took 232 seconds:
+
+| Gate | Seconds |
+|---|---|
+| `rust-coverage` | 74.4 |
+| `cargo-test` | 52.8 |
+| `vitest` | 30.6 |
+| `e2e` | 28.8 |
+| `lint` | 23.3 |
+| `typecheck` | 11.3 |
+| `stale-bindings` | 4.8 |
+| `deny`, `doc-width`, `machete`, `release-check` | 6.4 together |
+
+`cargo-test` spent 8.5 seconds compiling and most of the rest running `tsugiki-core`'s 1,041 tests, and
+`rust-coverage` ran the same tests again. The workspace has no doctests, so `cargo llvm-cov` runs every test
+`cargo test` does, `bindings_are_up_to_date` among them. Since #252, `check` leaves out `cargo-test` and
+`stale-bindings`. CI still runs both as jobs of their own, so a failed job's title names the gate.
+
+`cargo llvm-cov` also cleans the workspace's build before each run, and recompiling took about 30 seconds.
+Locally, `scripts/rust-coverage.ts` runs `cargo llvm-cov clean --profraw-only`, which deletes the last
+run's line counts, and then passes `--no-clean`, which keeps the instrumented build. CI still cleans. With
+cargo-llvm-cov 0.9.1 and a probe function in `crates/core/src/lib.rs`:
+
+| Run | Source | Recipe | Gate | Seconds | Compiling |
+|---|---|---|---|---|---|
+| 1 | probe and a test that calls it | clean | pass | 69 | 26.0 |
+| 2 | test removed, probe kept | `--no-clean` alone | fail on the probe's lines | 51 | 7.9 |
+| 3 | same | profraw clean, `--no-clean` | fail on the probe's lines | 42 | 0.4 |
+| 4 | probe removed | profraw clean, `--no-clean` | pass | 53 | 7.3 |
+| 5 | same | clean | pass | 72 | 27.3 |
+
+Runs 4 and 5 found the same 81 files, 17,692 lines and 4,753 functions, and the same of them unrun. Only hit
+counts differed, in 9 files. cargo-llvm-cov 0.8.7 gave the same results.
+
+A build under another toolchain, `Cargo.lock` or set of flags gets other file names, and stays in
+`target/llvm-cov-target` beside the new one. cargo-llvm-cov reads every build there, so code removed since
+then shows up as never run. A run with `CI=true` left such a build, for a reason we didn't find, and the next
+run failed on lines the file no longer had. With its line counts gone, an old build can add false gaps but
+can't hide a real one. So when `deps` holds two builds of one test target, the script cleans before the run,
+and after a failed `--no-clean` run it runs again clean.
+
+The workspace has no doctests. `cargo llvm-cov` runs them only on nightly, so a crate that gains one needs
+`cargo-test` back in `check`.
+
+After the change, with no Rust changed since the last coverage run, `just check` took 147 seconds:
+
+| Gate | Seconds |
+|---|---|
+| `rust-coverage` | 44.4 |
+| `vitest` | 35.3 |
+| `e2e` | 27.7 |
+| `typecheck` | 24.3 |
+| `lint` | 11.0 |
+| `deny`, `doc-width`, `machete`, `release-check` | 4.1 together |
+
+A change to `tsugiki-core` adds about 8 seconds of compiling to `rust-coverage`, as in runs 2 and 4.
+
 ## What to try next, in order
 
 1. **Tests inside the crates.** `AGENTS.md` has the rule. `core` doesn't depend on Tauri, so its tests don't

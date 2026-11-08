@@ -1,9 +1,11 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { openLink } from "$lib/state/browser";
+import { pickClone } from "$lib/state/mirror-source";
 import StatusBar from "./StatusBar.svelte";
 
 vi.mock("$lib/state/browser", () => ({ openLink: vi.fn() }));
+vi.mock("$lib/state/mirror-source", () => ({ pickClone: vi.fn() }));
 
 const bar = () => screen.getByRole("status");
 
@@ -179,6 +181,69 @@ describe("StatusBar", () => {
         "Offline: read-only · machine.toml, line 1: bad · settings.toml, line 3: bad",
       );
     });
+  });
+});
+
+describe("StatusBar's question of where a mirror gets its objects", () => {
+  const online = { state: "online", login: "octocat" } as const;
+  const lender = String.raw`D:\cpython`;
+
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("asks in the live region, and offers both answers outside it, even when the settings hide it", () => {
+    render(StatusBar, { status: online, mirrorQuestion: "python/cpython", visible: false });
+    expect(bar().textContent?.trim()).toMatch(/^The Files tab needs a mirror of python\/cpython/);
+    expect(screen.getByRole("button", { name: "Borrow from a clone…" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Download" })).toBeTruthy();
+  });
+
+  it("answers Download at a click", async () => {
+    const onchoosesource = vi.fn();
+    render(StatusBar, { status: online, mirrorQuestion: "python/cpython", onchoosesource });
+    await fireEvent.click(screen.getByRole("button", { name: "Download" }));
+    expect(onchoosesource).toHaveBeenCalledWith("python/cpython", { kind: "download" });
+  });
+
+  it("answers with a clone the user picks that lends", async () => {
+    vi.mocked(pickClone).mockResolvedValue({ kind: "lends", folder: lender });
+    const onchoosesource = vi.fn();
+    render(StatusBar, { status: online, mirrorQuestion: "python/cpython", onchoosesource });
+    await fireEvent.click(screen.getByRole("button", { name: "Borrow from a clone…" }));
+    await vi.waitFor(() => {
+      expect(onchoosesource).toHaveBeenCalledWith("python/cpython", { kind: "borrow", folder: lender });
+    });
+    expect(pickClone).toHaveBeenCalledWith("python/cpython");
+  });
+
+  it("says why a clone can't lend, until the question moves on", async () => {
+    vi.mocked(pickClone).mockResolvedValue({
+      kind: "refused",
+      folder: lender,
+      refusal: { kind: "no_remote" },
+    });
+    const onchoosesource = vi.fn();
+    const { rerender } = render(StatusBar, {
+      status: online,
+      mirrorQuestion: "python/cpython",
+      onchoosesource,
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Borrow from a clone…" }));
+    await vi.waitFor(() => {
+      expect(bar().textContent).toContain(String.raw`D:\cpython has no remote for python/cpython.`);
+    });
+    await rerender({ mirrorQuestion: "octo-org/hello" });
+    expect(bar().textContent).not.toContain("has no remote");
+    expect(onchoosesource).not.toHaveBeenCalled();
+  });
+
+  it("says nothing more when the user cancels the picker", async () => {
+    vi.mocked(pickClone).mockResolvedValue({ kind: "cancelled" });
+    render(StatusBar, { status: online, mirrorQuestion: "python/cpython" });
+    await fireEvent.click(screen.getByRole("button", { name: "Borrow from a clone…" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Download" }));
+    expect(bar().textContent).toMatch(/download it, in minutes\?$/);
   });
 });
 

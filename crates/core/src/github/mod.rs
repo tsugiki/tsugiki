@@ -201,7 +201,7 @@ const VIEWER: Request<'static> = Request {
 };
 
 const CHECK_REPOSITORY: &str = "query CheckRepository($owner: String!, $name: String!, $updated: String!, \
-                                $closed: String!) { repository(owner: $owner, name: $name) { nameWithOwner viewerPermission \
+                                $closed: String!) { repository(owner: $owner, name: $name) { nameWithOwner viewerPermission diskUsage \
                                 issues(states: OPEN) { totalCount } pullRequests(states: OPEN) { totalCount } } \
                                 updated: search(query: $updated, type: ISSUE_ADVANCED, first: 0) { issueCount } \
                                 closed: search(query: $closed, type: ISSUE_ADVANCED, first: 0) { issueCount } }";
@@ -312,6 +312,8 @@ impl GitHub {
         struct Repository {
             name_with_owner: RepositoryName,
             viewer_permission: Option<Permission>,
+            /// In kilobytes, or nothing for a Repository with no commits.
+            disk_usage: Option<u64>,
             issues: Total,
             pull_requests: Total,
         }
@@ -375,6 +377,7 @@ impl GitHub {
                 open_prs: data.repository.pull_requests.total_count,
                 updated_in_window: data.updated.issue_count,
                 closed_in_window: data.closed.issue_count,
+                disk_kb: data.repository.disk_usage.unwrap_or(0),
             },
             access,
         ))

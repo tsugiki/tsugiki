@@ -25,6 +25,8 @@ serde_json.workspace = true # `generate_context!` writes code that names it, to 
 specta.workspace = true
 tauri.workspace = true
 tauri-plugin-single-instance.workspace = true
+# The folder picker, which only the core opens: the window gets no permission for it (ADR 0005).
+tauri-plugin-dialog.workspace = true
 tauri-specta.workspace = true
 tsugiki-core.workspace = true
 

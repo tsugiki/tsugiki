@@ -1,5 +1,6 @@
 // The add dialog's words for what the core worked out about a Repository.
 import type { Conventions, RepositoryCheck, RepositorySize } from "$lib/state/add-repository.svelte";
+import { sizeWords } from "./synced";
 
 const CONVENTIONS: Record<Conventions, string> = { cpython: "CPython", github: "GitHub" };
 
@@ -27,4 +28,13 @@ export function describeCheck(check: RepositoryCheck): string[] {
     `First sync, estimated: ${items}, ${aboutHowLong(check.first_sync_seconds)}, about ${points} of your 5,000 an hour.`,
     `Conventions: ${CONVENTIONS[check.repository.conventions]}.`,
   ];
+}
+
+/** The dialog's words for the mirror's two ways to get its objects, and the disk it takes either way. */
+export function describeMirror(check: RepositoryCheck) {
+  return {
+    disk: `Mirror, for the diff: ${sizeWords(check.mirror_mb)} on the disk either way.`,
+    download: `Download it from GitHub, ${aboutHowLong(check.download_seconds)}`,
+    borrow: `Borrow objects from a clone you have, ${aboutHowLong(check.borrow_seconds)}`,
+  };
 }

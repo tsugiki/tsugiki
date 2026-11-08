@@ -308,9 +308,10 @@ The order in which v1 is built is in [build-order.md](build-order.md).
 - A Repository's **Mirror** is first cloned as the Repository is added, alongside its first sync, one
   Repository at a time with the open one first. Add repository offers to borrow objects from a clone the user
   has, picked as a folder, and gives the time and disk each choice takes. Tsugiki checks that the folder is a
-  clone with a remote for that repository, and doesn't search the disk for one. The path is kept in the
-  Repository's settings, so a new clone after a broken one borrows again. A clone that fails is deleted and
-  tried again, and one cut off by quitting starts again at the next launch.
+  clone with a remote for that repository, and doesn't search the disk for one. The path is kept in
+  `machine.toml`, so a new clone after a broken one borrows again. A Repository added before Tsugiki asked
+  waits for its clone until the user answers in the status bar, once on each machine. A clone that fails is
+  deleted and tried again, and one cut off by quitting starts again at the next launch.
 - While a Repository's mirror is still being cloned, the diff, the definitions and Open in editor say how far
   it has got. The Conversation tab works meanwhile.
 - Without git 2.30 or newer, or without room on the disk for the clone, the diff says what is missing, with a

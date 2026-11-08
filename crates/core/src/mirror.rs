@@ -24,6 +24,10 @@ use crate::repository::RepositoryName;
 use crate::status::Status;
 use crate::token::{RunGh, Token};
 
+mod source;
+pub use source::{CloneRefusal, MirrorSource, MirrorSources};
+use source::{GITHUB_PREFIXES, lender};
+
 /// How far a clone has got, from what `git clone --progress` writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "stage", rename_all = "snake_case")]
@@ -108,11 +112,16 @@ pub type AnnounceFetched = Box<dyn FnMut(&RepositoryName, &[u32]) + Send>;
 /// Says why no mirror can be made, and `None` once one can.
 pub type AnnounceProblem = Box<dyn FnMut(Option<&MirrorProblem>) + Send>;
 
+/// Names the first Repository whose clone waits for the user to say where it gets its objects, and `None`
+/// once none waits.
+pub type AnnounceQuestion = Box<dyn FnMut(Option<&RepositoryName>) + Send>;
+
 /// What the worker tells the app as it goes.
 pub struct Announce {
     pub cloning: AnnounceCloning,
     pub fetched: AnnounceFetched,
     pub problem: AnnounceProblem,
+    pub question: AnnounceQuestion,
 }
 
 impl Announce {
@@ -122,6 +131,7 @@ impl Announce {
             cloning,
             fetched: Box::new(|_, _| {}),
             problem: Box::new(|_| {}),
+            question: Box::new(|_| {}),
         }
     }
 }
@@ -130,6 +140,8 @@ impl Announce {
 /// also says how big a clone is, and how much room its disk has.
 pub struct Remotes {
     base: String,
+    /// The start of a remote of a Repository at `base`, in a clone the user has.
+    prefixes: Vec<String>,
     /// How long a head whose fetch brought another commit waits before it is fetched once more.
     patience: Duration,
     /// The wait before a clone that failed goes back in line.
@@ -144,6 +156,7 @@ impl Remotes {
         Self {
             size_of: sizes_on_github(https, live::run_gh),
             free_space: Box::new(|folder| fs4::available_space(folder)),
+            prefixes: GITHUB_PREFIXES.map(str::to_owned).to_vec(),
             ..Self::under("https://github.com/".to_owned())
         }
     }
@@ -151,6 +164,7 @@ impl Remotes {
     /// Remotes at `base` followed by `owner/name.git`, which take no room.
     pub fn under(base: String) -> Self {
         Self {
+            prefixes: vec![base.clone()],
             base,
             patience: BEHIND_PATIENCE,
             retry: CLONE_RETRY,
@@ -180,7 +194,8 @@ impl Remotes {
         }
     }
 
-    fn url(&self, repository: &RepositoryName) -> String {
+    /// The URL a clone of `repository` comes from.
+    pub fn url(&self, repository: &RepositoryName) -> String {
         format!(
             "{}{}/{}.git",
             self.base,
@@ -191,7 +206,8 @@ impl Remotes {
 }
 
 enum Message {
-    Clone(RepositoryName, Turn),
+    /// A clone to make, with the user's answer of where it gets its objects, if they have given one.
+    Clone(RepositoryName, Turn, Option<MirrorSource>),
     /// The heads of the PRs the user's work reaches in a Repository, as the store has them now.
     Heads(RepositoryName, Vec<PrHead>),
     /// The head of a PR the user opened, which the mirror lacks.
@@ -220,24 +236,38 @@ enum Turn {
 pub struct Mirrors {
     messages: Sender<Message>,
     finished: Receiver<()>,
+    prefixes: Vec<String>,
 }
 
-/// A way to ask for mirrors. It returns at once.
+/// A way to ask for mirrors. It returns at once, but for `check_clone`.
 #[derive(Clone)]
 pub struct MirrorRequests {
     messages: Sender<Message>,
+    /// The remotes' prefixes, so a clone the user picks is checked as the worker will check it.
+    prefixes: Vec<String>,
 }
 
 impl MirrorRequests {
-    /// Clones `repository`'s mirror after the ones already waiting, unless it has one.
-    pub fn clone_mirror(&self, repository: RepositoryName) {
-        self.send(Message::Clone(repository, Turn::Last));
+    /// Clones `repository`'s mirror after the ones already waiting, unless it has one. With no `source`, the
+    /// clone waits until the user says where it gets its objects, or a request with one comes.
+    pub fn clone_mirror(&self, repository: RepositoryName, source: Option<MirrorSource>) {
+        self.send(Message::Clone(repository, Turn::Last, source));
     }
 
     /// Clones `repository`'s mirror before the ones waiting, as the open Repository's goes first. A clone
     /// under way finishes first.
-    pub fn clone_mirror_next(&self, repository: RepositoryName) {
-        self.send(Message::Clone(repository, Turn::Next));
+    pub fn clone_mirror_next(&self, repository: RepositoryName, source: Option<MirrorSource>) {
+        self.send(Message::Clone(repository, Turn::Next, source));
+    }
+
+    /// Says whether the clone in `folder` can lend its objects to `repository`'s mirror. It runs git commands
+    /// that only read the clone, and waits for them.
+    pub fn check_clone(
+        &self,
+        folder: &Path,
+        repository: &RepositoryName,
+    ) -> Result<(), CloneRefusal> {
+        lender(&LiveGit, &self.prefixes, folder, repository).map(drop)
     }
 
     /// Fetches the PR heads in `heads` into `repository`'s mirror, as `refs/tsugiki/pull/N/head`, once
@@ -285,7 +315,11 @@ pub(crate) struct HeardRequests(Receiver<Message>);
 impl HeardRequests {
     pub(crate) fn new() -> (MirrorRequests, Self) {
         let (messages, heard) = mpsc::channel();
-        (MirrorRequests { messages }, Self(heard))
+        let requests = MirrorRequests {
+            messages,
+            prefixes: Vec::new(),
+        };
+        (requests, Self(heard))
     }
 
     /// The heads asked for first since the last call.
@@ -318,6 +352,7 @@ impl Mirrors {
     ) -> Self {
         let (messages, incoming) = mpsc::channel();
         let (finishing, finished) = mpsc::channel::<()>();
+        let prefixes = remotes.prefixes.clone();
         let mut worker = Worker {
             git,
             folders,
@@ -333,6 +368,9 @@ impl Mirrors {
             git_checked: false,
             problem: None,
             told: None,
+            sources: MirrorSources::default(),
+            asking: Vec::new(),
+            told_asking: None,
         };
         let _ = thread::spawn(move || {
             // `stop` learns the worker is over when this goes, however the thread ends. Locals go in reverse
@@ -341,12 +379,17 @@ impl Mirrors {
             let incoming = incoming;
             worker.run(&incoming);
         });
-        Self { messages, finished }
+        Self {
+            messages,
+            finished,
+            prefixes,
+        }
     }
 
     pub fn requests(&self) -> MirrorRequests {
         MirrorRequests {
             messages: self.messages.clone(),
+            prefixes: self.prefixes.clone(),
         }
     }
 
@@ -573,6 +616,12 @@ struct Worker {
     /// The problem the window last heard of. A Check again forgets `problem` but keeps this, so the window
     /// hears only of a change.
     told: Option<MirrorProblem>,
+    /// A copy of the user's answers of where each mirror gets its objects, as the clone requests bring them.
+    sources: MirrorSources,
+    /// The Repositories whose clone waits for an answer, in the order they came to the front of the line.
+    asking: Vec<RepositoryName>,
+    /// The first of `asking` the window last heard of.
+    told_asking: Option<RepositoryName>,
 }
 
 impl Worker {
@@ -589,7 +638,7 @@ impl Worker {
                 None => incoming.recv().map_err(drop),
             };
             match message {
-                Ok(Message::Clone(repository, turn)) => self.wait(repository, turn),
+                Ok(Message::Clone(repository, turn, source)) => self.wait(repository, turn, source),
                 Ok(Message::Heads(repository, heads)) => {
                     self.heard_news();
                     if self.pace == Pace::Stalled {
@@ -627,7 +676,17 @@ impl Worker {
         }
     }
 
-    fn wait(&mut self, repository: RepositoryName, turn: Turn) {
+    fn wait(&mut self, repository: RepositoryName, turn: Turn, source: Option<MirrorSource>) {
+        if let Some(source) = source {
+            self.sources.set(repository.clone(), source);
+        }
+        if let Some(index) = self.asking.iter().position(|one| one.is_same(&repository)) {
+            if self.sources.get(&repository).is_none() {
+                return;
+            }
+            drop(self.asking.remove(index));
+            self.tell_asking();
+        }
         let cloning = match &self.job {
             Some(Job::Clone(clone)) => Some(&clone.cloning.repository),
             Some(Job::Fetch(_)) | None => None,
@@ -775,6 +834,11 @@ impl Worker {
         if folders.mirror(&repository).exists() {
             return ControlFlow::Continue(());
         }
+        let Some(source) = self.sources.get(&repository).cloned() else {
+            self.asking.push(repository);
+            self.tell_asking();
+            return ControlFlow::Continue(());
+        };
         // What a clone cut off by quitting left goes first, or the disk would count it as taken.
         let partial = folder.join(PARTIAL);
         if partial.exists()
@@ -800,7 +864,8 @@ impl Worker {
                 return ControlFlow::Continue(());
             }
         }
-        match self.start_clone(repository, folder) {
+        let reference = self.reference(&repository, &source);
+        match self.start_clone(repository, folder, reference.as_deref()) {
             Ok(clone) => {
                 (self.announce.cloning)(Some(&clone.cloning));
                 self.job = Some(Job::Clone(clone));
@@ -1077,14 +1142,52 @@ impl Worker {
         Ok(pull_refs(&self.git.read(&args)?))
     }
 
+    /// The git folder a clone of `repository` borrows objects from, if `source` names a clone that can lend
+    /// them. One that can't any more downloads everything, and the log says why.
+    fn reference(&self, repository: &RepositoryName, source: &MirrorSource) -> Option<PathBuf> {
+        match source {
+            MirrorSource::Download => None,
+            MirrorSource::Borrow { folder } => {
+                match lender(&*self.git, &self.remotes.prefixes, folder, repository) {
+                    Ok(common) => Some(common),
+                    Err(refusal) => {
+                        log::warn!(
+                            "Tsugiki downloads {repository}'s mirror, as {} can't lend it objects: {refusal:?}",
+                            folder.display()
+                        );
+                        None
+                    }
+                }
+            }
+        }
+    }
+
+    /// Tells the window the first Repository whose clone waits for an answer, if that changed.
+    fn tell_asking(&mut self) {
+        let first = self.asking.first().cloned();
+        let same = match (&first, &self.told_asking) {
+            (Some(first), Some(told)) => first.is_same(told),
+            (None, None) => true,
+            (Some(_), None) | (None, Some(_)) => false,
+        };
+        if !same {
+            (self.announce.question)(first.as_ref());
+            self.told_asking = first;
+        }
+    }
+
     fn start_clone(
         &self,
         repository: RepositoryName,
         folder: PathBuf,
+        reference: Option<&Path>,
     ) -> Result<Clone, (RepositoryName, io::Error)> {
         let partial = folder.join(PARTIAL);
         let mirror = folder.join("mirror.git");
-        match self.start_clone_git(&self.remotes.url(&repository), &folder, &partial) {
+        let url = self.remotes.url(&repository);
+        let started = fs::create_dir_all(&folder)
+            .and_then(|()| self.start_clone_git(&url, &partial, reference));
+        match started {
             Ok(started) => {
                 self.listen(started.output);
                 Ok(Clone {
@@ -1101,12 +1204,24 @@ impl Worker {
         }
     }
 
-    /// Starts `git clone` into `partial`, in the Repository's `folder`.
-    fn start_clone_git(&self, url: &str, folder: &Path, partial: &Path) -> io::Result<Started> {
-        fs::create_dir_all(folder)?;
-        let args = ["clone", "--bare", "--no-tags", "--progress", url].map(OsStr::new);
-        self.git
-            .start(&[args.as_slice(), &[partial.as_os_str()]].concat(), &[])
+    /// Starts `git clone` into `partial`, borrowing what it can from the git folder `reference`.
+    /// `--dissociate` copies what it borrowed, so the mirror doesn't lean on the user's clone afterwards.
+    fn start_clone_git(
+        &self,
+        url: &str,
+        partial: &Path,
+        reference: Option<&Path>,
+    ) -> io::Result<Started> {
+        let args = ["clone", "--bare", "--no-tags", "--progress"].map(OsStr::new);
+        let borrow = reference.map_or_else(Vec::new, |reference| {
+            vec![
+                OsStr::new("--reference"),
+                reference.as_os_str(),
+                OsStr::new("--dissociate"),
+            ]
+        });
+        let target = [OsStr::new(url), partial.as_os_str()];
+        self.git.start(&[&args[..], &borrow, &target].concat(), &[])
     }
 
     /// Reads git's error output on a thread of its own, which tells the worker when git ends.

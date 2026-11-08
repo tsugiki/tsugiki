@@ -82,8 +82,10 @@
   syncActivity={status.syncActivity}
   cloning={status.cloning}
   mirrorProblem={status.mirrorProblem}
+  mirrorQuestion={status.mirrorQuestion}
   onrefresh={() => void status.refresh()}
   oncheckagain={() => void status.checkMirrorsAgain()}
+  onchoosesource={(repository, source) => void status.chooseMirrorSource(repository, source)}
 />
 {#if addOpen}
   <AddRepository

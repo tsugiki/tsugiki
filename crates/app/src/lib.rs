@@ -8,6 +8,8 @@ mod slow_commands;
 mod startup;
 mod wiring;
 
+use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
@@ -22,7 +24,9 @@ use tsugiki_core::github::CommitSha;
 use tsugiki_core::highlight::Span;
 use tsugiki_core::latest::LatestReader;
 use tsugiki_core::measurement::Measurement;
-use tsugiki_core::mirror::{Cloning, MirrorProblem, MirrorRequests};
+use tsugiki_core::mirror::{
+    CloneRefusal, Cloning, MirrorProblem, MirrorRequests, MirrorSource, MirrorSources,
+};
 use tsugiki_core::misses::Miss;
 use tsugiki_core::repository::{Home, RepositoryAccess, RepositoryCheck, RepositoryName};
 use tsugiki_core::session::SessionRequests;
@@ -86,6 +90,50 @@ type LatestMirrorProblem = LatestReader<Option<MirrorProblem>>;
 fn mirror_problem(latest: State<'_, LatestMirrorProblem>) -> Option<MirrorProblem> {
     latest.get()
 }
+
+type LatestMirrorQuestion = LatestReader<Option<RepositoryName>>;
+
+/// The first Repository whose mirror waits to hear where it gets its objects, for a window as it loads.
+#[tauri::command]
+#[specta::specta]
+fn mirror_question(latest: State<'_, LatestMirrorQuestion>) -> Option<RepositoryName> {
+    latest.get()
+}
+
+/// Says why the clone in `folder` can't lend its objects to `repository`'s mirror, or nothing if it can.
+/// This waits on git commands that only read the clone.
+#[tauri::command(async)]
+#[specta::specta]
+fn check_clone(
+    repository: &str,
+    folder: PathBuf,
+    work: State<'_, RepositoryWork>,
+) -> Result<Option<CloneRefusal>, Error> {
+    let repository = RepositoryName::parse(repository)?;
+    Ok(work.mirrors.check_clone(&folder, &repository).err())
+}
+
+/// Saves where `repository`'s mirror gets its objects, and starts its clone ahead of the others. This waits
+/// on a small file.
+#[tauri::command(async)]
+#[specta::specta]
+fn choose_mirror_source(
+    repository: &str,
+    source: MirrorSource,
+    owner: State<'_, SettingsOwner>,
+    work: State<'_, RepositoryWork>,
+) -> Result<(), Error> {
+    let repository = RepositoryName::parse(repository)?;
+    drop(owner.save_mirror_source(repository.clone(), source.clone())?);
+    work.mirrors.clone_mirror_next(repository, Some(source));
+    Ok(())
+}
+
+/// Opens the system's folder picker and gives the folder the user picked, if they picked one.
+pub(crate) type PickFolder = Arc<dyn Fn() -> Option<PathBuf> + Send + Sync>;
+
+/// The folder picker, which the commands share.
+pub(crate) struct FolderPicker(PickFolder);
 
 /// Looks at git and the disk again, and tries the clones that waited for them, and returns at once.
 #[tauri::command]
@@ -217,18 +265,30 @@ fn check_typed_repository(
     requests.check(RepositoryName::parse(input)?)
 }
 
+/// The user's choice in Add repository: the Repository, by the name GitHub gave it, what they may do in it,
+/// and where its mirror gets its objects. The name stays text until the core parses it, so a name that isn't
+/// one gets the same refusal as everywhere else.
+#[derive(Debug, Clone, Deserialize, Type)]
+pub(crate) struct NewRepository {
+    name: String,
+    access: RepositoryAccess,
+    source: MirrorSource,
+}
+
 /// Adds the Repository, and starts its first sync (ADR 0015) and its mirror's clone.
 fn add_named_repository(
-    name: &str,
-    access: RepositoryAccess,
+    repository: NewRepository,
     owner: &SettingsOwner,
     work: &RepositoryWork,
 ) -> Result<Home, Error> {
-    let home = owner
-        .add_repository(RepositoryName::parse(name)?, access)?
-        .home;
-    work.start(&home);
-    Ok(home)
+    let NewRepository {
+        name,
+        access,
+        source,
+    } = repository;
+    let view = owner.add_repository(RepositoryName::parse(&name)?, access, source)?;
+    work.start(&view.home, &view.mirror_sources);
+    Ok(view.home)
 }
 
 /// The threads that work on Repositories: the session's sync queue, and the mirrors' one writer.
@@ -240,12 +300,14 @@ struct RepositoryWork {
 impl RepositoryWork {
     /// Loads the user's work in the Repository the window opens on, under the name the window knows it by,
     /// so the window recognises the changes. Its mirror's clone goes ahead of the other Repositories', and
-    /// neither waits on the other.
-    fn start(&self, home: &Home) {
+    /// neither waits on the other. `sources` says where its objects come from, if the user has said.
+    fn start(&self, home: &Home, sources: &MirrorSources) {
         match home {
             Home::Repository { repository } => {
                 self.session.sync(repository.clone());
-                self.mirrors.clone_mirror_next(repository.name.clone());
+                let source = sources.get(&repository.name).cloned();
+                self.mirrors
+                    .clone_mirror_next(repository.name.clone(), source);
             }
             Home::Onboarding { .. } => {}
         }
@@ -488,6 +550,11 @@ struct CloningChanged(Option<Cloning>);
 #[derive(Clone, Serialize, Type, Event)]
 struct MirrorProblemChanged(Option<MirrorProblem>);
 
+/// Sent when the first Repository whose mirror waits to hear where it gets its objects changes, so the
+/// status bar can ask.
+#[derive(Clone, Serialize, Type, Event)]
+struct MirrorQuestionChanged(Option<RepositoryName>);
+
 /// Sent when PR heads arrive in a Repository's mirror, so a Files tab waiting for one asks again.
 #[derive(Clone, Serialize, Type, Event)]
 struct HeadsFetched(Change);
@@ -503,6 +570,10 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             cloning,
             mirror_problem,
             check_mirrors_again,
+            mirror_question,
+            check_clone,
+            choose_mirror_source,
+            slow_commands::pick_folder,
             refresh,
             open_issue,
             fetch_issue,
@@ -535,6 +606,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             SyncActivityChanged,
             CloningChanged,
             MirrorProblemChanged,
+            MirrorQuestionChanged,
             HeadsFetched
         ])
 }
@@ -666,8 +738,7 @@ mod tests {
             mirrors: mirrors.requests(),
         };
         let added = add_named_repository(
-            "https://github.com/python/cpython",
-            RepositoryAccess::Other,
+            new_repository("https://github.com/python/cpython"),
             &app.state(),
             &work,
         );
@@ -689,8 +760,7 @@ mod tests {
             mirrors: mirrors.requests(),
         };
 
-        let adding =
-            add_named_repository("nonsense", RepositoryAccess::Other, &owner, &work).unwrap_err();
+        let adding = add_named_repository(new_repository("nonsense"), &owner, &work).unwrap_err();
         let checking = check_typed_repository("nonsense", &session.requests()).unwrap_err();
         let reading = read_workbench("nonsense", &WorkbenchView::Whole, &owner, &session.reader())
             .unwrap_err();
@@ -698,6 +768,15 @@ mod tests {
         assert_eq!(adding.kind, ErrorKind::NotFound);
         assert_eq!(checking.kind, ErrorKind::NotFound);
         assert_eq!(reading.kind, ErrorKind::NotFound);
+    }
+
+    /// The choice of a user who may do little in `name` and downloads its mirror.
+    fn new_repository(name: &str) -> NewRepository {
+        NewRepository {
+            name: name.to_owned(),
+            access: RepositoryAccess::Other,
+            source: MirrorSource::Download,
+        }
     }
 
     /// Mirrors whose clones fail at once, from a folder of remotes that isn't there.

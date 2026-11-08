@@ -61,7 +61,7 @@ export function cloningWords(cloning: Cloning | null): string | null {
 const MB_IN_GB = 1024;
 
 /** A size in megabytes, in gigabytes from one up. */
-function sizeWords(mb: number): string {
+export function sizeWords(mb: number): string {
   return mb < MB_IN_GB ? `${String(mb)} MB` : `${(mb / MB_IN_GB).toFixed(1)} GB`;
 }
 
@@ -72,6 +72,12 @@ export function mirrorWords(problem: MirrorProblem | null): string | null {
   if (problem.kind === "old_git") return `The Files tab needs git 2.30 or newer: ${problem.version}`;
   const { repository, folder, needed_mb, free_mb } = problem;
   return `No room to clone ${repository}: it needs ${sizeWords(needed_mb)} on the disk with ${folder}, which has ${sizeWords(free_mb)} free`;
+}
+
+/** The question for the first Repository whose mirror waits to hear where it gets its objects. */
+export function questionWords(repository: string | null): string | null {
+  if (repository === null) return null;
+  return `The Files tab needs a mirror of ${repository}: borrow objects from a clone you have, in seconds, or download it, in minutes?`;
 }
 
 /** The wait for GitHub's points, while there is one. */

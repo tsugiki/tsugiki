@@ -3,7 +3,12 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { RepositoryCheck } from "$lib/state/add-repository.svelte";
 import AddRepository from "./AddRepository.svelte";
 
-const core = vi.hoisted(() => ({ checkRepository: vi.fn(), addRepository: vi.fn() }));
+const core = vi.hoisted(() => ({
+  checkRepository: vi.fn(),
+  addRepository: vi.fn(),
+  pickFolder: vi.fn(),
+  checkClone: vi.fn(),
+}));
 vi.mock("$lib/data/bindings", () => ({ commands: core }));
 
 const check: RepositoryCheck = {
@@ -15,6 +20,9 @@ const check: RepositoryCheck = {
   first_sync_items: 48,
   first_sync_seconds: 5,
   first_sync_points: 12,
+  mirror_mb: 891,
+  download_seconds: 209,
+  borrow_seconds: 36,
   access: "other",
 };
 
@@ -94,6 +102,62 @@ it("adds what was checked and hands on what the window opens on", async () => {
   await vi.waitFor(() => {
     expect(onadded).toHaveBeenCalledWith(home);
   });
+});
+
+const lender = "D:/gcmon";
+const radio = (name: RegExp) => screen.getByRole<HTMLInputElement>("radio", { name });
+
+it("offers to download the mirror or borrow objects from a clone, with the time and the disk", async () => {
+  render(AddRepository, { onclose: () => {}, onadded: () => {} });
+  await checked();
+
+  const mirror = screen.getByRole("group", { name: "Mirror, for the diff: 891 MB on the disk either way." });
+  expect(mirror).toBeTruthy();
+  expect(radio(/^Download it from GitHub, about 3 minutes/).checked).toBe(true);
+  expect(radio(/^Borrow objects from a clone you have, about 1 minute/).checked).toBe(false);
+});
+
+it("borrows from a clone the user picks, and adds with it", async () => {
+  core.pickFolder.mockResolvedValue({ status: "ok", data: lender });
+  core.checkClone.mockResolvedValue({ status: "ok", data: null });
+  core.addRepository.mockResolvedValue({ status: "ok", data: home });
+  const onadded = vi.fn();
+  render(AddRepository, { onclose: () => {}, onadded });
+  await checked();
+
+  await fireEvent.click(radio(/^Borrow objects/));
+  await screen.findByText("Borrows from D:/gcmon");
+  await fireEvent.click(button("Add"));
+
+  await vi.waitFor(() => {
+    expect(onadded).toHaveBeenCalledWith(home);
+  });
+  expect(core.addRepository).toHaveBeenCalledWith({
+    name: "some-maintainer/gcmon",
+    access: "other",
+    source: { kind: "borrow", folder: lender },
+  });
+});
+
+it("keeps Add off while the clone can't lend, until the user picks another or downloads", async () => {
+  core.pickFolder.mockResolvedValue({ status: "ok", data: lender });
+  core.checkClone.mockResolvedValue({ status: "ok", data: { kind: "no_remote" } });
+  render(AddRepository, { onclose: () => {}, onadded: () => {} });
+  await checked();
+
+  await fireEvent.click(radio(/^Borrow objects/));
+  await screen.findByText(/has no remote for some-maintainer\/gcmon/);
+  const refused = button("Add").disabled;
+  core.checkClone.mockResolvedValue({ status: "ok", data: null });
+  await fireEvent.click(button("Choose another clone…"));
+  await screen.findByText("Borrows from D:/gcmon");
+  const lends = button("Add").disabled;
+  await fireEvent.click(radio(/^Download it/));
+
+  expect(refused).toBe(true);
+  expect(lends).toBe(false);
+  expect(button("Add").disabled).toBe(false);
+  expect(screen.queryByText("Borrows from D:/gcmon")).toBeNull();
 });
 
 it("holds its text still while it adds", async () => {

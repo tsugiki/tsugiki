@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cloningWords, elsewhereWords, mirrorWords, syncedWords } from "./synced";
+import { cloningWords, elsewhereWords, mirrorWords, questionWords, syncedWords } from "./synced";
 
 const now = new Date("2026-11-05T12:00:00Z");
 
@@ -41,6 +41,18 @@ describe("elsewhereWords", () => {
   it("names the next of several and counts the rest", () => {
     const several = ["python/peps", "python/devguide", "python/typeshed"];
     expect(elsewhereWords(activity(several))).toBe("python/peps and 2 more syncing");
+  });
+});
+
+describe("questionWords", () => {
+  it("asks where the first waiting Repository's mirror gets its objects", () => {
+    expect(questionWords("python/cpython")).toBe(
+      "The Files tab needs a mirror of python/cpython: borrow objects from a clone you have, in seconds, or download it, in minutes?",
+    );
+  });
+
+  it("says nothing while no mirror waits", () => {
+    expect(questionWords(null)).toBeNull();
   });
 });
 

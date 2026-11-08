@@ -190,6 +190,12 @@ const FIXED_POINTS: u32 = 10;
 const POINTS_PER_THOUSAND_ITEMS: u32 = 100;
 const MILLISECONDS_PER_ITEM: u32 = 260;
 
+/// Measured on CPython (#13), whose size on GitHub is about 913,000 KB: a plain clone took about 3.5
+/// minutes, and one that borrowed objects from a clone on the same disk about 36 s.
+const DOWNLOAD_KB_PER_SECOND: u64 = 4_350;
+const BORROW_KB_PER_SECOND: u64 = 25_000;
+const KB_PER_MB: u64 = 1024;
+
 /// Which first sync a Repository gets (ADR 0015).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "snake_case")]
@@ -207,6 +213,8 @@ pub struct RepositoryCounts {
     pub open_prs: u32,
     pub updated_in_window: u32,
     pub closed_in_window: u32,
+    /// The Repository's size on GitHub, about what its mirror takes on the disk.
+    pub disk_kb: u64,
 }
 
 /// What the add dialog shows before the user decides.
@@ -222,6 +230,11 @@ pub struct RepositoryCheck {
     pub first_sync_items: u32,
     pub first_sync_seconds: u32,
     pub first_sync_points: u32,
+    /// The size of its mirror on the disk, whether it borrows objects or not: `--dissociate` copies them.
+    pub mirror_mb: u32,
+    /// About how long its mirror's clone takes from GitHub alone, and borrowing from a clone the user has.
+    pub download_seconds: u32,
+    pub borrow_seconds: u32,
 }
 
 impl RepositoryCheck {
@@ -246,8 +259,16 @@ impl RepositoryCheck {
             first_sync_seconds: items.saturating_mul(MILLISECONDS_PER_ITEM) / 1000,
             first_sync_points: FIXED_POINTS
                 .saturating_add(items.saturating_mul(POINTS_PER_THOUSAND_ITEMS) / 1000),
+            mirror_mb: clamped(counts.disk_kb / KB_PER_MB),
+            download_seconds: clamped(counts.disk_kb / DOWNLOAD_KB_PER_SECOND),
+            borrow_seconds: clamped(counts.disk_kb / BORROW_KB_PER_SECOND),
         }
     }
+}
+
+/// `value`, or the largest `u32` for more.
+fn clamped(value: u64) -> u32 {
+    u32::try_from(value).unwrap_or(u32::MAX)
 }
 
 #[cfg(test)]
@@ -263,6 +284,7 @@ mod tests {
         open_prs: 3,
         updated_in_window: 43,
         closed_in_window: 35,
+        disk_kb: 0,
     };
 
     #[test]
@@ -402,6 +424,7 @@ mod tests {
             open_prs: 2308,
             updated_in_window: 4715,
             closed_in_window: 2506,
+            disk_kb: 912_867,
         };
         let check = RepositoryCheck::new(name("python/cpython"), cpython, RepositoryAccess::Other);
         assert_eq!(check.repository.conventions, Conventions::Cpython);
@@ -410,5 +433,19 @@ mod tests {
             (1150..=1300).contains(&check.first_sync_seconds),
             "{check:?}"
         );
+        // Its mirror took about 3.5 minutes from GitHub alone, and about 36 s borrowing.
+        assert_eq!(check.mirror_mb, 891);
+        assert!((200..=220).contains(&check.download_seconds), "{check:?}");
+        assert!((33..=39).contains(&check.borrow_seconds), "{check:?}");
+    }
+
+    #[test]
+    fn a_size_past_what_the_window_can_count_says_the_most_it_can() {
+        let huge = RepositoryCounts {
+            disk_kb: u64::MAX,
+            ..FEW
+        };
+        let check = RepositoryCheck::new(name("a/b"), huge, RepositoryAccess::Other);
+        assert_eq!(check.mirror_mb, u32::MAX);
     }
 }

@@ -5,6 +5,7 @@
         "issueCount": 2613
       },
       "repository": {
+        "diskUsage": 912867,
         "issues": {
           "totalCount": 6945
         },
@@ -19,7 +20,7 @@
       }
     }
   },
-  "query": "query CheckRepository($owner: String!, $name: String!, $updated: String!, $closed: String!) { repository(owner: $owner, name: $name) { nameWithOwner viewerPermission issues(states: OPEN) { totalCount } pullRequests(states: OPEN) { totalCount } } updated: search(query: $updated, type: ISSUE_ADVANCED, first: 0) { issueCount } closed: search(query: $closed, type: ISSUE_ADVANCED, first: 0) { issueCount } }",
+  "query": "query CheckRepository($owner: String!, $name: String!, $updated: String!, $closed: String!) { repository(owner: $owner, name: $name) { nameWithOwner viewerPermission diskUsage issues(states: OPEN) { totalCount } pullRequests(states: OPEN) { totalCount } } updated: search(query: $updated, type: ISSUE_ADVANCED, first: 0) { issueCount } closed: search(query: $closed, type: ISSUE_ADVANCED, first: 0) { issueCount } }",
   "reset": 1794124534,
   "status": 200
 }

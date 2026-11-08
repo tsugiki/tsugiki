@@ -523,33 +523,42 @@ fn a_filter_github_wont_answer_tells_the_window() {
 }
 
 #[test]
-fn an_outage_blames_no_filter_and_its_search_runs_again() {
-    let mut replies = searches_finding(&[]);
-    replies.push(Ok(Reply {
+fn an_outage_or_no_network_blames_no_filter_and_its_search_runs_again() {
+    let outage = Ok(Reply {
         status: 503,
         reset: None,
         date: None,
         body: String::new(),
-    }));
-    replies.push(all_of(&[issue_hit(1)]));
-    replies.push(issues(&[1], LOTS));
-    replies.push(no_issue_references(LOTS));
-    let harness = Harness::new("filter-outage", replies);
-    let mut syncs = Syncs::default();
-    syncs.add(filtering(&["a"]));
+    });
+    // With no network, the search gets a second try at half the size.
+    let offline = vec![Err(Unreachable::Offline), Err(Unreachable::Offline)];
+    let cases = [
+        ("filter-outage", vec![outage], ErrorKind::Internal),
+        ("filter-offline", offline, ErrorKind::Offline),
+    ];
+    for (name, failures, kind) in cases {
+        let mut replies = searches_finding(&[]);
+        replies.extend(failures);
+        replies.push(all_of(&[issue_hit(1)]));
+        replies.push(issues(&[1], LOTS));
+        replies.push(no_issue_references(LOTS));
+        let harness = Harness::new(name, replies);
+        let mut syncs = Syncs::default();
+        syncs.add(filtering(&["a"]));
 
-    // Four searches and a move.
-    for _ in 0..5 {
-        drop(syncs.step(&harness.github, &harness.store).unwrap());
+        // Four searches and a move.
+        for _ in 0..5 {
+            drop(syncs.step(&harness.github, &harness.store).unwrap());
+        }
+        let failed = syncs.step(&harness.github, &harness.store).unwrap_err();
+        assert_eq!(filter_problem(&harness, "a"), None, "{name}");
+        drop(run_to_the_end(&mut syncs, &harness));
+
+        assert_eq!(failed.problem.kind, kind, "{name}");
+        assert_eq!(filter_problem(&harness, "a"), None, "{name}");
+        assert_eq!(found_by(&harness, "a"), [1], "{name}");
+        harness.finish();
     }
-    let failed = syncs.step(&harness.github, &harness.store).unwrap_err();
-    assert_eq!(filter_problem(&harness, "a"), None);
-    drop(run_to_the_end(&mut syncs, &harness));
-
-    assert_eq!(failed.problem.kind, ErrorKind::Internal);
-    assert_eq!(filter_problem(&harness, "a"), None);
-    assert_eq!(found_by(&harness, "a"), [1]);
-    harness.finish();
 }
 
 #[test]

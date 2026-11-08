@@ -404,6 +404,7 @@ mod tests {
             "pull_request_files",
             json!({ "repository": "a/b", "number": 1 }),
         );
+        let widths = wired.ask("save_pane_widths", json!({ "widths": { "sidebar": 240 } }));
         drop(wired.stop());
 
         let checking = checking.unwrap_err();
@@ -419,6 +420,26 @@ mod tests {
         assert_eq!(adding["message"], no_folders().message);
         assert_eq!(reading.unwrap_err()["kind"], "internal");
         assert_eq!(files.unwrap_err()["message"], no_folders().message);
+        assert_eq!(widths.unwrap_err()["message"], no_folders().message);
+    }
+
+    #[test]
+    fn a_name_that_isnt_one_is_refused_before_the_missing_folders_matter() {
+        let wired = Wired::start(Err(no_folders()), no_network());
+        let nonsense =
+            json!({ "name": "nonsense", "access": "other", "source": { "kind": "download" } });
+
+        let adding = wired.ask("add_repository", json!({ "repository": nonsense }));
+        let checking = wired.ask("check_repository", json!({ "input": "nonsense" }));
+        let reading = wired.ask(
+            "workbench",
+            json!({ "repository": "nonsense", "view": { "kind": "whole" } }),
+        );
+        drop(wired.stop());
+
+        assert_eq!(adding.unwrap_err()["kind"], "not_found");
+        assert_eq!(checking.unwrap_err()["kind"], "not_found");
+        assert_eq!(reading.unwrap_err()["kind"], "not_found");
     }
 
     #[test]
@@ -480,16 +501,6 @@ mod tests {
             (saved.unwrap(), reopened, synced),
             (widths.clone(), widths, false)
         );
-    }
-
-    #[test]
-    fn with_no_folders_the_panes_widths_arent_saved() {
-        let wired = Wired::start(Err(no_folders()), no_network());
-
-        let saved = wired.ask("save_pane_widths", json!({ "widths": { "sidebar": 240 } }));
-        drop(wired.stop());
-
-        assert_eq!(saved.unwrap_err()["kind"], "internal");
     }
 
     #[test]
@@ -753,20 +764,6 @@ mod tests {
     }
 
     #[test]
-    fn adding_a_repository_brings_in_what_waits_on_the_user() {
-        let (folders, root) = temp_folders("wired-first-sync");
-        let wired = Wired::start(Ok(folders), recordings());
-
-        let added = wired.ask("add_repository", add_cpython());
-        let workbench = workbench_after_sync(&wired);
-        drop(wired.stop());
-        std::fs::remove_dir_all(root).unwrap();
-
-        assert_eq!(added.unwrap(), json!(cpython()));
-        assert_is_the_recorded_work(&workbench);
-    }
-
-    #[test]
     fn the_app_syncs_the_repository_it_reopens() {
         let (folders, root) = temp_folders("wired-reopen");
         let wired = Wired::start(Ok(folders.clone()), no_network());
@@ -927,11 +924,11 @@ mod tests {
     }
 
     #[test]
-    fn the_status_bar_hears_each_part_of_a_first_sync_and_then_that_it_ended() {
+    fn an_add_syncs_what_waits_on_the_user_and_the_status_bar_hears_each_part() {
         let (folders, root) = temp_folders("wired-activity");
         let wired = Wired::start(Ok(folders), recordings());
         let _ = wired.ask("add_repository", add_cpython()).unwrap();
-        let _workbench = workbench_after_sync(&wired);
+        let workbench = workbench_after_sync(&wired);
 
         let mut parts = Vec::new();
         let ended = loop {
@@ -946,6 +943,7 @@ mod tests {
         drop(wired.stop());
         std::fs::remove_dir_all(root).unwrap();
 
+        assert_is_the_recorded_work(&workbench);
         assert_eq!(parts, ["refresh", "your_work", "trees", "window"]);
         assert_eq!(ended, Value::Null);
         assert_eq!(asked, Value::Null);

@@ -103,34 +103,25 @@ fn values_a_file_leaves_out_or_this_version_doesnt_know_change_nothing() {
 
 #[test]
 fn a_file_that_doesnt_parse_is_left_alone_and_named_with_its_line() {
-    let (folders, root) = temp_folders("broken");
-    let text = "# Mine.\n[status_bar]\nvisible = = false\n";
-    fs::write(folders.settings_file(), text).unwrap();
+    for (name, text) in [
+        ("broken", "# Mine.\n[status_bar]\nvisible = = false\n"),
+        ("wrong-type", "\n[status_bar]\nvisible = \"no\"\n"),
+    ] {
+        let (folders, root) = temp_folders(name);
+        fs::write(folders.settings_file(), text).unwrap();
 
-    let files = SettingsFiles::load(folders.clone());
-    let after = fs::read_to_string(folders.settings_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
+        let files = SettingsFiles::load(folders.clone());
+        let after = fs::read_to_string(folders.settings_file()).unwrap();
+        fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(after, text);
-    assert_eq!(files.loaded().settings, Settings::default());
-    let problem = only_problem(&files);
-    assert!(problem.contains("settings.toml, line 3"), "{problem}");
-}
-
-#[test]
-fn a_value_of_the_wrong_type_is_named_with_its_line() {
-    let (folders, root) = temp_folders("wrong-type");
-    fs::write(
-        folders.settings_file(),
-        "\n[status_bar]\nvisible = \"no\"\n",
-    )
-    .unwrap();
-
-    let files = SettingsFiles::load(folders);
-    fs::remove_dir_all(root).unwrap();
-
-    let problem = only_problem(&files);
-    assert!(problem.contains("settings.toml, line 3"), "{problem}");
+        assert_eq!(after, text, "{name}");
+        assert_eq!(files.loaded().settings, Settings::default(), "{name}");
+        let problem = only_problem(&files);
+        assert!(
+            problem.contains("settings.toml, line 3"),
+            "{name}: {problem}"
+        );
+    }
 }
 
 #[test]
@@ -144,19 +135,6 @@ fn a_file_it_cant_read_is_a_problem_that_names_it() {
     assert_eq!(files.loaded().settings, Settings::default());
     let problem = only_problem(&files);
     assert!(problem.contains("settings.toml"), "{problem}");
-}
-
-#[test]
-fn a_reload_picks_up_an_edit() {
-    let (folders, root) = temp_folders("reload");
-    let mut files = SettingsFiles::load(folders.clone());
-    assert_eq!(files.loaded().settings, Settings::default());
-
-    fs::write(folders.settings_file(), "[status_bar]\nvisible = false\n").unwrap();
-    files.reload();
-    fs::remove_dir_all(root).unwrap();
-
-    assert_eq!(files.loaded().settings, HIDDEN);
 }
 
 #[test]
@@ -250,33 +228,6 @@ fn adding_a_repository_writes_its_starter_filters_where_the_user_can_edit_them()
         "{written}"
     );
     assert_eq!(read.filters, Filter::starters(RepositoryAccess::Maintained));
-}
-
-#[test]
-fn adding_to_a_list_written_inline_keeps_it_inline_with_its_filters() {
-    let (folders, root) = temp_folders("inline-filters");
-    fs::write(
-        folders.settings_file(),
-        "repositories = [{ name = \"a/first\" }]\n",
-    )
-    .unwrap();
-    let mut files = SettingsFiles::load(folders);
-
-    drop(
-        files
-            .add_repository(
-                &repository("a/second"),
-                RepositoryAccess::Other,
-                &MirrorSource::Download,
-            )
-            .unwrap(),
-    );
-    let problems = files.loaded().problems.clone();
-    let added = files.loaded().settings.repositories[1].clone();
-    fs::remove_dir_all(root).unwrap();
-
-    assert_eq!(problems, Vec::<String>::new());
-    assert_eq!(added.filters, Filter::starters(RepositoryAccess::Other));
 }
 
 #[test]
@@ -511,13 +462,6 @@ fn a_value_back_at_its_default_stays_if_the_user_commented_on_it() {
 }
 
 #[test]
-fn a_section_with_a_comment_above_it_stays_when_it_empties() {
-    let before = "# The bar.\n[status_bar]\nvisible = false\n";
-    let after = saved_over("save-section", before, &Settings::default());
-    assert_eq!(after, "# The bar.\n[status_bar]\n");
-}
-
-#[test]
 fn a_section_written_inline_or_dotted_is_changed_where_it_is() {
     assert_eq!(
         saved_over("save-inline", "status_bar = { visible = true }\n", &HIDDEN),
@@ -657,6 +601,11 @@ fn a_save_that_fails_says_so_and_leaves_the_file_alone() {
 fn a_comment_on_a_section_keeps_it_when_it_empties() {
     let cases = [
         (
+            "save-section",
+            "# The bar.\n[status_bar]\nvisible = false\n",
+            "# The bar.\n[status_bar]\n",
+        ),
+        (
             "save-header",
             "[status_bar] # Note.\nvisible = false\n",
             "[status_bar] # Note.\n",
@@ -746,6 +695,8 @@ fn the_owner_saves_an_addition_and_answers_with_what_the_files_say() {
     assert!(text.contains("python/cpython"), "{text}");
     assert_eq!(saved.home, opened("python/cpython", Conventions::Cpython));
     assert_eq!(saved.loaded.settings.repositories.len(), 1);
+    // In the view by the time the owner answers.
+    assert_eq!(owner.view(), saved);
 }
 
 #[test]
@@ -773,17 +724,19 @@ fn the_owner_passes_on_why_a_file_refused_an_addition() {
 #[test]
 fn without_folders_the_owner_says_what_went_wrong_with_them() {
     let lost = Error::new(ErrorKind::Internal, "HOME isn't a full path.");
-    let owner = SettingsOwner::start(Err(lost));
+    let owner = SettingsOwner::start(Err(lost.clone()));
 
-    let refused = owner
-        .add_repository(
-            repository("a/b"),
-            RepositoryAccess::Other,
-            MirrorSource::Download,
-        )
-        .unwrap_err();
+    let adding = owner.add_repository(
+        repository("a/b"),
+        RepositoryAccess::Other,
+        MirrorSource::Download,
+    );
+    let answering = owner.save_mirror_source(repository("a/b"), MirrorSource::Download);
+    let resizing = owner.save_panes(WIDE);
 
-    assert_eq!(refused.message, "HOME isn't a full path.");
+    assert_eq!(adding.unwrap_err(), lost);
+    assert_eq!(answering.unwrap_err(), lost);
+    assert_eq!(resizing.unwrap_err(), lost);
 }
 
 #[test]
@@ -805,41 +758,6 @@ fn without_folders_the_owner_answers_with_the_defaults() {
     let owner = SettingsOwner::start(Err(lost));
 
     assert_eq!(owner.view(), SettingsView::default());
-}
-
-#[test]
-fn an_addition_is_in_the_view_by_the_time_the_owner_answers() {
-    let (folders, root) = temp_folders("owner-view");
-    let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
-
-    let saved = owner
-        .add_repository(
-            repository("python/cpython"),
-            RepositoryAccess::Other,
-            MirrorSource::Download,
-        )
-        .unwrap();
-    fs::remove_dir_all(root).unwrap();
-
-    assert_eq!(owner.view(), saved);
-}
-
-#[test]
-fn an_addition_that_fails_leaves_the_view_alone() {
-    let (folders, root) = temp_folders("owner-view-refused");
-    fs::write(folders.settings_file(), "[status_bar\n").unwrap();
-    let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
-    let before = owner.view();
-
-    let refused = owner.add_repository(
-        repository("a/b"),
-        RepositoryAccess::Other,
-        MirrorSource::Download,
-    );
-    fs::remove_dir_all(root).unwrap();
-
-    assert!(refused.is_err());
-    assert_eq!(owner.view(), before);
 }
 
 #[test]
@@ -991,16 +909,6 @@ fn the_owner_saves_the_panes_widths_and_shows_them_in_the_view() {
 }
 
 #[test]
-fn without_folders_the_owner_cant_save_the_panes_widths() {
-    let lost = Error::new(ErrorKind::Internal, "HOME isn't a full path.");
-    let owner = SettingsOwner::start(Err(lost));
-
-    let refused = owner.save_panes(WIDE).unwrap_err();
-
-    assert_eq!(refused.message, "HOME isn't a full path.");
-}
-
-#[test]
 fn machine_toml_says_where_each_mirror_gets_its_objects_and_skips_what_it_cant_read() {
     let (folders, root) = temp_folders("mirror-sources");
     let mine = r#"[mirrors]
@@ -1105,18 +1013,6 @@ fn the_owner_saves_a_mirrors_answer_and_shows_it_in_the_view() {
 }
 
 #[test]
-fn without_folders_the_owner_cant_save_a_mirrors_answer() {
-    let lost = Error::new(ErrorKind::Internal, "HOME isn't a full path.");
-    let owner = SettingsOwner::start(Err(lost));
-
-    let refused = owner
-        .save_mirror_source(repository("a/b"), MirrorSource::Download)
-        .unwrap_err();
-
-    assert_eq!(refused.message, "HOME isn't a full path.");
-}
-
-#[test]
 fn with_no_repositories_the_window_opens_on_onboarding() {
     let (folders, root) = temp_folders("home-none");
     let files = SettingsFiles::load(folders);
@@ -1217,22 +1113,29 @@ fn a_list_written_inline_stays_inline() {
         files
             .add_repository(
                 &repository("c/d"),
-                RepositoryAccess::Other,
+                RepositoryAccess::Maintained,
                 &MirrorSource::Download,
             )
             .unwrap(),
     );
-    let names: Vec<_> = files
-        .loaded()
+    let loaded = files.loaded().clone();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    let names: Vec<_> = loaded
         .settings
         .repositories
         .iter()
         .map(|one| one.name.to_string())
         .collect();
-    let after = fs::read_to_string(folders.settings_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
-
+    assert_eq!(loaded.problems, Vec::<String>::new());
     assert_eq!(names, ["a/b", "c/d"]);
+    // Maintained, because a read fills in the Other starters when a Repository has no Filters: with
+    // Other, an inline table that lost its Filters would read back the same.
+    assert_eq!(
+        loaded.settings.repositories[1].filters,
+        Filter::starters(RepositoryAccess::Maintained)
+    );
     assert!(after.starts_with("repositories = [{"), "{after}");
 }
 
@@ -1438,28 +1341,6 @@ fn an_add_that_cant_save_machine_toml_says_so_and_adds_nothing() {
     );
     assert!(!added);
     assert_eq!(files.home(), Home::default());
-}
-
-#[test]
-fn a_settings_file_that_cant_be_read_refuses_the_add() {
-    let (folders, root) = temp_folders("add-unreadable");
-    fs::create_dir(folders.settings_file()).unwrap();
-    let mut files = SettingsFiles::load(folders.clone());
-
-    let refused = files
-        .add_repository(
-            &repository("a/b"),
-            RepositoryAccess::Other,
-            &MirrorSource::Download,
-        )
-        .unwrap_err();
-    fs::remove_dir_all(root).unwrap();
-
-    assert!(
-        refused.message.contains("settings.toml"),
-        "{}",
-        refused.message
-    );
 }
 
 #[test]

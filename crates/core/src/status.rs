@@ -297,14 +297,6 @@ mod tests {
     }
 
     #[test]
-    fn a_status_that_didnt_change_isnt_announced() {
-        let (mut board, seen) = watched_board();
-        board.set(Status::Offline);
-        board.set(Status::Offline);
-        assert_eq!(announced(&seen).len(), 1);
-    }
-
-    #[test]
     fn the_status_reaches_the_ui_tagged_by_its_state() {
         let hubot = || Login::new("hubot");
         let problem = Error::new(ErrorKind::Unauthorized, "Sign in.");

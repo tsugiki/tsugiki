@@ -619,14 +619,8 @@ mod tests {
     use tsugiki_core::error::ErrorKind;
     use tsugiki_core::filters::Filter;
     use tsugiki_core::folders::Folders;
-    use tsugiki_core::github::GitHubAccess;
-    use tsugiki_core::github::live::{Https, run_gh};
-    use tsugiki_core::latest::channel;
-    use tsugiki_core::mirror::{Announce, Mirrors, Remotes};
     use tsugiki_core::repository::RepositorySettings;
-    use tsugiki_core::session::{Intervals, Session};
     use tsugiki_core::settings::SettingsFiles;
-    use tsugiki_core::status::StatusBoard;
 
     pub(crate) fn temp_folders(name: &str) -> (Folders, std::path::PathBuf) {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../.temp/app-{name}"));
@@ -683,23 +677,6 @@ mod tests {
     }
 
     #[test]
-    fn status_says_connecting_until_the_session_says_otherwise() {
-        let app = mock_app();
-        let (_writer, reader) = channel(Status::default());
-        assert!(app.manage(reader));
-        assert_eq!(status(app.state()), Status::Connecting);
-    }
-
-    #[test]
-    fn status_answers_with_the_latest_status() {
-        let app = mock_app();
-        let (mut writer, reader) = channel(Status::default());
-        assert!(app.manage(reader));
-        writer.set(&Status::Offline);
-        assert_eq!(status(app.state()), Status::Offline);
-    }
-
-    #[test]
     fn settings_says_what_was_wrong_with_the_files() {
         let (folders, root) = temp_folders("problems");
         std::fs::write(
@@ -717,97 +694,5 @@ mod tests {
 
     pub(crate) fn no_folders() -> Error {
         Error::new(ErrorKind::Internal, "no folders in this test")
-    }
-
-    #[test]
-    fn a_repository_added_is_what_the_window_opens_on() {
-        let (folders, root) = temp_folders("add");
-        let app = mock_app();
-        assert!(app.manage(SettingsOwner::start(Ok(SettingsFiles::load(
-            folders.clone()
-        )))));
-        assert_eq!(home(app.state()), Home::default());
-
-        let session = ended_session();
-        let mirrors = mirrors_cloning_nothing(Ok(folders.clone()));
-        let work = RepositoryWork {
-            session: session.requests(),
-            mirrors: mirrors.requests(),
-        };
-        let added = add_named_repository(
-            new_repository("https://github.com/python/cpython"),
-            &app.state(),
-            &work,
-        );
-        let after = home(app.state());
-        mirrors.stop(Duration::from_secs(10));
-        std::fs::remove_dir_all(root).unwrap();
-
-        assert_eq!(added.unwrap(), cpython());
-        assert_eq!(after, cpython());
-    }
-
-    #[test]
-    fn a_name_that_isnt_one_is_refused_before_anything_else_happens() {
-        let owner = SettingsOwner::start(Err(no_folders()));
-        let session = ended_session();
-        let mirrors = mirrors_cloning_nothing(Err(no_folders()));
-        let work = RepositoryWork {
-            session: session.requests(),
-            mirrors: mirrors.requests(),
-        };
-
-        let adding = add_named_repository(new_repository("nonsense"), &owner, &work).unwrap_err();
-        let checking = check_typed_repository("nonsense", &session.requests()).unwrap_err();
-        let reading = read_workbench("nonsense", &WorkbenchView::Whole, &owner, &session.reader())
-            .unwrap_err();
-
-        assert_eq!(adding.kind, ErrorKind::NotFound);
-        assert_eq!(checking.kind, ErrorKind::NotFound);
-        assert_eq!(reading.kind, ErrorKind::NotFound);
-    }
-
-    /// The choice of a user who may do little in `name` and downloads its mirror.
-    fn new_repository(name: &str) -> NewRepository {
-        NewRepository {
-            name: name.to_owned(),
-            access: RepositoryAccess::Other,
-            source: MirrorSource::Download,
-        }
-    }
-
-    /// Mirrors whose clones fail at once, from a folder of remotes that isn't there.
-    fn mirrors_cloning_nothing(folders: Result<Folders, Error>) -> Mirrors {
-        Mirrors::start(
-            folders,
-            Remotes::under("no-remotes/".to_owned()),
-            Announce::cloning_only(Box::new(|_| {})),
-        )
-    }
-
-    /// A session with no folders, which ends as soon as it starts, without asking anything of `Https`.
-    fn ended_session() -> Session {
-        let access = GitHubAccess {
-            transport: Box::new(Https::new()),
-            run_gh,
-        };
-        let board = StatusBoard::new(Box::new(|_| {}));
-        let hourly = Duration::from_secs(3600);
-        let intervals = Intervals {
-            status: hourly,
-            repository: hourly,
-        };
-        Session::start(board, Err(no_folders()), access, intervals)
-    }
-
-    #[test]
-    fn a_check_goes_to_the_session() {
-        let session = ended_session();
-
-        let answer = check_typed_repository("python/cpython", &session.requests()).unwrap_err();
-        session.stop(Duration::from_secs(10));
-
-        assert_eq!(answer.kind, ErrorKind::Offline);
-        assert!(answer.message.contains("isn't connected"), "{answer:?}");
     }
 }

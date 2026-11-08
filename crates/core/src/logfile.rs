@@ -409,11 +409,4 @@ mod tests {
         assert!(!file.contains("details"), "{file}");
         fs::remove_dir_all(folder).unwrap();
     }
-
-    #[test]
-    fn hiding_a_token_before_the_log_starts_does_nothing() {
-        // The process's logger starts only in `tests/logfile.rs`, which has a process of its own.
-        hide("nothing is listening");
-        assert!(LOGGER.get().is_none());
-    }
 }

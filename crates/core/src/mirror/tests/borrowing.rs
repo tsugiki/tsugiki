@@ -91,13 +91,18 @@ fn a_remote_names_the_repository_over_https_or_ssh_with_or_without_git_in_any_ca
         "HTTPS://GitHub.com/Python/CPython.git",
         "git@github.com:python/cpython.git",
         "ssh://git@github.com/python/cpython",
+        "https://someone@github.com/python/cpython.git",
+        "https://www.github.com/python/cpython",
+        "ssh://git@ssh.github.com:443/python/cpython.git",
     ] {
         assert!(source::names(&github, url, &cpython), "{url}");
     }
     for url in [
         "https://github.com/python/cpython-docs.git",
-        "https://gitlab.com/python/cpython.git",
+        "ssh://git@gitlab.com/python/cpython.git",
         "https://github.com/python",
+        "ssh://github.com@gitlab.com/python/cpython",
+        "someone@github.com:python/cpython.git",
         "",
     ] {
         assert!(!source::names(&github, url, &cpython), "{url}");
@@ -142,17 +147,14 @@ fn a_folder_that_cant_lend_is_refused_with_the_reason() {
     // A clone whose `.git` points nowhere, as one moved without its git folder would.
     let broken = place.remotes.with_file_name("broken");
     fs::create_dir_all(&broken).unwrap();
-    fs::write(
-        broken.join(".git"),
-        "gitdir: nowhere
-",
-    )
-    .unwrap();
+    fs::write(broken.join(".git"), "gitdir: nowhere\n").unwrap();
     let prefixes = place.prefixes();
 
     let missing = lender(&LiveGit, &prefixes, &broken.join("gone"), &hello);
     let not_a_clone = lender(&LiveGit, &prefixes, &broken, &hello);
     let elsewhere = lender(&LiveGit, &prefixes, &clone, &other);
+    fs::write(clone.join(".git/shallow"), "").unwrap();
+    let shallow = lender(&LiveGit, &prefixes, &clone, &hello);
     let _ = git(&clone, &["remote", "remove", "origin"]);
     let no_remote = lender(&LiveGit, &prefixes, &clone, &hello);
 
@@ -162,6 +164,7 @@ fn a_folder_that_cant_lend_is_refused_with_the_reason() {
         "{not_a_clone:?}"
     );
     assert_eq!(elsewhere, Err(CloneRefusal::NoRemote));
+    assert_eq!(shallow, Err(CloneRefusal::Shallow));
     assert_eq!(no_remote, Err(CloneRefusal::NoRemote));
 }
 

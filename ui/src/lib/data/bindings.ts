@@ -30,8 +30,8 @@ export const commands = {
 	 */
 	checkClone: (repository: string, folder: string) => typedError<CloneRefusal | null, Error_Serialize>(__TAURI_INVOKE("check_clone", { repository, folder })),
 	/**
-	 *  Saves where `repository`'s mirror gets its objects, and starts its clone ahead of the others. This waits
-	 *  on a small file.
+	 *  Starts `repository`'s clone ahead of the others, with its objects from `source`, and saves the answer in
+	 *  `machine.toml`. This waits on a small file.
 	 */
 	chooseMirrorSource: (repository: string, source: MirrorSource) => typedError<null, Error_Serialize>(__TAURI_INVOKE("choose_mirror_source", { repository, source })),
 	/**
@@ -227,7 +227,9 @@ export type CloneRefusal = { kind: "not_a_folder" } |
 /**  git can't read a clone there, for the reason it gives in `git_says`. */
 { kind: "not_a_clone"; git_says: string } | 
 /**  None of its remotes is the Repository on GitHub. */
-{ kind: "no_remote" };
+{ kind: "no_remote" } | 
+/**  A shallow or grafted clone, which `git clone --reference` refuses. */
+{ kind: "shallow" };
 
 /**  The clone under way, for the status bar. */
 export type Cloning = {

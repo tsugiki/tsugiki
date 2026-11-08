@@ -162,20 +162,15 @@ it("adds with the clone the user picked, and forgets it when the text changes", 
   expect(state.source).toEqual({ kind: "download" });
 });
 
-it("adds with a download while no clone lends, as the dialog's button stays off then", async () => {
-  const onboarding = { screen: "onboarding", token: "gh" } as const;
-  vi.mocked(commands.addRepository).mockResolvedValue({ status: "ok", data: onboarding });
+it("adds nothing while no clone lends, though the dialog's button stays off then", async () => {
   const state = new AddRepositoryState();
   picking(lender, { kind: "no_remote" });
   await state.chooseClone("Some-Maintainer/gcmon");
 
-  await state.add(check);
+  expect(await state.add(check)).toBeUndefined();
 
-  expect(commands.addRepository).toHaveBeenCalledWith({
-    name: "Some-Maintainer/gcmon",
-    access: "maintained",
-    source: { kind: "download" },
-  });
+  expect(commands.addRepository).not.toHaveBeenCalled();
+  expect(state.step).toEqual({ step: "typing" });
 });
 
 it("says why an add failed", async () => {

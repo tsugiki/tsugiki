@@ -1,6 +1,7 @@
 // Picking the clone a mirror borrows objects from (#172). The core opens the folder picker and checks the
 // folder with git, which only reads it.
 import { commands, type CloneRefusal, type MirrorSource } from "$lib/data/bindings";
+import { ask } from "./answer";
 
 export type { CloneRefusal, MirrorSource };
 
@@ -10,17 +11,6 @@ export type PickedClone =
   | { kind: "lends"; folder: string }
   | { kind: "refused"; folder: string; refusal: CloneRefusal }
   | { kind: "failed"; problem: string };
-
-type Answer<T> = { status: "ok"; data: T } | { status: "error"; error: { message: string } };
-
-/** The core's refusals come back as answers. Only a broken call rejects, and it reads the same. */
-async function ask<T>(asking: Promise<Answer<T>>): Promise<Answer<T>> {
-  try {
-    return await asking;
-  } catch (e) {
-    return { status: "error", error: { message: String(e) } };
-  }
-}
 
 /** Opens the folder picker, and checks the folder the user picks as a clone of `repository`. */
 export async function pickClone(repository: string): Promise<PickedClone> {

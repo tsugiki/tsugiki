@@ -5,6 +5,7 @@ import type { CloneRefusal, PickedClone } from "$lib/state/mirror-source";
 export function refusalWords(folder: string, repository: string, refusal: CloneRefusal): string {
   if (refusal.kind === "not_a_folder") return `${folder} isn't a folder.`;
   if (refusal.kind === "not_a_clone") return `${folder} isn't a git clone: ${refusal.git_says}`;
+  if (refusal.kind === "shallow") return `${folder} is a shallow clone, which git can't borrow from.`;
   return `${folder} has no remote for ${repository}.`;
 }
 

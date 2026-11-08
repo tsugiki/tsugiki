@@ -8,7 +8,7 @@ mod slow_commands;
 mod startup;
 mod wiring;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -101,31 +101,28 @@ fn mirror_question(latest: State<'_, LatestMirrorQuestion>) -> Option<Repository
 }
 
 /// Says why the clone in `folder` can't lend its objects to `repository`'s mirror, or nothing if it can.
-/// This waits on git commands that only read the clone.
-#[tauri::command(async)]
-#[specta::specta]
-fn check_clone(
+fn check_named_clone(
     repository: &str,
-    folder: PathBuf,
-    work: State<'_, RepositoryWork>,
+    folder: &Path,
+    work: &RepositoryWork,
 ) -> Result<Option<CloneRefusal>, Error> {
     let repository = RepositoryName::parse(repository)?;
-    Ok(work.mirrors.check_clone(&folder, &repository).err())
+    Ok(work.mirrors.check_clone(folder, &repository).err())
 }
 
-/// Saves where `repository`'s mirror gets its objects, and starts its clone ahead of the others. This waits
-/// on a small file.
-#[tauri::command(async)]
-#[specta::specta]
-fn choose_mirror_source(
+/// Starts `repository`'s clone ahead of the others, with its objects from `source`, and saves the answer in
+/// `machine.toml`.
+fn choose_named_source(
     repository: &str,
     source: MirrorSource,
-    owner: State<'_, SettingsOwner>,
-    work: State<'_, RepositoryWork>,
+    owner: &SettingsOwner,
+    work: &RepositoryWork,
 ) -> Result<(), Error> {
     let repository = RepositoryName::parse(repository)?;
-    drop(owner.save_mirror_source(repository.clone(), source.clone())?);
-    work.mirrors.clone_mirror_next(repository, Some(source));
+    // The clone goes ahead even if `machine.toml` can't keep the answer. The next launch asks again.
+    work.mirrors
+        .clone_mirror_next(repository.clone(), Some(source.clone()));
+    drop(owner.save_mirror_source(repository, source)?);
     Ok(())
 }
 
@@ -571,8 +568,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             mirror_problem,
             check_mirrors_again,
             mirror_question,
-            check_clone,
-            choose_mirror_source,
+            slow_commands::check_clone,
+            slow_commands::choose_mirror_source,
             slow_commands::pick_folder,
             refresh,
             open_issue,

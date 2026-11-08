@@ -5,13 +5,11 @@ import {
   type Cloning,
   type LastSync,
   type MirrorProblem,
-  type MirrorSource,
   type Status_Serialize as Status,
   type SyncActivity,
 } from "$lib/data/bindings";
-import { chooseMirrorSource } from "./mirror-source";
 
-export type { Cloning, LastSync, MirrorProblem, MirrorSource, Status, SyncActivity };
+export type { Cloning, LastSync, MirrorProblem, Status, SyncActivity };
 
 export class StatusState {
   status = $state<Status>();
@@ -82,13 +80,6 @@ export class StatusState {
     } catch (e) {
       this.error = String(e);
     }
-  }
-
-  /** Answers the status bar's question: where `repository`'s mirror gets its objects. The question goes as
-   * an event. */
-  async chooseMirrorSource(repository: string, source: MirrorSource) {
-    const problem = await chooseMirrorSource(repository, source);
-    if (problem !== undefined) this.error = problem;
   }
 
   /** Asks the core to look at git and the disk again. The answer comes as an event. */

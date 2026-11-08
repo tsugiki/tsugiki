@@ -10,7 +10,6 @@ vi.mock("$lib/data/bindings", () => ({
     cloning: vi.fn(),
     mirrorProblem: vi.fn(),
     mirrorQuestion: vi.fn(),
-    chooseMirrorSource: vi.fn(),
     refresh: vi.fn(),
     checkMirrorsAgain: vi.fn(),
   },
@@ -195,17 +194,6 @@ describe("StatusState's last sync", () => {
       const state = new StatusState();
       await state.load();
       expect(state.mirrorQuestion).toBeNull();
-    });
-
-    it("answers it, and says when it can't", async () => {
-      vi.mocked(commands.chooseMirrorSource).mockResolvedValueOnce({ status: "ok", data: null });
-      const state = new StatusState();
-      await state.chooseMirrorSource("python/cpython", { kind: "download" });
-      expect(state.error).toBeUndefined();
-      vi.mocked(commands.chooseMirrorSource).mockRejectedValue(new Error("no IPC"));
-      await state.chooseMirrorSource("python/cpython", { kind: "download" });
-      expect(commands.chooseMirrorSource).toHaveBeenCalledWith("python/cpython", { kind: "download" });
-      expect(state.error).toBe("Error: no IPC");
     });
   });
 

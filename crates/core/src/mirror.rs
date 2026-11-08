@@ -1151,9 +1151,9 @@ impl Worker {
                 match lender(&*self.git, &self.remotes.prefixes, folder, repository) {
                     Ok(common) => Some(common),
                     Err(refusal) => {
+                        let folder = folder.display();
                         log::warn!(
-                            "Tsugiki downloads {repository}'s mirror, as {} can't lend it objects: {refusal:?}",
-                            folder.display()
+                            "Tsugiki downloads {repository}'s mirror, as {folder} can't lend it objects: {refusal:?}"
                         );
                         None
                     }
@@ -1167,8 +1167,7 @@ impl Worker {
         let first = self.asking.first().cloned();
         let same = match (&first, &self.told_asking) {
             (Some(first), Some(told)) => first.is_same(told),
-            (None, None) => true,
-            (Some(_), None) | (None, Some(_)) => false,
+            (first, told) => first.is_none() && told.is_none(),
         };
         if !same {
             (self.announce.question)(first.as_ref());

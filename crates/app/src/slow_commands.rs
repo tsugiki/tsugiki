@@ -17,6 +17,7 @@ use tauri::async_runtime::spawn_blocking;
 use tsugiki_core::diff::{DiffRow, HeadLine};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::highlight::Span;
+use tsugiki_core::mirror::{CloneRefusal, MirrorSource};
 use tsugiki_core::repository::{Home, RepositoryCheck};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{PaneWidths, SettingsOwner};
@@ -58,6 +59,31 @@ pub(crate) fn add_repository(
     work: State<'_, crate::RepositoryWork>,
 ) -> Result<Home, Error> {
     crate::add_named_repository(repository, &owner, &work)
+}
+
+/// Says why the clone in `folder` can't lend its objects to `repository`'s mirror, or nothing if it can.
+/// This waits on git commands that only read the clone.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn check_clone(
+    repository: &str,
+    folder: PathBuf,
+    work: State<'_, crate::RepositoryWork>,
+) -> Result<Option<CloneRefusal>, Error> {
+    crate::check_named_clone(repository, &folder, &work)
+}
+
+/// Starts `repository`'s clone ahead of the others, with its objects from `source`, and saves the answer in
+/// `machine.toml`. This waits on a small file.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn choose_mirror_source(
+    repository: &str,
+    source: MirrorSource,
+    owner: State<'_, SettingsOwner>,
+    work: State<'_, crate::RepositoryWork>,
+) -> Result<(), Error> {
+    crate::choose_named_source(repository, source, &owner, &work)
 }
 
 /// Opens the system's folder picker, and gives the folder the user picked, or nothing if they cancelled. It

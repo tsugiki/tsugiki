@@ -80,6 +80,8 @@ pub enum CloneRefusal {
     },
     /// None of its remotes is the Repository on GitHub.
     NoRemote,
+    /// A shallow or grafted clone, which `git clone --reference` refuses.
+    Shallow,
 }
 
 /// The git folder that holds the objects of the clone in `folder`, if it is a clone of `repository` at one of
@@ -119,15 +121,22 @@ pub(crate) fn lender(
         )
         .unwrap_or_default();
     let mut remotes = urls.lines().filter_map(|line| line.split_once(' '));
-    if remotes.any(|(_, url)| names(prefixes, url.trim(), repository)) {
-        Ok(common)
-    } else {
+    if !remotes.any(|(_, url)| names(prefixes, url.trim(), repository)) {
         Err(CloneRefusal::NoRemote)
+    } else if ["shallow", "info/grafts"]
+        .iter()
+        .any(|file| common.join(file).exists())
+    {
+        Err(CloneRefusal::Shallow)
+    } else {
+        Ok(common)
     }
 }
 
-/// Whether `url` is `repository` at one of `prefixes`, with or without `.git`, in any case.
+/// Whether `url` is `repository` at one of `prefixes`, with or without `.git` and a user, in any case.
 pub(super) fn names(prefixes: &[String], url: &str, repository: &RepositoryName) -> bool {
+    let url = without_user(url);
+    let url = url.as_str();
     prefixes.iter().any(|prefix| {
         let rest = url
             .get(..prefix.len())
@@ -140,11 +149,25 @@ pub(super) fn names(prefixes: &[String], url: &str, repository: &RepositoryName)
     })
 }
 
-/// The prefixes a remote of a Repository on GitHub starts with, over HTTPS or SSH.
-pub(crate) const GITHUB_PREFIXES: [&str; 5] = [
+/// `url` without the user in `https://user@github.com/…` or `ssh://git@github.com/…`. The `git@` of
+/// `git@github.com:…` stays, as it has no `://`.
+fn without_user(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_owned();
+    };
+    let (host, path) = rest.split_at(rest.find('/').unwrap_or(rest.len()));
+    let host = host.rsplit_once('@').map_or(host, |(_, host)| host);
+    format!("{scheme}://{host}{path}")
+}
+
+/// The prefixes a remote of a Repository on GitHub starts with, over HTTPS or SSH, once `without_user`
+/// has dropped its user.
+pub(crate) const GITHUB_PREFIXES: [&str; 7] = [
     "https://github.com/",
+    "https://www.github.com/",
     "http://github.com/",
     "git@github.com:",
-    "ssh://git@github.com/",
+    "ssh://github.com/",
+    "ssh://ssh.github.com:443/",
     "git://github.com/",
 ];

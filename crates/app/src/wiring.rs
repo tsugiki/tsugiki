@@ -1176,6 +1176,42 @@ mod tests {
     }
 
     #[test]
+    fn an_answer_machine_toml_cant_keep_still_starts_the_clone() {
+        let (folders, root) = temp_folders("wiring-answer-unsaved");
+        let mut files = SettingsFiles::load(folders.clone());
+        let cpython = tsugiki_core::repository::RepositoryName::parse(CPYTHON).unwrap();
+        let _ = files
+            .add_repository(&cpython, RepositoryAccess::Other, &MirrorSource::Download)
+            .unwrap();
+        std::fs::write(
+            folders.machine_file(),
+            "last_repository = \"python/cpython\"\n",
+        )
+        .unwrap();
+        let wired = Wired::start_cloning_from(
+            Ok(folders.clone()),
+            recordings(),
+            remotes(&root, &[CPYTHON]),
+        );
+
+        let _ = wired.questions.recv_timeout(PLENTY).unwrap();
+        // Broken after the launch read it, as a user's edit in another window would leave it.
+        std::fs::write(folders.machine_file(), "last_repository = \n").unwrap();
+        let chose = wired.ask(
+            "choose_mirror_source",
+            json!({ "repository": CPYTHON, "source": { "kind": "download" } }),
+        );
+        let answered = wired.questions.recv_timeout(PLENTY).unwrap();
+        let cloned = clones(&wired, 1);
+        drop(wired.stop());
+        std::fs::remove_dir_all(root).unwrap();
+
+        assert!(chose.is_err(), "{chose:?}");
+        assert_eq!(answered, Value::Null);
+        assert_eq!(cloned.len(), 1);
+    }
+
+    #[test]
     fn a_picker_the_user_cancels_gives_nothing() {
         let wired = Wired::start(Err(no_folders()), no_network());
 

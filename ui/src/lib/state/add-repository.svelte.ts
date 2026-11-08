@@ -5,6 +5,7 @@ import {
   type RepositoryCheck_Serialize,
   type RepositorySize,
 } from "$lib/data/bindings";
+import { ask } from "./answer";
 import type { Home } from "./home.svelte";
 import { pickClone, type MirrorSource, type PickedClone } from "./mirror-source";
 
@@ -23,17 +24,6 @@ export type AddStep =
 export type MirrorChoice = { kind: "download" } | { kind: "borrow"; picked: PickedClone | undefined };
 
 const DOWNLOAD: MirrorChoice = { kind: "download" };
-
-type Answer<T> = { status: "ok"; data: T } | { status: "error"; error: { message: string } };
-
-/** The core's refusals come back as answers. Only a broken call rejects, and it reads the same. */
-async function ask<T>(asking: Promise<Answer<T>>): Promise<Answer<T>> {
-  try {
-    return await asking;
-  } catch (e) {
-    return { status: "error", error: { message: String(e) } };
-  }
-}
 
 export class AddRepositoryState {
   #input = $state("");
@@ -84,10 +74,12 @@ export class AddRepositoryState {
         : { step: "failed", problem: answer.error.message };
   }
 
-  /** Adds what was checked, by the name GitHub gave, and returns what the window opens on now. */
+  /** Adds what was checked, by the name GitHub gave, and returns what the window opens on now. It adds
+   * nothing while the user is still picking a clone, or the one they picked can't lend. */
   async add(check: RepositoryCheck): Promise<Home | undefined> {
+    const source = this.source;
+    if (source === undefined) return undefined;
     this.step = { step: "adding", check };
-    const source = this.source ?? { kind: "download" };
     const answer = await ask(
       commands.addRepository({ name: check.repository.name, access: check.access, source }),
     );

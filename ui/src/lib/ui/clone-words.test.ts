@@ -11,6 +11,7 @@ describe("refusalWords", () => {
       String.raw`D:\cpython isn't a git clone: not a git repository`,
     ],
     [{ kind: "no_remote" }, String.raw`D:\cpython has no remote for python/cpython.`],
+    [{ kind: "shallow" }, String.raw`D:\cpython is a shallow clone, which git can't borrow from.`],
   ] as const)("words %o", (refusal, words) => {
     expect(refusalWords(folder, "python/cpython", refusal)).toBe(words);
   });

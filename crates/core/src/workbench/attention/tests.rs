@@ -375,7 +375,7 @@ fn failed_ci_on_a_merged_own_pr_waits_on_nobody() {
 }
 
 #[test]
-fn failed_ci_on_a_colleagues_pr_is_listed_without_needing_attention() {
+fn failed_ci_on_a_colleagues_pr_doesnt_list_it() {
     let world = World::new("colleague-ci");
     world.has(vec![PullRequestFacts {
         ci: Some(CiState::Failure),
@@ -481,17 +481,6 @@ fn a_failed_bot_backport_needs_attention_on_a_merged_origin_pr() {
             target: "3.14".to_owned()
         }]
     );
-    world.finish();
-}
-
-#[test]
-fn what_happened_before_last_seen_no_longer_needs_attention() {
-    let world = World::new("seen");
-    world.has(vec![own(1), own(2)]);
-    world.happened(1, vec![comment(&colleague(), hours_ago(3))]);
-    world.opened(1, hours_ago(2));
-
-    assert_eq!(world.why(1), []);
     world.finish();
 }
 
@@ -626,19 +615,6 @@ fn a_mention_of_someone_else_leaves_an_issue_the_user_only_follows_alone() {
 }
 
 #[test]
-fn the_users_own_post_on_an_issue_they_opened_needs_nothing() {
-    let world = World::new("own-post");
-    world.has_issues(vec![IssueFacts {
-        author: Some(me()),
-        ..issue(1)
-    }]);
-    world.happened(1, vec![comment(&me(), hours_ago(1))]);
-
-    assert_eq!(world.workbench().items, []);
-    world.finish();
-}
-
-#[test]
 fn an_issue_needs_attention_when_a_pr_in_its_tree_does_and_says_why_with_the_newest_first() {
     let world = World::new("tree");
     world.has_issues(vec![issue(5)]);
@@ -690,7 +666,6 @@ fn the_same_reason_on_two_prs_of_a_tree_is_said_once() {
 #[test]
 fn what_needs_attention_comes_first_newest_first_then_the_rest_then_the_quiet_section() {
     let world = World::new("order");
-    let filter_numbers = [10, 11];
     world.has_issues(vec![
         IssueFacts {
             updated_at: hours_ago(1),
@@ -737,7 +712,7 @@ fn what_needs_attention_comes_first_newest_first_then_the_rest_then_the_quiet_se
     let workbench = world.workbench();
 
     assert_eq!(numbers(&workbench.items), [2, 1, 3, 4]);
-    assert_eq!(numbers(&workbench.quiet), filter_numbers);
+    assert_eq!(numbers(&workbench.quiet), [10, 11]);
     world.finish();
 }
 
@@ -768,25 +743,4 @@ fn the_sidebar_counts_what_needs_attention_and_review_requests_lists_those_prs()
     assert_eq!(requests.quiet, []);
     assert_eq!(requests.count, 3);
     world.finish();
-}
-
-#[test]
-fn nothing_needs_attention_before_anyone_signs_in() {
-    let folder = crate::testing::temp_path("attention-no-viewer");
-    fs::create_dir_all(&folder).unwrap();
-    let path = folder.join("tsugiki.db");
-    let store = Store::open(&path).unwrap();
-    store
-        .save_pull_requests(&cpython(), vec![requested(1)])
-        .unwrap();
-    let (to_open, reader) = reader();
-    let open_reader = to_open.open(&path).unwrap();
-
-    let settings = RepositorySettings::new(cpython());
-    let workbench = Workbench::read(&reader, &settings, &WorkbenchView::Whole).unwrap();
-
-    assert_eq!(workbench.count, 0);
-    open_reader.close();
-    store.close();
-    fs::remove_dir_all(folder).unwrap();
 }

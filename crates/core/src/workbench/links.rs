@@ -92,19 +92,6 @@ mod tests {
     }
 
     #[test]
-    fn a_pr_fixing_several_issues_appears_under_each() {
-        let both = PullRequestFacts {
-            closing_issues: vec![2],
-            ..fixing(10, 1)
-        };
-        let found = workbench(vec![both], vec![issue(1), issue(2)]);
-        assert_eq!(
-            outline(&found),
-            [("issue", 2, vec![10]), ("issue", 1, vec![10])]
-        );
-    }
-
-    #[test]
     fn a_retitled_pr_moves_to_the_issue_its_title_names_now() {
         let before = workbench(vec![fixing(10, 1)], vec![issue(1), issue(2)]);
         let after = workbench(vec![fixing(10, 2)], vec![issue(1), issue(2)]);

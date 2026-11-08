@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, Read, Write as _};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -18,6 +18,9 @@ const RECORDED: &str = include_str!("../../tests/fixtures/git/clone-progress.txt
 
 /// Each Repository whose heads arrived, by name, with the PRs whose heads they were.
 type Arrivals = Receiver<(String, Vec<u32>)>;
+
+/// Each Repository whose fetch of heads failed, by name, with the PRs whose heads they were and why.
+type Failures = Receiver<(String, Vec<u32>, String)>;
 
 /// Announcements that pass on each clone, and nothing of fetches.
 fn cloning_only(announcing: Sender<Option<Cloning>>) -> Announce {
@@ -541,6 +544,12 @@ impl FakeStart {
     }
 }
 
+/// Ends `start` as git does when it fails, with these lines of error output.
+fn fail_saying(mut start: FakeStart, lines: &str) {
+    start.output.write_all(lines.as_bytes()).unwrap();
+    start.fail();
+}
+
 #[derive(PartialEq, Eq)]
 enum Outcome {
     Succeeded,
@@ -630,15 +639,27 @@ impl Place {
     fn start_faked_hearing(&self, patience: Duration) -> (Mirrors, Receiver<FakeStart>, Arrivals) {
         let (arriving, arrivals) = channel();
         let announce = Announce {
-            cloning: Box::new(|_| {}),
             fetched: Box::new(move |repository, numbers| {
                 drop(arriving.send((repository.to_string(), numbers.to_vec())));
             }),
-            problem: Box::new(|_| {}),
-            question: Box::new(|_| {}),
+            ..Announce::cloning_only(Box::new(|_| {}))
         };
         let (mirrors, starts) = self.start_faked_announcing(patience, announce);
         (mirrors, starts, arrivals)
+    }
+
+    /// The worker with the fake git, each start of it, and each Repository's heads whose fetch failed, with
+    /// why.
+    fn start_faked_hearing_failures(&self) -> (Mirrors, Receiver<FakeStart>, Failures) {
+        let (failing, failures) = channel();
+        let announce = Announce {
+            failed: Box::new(move |repository, numbers, why| {
+                drop(failing.send((repository.to_string(), numbers.to_vec(), why.to_owned())));
+            }),
+            ..Announce::cloning_only(Box::new(|_| {}))
+        };
+        let (mirrors, starts) = self.start_faked_announcing(PLENTY, announce);
+        (mirrors, starts, failures)
     }
 
     /// The worker with the fake git, which tells `announce` as it goes, and each start of it.
@@ -1057,6 +1078,30 @@ fn the_app_hears_which_heads_arrived_and_not_those_behind_or_missing() {
 }
 
 #[test]
+fn the_app_hears_which_heads_failed_and_why_once_they_wait_for_news() {
+    let place = Place::new("failures");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts, failures) = place.start_faked_hearing_failures();
+    let requests = mirrors.requests();
+    let unreachable = "fatal: unable to access 'https://github.com/python/cpython.git/': \
+                       Could not resolve host: github.com";
+
+    requests.fetch_heads(cpython.clone(), vec![head(1), head(2)]);
+    let first = starts.recv_timeout(PLENTY).unwrap();
+    // Heads that come while the fetch runs are news, so the worker fetches again at once.
+    requests.fetch_heads(cpython, vec![head(1), head(2)]);
+    fail_saying(first, &format!("{unreachable}\n"));
+    let again = starts.recv_timeout(PLENTY).unwrap();
+    fail_saying(again, &format!("{unreachable}\n"));
+    mirrors.stop(PLENTY);
+
+    let heard: Vec<_> = failures.iter().collect();
+    let why = unreachable.to_owned();
+    assert_eq!(heard, [("python/cpython".to_owned(), vec![1, 2], why)]);
+}
+
+#[test]
 fn heads_wait_for_their_mirror_to_be_cloned() {
     let place = Place::new("heads-wait");
     let cpython = named("python/cpython");
@@ -1244,10 +1289,8 @@ mod problems {
     fn hearing_problems() -> (Announce, Receiver<Option<MirrorProblem>>) {
         let (telling, told) = channel();
         let announce = Announce {
-            cloning: Box::new(|_| {}),
-            fetched: Box::new(|_, _| {}),
             problem: Box::new(move |problem| drop(telling.send(problem.cloned()))),
-            question: Box::new(|_| {}),
+            ..Announce::cloning_only(Box::new(|_| {}))
         };
         (announce, told)
     }

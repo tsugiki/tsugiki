@@ -6,7 +6,8 @@
 // from the file at the PR's head (#182), and switch between the unified and side-by-side views (#183).
 // Review threads sit under their lines, and a resolved one starts folded to a line (#184). A thread on a
 // whole file or an Outdated one sits at the top of its file, a thread on a line no hunk shows opens the lines
-// around it, and those on files no longer in the diff come after the last file (#185).
+// around it, and those on files no longer in the diff come after the last file (#185). A fetch of the PR's
+// head that fails says why, until the tab asks again, which hands the head to the mirror once more (#233).
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import {
   commands,
@@ -105,6 +106,8 @@ export class PrFilesState {
   error = $state<string>();
   /** The mirror's clone under way, which a Repository's first diff waits for. */
   cloning = $state<Cloning | null>(null);
+  /** git's words for why the mirror's fetch of the PR's head failed, kept until the tab asks again. */
+  fetchFailed = $state<string>();
   /** The rows that show, and where: a Generated file the user hasn't opened shows only its header, and a
    * gap the user expanded shows the lines it left out. */
   layout = $derived.by(() => {
@@ -223,6 +226,9 @@ export class PrFilesState {
         events.headsFetched.listen(({ payload }) => {
           if (mine(payload.repository, payload.items)) void this.ask();
         }),
+        events.headsFetchFailed.listen(({ payload }) => {
+          if (mine(payload.repository, payload.items)) this.fetchFailed = payload.why;
+        }),
         // A sync that moves the PR's head changes its diff.
         events.changed.listen(({ payload }) => {
           if (mine(payload.repository, payload.items)) void this.ask();
@@ -255,8 +261,12 @@ export class PrFilesState {
 
   /** Asks the core what the tab shows now. A new head brings new rows, as does a new merge base: a PR
    * moved to another Target branch keeps its head, and its diff can list other files in the places the tab
-   * holds. */
+   * holds. The core hands a head the mirror lacks to the mirror again as it answers, so this is also how
+   * the user tries again after a fetch failed. */
   async ask() {
+    // The core hands the head to the mirror again, so a failure heard before is of a fetch that's over. One
+    // the mirror sent before this can land after it, and shows until the next answer or failure.
+    this.fetchFailed = undefined;
     this.#lastQuestion += 1;
     const question = this.#lastQuestion;
     const answer = await this.#safely(() => commands.pullRequestFiles(this.#repository, this.#number));

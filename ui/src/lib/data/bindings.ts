@@ -135,6 +135,7 @@ export const commands = {
 export const events = {
 	changed: makeEvent<Changed, Changed>("changed"),
 	cloningChanged: makeEvent<CloningChanged_Serialize, CloningChanged_Deserialize>("cloning-changed"),
+	headsFetchFailed: makeEvent<HeadsFetchFailed, HeadsFetchFailed>("heads-fetch-failed"),
 	headsFetched: makeEvent<HeadsFetched, HeadsFetched>("heads-fetched"),
 	lastSyncChanged: makeEvent<LastSyncChanged_Serialize, LastSyncChanged_Deserialize>("last-sync-changed"),
 	mirrorProblemChanged: makeEvent<MirrorProblemChanged_Serialize, MirrorProblemChanged_Deserialize>("mirror-problem-changed"),
@@ -444,6 +445,11 @@ export type Error_Serialize = {
 	message: string,
 } & ErrorKind_Serialize;
 
+/**  The PR heads a fetch into a Repository's mirror failed to bring, and git's words for why. */
+export type FailedHeads = {
+	why: string,
+} & Change;
+
 /**  How much a file changed. */
 export type FileChange = { kind: "lines"; added: number; removed: number } | 
 /**  git doesn't count the lines of a binary file. */
@@ -549,6 +555,12 @@ export type HeadLine = {
 	text: string,
 	spans: Span[],
 };
+
+/**
+ *  Sent when a fetch of PR heads fails and they wait for news, so a Files tab waiting for one says why and
+ *  offers to try again (#233).
+ */
+export type HeadsFetchFailed = FailedHeads;
 
 /**  Sent when PR heads arrive in a Repository's mirror, so a Files tab waiting for one asks again. */
 export type HeadsFetched = Change;

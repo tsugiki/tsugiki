@@ -111,6 +111,10 @@ pub type AnnounceCloning = Box<dyn FnMut(Option<&Cloning>) + Send>;
 /// Says which PRs' heads a fetch brought into a Repository's mirror.
 pub type AnnounceFetched = Box<dyn FnMut(&RepositoryName, &[u32]) + Send>;
 
+/// Says which PRs' heads a fetch into a Repository's mirror failed to bring, and why, once they wait for
+/// news before the next fetch.
+pub type AnnounceFailed = Box<dyn FnMut(&RepositoryName, &[u32], &str) + Send>;
+
 /// Says why no mirror can be made, and `None` once one can.
 pub type AnnounceProblem = Box<dyn FnMut(Option<&MirrorProblem>) + Send>;
 
@@ -122,6 +126,7 @@ pub type AnnounceQuestion = Box<dyn FnMut(Option<&RepositoryName>) + Send>;
 pub struct Announce {
     pub cloning: AnnounceCloning,
     pub fetched: AnnounceFetched,
+    pub failed: AnnounceFailed,
     pub problem: AnnounceProblem,
     pub question: AnnounceQuestion,
 }
@@ -132,6 +137,7 @@ impl Announce {
         Self {
             cloning,
             fetched: Box::new(|_, _| {}),
+            failed: Box::new(|_, _, _| {}),
             problem: Box::new(|_| {}),
             question: Box::new(|_| {}),
         }
@@ -1143,8 +1149,10 @@ impl Worker {
             }
             Err(cause) => {
                 log::warn!("Tsugiki can't start fetching PR heads of {repository}: {cause}");
+                let numbers: Vec<u32> = batch.heads.keys().copied().collect();
                 self.try_again_later(&repository, batch);
                 self.pace = Pace::Stalled;
+                (self.announce.failed)(&repository, &numbers, &cause.to_string());
             }
         }
     }
@@ -1186,15 +1194,18 @@ impl Worker {
             news,
         } = fetch;
         if !git.succeeded() {
+            let numbers: Vec<u32> = batch.heads.keys().copied().collect();
             self.try_again_later(&repository, batch);
             if says_broken(last_words) && self.replace_broken(&repository, &mirror, last_words) {
                 return;
             }
             log::warn!("Tsugiki couldn't fetch PR heads of {repository}: {last_words}");
             // A fetch starts only while the worker is going, and no news since means it still is. Fetches
-            // wait for some, so one that can't work doesn't run again and again.
+            // wait for some, so one that can't work doesn't run again and again. Only then does the app
+            // hear of it, as news means another fetch.
             if !news {
                 self.pace = Pace::Stalled;
+                (self.announce.failed)(&repository, &numbers, last_words);
             }
             return;
         }

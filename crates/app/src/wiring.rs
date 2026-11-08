@@ -16,9 +16,9 @@ use tsugiki_core::settings::{SettingsFiles, SettingsOwner};
 use tsugiki_core::status::{Change, Status, StatusBoard};
 
 use crate::{
-    Changed, CloningChanged, DiffWork, FolderPicker, HeadsFetched, LastSyncChanged,
-    MirrorProblemChanged, MirrorQuestionChanged, PickFolder, RepositoryWork, StatusChanged,
-    SyncActivityChanged,
+    Changed, CloningChanged, DiffWork, FailedHeads, FolderPicker, HeadsFetchFailed, HeadsFetched,
+    LastSyncChanged, MirrorProblemChanged, MirrorQuestionChanged, PickFolder, RepositoryWork,
+    StatusChanged, SyncActivityChanged,
 };
 
 /// How often the open Repository refreshes: a refresh costs a few points, and this is about 60 points an
@@ -165,6 +165,7 @@ fn mirror_announcements<R: Runtime>(app: &AppHandle<R>) -> Announce {
     let problem_handle = app.clone();
     let question_handle = app.clone();
     let heads_handle = app.clone();
+    let failed_handle = app.clone();
     Announce {
         cloning: Box::new(move |cloning| {
             let cloning = cloning.cloned();
@@ -177,6 +178,16 @@ fn mirror_announcements<R: Runtime>(app: &AppHandle<R>) -> Announce {
                 items: numbers.to_vec(),
             };
             log_if_unsent(HeadsFetched(change).emit(&heads_handle));
+        }),
+        failed: Box::new(move |repository, numbers, why| {
+            let failed = FailedHeads {
+                heads: Change {
+                    repository: repository.clone(),
+                    items: numbers.to_vec(),
+                },
+                why: why.to_owned(),
+            };
+            log_if_unsent(HeadsFetchFailed(failed).emit(&failed_handle));
         }),
         problem: Box::new(move |problem| {
             let problem = problem.cloned();
@@ -281,6 +292,7 @@ mod tests {
         problems: Receiver<Value>,
         questions: Receiver<Value>,
         heads: Receiver<Value>,
+        failed_heads: Receiver<Value>,
         _app: App<MockRuntime>,
     }
 
@@ -319,6 +331,7 @@ mod tests {
             let problems = hear(&app, "mirror-problem-changed");
             let questions = hear(&app, "mirror-question-changed");
             let heads = hear(&app, "heads-fetched");
+            let failed_heads = hear(&app, "heads-fetch-failed");
             let outside = Outside {
                 github,
                 remotes,
@@ -340,6 +353,7 @@ mod tests {
                 problems,
                 questions,
                 heads,
+                failed_heads,
                 _app: app,
             }
         }
@@ -1308,12 +1322,8 @@ mod tests {
         assert_eq!(head.trim(), commit);
     }
 
-    #[test]
-    fn a_prs_files_tab_fetches_its_head_first_and_then_reads_its_diff_in_chunks() {
-        let (folders, root) = temp_folders("wiring-files");
-        let remotes = remotes(&root, &[CPYTHON]);
-        let commit = pull_request_on(&root, CPYTHON, 1);
-        // A PR of someone else's, at the commit on the remote, which no sync step reads.
+    /// PR #1 of cpython, someone else's, at `commit`, which no sync step reads.
+    fn someone_elses_pr_1(folders: &Folders, commit: &str) {
         let pr = PullRequestFacts {
             number: 1,
             title: "gh-1: Fix it".to_owned(),
@@ -1328,13 +1338,21 @@ mod tests {
             assignees: vec![],
             closing_issues: vec![],
             merge_commit: None,
-            head: CommitSha::parse(&commit),
+            head: CommitSha::parse(commit),
             off_default: None,
         };
         let name = tsugiki_core::repository::RepositoryName::parse(CPYTHON).unwrap();
         let store = tsugiki_core::store::Store::open(&folders.database()).unwrap();
         store.save_pull_requests(&name, vec![pr]).unwrap();
         store.close();
+    }
+
+    #[test]
+    fn a_prs_files_tab_fetches_its_head_first_and_then_reads_its_diff_in_chunks() {
+        let (folders, root) = temp_folders("wiring-files");
+        let remotes = remotes(&root, &[CPYTHON]);
+        let commit = pull_request_on(&root, CPYTHON, 1);
+        someone_elses_pr_1(&folders, &commit);
         let wired = Wired::start_cloning_from(Ok(folders.clone()), recordings(), remotes);
         let _ = wired.ask("add_repository", add_cpython()).unwrap();
         let _clone = clones(&wired, 1);
@@ -1423,5 +1441,39 @@ mod tests {
             backwards["message"],
             "Lines 21 to 1 aren't lines of a file."
         );
+    }
+
+    #[test]
+    fn a_failed_fetch_of_a_prs_head_reaches_the_window_with_why() {
+        let (folders, root) = temp_folders("wiring-failed-head");
+        let remotes = remotes(&root, &[CPYTHON]);
+        let commit = pull_request_on(&root, CPYTHON, 1);
+        someone_elses_pr_1(&folders, &commit);
+        let wired = Wired::start_cloning_from(Ok(folders.clone()), recordings(), remotes);
+        let _ = wired.ask("add_repository", add_cpython()).unwrap();
+        let _clone = clones(&wired, 1);
+        // GitHub's copy goes after the clone, so the fetch of the head fails.
+        let bare = root.join("remotes").join(format!("{CPYTHON}.git"));
+        std::fs::remove_dir_all(bare).unwrap();
+
+        let fetching = wired.ask(
+            "pull_request_files",
+            json!({ "repository": CPYTHON, "number": 1 }),
+        );
+        // The sync's heads may fail in a fetch of their own before PR #1's.
+        let names_1 = |heard: &Value| {
+            heard["items"]
+                .as_array()
+                .is_some_and(|items| items.contains(&json!(1)))
+        };
+        let heard =
+            std::iter::from_fn(|| wired.failed_heads.recv_timeout(PLENTY).ok()).find(names_1);
+        drop(wired.stop());
+        std::fs::remove_dir_all(root).unwrap();
+
+        assert_eq!(fetching.unwrap(), json!({ "state": "fetching" }));
+        let heard = heard.unwrap();
+        assert_eq!(heard["repository"], CPYTHON);
+        assert!(heard["why"].as_str().is_some_and(|why| !why.is_empty()));
     }
 }

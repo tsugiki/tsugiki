@@ -28,6 +28,9 @@ tauri-plugin-dialog = "2.8.3"
 tauri-plugin-single-instance = "2.5.5"
 tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
 open = "5.4.5"
+# Ends each git the mirrors start with the helpers it started (#208): a Windows job object, or a process group
+# elsewhere.
+process-wrap = { version = "10.0.1", default-features = false, features = ["std", "creation-flags", "job-object", "process-group"] }
 # The free space on a disk, which a clone checks first (#171).
 fs4 = { version = "1.1.0", default-features = false, features = ["sync"] }
 time = { version = "0.3.55", features = ["formatting", "parsing", "serde"] }
@@ -55,6 +58,8 @@ url = "2.5.8"
 ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
 webview2-com = "0.39.1" # The version Tauri's window hands its controller in.
 windows-core = "0.62.2" # The version webview2-com uses.
+# The version process-wrap uses, named only for its process creation flags.
+windows = { version = "0.62.2", default-features = false, features = ["Win32_System_Threading"] }
 
 # The rules the gate enforces. Each one says why it is here, and a test in crates/app/tests/rules.rs fails
 # when one doesn't. Several picks come from easy-peasy-rust (MIT,

@@ -9,12 +9,15 @@
 
 use std::ffi::OsStr;
 use std::io::{self, Write};
-use std::process::{Child, ChildStderr, Command, Stdio};
+use std::process::{ChildStderr, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use process_wrap::std::{ChildWrapper, CommandWrap};
 use rustls::CertificateError;
 use ureq::Agent;
+#[cfg(windows)]
+use windows::Win32::System::Threading::CREATE_NO_WINDOW;
 
 use super::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::github::clock::http_date;
@@ -171,7 +174,7 @@ fn is_outside_certificate_dates(cause: &ureq::Error) -> bool {
 ///
 /// A Repository git can't read fails rather than asking for a password nobody sees: no terminal prompt, and
 /// no credential helper, since Git Credential Manager on Windows would open a sign-in window.
-pub(crate) fn start_git(args: &[&OsStr], input: &[u8]) -> io::Result<(Child, ChildStderr)> {
+pub(crate) fn start_git(args: &[&OsStr], input: &[u8]) -> io::Result<(StartedGit, ChildStderr)> {
     let mut command = Command::new("git");
     let _ = command
         .args(["-c", "credential.helper="])
@@ -183,22 +186,55 @@ pub(crate) fn start_git(args: &[&OsStr], input: &[u8]) -> io::Result<(Child, Chi
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
-    without_window(&mut command);
-    // Its own process group, so `stop_git` can end the helpers it starts along with it.
-    #[cfg(unix)]
-    let _ = std::os::unix::process::CommandExt::process_group(&mut command, 0);
-    let mut git = command.spawn()?;
+    // git hands a download to helpers (`git-remote-https`, `index-pack`), and the `git` on PATH on Windows
+    // is a launcher that starts the real one. Each helper joins git's job object, or its process group, as
+    // it starts, so `StartedGit::stop` ends them all. Reading the tree when stopping misses a helper that
+    // starts while it reads, and that helper goes on holding files in the mirror (#208).
+    let mut command = CommandWrap::from(command);
+    #[cfg(windows)]
+    let _ = command
+        .wrap(process_wrap::std::CreationFlags(CREATE_NO_WINDOW))
+        .wrap(process_wrap::std::JobObject);
+    #[cfg(not(windows))]
+    let _ = command.wrap(process_wrap::std::ProcessGroup::leader());
+    let mut git = StartedGit(command.spawn()?);
     // On a thread of its own, so a git that writes before it reads can't leave both waiting on a full pipe.
     // A git that stops reading says why on its error output. Closing the input tells git that is all.
-    if let Some(mut stdin) = git.stdin.take() {
+    if let Some(mut stdin) = git.0.stdin().take() {
         let input = input.to_vec();
         let _ = thread::spawn(move || drop(stdin.write_all(&input)));
     }
-    match git.stderr.take() {
+    match git.0.stderr().take() {
         Some(progress) => Ok((git, progress)),
         None => {
-            stop_git(&mut git);
+            git.stop();
             Err(io::Error::other("git's error output wasn't piped"))
+        }
+    }
+}
+
+/// A git that `start_git` started, with the helpers it starts in turn.
+pub(crate) struct StartedGit(Box<dyn ChildWrapper>);
+
+impl StartedGit {
+    /// Waits for git to end, and says if it did what it was asked.
+    pub(crate) fn succeeded(&mut self) -> bool {
+        self.0.wait().is_ok_and(|status| status.success())
+    }
+
+    /// Ends git and its helpers, so none goes on downloading after Tsugiki quits, and waits for git. A helper
+    /// can take a moment longer to end, and git's error output closes once the last one has. A failure
+    /// leaves a trace.
+    pub(crate) fn stop(&mut self) {
+        if let Err(cause) = self.0.start_kill() {
+            log::warn!("Tsugiki can't stop git's helpers: {cause}");
+            // git at least, so the wait doesn't last until git ends on its own.
+            if let Err(cause) = self.0.inner_mut().start_kill() {
+                log::warn!("Tsugiki can't stop git: {cause}");
+            }
+        }
+        if let Err(cause) = self.0.wait() {
+            log::warn!("Tsugiki can't wait for git: {cause}");
         }
     }
 }
@@ -273,48 +309,12 @@ fn gist(errors: &str) -> &str {
         .unwrap_or("")
 }
 
-/// Ends `git` and waits for it. git hands a download to helpers (`git-remote-https`, `index-pack`), which
-/// would otherwise go on downloading after Tsugiki quits, so this ends them too. A failure leaves a trace.
-pub(crate) fn stop_git(git: &mut Child) {
-    if let Err(cause) = end_git_and_helpers(git) {
-        log::warn!("Tsugiki can't stop git: {cause}");
-    }
-}
-
-fn end_git_and_helpers(git: &mut Child) -> io::Result<()> {
-    let id = git.id().to_string();
-    #[cfg(windows)]
-    let mut tree = {
-        let mut taskkill = Command::new("taskkill");
-        let _ = taskkill.args(["/F", "/T", "/PID", &id]);
-        taskkill
-    };
-    #[cfg(not(windows))]
-    let mut tree = {
-        let mut kill = Command::new("kill");
-        let _ = kill.args(["-s", "KILL", "--", &format!("-{id}")]);
-        kill
-    };
-    let _ = tree
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    without_window(&mut tree);
-    let ended = tree.status()?;
-    if !ended.success() {
-        // git ended between the two calls, or the tree couldn't be ended, so end git at least.
-        git.kill()?;
-    }
-    git.wait().map(drop)
-}
-
 /// Keeps a console program from opening a window on Windows, where Tsugiki itself has no console.
 fn without_window(command: &mut Command) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let _ = command.creation_flags(CREATE_NO_WINDOW);
+        let _ = command.creation_flags(CREATE_NO_WINDOW.0);
     }
     #[cfg(not(windows))]
     let _ = command;

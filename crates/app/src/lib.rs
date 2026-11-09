@@ -212,7 +212,7 @@ fn home(owner: State<'_, SettingsOwner>) -> Home {
 }
 
 /// How the user laid out the panes on this machine: the Sidebar's and the Workbench list's widths (#187), and
-/// whether the Sidebar shows (#234).
+/// whether the Sidebar (#234) and the list (#242) show.
 #[tauri::command]
 #[specta::specta]
 fn pane_layout(owner: State<'_, SettingsOwner>) -> PaneLayout {

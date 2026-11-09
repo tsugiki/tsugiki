@@ -90,6 +90,28 @@ describe("WorkbenchState", () => {
     state.stop();
   });
 
+  it("says whether the list or its quiet section has a line", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue({
+      status: "ok",
+      data: { items: [item(3)], quiet: [item(2)], count: 0, review_requests: 0, filters: [] },
+    });
+    const state = new WorkbenchState("python/cpython");
+    const pr = (number: number, issue?: number) => ({ number, kind: "pull_request" as const, issue });
+    const before = state.lists(pr(3));
+
+    await state.load();
+
+    expect([
+      before,
+      state.lists(pr(3)),
+      state.lists(pr(2)),
+      state.lists(pr(3, 1)),
+      state.lists(pr(4)),
+    ]).toEqual([false, true, true, false, false]);
+    state.stop();
+  });
+
   it("stops on each PR and Backport in an Issue's tree, and knows the Issue", async () => {
     catchListener();
     const tree: ListedItem = {

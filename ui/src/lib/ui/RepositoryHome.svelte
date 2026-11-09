@@ -23,7 +23,7 @@
     type WorkbenchRow,
   } from "$lib/state/workbench.svelte";
   import IssueDetail from "./IssueDetail.svelte";
-  import { currentOs, isTextBox, keyName } from "./keys";
+  import { currentOs, isTextBox, keyLabel, keyName } from "./keys";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
   import type { PaletteCommand } from "./Palette.svelte";
   import PaneEdge from "./PaneEdge.svelte";
@@ -33,6 +33,8 @@
   import { details, headline, issueDetails, preview, standaloneDetails } from "./workbench-row";
 
   const MINUTE = 60_000;
+  /** How far ↑ or ↓ scrolls the Detail pane while the list is hidden, in CSS pixels, as a browser does. */
+  const LINE = 40;
   /** The view of every PR's diff, unified or side by side, which `Ctrl+Alt+U` switches. */
   const diffView = new DiffViewChoice();
   /** How the user laid out the panes, which stays the same from one Repository to the next. */
@@ -92,6 +94,7 @@
   let kept: IssueViewState | undefined;
   let browserProblem = $state<string>();
   let list = $state<HTMLElement>();
+  let home = $state<HTMLElement>();
 
   const onGitHub = async (item: GitHubItem) => {
     browserProblem = await openOnGitHub(name, item);
@@ -159,11 +162,9 @@
     open({ number: issue, kind: "issue", issue: undefined }, "back");
   }
 
-  /** The Issue or PR in the Detail pane, or else the line under the cursor. */
+  /** The Issue or PR in the Detail pane, or else the line under the cursor while the list shows it. */
   function currentOnGitHub(): GitHubItem | undefined {
-    if (detail instanceof IssueViewState) return { kind: "issue", number: detail.number };
-    if (detail) return { kind: "pull_request", number: detail.number };
-    const stop = workbench.underCursor;
+    const stop = detailLine() ?? (panes.hidden("list") ? undefined : workbench.underCursor);
     return stop && { kind: stop.kind, number: stop.number };
   }
 
@@ -171,9 +172,26 @@
    * row, so it doesn't fall out of the window with the Sidebar. */
   async function toggleSidebarByKey() {
     const focused = document.activeElement;
-    void panes.toggleSidebar();
+    void panes.toggle("sidebar");
     await tick();
     if (focused?.isConnected === false) focusCursor();
+  }
+
+  /** The line of the list the Detail pane shows, if it shows one. */
+  function detailLine(): Stop | undefined {
+    if (detail instanceof IssueViewState) return { number: detail.number, kind: "issue", issue: undefined };
+    return detail?.line;
+  }
+
+  /** Ctrl+Alt+B: hides the list, with the focus going to the Detail pane, or brings it back at its width.
+   * The cursor and the focus then go to the row of what the Detail pane shows, or else stay on the
+   * cursor's row. */
+  async function toggleListByKey() {
+    void panes.toggle("list");
+    await tick();
+    const line = detailLine();
+    if (!panes.hidden("list") && line && workbench.lists(line)) workbench.cursor = line;
+    focusCursor();
   }
 
   /** What this screen adds to the command palette while it shows. Where the focus goes as the palette
@@ -181,8 +199,12 @@
   export function paletteCommands(): PaletteCommand[] {
     return [
       {
-        title: panes.sidebarHidden ? "Show Sidebar" : "Hide Sidebar",
-        run: () => void panes.toggleSidebar(),
+        title: panes.hidden("sidebar") ? "Show Sidebar" : "Hide Sidebar",
+        run: () => void panes.toggle("sidebar"),
+      },
+      {
+        title: panes.hidden("list") ? "Show Issue List" : "Hide Issue List",
+        run: () => void panes.toggle("list"),
       },
     ];
   }
@@ -195,15 +217,30 @@
     focusCursor();
   }
 
-  /** Focuses the row under the cursor, so it scrolls into view, and Enter presses its button. */
+  /** Focuses the row under the cursor, so it scrolls into view, and Enter presses its button. While the list
+   * is hidden the Detail pane takes the focus, once it shows what it's about to. */
   function focusCursor() {
+    if (panes.hidden("list")) {
+      void tick().then(() => detailPane()?.focus());
+      return;
+    }
     list?.querySelector<HTMLElement>(`[data-item="${lineName(workbench.cursor)}"]`)?.focus();
+  }
+
+  const detailPane = () => home?.querySelector<HTMLElement>('[data-pane="detail"]');
+
+  /** Scrolls the Detail pane by a line, or the diff on a PR's Files tab, which scrolls by itself. */
+  function scrollDetail(step: 1 | -1) {
+    const pane = detailPane();
+    const scroller = pane?.querySelector<HTMLElement>("[data-scrolls]") ?? pane;
+    scroller?.scrollBy({ top: step * LINE });
   }
 
   /**
    * The list's keys and the PR view's. A dialog on top keeps them, and a text box or a focused control
    * keeps its own. The window's guard has already stopped the browser for Ctrl+B, Ctrl+Shift+G, Ctrl+Alt+U
-   * and Ctrl+F, which work in a text box too.
+   * and Ctrl+F, which work in a text box too, and for Ctrl+Alt+B outside one, as AltGr sends it to type.
+   * While the list is hidden, ↑ and ↓ scroll the Detail pane, and Enter has no row to open.
    */
   function onkeydown(e: KeyboardEvent) {
     if (!keysActive) return;
@@ -222,13 +259,24 @@
       files.openSearch();
     } else if (isTextBox(e.target)) {
       return;
+    } else if (key === "ctrl+alt+b") {
+      // A held key would flicker the list and save the file each time.
+      if (!e.repeat) void toggleListByKey();
     } else if (key === "enter" && e.repeat) {
       // Each opening asks GitHub, and a held key isn't more than one.
       e.preventDefault();
+    } else if ((key === "arrowdown" || key === "arrowup") && panes.hidden("list")) {
+      e.preventDefault();
+      scrollDetail(key === "arrowdown" ? 1 : -1);
     } else if (key === "arrowdown" || key === "arrowup") {
       e.preventDefault();
       moveCursor(key === "arrowdown" ? 1 : -1);
-    } else if (key === "enter" && e.target === document.body && workbench.underCursor) {
+    } else if (
+      key === "enter" &&
+      e.target === document.body &&
+      workbench.underCursor &&
+      !panes.hidden("list")
+    ) {
       e.preventDefault();
       open(workbench.underCursor);
     } else if (key === "escape" && files?.searching) {
@@ -329,74 +377,89 @@
   </li>
 {/snippet}
 
+{#snippet problems()}
+  {#if workbench.error}
+    <!-- One expression: Svelte compiles `{a} {b}` with `?? ""` branches that no test can reach. -->
+    <p role="alert">{`Tsugiki can't read this Workbench: ${workbench.error}`}</p>
+  {/if}
+  {#if browserProblem}
+    <p role="alert">{browserProblem}</p>
+  {/if}
+  {#if panes.problem}
+    <p role="alert">{panes.problem}</p>
+  {/if}
+{/snippet}
+
 <svelte:window {onkeydown} />
 
+<!-- The list says what went wrong, and while it's hidden a row above the panes does. -->
+{#if panes.hidden("list")}
+  {@render problems()}
+{/if}
 <div
   class="home"
   style:--sidebar-width={`${String(panes.sidebar ?? SIDEBAR_WIDTH)}px`}
   style:--list-width={panes.list === null ? undefined : `${String(panes.list)}px`}
+  bind:this={home}
 >
-  {#if !panes.sidebarHidden}
+  {#if !panes.hidden("sidebar")}
     <Sidebar
       count={workbench.count}
       reviewRequests={workbench.reviewRequests}
       filters={workbench.filters}
       selected={workbench.selected}
-      onselect={(view) => void workbench.select(view)}
+      onselect={(view) => {
+        void workbench.select(view);
+        void panes.show("list");
+      }}
     />
     <PaneEdge
       label="Sidebar width"
       value={panes.sidebar ?? SIDEBAR_WIDTH}
       least={SIDEBAR_LEAST}
       most={SIDEBAR_MOST}
-      nextLeast={LIST_LEAST + (detail ? DETAIL_LEAST : 0)}
+      nextLeast={panes.hidden("list") ? DETAIL_LEAST : LIST_LEAST + (detail ? DETAIL_LEAST : 0)}
       onresize={(width) => (panes.sidebar = width)}
       ondone={() => void panes.save()}
       onreset={() => void panes.reset("sidebar")}
     />
   {/if}
-  <!-- The list keeps the width the user gave it beside the Detail pane, and fills the window without one. -->
-  <section class={["list", { sized: panes.list !== null && detail !== undefined }]} bind:this={list}>
-    <h1>{name}</h1>
-    <button onclick={onadd}>Add repository</button>
-    {#if workbench.error}
-      <!-- One expression: Svelte compiles `{a} {b}` with `?? ""` branches that no test can reach. -->
-      <p role="alert">{`Tsugiki can't read this Workbench: ${workbench.error}`}</p>
-    {/if}
-    {#if browserProblem}
-      <p role="alert">{browserProblem}</p>
-    {/if}
-    {#if panes.problem}
-      <p role="alert">{panes.problem}</p>
-    {/if}
-    {#if workbench.items?.length === 0 && workbench.quiet.length === 0}
-      <p>{EMPTY[workbench.selected.kind]}</p>
-    {:else if workbench.items}
-      <ul>
-        {#each workbench.items as item (item.number)}
-          {@render listed(item)}
-        {/each}
-      </ul>
-      {#if workbench.quiet.length > 0}
-        <h2>Quiet</h2>
+  {#if !panes.hidden("list")}
+    <!-- The list keeps the width the user gave it beside the Detail pane, and fills the window without
+         one. -->
+    <section class={["list", { sized: panes.list !== null && detail !== undefined }]} bind:this={list}>
+      <h1>{name}</h1>
+      <button onclick={onadd}>Add repository</button>
+      {@render problems()}
+      {#if workbench.items?.length === 0 && workbench.quiet.length === 0}
+        <p>{EMPTY[workbench.selected.kind]}</p>
+      {:else if workbench.items}
         <ul>
-          {#each workbench.quiet as item (item.number)}
+          {#each workbench.items as item (item.number)}
             {@render listed(item)}
           {/each}
         </ul>
+        {#if workbench.quiet.length > 0}
+          <h2>Quiet</h2>
+          <ul>
+            {#each workbench.quiet as item (item.number)}
+              {@render listed(item)}
+            {/each}
+          </ul>
+        {/if}
       {/if}
+    </section>
+    {#if detail}
+      <PaneEdge
+        label="Workbench width"
+        value={panes.list ?? undefined}
+        least={LIST_LEAST}
+        nextLeast={DETAIL_LEAST}
+        onresize={(width) => (panes.list = width)}
+        ondone={() => void panes.save()}
+        onreset={() => void panes.reset("list")}
+      />
     {/if}
-  </section>
-  {#if detail}
-    <PaneEdge
-      label="Workbench width"
-      value={panes.list ?? undefined}
-      least={LIST_LEAST}
-      nextLeast={DETAIL_LEAST}
-      onresize={(width) => (panes.list = width)}
-      ondone={() => void panes.save()}
-      onreset={() => void panes.reset("list")}
-    />
   {/if}
   {#if detail instanceof IssueViewState}
     {@const issue = detail}
@@ -405,6 +468,7 @@
         repository={name}
         {issue}
         {now}
+        focusable={panes.hidden("list")}
         onopenpr={(number) => {
           open({ number, kind: "pull_request", issue: issue.number });
         }}
@@ -413,8 +477,16 @@
   {:else if detail}
     {@const pr = detail}
     {#key pr}
-      <PrDetail repository={name} {pr} {now} onback={back} />
+      <PrDetail repository={name} {pr} {now} onback={back} focusable={panes.hidden("list")} />
     {/key}
+  {:else if panes.hidden("list")}
+    <section class="empty" aria-label="Detail pane" tabindex="-1" data-pane="detail">
+      <p>
+        Nothing open. <button class="key" onclick={() => void toggleListByKey()}
+          ><kbd>{keyLabel("ctrl+alt+b", currentOs())}</kbd></button
+        > shows the Issue list.
+      </p>
+    </section>
   {/if}
 </div>
 
@@ -430,6 +502,22 @@
 
   .list.sized {
     flex: 0 1 var(--list-width);
+  }
+
+  /* The Detail pane with nothing open, which shows only while the list is hidden. */
+  .empty {
+    flex: 1;
+    min-width: 320px;
+  }
+
+  .key {
+    all: unset;
+    cursor: pointer;
+  }
+
+  .key:hover,
+  .key:focus-visible {
+    text-decoration: underline;
   }
 
   h1 {

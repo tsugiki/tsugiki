@@ -807,6 +807,7 @@ const WIDE: PaneLayout = PaneLayout {
     sidebar: Some(240),
     list: Some(500),
     sidebar_hidden: false,
+    list_hidden: false,
 };
 
 #[test]
@@ -836,6 +837,30 @@ fn a_hidden_sidebar_stays_hidden_on_this_machine_until_it_shows_again() {
         shown,
         format!("{mine}\n[panes]\nsidebar = 240\nlist = 500\n")
     );
+}
+
+#[test]
+fn a_hidden_list_stays_hidden_on_this_machine_beside_the_sidebar() {
+    let (folders, root) = temp_folders("panes-list-hidden");
+    let mut files = SettingsFiles::load(folders.clone());
+    let hidden = PaneLayout {
+        list_hidden: true,
+        ..WIDE
+    };
+
+    files.save_panes(hidden).unwrap();
+    let saved = fs::read_to_string(folders.machine_file()).unwrap();
+    let read_again = SettingsFiles::load(folders.clone()).view().panes;
+    files.save_panes(WIDE).unwrap();
+    let shown = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(
+        saved,
+        "[panes]\nsidebar = 240\nlist = 500\nlist_hidden = true\n"
+    );
+    assert_eq!(read_again, hidden);
+    assert_eq!(shown, "[panes]\nsidebar = 240\nlist = 500\n");
 }
 
 #[test]
@@ -906,6 +931,7 @@ fn a_pane_value_it_cant_read_takes_the_default_and_keeps_the_rest_of_machine_tom
 sidebar = -1
 list = 500
 sidebar_hidden = \"yes\"
+list_hidden = 1
 ";
     fs::write(folders.machine_file(), text).unwrap();
 
@@ -916,6 +942,7 @@ sidebar_hidden = \"yes\"
         sidebar: None,
         list: Some(500),
         sidebar_hidden: false,
+        list_hidden: false,
     };
     assert_eq!(
         (files.view().panes, files.loaded().problems.len()),

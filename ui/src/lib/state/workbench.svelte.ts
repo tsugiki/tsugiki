@@ -101,6 +101,11 @@ export class WorkbenchState {
     return this.#stops().find((stop) => sameStop(this.cursor, stop));
   }
 
+  /** Whether the list, or its quiet section, has the line `stop`. */
+  lists(stop: Stop): boolean {
+    return this.#stops().some((line) => sameStop(line, stop));
+  }
+
   /** Moves the cursor down the list, or up it, stopping at each end. With none yet it starts at the top. */
   moveCursor(step: 1 | -1) {
     const stops = this.#stops();

@@ -19,6 +19,7 @@ const OWNED_KEYS = [
   "shift+f8",
   "ctrl+f",
   "ctrl+b",
+  "ctrl+alt+b",
   "ctrl+alt+u",
   "ctrl+pagedown",
   "ctrl+pageup",
@@ -47,6 +48,11 @@ const OWNED: ReadonlySet<string> = new Set(OWNED_KEYS);
 
 function isOwned(name: string): name is OwnedKey {
   return OWNED.has(name);
+}
+
+/** Whether `name` types in a text box: a plain key, or Ctrl+Alt+B, which AltGr sends too on Windows. */
+function typesInTextBox(name: OwnedKey): boolean {
+  return name.length === 1 || name === "ctrl+alt+b";
 }
 
 const MODIFIERS = new Set(["control", "shift", "alt", "meta"]);
@@ -86,11 +92,12 @@ function goesByPlace(key: string): boolean {
 /**
  * A key press as a binding: "ctrl+shift+p", "f7", "?". On macOS Cmd is called ctrl, as `docs/scope.md` has
  * it. Null for a key that can't be a binding: a modifier alone, AltGr, which types a character but reports
- * Ctrl and Alt, and the Windows key or macOS's Ctrl, which belong to the OS and to text boxes.
+ * Ctrl and Alt, and the Windows key or macOS's Ctrl, which belong to the OS and to text boxes. On macOS a
+ * key with Option goes by where it is, as Option makes it type something else: Option+B types "∫".
  */
 export function keyName(e: KeyboardEvent, os: Os): string | null {
   const [primary, foreign] = os === "mac" ? [e.metaKey, e.ctrlKey] : [e.ctrlKey, e.metaKey];
-  const byPlace = goesByPlace(e.key);
+  const byPlace = goesByPlace(e.key) || (os === "mac" && e.altKey);
   const key = (byPlace ? characterAt(e.code) : undefined) ?? e.key.toLowerCase();
   if (foreign || MODIFIERS.has(key) || e.getModifierState("AltGraph")) {
     return null;
@@ -100,6 +107,18 @@ export function keyName(e: KeyboardEvent, os: Os): string | null {
   const shift = e.shiftKey && (byPlace || key.length > 1 || /[a-z]/.test(key));
   const parts = [primary && "ctrl", e.altKey && "alt", shift && "shift", key === " " ? "space" : key];
   return parts.filter(Boolean).join("+");
+}
+
+const MAC_NAMES: Readonly<Record<string, string>> = { ctrl: "Cmd", alt: "Option" };
+
+/** A binding as the user reads it: "ctrl+alt+b" is "Ctrl+Alt+B", or "Cmd+Option+B" on macOS. */
+export function keyLabel(name: OwnedKey, os: Os): string {
+  return name
+    .split("+")
+    .map(
+      (part) => (os === "mac" ? MAC_NAMES[part] : undefined) ?? part.charAt(0).toUpperCase() + part.slice(1),
+    )
+    .join("+");
 }
 
 /** Which OS this is, for `keyName`. */
@@ -116,8 +135,8 @@ export function isTextBox(target: EventTarget | null): boolean {
 }
 
 /**
- * The handler for the window's capture phase. In a text box a plain key types, and a key with a modifier is
- * still Tsugiki's. A key in `forBrowser` goes through, and has no action.
+ * The handler for the window's capture phase. In a text box a plain key and Ctrl+Alt+B type, and any other
+ * key with a modifier is still Tsugiki's. A key in `forBrowser` goes through, and has no action.
  */
 export function keyGuard(
   bindings: Bindings,
@@ -130,7 +149,7 @@ export function keyGuard(
       name === null ||
       !isOwned(name) ||
       forBrowser.has(name) ||
-      (name.length === 1 && isTextBox(e.target))
+      (typesInTextBox(name) && isTextBox(e.target))
     ) {
       return;
     }

@@ -72,7 +72,7 @@ const issue = {
   pull_requests: [{ kind: "pr", ...row, backports: [] }],
 };
 
-const DEFAULT_LAYOUT = { sidebar: null, list: null, sidebar_hidden: false };
+const DEFAULT_LAYOUT = { sidebar: null, list: null, sidebar_hidden: false, list_hidden: false };
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -1191,6 +1191,20 @@ it("stops the Sidebar's edge where the list would go under its minimum", async (
   expect(home().style.getPropertyValue("--sidebar-width")).toBe("220px");
 });
 
+it("stops the Sidebar's edge where the Detail pane would go under its minimum while the list is hidden", async () => {
+  laidOut(200, 600, 500);
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  await screen.findByRole("region", { name: "Issue view" });
+  await toggleList();
+  const edge = screen.getByRole("separator", { name: "Sidebar width" });
+
+  await fireEvent.pointerDown(edge, { button: 0, clientX: 300, pointerId: 1 });
+  await fireEvent.pointerMove(edge, { clientX: 2000 });
+
+  expect(home().style.getPropertyValue("--sidebar-width")).toBe("380px");
+});
+
 it("offers the list's edge beside a Detail pane, and keeps the Detail pane's minimum", async () => {
   laidOut(200, 600, 500);
   const { issueRow } = await listing();
@@ -1256,7 +1270,7 @@ it("moves an edge with the bare arrow keys, and saves a held key once, as it com
 });
 
 it("opens with the widths saved on this machine, and says when it can't save them", async () => {
-  core.paneLayout.mockResolvedValue({ sidebar: 260, list: 500, sidebar_hidden: false });
+  core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar: 260, list: 500 });
   core.savePaneLayout.mockResolvedValue({ status: "error", error: { kind: "internal", message: "locked" } });
   laidOut(260, 500, 0);
   render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
@@ -1339,6 +1353,273 @@ it("moves the focus to the cursor's row when Ctrl+B hides the Sidebar it was in"
 
   await vi.waitFor(() => {
     expect(document.activeElement).toBe(issueRow);
+  });
+});
+
+/** Presses Ctrl+Alt+B, which hides the Issue list or brings it back. */
+const toggleList = (target: Element = document.body, init: KeyboardEventInit = {}) =>
+  fireEvent.keyDown(target, { key: "b", code: "KeyB", ctrlKey: true, altKey: true, ...init });
+
+const repositoryName = () => screen.queryByRole("heading", { name: "python/cpython" });
+
+/** The list's row named `name`, which the Detail pane may name too. */
+const rowNamed = (name: string) =>
+  within(document.querySelector<HTMLElement>(".list") as HTMLElement).getByRole("button", { name });
+
+it("hides the Issue list and its edge with Ctrl+Alt+B, and brings them back at their width", async () => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, list: 500 });
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  await screen.findByRole("separator", { name: "Workbench width" });
+
+  await toggleList();
+  const hidden = [repositoryName(), screen.queryByRole("separator", { name: "Workbench width" })];
+  const detail = screen.queryByRole("region", { name: "Issue view" });
+  // A held key flips it no more.
+  await toggleList(document.body, { repeat: true });
+  const held = repositoryName();
+  await toggleList();
+
+  expect([hidden, held, detail === null]).toEqual([[null, null], null, false]);
+  expect(screen.getByRole("separator", { name: "Workbench width" })).toBeTruthy();
+  expect(home().style.getPropertyValue("--list-width")).toBe("500px");
+  await vi.waitFor(() => {
+    expect(core.savePaneLayout.mock.calls).toEqual([
+      [{ ...DEFAULT_LAYOUT, list: 500, list_hidden: true }],
+      [{ ...DEFAULT_LAYOUT, list: 500 }],
+    ]);
+  });
+});
+
+it("opens with the Issue list hidden when it was hidden on this machine", async () => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, list_hidden: true });
+  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+
+  await vi.waitFor(() => {
+    expect(repositoryName()).toBeNull();
+  });
+});
+
+it("leaves the Issue list alone on Ctrl+Alt+B while a dialog is on top, and in a text box", async () => {
+  const { rerender } = render(RepositoryHome, { name: "python/cpython", onadd: vi.fn(), keysActive: false });
+  await vi.waitFor(() => {
+    expect(core.paneLayout).toHaveBeenCalled();
+  });
+  await toggleList();
+  const behindDialog = repositoryName();
+  await rerender({ keysActive: true });
+  const box = document.createElement("input");
+  document.body.append(box);
+
+  await toggleList(box);
+  box.remove();
+
+  expect([behindDialog === null, repositoryName() === null]).toEqual([false, false]);
+  expect(core.savePaneLayout).not.toHaveBeenCalled();
+});
+
+it("offers the palette a command that hides or shows the Issue list, named for what it does", async () => {
+  const { component } = render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  await screen.findByRole("navigation", { name: "Sidebar" });
+  const titles = () => component.paletteCommands().map((command) => command.title);
+  const before = titles();
+
+  component
+    .paletteCommands()
+    .find((command) => command.title === "Hide Issue List")
+    ?.run();
+  await vi.waitFor(() => {
+    expect(repositoryName()).toBeNull();
+  });
+
+  expect([before, titles()]).toEqual([
+    ["Hide Sidebar", "Hide Issue List"],
+    ["Hide Sidebar", "Show Issue List"],
+  ]);
+});
+
+it("moves the focus to the Detail pane as Ctrl+Alt+B hides the list", async () => {
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  const view = await screen.findByRole("region", { name: "Issue view" });
+  issueRow.focus();
+
+  await toggleList(issueRow);
+
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(view);
+  });
+});
+
+it("brings the list back with the cursor and the focus on the open item's row", async () => {
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  await screen.findByRole("region", { name: "Issue view" });
+  // The cursor leaves the Issue on show for the PR under it.
+  await press("ArrowDown");
+  await toggleList();
+
+  await toggleList();
+
+  const row = rowNamed("#112564 GIL drop during collection");
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(row);
+  });
+  expect(row.getAttribute("aria-current")).toBe("true");
+});
+
+it("brings the list back with the focus on the cursor's row when the open item isn't in it", async () => {
+  const { treeRow } = await listing();
+  await fireEvent.click(treeRow);
+  await screen.findByRole("region", { name: "PR view" });
+  await press("ArrowUp");
+  // The PR leaves the Issue's tree, so the list has no row for what the Detail pane shows.
+  core.workbench.mockResolvedValue({
+    status: "ok",
+    data: {
+      items: [{ ...issue, pull_requests: [], attention: null }],
+      quiet: [],
+      count: 0,
+      review_requests: 0,
+      filters: [],
+    },
+  });
+  await fireEvent.click(screen.getByRole("button", { name: "Review requests 0" }));
+  await vi.waitFor(() => {
+    expect(
+      screen.queryByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" }),
+    ).toBeNull();
+  });
+  await toggleList();
+
+  await toggleList();
+
+  const row = rowNamed("#112564 GIL drop during collection");
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(row);
+  });
+});
+
+it("scrolls the Detail pane with ↑ and ↓ while the list is hidden, and leaves the cursor alone", async () => {
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  const view = await screen.findByRole("region", { name: "Issue view" });
+  const scrollBy = vi.fn();
+  Object.defineProperty(view, "scrollBy", { value: scrollBy });
+  await toggleList();
+
+  await press("ArrowDown");
+  await press("ArrowUp");
+  await toggleList();
+
+  expect(scrollBy.mock.calls).toEqual([[{ top: 40 }], [{ top: -40 }]]);
+  expect(rowNamed("#112564 GIL drop during collection").getAttribute("aria-current")).toBe("true");
+});
+
+it("lets the Detail pane take the focus only while the list is hidden, so a click in it leaves Enter alone", async () => {
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  const view = await screen.findByRole("region", { name: "Issue view" });
+  const shown = view.getAttribute("tabindex");
+
+  await toggleList();
+
+  expect([shown, view.getAttribute("tabindex")]).toEqual([null, "-1"]);
+});
+
+it("says what went wrong above the panes while the list is hidden", async () => {
+  core.savePaneLayout.mockResolvedValue({ status: "error", error: { kind: "internal", message: "locked" } });
+  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  await screen.findByRole("navigation", { name: "Sidebar" });
+
+  await toggleList();
+
+  expect((await screen.findByRole("alert")).textContent).toBe("Tsugiki can't save the panes' layout: locked");
+  expect(repositoryName()).toBeNull();
+});
+
+it("opens nothing on GitHub with Ctrl+Shift+G while the list is hidden and nothing is open", async () => {
+  await listing();
+  await press("ArrowDown");
+  await toggleList();
+
+  await press("G", { ctrlKey: true, shiftKey: true });
+
+  expect(core.openOnGithub).not.toHaveBeenCalled();
+});
+
+it("opens nothing on Enter while the list is hidden, as the cursor's row doesn't show", async () => {
+  await listing();
+  await press("ArrowDown");
+  await toggleList();
+
+  await press("Enter");
+
+  expect(screen.getByRole("region", { name: "Detail pane" })).toBeTruthy();
+  expect(core.openIssue).not.toHaveBeenCalled();
+});
+
+it("scrolls the diff with ↑ and ↓ on a PR's Files tab while the list is hidden", async () => {
+  const files = await onFiles();
+  await fireEvent.click(files);
+  const diff = await screen.findByRole("region", { name: "Diff" });
+  const scrollBy = vi.fn();
+  Object.defineProperty(diff, "scrollBy", { value: scrollBy });
+  await toggleList();
+
+  await press("ArrowDown");
+
+  expect(scrollBy.mock.calls).toEqual([[{ top: 40 }]]);
+});
+
+it("still goes back through the Issues and PRs it opened with Alt+← while the list is hidden", async () => {
+  const { issueRow, prRow } = await listing();
+  await fireEvent.click(issueRow);
+  await fireEvent.click(prRow);
+  await screen.findByRole("region", { name: "PR view" });
+  await toggleList();
+
+  await press("ArrowLeft", { altKey: true });
+
+  const view = await screen.findByRole("region", { name: "Issue view" });
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(view);
+  });
+});
+
+it("brings the list back with the view a click on the Sidebar picks, and keeps the Detail pane", async () => {
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  await screen.findByRole("region", { name: "Issue view" });
+  await toggleList();
+
+  await fireEvent.click(screen.getByRole("button", { name: "Review requests 0" }));
+
+  expect(core.workbench).toHaveBeenLastCalledWith("python/cpython", { kind: "review_requests" });
+  expect(repositoryName()).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Issue view" })).toBeTruthy();
+  await vi.waitFor(() => {
+    expect(core.savePaneLayout.mock.lastCall).toEqual([DEFAULT_LAYOUT]);
+  });
+});
+
+it("says how to bring the list back when nothing is open, and does so on a click of the key", async () => {
+  await listing();
+  await press("ArrowDown");
+  await toggleList();
+  const empty = screen.getByRole("region", { name: "Detail pane" });
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(empty);
+  });
+  const said = empty.textContent;
+
+  await fireEvent.click(within(empty).getByRole("button", { name: "Ctrl+Alt+B" }));
+
+  expect(said).toBe("Nothing open. Ctrl+Alt+B shows the Issue list.");
+  expect(repositoryName()).toBeTruthy();
+  expect(screen.queryByRole("region", { name: "Detail pane" })).toBeNull();
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(rowNamed("#112564 GIL drop during collection"));
   });
 });
 

@@ -106,9 +106,14 @@ impl Default for Home {
 }
 
 /// How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
-/// (#187), and whether the Sidebar shows (#234). All of it stays on this machine, like the window's place,
-/// and a value left out takes its default. So does a value Tsugiki can't read, such as a width that isn't a
-/// whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml` over.
+/// (#187), and whether the Sidebar (#234) and the list (#242) show. All of it stays on this machine, like
+/// the window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
+/// width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml`
+/// over.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Each pane hides by itself, so all four states are valid: both hidden leaves the Detail pane"
+)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(default)]
 pub struct PaneLayout {
@@ -122,6 +127,10 @@ pub struct PaneLayout {
     #[serde(deserialize_with = "or_default")]
     #[specta(type = bool)]
     pub sidebar_hidden: bool,
+    /// `Ctrl+Alt+B` hid the Workbench list. It keeps its width for when it shows again.
+    #[serde(deserialize_with = "or_default")]
+    #[specta(type = bool)]
+    pub list_hidden: bool,
 }
 
 /// The value, or its default for one Tsugiki can't read.
@@ -312,12 +321,17 @@ impl SettingsFiles {
                     None => drop(section.remove(key)),
                 }
             }
-            merge_value(
-                section,
-                "sidebar_hidden",
-                &toml_edit::value(panes.sidebar_hidden),
-                Some(&toml_edit::value(false)),
-            );
+            for (key, hidden) in [
+                ("sidebar_hidden", panes.sidebar_hidden),
+                ("list_hidden", panes.list_hidden),
+            ] {
+                merge_value(
+                    section,
+                    key,
+                    &toml_edit::value(hidden),
+                    Some(&toml_edit::value(false)),
+                );
+            }
         });
         edit.save()?;
         self.reload();

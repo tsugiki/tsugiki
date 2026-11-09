@@ -187,6 +187,10 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
 
   await expect(page.getByRole("region", { name: "Issue view" })).toContainText("Issue 7");
   await expect(pane).toHaveCount(0);
+  // The focus goes with the cursor, off the PR's row, so Enter doesn't open the PR again.
+  await expect(
+    page.getByRole("button", { name: "#7 Issue 7" }).and(page.locator("[aria-current=true]")),
+  ).toBeFocused();
 });
 
 /** Opens a PR whose diff adds two lines to `NEWS` and has a thread at `at` with the comment `words`, and

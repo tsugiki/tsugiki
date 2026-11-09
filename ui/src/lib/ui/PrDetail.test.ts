@@ -206,7 +206,7 @@ it("goes back to the Issue with its gh-N link", async () => {
 
   await fireEvent.click(screen.getByRole("button", { name: "gh-10" }));
 
-  expect(onback).toHaveBeenCalledOnce();
+  expect(onback).toHaveBeenCalledExactlyOnceWith(10);
 });
 
 it("has no way back for a PR opened from no Issue", async () => {

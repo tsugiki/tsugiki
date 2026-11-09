@@ -151,10 +151,11 @@
     detail = next;
   }
 
-  /** Leaves the PR view for the Issue the user opened it from, or for an empty Detail pane. */
-  function back(pr: PrViewState) {
-    if (pr.issue === undefined) swap(undefined);
-    else open({ number: pr.issue, kind: "issue", issue: undefined }, "back");
+  /** Leaves the PR view for the Issue the user opened it from, and moves the focus with the cursor to the
+   * Issue's row, so the PR's row doesn't look selected too, and Enter doesn't open the PR again. */
+  function back(issue: number) {
+    open({ number: issue, kind: "issue", issue: undefined }, "back");
+    focusCursor();
   }
 
   /** The Issue or PR in the Detail pane, or else the line under the cursor. */
@@ -170,7 +171,11 @@
 
   function moveCursor(step: 1 | -1) {
     workbench.moveCursor(step);
-    // Focus follows, so the row scrolls into view, and Enter presses its button.
+    focusCursor();
+  }
+
+  /** Focuses the row under the cursor, so it scrolls into view, and Enter presses its button. */
+  function focusCursor() {
     list?.querySelector<HTMLElement>(`[data-item="${lineName(workbench.cursor)}"]`)?.focus();
   }
 
@@ -206,9 +211,10 @@
       // Escape closes the search first, wherever the focus is, as in VS Code.
       e.preventDefault();
       files.closeSearch();
-    } else if (key === "escape" && detail instanceof PrViewState) {
+    } else if (key === "escape" && detail instanceof PrViewState && detail.issue !== undefined) {
+      // A PR opened from a row of its own has nothing under it, so it stays on show.
       e.preventDefault();
-      back(detail);
+      back(detail.issue);
     } else if ((key === "ctrl+pagedown" || key === "ctrl+pageup") && detail instanceof PrViewState) {
       e.preventDefault();
       detail.switchTab();
@@ -381,14 +387,7 @@
   {:else if detail}
     {@const pr = detail}
     {#key pr}
-      <PrDetail
-        repository={name}
-        {pr}
-        {now}
-        onback={() => {
-          back(pr);
-        }}
-      />
+      <PrDetail repository={name} {pr} {now} onback={back} />
     {/key}
   {/if}
 </div>

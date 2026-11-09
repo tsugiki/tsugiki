@@ -128,6 +128,80 @@ describe("IssueViewState", () => {
     expect(commands.fetchIssue).not.toHaveBeenCalled();
   });
 
+  it("leaves GitHub alone while a PR hides it, and reads the minute it missed once it shows", async () => {
+    vi.useFakeTimers();
+    catchListener();
+    const state = new IssueViewState("python/cpython", 7);
+    await state.load();
+
+    state.hide();
+    state.show();
+    expect(commands.fetchIssue).not.toHaveBeenCalled();
+    state.hide();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(commands.fetchIssue).not.toHaveBeenCalled();
+    state.show();
+    expect(commands.fetchIssue).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(commands.fetchIssue).toHaveBeenCalledTimes(2);
+    expect(commands.openIssue).toHaveBeenCalledOnce();
+    state.stop();
+  });
+
+  it("has nothing to catch up on once it shows, when it was opened again while hidden", async () => {
+    vi.useFakeTimers();
+    const { send } = catchListener();
+    const state = new IssueViewState("python/cpython", 7);
+    await state.load();
+    state.hide();
+    send("python/cpython");
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    await state.open();
+    state.show();
+
+    expect(commands.issue).toHaveBeenCalledTimes(2);
+    expect(commands.fetchIssue).not.toHaveBeenCalled();
+    state.stop();
+  });
+
+  it("comes back as it was, without asking the core, when nothing changed while it was hidden", async () => {
+    const { send } = catchListener();
+    const state = new IssueViewState("python/cpython", 7);
+    await state.load();
+
+    state.hide();
+    send("python/other");
+    state.show();
+    await Promise.resolve();
+
+    expect(state.view?.title).toBe("First");
+    expect(commands.issue).toHaveBeenCalledOnce();
+    state.stop();
+  });
+
+  it("asks the core again once it shows, when its Repository changed while it was hidden", async () => {
+    const { send } = catchListener();
+    const state = new IssueViewState("python/cpython", 7);
+    await state.load();
+    vi.mocked(commands.issue).mockResolvedValue(ok(view("Second")));
+
+    state.hide();
+    send("python/cpython");
+    send("python/cpython");
+    await Promise.resolve();
+    expect(commands.issue).toHaveBeenCalledOnce();
+    state.show();
+
+    await vi.waitFor(() => {
+      expect(state.view?.title).toBe("Second");
+    });
+    expect(commands.issue).toHaveBeenCalledTimes(2);
+    expect(commands.openIssue).toHaveBeenCalledOnce();
+    state.stop();
+  });
+
   it("stops listening when told to", async () => {
     const { stop } = catchListener();
     const state = new IssueViewState("python/cpython", 7);

@@ -1,5 +1,6 @@
 // What the Detail pane shows, an Issue or a PR: opened once, asked for again each time the core says its
 // Repository changed (ADR 0008), and read from GitHub about once a minute while it's on screen (ADR 0015).
+// An Issue view stays hidden while a PR from its tree is on show, and asks nobody anything until it shows.
 import { events } from "$lib/data/bindings";
 import { hud } from "./hud.svelte";
 
@@ -26,6 +27,11 @@ export class DetailState<View extends { content: unknown }> {
   #stopListening: (() => void) | undefined;
   #stopped = false;
   #reading: ReturnType<typeof setInterval> | undefined;
+  #hidden = false;
+  /** Whether the core announced a change to the Repository while this view was hidden. */
+  #missedChange = false;
+  /** Whether a minute's read from GitHub came round while this view was hidden. */
+  #missedRead = false;
 
   constructor(repository: string, number: number, commands: DetailCommands<View>) {
     this.#repository = repository;
@@ -38,7 +44,9 @@ export class DetailState<View extends { content: unknown }> {
     try {
       // A change can touch a PR in an Issue's tree, or give the Issue a new one, so any change asks again.
       const stopListening = await events.changed.listen(({ payload }) => {
-        if (payload.repository === this.#repository) void this.#ask();
+        if (payload.repository !== this.#repository) return;
+        if (this.#hidden) this.#missedChange = true;
+        else void this.#ask();
       });
       if (this.#stopped) {
         stopListening();
@@ -51,17 +59,37 @@ export class DetailState<View extends { content: unknown }> {
       return;
     }
     this.#reading = setInterval(() => {
-      if (!document.hidden) void this.#fetch();
+      if (document.hidden) return;
+      if (this.#hidden) this.#missedRead = true;
+      else void this.#fetch();
     }, MINUTE);
     await this.open();
   }
 
   /** Shows what the core holds until GitHub answers, and tells the core the user opened this item. The
-   * view asks first, as opening a PR waits for git to say whether the mirror holds its head. */
+   * view asks first, as opening a PR waits for git to say whether the mirror holds its head. Opening asks
+   * the core and GitHub afresh, so a hidden view has nothing left to catch up on when it shows. */
   async open() {
+    this.#missedChange = false;
+    this.#missedRead = false;
     const asking = this.#ask();
     await this.#say(this.#commands.open(this.#repository, this.number));
     await asking;
+  }
+
+  /** Keeps what it holds, and stops asking GitHub and the core, until `show`. */
+  hide() {
+    this.#hidden = true;
+  }
+
+  /** Shows what it held, then asks the core again if the Repository changed meanwhile, and GitHub if a
+   * minute's read came round. */
+  show() {
+    this.#hidden = false;
+    if (this.#missedChange) void this.#ask();
+    if (this.#missedRead) void this.#fetch();
+    this.#missedChange = false;
+    this.#missedRead = false;
   }
 
   stop() {
@@ -94,8 +122,9 @@ export class DetailState<View extends { content: unknown }> {
     if (answer.status === "ok") {
       this.view = answer.data;
       this.error = undefined;
-      // A view that has stopped is no longer on screen, though its last answer can still arrive.
-      if (!this.#stopped) hud.issueShown(this.number, answer.data !== null && answer.data.content !== null);
+      // A view that has stopped or hidden is no longer on screen, though its last answer can still arrive.
+      if (!this.#stopped && !this.#hidden)
+        hud.issueShown(this.number, answer.data !== null && answer.data.content !== null);
     } else {
       this.error = answer.error.message;
     }

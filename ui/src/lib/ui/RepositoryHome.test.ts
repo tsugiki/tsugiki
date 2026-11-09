@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { PrFilesState } from "$lib/state/pr-files.svelte";
 import RepositoryHome from "./RepositoryHome.svelte";
@@ -390,6 +390,21 @@ const listing = async () => {
 const press = (key: string, init: KeyboardEventInit = {}) =>
   fireEvent.keyDown(document.body, { key, ...init });
 
+/** How many of the listeners the page started haven't stopped. */
+const listening = () => core.listen.mock.calls.length - core.stopListening.mock.calls.length;
+
+/** Says a Repository changed to every listener the page started, as the core would. */
+const catchChanged = () => {
+  const callbacks: ((event: { payload: unknown }) => void)[] = [];
+  core.listen.mockImplementation((callback: (event: { payload: unknown }) => void) => {
+    callbacks.push(callback);
+    return Promise.resolve(core.stopListening);
+  });
+  return (repository: string) => {
+    for (const callback of callbacks) callback({ payload: { repository, items: [] } });
+  };
+};
+
 it("opens an Issue in the Detail pane on a click, and moves Last seen", async () => {
   const { issueRow } = await listing();
 
@@ -528,6 +543,92 @@ it("goes back to the Issue with the PR view's gh-N link", async () => {
   await fireEvent.click(await screen.findByRole("button", { name: "gh-112564" }));
 
   expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
+});
+
+it("keeps the Issue view while a PR from its tree is on show, and shows it again at once", async () => {
+  const { issueRow, treeRow } = await listing();
+  await fireEvent.click(issueRow);
+  await screen.findByRole("heading", { name: /GIL drop during collection/ });
+
+  await fireEvent.click(treeRow);
+  await press("Escape");
+  expect(screen.getByRole("heading", { name: /GIL drop during collection/ })).toBeTruthy();
+  await fireEvent.click(treeRow);
+  await fireEvent.click(await screen.findByRole("button", { name: "gh-112564" }));
+  expect(screen.getByRole("heading", { name: /GIL drop during collection/ })).toBeTruthy();
+  await fireEvent.click(treeRow);
+  await press("ArrowLeft", { altKey: true });
+
+  expect(screen.getByRole("heading", { name: /GIL drop during collection/ })).toBeTruthy();
+  expect(core.openIssue).toHaveBeenCalledOnce();
+  expect(core.issue).toHaveBeenCalledOnce();
+  expect(core.openPullRequest).toHaveBeenCalledTimes(3);
+});
+
+it("shows the Issue view it keeps at once on a click on the Issue's line, and moves Last seen", async () => {
+  const send = catchChanged();
+  const { issueRow, treeRow } = await listing();
+  await fireEvent.click(issueRow);
+  await screen.findByRole("heading", { name: /GIL drop during collection/ });
+  await fireEvent.click(treeRow);
+  await screen.findByRole("region", { name: "PR view" });
+  send("python/cpython");
+
+  await fireEvent.click(issueRow);
+
+  expect(screen.getByRole("heading", { name: /GIL drop during collection/ })).toBeTruthy();
+  await vi.waitFor(() => {
+    expect(core.openIssue).toHaveBeenCalledTimes(2);
+  });
+  expect(core.issue).toHaveBeenCalledTimes(2);
+});
+
+it("opens the Issue afresh on the way back when its view couldn't read it", async () => {
+  core.issue.mockResolvedValueOnce({ status: "error", error: { kind: "internal", message: "no database" } });
+  const { issueRow, treeRow } = await listing();
+  await fireEvent.click(issueRow);
+  await screen.findByText(/no database/);
+  await fireEvent.click(treeRow);
+  await screen.findByRole("region", { name: "PR view" });
+
+  await press("Escape");
+
+  expect(await screen.findByRole("heading", { name: /GIL drop during collection/ })).toBeTruthy();
+  expect(core.openIssue).toHaveBeenCalledTimes(2);
+});
+
+it("asks GitHub nothing for the Issue view it keeps, and stops it when the PR gives way to another", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  core.fetchIssue.mockResolvedValue({ status: "ok", data: null });
+  core.fetchPullRequest.mockResolvedValue({ status: "ok", data: null });
+  const { issueRow, treeRow, prRow } = await listing();
+  const idle = listening();
+  await fireEvent.click(issueRow);
+  await screen.findByRole("region", { name: "Issue view" });
+  await fireEvent.click(treeRow);
+  await screen.findByRole("region", { name: "PR view" });
+
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(core.fetchIssue).not.toHaveBeenCalled();
+  expect(core.fetchPullRequest).toHaveBeenCalledOnce();
+  await fireEvent.click(prRow);
+  await press("Escape");
+
+  expect(screen.queryByRole("region", { name: "PR view" })).toBeNull();
+  expect(listening()).toBe(idle);
+});
+
+it("stops the Issue view it keeps when it goes", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  const { issueRow, treeRow } = await listing();
+  await fireEvent.click(issueRow);
+  await screen.findByRole("region", { name: "Issue view" });
+  await fireEvent.click(treeRow);
+  await screen.findByRole("region", { name: "PR view" });
+
+  cleanup();
+
+  expect(listening()).toBe(0);
 });
 
 it("opens a Backport in the list in the PR view, with its Issue to go back to", async () => {

@@ -44,9 +44,11 @@ binary, and one that uses `tsugiki_app` also links Tauri and WebView2. If more t
 `crates/app/tests/` use it, move those into one `tests/app/main.rs` binary. `docs/build-costs.md` has the
 numbers.
 
-A source file in `core` over about 500 lines whose tests outnumber its code keeps them in a sibling file:
-`#[cfg(test)] mod tests;` in `sync/refresh.rs` loads `sync/refresh/tests.rs`. Reading the code then doesn't
-mean paging past its tests.
+Each source file keeps its unit tests in a file of their own: `#[cfg(test)] mod tests;` in `sync/refresh.rs`
+loads `sync/refresh/tests.rs`, and a `mod.rs` or `lib.rs` loads the `tests.rs` beside it. A test-only
+`mod testing` of helpers lives in `testing.rs` the same way. You then read the code and its tests apart, and a
+scan of the source can tell the two by path. `crates/app/tests/rules.rs` fails on an inline
+`#[cfg(test)] mod name { ... }`.
 
 ## Rust design rules
 

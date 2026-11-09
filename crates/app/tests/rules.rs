@@ -1,5 +1,6 @@
 //! Rules about the rules: each one says why it is here, so a reader can judge a violation or an exception
-//! without guessing. Also the one layering rule Clippy can't see, since it lives in a manifest (ADR 0007).
+//! without guessing. Also the one layering rule Clippy can't see, since it lives in a manifest (ADR 0007),
+//! and the rule that keeps each test module in a file of its own.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -129,5 +130,144 @@ fn the_core_doesnt_depend_on_tauri() {
     assert!(
         !manifest.to_lowercase().contains("tauri"),
         "the core stays free of the desktop shell, so it can run without a window (ADR 0007)"
+    );
+}
+
+/// The 1-based lines of `source` that open an inline test module: a `mod name {` after a `#[cfg(...)]` that
+/// needs `test`, past any other attributes and line comments between the two.
+fn inline_test_modules(source: &str) -> Vec<usize> {
+    let mut found = Vec::new();
+    for (start, _) in source.match_indices("#[cfg(") {
+        let (condition, mut rest) = attribute(source.split_at(start).1);
+        if !needs_test(condition) {
+            continue;
+        }
+        loop {
+            rest = rest.trim_start();
+            if rest.starts_with("//") {
+                rest = rest.split_once('\n').map_or("", |(_, after)| after);
+            } else if rest.starts_with("#[") {
+                rest = attribute(rest).1;
+            } else {
+                break;
+            }
+        }
+        if opens_inline_module(rest) {
+            let at = source.len() - rest.len();
+            found.push(source.split_at(at).0.matches('\n').count() + 1);
+        }
+    }
+    found
+}
+
+/// The attribute that `text` starts with, and the text after it. A `]` inside a string doesn't close it.
+fn attribute(text: &str) -> (&str, &str) {
+    let (mut depth, mut in_string, mut escaped) = (0, false, false);
+    for (index, c) in text.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match c {
+            '"' => in_string = true,
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return text.split_at(index + 1);
+                }
+            }
+            _ => {}
+        }
+    }
+    (text, "")
+}
+
+/// Whether a `#[cfg(...)]` keeps its item to test builds. One under `not(...)` keeps it out of them instead.
+fn needs_test(condition: &str) -> bool {
+    let mut words = condition.split(|c: char| !(c.is_alphanumeric() || c == '_'));
+    words.any(|word| word == "test") && !condition.contains("not(")
+}
+
+/// Whether `item` opens a module whose body follows in braces, after any `pub` or `pub(...)`.
+fn opens_inline_module(item: &str) -> bool {
+    let item = match item.strip_prefix("pub") {
+        Some(after) if after.starts_with('(') => after.split_once(')').map_or("", |(_, rest)| rest),
+        Some(after) => after,
+        None => item,
+    };
+    let Some(after) = item.trim_start().strip_prefix("mod ") else {
+        return false;
+    };
+    let name = after.trim_start();
+    let body = name.trim_start_matches(|c: char| c.is_alphanumeric() || c == '_');
+    body.trim_start().starts_with('{')
+}
+
+/// The `.rs` files under `dir`, at any depth.
+#[expect(
+    clippy::expect_used,
+    reason = "a test fails by panicking, and this helper sits outside any #[test] function"
+)]
+fn rust_sources(dir: &Path) -> Vec<PathBuf> {
+    let mut sources = Vec::new();
+    for entry in fs::read_dir(dir).expect("list a source folder") {
+        let path = entry.expect("read a source folder entry").path();
+        if path.is_dir() {
+            sources.extend(rust_sources(&path));
+        } else if path.extension().is_some_and(|extension| extension == "rs") {
+            sources.push(path);
+        }
+    }
+    sources
+}
+
+#[test]
+fn an_inline_test_module_is_found() {
+    let source = "#[cfg(test)]\nmod tests;\n\
+                  #[cfg(test)]\nmod tests {\n}\n\
+                  #[cfg(test)]\x20pub(crate) mod testing { use super::*; }\n\
+                  #[cfg(all(test, windows))]\n\
+                  /// What the Windows tests share.\n\
+                  // A comment.\n\
+                  #[expect(\n    dead_code,\n    reason = \"a \\\"quoted\\\" ] word\"\n)]\n\
+                  pub mod windows { // Why.\n}\n\
+                  #[cfg(not(test))]\nmod production {\n}\n\
+                  #[cfg(test)]\nfn helper() {}\n\
+                  #[cfg(test)]\n// The end.\n\
+                  #[cfg(test";
+    assert_eq!(inline_test_modules(source), [4, 6, 14]);
+}
+
+#[test]
+fn each_test_module_lives_in_a_file_of_its_own() {
+    let crates = fs::read_dir(repo().join("crates")).unwrap();
+    let crates = crates
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.is_dir());
+    let sources: Vec<_> = crates.flat_map(|path| rust_sources(&path)).collect();
+    assert!(
+        sources.len() > 100,
+        "the scan found {} files",
+        sources.len()
+    );
+    let inline: Vec<String> = sources
+        .into_iter()
+        .flat_map(|path| {
+            let lines = inline_test_modules(&fs::read_to_string(&path).unwrap());
+            lines
+                .into_iter()
+                .map(move |line| format!("{}:{line}", path.display()))
+        })
+        .collect();
+    assert!(
+        inline.is_empty(),
+        "move each of these into a file, so a reviewer reads code and tests apart: {inline:#?}"
     );
 }

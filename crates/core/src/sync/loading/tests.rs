@@ -980,7 +980,7 @@ fn a_first_sync_taken_up_again_keeps_when_it_started() {
 
     assert!((first.started_at - long_ago).abs() < Duration::minutes(1));
     assert_eq!(taken_up.started_at, first.started_at);
-    assert_eq!(taken_up.first_sync.map(|sync| sync.pages), Some(2));
+    assert_eq!(taken_up.first_sync().map(|sync| sync.pages), Some(2));
     harness.finish();
 }
 

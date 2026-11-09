@@ -106,12 +106,23 @@ pub(super) fn save(
     events: &[ItemActivity],
 ) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
-    // Before the PRs, because a commit counts differently on a PR the store holds.
-    activity::save(&transaction, repository, events)?;
-    for pull_request in pull_requests {
-        replace(&transaction, repository, pull_request)?;
-    }
+    save_in(&transaction, repository, pull_requests, events)?;
     transaction.commit()
+}
+
+/// Does what `save` does inside a transaction the caller holds, which can save more beside it.
+pub(super) fn save_in(
+    transaction: &Connection,
+    repository: &RepositoryName,
+    pull_requests: &[PullRequestFacts],
+    events: &[ItemActivity],
+) -> rusqlite::Result<()> {
+    // Before the PRs, because a commit counts differently on a PR the store holds.
+    activity::save(transaction, repository, events)?;
+    for pull_request in pull_requests {
+        replace(transaction, repository, pull_request)?;
+    }
+    Ok(())
 }
 
 fn replace(

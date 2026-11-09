@@ -65,13 +65,10 @@ struct UserWorkSync {
     started_at: OffsetDateTime,
     /// How the next refresh can learn that nothing changed, as far as this one knows.
     check: ChangeCheck,
-    /// A first sync's own state. A refresh has none, because it keeps no place to come back to.
-    first_sync: Option<FirstSync>,
+    /// A refresh until the store says the Repository never finished a sync, which makes it a first sync.
+    kind: Kind,
     /// A step that worked and whose place couldn't be saved, which the next try reports once it can.
     unsaved: Option<Step>,
-    /// The PRs a refresh found changed, whose Conversations it reads before it finishes if the user's work
-    /// reaches them. A first sync finds none.
-    changed_prs: BTreeSet<u32>,
 }
 
 enum Phase {
@@ -141,6 +138,17 @@ impl PlaceOwner {
             filters: filters.to_vec(),
         })
     }
+}
+
+/// What a sync is for, which decides what it does beside its phases.
+enum Kind {
+    /// A sync after the first, which keeps no place to come back to and reads ahead before it finishes. A
+    /// sync is one until the store says the Repository has never finished a sync.
+    Refresh,
+    /// A first sync, with its own state.
+    First(FirstSync),
+    /// The read of the tree of an Issue the user opened, and nothing else.
+    Tree,
 }
 
 /// A first sync's own state, which a refresh doesn't have.
@@ -279,9 +287,8 @@ impl UserWorkSync {
             fetched: BTreeSet::new(),
             started_at: OffsetDateTime::now_utc(),
             check: ChangeCheck::Skipped,
-            first_sync: None,
+            kind: Kind::Refresh,
             unsaved: None,
-            changed_prs: BTreeSet::new(),
         }
     }
 
@@ -293,7 +300,16 @@ impl UserWorkSync {
             ..Reading::default()
         })
         .into();
+        sync.kind = Kind::Tree;
         sync
+    }
+
+    /// A first sync's own state, if this is one.
+    fn first_sync(&self) -> Option<&FirstSync> {
+        match &self.kind {
+            Kind::First(first_sync) => Some(first_sync),
+            Kind::Refresh | Kind::Tree => None,
+        }
     }
 
     /// Runs one step, then saves a first sync's place, so quitting, a crash or going offline comes back to
@@ -313,7 +329,7 @@ impl UserWorkSync {
     }
 
     fn save_place(&self, store: &Store) -> Result<(), Error> {
-        let (Some(first_sync), Phase::Resumable(place)) = (&self.first_sync, &self.phase) else {
+        let (Some(first_sync), Phase::Resumable(place)) = (self.first_sync(), &self.phase) else {
             return Ok(());
         };
         let saved = PlaceToSave {
@@ -332,7 +348,7 @@ impl UserWorkSync {
         let owner = PlaceOwner::now(store, &self.filters)?;
         let saved = saved_place(store, &self.settings.name)?;
         let Some(saved) = saved.filter(|saved| saved.owner == owner) else {
-            self.first_sync = Some(FirstSync { owner, pages: 0 });
+            self.kind = Kind::First(FirstSync { owner, pages: 0 });
             self.phase = Resumable::Searching {
                 next_search: 0,
                 cursor: None,
@@ -341,7 +357,7 @@ impl UserWorkSync {
             .into();
             return Ok(());
         };
-        self.first_sync = Some(FirstSync {
+        self.kind = Kind::First(FirstSync {
             owner,
             pages: saved.pages,
         });
@@ -353,7 +369,7 @@ impl UserWorkSync {
 
     /// The part of a sync this is, for the status bar.
     fn part(&self) -> SyncPart {
-        match (&self.phase, &self.first_sync) {
+        match (&self.phase, self.first_sync()) {
             (Phase::Resumable(Resumable::Loading(loading)), Some(_)) => {
                 if loading.trees_come_first() {
                     SyncPart::Trees
@@ -401,12 +417,10 @@ impl UserWorkSync {
             repository: &self.settings.name,
             filters: &self.filters,
             window_since: self
-                .first_sync
-                .as_ref()
+                .first_sync()
                 .map(|_| self.started_at - Duration::days(WINDOW_DAYS.into())),
         };
         let fetched = &mut self.fetched;
-        let changed_prs = &mut self.changed_prs;
         let (step, next) = match &mut self.phase {
             // Asking the store is no request to GitHub, so this goes straight on to the first one.
             Phase::Starting => {
@@ -419,10 +433,8 @@ impl UserWorkSync {
             }
             Phase::CheckingList(poll) => refresh::check_list(&link, poll, &self.check)?,
             Phase::Polling(poll) => refresh::poll(&link, poll, &mut self.check)?,
-            Phase::FetchingChanged(changed) => {
-                refresh::fetch_changed(&link, changed, fetched, changed_prs)?
-            }
-            Phase::Probing(probing) => refresh::probe(&link, probing, changed_prs)?,
+            Phase::FetchingChanged(changed) => refresh::fetch_changed(&link, changed, fetched)?,
+            Phase::Probing(probing) => refresh::probe(&link, probing)?,
             Phase::ReadingAhead(numbers) => refresh::read_ahead(&link, numbers)?,
             Phase::Resumable(Resumable::Searching {
                 next_search,
@@ -448,17 +460,17 @@ impl UserWorkSync {
         if let Some(next) = next {
             self.phase = next;
         }
-        if matches!(step, Step::Finished) && !changed_prs.is_empty() {
-            // A failure here keeps the PRs, for the retry to read.
-            let numbers = refresh::to_read_ahead(&link, &self.settings, changed_prs)?;
-            changed_prs.clear();
+        let reads_ahead = matches!(self.phase, Phase::ReadingAhead(_));
+        if matches!((&step, &self.kind), (Step::Finished, Kind::Refresh)) && !reads_ahead {
+            // The store keeps the PRs until the refresh finishes, so a failure here leaves them to the retry.
+            let numbers = refresh::to_read_ahead(&link, &self.settings)?;
             if !numbers.is_empty() {
                 self.phase = Phase::ReadingAhead(numbers);
                 return Ok(Step::Moved);
             }
         }
-        if let (Some(first_sync), Step::Searched { .. } | Step::Saved { .. }) =
-            (self.first_sync.as_mut(), &step)
+        if let (Kind::First(first_sync), Step::Searched { .. } | Step::Saved { .. }) =
+            (&mut self.kind, &step)
         {
             first_sync.pages += 1;
         }

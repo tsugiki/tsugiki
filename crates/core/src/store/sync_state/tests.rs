@@ -1,5 +1,7 @@
 use super::*;
 use crate::error::ErrorKind;
+use crate::github::issue_content::IssueContent;
+use crate::github::pull_request_content::PullRequestContent;
 use crate::store::Store;
 use crate::store::testing::temp_database;
 use std::fs;
@@ -71,6 +73,57 @@ fn each_kind_of_check_reads_back_as_it_was_saved() {
     fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(read, checks);
+}
+
+#[test]
+fn the_reads_a_refresh_owes_last_until_a_sync_finishes() {
+    let (path, folder) = temp_database("sync-state-read-ahead");
+    let store = Store::open(&path).unwrap();
+    let under_way = SyncState {
+        refresh_under_way: true,
+        ..at(100, ChangeCheck::Skipped)
+    };
+    store
+        .save_sync_state(&cpython(), under_way.clone())
+        .unwrap();
+    store
+        .save_changed_pull_requests(&cpython(), (vec![], vec![]), vec![3, 2, 1])
+        .unwrap();
+    let shouted = RepositoryName::parse("Python/CPython").unwrap();
+    store
+        .save_changed_pull_requests(&shouted, (vec![], vec![]), vec![3])
+        .unwrap();
+    store.save_sync_state(&cpython(), under_way).unwrap();
+    store
+        .save_pull_request_content(&cpython(), 2, no_conversation())
+        .unwrap();
+    store.close();
+
+    let store = Store::open(&path).unwrap();
+    let owed = store.read_ahead_owed(&cpython()).unwrap();
+    store
+        .save_sync_state(&cpython(), at(200, ChangeCheck::Skipped))
+        .unwrap();
+    let after = store.read_ahead_owed(&cpython()).unwrap();
+    store.close();
+    fs::remove_dir_all(folder).unwrap();
+
+    assert_eq!(owed, BTreeSet::from([1, 3]), "PR 2's Conversation was read");
+    assert_eq!(after, BTreeSet::new(), "a finished sync owes nothing");
+}
+
+fn no_conversation() -> PullRequestContent {
+    PullRequestContent {
+        conversation: IssueContent {
+            body_html: String::new(),
+            comments: vec![],
+            earlier_comments: 0,
+        },
+        reviews: vec![],
+        earlier_reviews: 0,
+        head: None,
+        pending: vec![],
+    }
 }
 
 #[test]

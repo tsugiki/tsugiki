@@ -87,9 +87,6 @@ impl Default for Poll {
 pub(super) struct Changed {
     ids: Vec<NodeId>,
     walk: FilterWalk,
-    /// The changed PRs Tsugiki held when it redoes a refresh that stopped partway. That one may have saved
-    /// them, so the fetch can't tell they changed, and their Conversations still need reading.
-    redone: BTreeSet<u32>,
 }
 
 /// The user's open PRs left to probe, with the walk that follows them.
@@ -154,7 +151,6 @@ pub(super) fn check_list(
             Phase::FetchingChanged(Changed {
                 ids: Vec::new(),
                 walk,
-                redone: BTreeSet::new(),
             })
         }
         ListCheck::Moved(tag) => {
@@ -314,18 +310,18 @@ fn plan_the_rest(link: &Link<'_>, poll: &mut Poll) -> Result<Changed, Error> {
         hits: std::mem::take(&mut poll.hits),
     });
     walk.hold_issues(std::mem::take(&mut poll.moved_issues));
-    let mut redone = BTreeSet::new();
     if poll.redo {
+        // The refresh that stopped may have saved these, so the fetch can't tell they changed. It owed
+        // their Conversations in the store as it saved them.
         let held = poll
             .changed_prs
             .iter()
             .filter_map(|pr| stored.get(&pr.number));
-        redone.extend(held.clone().map(|pr| pr.number));
         for pull_request in held.filter(|pr| is_work(pr, viewer.as_ref())) {
             walk.learn_from(pull_request, link.repository);
         }
     }
-    Ok(Changed { ids, walk, redone })
+    Ok(Changed { ids, walk })
 }
 
 /// True when `pull_request` is on one of the user's own lists.
@@ -344,10 +340,8 @@ pub(super) fn fetch_changed(
     link: &Link<'_>,
     changed: &mut Changed,
     fetched: &mut BTreeSet<u32>,
-    changed_prs: &mut BTreeSet<u32>,
 ) -> Result<Moved, Error> {
     if changed.ids.is_empty() {
-        changed_prs.append(&mut changed.redone);
         let next = Probing {
             numbers: tracked_pull_requests(link, fetched)?,
             walk: std::mem::take(&mut changed.walk),
@@ -359,24 +353,22 @@ pub(super) fn fetch_changed(
         .fetch_pull_requests(PrFetch::Changed, &changed.ids, FETCH_BATCH)?;
     let stored = stored_pull_requests(link)?;
     let viewer = link.store.last_login()?;
-    link.store.save_fetched_pull_requests(
+    let moved: Vec<&PullRequestFacts> = batch
+        .pull_requests
+        .iter()
+        .filter(|pr| stored.get(&pr.number) != Some(*pr))
+        .collect();
+    let touched: Vec<u32> = moved.iter().map(|pr| pr.number).collect();
+    link.store.save_changed_pull_requests(
         link.repository,
-        batch.pull_requests.clone(),
-        batch.activity,
+        (batch.pull_requests.clone(), batch.activity),
+        touched.clone(),
     )?;
-    let mut touched = Vec::new();
-    for pull_request in &batch.pull_requests {
-        fetched.extend([pull_request.number]);
-        if stored.get(&pull_request.number) == Some(pull_request) {
-            continue;
-        }
-        touched.push(pull_request.number);
-        if is_work(pull_request, viewer.as_ref()) {
-            changed.walk.learn_from(pull_request, link.repository);
-        }
+    fetched.extend(batch.pull_requests.iter().map(|pr| pr.number));
+    for pull_request in moved.into_iter().filter(|pr| is_work(pr, viewer.as_ref())) {
+        changed.walk.learn_from(pull_request, link.repository);
     }
     drop(changed.ids.drain(..batch.asked_for));
-    changed_prs.extend(&touched);
     let pause_until = pause_until(batch.rate_limit);
     Ok((Step::saved_if_any(touched, pause_until), None))
 }
@@ -439,11 +431,7 @@ fn read_failed_checks(link: &Link<'_>) -> Result<Step, Error> {
 }
 
 /// Probes the next batch of the user's open PRs, for the CI and Reviews that don't move `updatedAt`.
-pub(super) fn probe(
-    link: &Link<'_>,
-    probing: &mut Probing,
-    changed_prs: &mut BTreeSet<u32>,
-) -> Result<Moved, Error> {
+pub(super) fn probe(link: &Link<'_>, probing: &mut Probing) -> Result<Moved, Error> {
     if probing.numbers.is_empty() {
         let read = read_failed_checks(link)?;
         let walk = std::mem::take(&mut probing.walk);
@@ -463,21 +451,27 @@ pub(super) fn probe(
         })
         .collect();
     let touched: Vec<u32> = updated.iter().map(|pr| pr.number).collect();
-    link.store
-        .save_fetched_pull_requests(link.repository, updated, batch.activity)?;
+    link.store.save_changed_pull_requests(
+        link.repository,
+        (updated, batch.activity),
+        touched.clone(),
+    )?;
     drop(probing.numbers.drain(..batch.asked_for));
-    changed_prs.extend(&touched);
     let pause_until = pause_until(batch.rate_limit);
     Ok((Step::saved_if_any(touched, pause_until), None))
 }
 
-/// The PRs among `changed` that the user's work reaches. Their Conversations are worth reading before the
-/// user opens them, and a stranger's PR waits until then.
+/// The PRs the user's work reaches among those this refresh found changed, and any a refresh that stopped
+/// left unread. Their Conversations are worth reading before the user opens them, and a stranger's PR waits
+/// until then.
 pub(super) fn to_read_ahead(
     link: &Link<'_>,
     repository: &RepositorySettings,
-    changed: &BTreeSet<u32>,
 ) -> Result<BTreeSet<u32>, Error> {
+    let changed = link.store.read_ahead_owed(link.repository)?;
+    if changed.is_empty() {
+        return Ok(changed);
+    }
     let reached = Workbench::reached(link.store.work_facts(link.repository)?, repository);
     Ok(changed.intersection(&reached).copied().collect())
 }

@@ -1,6 +1,8 @@
 //! What a Repository's refresh needs from the last sync that finished (ADR 0015). A Repository with no row
 //! here hasn't finished its first sync, so its next sync is a whole one.
 
+use std::collections::BTreeSet;
+
 use rusqlite::{OptionalExtension, Row, named_params};
 use time::OffsetDateTime;
 
@@ -25,6 +27,16 @@ pub(super) const FIRST_SYNC_PLACE: &str = "
     CREATE TABLE first_sync_place (
         repository TEXT PRIMARY KEY COLLATE NOCASE,
         place TEXT NOT NULL
+    ) WITHOUT ROWID;
+";
+
+/// The PRs a refresh found changed and hasn't yet read the Conversations of. A refresh that stops partway
+/// leaves them here for the next one, which can't tell they changed once they're saved (#205).
+pub(super) const READ_AHEAD: &str = "
+    CREATE TABLE read_ahead (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        number INTEGER NOT NULL,
+        PRIMARY KEY (repository, number)
     ) WITHOUT ROWID;
 ";
 
@@ -77,6 +89,59 @@ pub(super) fn forget_place(
     connection
         .execute(
             "DELETE FROM first_sync_place WHERE repository = :repository",
+            named_params! { ":repository": repository },
+        )
+        .map(drop)
+}
+
+pub(super) fn owe_read_ahead(
+    connection: &Connection,
+    repository: &RepositoryName,
+    numbers: &[u32],
+) -> rusqlite::Result<()> {
+    let mut insert = connection.prepare(
+        "INSERT INTO read_ahead (repository, number) VALUES (:repository, :number)
+         ON CONFLICT DO NOTHING",
+    )?;
+    for number in numbers {
+        insert
+            .execute(named_params! { ":repository": repository, ":number": number })
+            .map(drop)?;
+    }
+    Ok(())
+}
+
+pub(super) fn read_ahead_owed(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<BTreeSet<u32>> {
+    let mut select =
+        connection.prepare("SELECT number FROM read_ahead WHERE repository = :repository")?;
+    let numbers = select.query_map(named_params! { ":repository": repository }, |row| {
+        row.get("number")
+    })?;
+    numbers.collect()
+}
+
+/// Whoever saved PR `number`'s Conversation, a refresh or the PR view, has read it.
+pub(super) fn forget_read_ahead_of(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "DELETE FROM read_ahead WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": number },
+        )
+        .map(drop)
+}
+
+/// A finished refresh has read ahead each PR it owed, or found the user's work doesn't reach it.
+fn forget_read_ahead(connection: &Connection, repository: &RepositoryName) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "DELETE FROM read_ahead WHERE repository = :repository",
             named_params! { ":repository": repository },
         )
         .map(drop)
@@ -168,7 +233,12 @@ pub(super) fn save(
                  etag = excluded.etag",
             params,
         )
-        .map(drop)
+        .map(drop)?;
+    if state.refresh_under_way {
+        Ok(())
+    } else {
+        forget_read_ahead(connection, repository)
+    }
 }
 
 #[cfg(test)]

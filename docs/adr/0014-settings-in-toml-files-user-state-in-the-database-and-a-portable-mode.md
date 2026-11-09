@@ -44,7 +44,13 @@ portable
 
 development build, unless portable
   the installed folders, named tsugiki-dev       (ADR 0016)
+  <repo>\                                       tsugiki.log, tsugiki.log.1
 ```
+
+A development build that isn't portable writes its log in the root of the repo it was built from, the folder
+`just dev` runs in, so you can read or paste its lines without opening `AppData`. Its database and the rest
+stay in the `tsugiki-dev` folders. The build takes the repo's path from the core crate's folder at compile
+time, and logs beside its database when that checkout has moved or gone.
 
 **Portable mode** works as in VS Code: when a `data` folder sits next to `tsg.exe`, or a
 `tsugiki-portable-data` folder next to `Tsugiki.app`, everything lives there instead. The folder can be

@@ -139,9 +139,9 @@ the links Tsugiki was asked to open, and quote what GitHub sent, so read it befo
 | Installed on macOS | `~/Library/Application Support/tsugiki/tsugiki.log` |
 | Portable on Windows | `data\tsugiki.log`, next to `tsg.exe` |
 | Portable on macOS | `tsugiki-portable-data/tsugiki.log`, next to `Tsugiki.app` |
+| A development build, such as `just dev` | `tsugiki.log` in the repo's root |
 
-`tsugiki.log.1`, next to it, holds the older lines. A development build's folder is `tsugiki-dev`, not
-`tsugiki`.
+`tsugiki.log.1`, next to it, holds the older lines.
 
 ## License
 

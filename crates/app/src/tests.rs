@@ -17,6 +17,7 @@ pub(crate) fn temp_folders(name: &str) -> (Folders, std::path::PathBuf) {
     let folders = Folders {
         data: root.clone(),
         settings: root.clone(),
+        logs: root.clone(),
     };
     (folders, root)
 }

@@ -79,7 +79,8 @@ impl Place {
         Self {
             folders: Folders {
                 data: data.clone(),
-                settings: data,
+                settings: data.clone(),
+                logs: data,
             },
             remotes,
         }
@@ -231,6 +232,7 @@ fn a_mirror_sits_in_its_repositorys_folder() {
     let folders = Folders {
         data: PathBuf::from("data"),
         settings: PathBuf::from("settings"),
+        logs: PathBuf::from("logs"),
     };
 
     assert_eq!(

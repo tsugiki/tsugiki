@@ -29,6 +29,7 @@ fn temp_folders(name: &str) -> (Folders, PathBuf) {
     let folders = Folders {
         data: root.join("data"),
         settings: root.join("settings"),
+        logs: root.join("data"),
     };
     fs::create_dir_all(&folders.data).unwrap();
     fs::create_dir_all(&folders.settings).unwrap();

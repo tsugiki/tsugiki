@@ -224,7 +224,8 @@ impl StartedGit {
 
     /// Ends git and its helpers, so none goes on downloading after Tsugiki quits, and waits for git. Says if
     /// git had ended before the kill, having done what it was asked. A helper can take a moment longer to
-    /// end, and git's error output closes once the last one has. A failure leaves a trace.
+    /// end, and git's error output closes once the last one has. Off Windows, killing the helpers that
+    /// started meanwhile can add up to `STRAGGLERS_PATIENCE`. A failure leaves a trace.
     pub(crate) fn stop(&mut self) -> bool {
         if let Err(cause) = self.0.start_kill() {
             log::warn!("Tsugiki can't stop git's helpers: {cause}");
@@ -233,15 +234,50 @@ impl StartedGit {
                 log::warn!("Tsugiki can't stop git: {cause}");
             }
         }
-        match self.0.wait() {
+        let succeeded = match self.0.wait() {
             Ok(status) => status.success(),
             Err(cause) => {
                 log::warn!("Tsugiki can't wait for git: {cause}");
                 false
             }
+        };
+        #[cfg(not(windows))]
+        self.end_stragglers();
+        succeeded
+    }
+
+    /// Kills git's process group again until nobody is left in it. macOS kills the processes it finds in
+    /// the group when the kill starts, so a process that forks meanwhile leaves a child the kill missed
+    /// (#309), and that child can fork in turn. A job object on Windows lets no process escape that way.
+    ///
+    /// The group outlives git, whose number it bears, while a helper is left in it. The loop ends at the
+    /// first kill that finds the group empty, so another group can take that number only in the moment
+    /// between two kills.
+    #[cfg(not(windows))]
+    fn end_stragglers(&self) {
+        let deadline = Instant::now() + STRAGGLERS_PATIENCE;
+        loop {
+            match self.0.signal(libc::SIGKILL) {
+                Ok(()) => {}
+                Err(cause) if cause.raw_os_error() == Some(libc::ESRCH) => return,
+                Err(cause) => {
+                    log::warn!("Tsugiki can't stop git's helpers: {cause}");
+                    return;
+                }
+            }
+            if Instant::now() > deadline {
+                log::warn!("Tsugiki can't stop git's helpers: some are still running");
+                return;
+            }
+            thread::sleep(Duration::from_millis(10));
         }
     }
 }
+
+/// The time `StartedGit::stop` spends killing helpers that started while it killed the others. Short beside
+/// the second quitting gives, since the clone a stop finishes is marked only after it.
+#[cfg(not(windows))]
+const STRAGGLERS_PATIENCE: Duration = Duration::from_millis(200);
 
 /// Runs a `git` that only reads local files, with `args`, and gives its output. Its last line of error output
 /// says why it failed.

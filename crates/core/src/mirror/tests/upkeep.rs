@@ -110,7 +110,7 @@ fn a_mirror_that_never_had_upkeep_gets_gc_at_once_and_notes_when() {
     let args = gc.args.clone();
     gc.succeed();
     let nothing_more = starts.recv_timeout(A_MOMENT);
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     let mirror = place.folders.mirror(&cpython);
     assert_eq!(args, ["-C", &mirror.to_string_lossy(), "gc", "--quiet"]);
@@ -136,7 +136,7 @@ fn a_mirror_maintained_over_a_day_ago_gets_maintenance_and_keeps_its_gc_time() {
     let maintenance = starts.recv_timeout(PLENTY).unwrap();
     let args = maintenance.args.clone();
     maintenance.succeed();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     let mirror = place.folders.mirror(&cpython);
     let incremental = [
@@ -170,7 +170,7 @@ fn a_mirror_kept_lately_waits_for_its_turn_and_the_worker_wakes_for_it() {
     let on_time = starts.recv_timeout(PLENTY).unwrap();
     let args = on_time.args.clone();
     on_time.succeed();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(early.is_err(), "nothing is due yet");
     assert_eq!(args[2..4], ["maintenance", "run"]);
@@ -223,7 +223,7 @@ fn refs_of_prs_the_work_no_longer_reaches_go_before_maintenance_but_opened_ones_
         .map(|line| (*line).to_owned())
         .collect();
     again.succeed();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert_eq!(prune_args[2..], ["update-ref", "--stdin"]);
     assert_eq!(deletes, "delete refs/tsugiki/pull/3/head\n");
@@ -261,7 +261,7 @@ fn refs_that_cant_be_deleted_leave_the_maintenance_to_run() {
     let maintenance = starts.recv_timeout(PLENTY).unwrap();
     let args = maintenance.args.clone();
     maintenance.succeed();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert_eq!(args[2..4], ["maintenance", "run"]);
     assert!(place.folders.mirror(&cpython).exists());
@@ -281,7 +281,7 @@ fn an_upkeep_that_fails_waits_for_its_next_turn_and_leaves_the_mirror() {
         "fatal: gc is already running on machine 'here' pid 1 (use --force if not)\n",
     );
     let nothing_more = starts.recv_timeout(A_MOMENT);
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(nothing_more.is_err());
     assert!(place.folders.mirror(&cpython).exists());
@@ -322,7 +322,7 @@ fn a_mirror_a_fetch_finds_broken_is_cloned_again_and_gets_its_heads_back() {
         .map(|line| (*line).to_owned())
         .collect();
     fetch.succeed();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(set_aside, "the broken mirror waits beside the clone");
     assert_eq!(
@@ -362,7 +362,7 @@ fn a_mirror_an_upkeep_finds_broken_is_cloned_again() {
     fs::create_dir_all(clone.args.last().unwrap()).unwrap();
     clone.succeed();
     let nothing_more = starts.recv_timeout(A_MOMENT);
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(is_clone);
     assert!(nothing_more.is_err(), "a new clone needs no upkeep yet");
@@ -384,7 +384,7 @@ fn a_broken_mirror_that_cant_be_set_aside_stays_and_its_fetches_wait_for_news() 
     let fetch = starts.recv_timeout(PLENTY).unwrap();
     fail_saying(fetch, "fatal: bad object HEAD\n");
     let nothing_more = starts.recv_timeout(A_MOMENT);
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(nothing_more.is_err(), "no clone, and no fetch until news");
     assert!(place.folders.mirror(&cpython).exists());
@@ -402,7 +402,7 @@ fn a_broken_mirror_whose_upkeep_failed_and_cant_be_set_aside_waits_for_its_next_
     let gc = starts.recv_timeout(PLENTY).unwrap();
     fail_saying(gc, "fatal: bad object HEAD\n");
     let nothing_more = starts.recv_timeout(A_MOMENT);
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(nothing_more.is_err());
     assert!(just_now(place.upkept_at(&cpython, "collected")));
@@ -446,7 +446,7 @@ fn a_file_tsugiki_cant_read_counts_as_no_upkeep_yet() {
     let gc = starts.recv_timeout(PLENTY).unwrap();
     let args = gc.args.clone();
     gc.succeed();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert_eq!(args[2..], ["gc", "--quiet"]);
 }
@@ -460,7 +460,7 @@ fn without_upkeep_tsugiki_leaves_mirrors_as_they_are() {
 
     mirrors.requests().clone_mirror(cpython.clone(), download());
     let nothing = starts.recv_timeout(A_MOMENT);
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(nothing.is_err());
     assert!(!place.upkeep_file(&cpython).exists());
@@ -482,7 +482,7 @@ fn a_real_mirror_drops_the_refs_of_prs_gone_from_the_work_and_gets_maintenance_a
     let _clone = one_clone(&announced);
     mirrors.requests().fetch_heads(hello.clone(), heads.clone());
     wait_until(|| place.pull_refs(&hello).lines().count() == 2);
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
     let config = git(
         &place.folders.mirror(&hello),
         &["config", "maintenance.auto"],
@@ -498,7 +498,7 @@ fn a_real_mirror_drops_the_refs_of_prs_gone_from_the_work_and_gets_maintenance_a
         .fetch_heads(hello.clone(), heads[..1].to_vec());
     mirrors.requests().clone_mirror(hello.clone(), download());
     wait_until(|| place.upkept_just_now(&hello, "maintained"));
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
     let after_maintenance = place.pull_refs(&hello);
 
     // A week later.
@@ -506,7 +506,7 @@ fn a_real_mirror_drops_the_refs_of_prs_gone_from_the_work_and_gets_maintenance_a
     let (mirrors, _announced) = place.start_live_keeping();
     mirrors.requests().clone_mirror(hello.clone(), download());
     wait_until(|| place.upkept_just_now(&hello, "collected"));
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
     let mirror = place.folders.mirror(&hello);
     let fsck = LiveGit.read(&[
         OsStr::new("-C"),
@@ -537,7 +537,7 @@ fn refs_that_cant_be_read_leave_the_maintenance_to_run() {
     let maintenance = starts.recv_timeout(PLENTY).unwrap();
     let args = maintenance.args.clone();
     maintenance.succeed();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert_eq!(args[2..4], ["maintenance", "run"]);
 }
@@ -553,7 +553,7 @@ fn an_upkeep_that_cant_start_waits_for_its_next_turn() {
 
     mirrors.requests().clone_mirror(cpython.clone(), download());
     wait_until(|| place.upkeep_file(&cpython).exists());
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(just_now(place.upkept_at(&cpython, "collected")));
 }
@@ -570,7 +570,7 @@ fn an_upkeep_file_that_cant_be_written_leaves_a_trace_and_the_worker_goes_by_its
     mirrors.requests().clone_mirror(cpython.clone(), download());
     starts.recv_timeout(PLENTY).unwrap().succeed();
     let nothing_more = starts.recv_timeout(A_MOMENT);
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(nothing_more.is_err());
 }
@@ -590,7 +590,7 @@ fn a_broken_mirror_the_new_clone_cant_delete_leaves_a_trace() {
     fs::create_dir_all(clone.args.last().unwrap()).unwrap();
     clone.succeed();
     let nothing_more = starts.recv_timeout(A_MOMENT);
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(nothing_more.is_err(), "a new clone needs no upkeep yet");
     assert!(broken.exists());
@@ -606,7 +606,7 @@ fn quitting_stops_an_upkeep_under_way() {
 
     mirrors.requests().clone_mirror(cpython, download());
     let gc = starts.recv_timeout(PLENTY).unwrap();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert_eq!(gc.stopped.recv_timeout(PLENTY), Ok(()));
 }
@@ -633,7 +633,7 @@ fn a_mirror_found_broken_again_since_launch_stays_and_its_fetches_wait_for_news(
         "fatal: bad object HEAD\n",
     );
     let nothing_more = starts.recv_timeout(A_MOMENT);
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(
         nothing_more.is_err(),
@@ -671,7 +671,7 @@ fn a_head_due_another_fetch_waits_for_the_new_clone_too() {
         .map(|line| (*line).to_owned())
         .collect();
     fetch.succeed();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert_eq!(refspecs, [refspec(1), refspec(2)]);
 }
@@ -703,7 +703,7 @@ fn a_broken_mirror_gives_back_its_room_when_the_disk_is_short_for_its_clone() {
     let clone = starts.recv_timeout(PLENTY).unwrap();
     let is_clone = clone.args.first().is_some_and(|arg| arg == "clone");
     drop(clone);
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(is_clone);
     assert!(!broken.exists());

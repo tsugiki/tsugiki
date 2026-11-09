@@ -182,7 +182,7 @@ fn requests_check_a_clone_as_the_worker_will() {
     let refused = mirrors
         .requests()
         .check_clone(&folder, &named("octo-org/other"));
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert_eq!(lends, Ok(()));
     assert_eq!(refused, Err(CloneRefusal::NoRemote));
@@ -204,7 +204,7 @@ fn a_mirror_that_borrows_clones_with_the_lenders_objects_and_keeps_none_of_its_l
     let clone = starts.recv_timeout(PLENTY).unwrap();
     let args = clone.args.clone();
     clone.fail();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     let reference = args.iter().position(|arg| arg == "--reference");
     let lent = reference.and_then(|at| args.get(at + 1));
@@ -232,7 +232,7 @@ fn a_lender_gone_by_the_clone_leaves_it_to_download_everything() {
     let clone = starts.recv_timeout(PLENTY).unwrap();
     let args = clone.args.clone();
     clone.fail();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(args.first().is_some_and(|arg| arg == "clone"), "{args:?}");
     assert!(!args.contains(&"--reference".to_owned()), "{args:?}");
@@ -250,7 +250,7 @@ fn a_real_borrowed_mirror_stands_alone_and_the_lender_is_untouched() {
         .requests()
         .clone_mirror(hello.clone(), borrow(&folder));
     let clone = one_clone(&announced);
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     let mirror = place.folders.mirror(&hello);
     assert!(!clone.is_empty());
@@ -275,7 +275,7 @@ fn a_clone_nobody_has_answered_for_asks_and_starts_on_the_answer() {
     let clone = starts.recv_timeout(PLENTY).unwrap();
     let cloned = clone.args.first().is_some_and(|arg| arg == "clone");
     clone.fail();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert_eq!(question.as_deref(), Some("octo-org/hello"));
     assert!(held);
@@ -298,7 +298,7 @@ fn the_question_names_the_first_repository_that_waits_and_then_the_next() {
     let named_second = asked.recv_timeout(PLENTY).unwrap();
     let clone = starts.recv_timeout(PLENTY).unwrap();
     clone.fail();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert_eq!(named_first.as_deref(), Some("octo-org/first"));
     assert_eq!(named_second.as_deref(), Some("octo-org/second"));
@@ -318,7 +318,7 @@ fn an_app_that_hears_only_of_clones_still_holds_a_clone_nobody_answered_for() {
         .requests()
         .clone_mirror(named("octo-org/hello"), None);
     let held = starts.recv_timeout(A_MOMENT).is_err();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(held);
 }

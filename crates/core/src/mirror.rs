@@ -275,6 +275,10 @@ pub struct Mirrors {
     messages: Sender<Message>,
     finished: Receiver<()>,
     prefixes: Vec<String>,
+    /// The worker's thread, which a test joins to learn how it ended. Quitting doesn't join it, so a worker
+    /// stuck on a disk can't hold the app up.
+    #[cfg_attr(not(test), expect(dead_code, reason = "only a test joins the worker"))]
+    worker: Option<thread::JoinHandle<()>>,
 }
 
 /// A way to ask for mirrors. It returns at once, but for `check_clone`.
@@ -397,7 +401,7 @@ impl Mirrors {
         let (messages, incoming) = mpsc::channel();
         let (finishing, finished) = mpsc::channel::<()>();
         let prefixes = remotes.prefixes.clone();
-        let mut worker = Worker {
+        let worker = Worker {
             git,
             folders,
             remotes,
@@ -418,10 +422,12 @@ impl Mirrors {
             upkept: Vec::new(),
             replaced: Vec::new(),
         };
-        let _ = thread::spawn(move || {
+        let worker = thread::spawn(move || {
             // `stop` learns the worker is over when this goes, however the thread ends. Locals go in reverse
-            // order, so `incoming` goes first, and a request after `stop` finds nobody to take it.
+            // order, so `incoming` goes first, and a request after `stop` finds nobody to take it. The
+            // worker's git goes before `stop` returns.
             let _finishing = finishing;
+            let mut worker = worker;
             let incoming = incoming;
             worker.run(&incoming);
         });
@@ -429,6 +435,7 @@ impl Mirrors {
             messages,
             finished,
             prefixes,
+            worker: Some(worker),
         }
     }
 
@@ -462,6 +469,20 @@ impl Mirrors {
             reason = "ending git takes a moment, so only a stuck disk outlasts `patience`, and quitting goes on"
         )]
         let _ = self.finished.recv_timeout(patience);
+    }
+
+    /// Stops the mirrors as `stop` does, and fails the test unless the worker ended within `patience`
+    /// without a panic. A panic there goes on in the test, with the worker's message.
+    #[cfg(test)]
+    pub(crate) fn stop_cleanly(mut self, patience: Duration) {
+        self.begin_stopping();
+        if let Err(RecvTimeoutError::Timeout) = self.finished.recv_timeout(patience) {
+            panic!("the mirror worker didn't end within {patience:?} of hearing to stop");
+        }
+        let worker = self.worker.take().expect("only this joins the worker");
+        if let Err(panic) = worker.join() {
+            std::panic::resume_unwind(panic);
+        }
     }
 }
 

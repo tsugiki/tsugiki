@@ -16,6 +16,10 @@ use crate::status::Status;
 /// Longer than any of these tests should wait on a working git.
 const PLENTY: Duration = Duration::from_secs(60);
 
+/// Longer than a worker with no git under way takes to end once it hears to stop, and short enough that a
+/// test that waits it out fails within seconds.
+const SOON: Duration = Duration::from_secs(5);
+
 const RECORDED: &str = include_str!("../../tests/fixtures/git/clone-progress.txt");
 
 /// Each Repository whose heads arrived, by name, with the PRs whose heads they were.
@@ -195,7 +199,7 @@ fn adding_a_repository_clones_its_mirror_and_shows_the_clone_until_it_ends() {
 
     mirrors.requests().clone_mirror(hello.clone(), download());
     let clone = one_clone(&announced);
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert_eq!(
         clone.first(),
@@ -265,7 +269,7 @@ fn quitting_stops_a_clone_under_way() {
     }
     assert!(announced.recv_timeout(PLENTY).unwrap().is_some());
     let quitting = Instant::now();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
     let quit_in = quitting.elapsed();
     // git hands the download to a helper of its own, which has to end with it.
     let after_quitting = waiting_git.read(&mut [0; 64]);
@@ -302,7 +306,7 @@ fn the_open_repositorys_mirror_goes_ahead_of_those_waiting() {
     let order: Vec<RepositoryName> = (0..3)
         .map(|_| one_clone(&announced).remove(0).repository)
         .collect();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert_eq!(order, [first, open, second]);
 }
@@ -320,7 +324,7 @@ fn a_repository_whose_mirror_is_there_isnt_cloned_again() {
         .requests()
         .clone_mirror_next(next.clone(), download());
     let clone = one_clone(&announced);
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(clone.iter().all(|cloning| cloning.repository == next));
 }
@@ -336,7 +340,7 @@ fn a_failed_clone_leaves_no_folder_and_the_next_one_goes_on() {
     mirrors.requests().clone_mirror(next.clone(), download());
     let failed = one_clone(&announced);
     let _ = one_clone(&announced);
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(failed.iter().all(|cloning| cloning.repository == missing));
     let partial = place.folders.repository(&missing).join(PARTIAL);
@@ -355,7 +359,7 @@ fn a_clone_that_cant_start_leaves_only_a_trace() {
     mirrors
         .requests()
         .clone_mirror(named("octo-org/hello"), download());
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(announced.try_recv().is_err());
 }
@@ -370,7 +374,7 @@ fn a_leftover_clone_that_cant_be_deleted_leaves_only_a_trace() {
     let (mirrors, announced) = place.start();
 
     mirrors.requests().clone_mirror(hello.clone(), download());
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(announced.try_recv().is_err());
     assert!(!place.folders.mirror(&hello).exists());
@@ -382,7 +386,7 @@ fn asking_after_quitting_only_leaves_a_trace() {
     let (mirrors, announced) = place.start();
     let requests = mirrors.requests();
 
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
     requests.clone_mirror(named("octo-org/hello"), download());
 
     assert!(announced.try_recv().is_err());
@@ -400,7 +404,7 @@ fn without_its_data_folder_tsugiki_clones_nothing() {
     mirrors
         .requests()
         .clone_mirror(named("python/cpython"), download());
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(announced.try_recv().is_err());
 }
@@ -604,7 +608,8 @@ impl Run for FakeRun {
     }
 
     fn stop(&mut self) {
-        self.stopping.send(()).unwrap();
+        // A test that has stopped listening doesn't hear the stop.
+        let _unheard = self.stopping.send(());
         self.output.close();
     }
 }
@@ -665,6 +670,18 @@ impl Place {
     /// The worker with the fake git, and each start of it. A head that is behind waits longer than a test.
     fn start_faked(&self) -> (Mirrors, Receiver<FakeStart>) {
         self.start_faked_with(PLENTY)
+    }
+
+    /// The worker with the fake git, fetching a head of python/cpython, and a helper of that fetch. Once
+    /// stopped, the worker waits for the helper until the test drops it, or for `HELPERS_PATIENCE`.
+    fn start_held_fetch(&self) -> (Mirrors, FakeStart, io::PipeWriter) {
+        let cpython = named("python/cpython");
+        self.mirrored(&cpython);
+        let (mirrors, starts) = self.start_faked();
+        mirrors.requests().fetch_heads(cpython, vec![head(1)]);
+        let fetch = starts.recv_timeout(PLENTY).unwrap();
+        let helper = fetch.helper();
+        (mirrors, fetch, helper)
     }
 
     /// The worker with the fake git, whose heads that are behind wait `patience` to be fetched once more.
@@ -796,7 +813,7 @@ fn the_heads_handed_over_together_go_in_one_fetch_into_the_mirror() {
         ]
     );
     fetch.succeed();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
     assert!(starts.recv().is_err(), "one fetch, and nothing after it");
 }
 
@@ -817,7 +834,7 @@ fn heads_handed_over_during_a_fetch_go_in_the_next() {
 
     assert_eq!(next.refspecs(), [refspec(2), refspec(3)]);
     next.succeed();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 }
 
 #[test]
@@ -839,7 +856,7 @@ fn a_fetched_head_isnt_fetched_again_and_a_failed_one_is() {
 
     assert_eq!(third.refspecs(), [refspec(2)]);
     third.succeed();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 }
 
 #[test]
@@ -861,7 +878,7 @@ fn a_failed_fetch_tries_again_when_github_is_back() {
     assert_eq!(again.refspecs(), [refspec(1)]);
     assert_eq!(again.branches(), ["+refs/heads/main*:refs/heads/main*"]);
     again.succeed();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 }
 
 #[test]
@@ -885,7 +902,7 @@ fn a_fetch_that_brings_an_older_commit_leaves_the_head_for_the_next_hand_over() 
     assert_eq!(next.refspecs(), [refspec(1), refspec(2)]);
     next.succeed();
     requests.fetch_heads(cpython, vec![head(1), head(2)]);
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
     assert!(starts.recv().is_err(), "both heads landed");
 }
 
@@ -915,7 +932,7 @@ fn a_head_that_is_behind_is_fetched_once_more_after_a_moment_then_waits_for_a_ha
         "head 1 waits for a hand-over"
     );
     next.succeed();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 }
 
 #[test]
@@ -930,7 +947,7 @@ fn a_head_handed_over_during_its_fetch_that_comes_back_behind_isnt_asked_for_at_
     let fetch = starts.recv_timeout(PLENTY).unwrap();
     requests.fetch_heads(cpython, vec![head(1)]);
     fetch.succeed_with(vec![older(1)]);
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(starts.recv().is_err());
 }
@@ -952,7 +969,7 @@ fn a_head_github_doesnt_have_is_fetched_once_more_then_not_at_a_hand_over() {
     assert_eq!(again.refspecs(), [refspec(2)]);
     again.succeed_with(vec![head(1)]);
     requests.fetch_heads(cpython, vec![head(1), head(2)]);
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(starts.recv().is_err());
 }
@@ -972,7 +989,7 @@ fn heads_whose_refs_cant_be_read_back_are_fetched_at_the_next_hand_over() {
 
     assert_eq!(again.refspecs(), [refspec(1)]);
     again.succeed();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 }
 
 #[test]
@@ -999,7 +1016,7 @@ fn a_fetch_brings_the_target_branches_of_its_heads_up_to_date_with_them() {
         ]
     );
     fetch.succeed();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 }
 
 #[test]
@@ -1030,7 +1047,7 @@ fn an_opened_prs_head_goes_ahead_of_the_other_repositories_heads() {
     let hellos = starts.recv_timeout(PLENTY).unwrap();
     assert_eq!(hellos.refspecs(), [refspec(5)]);
     hellos.succeed();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 }
 
 #[test]
@@ -1059,7 +1076,7 @@ fn repositories_take_turns_with_their_heads() {
     let last = starts.recv_timeout(PLENTY).unwrap();
     assert_eq!(last.refspecs(), [refspec(2)]);
     last.succeed();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 }
 
 #[test]
@@ -1077,7 +1094,7 @@ fn an_opened_prs_head_is_fetched_whatever_the_worker_noted_of_it() {
 
     assert_eq!(opened.refspecs(), [refspec(1)]);
     opened.succeed();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 }
 
 #[test]
@@ -1095,7 +1112,7 @@ fn an_opened_pr_wakes_a_stalled_worker() {
 
     assert_eq!(opened.refspecs(), [refspec(1), refspec(2)]);
     opened.succeed();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 }
 
 #[test]
@@ -1114,7 +1131,7 @@ fn the_app_hears_which_heads_arrived_and_not_those_behind_or_missing() {
         .recv_timeout(PLENTY)
         .unwrap()
         .succeed_with(vec![older(4)]);
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     let heard: Vec<_> = arrivals.iter().collect();
     assert_eq!(heard, [("python/cpython".to_owned(), vec![1])]);
@@ -1138,7 +1155,7 @@ fn the_app_hears_which_heads_are_behind_or_not_on_github_once_they_were_fetched_
     assert_eq!(again.refspecs(), [refspec(2), refspec(3)]);
     assert!(failures.try_recv().is_err(), "nothing before the retry");
     again.succeed_with(vec![head(1), older(2)]);
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     let heard: Vec<_> = failures.iter().collect();
     let cpython = "python/cpython".to_owned();
@@ -1163,7 +1180,7 @@ fn the_app_hears_why_refs_cant_be_read_back_once_their_heads_were_fetched_once_m
     let again = starts.recv_timeout(PLENTY).unwrap();
     assert!(failures.try_recv().is_err(), "nothing before the retry");
     again.succeed_unread();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     let heard: Vec<_> = failures.iter().collect();
     let why = Unfetched::Git {
@@ -1189,7 +1206,7 @@ fn the_app_hears_which_heads_failed_and_why_once_they_wait_for_news() {
     fail_saying(first, &format!("{unreachable}\n"));
     let again = starts.recv_timeout(PLENTY).unwrap();
     fail_saying(again, &format!("{unreachable}\n"));
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     let heard: Vec<_> = failures.iter().collect();
     let why = Unfetched::Git {
@@ -1215,7 +1232,7 @@ fn heads_wait_for_their_mirror_to_be_cloned() {
 
     assert_eq!(fetch.refspecs(), [refspec(1)]);
     fetch.succeed();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 }
 
 #[test]
@@ -1226,7 +1243,7 @@ fn heads_without_a_mirror_wait_and_start_nothing() {
     mirrors
         .requests()
         .fetch_heads(named("python/cpython"), vec![head(1)]);
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(starts.recv().is_err());
 }
@@ -1235,22 +1252,18 @@ fn heads_without_a_mirror_wait_and_start_nothing() {
 #[test]
 fn quitting_stops_a_fetch_under_way_and_waits_for_its_error_output_to_close() {
     let place = Place::new("stop-fetch");
-    let cpython = named("python/cpython");
-    place.mirrored(&cpython);
-    let (mirrors, starts) = place.start_faked();
+    let (mirrors, fetch, helper) = place.start_held_fetch();
 
-    mirrors.requests().fetch_heads(cpython, vec![head(1)]);
-    let fetch = starts.recv_timeout(PLENTY).unwrap();
-    let helper = fetch.helper();
     let (ending, ended) = channel();
-    let _stopping = std::thread::spawn(move || {
-        mirrors.stop(PLENTY);
+    let stopping = std::thread::spawn(move || {
+        mirrors.stop_cleanly(PLENTY);
         ending.send(()).unwrap();
     });
     let stopped = fetch.stopped.recv_timeout(PLENTY);
     let early = ended.recv_timeout(Duration::from_millis(300));
     drop(helper);
     let late = ended.recv_timeout(PLENTY);
+    stopping.join().unwrap();
 
     assert_eq!(stopped, Ok(()));
     assert!(
@@ -1261,18 +1274,84 @@ fn quitting_stops_a_fetch_under_way_and_waits_for_its_error_output_to_close() {
 }
 
 #[test]
-fn a_fetch_that_cant_start_leaves_only_a_trace() {
+fn quitting_carries_on_while_the_worker_is_stuck() {
+    let place = Place::new("stuck-worker");
+    let (mirrors, _fetch, helper) = place.start_held_fetch();
+
+    let (ending, ended) = channel();
+    let stopping = std::thread::spawn(move || {
+        mirrors.stop(Duration::from_millis(300));
+        ending.send(()).unwrap();
+        mirrors
+    });
+    // Well short of `HELPERS_PATIENCE`, after which the worker gives up on the helper and ends anyway.
+    let carried_on = ended.recv_timeout(Duration::from_secs(3));
+    drop(helper);
+    stopping.join().unwrap().stop_cleanly(PLENTY);
+
+    assert_eq!(carried_on, Ok(()), "quitting waits only as long as it said");
+}
+
+#[test]
+fn a_test_hears_of_a_worker_that_panicked() {
+    let place = Place::new("worker-panics");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let announce = Announce {
+        failed: Box::new(|_, _, _| panic!("the fake announcement panicked")),
+        ..Announce::cloning_only(Box::new(|_| {}))
+    };
+    let (mirrors, starts) = place.start_faked_announcing(PLENTY, announce);
+    drop(starts);
+
+    mirrors.requests().fetch_heads(cpython, vec![head(1)]);
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        mirrors.stop_cleanly(PLENTY);
+    }))
+    .unwrap_err();
+
+    assert_eq!(
+        panic.downcast_ref::<&str>(),
+        Some(&"the fake announcement panicked")
+    );
+}
+
+#[test]
+fn a_test_hears_of_a_worker_that_outlasts_its_patience() {
+    let place = Place::new("worker-outlasts");
+    let (mirrors, _fetch, helper) = place.start_held_fetch();
+
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        mirrors.stop_cleanly(Duration::from_millis(300));
+    }))
+    .unwrap_err();
+    drop(helper);
+
+    let message = panic.downcast_ref::<String>().unwrap();
+    assert!(message.contains("didn't end"), "{message}");
+}
+
+#[test]
+fn a_fetch_that_cant_start_waits_for_news_to_try_again() {
     let place = Place::new("cant-fetch");
     let cpython = named("python/cpython");
     place.mirrored(&cpython);
-    let (mirrors, starts) = place.start_faked();
+    let (mirrors, starts, failures) = place.start_faked_hearing_failures(PLENTY);
     drop(starts);
     let requests = mirrors.requests();
 
     // The second hand-over is the news a stalled worker waits for, and it tries once more.
     requests.fetch_heads(cpython.clone(), vec![head(1)]);
     requests.fetch_heads(cpython, vec![head(1)]);
-    mirrors.stop(PLENTY);
+    // A worker that tried again and again without news wouldn't hear the stop.
+    mirrors.stop_cleanly(SOON);
+
+    let failed: Vec<(String, Vec<u32>)> = failures
+        .try_iter()
+        .map(|(repository, numbers, _why)| (repository, numbers))
+        .collect();
+    let once = ("python/cpython".to_owned(), vec![1]);
+    assert_eq!(failed, [once.clone(), once]);
 }
 
 #[test]
@@ -1286,7 +1365,7 @@ fn offline_holds_the_worker() {
     requests.follow(&Status::Offline);
     requests.fetch_heads(cpython.clone(), vec![head(1)]);
     requests.clone_mirror(named("octo-org/hello"), download());
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert!(starts.recv().is_err());
 }
@@ -1313,7 +1392,7 @@ fn a_rate_limit_doesnt_hold_the_worker() {
 
     assert_eq!(fetch.refspecs(), [refspec(1)]);
     fetch.succeed();
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 }
 
 #[test]
@@ -1344,7 +1423,7 @@ fn a_fetch_brings_a_prs_head_into_the_mirror_and_a_head_github_lacks_fails_nothi
     while (!fetched.exists() || dropped.exists()) && Instant::now() < deadline {
         thread::sleep(Duration::from_millis(20));
     }
-    mirrors.stop(PLENTY);
+    mirrors.stop_cleanly(PLENTY);
 
     assert_eq!(
         git(&mirror, &["rev-parse", "refs/tsugiki/pull/1/head"]).trim(),
@@ -1477,7 +1556,7 @@ mod problems {
         mirrors.requests().check_again();
         let found = told.recv_timeout(PLENTY).unwrap();
         let fetch = starts.recv_timeout(PLENTY).unwrap();
-        mirrors.stop(PLENTY);
+        mirrors.stop_cleanly(PLENTY);
 
         assert_eq!(missing, Some(MirrorProblem::NoGit));
         assert!(held);
@@ -1500,7 +1579,7 @@ mod problems {
             .clone_mirror(named("octo-org/hello"), download());
         let old = told.recv_timeout(PLENTY).unwrap();
         let held = starts.recv_timeout(A_MOMENT).is_err();
-        mirrors.stop(PLENTY);
+        mirrors.stop_cleanly(PLENTY);
 
         let version = "git version 2.29.2".to_owned();
         assert_eq!(old, Some(MirrorProblem::OldGit { version }));
@@ -1532,7 +1611,7 @@ mod problems {
         mirrors.requests().check_again();
         let cleared = told.recv_timeout(PLENTY).unwrap();
         let clone = starts.recv_timeout(PLENTY).unwrap();
-        mirrors.stop(PLENTY);
+        mirrors.stop_cleanly(PLENTY);
 
         let folder = place.folders.data.display().to_string();
         let needed = MirrorProblem::DiskShort {
@@ -1568,7 +1647,7 @@ mod problems {
         let heard = told.try_recv();
         let fetched = !clones(&fetch);
         fetch.fail();
-        mirrors.stop(PLENTY);
+        mirrors.stop_cleanly(PLENTY);
 
         assert!(short.is_some());
         assert!(fetched);
@@ -1599,7 +1678,7 @@ mod problems {
         mirrors.requests().clone_mirror(hello, download());
         let clone = starts.recv_timeout(PLENTY).unwrap();
         clone.fail();
-        mirrors.stop(PLENTY);
+        mirrors.stop_cleanly(PLENTY);
 
         assert!(!left.load(Ordering::SeqCst));
     }
@@ -1634,7 +1713,7 @@ mod problems {
         let next_cloned = clones(&next);
         let next_args = format!("{:?}", next.args);
         next.fail();
-        mirrors.stop(PLENTY);
+        mirrors.stop_cleanly(PLENTY);
 
         assert!(first_cloned && opened_cloned && checked_cloned);
         assert!(!next_cloned, "{next_args}");
@@ -1666,7 +1745,7 @@ mod problems {
         let cloned = clones(&first);
         first.fail();
         let again = starts.recv_timeout(PLENTY).unwrap();
-        mirrors.stop(PLENTY);
+        mirrors.stop_cleanly(PLENTY);
 
         assert!(cloned && clones(&again));
     }
@@ -1697,7 +1776,7 @@ mod problems {
             .requests()
             .clone_mirror(named("octo-org/hello"), download());
         let clone = starts.recv_timeout(PLENTY).unwrap();
-        mirrors.stop(PLENTY);
+        mirrors.stop_cleanly(PLENTY);
 
         assert!(clones(&clone), "{:?}", clone.args);
     }
@@ -1727,7 +1806,7 @@ mod problems {
             .requests()
             .clone_mirror(named("octo-org/hello"), download());
         let clone = starts.recv_timeout(PLENTY).unwrap();
-        mirrors.stop(PLENTY);
+        mirrors.stop_cleanly(PLENTY);
 
         assert!(clones(&clone), "{:?}", clone.args);
     }
@@ -1747,7 +1826,7 @@ mod problems {
             .requests()
             .clone_mirror(named("octo-org/hello"), download());
         let held = starts.recv_timeout(A_MOMENT).is_err();
-        mirrors.stop(PLENTY);
+        mirrors.stop_cleanly(PLENTY);
 
         assert!(held);
     }

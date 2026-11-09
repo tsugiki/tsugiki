@@ -7,8 +7,9 @@ use std::time::{Duration, Instant};
 
 use super::*;
 use crate::error::ErrorKind;
+use crate::github::CommitSha;
 use crate::github::pull_requests::PrHead;
-use crate::github::{CommitSha, Login};
+use crate::login::Login;
 use crate::status::Status;
 
 /// Longer than any of these tests should wait on a working git.

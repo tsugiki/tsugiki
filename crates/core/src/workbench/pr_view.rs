@@ -8,7 +8,7 @@ use specta::Type;
 use super::{WorkbenchRow, candidates};
 use crate::error::Error;
 use crate::github::pull_request_content::PullRequestContent;
-use crate::repository::RepositorySettings;
+use crate::repository_settings::RepositorySettings;
 use crate::store::StoreReader;
 
 /// A PR as the Detail pane shows it.

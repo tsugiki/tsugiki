@@ -2,8 +2,10 @@ use serde_json::{Value, json};
 use time::{Duration, OffsetDateTime};
 
 use crate::github::testing::{dated, signed_in_as};
-use crate::github::{Login, Reply, Unreachable};
-use crate::repository::{RepositoryAccess, RepositoryCheck, RepositoryCounts, RepositorySettings};
+use crate::github::{Reply, Unreachable};
+use crate::login::Login;
+use crate::repository::{RepositoryAccess, RepositoryCounts};
+use crate::repository_settings::{RepositoryCheck, RepositorySettings};
 use crate::status::SyncPart;
 use crate::store::FirstSyncPlace;
 use crate::sync::recovery::{Scenario, recovers_from_each_failure, resumes_after_each_step};

@@ -2,7 +2,7 @@ use super::*;
 use crate::filters::Filter;
 use crate::github::testing::reply_ok;
 use crate::github::{Reply, Request, Transport, Unreachable};
-use crate::repository::RepositorySettings;
+use crate::repository_settings::RepositorySettings;
 use crate::store::Store;
 use crate::sync::Syncs;
 use crate::sync::recovery::{Scenario, recovers_from_each_failure, resumes_after_each_step};

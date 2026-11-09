@@ -7,7 +7,7 @@ use rusqlite::named_params;
 use time::OffsetDateTime;
 
 use super::Connection;
-use crate::github::Login;
+use crate::login::Login;
 use crate::repository::RepositoryName;
 
 pub(super) const SCHEMA: &str = "

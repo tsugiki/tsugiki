@@ -7,9 +7,9 @@ use specta::Type;
 
 use super::{IssueItem, WorkbenchItem, candidates};
 use crate::error::Error;
-use crate::github::Login;
 use crate::github::issue_content::IssueContent;
-use crate::repository::RepositorySettings;
+use crate::login::Login;
+use crate::repository_settings::RepositorySettings;
 use crate::store::StoreReader;
 
 /// An Issue as the Detail pane shows it.

@@ -29,12 +29,12 @@ use time::OffsetDateTime;
 
 use crate::error::{Error, ErrorKind};
 use crate::filters::FilterQuery;
-use crate::github::Login;
 use crate::github::activity::ItemActivity;
 use crate::github::issue_content::IssueContent;
 use crate::github::issues::IssueFacts;
 use crate::github::pull_request_content::PullRequestContent;
 use crate::github::pull_requests::PullRequestFacts;
+use crate::login::Login;
 use crate::repository::RepositoryName;
 pub use activity::ActivityFacts;
 pub use filters::{FilterProblem, FilterResults, NarrowedResults};

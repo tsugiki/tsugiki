@@ -7,10 +7,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 use specta::Type;
 
-use crate::conventions::Conventions;
+use crate::conventions::{Conventions, gh_number};
+use crate::github::CommitSha;
 use crate::github::pull_requests::{OffDefault, PullRequestFacts};
-use crate::github::{CommitSha, Login, gh_number, issue_number};
-use crate::repository::{RepositoryName, RepositorySettings};
+use crate::login::Login;
+use crate::repository::{RepositoryName, issue_number};
+use crate::repository_settings::RepositorySettings;
 
 /// GitHub's closing keywords, in each form it accepts.
 const KEYWORDS: [&str; 9] = [

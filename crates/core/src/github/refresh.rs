@@ -16,10 +16,11 @@ use super::pull_requests::{
     CiState, LastCommitNode, LatestReview, LatestReviewWire, NodeId, Nodes, PageRequest,
     PullRequestFacts, RateLimit, ReviewRequestWire, ci_of, requested_logins, reviews_of,
 };
-use super::{ConditionalGet, GitHub, Login, Request};
+use super::{ConditionalGet, GitHub, Request};
 use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::filters::FilterQuery;
+use crate::login::Login;
 use crate::repository::RepositoryName;
 
 const REFRESH_REPOSITORY: &str = "RefreshRepository";

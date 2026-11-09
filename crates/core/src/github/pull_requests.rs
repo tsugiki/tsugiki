@@ -9,9 +9,10 @@ use specta::Type;
 use time::OffsetDateTime;
 
 use super::activity::{ItemActivity, TimelineWire, pull_request_activity};
-use super::{BAD_GATEWAY, CommitSha, GitHub, Login, Request, Unreachable, read};
+use super::{BAD_GATEWAY, CommitSha, GitHub, Request, Unreachable, read};
 use crate::conventions::Conventions;
 use crate::error::Error;
+use crate::login::Login;
 use crate::repository::RepositoryName;
 
 /// One search for PRs.

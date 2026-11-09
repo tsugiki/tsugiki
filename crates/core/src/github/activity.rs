@@ -4,9 +4,9 @@
 use serde::Deserialize;
 use time::OffsetDateTime;
 
-use super::Login;
 use super::pull_requests::{Nodes, Person, ReviewerWire};
 use crate::conventions::Conventions;
+use crate::login::Login;
 
 /// The name GitHub itself gives an account that no longer exists.
 const NO_ACCOUNT: &str = "ghost";

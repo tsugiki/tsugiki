@@ -9,8 +9,9 @@ use super::issue_content::{
     HiddenReason, IssueComment, IssueContent, IssueWire, MinimizedWire, Thread,
 };
 use super::pull_requests::{Person, RateLimit, ReviewState};
-use super::{CommitSha, GitHub, Login};
+use super::{CommitSha, GitHub};
 use crate::error::Error;
+use crate::login::Login;
 use crate::repository::RepositoryName;
 
 /// The Reviews and threads the Conversation reads beside the comments. The last 100 Reviews and the last 100

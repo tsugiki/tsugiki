@@ -21,14 +21,13 @@ use std::cell::Cell;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use specta::Type;
 use time::{Date, Duration, OffsetDateTime};
 
 use crate::error::{Error, ErrorKind};
 use crate::github::clock::{GitHubClock, skew_warning};
-use crate::repository::{
-    RepositoryAccess, RepositoryCheck, RepositoryCounts, RepositoryName, WINDOW_DAYS,
-};
+use crate::login::Login;
+use crate::repository::{RepositoryAccess, RepositoryCounts, RepositoryName, WINDOW_DAYS};
+use crate::repository_settings::RepositoryCheck;
 use crate::token::{RunGh, Token};
 
 /// One GraphQL request. `operation` names the query, and the replayer finds its recording by that name.
@@ -91,26 +90,6 @@ impl From<Unreachable> for Error {
     }
 }
 
-/// The number `digits` spell. GitHub's numbers are GraphQL `Int`s, 32 bits and signed, and it refuses a whole
-/// query over one that doesn't fit.
-pub(crate) fn issue_number(digits: &str) -> Option<u32> {
-    digits
-        .chars()
-        .all(|c| c.is_ascii_digit())
-        .then(|| digits.parse::<i32>().ok())
-        .flatten()
-        .and_then(|number| u32::try_from(number).ok())
-}
-
-/// The number in `gh-N`, whatever its case.
-pub(crate) fn gh_number(word: &str) -> Option<u32> {
-    let digits = word.get(3..)?;
-    word.get(..3)?
-        .eq_ignore_ascii_case("gh-")
-        .then(|| issue_number(digits))
-        .flatten()
-}
-
 /// A commit's SHA in lower case, whole or cut short as a person wrote it.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CommitSha(String);
@@ -162,30 +141,6 @@ pub trait Transport: Send {
 pub struct GitHubAccess {
     pub transport: Box<dyn Transport>,
     pub run_gh: RunGh,
-}
-
-/// A GitHub username. It reaches the UI as a plain string, in GitHub's casing.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[serde(transparent)]
-pub struct Login(String);
-
-/// GitHub logins ignore case, so `Octocat` and `octocat` are one user, and "is this me?" has one answer.
-impl PartialEq for Login {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.eq_ignore_ascii_case(&other.0)
-    }
-}
-
-impl Eq for Login {}
-
-impl Login {
-    pub fn new(login: &str) -> Self {
-        Self(login.to_owned())
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
 /// The signed-in user.

@@ -1,7 +1,7 @@
 use time::OffsetDateTime;
 
 use super::*;
-use crate::github::Login;
+use crate::login::Login;
 use crate::store::Store;
 use crate::store::reader;
 use crate::store::testing::temp_database;

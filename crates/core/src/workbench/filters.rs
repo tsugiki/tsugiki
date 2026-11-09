@@ -7,7 +7,7 @@ use specta::Type;
 
 use super::{ListedItem, WorkbenchItem, count_of};
 use crate::filters::{Filter, FilterName, FilterQuery};
-use crate::repository::RepositorySettings;
+use crate::repository_settings::RepositorySettings;
 use crate::store::FilterResults;
 
 /// A Filter's line of the Sidebar.

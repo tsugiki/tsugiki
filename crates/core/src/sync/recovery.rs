@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use super::testing::Harness;
 use super::{Progress, Syncs};
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
-use crate::repository::RepositorySettings;
+use crate::repository_settings::RepositorySettings;
 use crate::store::{ActivityFacts, ChangeCheck, Store, WorkFacts};
 use crate::token::Token;
 

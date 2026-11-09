@@ -10,7 +10,8 @@ use super::{Link, Step, UserWorkSync};
 use crate::error::{Error, ErrorKind};
 use crate::github::GitHub;
 use crate::github::clock::GitHubClock;
-use crate::repository::{RepositoryName, RepositorySettings};
+use crate::repository::RepositoryName;
+use crate::repository_settings::RepositorySettings;
 use crate::status::{Change, LastSync, OpenSync, SyncActivity, SyncPart};
 use crate::store::Store;
 

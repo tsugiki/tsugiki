@@ -12,14 +12,15 @@ use super::{FETCH_BATCH, Link, Moved, Phase, Resumable, SEARCH_PAGE, Step, pause
 use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::filters::FilterQuery;
-use crate::github::Login;
 use crate::github::activity::ItemActivity;
 use crate::github::filters::{FilterHit, FilterPage};
 use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::{NodeId, PrFetch, PrState, PullRequestFacts};
 use crate::github::refresh::{ChangedPr, Etag, ListCheck, ListPlace, PollRequest};
 use crate::links::{BackportKind, MergeCommits, backport_of};
-use crate::repository::{RepositorySettings, SMALL_UP_TO};
+use crate::login::Login;
+use crate::repository::SMALL_UP_TO;
+use crate::repository_settings::RepositorySettings;
 use crate::store::{ChangeCheck, NarrowedResults, SyncState};
 use crate::workbench::{Workbench, reasons};
 

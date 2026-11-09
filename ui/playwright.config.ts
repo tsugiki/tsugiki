@@ -6,6 +6,8 @@ const port = 4183;
 // Serves build/, the files Tauri ships, not Vite's preview of them.
 export default defineConfig({
   testDir: "e2e",
+  // A failed test's traces, in the ignored .temp beside the other test output.
+  outputDir: "../.temp/playwright-results",
   forbidOnly: !!process.env["CI"],
   reporter: process.env["CI"] ? "github" : "list",
   use: { baseURL: `http://localhost:${port}`, trace: "retain-on-failure" },

@@ -3,7 +3,7 @@ import type { commands } from "../src/lib/data/bindings.ts";
 
 /** What each command answers. A command left out rejects, as it would if the core failed, except for those
  * every page asks: a Repository isn't open yet, a refresh has nothing to say, a mirror can be made, asking to
- * check again has nothing to say, no mirror waits for an answer, and the panes take their default widths. */
+ * check again has nothing to say, no mirror waits for an answer, and the panes take their default layout. */
 export type CoreAnswers = { [C in keyof typeof commands]?: Awaited<ReturnType<(typeof commands)[C]>> };
 
 type Listener = (message: { event: string; id: number; payload: unknown }) => void;
@@ -12,7 +12,7 @@ type MockWindow = { mockEventListeners: Record<string, Listener[]>; mockAnswers:
 /** Stands in for Tauri's IPC: the page's generated bindings get these answers instead of the core's. */
 export const mockCore = (page: Page, answers: CoreAnswers) =>
   page.addInitScript((given: Record<string, unknown>) => {
-    const panes = { sidebar: null, list: null };
+    const panes = { sidebar: null, list: null, sidebar_hidden: false };
     const answers = {
       lastSync: null,
       syncActivity: null,
@@ -21,8 +21,8 @@ export const mockCore = (page: Page, answers: CoreAnswers) =>
       checkMirrorsAgain: null,
       mirrorQuestion: null,
       refresh: null,
-      paneWidths: panes,
-      savePaneWidths: { status: "ok", data: panes },
+      paneLayout: panes,
+      savePaneLayout: { status: "ok", data: panes },
       ...given,
     };
     const listeners: MockWindow["mockEventListeners"] = {};

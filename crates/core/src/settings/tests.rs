@@ -803,13 +803,57 @@ fn an_owner_whose_thread_has_gone_says_so() {
     assert_eq!(refused.message, STOPPED_SAVING);
 }
 
-const WIDE: PaneWidths = PaneWidths {
+const WIDE: PaneLayout = PaneLayout {
     sidebar: Some(240),
     list: Some(500),
+    sidebar_hidden: false,
 };
 
 #[test]
-fn the_panes_widths_stay_on_this_machine_beside_what_the_user_wrote() {
+fn a_hidden_sidebar_stays_hidden_on_this_machine_until_it_shows_again() {
+    let (folders, root) = temp_folders("panes-sidebar-hidden");
+    let mine = "last_repository = \"a/old\"\n";
+    fs::write(folders.machine_file(), mine).unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+    let hidden = PaneLayout {
+        sidebar_hidden: true,
+        ..WIDE
+    };
+
+    files.save_panes(hidden).unwrap();
+    let saved = fs::read_to_string(folders.machine_file()).unwrap();
+    let read_again = SettingsFiles::load(folders.clone()).view().panes;
+    files.save_panes(WIDE).unwrap();
+    let shown = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(
+        saved,
+        format!("{mine}\n[panes]\nsidebar = 240\nlist = 500\nsidebar_hidden = true\n")
+    );
+    assert_eq!(read_again, hidden);
+    assert_eq!(
+        shown,
+        format!("{mine}\n[panes]\nsidebar = 240\nlist = 500\n")
+    );
+}
+
+#[test]
+fn a_shown_sidebar_keeps_the_users_comment_on_it() {
+    let (folders, root) = temp_folders("panes-sidebar-comment");
+    let mine = "[panes]\nsidebar_hidden = true # Small screen.\n";
+    fs::write(folders.machine_file(), mine).unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+
+    files.save_panes(PaneLayout::default()).unwrap();
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(machine, "[panes]\nsidebar_hidden = false # Small screen.\n");
+}
+
+#[test]
+fn the_panes_layout_stays_on_this_machine_beside_what_the_user_wrote() {
     let (folders, root) = temp_folders("panes");
     let mine = "# This laptop.\nlast_repository = \"a/old\" # Mine.\n";
     fs::write(folders.machine_file(), mine).unwrap();
@@ -839,40 +883,39 @@ fn a_pane_back_at_its_default_leaves_machine_toml() {
     let mut files = SettingsFiles::load(folders.clone());
     files.save_panes(WIDE).unwrap();
 
-    let sidebar = PaneWidths {
-        sidebar: Some(240),
-        list: None,
-    };
+    let sidebar = PaneLayout { list: None, ..WIDE };
     files.save_panes(sidebar).unwrap();
     let one = fs::read_to_string(folders.machine_file()).unwrap();
-    files.save_panes(PaneWidths::default()).unwrap();
+    files.save_panes(PaneLayout::default()).unwrap();
     let none = fs::read_to_string(folders.machine_file()).unwrap();
     fs::remove_dir_all(root).unwrap();
 
     assert_eq!(one, format!("{mine}\n[panes]\nsidebar = 240\n"));
     assert_eq!(
         (none.as_str(), files.view().panes),
-        (mine, PaneWidths::default())
+        (mine, PaneLayout::default())
     );
 }
 
 #[test]
-fn a_pane_width_it_cant_read_takes_the_default_and_keeps_the_rest_of_machine_toml() {
+fn a_pane_value_it_cant_read_takes_the_default_and_keeps_the_rest_of_machine_toml() {
     let (folders, root) = temp_folders("panes-unreadable");
     let text = "last_repository = \"a/b\"
 
 [panes]
 sidebar = -1
 list = 500
+sidebar_hidden = \"yes\"
 ";
     fs::write(folders.machine_file(), text).unwrap();
 
     let files = SettingsFiles::load(folders);
     fs::remove_dir_all(root).unwrap();
 
-    let list = PaneWidths {
+    let list = PaneLayout {
         sidebar: None,
         list: Some(500),
+        sidebar_hidden: false,
     };
     assert_eq!(
         (files.view().panes, files.loaded().problems.len()),
@@ -881,7 +924,7 @@ list = 500
 }
 
 #[test]
-fn a_broken_machine_toml_keeps_the_panes_widths() {
+fn a_broken_machine_toml_keeps_the_panes_layout() {
     let (folders, root) = temp_folders("panes-broken");
     fs::write(folders.machine_file(), "settings_path =\n").unwrap();
     let mut files = SettingsFiles::load(folders.clone());
@@ -899,7 +942,7 @@ fn a_broken_machine_toml_keeps_the_panes_widths() {
 }
 
 #[test]
-fn the_owner_saves_the_panes_widths_and_shows_them_in_the_view() {
+fn the_owner_saves_the_panes_layout_and_shows_it_in_the_view() {
     let (folders, root) = temp_folders("owner-panes");
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
 

@@ -209,7 +209,7 @@ fn with_no_folders_every_command_that_needs_them_says_so_in_the_cores_form() {
         "pull_request_files",
         json!({ "repository": "a/b", "number": 1 }),
     );
-    let widths = wired.ask("save_pane_widths", json!({ "widths": { "sidebar": 240 } }));
+    let layout = wired.ask("save_pane_layout", json!({ "layout": { "sidebar": 240 } }));
     drop(wired.stop());
 
     let checking = checking.unwrap_err();
@@ -225,7 +225,7 @@ fn with_no_folders_every_command_that_needs_them_says_so_in_the_cores_form() {
     assert_eq!(adding["message"], no_folders().message);
     assert_eq!(reading.unwrap_err()["kind"], "internal");
     assert_eq!(files.unwrap_err()["message"], no_folders().message);
-    assert_eq!(widths.unwrap_err()["message"], no_folders().message);
+    assert_eq!(layout.unwrap_err()["message"], no_folders().message);
 }
 
 #[test]
@@ -287,24 +287,27 @@ fn an_add_and_a_read_dont_wait_for_github() {
 }
 
 #[test]
-fn the_panes_widths_stay_on_this_machine_across_a_restart() {
+fn the_panes_layout_stays_on_this_machine_across_a_restart() {
     let (folders, root) = temp_folders("wired-panes");
     let wired = Wired::start(Ok(folders.clone()), no_network());
-    let before = wired.ask("pane_widths", json!({})).unwrap();
-    let widths = json!({ "sidebar": 240, "list": null });
-    let saved = wired.ask("save_pane_widths", json!({ "widths": widths }));
+    let before = wired.ask("pane_layout", json!({})).unwrap();
+    let layout = json!({ "sidebar": 240, "list": null, "sidebar_hidden": true });
+    let saved = wired.ask("save_pane_layout", json!({ "layout": layout }));
     drop(wired.stop());
 
     let restarted = Wired::start(Ok(folders.clone()), no_network());
-    let reopened = restarted.ask("pane_widths", json!({})).unwrap();
+    let reopened = restarted.ask("pane_layout", json!({})).unwrap();
     drop(restarted.stop());
     let synced = folders.settings_file().exists();
     std::fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(before, json!({ "sidebar": null, "list": null }));
+    assert_eq!(
+        before,
+        json!({ "sidebar": null, "list": null, "sidebar_hidden": false })
+    );
     assert_eq!(
         (saved.unwrap(), reopened, synced),
-        (widths.clone(), widths, false)
+        (layout.clone(), layout, false)
     );
 }
 

@@ -312,6 +312,41 @@ test("the edges between the panes drag, a double-click resets one, and the list 
   expect(Math.abs((await width(list)) - (await width(pane)))).toBeLessThan(2);
 });
 
+test("Ctrl+B and the palette hide the Sidebar, and the Issue list takes its room", async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 600 });
+  await mockCore(page, answers("<p>It crashes</p>"));
+  await page.goto("/");
+  const sidebar = page.getByRole("navigation", { name: "Sidebar" });
+  const edge = page.getByRole("separator", { name: "Sidebar width" });
+  const list = page.locator(".list");
+  const width = async () => (await list.boundingBox())?.width ?? 0;
+  await expect(sidebar).toBeVisible();
+  const shown = await width();
+  const palette = async (title: string) => {
+    await page.keyboard.press("ControlOrMeta+Shift+P");
+    await page.getByRole("combobox", { name: "Command" }).fill(title);
+    await expect(page.getByRole("option")).toHaveText([title]);
+    await page.keyboard.press("Enter");
+  };
+
+  await page.keyboard.press("ControlOrMeta+B");
+  await expect(sidebar).toHaveCount(0);
+  const hidden = await width();
+  await expect(edge).toHaveCount(0);
+  await palette("Show Sidebar");
+  await expect(sidebar).toBeVisible();
+  const back = await width();
+  await palette("Hide Sidebar");
+  await expect(sidebar).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+Shift+P");
+  await page.keyboard.press("ControlOrMeta+B");
+  await page.keyboard.press("Escape");
+
+  expect(hidden).toBeGreaterThan(shown + 100);
+  expect(back).toBe(shown);
+  await expect(sidebar).toHaveCount(0);
+});
+
 test("the Octicons take GitHub's colors in the light theme and the dark one", async ({ page }) => {
   await mockCore(page, answers("<p>It crashes</p>"));
   await page.goto("/");

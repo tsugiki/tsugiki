@@ -31,7 +31,7 @@ use tsugiki_core::misses::Miss;
 use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
 use tsugiki_core::repository_settings::RepositoryCheck;
 use tsugiki_core::session::SessionRequests;
-use tsugiki_core::settings::{Home, LoadedSettings, PaneWidths, SettingsOwner};
+use tsugiki_core::settings::{Home, LoadedSettings, PaneLayout, SettingsOwner};
 use tsugiki_core::status::{Change, FailedRead, LastSync, Status, SyncActivity};
 use tsugiki_core::store::StoreReader;
 use tsugiki_core::web::{GitHubItem, WebAddress};
@@ -211,10 +211,11 @@ fn home(owner: State<'_, SettingsOwner>) -> Home {
     owner.view().home
 }
 
-/// How wide the user dragged the Sidebar and the Workbench list on this machine (#187).
+/// How the user laid out the panes on this machine: the Sidebar's and the Workbench list's widths (#187), and
+/// whether the Sidebar shows (#234).
 #[tauri::command]
 #[specta::specta]
-fn pane_widths(owner: State<'_, SettingsOwner>) -> PaneWidths {
+fn pane_layout(owner: State<'_, SettingsOwner>) -> PaneLayout {
     owner.view().panes
 }
 
@@ -584,13 +585,13 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             fetch_pull_request,
             settings,
             home,
-            pane_widths,
+            pane_layout,
             time_running,
             record_measurement,
             record_miss,
             slow_commands::check_repository,
             slow_commands::add_repository,
-            slow_commands::save_pane_widths,
+            slow_commands::save_pane_layout,
             slow_commands::workbench,
             slow_commands::issue,
             slow_commands::pull_request,

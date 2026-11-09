@@ -15,8 +15,8 @@ const core = vi.hoisted(() => ({
   pullRequestFiles: vi.fn(),
   pullRequestFind: vi.fn(),
   cloning: vi.fn(),
-  paneWidths: vi.fn(),
-  savePaneWidths: vi.fn(),
+  paneLayout: vi.fn(),
+  savePaneLayout: vi.fn(),
   // The HUD logs a slow opening of an Issue whether or not it shows.
   recordMiss: vi.fn(() => Promise.resolve("a miss")),
   listen: vi.fn(),
@@ -36,8 +36,8 @@ vi.mock("$lib/data/bindings", () => ({
     pullRequestFiles: core.pullRequestFiles,
     pullRequestFind: core.pullRequestFind,
     cloning: core.cloning,
-    paneWidths: core.paneWidths,
-    savePaneWidths: core.savePaneWidths,
+    paneLayout: core.paneLayout,
+    savePaneLayout: core.savePaneLayout,
     recordMiss: core.recordMiss,
   },
   events: {
@@ -72,6 +72,8 @@ const issue = {
   pull_requests: [{ kind: "pr", ...row, backports: [] }],
 };
 
+const DEFAULT_LAYOUT = { sidebar: null, list: null, sidebar_hidden: false };
+
 beforeEach(() => {
   vi.resetAllMocks();
   core.listen.mockResolvedValue(core.stopListening);
@@ -80,8 +82,8 @@ beforeEach(() => {
   core.pullRequestFiles.mockResolvedValue({ status: "ok", data: { state: "fetching" } });
   core.pullRequestFind.mockResolvedValue({ status: "ok", data: { matches: [], more: false } });
   core.cloning.mockResolvedValue(null);
-  core.paneWidths.mockResolvedValue({ sidebar: null, list: null });
-  core.savePaneWidths.mockResolvedValue({ status: "ok", data: { sidebar: null, list: null } });
+  core.paneLayout.mockResolvedValue(DEFAULT_LAYOUT);
+  core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULT_LAYOUT });
   core.pullRequest.mockImplementation((_repository: string, number: number) =>
     Promise.resolve({ status: "ok", data: { ...row, number, title: `PR ${String(number)}`, content: null } }),
   );
@@ -1173,10 +1175,7 @@ it("drags the Sidebar's edge between its minimum and maximum, saves where it sto
 
   expect([dragged, widest, narrowest]).toEqual([["240px", "240"], "480px", "140px"]);
   await vi.waitFor(() => {
-    expect(core.savePaneWidths.mock.calls).toEqual([
-      [{ sidebar: 140, list: null }],
-      [{ sidebar: null, list: null }],
-    ]);
+    expect(core.savePaneLayout.mock.calls).toEqual([[{ ...DEFAULT_LAYOUT, sidebar: 140 }], [DEFAULT_LAYOUT]]);
   });
   expect(home().style.getPropertyValue("--sidebar-width")).toBe("200px");
 });
@@ -1213,7 +1212,7 @@ it("offers the list's edge beside a Detail pane, and keeps the Detail pane's min
     "280px",
     true,
   ]);
-  expect(core.savePaneWidths).toHaveBeenCalledExactlyOnceWith({ sidebar: null, list: 280 });
+  expect(core.savePaneLayout).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_LAYOUT, list: 280 });
   await fireEvent.dblClick(edge);
   expect(list.classList.contains("sized")).toBe(false);
 });
@@ -1237,7 +1236,7 @@ it("moves an edge with the bare arrow keys, and saves a held key once, as it com
   const edge = await screen.findByRole("separator", { name: "Sidebar width" });
 
   await fireEvent.keyDown(edge, { key: "ArrowRight" });
-  const right = [home().style.getPropertyValue("--sidebar-width"), core.savePaneWidths.mock.calls.length];
+  const right = [home().style.getPropertyValue("--sidebar-width"), core.savePaneLayout.mock.calls.length];
   await fireEvent.keyUp(edge, { key: "ArrowRight" });
   // The layout jsdom stands in for still says 200 px, so both presses land on 184 px.
   await fireEvent.keyDown(edge, { key: "ArrowLeft" });
@@ -1249,16 +1248,16 @@ it("moves an edge with the bare arrow keys, and saves a held key once, as it com
 
   expect([right, home().style.getPropertyValue("--sidebar-width")]).toEqual([["216px", 0], "184px"]);
   await vi.waitFor(() => {
-    expect(core.savePaneWidths.mock.calls).toEqual([
-      [{ sidebar: 216, list: null }],
-      [{ sidebar: 184, list: null }],
+    expect(core.savePaneLayout.mock.calls).toEqual([
+      [{ ...DEFAULT_LAYOUT, sidebar: 216 }],
+      [{ ...DEFAULT_LAYOUT, sidebar: 184 }],
     ]);
   });
 });
 
 it("opens with the widths saved on this machine, and says when it can't save them", async () => {
-  core.paneWidths.mockResolvedValue({ sidebar: 260, list: 500 });
-  core.savePaneWidths.mockResolvedValue({ status: "error", error: { kind: "internal", message: "locked" } });
+  core.paneLayout.mockResolvedValue({ sidebar: 260, list: 500, sidebar_hidden: false });
+  core.savePaneLayout.mockResolvedValue({ status: "error", error: { kind: "internal", message: "locked" } });
   laidOut(260, 500, 0);
   render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
   const edge = await screen.findByRole("separator", { name: "Sidebar width" });
@@ -1270,7 +1269,77 @@ it("opens with the widths saved on this machine, and says when it can't save the
   await fireEvent.keyUp(edge, { key: "ArrowRight" });
 
   expect(home().style.getPropertyValue("--list-width")).toBe("500px");
-  expect((await screen.findByRole("alert")).textContent).toBe("Tsugiki can't save the panes' widths: locked");
+  expect((await screen.findByRole("alert")).textContent).toBe("Tsugiki can't save the panes' layout: locked");
+});
+
+it("hides the Sidebar and its edge with Ctrl+B, and brings them back at their width", async () => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar: 260 });
+  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  const edge = await screen.findByRole("separator", { name: "Sidebar width" });
+  await vi.waitFor(() => {
+    expect(edge.getAttribute("aria-valuenow")).toBe("260");
+  });
+
+  await fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true });
+  const hidden = [screen.queryByRole("navigation"), screen.queryByRole("separator")];
+  // A held key flips it no more.
+  await fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true, repeat: true });
+  const held = screen.queryByRole("navigation");
+  await fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true });
+
+  expect([hidden, held]).toEqual([[null, null], null]);
+  expect(screen.getByRole("separator", { name: "Sidebar width" }).getAttribute("aria-valuenow")).toBe("260");
+  await vi.waitFor(() => {
+    expect(core.savePaneLayout.mock.calls).toEqual([
+      [{ ...DEFAULT_LAYOUT, sidebar: 260, sidebar_hidden: true }],
+      [{ ...DEFAULT_LAYOUT, sidebar: 260 }],
+    ]);
+  });
+});
+
+it("opens with the Sidebar hidden when it was hidden on this machine", async () => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar_hidden: true });
+  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+
+  await vi.waitFor(() => {
+    expect(screen.queryByRole("navigation")).toBeNull();
+  });
+});
+
+it("leaves the Sidebar alone on Ctrl+B while a dialog is on top", async () => {
+  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn(), keysActive: false });
+  await screen.findByRole("navigation", { name: "Sidebar" });
+
+  await fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true });
+
+  expect(screen.getByRole("navigation", { name: "Sidebar" })).toBeTruthy();
+  expect(core.savePaneLayout).not.toHaveBeenCalled();
+});
+
+it("offers the palette a command that hides or shows the Sidebar, named for what it does", async () => {
+  const { component } = render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  await screen.findByRole("navigation", { name: "Sidebar" });
+  const [hide] = component.paletteCommands();
+
+  hide?.run();
+  await vi.waitFor(() => {
+    expect(screen.queryByRole("navigation")).toBeNull();
+  });
+
+  expect([hide?.title, component.paletteCommands()[0]?.title]).toEqual(["Hide Sidebar", "Show Sidebar"]);
+});
+
+it("moves the focus to the cursor's row when Ctrl+B hides the Sidebar it was in", async () => {
+  const { issueRow } = await listing();
+  await fireEvent.keyDown(window, { key: "ArrowDown" });
+  const view = screen.getByRole("button", { name: /^Review requests/ });
+  view.focus();
+
+  await fireEvent.keyDown(view, { key: "b", code: "KeyB", ctrlKey: true });
+
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(issueRow);
+  });
 });
 
 it("marks each Issue and PR in the list with the icon of its state", async () => {

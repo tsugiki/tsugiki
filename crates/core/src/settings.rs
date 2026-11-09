@@ -75,7 +75,7 @@ pub struct LoadedSettings {
 pub struct SettingsView {
     pub loaded: LoadedSettings,
     pub home: Home,
-    pub panes: PaneWidths,
+    pub panes: PaneLayout,
     /// The user's answer, on this machine, of where each Repository's mirror gets its objects.
     pub mirror_sources: MirrorSources,
 }
@@ -105,31 +105,38 @@ impl Default for Home {
     }
 }
 
-/// How wide the user dragged the Sidebar and the Workbench list, in CSS pixels (#187). Each stays on this
-/// machine, like the window's place, and a pane left out takes its default. So does a width that isn't a
-/// whole number of pixels: a pane's width is too small a thing to lose the rest of `machine.toml` over.
+/// How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
+/// (#187), and whether the Sidebar shows (#234). All of it stays on this machine, like the window's place,
+/// and a value left out takes its default. So does a value Tsugiki can't read, such as a width that isn't a
+/// whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml` over.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(default)]
-pub struct PaneWidths {
-    #[serde(deserialize_with = "width_or_default")]
+pub struct PaneLayout {
+    #[serde(deserialize_with = "or_default")]
     #[specta(type = Option<u32>)]
     pub sidebar: Option<u32>,
-    #[serde(deserialize_with = "width_or_default")]
+    #[serde(deserialize_with = "or_default")]
     #[specta(type = Option<u32>)]
     pub list: Option<u32>,
+    /// `Ctrl+B` hid the Sidebar. It keeps its width for when it shows again.
+    #[serde(deserialize_with = "or_default")]
+    #[specta(type = bool)]
+    pub sidebar_hidden: bool,
 }
 
-/// A pane's width, or nothing for one Tsugiki can't read.
-fn width_or_default<'de, D: Deserializer<'de>>(given: D) -> Result<Option<u32>, D::Error> {
+/// The value, or its default for one Tsugiki can't read.
+fn or_default<'de, D: Deserializer<'de>, T: Deserialize<'de> + Default>(
+    given: D,
+) -> Result<T, D::Error> {
     #[derive(Deserialize)]
     #[serde(untagged)]
-    enum Width {
-        Pixels(u32),
+    enum Read<T> {
+        Given(T),
         Other(IgnoredAny),
     }
-    Ok(match Width::deserialize(given)? {
-        Width::Pixels(pixels) => Some(pixels),
-        Width::Other(_) => None,
+    Ok(match Read::<T>::deserialize(given)? {
+        Read::Given(value) => value,
+        Read::Other(_) => T::default(),
     })
 }
 
@@ -163,7 +170,7 @@ struct Machine {
     /// The Repository the window last showed. It stays on this machine and is read with the settings, so a
     /// normal launch knows what to reopen before the window exists.
     last_repository: Option<RepositoryName>,
-    panes: PaneWidths,
+    panes: PaneLayout,
     #[serde(deserialize_with = "sources_or_skip")]
     mirrors: MirrorSources,
 }
@@ -199,7 +206,7 @@ impl SettingsFiles {
             panes: self
                 .machine
                 .as_ref()
-                .map_or_else(PaneWidths::default, |machine| machine.panes),
+                .map_or_else(PaneLayout::default, |machine| machine.panes),
             mirror_sources: self
                 .machine
                 .as_ref()
@@ -290,9 +297,9 @@ impl SettingsFiles {
         Ok(self.home())
     }
 
-    /// Saves the panes' widths in `machine.toml`, keeping everything else in it, and reads the files again.
+    /// Saves the panes' layout in `machine.toml`, keeping everything else in it, and reads the files again.
     /// It refuses while `machine.toml` can't be used.
-    pub fn save_panes(&mut self, panes: PaneWidths) -> Result<(), Error> {
+    pub fn save_panes(&mut self, panes: PaneLayout) -> Result<(), Error> {
         let path = self.folders.machine_file();
         let mut edit = TomlEdit::<Machine>::open(&path)?;
         edit_section(edit.document.as_table_mut(), PANES, |section| {
@@ -305,6 +312,12 @@ impl SettingsFiles {
                     None => drop(section.remove(key)),
                 }
             }
+            merge_value(
+                section,
+                "sidebar_hidden",
+                &toml_edit::value(panes.sidebar_hidden),
+                Some(&toml_edit::value(false)),
+            );
         });
         edit.save()?;
         self.reload();
@@ -355,7 +368,7 @@ enum Request {
         reply: Sender<Result<SettingsView, Error>>,
     },
     Panes {
-        widths: PaneWidths,
+        layout: PaneLayout,
         reply: Sender<Result<SettingsView, Error>>,
     },
 }
@@ -392,8 +405,8 @@ impl SettingsOwner {
                         let saved = files.save_mirror_source(&name, &source);
                         (saved.map(|()| files.view()), reply)
                     }
-                    (Ok(files), Request::Panes { widths, reply }) => {
-                        (files.save_panes(widths).map(|()| files.view()), reply)
+                    (Ok(files), Request::Panes { layout, reply }) => {
+                        (files.save_panes(layout).map(|()| files.view()), reply)
                     }
                     (
                         Err(problem),
@@ -459,10 +472,10 @@ impl SettingsOwner {
         )
     }
 
-    /// Saves the panes' widths in `machine.toml`, and answers with what the settings say now.
-    pub fn save_panes(&self, widths: PaneWidths) -> Result<SettingsView, Error> {
+    /// Saves the panes' layout in `machine.toml`, and answers with what the settings say now.
+    pub fn save_panes(&self, layout: PaneLayout) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
-        self.ask(Request::Panes { widths, reply }, &answer)
+        self.ask(Request::Panes { layout, reply }, &answer)
     }
 
     fn ask(

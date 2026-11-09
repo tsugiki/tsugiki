@@ -6,6 +6,8 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { closeSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 
+import { branchRefusal, failureSummary, shipArgs } from "./pr.ts";
+
 const LOG = ".temp/check.log";
 
 function stop(message: string): never {
@@ -30,18 +32,13 @@ function attempt(command: string, ...args: string[]): string | undefined {
   }
 }
 
-const args = process.argv.slice(2);
-const check = !args.includes("--no-check");
-const [bodyFile, ...extra] = args.filter((arg) => arg !== "--no-check");
-if (bodyFile?.startsWith("-") || extra.length > 0) {
-  stop("Usage: `just ship [--no-check] [body.md]`.");
-}
+const args = shipArgs(process.argv.slice(2));
+if (args === undefined) stop("Usage: `just ship [--no-check] [body.md]`.");
+const { check, bodyFile } = args;
 
 const branch = run("git can't name the current branch.", "git", "branch", "--show-current");
-if (branch === "" || branch === "main") stop("Ship from the PR's branch, not main.");
-if (branch.startsWith("release/")) {
-  stop("A push to a release/ branch rehearses the release on CI: ask the user, then push by hand.");
-}
+const refusal = branchRefusal(branch);
+if (refusal !== undefined) stop(refusal);
 // Untracked files count too: `just check` would test them, and the push would leave them out.
 if (run("git status failed.", "git", "status", "--porcelain") !== "") {
   stop("Commit, delete or ignore every change first: `just check` should test what the PR holds.");
@@ -55,9 +52,7 @@ if (check) {
   closeSync(log);
   const minutes = ((Date.now() - started) / 60_000).toFixed(1);
   if (result.status !== 0) {
-    const lines = readFileSync(LOG, "utf8").trimEnd().split(/\r?\n/);
-    const failed = lines.filter((line) => /recipe `[\w-]+` failed/.test(line));
-    console.error([...lines.slice(-30), "", ...failed].join("\n"));
+    console.error(failureSummary(readFileSync(LOG, "utf8")));
     stop(`\`just check\` failed after ${minutes} min; the whole log is in ${LOG}.`);
   }
   console.log(`\`just check\` passed in ${minutes} min.`);

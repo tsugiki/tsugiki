@@ -2,6 +2,8 @@
 // with the ones ready for an agent first, so a session can pick its next ticket in one step.
 import { execFileSync } from "node:child_process";
 
+import { byVersion } from "./pr.ts";
+
 function gh(...args: string[]): string {
   return execFileSync("gh", args, { encoding: "utf8" });
 }
@@ -15,22 +17,11 @@ interface Issue {
   labels: { name: string }[];
 }
 
-/** A milestone's version as numbers, padded to three parts. A title that isn't a version sorts last. */
-function version(title: string): number[] {
-  const parts = title.split(".").map(Number);
-  return parts.every(Number.isInteger) ? [...parts, 0, 0].slice(0, 3) : [Infinity, Infinity, Infinity];
-}
-function earlier(a: Milestone, b: Milestone): number {
-  const [x, y] = [version(a.title), version(b.title)];
-  const at = x.findIndex((part, i) => part !== y[i]);
-  return at === -1 ? 0 : Number(x[at]) - Number(y[at]);
-}
-
 const milestones = JSON.parse(
   gh("api", "repos/{owner}/{repo}/milestones?state=open&per_page=100"),
 ) as Milestone[];
 // A milestone's open_issues counts PRs too, so ask for each one's issues until one has some.
-for (const milestone of milestones.sort(earlier)) {
+for (const milestone of milestones.sort((a, b) => byVersion(a.title, b.title))) {
   const issues = JSON.parse(
     gh(
       "issue",

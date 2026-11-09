@@ -100,7 +100,14 @@ The order in which v1 is built is in [build-order.md](build-order.md).
     - The PR view shows Conversation and Files as tabs, and opens on Conversation. `Ctrl+PageDown` and
       `Ctrl+PageUp` switch tabs, and so does `Enter` on the PR's row once the PR is open.
 
-    Esc goes from a PR back to its Issue, and leaves the panes as they are.
+    Esc closes what is on top, wherever the focus is: a dialog, the palette or a Peek first, then the wait
+    for a chord's second key, a Definition peek or the diff's search, and last a PR, which goes back to the
+    Issue it was opened under. With nothing on top, Esc does nothing. A PR opened from a row of its own (a
+    Standalone PR, one of its Backports, a Dependency update) has nothing under it, so Esc leaves it on
+    show, as it leaves an Issue. A text box keeps Esc, unless it belongs to what Esc closes, like the search
+    box. Esc gives the focus to whatever lay under the thing it closed: going back from a PR moves the cursor
+    and the focus to the Issue's row, or to the Detail pane while the Issue list is hidden. Esc leaves the
+    panes as they are.
 
     The edges between the panes can be dragged; a double-click puts the default back. The Issue list has a
     minimum width, and so does the Detail pane, so in a narrow window the Issue list gives way first.

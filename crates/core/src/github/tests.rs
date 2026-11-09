@@ -250,7 +250,10 @@ fn a_renamed_repository_is_counted_under_its_new_name() {
         .unwrap();
     assert_eq!(found.name, name("pallets/flask"));
     assert_eq!(
-        (found.counts.updated_in_window, found.counts.closed_in_window),
+        (
+            found.counts.updated_in_window,
+            found.counts.closed_in_window
+        ),
         (13, 13)
     );
 }

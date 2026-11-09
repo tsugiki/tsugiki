@@ -6,6 +6,8 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use tsugiki_test_git::git;
+
 use super::*;
 use crate::error::ErrorKind;
 use crate::github::CommitSha;
@@ -45,24 +47,6 @@ fn download() -> Option<MirrorSource> {
     Some(MirrorSource::Download)
 }
 
-#[expect(
-    clippy::disallowed_types,
-    reason = "tests build their repositories with the real git (ADR 0009)"
-)]
-fn git(dir: &Path, args: &[&str]) -> String {
-    let output = std::process::Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout).unwrap()
-}
-
 /// A test's folders: Tsugiki's data, and the remotes it clones from.
 struct Place {
     folders: Folders,
@@ -88,49 +72,11 @@ impl Place {
 
     /// A bare repository for `name` among the remotes, with one commit and a tag.
     fn remote(&self, name: &RepositoryName) {
-        let work = self.remotes.join(format!("work-{}", name.name()));
-        fs::create_dir_all(&work).unwrap();
-        let _ = git(&work, &["init", "-q"]);
-        fs::write(
-            work.join("README.rst"),
-            "This is Python version 3.15.0 alpha 0\n",
-        )
-        .unwrap();
-        let _ = git(&work, &["add", "README.rst"]);
-        let _ = git(
-            &work,
-            &[
-                "-c",
-                "user.name=Contributor",
-                "-c",
-                "user.email=contributor@example.com",
-                "commit",
-                "-qm",
-                "One",
-            ],
-        );
-        let _ = git(&work, &["tag", "v3.15.0a0"]);
-        let bare = self
-            .remotes
-            .join(name.owner())
-            .join(format!("{}.git", name.name()));
-        let _ = git(
-            &self.remotes,
-            &[
-                "clone",
-                "-q",
-                "--bare",
-                &work.to_string_lossy(),
-                &bare.to_string_lossy(),
-            ],
-        );
+        tsugiki_test_git::remote(&self.remotes, &name.to_string());
     }
 
-    /// Where the remotes are, as a `file://` URL, over which git reports progress as it does from GitHub.
     fn clone_source(&self) -> Remotes {
-        let path = self.remotes.to_string_lossy().replace('\\', "/");
-        let slash = if path.starts_with('/') { "" } else { "/" };
-        Remotes::under(format!("file://{slash}{path}/"))
+        Remotes::under(tsugiki_test_git::url(&self.remotes))
     }
 
     fn start(&self) -> (Mirrors, Receiver<Option<Cloning>>) {
@@ -148,37 +94,7 @@ impl Place {
     /// A PR `number` on the remote for `name`, as GitHub keeps one: a commit of its own under
     /// `refs/pull/N/head`, on no branch. Gives the commit.
     fn pull_request(&self, name: &RepositoryName, number: u32) -> String {
-        let work = self.remotes.join(format!("work-{}", name.name()));
-        fs::write(work.join("NEWS"), format!("PR {number}\n")).unwrap();
-        let _ = git(&work, &["add", "NEWS"]);
-        let _ = git(
-            &work,
-            &[
-                "-c",
-                "user.name=Contributor",
-                "-c",
-                "user.email=contributor@example.com",
-                "commit",
-                "-qm",
-                &format!("PR {number}"),
-            ],
-        );
-        let commit = git(&work, &["rev-parse", "HEAD"]).trim().to_owned();
-        let bare = self
-            .remotes
-            .join(name.owner())
-            .join(format!("{}.git", name.name()));
-        let _ = git(
-            &work,
-            &[
-                "push",
-                "-q",
-                &bare.to_string_lossy(),
-                &format!("HEAD:refs/pull/{number}/head"),
-            ],
-        );
-        let _ = git(&work, &["reset", "-q", "--hard", "HEAD~1"]);
-        commit
+        tsugiki_test_git::pull_request(&self.remotes, &name.to_string(), number)
     }
 }
 

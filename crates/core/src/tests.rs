@@ -1,5 +1,21 @@
 use super::*;
 
+/// `diff --exit-code` fails on files that differ, and says how on stdout, where git says some failures.
+#[test]
+#[should_panic(expected = "diff --git a/Cargo.toml b/src/lib.rs")]
+fn a_test_git_that_fails_ends_the_test_with_what_it_printed() {
+    let _ = tsugiki_test_git::git(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")),
+        &[
+            "diff",
+            "--no-index",
+            "--exit-code",
+            "Cargo.toml",
+            "src/lib.rs",
+        ],
+    );
+}
+
 #[test]
 fn a_file_a_failed_run_left_at_a_test_path_is_gone() {
     let leftover = testing::temp_path("leftover-file");

@@ -65,12 +65,10 @@ fn a_failed_git_says_its_reason_rather_than_the_hint_after_it() {
 fn stopping_git_ends_what_it_started_though_it_left_gits_tree() {
     let folder = crate::testing::temp_path("stop-git");
     // An alias runs at the top of its repository, so this one needs its own.
-    let init = std::process::Command::new("git")
-        .args(["init", "-q"])
-        .arg(&folder)
-        .status()
-        .unwrap();
-    assert!(init.success());
+    let _ = tsugiki_test_git::git(
+        folder.parent().unwrap(),
+        &["init", "-q", &folder.to_string_lossy()],
+    );
     // A git, which holds the folder as Windows sees it, unlike MSYS's own programs such as `sleep`.
     let orphan = "sleep 60 | git hash-object --stdin";
     let hold = format!("alias.hold=!sh -c '{orphan} &'; echo started >&2; sleep 60");

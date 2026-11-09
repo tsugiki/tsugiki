@@ -40,6 +40,7 @@ tsugiki-webview-keys.workspace = true
 specta-typescript.workspace = true
 tauri = { workspace = true, features = ["test"] }
 time.workspace = true
+tsugiki-test-git.workspace = true
 
 [lints]
 workspace = true

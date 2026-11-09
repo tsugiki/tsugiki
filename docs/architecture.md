@@ -7,7 +7,7 @@ types, not functions, so it stays true longer. Update it in the PR that moves a 
 ## The shape
 
 Tsugiki is a Tauri app with three crates and a webview
-([ADR 0007](adr/0007-core-library-and-thin-tauri-app.md)):
+([ADR 0007](adr/0007-core-library-and-thin-tauri-app.md)), and a fourth crate serves only the tests:
 
 - `crates/core` (`tsugiki-core`) knows and decides everything: GitHub, the database, the **Mirrors**, the
   diff and every rule the screens show. It has no Tauri and no webview, and plain `cargo test` tests it.
@@ -15,6 +15,8 @@ Tsugiki is a Tauri app with three crates and a webview
   into calls on the core, and owns the window.
 - `crates/webview-keys` holds the one `unsafe` call that turns off WebView2's browser shortcuts
   ([ADR 0013](adr/0013-webview2-browser-shortcuts-off-tsugiki-owns-its-keys.md)).
+- `crates/test-git` runs git and builds bare remotes for the tests of `core` and `app`. Only their tests
+  depend on it.
 - `ui/` is a SvelteKit single-page app that renders what the core computed.
 
 The GitHub token never leaves the core ([ADR 0005](adr/0005-token-stays-in-the-rust-core.md)). The webview

@@ -4710,6 +4710,7 @@ dependencies = [
  "tauri-specta",
  "time",
  "tsugiki-core",
+ "tsugiki-test-git",
  "tsugiki-webview-keys",
 ]
 
@@ -4745,10 +4746,15 @@ dependencies = [
  "tree-sitter-toml-ng",
  "tree-sitter-typescript",
  "tree-sitter-yaml",
+ "tsugiki-test-git",
  "ureq",
  "url",
  "windows",
 ]
+
+[[package]]
+name = "tsugiki-test-git"
+version = "0.1.1"
 
 [[package]]
 name = "tsugiki-webview-keys"

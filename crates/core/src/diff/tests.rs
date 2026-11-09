@@ -2,34 +2,12 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use tsugiki_test_git::git;
+
 use super::*;
 
 fn sha(text: &str) -> CommitSha {
     CommitSha::parse(text.trim()).unwrap()
-}
-
-#[expect(
-    clippy::disallowed_types,
-    reason = "tests build their repositories with the real git (ADR 0009)"
-)]
-pub(crate) fn git_in(dir: &Path, args: &[&str]) -> String {
-    let output = std::process::Command::new("git")
-        .args([
-            "-c",
-            "user.name=Contributor",
-            "-c",
-            "user.email=contributor@example.com",
-        ])
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout).unwrap()
 }
 
 fn numbered(lines: std::ops::RangeInclusive<u32>) -> String {
@@ -64,9 +42,9 @@ impl Mirrored {
         for folder in ["Lib", "Modules", "Doc", "Tools"] {
             fs::create_dir_all(work.join(folder)).unwrap();
         }
-        let _ = git_in(&work, &["init", "-q", "-b", "main"]);
+        let _ = git(&work, &["init", "-q", "-b", "main"]);
         // The PR sets run.sh's mode in the index only, which macOS's git would then see as a change on disk.
-        let _ = git_in(&work, &["config", "core.fileMode", "false"]);
+        let _ = git(&work, &["config", "core.fileMode", "false"]);
         fs::write(work.join("Lib/ast.py"), assigned(1..=10)).unwrap();
         fs::write(work.join("Modules/old.c"), "int x;\n").unwrap();
         fs::write(work.join("Doc/notes.txt"), numbered(1..=20)).unwrap();
@@ -74,34 +52,34 @@ impl Mirrored {
         fs::write(work.join("Tools/run.sh"), "echo hi\n").unwrap();
         fs::create_dir_all(work.join("Misc/NEWS.d/next/Library")).unwrap();
         fs::write(work.join(OLD_NEWS), "Old news.\n").unwrap();
-        let _ = git_in(&work, &["add", "."]);
-        let _ = git_in(&work, &["commit", "-qm", "One"]);
+        let _ = git(&work, &["add", "."]);
+        let _ = git(&work, &["commit", "-qm", "One"]);
 
-        let _ = git_in(&work, &["switch", "-qc", "pr"]);
+        let _ = git(&work, &["switch", "-qc", "pr"]);
         let ast = assigned(1..=10).replace("x5 = 5\n", "x5 = 'five'\n") + "x11 = 11";
         fs::write(work.join("Lib/ast.py"), ast).unwrap();
-        let _ = git_in(&work, &["rm", "-q", "Modules/old.c"]);
-        let _ = git_in(&work, &["mv", "Doc/notes.txt", "Doc/news.txt"]);
+        let _ = git(&work, &["rm", "-q", "Modules/old.c"]);
+        let _ = git(&work, &["mv", "Doc/notes.txt", "Doc/news.txt"]);
         let news = numbered(1..=20).replace("line 20\n", "line twenty\n");
         fs::write(work.join("Doc/news.txt"), news).unwrap();
         fs::write(work.join("logo.png"), b"\x89PNG\0\x02").unwrap();
         fs::write(work.join("Lib/spaced name ü.py"), "pass\n").unwrap();
         more(&work);
-        let _ = git_in(&work, &["add", "."]);
-        let _ = git_in(&work, &["update-index", "--chmod=+x", "Tools/run.sh"]);
-        let _ = git_in(&work, &["commit", "-qm", "The PR"]);
+        let _ = git(&work, &["add", "."]);
+        let _ = git(&work, &["update-index", "--chmod=+x", "Tools/run.sh"]);
+        let _ = git(&work, &["commit", "-qm", "The PR"]);
 
-        let _ = git_in(&work, &["switch", "-q", "main"]);
+        let _ = git(&work, &["switch", "-q", "main"]);
         fs::write(work.join("README.rst"), "Moved on\n").unwrap();
         // Only main's newest commit marks files generated, so a diff reads them from there.
         let attributes = "[attr]generated linguist-generated=true\nLib/ast.py generated\n\
                           *.png linguist-generated\nDoc/** -linguist-generated\n";
         fs::write(work.join(".gitattributes"), attributes).unwrap();
-        let _ = git_in(&work, &["add", "README.rst", ".gitattributes"]);
-        let _ = git_in(&work, &["commit", "-qm", "Two"]);
+        let _ = git(&work, &["add", "README.rst", ".gitattributes"]);
+        let _ = git(&work, &["commit", "-qm", "Two"]);
 
         let mirror = root.join("mirror.git");
-        let _ = git_in(
+        let _ = git(
             &root,
             &[
                 "clone",
@@ -111,7 +89,7 @@ impl Mirrored {
                 &mirror.to_string_lossy(),
             ],
         );
-        let head = sha(&git_in(&mirror, &["rev-parse", "refs/heads/pr"]));
+        let head = sha(&git(&mirror, &["rev-parse", "refs/heads/pr"]));
         Self { root, mirror, head }
     }
 
@@ -300,7 +278,7 @@ fn a_diff_against_another_branch_or_from_another_base_is_read_again() {
 fn a_diff_from_a_base_reads_from_that_base_whatever_the_branch_says() {
     let mirrored = Mirrored::new("from-base");
     let first = mirrored.read();
-    let _ = git_in(
+    let _ = git(
         &mirrored.mirror,
         &["branch", "3.14", mirrored.head.as_str()],
     );
@@ -517,7 +495,7 @@ fn only_the_target_branch_s_attributes_count_and_an_index_a_run_left_goes() {
     let mirrored = Mirrored::new("own-attributes");
     let own = mirrored.root.join("own.attributes");
     fs::write(&own, "Modules/** linguist-generated\n").unwrap();
-    let _ = git_in(
+    let _ = git(
         &mirrored.mirror,
         &["config", "core.attributesFile", &own.to_string_lossy()],
     );
@@ -570,7 +548,7 @@ fn a_prs_news_entries_come_rendered_from_its_head() {
     let mirrored = Mirrored::with("news", |work| {
         fs::write(work.join(entry), "Fix :func:`ast.parse`.\n").unwrap();
         fs::write(work.join("Misc/NEWS.d/3.14.0.rst"), "Released.\n").unwrap();
-        let _ = git_in(work, &["rm", "-q", OLD_NEWS]);
+        let _ = git(work, &["rm", "-q", OLD_NEWS]);
     });
 
     let read = mirrored.read();

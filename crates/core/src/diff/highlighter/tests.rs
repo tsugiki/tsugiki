@@ -1,7 +1,8 @@
 use std::fs;
 
+use tsugiki_test_git::git;
+
 use super::*;
-use crate::diff::tests::git_in;
 use crate::diff::{Diff, PrAt, Start, read};
 use crate::github::CommitSha;
 use crate::repository::RepositoryName;
@@ -37,17 +38,17 @@ impl Repo {
                     fs::write(path, text).unwrap();
                 }
             }
-            let _ = git_in(&work, &["add", "-A"]);
-            let _ = git_in(&work, &["commit", "-qm", "Files"]);
+            let _ = git(&work, &["add", "-A"]);
+            let _ = git(&work, &["commit", "-qm", "Files"]);
         };
-        let _ = git_in(&work, &["init", "-q", "-b", "main"]);
+        let _ = git(&work, &["init", "-q", "-b", "main"]);
         write(base);
-        let _ = git_in(&work, &["switch", "-qc", "pr"]);
+        let _ = git(&work, &["switch", "-qc", "pr"]);
         write(head);
         let mirror = root.join("mirror.git");
         let (from, to) = (work.to_string_lossy(), mirror.to_string_lossy());
-        let _ = git_in(&root, &["clone", "-q", "--bare", &from, &to]);
-        let head = git_in(&mirror, &["rev-parse", "refs/heads/pr"]);
+        let _ = git(&root, &["clone", "-q", "--bare", &from, &to]);
+        let head = git(&mirror, &["rev-parse", "refs/heads/pr"]);
         let head = CommitSha::parse(head.trim()).unwrap();
         Self { root, mirror, head }
     }

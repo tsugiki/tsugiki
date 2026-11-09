@@ -1,0 +1,18 @@
+[package]
+name = "tsugiki-test-git"
+description = "Git repositories for the tests of tsugiki-core and tsugiki-app, built with the real git"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+# Its tests are in core's, which run the build of it the other tests link. Coverage counts a second build,
+# for a test binary of its own, apart, so a line that ran only there would count as missed in the first.
+[lib]
+test = false
+doctest = false
+
+[lints]
+workspace = true

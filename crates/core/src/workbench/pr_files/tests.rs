@@ -1,8 +1,10 @@
 use std::path::Path;
 
+use tsugiki_test_git::git;
+
 use super::*;
 use crate::diff::MirrorDiff;
-use crate::diff::tests::{Mirrored, git_in};
+use crate::diff::tests::Mirrored;
 use crate::github::pull_request_content::{Side, Subject};
 use crate::mirror::HeardRequests;
 use crate::workbench::testing::{ViewWorld, mine};
@@ -221,7 +223,7 @@ fn a_moved_head_shows_the_diff_before_with_its_threads_held_back_until_the_newer
     let mirrored = Mirrored::new("pr-files-moved");
     let older = mirrored.head.clone();
     let whole = mirrored.read();
-    let _ = git_in(
+    let _ = git(
         &mirrored.mirror,
         &["update-ref", "refs/tsugiki/pull/7/head", older.as_str()],
     );
@@ -263,7 +265,7 @@ fn a_moved_head_shows_the_diff_before_with_its_threads_held_back_until_the_newer
 fn a_moved_head_whose_older_diff_has_no_target_branch_waits_for_the_newer() {
     let world = World::new("moved-no-target");
     let mirrored = Mirrored::new("pr-files-moved-no-target");
-    let _ = git_in(
+    let _ = git(
         &mirrored.mirror,
         &[
             "update-ref",
@@ -446,7 +448,7 @@ fn the_diff_on_show_answers_without_asking_git_again() {
     let mirror = world.folders.mirror(&world.repository());
 
     // git would now say the mirror has no Target branch.
-    let _ = git_in(&mirror, &["update-ref", "-d", "refs/heads/main"]);
+    let _ = git(&mirror, &["update-ref", "-d", "refs/heads/main"]);
 
     assert_eq!(world.files(), first);
     mirrored.finish();
@@ -459,7 +461,7 @@ fn rows_of_a_diff_no_longer_on_show_are_read_again_from_its_base() {
     let mirrored = Mirrored::new("pr-files-read-again");
     let head = mirrored.head.clone();
     let whole = mirrored.read();
-    let _ = git_in(&mirrored.mirror, &["branch", "3.14", head.as_str()]);
+    let _ = git(&mirrored.mirror, &["branch", "3.14", head.as_str()]);
     world.mirrors(&mirrored);
     // The PR moved to 3.14 after the window read its files against main.
     world.has_pr(Some(head.clone()), "3.14");
@@ -487,7 +489,7 @@ fn a_pr_moved_to_another_branch_shows_its_diff_against_that_branch() {
     let mirrored = Mirrored::new("pr-files-retargeted");
     let head = mirrored.head.clone();
     // 3.14 already holds the PR's commit, so the diff against it is empty.
-    let _ = git_in(&mirrored.mirror, &["branch", "3.14", head.as_str()]);
+    let _ = git(&mirrored.mirror, &["branch", "3.14", head.as_str()]);
     world.mirrors(&mirrored);
     world.has_pr(Some(head.clone()), "main");
     let before = world.files();
@@ -512,7 +514,7 @@ fn a_pr_moved_to_another_branch_shows_its_diff_against_that_branch() {
 
 /// The commit main is at in `mirror`.
 fn main_tip(mirror: &Path) -> CommitSha {
-    CommitSha::parse(git_in(mirror, &["rev-parse", "main"]).trim()).unwrap()
+    CommitSha::parse(git(mirror, &["rev-parse", "main"]).trim()).unwrap()
 }
 
 /// Moves main in `mirror` to a new commit with `parents` and main's files, as a merge does, and gives it.
@@ -521,8 +523,8 @@ fn commit_onto_main(mirror: &Path, parents: &[&CommitSha]) -> CommitSha {
     for parent in parents {
         args.extend(["-p", parent.as_str()]);
     }
-    let commit = CommitSha::parse(git_in(mirror, &args).trim()).unwrap();
-    let _ = git_in(mirror, &["update-ref", "refs/heads/main", commit.as_str()]);
+    let commit = CommitSha::parse(git(mirror, &args).trim()).unwrap();
+    let _ = git(mirror, &["update-ref", "refs/heads/main", commit.as_str()]);
     commit
 }
 
@@ -564,15 +566,15 @@ fn a_pr_merged_by_fast_forward_shows_the_diff_from_where_main_was() {
     let before = mirrored.read();
     // The PR merges main in, and main then moves to its head.
     let base = main_tip(&mirrored.mirror);
-    let tree = git_in(
+    let tree = git(
         &mirrored.mirror,
         &["merge-tree", "--write-tree", "main", mirrored.head.as_str()],
     );
     let args = ["commit-tree", tree.trim(), "-m", "Merged main"];
     let parents = ["-p", base.as_str(), "-p", mirrored.head.as_str()];
     let head =
-        CommitSha::parse(git_in(&mirrored.mirror, &[&args[..], &parents].concat()).trim()).unwrap();
-    let _ = git_in(
+        CommitSha::parse(git(&mirrored.mirror, &[&args[..], &parents].concat()).trim()).unwrap();
+    let _ = git(
         &mirrored.mirror,
         &["update-ref", "refs/heads/main", head.as_str()],
     );
@@ -667,7 +669,7 @@ fn a_fast_forward_stored_before_tsugiki_read_its_base_has_nothing_to_show() {
     let world = World::new("fast-forward-before");
     let mirrored = Mirrored::new("pr-files-fast-forward-before");
     let head = mirrored.head.clone();
-    let _ = git_in(
+    let _ = git(
         &mirrored.mirror,
         &["update-ref", "refs/heads/main", head.as_str()],
     );

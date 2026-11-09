@@ -4,9 +4,10 @@
 use std::collections::BTreeMap;
 
 use rusqlite::types::FromSql;
-use rusqlite::{Connection, Statement, ToSql, named_params};
+use rusqlite::{Statement, ToSql, named_params};
 use time::OffsetDateTime;
 
+use super::Connection;
 use crate::github::activity::ItemActivity;
 use crate::github::pull_requests::{LatestReview, OffDefault, PrState, PullRequestFacts};
 use crate::github::{CommitSha, Login};

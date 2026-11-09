@@ -3,8 +3,9 @@
 
 use std::collections::BTreeMap;
 
-use rusqlite::{Connection, Row, Transaction, named_params};
+use rusqlite::{Row, Transaction, named_params};
 
+use super::Connection;
 use super::columns::UnixTime;
 use super::issue_content;
 use crate::github::CommitSha;

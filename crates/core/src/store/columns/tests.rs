@@ -1,5 +1,6 @@
 use super::*;
-use rusqlite::{Connection, named_params};
+use crate::store::Connection;
+use rusqlite::named_params;
 use std::fmt::Debug;
 
 /// The text `value` leaves in a column, and the value that reads back from there.

@@ -4,8 +4,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use rusqlite::{Connection, Row, named_params};
+use rusqlite::{Row, named_params};
 
+use super::Connection;
 use crate::filters::FilterQuery;
 use crate::repository::RepositoryName;
 

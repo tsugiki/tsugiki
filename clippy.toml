@@ -16,14 +16,16 @@ max-fn-params-bools = 0 # No keyword arguments in Rust, so a bool at the call sa
 max-struct-bools = 1 # Two bools make four states, and a struct rarely has four valid ones.
 too-many-arguments-threshold = 4 # More usually means a missing struct, and methods count `self`.
 
-# Only one file touches the outside world, so tests can replace all of it (ADR 0009).
-disallowed-types = [ # The real network and the real gh stay in crates/core/src/github/live.rs.
+# Only one file touches the outside world, so tests can replace all of it (ADR 0009). Only `store` holds
+# the database, so its tables stay its own (#88).
+disallowed-types = [ # The network and gh stay in crates/core/src/github/live.rs, the database in store.
     { path = "std::process::Command", reason = "Run programs in crates/core/src/github/live.rs" },
     { path = "std::net::TcpStream", reason = "Reach the network in crates/core/src/github/live.rs" },
     { path = "std::net::UdpSocket", reason = "Reach the network in crates/core/src/github/live.rs" },
     { path = "ureq::Agent", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },
     { path = "ureq::RequestExt", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },
     { path = "ureq::config::Config", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },
+    { path = "rusqlite::Connection", reason = "Reach the database through crates/core/src/store", allow-invalid = true },
 ]
 disallowed-methods = [ # ureq's shortcuts reach the network without naming an `Agent`.
     { path = "ureq::agent", reason = "Reach the network in crates/core/src/github/live.rs", allow-invalid = true },

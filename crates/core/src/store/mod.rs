@@ -3,6 +3,11 @@
 //! a thread that runs its jobs in turn, so a caller waits only for the jobs ahead of its own on that
 //! connection.
 
+#![expect(
+    clippy::disallowed_types,
+    reason = "the one module clippy.toml lets hold a database connection, so its tables stay its own"
+)]
+
 mod activity;
 mod columns;
 mod failed_checks;

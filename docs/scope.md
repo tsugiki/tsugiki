@@ -100,7 +100,14 @@ The order in which v1 is built is in [build-order.md](build-order.md).
     - The PR view shows Conversation and Files as tabs, and opens on Conversation. `Ctrl+PageDown` and
       `Ctrl+PageUp` switch tabs, and so does `Enter` on the PR's row once the PR is open.
 
-    Esc goes from a PR back to its Issue, and leaves the panes as they are.
+    Esc closes what is on top, wherever the focus is: a dialog, the palette or a Peek first, then the wait
+    for a chord's second key, a Definition peek or the diff's search, and last a PR, which goes back to the
+    Issue it was opened under. With nothing on top, Esc does nothing. A PR opened from a row of its own (a
+    Standalone PR, one of its Backports, a Dependency update) has nothing under it, so Esc leaves it on
+    show, as it leaves an Issue. A text box keeps Esc, unless it belongs to what Esc closes, like the search
+    box. Esc gives the focus to whatever lay under the thing it closed: going back from a PR moves the cursor
+    and the focus to the Issue's row, or to the Detail pane while the Issue list is hidden. Esc leaves the
+    panes as they are.
 
     The edges between the panes can be dragged; a double-click puts the default back. The Issue list has a
     minimum width, and so does the Detail pane, so in a narrow window the Issue list gives way first.
@@ -133,12 +140,13 @@ The order in which v1 is built is in [build-order.md](build-order.md).
 - Links in descriptions and comments are sorted by where they point. Tsugiki never navigates its own window to
   a web page.
   - An Issue or PR in the current Repository opens in the Detail pane. `Alt+←` / `Alt+→` go back and forward
-    through what was opened. A slim bar over the Detail pane shows ‹ and › (greyed out when there's nothing
-    that way, the target in the tooltip) and the title of the item shown. Right-clicking an arrow lists the
-    recent items that way; there is no other history manager. The mouse's back and forward buttons and the
-    command palette (Go Back / Go Forward) do the same. History records only items opened in the Detail pane:
-    switching views in the Sidebar adds nothing, and re-opening the item already shown adds nothing. Each
-    Repository has its own history, which starts fresh when you switch to it.
+    through what was opened, and move the cursor and the focus to its row. A slim bar over the Detail pane
+    shows ‹ and › (greyed out when there's nothing that way, the target in the tooltip) and the title of the
+    item shown. Right-clicking an arrow lists the recent items that way; there is no other history manager.
+    The mouse's back and forward buttons and the command palette (Go Back / Go Forward) do the same. History
+    records only items opened in the Detail pane: switching views in the Sidebar adds nothing, and re-opening
+    the item already shown adds nothing. Each Repository has its own history, which starts fresh when you
+    switch to it.
   - An Issue or PR anywhere else on GitHub opens in a **Peek** popup that Tsugiki renders from the API: title,
     state, author, description, the last few comments, with Open in browser and, for an added Repository, Open
     in Tsugiki. GitHub can't be embedded in a frame.

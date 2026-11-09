@@ -13,7 +13,7 @@
     pr,
     now,
     onback,
-  }: { repository: string; pr: PrViewState; now: Date; onback: () => void } = $props();
+  }: { repository: string; pr: PrViewState; now: Date; onback: (issue: number) => void } = $props();
 
   const TABS: { tab: PrTab; name: string }[] = [
     { tab: "conversation", name: "Conversation" },
@@ -48,7 +48,13 @@
     <p role="alert">{browserProblem}</p>
   {/if}
   {#if pr.issue !== undefined}
-    <button class="link back" onclick={onback}>{`gh-${String(pr.issue)}`}</button>
+    {@const issue = pr.issue}
+    <button
+      class="link back"
+      onclick={() => {
+        onback(issue);
+      }}>{`gh-${String(issue)}`}</button
+    >
   {/if}
   {#if pr.view === null}
     <p>{`Tsugiki doesn't hold PR #${String(pr.number)}.`}</p>

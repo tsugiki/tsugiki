@@ -100,11 +100,13 @@
    * Shows the Issue or PR on line `stop` in the Detail pane. The PR already on show switches tabs instead,
    * and the Issue already on show reads GitHub again. Each counts as a visit, unless Alt+← or Alt+→ went
    * `"through"` the visits to it. Going `"back"` to the Issue the PR on show came from, or through the
-   * visits to it, shows its view as it was and counts as no new opening.
+   * visits to it, shows its view as it was and counts as no new opening. Both move the focus with the
+   * cursor, so the row the user left doesn't look selected too, and Enter doesn't open it again.
    */
   function open(stop: Stop, how: "open" | "back" | "through" = "open") {
     if (how !== "through") visits.visit(stop);
     workbench.cursor = stop;
+    if (how !== "open") focusCursor();
     if (stop.kind === "pull_request" && detail instanceof PrViewState && sameStop(detail.line, stop)) {
       detail.switchTab();
       return;
@@ -151,10 +153,9 @@
     detail = next;
   }
 
-  /** Leaves the PR view for the Issue the user opened it from, or for an empty Detail pane. */
-  function back(pr: PrViewState) {
-    if (pr.issue === undefined) swap(undefined);
-    else open({ number: pr.issue, kind: "issue", issue: undefined }, "back");
+  /** Leaves the PR view for the Issue the user opened it from, with the focus on the Issue's row. */
+  function back(issue: number) {
+    open({ number: issue, kind: "issue", issue: undefined }, "back");
   }
 
   /** The Issue or PR in the Detail pane, or else the line under the cursor. */
@@ -170,7 +171,11 @@
 
   function moveCursor(step: 1 | -1) {
     workbench.moveCursor(step);
-    // Focus follows, so the row scrolls into view, and Enter presses its button.
+    focusCursor();
+  }
+
+  /** Focuses the row under the cursor, so it scrolls into view, and Enter presses its button. */
+  function focusCursor() {
     list?.querySelector<HTMLElement>(`[data-item="${lineName(workbench.cursor)}"]`)?.focus();
   }
 
@@ -206,9 +211,10 @@
       // Escape closes the search first, wherever the focus is, as in VS Code.
       e.preventDefault();
       files.closeSearch();
-    } else if (key === "escape" && detail instanceof PrViewState) {
+    } else if (key === "escape" && detail instanceof PrViewState && detail.issue !== undefined) {
+      // A PR opened from a row of its own has nothing under it, so it stays on show.
       e.preventDefault();
-      back(detail);
+      back(detail.issue);
     } else if ((key === "ctrl+pagedown" || key === "ctrl+pageup") && detail instanceof PrViewState) {
       e.preventDefault();
       detail.switchTab();
@@ -381,14 +387,7 @@
   {:else if detail}
     {@const pr = detail}
     {#key pr}
-      <PrDetail
-        repository={name}
-        {pr}
-        {now}
-        onback={() => {
-          back(pr);
-        }}
-      />
+      <PrDetail repository={name} {pr} {now} onback={back} />
     {/key}
   {/if}
 </div>

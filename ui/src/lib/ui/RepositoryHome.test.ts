@@ -537,13 +537,36 @@ it("opens a PR that fixes two Issues again from its line under the other one", a
   expect(first?.getAttribute("aria-current")).toBeNull();
 });
 
-it("goes back to the Issue with the PR view's gh-N link", async () => {
-  const { treeRow } = await listing();
+it("goes back to the Issue with the PR view's gh-N link, and focuses the Issue's row", async () => {
+  const { issueRow, treeRow } = await listing();
   await fireEvent.click(treeRow);
 
   await fireEvent.click(await screen.findByRole("button", { name: "gh-112564" }));
 
   expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
+  expect(document.activeElement).toBe(issueRow);
+});
+
+it.each([
+  ["the PR's row", (treeRow: HTMLElement) => treeRow],
+  ["a PR tab", () => screen.getByRole("tab", { name: "Files" })],
+  [
+    "the Sidebar",
+    () =>
+      within(screen.getByRole("navigation", { name: "Sidebar" })).getByRole("button", { name: /^Workbench/ }),
+  ],
+])("focuses the Issue's row on Esc from %s", async (_, focused) => {
+  const { issueRow, treeRow } = await listing();
+  await fireEvent.click(treeRow);
+  await screen.findByRole("tab", { name: "Files" });
+  const from = focused(treeRow) as HTMLElement;
+  from.focus();
+
+  await fireEvent.keyDown(from, { key: "Escape" });
+
+  expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
+  expect(document.activeElement).toBe(issueRow);
+  expect(issueRow.getAttribute("aria-current")).toBe("true");
 });
 
 it("keeps the Issue view while a PR from its tree is on show, and shows it again at once", async () => {
@@ -603,9 +626,9 @@ it("asks GitHub nothing for the Issue view it keeps, and stops it when the PR gi
   core.fetchIssue.mockResolvedValue({ status: "ok", data: null });
   core.fetchPullRequest.mockResolvedValue({ status: "ok", data: null });
   const { issueRow, treeRow, prRow } = await listing();
-  const idle = listening();
   await fireEvent.click(issueRow);
   await screen.findByRole("region", { name: "Issue view" });
+  const withIssue = listening();
   await fireEvent.click(treeRow);
   await screen.findByRole("region", { name: "PR view" });
 
@@ -613,10 +636,11 @@ it("asks GitHub nothing for the Issue view it keeps, and stops it when the PR gi
   expect(core.fetchIssue).not.toHaveBeenCalled();
   expect(core.fetchPullRequest).toHaveBeenCalledOnce();
   await fireEvent.click(prRow);
-  await press("Escape");
+  // With the kept view stopped, the Issue opens afresh and listens in its place.
+  await fireEvent.click(issueRow);
 
-  expect(screen.queryByRole("region", { name: "PR view" })).toBeNull();
-  expect(listening()).toBe(idle);
+  expect(core.openIssue).toHaveBeenCalledTimes(2);
+  expect(listening()).toBe(withIssue);
 });
 
 it("stops the Issue view it keeps when it goes", async () => {
@@ -668,17 +692,33 @@ it("opens a PR from the Issue view, and puts the cursor on its line in the tree"
   expect(treeRow.getAttribute("aria-current")).toBe("true");
 });
 
-it("closes a Standalone PR's view with Esc, and leaves Esc alone with no PR on show", async () => {
-  const { prRow, issueRow } = await listing();
+it.each([
+  ["a Standalone PR", standalone, "#5 Alone"],
+  ["a Standalone PR's Backport", { ...standalone, backports: [backportRow] }, /^#160700 /],
+  ["a Backport with no Issue", { kind: "standalone_backport", ...backportRow }, /^#160700 /],
+])("leaves %s on show on Esc, with no Issue under it", async (_, item, name) => {
+  answering(item);
+  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  const prRow = await screen.findByRole("button", { name });
   await fireEvent.click(prRow);
   await screen.findByRole("tab", { name: "Conversation" });
+  const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
 
-  await press("Escape");
-  expect(screen.queryByRole("region", { name: "PR view" })).toBeNull();
+  await fireEvent(document.body, escape);
+
+  expect(escape.defaultPrevented).toBe(false);
+  expect(screen.getByRole("region", { name: "PR view" })).toBeTruthy();
+  expect(prRow.getAttribute("aria-current")).toBe("true");
+  expect(core.openPullRequest).toHaveBeenCalledOnce();
   expect(core.openIssue).not.toHaveBeenCalled();
+});
 
+it("leaves Esc alone with an Issue on show", async () => {
+  const { issueRow } = await listing();
   await fireEvent.click(issueRow);
+
   await press("Escape");
+
   expect(screen.getByRole("region", { name: "Issue view" })).toBeTruthy();
 });
 
@@ -714,7 +754,7 @@ it("switches the Files tab between unified and side by side with Ctrl+Alt+U, for
       disconnect() {}
     },
   );
-  const { prRow } = await listing();
+  const { prRow, treeRow } = await listing();
   await fireEvent.click(prRow);
   const files = await screen.findByRole("tab", { name: "Files" });
   const toggle = () =>
@@ -728,8 +768,7 @@ it("switches the Files tab between unified and side by side with Ctrl+Alt+U, for
   const onFiles = toggle();
   await fireEvent(document.body, onFiles);
   expect(await screen.findByRole("region", { name: "Side-by-side diff" })).toBeTruthy();
-  await press("Escape");
-  await fireEvent.click(prRow);
+  await fireEvent.click(treeRow);
   await fireEvent.click(await screen.findByRole("tab", { name: "Files" }));
 
   expect(await screen.findByRole("region", { name: "Side-by-side diff" })).toBeTruthy();
@@ -779,8 +818,8 @@ const onFiles = async () => {
       disconnect() {}
     },
   );
-  const { prRow } = await listing();
-  await fireEvent.click(prRow);
+  const { treeRow } = await listing();
+  await fireEvent.click(treeRow);
   return screen.findByRole("tab", { name: "Files" });
 };
 
@@ -815,18 +854,19 @@ it("opens the search in the diff with Ctrl+F on the Files tab, and gives its box
   expect([box.selectionStart, box.selectionEnd]).toEqual([0, 2]);
 });
 
-it("closes the search with Escape from anywhere, before Escape leaves the PR", async () => {
+it("closes the search with Escape from anywhere, then leaves the PR with the focus on the Issue's row", async () => {
   const files = await onFiles();
   await fireEvent.click(files);
   const diff = await screen.findByRole("region", { name: "Diff" });
   await press("f", { ctrlKey: true });
   diff.focus();
 
-  await press("Escape");
+  await fireEvent.keyDown(diff, { key: "Escape" });
   expect(screen.queryByRole("search")).toBeNull();
   expect(screen.getByRole("region", { name: "PR view" })).toBeTruthy();
-  await press("Escape");
+  await fireEvent.keyDown(diff, { key: "Escape" });
   expect(screen.queryByRole("region", { name: "PR view" })).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: /^#112564 / }));
 });
 
 it("leaves the focus where it is when the Files tab is drawn again with the search open", async () => {
@@ -858,6 +898,22 @@ it("goes back and forward through the Issues and PRs it opened with Alt+← and 
   expect(await screen.findByRole("region", { name: "PR view" })).toBeTruthy();
   await press("ArrowRight", { altKey: true });
   expect(screen.getByRole("region", { name: "PR view" })).toBeTruthy();
+});
+
+it("moves the focus with the cursor on Alt+← and Alt+→", async () => {
+  const { issueRow, treeRow } = await listing();
+  await fireEvent.click(issueRow);
+  await fireEvent.click(treeRow);
+  await screen.findByRole("region", { name: "PR view" });
+  treeRow.focus();
+
+  await fireEvent.keyDown(treeRow, { key: "ArrowLeft", altKey: true });
+  expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
+  expect(document.activeElement).toBe(issueRow);
+  await fireEvent.keyDown(issueRow, { key: "ArrowRight", altKey: true });
+
+  expect(await screen.findByRole("region", { name: "PR view" })).toBeTruthy();
+  expect(document.activeElement).toBe(treeRow);
 });
 
 it("starts the way back fresh in another Repository", async () => {

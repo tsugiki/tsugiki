@@ -78,7 +78,7 @@ fn a_502_names_the_status() {
 }
 
 #[test]
-fn a_graphql_error_passes_on_githubs_words() {
+fn a_graphql_error_without_a_type_passes_on_githubs_words() {
     let error = error_of(answered(
         200,
         r#"{"errors":[{"message":"Something broke"}]}"#,
@@ -88,13 +88,25 @@ fn a_graphql_error_passes_on_githubs_words() {
 }
 
 #[test]
-fn a_graphql_error_of_another_type_passes_on_githubs_words() {
+fn a_graphql_forbidden_error_passes_on_githubs_words() {
     let error = error_of(answered(
         200,
         r#"{"errors":[{"type":"FORBIDDEN","message":"No such thing"}]}"#,
     ));
     assert_eq!(error.kind, ErrorKind::QueryRefused);
     assert_eq!(error.message, "GitHub said: No such thing");
+}
+
+#[test]
+fn a_graphql_error_of_a_type_tsugiki_doesnt_know_passes_on_githubs_words() {
+    // A sync saves a refused query on its Filter and moves on, but an unreadable reply fails the step. So
+    // a type `GraphqlErrorKind` doesn't name must not make the reply unreadable.
+    let error = error_of(answered(
+        200,
+        r#"{"errors":[{"type":"MAX_NODE_LIMIT_EXCEEDED","message":"Too many nodes"}]}"#,
+    ));
+    assert_eq!(error.kind, ErrorKind::QueryRefused);
+    assert_eq!(error.message, "GitHub said: Too many nodes");
 }
 
 #[test]
@@ -284,7 +296,7 @@ fn a_check_that_fails_for_another_reason_says_that_reason() {
 }
 
 #[test]
-fn a_null_field_doesnt_hide_the_error_that_explains_it() {
+fn a_null_field_doesnt_hide_the_rate_limit_that_explains_it() {
     let body = r#"{"data":{"viewer":null},"errors":[{"type":"RATE_LIMITED","message":"x"}]}"#;
     assert_eq!(error_of(answered(200, body)).kind, limited_until(None));
 }

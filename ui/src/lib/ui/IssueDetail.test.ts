@@ -198,6 +198,17 @@ it("says so for an Issue Tsugiki doesn't hold", async () => {
   expect(screen.getByText("Tsugiki doesn't hold Issue #7.")).toBeTruthy();
 });
 
+// jsdom doesn't keep `scrollTop`, so `e2e/issue-view.spec.ts` checks that the pane comes back there.
+it("keeps how far down the user scrolled its pane", async () => {
+  const state = await shown(view);
+  const pane = screen.getByRole("region", { name: "Issue view" });
+  Object.defineProperty(pane, "scrollTop", { value: 300 });
+
+  await fireEvent.scroll(pane);
+
+  expect(state.scrollTop).toBe(300);
+});
+
 it("says why it can't show the Issue", async () => {
   core.issue.mockResolvedValue({ status: "error", error: { kind: "internal", message: "no database" } });
   const state = new IssueViewState("python/cpython", 7);

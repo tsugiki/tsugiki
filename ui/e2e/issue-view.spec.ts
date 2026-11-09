@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
-import { expect, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import type {
   Filter,
   IssueView_Serialize as IssueView,
   ListedItem_Serialize as ListedItem,
+  TreeEntry_Serialize as TreeEntry,
   WorkbenchRow_Serialize as WorkbenchRow,
 } from "../src/lib/data/bindings.ts";
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
@@ -23,14 +24,14 @@ const row: Omit<WorkbenchRow, "number"> = {
   your_review: "APPROVED",
 };
 
-const issue = (number: number, waiting: boolean): ListedItem => ({
+const issue = (number: number, waiting: boolean, pullRequests: TreeEntry[] = []): ListedItem => ({
   kind: "issue",
   number,
   title: `Issue ${String(number)}`,
   state: "OPEN",
   people: ["issue-author"],
   updated_at: "2026-11-04T10:00:00Z",
-  pull_requests: [],
+  pull_requests: pullRequests,
   attention: waiting
     ? { since: "2026-11-04T10:00:00Z", why: [{ kind: "comment", by: "some-reviewer" }] }
     : null,
@@ -145,6 +146,69 @@ test("an Issue opened far down a long list shows beside it", async ({ page }) =>
   await page.getByRole("button", { name: "#139 Issue 139" }).click();
 
   await expect(page.getByRole("region", { name: "Issue view" }).getByRole("heading")).toBeInViewport();
+});
+
+/** A long Issue 7 with PR 10 in its tree, in a window too short to show it whole. */
+const longIssue = async (page: Page) => {
+  await page.setViewportSize({ width: 1000, height: 400 });
+  const paragraphs = Array.from({ length: 60 }, (_, at) => `<p>Paragraph ${String(at)}</p>`).join("");
+  const tree = issue(7, false, [{ number: 10, kind: "pr", ...row, backports: [] }]);
+  await mockCore(page, {
+    ...answers(paragraphs),
+    workbench: { ...listing(false), data: { ...listing(false).data, items: [tree, issue(8, false)] } },
+    openPullRequest: done,
+    fetchPullRequest: done,
+    pullRequest: done,
+  });
+  await page.goto("/");
+  await inList(page, "#7 Issue 7").click();
+  const pane = page.getByRole("region", { name: "Issue view" });
+  await expect(pane).toContainText("Paragraph 59");
+  return pane;
+};
+
+/** The line named `name` in the list, as the Issue view has a button of that name too. */
+const inList = (page: Page, name: string) => page.locator(".list").getByRole("button", { name });
+
+/** Scrolls `pane` to `top` pixels from its top, and waits for the page to hear of it. */
+const scrollTo = async (pane: Locator, top: number) => {
+  await pane.evaluate(async (element, top) => {
+    element.scrollTop = top;
+    await new Promise(requestAnimationFrame);
+  }, top);
+};
+
+const scrolled = (pane: Locator) => pane.evaluate((element) => element.scrollTop);
+
+test("the Issue view comes back where the user left it after a PR from its tree", async ({ page }) => {
+  const pane = await longIssue(page);
+  await scrollTo(pane, 300);
+  const pr = inList(page, "#10 gh-7: Fix it");
+
+  await pr.click();
+  await expect(page.getByRole("region", { name: "PR view" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(pane).toBeVisible();
+  const afterEsc = await scrolled(pane);
+  await scrollTo(pane, 200);
+  await pr.click();
+  await expect(page.getByRole("region", { name: "PR view" })).toBeVisible();
+  await page.keyboard.press("Alt+ArrowLeft");
+  await expect(pane).toBeVisible();
+
+  expect([afterEsc, await scrolled(pane)]).toEqual([300, 200]);
+});
+
+test("the Issue view starts at the top when the user opens it from the list", async ({ page }) => {
+  const pane = await longIssue(page);
+  await scrollTo(pane, 300);
+  await inList(page, "#10 gh-7: Fix it").click();
+  await expect(page.getByRole("region", { name: "PR view" })).toBeVisible();
+
+  await inList(page, "#7 Issue 7").click();
+
+  await expect(pane).toBeVisible();
+  expect(await scrolled(pane)).toBe(0);
 });
 
 test("a link in a description leaves the window where it is", async ({ page }) => {

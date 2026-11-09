@@ -116,6 +116,8 @@
         resumed.show();
         return;
       }
+      // Opening the Issue from the list starts at the top. Going back to it leaves the user where they were.
+      resumed.scrollTop = 0;
     }
     hud.issueOpened(stop.number);
     if (stop.kind === "issue" && detail instanceof IssueViewState && detail.number === stop.number) {

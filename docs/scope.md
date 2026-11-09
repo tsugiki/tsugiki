@@ -324,7 +324,8 @@ The order in which v1 is built is in [build-order.md](build-order.md).
   clone with a remote for that repository, and doesn't search the disk for one. The path is kept in
   `machine.toml`, so a new clone after a broken one borrows again. A Repository added before Tsugiki asked
   waits for its clone until the user answers in the status bar, once on each machine. A clone that fails is
-  deleted and tried again, and one cut off by quitting starts again at the next launch.
+  deleted and tried again, and one cut off by quitting starts again at the next launch. A clone git finished
+  is kept, though quitting came as it ended or another program held a file as Tsugiki moved it into place.
 - Tsugiki keeps each mirror in shape itself, and never changes the user's git config. Each day it deletes the
   refs of PRs the Workbench no longer reaches, apart from those opened since launch, and runs git's
   incremental maintenance; each week it runs `git gc`. A mirror git says is broken is moved aside and cloned

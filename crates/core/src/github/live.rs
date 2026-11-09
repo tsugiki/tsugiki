@@ -207,7 +207,7 @@ pub(crate) fn start_git(args: &[&OsStr], input: &[u8]) -> io::Result<(StartedGit
     match git.0.stderr().take() {
         Some(progress) => Ok((git, progress)),
         None => {
-            git.stop();
+            let _succeeded = git.stop();
             Err(io::Error::other("git's error output wasn't piped"))
         }
     }
@@ -222,10 +222,10 @@ impl StartedGit {
         self.0.wait().is_ok_and(|status| status.success())
     }
 
-    /// Ends git and its helpers, so none goes on downloading after Tsugiki quits, and waits for git. A helper
-    /// can take a moment longer to end, and git's error output closes once the last one has. A failure
-    /// leaves a trace.
-    pub(crate) fn stop(&mut self) {
+    /// Ends git and its helpers, so none goes on downloading after Tsugiki quits, and waits for git. Says if
+    /// git had ended before the kill, having done what it was asked. A helper can take a moment longer to
+    /// end, and git's error output closes once the last one has. A failure leaves a trace.
+    pub(crate) fn stop(&mut self) -> bool {
         if let Err(cause) = self.0.start_kill() {
             log::warn!("Tsugiki can't stop git's helpers: {cause}");
             // git at least, so the wait doesn't last until git ends on its own.
@@ -233,8 +233,12 @@ impl StartedGit {
                 log::warn!("Tsugiki can't stop git: {cause}");
             }
         }
-        if let Err(cause) = self.0.wait() {
-            log::warn!("Tsugiki can't wait for git: {cause}");
+        match self.0.wait() {
+            Ok(status) => status.success(),
+            Err(cause) => {
+                log::warn!("Tsugiki can't wait for git: {cause}");
+                false
+            }
         }
     }
 }

@@ -86,7 +86,7 @@ fn stopping_git_ends_what_it_started_though_it_left_gits_tree() {
     let mut output = io::BufReader::new(output);
     let mut line = String::new();
     let _ = io::BufRead::read_line(&mut output, &mut line).unwrap();
-    git.stop();
+    let _succeeded = git.stop();
     let (closing, closed) = std::sync::mpsc::channel();
     let _reading = thread::spawn(move || {
         let mut rest = Vec::new();

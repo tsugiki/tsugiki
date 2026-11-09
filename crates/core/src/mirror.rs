@@ -104,6 +104,10 @@ fn https() -> Box<dyn Transport> {
 /// Where git clones to, in the Repository's folder, so a clone cut off never looks like a mirror.
 const PARTIAL: &str = "mirror.git.partial";
 
+/// A file in `PARTIAL` that says git finished that clone, so the clone is kept until it can be moved to the
+/// mirror's place (#194). Without it, the next clone deletes `PARTIAL` as cut off.
+const CLONED: &str = "tsugiki-cloned";
+
 /// Says the clone under way each time it moves on, and `None` when it ends.
 pub type AnnounceCloning = Box<dyn FnMut(Option<&Cloning>) + Send>;
 
@@ -447,7 +451,7 @@ impl Mirrors {
     }
 
     /// Stops a clone under way, with the helpers git started, and gives the worker up to `patience` to end.
-    /// The next launch starts that clone again from an empty folder.
+    /// The next launch starts that clone again from an empty folder, unless git had finished it.
     pub fn stop(&self, patience: Duration) {
         self.begin_stopping();
         self.wait_for_end(patience);
@@ -513,8 +517,9 @@ struct Started {
 trait Run: Send {
     /// Waits for git to end, and says if it did what it was asked.
     fn succeeded(&mut self) -> bool;
-    /// Ends git and the helpers it started.
-    fn stop(&mut self);
+    /// Ends git and the helpers it started, and says if git had ended before the stop, having done what it
+    /// was asked.
+    fn stop(&mut self) -> bool;
 }
 
 struct LiveGit;
@@ -538,8 +543,8 @@ impl Run for live::StartedGit {
         Self::succeeded(self)
     }
 
-    fn stop(&mut self) {
-        Self::stop(self);
+    fn stop(&mut self) -> bool {
+        Self::stop(self)
     }
 }
 
@@ -766,12 +771,21 @@ impl Worker {
             }
         }
         match self.job.take() {
-            Some(
-                Job::Clone(Clone { mut git, .. })
-                | Job::Fetch(Fetch { mut git, .. })
-                | Job::Upkeep(Upkeep { mut git, .. }),
-            ) => {
-                git.stop();
+            // The stop can come as git ends having cloned it all, and the next launch moves that clone.
+            Some(Job::Clone(Clone {
+                mut git,
+                cloning,
+                partial,
+                ..
+            })) => {
+                // The mark goes before the wait for helpers, which can outlast the time quitting gives.
+                if git.stop() {
+                    mark_cloned(&cloning.repository, &partial);
+                }
+                wait_for_helpers(incoming);
+            }
+            Some(Job::Fetch(Fetch { mut git, .. }) | Job::Upkeep(Upkeep { mut git, .. })) => {
+                let _succeeded = git.stop();
                 wait_for_helpers(incoming);
             }
             None => {}
@@ -959,7 +973,13 @@ impl Worker {
             }
         };
         let folder = folders.repository(&repository);
-        if folders.mirror(&repository).exists() {
+        let mirror = folders.mirror(&repository);
+        if mirror.exists() {
+            return ControlFlow::Continue(());
+        }
+        let partial = folder.join(PARTIAL);
+        if partial.join(CLONED).exists() {
+            self.settle(repository, &partial, &mirror);
             return ControlFlow::Continue(());
         }
         let Some(source) = self.sources.get(&repository).cloned() else {
@@ -968,7 +988,6 @@ impl Worker {
             return ControlFlow::Continue(());
         };
         // What a clone cut off by quitting left goes first, or the disk would count it as taken.
-        let partial = folder.join(PARTIAL);
         if partial.exists()
             && let Err(cause) = fs::remove_dir_all(&partial)
         {
@@ -979,7 +998,7 @@ impl Worker {
             return ControlFlow::Continue(());
         }
         let root = folders.data.clone();
-        match self.room_for(&repository, &root, &folders.mirror(&repository)) {
+        match self.room_for(&repository, &root, &mirror) {
             Ok(None) => self.set_problem(None),
             Ok(Some(short)) => {
                 self.waiting.push_front(repository);
@@ -1414,26 +1433,50 @@ impl Worker {
     /// later. git's last words say why it failed.
     fn finish(&mut self, mut clone: Clone, last_words: &str) {
         let repository = clone.cloning.repository.clone();
-        let ended = if clone.git.succeeded() {
-            fs::rename(&clone.partial, &clone.mirror)
+        if clone.git.succeeded() {
+            self.settle(repository, &clone.partial, &clone.mirror);
         } else {
-            Err(io::Error::other(last_words.to_owned()))
-        };
-        match ended {
+            log::warn!("Tsugiki couldn't clone {repository}'s mirror: {last_words}");
+            // What is left goes before the next clone of this Repository, which says if it can't.
+            drop(fs::remove_dir_all(&clone.partial));
+            self.fail_clone(repository);
+        }
+        (self.announce.cloning)(None);
+    }
+
+    /// Moves the clone git finished in `partial` to `mirror`. If Windows refuses, as another program has a
+    /// file in it open, the clone stays marked as finished, and its retry moves it.
+    fn settle(&mut self, repository: RepositoryName, partial: &Path, mirror: &Path) {
+        match fs::rename(partial, mirror) {
             Ok(()) => {
                 log::info!("Tsugiki cloned {repository}'s mirror");
+                // Only a clone that couldn't be moved at once has the mark. git doesn't read it, so one left
+                // behind does no harm.
+                if let Err(cause) = fs::remove_file(mirror.join(CLONED))
+                    && cause.kind() != io::ErrorKind::NotFound
+                {
+                    log::warn!("Tsugiki can't delete the mark in {repository}'s mirror: {cause}");
+                }
                 self.clone_tries
                     .retain(|(one, _)| !one.is_same(&repository));
-                self.cloned_afresh(&repository, &clone.mirror);
+                self.cloned_afresh(&repository, mirror);
             }
-            Err(why) => {
-                log::warn!("Tsugiki couldn't clone {repository}'s mirror: {why}");
-                // What is left goes before the next clone of this Repository, which says if it can't.
-                drop(fs::remove_dir_all(&clone.partial));
+            Err(cause) => {
+                log::warn!(
+                    "Tsugiki can't move {repository}'s finished clone to its mirror: {cause}"
+                );
+                mark_cloned(&repository, partial);
                 self.fail_clone(repository);
             }
         }
-        (self.announce.cloning)(None);
+    }
+}
+
+/// Marks the clone of `repository` in `partial` as one git finished, so it is kept. Without the mark, the
+/// next clone deletes it and starts again.
+fn mark_cloned(repository: &RepositoryName, partial: &Path) {
+    if let Err(cause) = fs::write(partial.join(CLONED), "") {
+        log::warn!("Tsugiki can't mark {repository}'s clone as finished: {cause}");
     }
 }
 

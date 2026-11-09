@@ -434,3 +434,31 @@ describe("StatusBar's sync under way", () => {
     );
   });
 });
+
+describe("StatusBar's chord", () => {
+  const online = { state: "online", login: "octocat" } as const;
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("shows the first key on the right while Tsugiki waits for the second", () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    render(StatusBar, { status: online, chord: "ctrl+k" });
+    const chord = screen.getByText("Ctrl+K");
+    expect(bar().contains(chord)).toBe(false);
+    expect(chord.parentElement).toBe(bar().parentElement);
+  });
+
+  it("names Cmd on macOS", () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    render(StatusBar, { status: online, chord: "ctrl+k" });
+    expect(screen.getByText("Cmd+K")).toBeTruthy();
+  });
+
+  it("goes with the bar", () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    render(StatusBar, { status: online, chord: "ctrl+k", visible: false });
+    expect(screen.queryByText("Ctrl+K")).toBeNull();
+  });
+});

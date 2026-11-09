@@ -125,6 +125,29 @@ test("the arrows move through the list and Enter opens the selection", async ({ 
   await expect(page.getByRole("region", { name: "Issue view" })).toContainText("It crashes");
 });
 
+test("Ctrl+K waits for a chord's second key, and an unbound key or a click ends the wait", async ({
+  page,
+}) => {
+  await mockCore(page, answers("<p>It crashes</p>"));
+  await page.goto("/");
+  const row = page.getByRole("button", { name: "#7 Issue 7" });
+  const chord = page.getByText(/^(Ctrl|Cmd)\+K$/);
+  await expect(row).toBeVisible();
+
+  await page.keyboard.press("ControlOrMeta+K");
+  await expect(chord).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  await expect(chord).toHaveCount(0);
+  await expect(row).not.toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(row).toBeFocused();
+
+  await page.keyboard.press("ControlOrMeta+K");
+  await expect(chord).toBeVisible();
+  await page.getByRole("button", { name: "#8 Issue 8" }).click();
+  await expect(chord).toHaveCount(0);
+});
+
 test("an Issue opened far down a long list shows beside it", async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 400 });
   const numbers = Array.from({ length: 40 }, (_, at) => 100 + at);

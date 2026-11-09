@@ -6,6 +6,7 @@
   import { StatusState } from "$lib/state/status.svelte";
   import AboutLine from "$lib/ui/AboutLine.svelte";
   import AddRepository from "$lib/ui/AddRepository.svelte";
+  import { ChordWait } from "$lib/ui/chord.svelte";
   import { currentOs, keyGuard, keysForBrowser } from "$lib/ui/keys";
   import Onboarding from "$lib/ui/Onboarding.svelte";
   import Palette, { type PaletteCommand } from "$lib/ui/Palette.svelte";
@@ -29,6 +30,10 @@
     addOpen = true;
   };
   let paletteOpen = $state(false);
+  /** Whether the list's keys and the chords work: a dialog or the palette on top keeps them. */
+  const keysActive = $derived(!addOpen && !paletteOpen);
+  const os = currentOs();
+  const chord = new ChordWait(os);
   const guard = keyGuard(
     {
       "ctrl+shift+p": () => {
@@ -39,9 +44,18 @@
         hud.toggle();
       },
     },
-    currentOs(),
+    os,
     keysForBrowser(import.meta.env.DEV),
   );
+  /** Reads each key before anything else, so the key that ends a chord's wait goes nowhere else. Chords
+   * start where the list's keys work: on a Repository's screen, with no dialog or palette on top. No chord
+   * has an action yet. */
+  const readKey = (e: KeyboardEvent) => {
+    if (!chord.read(e, home.current?.screen === "repository" && keysActive, {})) guard(e);
+  };
+  const endChord = () => {
+    chord.end();
+  };
   // A run that opens on Onboarding has no Workbench to time until the user adds a Repository.
   $effect(() => {
     if (home.current?.screen === "onboarding" || home.error) hud.skipStartup();
@@ -59,7 +73,7 @@
   ]);
 </script>
 
-<svelte:window onkeydowncapture={guard} />
+<svelte:window onkeydowncapture={readKey} onpointerdowncapture={endChord} onblur={endChord} />
 
 <main>
   <AboutLine about={about.about} error={about.error} />
@@ -70,7 +84,7 @@
       bind:this={repositoryHome}
       name={home.current.repository.name}
       onadd={openAdd}
-      keysActive={!addOpen && !paletteOpen}
+      {keysActive}
     />
   {:else if home.error}
     <!-- One expression: Svelte compiles `{a} {b}` with `?? ""` branches that no test can reach. -->
@@ -87,6 +101,7 @@
   cloning={status.cloning}
   mirrorProblem={status.mirrorProblem}
   mirrorQuestion={status.mirrorQuestion}
+  chord={chord.first}
   onrefresh={() => void status.refresh()}
   oncheckagain={() => void status.checkMirrorsAgain()}
 />

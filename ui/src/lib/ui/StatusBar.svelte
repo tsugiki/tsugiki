@@ -3,6 +3,7 @@
   import { chooseMirrorSource, pickClone, type MirrorSource } from "$lib/state/mirror-source";
   import type { Cloning, LastSync, MirrorProblem, Status, SyncActivity } from "$lib/state/status.svelte";
   import { pickedWords } from "./clone-words";
+  import { type ChordStart, currentOs, keyLabel } from "./keys";
   import {
     cloningWords,
     elsewhereWords,
@@ -26,6 +27,7 @@
     cloning = null,
     mirrorProblem = null,
     mirrorQuestion = null,
+    chord = null,
     onrefresh = () => {},
     oncheckagain = () => {},
   }: {
@@ -38,6 +40,8 @@
     cloning?: Cloning | null;
     mirrorProblem?: MirrorProblem | null;
     mirrorQuestion?: string | null;
+    /** The first key of the chord whose second key Tsugiki waits for. */
+    chord?: ChordStart | null;
     onrefresh?: () => void;
     oncheckagain?: () => void;
   } = $props();
@@ -148,6 +152,9 @@
   {#if lastSync !== null && showStatus}
     <button class:offline onclick={onrefresh}>{syncWords}</button>
   {/if}
+  {#if chord !== null && visible}
+    <kbd class:offline>{keyLabel(chord, currentOs())}</kbd>
+  {/if}
 </div>
 
 <style>
@@ -166,7 +173,8 @@
     color: #222;
   }
 
-  button {
+  button,
+  kbd {
     flex: none;
     align-self: flex-end;
     white-space: nowrap;
@@ -175,7 +183,14 @@
     font-size: 12px;
     background: #e8e8e8;
     color: #222;
+  }
+
+  button {
     cursor: pointer;
+  }
+
+  kbd {
+    font-family: inherit;
   }
 
   .offline {

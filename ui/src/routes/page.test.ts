@@ -225,3 +225,87 @@ describe("the performance HUD", () => {
     expect(panel()).toBeNull();
   });
 });
+
+describe("a chord", () => {
+  const ctrlK = () => fireEvent.keyDown(document.body, { key: "k", code: "KeyK", ctrlKey: true });
+  const chord = () => screen.queryByText("Ctrl+K");
+
+  beforeEach(() => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    core.home.mockResolvedValue({ screen: "repository", repository: gcmon });
+  });
+
+  it("waits after Ctrl+K, with the status bar saying so, and the next key ends it doing nothing else", async () => {
+    core.workbench.mockResolvedValue({
+      status: "ok",
+      data: {
+        items: [
+          {
+            kind: "issue",
+            number: 7,
+            title: "It crashes",
+            state: "OPEN",
+            people: [],
+            updated_at: "2026-11-04T10:00:00Z",
+            pull_requests: [],
+            attention: null,
+          },
+        ],
+        quiet: [],
+        count: 0,
+        review_requests: 0,
+        filters: [],
+      },
+    });
+    render(Page);
+    const row = await screen.findByRole("button", { name: "#7 It crashes" });
+
+    await ctrlK();
+    expect(chord()).toBeTruthy();
+    await fireEvent.keyDown(document.body, { key: "ArrowDown", code: "ArrowDown" });
+
+    expect(chord()).toBeNull();
+    expect(document.activeElement).not.toBe(row);
+  });
+
+  it("ends at a click", async () => {
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await ctrlK();
+    expect(chord()).toBeTruthy();
+    await fireEvent.pointerDown(document.body);
+    expect(chord()).toBeNull();
+  });
+
+  it("ends when the window loses the focus", async () => {
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await ctrlK();
+    expect(chord()).toBeTruthy();
+    await fireEvent.blur(window);
+    expect(chord()).toBeNull();
+  });
+
+  it("doesn't start under the add dialog, even outside its text box", async () => {
+    render(Page);
+    await fireEvent.click(await screen.findByRole("button", { name: "Add repository" }));
+    await ctrlK();
+    expect(chord()).toBeNull();
+  });
+
+  it("doesn't start under the palette", async () => {
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    await ctrlK();
+    expect(chord()).toBeNull();
+  });
+
+  it("doesn't start on onboarding", async () => {
+    core.home.mockResolvedValue(onboarding);
+    render(Page);
+    await screen.findByText(/Your token comes from/);
+    await ctrlK();
+    expect(chord()).toBeNull();
+  });
+});

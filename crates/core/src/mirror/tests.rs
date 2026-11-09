@@ -525,10 +525,12 @@ impl Run for FakeRun {
         succeeded
     }
 
-    fn stop(&mut self) {
+    /// Says git succeeded if the test said so before the stop.
+    fn stop(&mut self) -> bool {
         // A test that has stopped listening doesn't hear the stop.
         let _unheard = self.stopping.send(());
         self.output.close();
+        self.outcome.try_recv().unwrap_or(false)
     }
 }
 
@@ -1599,6 +1601,101 @@ mod problems {
         mirrors.stop_cleanly(PLENTY);
 
         assert!(!left.load(Ordering::SeqCst));
+    }
+
+    /// Leaves a file in `repository`'s clone under way, as git does as it clones.
+    fn clone_a_file(place: &Place, repository: &RepositoryName) {
+        let partial = place.folders.repository(repository).join(PARTIAL);
+        fs::create_dir_all(&partial).unwrap();
+        fs::write(partial.join("packed-refs"), "what git cloned").unwrap();
+    }
+
+    #[test]
+    fn a_finished_clone_that_cant_be_moved_is_moved_on_its_retry_and_not_cloned_again() {
+        let place = Place::new("move-retry");
+        let hello = named("octo-org/hello");
+        let mirror = place.folders.mirror(&hello);
+        let remotes = place.clone_source().retrying(PLENTY * 10);
+        let (_versions, answers) = channel();
+        let (announcing, announced) = channel();
+        let (mirrors, starts) = place.start_faked_from(remotes, cloning_only(announcing), answers);
+
+        mirrors.requests().clone_mirror(hello.clone(), download());
+        let clone = starts.recv_timeout(PLENTY).unwrap();
+        clone_a_file(&place, &hello);
+        // A folder with a file in the mirror's place, which a move can't replace.
+        fs::create_dir_all(&mirror).unwrap();
+        fs::write(mirror.join("in-the-way"), "").unwrap();
+        clone.succeed();
+        let _ = one_clone(&announced);
+        fs::remove_dir_all(&mirror).unwrap();
+        mirrors.requests().clone_mirror_next(hello, download());
+        mirrors.stop_cleanly(PLENTY);
+
+        assert!(starts.try_recv().is_err(), "a second clone started");
+        let moved = fs::read_to_string(mirror.join("packed-refs")).unwrap();
+        assert_eq!(moved, "what git cloned");
+        assert!(!mirror.join(CLONED).exists());
+    }
+
+    #[test]
+    fn a_clone_that_left_no_folder_to_mark_is_cloned_again() {
+        let place = Place::new("no-folder-to-mark");
+        let remotes = place.clone_source().retrying(Duration::from_millis(10));
+        let (_versions, answers) = channel();
+        let (mirrors, starts) =
+            place.start_faked_from(remotes, Announce::cloning_only(Box::new(|_| {})), answers);
+
+        mirrors
+            .requests()
+            .clone_mirror(named("octo-org/hello"), download());
+        // git says it succeeded but cloned nothing, so there is no folder to move or mark.
+        starts.recv_timeout(PLENTY).unwrap().succeed();
+        let again = starts.recv_timeout(PLENTY).unwrap();
+        mirrors.stop_cleanly(PLENTY);
+
+        assert!(clones(&again), "{:?}", again.args);
+    }
+
+    #[test]
+    fn a_mark_that_cant_be_deleted_stays_in_the_moved_mirror() {
+        let place = Place::new("mark-stays");
+        let hello = named("octo-org/hello");
+        clone_a_file(&place, &hello);
+        // A folder where the mark goes, which deleting a file can't remove.
+        let partial = place.folders.repository(&hello).join(PARTIAL);
+        fs::create_dir_all(partial.join(CLONED)).unwrap();
+        let (mirrors, starts) = place.start_faked();
+
+        mirrors.requests().clone_mirror(hello.clone(), download());
+        mirrors.stop_cleanly(PLENTY);
+
+        assert!(starts.try_recv().is_err(), "a clone started");
+        let mirror = place.folders.mirror(&hello);
+        assert!(mirror.join("packed-refs").exists());
+        assert!(mirror.join(CLONED).exists());
+    }
+
+    #[test]
+    fn a_clone_git_finished_as_quitting_came_is_kept_for_the_next_launch() {
+        let place = Place::new("quit-as-cloned");
+        let hello = named("octo-org/hello");
+        let (mirrors, starts) = place.start_faked();
+        mirrors.requests().clone_mirror(hello.clone(), download());
+        let clone = starts.recv_timeout(PLENTY).unwrap();
+        clone_a_file(&place, &hello);
+        // git has ended, and the stop reaches the worker before git's error output closes.
+        clone.outcome.send(true).unwrap();
+        mirrors.stop_cleanly(PLENTY);
+
+        let (mirrors, starts) = place.start_faked();
+        mirrors.requests().clone_mirror(hello.clone(), download());
+        mirrors.stop_cleanly(PLENTY);
+
+        assert!(starts.try_recv().is_err(), "a second clone started");
+        let mirror = place.folders.mirror(&hello);
+        let moved = fs::read_to_string(mirror.join("packed-refs")).unwrap();
+        assert_eq!(moved, "what git cloned");
     }
 
     #[test]

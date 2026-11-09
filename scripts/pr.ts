@@ -1,7 +1,7 @@
 // The decisions behind `just ship` and `just next`, kept apart from the git and GitHub calls in ship.ts and
 // next.ts so that tests can reach them.
 
-/** What `just ship` was asked to do. */
+/** The options `just ship` was given. */
 export interface ShipArgs {
   check: boolean;
   bodyFile: string | undefined;

@@ -110,6 +110,34 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
+    /// Stores PRs a refresh fetched or probed, as `save_fetched_pull_requests` does, and in the same
+    /// transaction owes a read of the Conversation of each of `changed`. A refresh that stops after this has
+    /// saved them can't tell they changed, so the next one reads them ahead from here (#205).
+    pub fn save_changed_pull_requests(
+        &self,
+        repository: &RepositoryName,
+        (pull_requests, events): (Vec<PullRequestFacts>, Vec<ItemActivity>),
+        changed: Vec<u32>,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| {
+            let transaction = connection.transaction()?;
+            pull_requests::save_in(&transaction, &repository, &pull_requests, &events)?;
+            sync_state::owe_read_ahead(&transaction, &repository, &changed)?;
+            transaction.commit()
+        })?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// The PRs of `repository` whose Conversations a refresh owes a read. Saving a PR's Conversation clears
+    /// its debt, and saving a finished sync clears them all.
+    pub fn read_ahead_owed(&self, repository: &RepositoryName) -> Result<BTreeSet<u32>, Error> {
+        let repository = repository.clone();
+        let read =
+            self.call(move |connection| sync_state::read_ahead_owed(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
     /// Each PR Tsugiki has of `repository`, for a sync to see what it's missing.
     pub fn pull_requests(
         &self,
@@ -336,7 +364,8 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// Keeps what PR `number` says, its Reviews included, in place of what was kept before.
+    /// Keeps what PR `number` says, its Reviews included, in place of what was kept before. A refresh no
+    /// longer owes a read of it.
     pub fn save_pull_request_content(
         &self,
         repository: &RepositoryName,

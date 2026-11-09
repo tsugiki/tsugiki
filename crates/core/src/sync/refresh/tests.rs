@@ -82,8 +82,8 @@ fn holding_issue(harness: &Harness, number: u32, updated_at: &str) {
     harness.store.save_issues(&cpython(), vec![issue]).unwrap();
 }
 
-/// Saves PR `number` as a fetch would read it from `node`.
-fn holding_pr(harness: &Harness, node: &Value) {
+/// PR `number` as a fetch would read it from `node`.
+fn read_pr(node: &Value) -> Vec<PullRequestFacts> {
     let script = fetched_nodes(std::slice::from_ref(node), LOTS);
     let (script, _asked) = crate::github::testing::Scripted::new(vec![script]);
     let github = crate::github::GitHub::new(Box::new(script), crate::github::testing::token());
@@ -91,10 +91,33 @@ fn holding_pr(harness: &Harness, node: &Value) {
     let batch = github
         .fetch_pull_requests(PrFetch::Work, &[id], 25)
         .unwrap();
+    batch.pull_requests
+}
+
+/// Saves the PR a fetch would read from `node`.
+fn holding_pr(harness: &Harness, node: &Value) {
     harness
         .store
-        .save_pull_requests(&cpython(), batch.pull_requests)
+        .save_pull_requests(&cpython(), read_pr(node))
         .unwrap();
+}
+
+/// Saves the PR a fetch would read from `node` as a refresh that found it changed saves it, then stops
+/// before it reads the PR's Conversation.
+fn saved_by_a_stopped_refresh(harness: &Harness, node: &Value) {
+    let pull_requests = read_pr(node);
+    let changed = pull_requests.iter().map(|pr| pr.number).collect();
+    harness
+        .store
+        .save_changed_pull_requests(&cpython(), (pull_requests, vec![]), changed)
+        .unwrap();
+    let state = SyncState {
+        started_at: at(LAST_SYNC),
+        finished_at: at(LAST_SYNC),
+        check: ChangeCheck::Skipped,
+        refresh_under_way: true,
+    };
+    harness.store.save_sync_state(&cpython(), state).unwrap();
 }
 
 fn own_open_pr(number: u32, changes: &Value) -> Value {
@@ -1142,15 +1165,8 @@ fn a_refresh_that_stopped_follows_the_users_pr_it_had_saved() {
         approved(),
     ];
     let harness = after_a_sync("stopped-pr", replies);
-    holding_pr(&harness, &mine);
-    holding_pr(&harness, &theirs);
-    let state = SyncState {
-        started_at: at(LAST_SYNC),
-        finished_at: at(LAST_SYNC),
-        check: ChangeCheck::Skipped,
-        refresh_under_way: true,
-    };
-    harness.store.save_sync_state(&cpython(), state).unwrap();
+    saved_by_a_stopped_refresh(&harness, &mine);
+    saved_by_a_stopped_refresh(&harness, &theirs);
     let mut syncs = refreshing(filtering(&[]));
 
     drop(run(&mut syncs, &harness));
@@ -1165,9 +1181,145 @@ fn a_refresh_that_stopped_follows_the_users_pr_it_had_saved() {
             "FetchPullRequestContent",
         ]
     );
-    // The refresh that stopped may have saved PR 1 before it read its Conversation.
     assert_eq!(reviews_held(&harness, 1), Some(vec![ReviewState::Approved]));
-    assert_eq!(reviews_held(&harness, 2), None);
+    assert_eq!(
+        reviews_held(&harness, 2),
+        None,
+        "the user's work doesn't reach a stranger's PR"
+    );
+    assert_eq!(
+        harness.store.read_ahead_owed(&cpython()).unwrap(),
+        BTreeSet::new()
+    );
+    harness.finish();
+}
+
+/// GitHub's answer to a probe of PR `number`, which `some-reviewer` approved without moving `updatedAt`.
+fn probed_approved(number: u32) -> Result<Reply, Unreachable> {
+    let fields = json!({ format!("p{number}"): {
+        "number": number,
+        "reviewRequests": { "nodes": [] },
+        "timelineItems": { "nodes": [] },
+        "latestReviews": { "nodes": [
+            { "author": { "login": "some-reviewer" }, "state": "APPROVED" },
+        ] },
+        "lastCommit": { "nodes": [] },
+    } });
+    reply_ok(&format!(r#"{{"data":{{"repository":{fields},{LOTS}}}}}"#))
+}
+
+#[test]
+fn a_refresh_that_stopped_after_the_probe_reads_ahead_what_the_probe_found() {
+    let replies = vec![
+        quiet_poll(),
+        probed_approved(1),
+        quiet_poll(),
+        probed_approved(1),
+        approved(),
+    ];
+    let harness = after_a_sync("stopped-after-probe", replies);
+    holding_pr(
+        &harness,
+        &own_open_pr(1, &json!({ "updatedAt": LONG_BEFORE })),
+    );
+    let mut stopped = refreshing(filtering(&[]));
+    let mut asked = Vec::new();
+    while !asked
+        .iter()
+        .any(|operation| operation == "ProbePullRequests")
+    {
+        drop(stopped.step(&harness.github, &harness.store).unwrap());
+        asked.extend(harness.operations());
+    }
+    drop(stopped);
+
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+
+    assert_eq!(
+        harness.operations(),
+        [
+            "RefreshRepository",
+            "ProbePullRequests",
+            "FetchPullRequestContent"
+        ],
+        "the second probe finds PR 1 as the first one saved it"
+    );
+    assert_eq!(reviews_held(&harness, 1), Some(vec![ReviewState::Approved]));
+    harness.finish();
+}
+
+#[test]
+fn a_tree_the_user_opened_leaves_what_a_stopped_refresh_owes_to_the_refresh() {
+    let replies = vec![
+        cross_references(&[], None, LOTS),
+        quiet_poll(),
+        probed(&[]),
+        approved(),
+    ];
+    let harness = after_a_sync("tree-leaves-read-ahead", replies);
+    saved_by_a_stopped_refresh(&harness, &own_open_pr(1, &json!({})));
+    let mut syncs = refreshing(filtering(&[]));
+    syncs.open_issue(&cpython(), 7);
+
+    drop(run(&mut syncs, &harness));
+
+    assert_eq!(
+        harness.operations(),
+        [
+            "FetchCrossReferences",
+            "RefreshRepository",
+            "ProbePullRequests",
+            "FetchPullRequestContent"
+        ]
+    );
+    assert_eq!(reviews_held(&harness, 1), Some(vec![ReviewState::Approved]));
+    harness.finish();
+}
+
+#[test]
+fn a_refresh_that_stopped_reading_ahead_leaves_the_next_only_what_it_hadnt_read() {
+    let replies = vec![
+        polled(
+            &list(&[], None),
+            &list(&[changed_pr(1, AFTER_IT), changed_pr(2, AFTER_IT)], None),
+            &[],
+        ),
+        fetched_nodes(
+            &[
+                own_open_pr(1, &json!({ "title": "A change", "updatedAt": AFTER_IT })),
+                own_open_pr(2, &json!({ "title": "Another", "updatedAt": AFTER_IT })),
+            ],
+            LOTS,
+        ),
+        approved(),
+        quiet_poll(),
+        probed(&[]),
+        approved(),
+    ];
+    let harness = after_a_sync("stopped-reading-ahead", replies);
+    let mut stopped = refreshing(filtering(&[]));
+    let mut asked = Vec::new();
+    while !asked
+        .iter()
+        .any(|operation| operation == "FetchPullRequestContent")
+    {
+        drop(stopped.step(&harness.github, &harness.store).unwrap());
+        asked.extend(harness.operations());
+    }
+    drop(stopped);
+
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+
+    assert_eq!(
+        harness.operations(),
+        [
+            "RefreshRepository",
+            "ProbePullRequests",
+            "FetchPullRequestContent"
+        ],
+        "PR 1's Conversation was read before the refresh stopped"
+    );
+    assert_eq!(reviews_held(&harness, 2), Some(vec![ReviewState::Approved]));
     harness.finish();
 }
 

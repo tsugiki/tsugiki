@@ -7,7 +7,7 @@ use rusqlite::{Row, Transaction, named_params};
 
 use super::Connection;
 use super::columns::UnixTime;
-use super::issue_content;
+use super::{issue_content, sync_state};
 use crate::github::CommitSha;
 use crate::github::issue_content::IssueComment;
 use crate::github::pull_request_content::{
@@ -152,6 +152,8 @@ pub(super) fn save(
         let pending = (number, position);
         save_threads(&transaction, repository, pending, &content.pending)?;
     }
+    // A refresh that owed this read, and stops before it finishes, leaves the next one less to read.
+    sync_state::forget_read_ahead_of(&transaction, repository, number)?;
     transaction.commit()
 }
 

@@ -229,10 +229,7 @@ impl Syncs {
             open: open.map(|(sync, part)| OpenSync {
                 repository: sync.settings.name.clone(),
                 part,
-                pages: sync
-                    .first_sync
-                    .as_ref()
-                    .map_or(0, |first_sync| first_sync.pages),
+                pages: sync.first_sync().map_or(0, |first_sync| first_sync.pages),
                 load: sync.load_progress(),
             }),
             paused_until,

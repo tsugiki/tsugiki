@@ -100,11 +100,13 @@
    * Shows the Issue or PR on line `stop` in the Detail pane. The PR already on show switches tabs instead,
    * and the Issue already on show reads GitHub again. Each counts as a visit, unless Alt+← or Alt+→ went
    * `"through"` the visits to it. Going `"back"` to the Issue the PR on show came from, or through the
-   * visits to it, shows its view as it was and counts as no new opening.
+   * visits to it, shows its view as it was and counts as no new opening. Both move the focus with the
+   * cursor, so the row the user left doesn't look selected too, and Enter doesn't open it again.
    */
   function open(stop: Stop, how: "open" | "back" | "through" = "open") {
     if (how !== "through") visits.visit(stop);
     workbench.cursor = stop;
+    if (how !== "open") focusCursor();
     if (stop.kind === "pull_request" && detail instanceof PrViewState && sameStop(detail.line, stop)) {
       detail.switchTab();
       return;
@@ -151,11 +153,9 @@
     detail = next;
   }
 
-  /** Leaves the PR view for the Issue the user opened it from, and moves the focus with the cursor to the
-   * Issue's row, so the PR's row doesn't look selected too, and Enter doesn't open the PR again. */
+  /** Leaves the PR view for the Issue the user opened it from, with the focus on the Issue's row. */
   function back(issue: number) {
     open({ number: issue, kind: "issue", issue: undefined }, "back");
-    focusCursor();
   }
 
   /** The Issue or PR in the Detail pane, or else the line under the cursor. */

@@ -900,6 +900,22 @@ it("goes back and forward through the Issues and PRs it opened with Alt+← and 
   expect(screen.getByRole("region", { name: "PR view" })).toBeTruthy();
 });
 
+it("moves the focus with the cursor on Alt+← and Alt+→", async () => {
+  const { issueRow, treeRow } = await listing();
+  await fireEvent.click(issueRow);
+  await fireEvent.click(treeRow);
+  await screen.findByRole("region", { name: "PR view" });
+  treeRow.focus();
+
+  await fireEvent.keyDown(treeRow, { key: "ArrowLeft", altKey: true });
+  expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
+  expect(document.activeElement).toBe(issueRow);
+  await fireEvent.keyDown(issueRow, { key: "ArrowRight", altKey: true });
+
+  expect(await screen.findByRole("region", { name: "PR view" })).toBeTruthy();
+  expect(document.activeElement).toBe(treeRow);
+});
+
 it("starts the way back fresh in another Repository", async () => {
   answering({ ...issue, attention: null });
   const { rerender } = render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });

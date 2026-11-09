@@ -1,27 +1,28 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { commands } from "$lib/data/bindings";
+import { commands, type PaneLayout_Serialize } from "$lib/data/bindings";
 import { PanesState } from "./panes.svelte";
 
 vi.mock("$lib/data/bindings", () => ({ commands: { paneLayout: vi.fn(), savePaneLayout: vi.fn() } }));
 
 const core = vi.mocked(commands);
-const DEFAULTS = { sidebar: null, list: null, sidebar_hidden: false };
+const DEFAULTS = { sidebar: null, list: null, sidebar_hidden: false, list_hidden: false };
 
 beforeEach(() => {
   vi.resetAllMocks();
 });
 
 it("takes the defaults until the core says how the user laid out the panes", async () => {
-  core.paneLayout.mockResolvedValue({ sidebar: 240, list: null, sidebar_hidden: true });
+  core.paneLayout.mockResolvedValue({ ...DEFAULTS, sidebar: 240, sidebar_hidden: true, list_hidden: true });
   const panes = new PanesState();
-  const before = [panes.sidebar, panes.list, panes.sidebarHidden];
+  const before = [panes.sidebar, panes.list, panes.hidden("sidebar"), panes.hidden("list")];
 
   await panes.load();
 
-  expect(before).toEqual([null, null, false]);
-  expect([panes.sidebar, panes.list, panes.sidebarHidden, panes.problem]).toEqual([
+  expect(before).toEqual([null, null, false, false]);
+  expect([panes.sidebar, panes.list, panes.hidden("sidebar"), panes.hidden("list"), panes.problem]).toEqual([
     240,
     null,
+    true,
     true,
     undefined,
   ]);
@@ -29,11 +30,11 @@ it("takes the defaults until the core says how the user laid out the panes", asy
 
 it("keeps widths written by hand within each pane's limits", async () => {
   const panes = new PanesState();
-  core.paneLayout.mockResolvedValueOnce({ sidebar: 100_000, list: 3, sidebar_hidden: false });
+  core.paneLayout.mockResolvedValueOnce({ ...DEFAULTS, sidebar: 100_000, list: 3 });
   await panes.load();
   const wide = [panes.sidebar, panes.list];
   const again = new PanesState();
-  core.paneLayout.mockResolvedValueOnce({ sidebar: 3, list: null, sidebar_hidden: false });
+  core.paneLayout.mockResolvedValueOnce({ ...DEFAULTS, sidebar: 3 });
 
   await again.load();
 
@@ -44,20 +45,26 @@ it("keeps widths written by hand within each pane's limits", async () => {
 });
 
 it("keeps what the user changed before the core answered", async () => {
-  core.paneLayout.mockResolvedValue({ sidebar: 240, list: 500, sidebar_hidden: false });
+  core.paneLayout.mockResolvedValue({ ...DEFAULTS, sidebar: 240, list: 500, list_hidden: true });
   core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
   const panes = new PanesState();
   const loading = panes.load();
   panes.sidebar = 300;
-  void panes.toggleSidebar();
+  void panes.toggle("sidebar");
+  void panes.show("list");
 
   await loading;
 
-  expect([panes.sidebar, panes.list, panes.sidebarHidden]).toEqual([300, 500, true]);
+  expect([panes.sidebar, panes.list, panes.hidden("sidebar"), panes.hidden("list")]).toEqual([
+    300,
+    500,
+    true,
+    false,
+  ]);
 });
 
 it("saves what the user changed before the core answered only once it has, with what the file holds", async () => {
-  let answer: (layout: { sidebar: number; list: number; sidebar_hidden: boolean }) => void = () => {};
+  let answer: (layout: PaneLayout_Serialize) => void = () => {};
   core.paneLayout.mockReturnValue(
     new Promise((resolve) => {
       answer = resolve;
@@ -66,15 +73,17 @@ it("saves what the user changed before the core answered only once it has, with 
   core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
   const panes = new PanesState();
   const loading = panes.load();
-  const hiding = panes.toggleSidebar();
+  const hiding = panes.toggle("sidebar");
   await Promise.resolve();
   const meanwhile = core.savePaneLayout.mock.calls.length;
 
-  answer({ sidebar: 240, list: 500, sidebar_hidden: false });
+  answer({ ...DEFAULTS, sidebar: 240, list: 500 });
   await Promise.all([loading, hiding]);
 
   expect(meanwhile).toBe(0);
-  expect(core.savePaneLayout.mock.calls).toEqual([[{ sidebar: 240, list: 500, sidebar_hidden: true }]]);
+  expect(core.savePaneLayout.mock.calls).toEqual([
+    [{ ...DEFAULTS, sidebar: 240, list: 500, sidebar_hidden: true }],
+  ]);
 });
 
 it("saves again after a save that threw before it could answer", async () => {
@@ -87,26 +96,46 @@ it("saves again after a save that threw before it could answer", async () => {
 
   await panes.save();
   const thrown = panes.problem;
-  await panes.toggleSidebar();
+  await panes.toggle("sidebar");
 
   expect(thrown).toBe("Tsugiki can't save the panes' layout: Error: no IPC");
   expect([core.savePaneLayout.mock.calls.length, panes.problem]).toEqual([2, undefined]);
 });
 
-it("hides the Sidebar and shows it again, saving each time with its width", async () => {
+it("hides each pane and shows it again, saving each time with its width", async () => {
   core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
   const panes = new PanesState();
   panes.sidebar = 240;
+  panes.list = 500;
 
-  await panes.toggleSidebar();
-  const hidden = panes.sidebarHidden;
-  await panes.toggleSidebar();
+  await panes.toggle("sidebar");
+  await panes.toggle("list");
+  const hidden = [panes.hidden("sidebar"), panes.hidden("list")];
+  await panes.toggle("sidebar");
+  await panes.toggle("list");
 
-  expect([hidden, panes.sidebarHidden, panes.sidebar]).toEqual([true, false, 240]);
+  expect([hidden, panes.hidden("sidebar"), panes.hidden("list")]).toEqual([[true, true], false, false]);
+  const widths = { sidebar: 240, list: 500 };
   expect(core.savePaneLayout.mock.calls).toEqual([
-    [{ sidebar: 240, list: null, sidebar_hidden: true }],
-    [{ sidebar: 240, list: null, sidebar_hidden: false }],
+    [{ ...widths, sidebar_hidden: true, list_hidden: false }],
+    [{ ...widths, sidebar_hidden: true, list_hidden: true }],
+    [{ ...widths, sidebar_hidden: false, list_hidden: true }],
+    [{ ...widths, sidebar_hidden: false, list_hidden: false }],
   ]);
+});
+
+it("shows a hidden pane and saves that, and leaves a pane on show as it is", async () => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULTS, list_hidden: true });
+  core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
+  const panes = new PanesState();
+  await panes.load();
+
+  await panes.show("list");
+  await panes.show("list");
+  await panes.show("sidebar");
+
+  expect(panes.hidden("list")).toBe(false);
+  expect(core.savePaneLayout.mock.calls).toEqual([[DEFAULTS]]);
 });
 
 it("keeps the defaults and says why when it can't ask, after a save that works too", async () => {
@@ -117,7 +146,12 @@ it("keeps the defaults and says why when it can't ask, after a save that works t
   await panes.load();
   await panes.save();
 
-  expect([panes.sidebar, panes.list, panes.sidebarHidden]).toEqual([null, null, false]);
+  expect([panes.sidebar, panes.list, panes.hidden("sidebar"), panes.hidden("list")]).toEqual([
+    null,
+    null,
+    false,
+    false,
+  ]);
   expect(panes.problem).toBe("Tsugiki can't read the panes' layout: Error: the core has gone");
 });
 

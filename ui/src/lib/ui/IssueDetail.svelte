@@ -11,7 +11,16 @@
     issue,
     now,
     onopenpr,
-  }: { repository: string; issue: IssueViewState; now: Date; onopenpr: (number: number) => void } = $props();
+    focusable = false,
+  }: {
+    repository: string;
+    issue: IssueViewState;
+    now: Date;
+    onopenpr: (number: number) => void;
+    /** Whether the pane takes the focus, as it does while the Issue list is hidden. Otherwise a click in it
+     * leaves the focus where it was, so Enter still opens the row under the cursor. */
+    focusable?: boolean;
+  } = $props();
 
   let browserProblem = $state<string>();
 
@@ -30,6 +39,8 @@
 <section
   class="detail"
   aria-label="Issue view"
+  tabindex={focusable ? -1 : undefined}
+  data-pane="detail"
   {@attach (pane) => {
     pane.scrollTop = issue.scrollTop;
   }}

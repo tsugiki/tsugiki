@@ -220,13 +220,15 @@
   </span>{@render whole(hidden.file)}
 {/snippet}
 
-<!-- A region that scrolls takes focus, so the keys scroll it (axe's scrollable-region-focusable). -->
+<!-- A region that scrolls takes focus, so the keys scroll it (axe's scrollable-region-focusable). The Detail
+     pane's ↑ and ↓ scroll it too while the Issue list is hidden, which `data-scrolls` marks it for. -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
   class="scroller"
   role="region"
   aria-label={sideBySide ? "Side-by-side diff" : "Diff"}
   tabindex="0"
+  data-scrolls
   bind:this={scroller}
   {@attach (region) => {
     // The search hands the diff its focus back as it closes, so the keys scroll the diff again.

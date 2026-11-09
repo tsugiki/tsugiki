@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { currentOs, keyGuard, keyName, keysForBrowser } from "./keys";
+import { currentOs, keyGuard, keyLabel, keyName, keysForBrowser } from "./keys";
 
 function press(init: KeyboardEventInit): KeyboardEvent {
   return new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
@@ -77,6 +77,13 @@ describe("keyName", () => {
     expect(keyName(press({ key: "p", code: "KeyP", metaKey: true }), "mac")).toBe("ctrl+p");
   });
 
+  it("names a key by where it is when macOS's Option changes what it types", () => {
+    const optionB = { key: "∫", code: "KeyB", metaKey: true, altKey: true };
+    expect([keyName(press(optionB), "mac"), keyName(press({ ...optionB, metaKey: false }), "other")]).toEqual(
+      ["ctrl+alt+b", "alt+∫"],
+    );
+  });
+
   it("leaves macOS's own Ctrl keys alone, which move the caret in a text box", () => {
     expect(keyName(press({ key: "p", code: "KeyP", ctrlKey: true }), "mac")).toBeNull();
   });
@@ -89,6 +96,16 @@ describe("keyName", () => {
     const altGr = press({ key: "€", code: "KeyU", ctrlKey: true, altKey: true });
     vi.spyOn(altGr, "getModifierState").mockImplementation((state) => state === "AltGraph");
     expect(keyName(altGr, "other")).toBeNull();
+  });
+});
+
+describe("keyLabel", () => {
+  it("names a key as the user reads it, with Cmd and Option on macOS", () => {
+    expect([
+      keyLabel("ctrl+alt+b", "other"),
+      keyLabel("ctrl+alt+b", "mac"),
+      keyLabel("f12", "other"),
+    ]).toEqual(["Ctrl+Alt+B", "Cmd+Option+B", "F12"]);
   });
 });
 
@@ -129,6 +146,7 @@ describe("keyGuard", () => {
       { key: "f", code: "KeyF", ctrlKey: true },
       { key: "b", code: "KeyB", ctrlKey: true },
       { key: "u", code: "KeyU", ctrlKey: true, altKey: true },
+      { key: "b", code: "KeyB", ctrlKey: true, altKey: true },
       { key: "Enter", code: "Enter", ctrlKey: true },
       { key: "E", code: "KeyE", ctrlKey: true, shiftKey: true },
       { key: "k", code: "KeyK", ctrlKey: true },
@@ -187,6 +205,11 @@ describe("keyGuard", () => {
 
     it("still owns a key with a modifier", () => {
       expect(typedIn("input", { key: "p", code: "KeyP", ctrlKey: true }).defaultPrevented).toBe(true);
+    });
+
+    it("lets Ctrl+Alt+B type, as AltGr sends it too", () => {
+      const ctrlAltB = { key: "b", code: "KeyB", ctrlKey: true, altKey: true };
+      expect(typedIn("input", ctrlAltB).defaultPrevented).toBe(false);
     });
 
     it("counts editable text as a text box", () => {

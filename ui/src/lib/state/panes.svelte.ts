@@ -1,6 +1,6 @@
 // How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list (#187), and
-// whether the Sidebar shows (#234). The core keeps the layout in `machine.toml`, so it stays on this machine
-// and isn't synced.
+// whether the Sidebar (#234) and the list (#242) show. The core keeps the layout in `machine.toml`, so it
+// stays on this machine and isn't synced.
 import { commands } from "$lib/data/bindings";
 
 /** The Sidebar's width until the user drags its edge, in CSS pixels. */
@@ -20,8 +20,9 @@ export class PanesState {
    * Detail pane for the list. */
   sidebar = $state<number | null>(null);
   list = $state<number | null>(null);
-  /** Whether `Ctrl+B` hid the Sidebar, or nothing until the core or the user says. */
-  #sidebarHidden = $state<boolean | null>(null);
+  /** Whether `Ctrl+B` hid the Sidebar and `Ctrl+Alt+B` the list, each nothing until the core or the user
+   * says. */
+  #hidden = $state<Record<Pane, boolean | null>>({ sidebar: null, list: null });
   #readProblem = $state<string>();
   #saveProblem = $state<string>();
   /** The last save, or else the first read, which the next save waits for. The layout then reaches the file
@@ -39,18 +40,20 @@ export class PanesState {
 
   async #read() {
     try {
-      const { sidebar, list, sidebar_hidden } = await commands.paneLayout();
+      const { sidebar, list, sidebar_hidden, list_hidden } = await commands.paneLayout();
       this.sidebar ??= sidebar === null ? null : Math.min(SIDEBAR_MOST, Math.max(SIDEBAR_LEAST, sidebar));
       this.list ??= list === null ? null : Math.max(LIST_LEAST, list);
-      this.#sidebarHidden ??= sidebar_hidden;
+      this.#hidden.sidebar ??= sidebar_hidden;
+      this.#hidden.list ??= list_hidden;
     } catch (e) {
       this.#readProblem = `Tsugiki can't read the panes' layout: ${String(e)}`;
     }
   }
 
-  /** Whether `Ctrl+B` hid the Sidebar. It keeps its width for when it shows again. */
-  get sidebarHidden(): boolean {
-    return this.#sidebarHidden ?? false;
+  /** Whether `pane` is hidden: the Sidebar by `Ctrl+B`, the list by `Ctrl+Alt+B`. It keeps its width for
+   * when it shows again. */
+  hidden(pane: Pane): boolean {
+    return this.#hidden[pane] ?? false;
   }
 
   /** Why the layout couldn't be saved, or else read. */
@@ -58,9 +61,16 @@ export class PanesState {
     return this.#saveProblem ?? this.#readProblem;
   }
 
-  /** Hides the Sidebar, or shows it again, and saves that. */
-  toggleSidebar(): Promise<void> {
-    this.#sidebarHidden = !this.sidebarHidden;
+  /** Hides `pane`, or shows it again, and saves that. */
+  toggle(pane: Pane): Promise<void> {
+    this.#hidden[pane] = !this.hidden(pane);
+    return this.save();
+  }
+
+  /** Shows `pane` if it's hidden, or may be once the core answers, and saves that. */
+  show(pane: Pane): Promise<void> {
+    if (this.#hidden[pane] === false) return Promise.resolve();
+    this.#hidden[pane] = false;
     return this.save();
   }
 
@@ -78,7 +88,12 @@ export class PanesState {
 
   /** Never rejects, as a rejection would stop every save after it. */
   async #send() {
-    const layout = { sidebar: this.sidebar, list: this.list, sidebar_hidden: this.sidebarHidden };
+    const layout = {
+      sidebar: this.sidebar,
+      list: this.list,
+      sidebar_hidden: this.hidden("sidebar"),
+      list_hidden: this.hidden("list"),
+    };
     let problem: string | undefined;
     try {
       const answer = await commands.savePaneLayout(layout);

@@ -13,7 +13,16 @@
     pr,
     now,
     onback,
-  }: { repository: string; pr: PrViewState; now: Date; onback: (issue: number) => void } = $props();
+    focusable = false,
+  }: {
+    repository: string;
+    pr: PrViewState;
+    now: Date;
+    onback: (issue: number) => void;
+    /** Whether the pane takes the focus, as it does while the Issue list is hidden. Otherwise a click in it
+     * leaves the focus where it was, so Enter still opens the row under the cursor. */
+    focusable?: boolean;
+  } = $props();
 
   const TABS: { tab: PrTab; name: string }[] = [
     { tab: "conversation", name: "Conversation" },
@@ -40,7 +49,13 @@
   };
 </script>
 
-<section class="detail" class:files={pr.tab === "files"} aria-label="PR view">
+<section
+  class="detail"
+  class:files={pr.tab === "files"}
+  aria-label="PR view"
+  tabindex={focusable ? -1 : undefined}
+  data-pane="detail"
+>
   {#if pr.error}
     <p role="alert">{`Tsugiki can't show this PR: ${pr.error}`}</p>
   {/if}

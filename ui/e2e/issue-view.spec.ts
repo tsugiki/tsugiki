@@ -347,6 +347,30 @@ test("Ctrl+B and the palette hide the Sidebar, and the Issue list takes its room
   await expect(sidebar).toHaveCount(0);
 });
 
+test("Ctrl+Alt+B hides the Issue list, and the Detail pane takes its room and the focus", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1200, height: 600 });
+  await mockCore(page, answers("<p>It crashes</p>"));
+  await page.goto("/");
+  await page.getByRole("button", { name: "#7 Issue 7" }).click();
+  const pane = page.getByRole("region", { name: "Issue view" });
+  const row = page.locator(".list").getByRole("button", { name: "#7 Issue 7" });
+  const width = async () => (await pane.boundingBox())?.width ?? 0;
+  await expect(pane).toBeVisible();
+  const shown = await width();
+
+  await page.keyboard.press("ControlOrMeta+Alt+B");
+  await expect(row).toHaveCount(0);
+  const hidden = await width();
+  await expect(pane).toBeFocused();
+  await page.keyboard.press("ControlOrMeta+Alt+B");
+
+  expect(hidden).toBeGreaterThan(shown + 200);
+  await expect(row).toBeFocused();
+  expect(await width()).toBe(shown);
+});
+
 test("the Octicons take GitHub's colors in the light theme and the dark one", async ({ page }) => {
   await mockCore(page, answers("<p>It crashes</p>"));
   await page.goto("/");

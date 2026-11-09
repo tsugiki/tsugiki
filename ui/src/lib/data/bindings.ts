@@ -61,7 +61,7 @@ export const commands = {
 	home: () => __TAURI_INVOKE<Home_Serialize>("home"),
 	/**
 	 *  How the user laid out the panes on this machine: the Sidebar's and the Workbench list's widths (#187), and
-	 *  whether the Sidebar shows (#234).
+	 *  whether the Sidebar (#234) and the list (#242) show.
 	 */
 	paneLayout: () => __TAURI_INVOKE<PaneLayout_Serialize>("pane_layout"),
 	/**  The milliseconds since Tsugiki started running. */
@@ -1097,36 +1097,43 @@ export type Pair = {
 
 /**
  *  How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
- *  (#187), and whether the Sidebar shows (#234). All of it stays on this machine, like the window's place,
- *  and a value left out takes its default. So does a value Tsugiki can't read, such as a width that isn't a
- *  whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml` over.
+ *  (#187), and whether the Sidebar (#234) and the list (#242) show. All of it stays on this machine, like
+ *  the window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
+ *  width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml`
+ *  over.
  */
 export type PaneLayout = PaneLayout_Serialize | PaneLayout_Deserialize;
 
 /**
  *  How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
- *  (#187), and whether the Sidebar shows (#234). All of it stays on this machine, like the window's place,
- *  and a value left out takes its default. So does a value Tsugiki can't read, such as a width that isn't a
- *  whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml` over.
+ *  (#187), and whether the Sidebar (#234) and the list (#242) show. All of it stays on this machine, like
+ *  the window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
+ *  width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml`
+ *  over.
  */
 export type PaneLayout_Deserialize = {
 	sidebar?: number | null,
 	list?: number | null,
 	/**  `Ctrl+B` hid the Sidebar. It keeps its width for when it shows again. */
 	sidebar_hidden?: boolean,
+	/**  `Ctrl+Alt+B` hid the Workbench list. It keeps its width for when it shows again. */
+	list_hidden?: boolean,
 };
 
 /**
  *  How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
- *  (#187), and whether the Sidebar shows (#234). All of it stays on this machine, like the window's place,
- *  and a value left out takes its default. So does a value Tsugiki can't read, such as a width that isn't a
- *  whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml` over.
+ *  (#187), and whether the Sidebar (#234) and the list (#242) show. All of it stays on this machine, like
+ *  the window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
+ *  width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml`
+ *  over.
  */
 export type PaneLayout_Serialize = {
 	sidebar: number | null,
 	list: number | null,
 	/**  `Ctrl+B` hid the Sidebar. It keeps its width for when it shows again. */
 	sidebar_hidden: boolean,
+	/**  `Ctrl+Alt+B` hid the Workbench list. It keeps its width for when it shows again. */
+	list_hidden: boolean,
 };
 
 /**  Where Files shows a thread. A file is named by its place among the diff's files. */

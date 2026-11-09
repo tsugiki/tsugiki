@@ -14,7 +14,7 @@ use crate::github::pull_request_content::PullRequestContent;
 use crate::github::{GitHub, GitHubAccess};
 use crate::repository::RepositoryName;
 use crate::repository_settings::{RepositoryCheck, RepositorySettings};
-use crate::status::{Change, LastSync, Status, StatusBoard};
+use crate::status::{Change, FailedRead, LastSync, ReadFailure, Status, StatusBoard};
 use crate::store::{self, OpenReader, ReaderToOpen, Store, StoreReader};
 use crate::sync::{Progress, Syncs};
 use crate::token::Token;
@@ -88,6 +88,24 @@ enum Message {
 enum Fetched {
     Issue(Item),
     PullRequest(Item),
+}
+
+impl Fetched {
+    fn item(&self) -> &Item {
+        let (Self::Issue(item) | Self::PullRequest(item)) = self;
+        item
+    }
+}
+
+impl Item {
+    /// The news for the window that a read of what this item says failed, and `why`.
+    fn failed(&self, why: ReadFailure) -> FailedRead {
+        FailedRead {
+            repository: self.repository.clone(),
+            number: self.number,
+            why,
+        }
+    }
 }
 
 /// Asks the session about Repositories, from any thread. A check waits for what the session is doing first,
@@ -278,10 +296,10 @@ impl Refreshes {
             match message {
                 Message::Stop => return,
                 Message::Seen { item, at } => mark_seen(board, store, &item, at),
-                Message::Check { .. }
-                | Message::Sync { .. }
-                | Message::Refresh
-                | Message::Fetch(_) => {}
+                Message::Fetch(fetched) => {
+                    board.failed_read(&fetched.item().failed(ReadFailure::NoToken));
+                }
+                Message::Check { .. } | Message::Sync { .. } | Message::Refresh => {}
             }
         }
     }
@@ -462,16 +480,16 @@ enum Content {
 }
 
 /// Reads what an Issue or a PR says from GitHub, keeps it, and tells the window. GitHub numbers both from
-/// one sequence, so they share where they are kept. The view goes on showing what was last read if this
-/// fails. An error returned here speaks for all of GitHub, so the status bar and the syncs need to hear it.
-/// Any other trouble is this one item's, and goes to the log.
+/// one sequence, so they share where they are kept. If this fails, the view goes on showing what was last
+/// read, and the window hears why. An error returned here speaks for all of GitHub, so the status bar and
+/// the syncs need to hear it. Any other trouble is this one item's, and goes to the log.
 fn fetch_conversation(
     board: &mut StatusBoard,
     store: &Store,
     github: &GitHub,
     fetched: Fetched,
 ) -> Result<(), Error> {
-    let (Item { repository, number }, noun, read) = match fetched {
+    let (item, noun, read) = match fetched {
         Fetched::Issue(item) => {
             let read = github.issue_content(&item.repository, item.number);
             (item, "Issue", read.map(Content::Issue))
@@ -487,15 +505,27 @@ fn fetch_conversation(
     };
     let content = match read {
         Ok(content) => content,
-        Err(problem) if problem.kind.speaks_for_all_of_github() => return Err(problem),
+        Err(problem) if problem.kind.speaks_for_all_of_github() => {
+            board.failed_read(&item.failed(ReadFailure::WaitsOnGitHub));
+            return Err(problem);
+        }
         Err(problem) => {
+            let why = if matches!(problem.kind, ErrorKind::NotFound) {
+                ReadFailure::NotOnGitHub
+            } else {
+                ReadFailure::Other
+            };
+            board.failed_read(&item.failed(why));
             log::warn!(
-                "Tsugiki couldn't read {noun} #{number} in {repository}: {}",
+                "Tsugiki couldn't read {noun} #{} in {}: {}",
+                item.number,
+                item.repository,
                 problem.message
             );
             return Ok(());
         }
     };
+    let Item { repository, number } = item;
     let saved = match content {
         Content::Issue(content) => store.save_issue_content(&repository, number, content),
         Content::PullRequest(content) => {

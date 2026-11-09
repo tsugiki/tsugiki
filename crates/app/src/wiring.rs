@@ -17,8 +17,8 @@ use tsugiki_core::status::{Change, Status, StatusBoard};
 
 use crate::{
     Changed, CloningChanged, DiffWork, FailedHeads, FolderPicker, HeadsFetchFailed, HeadsFetched,
-    LastSyncChanged, MirrorProblemChanged, MirrorQuestionChanged, PickFolder, RepositoryWork,
-    StatusChanged, SyncActivityChanged,
+    LastSyncChanged, MirrorProblemChanged, MirrorQuestionChanged, PickFolder, ReadFailed,
+    RepositoryWork, StatusChanged, SyncActivityChanged,
 };
 
 /// How often the open Repository refreshes: a refresh costs a few points, and this is about 60 points an
@@ -80,6 +80,7 @@ pub(crate) fn connect_core<R: Runtime>(
     let settings = SettingsOwner::start(folders.clone().map(SettingsFiles::load));
     let status_handle = app.clone();
     let changes_handle = app.clone();
+    let failed_reads_handle = app.clone();
     let last_sync_handle = app.clone();
     let activity_handle = app.clone();
     let announce = mirror_announcements(app);
@@ -95,6 +96,10 @@ pub(crate) fn connect_core<R: Runtime>(
     }))
     .with_changes(Box::new(move |change| {
         log_if_unsent(Changed(change.clone()).emit(&changes_handle));
+    }))
+    // Only a view that is listening asks for a read, so a window that starts late has missed nothing.
+    .with_failed_reads(Box::new(move |failed| {
+        log_if_unsent(ReadFailed(failed.clone()).emit(&failed_reads_handle));
     }))
     .with_last_syncs(Box::new(move |last_sync| {
         // Before the event, for the reason the status gives above.

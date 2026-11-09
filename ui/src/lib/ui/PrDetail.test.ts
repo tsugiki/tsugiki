@@ -26,6 +26,7 @@ vi.mock("$lib/data/bindings", () => ({
   },
   events: {
     changed: { listen: core.listen },
+    readFailed: { listen: core.listen },
     headsFetched: { listen: core.listen },
     headsFetchFailed: { listen: core.listen },
     cloningChanged: { listen: core.listen },
@@ -124,6 +125,32 @@ it("says it's reading from GitHub until the first read lands", async () => {
 
   expect(screen.getByText("Reading from GitHub…")).toBeTruthy();
   expect(screen.getByText("deleted user")).toBeTruthy();
+});
+
+it.each([
+  [
+    "no_token",
+    "Tsugiki can't ask GitHub for the Conversation without a token. The status bar says how to sign in.",
+  ],
+  ["waits_on_github", "The Conversation comes once GitHub answers."],
+  ["not_on_github", "GitHub doesn't have this PR, or your token can't see it."],
+  ["other", "Tsugiki couldn't read this PR's Conversation from GitHub. tsugiki.log says why."],
+] as const)("says why the first read failed: %s", async (why, words) => {
+  const state = await shown({ ...view, content: null }, 10);
+
+  state.failedRead = why;
+
+  await vi.waitFor(() => expect(screen.getByText(words)).toBeTruthy());
+  expect(screen.queryByText("Reading from GitHub…")).toBeNull();
+});
+
+it("shows the Conversation it holds when a later read fails", async () => {
+  const state = await shown(view, 10);
+
+  state.failedRead = "waits_on_github";
+
+  await vi.waitFor(() => expect(screen.getByText("The description")).toBeTruthy());
+  expect(screen.queryByText("The Conversation comes once GitHub answers.")).toBeNull();
 });
 
 it("switches to the Files tab on a click, which waits for the PR's commits", async () => {

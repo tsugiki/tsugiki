@@ -7,10 +7,10 @@ use crate::github::{CommitSha, Reply, Request, Transport, Unreachable};
 use crate::login::Login;
 use crate::repository::{RepositoryName, RepositorySize};
 use crate::repository_settings::RepositorySettings;
-use crate::status::Change;
 use crate::status::testing::{
-    announced, changes_board, heads_board, quiet_board, showing, watched_board,
+    announced, changes_board, failed_reads_board, heads_board, quiet_board, showing, watched_board,
 };
+use crate::status::{Change, FailedRead, ReadFailure};
 use crate::store::{ChangeCheck, SyncState};
 use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
 use std::cell::RefCell;
@@ -545,6 +545,83 @@ fn losing_the_network_while_reading_an_issue_shows_on_the_status_bar() {
         last_login: Login::new("octocat"),
     };
     assert_eq!(shown.last(), Some(&offline_as));
+}
+
+/// The reads that failed while a session with `access` read PR 7 of gcmon.
+fn failed_reads_of_pr_7(name: &str, access: GitHubAccess) -> Vec<FailedRead> {
+    let folders = temp_folders(name);
+    let (board, failed) = failed_reads_board();
+    let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
+    session.requests().fetch_pull_request(gcmon(), 7);
+    session.stop(PLENTY);
+    fs::remove_dir_all(folders.data).unwrap();
+    failed.try_iter().collect()
+}
+
+fn pr_7_failed(why: ReadFailure) -> FailedRead {
+    FailedRead {
+        repository: gcmon(),
+        number: 7,
+        why,
+    }
+}
+
+#[test]
+fn a_pr_read_without_the_network_waits_on_github() {
+    let access = replying(vec![signed_in(), Err(Unreachable::Offline)]);
+
+    let failed = failed_reads_of_pr_7("offline-pr", access);
+
+    assert_eq!(failed, [pr_7_failed(ReadFailure::WaitsOnGitHub)]);
+}
+
+#[test]
+fn a_pr_read_with_no_token_says_so() {
+    let access = GitHubAccess {
+        transport: Box::new(Canned(Err(Unreachable::Offline))),
+        run_gh: without_gh,
+    };
+
+    let failed = failed_reads_of_pr_7("no-token-pr", access);
+
+    assert_eq!(failed, [pr_7_failed(ReadFailure::NoToken)]);
+}
+
+#[test]
+fn a_pr_github_doesnt_have_says_so() {
+    let gone = reply_ok(
+        r#"{"data":{"repository":{"pullRequest":null},
+            "rateLimit":{"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
+    );
+    let access = replying(vec![signed_in(), gone]);
+
+    let failed = failed_reads_of_pr_7("gone-pr", access);
+
+    assert_eq!(failed, [pr_7_failed(ReadFailure::NotOnGitHub)]);
+}
+
+#[test]
+fn a_pr_whose_answer_cant_be_read_says_so() {
+    let access = replying(vec![signed_in(), reply_ok("not json")]);
+
+    let failed = failed_reads_of_pr_7("garbled-pr", access);
+
+    assert_eq!(failed, [pr_7_failed(ReadFailure::Other)]);
+}
+
+#[test]
+fn a_pr_read_that_lands_fails_nothing() {
+    let reply = reply_ok(
+        r#"{"data":{"repository":{"pullRequest":{"bodyHTML":"<p>Fixes the crash</p>",
+            "comments":{"totalCount":0,"nodes":[]},"reviews":{"totalCount":0,"nodes":[]},
+            "reviewThreads":{"nodes":[]},"headRefOid":"0123abc"}},
+            "rateLimit":{"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
+    );
+    let access = replying(vec![signed_in(), reply]);
+
+    let failed = failed_reads_of_pr_7("landed-pr", access);
+
+    assert_eq!(failed, []);
 }
 
 const AN_HOUR: Duration = Duration::from_secs(3600);

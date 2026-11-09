@@ -32,7 +32,7 @@ use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
 use tsugiki_core::repository_settings::RepositoryCheck;
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{Home, LoadedSettings, PaneWidths, SettingsOwner};
-use tsugiki_core::status::{Change, LastSync, Status, SyncActivity};
+use tsugiki_core::status::{Change, FailedRead, LastSync, Status, SyncActivity};
 use tsugiki_core::store::StoreReader;
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
@@ -519,6 +519,11 @@ struct StatusChanged(Status);
 #[derive(Clone, Serialize, Type, Event)]
 struct Changed(Change);
 
+/// Sent when a read of an Issue or a PR on screen fails, so a view still waiting for what it says can say
+/// why (#189).
+#[derive(Clone, Serialize, Type, Event)]
+struct ReadFailed(FailedRead);
+
 /// Sent when the open Repository's last sync changes, so the status bar can say.
 #[derive(Clone, Serialize, Type, Event)]
 struct LastSyncChanged(LastSync);
@@ -600,6 +605,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
         .events(collect_events![
             StatusChanged,
             Changed,
+            ReadFailed,
             LastSyncChanged,
             SyncActivityChanged,
             CloningChanged,

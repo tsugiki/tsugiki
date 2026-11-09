@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { commands } from "$lib/data/bindings";
+import { commands, events, type FailedRead } from "$lib/data/bindings";
 import { PrViewState, type PrView } from "./pr-view.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
@@ -12,6 +12,7 @@ vi.mock("$lib/data/bindings", () => ({
   },
   events: {
     changed: { listen: vi.fn(async () => () => {}) },
+    readFailed: { listen: vi.fn(async () => () => {}) },
     headsFetched: { listen: vi.fn(async () => () => {}) },
     headsFetchFailed: { listen: vi.fn(async () => () => {}) },
     cloningChanged: { listen: vi.fn(async () => () => {}) },
@@ -114,6 +115,40 @@ describe("PrViewState", () => {
     expect(commands.fetchPullRequest).toHaveBeenCalledExactlyOnceWith("python/cpython", 11);
     expect(commands.openPullRequest).toHaveBeenCalledTimes(1);
     state.stop();
+  });
+
+  it("hears why a read of this PR from GitHub failed, and of no other item", async () => {
+    let hear: ((failed: FailedRead) => void) | undefined;
+    vi.mocked(events.readFailed.listen).mockImplementationOnce(async (callback) => {
+      hear = (payload) => {
+        callback({ event: "read-failed", id: 1, payload });
+      };
+      return () => {};
+    });
+    const state = new PrViewState("python/cpython", 11, undefined);
+    await state.load();
+    expect(state.failedRead).toBeUndefined();
+
+    hear?.({ repository: "python/cpython", number: 12, why: "not_on_github" });
+    hear?.({ repository: "python/other", number: 11, why: "not_on_github" });
+    expect(state.failedRead).toBeUndefined();
+
+    hear?.({ repository: "python/cpython", number: 11, why: "waits_on_github" });
+    expect(state.failedRead).toBe("waits_on_github");
+    state.stop();
+  });
+
+  it("stops the listener that started when the other can't, and says why", async () => {
+    const stop = vi.fn();
+    vi.mocked(events.changed.listen).mockResolvedValueOnce(stop);
+    vi.mocked(events.readFailed.listen).mockRejectedValueOnce(new Error("no events"));
+    const state = new PrViewState("python/cpython", 11, undefined);
+
+    await state.load();
+
+    expect(stop).toHaveBeenCalledOnce();
+    expect(state.error).toBe("Error: no events");
+    expect(commands.openPullRequest).not.toHaveBeenCalled();
   });
 
   it("opens on the Conversation and switches between its two tabs", () => {

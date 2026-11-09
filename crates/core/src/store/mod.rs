@@ -24,7 +24,7 @@ use std::sync::{Arc, Weak};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, named_params};
+use rusqlite::{OpenFlags, OptionalExtension, Transaction, named_params};
 use time::OffsetDateTime;
 
 use crate::error::{Error, ErrorKind};
@@ -40,6 +40,14 @@ pub use activity::ActivityFacts;
 pub use filters::{FilterProblem, FilterResults, NarrowedResults};
 use migrate::{MIGRATIONS, Migration};
 pub use sync_state::{ChangeCheck, FirstSyncPlace, SyncState};
+
+/// The database connection, which only `store` may hold. Code here names it through this alias, so
+/// Clippy's ban on `rusqlite::Connection` holds everywhere else, and its other bans hold here too.
+#[expect(
+    clippy::disallowed_types,
+    reason = "store is the one module that holds a database connection, so its tables stay its own"
+)]
+type Connection = rusqlite::Connection;
 
 const CANT_OPEN: &str = "Tsugiki can't open its database";
 const CANT_READ: &str = "Tsugiki can't read its database";

@@ -5,8 +5,9 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, named_params};
+use rusqlite::named_params;
 
+use super::Connection;
 use super::{CANT_UPDATE, NEWER, saying};
 use crate::error::{Error, ErrorKind};
 

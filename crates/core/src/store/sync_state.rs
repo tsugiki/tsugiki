@@ -1,9 +1,10 @@
 //! What a Repository's refresh needs from the last sync that finished (ADR 0015). A Repository with no row
 //! here hasn't finished its first sync, so its next sync is a whole one.
 
-use rusqlite::{Connection, OptionalExtension, Row, named_params};
+use rusqlite::{OptionalExtension, Row, named_params};
 use time::OffsetDateTime;
 
+use super::Connection;
 use super::columns::UnixTime;
 use crate::github::refresh::Etag;
 use crate::repository::RepositoryName;

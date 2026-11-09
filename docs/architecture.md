@@ -98,6 +98,9 @@ Highlighter.
 
 ## The core's modules
 
+`core/tests/layers.rs` lists every top-level module, lowest first, with the modules each one may use and
+why. Only `store` may hold a database connection: Clippy rejects `rusqlite::Connection` anywhere else.
+
 The big ones, in the order data passes through them:
 
 | Module | What it does |

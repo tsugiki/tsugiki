@@ -3,8 +3,9 @@
 
 use std::collections::BTreeMap;
 
-use rusqlite::{Connection, named_params};
+use rusqlite::named_params;
 
+use super::Connection;
 use super::columns::UnixTime;
 use super::{activity, pull_requests};
 use crate::github::Login;

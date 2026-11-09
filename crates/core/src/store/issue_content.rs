@@ -2,8 +2,9 @@
 //! replaces the last. These rows hold long HTML, so unlike the other tables they keep a rowid: SQLite advises
 //! against `WITHOUT ROWID` for large rows.
 
-use rusqlite::{Connection, Row, Transaction, named_params};
+use rusqlite::{Row, Transaction, named_params};
 
+use super::Connection;
 use super::columns::UnixTime;
 use crate::github::issue_content::{IssueComment, IssueContent};
 use crate::repository::RepositoryName;

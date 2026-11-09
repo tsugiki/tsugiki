@@ -3,9 +3,10 @@
 
 use std::collections::BTreeMap;
 
-use rusqlite::{Connection, named_params};
+use rusqlite::named_params;
 use time::OffsetDateTime;
 
+use super::Connection;
 use crate::github::Login;
 use crate::repository::RepositoryName;
 

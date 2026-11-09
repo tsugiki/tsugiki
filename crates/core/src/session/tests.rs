@@ -1324,6 +1324,10 @@ fn folders_that_cant_be_found_show_as_a_problem() {
 }
 
 #[test]
+#[expect(
+    clippy::disallowed_types,
+    reason = "a database from a newer Tsugiki has a version the store can't write, so the test sets it"
+)]
 fn a_newer_database_shows_as_a_problem_and_github_isnt_asked() {
     let folders = temp_folders("newer");
     let newer = rusqlite::Connection::open(folders.database()).unwrap();

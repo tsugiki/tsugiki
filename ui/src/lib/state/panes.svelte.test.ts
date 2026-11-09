@@ -198,6 +198,23 @@ it("saves both widths, and a reset saves the default", async () => {
   expect([panes.list, panes.problem]).toEqual([null, undefined]);
 });
 
+it("puts the whole layout back to the defaults with one save", async () => {
+  core.paneLayout.mockResolvedValue({ sidebar: 240, list: 500, sidebar_hidden: true, list_hidden: true });
+  core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
+  const panes = new PanesState();
+  await panes.load();
+
+  await panes.resetLayout();
+
+  expect([panes.sidebar, panes.list, panes.hidden("sidebar"), panes.hidden("list")]).toEqual([
+    null,
+    null,
+    false,
+    false,
+  ]);
+  expect(core.savePaneLayout.mock.calls).toEqual([[DEFAULTS]]);
+});
+
 it("says why it couldn't save, until a save works", async () => {
   const panes = new PanesState();
   core.savePaneLayout.mockResolvedValueOnce({

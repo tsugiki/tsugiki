@@ -189,8 +189,25 @@
   async function toggleListByKey() {
     void panes.toggle("list");
     await tick();
+    if (!panes.hidden("list")) cursorToDetail();
+    focusCursor();
+  }
+
+  /** Moves the cursor to the row of what the Detail pane shows, if the list has that row. */
+  function cursorToDetail() {
     const line = detailLine();
-    if (!panes.hidden("list") && line && workbench.lists(line)) workbench.cursor = line;
+    if (line && workbench.lists(line)) workbench.cursor = line;
+  }
+
+  /** "Reset Layout": both panes on show at their default widths. A list it brings back takes the cursor and
+   * the focus as on `Ctrl+Alt+B`. The palette has closed and handed the focus back by the tick, so the row
+   * takes it after that. */
+  async function resetLayout() {
+    const listHidden = panes.hidden("list");
+    void panes.resetLayout();
+    if (!listHidden) return;
+    await tick();
+    cursorToDetail();
     focusCursor();
   }
 
@@ -206,6 +223,7 @@
         title: panes.hidden("list") ? "Show Issue List" : "Hide Issue List",
         run: () => void panes.toggle("list"),
       },
+      { title: "Reset Layout", run: () => void resetLayout() },
     ];
   }
 

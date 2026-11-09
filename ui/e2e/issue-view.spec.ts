@@ -371,6 +371,42 @@ test("Ctrl+Alt+B hides the Issue list, and the Detail pane takes its room and th
   expect(await width()).toBe(shown);
 });
 
+test("Reset Layout in the palette brings back both panes, with the focus on the open item's row", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1200, height: 600 });
+  await mockCore(page, answers("<p>It crashes</p>"));
+  await page.goto("/");
+  await page.getByRole("button", { name: "#7 Issue 7" }).click();
+  const sidebar = page.getByRole("navigation", { name: "Sidebar" });
+  const row = page.locator(".list").getByRole("button", { name: "#7 Issue 7" });
+  const list = page.locator(".list");
+  const width = async () => (await list.boundingBox())?.width ?? 0;
+  await expect(page.getByRole("region", { name: "Issue view" })).toBeVisible();
+  const shown = await width();
+  const edge = (await page.getByRole("separator", { name: "Workbench width" }).boundingBox()) ?? {
+    x: 0,
+    y: 0,
+  };
+  await page.mouse.move(edge.x + 8, edge.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(edge.x + 108, edge.y + 20, { steps: 4 });
+  await page.mouse.up();
+  const dragged = await width();
+  await page.keyboard.press("ControlOrMeta+B");
+  await page.keyboard.press("ControlOrMeta+Alt+B");
+  await expect(row).toHaveCount(0);
+
+  await page.keyboard.press("ControlOrMeta+Shift+P");
+  await page.getByRole("combobox", { name: "Command" }).fill("Reset Layout");
+  await page.keyboard.press("Enter");
+
+  await expect(sidebar).toBeVisible();
+  await expect(row).toBeFocused();
+  expect(dragged).toBeGreaterThan(shown + 50);
+  await expect.poll(width).toBe(shown);
+});
+
 test("the Octicons take GitHub's colors in the light theme and the dark one", async ({ page }) => {
   await mockCore(page, answers("<p>It crashes</p>"));
   await page.goto("/");

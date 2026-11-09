@@ -4,7 +4,7 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 
-import { outputs, scope } from "./scope.ts";
+import { outputs, paths, scope } from "./scope.ts";
 
 const [base, head] = process.argv.slice(2);
 const output = process.env["GITHUB_OUTPUT"];
@@ -12,7 +12,8 @@ if (base === undefined || head === undefined || output === undefined) {
   console.error("Usage: `node scripts/changes.ts <base> <head>`, from a GitHub Actions step.");
   process.exit(1);
 }
-const diff = execFileSync("git", ["diff", "--no-renames", "--name-only", base, head], { encoding: "utf8" });
-const paths = diff.split("\n").filter((path) => path !== "");
-console.log(paths.join("\n"));
-appendFileSync(output, outputs(scope(paths)));
+const changed = paths(
+  execFileSync("git", ["diff", "--no-renames", "--name-only", base, head], { encoding: "utf8" }),
+);
+console.log(changed.join("\n"));
+appendFileSync(output, outputs(scope(changed)));

@@ -12,12 +12,18 @@ const READ_BY_RUST = new Set([
   "ui/package.json",
 ]);
 
+/** Markdown under `crates/` doesn't count: the highlighter's tests read a sample there. */
 function isDocs(path: string): boolean {
-  return path.startsWith("docs/") || path.endsWith(".md");
+  return path.startsWith("docs/") || (path.endsWith(".md") && !path.startsWith("crates/"));
 }
 
 function isUi(path: string): boolean {
   return isDocs(path) || (path.startsWith("ui/") && !READ_BY_RUST.has(path));
+}
+
+/** The paths in what `git diff --name-only` printed, one a line. */
+export function paths(listed: string): string[] {
+  return listed.split(/\r?\n/).filter((path) => path !== "");
 }
 
 /** The scope of a change to `paths`. With no path to read, nothing is ruled out. */

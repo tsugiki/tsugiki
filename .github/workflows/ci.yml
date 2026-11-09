@@ -318,11 +318,13 @@ jobs:
           DOCS_ONLY: ${{ needs.changes.outputs.docs-only }}
           UI_ONLY: ${{ needs.changes.outputs.ui-only }}
           NEEDS: ${{ toJSON(needs) }}
+        # A failed jq stops the step here: read from `<(jq ...)`, it would leave the loop nothing to check.
         run: |
+          results=$(jq -r 'to_entries[] | "\(.key) \(.value.result)"' <<< "$NEEDS")
           while read -r job result; do
             case "$result $DOCS_ONLY $UI_ONLY $job" in
               "success "* | "skipped true "* | "skipped false true rust" | \
                 "skipped false true rust-coverage" | "skipped false true dependencies") ;;
               *) echo "$job ended with: $result"; exit 1 ;;
             esac
-          done < <(jq -r 'to_entries[] | "\(.key) \(.value.result)"' <<< "$NEEDS")
+          done <<< "$results"

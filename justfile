@@ -68,7 +68,8 @@ prose-check *files:
     node scripts/prose-check.ts {{files}}
 
 # Type check with svelte-check, and lint Rust with Clippy
-typecheck: svelte-check clippy
+typecheck:
+    npm run check
 
 # Type check the UI with svelte-check
 svelte-check:
@@ -78,7 +79,7 @@ svelte-check:
 clippy:
     npm run clippy
 
-# Run Clippy, `rust-coverage`, `deny` and `machete`, unless the branch changes only `ui/` and docs since main
+# Run Clippy, `rust-coverage`, `deny` and `machete`, unless the branch changes only `ui/` and docs
 rust-gates:
     node scripts/rust-gates.ts
 

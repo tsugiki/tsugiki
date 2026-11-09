@@ -1,4 +1,5 @@
 use super::*;
+use crate::repository::RepositoryCounts;
 
 fn name(text: &str) -> RepositoryName {
     RepositoryName::parse(text).unwrap()
@@ -11,6 +12,15 @@ const FEW: RepositoryCounts = RepositoryCounts {
     closed_in_window: 35,
     disk_kb: 0,
 };
+
+/// The check of a Repository named `text` that GitHub counted so, for a user who doesn't administer it.
+fn checked(text: &str, counts: RepositoryCounts) -> RepositoryCheck {
+    RepositoryCheck::new(FoundRepository {
+        name: name(text),
+        counts,
+        access: RepositoryAccess::Other,
+    })
+}
 
 #[test]
 fn conventions_a_file_leaves_out_come_from_the_name() {
@@ -31,7 +41,7 @@ fn conventions_a_file_leaves_out_come_from_the_name() {
 
 #[test]
 fn up_to_500_open_is_small_and_loads_those_and_what_closed_lately() {
-    let check = RepositoryCheck::new(name("some-maintainer/gcmon"), FEW, RepositoryAccess::Other);
+    let check = checked("some-maintainer/gcmon", FEW);
     assert_eq!(check.size, RepositorySize::Small);
     assert_eq!(check.open_issues, 10);
     assert_eq!(check.open_prs, 3);
@@ -43,9 +53,22 @@ fn up_to_500_open_is_small_and_loads_those_and_what_closed_lately() {
         open_prs: 100,
         ..FEW
     };
-    let check = RepositoryCheck::new(name("a/b"), at_the_limit, RepositoryAccess::Other);
+    let check = checked("a/b", at_the_limit);
     assert_eq!(check.size, RepositorySize::Small);
     assert_eq!(check.first_sync_items, 535);
+}
+
+#[test]
+fn a_repository_the_user_administers_starts_with_the_filters_for_its_maintainers() {
+    let check = RepositoryCheck::new(FoundRepository {
+        name: name("a/b"),
+        counts: FEW,
+        access: RepositoryAccess::Maintained,
+    });
+    assert_eq!(
+        check.repository.filters,
+        Filter::starters(RepositoryAccess::Maintained)
+    );
 }
 
 #[test]
@@ -55,7 +78,7 @@ fn above_500_open_is_large_and_loads_the_window() {
         open_prs: 100,
         ..FEW
     };
-    let check = RepositoryCheck::new(name("a/b"), just_over, RepositoryAccess::Other);
+    let check = checked("a/b", just_over);
     assert_eq!(check.size, RepositorySize::Large);
     assert_eq!(check.first_sync_items, 43);
 }
@@ -70,7 +93,7 @@ fn the_estimate_for_cpython_agrees_with_what_was_measured() {
         closed_in_window: 2506,
         disk_kb: 912_867,
     };
-    let check = RepositoryCheck::new(name("python/cpython"), cpython, RepositoryAccess::Other);
+    let check = checked("python/cpython", cpython);
     assert_eq!(check.repository.conventions, Conventions::Cpython);
     assert!((460..=510).contains(&check.first_sync_points), "{check:?}");
     assert!(
@@ -89,6 +112,6 @@ fn a_size_past_what_the_window_can_count_says_the_most_it_can() {
         disk_kb: u64::MAX,
         ..FEW
     };
-    let check = RepositoryCheck::new(name("a/b"), huge, RepositoryAccess::Other);
+    let check = checked("a/b", huge);
     assert_eq!(check.mirror_mb, u32::MAX);
 }

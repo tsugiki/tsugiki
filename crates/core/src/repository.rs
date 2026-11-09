@@ -111,7 +111,7 @@ pub enum RepositoryAccess {
 }
 
 /// Up to this many open Issues and PRs loads everything open, and more loads a window (ADR 0015).
-pub(crate) const SMALL_UP_TO: u32 = 500;
+const SMALL_UP_TO: u32 = 500;
 /// How far back the first sync looks, in days (ADR 0015).
 pub const WINDOW_DAYS: u8 = 30;
 
@@ -125,7 +125,18 @@ pub enum RepositorySize {
     Large,
 }
 
-/// What GitHub says about a Repository, from the one query adding it costs.
+impl RepositorySize {
+    /// The size of a Repository with `open` Issues and PRs open.
+    pub fn of(open: u32) -> Self {
+        if open <= SMALL_UP_TO {
+            Self::Small
+        } else {
+            Self::Large
+        }
+    }
+}
+
+/// How much of a Repository GitHub counted, from the one query adding it costs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RepositoryCounts {
     pub open_issues: u32,
@@ -134,6 +145,27 @@ pub struct RepositoryCounts {
     pub closed_in_window: u32,
     /// The Repository's size on GitHub, about what its mirror takes on the disk.
     pub disk_kb: u64,
+}
+
+impl RepositoryCounts {
+    /// Its open Issues and PRs together.
+    pub fn open(&self) -> u32 {
+        self.open_issues.saturating_add(self.open_prs)
+    }
+
+    /// The first sync these counts call for.
+    pub fn size(&self) -> RepositorySize {
+        RepositorySize::of(self.open())
+    }
+}
+
+/// What GitHub says about a Repository the user asked about: its name as GitHub spells it, what it holds,
+/// and the user's access to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FoundRepository {
+    pub name: RepositoryName,
+    pub counts: RepositoryCounts,
+    pub access: RepositoryAccess,
 }
 
 #[cfg(test)]

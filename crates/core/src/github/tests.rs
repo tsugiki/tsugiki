@@ -1,8 +1,5 @@
 use super::testing::{Canned, Scripted, answered, dated, signed_in_as, token};
 use super::*;
-use crate::conventions::Conventions;
-use crate::filters::Filter;
-use crate::repository::RepositorySize;
 use std::path::Path;
 
 fn client(transport: impl Transport + 'static) -> GitHub {
@@ -135,15 +132,23 @@ impl Transport for Asked {
 #[test]
 fn checking_a_repository_reads_a_recorded_answer() {
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
-    let check = client(replay::Replayer::new(fixtures))
+    let found = client(replay::Replayer::new(fixtures))
         .check_repository(&name("python/cpython"), the_day())
         .unwrap();
-    assert_eq!(check.repository.name, name("python/cpython"));
-    assert_eq!(check.repository.conventions, Conventions::Cpython);
-    assert_eq!(check.access, RepositoryAccess::Other);
-    assert_eq!((check.open_issues, check.open_prs), (6945, 2324));
-    assert_eq!(check.size, RepositorySize::Large);
-    assert_eq!(check.first_sync_items, 4886);
+    assert_eq!(
+        found,
+        FoundRepository {
+            name: name("python/cpython"),
+            counts: RepositoryCounts {
+                open_issues: 6945,
+                open_prs: 2324,
+                updated_in_window: 4886,
+                closed_in_window: 2613,
+                disk_kb: 912_867,
+            },
+            access: RepositoryAccess::Other,
+        }
+    );
 }
 
 #[test]
@@ -167,15 +172,24 @@ fn a_check_gives_the_name_as_github_spells_it() {
     let body = r#"{"data":{"repository":{"nameWithOwner":"Some-Maintainer/GCMon",
             "issues":{"totalCount":10},"pullRequests":{"totalCount":3}},
             "updated":{"issueCount":43},"closed":{"issueCount":35}}}"#;
-    let check = client(answered(200, body))
+    let found = client(answered(200, body))
         .check_repository(&name("some-maintainer/gcmon"), the_day())
         .unwrap();
-    assert_eq!(check.repository.name.to_string(), "Some-Maintainer/GCMon");
-    assert_eq!(check.size, RepositorySize::Small);
-    assert_eq!(check.first_sync_items, 48);
+    assert_eq!(found.name.to_string(), "Some-Maintainer/GCMon");
+    // GitHub leaves `diskUsage` out for a Repository with no commits.
+    assert_eq!(
+        found.counts,
+        RepositoryCounts {
+            open_issues: 10,
+            open_prs: 3,
+            updated_in_window: 43,
+            closed_in_window: 35,
+            disk_kb: 0,
+        }
+    );
 }
 
-fn checked_with_permission(permission: &str) -> RepositoryCheck {
+fn checked_with_permission(permission: &str) -> FoundRepository {
     let body = format!(
         r#"{{"data":{{"repository":{{"nameWithOwner":"a/b","viewerPermission":{permission},
             "issues":{{"totalCount":1}},"pullRequests":{{"totalCount":1}}}},
@@ -187,20 +201,16 @@ fn checked_with_permission(permission: &str) -> RepositoryCheck {
 }
 
 #[test]
-fn a_repository_the_user_administers_is_maintained_and_starts_with_everything_open() {
-    let check = checked_with_permission(r#""ADMIN""#);
-    assert_eq!(check.access, RepositoryAccess::Maintained);
-    assert_eq!(
-        check.repository.filters,
-        Filter::starters(RepositoryAccess::Maintained)
-    );
+fn a_repository_the_user_administers_is_maintained() {
+    let found = checked_with_permission(r#""ADMIN""#);
+    assert_eq!(found.access, RepositoryAccess::Maintained);
 }
 
 #[test]
 fn writing_to_a_repository_doesnt_make_it_maintained() {
     for permission in [r#""WRITE""#, r#""MAINTAIN""#, "null"] {
-        let check = checked_with_permission(permission);
-        assert_eq!(check.access, RepositoryAccess::Other, "{permission}");
+        let found = checked_with_permission(permission);
+        assert_eq!(found.access, RepositoryAccess::Other, "{permission}");
     }
 }
 
@@ -235,11 +245,14 @@ impl Transport for Renamed {
 
 #[test]
 fn a_renamed_repository_is_counted_under_its_new_name() {
-    let check = client(Renamed)
+    let found = client(Renamed)
         .check_repository(&name("mitsuhiko/flask"), the_day())
         .unwrap();
-    assert_eq!(check.repository.name, name("pallets/flask"));
-    assert_eq!(check.first_sync_items, 17);
+    assert_eq!(found.name, name("pallets/flask"));
+    assert_eq!(
+        (found.counts.updated_in_window, found.counts.closed_in_window),
+        (13, 13)
+    );
 }
 
 #[test]

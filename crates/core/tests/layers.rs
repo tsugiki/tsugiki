@@ -121,7 +121,6 @@ const LAYERS: &[Layer] = &[
             "filters",
             "login",
             "repository",
-            "repository_settings",
             "token",
         ],
         why: "Sends the token with each request, runs a Filter's search, and reads what GitHub answers \

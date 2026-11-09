@@ -26,8 +26,9 @@ use time::{Date, Duration, OffsetDateTime};
 use crate::error::{Error, ErrorKind};
 use crate::github::clock::{GitHubClock, skew_warning};
 use crate::login::Login;
-use crate::repository::{RepositoryAccess, RepositoryCounts, RepositoryName, WINDOW_DAYS};
-use crate::repository_settings::RepositoryCheck;
+use crate::repository::{
+    FoundRepository, RepositoryAccess, RepositoryCounts, RepositoryName, WINDOW_DAYS,
+};
 use crate::token::{RunGh, Token};
 
 /// One GraphQL request. `operation` names the query, and the replayer finds its recording by that name.
@@ -239,8 +240,8 @@ impl GitHub {
         Ok(data.viewer)
     }
 
-    /// Asks GitHub, in one query, whether `name` exists and how much adding it would load (ADR 0015). The
-    /// answer carries the name as GitHub spells it, which follows a rename and fixes the case.
+    /// Asks GitHub, in one query, whether `name` exists, what it holds and what the user may do in it (ADR
+    /// 0015). The answer carries the name as GitHub spells it, which follows a rename and fixes the case.
     ///
     /// A search doesn't follow a rename, and counts nothing under the old name, so that case takes a second
     /// query with the new one.
@@ -248,12 +249,12 @@ impl GitHub {
         &self,
         name: &RepositoryName,
         today: Date,
-    ) -> Result<RepositoryCheck, Error> {
-        let check = self.count_repository(name, today)?;
-        if check.repository.name.is_same(name) {
-            Ok(check)
+    ) -> Result<FoundRepository, Error> {
+        let found = self.count_repository(name, today)?;
+        if found.name.is_same(name) {
+            Ok(found)
         } else {
-            self.count_repository(&check.repository.name, today)
+            self.count_repository(&found.name, today)
         }
     }
 
@@ -261,7 +262,7 @@ impl GitHub {
         &self,
         name: &RepositoryName,
         today: Date,
-    ) -> Result<RepositoryCheck, Error> {
+    ) -> Result<FoundRepository, Error> {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Repository {
@@ -325,9 +326,9 @@ impl GitHub {
             Some(Permission::Admin) => RepositoryAccess::Maintained,
             Some(Permission::Lower) | None => RepositoryAccess::Other,
         };
-        Ok(RepositoryCheck::new(
-            data.repository.name_with_owner,
-            RepositoryCounts {
+        Ok(FoundRepository {
+            name: data.repository.name_with_owner,
+            counts: RepositoryCounts {
                 open_issues: data.repository.issues.total_count,
                 open_prs: data.repository.pull_requests.total_count,
                 updated_in_window: data.updated.issue_count,
@@ -335,7 +336,7 @@ impl GitHub {
                 disk_kb: data.repository.disk_usage.unwrap_or(0),
             },
             access,
-        ))
+        })
     }
 
     fn query<D: DeserializeOwned>(&self, request: &Request<'_>) -> Result<D, Error> {

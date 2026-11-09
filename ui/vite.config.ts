@@ -31,6 +31,12 @@ export default defineConfig({
         "../scripts/prose-check.ts",
         // coverage: asks GitHub about a real PR and deletes a real branch, which no unit test can do.
         "../scripts/merged.ts",
+        // coverage: runs `just check`, pushes and opens a real PR, with its logic in pr.ts.
+        "../scripts/ship.ts",
+        // coverage: lists a real milestone's tickets on GitHub, with its logic in pr.ts.
+        "../scripts/next.ts",
+        // coverage: reads Claude Code's call from stdin, with its logic in shell-edits.ts.
+        "../scripts/shell-edits-hook.ts",
         // coverage: checks the real window with real keys, which no unit test can do.
         "../scripts/smoke.ts",
         // coverage: zips the real build and starts it, which no unit test can do.

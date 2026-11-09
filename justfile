@@ -24,6 +24,15 @@ install:
 merged branch="":
     node scripts/merged.ts {{quote(branch)}}
 
+# End a PR's work: run `just check`, push, and open the PR. `just ship body.md` takes the body from a file,
+# `just ship --no-check` skips the check
+ship *args:
+    node scripts/ship.ts {{args}}
+
+# List the open tickets of the earliest open milestone, the ones ready for an agent first
+next:
+    node scripts/next.ts
+
 # Run the app with hot reload
 dev:
     npm run dev

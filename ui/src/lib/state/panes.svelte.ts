@@ -80,6 +80,15 @@ export class PanesState {
     return this.save();
   }
 
+  /** "Reset Layout": gives both panes their default widths and shows both, and saves that. */
+  resetLayout(): Promise<void> {
+    this.sidebar = null;
+    this.list = null;
+    this.#hidden.sidebar = false;
+    this.#hidden.list = false;
+    return this.save();
+  }
+
   /** Saves the layout in `machine.toml`, once the save before has finished. */
   save(): Promise<void> {
     this.#saving = this.#saving.then(() => this.#send());

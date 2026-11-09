@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
+import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { PrFilesState } from "$lib/state/pr-files.svelte";
 import RepositoryHome from "./RepositoryHome.svelte";
@@ -382,8 +383,9 @@ const listing = async () => {
       filters: [],
     },
   });
-  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  const { component } = render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
   return {
+    component,
     issueRow: await screen.findByRole("button", { name: "#112564 GIL drop during collection" }),
     treeRow: screen.getByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" }),
     prRow: screen.getByRole("button", { name: "#5 Alone" }),
@@ -1433,9 +1435,67 @@ it("offers the palette a command that hides or shows the Issue list, named for w
   });
 
   expect([before, titles()]).toEqual([
-    ["Hide Sidebar", "Hide Issue List"],
-    ["Hide Sidebar", "Show Issue List"],
+    ["Hide Sidebar", "Hide Issue List", "Reset Layout"],
+    ["Hide Sidebar", "Show Issue List", "Reset Layout"],
   ]);
+});
+
+/** Runs the palette's "Reset Layout". */
+const resetLayout = (component: { paletteCommands: () => { title: string; run: () => void }[] }) => {
+  const command = component.paletteCommands().find(({ title }) => title === "Reset Layout");
+  if (!command) throw new Error("The palette offers no Reset Layout");
+  command.run();
+};
+
+it("resets the layout from the palette: both panes on show at their default widths, saved", async () => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar: 260, list: 500 });
+  const { component, issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  await screen.findByRole("region", { name: "Issue view" });
+  await fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true });
+  await toggleList();
+
+  resetLayout(component);
+
+  await vi.waitFor(() => {
+    expect(core.savePaneLayout.mock.lastCall).toEqual([DEFAULT_LAYOUT]);
+  });
+  expect(screen.getByRole("navigation", { name: "Sidebar" })).toBeTruthy();
+  expect(repositoryName()).toBeTruthy();
+  expect(home().style.getPropertyValue("--sidebar-width")).toBe("200px");
+  expect(home().style.getPropertyValue("--list-width")).toBe("");
+});
+
+it("brings the list back on Reset Layout with the cursor and the focus on the open item's row", async () => {
+  const { component, issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  await screen.findByRole("region", { name: "Issue view" });
+  await press("ArrowDown");
+  await toggleList();
+
+  resetLayout(component);
+
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(rowNamed("#112564 GIL drop during collection"));
+  });
+  expect(document.activeElement?.getAttribute("aria-current")).toBe("true");
+});
+
+it("leaves the cursor and the focus alone on Reset Layout while the list shows", async () => {
+  const { component, issueRow, treeRow } = await listing();
+  await fireEvent.click(issueRow);
+  await screen.findByRole("region", { name: "Issue view" });
+  // The cursor leaves the Issue on show for the PR under it.
+  await press("ArrowDown");
+
+  resetLayout(component);
+  await vi.waitFor(() => {
+    expect(core.savePaneLayout).toHaveBeenCalled();
+  });
+  await tick();
+
+  expect(document.activeElement).toBe(treeRow);
+  expect(treeRow.getAttribute("aria-current")).toBe("true");
 });
 
 it("moves the focus to the Detail pane as Ctrl+Alt+B hides the list", async () => {

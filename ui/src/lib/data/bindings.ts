@@ -59,8 +59,11 @@ export const commands = {
 	settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
 	/**  What the window opens on. */
 	home: () => __TAURI_INVOKE<Home_Serialize>("home"),
-	/**  How wide the user dragged the Sidebar and the Workbench list on this machine (#187). */
-	paneWidths: () => __TAURI_INVOKE<PaneWidths_Serialize>("pane_widths"),
+	/**
+	 *  How the user laid out the panes on this machine: the Sidebar's and the Workbench list's widths (#187), and
+	 *  whether the Sidebar shows (#234).
+	 */
+	paneLayout: () => __TAURI_INVOKE<PaneLayout_Serialize>("pane_layout"),
 	/**  The milliseconds since Tsugiki started running. */
 	timeRunning: () => __TAURI_INVOKE<number | null>("time_running"),
 	/**  Writes what the performance HUD measured to `tsugiki.log`, and says the summary line it wrote. */
@@ -79,10 +82,10 @@ export const commands = {
 	 */
 	addRepository: (repository: NewRepository) => typedError<Home_Serialize, Error_Serialize>(__TAURI_INVOKE("add_repository", { repository })),
 	/**
-	 *  Saves how wide the user dragged the Sidebar and the Workbench list in `machine.toml`, and says the widths
-	 *  the window keeps now. This waits on a small file.
+	 *  Saves how the user laid out the panes in `machine.toml`, and says the layout the window keeps now. This
+	 *  waits on a small file.
 	 */
-	savePaneWidths: (widths: PaneWidths_Deserialize) => typedError<PaneWidths_Serialize, Error_Serialize>(__TAURI_INVOKE("save_pane_widths", { widths })),
+	savePaneLayout: (layout: PaneLayout_Deserialize) => typedError<PaneLayout_Serialize, Error_Serialize>(__TAURI_INVOKE("save_pane_layout", { layout })),
 	/**
 	 *  The rows of a view of a Repository's Workbench, with what its Sidebar shows. This waits
 	 *  on the database and never on GitHub (ADR 0018).
@@ -1093,30 +1096,37 @@ export type Pair = {
 };
 
 /**
- *  How wide the user dragged the Sidebar and the Workbench list, in CSS pixels (#187). Each stays on this
- *  machine, like the window's place, and a pane left out takes its default. So does a width that isn't a
- *  whole number of pixels: a pane's width is too small a thing to lose the rest of `machine.toml` over.
+ *  How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
+ *  (#187), and whether the Sidebar shows (#234). All of it stays on this machine, like the window's place,
+ *  and a value left out takes its default. So does a value Tsugiki can't read, such as a width that isn't a
+ *  whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml` over.
  */
-export type PaneWidths = PaneWidths_Serialize | PaneWidths_Deserialize;
+export type PaneLayout = PaneLayout_Serialize | PaneLayout_Deserialize;
 
 /**
- *  How wide the user dragged the Sidebar and the Workbench list, in CSS pixels (#187). Each stays on this
- *  machine, like the window's place, and a pane left out takes its default. So does a width that isn't a
- *  whole number of pixels: a pane's width is too small a thing to lose the rest of `machine.toml` over.
+ *  How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
+ *  (#187), and whether the Sidebar shows (#234). All of it stays on this machine, like the window's place,
+ *  and a value left out takes its default. So does a value Tsugiki can't read, such as a width that isn't a
+ *  whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml` over.
  */
-export type PaneWidths_Deserialize = {
+export type PaneLayout_Deserialize = {
 	sidebar?: number | null,
 	list?: number | null,
+	/**  `Ctrl+B` hid the Sidebar. It keeps its width for when it shows again. */
+	sidebar_hidden?: boolean,
 };
 
 /**
- *  How wide the user dragged the Sidebar and the Workbench list, in CSS pixels (#187). Each stays on this
- *  machine, like the window's place, and a pane left out takes its default. So does a width that isn't a
- *  whole number of pixels: a pane's width is too small a thing to lose the rest of `machine.toml` over.
+ *  How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
+ *  (#187), and whether the Sidebar shows (#234). All of it stays on this machine, like the window's place,
+ *  and a value left out takes its default. So does a value Tsugiki can't read, such as a width that isn't a
+ *  whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml` over.
  */
-export type PaneWidths_Serialize = {
+export type PaneLayout_Serialize = {
 	sidebar: number | null,
 	list: number | null,
+	/**  `Ctrl+B` hid the Sidebar. It keeps its width for when it shows again. */
+	sidebar_hidden: boolean,
 };
 
 /**  Where Files shows a thread. A file is named by its place among the diff's files. */

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { openOnGitHub, type GitHubItem } from "$lib/state/browser";
   import { hud } from "$lib/state/hud.svelte";
   import { IssueViewState } from "$lib/state/issue-view.svelte";
@@ -24,6 +25,7 @@
   import IssueDetail from "./IssueDetail.svelte";
   import { currentOs, isTextBox, keyName } from "./keys";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
+  import type { PaletteCommand } from "./Palette.svelte";
   import PaneEdge from "./PaneEdge.svelte";
   import PrDetail from "./PrDetail.svelte";
   import Sidebar from "./Sidebar.svelte";
@@ -33,8 +35,7 @@
   const MINUTE = 60_000;
   /** The view of every PR's diff, unified or side by side, which `Ctrl+Alt+U` switches. */
   const diffView = new DiffViewChoice();
-  /** How wide the user dragged the Sidebar and the list, which stays the same from one Repository to the
-   * next. */
+  /** How the user laid out the panes, which stays the same from one Repository to the next. */
   const panes = new PanesState();
   void panes.load();
   const EMPTY = {
@@ -166,6 +167,26 @@
     return stop && { kind: stop.kind, number: stop.number };
   }
 
+  /** Ctrl+B: hides the Sidebar, or brings it back at its width. Focus in the Sidebar moves to the cursor's
+   * row, so it doesn't fall out of the window with the Sidebar. */
+  async function toggleSidebarByKey() {
+    const focused = document.activeElement;
+    void panes.toggleSidebar();
+    await tick();
+    if (focused?.isConnected === false) focusCursor();
+  }
+
+  /** What this screen adds to the command palette while it shows. Where the focus goes as the palette
+   * closes is the palette's to say. */
+  export function paletteCommands(): PaletteCommand[] {
+    return [
+      {
+        title: panes.sidebarHidden ? "Show Sidebar" : "Hide Sidebar",
+        run: () => void panes.toggleSidebar(),
+      },
+    ];
+  }
+
   /** Names a line for the page, which can list a PR under two Issues. */
   const lineName = (stop: Stop | undefined) => `${String(stop?.issue ?? "")}#${String(stop?.number)}`;
 
@@ -181,14 +202,17 @@
 
   /**
    * The list's keys and the PR view's. A dialog on top keeps them, and a text box or a focused control
-   * keeps its own. The window's guard has already stopped the browser for Ctrl+Shift+G, Ctrl+Alt+U and
-   * Ctrl+F, which work in a text box too.
+   * keeps its own. The window's guard has already stopped the browser for Ctrl+B, Ctrl+Shift+G, Ctrl+Alt+U
+   * and Ctrl+F, which work in a text box too.
    */
   function onkeydown(e: KeyboardEvent) {
     if (!keysActive) return;
     const key = keyName(e, currentOs());
     const files = detail instanceof PrViewState && detail.tab === "files" ? detail.files : undefined;
-    if (key === "ctrl+shift+g") {
+    if (key === "ctrl+b") {
+      // A held key would flicker the Sidebar and save the file each time.
+      if (!e.repeat) void toggleSidebarByKey();
+    } else if (key === "ctrl+shift+g") {
       const current = currentOnGitHub();
       if (current) void onGitHub(current);
     } else if (key === "ctrl+alt+u" && files) {
@@ -312,23 +336,25 @@
   style:--sidebar-width={`${String(panes.sidebar ?? SIDEBAR_WIDTH)}px`}
   style:--list-width={panes.list === null ? undefined : `${String(panes.list)}px`}
 >
-  <Sidebar
-    count={workbench.count}
-    reviewRequests={workbench.reviewRequests}
-    filters={workbench.filters}
-    selected={workbench.selected}
-    onselect={(view) => void workbench.select(view)}
-  />
-  <PaneEdge
-    label="Sidebar width"
-    value={panes.sidebar ?? SIDEBAR_WIDTH}
-    least={SIDEBAR_LEAST}
-    most={SIDEBAR_MOST}
-    nextLeast={LIST_LEAST + (detail ? DETAIL_LEAST : 0)}
-    onresize={(width) => (panes.sidebar = width)}
-    ondone={() => void panes.save()}
-    onreset={() => void panes.reset("sidebar")}
-  />
+  {#if !panes.sidebarHidden}
+    <Sidebar
+      count={workbench.count}
+      reviewRequests={workbench.reviewRequests}
+      filters={workbench.filters}
+      selected={workbench.selected}
+      onselect={(view) => void workbench.select(view)}
+    />
+    <PaneEdge
+      label="Sidebar width"
+      value={panes.sidebar ?? SIDEBAR_WIDTH}
+      least={SIDEBAR_LEAST}
+      most={SIDEBAR_MOST}
+      nextLeast={LIST_LEAST + (detail ? DETAIL_LEAST : 0)}
+      onresize={(width) => (panes.sidebar = width)}
+      ondone={() => void panes.save()}
+      onreset={() => void panes.reset("sidebar")}
+    />
+  {/if}
   <!-- The list keeps the width the user gave it beside the Detail pane, and fills the window without one. -->
   <section class={["list", { sized: panes.list !== null && detail !== undefined }]} bind:this={list}>
     <h1>{name}</h1>
@@ -396,7 +422,6 @@
   .home {
     display: flex;
   }
-
   /* The Detail pane grows from nothing, so the list keeps its width and is the first to shrink. */
   .list {
     flex: 1;

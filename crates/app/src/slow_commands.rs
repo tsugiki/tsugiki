@@ -20,7 +20,7 @@ use tsugiki_core::highlight::Span;
 use tsugiki_core::mirror::{CloneRefusal, MirrorSource};
 use tsugiki_core::repository_settings::RepositoryCheck;
 use tsugiki_core::session::SessionRequests;
-use tsugiki_core::settings::{Home, PaneWidths, SettingsOwner};
+use tsugiki_core::settings::{Home, PaneLayout, SettingsOwner};
 use tsugiki_core::store::StoreReader;
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
@@ -103,15 +103,15 @@ pub(crate) async fn pick_folder(
     })
 }
 
-/// Saves how wide the user dragged the Sidebar and the Workbench list in `machine.toml`, and says the widths
-/// the window keeps now. This waits on a small file.
+/// Saves how the user laid out the panes in `machine.toml`, and says the layout the window keeps now. This
+/// waits on a small file.
 #[tauri::command(async)]
 #[specta::specta]
-pub(crate) fn save_pane_widths(
-    widths: PaneWidths,
+pub(crate) fn save_pane_layout(
+    layout: PaneLayout,
     owner: State<'_, SettingsOwner>,
-) -> Result<PaneWidths, Error> {
-    Ok(owner.save_panes(widths)?.panes)
+) -> Result<PaneLayout, Error> {
+    Ok(owner.save_panes(layout)?.panes)
 }
 
 /// The rows of a view of a Repository's Workbench, with what its Sidebar shows. This waits

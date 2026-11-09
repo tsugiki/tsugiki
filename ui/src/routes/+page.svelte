@@ -46,7 +46,10 @@
   $effect(() => {
     if (home.current?.screen === "onboarding" || home.error) hud.skipStartup();
   });
+  /** The open Repository's screen, which adds its own commands to the palette. */
+  let repositoryHome = $state<ReturnType<typeof RepositoryHome>>();
   const commands: PaletteCommand[] = $derived([
+    ...(repositoryHome?.paletteCommands() ?? []),
     {
       title: hud.visible ? "Hide performance HUD" : "Show performance HUD",
       run: () => {
@@ -64,6 +67,7 @@
     <Onboarding token={home.current.token} onadd={openAdd} />
   {:else if home.current?.screen === "repository"}
     <RepositoryHome
+      bind:this={repositoryHome}
       name={home.current.repository.name}
       onadd={openAdd}
       keysActive={!addOpen && !paletteOpen}

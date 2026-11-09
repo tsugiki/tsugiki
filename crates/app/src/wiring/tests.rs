@@ -17,6 +17,7 @@ use tsugiki_core::repository::RepositoryAccess;
 use tsugiki_core::settings::SettingsFiles;
 use tsugiki_core::token::{GhOutput, Token};
 use tsugiki_core::web::{GitHubItem, WebAddress};
+use tsugiki_test_git::git;
 
 /// Longer than any of these tests should wait on a working app.
 const PLENTY: Duration = Duration::from_secs(60);
@@ -779,59 +780,14 @@ fn a_change_the_window_cant_hear_leaves_only_a_trace() {
     log_if_unsent(Err(tauri::Error::WindowNotFound));
 }
 
-#[expect(
-    clippy::disallowed_types,
-    reason = "tests build their repositories with the real git (ADR 0009)"
-)]
-fn git(dir: &Path, args: &[&str]) {
-    let output = std::process::Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "git {args:?}: {output:?}");
-}
-
-/// Bare repositories with one commit each under `root`, laid out as GitHub's are, for mirrors to clone.
+/// Bare repositories with one commit each under `root/remotes`, laid out as GitHub's are, for mirrors to
+/// clone.
 fn remotes(root: &Path, names: &[&str]) -> Remotes {
     let remotes = root.join("remotes");
     for name in names {
-        let work = remotes.join("work").join(name);
-        std::fs::create_dir_all(&work).unwrap();
-        git(&work, &["init", "-q", "-b", "main"]);
-        std::fs::write(
-            work.join("README.rst"),
-            "This is Python version 3.15.0 alpha 0\n",
-        )
-        .unwrap();
-        git(&work, &["add", "README.rst"]);
-        git(
-            &work,
-            &[
-                "-c",
-                "user.name=Contributor",
-                "-c",
-                "user.email=contributor@example.com",
-                "commit",
-                "-qm",
-                "One",
-            ],
-        );
-        let bare = remotes.join(format!("{name}.git"));
-        git(
-            &remotes,
-            &[
-                "clone",
-                "-q",
-                "--bare",
-                &work.to_string_lossy(),
-                &bare.to_string_lossy(),
-            ],
-        );
+        tsugiki_test_git::remote(&remotes, name);
     }
-    let path = remotes.to_string_lossy().replace('\\', "/");
-    let slash = if path.starts_with('/') { "" } else { "/" };
-    Remotes::under(format!("file://{slash}{path}/"))
+    Remotes::under(tsugiki_test_git::url(&remotes))
 }
 
 /// The Repositories each clone announced, in turn, as the webview heard them.
@@ -929,7 +885,7 @@ fn a_repository_from_before_asks_where_its_mirror_gets_objects_and_borrows_on_th
     let remotes = remotes(&root, &[CPYTHON]);
     let lender = root.join("user-cpython");
     let url = remotes.url(&cpython);
-    git(&root, &["clone", "-q", &url, &lender.to_string_lossy()]);
+    let _ = git(&root, &["clone", "-q", &url, &lender.to_string_lossy()]);
     let picked = lender.clone();
     let wired = Wired::start_picking(
         Ok(folders.clone()),
@@ -1049,36 +1005,10 @@ fn find_in_pr_1(wired: &Wired, (head, base): (&str, &str), query: &str) -> Resul
     wired.ask("pull_request_find", json!({ "search": search }))
 }
 
-/// Puts a commit of PR `number`'s own on the remote for `name`, under `refs/pull/N/head` as GitHub
-/// keeps it, and gives the commit.
+/// Puts a commit of PR `number`'s own on the remote for `name` among the [`remotes`] under `root`, and
+/// gives the commit.
 fn pull_request_on(root: &Path, name: &str, number: u32) -> String {
-    let work = root.join("remotes").join("work").join(name);
-    std::fs::write(work.join("NEWS"), format!("PR {number}\n")).unwrap();
-    git(&work, &["add", "NEWS"]);
-    git(
-        &work,
-        &[
-            "-c",
-            "user.name=Contributor",
-            "-c",
-            "user.email=contributor@example.com",
-            "commit",
-            "-qm",
-            "PR",
-        ],
-    );
-    let bare = root.join("remotes").join(format!("{name}.git"));
-    git(
-        &work,
-        &[
-            "push",
-            "-q",
-            &bare.to_string_lossy(),
-            &format!("HEAD:refs/pull/{number}/head"),
-        ],
-    );
-    let head = std::fs::read_to_string(bare.join(format!("refs/pull/{number}/head")));
-    head.unwrap().trim().to_owned()
+    tsugiki_test_git::pull_request(&root.join("remotes"), name, number)
 }
 
 #[test]

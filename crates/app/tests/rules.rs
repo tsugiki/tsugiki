@@ -1,6 +1,6 @@
 //! Rules about the rules: each one says why it is here, so a reader can judge a violation or an exception
-//! without guessing. Also the one layering rule Clippy can't see, since it lives in a manifest (ADR 0007),
-//! and the rule that keeps each test module in a file of its own.
+//! without guessing. Also the layering rules Clippy can't see, since they live in manifests (ADR 0007,
+//! ADR 0009), and the rule that keeps each test module in a file of its own.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -131,6 +131,32 @@ fn the_core_doesnt_depend_on_tauri() {
         !manifest.to_lowercase().contains("tauri"),
         "the core stays free of the desktop shell, so it can run without a window (ADR 0007)"
     );
+}
+
+/// The table each line of `manifest` that names `package` sits under, such as `[dev-dependencies]`.
+fn tables_naming<'a>(manifest: &'a str, package: &str) -> Vec<&'a str> {
+    let mut table = "";
+    let mut found = Vec::new();
+    for line in manifest.lines() {
+        if line.starts_with('[') {
+            table = line;
+        } else if line.starts_with(package) {
+            found.push(table);
+        }
+    }
+    found
+}
+
+#[test]
+fn only_tests_depend_on_the_git_test_helpers() {
+    for manifest in ["crates/core/Cargo.toml", "crates/app/Cargo.toml"] {
+        assert_eq!(
+            tables_naming(&read(manifest), "tsugiki-test-git"),
+            ["[dev-dependencies]"],
+            "{manifest}: tsugiki-test-git runs git outside crates/core/src/github/live.rs, which only tests \
+             may do (ADR 0009)"
+        );
+    }
 }
 
 /// The 1-based lines of `source` that open an inline test module: a `mod name {` after a `#[cfg(...)]` that

@@ -47,6 +47,7 @@ windows.workspace = true
 [dev-dependencies]
 divan.workspace = true
 insta.workspace = true
+tsugiki-test-git.workspace = true
 
 [[bench]]
 name = "about"

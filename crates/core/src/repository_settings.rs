@@ -7,7 +7,7 @@ use specta::Type;
 use crate::conventions::Conventions;
 use crate::filters::Filter;
 use crate::repository::{
-    RepositoryAccess, RepositoryCounts, RepositoryName, RepositorySize, SMALL_UP_TO, WINDOW_DAYS,
+    FoundRepository, RepositoryAccess, RepositoryName, RepositorySize, WINDOW_DAYS,
 };
 
 /// Measured on CPython's last 30 days (#132): 4,760 items took about 485 points and 20.5 minutes, one request
@@ -96,15 +96,17 @@ pub struct RepositoryCheck {
 }
 
 impl RepositoryCheck {
-    pub fn new(name: RepositoryName, counts: RepositoryCounts, access: RepositoryAccess) -> Self {
-        let open = counts.open_issues.saturating_add(counts.open_prs);
-        let (size, items) = if open <= SMALL_UP_TO {
-            (
-                RepositorySize::Small,
-                open.saturating_add(counts.closed_in_window),
-            )
-        } else {
-            (RepositorySize::Large, counts.updated_in_window)
+    /// What adding the Repository GitHub `found` would give and cost.
+    pub fn new(found: FoundRepository) -> Self {
+        let FoundRepository {
+            name,
+            counts,
+            access,
+        } = found;
+        let size = counts.size();
+        let items = match size {
+            RepositorySize::Small => counts.open().saturating_add(counts.closed_in_window),
+            RepositorySize::Large => counts.updated_in_window,
         };
         Self {
             repository: RepositorySettings::added(name, access),

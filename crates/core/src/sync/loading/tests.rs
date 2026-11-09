@@ -4,7 +4,7 @@ use time::{Duration, OffsetDateTime};
 use crate::github::testing::{dated, signed_in_as};
 use crate::github::{Reply, Unreachable};
 use crate::login::Login;
-use crate::repository::{RepositoryAccess, RepositoryCounts};
+use crate::repository::{FoundRepository, RepositoryAccess, RepositoryCounts};
 use crate::repository_settings::{RepositoryCheck, RepositorySettings};
 use crate::status::SyncPart;
 use crate::store::FirstSyncPlace;
@@ -1136,7 +1136,11 @@ fn a_small_repository_loads_what_the_add_dialog_counted() {
 
     drop(run_to_the_end(&mut syncs, &harness));
 
-    let check = RepositoryCheck::new(cpython(), counts, RepositoryAccess::Other);
+    let check = RepositoryCheck::new(FoundRepository {
+        name: cpython(),
+        counts,
+        access: RepositoryAccess::Other,
+    });
     let mut issues: Vec<u32> = harness
         .store
         .issues(&cpython())

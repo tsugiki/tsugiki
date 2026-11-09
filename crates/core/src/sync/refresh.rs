@@ -19,7 +19,7 @@ use crate::github::pull_requests::{NodeId, PrFetch, PrState, PullRequestFacts};
 use crate::github::refresh::{ChangedPr, Etag, ListCheck, ListPlace, PollRequest};
 use crate::links::{BackportKind, MergeCommits, backport_of};
 use crate::login::Login;
-use crate::repository::SMALL_UP_TO;
+use crate::repository::RepositorySize;
 use crate::repository_settings::RepositorySettings;
 use crate::store::{ChangeCheck, NarrowedResults, SyncState};
 use crate::workbench::{Workbench, reasons};
@@ -216,10 +216,10 @@ fn read_page(link: &Link<'_>, poll: &mut Poll, check: &mut ChangeCheck) -> Resul
     poll.changed_prs.extend(answer.pull_requests);
     poll.issues = answer.next_issues;
     poll.pull_requests = answer.next_pull_requests;
-    *check = match (answer.open_items <= SMALL_UP_TO, poll.tag.clone()) {
-        (false, _) => ChangeCheck::Skipped,
-        (true, None) => ChangeCheck::Untagged,
-        (true, Some(tag)) => ChangeCheck::Tagged(tag),
+    *check = match (RepositorySize::of(answer.open_items), poll.tag.clone()) {
+        (RepositorySize::Large, _) => ChangeCheck::Skipped,
+        (RepositorySize::Small, None) => ChangeCheck::Untagged,
+        (RepositorySize::Small, Some(tag)) => ChangeCheck::Tagged(tag),
     };
     Ok(Step::saved_if_any(touched, pause_until(answer.rate_limit)))
 }

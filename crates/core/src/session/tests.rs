@@ -5,7 +5,7 @@ use crate::github::replay::Replayer;
 use crate::github::testing::{Canned, Scripted, answered, reply_ok, signed_in_as, signed_in_gh};
 use crate::github::{CommitSha, Reply, Request, Transport, Unreachable};
 use crate::login::Login;
-use crate::repository::RepositoryName;
+use crate::repository::{RepositoryName, RepositorySize};
 use crate::repository_settings::RepositorySettings;
 use crate::status::Change;
 use crate::status::testing::{
@@ -586,7 +586,11 @@ fn a_session_answers_a_check_between_refreshes() {
     session.stop(PLENTY);
     fs::remove_dir_all(folders.data).unwrap();
 
+    assert_eq!(check.repository.name, gcmon());
     assert_eq!((check.open_issues, check.open_prs), (10, 3));
+    assert_eq!(check.size, RepositorySize::Small);
+    // Its 13 open items and the 35 that closed in the window.
+    assert_eq!(check.first_sync_items, 48);
 }
 
 #[test]

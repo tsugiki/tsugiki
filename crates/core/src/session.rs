@@ -312,7 +312,11 @@ impl Refreshes {
                         clippy::let_underscore_must_use,
                         reason = "this fails only if the caller has gone, and it waits for this answer"
                     )]
-                    let _ = reply.send(github.check_repository(&name, today));
+                    let _ = reply.send(
+                        github
+                            .check_repository(&name, today)
+                            .map(RepositoryCheck::new),
+                    );
                 }
                 Ok(Message::Stop) | Err(RecvTimeoutError::Disconnected) => return Turn::Stop,
                 Err(RecvTimeoutError::Timeout) if Instant::now() >= due.status => {

@@ -83,3 +83,28 @@ fn a_name_travels_as_a_plain_string_and_is_checked_on_the_way_in() {
     let problem = serde_json::from_str::<RepositoryName>(r#""nonsense""#).unwrap_err();
     assert!(problem.to_string().contains(BAD_NAME), "{problem}");
 }
+
+#[test]
+fn up_to_500_open_is_small_and_more_is_large() {
+    assert_eq!(RepositorySize::of(0), RepositorySize::Small);
+    assert_eq!(RepositorySize::of(500), RepositorySize::Small);
+    assert_eq!(RepositorySize::of(501), RepositorySize::Large);
+}
+
+#[test]
+fn open_items_are_the_open_issues_and_prs_together() {
+    let counts = RepositoryCounts {
+        open_issues: 6945,
+        open_prs: 2324,
+        updated_in_window: 0,
+        closed_in_window: 0,
+        disk_kb: 0,
+    };
+    assert_eq!(counts.open(), 9269);
+    assert_eq!(counts.size(), RepositorySize::Large);
+    let full = RepositoryCounts {
+        open_issues: u32::MAX,
+        ..counts
+    };
+    assert_eq!(full.open(), u32::MAX);
+}

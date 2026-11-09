@@ -27,7 +27,8 @@ impl World {
             view,
             folders: Folders {
                 data: data.clone(),
-                settings: data,
+                settings: data.clone(),
+                logs: data,
             },
             diffs: Diffs::default(),
             mirrors,

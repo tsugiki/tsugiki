@@ -23,12 +23,76 @@ fn env_of(variables: &[(&str, &Path)]) -> impl Fn(&str) -> Option<OsString> + us
 }
 
 #[test]
-fn the_log_sits_beside_the_database() {
-    let folders = Folders {
-        data: PathBuf::from("data"),
-        settings: PathBuf::from("settings"),
-    };
-    assert_eq!(folders.log(), Path::new("data").join("tsugiki.log"));
+fn an_installed_release_logs_beside_its_database() {
+    let root = temp_folder("release-log");
+    let (local, roaming) = (root.join("Local"), root.join("Roaming"));
+    let env = env_of(&[
+        ("LOCALAPPDATA", &local),
+        ("APPDATA", &roaming),
+        ("HOME", &root),
+    ]);
+
+    let windows = Folders::find(Os::Windows, Build::Release, &root.join("tsg.exe"), &env).unwrap();
+    let macos = Folders::find(Os::MacOs, Build::Release, &root.join("tsg"), &env).unwrap();
+    fs::remove_dir_all(&root).unwrap();
+
+    assert_eq!(windows.log(), local.join("tsugiki").join("tsugiki.log"));
+    assert_eq!(
+        macos.log(),
+        root.join("Library")
+            .join("Application Support")
+            .join("tsugiki")
+            .join("tsugiki.log")
+    );
+}
+
+#[test]
+fn a_development_build_logs_in_the_repos_root_where_just_dev_runs() {
+    let root = temp_folder("development-log");
+    let env = env_of(&[("LOCALAPPDATA", &root), ("APPDATA", &root), ("HOME", &root)]);
+
+    let windows =
+        Folders::find(Os::Windows, Build::Development, &root.join("tsg.exe"), &env).unwrap();
+    let macos = Folders::find(Os::MacOs, Build::Development, &root.join("tsg"), &env).unwrap();
+    fs::remove_dir_all(&root).unwrap();
+
+    for folders in [windows, macos] {
+        let log = folders.log();
+        assert_eq!(log.file_name().unwrap(), "tsugiki.log");
+        let folder = log.parent().unwrap();
+        assert!(folder.join("justfile").is_file(), "{}", log.display());
+        assert!(folder.join("Cargo.lock").is_file(), "{}", log.display());
+        assert!(folders.data.ends_with("tsugiki-dev"), "{:?}", folders.data);
+    }
+}
+
+#[test]
+fn a_checkout_that_moved_or_went_leaves_no_repos_root_to_log_in() {
+    let root = temp_folder("moved-checkout");
+    let crate_folder = root.join("crates").join("core");
+    fs::create_dir_all(&crate_folder).unwrap();
+
+    let gone = checkout_root(&crate_folder);
+    fs::write(root.join("justfile"), "").unwrap();
+    let there = checkout_root(&crate_folder);
+    fs::remove_dir_all(&root).unwrap();
+
+    assert_eq!(gone, None);
+    assert_eq!(there, Some(root));
+}
+
+#[test]
+fn a_portable_copy_logs_in_its_folder_whatever_its_build() {
+    let root = temp_folder("portable-log");
+    fs::create_dir(root.join("data")).unwrap();
+    let exe = root.join("tsg.exe");
+
+    let release = Folders::find(Os::Windows, Build::Release, &exe, &env_of(&[])).unwrap();
+    let development = Folders::find(Os::Windows, Build::Development, &exe, &env_of(&[])).unwrap();
+    fs::remove_dir_all(&root).unwrap();
+
+    assert_eq!(release.log(), root.join("data").join("tsugiki.log"));
+    assert_eq!(development.log(), root.join("data").join("tsugiki.log"));
 }
 
 #[test]
@@ -36,6 +100,7 @@ fn the_webview_keeps_its_data_with_ours_so_a_portable_copy_stays_in_its_folder()
     let folders = Folders {
         data: PathBuf::from("data"),
         settings: PathBuf::from("settings"),
+        logs: PathBuf::from("logs"),
     };
     assert_eq!(folders.webview(), Path::new("data").join("webview"));
 }

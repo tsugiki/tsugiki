@@ -29,13 +29,28 @@ impl Os {
 /// A **Mirror**'s folder, in its Repository's folder.
 const MIRROR: &str = "mirror.git";
 
+/// The root of the repo this program was built from, two folders up from this crate's, where `just dev` runs.
+/// None once the checkout has moved or gone, or on a machine that never had it.
+fn repo_root() -> Option<PathBuf> {
+    checkout_root(Path::new(env!("CARGO_MANIFEST_DIR")))
+}
+
+/// The checkout two folders up from a crate's folder, if it still holds the `justfile`.
+fn checkout_root(crate_folder: &Path) -> Option<PathBuf> {
+    let root = crate_folder.ancestors().nth(2)?;
+    root.join("justfile").is_file().then(|| root.to_owned())
+}
+
 /// The folders Tsugiki's files live in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Folders {
-    /// Holds `tsugiki.db`, `tsugiki.log`, `machine.toml`, `repos` and `webview`.
+    /// Holds `tsugiki.db`, `machine.toml`, `repos` and `webview`.
     pub data: PathBuf,
     /// Holds `settings.toml`, unless `settings_path` in `machine.toml` says otherwise.
     pub settings: PathBuf,
+    /// Holds `tsugiki.log` and `tsugiki.log.1`: `data`, or the repo's root for a development build that
+    /// isn't portable and still has its checkout.
+    pub logs: PathBuf,
 }
 
 impl Folders {
@@ -46,7 +61,7 @@ impl Folders {
 
     /// Where the log is. The file before it is `tsugiki.log.1`, next to it.
     pub fn log(&self) -> PathBuf {
-        self.data.join("tsugiki.log")
+        self.logs.join("tsugiki.log")
     }
 
     /// Where the webview on Windows keeps its profile and cache, so a portable copy stays in its folder.
@@ -110,26 +125,35 @@ impl Folders {
         if let Some(portable) = portable_folder(os, exe) {
             return Ok(Self {
                 settings: portable.clone(),
+                logs: portable.clone(),
                 data: portable,
             });
         }
         let name = build.folder_name();
-        match os {
-            Os::Windows => Ok(Self {
-                data: folder_from_env(env, "LOCALAPPDATA")?.join(name),
-                settings: folder_from_env(env, "APPDATA")?.join(name),
-            }),
+        let (data, settings) = match os {
+            Os::Windows => (
+                folder_from_env(env, "LOCALAPPDATA")?.join(name),
+                folder_from_env(env, "APPDATA")?.join(name),
+            ),
             Os::MacOs => {
                 let data = folder_from_env(env, "HOME")?
                     .join("Library")
                     .join("Application Support")
                     .join(name);
-                Ok(Self {
-                    settings: data.clone(),
-                    data,
-                })
+                (data.clone(), data)
             }
-        }
+        };
+        // A developer finds the log in the folder they ran `just dev` from.
+        let logs = match build {
+            Build::Release => None,
+            Build::Development => repo_root(),
+        };
+        let logs = logs.unwrap_or_else(|| data.clone());
+        Ok(Self {
+            data,
+            settings,
+            logs,
+        })
     }
 }
 

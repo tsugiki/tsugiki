@@ -72,7 +72,8 @@ fn temp_folders(name: &str) -> Folders {
     fs::create_dir_all(&folder).unwrap();
     Folders {
         data: folder.clone(),
-        settings: folder,
+        settings: folder.clone(),
+        logs: folder,
     }
 }
 

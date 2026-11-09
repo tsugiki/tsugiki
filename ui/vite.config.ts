@@ -13,6 +13,8 @@ export default defineConfig({
     // TypeScript's coverage gate (ADR 0009). `npm run coverage -w ui` turns it on.
     coverage: {
       provider: "v8",
+      // In the ignored .temp beside the other test output; CI hands lcov.info to Codecov from there.
+      reportsDirectory: "../.temp/vitest-coverage",
       allowExternal: true,
       include: ["src/**/*.{ts,svelte}", "eslint/**/*.ts", "../scripts/**/*.ts"],
       exclude: [

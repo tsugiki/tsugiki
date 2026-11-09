@@ -91,16 +91,20 @@ fn a_graphql_error_without_a_type_passes_on_githubs_words() {
 fn a_graphql_forbidden_error_passes_on_githubs_words() {
     let error = error_of(answered(
         200,
-        r#"{"errors":[{"type":"FORBIDDEN","message":"No such thing"}]}"#,
+        r#"{"errors":[{"type":"FORBIDDEN","message":"Resource not accessible by integration"}]}"#,
     ));
     assert_eq!(error.kind, ErrorKind::QueryRefused);
-    assert_eq!(error.message, "GitHub said: No such thing");
+    assert_eq!(
+        error.message,
+        "GitHub said: Resource not accessible by integration"
+    );
 }
 
 #[test]
 fn a_graphql_error_of_a_type_tsugiki_doesnt_know_passes_on_githubs_words() {
-    // A sync saves a refused query on its Filter and moves on, but an unreadable reply fails the step. So
-    // a type `GraphqlErrorKind` doesn't name must not make the reply unreadable.
+    // A sync saves a refused query on its Filter and moves on (`blames_the_search` in `sync/filters.rs`), but
+    // an unreadable reply fails the step. So a type `GraphqlErrorKind` doesn't name must not make the reply
+    // unreadable.
     let error = error_of(answered(
         200,
         r#"{"errors":[{"type":"MAX_NODE_LIMIT_EXCEEDED","message":"Too many nodes"}]}"#,

@@ -36,6 +36,7 @@ vi.mock("$lib/data/bindings", () => ({
     headsFetched: { listen: core.listen },
     headsFetchFailed: { listen: core.listen },
     changed: { listen: core.listen },
+    readFailed: { listen: core.listen },
     cloningChanged: { listen: core.listen },
   },
 }));

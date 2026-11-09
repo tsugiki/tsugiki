@@ -75,6 +75,7 @@ struct Wired {
     webview: WebviewWindow<MockRuntime>,
     statuses: Receiver<Value>,
     workbenches: Receiver<Value>,
+    failed_reads: Receiver<Value>,
     last_syncs: Receiver<Value>,
     activities: Receiver<Value>,
     clonings: Receiver<Value>,
@@ -114,6 +115,7 @@ impl Wired {
         builder.mount_events(&app);
         let statuses = hear(&app, "status-changed");
         let workbenches = hear(&app, "changed");
+        let failed_reads = hear(&app, "read-failed");
         let last_syncs = hear(&app, "last-sync-changed");
         let activities = hear(&app, "sync-activity-changed");
         let clonings = hear(&app, "cloning-changed");
@@ -135,6 +137,7 @@ impl Wired {
             webview,
             statuses,
             workbenches,
+            failed_reads,
             last_syncs,
             activities,
             clonings,
@@ -376,6 +379,29 @@ fn opening_an_issue_moves_its_last_seen_and_tells_the_window() {
 
     assert_eq!(changed, json!({ "repository": CPYTHON, "items": [7] }));
     assert_eq!(held, Value::Null, "nothing has saved an Issue #7");
+}
+
+#[test]
+fn a_pr_read_github_cant_answer_tells_the_window_it_waits_on_github() {
+    let (folders, root) = temp_folders("wired-pr-offline");
+    let wired = Wired::start(Ok(folders), no_network());
+
+    drop(
+        wired
+            .ask(
+                "fetch_pull_request",
+                json!({ "repository": CPYTHON, "number": 7 }),
+            )
+            .unwrap(),
+    );
+    let failed = wired.failed_reads.recv_timeout(PLENTY).unwrap();
+    drop(wired.stop());
+    std::fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(
+        failed,
+        json!({ "repository": CPYTHON, "number": 7, "why": "waits_on_github" })
+    );
 }
 
 #[test]

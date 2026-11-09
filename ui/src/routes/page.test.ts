@@ -32,6 +32,7 @@ vi.mock("$lib/data/bindings", () => ({
     mirrorProblemChanged: { listen: async () => () => {} },
     mirrorQuestionChanged: { listen: async () => () => {} },
     changed: { listen: async () => () => {} },
+    readFailed: { listen: async () => () => {} },
   },
 }));
 

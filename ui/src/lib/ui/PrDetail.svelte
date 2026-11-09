@@ -1,5 +1,6 @@
 <script lang="ts">
   import { openLink, openOnGitHub, type GitHubItem } from "$lib/state/browser";
+  import type { ReadFailure } from "$lib/state/detail-view.svelte";
   import type { PrTab, PrViewState } from "$lib/state/pr-view.svelte";
   import Conversation from "./Conversation.svelte";
   import FilesTab from "./FilesTab.svelte";
@@ -18,6 +19,16 @@
     { tab: "conversation", name: "Conversation" },
     { tab: "files", name: "Files" },
   ];
+
+  /** The Conversation tab's words before its first read lands, and why it hasn't once a read failed. */
+  const UNREAD: Record<ReadFailure | "reading", string> = {
+    reading: "Reading from GitHub…",
+    no_token:
+      "Tsugiki can't ask GitHub for the Conversation without a token. The status bar says how to sign in.",
+    waits_on_github: "The Conversation comes once GitHub answers.",
+    not_on_github: "GitHub doesn't have this PR, or your token can't see it.",
+    other: "Tsugiki couldn't read this PR's Conversation from GitHub. tsugiki.log says why.",
+  };
 
   let browserProblem = $state<string>();
 
@@ -78,7 +89,7 @@
             }}
           />
         {:else}
-          <p class="by">Reading from GitHub…</p>
+          <p class="by">{UNREAD[pr.failedRead ?? "reading"]}</p>
         {/if}
       {:else}
         <FilesTab files={pr.files} {now} onlink={(address) => void followLink(address)} />

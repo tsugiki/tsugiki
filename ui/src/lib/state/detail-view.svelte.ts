@@ -1,8 +1,10 @@
 // What the Detail pane shows, an Issue or a PR: opened once, asked for again each time the core says its
 // Repository changed (ADR 0008), and read from GitHub about once a minute while it's on screen (ADR 0015).
 // An Issue view stays hidden while a PR from its tree is on show, and asks nobody anything until it shows.
-import { events } from "$lib/data/bindings";
+import { events, type ReadFailure } from "$lib/data/bindings";
 import { hud } from "./hud.svelte";
+
+export type { ReadFailure };
 
 const MINUTE = 60_000;
 
@@ -20,6 +22,9 @@ export class DetailState<View extends { content: unknown }> {
   /** Undefined until the core answers, and null if Tsugiki doesn't hold this item. */
   view = $state<View | null>();
   error = $state<string>();
+  /** The reason the last read from GitHub failed. Nothing, until one fails. A view that holds what the item
+   * says shows that instead. */
+  failedRead = $state<ReadFailure>();
   readonly number: number;
   #repository: string;
   #commands: DetailCommands<View>;
@@ -39,25 +44,37 @@ export class DetailState<View extends { content: unknown }> {
     this.#commands = commands;
   }
 
-  /** Listens before it opens the item, so it hears the core saving what GitHub says. */
+  /** Listens before it opens the item, so it hears the core saving what GitHub says, or why it couldn't. */
   async load() {
-    try {
+    const listening = await Promise.allSettled([
       // A change can touch a PR in an Issue's tree, or give the Issue a new one, so any change asks again.
-      const stopListening = await events.changed.listen(({ payload }) => {
+      events.changed.listen(({ payload }) => {
         if (payload.repository !== this.#repository) return;
         if (this.#hidden) this.#missedChange = true;
         else void this.#ask();
-      });
-      if (this.#stopped) {
-        stopListening();
-        return;
-      }
-      this.#stopListening = stopListening;
-    } catch (e) {
+      }),
+      events.readFailed.listen(({ payload }) => {
+        if (payload.repository === this.#repository && payload.number === this.number)
+          this.failedRead = payload.why;
+      }),
+    ]);
+    // A listener that did start stops with the view, even when the other one couldn't.
+    const stops = listening.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+    const stopListening = () => {
+      for (const stop of stops) stop();
+    };
+    const refused = listening.find((result) => result.status === "rejected");
+    if (refused) {
       // With no listener the view would go stale, and the next good answer would clear this error.
-      this.error = String(e);
+      stopListening();
+      this.error = String(refused.reason);
       return;
     }
+    if (this.#stopped) {
+      stopListening();
+      return;
+    }
+    this.#stopListening = stopListening;
     this.#reading = setInterval(() => {
       if (document.hidden) return;
       if (this.#hidden) this.#missedRead = true;

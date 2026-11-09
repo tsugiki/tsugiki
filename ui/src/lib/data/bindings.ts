@@ -140,6 +140,7 @@ export const events = {
 	lastSyncChanged: makeEvent<LastSyncChanged_Serialize, LastSyncChanged_Deserialize>("last-sync-changed"),
 	mirrorProblemChanged: makeEvent<MirrorProblemChanged_Serialize, MirrorProblemChanged_Deserialize>("mirror-problem-changed"),
 	mirrorQuestionChanged: makeEvent<MirrorQuestionChanged_Serialize, MirrorQuestionChanged_Deserialize>("mirror-question-changed"),
+	readFailed: makeEvent<ReadFailed, ReadFailed>("read-failed"),
 	statusChanged: makeEvent<StatusChanged_Serialize, StatusChanged_Deserialize>("status-changed"),
 	syncActivityChanged: makeEvent<SyncActivityChanged_Serialize, SyncActivityChanged_Deserialize>("sync-activity-changed"),
 };
@@ -449,6 +450,13 @@ export type Error_Serialize = {
 export type FailedHeads = {
 	why: Unfetched,
 } & Change;
+
+/**  A read of an Issue or a PR on screen that failed, so the window can say why it shows nothing new. */
+export type FailedRead = {
+	repository: RepositoryName,
+	number: number,
+	why: ReadFailure,
+};
 
 /**  How much a file changed. */
 export type FileChange = { kind: "lines"; added: number; removed: number } | 
@@ -1257,6 +1265,32 @@ export type PullRequestContent_Serialize = {
 	 */
 	earlier_reviews: number,
 } & IssueContent_Serialize;
+
+/**
+ *  Sent when a read of an Issue or a PR on screen fails, so a view still waiting for what it says can say
+ *  why (#189).
+ */
+export type ReadFailed = FailedRead;
+
+/**  The reason a read of what an Issue or a PR says didn't bring it from GitHub. */
+export type ReadFailure = 
+/**
+ *  Tsugiki has no token, so it asks GitHub nothing until it starts again, and the status bar says how to
+ *  sign in.
+ */
+"no_token" | 
+/**
+ *  GitHub can't be asked anything now, and the status bar says why. A read after GitHub answers again
+ *  brings it.
+ */
+"waits_on_github" | 
+/**  GitHub has no such item, or the token can't see it. */
+"not_on_github" | 
+/**
+ *  Anything else that went wrong with this one read, such as an answer Tsugiki couldn't parse. The log
+ *  says what it was.
+ */
+"other";
 
 /**  The background refreshes that ran while the window drew frames. */
 export type Refreshes = {

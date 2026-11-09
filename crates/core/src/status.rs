@@ -36,6 +36,33 @@ pub struct Change {
     pub items: Vec<u32>,
 }
 
+/// The reason a read of what an Issue or a PR says didn't bring it from GitHub.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ReadFailure {
+    /// Tsugiki has no token, so it asks GitHub nothing until it starts again, and the status bar says how to
+    /// sign in.
+    NoToken,
+    /// GitHub can't be asked anything now, and the status bar says why. A read after GitHub answers again
+    /// brings it.
+    #[serde(rename = "waits_on_github")]
+    WaitsOnGitHub,
+    /// GitHub has no such item, or the token can't see it.
+    #[serde(rename = "not_on_github")]
+    NotOnGitHub,
+    /// Anything else that went wrong with this one read, such as an answer Tsugiki couldn't parse. The log
+    /// says what it was.
+    Other,
+}
+
+/// A read of an Issue or a PR on screen that failed, so the window can say why it shows nothing new.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct FailedRead {
+    pub repository: RepositoryName,
+    pub number: u32,
+    pub why: ReadFailure,
+}
+
 /// When the open Repository last finished a sync.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct LastSync {
@@ -106,6 +133,7 @@ pub struct StatusBoard {
     current: Status,
     announce: Box<dyn FnMut(&Status) + Send>,
     announce_change: Box<dyn FnMut(&Change) + Send>,
+    announce_failed_read: Box<dyn FnMut(&FailedRead) + Send>,
     announce_last_sync: Box<dyn FnMut(&LastSync) + Send>,
     sync_activity: Option<SyncActivity>,
     announce_sync_activity: AnnounceActivity,
@@ -118,6 +146,7 @@ impl StatusBoard {
             current: Status::default(),
             announce,
             announce_change: Box::new(|_| {}),
+            announce_failed_read: Box::new(|_| {}),
             announce_last_sync: Box::new(|_| {}),
             sync_activity: None,
             announce_sync_activity: Box::new(|_| {}),
@@ -129,6 +158,13 @@ impl StatusBoard {
     #[must_use]
     pub fn with_changes(mut self, announce: Box<dyn FnMut(&Change) + Send>) -> Self {
         self.announce_change = announce;
+        self
+    }
+
+    /// Also tells `announce` when a read of an Issue or a PR on screen fails.
+    #[must_use]
+    pub fn with_failed_reads(mut self, announce: Box<dyn FnMut(&FailedRead) + Send>) -> Self {
+        self.announce_failed_read = announce;
         self
     }
 
@@ -167,6 +203,10 @@ impl StatusBoard {
 
     pub(crate) fn changed(&mut self, change: &Change) {
         (self.announce_change)(change);
+    }
+
+    pub(crate) fn failed_read(&mut self, failed: &FailedRead) {
+        (self.announce_failed_read)(failed);
     }
 
     pub(crate) fn last_sync(&mut self, last_sync: &LastSync) {

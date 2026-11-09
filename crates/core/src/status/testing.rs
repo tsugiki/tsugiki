@@ -11,6 +11,17 @@ pub(crate) fn changes_board() -> (StatusBoard, Receiver<Change>) {
     (board, seen)
 }
 
+/// A board that passes on the reads of items on screen that failed, and drops status changes.
+pub(crate) fn failed_reads_board() -> (StatusBoard, Receiver<FailedRead>) {
+    let (passed, seen) = mpsc::channel();
+    let board = StatusBoard::new(Box::new(|_| {})).with_failed_reads(Box::new(
+        move |failed: &FailedRead| {
+            passed.send(failed.clone()).unwrap();
+        },
+    ));
+    (board, seen)
+}
+
 /// A board that passes on the PR heads it is handed, for the mirrors.
 pub(crate) fn heads_board() -> (StatusBoard, Receiver<(RepositoryName, Vec<PrHead>)>) {
     let (passed, seen) = mpsc::channel();

@@ -20,7 +20,7 @@ vi.mock("$lib/data/bindings", () => ({
     openOnGithub: core.openOnGithub,
     openLink: core.openLink,
   },
-  events: { changed: { listen: core.listen } },
+  events: { changed: { listen: core.listen }, readFailed: { listen: core.listen } },
 }));
 
 const row = {

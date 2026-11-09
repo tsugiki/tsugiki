@@ -20,7 +20,8 @@ use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
 use crate::latest::{self, LatestReader};
 use crate::mirror::{MirrorSource, MirrorSources};
-use crate::repository::{Home, RepositoryAccess, RepositoryName, RepositorySettings};
+use crate::repository::{RepositoryAccess, RepositoryName};
+use crate::repository_settings::RepositorySettings;
 
 const REPOSITORIES: &str = "repositories";
 const FILTERS: &str = "filters";
@@ -77,6 +78,31 @@ pub struct SettingsView {
     pub panes: PaneWidths,
     /// The user's answer, on this machine, of where each Repository's mirror gets its objects.
     pub mirror_sources: MirrorSources,
+}
+
+/// Where the token comes from. A personal access token joins this with the Account page (ADR 0004).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum TokenSource {
+    Gh,
+}
+
+/// What the window opens on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "screen", rename_all = "snake_case")]
+pub enum Home {
+    /// No Repositories yet.
+    Onboarding { token: TokenSource },
+    /// The last Repository the user had open.
+    Repository { repository: RepositorySettings },
+}
+
+impl Default for Home {
+    fn default() -> Self {
+        Self::Onboarding {
+            token: TokenSource::Gh,
+        }
+    }
 }
 
 /// How wide the user dragged the Sidebar and the Workbench list, in CSS pixels (#187). Each stays on this

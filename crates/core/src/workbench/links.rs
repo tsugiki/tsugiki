@@ -4,11 +4,11 @@ use std::collections::BTreeSet;
 
 use super::WorkbenchRow;
 use super::rows::row;
-use crate::github::Login;
 use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::PullRequestFacts;
 use crate::links::{BackportLink, MergeCommits, backport_of, fixed_numbers};
-use crate::repository::RepositorySettings;
+use crate::login::Login;
+use crate::repository_settings::RepositorySettings;
 
 /// A PR with what the link rules say about it.
 pub(super) struct Linked {

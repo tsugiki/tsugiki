@@ -11,10 +11,10 @@ use super::rows::reasons;
 use super::{IssueItem, WorkReason, WorkbenchItem};
 use crate::activity::{News, WhatHappened, has_failed};
 use crate::conventions::Conventions;
-use crate::github::Login;
 use crate::github::activity::{Activity, ActivityKind};
 use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
+use crate::login::Login;
 use crate::store::{ActivityFacts, WorkFacts};
 
 /// One reason an item Needs attention.

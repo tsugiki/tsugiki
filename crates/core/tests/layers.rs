@@ -58,6 +58,11 @@ const LAYERS: &[Layer] = &[
         why: "Takes the log lines from anywhere in the core, so it can't use what logs to it.",
     },
     Layer {
+        module: "login",
+        uses: &[],
+        why: "Names a GitHub account, which `github` reads and the Conventions and Activity compare.",
+    },
+    Layer {
         module: "measurement",
         uses: &[],
         why: "Records the performance HUD, which times the window and not the core's data.",
@@ -79,9 +84,9 @@ const LAYERS: &[Layer] = &[
     },
     Layer {
         module: "repository",
-        uses: &["conventions", "error", "filters"],
-        why: "Names a Repository and says what adding it takes. A `Repository` holds its Conventions and \
-              Filters, the two edges in CYCLES.",
+        uses: &["error"],
+        why: "Names a Repository, reads the numbers of its Issues, and says how big it is and what the user \
+              may do in it.",
     },
     Layer {
         module: "web",
@@ -100,36 +105,54 @@ const LAYERS: &[Layer] = &[
     },
     Layer {
         module: "conventions",
-        uses: &["github", "repository"],
-        why: "Picks a Repository's Conventions by its name. They name bot accounts by `Login`, the edge in \
-              CYCLES.",
+        uses: &["login", "repository"],
+        why: "Picks a Repository's Conventions by its name. They name bot accounts by `Login`.",
+    },
+    Layer {
+        module: "repository_settings",
+        uses: &["conventions", "filters", "repository"],
+        why: "Holds a Repository's Conventions and Filters, and starts them with what adding it gives.",
     },
     Layer {
         module: "github",
-        uses: &["conventions", "error", "filters", "repository", "token"],
+        uses: &[
+            "conventions",
+            "error",
+            "filters",
+            "login",
+            "repository",
+            "repository_settings",
+            "token",
+        ],
         why: "Sends the token with each request, runs a Filter's search, and reads what GitHub answers \
               through the Repository's Conventions.",
     },
     Layer {
         module: "status",
-        uses: &["error", "github", "repository"],
+        uses: &["error", "github", "login", "repository"],
         why: "Announces app-wide status, which names the signed-in `Login` and the PR heads that wait.",
     },
     Layer {
         module: "store",
-        uses: &["error", "filters", "github", "repository"],
+        uses: &["error", "filters", "github", "login", "repository"],
         why: "Saves the facts `github` parses in `github`'s own types, so no second copy of each type drifts \
               from the first.",
     },
     Layer {
         module: "links",
-        uses: &["conventions", "github", "repository"],
+        uses: &[
+            "conventions",
+            "github",
+            "login",
+            "repository",
+            "repository_settings",
+        ],
         why: "Works out the Issues a PR names and a Backport's Origin PR from `github`'s facts, through the \
               Repository's Conventions.",
     },
     Layer {
         module: "activity",
-        uses: &["conventions", "github", "links", "store"],
+        uses: &["conventions", "github", "links", "login", "store"],
         why: "Works out New activity from the facts the store keeps, and counts a Backport through `links`.",
     },
     Layer {
@@ -152,7 +175,14 @@ const LAYERS: &[Layer] = &[
     },
     Layer {
         module: "settings",
-        uses: &["error", "folders", "latest", "mirror", "repository"],
+        uses: &[
+            "error",
+            "folders",
+            "latest",
+            "mirror",
+            "repository",
+            "repository_settings",
+        ],
         why: "Reads and writes the Repositories and mirror sources, and shares them through `latest`.",
     },
     Layer {
@@ -167,8 +197,10 @@ const LAYERS: &[Layer] = &[
             "github",
             "highlight",
             "links",
+            "login",
             "mirror",
             "repository",
+            "repository_settings",
             "store",
         ],
         why: "Builds the view models, which show what each module below works out.",
@@ -181,7 +213,9 @@ const LAYERS: &[Layer] = &[
             "filters",
             "github",
             "links",
+            "login",
             "repository",
+            "repository_settings",
             "status",
             "store",
             "token",
@@ -196,6 +230,7 @@ const LAYERS: &[Layer] = &[
             "folders",
             "github",
             "repository",
+            "repository_settings",
             "status",
             "store",
             "sync",
@@ -213,24 +248,8 @@ struct Cycle {
     why: &'static str,
 }
 
-/// The edges that close a cycle today, until #278 breaks them.
-const CYCLES: &[Cycle] = &[
-    Cycle {
-        module: "conventions",
-        uses: "github",
-        why: "Conventions name bot accounts by `Login`, and read numbers with `gh_number`.",
-    },
-    Cycle {
-        module: "repository",
-        uses: "conventions",
-        why: "A `Repository` holds its Conventions.",
-    },
-    Cycle {
-        module: "repository",
-        uses: "filters",
-        why: "A `Repository` holds its Filters, and starts with those its access suits.",
-    },
-];
+/// The edges that close a cycle. None do: a new one needs its reason here, and an issue to break it.
+const CYCLES: &[Cycle] = &[];
 
 /// A file of the core: its path below `crates/core/src` with `/` between folders, and its text.
 struct Source {

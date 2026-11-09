@@ -6,8 +6,8 @@ use time::OffsetDateTime;
 
 use super::{TreeEntry, WorkbenchItem};
 use crate::conventions::Conventions;
-use crate::github::Login;
 use crate::github::issues::{IssueFacts, IssueState};
+use crate::login::Login;
 
 /// An Issue on the Workbench, with its tree: each PR Tsugiki knows that fixes it, whatever its state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]

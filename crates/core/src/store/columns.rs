@@ -6,12 +6,13 @@ use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRe
 use time::OffsetDateTime;
 
 use crate::filters::FilterQuery;
+use crate::github::CommitSha;
 use crate::github::issue_content::HiddenReason;
 use crate::github::issues::IssueState;
 use crate::github::pull_request_content::{Anchor, Resolution, Side, Submission};
 use crate::github::pull_requests::{CiState, PrState, ReviewState};
 use crate::github::refresh::Etag;
-use crate::github::{CommitSha, Login};
+use crate::login::Login;
 use crate::repository::RepositoryName;
 
 /// A time in a column, as seconds since the Unix epoch.

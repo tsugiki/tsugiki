@@ -1,6 +1,7 @@
 use time::OffsetDateTime;
 
 use super::*;
+use crate::github::CommitSha;
 use crate::github::issue_content::IssueComment;
 use crate::github::issue_content::{HiddenReason, IssueContent};
 use crate::github::pull_request_content::{
@@ -8,7 +9,7 @@ use crate::github::pull_request_content::{
     ThreadId, ThreadLine,
 };
 use crate::github::pull_requests::{PullRequestFacts, ReviewState};
-use crate::github::{CommitSha, Login};
+use crate::login::Login;
 use crate::workbench::testing::{ViewWorld, fixing, issue, stranger};
 
 fn view(world: &ViewWorld, number: u32) -> Option<PrView> {

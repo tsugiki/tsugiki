@@ -1,7 +1,7 @@
 use super::super::testing::temp_database;
 use super::super::*;
-use crate::github::Login;
 use crate::github::issues::IssueState;
+use crate::login::Login;
 use time::OffsetDateTime;
 
 fn cpython() -> RepositoryName {

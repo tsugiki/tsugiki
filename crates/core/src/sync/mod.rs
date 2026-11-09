@@ -25,11 +25,13 @@ use time::{Duration, OffsetDateTime};
 
 use crate::error::{Error, ErrorKind};
 use crate::filters::FilterQuery;
+use crate::github::GitHub;
 use crate::github::issues::ListedPr;
 use crate::github::pull_requests::{NodeId, PrFetch, PullRequestFacts, RateLimit};
-use crate::github::{GitHub, Login};
 use crate::links::{possible_numbers, possible_origin};
-use crate::repository::{RepositoryName, RepositorySettings, WINDOW_DAYS};
+use crate::login::Login;
+use crate::repository::{RepositoryName, WINDOW_DAYS};
+use crate::repository_settings::RepositorySettings;
 use crate::status::{LastSync, LoadProgress, SyncPart};
 use crate::store::{ChangeCheck, FirstSyncPlace, Store, SyncState};
 use batches::fetch;

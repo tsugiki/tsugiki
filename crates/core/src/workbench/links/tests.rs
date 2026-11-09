@@ -1,6 +1,6 @@
 use crate::conventions::Conventions;
 use crate::github::pull_requests::PullRequestFacts;
-use crate::repository::RepositorySettings;
+use crate::repository_settings::RepositorySettings;
 use crate::store::{ActivityFacts, WorkFacts};
 use crate::workbench::testing::{
     backport, cpython, fixing, issue, me, mine, outline, own, stranger, workbench,

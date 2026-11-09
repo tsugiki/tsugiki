@@ -28,9 +28,10 @@ use tsugiki_core::mirror::{
     CloneRefusal, Cloning, MirrorProblem, MirrorRequests, MirrorSource, MirrorSources, Unfetched,
 };
 use tsugiki_core::misses::Miss;
-use tsugiki_core::repository::{Home, RepositoryAccess, RepositoryCheck, RepositoryName};
+use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
+use tsugiki_core::repository_settings::RepositoryCheck;
 use tsugiki_core::session::SessionRequests;
-use tsugiki_core::settings::{LoadedSettings, PaneWidths, SettingsOwner};
+use tsugiki_core::settings::{Home, LoadedSettings, PaneWidths, SettingsOwner};
 use tsugiki_core::status::{Change, LastSync, Status, SyncActivity};
 use tsugiki_core::store::StoreReader;
 use tsugiki_core::web::{GitHubItem, WebAddress};

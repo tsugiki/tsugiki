@@ -1,5 +1,5 @@
-use crate::github::Login;
 use crate::github::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
+use crate::login::Login;
 use crate::workbench::testing::{at, me, mine, reasons_for, someone, stranger, workbench};
 use crate::workbench::{PrTree, WorkReason, WorkbenchItem, WorkbenchRow};
 

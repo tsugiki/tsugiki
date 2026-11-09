@@ -13,8 +13,9 @@ use time::OffsetDateTime;
 use super::activity::{IssueTimelineWire, ItemActivity, issue_activity};
 use super::pull_requests::{NodeId, Nodes, PageRequest, Person, RateLimit};
 use super::references::{REFERENCE_FIELDS, ReferenceTimeline};
-use super::{GitHub, Login, Request};
+use super::{GitHub, Request};
 use crate::error::Error;
+use crate::login::Login;
 use crate::repository::RepositoryName;
 
 /// An Issue a PR names, as Tsugiki keeps it.

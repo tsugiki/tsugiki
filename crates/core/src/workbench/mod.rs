@@ -29,7 +29,7 @@ use crate::filters::FilterQuery;
 use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::PrHead;
 use crate::links::BackportKind;
-use crate::repository::RepositorySettings;
+use crate::repository_settings::RepositorySettings;
 use crate::store::{StoreReader, WorkFacts};
 use attention::Causes;
 use backports::{plant, standalone};

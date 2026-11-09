@@ -18,17 +18,6 @@ fn error_of(transport: Canned) -> crate::error::Error {
 }
 
 #[test]
-fn a_login_is_the_same_user_whatever_its_case() {
-    assert_eq!(Login::new("Octocat"), Login::new("octocat"));
-    assert_ne!(Login::new("octocat"), Login::new("octodog"));
-}
-
-#[test]
-fn a_login_keeps_githubs_casing_for_display() {
-    assert_eq!(Login::new("Octocat").as_str(), "Octocat");
-}
-
-#[test]
 fn github_says_who_the_user_is() {
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
     let viewer = client(replay::Replayer::new(fixtures)).viewer().unwrap();

@@ -9,8 +9,9 @@ use specta::Type;
 use time::OffsetDateTime;
 
 use super::pull_requests::{Person, RateLimit};
-use super::{GitHub, Login, Request};
+use super::{GitHub, Request};
 use crate::error::{Error, ErrorKind};
+use crate::login::Login;
 use crate::repository::RepositoryName;
 
 /// Whose conversation a query reads. GitHub gives an Issue and a PR the same description and comments, and

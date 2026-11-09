@@ -8,9 +8,9 @@ use rusqlite::named_params;
 use super::Connection;
 use super::columns::UnixTime;
 use super::{activity, pull_requests};
-use crate::github::Login;
 use crate::github::activity::ItemActivity;
 use crate::github::issues::IssueFacts;
+use crate::login::Login;
 use crate::repository::RepositoryName;
 
 pub(super) const SCHEMA: &str = "

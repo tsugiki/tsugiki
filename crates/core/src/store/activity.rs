@@ -9,8 +9,8 @@ use time::OffsetDateTime;
 use super::Connection;
 use super::columns::UnixTime;
 use super::failed_checks;
-use crate::github::Login;
 use crate::github::activity::{Activity, ActivityKind, ItemActivity};
+use crate::login::Login;
 use crate::repository::RepositoryName;
 
 /// A timeline's events stay after GitHub's answer stops listing them, because an answer only gives the last

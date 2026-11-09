@@ -3,8 +3,8 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use crate::github::{Login, gh_number};
-use crate::repository::RepositoryName;
+use crate::login::Login;
+use crate::repository::{RepositoryName, issue_number};
 
 const CPYTHON: &str = "python/cpython";
 /// `pub` because the recorder keeps this login, which the rules have to recognise in a recording.
@@ -142,6 +142,15 @@ fn cpython_title_origin(title: &str) -> Option<u32> {
     title
         .rsplit('(')
         .find_map(|piece| gh_number(piece.split_once(')')?.0))
+}
+
+/// The number in `gh-N`, whatever its case.
+pub(crate) fn gh_number(word: &str) -> Option<u32> {
+    let digits = word.get(3..)?;
+    word.get(..3)?
+        .eq_ignore_ascii_case("gh-")
+        .then(|| issue_number(digits))
+        .flatten()
 }
 
 #[cfg(test)]

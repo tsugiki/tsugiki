@@ -6,11 +6,12 @@ use std::path::PathBuf;
 use time::{Duration, OffsetDateTime};
 
 use super::{Attention, Why};
-use crate::github::Login;
 use crate::github::activity::{Activity, ActivityKind, ItemActivity};
 use crate::github::issues::{IssueFacts, IssueState};
 use crate::github::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
-use crate::repository::{RepositoryName, RepositorySettings};
+use crate::login::Login;
+use crate::repository::RepositoryName;
+use crate::repository_settings::RepositorySettings;
 use crate::store::{ChangeCheck, OpenReader, Store, StoreReader, SyncState, reader};
 use crate::workbench::{ListedItem, Workbench, WorkbenchView};
 

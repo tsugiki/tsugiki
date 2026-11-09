@@ -5,10 +5,11 @@ use std::collections::BTreeMap;
 use time::OffsetDateTime;
 
 use super::{IssueItem, TreeEntry, WorkReason, Workbench, WorkbenchItem, WorkbenchView, reasons};
-use crate::github::Login;
 use crate::github::issues::{IssueFacts, IssueState};
 use crate::github::pull_requests::{OffDefault, PrState, PullRequestFacts};
-use crate::repository::{RepositoryName, RepositorySettings};
+use crate::login::Login;
+use crate::repository::RepositoryName;
+use crate::repository_settings::RepositorySettings;
 use crate::store::{ActivityFacts, WorkFacts};
 
 pub(super) fn me() -> Login {

@@ -7,7 +7,7 @@ use tsugiki_core::conventions::Conventions;
 use tsugiki_core::error::ErrorKind;
 use tsugiki_core::filters::Filter;
 use tsugiki_core::folders::Folders;
-use tsugiki_core::repository::RepositorySettings;
+use tsugiki_core::repository_settings::RepositorySettings;
 use tsugiki_core::settings::SettingsFiles;
 
 pub(crate) fn temp_folders(name: &str) -> (Folders, std::path::PathBuf) {

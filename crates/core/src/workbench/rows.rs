@@ -4,8 +4,8 @@ use serde::Serialize;
 use specta::Type;
 use time::OffsetDateTime;
 
-use crate::github::Login;
 use crate::github::pull_requests::{CiState, PrState, PullRequestFacts, ReviewState};
+use crate::login::Login;
 
 /// The reason a PR is on the user's Workbench.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]

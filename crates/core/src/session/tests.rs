@@ -3,8 +3,10 @@ use crate::github::issue_content::IssueContent;
 use crate::github::pull_requests::{PrHead, PrState, PullRequestFacts, ReviewState};
 use crate::github::replay::Replayer;
 use crate::github::testing::{Canned, Scripted, answered, reply_ok, signed_in_as, signed_in_gh};
-use crate::github::{CommitSha, Login, Reply, Request, Transport, Unreachable};
-use crate::repository::{RepositoryName, RepositorySettings};
+use crate::github::{CommitSha, Reply, Request, Transport, Unreachable};
+use crate::login::Login;
+use crate::repository::RepositoryName;
+use crate::repository_settings::RepositorySettings;
 use crate::status::Change;
 use crate::status::testing::{
     announced, changes_board, heads_board, quiet_board, showing, watched_board,

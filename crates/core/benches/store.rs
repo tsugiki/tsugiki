@@ -7,14 +7,16 @@ use std::path::{Path, PathBuf};
 use time::{Duration, OffsetDateTime};
 use tsugiki_core::conventions::Conventions;
 use tsugiki_core::filters::Filter;
+use tsugiki_core::github::CommitSha;
 use tsugiki_core::github::activity::{Activity, ActivityKind, ItemActivity};
 use tsugiki_core::github::issue_content::{IssueComment, IssueContent};
 use tsugiki_core::github::issues::{IssueFacts, IssueState};
 use tsugiki_core::github::pull_requests::{
     CiState, LatestReview, OffDefault, PrState, PullRequestFacts, ReviewState,
 };
-use tsugiki_core::github::{CommitSha, Login};
-use tsugiki_core::repository::{RepositoryAccess, RepositoryName, RepositorySettings};
+use tsugiki_core::login::Login;
+use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
+use tsugiki_core::repository_settings::RepositorySettings;
 use tsugiki_core::store::{self, FilterResults, OpenReader, Store, StoreReader};
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_view::PrView;

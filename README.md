@@ -62,10 +62,11 @@ command-line name is `tsg`.
 - A performance HUD on `Ctrl+Shift+H`, and a line in the log for each performance budget the window misses.
 - A portable `.zip` for Windows and a `.dmg` for Apple silicon Macs.
 
-### In 0.2, on main
+### In 0.2
 
 - Each Repository gets a Mirror, a bare git clone, and each sync fetches the branches of the PRs your work
-  reaches.
+  reaches. A Mirror can borrow its objects from a clone you have, and the status bar says when git is
+  missing or the disk is short.
 - A PR opens in the Detail pane. Its Conversation tab shows the Reviews with their threads, and its Files tab
   shows the diff, read from the Mirror.
 - The diff highlights C, Python, Rust, TypeScript, Svelte and 9 more languages, with code inside other code
@@ -83,10 +84,10 @@ command-line name is `tsg`.
 The [Issues](https://github.com/tsugiki/tsugiki/issues) hold the work in flight, and
 [docs/build-order.md](docs/build-order.md) the stages after it:
 
-- The rest of 0.2: borrowing objects from a clone you have
-  ([#172](https://github.com/tsugiki/tsugiki/issues/172)), saying when git is missing or the disk is short
-  ([#171](https://github.com/tsugiki/tsugiki/issues/171)), and hiding the Sidebar
-  ([#234](https://github.com/tsugiki/tsugiki/issues/234)).
+- 0.2.1: hiding the Sidebar ([#234](https://github.com/tsugiki/tsugiki/issues/234)) and the Issue list
+  ([#242](https://github.com/tsugiki/tsugiki/issues/242)), showing only the Detail pane
+  ([#246](https://github.com/tsugiki/tsugiki/issues/246)), chords on `Ctrl+K`, and Esc that closes what is
+  on top ([#192](https://github.com/tsugiki/tsugiki/issues/192)).
 - Reading PRs, continued: Stale reviews, Go to definition and Definition peek, the file view, the Review
   checkout, Open in editor, and reading offline.
 - Writing: comments, line comments in a Pending review, replies, resolving threads, `suggestion` blocks and
@@ -100,7 +101,8 @@ The [Issues](https://github.com/tsugiki/tsugiki/issues) hold the work in flight,
 ## Installing
 
 Tsugiki runs on 64-bit Windows and on Macs with Apple silicon. It reads GitHub with the
-[GitHub CLI](https://cli.github.com/)'s token, so install `gh` and run `gh auth login` first.
+[GitHub CLI](https://cli.github.com/)'s token, so install `gh` and run `gh auth login` first. It reads diffs
+with [git](https://git-scm.com/downloads) 2.30 or newer, which it finds on the `PATH`.
 
 Download the latest release from [Releases](https://github.com/tsugiki/tsugiki/releases). Tsugiki isn't
 code-signed yet, so Windows and macOS warn you the first time you open it:

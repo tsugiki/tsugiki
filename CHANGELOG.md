@@ -7,16 +7,35 @@ release's body, and fails without it
 
 ## WIP
 
+## Version 0.2.0 (2026-11-09)
+
+A PR opens in the Detail pane, with its Conversation and a highlighted diff.
+Each Repository gets a Mirror, a bare git clone that Tsugiki reads the diff from, so you need git 2.30+.
+Issues and PRs show GitHub's Octicons for their state.
+
 ### Added
 
 - A PR opens in the Detail pane, on a Conversation tab with its description and recent comments, and a Files
   tab with its diff. The arrows stop on each PR and Backport in an Issue's tree.
   `Enter` or a click opens one, as does a PR in the Issue view, and `Esc` or the `gh-N` link goes back to the
-  Issue. `Ctrl+PageDown` and `Ctrl+PageUp` switch tabs, and so do `Enter` and a click on the open PR's line.
-- Each Repository gets a **Mirror**, a bare git clone in its folder, which later changes read diffs from.
+  Issue, scrolled where you left it. `Ctrl+PageDown` and `Ctrl+PageUp` switch tabs, and so do `Enter` and a
+  click on the open PR's line.
+- Each Repository gets a **Mirror**, a bare git clone in its folder, which the Files tab reads diffs from.
   Adding a Repository starts its clone beside its first sync, and Repositories added before get theirs at the
   next launch, the open one first. The status bar shows "Cloning python/cpython 42%" beside the sync time.
-  Quitting stops a clone, and the next launch starts it again. Tsugiki needs `git` on the `PATH` for this.
+  Quitting stops a clone, and the next launch starts it again. Tsugiki needs git 2.30 or newer on the `PATH`
+  for this.
+- Add repository asks where the Mirror gets its objects: downloaded from GitHub, or borrowed from a clone you
+  already have. Each choice shows how long it should take and the disk the Mirror takes.
+  Tsugiki only reads the clone, and the Mirror doesn't need it afterwards. For a Repository added before,
+  the status bar asks once on each machine. `machine.toml` keeps the answer.
+- Without git 2.30 or newer, or without room on the disk, Tsugiki makes no Mirror, and the status bar says
+  why, with Check again. A clone that fails tries again a minute later, and waits twice as long after each
+  failure in a row, up to about an hour.
+- Tsugiki looks after each Mirror while no fetch waits. Each day it drops the branches of PRs your work no
+  longer reaches and runs `git maintenance`, and each week it runs `git gc`. Tsugiki never runs
+  `git maintenance start`, so your global git config stays as it was. When git says a Mirror is broken,
+  Tsugiki clones it again.
 - Each sync fetches into the mirror the branch of each PR your work reaches: your Review requests, your own
   PRs and those you reviewed, your Filters' PRs and the PRs in your Issues' trees. One `git fetch` takes all
   the PRs whose branch moved, and a PR GitHub has dropped fails nothing. While Tsugiki is offline the mirror
@@ -24,7 +43,8 @@ release's body, and fails without it
 - A PR's Conversation shows its Reviews among the comments, oldest first. Each Review is a block with its
   author, state, commit and body, and a line for each thread it started: the file and line, the first words,
   the replies, and whether it's Resolved or Outdated. A Review that says nothing beyond its state, such as a
-  bare approval, takes one line. A comment hidden on GitHub folds to its reason, and a click opens it.
+  bare approval, takes one line. A comment hidden on GitHub folds to its reason, and a click opens it. If
+  GitHub can't send the Conversation, the PR view says why.
 - A refresh reads the Conversation of each changed PR your work reaches, so its Reviews are there when you
   open it. Each PR costs about one point of GitHub's hourly 5,000.
 - The Files tab shows a PR's diff, read from its Mirror, so it asks GitHub for nothing. A PR moved to
@@ -53,8 +73,14 @@ release's body, and fails without it
   yet included. `Alt+←` and `Alt+→` go back and forward through the Issues and PRs you opened.
 - The edges between the panes drag, and a focused edge moves with the arrow keys. A double-click puts the
   default width back. The widths stay on this machine, in `machine.toml`.
-- Each Issue and PR shows GitHub's Octicon for its state, in GitHub's colors. The first sync after the
-  upgrade fetches the state of the Issues 0.1 stored.
+- Each Issue and PR shows GitHub's Octicon for its state, in GitHub's colors.
+
+### Database
+
+0.2.0 moves the database forward and leaves a copy of the old one beside it, as `tsugiki.db.v12.bak`. 0.1
+won't open the new file: to go back, put the copy in its place. Tsugiki doesn't sync the cache again, though
+the first sync fetches the state of the Issues 0.1 stored. A PR that 0.1 stored as merged by a fast-forward
+shows an empty Files tab, since Tsugiki doesn't fetch a merged PR again.
 
 ## Version 0.1.1 (2026-11-07)
 

@@ -4694,7 +4694,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tsugiki-app"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "log",
  "open",
@@ -4716,7 +4716,7 @@ dependencies = [
 
 [[package]]
 name = "tsugiki-core"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "codspeed-divan-compat",
  "fs4",
@@ -4754,11 +4754,11 @@ dependencies = [
 
 [[package]]
 name = "tsugiki-test-git"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "tsugiki-webview-keys"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "webview2-com",
  "windows-core",

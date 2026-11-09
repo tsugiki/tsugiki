@@ -29,6 +29,9 @@ export default defineConfig({
         // coverage: command lines around git, with their logic in the files they call.
         "../scripts/doc-width.ts",
         "../scripts/prose-check.ts",
+        "../scripts/changes.ts",
+        // coverage: runs the real Rust gates or skips them, with its logic in scope.ts.
+        "../scripts/rust-gates.ts",
         // coverage: asks GitHub about a real PR and deletes a real branch, which no unit test can do.
         "../scripts/merged.ts",
         // coverage: runs `just check`, pushes and opens a real PR, with its logic in pr.ts.

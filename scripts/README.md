@@ -16,6 +16,9 @@ or `npm run`, and CI calls the same npm scripts.
 | `doc-lines.ts`        | `doc-width.ts`, `prose-check.ts` | Picks out the lines of a file that hold prose                                    |
 | `prose-check.ts`      | `just prose-check`               | Lists prose to reread against /stop-slop; never fails                            |
 | `prose.ts`            | `prose-check.ts`                 | The rules behind `just prose-check`                                              |
+| `rust-gates.ts`       | `just rust-gates`, `just check`  | Runs the Rust gates, or skips them on a branch that changes only `ui/` and docs  |
+| `changes.ts`          | CI                               | Tells CI's `changes` job whether a PR changes only docs, or only `ui/` and docs  |
+| `scope.ts`            | `rust-gates.ts`, `changes.ts`    | Which paths count as docs or as `ui/`, so CI and `just check` agree              |
 | `rust-coverage.ts`    | `just rust-coverage`             | Rust's coverage gate: runs the tests and fails below 100%                        |
 | `coverage-gaps.ts`    | `rust-coverage.ts`               | Finds the lines and functions the Rust coverage gate fell short on               |
 | `bindings.ts`         | `just bindings`                  | Regenerates the UI's TypeScript bindings from the Rust commands                  |

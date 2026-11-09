@@ -1,5 +1,8 @@
 # The benchmarks under CodSpeed's simulation mode (ADR 0017). CodSpeed's own check on the PR
 # fails on a regression. This job needs only Linux, so tsugiki-core must build there.
+#
+# Unlike CI's Rust checks, it runs on a PR that changes only `ui/`: it measures the UI too. The ruleset also
+# requires CodSpeed's own check, which only CodSpeed's app can report, so no job here could pass in its place.
 name: Benchmarks
 
 on:

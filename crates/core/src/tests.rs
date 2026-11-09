@@ -23,6 +23,7 @@ fn a_folder_a_failed_run_left_at_a_test_path_is_gone() {
 fn a_backtrace_keeps_the_file_and_line() {
     // `[profile.dev]` keeps only line tables, and this is what they're for. Only this test's own frame
     // counts: the line after its name says where it stands, and libtest's frames keep their lines too.
+    // macOS adds a column after the line, and Windows doesn't.
     let (backtrace, line) = (std::backtrace::Backtrace::force_capture(), line!());
     let backtrace = backtrace.to_string();
     let frame = backtrace
@@ -30,7 +31,10 @@ fn a_backtrace_keeps_the_file_and_line() {
         .nth(1)
         .unwrap();
     let place = frame.lines().nth(1).unwrap();
-    assert!(place.ends_with(&format!("tests.rs:{line}")), "{backtrace}");
+    let at = place
+        .split_once("tests.rs:")
+        .and_then(|(_, at)| at.split(':').next());
+    assert_eq!(at, Some(line.to_string().as_str()), "{backtrace}");
 }
 
 #[test]

@@ -8,7 +8,6 @@ use std::io::{self, BufReader, Read};
 use std::mem;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
-use std::process::Child;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -513,13 +512,13 @@ impl Git for LiveGit {
     }
 }
 
-impl Run for Child {
+impl Run for live::StartedGit {
     fn succeeded(&mut self) -> bool {
-        self.wait().is_ok_and(|status| status.success())
+        Self::succeeded(self)
     }
 
     fn stop(&mut self) {
-        live::stop_git(self);
+        Self::stop(self);
     }
 }
 

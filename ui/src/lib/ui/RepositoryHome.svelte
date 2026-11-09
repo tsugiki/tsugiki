@@ -75,8 +75,7 @@
     void opened.load();
     return () => {
       opened.stop();
-      detail?.stop();
-      detail = undefined;
+      swap(undefined);
     };
   });
 
@@ -88,6 +87,8 @@
 
   /** The Issue or the PR in the Detail pane. */
   let detail = $state<IssueViewState | PrViewState>();
+  /** The view of the Issue the PR on show came from, hidden until the user goes back to it (#191). */
+  let kept: IssueViewState | undefined;
   let browserProblem = $state<string>();
   let list = $state<HTMLElement>();
 
@@ -98,36 +99,60 @@
   /**
    * Shows the Issue or PR on line `stop` in the Detail pane. The PR already on show switches tabs instead,
    * and the Issue already on show reads GitHub again. Each counts as a visit, unless Alt+← or Alt+→ went
-   * back or forward to it.
+   * `"through"` the visits to it. Going `"back"` to the Issue the PR on show came from, or through the
+   * visits to it, shows its view as it was and counts as no new opening.
    */
-  function open(stop: Stop, visit = true) {
-    if (visit) visits.visit(stop);
+  function open(stop: Stop, how: "open" | "back" | "through" = "open") {
+    if (how !== "through") visits.visit(stop);
     workbench.cursor = stop;
     if (stop.kind === "pull_request" && detail instanceof PrViewState && sameStop(detail.line, stop)) {
       detail.switchTab();
       return;
     }
+    if (stop.kind === "issue" && kept?.number === stop.number) {
+      const resumed = kept;
+      swap(resumed);
+      if (how !== "open") {
+        resumed.show();
+        return;
+      }
+    }
     hud.issueOpened(stop.number);
     if (stop.kind === "issue" && detail instanceof IssueViewState && detail.number === stop.number) {
+      // Opening leaves a view that was hidden nothing to catch up on when it shows.
       void detail.open();
+      detail.show();
       return;
     }
-    detail?.stop();
-    detail =
+    const next =
       stop.kind === "issue"
         ? new IssueViewState(name, stop.number)
         : new PrViewState(name, stop.number, stop.issue, diffView);
-    void detail.load();
+    swap(next);
+    void next.load();
+  }
+
+  /** Puts `next` in the Detail pane. The Issue view a PR in its tree came from stays, hidden, while that PR
+   * is on show, and every other view stops. A view that couldn't read its Issue stops too, so going back
+   * opens the Issue afresh. */
+  function swap(next: IssueViewState | PrViewState | undefined) {
+    const from = next instanceof PrViewState ? next.issue : undefined;
+    const keep = [detail, kept].find(
+      (view): view is IssueViewState =>
+        view instanceof IssueViewState && view.number === from && view.error === undefined,
+    );
+    for (const view of [detail, kept]) {
+      if (view !== undefined && view !== keep && view !== next) view.stop();
+    }
+    keep?.hide();
+    kept = keep;
+    detail = next;
   }
 
   /** Leaves the PR view for the Issue the user opened it from, or for an empty Detail pane. */
   function back(pr: PrViewState) {
-    if (pr.issue === undefined) {
-      pr.stop();
-      detail = undefined;
-    } else {
-      open({ number: pr.issue, kind: "issue", issue: undefined });
-    }
+    if (pr.issue === undefined) swap(undefined);
+    else open({ number: pr.issue, kind: "issue", issue: undefined }, "back");
   }
 
   /** The Issue or PR in the Detail pane, or else the line under the cursor. */
@@ -194,7 +219,7 @@
     } else if (key === "alt+arrowleft" || key === "alt+arrowright") {
       e.preventDefault();
       const place = key === "alt+arrowleft" ? visits.back() : visits.forward();
-      if (place) open(place, false);
+      if (place) open(place, "through");
     }
   }
 </script>

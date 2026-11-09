@@ -749,7 +749,10 @@ impl Worker {
                 Job::Clone(Clone { mut git, .. })
                 | Job::Fetch(Fetch { mut git, .. })
                 | Job::Upkeep(Upkeep { mut git, .. }),
-            ) => git.stop(),
+            ) => {
+                git.stop();
+                wait_for_helpers(incoming);
+            }
             None => {}
         }
     }
@@ -1410,6 +1413,25 @@ impl Worker {
             }
         }
         (self.announce.cloning)(None);
+    }
+}
+
+/// The time a stopped git's helpers get to end, after their kill. Ending takes a moment, so only a helper
+/// that left git's job object or process group, and didn't get the kill, outlasts this.
+const HELPERS_PATIENCE: Duration = Duration::from_secs(5);
+
+/// Waits for the error output of the git stopped last to close, up to `HELPERS_PATIENCE`. Each helper holds
+/// it, so it closes once the last of them has ended. `Run::stop` waits for git, and on Windows the job
+/// object's wait returns before the helpers it killed have ended (#208).
+fn wait_for_helpers(incoming: &Receiver<Message>) {
+    let deadline = Instant::now() + HELPERS_PATIENCE;
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match incoming.recv_timeout(left) {
+            Ok(Message::Ended { .. }) | Err(_) => break,
+            // Stopping drops what else comes.
+            Ok(_) => {}
+        }
     }
 }
 

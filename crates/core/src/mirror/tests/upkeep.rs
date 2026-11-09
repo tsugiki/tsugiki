@@ -60,6 +60,17 @@ impl Place {
         UNIX_EPOCH + Duration::from_secs(u64::try_from(seconds).unwrap())
     }
 
+    /// Whether the file gives a time within a minute of now for `key`. The worker writes the file over, so
+    /// a look while it writes can find it empty, which says no.
+    fn upkept_just_now(&self, repository: &RepositoryName, key: &str) -> bool {
+        let text = fs::read_to_string(self.upkeep_file(repository)).unwrap_or_default();
+        let document = text.parse::<toml_edit::DocumentMut>().unwrap_or_default();
+        let seconds = document.get(key).and_then(toml_edit::Item::as_integer);
+        seconds
+            .and_then(|seconds| u64::try_from(seconds).ok())
+            .is_some_and(|seconds| just_now(UNIX_EPOCH + Duration::from_secs(seconds)))
+    }
+
     /// The PR refs in `repository`'s real mirror.
     fn pull_refs(&self, repository: &RepositoryName) -> String {
         let mirror = self.folders.mirror(repository);
@@ -486,7 +497,7 @@ fn a_real_mirror_drops_the_refs_of_prs_gone_from_the_work_and_gets_maintenance_a
         .requests()
         .fetch_heads(hello.clone(), heads[..1].to_vec());
     mirrors.requests().clone_mirror(hello.clone(), download());
-    wait_until(|| just_now(place.upkept_at(&hello, "maintained")));
+    wait_until(|| place.upkept_just_now(&hello, "maintained"));
     mirrors.stop(PLENTY);
     let after_maintenance = place.pull_refs(&hello);
 
@@ -494,7 +505,7 @@ fn a_real_mirror_drops_the_refs_of_prs_gone_from_the_work_and_gets_maintenance_a
     place.upkept(&hello, SystemTime::now(), ago(HOUR * 24 * 8));
     let (mirrors, _announced) = place.start_live_keeping();
     mirrors.requests().clone_mirror(hello.clone(), download());
-    wait_until(|| just_now(place.upkept_at(&hello, "collected")));
+    wait_until(|| place.upkept_just_now(&hello, "collected"));
     mirrors.stop(PLENTY);
     let mirror = place.folders.mirror(&hello);
     let fsck = LiveGit.read(&[

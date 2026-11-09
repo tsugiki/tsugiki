@@ -1,8 +1,9 @@
 use std::fs;
-use std::io::{self, Read, Write as _};
+use std::io::{self, Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use super::*;
@@ -464,8 +465,7 @@ struct FakeGit {
 struct FakeStart {
     args: Vec<String>,
     input: String,
-    /// Closing it closes git's error output, as git does when it ends.
-    output: io::PipeWriter,
+    output: FakeOutput,
     outcome: Sender<bool>,
     /// Hears when the worker has asked how git ended, so what the test sends next comes after.
     asked: Receiver<()>,
@@ -479,8 +479,13 @@ impl FakeStart {
     /// Ends this git, and waits for the worker to hear how.
     fn end(self, outcome: Outcome) {
         self.outcome.send(outcome == Outcome::Succeeded).unwrap();
-        drop(self.output);
+        self.output.close();
         self.asked.recv_timeout(PLENTY).unwrap();
+    }
+
+    /// A helper of this git, which holds its error output open until the test drops it, though git ends.
+    fn helper(&self) -> io::PipeWriter {
+        self.output.pipe().as_ref().unwrap().try_clone().unwrap()
     }
 
     /// Ends this git. A fetch leaves each head it asked for at the commit `head` gives it.
@@ -558,10 +563,37 @@ enum Outcome {
     Failed,
 }
 
+/// git's error output, which closes as git ends or the worker stops it, unless a helper holds it.
+#[derive(Clone)]
+struct FakeOutput(Arc<Mutex<Option<io::PipeWriter>>>);
+
+impl FakeOutput {
+    /// The pipe's end, or `None` once it is closed.
+    fn pipe(&self) -> std::sync::MutexGuard<'_, Option<io::PipeWriter>> {
+        self.0.lock().unwrap()
+    }
+
+    fn close(&self) {
+        drop(self.pipe().take());
+    }
+}
+
+impl Write for FakeOutput {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let mut pipe = self.pipe();
+        pipe.as_mut().ok_or(io::ErrorKind::BrokenPipe)?.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.pipe().as_mut().map_or(Ok(()), Write::flush)
+    }
+}
+
 struct FakeRun {
     outcome: Receiver<bool>,
     asking: Sender<()>,
     stopping: Sender<()>,
+    output: FakeOutput,
 }
 
 impl Run for FakeRun {
@@ -573,12 +605,14 @@ impl Run for FakeRun {
 
     fn stop(&mut self) {
         self.stopping.send(()).unwrap();
+        self.output.close();
     }
 }
 
 impl Git for FakeGit {
     fn start(&self, args: &[&OsStr], input: &[u8]) -> io::Result<Started> {
         let (output, writer) = io::pipe()?;
+        let writer = FakeOutput(Arc::new(Mutex::new(Some(writer))));
         let (outcome, outcomes) = channel();
         let (stopping, stopped) = channel();
         let (asking, asked) = channel();
@@ -590,7 +624,7 @@ impl Git for FakeGit {
                     .map(|arg| arg.to_string_lossy().into_owned())
                     .collect(),
                 input: String::from_utf8_lossy(input).into_owned(),
-                output: writer,
+                output: writer.clone(),
                 outcome,
                 asked,
                 stopped,
@@ -602,6 +636,7 @@ impl Git for FakeGit {
                 outcome: outcomes,
                 asking,
                 stopping,
+                output: writer,
             }),
             output: Box::new(output),
         })
@@ -1196,8 +1231,9 @@ fn heads_without_a_mirror_wait_and_start_nothing() {
     assert!(starts.recv().is_err());
 }
 
+/// git's helpers hold its error output, so it closes once the last of them has ended (#208).
 #[test]
-fn quitting_stops_a_fetch_under_way() {
+fn quitting_stops_a_fetch_under_way_and_waits_for_its_error_output_to_close() {
     let place = Place::new("stop-fetch");
     let cpython = named("python/cpython");
     place.mirrored(&cpython);
@@ -1205,9 +1241,23 @@ fn quitting_stops_a_fetch_under_way() {
 
     mirrors.requests().fetch_heads(cpython, vec![head(1)]);
     let fetch = starts.recv_timeout(PLENTY).unwrap();
-    mirrors.stop(PLENTY);
+    let helper = fetch.helper();
+    let (ending, ended) = channel();
+    let _stopping = std::thread::spawn(move || {
+        mirrors.stop(PLENTY);
+        ending.send(()).unwrap();
+    });
+    let stopped = fetch.stopped.recv_timeout(PLENTY);
+    let early = ended.recv_timeout(Duration::from_millis(300));
+    drop(helper);
+    let late = ended.recv_timeout(PLENTY);
 
-    assert_eq!(fetch.stopped.recv_timeout(PLENTY), Ok(()));
+    assert_eq!(stopped, Ok(()));
+    assert!(
+        early.is_err(),
+        "stopping waits while a helper holds git's error output"
+    );
+    assert_eq!(late, Ok(()));
 }
 
 #[test]

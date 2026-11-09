@@ -188,8 +188,8 @@ pub(crate) fn start_git(args: &[&OsStr], input: &[u8]) -> io::Result<(StartedGit
         .stderr(Stdio::piped());
     // git hands a download to helpers (`git-remote-https`, `index-pack`), and the `git` on PATH on Windows
     // is a launcher that starts the real one. Each helper joins git's job object, or its process group, as
-    // it starts, so `StartedGit` can end and wait for them all. Reading the tree when stopping misses a
-    // helper that starts while it reads, and that helper goes on holding files in the mirror (#208).
+    // it starts, so `StartedGit::stop` ends them all. Reading the tree when stopping misses a helper that
+    // starts while it reads, and that helper goes on holding files in the mirror (#208).
     let mut command = CommandWrap::from(command);
     #[cfg(windows)]
     let _ = command
@@ -217,21 +217,24 @@ pub(crate) fn start_git(args: &[&OsStr], input: &[u8]) -> io::Result<(StartedGit
 pub(crate) struct StartedGit(Box<dyn ChildWrapper>);
 
 impl StartedGit {
-    /// Waits for git and its helpers to end, and says if git did what it was asked.
+    /// Waits for git to end, and says if it did what it was asked.
     pub(crate) fn succeeded(&mut self) -> bool {
         self.0.wait().is_ok_and(|status| status.success())
     }
 
-    /// Ends git and its helpers, and waits for them all, so none goes on downloading after Tsugiki quits, or
-    /// holds a file in the mirror. A failure leaves a trace.
+    /// Ends git and its helpers, so none goes on downloading after Tsugiki quits, and waits for git. A helper
+    /// can take a moment longer to end, and git's error output closes once the last one has. A failure
+    /// leaves a trace.
     pub(crate) fn stop(&mut self) {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "only a git that has already ended can't be ended, and the wait says if all of it has"
-        )]
-        let _ = self.0.start_kill();
+        if let Err(cause) = self.0.start_kill() {
+            log::warn!("Tsugiki can't stop git's helpers: {cause}");
+            // git at least, so the wait doesn't last until git ends on its own.
+            if let Err(cause) = self.0.inner_mut().start_kill() {
+                log::warn!("Tsugiki can't stop git: {cause}");
+            }
+        }
         if let Err(cause) = self.0.wait() {
-            log::warn!("Tsugiki can't stop git: {cause}");
+            log::warn!("Tsugiki can't wait for git: {cause}");
         }
     }
 }

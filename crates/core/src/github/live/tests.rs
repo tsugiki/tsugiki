@@ -83,12 +83,23 @@ fn stopping_git_ends_what_it_started_though_it_left_gits_tree() {
     ];
 
     let (mut git, output) = start_git(&args, b"").unwrap();
-    // The orphaned `sleep` holds the error output too, so read only up to the line.
+    // The orphans hold the error output too, so it closes only once they have ended, as the mirror's
+    // worker waits for it to.
+    let mut output = io::BufReader::new(output);
     let mut line = String::new();
-    let _ = io::BufRead::read_line(&mut io::BufReader::new(output), &mut line).unwrap();
+    let _ = io::BufRead::read_line(&mut output, &mut line).unwrap();
     git.stop();
+    let (closing, closed) = std::sync::mpsc::channel();
+    let _reading = thread::spawn(move || {
+        let mut rest = Vec::new();
+        closing
+            .send(io::Read::read_to_end(&mut output, &mut rest).is_ok())
+            .unwrap();
+    });
+    let closed = closed.recv_timeout(Duration::from_secs(30));
     let removed = std::fs::remove_dir_all(&folder);
 
     assert_eq!(line.trim_end(), "started");
+    assert_eq!(closed, Ok(true), "the orphans have ended");
     assert!(removed.is_ok(), "{removed:?}");
 }

@@ -7,6 +7,10 @@ release's body, and fails without it
 
 ## WIP
 
+### Fixed
+
+- On macOS, a git helper that started as Tsugiki stopped git could go on running after it.
+
 ## Version 0.2.0 (2026-11-09)
 
 A PR opens in the Detail pane, with its Conversation and a highlighted diff.

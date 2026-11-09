@@ -60,7 +60,9 @@ fn a_failed_git_says_its_reason_rather_than_the_hint_after_it() {
 }
 
 /// A helper can leave git's tree while git runs: its parent ends first, as here, or it starts while
-/// `taskkill /T` reads the tree (#208). On Windows, a process left running in the folder keeps it there.
+/// `taskkill /T` reads the tree (#208). On Windows, a process left running in the folder keeps it there. On
+/// macOS, a process that starts while the kill runs can outlive it (#309), so the alias goes on starting
+/// them after it says it has started.
 #[test]
 fn stopping_git_ends_what_it_started_though_it_left_gits_tree() {
     let folder = crate::testing::temp_path("stop-git");
@@ -71,7 +73,8 @@ fn stopping_git_ends_what_it_started_though_it_left_gits_tree() {
     );
     // A git, which holds the folder as Windows sees it, unlike MSYS's own programs such as `sleep`.
     let orphan = "sleep 60 | git hash-object --stdin";
-    let hold = format!("alias.hold=!sh -c '{orphan} &'; echo started >&2; sleep 60");
+    let late = "for i in 1 2 3 4 5 6 7 8 9 10; do sleep 60 & done";
+    let hold = format!("alias.hold=!sh -c '{orphan} &'; echo started >&2; {late}; sleep 60");
     let args = [
         OsStr::new("-C"),
         folder.as_os_str(),

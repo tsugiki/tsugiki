@@ -44,6 +44,9 @@ url.workspace = true
 [target.'cfg(windows)'.dependencies]
 windows.workspace = true
 
+[target.'cfg(not(windows))'.dependencies]
+libc.workspace = true
+
 [dev-dependencies]
 divan.workspace = true
 insta.workspace = true

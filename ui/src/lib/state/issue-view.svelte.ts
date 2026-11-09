@@ -16,6 +16,11 @@ export type IssueContent = IssueContent_Serialize;
 export type IssueView = IssueView_Serialize;
 
 export class IssueViewState extends DetailState<IssueView> {
+  /** How far down the user scrolled this view's pane, in pixels, so the pane comes back there after a PR
+   * from its tree has hidden it (#296). The pane writes it as it scrolls, and reads it when it shows. It
+   * isn't `$state`: the pane would then set its scroll on each scroll event, and fight a smooth scroll. */
+  scrollTop = 0;
+
   constructor(repository: string, number: number) {
     super(repository, number, {
       open: (repository, number) => commands.openIssue(repository, number),

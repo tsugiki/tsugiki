@@ -26,7 +26,17 @@
   };
 </script>
 
-<section class="detail" aria-label="Issue view">
+<!-- The pane mounts afresh each time the view shows, so it goes back to where the view says it was. -->
+<section
+  class="detail"
+  aria-label="Issue view"
+  {@attach (pane) => {
+    pane.scrollTop = issue.scrollTop;
+  }}
+  onscroll={(e) => {
+    issue.scrollTop = e.currentTarget.scrollTop;
+  }}
+>
   {#if issue.error}
     <p role="alert">{`Tsugiki can't show this Issue: ${issue.error}`}</p>
   {/if}

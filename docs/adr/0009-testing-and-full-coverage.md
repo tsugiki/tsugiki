@@ -62,7 +62,9 @@ release. Coverage is held at 100%, and CI fails below it.
 - On every push to main and every PR that changes more than docs, on Windows: rustfmt, clippy with warnings
   as errors, `cargo test`, the stale-bindings check, ESLint, Prettier, `svelte-check`, Vitest, Playwright on
   Chromium and WebKit, and both coverage gates. CI skips them on a PR that changes only Markdown files or
-  `docs/`, and still reports `CI passed`.
+  `docs/`, and still reports `CI passed`. A PR that changes only `ui/` and docs skips the Rust checks on
+  every OS below, and Codecov keeps main's Rust figure for it. `ui/package.json` and the generated bindings
+  don't count as `ui/`, because Rust tests read them.
 - On those same pushes and PRs, on macOS: what can differ there, which is clippy, Vitest, Playwright on
   WebKit, and both coverage gates. Rust's gate runs the tests, so `cargo test` has no job of its own there.
   The others read the source or generate the same output on any OS. These are steps of one job, which needs
@@ -74,7 +76,9 @@ release. Coverage is held at 100%, and CI fails below it.
   enough. A weekly run also checks for new advisories, so one still reaches us in a week with no PRs.
 - On every PR, on Linux: the CodSpeed benchmarks
   ([ADR 0017](0017-performance-budgets-codspeed-gates-prs-the-window-is-measured-before-release.md)). The
-  query-plan check from that ADR is a test in the core, so it runs on Windows and macOS.
+  query-plan check from that ADR is a test in the core, so it runs on Windows and macOS. They run on a PR
+  that changes only `ui/` too: they measure the UI as well, and the check the ruleset requires comes from
+  CodSpeed's app, which no job of ours can report in place of.
 - Before a release (in the release workflow, and runnable by hand): the CPython mirror suite, the smoke tests
   on Windows, a check that live GitHub responses still match the recorded fixtures (read-only), the macOS
   checklist (once the maintainer takes macOS on, as ADR 0012 says), and the performance budgets measured in

@@ -1,4 +1,5 @@
-# The checks of ADR 0009, on every push to main and every PR that changes more than docs.
+# The checks of ADR 0009, on every push to main and every PR that changes more than docs. A PR that changes
+# only `ui/` and docs skips the Rust ones.
 # On Windows each is its own job, and a job's name is the npm script it runs, so a PR shows what failed and
 # where. macOS runs only what can differ there, as steps of one job: GitHub cancels a macOS job that waits too
 # long for a runner, and the more jobs a run has, the likelier that gets (ADR 0009).
@@ -17,14 +18,17 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Decides whether the checks run. It compares the PR's merge commit with its base, and a rename counts
-  # as both of its paths. Any path it can't read as docs runs the checks, and so does a push to main.
+  # Decides which checks run. It compares the PR's merge commit with its base, and a rename counts as both
+  # of its paths. `docs-only` skips every check but doc-width. `ui-only`, when each path is docs or under
+  # `ui/`, skips the Rust ones. scripts/scope.ts holds the rule, which `just check` applies too. A push to
+  # main sets neither, so it runs every check.
   changes:
     name: changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       docs-only: ${{ steps.diff.outputs.docs-only }}
+      ui-only: ${{ steps.diff.outputs.ui-only }}
     steps:
       - if: ${{ github.event_name == 'pull_request' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -32,15 +36,12 @@ jobs:
           fetch-depth: 2
           persist-credentials: false
       - if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - if: ${{ github.event_name == 'pull_request' }}
         id: diff
-        run: |
-          paths=$(git diff --no-renames --name-only HEAD^1 HEAD)
-          printf '%s\n' "$paths"
-          if printf '%s\n' "$paths" | grep -qvE '^docs/|\.md$'; then
-            echo "docs-only=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "docs-only=true" >> "$GITHUB_OUTPUT"
-          fi
+        run: node scripts/changes.ts HEAD^1 HEAD
 
   # Runs on a docs-only PR too, because that's where a wide line of Markdown lands.
   doc-width:
@@ -59,7 +60,7 @@ jobs:
   rust:
     name: ${{ matrix.check }} (windows-latest)
     needs: [changes]
-    if: ${{ needs.changes.outputs.docs-only != 'true' }}
+    if: ${{ needs.changes.outputs.ui-only != 'true' }}
     runs-on: windows-latest
     timeout-minutes: 45
     strategy:
@@ -84,7 +85,7 @@ jobs:
   dependencies:
     name: ${{ matrix.check }}
     needs: [changes]
-    if: ${{ needs.changes.outputs.docs-only != 'true' }}
+    if: ${{ needs.changes.outputs.ui-only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -139,10 +140,11 @@ jobs:
             exit 1
           fi
 
+  # Codecov carries main's Rust figure forward on a PR that skips this job (codecov.yml).
   rust-coverage:
     name: rust-coverage (windows-latest)
     needs: [changes]
-    if: ${{ needs.changes.outputs.docs-only != 'true' }}
+    if: ${{ needs.changes.outputs.ui-only != 'true' }}
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -235,7 +237,8 @@ jobs:
           if-no-files-found: ignore
 
   # What can differ on macOS, as steps of one job so a run needs one macOS runner. A failed check doesn't stop
-  # the checks after it. Rust's coverage gate runs the tests, so there's no separate `cargo-test`.
+  # the checks after it. Rust's coverage gate runs the tests, so there's no separate `cargo-test`. A `ui-only`
+  # PR skips the Rust steps.
   macos:
     name: checks (macos-latest)
     needs: [changes]
@@ -251,24 +254,27 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - name: Install the Rust toolchain from rust-toolchain.toml
+        if: ${{ needs.changes.outputs.ui-only != 'true' }}
         run: rustup toolchain install
-      - uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
+      - if: ${{ needs.changes.outputs.ui-only != 'true' }}
+        uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
         with:
           tool: cargo-llvm-cov@0.9.1
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - if: ${{ needs.changes.outputs.ui-only != 'true' }}
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: macos
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
       - run: npx playwright install webkit
       - name: clippy
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.ui-only != 'true' }}
         run: npm run clippy
       - name: rust-coverage
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.ui-only != 'true' }}
         run: npm run rust-coverage
       # Also when a gate fails: that's when the uncovered lines are worth seeing.
-      - if: ${{ !cancelled() }}
+      - if: ${{ !cancelled() && needs.changes.outputs.ui-only != 'true' }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -307,14 +313,16 @@ jobs:
     needs: [changes, doc-width, rust, dependencies, release-check, rust-coverage, ui, playwright, macos]
     runs-on: ubuntu-latest
     steps:
-      - name: Every job succeeded, or skipped on a docs-only PR
+      - name: Every job succeeded, or skipped on a docs-only PR, or skipped a Rust check on a ui-only PR
         env:
           DOCS_ONLY: ${{ needs.changes.outputs.docs-only }}
-          RESULTS: ${{ join(needs.*.result, ' ') }}
+          UI_ONLY: ${{ needs.changes.outputs.ui-only }}
+          NEEDS: ${{ toJSON(needs) }}
         run: |
-          for result in $RESULTS; do
-            case "$DOCS_ONLY $result" in
-              *" success" | "true skipped") ;;
-              *) echo "A job ended with: $result"; exit 1 ;;
+          while read -r job result; do
+            case "$result $DOCS_ONLY $UI_ONLY $job" in
+              "success "* | "skipped true "* | "skipped false true rust" | \
+                "skipped false true rust-coverage" | "skipped false true dependencies") ;;
+              *) echo "$job ended with: $result"; exit 1 ;;
             esac
-          done
+          done < <(jq -r 'to_entries[] | "\(.key) \(.value.result)"' <<< "$NEEDS")

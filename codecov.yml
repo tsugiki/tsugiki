@@ -4,9 +4,17 @@
 # Codecov can't tell how many uploads a commit will get, so it would report from the first ones. CI sends
 # four: `vitest` and `rust-coverage` on Windows and macOS. Change this when ci.yml changes those uploads.
 # A cancelled upload means no report until a rerun sends it.
+#
+# A PR that changes only `ui/` and docs sends no Rust upload, so the `rust` flag carries main's two forward.
+# Codecov counts those two toward the four. On a PR that runs Rust, they count until its first Rust upload
+# replaces them, so the comment can show main's Rust figure until that PR's own arrives.
 codecov:
   notify:
     after_n_builds: 4
+
+flags:
+  rust:
+    carryforward: true
 
 coverage:
   status:

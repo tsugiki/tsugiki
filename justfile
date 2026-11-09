@@ -52,7 +52,8 @@ fmt:
 # Run every test CI runs, once each, one at a time. The coverage gate runs the Rust tests and checks the
 # bindings, so `cargo-test` and `stale-bindings` stay out. It runs no doctests, and the workspace has none.
 # `smoke` isn't one: it opens a window and presses real keys.
-check: lint doc-width typecheck vitest rust-coverage deny machete release-check e2e
+# Like CI, it skips the Rust gates on a branch that changes only `ui/` and docs
+check: lint doc-width svelte-check vitest rust-gates release-check e2e
 
 # Check the formatting and lint with ESLint
 lint:
@@ -67,8 +68,19 @@ prose-check *files:
     node scripts/prose-check.ts {{files}}
 
 # Type check with svelte-check, and lint Rust with Clippy
-typecheck:
-    npm run check
+typecheck: svelte-check clippy
+
+# Type check the UI with svelte-check
+svelte-check:
+    npm run svelte-check
+
+# Lint Rust with Clippy
+clippy:
+    npm run clippy
+
+# Run Clippy, `rust-coverage`, `deny` and `machete`, unless the branch changes only `ui/` and docs since main
+rust-gates:
+    node scripts/rust-gates.ts
 
 # Run the Vitest and Rust tests, and check the generated bindings
 test: vitest cargo-test stale-bindings

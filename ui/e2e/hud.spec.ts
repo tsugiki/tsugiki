@@ -65,11 +65,42 @@ test("the palette shows and hides the performance HUD", async ({ page }) => {
 test("a recording says the line it wrote to the log", async ({ page }) => {
   await openApp(page);
   await page.keyboard.press("ControlOrMeta+Shift+H");
-  await hud(page).getByRole("button", { name: "Start recording" }).click();
+  const start = hud(page).getByRole("button", { name: "Start recording" });
+  await start.click();
+  const clicked = await hud(page).getByRole("button", { name: "Stop recording" }).boundingBox();
   await hud(page).getByRole("button", { name: "Stop recording" }).click();
   await expect(hud(page).getByText(/^Written to tsugiki\.log/)).toHaveText(
     "Written to tsugiki.log: Performance of Tsugiki 0.1.0 over 1.0 s: frame p95 16.7 ms",
   );
+  // The line goes above the button, so the next click finds the button where the last one did. Its label is a
+  // letter longer than Stop's.
+  expect(await start.boundingBox()).toMatchObject({ x: clicked?.x, y: clicked?.y });
+});
+
+test("the recording button stays put when a line about a long frame shows", async ({ page }) => {
+  await openApp(page);
+  await page.keyboard.press("ControlOrMeta+Shift+H");
+  const button = hud(page).getByRole("button", { name: "Start recording" });
+  await expect(button).toBeVisible();
+  const before = await button.boundingBox();
+
+  // A frame of 150 ms is over the budget, so the HUD adds a line that names it. A HUD that widened for that
+  // line moved the button out from under a click (#232). Chromium measures the frame in whole vsyncs, so
+  // shorter, and the HUD's own first frame is long too, but not this long. A later long frame can take over
+  // the line.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          const end = performance.now() + 150;
+          while (performance.now() < end);
+          resolve();
+        });
+      }),
+  );
+  await expect(value(page, "Frame, worst")).toHaveText(/^\d{3,}\.\d ms$/);
+  await expect(hud(page).getByText(/^Last long frame/)).toBeVisible();
+  expect(await button.boundingBox()).toEqual(before);
 });
 
 test("the HUD times an Issue whose text comes from GitHub", async ({ page }) => {

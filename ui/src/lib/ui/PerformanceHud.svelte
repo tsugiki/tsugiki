@@ -139,6 +139,13 @@
   {#if longFrame}
     <p class="miss">{longFrame}</p>
   {/if}
+  <!-- Above the button, which stays at the panel's pinned bottom edge as these lines come and go. -->
+  {#if hud.written}
+    <p class="written">{`Written to tsugiki.log: ${hud.written}`}</p>
+  {/if}
+  {#if hud.error}
+    <p role="alert">{hud.error}</p>
+  {/if}
   {#if hud.recording}
     <button onclick={() => void hud.stop()}>Stop recording</button>
   {:else}
@@ -148,20 +155,16 @@
       }}>Start recording</button
     >
   {/if}
-  {#if hud.written}
-    <p class="written">{`Written to tsugiki.log: ${hud.written}`}</p>
-  {/if}
-  {#if hud.error}
-    <p role="alert">{hud.error}</p>
-  {/if}
 </aside>
 
 <style>
+  /* A fixed width: a panel pinned to the right that grew with its lines would move its button out from under
+     the pointer (#232). The button comes last, at the pinned bottom edge, for the same reason. */
   aside {
     position: fixed;
     right: 8px;
     bottom: 32px;
-    max-width: 360px;
+    width: 360px;
     padding: 6px 8px;
     font:
       12px/1.4 ui-monospace,

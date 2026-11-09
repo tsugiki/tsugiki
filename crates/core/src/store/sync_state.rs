@@ -99,14 +99,12 @@ pub(super) fn owe_read_ahead(
     repository: &RepositoryName,
     numbers: &[u32],
 ) -> rusqlite::Result<()> {
-    let mut insert = connection.prepare(
-        "INSERT INTO read_ahead (repository, number) VALUES (:repository, :number)
-         ON CONFLICT DO NOTHING",
-    )?;
+    let sql = "INSERT INTO read_ahead (repository, number) VALUES (:repository, :number)
+               ON CONFLICT DO NOTHING";
+    let mut insert = connection.prepare(sql)?;
     for number in numbers {
-        insert
-            .execute(named_params! { ":repository": repository, ":number": number })
-            .map(drop)?;
+        let values = named_params! { ":repository": repository, ":number": number };
+        insert.execute(values).map(drop)?;
     }
     Ok(())
 }
@@ -117,9 +115,8 @@ pub(super) fn read_ahead_owed(
 ) -> rusqlite::Result<BTreeSet<u32>> {
     let mut select =
         connection.prepare("SELECT number FROM read_ahead WHERE repository = :repository")?;
-    let numbers = select.query_map(named_params! { ":repository": repository }, |row| {
-        row.get("number")
-    })?;
+    let asked = named_params! { ":repository": repository };
+    let numbers = select.query_map(asked, |row| row.get("number"))?;
     numbers.collect()
 }
 
@@ -212,6 +209,9 @@ pub(super) fn save(
         ChangeCheck::Untagged => (true, None),
         ChangeCheck::Tagged(etag) => (true, Some(etag)),
     };
+    if !state.refresh_under_way {
+        forget_read_ahead(connection, repository)?;
+    }
     let params = named_params! {
         ":repository": repository,
         ":started_at": state.started_at.unix_timestamp(),
@@ -233,12 +233,7 @@ pub(super) fn save(
                  etag = excluded.etag",
             params,
         )
-        .map(drop)?;
-    if state.refresh_under_way {
-        Ok(())
-    } else {
-        forget_read_ahead(connection, repository)
-    }
+        .map(drop)
 }
 
 #[cfg(test)]

@@ -2,6 +2,7 @@ use super::*;
 use crate::conventions::Conventions;
 use crate::filters::Filter;
 use crate::mirror::MirrorSource;
+use crate::repository::{FoundRepository, RepositoryCounts};
 use time::format_description::well_known::Rfc3339;
 
 const HIDDEN: Settings = Settings {
@@ -322,6 +323,94 @@ fn a_repositorys_settings_come_from_the_list_whatever_the_case_of_its_name() {
 
     let shouting = RepositoryName::parse("Python/CPython").unwrap();
     assert_eq!(settings.repository(shouting), chosen);
+}
+
+/// Settings that hold `names`, each as written.
+fn holding(names: &[&str]) -> Settings {
+    Settings {
+        repositories: names
+            .iter()
+            .map(|&name| RepositorySettings::new(repository(name)))
+            .collect(),
+        ..Settings::default()
+    }
+}
+
+/// What GitHub says adding a small Repository it calls `name` would take.
+fn found(name: &str) -> RepositoryCheck {
+    RepositoryCheck::new(FoundRepository {
+        name: repository(name),
+        counts: RepositoryCounts {
+            open_issues: 10,
+            open_prs: 3,
+            updated_in_window: 43,
+            closed_in_window: 35,
+            disk_kb: 0,
+        },
+        access: RepositoryAccess::Other,
+    })
+}
+
+#[test]
+fn a_name_the_settings_hold_in_any_case_is_held_by_their_name_and_github_isnt_asked() {
+    let settings = holding(&["python/cpython", "python/peps"]);
+
+    let checked = settings.check_name(repository("Python/CPython"), &mut |_| {
+        panic!("GitHub was asked about a Repository Tsugiki has")
+    });
+
+    assert_eq!(
+        checked.unwrap(),
+        NameCheck::Held {
+            name: repository("python/cpython")
+        }
+    );
+}
+
+#[test]
+fn a_name_the_settings_dont_hold_gets_githubs_check() {
+    let settings = holding(&["python/cpython"]);
+    let mut asked = Vec::new();
+
+    let checked = settings.check_name(repository("python/peps"), &mut |name| {
+        asked.push(name.to_string());
+        Ok(found("python/peps"))
+    });
+
+    assert_eq!(asked, ["python/peps"]);
+    assert_eq!(
+        checked.unwrap(),
+        NameCheck::New {
+            check: found("python/peps")
+        }
+    );
+}
+
+#[test]
+fn a_name_github_answers_with_that_the_settings_hold_is_held() {
+    // GitHub follows a renamed Repository to its new name.
+    let settings = holding(&["python/cpython"]);
+
+    let checked = settings.check_name(repository("python/old-cpython"), &mut |_| {
+        Ok(found("python/CPython"))
+    });
+
+    assert_eq!(
+        checked.unwrap(),
+        NameCheck::Held {
+            name: repository("python/cpython")
+        }
+    );
+}
+
+#[test]
+fn a_check_github_refuses_says_why() {
+    let refused = Error::new(ErrorKind::NotFound, "GitHub has no python/no-such.");
+
+    let checked =
+        holding(&[]).check_name(repository("python/no-such"), &mut |_| Err(refused.clone()));
+
+    assert_eq!(checked.unwrap_err(), refused);
 }
 
 #[test]
@@ -1867,6 +1956,50 @@ fn the_owner_opens_a_repository_and_answers_with_what_the_files_say() {
     );
     // In the view by the time the owner answers.
     assert_eq!(owner.view(), saved);
+}
+
+#[test]
+fn the_owners_check_reads_the_files_again_so_a_repository_taken_out_by_hand_isnt_held() {
+    let (folders, root) = temp_folders("owner-check");
+    let mut files = SettingsFiles::load(folders.clone());
+    add_all(&mut files, &["a/first", "a/second"], WHENEVER);
+    let owner = SettingsOwner::start(Ok(files));
+    hold_only(&folders, &["a/first"]);
+
+    let second = owner.check_name(repository("a/second"), &mut |_| Ok(found("a/second")));
+    let first = owner.check_name(repository("A/First"), &mut |_| {
+        panic!("GitHub was asked about a Repository Tsugiki has")
+    });
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(
+        second.unwrap(),
+        NameCheck::New {
+            check: found("a/second")
+        }
+    );
+    assert_eq!(
+        first.unwrap(),
+        NameCheck::Held {
+            name: repository("a/first")
+        }
+    );
+    // What the owner read is in the view too, so the picker's list loses the name.
+    assert_eq!(owner.view().home, opened(&["a/first"], Conventions::Github));
+}
+
+#[test]
+fn without_folders_the_owners_check_asks_github() {
+    let owner = SettingsOwner::start(Err(Error::new(ErrorKind::Internal, "no folders")));
+
+    let checked = owner.check_name(repository("a/b"), &mut |_| Ok(found("a/b")));
+
+    assert_eq!(
+        checked.unwrap(),
+        NameCheck::New {
+            check: found("a/b")
+        }
+    );
 }
 
 #[test]

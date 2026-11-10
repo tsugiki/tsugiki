@@ -5,7 +5,16 @@
   import { takeFocus } from "./focus";
   import { describeCheck, describeMirror } from "./repository-check";
 
-  let { onclose, onadded }: { onclose: () => void; onadded: (home: Home) => void } = $props();
+  let {
+    onclose,
+    onadded,
+    onswitch,
+  }: {
+    onclose: () => void;
+    onadded: (home: Home) => void;
+    /** The user chose to switch to `name`, a Repository Tsugiki has already. */
+    onswitch: (name: string) => void;
+  } = $props();
 
   const adding = new AddRepositoryState();
   const step = $derived(adding.step);
@@ -13,10 +22,16 @@
   const waiting = $derived(step.step === "checking" || step.step === "adding");
   // A clone that can't lend, or one still being picked, leaves nothing to add with until the user decides.
   const undecided = $derived(check !== undefined && adding.source === undefined);
+  const action = $derived(step.step === "held" ? "Switch to it" : check ? "Add" : "Check");
 
-  // The one button does the next thing, so Enter takes the user from typing to checked to added.
+  // The one button does the next thing, so Enter takes the user from typing to checked to added, or to the
+  // Repository Tsugiki has already.
   async function submit(e: SubmitEvent) {
     e.preventDefault();
+    if (step.step === "held") {
+      onswitch(step.name);
+      return;
+    }
     if (check === undefined) {
       await adding.check();
       return;
@@ -66,6 +81,8 @@
         <p>Asking GitHub…</p>
       {:else if step.step === "failed"}
         <p role="alert">{step.problem}</p>
+      {:else if step.step === "held"}
+        <p>{`Tsugiki has ${step.name} already.`}</p>
       {:else if check}
         <h2>{check.repository.name}</h2>
         {#each describeCheck(check) as line (line)}
@@ -108,7 +125,7 @@
       {/if}
       <div class="buttons">
         <button type="button" onclick={onclose}>Cancel</button>
-        <button type="submit" disabled={waiting || undecided}>{check ? "Add" : "Check"}</button>
+        <button type="submit" disabled={waiting || undecided}>{action}</button>
       </div>
     </form>
   </div>

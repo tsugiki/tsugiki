@@ -29,7 +29,7 @@ use tsugiki_core::mirror::{
 };
 use tsugiki_core::misses::Miss;
 use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
-use tsugiki_core::repository_settings::{RepositoryCheck, RepositorySettings};
+use tsugiki_core::repository_settings::{NameCheck, RepositorySettings};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{Home, LoadedSettings, PaneLayout, SettingsOwner};
 use tsugiki_core::status::{Change, FailedRead, LastSync, Status, SyncActivity};
@@ -263,11 +263,15 @@ fn record_miss(miss: Miss) -> String {
     line
 }
 
+/// Says the Repository the user typed is one Tsugiki has, or else asks GitHub what adding it would load.
 fn check_typed_repository(
     input: &str,
+    owner: &SettingsOwner,
     requests: &SessionRequests,
-) -> Result<RepositoryCheck, Error> {
-    requests.check(RepositoryName::parse(input)?)
+) -> Result<NameCheck, Error> {
+    owner.check_name(RepositoryName::parse(input)?, &mut |name| {
+        requests.check(name)
+    })
 }
 
 /// The user's choice in Add repository: the Repository, by the name GitHub gave it, what they may do in it,

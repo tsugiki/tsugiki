@@ -71,11 +71,11 @@ export const commands = {
 	/**  Writes a budget the window missed to `tsugiki.log`, and says the line it wrote. */
 	recordMiss: (miss: Miss_Deserialize) => __TAURI_INVOKE<string>("record_miss", { miss }),
 	/**
-	 *  What adding the Repository the user typed would load. A check can wait out a stuck request to GitHub, so
-	 *  it waits on a thread meant for blocking, and leaves the threads that answer the window's other commands
-	 *  free.
+	 *  Whether Tsugiki has the Repository the user typed, and if not, what adding it would load. A check can wait
+	 *  out a stuck request to GitHub, so it waits on a thread meant for blocking, and leaves the threads that
+	 *  answer the window's other commands free.
 	 */
-	checkRepository: (input: string) => typedError<RepositoryCheck_Serialize, Error_Serialize>(__TAURI_INVOKE("check_repository", { input })),
+	checkRepository: (input: string) => typedError<NameCheck_Serialize, Error_Serialize>(__TAURI_INVOKE("check_repository", { input })),
 	/**
 	 *  Adds a Repository the user has seen the check for, starts its first sync and its mirror's clone, and says
 	 *  what the window opens on now. This waits on a small file and never on GitHub or git.
@@ -1021,6 +1021,23 @@ export type Miss_Serialize =
 { kind: "long_frame"; ms: number | null; scripts: Script_Serialize[] } | 
 /**  The window logged `limit` misses of one kind within a minute, and logs no more of them until it ends. */
 { kind: "capped"; of: MissKind; limit: number };
+
+/**  What Add repository learns about the name the user typed. */
+export type NameCheck = NameCheck_Serialize | NameCheck_Deserialize;
+
+/**  What Add repository learns about the name the user typed. */
+export type NameCheck_Deserialize = 
+/**  Tsugiki has this Repository already, by this name, so the dialog offers to switch to it. */
+{ kind: "held"; name: RepositoryName } | 
+/**  What adding it would give and cost. */
+{ kind: "new"; check: RepositoryCheck_Deserialize };
+
+/**  What Add repository learns about the name the user typed. */
+export type NameCheck_Serialize = 
+/**  Tsugiki has this Repository already, by this name, so the dialog offers to switch to it. */
+{ kind: "held"; name: RepositoryName } | 
+/**  What adding it would give and cost. */
+{ kind: "new"; check: RepositoryCheck_Serialize };
 
 /**
  *  The user's choice in Add repository: the Repository, by the name GitHub gave it, what they may do in it,

@@ -18,7 +18,7 @@ use tsugiki_core::diff::{DiffRow, HeadLine};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::highlight::Span;
 use tsugiki_core::mirror::{CloneRefusal, MirrorSource};
-use tsugiki_core::repository_settings::RepositoryCheck;
+use tsugiki_core::repository_settings::NameCheck;
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{Home, PaneLayout, SettingsOwner};
 use tsugiki_core::store::StoreReader;
@@ -28,17 +28,19 @@ use tsugiki_core::workbench::pr_files::PrFiles;
 use tsugiki_core::workbench::pr_view::PrView;
 use tsugiki_core::workbench::{Workbench, WorkbenchView};
 
-/// What adding the Repository the user typed would load. A check can wait out a stuck request to GitHub, so
-/// it waits on a thread meant for blocking, and leaves the threads that answer the window's other commands
-/// free.
+/// Whether Tsugiki has the Repository the user typed, and if not, what adding it would load. A check can wait
+/// out a stuck request to GitHub, so it waits on a thread meant for blocking, and leaves the threads that
+/// answer the window's other commands free.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn check_repository(
     input: String,
+    owner: State<'_, SettingsOwner>,
     requests: State<'_, SessionRequests>,
-) -> Result<RepositoryCheck, Error> {
+) -> Result<NameCheck, Error> {
+    let owner = owner.inner().clone();
     let requests = requests.inner().clone();
-    spawn_blocking(move || crate::check_typed_repository(&input, &requests))
+    spawn_blocking(move || crate::check_typed_repository(&input, &owner, &requests))
         .await
         .unwrap_or_else(|cause| {
             log::error!("A check of a Repository stopped: {cause}");

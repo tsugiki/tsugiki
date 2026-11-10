@@ -172,6 +172,10 @@
       // The core read the files again to add this, so a problem the user has since fixed can go.
       void settings.load();
     }}
+    onswitch={(name) => {
+      addOpen = false;
+      if (name !== openName) switchTo(name);
+    }}
   />
 {/if}
 {#if paletteOpen}

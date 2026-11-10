@@ -14,6 +14,7 @@ const core = vi.hoisted(() => ({
   mirrorQuestion: vi.fn(),
   mirrorStates: vi.fn(),
   chooseMirrorSource: vi.fn(),
+  mirrorCost: vi.fn(),
 }));
 
 /** The listener for the mirrors' states, so a test can send it what the core would. */
@@ -90,11 +91,66 @@ it("says why no mirror can be made, and a click asks the core to look again", as
   expect(core.checkMirrorsAgain).toHaveBeenCalledOnce();
 });
 
-it("asks where a mirror gets its objects, and hands the core the answer", async () => {
-  core.mirrorQuestion.mockResolvedValue("python/cpython");
-  render(Page);
-  await fireEvent.click(await screen.findByRole("button", { name: "Download" }));
-  expect(core.chooseMirrorSource).toHaveBeenCalledWith("python/cpython", { kind: "download" });
+describe("the dialog the status bar's question opens", () => {
+  const dialog = () => screen.queryByRole("dialog", { name: "Mirror of python/cpython" });
+
+  beforeEach(() => {
+    core.mirrorQuestion.mockResolvedValue("python/cpython");
+    core.mirrorCost.mockResolvedValue({
+      status: "ok",
+      data: { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 },
+    });
+  });
+
+  const opened = async () => {
+    render(Page);
+    const line = await screen.findByRole("button", { name: "python/cpython's mirror waits for your answer" });
+    // jsdom doesn't focus a button it clicks, as a browser does.
+    line.focus();
+    await fireEvent.click(line);
+    return line;
+  };
+
+  it("asks where the mirror gets its objects, hands the core the answer and closes", async () => {
+    await opened();
+    expect(dialog()).toBeTruthy();
+    expect(core.mirrorCost).toHaveBeenCalledWith("python/cpython");
+    expect(
+      await screen.findByRole("radio", { name: "Download it from GitHub, about 3 minutes" }),
+    ).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Start the clone" }));
+
+    expect(core.chooseMirrorSource).toHaveBeenCalledWith("python/cpython", { kind: "download" });
+    await vi.waitFor(() => {
+      expect(dialog()).toBeNull();
+    });
+  });
+
+  it("takes the focus, and closes on Esc, Close or a click outside, with the focus back", async () => {
+    const line = await opened();
+    expect(document.activeElement).toBe(dialog());
+    await fireEvent.keyDown(window, { key: "Escape" });
+    expect(dialog()).toBeNull();
+    expect(document.activeElement).toBe(line);
+
+    await fireEvent.click(line);
+    await fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(dialog()).toBeNull();
+
+    await fireEvent.click(line);
+    await fireEvent.mouseDown(dialog() as HTMLElement);
+    expect(dialog()).toBeTruthy();
+    await fireEvent.mouseDown(screen.getByTestId("mirror-question-scrim"));
+    expect(dialog()).toBeNull();
+    expect(core.chooseMirrorSource).not.toHaveBeenCalled();
+  });
+
+  it("keeps the palette from opening on top", async () => {
+    await opened();
+    await fireEvent.keyDown(window, { key: "p", code: "KeyP", ctrlKey: true, shiftKey: true });
+    expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
+  });
 });
 
 it("opens on onboarding with no Repositories", async () => {
@@ -132,6 +188,7 @@ it("adds a Repository from onboarding and then shows it", async () => {
         first_sync_items: 48,
         first_sync_seconds: 5,
         first_sync_points: 12,
+        mirror: { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 },
         access: "other",
       },
     },

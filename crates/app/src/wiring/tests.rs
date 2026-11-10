@@ -240,6 +240,7 @@ fn a_name_that_isnt_one_is_refused_before_the_missing_folders_matter() {
 
     let adding = wired.ask("add_repository", json!({ "repository": nonsense }));
     let checking = wired.ask("check_repository", json!({ "input": "nonsense" }));
+    let costing = wired.ask("mirror_cost", json!({ "repository": "nonsense" }));
     let reading = wired.ask(
         "workbench",
         json!({ "repository": "nonsense", "view": { "kind": "whole" } }),
@@ -248,7 +249,22 @@ fn a_name_that_isnt_one_is_refused_before_the_missing_folders_matter() {
 
     assert_eq!(adding.unwrap_err()["kind"], "not_found");
     assert_eq!(checking.unwrap_err()["kind"], "not_found");
+    assert_eq!(costing.unwrap_err()["kind"], "not_found");
     assert_eq!(reading.unwrap_err()["kind"], "not_found");
+}
+
+#[test]
+fn the_files_tabs_check_of_a_mirrors_cost_goes_to_the_session_and_back() {
+    let (folders, root) = temp_folders("wired-cost");
+    let wired = Wired::start(Ok(folders), no_network());
+
+    let answer = wired.ask("mirror_cost", json!({ "repository": CPYTHON }));
+    drop(wired.stop());
+    std::fs::remove_dir_all(root).unwrap();
+
+    let answer = answer.unwrap_err();
+    assert_eq!(answer["kind"], "offline");
+    assert_eq!(answer["message"], "Tsugiki can't reach GitHub.");
 }
 
 #[test]

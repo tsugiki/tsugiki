@@ -1,10 +1,24 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { commands } from "$lib/data/bindings";
-import { chooseMirrorSource, pickClone } from "./mirror-source";
+import { chooseMirrorSource, mirrorCost, pickClone } from "./mirror-source";
 
 vi.mock("$lib/data/bindings", () => ({
-  commands: { pickFolder: vi.fn(), checkClone: vi.fn(), chooseMirrorSource: vi.fn() },
+  commands: { pickFolder: vi.fn(), checkClone: vi.fn(), chooseMirrorSource: vi.fn(), mirrorCost: vi.fn() },
 }));
+
+it("gives what a mirror takes, and asks GitHub again only once it answers", async () => {
+  const cost = { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 };
+  const offline = { kind: "offline", message: "Tsugiki can't reach GitHub." } as const;
+  vi.mocked(commands.mirrorCost).mockResolvedValueOnce({ status: "error", error: offline });
+  expect(await mirrorCost("python/peps")).toBeNull();
+
+  vi.mocked(commands.mirrorCost).mockResolvedValueOnce({ status: "ok", data: cost });
+  expect(await mirrorCost("python/peps")).toEqual(cost);
+  expect(await mirrorCost("python/peps")).toEqual(cost);
+
+  expect(commands.mirrorCost).toHaveBeenCalledTimes(2);
+  expect(commands.mirrorCost).toHaveBeenCalledWith("python/peps");
+});
 
 const folder = String.raw`D:\cpython`;
 

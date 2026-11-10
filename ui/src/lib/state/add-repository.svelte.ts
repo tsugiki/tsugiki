@@ -8,7 +8,7 @@ import {
 } from "$lib/data/bindings";
 import { ask } from "./answer";
 import type { Home } from "./home.svelte";
-import { pickClone, type MirrorSource, type PickedClone } from "./mirror-source";
+import { MirrorChoosing } from "./mirror-choice.svelte";
 
 export type RepositoryCheck = RepositoryCheck_Serialize;
 export type { Conventions, RepositorySize };
@@ -22,16 +22,11 @@ export type AddStep =
   | { step: "adding"; check: RepositoryCheck }
   | { step: "failed"; problem: string };
 
-/** The mirror's source of objects: all from GitHub, or borrowed from a clone the user picks. While the
- * picker is open nothing is picked yet. */
-export type MirrorChoice = { kind: "download" } | { kind: "borrow"; picked: PickedClone | undefined };
-
-const DOWNLOAD: MirrorChoice = { kind: "download" };
-
 export class AddRepositoryState {
   #input = $state("");
   step = $state<AddStep>({ step: "typing" });
-  mirror = $state<MirrorChoice>(DOWNLOAD);
+  /** Where the mirror gets its objects. A clone picked after the text changed goes to the choice before. */
+  mirror = $state(new MirrorChoosing());
 
   get input() {
     return this.#input;
@@ -41,27 +36,7 @@ export class AddRepositoryState {
   set input(text: string) {
     this.#input = text;
     this.step = { step: "typing" };
-    this.mirror = DOWNLOAD;
-  }
-
-  /** The mirror's source of objects, or nothing while the user is still picking a clone that lends
-   * them. */
-  get source(): MirrorSource | undefined {
-    if (this.mirror.kind === "download") return { kind: "download" };
-    const { picked } = this.mirror;
-    return picked?.kind === "lends" ? { kind: "borrow", folder: picked.folder } : undefined;
-  }
-
-  chooseDownload() {
-    this.mirror = DOWNLOAD;
-  }
-
-  /** Opens the folder picker for a clone of `repository`. Cancelling keeps what was chosen before. */
-  async chooseClone(repository: string) {
-    const before = this.mirror;
-    this.mirror = { kind: "borrow", picked: undefined };
-    const picked = await pickClone(repository);
-    this.mirror = picked.kind === "cancelled" ? before : { kind: "borrow", picked };
+    this.mirror = new MirrorChoosing();
   }
 
   async check() {
@@ -83,7 +58,7 @@ export class AddRepositoryState {
   /** Adds what was checked, by the name GitHub gave, and returns what the window opens on now. It adds
    * nothing while the user is still picking a clone, or the one they picked can't lend. */
   async add(check: RepositoryCheck): Promise<Home | undefined> {
-    const source = this.source;
+    const source = this.mirror.source;
     if (source === undefined) return undefined;
     this.step = { step: "adding", check };
     const answer = await ask(

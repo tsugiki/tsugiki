@@ -80,27 +80,34 @@ test("a hidden status bar says git is missing until the core finds it", async ({
   await expect(page.getByRole("status")).toHaveText("");
 });
 
-test("a hidden status bar asks where a mirror gets its objects, says why a clone can't lend, and takes Download", async ({
+test("a hidden status bar says a mirror waits for an answer, and its dialog says why a clone can't lend and takes Download", async ({
   page,
 }) => {
   await mockCore(page, {
     settings: hidden,
     status: online,
     mirrorQuestion: "python/cpython",
+    mirrorCost: { status: "ok", data: { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 } },
     pickFolder: { status: "ok", data: "D:/somewhere" },
     checkClone: { status: "ok", data: { kind: "no_remote" } },
     chooseMirrorSource: { status: "ok", data: null },
   });
   await page.goto("/");
-  await expect(page.getByRole("status")).toHaveText(
-    "The Files tab needs a mirror of python/cpython: borrow objects from a clone you have, in seconds, or download it, in minutes?",
-  );
+  const line = page.getByRole("button", { name: "python/cpython's mirror waits for your answer" });
+  await expect(page.getByRole("status")).toHaveText("python/cpython's mirror waits for your answer");
+  await expect(page.getByRole("button")).toHaveCount(1);
 
-  await page.getByRole("button", { name: "Borrow from a clone…" }).click();
-  await expect(page.getByRole("status")).toContainText("D:/somewhere has no remote for python/cpython.");
-  await page.getByRole("button", { name: "Download" }).click();
+  await line.click();
+  const dialog = page.getByRole("dialog", { name: "Mirror of python/cpython" });
+  const start = dialog.getByRole("button", { name: "Start the clone" });
+  await dialog.getByRole("radio", { name: "Borrow objects from a clone you have, about 1 minute" }).check();
+  await expect(dialog).toContainText("D:/somewhere has no remote for python/cpython.");
+  await expect(start).toBeDisabled();
+  await dialog.getByRole("radio", { name: "Download it from GitHub, about 3 minutes" }).check();
+  await start.click();
+  await expect(dialog).toHaveCount(0);
   await emitFromCore(page, "mirror-question-changed", null);
 
-  await expect(page.getByRole("button", { name: "Download" })).toHaveCount(0);
+  await expect(line).toHaveCount(0);
   await expect(page.getByRole("status")).toHaveText("");
 });

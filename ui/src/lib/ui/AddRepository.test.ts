@@ -20,9 +20,7 @@ const check: RepositoryCheck = {
   first_sync_items: 48,
   first_sync_seconds: 5,
   first_sync_points: 12,
-  mirror_mb: 891,
-  download_seconds: 209,
-  borrow_seconds: 36,
+  mirror: { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 },
   access: "other",
 };
 

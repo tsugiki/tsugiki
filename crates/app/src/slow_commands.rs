@@ -18,7 +18,7 @@ use tsugiki_core::diff::{DiffRow, HeadLine};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::highlight::Span;
 use tsugiki_core::mirror::{CloneRefusal, MirrorSource};
-use tsugiki_core::repository_settings::NameCheck;
+use tsugiki_core::repository_settings::{MirrorCost, NameCheck};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{Home, PaneLayout, SettingsOwner};
 use tsugiki_core::store::StoreReader;
@@ -28,9 +28,7 @@ use tsugiki_core::workbench::pr_files::PrFiles;
 use tsugiki_core::workbench::pr_view::PrView;
 use tsugiki_core::workbench::{Workbench, WorkbenchView};
 
-/// Whether Tsugiki has the Repository the user typed, and if not, what adding it would load. A check can wait
-/// out a stuck request to GitHub, so it waits on a thread meant for blocking, and leaves the threads that
-/// answer the window's other commands free.
+/// Whether Tsugiki has the Repository the user typed, and if not, what adding it would load.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn check_repository(
@@ -40,15 +38,33 @@ pub(crate) async fn check_repository(
 ) -> Result<NameCheck, Error> {
     let owner = owner.inner().clone();
     let requests = requests.inner().clone();
-    spawn_blocking(move || crate::check_typed_repository(&input, &owner, &requests))
-        .await
-        .unwrap_or_else(|cause| {
-            log::error!("A check of a Repository stopped: {cause}");
-            Err(Error::new(
-                ErrorKind::Internal,
-                "Tsugiki couldn't finish that check.",
-            ))
-        })
+    check_aside(move || crate::check_typed_repository(&input, &owner, &requests)).await
+}
+
+/// Asks GitHub the disk and the time the mirror of `repository` takes, for the user to choose where it gets
+/// its objects.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn mirror_cost(
+    repository: String,
+    requests: State<'_, SessionRequests>,
+) -> Result<MirrorCost, Error> {
+    let requests = requests.inner().clone();
+    check_aside(move || crate::check_mirror_cost(&repository, &requests)).await
+}
+
+/// Runs `check`, which asks GitHub, on a thread meant for blocking. A check can wait out a stuck request, and
+/// this leaves the threads that answer the window's other commands free.
+async fn check_aside<T: Send + 'static>(
+    check: impl FnOnce() -> Result<T, Error> + Send + 'static,
+) -> Result<T, Error> {
+    spawn_blocking(check).await.unwrap_or_else(|cause| {
+        log::error!("A check on GitHub stopped: {cause}");
+        Err(Error::new(
+            ErrorKind::Internal,
+            "Tsugiki couldn't finish that check.",
+        ))
+    })
 }
 
 /// Adds a Repository the user has seen the check for, starts its first sync and its mirror's clone, and says

@@ -1,8 +1,6 @@
 <script lang="ts">
   import { openLink } from "$lib/state/browser";
-  import { chooseMirrorSource, pickClone, type MirrorSource } from "$lib/state/mirror-source";
   import type { Cloning, LastSync, MirrorProblem, Status, SyncActivity } from "$lib/state/status.svelte";
-  import { pickedWords } from "./clone-words";
   import { type ChordStart, currentOs, keyLabel } from "./keys";
   import {
     cloningWords,
@@ -30,6 +28,7 @@
     chord = null,
     onrefresh = () => {},
     oncheckagain = () => {},
+    onquestion = () => {},
   }: {
     status: Status | undefined;
     error?: string | undefined;
@@ -44,28 +43,14 @@
     chord?: ChordStart | null;
     onrefresh?: () => void;
     oncheckagain?: () => void;
+    /** Asks where `repository`'s mirror gets its objects. */
+    onquestion?: (repository: string) => void;
   } = $props();
 
   /** The problem that kept the browser from opening git's downloads, until the next try. */
   let browserProblem = $state<string>();
   const getGit = async () => {
     browserProblem = await openLink(GIT_DOWNLOADS);
-  };
-
-  /** The reason the user's answer didn't take, kept with the Repository it answered for: a clone that can't
-   * lend, or an answer `machine.toml` can't keep. */
-  let cloneProblem = $state<{ repository: string; words: string }>();
-  /** Answers the question for `repository`. The core starts its clone, and the next question comes as an
-   * event. */
-  const choose = async (repository: string, source: MirrorSource) => {
-    const problem = await chooseMirrorSource(repository, source);
-    cloneProblem = problem === undefined ? undefined : { repository, words: problem };
-  };
-  const borrow = async (repository: string) => {
-    const picked = await pickClone(repository);
-    if (picked.kind === "lends") return choose(repository, { kind: "borrow", folder: picked.folder });
-    const words = pickedWords(picked, repository);
-    cloneProblem = words === null ? undefined : { repository, words };
   };
 
   // "Synced 2 min ago" has to move on by itself between syncs.
@@ -85,16 +70,15 @@
   const paused = $derived(pausedWords(syncActivity));
   // Hiding the bar can't hide why the Files tab has no diff either.
   const mirror = $derived(mirrorWords(mirrorProblem));
-  const question = $derived(questionWords(mirrorQuestion));
-  // A refusal goes with the question it answered.
-  const refused = $derived(cloneProblem?.repository === mirrorQuestion ? cloneProblem?.words : undefined);
   const needsGit = $derived(mirrorProblem?.kind === "no_git" || mirrorProblem?.kind === "old_git");
   // The browser's problem goes with the button that met it.
   const listedProblems = $derived(
-    [...problems, paused, mirror, needsGit ? browserProblem : undefined, question, refused]
+    [...problems, paused, mirror, needsGit ? browserProblem : undefined]
       .filter((words) => Boolean(words))
       .join(" · "),
   );
+  /** Whether anything shows before the question's line, which then needs a " · " before it. */
+  const beforeQuestion = $derived(showStatus || Boolean(listedProblems));
   // A sync of the Repository open before the window switched says nothing about the one open now.
   const syncing = $derived(
     syncActivity?.open?.repository === lastSync?.repository ? syncingWords(syncActivity) : null,
@@ -112,7 +96,7 @@
 <div class="bar">
   <!-- Always in the page, because screen readers only announce changes in a live region that already
        exists. -->
-  <footer role="status" class:offline class:empty={!showStatus && !listedProblems}>
+  <footer role="status" class:offline class:empty={!showStatus && !listedProblems && mirrorQuestion === null}>
     {#if showStatus}
       {#if error}
         Tsugiki can't read its status: {error}
@@ -131,21 +115,23 @@
       {/if}
     {/if}
     <span>{showStatus && listedProblems ? `· ${listedProblems}` : listedProblems}</span>
+    <!-- Hiding the bar can't hide the question the Files tab waits for. -->
+    {#if mirrorQuestion !== null}
+      {@const repository = mirrorQuestion}
+      {#if beforeQuestion}·{/if}
+      <button
+        class="question"
+        onclick={() => {
+          onquestion(repository);
+        }}>{questionWords(repository)}</button
+      >
+    {/if}
   </footer>
   {#if needsGit}
     <button onclick={() => void getGit()}>Get git</button>
   {/if}
   {#if mirrorProblem !== null}
     <button onclick={oncheckagain}>Check again</button>
-  {/if}
-  {#if mirrorQuestion !== null}
-    {@const repository = mirrorQuestion}
-    <button onclick={() => void borrow(repository)}>Borrow from a clone…</button>
-    <button
-      onclick={() => {
-        void choose(repository, { kind: "download" });
-      }}>Download</button
-    >
   {/if}
   <!-- Outside the live region, or a screen reader would read this out each minute, and each page of a
        sync. -->
@@ -187,6 +173,16 @@
 
   button {
     cursor: pointer;
+  }
+
+  /* A line of the status, which reads as a link to the question. */
+  .question {
+    padding: 0;
+    white-space: normal;
+    font: inherit;
+    color: inherit;
+    background: none;
+    text-decoration: underline;
   }
 
   kbd {

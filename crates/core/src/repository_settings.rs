@@ -88,11 +88,28 @@ pub struct RepositoryCheck {
     pub first_sync_items: u32,
     pub first_sync_seconds: u32,
     pub first_sync_points: u32,
-    /// The size of its mirror on the disk, whether it borrows objects or not: `--dissociate` copies them.
+    pub mirror: MirrorCost,
+}
+
+/// What a Repository's mirror takes, for the user to choose where it gets its objects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+pub struct MirrorCost {
+    /// The size of the mirror on the disk, whether it borrows objects or not: `--dissociate` copies them.
     pub mirror_mb: u32,
-    /// About how long its mirror's clone takes from GitHub alone, and borrowing from a clone the user has.
+    /// About how long its clone takes from GitHub alone, and borrowing from a clone the user has.
     pub download_seconds: u32,
     pub borrow_seconds: u32,
+}
+
+impl MirrorCost {
+    /// The cost of the mirror of a Repository that takes `disk_kb` on GitHub.
+    fn new(disk_kb: u64) -> Self {
+        Self {
+            mirror_mb: clamped(disk_kb / KB_PER_MB),
+            download_seconds: clamped(disk_kb / DOWNLOAD_KB_PER_SECOND),
+            borrow_seconds: clamped(disk_kb / BORROW_KB_PER_SECOND),
+        }
+    }
 }
 
 impl RepositoryCheck {
@@ -119,9 +136,7 @@ impl RepositoryCheck {
             first_sync_seconds: items.saturating_mul(MILLISECONDS_PER_ITEM) / 1000,
             first_sync_points: FIXED_POINTS
                 .saturating_add(items.saturating_mul(POINTS_PER_THOUSAND_ITEMS) / 1000),
-            mirror_mb: clamped(counts.disk_kb / KB_PER_MB),
-            download_seconds: clamped(counts.disk_kb / DOWNLOAD_KB_PER_SECOND),
-            borrow_seconds: clamped(counts.disk_kb / BORROW_KB_PER_SECOND),
+            mirror: MirrorCost::new(counts.disk_kb),
         }
     }
 }

@@ -1,5 +1,7 @@
-// The add dialog's words for what the core worked out about a Repository.
+// The words for what the core worked out about a Repository: Add repository's check, and what its mirror
+// takes, which the Files tab says too.
 import type { Conventions, RepositoryCheck, RepositorySize } from "$lib/state/add-repository.svelte";
+import type { MirrorCost } from "$lib/state/mirror-source";
 import { sizeWords } from "./synced";
 
 const CONVENTIONS: Record<Conventions, string> = { cpython: "CPython", github: "GitHub" };
@@ -30,11 +32,19 @@ export function describeCheck(check: RepositoryCheck): string[] {
   ];
 }
 
-/** The dialog's words for the mirror's two ways to get its objects, and the disk it takes either way. */
-export function describeMirror(check: RepositoryCheck) {
+/** The words for the mirror's two ways to get its objects, and the disk it takes either way, or the two ways
+ * alone while GitHub hasn't said what the mirror takes. */
+export function describeMirror(cost: MirrorCost | null) {
+  if (cost === null) {
+    return {
+      disk: "Mirror, for the diff",
+      download: "Download it from GitHub",
+      borrow: "Borrow objects from a clone you have",
+    };
+  }
   return {
-    disk: `Mirror, for the diff: ${sizeWords(check.mirror_mb)} on the disk either way.`,
-    download: `Download it from GitHub, ${aboutHowLong(check.download_seconds)}`,
-    borrow: `Borrow objects from a clone you have, ${aboutHowLong(check.borrow_seconds)}`,
+    disk: `Mirror, for the diff: ${sizeWords(cost.mirror_mb)} on the disk either way.`,
+    download: `Download it from GitHub, ${aboutHowLong(cost.download_seconds)}`,
+    borrow: `Borrow objects from a clone you have, ${aboutHowLong(cost.borrow_seconds)}`,
   };
 }

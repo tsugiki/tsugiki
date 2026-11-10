@@ -15,9 +15,7 @@ const check: RepositoryCheck_Serialize = {
   first_sync_items: 48,
   first_sync_seconds: 5,
   first_sync_points: 12,
-  mirror_mb: 891,
-  download_seconds: 209,
-  borrow_seconds: 36,
+  mirror: { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 },
   access: "maintained",
 };
 
@@ -122,49 +120,12 @@ function picking(folder: string | null, refusal: { kind: "no_remote" } | null = 
   vi.mocked(commands.checkClone).mockResolvedValue({ status: "ok", data: refusal });
 }
 
-it("downloads the mirror unless the user picks a clone that lends", async () => {
-  const state = new AddRepositoryState();
-  expect(state.source).toEqual({ kind: "download" });
-
-  picking(lender);
-  await state.chooseClone("Some-Maintainer/gcmon");
-  expect(state.source).toEqual({ kind: "borrow", folder: lender });
-
-  state.chooseDownload();
-  expect(state.source).toEqual({ kind: "download" });
-});
-
-it("has nothing to add with while the picker is open or the clone can't lend", async () => {
-  const state = new AddRepositoryState();
-  picking(lender, { kind: "no_remote" });
-
-  const choosing = state.chooseClone("Some-Maintainer/gcmon");
-  expect(state.mirror).toEqual({ kind: "borrow", picked: undefined });
-  expect(state.source).toBeUndefined();
-  await choosing;
-
-  expect(state.mirror).toEqual({
-    kind: "borrow",
-    picked: { kind: "refused", folder: lender, refusal: { kind: "no_remote" } },
-  });
-  expect(state.source).toBeUndefined();
-});
-
-it("keeps what was chosen when the user cancels the picker", async () => {
-  const state = new AddRepositoryState();
-  picking(lender);
-  await state.chooseClone("Some-Maintainer/gcmon");
-  picking(null);
-  await state.chooseClone("Some-Maintainer/gcmon");
-  expect(state.source).toEqual({ kind: "borrow", folder: lender });
-});
-
 it("adds with the clone the user picked, and forgets it when the text changes", async () => {
   const home = { screen: "repository", repository: check.repository, others: [] as string[] } as const;
   vi.mocked(commands.addRepository).mockResolvedValue({ status: "ok", data: home });
   const state = new AddRepositoryState();
   picking(lender);
-  await state.chooseClone("Some-Maintainer/gcmon");
+  await state.mirror.chooseClone("Some-Maintainer/gcmon");
 
   await state.add(check);
   state.input = "other/repo";
@@ -174,13 +135,22 @@ it("adds with the clone the user picked, and forgets it when the text changes", 
     access: "maintained",
     source: { kind: "borrow", folder: lender },
   });
-  expect(state.source).toEqual({ kind: "download" });
+  expect(state.mirror.source).toEqual({ kind: "download" });
+});
+
+it("forgets a clone picked after the text changed", async () => {
+  const state = new AddRepositoryState();
+  picking(lender);
+  const choosing = state.mirror.chooseClone("Some-Maintainer/gcmon");
+  state.input = "other/repo";
+  await choosing;
+  expect(state.mirror.source).toEqual({ kind: "download" });
 });
 
 it("adds nothing while no clone lends, though the dialog's button stays off then", async () => {
   const state = new AddRepositoryState();
   picking(lender, { kind: "no_remote" });
-  await state.chooseClone("Some-Maintainer/gcmon");
+  await state.mirror.chooseClone("Some-Maintainer/gcmon");
 
   expect(await state.add(check)).toBeUndefined();
 

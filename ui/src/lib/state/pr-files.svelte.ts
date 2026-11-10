@@ -153,6 +153,10 @@ export class PrFilesState {
   readonly #number: number;
   readonly #jumps: JumpTimer;
   readonly #choice: DiffViewChoice;
+  /** Whether the mirror's clone waited for an answer in the mirror states the core last told of. */
+  #mirrorAsks = false;
+  /** How many times the core has told of the mirror states, so an answer can tell it is older than one. */
+  #statesHeard = 0;
   /** The rows the core has sent, by chunk, for the diff `view` shows. */
   #chunks = new SvelteMap<number, DiffRow[]>();
   /** The spans of each row, by chunk, which come after its rows. */
@@ -216,6 +220,11 @@ export class PrFilesState {
     this.#choice = choice;
   }
 
+  /** The Repository the PR is in. */
+  get repository(): string {
+    return this.#repository;
+  }
+
   /** Whether the tab shows the diff unified or side by side. */
   get shownAs(): DiffView {
     return this.#choice.view;
@@ -242,6 +251,14 @@ export class PrFilesState {
           this.cloning = payload;
           heardCloning = true;
           if (payload === null) void this.ask();
+        }),
+        events.mirrorStatesChanged.listen(({ payload }) => {
+          // The core matches names in any case.
+          const name = this.#repository.toLowerCase();
+          const mirror = payload.find((one) => one.repository.toLowerCase() === name);
+          this.#mirrorAsks = mirror?.state.state === "asking";
+          this.#statesHeard += 1;
+          this.#followMirror();
         }),
       ]);
       this.#stopListening = listening;
@@ -274,6 +291,7 @@ export class PrFilesState {
     this.unfetched = undefined;
     this.#lastQuestion += 1;
     const question = this.#lastQuestion;
+    const statesHeard = this.#statesHeard;
     const answer = await this.#safely(() => commands.pullRequestFiles(this.#repository, this.#number));
     // A newer question reads newer facts, so this drops an older answer that arrives late.
     if (question !== this.#lastQuestion || answer === undefined) return;
@@ -305,6 +323,17 @@ export class PrFilesState {
     if (this.#revealing !== undefined && answer?.state === "ready") this.reveal(this.#revealing);
     // The rows of a new diff hold other matches, and the tab stays where the user is.
     if (anew && this.query !== "") void this.#search(this.query, false);
+    // Mirror states told of while the core answered can be newer than the answer.
+    if (statesHeard !== this.#statesHeard) this.#followMirror();
+  }
+
+  /** Asks again when the mirror states the core last told of disagree with the tab's clone: the user
+   * answered where the mirror gets its objects, or the clone came to wait for that answer. */
+  #followMirror() {
+    const view = this.view?.state;
+    if ((view === "asking" || view === "cloning") && this.#mirrorAsks !== (view === "asking")) {
+      void this.ask();
+    }
   }
 
   /** The review threads, in the order the tab shows them. */

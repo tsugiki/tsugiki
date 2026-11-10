@@ -161,11 +161,16 @@ fn a_clone_that_waits_for_an_answer_says_so_until_the_answer_comes() {
     let hello = named("octo-org/hello");
     let (mirrors, starts, told) = place.start_hearing();
 
-    mirrors.requests().clone_mirror(hello.clone(), None);
+    let requests = mirrors.requests();
+    assert!(!requests.asks(&hello));
+
+    requests.clone_mirror(hello.clone(), None);
     wait_for(&told, &[mirror(&hello, MirrorState::Asking)]);
-    mirrors.requests().clone_mirror(hello.clone(), download());
+    assert!(requests.asks(&named("Octo-Org/Hello")));
+    requests.clone_mirror(hello.clone(), download());
     let _clone = starts.recv_timeout(PLENTY).unwrap();
     wait_for(&told, &[mirror(&hello, cloning(CloneProgress::Starting))]);
+    assert!(!requests.asks(&hello));
     mirrors.stop_cleanly(PLENTY);
 }
 

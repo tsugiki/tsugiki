@@ -170,12 +170,13 @@ const LAYERS: &[Layer] = &[
             "error",
             "folders",
             "github",
+            "latest",
             "repository",
             "status",
             "token",
         ],
         why: "Clones and fetches PR heads into this build's folders with the token, and says how on the \
-              status board.",
+              status board. Its requests read a copy of the clones that wait for an answer.",
     },
     Layer {
         module: "settings",

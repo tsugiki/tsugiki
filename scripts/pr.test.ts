@@ -4,15 +4,15 @@ import { branchRefusal, byVersion, failureSummary, shipArgs } from "./pr.ts";
 
 describe("shipArgs", () => {
   it.each([
-    [[], { check: true, bodyFile: undefined }],
-    [["--no-check"], { check: false, bodyFile: undefined }],
-    [["body.md"], { check: true, bodyFile: "body.md" }],
-    [["body.md", "--no-check"], { check: false, bodyFile: "body.md" }],
+    [[], { check: false, bodyFile: undefined }],
+    [["--check"], { check: true, bodyFile: undefined }],
+    [["body.md"], { check: false, bodyFile: "body.md" }],
+    [["body.md", "--check"], { check: true, bodyFile: "body.md" }],
   ])("reads %j", (args, expected) => {
     expect(shipArgs(args)).toEqual(expected);
   });
 
-  it.each([[["--nocheck"]], [["--draft", "body.md"]], [["a.md", "b.md"]]])("refuses %j", (args) => {
+  it.each([[["--no-check"]], [["--draft", "body.md"]], [["a.md", "b.md"]]])("refuses %j", (args) => {
     expect(shipArgs(args)).toBeUndefined();
   });
 });

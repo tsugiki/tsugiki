@@ -26,9 +26,9 @@ Run `just check` once per PR, at the end, after `/code-review` and its fixes. Be
 files, `just typecheck`, `just doc-width` and the tests of each crate the change touches. If a gate fails, fix
 it and rerun only that gate. Run `just check` again only if the fix changes behaviour outside that gate.
 
-`just ship` does that last step: it runs `just check`, pushes and opens the PR, and prints only the outcome,
-with the failed recipe and the log's tail on a failure. `just ship --no-check` pushes a fix for a gate you
-reran yourself. `just next` lists the open tickets of the release being built.
+`just ship --check` does that last step: it runs `just check`, pushes and opens the PR, and prints only the
+outcome, with the failed recipe and the log's tail on a failure. Plain `just ship` skips the check and pushes
+a fix for a gate you reran yourself. `just next` lists the open tickets of the release being built.
 
 A hook in `.claude/settings.json` refuses a shell command that rewrites code or docs in place, such as
 `sed -i` or a redirect into `crates/`. Edit those files with the Edit or Write tool.

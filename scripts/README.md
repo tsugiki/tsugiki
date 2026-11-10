@@ -8,7 +8,7 @@ or `npm run`, and CI calls the same npm scripts.
 
 | Script                | Called by                        | What it does                                                                     |
 | --------------------- | -------------------------------- | -------------------------------------------------------------------------------- |
-| `ship.ts`             | `just ship`                      | Runs `just check`, pushes the branch and opens the PR, printing only the outcome |
+| `ship.ts`             | `just ship`                      | Pushes the branch and opens the PR; with `--check`, runs `just check` first      |
 | `merged.ts`           | `just merged`                    | After GitHub merges a PR: switches to main, pulls, deletes the local branch      |
 | `next.ts`             | `just next`                      | Lists the open tickets of the release being built, ready-for-agent first         |
 | `pr.ts`               | `ship.ts`, `next.ts`             | Their arguments, branch rules, failure summary and milestone order               |

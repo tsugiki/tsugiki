@@ -24,8 +24,8 @@ install:
 merged branch="":
     node scripts/merged.ts {{quote(branch)}}
 
-# End a PR's work: run `just check`, push, and open the PR. `just ship body.md` takes the body from a file,
-# `just ship --no-check` skips the check
+# `just ship body.md` takes the PR's body from a file
+# Push the branch and open its PR; `just ship --check` runs `just check` first
 ship *args:
     node scripts/ship.ts {{args}}
 

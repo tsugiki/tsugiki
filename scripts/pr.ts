@@ -7,13 +7,13 @@ export interface ShipArgs {
   bodyFile: string | undefined;
 }
 
-/** `just ship [--no-check] [body.md]`, or `undefined` for anything else, such as a mistyped flag. */
+/** `just ship [--check] [body.md]`, or `undefined` for anything else, such as a mistyped flag. */
 export function shipArgs(args: string[]): ShipArgs | undefined {
-  const [bodyFile, ...extra] = args.filter((arg) => arg !== "--no-check");
+  const [bodyFile, ...extra] = args.filter((arg) => arg !== "--check");
   if (bodyFile?.startsWith("-") || extra.length > 0) {
     return undefined;
   }
-  return { check: !args.includes("--no-check"), bodyFile };
+  return { check: args.includes("--check"), bodyFile };
 }
 
 /** The reason `just ship` won't push from `branch`, or `undefined` when it may. */

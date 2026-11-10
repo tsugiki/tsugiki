@@ -40,6 +40,8 @@ const onboarding = { screen: "onboarding", token: "gh" } as const;
 const gcmon = { name: "some-maintainer/gcmon", conventions: "github", filters: [] } as const;
 
 beforeEach(() => {
+  // The tests share one document, so each starts with no title of its own.
+  document.title = "";
   core.home.mockResolvedValue(onboarding);
   core.mirrorProblem.mockResolvedValue(null);
   core.mirrorQuestion.mockResolvedValue(null);
@@ -82,18 +84,21 @@ it("asks where a mirror gets its objects, and hands the core the answer", async 
 it("opens on onboarding with no Repositories", async () => {
   render(Page);
   expect(await screen.findByText(/Your token comes from/)).toBeTruthy();
+  expect(document.title).toBe("Tsugiki");
 });
 
-it("reopens the Repository the core names", async () => {
+it("reopens the Repository the core names, and the window title names it", async () => {
   core.home.mockResolvedValue({ screen: "repository", repository: gcmon });
   render(Page);
   expect(await screen.findByRole("heading", { name: gcmon.name })).toBeTruthy();
+  expect(document.title).toBe("some-maintainer/gcmon · Tsugiki");
 });
 
 it("says so when the core can't say what to open", async () => {
   core.home.mockRejectedValue(new Error("the core has gone"));
   render(Page);
   expect(await screen.findByText(/can't say what to open: Error: the core has gone/)).toBeTruthy();
+  expect(document.title).toBe("Tsugiki");
 });
 
 it("adds a Repository from onboarding and then shows it", async () => {
@@ -115,12 +120,14 @@ it("adds a Repository from onboarding and then shows it", async () => {
   });
   render(Page);
   await fireEvent.click(await screen.findByRole("button", { name: "Add repository" }));
+  expect(document.title).toBe("Tsugiki");
   await fireEvent.click(screen.getByRole("button", { name: "Check" }));
   await fireEvent.click(await screen.findByRole("button", { name: "Add" }));
 
   await screen.findByText(/Nothing here yet/);
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.getByRole("heading", { name: gcmon.name })).toBeTruthy();
+  expect(document.title).toBe("some-maintainer/gcmon · Tsugiki");
   expect(core.settings).toHaveBeenCalledTimes(2);
 });
 

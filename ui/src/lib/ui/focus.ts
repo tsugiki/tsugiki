@@ -9,3 +9,13 @@ export function takeFocus(element: HTMLElement) {
     }
   };
 }
+
+/** For a dialog's scrim, as its `onmousedown`: a press closes the dialog. The dialog goes and gives the focus
+ * back before the browser acts on the press, which would then move the focus to the body, so it stops the
+ * browser. */
+export function closeOnPress(close: () => void) {
+  return (e: MouseEvent) => {
+    e.preventDefault();
+    close();
+  };
+}

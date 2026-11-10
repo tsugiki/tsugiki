@@ -227,6 +227,12 @@ it("closes on Esc, on Cancel and on a press outside it", async () => {
   expect(onclose).toHaveBeenCalledTimes(3);
 });
 
+it("keeps the browser from moving the focus on a press outside it, as the focus has gone back", async () => {
+  render(AddRepository, { onclose: () => {}, onadded: () => {}, onswitch: () => {} });
+  // A browser focuses the body on a press it isn't stopped from, after the dialog gave the focus back.
+  expect(await fireEvent.mouseDown(screen.getByTestId("add-repository-scrim"))).toBe(false);
+});
+
 it("stays open on other keys and on a press inside it", async () => {
   const onclose = vi.fn();
   render(AddRepository, { onclose, onadded: () => {}, onswitch: () => {} });

@@ -54,6 +54,28 @@ const onboarding = { screen: "onboarding", token: "gh" } as const;
 const gcmon = { name: "some-maintainer/gcmon", conventions: "github", filters: [] } as const;
 /** The window open on gcmon, the only Repository. */
 const gcmonHome = { screen: "repository", repository: gcmon, others: [] } as const;
+/** The Workbench with one Issue, #7, on it. */
+const oneIssue = {
+  status: "ok",
+  data: {
+    items: [
+      {
+        kind: "issue",
+        number: 7,
+        title: "It crashes",
+        state: "OPEN",
+        people: [],
+        updated_at: "2026-11-04T10:00:00Z",
+        pull_requests: [],
+        attention: null,
+      },
+    ],
+    quiet: [],
+    count: 0,
+    review_requests: 0,
+    filters: [],
+  },
+} as const;
 
 beforeEach(() => {
   // The tests share one document, so each starts with no title of its own.
@@ -141,8 +163,10 @@ describe("the dialog the status bar's question opens", () => {
     await fireEvent.click(line);
     await fireEvent.mouseDown(dialog() as HTMLElement);
     expect(dialog()).toBeTruthy();
-    await fireEvent.mouseDown(screen.getByTestId("mirror-question-scrim"));
+    // A browser would move the focus to the body after the dialog gave it back, if not stopped.
+    expect(await fireEvent.mouseDown(screen.getByTestId("mirror-question-scrim"))).toBe(false);
     expect(dialog()).toBeNull();
+    expect(document.activeElement).toBe(line);
     expect(core.chooseMirrorSource).not.toHaveBeenCalled();
   });
 
@@ -223,6 +247,33 @@ it("closes the add dialog without changing anything", async () => {
   expect(screen.getByText(/Your token comes from/)).toBeTruthy();
 });
 
+it("gives the focus back from the add dialog on Esc, on Cancel and on a press outside", async () => {
+  render(Page);
+  const add = await screen.findByRole("button", { name: "Add repository" });
+  const dialog = () => screen.queryByRole("dialog", { name: "Add repository" });
+  /** Opens the dialog from the button, which a browser focuses on the click and jsdom doesn't. */
+  const open = async () => {
+    add.focus();
+    await fireEvent.click(add);
+    expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Repository" }));
+  };
+
+  await open();
+  await fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
+  expect(dialog()).toBeNull();
+  expect(document.activeElement).toBe(add);
+
+  await open();
+  await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(dialog()).toBeNull();
+  expect(document.activeElement).toBe(add);
+
+  await open();
+  expect(await fireEvent.mouseDown(screen.getByTestId("add-repository-scrim"))).toBe(false);
+  expect(dialog()).toBeNull();
+  expect(document.activeElement).toBe(add);
+});
+
 it("asks the core when it opens and shows the answer", async () => {
   render(Page);
   expect(screen.getByText("Asking the core…")).toBeTruthy();
@@ -246,27 +297,7 @@ it("opens the command palette on Ctrl+Shift+P and closes it on Esc", async () =>
 
 it("gives the list's keys to a dialog on top of it", async () => {
   core.home.mockResolvedValue(gcmonHome);
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: {
-      items: [
-        {
-          kind: "issue",
-          number: 7,
-          title: "It crashes",
-          state: "OPEN",
-          people: [],
-          updated_at: "2026-11-04T10:00:00Z",
-          pull_requests: [],
-          attention: null,
-        },
-      ],
-      quiet: [],
-      count: 0,
-      review_requests: 0,
-      filters: [],
-    },
-  });
+  core.workbench.mockResolvedValue(oneIssue);
   render(Page);
   const row = await screen.findByRole("button", { name: "#7 It crashes" });
 
@@ -277,6 +308,51 @@ it("gives the list's keys to a dialog on top of it", async () => {
   await fireEvent.keyDown(window, { key: "Escape" });
   await fireEvent.keyDown(document.body, { key: "ArrowDown" });
   expect(document.activeElement).toBe(row);
+});
+
+describe("the focus under the palette", () => {
+  const ctrlShiftP = () =>
+    fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+  const palette = () => screen.queryByRole("dialog", { name: "Command palette" });
+
+  /** The page open on gcmon, with the focus on its one row. */
+  const onRow = async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    core.home.mockResolvedValue(gcmonHome);
+    core.workbench.mockResolvedValue(oneIssue);
+    render(Page);
+    const row = await screen.findByRole("button", { name: "#7 It crashes" });
+    await fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(row);
+    return row;
+  };
+
+  it("goes back to the row on Esc", async () => {
+    const row = await onRow();
+    await ctrlShiftP();
+    expect(document.activeElement).toBe(screen.getByRole("combobox", { name: "Command" }));
+    await fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
+    expect(palette()).toBeNull();
+    expect(document.activeElement).toBe(row);
+  });
+
+  it("goes back to the row on a press outside, which the browser doesn't then move", async () => {
+    const row = await onRow();
+    await ctrlShiftP();
+    expect(await fireEvent.mouseDown(screen.getByTestId("palette-scrim"))).toBe(false);
+    expect(palette()).toBeNull();
+    expect(document.activeElement).toBe(row);
+  });
+
+  it("goes where the command the user runs puts it", async () => {
+    await onRow();
+    await ctrlShiftP();
+    await fireEvent.click(screen.getByRole("option", { name: "Show Only the Detail Pane" }));
+    expect(palette()).toBeNull();
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(document.querySelector('[data-pane="detail"]'));
+    });
+  });
 });
 
 describe("the performance HUD", () => {
@@ -518,10 +594,11 @@ describe("the Repository picker", () => {
     expect(options()).toEqual(["python/peps"]);
   });
 
-  it("opens Add repository from its row", async () => {
+  it("opens Add repository from its row, which gives the focus back to what had it before the picker", async () => {
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
-    await ctrlR();
+    const add = await screen.findByRole("button", { name: "Add repository" });
+    add.focus();
+    await ctrlR(add);
     await fireEvent.input(filter(), { target: { value: "add" } });
     await fireEvent.keyDown(filter(), { key: "Enter" });
 
@@ -529,6 +606,10 @@ describe("the Repository picker", () => {
     const dialog = await screen.findByRole("dialog", { name: "Add repository" });
     // The picker gives the focus back as it closes, and the dialog takes it after.
     expect(document.activeElement).toBe(within(dialog).getByRole("textbox", { name: "Repository" }));
+
+    await fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(add);
   });
 
   it("closes without a switch on Enter on the open Repository", async () => {
@@ -613,27 +694,7 @@ describe("a chord", () => {
   });
 
   it("waits after Ctrl+K, with the status bar saying so, and the next key ends it doing nothing else", async () => {
-    core.workbench.mockResolvedValue({
-      status: "ok",
-      data: {
-        items: [
-          {
-            kind: "issue",
-            number: 7,
-            title: "It crashes",
-            state: "OPEN",
-            people: [],
-            updated_at: "2026-11-04T10:00:00Z",
-            pull_requests: [],
-            attention: null,
-          },
-        ],
-        quiet: [],
-        count: 0,
-        review_requests: 0,
-        filters: [],
-      },
-    });
+    core.workbench.mockResolvedValue(oneIssue);
     render(Page);
     const row = await screen.findByRole("button", { name: "#7 It crashes" });
 

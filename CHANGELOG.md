@@ -7,6 +7,25 @@ release's body, and fails without it
 
 ## WIP
 
+## Version 0.2.2 (2026-11-10)
+
+The status bar tells you when a newer Tsugiki is out, and one small crate holds the only code that can read
+your GitHub token.
+
+### Added
+
+- Tsugiki asks GitHub Releases for its latest release at start-up and every 6 hours. If that release is
+  newer than yours, the status bar says "Tsugiki 0.3.0 is out", and a click opens the release page in your
+  browser. The request carries no token. A failed check leaves the status bar alone and writes a line to
+  `tsugiki.log`.
+- `check = false` under `[releases]` in `settings.toml` turns the check off from the next start, and Tsugiki
+  then sends Releases nothing.
+
+### Changed
+
+- A crate of its own holds the GitHub CLI's token and is the only code that can read it. The token goes out
+  in requests to `api.github.com` and nowhere else.
+
 ## Version 0.2.1 (2026-11-10)
 
 You can hide the Sidebar and the Issue list, show the Detail pane alone, and put the layout back.

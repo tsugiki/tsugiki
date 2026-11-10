@@ -927,6 +927,41 @@ it("moves the focus with the cursor on Alt+← and Alt+→", async () => {
   expect(document.activeElement).toBe(treeRow);
 });
 
+it("shows another Repository as a launch does: its Workbench, an empty Detail pane, the cursor on top", async () => {
+  const mine = { name: "Mine", query: "is:open author:@me", count: 1, problem: null };
+  core.workbench.mockResolvedValue({
+    status: "ok",
+    data: {
+      items: [{ ...issue, attention: null }],
+      quiet: [],
+      count: 1,
+      review_requests: 0,
+      filters: [mine],
+    },
+  });
+  const { rerender } = render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  await fireEvent.click(await screen.findByRole("button", { name: "Mine 1" }));
+  await fireEvent.click(
+    await screen.findByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" }),
+  );
+  await screen.findByRole("region", { name: "PR view" });
+
+  await rerender({ name: "python/other" });
+
+  const workbench = await screen.findByRole("button", { name: "Workbench 1" });
+  await vi.waitFor(() => {
+    expect(workbench.getAttribute("aria-current")).toBe("true");
+  });
+  expect(core.workbench).toHaveBeenLastCalledWith("python/other", { kind: "whole" });
+  expect(screen.queryByRole("region", { name: "PR view" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Issue view" })).toBeNull();
+  // As at a launch, no line has the cursor yet, and the first ↓ puts it on the top one.
+  const first = await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
+  expect(document.querySelector(".open[aria-current]")).toBeNull();
+  await press("ArrowDown");
+  expect(first.getAttribute("aria-current")).toBe("true");
+});
+
 it("starts the way back fresh in another Repository", async () => {
   answering({ ...issue, attention: null });
   const { rerender } = render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
@@ -983,6 +1018,26 @@ it("says so when the browser won't open", async () => {
   expect((await screen.findByRole("alert")).textContent).toContain(
     "Tsugiki couldn't open the system browser.",
   );
+});
+
+it("leaves the browser's problem behind with the Repository it came from", async () => {
+  core.openOnGithub.mockResolvedValue({
+    status: "error",
+    error: { kind: "internal", message: "Tsugiki couldn't open the system browser." },
+  });
+  answering({ ...issue, attention: null });
+  const { rerender } = render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
+  await press("ArrowDown");
+  await press("G", { ctrlKey: true, shiftKey: true });
+  await screen.findByRole("alert");
+
+  await rerender({ name: "python/other" });
+
+  await vi.waitFor(() => {
+    expect(core.workbench).toHaveBeenLastCalledWith("python/other", { kind: "whole" });
+  });
+  expect(screen.queryByRole("alert")).toBeNull();
 });
 
 it("moves through the list and the PRs in its trees with the arrows, and focus follows", async () => {

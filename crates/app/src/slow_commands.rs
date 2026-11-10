@@ -61,6 +61,18 @@ pub(crate) fn add_repository(
     crate::add_named_repository(repository, &owner, &work)
 }
 
+/// Makes `name` the open Repository and starts its sync, and says what the window shows now. This waits on
+/// a small file and never on GitHub or git.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn open_repository(
+    name: &str,
+    owner: State<'_, SettingsOwner>,
+    work: State<'_, crate::RepositoryWork>,
+) -> Result<Home, Error> {
+    crate::open_named_repository(name, &owner, &work)
+}
+
 /// Says why the clone in `folder` can't lend its objects to `repository`'s mirror, or nothing if it can.
 /// This waits on git commands that only read the clone.
 #[tauri::command(async)]

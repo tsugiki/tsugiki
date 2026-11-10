@@ -57,6 +57,13 @@
   const endChord = () => {
     chord.end();
   };
+  /** The name of the open Repository, if one is. */
+  const openName = $derived(home.current?.screen === "repository" ? home.current.repository.name : undefined);
+  /** The open Repository's last sync. After a switch the core tells of the new one's a moment later, and
+   * until then the status bar shows no last sync. */
+  const lastSync = $derived(
+    openName === undefined || status.lastSync?.repository === openName ? status.lastSync : null,
+  );
   /** Names the open Repository, so the user can tell which one this is with the Sidebar hidden, in the
    * taskbar and in Alt+Tab. `startup.rs` copies it to the window. */
   const title = $derived(
@@ -70,6 +77,15 @@
   let repositoryHome = $state<ReturnType<typeof RepositoryHome>>();
   const commands: PaletteCommand[] = $derived([
     ...(repositoryHome?.paletteCommands() ?? []),
+    ...settings.repositories
+      .filter((name) => name !== openName)
+      .map((name) => ({
+        title: `Repository: ${name}`,
+        run: () => {
+          // The core read the files again to switch, so a problem the user has since fixed can go.
+          void home.open(name).then(() => settings.load());
+        },
+      })),
     {
       title: hud.visible ? "Hide performance HUD" : "Show performance HUD",
       run: () => {
@@ -88,6 +104,9 @@
   {#if home.current?.screen === "onboarding"}
     <Onboarding token={home.current.token} onadd={openAdd} />
   {:else if home.current?.screen === "repository"}
+    {#if home.switchProblem}
+      <p role="alert">{home.switchProblem}</p>
+    {/if}
     <RepositoryHome
       bind:this={repositoryHome}
       name={home.current.repository.name}
@@ -104,7 +123,7 @@
   error={status.error}
   visible={settings.statusBarVisible}
   problems={settings.problems}
-  lastSync={status.lastSync}
+  {lastSync}
   syncActivity={status.syncActivity}
   cloning={status.cloning}
   mirrorProblem={status.mirrorProblem}
@@ -119,7 +138,7 @@
       addOpen = false;
     }}
     onadded={(next) => {
-      home.current = next;
+      home.added(next);
       addOpen = false;
       // The core read the files again to add this, so a problem the user has since fixed can go.
       void settings.load();

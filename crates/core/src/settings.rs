@@ -390,6 +390,38 @@ impl SettingsFiles {
         Ok(self.home())
     }
 
+    /// Makes `name` the open Repository: puts it at the head of `recent`, opened at `opened_at`, under the
+    /// name the settings hold it by. Nothing else in either file changes, its mirror answer included.
+    ///
+    /// Like `add_repository`, it works from what the files say now. It refuses a name the settings don't
+    /// hold, and refuses while `machine.toml` can't be used.
+    pub fn open_repository(
+        &mut self,
+        name: &RepositoryName,
+        opened_at: OffsetDateTime,
+    ) -> Result<Home, Error> {
+        self.reload();
+        let held = self
+            .loaded
+            .settings
+            .repositories
+            .iter()
+            .find(|one| one.name.is_same(name))
+            .map(|one| one.name.clone())
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorKind::NotFound,
+                    &format!("Tsugiki doesn't have {name}."),
+                )
+            })?;
+        let path = self.folders.machine_file();
+        let mut edit = TomlEdit::open_machine(&path)?;
+        put_first_in_recent(edit.document.as_table_mut(), &held, opened_at);
+        edit.save()?;
+        self.reload();
+        Ok(self.home())
+    }
+
     /// Saves the panes' layout in `machine.toml`, keeping everything else in it, and reads the files again.
     /// It refuses while `machine.toml` can't be used.
     pub fn save_panes(&mut self, panes: PaneLayout) -> Result<(), Error> {
@@ -474,6 +506,10 @@ enum Request {
         layout: PaneLayout,
         reply: Sender<Result<SettingsView, Error>>,
     },
+    Open {
+        name: RepositoryName,
+        reply: Sender<Result<SettingsView, Error>>,
+    },
 }
 
 impl SettingsOwner {
@@ -515,11 +551,16 @@ impl SettingsOwner {
                     (Ok(files), Request::Panes { layout, reply }) => {
                         (files.save_panes(layout).map(|()| files.view()), reply)
                     }
+                    (Ok(files), Request::Open { name, reply }) => {
+                        let opened = files.open_repository(&name, OffsetDateTime::now_utc());
+                        (opened.map(|_| files.view()), reply)
+                    }
                     (
                         Err(problem),
                         Request::Add { reply, .. }
                         | Request::MirrorSource { reply, .. }
-                        | Request::Panes { reply, .. },
+                        | Request::Panes { reply, .. }
+                        | Request::Open { reply, .. },
                     ) => (Err(problem.clone()), reply),
                 };
                 // Before the answer, so whoever asked finds the change in `view`. Changes come through here
@@ -583,6 +624,12 @@ impl SettingsOwner {
     pub fn save_panes(&self, layout: PaneLayout) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
         self.ask(Request::Panes { layout, reply }, &answer)
+    }
+
+    /// Makes `name` the open Repository, and answers with what the settings say now.
+    pub fn open_repository(&self, name: RepositoryName) -> Result<SettingsView, Error> {
+        let (reply, answer) = mpsc::channel();
+        self.ask(Request::Open { name, reply }, &answer)
     }
 
     fn ask(

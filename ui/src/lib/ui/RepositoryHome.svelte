@@ -79,6 +79,7 @@
     return () => {
       opened.stop();
       swap(undefined);
+      browserProblem = undefined;
     };
   });
 

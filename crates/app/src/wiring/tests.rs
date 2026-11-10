@@ -359,6 +359,42 @@ fn a_repository_added_reaches_both_files_and_opens_after_a_restart() {
 }
 
 #[test]
+fn a_switch_opens_the_repository_syncs_it_and_a_restart_reopens_it() {
+    let (folders, root) = temp_folders("wired-switch");
+    let wired = Wired::start(Ok(folders.clone()), no_network());
+    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    let peps =
+        json!({ "name": "python/peps", "access": "other", "source": { "kind": "download" } });
+    let _ = wired
+        .ask("add_repository", json!({ "repository": peps }))
+        .unwrap();
+
+    let opened = wired.ask("open_repository", json!({ "name": "Python/CPython" }));
+    let home = wired.ask("home", json!({})).unwrap();
+    let synced: Vec<Value> = (0..3)
+        .map(|_| wired.last_syncs.recv_timeout(PLENTY).unwrap()["repository"].clone())
+        .collect();
+    let gone = wired.ask("open_repository", json!({ "name": "python/gone" }));
+    let nonsense = wired.ask("open_repository", json!({ "name": "nonsense" }));
+    drop(wired.stop());
+    let restarted = Wired::start(Ok(folders), no_network());
+    let reopened = restarted.ask("home", json!({})).unwrap();
+    drop(restarted.stop());
+    std::fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(opened.unwrap(), json!(cpython()));
+    assert_eq!(home, json!(cpython()));
+    // The session tells the status bar when each Repository opened last synced, the switched-to one last.
+    assert_eq!(synced, [CPYTHON, "python/peps", CPYTHON]);
+    assert_eq!(
+        gone.unwrap_err()["message"],
+        "Tsugiki doesn't have python/gone."
+    );
+    assert_eq!(nonsense.unwrap_err()["kind"], "not_found");
+    assert_eq!(reopened, json!(cpython()));
+}
+
+#[test]
 fn a_window_that_loads_after_an_announcement_gets_the_same_status() {
     let (folders, root) = temp_folders("wired-status");
     let wired = Wired::start(Ok(folders), no_network());

@@ -7,6 +7,7 @@ const core = vi.hoisted(() => ({
   home: vi.fn(),
   checkRepository: vi.fn(),
   addRepository: vi.fn(),
+  openRepository: vi.fn(),
   workbench: vi.fn(),
   mirrorProblem: vi.fn(),
   checkMirrorsAgain: vi.fn(),
@@ -230,6 +231,76 @@ describe("the performance HUD", () => {
     expect(panel()).toBeTruthy();
     await fromPalette("Hide performance HUD");
     expect(panel()).toBeNull();
+  });
+});
+
+describe("a switch from the palette", () => {
+  const peps = { name: "python/peps", conventions: "github", filters: [] } as const;
+  const options = () => screen.getAllByRole("option").map((option) => option.textContent);
+  /** Opens the palette once the page knows the Repositories. */
+  const palette = async () => {
+    await vi.waitFor(() => {
+      expect(core.settings).toHaveBeenCalled();
+    });
+    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+  };
+
+  beforeEach(() => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    core.home.mockResolvedValue({ screen: "repository", repository: gcmon });
+    core.settings.mockResolvedValue({
+      settings: { status_bar: { visible: true }, repositories: [gcmon, peps] },
+      problems: [],
+    });
+  });
+
+  it("offers each Repository but the open one", async () => {
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await palette();
+    expect(options()).toContain("Repository: python/peps");
+    expect(options()).not.toContain("Repository: some-maintainer/gcmon");
+  });
+
+  it("shows the Repository it switches to as a launch does, with its own title and last sync", async () => {
+    core.openRepository.mockResolvedValue({ status: "ok", data: { screen: "repository", repository: peps } });
+    render(Page);
+    await screen.findByRole("button", { name: "Not synced yet" });
+    await palette();
+    await fireEvent.click(screen.getByRole("option", { name: "Repository: python/peps" }));
+
+    expect(await screen.findByRole("heading", { name: peps.name })).toBeTruthy();
+    expect(core.openRepository).toHaveBeenCalledWith("python/peps");
+    expect(core.workbench).toHaveBeenLastCalledWith("python/peps", { kind: "whole" });
+    expect(document.title).toBe("python/peps · Tsugiki");
+    // The core read the files again to switch, so a problem the user has since fixed can go.
+    await vi.waitFor(() => {
+      expect(core.settings).toHaveBeenCalledTimes(2);
+    });
+    // The last sync the core told of is the Repository left behind's, until the core tells of this one's.
+    expect(screen.queryByRole("button", { name: "Not synced yet" })).toBeNull();
+    await palette();
+    expect(options()).toContain("Repository: some-maintainer/gcmon");
+    expect(options()).not.toContain("Repository: python/peps");
+  });
+
+  it("stays on the open Repository and says why when the core refuses", async () => {
+    core.openRepository.mockResolvedValue({
+      status: "error",
+      error: { kind: "internal", message: "machine.toml, line 1: expected a value" },
+    });
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await palette();
+    await fireEvent.click(screen.getByRole("option", { name: "Repository: python/peps" }));
+
+    expect(
+      await screen.findByText(
+        "Tsugiki couldn't switch to python/peps: machine.toml, line 1: expected a value",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: gcmon.name })).toBeTruthy();
+    expect(document.title).toBe("some-maintainer/gcmon · Tsugiki");
   });
 });
 

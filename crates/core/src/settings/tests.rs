@@ -767,8 +767,10 @@ fn without_folders_the_owner_says_what_went_wrong_with_them() {
     );
     let answering = owner.save_mirror_source(repository("a/b"), MirrorSource::Download);
     let resizing = owner.save_panes(WIDE);
+    let opening = owner.open_repository(repository("a/b"));
 
     assert_eq!(adding.unwrap_err(), lost);
+    assert_eq!(opening.unwrap_err(), lost);
     assert_eq!(answering.unwrap_err(), lost);
     assert_eq!(resizing.unwrap_err(), lost);
 }
@@ -1699,6 +1701,116 @@ fn an_add_that_cant_save_machine_toml_says_so_and_adds_nothing() {
     );
     assert!(!added);
     assert_eq!(files.home(), Home::default());
+}
+
+#[test]
+fn opening_a_repository_puts_it_first_in_recent_and_the_next_launch_opens_it() {
+    let (folders, root) = temp_folders("open");
+    let mut files = SettingsFiles::load(folders.clone());
+    add_all(
+        &mut files,
+        &["a/first", "a/second"],
+        at("2026-11-10T07:00:00Z"),
+    );
+    let settings = fs::read_to_string(folders.settings_file()).unwrap();
+
+    let home = files
+        .open_repository(&repository("A/First"), at("2026-11-10T09:00:00.5+01:00"))
+        .unwrap();
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+    let relaunched = SettingsFiles::load(folders).home();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(home, opened("a/first", Conventions::Github));
+    assert_eq!(relaunched, home);
+    // Under the name the settings hold, and with the mirror answers as they were.
+    assert_eq!(
+        machine,
+        "recent = [
+    { name = \"a/first\", opened_at = 2026-11-10T08:00:00Z },
+    { name = \"a/second\", opened_at = 2026-11-10T08:00:00Z },
+]
+
+[mirrors]
+\"a/first\" = \"download\"
+\"a/second\" = \"download\"
+"
+    );
+    assert_eq!(after, settings);
+}
+
+#[test]
+fn opening_a_repository_the_settings_dont_hold_is_refused_and_changes_nothing() {
+    let (folders, root) = temp_folders("open-unknown");
+    let mut files = SettingsFiles::load(folders.clone());
+    add_all(&mut files, &["a/first", "a/second"], WHENEVER);
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+
+    let refused = files
+        .open_repository(&repository("a/gone"), WHENEVER)
+        .unwrap_err();
+    let after = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(refused.kind, ErrorKind::NotFound);
+    assert_eq!(refused.message, "Tsugiki doesn't have a/gone.");
+    assert_eq!(after, machine);
+    assert_eq!(files.home(), opened("a/second", Conventions::Github));
+}
+
+#[test]
+fn opening_a_repository_the_user_took_out_of_settings_toml_since_is_refused() {
+    let (folders, root) = temp_folders("open-removed");
+    let mut files = SettingsFiles::load(folders.clone());
+    add_all(&mut files, &["a/first", "a/second"], WHENEVER);
+    hold_only(&folders, &["a/second"]);
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+
+    let refused = files
+        .open_repository(&repository("a/first"), WHENEVER)
+        .unwrap_err();
+    let after = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(refused.message, "Tsugiki doesn't have a/first.");
+    assert_eq!(after, machine);
+}
+
+#[test]
+fn opening_refuses_while_machine_toml_cant_be_used() {
+    let (folders, root) = temp_folders("open-machine-broken");
+    let mut files = SettingsFiles::load(folders.clone());
+    add_all(&mut files, &["a/first", "a/second"], WHENEVER);
+    fs::write(folders.machine_file(), "settings_path =\n").unwrap();
+
+    let refused = files
+        .open_repository(&repository("a/first"), WHENEVER)
+        .unwrap_err();
+    let after = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert!(
+        refused.message.contains("machine.toml, line 1"),
+        "{}",
+        refused.message
+    );
+    assert_eq!(after, "settings_path =\n");
+}
+
+#[test]
+fn the_owner_opens_a_repository_and_answers_with_what_the_files_say() {
+    let (folders, root) = temp_folders("owner-open");
+    let mut files = SettingsFiles::load(folders);
+    add_all(&mut files, &["a/first", "a/second"], WHENEVER);
+    let owner = SettingsOwner::start(Ok(files));
+
+    let saved = owner.open_repository(repository("a/first")).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(saved.home, opened("a/first", Conventions::Github));
+    // In the view by the time the owner answers.
+    assert_eq!(owner.view(), saved);
 }
 
 #[test]

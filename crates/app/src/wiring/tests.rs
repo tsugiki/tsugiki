@@ -14,6 +14,7 @@ use tsugiki_core::github::{Reply, Request, Transport, Unreachable};
 use tsugiki_core::login::Login;
 use tsugiki_core::mirror::MirrorSource;
 use tsugiki_core::repository::RepositoryAccess;
+use tsugiki_core::repository_settings::RepositorySettings;
 use tsugiki_core::settings::SettingsFiles;
 use tsugiki_core::token::{GhOutput, Token};
 use tsugiki_core::web::{GitHubItem, WebAddress};
@@ -352,7 +353,7 @@ fn a_repository_added_reaches_both_files_and_opens_after_a_restart() {
         "{settings}"
     );
     assert!(
-        machine.contains(r#"last_repository = "python/cpython""#),
+        machine.contains(r#"{ name = "python/cpython", opened_at = "#),
         "{machine}"
     );
 }
@@ -915,7 +916,11 @@ fn a_repository_from_before_asks_where_its_mirror_gets_objects_and_borrows_on_th
     let mut files = SettingsFiles::load(folders.clone());
     let cpython = tsugiki_core::repository::RepositoryName::parse(CPYTHON).unwrap();
     let _ = files
-        .add_repository(&cpython, RepositoryAccess::Other, &MirrorSource::Download)
+        .add_repository(
+            &RepositorySettings::added(cpython.clone(), RepositoryAccess::Other),
+            &MirrorSource::Download,
+            time::OffsetDateTime::now_utc(),
+        )
         .unwrap();
     // As 0.1 left it: the Repository, and no answer.
     std::fs::write(
@@ -976,7 +981,11 @@ fn an_answer_machine_toml_cant_keep_still_starts_the_clone() {
     let mut files = SettingsFiles::load(folders.clone());
     let cpython = tsugiki_core::repository::RepositoryName::parse(CPYTHON).unwrap();
     let _ = files
-        .add_repository(&cpython, RepositoryAccess::Other, &MirrorSource::Download)
+        .add_repository(
+            &RepositorySettings::added(cpython.clone(), RepositoryAccess::Other),
+            &MirrorSource::Download,
+            time::OffsetDateTime::now_utc(),
+        )
         .unwrap();
     std::fs::write(
         folders.machine_file(),
@@ -1023,7 +1032,11 @@ fn repositories_added_before_get_their_mirrors_at_launch_the_open_one_first() {
     for name in ["octo-org/first", CPYTHON] {
         let name = tsugiki_core::repository::RepositoryName::parse(name).unwrap();
         let _ = files
-            .add_repository(&name, RepositoryAccess::Other, &MirrorSource::Download)
+            .add_repository(
+                &RepositorySettings::added(name, RepositoryAccess::Other),
+                &MirrorSource::Download,
+                time::OffsetDateTime::now_utc(),
+            )
             .unwrap();
     }
     let remotes = remotes(&root, &["octo-org/first", CPYTHON]);

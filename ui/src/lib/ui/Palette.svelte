@@ -31,7 +31,7 @@
   // The command palette: it lists the commands that hold what the user typed, and runs the one they pick.
   // Each feature brings its own commands, and the ranking comes with the whole palette (docs/build-order.md).
   // The Repository picker is the same quick pick with other words and rows.
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import { closeOnPress, takeFocus } from "./focus";
 
   let {
@@ -53,9 +53,11 @@
     commands.filter((command) => command.title.toLowerCase().includes(typed.trim().toLowerCase())),
   );
 
+  /** Closes, and runs `command` once the palette has gone and handed the focus back, so the command finds
+   * the focus where the user left it: a pane command then moves it as its key would. */
   function run(command: PaletteCommand) {
     onclose();
-    command.run();
+    void tick().then(command.run);
   }
 
   function pick(e: KeyboardEvent) {

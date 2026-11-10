@@ -139,6 +139,28 @@ it("gives the focus back when it closes", () => {
   button.remove();
 });
 
+it("runs the command once it has gone and given the focus back", async () => {
+  const button = document.createElement("button");
+  document.body.append(button);
+  button.focus();
+  let focusedOnRun: Element | null = null;
+  const run = () => {
+    focusedOnRun = document.activeElement;
+  };
+  // The page closes the palette on its next update, as `onclose` only changes the page's state.
+  const { unmount } = render(Palette, {
+    commands: [{ title: "Hide Sidebar", run }],
+    onclose: () => {
+      queueMicrotask(unmount);
+    },
+  });
+
+  await fireEvent.click(screen.getByRole("option", { name: "Hide Sidebar" }));
+
+  expect(focusedOnRun).toBe(button);
+  button.remove();
+});
+
 it("closes quietly when nothing had the focus to give back", () => {
   vi.spyOn(document, "activeElement", "get").mockReturnValue(null);
   const { unmount } = render(Palette, { commands: [], onclose: () => {} });

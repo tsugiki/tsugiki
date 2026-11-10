@@ -113,6 +113,12 @@ it("closes on a press outside it", async () => {
   expect(onclose).toHaveBeenCalledOnce();
 });
 
+it("keeps the browser from moving the focus on a press outside it, as the focus has gone back", async () => {
+  render(Palette, { commands: [], onclose: () => {} });
+  // A browser focuses the body on a press it isn't stopped from, after the palette gave the focus back.
+  expect(await fireEvent.mouseDown(screen.getByTestId("palette-scrim"))).toBe(false);
+});
+
 it("stays open on a press inside it, even if the mouse lets go outside", async () => {
   const onclose = vi.fn();
   render(Palette, { commands: [], onclose });

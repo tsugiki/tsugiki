@@ -32,7 +32,7 @@
   // Each feature brings its own commands, and the ranking comes with the whole palette (docs/build-order.md).
   // The Repository picker is the same quick pick with other words and rows.
   import { untrack } from "svelte";
-  import { takeFocus } from "./focus";
+  import { closeOnPress, takeFocus } from "./focus";
 
   let {
     commands,
@@ -80,7 +80,7 @@
 <!-- The keyboard's way out is Esc, on the window above. This is the mouse's. It goes by the press, because a
      drag that starts in the text box and ends out here also counts as a click out here. -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="scrim" data-testid="palette-scrim" onmousedown={onclose}>
+<div class="scrim" data-testid="palette-scrim" onmousedown={closeOnPress(onclose)}>
   <div
     class="palette"
     role="dialog"

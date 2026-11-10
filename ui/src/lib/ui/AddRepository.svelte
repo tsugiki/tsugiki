@@ -1,7 +1,7 @@
 <script lang="ts">
   import { AddRepositoryState } from "$lib/state/add-repository.svelte";
   import type { Home } from "$lib/state/home.svelte";
-  import { takeFocus } from "./focus";
+  import { closeOnPress, takeFocus } from "./focus";
   import MirrorChoices from "./MirrorChoices.svelte";
   import { describeCheck } from "./repository-check";
 
@@ -54,7 +54,7 @@
 <!-- The keyboard's way out is Esc, on the window above. This is the mouse's. It goes by the press, because a
      drag that starts in the text box and ends out here also counts as a click out here. -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="scrim" data-testid="add-repository-scrim" onmousedown={onclose}>
+<div class="scrim" data-testid="add-repository-scrim" onmousedown={closeOnPress(onclose)}>
   <div
     class="dialog"
     role="dialog"

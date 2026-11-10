@@ -1,7 +1,7 @@
 <!-- The dialog a click on the status bar's line opens, which asks where a Repository's mirror gets its
      objects, as the Files tab does (#311). It closes once the clone starts. -->
 <script lang="ts">
-  import { takeFocus } from "./focus";
+  import { closeOnPress, takeFocus } from "./focus";
   import MirrorQuestion from "./MirrorQuestion.svelte";
 
   let { repository, onclose }: { repository: string; onclose: () => void } = $props();
@@ -15,7 +15,7 @@
 
 <!-- The keyboard's way out is Esc, on the window above. This is the mouse's. -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="scrim" data-testid="mirror-question-scrim" onmousedown={onclose}>
+<div class="scrim" data-testid="mirror-question-scrim" onmousedown={closeOnPress(onclose)}>
   <div
     class="dialog"
     role="dialog"

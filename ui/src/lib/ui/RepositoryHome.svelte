@@ -208,8 +208,7 @@
   }
 
   /** "Reset Layout": both panes on show at their default widths. A list it brings back takes the cursor and
-   * the focus as on `Ctrl+Alt+B`. The palette has closed and handed the focus back by the tick, so the row
-   * takes it after that. */
+   * the focus as on `Ctrl+Alt+B`. */
   async function resetLayout() {
     const listHidden = panes.hidden("list");
     void panes.resetLayout();
@@ -222,8 +221,7 @@
   /** `Ctrl+K Z`: hides the Sidebar and the list, with the focus going to the Detail pane, or brings back the
    * ones it hid. A list it brings back takes the cursor and the focus as on `Ctrl+Alt+B`, and the Sidebar
    * alone leaves the focus in the Detail pane. Focus already in the Detail pane stays where it is while the
-   * list stays hidden. From the palette, the palette has handed the focus back by the tick, so the focus
-   * moves after that. */
+   * list stays hidden. */
   async function toggleDetailOnly() {
     void panes.toggleDetailOnly();
     await tick();
@@ -237,17 +235,17 @@
     return { "ctrl+k z": () => void toggleDetailOnly() };
   }
 
-  /** What this screen adds to the command palette while it shows. Where the focus goes as the palette
-   * closes is the palette's to say. */
+  /** What this screen adds to the command palette while it shows. Each command runs what its key runs. The
+   * palette runs it once it has handed the focus back, so the focus goes where the key would put it. */
   export function paletteCommands(): PaletteCommand[] {
     return [
       {
         title: panes.hidden("sidebar") ? "Show Sidebar" : "Hide Sidebar",
-        run: () => void panes.toggle("sidebar"),
+        run: () => void toggleSidebarByKey(),
       },
       {
         title: panes.hidden("list") ? "Show Issue List" : "Hide Issue List",
-        run: () => void panes.toggle("list"),
+        run: () => void toggleListByKey(),
       },
       {
         title: panes.detailOnly ? "Show the Panes" : "Show Only the Detail Pane",

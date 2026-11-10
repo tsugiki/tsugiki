@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
+import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Page from "./+page.svelte";
 
@@ -327,6 +328,13 @@ describe("the focus under the palette", () => {
     return row;
   };
 
+  /** Opens the palette and runs `title`. The palette hands the focus back before the command moves it. */
+  const fromPalette = async (title: string) => {
+    await ctrlShiftP();
+    await fireEvent.click(screen.getByRole("option", { name: title }));
+  };
+  const detailPane = () => document.querySelector('[data-pane="detail"]');
+
   it("goes back to the row on Esc", async () => {
     const row = await onRow();
     await ctrlShiftP();
@@ -346,12 +354,65 @@ describe("the focus under the palette", () => {
 
   it("goes where the command the user runs puts it", async () => {
     await onRow();
-    await ctrlShiftP();
-    await fireEvent.click(screen.getByRole("option", { name: "Show Only the Detail Pane" }));
+    await fromPalette("Show Only the Detail Pane");
     expect(palette()).toBeNull();
     await vi.waitFor(() => {
-      expect(document.activeElement).toBe(document.querySelector('[data-pane="detail"]'));
+      expect(document.activeElement).toBe(detailPane());
     });
+  });
+
+  it("goes to the Detail pane on Hide Issue List and back to the row on Show Issue List, as on Ctrl+Alt+B", async () => {
+    await onRow();
+
+    await fromPalette("Hide Issue List");
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(detailPane());
+    });
+    await fromPalette("Show Issue List");
+
+    // The list draws its rows afresh as it comes back.
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "#7 It crashes" }));
+    });
+  });
+
+  it("goes to the row on Hide Sidebar from a Sidebar button, and stays there on Show Sidebar, as on Ctrl+B", async () => {
+    const row = await onRow();
+    const sidebar = screen.getByRole("navigation", { name: "Sidebar" });
+    within(sidebar).getByRole("button", { name: gcmon.name }).focus();
+
+    await fromPalette("Hide Sidebar");
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(row);
+    });
+    await fromPalette("Show Sidebar");
+    // The command moves the focus, if it does, on the tick after the Sidebar changes.
+    await screen.findByRole("navigation", { name: "Sidebar" });
+    await tick();
+
+    expect(document.activeElement).toBe(row);
+  });
+
+  // A command that ran before the palette gave the focus back would find the focus gone with the palette, and
+  // move it to the Detail pane itself.
+  it("stays on a control in the Detail pane on Hide Sidebar, as on Ctrl+B", async () => {
+    await onRow();
+    await fireEvent.keyDown(document.activeElement as Element, {
+      key: "b",
+      code: "KeyB",
+      ctrlKey: true,
+      altKey: true,
+    });
+    const control = await within(screen.getByRole("region", { name: "Detail pane" })).findByRole("button");
+    control.focus();
+
+    await fromPalette("Hide Sidebar");
+    await vi.waitFor(() => {
+      expect(screen.queryByRole("navigation", { name: "Sidebar" })).toBeNull();
+    });
+    await tick();
+
+    expect(document.activeElement).toBe(control);
   });
 });
 

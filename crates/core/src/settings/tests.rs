@@ -808,6 +808,7 @@ const WIDE: PaneLayout = PaneLayout {
     list: Some(500),
     sidebar_hidden: false,
     list_hidden: false,
+    detail_only_hid: None,
 };
 
 #[test]
@@ -861,6 +862,42 @@ fn a_hidden_list_stays_hidden_on_this_machine_beside_the_sidebar() {
     );
     assert_eq!(read_again, hidden);
     assert_eq!(shown, "[panes]\nsidebar = 240\nlist = 500\n");
+}
+
+#[test]
+fn what_ctrl_k_z_hid_stays_on_this_machine_until_it_forgets() {
+    let (folders, root) = temp_folders("panes-detail-only");
+    let mut files = SettingsFiles::load(folders.clone());
+    let detail_only = |hid| PaneLayout {
+        sidebar_hidden: true,
+        list_hidden: true,
+        detail_only_hid: Some(hid),
+        ..WIDE
+    };
+
+    let mut saved = Vec::new();
+    let mut read_again = Vec::new();
+    for hid in [Panes::Sidebar, Panes::List, Panes::Both] {
+        files.save_panes(detail_only(hid)).unwrap();
+        saved.push(fs::read_to_string(folders.machine_file()).unwrap());
+        read_again.push(SettingsFiles::load(folders.clone()).view().panes);
+    }
+    files.save_panes(WIDE).unwrap();
+    let forgotten = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    let both_hidden =
+        "[panes]\nsidebar = 240\nlist = 500\nsidebar_hidden = true\nlist_hidden = true\n";
+    assert_eq!(
+        saved,
+        ["sidebar", "list", "both"]
+            .map(|hid| format!("{both_hidden}detail_only_hid = \"{hid}\"\n"))
+    );
+    assert_eq!(
+        read_again,
+        [Panes::Sidebar, Panes::List, Panes::Both].map(detail_only)
+    );
+    assert_eq!(forgotten, "[panes]\nsidebar = 240\nlist = 500\n");
 }
 
 #[test]
@@ -932,6 +969,7 @@ sidebar = -1
 list = 500
 sidebar_hidden = \"yes\"
 list_hidden = 1
+detail_only_hid = \"everything\"
 ";
     fs::write(folders.machine_file(), text).unwrap();
 
@@ -943,6 +981,7 @@ list_hidden = 1
         list: Some(500),
         sidebar_hidden: false,
         list_hidden: false,
+        detail_only_hid: None,
     };
     assert_eq!(
         (files.view().panes, files.loaded().problems.len()),

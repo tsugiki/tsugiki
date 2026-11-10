@@ -106,10 +106,10 @@ impl Default for Home {
 }
 
 /// How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
-/// (#187), and whether the Sidebar (#234) and the list (#242) show. All of it stays on this machine, like
-/// the window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
-/// width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml`
-/// over.
+/// (#187), whether the Sidebar (#234) and the list (#242) show, and which of them `Ctrl+K Z` hid (#246),
+/// to bring back on the next press. All of it stays on this machine, like the window's place, and a value
+/// left out takes its default. So does a value Tsugiki can't read, such as a width that isn't a whole number
+/// of pixels: a pane is too small a thing to lose the rest of `machine.toml` over.
 #[expect(
     clippy::struct_excessive_bools,
     reason = "Each pane hides by itself, so all four states are valid: both hidden leaves the Detail pane"
@@ -131,6 +131,32 @@ pub struct PaneLayout {
     #[serde(deserialize_with = "or_default")]
     #[specta(type = bool)]
     pub list_hidden: bool,
+    /// The panes `Ctrl+K Z` hid to show only the Detail pane, which its next press brings back. Nothing
+    /// while it remembers none: before the first press, and after `Ctrl+B`, `Ctrl+Alt+B` or "Reset Layout"
+    /// made it forget.
+    #[serde(deserialize_with = "or_default")]
+    #[specta(type = Option<Panes>)]
+    pub detail_only_hid: Option<Panes>,
+}
+
+/// The Sidebar, the Workbench list, or both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum Panes {
+    Sidebar,
+    List,
+    Both,
+}
+
+impl Panes {
+    /// The name `machine.toml` gives it, as serde reads it.
+    fn to_text(self) -> &'static str {
+        match self {
+            Self::Sidebar => "sidebar",
+            Self::List => "list",
+            Self::Both => "both",
+        }
+    }
 }
 
 /// The value, or its default for one Tsugiki can't read.
@@ -331,6 +357,11 @@ impl SettingsFiles {
                     &toml_edit::value(hidden),
                     Some(&toml_edit::value(false)),
                 );
+            }
+            let key = "detail_only_hid";
+            match panes.detail_only_hid {
+                Some(hid) => merge_value(section, key, &toml_edit::value(hid.to_text()), None),
+                None => drop(section.remove(key)),
             }
         });
         edit.save()?;

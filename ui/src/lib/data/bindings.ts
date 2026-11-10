@@ -1097,19 +1097,19 @@ export type Pair = {
 
 /**
  *  How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
- *  (#187), and whether the Sidebar (#234) and the list (#242) show. All of it stays on this machine, like
- *  the window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
- *  width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml`
- *  over.
+ *  (#187), whether the Sidebar (#234) and the list (#242) show, and which of them `Ctrl+K Z` hid (#246),
+ *  to bring back on the next press. All of it stays on this machine, like the window's place, and a value
+ *  left out takes its default. So does a value Tsugiki can't read, such as a width that isn't a whole number
+ *  of pixels: a pane is too small a thing to lose the rest of `machine.toml` over.
  */
 export type PaneLayout = PaneLayout_Serialize | PaneLayout_Deserialize;
 
 /**
  *  How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
- *  (#187), and whether the Sidebar (#234) and the list (#242) show. All of it stays on this machine, like
- *  the window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
- *  width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml`
- *  over.
+ *  (#187), whether the Sidebar (#234) and the list (#242) show, and which of them `Ctrl+K Z` hid (#246),
+ *  to bring back on the next press. All of it stays on this machine, like the window's place, and a value
+ *  left out takes its default. So does a value Tsugiki can't read, such as a width that isn't a whole number
+ *  of pixels: a pane is too small a thing to lose the rest of `machine.toml` over.
  */
 export type PaneLayout_Deserialize = {
 	sidebar?: number | null,
@@ -1118,14 +1118,20 @@ export type PaneLayout_Deserialize = {
 	sidebar_hidden?: boolean,
 	/**  `Ctrl+Alt+B` hid the Workbench list. It keeps its width for when it shows again. */
 	list_hidden?: boolean,
+	/**
+	 *  The panes `Ctrl+K Z` hid to show only the Detail pane, which its next press brings back. Nothing
+	 *  while it remembers none: before the first press, and after `Ctrl+B`, `Ctrl+Alt+B` or "Reset Layout"
+	 *  made it forget.
+	 */
+	detail_only_hid?: Panes | null,
 };
 
 /**
  *  How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
- *  (#187), and whether the Sidebar (#234) and the list (#242) show. All of it stays on this machine, like
- *  the window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
- *  width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml`
- *  over.
+ *  (#187), whether the Sidebar (#234) and the list (#242) show, and which of them `Ctrl+K Z` hid (#246),
+ *  to bring back on the next press. All of it stays on this machine, like the window's place, and a value
+ *  left out takes its default. So does a value Tsugiki can't read, such as a width that isn't a whole number
+ *  of pixels: a pane is too small a thing to lose the rest of `machine.toml` over.
  */
 export type PaneLayout_Serialize = {
 	sidebar: number | null,
@@ -1134,7 +1140,16 @@ export type PaneLayout_Serialize = {
 	sidebar_hidden: boolean,
 	/**  `Ctrl+Alt+B` hid the Workbench list. It keeps its width for when it shows again. */
 	list_hidden: boolean,
+	/**
+	 *  The panes `Ctrl+K Z` hid to show only the Detail pane, which its next press brings back. Nothing
+	 *  while it remembers none: before the first press, and after `Ctrl+B`, `Ctrl+Alt+B` or "Reset Layout"
+	 *  made it forget.
+	 */
+	detail_only_hid: Panes | null,
 };
+
+/**  The Sidebar, the Workbench list, or both. */
+export type Panes = "sidebar" | "list" | "both";
 
 /**  Where Files shows a thread. A file is named by its place among the diff's files. */
 export type Placement = Placement_Serialize | Placement_Deserialize;

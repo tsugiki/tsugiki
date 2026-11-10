@@ -394,6 +394,33 @@ test("Ctrl+Alt+B hides the Issue list, and the Detail pane takes its room and th
   expect(await width()).toBe(shown);
 });
 
+test("Ctrl+K Z shows only the Detail pane, and again brings back the layout", async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 600 });
+  await mockCore(page, answers("<p>It crashes</p>"));
+  await page.goto("/");
+  await page.getByRole("button", { name: "#7 Issue 7" }).click();
+  const pane = page.getByRole("region", { name: "Issue view" });
+  const sidebar = page.getByRole("navigation", { name: "Sidebar" });
+  const row = page.locator(".list").getByRole("button", { name: "#7 Issue 7" });
+  const width = async () => (await pane.boundingBox())?.width ?? 0;
+  await expect(pane).toBeVisible();
+  const shown = await width();
+
+  await page.keyboard.press("ControlOrMeta+K");
+  await page.keyboard.press("Z");
+  await expect(sidebar).toHaveCount(0);
+  await expect(row).toHaveCount(0);
+  await expect(pane).toBeFocused();
+  const alone = await width();
+  await page.keyboard.press("ControlOrMeta+K");
+  await page.keyboard.press("Z");
+
+  await expect(sidebar).toBeVisible();
+  await expect(row).toBeFocused();
+  expect(alone).toBeGreaterThan(shown + 400);
+  await expect.poll(width).toBe(shown);
+});
+
 test("Reset Layout in the palette brings back both panes, with the focus on the open item's row", async ({
   page,
 }) => {

@@ -23,7 +23,7 @@
     type WorkbenchRow,
   } from "$lib/state/workbench.svelte";
   import IssueDetail from "./IssueDetail.svelte";
-  import { currentOs, isTextBox, keyLabel, keyName } from "./keys";
+  import { type ChordBindings, currentOs, isTextBox, keyLabel, keyName } from "./keys";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
   import type { PaletteCommand } from "./Palette.svelte";
   import PaneEdge from "./PaneEdge.svelte";
@@ -211,6 +211,24 @@
     focusCursor();
   }
 
+  /** `Ctrl+K Z`: hides the Sidebar and the list, with the focus going to the Detail pane, or brings back the
+   * ones it hid. A list it brings back takes the cursor and the focus as on `Ctrl+Alt+B`, and the Sidebar
+   * alone leaves the focus in the Detail pane. Focus already in the Detail pane stays where it is while the
+   * list stays hidden. From the palette, the palette has handed the focus back by the tick, so the focus
+   * moves after that. */
+  async function toggleDetailOnly() {
+    void panes.toggleDetailOnly();
+    await tick();
+    // A list on show has just come back, as the press hides it whenever it shows.
+    if (!panes.hidden("list")) cursorToDetail();
+    if (!panes.hidden("list") || detailPane()?.contains(document.activeElement) !== true) focusCursor();
+  }
+
+  /** The chords this screen binds, each with the action the page runs once the chord's wait ends. */
+  export function chordBindings(): ChordBindings {
+    return { "ctrl+k z": () => void toggleDetailOnly() };
+  }
+
   /** What this screen adds to the command palette while it shows. Where the focus goes as the palette
    * closes is the palette's to say. */
   export function paletteCommands(): PaletteCommand[] {
@@ -222,6 +240,10 @@
       {
         title: panes.hidden("list") ? "Show Issue List" : "Hide Issue List",
         run: () => void panes.toggle("list"),
+      },
+      {
+        title: panes.detailOnly ? "Show the Panes" : "Show Only the Detail Pane",
+        run: () => void toggleDetailOnly(),
       },
       { title: "Reset Layout", run: () => void resetLayout() },
     ];

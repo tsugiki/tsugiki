@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/sve
 import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { PrFilesState } from "$lib/state/pr-files.svelte";
+import type { ChordBindings } from "./keys";
 import RepositoryHome from "./RepositoryHome.svelte";
 
 const core = vi.hoisted(() => ({
@@ -73,7 +74,13 @@ const issue = {
   pull_requests: [{ kind: "pr", ...row, backports: [] }],
 };
 
-const DEFAULT_LAYOUT = { sidebar: null, list: null, sidebar_hidden: false, list_hidden: false };
+const DEFAULT_LAYOUT = {
+  sidebar: null,
+  list: null,
+  sidebar_hidden: false,
+  list_hidden: false,
+  detail_only_hid: null,
+};
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -1435,9 +1442,95 @@ it("offers the palette a command that hides or shows the Issue list, named for w
   });
 
   expect([before, titles()]).toEqual([
-    ["Hide Sidebar", "Hide Issue List", "Reset Layout"],
-    ["Hide Sidebar", "Show Issue List", "Reset Layout"],
+    ["Hide Sidebar", "Hide Issue List", "Show Only the Detail Pane", "Reset Layout"],
+    ["Hide Sidebar", "Show Issue List", "Show Only the Detail Pane", "Reset Layout"],
   ]);
+});
+
+/** Presses Ctrl+K Z, which the page hands the screen once the chord ends. */
+const detailOnly = async (component: { chordBindings: () => ChordBindings }) => {
+  component.chordBindings()["ctrl+k z"]?.();
+  await tick();
+};
+
+const sidebar = () => screen.queryByRole("navigation", { name: "Sidebar" });
+
+it("shows only the Detail pane on Ctrl+K Z, with the focus in it, and brings back both panes", async () => {
+  const { component, issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  const view = await screen.findByRole("region", { name: "Issue view" });
+  // The cursor leaves the Issue on show for the PR under it.
+  await press("ArrowDown");
+
+  await detailOnly(component);
+  const hidden = [sidebar(), repositoryName()];
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(view);
+  });
+  await detailOnly(component);
+
+  expect(hidden).toEqual([null, null]);
+  expect([sidebar() === null, repositoryName() === null]).toEqual([false, false]);
+  const row = rowNamed("#112564 GIL drop during collection");
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(row);
+  });
+  expect(row.getAttribute("aria-current")).toBe("true");
+  expect(core.savePaneLayout.mock.calls).toEqual([
+    [{ ...DEFAULT_LAYOUT, sidebar_hidden: true, list_hidden: true, detail_only_hid: "both" }],
+    [DEFAULT_LAYOUT],
+  ]);
+});
+
+it("brings back only the Sidebar on Ctrl+K Z when the list was hidden, with the focus left in the Detail pane", async () => {
+  const { component, issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  const view = await screen.findByRole("region", { name: "Issue view" });
+  await toggleList();
+
+  await detailOnly(component);
+  const hidden = sidebar();
+  await detailOnly(component);
+
+  expect([hidden, sidebar() === null, repositoryName()]).toEqual([null, false, null]);
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(view);
+  });
+});
+
+it("leaves the focus on a control in the Detail pane while Ctrl+K Z keeps the list hidden", async () => {
+  const { component, issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  const view = await screen.findByRole("region", { name: "Issue view" });
+  await toggleList();
+  const title = await within(view).findByRole("button", { name: "#112564 GIL drop during collection" });
+  title.focus();
+
+  await detailOnly(component);
+  await tick();
+  const hiding = document.activeElement;
+  await detailOnly(component);
+  await tick();
+
+  expect([hiding, document.activeElement]).toEqual([title, title]);
+});
+
+it("offers the palette Ctrl+K Z's command, named for what it does", async () => {
+  const { component } = render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  await screen.findByRole("navigation", { name: "Sidebar" });
+  const command = (title: string) => component.paletteCommands().find((one) => one.title === title);
+
+  command("Show Only the Detail Pane")?.run();
+  await vi.waitFor(() => {
+    expect(sidebar()).toBeNull();
+  });
+  const hidden = repositoryName();
+  command("Show the Panes")?.run();
+
+  await vi.waitFor(() => {
+    expect(sidebar()).toBeTruthy();
+  });
+  expect([hidden, repositoryName() === null]).toEqual([null, false]);
 });
 
 /** Runs the palette's "Reset Layout". */

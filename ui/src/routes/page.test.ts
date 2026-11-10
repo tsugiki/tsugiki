@@ -268,6 +268,18 @@ describe("a chord", () => {
     expect(document.activeElement).not.toBe(row);
   });
 
+  it("hands Ctrl+K Z to the Repository's screen, which shows only the Detail pane", async () => {
+    render(Page);
+    await screen.findByRole("navigation", { name: "Sidebar" });
+
+    await ctrlK();
+    await fireEvent.keyDown(document.body, { key: "z", code: "KeyZ" });
+
+    expect(chord()).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Sidebar" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: gcmon.name })).toBeNull();
+  });
+
   it("ends at a click", async () => {
     render(Page);
     await screen.findByRole("heading", { name: gcmon.name });

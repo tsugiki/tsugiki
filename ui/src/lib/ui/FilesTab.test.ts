@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
 import { tick } from "svelte";
-import { beforeEach, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { chooseMirrorSource, mirrorCost, pickClone } from "$lib/state/mirror-source";
 import {
   CHUNK,
   DiffViewChoice,
@@ -38,7 +39,14 @@ vi.mock("$lib/data/bindings", () => ({
     changed: { listen: core.listen },
     readFailed: { listen: core.listen },
     cloningChanged: { listen: core.listen },
+    mirrorStatesChanged: { listen: core.listen },
   },
+}));
+
+vi.mock("$lib/state/mirror-source", () => ({
+  pickClone: vi.fn(),
+  chooseMirrorSource: vi.fn(),
+  mirrorCost: vi.fn(),
 }));
 
 const ok = <T>(data: T) => ({ status: "ok" as const, data });
@@ -140,6 +148,78 @@ it("waits for the mirror's clone, and says how far it got", async () => {
 it("waits for the mirror's clone before it hears how far it got", async () => {
   await shown({ state: "cloning" });
   expect(screen.getByText("Cloning the Repository's mirror…")).toBeTruthy();
+});
+
+describe("the question of where the mirror gets its objects", () => {
+  const lender = String.raw`D:\cpython`;
+  const cost = { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 };
+  const start = () => screen.getByRole("button", { name: "Start the clone" });
+
+  beforeEach(() => {
+    vi.mocked(mirrorCost).mockResolvedValue(cost);
+  });
+
+  it("asks it instead of saying it is cloning, with the time and disk of each way", async () => {
+    await shown({ state: "asking" });
+
+    expect(screen.getByText(/its own copy of python\/cpython, its mirror, which waits for you/)).toBeTruthy();
+    expect(screen.queryByText(/Cloning/)).toBeNull();
+    expect(mirrorCost).toHaveBeenCalledWith("python/cpython");
+    expect(await screen.findByText("Mirror, for the diff: 891 MB on the disk either way.")).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Download it from GitHub, about 3 minutes" })).toBeTruthy();
+    expect(
+      screen.getByRole("radio", { name: "Borrow objects from a clone you have, about 1 minute" }),
+    ).toBeTruthy();
+  });
+
+  it("offers both ways without their cost when GitHub can't say it", async () => {
+    vi.mocked(mirrorCost).mockResolvedValue(null);
+    await shown({ state: "asking" });
+
+    expect(await screen.findByText("Mirror, for the diff")).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Download it from GitHub" })).toBeTruthy();
+  });
+
+  it("starts the clone with Download", async () => {
+    await shown({ state: "asking" });
+
+    await fireEvent.click(start());
+
+    expect(chooseMirrorSource).toHaveBeenCalledWith("python/cpython", { kind: "download" });
+    await vi.waitFor(() => {
+      expect((start() as HTMLButtonElement).disabled).toBe(true);
+    });
+  });
+
+  it("says why a folder can't lend, and starts nothing until the user picks another or Download", async () => {
+    vi.mocked(pickClone).mockResolvedValueOnce({
+      kind: "refused",
+      folder: lender,
+      refusal: { kind: "no_remote" },
+    });
+    await shown({ state: "asking" });
+
+    await fireEvent.click(screen.getByRole("radio", { name: /^Borrow objects/ }));
+
+    expect(await screen.findByText(String.raw`D:\cpython has no remote for python/cpython.`)).toBeTruthy();
+    expect((start() as HTMLButtonElement).disabled).toBe(true);
+    vi.mocked(pickClone).mockResolvedValueOnce({ kind: "lends", folder: lender });
+    await fireEvent.click(screen.getByRole("button", { name: "Choose another clone…" }));
+    await vi.waitFor(() => {
+      expect((start() as HTMLButtonElement).disabled).toBe(false);
+    });
+    await fireEvent.click(start());
+    expect(chooseMirrorSource).toHaveBeenCalledWith("python/cpython", { kind: "borrow", folder: lender });
+  });
+
+  it("says why the answer didn't take", async () => {
+    vi.mocked(chooseMirrorSource).mockResolvedValue("machine.toml, line 1: expected a value");
+    await shown({ state: "asking" });
+
+    await fireEvent.click(start());
+
+    expect((await screen.findByRole("alert")).textContent).toBe("machine.toml, line 1: expected a value");
+  });
 });
 
 it("waits for the PR's commits", async () => {

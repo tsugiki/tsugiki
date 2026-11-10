@@ -9,6 +9,7 @@
   import { ChordWait } from "$lib/ui/chord.svelte";
   import { currentOs, keyGuard, keysForBrowser } from "$lib/ui/keys";
   import { mirrorNote } from "$lib/ui/mirror-note";
+  import MirrorQuestionDialog from "$lib/ui/MirrorQuestionDialog.svelte";
   import Onboarding from "$lib/ui/Onboarding.svelte";
   import Palette, { type PaletteCommand, type PaletteWords } from "$lib/ui/Palette.svelte";
   import PerformanceHud from "$lib/ui/PerformanceHud.svelte";
@@ -40,19 +41,22 @@
   };
   let paletteOpen = $state(false);
   let pickerOpen = $state(false);
+  /** The Repository whose mirror's question the dialog asks, while it's open. */
+  let questionFor = $state<string>();
   /** Opens the Repository picker, which only a Repository's screen has. */
   const openPicker = () => {
     // Each dialog closes on Esc, so one on top of another would lose what the user typed below.
-    if (home.current?.screen === "repository" && !addOpen && !paletteOpen) pickerOpen = true;
+    if (home.current?.screen === "repository" && !addOpen && !paletteOpen && questionFor === undefined)
+      pickerOpen = true;
   };
   /** Whether the list's keys and the chords work: a dialog, the palette or the picker on top keeps them. */
-  const keysActive = $derived(!addOpen && !paletteOpen && !pickerOpen);
+  const keysActive = $derived(!addOpen && !paletteOpen && !pickerOpen && questionFor === undefined);
   const os = currentOs();
   const chord = new ChordWait(os);
   const guard = keyGuard(
     {
       "ctrl+shift+p": () => {
-        paletteOpen = !addOpen && !pickerOpen;
+        paletteOpen = !addOpen && !pickerOpen && questionFor === undefined;
       },
       "ctrl+r": openPicker,
       "ctrl+shift+h": () => {
@@ -169,7 +173,18 @@
   chord={chord.first}
   onrefresh={() => void status.refresh()}
   oncheckagain={() => void status.checkMirrorsAgain()}
+  onquestion={(repository) => {
+    questionFor = repository;
+  }}
 />
+{#if questionFor !== undefined}
+  <MirrorQuestionDialog
+    repository={questionFor}
+    onclose={() => {
+      questionFor = undefined;
+    }}
+  />
+{/if}
 {#if addOpen}
   <AddRepository
     onclose={() => {

@@ -11,9 +11,7 @@ const gcmon: RepositoryCheck = {
   first_sync_items: 48,
   first_sync_seconds: 5,
   first_sync_points: 12,
-  mirror_mb: 891,
-  download_seconds: 209,
-  borrow_seconds: 36,
+  mirror: { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 },
   access: "other",
 };
 
@@ -26,9 +24,7 @@ const cpython: RepositoryCheck = {
   first_sync_items: 4754,
   first_sync_seconds: 546,
   first_sync_points: 223,
-  mirror_mb: 891,
-  download_seconds: 209,
-  borrow_seconds: 36,
+  mirror: { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 },
   access: "other",
 };
 
@@ -58,9 +54,7 @@ it("counts one of each in the singular", () => {
     first_sync_items: 1,
     first_sync_seconds: 60,
     first_sync_points: 1,
-    mirror_mb: 891,
-    download_seconds: 209,
-    borrow_seconds: 36,
+    mirror: { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 },
   };
   expect(describeCheck(one)).toEqual([
     "1 open Issue, 1 open PR.",
@@ -71,9 +65,17 @@ it("counts one of each in the singular", () => {
 });
 
 it("gives the mirror's disk, and the time each way to get its objects takes", () => {
-  expect(describeMirror(gcmon)).toEqual({
+  expect(describeMirror(gcmon.mirror)).toEqual({
     disk: "Mirror, for the diff: 891 MB on the disk either way.",
     download: "Download it from GitHub, about 3 minutes",
     borrow: "Borrow objects from a clone you have, about 1 minute",
+  });
+});
+
+it("gives the two ways without their cost when GitHub couldn't say it", () => {
+  expect(describeMirror(null)).toEqual({
+    disk: "Mirror, for the diff",
+    download: "Download it from GitHub",
+    borrow: "Borrow objects from a clone you have",
   });
 });

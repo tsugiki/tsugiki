@@ -86,10 +86,10 @@ export function mirrorWords(problem: MirrorProblem | null): string | null {
   return `No room to clone ${repository}: it needs ${sizeWords(needed_mb)} on the disk with ${folder}, which has ${sizeWords(free_mb)} free`;
 }
 
-/** The question for the first Repository whose mirror waits to hear where it gets its objects. */
-export function questionWords(repository: string | null): string | null {
-  if (repository === null) return null;
-  return `The Files tab needs a mirror of ${repository}: borrow objects from a clone you have, in seconds, or download it, in minutes?`;
+/** The status bar's line for the first Repository whose mirror waits to hear where it gets its objects. A
+ * click on it asks the question. */
+export function questionWords(repository: string): string {
+  return `${repository}'s mirror waits for your answer`;
 }
 
 /** The wait for GitHub's points, while there is one. */

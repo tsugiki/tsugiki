@@ -101,9 +101,10 @@ fn the_estimate_for_cpython_agrees_with_what_was_measured() {
         "{check:?}"
     );
     // Its mirror took about 3.5 minutes from GitHub alone, and about 36 s borrowing.
-    assert_eq!(check.mirror_mb, 891);
-    assert!((200..=220).contains(&check.download_seconds), "{check:?}");
-    assert!((33..=39).contains(&check.borrow_seconds), "{check:?}");
+    let mirror = check.mirror;
+    assert_eq!(mirror.mirror_mb, 891);
+    assert!((200..=220).contains(&mirror.download_seconds), "{mirror:?}");
+    assert!((33..=39).contains(&mirror.borrow_seconds), "{mirror:?}");
 }
 
 #[test]
@@ -113,5 +114,5 @@ fn a_size_past_what_the_window_can_count_says_the_most_it_can() {
         ..FEW
     };
     let check = checked("a/b", huge);
-    assert_eq!(check.mirror_mb, u32::MAX);
+    assert_eq!(check.mirror.mirror_mb, u32::MAX);
 }

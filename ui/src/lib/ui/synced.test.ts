@@ -45,14 +45,8 @@ describe("elsewhereWords", () => {
 });
 
 describe("questionWords", () => {
-  it("asks where the first waiting Repository's mirror gets its objects", () => {
-    expect(questionWords("python/cpython")).toBe(
-      "The Files tab needs a mirror of python/cpython: borrow objects from a clone you have, in seconds, or download it, in minutes?",
-    );
-  });
-
-  it("says nothing while no mirror waits", () => {
-    expect(questionWords(null)).toBeNull();
+  it("says the first Repository's mirror that waits for an answer", () => {
+    expect(questionWords("python/cpython")).toBe("python/cpython's mirror waits for your answer");
   });
 });
 

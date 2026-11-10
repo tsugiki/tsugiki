@@ -1,12 +1,14 @@
-<!-- A PR's Files tab: its diff, or what it waits for, the mirror's clone or the PR's commits. When the PR
-     has moved on since the mirror's copy, the diff before shows while the mirror fetches the newer one, with
-     its threads held back and counted (#185). A fetch of the PR's head that fails says why, and so does one
-     that leaves GitHub's ref somewhere else or finds none, and "Try again" asks the core once more, which
-     hands the head to the mirror again (#233, #213). Ctrl+F opens a search over the diff's rows (#186). -->
+<!-- A PR's Files tab: its diff, or what it waits for, the mirror's clone or the PR's commits. A clone that
+     waits for the user to say where the mirror gets its objects asks it here (#311). When the PR has moved
+     on since the mirror's copy, the diff before shows while the mirror fetches the newer one, with its
+     threads held back and counted (#185). A fetch of the PR's head that fails says why, and so does one that
+     leaves GitHub's ref somewhere else or finds none, and "Try again" asks the core once more, which hands
+     the head to the mirror again (#233, #213). Ctrl+F opens a search over the diff's rows (#186). -->
 <script lang="ts">
   import type { PrFilesState, Unfetched } from "$lib/state/pr-files.svelte";
   import DiffRows from "./DiffRows.svelte";
   import FindBar from "./FindBar.svelte";
+  import MirrorQuestion from "./MirrorQuestion.svelte";
   import { cloningWords } from "./synced";
 
   let { files, now, onlink }: { files: PrFilesState; now: Date; onlink: (address: string) => void } =
@@ -36,7 +38,9 @@
 {#if files.error}
   <p role="alert">{`Tsugiki can't show this PR's files: ${files.error}`}</p>
 {/if}
-{#if files.view?.state === "cloning"}
+{#if files.view?.state === "asking"}
+  <MirrorQuestion repository={files.repository} />
+{:else if files.view?.state === "cloning"}
   <p class="waiting">{cloningWords(files.cloning) ?? "Cloning the Repository's mirror…"}</p>
 {:else if files.view?.state === "fetching"}
   {#if files.unfetched !== undefined}

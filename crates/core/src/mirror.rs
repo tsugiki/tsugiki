@@ -19,6 +19,7 @@ use crate::error::Error;
 use crate::folders::Folders;
 use crate::github::pull_requests::PrHead;
 use crate::github::{CommitSha, GitHub, Transport, live};
+use crate::latest::{self, LatestReader, LatestWriter};
 use crate::repository::RepositoryName;
 use crate::status::Status;
 use crate::token::{RunGh, Token};
@@ -313,6 +314,7 @@ pub struct Mirrors {
     messages: Sender<Message>,
     finished: Receiver<()>,
     prefixes: Vec<String>,
+    asking: LatestReader<Vec<RepositoryName>>,
     /// The worker's thread, which a test joins to learn how it ended. Quitting doesn't join it, so a worker
     /// stuck on a disk can't hold the app up.
     #[cfg_attr(not(test), expect(dead_code, reason = "only a test joins the worker"))]
@@ -325,6 +327,8 @@ pub struct MirrorRequests {
     messages: Sender<Message>,
     /// The remotes' prefixes, so a clone the user picks is checked as the worker will check it.
     prefixes: Vec<String>,
+    /// The worker's copy of the Repositories whose clone waits for an answer.
+    asking: LatestReader<Vec<RepositoryName>>,
 }
 
 impl MirrorRequests {
@@ -348,6 +352,11 @@ impl MirrorRequests {
         repository: &RepositoryName,
     ) -> Result<(), CloneRefusal> {
         lender(&LiveGit, &self.prefixes, folder, repository).map(drop)
+    }
+
+    /// Whether `repository`'s clone waits for the user to say where its mirror gets its objects.
+    pub fn asks(&self, repository: &RepositoryName) -> bool {
+        (self.asking.get().iter()).any(|one| one.is_same(repository))
     }
 
     /// Fetches the PR heads in `heads` into `repository`'s mirror, as `refs/tsugiki/pull/N/head`, once
@@ -392,19 +401,27 @@ impl MirrorRequests {
     }
 }
 
-/// Requests that reach a test rather than a worker, which hears each head asked for first.
+/// Requests that reach a test rather than a worker, which hears each head asked for first, and says which
+/// clones wait for an answer.
 #[cfg(test)]
-pub(crate) struct HeardRequests(Receiver<Message>);
+pub(crate) struct HeardRequests(Receiver<Message>, LatestWriter<Vec<RepositoryName>>);
 
 #[cfg(test)]
 impl HeardRequests {
     pub(crate) fn new() -> (MirrorRequests, Self) {
         let (messages, heard) = mpsc::channel();
+        let (asked, asking) = latest::channel(Vec::new());
         let requests = MirrorRequests {
             messages,
             prefixes: Vec::new(),
+            asking,
         };
-        (requests, Self(heard))
+        (requests, Self(heard, asked))
+    }
+
+    /// Has the clones of `repositories` wait for an answer, as the worker would.
+    pub(crate) fn asking(&mut self, repositories: &[RepositoryName]) {
+        self.1.set(&repositories.to_vec());
     }
 
     /// The heads asked for first since the last call.
@@ -439,6 +456,7 @@ impl Mirrors {
         let (messages, incoming) = mpsc::channel();
         let (finishing, finished) = mpsc::channel::<()>();
         let prefixes = remotes.prefixes.clone();
+        let (asked, asking) = latest::channel(Vec::new());
         let worker = Worker {
             git,
             folders,
@@ -456,6 +474,7 @@ impl Mirrors {
             told: None,
             sources: MirrorSources::default(),
             asking: Vec::new(),
+            asked,
             told_asking: None,
             heard: Vec::new(),
             told_states: Vec::new(),
@@ -475,6 +494,7 @@ impl Mirrors {
             messages,
             finished,
             prefixes,
+            asking,
             worker: Some(worker),
         }
     }
@@ -483,6 +503,7 @@ impl Mirrors {
         MirrorRequests {
             messages: self.messages.clone(),
             prefixes: self.prefixes.clone(),
+            asking: self.asking.clone(),
         }
     }
 
@@ -753,6 +774,8 @@ struct Worker {
     sources: MirrorSources,
     /// The Repositories whose clone waits for an answer, in the order they came to the front of the line.
     asking: Vec<RepositoryName>,
+    /// The copy of `asking` the requests read.
+    asked: LatestWriter<Vec<RepositoryName>>,
     /// The first of `asking` the window last heard of.
     told_asking: Option<RepositoryName>,
     /// The Repositories the worker has heard of, in the order it heard of them. Each one in none of
@@ -1411,8 +1434,10 @@ impl Worker {
         }
     }
 
-    /// Tells the window the first Repository whose clone waits for an answer, if that changed.
+    /// Tells the requests each Repository whose clone waits for an answer, and the window the first, if that
+    /// changed.
     fn tell_asking(&mut self) {
+        self.asked.set(&self.asking);
         let first = self.asking.first().cloned();
         let same = match (&first, &self.told_asking) {
             (Some(first), Some(told)) => first.is_same(told),

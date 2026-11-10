@@ -1,9 +1,9 @@
 // Picking the clone a mirror borrows objects from (#172). The core opens the folder picker and checks the
 // folder with git, which only reads it.
-import { commands, type CloneRefusal, type MirrorSource } from "$lib/data/bindings";
+import { commands, type CloneRefusal, type MirrorCost, type MirrorSource } from "$lib/data/bindings";
 import { ask } from "./answer";
 
-export type { CloneRefusal, MirrorSource };
+export type { CloneRefusal, MirrorCost, MirrorSource };
 
 /** The outcome of picking a clone for a Repository's mirror. */
 export type PickedClone =
@@ -22,6 +22,19 @@ export async function pickClone(repository: string): Promise<PickedClone> {
   if (checked.status === "error") return { kind: "failed", problem: checked.error.message };
   const refusal = checked.data;
   return refusal === null ? { kind: "lends", folder } : { kind: "refused", folder, refusal };
+}
+
+/** What each Repository's mirror takes, as GitHub said, so each PR's Files tab doesn't ask again. */
+const costs = new Map<string, MirrorCost>();
+
+/** What `repository`'s mirror takes, as GitHub says, or nothing if Tsugiki couldn't ask. */
+export async function mirrorCost(repository: string): Promise<MirrorCost | null> {
+  const known = costs.get(repository);
+  if (known !== undefined) return known;
+  const answer = await ask(commands.mirrorCost(repository));
+  if (answer.status === "error") return null;
+  costs.set(repository, answer.data);
+  return answer.data;
 }
 
 /** Saves where `repository`'s mirror gets its objects, and says what went wrong if it couldn't. */

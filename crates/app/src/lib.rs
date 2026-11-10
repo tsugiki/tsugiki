@@ -30,7 +30,7 @@ use tsugiki_core::mirror::{
 };
 use tsugiki_core::misses::Miss;
 use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
-use tsugiki_core::repository_settings::{NameCheck, RepositorySettings};
+use tsugiki_core::repository_settings::{MirrorCost, NameCheck, RepositorySettings};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{Home, LoadedSettings, PaneLayout, SettingsOwner};
 use tsugiki_core::status::{Change, FailedRead, LastSync, Status, SyncActivity};
@@ -282,6 +282,12 @@ fn check_typed_repository(
     owner.check_name(RepositoryName::parse(input)?, &mut |name| {
         requests.check(name)
     })
+}
+
+/// Asks GitHub what the mirror of `repository` takes, with the check Add repository makes. The Files tab asks
+/// for a Repository Tsugiki has.
+fn check_mirror_cost(repository: &str, requests: &SessionRequests) -> Result<MirrorCost, Error> {
+    Ok(requests.check(RepositoryName::parse(repository)?)?.mirror)
 }
 
 /// The user's choice in Add repository: the Repository, by the name GitHub gave it, what they may do in it,
@@ -638,6 +644,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             record_measurement,
             record_miss,
             slow_commands::check_repository,
+            slow_commands::mirror_cost,
             slow_commands::add_repository,
             slow_commands::open_repository,
             slow_commands::save_pane_layout,

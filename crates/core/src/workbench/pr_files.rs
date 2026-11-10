@@ -31,6 +31,9 @@ pub use threads::{DiffThread, Placement, ThreadCode};
 pub enum PrFiles {
     /// The Repository's mirror is still being cloned, and the clone says how far it is.
     Cloning,
+    /// The Repository's mirror isn't cloned yet, and its clone waits for the user to say where it gets its
+    /// objects.
+    Asking,
     /// The mirror lacks the PR's commits, and is fetching them.
     Fetching,
     /// The diff, whose rows the window asks for by number.
@@ -89,7 +92,8 @@ impl PrFiles {
         };
         let mirror = sources.folders.mirror(repository);
         if !mirror.exists() {
-            return Ok(Some(Self::Cloning));
+            let asks = sources.mirrors.asks(repository);
+            return Ok(Some(if asks { Self::Asking } else { Self::Cloning }));
         }
         sources.mirrors.opened(repository.clone(), number);
         // The sync reads a PR's head the next time it reads the PR.

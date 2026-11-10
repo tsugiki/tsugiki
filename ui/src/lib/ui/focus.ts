@@ -1,7 +1,8 @@
-/** For a dialog's first field, as an attachment: takes the focus, and gives it back when the field goes. */
-export function takeFocus(input: HTMLInputElement) {
+/** For a dialog's first field, or a dialog with none, as an attachment: takes the focus, and gives it back
+ * when the element goes. */
+export function takeFocus(element: HTMLElement) {
   const previous = document.activeElement;
-  input.focus();
+  element.focus();
   return () => {
     if (previous instanceof HTMLElement) {
       previous.focus();

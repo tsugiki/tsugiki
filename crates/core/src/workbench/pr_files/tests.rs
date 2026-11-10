@@ -124,6 +124,17 @@ fn before_its_mirror_is_cloned_a_pr_shows_the_clone() {
 }
 
 #[test]
+fn before_the_user_says_where_its_mirror_gets_its_objects_a_pr_asks() {
+    let mut world = World::new("asking");
+    world.has_pr(None, "main");
+
+    world.heard.asking(&[world.repository()]);
+
+    assert_eq!(world.files(), Some(PrFiles::Asking));
+    world.finish();
+}
+
+#[test]
 fn a_pr_whose_head_tsugiki_hasnt_read_waits_for_the_sync() {
     let world = World::new("no-head");
     let mirrored = Mirrored::new("pr-files-no-head");

@@ -48,6 +48,7 @@ vi.mock("$lib/data/bindings", () => ({
     headsFetchFailed: core.listener("headsFetchFailed"),
     changed: core.listener("changed"),
     cloningChanged: core.listener("cloningChanged"),
+    mirrorStatesChanged: core.listener("mirrorStatesChanged"),
   },
 }));
 
@@ -325,6 +326,76 @@ it("follows the clone, and asks again once it ends", async () => {
   });
 });
 
+/** The mirror states the core tells of, with python/cpython's in `state` beside another Repository's. */
+const states = (state: "asking" | "waiting") => ({
+  payload: [
+    { repository: "octo-org/hello", state: { state: "asking" } },
+    { repository: "python/cpython", state: state === "asking" ? { state } : { state, behind: null } },
+  ],
+});
+
+it("asks again once the user answers where the mirror gets its objects", async () => {
+  const files = await loaded({ state: "asking" });
+  expect(files.repository).toBe("python/cpython");
+
+  core.heard.mirrorStatesChanged?.(states("asking"));
+  expect(core.pullRequestFiles).toHaveBeenCalledTimes(1);
+  core.pullRequestFiles.mockResolvedValue(ok({ state: "cloning" }));
+  core.heard.mirrorStatesChanged?.(states("waiting"));
+
+  await vi.waitFor(() => {
+    expect(files.view).toEqual({ state: "cloning" });
+  });
+});
+
+it("asks again when the clone it waits for comes to wait for an answer", async () => {
+  const files = await loaded({ state: "cloning" });
+
+  core.heard.mirrorStatesChanged?.(states("waiting"));
+  expect(core.pullRequestFiles).toHaveBeenCalledTimes(1);
+  core.pullRequestFiles.mockResolvedValue(ok({ state: "asking" }));
+  core.heard.mirrorStatesChanged?.(states("asking"));
+
+  await vi.waitFor(() => {
+    expect(files.view).toEqual({ state: "asking" });
+  });
+});
+
+it("asks again when the clone comes to wait for an answer while the core answers", async () => {
+  let answer: (answer: unknown) => void = () => {};
+  core.pullRequestFiles.mockReturnValueOnce(
+    new Promise((resolve) => {
+      answer = resolve;
+    }),
+  );
+  core.pullRequestFiles.mockResolvedValue(ok({ state: "asking" }));
+  const files = new PrFilesState("python/cpython", 11);
+  const loading = files.load();
+  await vi.waitFor(() => {
+    expect(core.pullRequestFiles).toHaveBeenCalledOnce();
+  });
+
+  core.heard.mirrorStatesChanged?.(states("asking"));
+  answer(ok({ state: "cloning" }));
+  await loading;
+
+  await vi.waitFor(() => {
+    expect(files.view).toEqual({ state: "asking" });
+  });
+  expect(core.pullRequestFiles).toHaveBeenCalledTimes(2);
+});
+
+it("finds its Repository's mirror by its name in any case", async () => {
+  const files = await loaded({ state: "asking" });
+
+  const told = states("asking");
+  told.payload[1] = { repository: "Python/CPython", state: { state: "asking" } };
+  core.heard.mirrorStatesChanged?.(told);
+
+  expect(core.pullRequestFiles).toHaveBeenCalledTimes(1);
+  expect(files.view).toEqual({ state: "asking" });
+});
+
 it("keeps a clone it heard of while asking over the older answer", async () => {
   core.pullRequestFiles.mockResolvedValue(ok({ state: "cloning" }));
   core.cloning.mockImplementation(() => {
@@ -341,7 +412,13 @@ it("keeps a clone it heard of while asking over the older answer", async () => {
 it("stops listening, even when it stops before it started", async () => {
   const files = await loaded();
   files.stop();
-  expect(core.stopped.toSorted()).toEqual(["changed", "cloningChanged", "headsFetchFailed", "headsFetched"]);
+  expect(core.stopped.toSorted()).toEqual([
+    "changed",
+    "cloningChanged",
+    "headsFetchFailed",
+    "headsFetched",
+    "mirrorStatesChanged",
+  ]);
 
   core.stopped = [];
   const early = new PrFilesState("python/cpython", 11);
@@ -349,7 +426,7 @@ it("stops listening, even when it stops before it started", async () => {
   early.stop();
   await loading;
 
-  expect(core.stopped).toHaveLength(4);
+  expect(core.stopped).toHaveLength(5);
   expect(core.cloning).toHaveBeenCalledTimes(1);
 });
 

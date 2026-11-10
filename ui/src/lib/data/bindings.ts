@@ -72,12 +72,13 @@ export const commands = {
 	recordMeasurement: (measurement: Measurement_Deserialize) => __TAURI_INVOKE<string>("record_measurement", { measurement }),
 	/**  Writes a budget the window missed to `tsugiki.log`, and says the line it wrote. */
 	recordMiss: (miss: Miss_Deserialize) => __TAURI_INVOKE<string>("record_miss", { miss }),
-	/**
-	 *  Whether Tsugiki has the Repository the user typed, and if not, what adding it would load. A check can wait
-	 *  out a stuck request to GitHub, so it waits on a thread meant for blocking, and leaves the threads that
-	 *  answer the window's other commands free.
-	 */
+	/**  Whether Tsugiki has the Repository the user typed, and if not, what adding it would load. */
 	checkRepository: (input: string) => typedError<NameCheck_Serialize, Error_Serialize>(__TAURI_INVOKE("check_repository", { input })),
+	/**
+	 *  Asks GitHub the disk and the time the mirror of `repository` takes, for the user to choose where it gets
+	 *  its objects.
+	 */
+	mirrorCost: (repository: string) => typedError<MirrorCost, Error_Serialize>(__TAURI_INVOKE("mirror_cost", { repository })),
 	/**
 	 *  Adds a Repository the user has seen the check for, starts its first sync and its mirror's clone, and says
 	 *  what the window opens on now. This waits on a small file and never on GitHub or git.
@@ -926,6 +927,15 @@ export type Measurement_Serialize = {
 	long_frames: LongFrame_Serialize[],
 };
 
+/**  What a Repository's mirror takes, for the user to choose where it gets its objects. */
+export type MirrorCost = {
+	/**  The size of the mirror on the disk, whether it borrows objects or not: `--dissociate` copies them. */
+	mirror_mb: number,
+	/**  About how long its clone takes from GitHub alone, and borrowing from a clone the user has. */
+	download_seconds: number,
+	borrow_seconds: number,
+};
+
 /**  The reason no mirror can be made, for the status bar (#171). The rest of Tsugiki works without one. */
 export type MirrorProblem = 
 /**  git isn't on the `PATH`. */
@@ -1305,6 +1315,11 @@ export type PrFiles = PrFiles_Serialize | PrFiles_Deserialize;
 export type PrFiles_Deserialize = 
 /**  The Repository's mirror is still being cloned, and the clone says how far it is. */
 { state: "cloning" } | 
+/**
+ *  The Repository's mirror isn't cloned yet, and its clone waits for the user to say where it gets its
+ *  objects.
+ */
+{ state: "asking" } | 
 /**  The mirror lacks the PR's commits, and is fetching them. */
 { state: "fetching" } | 
 /**  The diff, whose rows the window asks for by number. */
@@ -1323,6 +1338,11 @@ news: NewsEntry_Deserialize[]; threads: DiffThreads_Deserialize };
 export type PrFiles_Serialize = 
 /**  The Repository's mirror is still being cloned, and the clone says how far it is. */
 { state: "cloning" } | 
+/**
+ *  The Repository's mirror isn't cloned yet, and its clone waits for the user to say where it gets its
+ *  objects.
+ */
+{ state: "asking" } | 
 /**  The mirror lacks the PR's commits, and is fetching them. */
 { state: "fetching" } | 
 /**  The diff, whose rows the window asks for by number. */
@@ -1450,11 +1470,7 @@ export type RepositoryCheck_Deserialize = {
 	first_sync_items: number,
 	first_sync_seconds: number,
 	first_sync_points: number,
-	/**  The size of its mirror on the disk, whether it borrows objects or not: `--dissociate` copies them. */
-	mirror_mb: number,
-	/**  About how long its mirror's clone takes from GitHub alone, and borrowing from a clone the user has. */
-	download_seconds: number,
-	borrow_seconds: number,
+	mirror: MirrorCost,
 };
 
 /**  What the add dialog shows before the user decides. */
@@ -1469,11 +1485,7 @@ export type RepositoryCheck_Serialize = {
 	first_sync_items: number,
 	first_sync_seconds: number,
 	first_sync_points: number,
-	/**  The size of its mirror on the disk, whether it borrows objects or not: `--dissociate` copies them. */
-	mirror_mb: number,
-	/**  About how long its mirror's clone takes from GitHub alone, and borrowing from a clone the user has. */
-	download_seconds: number,
-	borrow_seconds: number,
+	mirror: MirrorCost,
 };
 
 /**

@@ -12,6 +12,7 @@ use crate::status::testing::{
 };
 use crate::status::{Change, FailedRead, ReadFailure};
 use crate::store::{ChangeCheck, SyncState};
+use crate::token::Token;
 use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
 use std::cell::RefCell;
 use std::collections::VecDeque;

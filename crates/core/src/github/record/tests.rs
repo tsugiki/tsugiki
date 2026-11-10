@@ -1,7 +1,8 @@
 use super::*;
+use crate::github::RestPath;
 use crate::github::replay::Replayer;
 use crate::github::testing::Canned;
-use crate::token::GhOutput;
+use crate::token::{GhOutput, read_token};
 use std::path::PathBuf;
 
 const REQUEST: Request<'static> = Request {
@@ -11,7 +12,7 @@ const REQUEST: Request<'static> = Request {
 };
 
 fn token() -> Token {
-    Token::from_gh(|_| {
+    read_token(|_| {
         Ok(GhOutput {
             success: true,
             stdout: "secret-token-value".to_owned(),
@@ -33,33 +34,17 @@ fn reply(body: &str) -> Reply {
     }
 }
 
+/// `tsugiki-token`'s tests cover each shape; these show the recorder hides both kinds.
 #[test]
 fn scrubbing_removes_the_token_in_use() {
-    assert_eq!(
-        scrub("a secret-token-value b", "secret-token-value"),
-        "a [token] b"
-    );
+    assert_eq!(scrub("a secret-token-value b", &token()), "a [token] b");
 }
 
 #[test]
 fn scrubbing_removes_anything_shaped_like_a_github_token() {
-    let text = "gho_abc123 ghp_ABC ghs_a_b ghu_1 ghr_2 github_pat_11A_b0, other";
     assert_eq!(
-        scrub(text, "unused"),
-        "[token] [token] [token] [token] [token] [token], other"
-    );
-}
-
-#[test]
-fn scrubbing_leaves_words_that_only_start_like_a_token() {
-    assert_eq!(scrub("gho_ ghost", "unused"), "gho_ ghost");
-}
-
-#[test]
-fn scrubbing_removes_a_token_right_after_an_escape() {
-    assert_eq!(
-        scrub(r#"see:\ngho_abc %3Dghp_def"#, "unused"),
-        r#"see:\n[token] %3D[token]"#
+        scrub(r#"see:\ngho_abc %3Dghp_def, other"#, &token()),
+        r#"see:\n[token] %3D[token], other"#
     );
 }
 
@@ -77,11 +62,6 @@ fn a_failed_answer_leaves_the_recording_alone() {
         assert_eq!(recorder.post(&token(), &REQUEST).unwrap().status, status);
         assert!(!dir.exists(), "{status} {body}");
     }
-}
-
-#[test]
-fn scrubbing_leaves_other_text_alone_including_non_ascii() {
-    assert_eq!(scrub("tsugi木 ok", "unused"), "tsugi木 ok");
 }
 
 #[test]
@@ -107,8 +87,9 @@ fn a_recording_replays_with_the_token_scrubbed() {
 fn a_list_check_passes_through_and_records_nothing() {
     let dir = temp_dir("list-check");
     let recorder = Recorder::new(Box::new(Canned(Ok(reply("{}")))), dir.clone());
+    let path = RestPath::parse("/repos/python/cpython/issues").unwrap();
     let asked = ConditionalGet {
-        path: "/repos/python/cpython/issues",
+        path: &path,
         etag: None,
     };
 

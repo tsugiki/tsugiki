@@ -1,4 +1,5 @@
 use super::*;
+use crate::token::{GhOutput, read_token};
 
 /// A logger with its own folder, so tests don't share the process's one logger.
 fn temp_logger(name: &str) -> (Logger, PathBuf) {
@@ -48,7 +49,13 @@ fn a_line_says_when_how_bad_where_and_what() {
 #[test]
 fn a_token_in_use_never_reaches_the_file_whatever_its_shape() {
     let (logger, folder) = temp_logger("in-use");
-    logger.send(Message::Hide("0123456789abcdef".to_owned()));
+    let token = read_token(|_| {
+        Ok(GhOutput {
+            success: true,
+            stdout: "0123456789abcdef".to_owned(),
+        })
+    });
+    logger.send(Message::Hide(token.unwrap()));
     say(
         &logger,
         Level::Warn,

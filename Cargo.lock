@@ -4711,6 +4711,7 @@ dependencies = [
  "time",
  "tsugiki-core",
  "tsugiki-test-git",
+ "tsugiki-token",
  "tsugiki-webview-keys",
 ]
 
@@ -4725,7 +4726,6 @@ dependencies = [
  "log",
  "process-wrap",
  "rusqlite",
- "rustls",
  "serde",
  "serde_json",
  "specta",
@@ -4748,7 +4748,7 @@ dependencies = [
  "tree-sitter-typescript",
  "tree-sitter-yaml",
  "tsugiki-test-git",
- "ureq",
+ "tsugiki-token",
  "url",
  "windows",
 ]
@@ -4756,6 +4756,15 @@ dependencies = [
 [[package]]
 name = "tsugiki-test-git"
 version = "0.2.1"
+
+[[package]]
+name = "tsugiki-token"
+version = "0.2.1"
+dependencies = [
+ "rustls",
+ "ureq",
+ "url",
+]
 
 [[package]]
 name = "tsugiki-webview-keys"

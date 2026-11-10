@@ -6,13 +6,13 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use serde_json::{Value, json};
+use tsugiki_token::hide_token_shapes;
 
 use super::activity::{APP_NAME_END, WEB_COMMITTER};
 use super::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::conventions::{CPYTHON_BACKPORT_APP, CPYTHON_BOT_ACCOUNTS};
 use crate::token::Token;
 
-const PREFIXES: [&str; 6] = ["gho_", "ghp_", "ghs_", "ghu_", "ghr_", "github_pat_"];
 const SCRUBBED: &str = "[token]";
 
 /// Written in place of the viewer's login, so a fixture doesn't depend on who recorded it.
@@ -29,36 +29,10 @@ const CHERRY_PICK: &str = "(cherry picked from commit ";
 /// The fields of an answer that people write, where a login can sit inside the text.
 const PROSE_FIELDS: [&str; 4] = ["title", "body", "bodyText", "bodyHTML"];
 
-fn is_token_char(c: char) -> bool {
-    c.is_ascii_alphanumeric() || c == '_'
-}
-
-/// What follows the token that `text` starts with, if it does.
-fn after_token(text: &str) -> Option<&str> {
-    PREFIXES.iter().find_map(|prefix| {
-        let tail = text.strip_prefix(prefix)?;
-        let after = tail.trim_start_matches(is_token_char);
-        (after.len() < tail.len()).then_some(after)
-    })
-}
-
 /// Removes `token`, and anything else shaped like a GitHub token, wherever it starts: the text is raw
 /// JSON, so a token can follow an escape such as `\n`.
-pub fn scrub(text: &str, token: &str) -> String {
-    let text = text.replace(token, SCRUBBED);
-    let mut scrubbed = String::with_capacity(text.len());
-    let mut rest = text.as_str();
-    while !rest.is_empty() {
-        if let Some(after) = after_token(rest) {
-            scrubbed.push_str(SCRUBBED);
-            rest = after;
-        } else {
-            let mut chars = rest.chars();
-            scrubbed.extend(chars.next());
-            rest = chars.as_str();
-        }
-    }
-    scrubbed
+fn scrub(text: &str, token: &Token) -> String {
+    hide_token_shapes(&token.hide_in(text, SCRUBBED), SCRUBBED)
 }
 
 /// Keeps a recording to what Tsugiki reads, because the rest can name people. A description on the default
@@ -308,7 +282,7 @@ impl Transport for Recorder {
     )]
     fn post(&self, token: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
         let reply = self.inner.post(token, request)?;
-        let text = scrub(&reply.body, token.expose());
+        let text = scrub(&reply.body, token);
         let mut body = serde_json::from_str(&text).unwrap_or(Value::String(text));
         if reply.status != 200 || body.get("errors").is_some() {
             return Ok(reply);

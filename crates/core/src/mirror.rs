@@ -22,7 +22,7 @@ use crate::github::{CommitSha, GitHub, Transport, live};
 use crate::latest::{self, LatestReader, LatestWriter};
 use crate::repository::RepositoryName;
 use crate::status::Status;
-use crate::token::{RunGh, Token};
+use crate::token::{RunGh, read_token};
 
 mod source;
 mod upkeep;
@@ -120,14 +120,14 @@ pub type FreeSpace = Box<dyn Fn(&Path) -> io::Result<u64> + Send>;
 /// clone is rare and the session owns the other one.
 pub fn sizes_on_github(new_transport: fn() -> Box<dyn Transport>, run_gh: RunGh) -> SizeOf {
     Box::new(move |repository| {
-        let token = Token::from_gh(run_gh)?;
+        let token = read_token(run_gh)?;
         GitHub::new(new_transport(), token).repository_size(repository)
     })
 }
 
 /// A connection to GitHub's API, for a Repository's size.
 fn https() -> Box<dyn Transport> {
-    Box::new(live::Https::new())
+    Box::new(tsugiki_token::Https::new())
 }
 
 /// Where git clones to, in the Repository's folder, so a clone cut off never looks like a mirror.
@@ -218,7 +218,7 @@ impl Remotes {
     /// GitHub's remotes, whose sizes its API gives, signed in with gh's token.
     pub fn github() -> Self {
         Self {
-            size_of: sizes_on_github(https, live::run_gh),
+            size_of: sizes_on_github(https, tsugiki_token::run_gh),
             free_space: Box::new(|folder| fs4::available_space(folder)),
             prefixes: GITHUB_PREFIXES.map(str::to_owned).to_vec(),
             upkeep: Some(Schedule::DAILY_AND_WEEKLY),

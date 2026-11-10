@@ -12,13 +12,16 @@ use tsugiki_core::logfile;
 use tsugiki_core::session::{Intervals, Session};
 use tsugiki_core::status::StatusBoard;
 use tsugiki_core::store::Store;
-use tsugiki_core::token::{GhOutput, Token};
+use tsugiki_core::token::{GhOutput, Token, read_token};
 use tsugiki_core::version::Version;
+
+/// A token no shape gives away, so only hiding it by its value keeps it out of the log.
+const NO_KNOWN_SHAPE: &str = "0123456789abcdef";
 
 fn gh_prints_a_token_of_no_known_shape(_: &[&str]) -> io::Result<GhOutput> {
     Ok(GhOutput {
         success: true,
-        stdout: "0123456789abcdef\n".to_owned(),
+        stdout: format!("{NO_KNOWN_SHAPE}\n"),
     })
 }
 
@@ -84,14 +87,14 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
     a_run_says_it_started_only_when_told_to(&path);
 
     // The real token's words reach the log with the token hidden.
-    let token = Token::from_gh(gh_prints_a_token_of_no_known_shape).unwrap();
-    log::warn!("GitHub refused Bearer {}", token.expose());
+    let token = read_token(gh_prints_a_token_of_no_known_shape).unwrap();
+    log::warn!("GitHub refused Bearer {NO_KNOWN_SHAPE}");
     let file = read_after_flush();
-    assert!(!file.contains(token.expose()), "{file}");
+    assert!(!file.contains(NO_KNOWN_SHAPE), "{file}");
     assert!(file.contains("GitHub refused Bearer [token]"), "{file}");
 
     // A failure's cause goes to the log while the status bar keeps its plain words.
-    let problem = Token::from_gh(gh_is_missing).unwrap_err();
+    let problem = read_token(gh_is_missing).unwrap_err();
     assert!(
         problem.message.contains("gh auth login"),
         "{}",
@@ -109,7 +112,6 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
     assert!(file.contains(&with_its_cause), "{file}");
 
     // What a proxy said, which the status bar has no room for.
-    let token = Token::from_gh(gh_prints_a_token_of_no_known_shape).unwrap();
     assert!(GitHub::new(Box::new(Proxy), token).viewer().is_err());
     let file = read_after_flush();
     assert!(

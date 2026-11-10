@@ -1,6 +1,6 @@
 use super::*;
 use crate::github::{Request, Transport};
-use crate::token::{GhOutput, Token};
+use crate::token::{GhOutput, Token, read_token};
 
 fn fixture(name: &str, contents: &str) -> std::path::PathBuf {
     let dir = crate::testing::temp_path(&format!("replay-{name}"));
@@ -10,7 +10,7 @@ fn fixture(name: &str, contents: &str) -> std::path::PathBuf {
 }
 
 fn token() -> Token {
-    Token::from_gh(|_| {
+    read_token(|_| {
         Ok(GhOutput {
             success: true,
             stdout: "t".to_owned(),

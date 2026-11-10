@@ -10,10 +10,10 @@ use tauri::{AppHandle, Manager, RunEvent, WebviewWindowBuilder};
 use tsugiki_core::build::Build;
 use tsugiki_core::folders::Folders;
 use tsugiki_core::github::GitHubAccess;
-use tsugiki_core::github::live::{Https, run_gh};
 use tsugiki_core::launch;
 use tsugiki_core::logfile;
 use tsugiki_core::mirror::Remotes;
+use tsugiki_token::{Https, run_gh};
 
 use crate::Started;
 use crate::navigation;

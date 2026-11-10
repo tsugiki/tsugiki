@@ -19,6 +19,7 @@ pub mod login;
 pub mod measurement;
 pub mod mirror;
 pub mod misses;
+pub mod releases;
 pub mod repository;
 pub mod repository_settings;
 pub mod session;

@@ -12,7 +12,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use ureq::http::Response;
-use ureq::{Agent, Body};
+use ureq::typestate::WithoutBody;
+use ureq::{Agent, Body, RequestBuilder};
 
 use crate::{API_HOST, GRAPHQL, GhOutput, Reply, RestPath, Token, Unreachable, unreachable};
 
@@ -69,20 +70,37 @@ impl Https {
         path: &RestPath,
         etag: Option<&str>,
     ) -> Result<Reply, Unreachable> {
-        let url = path
-            .url()
-            .ok_or_else(|| Unreachable::Offline(format!("{path} isn't on {API_HOST}")))?;
         let mut asking = self
-            .agent
-            .get(url.as_str())
-            .header("Authorization", token.bearer())
-            .header("Accept", "application/vnd.github+json")
-            .header("X-GitHub-Api-Version", "2022-11-28");
+            .public_request(path)?
+            .header("Authorization", token.bearer());
         if let Some(etag) = etag {
             asking = asking.header("If-None-Match", etag);
         }
         let response = asking.call().map_err(|cause| unreachable(&cause))?;
         Ok(headers(&response))
+    }
+
+    /// Asks for `path` with no token, for what GitHub shows anyone, such as Tsugiki's latest release. It
+    /// takes no [`Token`], so it has no way to send one. The body comes back with the status and headers.
+    pub fn get_public(&self, path: &RestPath) -> Result<Reply, Unreachable> {
+        let response = self
+            .public_request(path)?
+            .call()
+            .map_err(|cause| unreachable(&cause))?;
+        with_body(response)
+    }
+
+    /// A GET of `path` on `api.github.com`, with no token yet. `get_rest` adds one, and `get_public` sends it
+    /// as it is.
+    fn public_request(&self, path: &RestPath) -> Result<RequestBuilder<WithoutBody>, Unreachable> {
+        let url = path
+            .url()
+            .ok_or_else(|| Unreachable::Offline(format!("{path} isn't on {API_HOST}")))?;
+        Ok(self
+            .agent
+            .get(url.as_str())
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28"))
     }
 }
 
@@ -169,3 +187,6 @@ fn run_program(program: &str, args: &[&str]) -> io::Result<GhOutput> {
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
     })
 }
+
+#[cfg(test)]
+mod tests;

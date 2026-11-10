@@ -11,32 +11,41 @@ use tsugiki_core::folders::Folders;
 use tsugiki_core::github::GitHubAccess;
 use tsugiki_core::latest;
 use tsugiki_core::mirror::{Announce, Mirrors, Remotes};
+use tsugiki_core::releases::{AskPublic, ReleaseCheck};
 use tsugiki_core::session::{Intervals, Session};
 use tsugiki_core::settings::{SettingsFiles, SettingsOwner};
 use tsugiki_core::status::{Change, Status, StatusBoard};
 
 use crate::{
     Changed, CloningChanged, DiffWork, FailedHeads, FolderPicker, HeadsFetchFailed, HeadsFetched,
-    LastSyncChanged, MirrorProblemChanged, MirrorQuestionChanged, MirrorStatesChanged, PickFolder,
-    ReadFailed, RepositoryWork, StatusChanged, SyncActivityChanged,
+    LastSyncChanged, MirrorProblemChanged, MirrorQuestionChanged, MirrorStatesChanged,
+    NewVersionFound, PickFolder, ReadFailed, RepositoryWork, StatusChanged, SyncActivityChanged,
 };
 
 /// How often the open Repository refreshes: a refresh costs a few points, and this is about 60 points an
 /// hour, out of 5,000 (ADR 0015).
 const REPOSITORY_REFRESH: Duration = Duration::from_secs(180);
 
-/// The world outside the window that Tsugiki reaches: GitHub's API and `gh`, where mirrors are cloned from,
-/// and the system's folder picker.
+/// The time between two checks of GitHub Releases for a newer version, after the one at start-up. GitHub
+/// lets one address ask 60 times an hour without a token, and this asks four times a day.
+const RELEASE_CHECK: Duration = Duration::from_secs(6 * 60 * 60);
+
+/// The world outside the window that Tsugiki reaches: GitHub's API and `gh`, GitHub Releases without a
+/// token, where mirrors are cloned from, and the system's folder picker.
 pub(crate) struct Outside {
     pub(crate) github: GitHubAccess,
+    pub(crate) releases: AskPublic,
     pub(crate) remotes: Remotes,
     pub(crate) pick_folder: PickFolder,
 }
 
-/// The threads that work for the window: the session, and the mirrors' one writer.
+/// The threads that work for the window: the session, the mirrors' one writer, and the check for a new
+/// version unless the settings turn it off. The check ends when this is dropped: it writes nothing, so
+/// quitting needn't wait for it.
 pub(crate) struct Core {
     pub(crate) session: Session,
     mirrors: Mirrors,
+    _releases: Option<ReleaseCheck>,
 }
 
 impl Core {
@@ -78,6 +87,12 @@ pub(crate) fn connect_core<R: Runtime>(
     // `settings_path` on a slow drive would delay the window. Without folders the defaults apply, and the
     // session shows why. A thread of their own owns the files from here, so saving doesn't wait on GitHub.
     let settings = SettingsOwner::start(folders.clone().map(SettingsFiles::load));
+    // Settings Tsugiki can't read fall back to the defaults, which check, though the file may turn the check
+    // off. So only settings read without a problem start it.
+    let check_releases_on = {
+        let loaded = &settings.view().loaded;
+        folders.is_ok() && loaded.problems.is_empty() && loaded.settings.releases.check
+    };
     let status_handle = app.clone();
     let changes_handle = app.clone();
     let failed_reads_handle = app.clone();
@@ -150,7 +165,34 @@ pub(crate) fn connect_core<R: Runtime>(
     );
     let reader = session.reader();
     assert!(app.manage(reader), "only this manages the reader");
-    Core { session, mirrors }
+    let releases = check_releases(app, check_releases_on.then_some(outside.releases));
+    Core {
+        session,
+        mirrors,
+        _releases: releases,
+    }
+}
+
+/// Starts the check for a new version with `ask`. Without it Tsugiki sends Releases nothing, and the command
+/// answers that no version is out. Each version the check finds is set for the command that asks before it
+/// goes out as an event, for the reason `connect_core` gives for the status.
+fn check_releases<R: Runtime>(app: &AppHandle<R>, ask: Option<AskPublic>) -> Option<ReleaseCheck> {
+    let (mut latest_version, version_reader) = latest::channel(None);
+    assert!(
+        app.manage(version_reader),
+        "only this manages the new version"
+    );
+    let handle = app.clone();
+    ask.map(|ask| {
+        ReleaseCheck::start(
+            ask,
+            RELEASE_CHECK,
+            Box::new(move |new| {
+                latest_version.set(&Some(new.clone()));
+                log_if_unsent(NewVersionFound(new.clone()).emit(&handle));
+            }),
+        )
+    })
 }
 
 /// Tells the window what the mirrors' one writer says. Each change is set for the commands that ask before it

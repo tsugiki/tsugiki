@@ -28,6 +28,15 @@ The token goes to one place: the `Authorization` header of a request to `https:/
 - takes a REST path only as a `RestPath`, which refuses `@`, `?`, `#` and `\`, the characters that could make
   a path name another host. A query is encoded on its own, so it can't either.
 
+## What Tsugiki asks without a token
+
+Tsugiki sends GitHub one request with no token: `GET /repos/tsugiki/tsugiki/releases/latest`, which asks for
+its latest release, at start-up and every 6 hours, so the status bar can say when a new version is out. The
+code is `Https::get_public` in [`src/live.rs`](src/live.rs). It follows the rules above and sends no
+`Authorization` header. It takes no token, so it has no way to send one, and a test checks the header isn't
+there. `check = false` under `[releases]` in `settings.toml` turns the check off, and Tsugiki then never
+sends this request.
+
 ## Where the token never goes
 
 - **The disk.** Tsugiki writes the token to no file: not the settings, not the database, not the log.

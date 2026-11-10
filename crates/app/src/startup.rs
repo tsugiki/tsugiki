@@ -78,6 +78,10 @@ pub fn run() {
             transport: Box::new(Https::new()),
             run_gh,
         },
+        releases: {
+            let https = Https::new();
+            Box::new(move |path| https.get_public(path))
+        },
         remotes: Remotes::github(),
         pick_folder: {
             let app = app.handle().clone();

@@ -3,8 +3,9 @@ import { emitFromCore, mockCore } from "./mock-core.ts";
 
 const online = { state: "online", login: "octocat" } as const;
 const offline = { state: "offline" } as const;
-const defaults = { settings: { status_bar: { visible: true }, repositories: [] }, problems: [] };
-const hidden = { settings: { status_bar: { visible: false }, repositories: [] }, problems: [] };
+const releases = { check: true };
+const defaults = { settings: { status_bar: { visible: true }, releases, repositories: [] }, problems: [] };
+const hidden = { settings: { status_bar: { visible: false }, releases, repositories: [] }, problems: [] };
 
 test("the status bar shows who is signed in", async ({ page }) => {
   await mockCore(page, { settings: defaults, status: online });
@@ -28,6 +29,21 @@ test("the status bar shows the last login while offline", async ({ page }) => {
   await mockCore(page, { settings: defaults, status: { state: "offline_as", last_login: "octocat" } });
   await page.goto("/");
   await expect(page.getByRole("status")).toHaveText("octocat · Offline: read-only");
+});
+
+test("the status bar says when a newer version is out, found before or after the window loaded", async ({
+  page,
+}) => {
+  const page_of = (version: string) => `https://github.com/tsugiki/tsugiki/releases/tag/v${version}`;
+  await mockCore(page, {
+    settings: defaults,
+    status: online,
+    newVersion: { version: "0.3.0", page: page_of("0.3.0") },
+  });
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Tsugiki 0.3.0 is out" })).toBeVisible();
+  await emitFromCore(page, "new-version-found", { version: "0.4.0", page: page_of("0.4.0") });
+  await expect(page.getByRole("button", { name: "Tsugiki 0.4.0 is out" })).toBeVisible();
 });
 
 test("the status bar follows the core's status event", async ({ page }) => {

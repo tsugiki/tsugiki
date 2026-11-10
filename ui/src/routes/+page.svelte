@@ -170,6 +170,7 @@
   cloning={status.cloning}
   mirrorProblem={status.mirrorProblem}
   mirrorQuestion={status.mirrorQuestion}
+  newVersion={status.newVersion}
   chord={chord.first}
   onrefresh={() => void status.refresh()}
   oncheckagain={() => void status.checkMirrorsAgain()}

@@ -80,7 +80,8 @@
 </script>
 
 <svelte:window onkeydowncapture={readKey} onpointerdowncapture={endChord} onblur={endChord} />
-<svelte:head><title>{title}</title></svelte:head>
+<!-- A template string: Svelte compiles a bare `{title}` here with a `?? ""` branch that no test can reach. -->
+<svelte:head><title>{`${title}`}</title></svelte:head>
 
 <main>
   <AboutLine about={about.about} error={about.error} />

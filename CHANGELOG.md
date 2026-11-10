@@ -7,8 +7,53 @@ release's body, and fails without it
 
 ## WIP
 
+## Version 0.2.1 (2026-11-10)
+
+You can hide the Sidebar and the Issue list, show the Detail pane alone, and put the layout back.
+`Ctrl+R` opens a picker that switches between your Repositories, and the window title names the open one.
+
+### Added
+
+- `Ctrl+B` hides the Sidebar and `Ctrl+Alt+B` hides the Issue list, and the same key brings the pane back at
+  its width. With the list hidden, the Detail pane takes its room and the focus, and `↑` and `↓` scroll it.
+  A list that comes back puts the cursor and the focus on the row of what the Detail pane shows.
+- `Ctrl+K Z` hides both panes, and pressing it again brings back the ones it hid. `Ctrl+K` starts a chord:
+  the status bar shows it until you press the second key, and `Esc` or a click ends the wait.
+- The command palette offers each of these, as "Hide Sidebar", "Hide Issue List" and "Show Only the Detail
+  Pane", and "Reset Layout" gives both panes their default widths and shows them. `machine.toml` keeps which
+  panes show, beside their widths.
+- `Ctrl+R`, or a click on the Repository's name at the top of the Sidebar, opens the Repository picker. It
+  lists your Repositories in the order you last opened them, and picks the one you had open before,
+  so `Ctrl+R` and `Enter` go back to it. A row says why that Repository's diffs aren't there yet, such as
+  "cloning, 40%" or "the mirror waits for your answer". The palette also lists "Repository: owner/name" for
+  each one but the open one.
+- A switch opens the Repository as a launch does, and its Mirror clones ahead of the others waiting. The next
+  launch opens the Repository you opened last.
+- Add repository on a Repository Tsugiki already has offers "Switch to it" in place of Add, and saves
+  nothing.
+- The window title names the open Repository, as "python/cpython · Tsugiki", so the taskbar and `Alt+Tab`
+  show it.
+- The About line shows the commit a build came from beside its version, as "0.2.1 (3a6dc89)", and so do
+  the first line of `tsugiki.log` and the performance HUD's recordings.
+
+### Changed
+
+- `machine.toml` keeps the Repositories you opened as `recent`, newest first, in place of
+  `last_repository`. 0.2.1 reopens the Repository a 0.2.0 file names, and turns `last_repository` into
+  `recent` the next time it writes the file.
+
 ### Fixed
 
+- The Files tab of a Repository whose Mirror waits for your answer asks where the Mirror gets its objects,
+  and its button starts the clone. Before, it said it was cloning, and the question waited in the status bar.
+- `Esc` on a PR with no Issue under it, such as a Standalone PR, leaves the PR on show. It used to empty the
+  Detail pane.
+- Going back from a PR to its Issue, with `Esc`, the gh-N link, `Alt+←` or `Alt+→`, moves the focus to the
+  Issue's row. Before, the focus stayed on the PR's row, and `Enter` opened the PR again.
+- A click outside the palette, Add repository or the mirror question closes it and gives the focus back to
+  where it was. Before, the browser then moved the focus to the page itself.
+- A drag of a pane's edge right after launch, before Tsugiki had read `machine.toml`, no longer saves the
+  default widths over yours.
 - On macOS, a git helper that started as Tsugiki stopped git could go on running after it.
 
 ## Version 0.2.0 (2026-11-09)

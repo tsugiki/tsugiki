@@ -102,7 +102,13 @@ pub enum Home {
     /// No Repositories yet.
     Onboarding { token: TokenSource },
     /// The Repository opened most recently on this machine that the settings still hold, or else the first.
-    Repository { repository: RepositorySettings },
+    Repository {
+        repository: RepositorySettings,
+        /// The names of the other Repositories the settings hold, in the order the Repository picker lists
+        /// them below the open one: those opened on this machine first, most recently opened first, and then
+        /// the rest in the settings' order.
+        others: Vec<RepositoryName>,
+    },
 }
 
 impl Default for Home {
@@ -342,7 +348,8 @@ impl SettingsFiles {
     }
 
     /// What the window opens on: the Repository opened most recently that the settings still hold, or else
-    /// the first.
+    /// the first. The others follow in the Repository picker's order: those in `recent` as it lists them,
+    /// then the rest in the settings' order, each name once.
     pub fn home(&self) -> Home {
         let repositories = &self.loaded.settings.repositories;
         let recent = self
@@ -351,10 +358,18 @@ impl SettingsFiles {
             .map_or(&[][..], |machine| &machine.recent);
         let reopened = recent
             .iter()
-            .find_map(|name| repositories.iter().find(|one| one.name.is_same(name)));
-        match reopened.or_else(|| repositories.first()) {
-            Some(repository) => Home::Repository {
+            .filter_map(|name| repositories.iter().find(|one| one.name.is_same(name)));
+        // A name the user wrote twice, in either file, comes once.
+        let mut order: Vec<&RepositorySettings> = Vec::with_capacity(repositories.len());
+        for repository in reopened.chain(repositories) {
+            if !order.iter().any(|one| one.name.is_same(&repository.name)) {
+                order.push(repository);
+            }
+        }
+        match order.split_first() {
+            Some((&repository, others)) => Home::Repository {
                 repository: repository.clone(),
+                others: others.iter().map(|one| one.name.clone()).collect(),
             },
             None => Home::default(),
         }

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/svelte";
+import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Page from "./+page.svelte";
 
@@ -39,6 +39,8 @@ vi.mock("$lib/data/bindings", () => ({
 
 const onboarding = { screen: "onboarding", token: "gh" } as const;
 const gcmon = { name: "some-maintainer/gcmon", conventions: "github", filters: [] } as const;
+/** The window open on gcmon, the only Repository. */
+const gcmonHome = { screen: "repository", repository: gcmon, others: [] } as const;
 
 beforeEach(() => {
   // The tests share one document, so each starts with no title of its own.
@@ -89,7 +91,7 @@ it("opens on onboarding with no Repositories", async () => {
 });
 
 it("reopens the Repository the core names, and the window title names it", async () => {
-  core.home.mockResolvedValue({ screen: "repository", repository: gcmon });
+  core.home.mockResolvedValue(gcmonHome);
   render(Page);
   expect(await screen.findByRole("heading", { name: gcmon.name })).toBeTruthy();
   expect(document.title).toBe("some-maintainer/gcmon · Tsugiki");
@@ -103,8 +105,7 @@ it("says so when the core can't say what to open", async () => {
 });
 
 it("adds a Repository from onboarding and then shows it", async () => {
-  const added = { screen: "repository", repository: gcmon } as const;
-  core.addRepository.mockResolvedValue({ status: "ok", data: added });
+  core.addRepository.mockResolvedValue({ status: "ok", data: gcmonHome });
   core.checkRepository.mockResolvedValue({
     status: "ok",
     data: {
@@ -171,7 +172,7 @@ it("opens the command palette on Ctrl+Shift+P and closes it on Esc", async () =>
 });
 
 it("gives the list's keys to a dialog on top of it", async () => {
-  core.home.mockResolvedValue({ screen: "repository", repository: gcmon });
+  core.home.mockResolvedValue(gcmonHome);
   core.workbench.mockResolvedValue({
     status: "ok",
     data: {
@@ -234,24 +235,23 @@ describe("the performance HUD", () => {
   });
 });
 
+const peps = { name: "python/peps", conventions: "github", filters: [] } as const;
+/** The window open on gcmon, with peps opened before it. */
+const gcmonAfterPeps = { screen: "repository", repository: gcmon, others: [peps.name] } as const;
+/** The window switched to peps. */
+const pepsHome = { screen: "repository", repository: peps, others: [gcmon.name] } as const;
+/** Each option's text, with the space before a row's "open" mark as a plain one. */
+const spaced = (option: HTMLElement) => option.textContent.replace(/\s/g, " ");
+const options = () => screen.getAllByRole("option").map(spaced);
+
 describe("a switch from the palette", () => {
-  const peps = { name: "python/peps", conventions: "github", filters: [] } as const;
-  const options = () => screen.getAllByRole("option").map((option) => option.textContent);
-  /** Opens the palette once the page knows the Repositories. */
   const palette = async () => {
-    await vi.waitFor(() => {
-      expect(core.settings).toHaveBeenCalled();
-    });
     await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
   };
 
   beforeEach(() => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
-    core.home.mockResolvedValue({ screen: "repository", repository: gcmon });
-    core.settings.mockResolvedValue({
-      settings: { status_bar: { visible: true }, repositories: [gcmon, peps] },
-      problems: [],
-    });
+    core.home.mockResolvedValue(gcmonAfterPeps);
   });
 
   it("offers each Repository but the open one", async () => {
@@ -263,7 +263,7 @@ describe("a switch from the palette", () => {
   });
 
   it("shows the Repository it switches to as a launch does, with its own title and last sync", async () => {
-    core.openRepository.mockResolvedValue({ status: "ok", data: { screen: "repository", repository: peps } });
+    core.openRepository.mockResolvedValue({ status: "ok", data: pepsHome });
     render(Page);
     await screen.findByRole("button", { name: "Not synced yet" });
     await palette();
@@ -304,13 +304,155 @@ describe("a switch from the palette", () => {
   });
 });
 
+describe("the Repository picker", () => {
+  const ctrlR = (target: Element = document.body) =>
+    fireEvent.keyDown(target, { key: "r", code: "KeyR", ctrlKey: true });
+  const picker = () => screen.queryByRole("dialog", { name: "Repository picker" });
+  const filter = () => screen.getByRole("combobox", { name: "Repository" });
+  /** The window open on gcmon, with peps opened before it and a/third before that. */
+  const threeHome = { ...gcmonAfterPeps, others: [peps.name, "a/third"] };
+
+  beforeEach(() => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    core.home.mockResolvedValue(threeHome);
+  });
+
+  it("opens on Ctrl+R: the Repositories most recently opened first, the open one marked, the previous picked", async () => {
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await ctrlR();
+
+    expect(picker()).toBeTruthy();
+    expect(document.activeElement).toBe(filter());
+    expect(options()).toEqual(["some-maintainer/gcmon open", "python/peps", "a/third", "Add repository…"]);
+    expect(spaced(screen.getByRole("option", { current: true }))).toBe("some-maintainer/gcmon open");
+    expect(screen.getByRole("option", { selected: true }).textContent).toBe("python/peps");
+  });
+
+  it("picks the open Repository when it is the only one", async () => {
+    core.home.mockResolvedValue(gcmonHome);
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await ctrlR();
+    expect(spaced(screen.getByRole("option", { selected: true }))).toBe("some-maintainer/gcmon open");
+  });
+
+  it("switches back to the previous Repository on Ctrl+R and Enter", async () => {
+    core.openRepository.mockResolvedValue({ status: "ok", data: pepsHome });
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await ctrlR();
+    await fireEvent.keyDown(filter(), { key: "Enter" });
+
+    expect(picker()).toBeNull();
+    expect(await screen.findByRole("heading", { name: peps.name })).toBeTruthy();
+    expect(core.openRepository).toHaveBeenCalledWith("python/peps");
+    // The core read the files again to switch, so a problem the user has since fixed can go.
+    await vi.waitFor(() => {
+      expect(core.settings).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("filters the rows as the user types", async () => {
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await ctrlR();
+    await fireEvent.input(filter(), { target: { value: "PEP" } });
+    expect(options()).toEqual(["python/peps"]);
+  });
+
+  it("opens Add repository from its row", async () => {
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await ctrlR();
+    await fireEvent.input(filter(), { target: { value: "add" } });
+    await fireEvent.keyDown(filter(), { key: "Enter" });
+
+    expect(picker()).toBeNull();
+    const dialog = await screen.findByRole("dialog", { name: "Add repository" });
+    // The picker gives the focus back as it closes, and the dialog takes it after.
+    expect(document.activeElement).toBe(within(dialog).getByRole("textbox", { name: "Repository" }));
+  });
+
+  it("closes without a switch on Enter on the open Repository", async () => {
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await ctrlR();
+    await fireEvent.keyDown(filter(), { key: "ArrowUp" });
+    await fireEvent.keyDown(filter(), { key: "Enter" });
+
+    expect(picker()).toBeNull();
+    expect(core.openRepository).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: gcmon.name })).toBeTruthy();
+  });
+
+  it("closes on Esc and gives the focus back to what had it", async () => {
+    render(Page);
+    const add = await screen.findByRole("button", { name: "Add repository" });
+    add.focus();
+    await ctrlR(add);
+    expect(document.activeElement).toBe(filter());
+
+    await fireEvent.keyDown(filter(), { key: "Escape" });
+    expect(picker()).toBeNull();
+    expect(document.activeElement).toBe(add);
+  });
+
+  it("opens from the Repository's name atop the Sidebar", async () => {
+    render(Page);
+    await fireEvent.click(await screen.findByRole("button", { name: gcmon.name }));
+    expect(picker()).toBeTruthy();
+  });
+
+  it("opens on Ctrl+R with the Sidebar hidden", async () => {
+    render(Page);
+    await screen.findByRole("navigation", { name: "Sidebar" });
+    await fireEvent.keyDown(document.body, { key: "b", code: "KeyB", ctrlKey: true });
+    await vi.waitFor(() => {
+      expect(screen.queryByRole("navigation", { name: "Sidebar" })).toBeNull();
+    });
+    await ctrlR();
+    expect(picker()).toBeTruthy();
+  });
+
+  it("doesn't open on onboarding", async () => {
+    core.home.mockResolvedValue(onboarding);
+    render(Page);
+    await screen.findByText(/Your token comes from/);
+    await ctrlR();
+    expect(picker()).toBeNull();
+  });
+
+  it("doesn't open over the add dialog", async () => {
+    render(Page);
+    await fireEvent.click(await screen.findByRole("button", { name: "Add repository" }));
+    await ctrlR();
+    expect(picker()).toBeNull();
+  });
+
+  it("and the command palette don't open over each other", async () => {
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await ctrlR();
+    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
+    expect(picker()).toBeTruthy();
+
+    await fireEvent.keyDown(window, { key: "Escape" });
+    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    await ctrlR();
+    expect(picker()).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Command palette" })).toBeTruthy();
+  });
+});
+
 describe("a chord", () => {
   const ctrlK = () => fireEvent.keyDown(document.body, { key: "k", code: "KeyK", ctrlKey: true });
   const chord = () => screen.queryByText("Ctrl+K");
 
   beforeEach(() => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
-    core.home.mockResolvedValue({ screen: "repository", repository: gcmon });
+    core.home.mockResolvedValue(gcmonHome);
   });
 
   it("waits after Ctrl+K, with the status bar saying so, and the next key ends it doing nothing else", async () => {
@@ -387,6 +529,14 @@ describe("a chord", () => {
     render(Page);
     await screen.findByRole("heading", { name: gcmon.name });
     await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    await ctrlK();
+    expect(chord()).toBeNull();
+  });
+
+  it("doesn't start under the Repository picker", async () => {
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await fireEvent.keyDown(window, { key: "r", code: "KeyR", ctrlKey: true });
     await ctrlK();
     expect(chord()).toBeNull();
   });

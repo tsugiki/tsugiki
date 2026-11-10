@@ -26,7 +26,7 @@ const check: RepositoryCheck = {
   access: "other",
 };
 
-const home = { screen: "repository", repository: check.repository } as const;
+const home = { screen: "repository", repository: check.repository, others: [] as string[] } as const;
 
 const button = (name: string) => screen.getByRole<HTMLButtonElement>("button", { name });
 

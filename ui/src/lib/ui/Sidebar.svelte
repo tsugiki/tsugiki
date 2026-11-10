@@ -2,12 +2,18 @@
   import type { FilterLine, WorkbenchView } from "$lib/state/workbench.svelte";
 
   let {
+    repository,
+    onpick,
     count,
     reviewRequests,
     filters,
     selected,
     onselect,
   }: {
+    /** The open Repository's name. */
+    repository: string;
+    /** Opens the Repository picker. */
+    onpick: () => void;
     count: number;
     reviewRequests: number;
     filters: FilterLine[];
@@ -19,6 +25,7 @@
 </script>
 
 <nav aria-label="Sidebar">
+  <button class="repository" aria-haspopup="dialog" onclick={onpick}>{repository}</button>
   <button aria-current={shown(selected.kind === "whole")} onclick={() => onselect({ kind: "whole" })}>
     <span>Workbench</span>
     <span>{count}</span>
@@ -63,5 +70,15 @@
 
   [aria-current] {
     font-weight: 600;
+  }
+
+  .repository {
+    /* Not flex like the other lines: the ellipsis shows only on a block's own text. */
+    display: block;
+    margin-bottom: 6px;
+    overflow: hidden;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

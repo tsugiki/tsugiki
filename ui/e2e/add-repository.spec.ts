@@ -17,7 +17,11 @@ const check = {
   access: "other",
 } as const;
 
-const cpython = { screen: "repository", repository: check.repository } as const;
+const cpython = {
+  screen: "repository",
+  repository: check.repository,
+  others: [] as string[],
+} as const;
 const onboarding = { screen: "onboarding", token: "gh" } as const;
 
 test("adding the first Repository goes from onboarding to the Repository", async ({ page }) => {

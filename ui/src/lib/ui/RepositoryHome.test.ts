@@ -121,15 +121,22 @@ afterEach(() => {
 });
 
 it("names the Repository", () => {
-  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
   expect(screen.getByRole("heading", { name: "python/cpython" })).toBeTruthy();
 });
 
 it("offers to add another", async () => {
   const onadd = vi.fn();
-  render(RepositoryHome, { name: "python/cpython", onadd });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd });
   await fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
   expect(onadd).toHaveBeenCalledOnce();
+});
+
+it("opens the Repository picker from the name atop the Sidebar", async () => {
+  const onpick = vi.fn();
+  render(RepositoryHome, { name: "python/cpython", onpick, onadd: () => {} });
+  await fireEvent.click(screen.getByRole("button", { name: "python/cpython" }));
+  expect(onpick).toHaveBeenCalledOnce();
 });
 
 it("lists a Standalone PR with the time it changed", async () => {
@@ -144,7 +151,7 @@ it("lists a Standalone PR with the time it changed", async () => {
       filters: [],
     },
   });
-  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
 
   const item = await screen.findByRole("listitem");
 
@@ -163,7 +170,7 @@ it("moves a time on while the window stays open", async () => {
     status: "ok",
     data: { items: [issue], quiet: [], count: 1, review_requests: 0, filters: [] },
   });
-  const { unmount } = render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+  const { unmount } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
   await screen.findByText("issue-author, some-author · 1 PR · 3h ago");
 
   await vi.advanceTimersByTimeAsync(60 * 60_000);
@@ -179,7 +186,7 @@ it("lists an Issue with its PRs under it", async () => {
     status: "ok",
     data: { items: [issue], quiet: [], count: 1, review_requests: 0, filters: [] },
   });
-  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
 
   const [item, pullRequest] = await screen.findAllByRole("listitem");
 
@@ -196,7 +203,7 @@ it("lists an Issue with its PRs under it", async () => {
 });
 
 it("says so while there is nothing to list", async () => {
-  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
   expect(await screen.findByText(/Nothing here yet/)).toBeTruthy();
 });
 
@@ -212,7 +219,7 @@ it("shows a Filter's Issues when the user selects it, with the Sidebar's counts"
       filters: [mine],
     },
   }));
-  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
 
   await fireEvent.click(await screen.findByRole("button", { name: "Mine 1" }));
 
@@ -232,7 +239,7 @@ it("marks what Needs attention the way unread mail is, and says why", async () =
     status: "ok",
     data: { items: [unread], quiet: [], count: 1, review_requests: 0, filters: [] },
   });
-  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
 
   const item = await screen.findByRole("listitem");
 
@@ -248,7 +255,7 @@ it("lists the Issues with nothing waiting apart, under Quiet", async () => {
     status: "ok",
     data: { items: [standalone], quiet: [issue], count: 0, review_requests: 0, filters: [] },
   });
-  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
 
   const heading = await screen.findByRole("heading", { name: "Quiet" });
   const after = heading.nextElementSibling as HTMLElement;
@@ -262,7 +269,7 @@ it("shows only the quiet section when nothing else is listed", async () => {
     status: "ok",
     data: { items: [], quiet: [issue], count: 0, review_requests: 0, filters: [] },
   });
-  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
 
   expect(await screen.findByRole("heading", { name: "Quiet" })).toBeTruthy();
   expect(screen.queryByText(/Nothing here yet/)).toBeNull();
@@ -273,7 +280,7 @@ it("says when nobody has asked for a review", async () => {
     status: "ok",
     data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [] },
   });
-  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
 
   await fireEvent.click(await screen.findByRole("button", { name: "Review requests 0" }));
 
@@ -287,7 +294,7 @@ it("says how to check a Filter that holds nothing", async () => {
     status: "ok",
     data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [mine] },
   });
-  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
 
   await fireEvent.click(await screen.findByRole("button", { name: "Mine 0" }));
 
@@ -297,7 +304,7 @@ it("says how to check a Filter that holds nothing", async () => {
 
 it("says why it can't read the Workbench", async () => {
   core.workbench.mockResolvedValue({ status: "error", error: { kind: "internal", message: "no database" } });
-  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
   expect((await screen.findByRole("alert")).textContent).toBe(
     "Tsugiki can't read this Workbench: no database",
   );
@@ -305,7 +312,7 @@ it("says why it can't read the Workbench", async () => {
 });
 
 it("opens the other Repository's Workbench and stops listening for the last", async () => {
-  const { rerender } = render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+  const { rerender } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
   await screen.findByText(/Nothing here yet/);
 
   await rerender({ name: "tsugiki/tsugiki", onadd: () => {} });
@@ -317,7 +324,7 @@ it("opens the other Repository's Workbench and stops listening for the last", as
 });
 
 it("stops listening when it goes", async () => {
-  const { unmount } = render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+  const { unmount } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
   await screen.findByText(/Nothing here yet/);
   unmount();
   expect(core.stopListening).toHaveBeenCalledOnce();
@@ -342,7 +349,7 @@ const backportRow = {
 
 it("lists an Origin PR's Backports beneath it in the Issue", async () => {
   answering({ ...issue, pull_requests: [{ kind: "pr", ...row, backports: [backportRow] }] });
-  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
 
   const origin = (await screen.findByText(/^#160662 /)).closest("li") as HTMLElement;
 
@@ -354,14 +361,14 @@ it("lists an Origin PR's Backports beneath it in the Issue", async () => {
 
 it("lists a Backport with no Origin PR directly under its Issue", async () => {
   answering({ ...issue, pull_requests: [{ kind: "backport", ...backportRow }] });
-  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
 
   expect(await screen.findByText("Bot backport · some-author · into 3.14 · Open · CI passed")).toBeTruthy();
 });
 
 it("lists a Standalone PR's Backports beneath it", async () => {
   answering({ kind: "standalone_pr", ...row, backports: [backportRow] });
-  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
 
   const origin = (await screen.findByText(/^#160662 /)).closest("li") as HTMLElement;
 
@@ -370,7 +377,7 @@ it("lists a Standalone PR's Backports beneath it", async () => {
 
 it("lists a Backport with no Issue and no Origin PR by itself", async () => {
   answering({ kind: "standalone_backport", ...backportRow });
-  render(RepositoryHome, { name: "python/cpython", onadd: () => {} });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
 
   expect(await screen.findByText(/^#160700 /)).toBeTruthy();
   expect(screen.getAllByRole("listitem")).toHaveLength(1);
@@ -390,7 +397,7 @@ const listing = async () => {
       filters: [],
     },
   });
-  const { component } = render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  const { component } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
   return {
     component,
     issueRow: await screen.findByRole("button", { name: "#112564 GIL drop during collection" }),
@@ -479,7 +486,7 @@ it("swaps the Detail pane for the next Issue", async () => {
       filters: [],
     },
   });
-  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
 
   await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
   await fireEvent.click(screen.getByRole("button", { name: "#2 Next" }));
@@ -533,7 +540,7 @@ it("opens a PR in an Issue's tree with the way back to its Issue, and Esc goes b
 
 it("opens a PR that fixes two Issues again from its line under the other one", async () => {
   answering(issue, { ...issue, number: 112565, title: "Another crash" });
-  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
   const [first, second] = await screen.findAllByRole("button", { name: /^#160662 / });
 
   await fireEvent.click(first as HTMLElement);
@@ -669,7 +676,7 @@ it("stops the Issue view it keeps when it goes", async () => {
 
 it("opens a Backport in the list in the PR view, with its Issue to go back to", async () => {
   answering({ ...issue, pull_requests: [{ kind: "pr", ...row, backports: [backportRow] }] });
-  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
 
   await fireEvent.click(await screen.findByRole("button", { name: /^#160700 / }));
 
@@ -679,7 +686,7 @@ it("opens a Backport in the list in the PR view, with its Issue to go back to", 
 
 it("opens a Standalone PR's Backport in the PR view, with no Issue to go back to", async () => {
   answering({ kind: "standalone_pr", ...row, backports: [backportRow] });
-  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
 
   await fireEvent.click(await screen.findByRole("button", { name: /^#160700 / }));
 
@@ -709,7 +716,7 @@ it.each([
   ["a Backport with no Issue", { kind: "standalone_backport", ...backportRow }, /^#160700 /],
 ])("leaves %s on show on Esc, with no Issue under it", async (_, item, name) => {
   answering(item);
-  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
   const prRow = await screen.findByRole("button", { name });
   await fireEvent.click(prRow);
   await screen.findByRole("tab", { name: "Conversation" });
@@ -939,7 +946,7 @@ it("shows another Repository as a launch does: its Workbench, an empty Detail pa
       filters: [mine],
     },
   });
-  const { rerender } = render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  const { rerender } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
   await fireEvent.click(await screen.findByRole("button", { name: "Mine 1" }));
   await fireEvent.click(
     await screen.findByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" }),
@@ -964,7 +971,7 @@ it("shows another Repository as a launch does: its Workbench, an empty Detail pa
 
 it("starts the way back fresh in another Repository", async () => {
   answering({ ...issue, attention: null });
-  const { rerender } = render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  const { rerender } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
   await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
   await rerender({ name: "python/other" });
   await fireEvent.click(
@@ -1026,7 +1033,7 @@ it("leaves the browser's problem behind with the Repository it came from", async
     error: { kind: "internal", message: "Tsugiki couldn't open the system browser." },
   });
   answering({ ...issue, attention: null });
-  const { rerender } = render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  const { rerender } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
   await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
   await press("ArrowDown");
   await press("G", { ctrlKey: true, shiftKey: true });
@@ -1056,7 +1063,7 @@ it("moves through the list and the PRs in its trees with the arrows, and focus f
 });
 
 it("does nothing on the arrows with an empty list", async () => {
-  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
   await screen.findByText(/Nothing here yet/);
 
   await press("ArrowDown");
@@ -1134,7 +1141,7 @@ it("leaves its keys alone while a dialog is on top", async () => {
     status: "ok",
     data: { items: [{ ...issue, attention: null }], quiet: [], count: 0, review_requests: 0, filters: [] },
   });
-  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn(), keysActive: false });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn(), keysActive: false });
   await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
 
   await press("ArrowDown");
@@ -1192,7 +1199,7 @@ it("closes the Detail pane when the Repository changes", async () => {
     status: "ok",
     data: { items: [{ ...issue, attention: null }], quiet: [], count: 0, review_requests: 0, filters: [] },
   });
-  const { rerender } = render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  const { rerender } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
   await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
   expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
 
@@ -1215,7 +1222,7 @@ const home = () => document.querySelector<HTMLElement>(".home") as HTMLElement;
 
 it("drags the Sidebar's edge between its minimum and maximum, saves where it stops, and resets on a double-click", async () => {
   laidOut(200, 600, 0);
-  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
   const edge = await screen.findByRole("separator", { name: "Sidebar width" });
   // A click that doesn't move the edge has nothing to save.
   await fireEvent.pointerDown(edge, { button: 0, clientX: 300, pointerId: 1 });
@@ -1246,7 +1253,7 @@ it("drags the Sidebar's edge between its minimum and maximum, saves where it sto
 
 it("stops the Sidebar's edge where the list would go under its minimum", async () => {
   laidOut(200, 300, 0);
-  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
   const edge = await screen.findByRole("separator", { name: "Sidebar width" });
 
   await fireEvent.pointerDown(edge, { button: 0, clientX: 300, pointerId: 1 });
@@ -1310,7 +1317,7 @@ it("lets the Sidebar grow into the room the Detail pane has to spare", async () 
 
 it("moves an edge with the bare arrow keys, and saves a held key once, as it comes up", async () => {
   laidOut(200, 600, 0);
-  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
   const edge = await screen.findByRole("separator", { name: "Sidebar width" });
 
   await fireEvent.keyDown(edge, { key: "ArrowRight" });
@@ -1337,7 +1344,7 @@ it("opens with the widths saved on this machine, and says when it can't save the
   core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar: 260, list: 500 });
   core.savePaneLayout.mockResolvedValue({ status: "error", error: { kind: "internal", message: "locked" } });
   laidOut(260, 500, 0);
-  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
   const edge = await screen.findByRole("separator", { name: "Sidebar width" });
   await vi.waitFor(() => {
     expect(edge.getAttribute("aria-valuenow")).toBe("260");
@@ -1352,7 +1359,7 @@ it("opens with the widths saved on this machine, and says when it can't save the
 
 it("hides the Sidebar and its edge with Ctrl+B, and brings them back at their width", async () => {
   core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar: 260 });
-  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
   const edge = await screen.findByRole("separator", { name: "Sidebar width" });
   await vi.waitFor(() => {
     expect(edge.getAttribute("aria-valuenow")).toBe("260");
@@ -1377,7 +1384,7 @@ it("hides the Sidebar and its edge with Ctrl+B, and brings them back at their wi
 
 it("opens with the Sidebar hidden when it was hidden on this machine", async () => {
   core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar_hidden: true });
-  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
 
   await vi.waitFor(() => {
     expect(screen.queryByRole("navigation")).toBeNull();
@@ -1385,7 +1392,7 @@ it("opens with the Sidebar hidden when it was hidden on this machine", async () 
 });
 
 it("leaves the Sidebar alone on Ctrl+B while a dialog is on top", async () => {
-  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn(), keysActive: false });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn(), keysActive: false });
   await screen.findByRole("navigation", { name: "Sidebar" });
 
   await fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true });
@@ -1395,7 +1402,7 @@ it("leaves the Sidebar alone on Ctrl+B while a dialog is on top", async () => {
 });
 
 it("offers the palette a command that hides or shows the Sidebar, named for what it does", async () => {
-  const { component } = render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  const { component } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
   await screen.findByRole("navigation", { name: "Sidebar" });
   const [hide] = component.paletteCommands();
 
@@ -1457,7 +1464,7 @@ it("hides the Issue list and its edge with Ctrl+Alt+B, and brings them back at t
 
 it("opens with the Issue list hidden when it was hidden on this machine", async () => {
   core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, list_hidden: true });
-  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
 
   await vi.waitFor(() => {
     expect(repositoryName()).toBeNull();
@@ -1465,7 +1472,12 @@ it("opens with the Issue list hidden when it was hidden on this machine", async 
 });
 
 it("leaves the Issue list alone on Ctrl+Alt+B while a dialog is on top, and in a text box", async () => {
-  const { rerender } = render(RepositoryHome, { name: "python/cpython", onadd: vi.fn(), keysActive: false });
+  const { rerender } = render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onadd: vi.fn(),
+    keysActive: false,
+  });
   await vi.waitFor(() => {
     expect(core.paneLayout).toHaveBeenCalled();
   });
@@ -1483,7 +1495,7 @@ it("leaves the Issue list alone on Ctrl+Alt+B while a dialog is on top, and in a
 });
 
 it("offers the palette a command that hides or shows the Issue list, named for what it does", async () => {
-  const { component } = render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  const { component } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
   await screen.findByRole("navigation", { name: "Sidebar" });
   const titles = () => component.paletteCommands().map((command) => command.title);
   const before = titles();
@@ -1571,7 +1583,7 @@ it("leaves the focus on a control in the Detail pane while Ctrl+K Z keeps the li
 });
 
 it("offers the palette Ctrl+K Z's command, named for what it does", async () => {
-  const { component } = render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  const { component } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
   await screen.findByRole("navigation", { name: "Sidebar" });
   const command = (title: string) => component.paletteCommands().find((one) => one.title === title);
 
@@ -1737,7 +1749,7 @@ it("lets the Detail pane take the focus only while the list is hidden, so a clic
 
 it("says what went wrong above the panes while the list is hidden", async () => {
   core.savePaneLayout.mockResolvedValue({ status: "error", error: { kind: "internal", message: "locked" } });
-  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
   await screen.findByRole("navigation", { name: "Sidebar" });
 
   await toggleList();
@@ -1845,7 +1857,7 @@ it("marks each Issue and PR in the list with the icon of its state", async () =>
       filters: [],
     },
   });
-  render(RepositoryHome, { name: "python/cpython", onadd: vi.fn() });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
   await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
 
   const icons = screen.getAllByRole("img").map((icon) => icon.getAttribute("title"));

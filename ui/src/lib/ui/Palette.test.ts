@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import Palette from "./Palette.svelte";
 
 afterEach(() => {
@@ -139,6 +139,47 @@ it("closes quietly when nothing had the focus to give back", () => {
   expect(() => {
     unmount();
   }).not.toThrow();
+});
+
+describe("as another quick pick", () => {
+  const words = {
+    dialog: "Repository picker",
+    input: "Repository",
+    placeholder: "Type a Repository's name",
+    list: "Repositories",
+    none: "No Repository matches",
+  };
+  /** A row's text as it reads: the mark stays on the same line as the name. */
+  const spaced = (row: HTMLElement | undefined) => row?.textContent.replace(/\s/g, " ");
+  const rows = [
+    { title: "a/open", run: () => {}, current: true },
+    { title: "a/previous", run: () => {} },
+  ];
+
+  it("names its dialog, its box, its list and an empty list with the words it is given", async () => {
+    render(Palette, { commands: rows, onclose: () => {}, words });
+    expect(screen.getByRole("dialog", { name: "Repository picker" })).toBeTruthy();
+    expect(screen.getByRole("listbox", { name: "Repositories" })).toBeTruthy();
+    const input = screen.getByRole("combobox", { name: "Repository" });
+    expect(input.getAttribute("placeholder")).toBe("Type a Repository's name");
+    await fireEvent.input(input, { target: { value: "nothing" } });
+    expect(screen.getByText("No Repository matches")).toBeTruthy();
+  });
+
+  it("opens with the row it is told picked, and picks the first again after typing", async () => {
+    render(Palette, { commands: rows, onclose: () => {}, words, start: 1 });
+    expect(screen.getByRole("option", { selected: true }).textContent).toBe("a/previous");
+    await fireEvent.input(screen.getByRole("combobox"), { target: { value: "a/" } });
+    expect(spaced(screen.getByRole("option", { selected: true }))).toBe("a/open open");
+  });
+
+  it("marks the current row", () => {
+    render(Palette, { commands: rows, onclose: () => {}, words });
+    const [open, previous] = screen.getAllByRole("option");
+    expect(open?.getAttribute("aria-current")).toBe("true");
+    expect(spaced(open)).toBe("a/open open");
+    expect(previous?.getAttribute("aria-current")).toBeNull();
+  });
 });
 
 it("leaves other keys to the text box", async () => {

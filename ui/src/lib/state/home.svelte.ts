@@ -34,6 +34,25 @@ export class HomeState {
       this.switchProblem = undefined;
     } else {
       this.switchProblem = `Tsugiki couldn't switch to ${name}: ${answer.error.message}`;
+      await this.refreshOthers();
+    }
+  }
+
+  /** The core read the files again to try a switch, so a Repository the user took out of them by hand leaves
+   * the picker and the palette. The window stays on its Repository, even if the core would open another. */
+  private async refreshOthers() {
+    try {
+      const now = await commands.home();
+      const open = this.current;
+      if (
+        now.screen === "repository" &&
+        open?.screen === "repository" &&
+        now.repository.name === open.repository.name
+      ) {
+        this.current = { ...open, others: now.others };
+      }
+    } catch {
+      // The list stays as it was, and the next switch or add brings it up to date.
     }
   }
 }

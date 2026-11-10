@@ -2,18 +2,50 @@
   export interface PaletteCommand {
     title: string;
     run: () => void;
+    /** Marks the row that stands for what is open now, such as the open Repository in the picker. */
+    current?: boolean;
   }
+
+  /** What a quick pick calls itself, its text box, its list, and a list with nothing in it. */
+  export interface PaletteWords {
+    dialog: string;
+    input: string;
+    placeholder: string;
+    list: string;
+    none: string;
+  }
+
+  const COMMAND_WORDS: PaletteWords = {
+    dialog: "Command palette",
+    input: "Command",
+    placeholder: "Type a command",
+    list: "Commands",
+    none: "No command matches",
+  };
 </script>
 
 <script lang="ts">
   // The command palette: it lists the commands that hold what the user typed, and runs the one they pick.
   // Each feature brings its own commands, and the ranking comes with the whole palette (docs/build-order.md).
+  // The Repository picker is the same quick pick with other words and rows.
+  import { untrack } from "svelte";
   import { takeFocus } from "./focus";
 
-  let { commands, onclose }: { commands: readonly PaletteCommand[]; onclose: () => void } = $props();
+  let {
+    commands,
+    onclose,
+    words = COMMAND_WORDS,
+    start = 0,
+  }: {
+    commands: readonly PaletteCommand[];
+    onclose: () => void;
+    words?: PaletteWords;
+    /** The row picked when it opens. Typing picks the first. */
+    start?: number;
+  } = $props();
 
   let typed = $state("");
-  let picked = $state(0);
+  let picked = $state(untrack(() => start));
   const matching = $derived(
     commands.filter((command) => command.title.toLowerCase().includes(typed.trim().toLowerCase())),
   );
@@ -50,7 +82,7 @@
     class="palette"
     role="dialog"
     aria-modal="true"
-    aria-label="Command palette"
+    aria-label={words.dialog}
     tabindex="-1"
     onmousedown={(e) => {
       e.stopPropagation();
@@ -67,11 +99,11 @@
       aria-expanded={matching.length > 0}
       aria-controls="palette-commands"
       aria-activedescendant={matching.length > 0 ? `palette-command-${String(picked)}` : undefined}
-      aria-label="Command"
-      placeholder="Type a command"
+      aria-label={words.input}
+      placeholder={words.placeholder}
     />
     {#if matching.length > 0}
-      <ul id="palette-commands" role="listbox" aria-label="Commands">
+      <ul id="palette-commands" role="listbox" aria-label={words.list}>
         {#each matching as command, i (command.title)}
           <!-- The keys pick from the text box, which keeps the focus, so a click is the mouse's way. -->
           <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -79,16 +111,17 @@
             id={`palette-command-${String(i)}`}
             role="option"
             aria-selected={i === picked}
+            aria-current={command.current ? "true" : undefined}
             onclick={() => {
               run(command);
             }}
           >
-            {command.title}
+            {command.title}{#if command.current}&nbsp;<span class="note">open</span>{/if}
           </li>
         {/each}
       </ul>
     {:else}
-      <p id="palette-commands">No command matches</p>
+      <p id="palette-commands">{words.none}</p>
     {/if}
   </div>
 </div>
@@ -133,6 +166,11 @@
 
   li[aria-selected="true"] {
     background: #e4ecf7;
+  }
+
+  .note {
+    float: right;
+    color: #555;
   }
 
   p {

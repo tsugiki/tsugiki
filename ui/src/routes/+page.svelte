@@ -9,10 +9,18 @@
   import { ChordWait } from "$lib/ui/chord.svelte";
   import { currentOs, keyGuard, keysForBrowser } from "$lib/ui/keys";
   import Onboarding from "$lib/ui/Onboarding.svelte";
-  import Palette, { type PaletteCommand } from "$lib/ui/Palette.svelte";
+  import Palette, { type PaletteCommand, type PaletteWords } from "$lib/ui/Palette.svelte";
   import PerformanceHud from "$lib/ui/PerformanceHud.svelte";
   import RepositoryHome from "$lib/ui/RepositoryHome.svelte";
   import StatusBar from "$lib/ui/StatusBar.svelte";
+
+  const PICKER_WORDS: PaletteWords = {
+    dialog: "Repository picker",
+    input: "Repository",
+    placeholder: "Type a Repository's name",
+    list: "Repositories",
+    none: "No Repository matches",
+  };
 
   const about = new AboutState();
   void about.load();
@@ -30,16 +38,22 @@
     addOpen = true;
   };
   let paletteOpen = $state(false);
-  /** Whether the list's keys and the chords work: a dialog or the palette on top keeps them. */
-  const keysActive = $derived(!addOpen && !paletteOpen);
+  let pickerOpen = $state(false);
+  /** Opens the Repository picker, which only a Repository's screen has. */
+  const openPicker = () => {
+    // Each dialog closes on Esc, so one on top of another would lose what the user typed below.
+    if (home.current?.screen === "repository" && !addOpen && !paletteOpen) pickerOpen = true;
+  };
+  /** Whether the list's keys and the chords work: a dialog, the palette or the picker on top keeps them. */
+  const keysActive = $derived(!addOpen && !paletteOpen && !pickerOpen);
   const os = currentOs();
   const chord = new ChordWait(os);
   const guard = keyGuard(
     {
       "ctrl+shift+p": () => {
-        // Both dialogs close on Esc, so one on top of the other would lose what the user typed below.
-        paletteOpen = !addOpen;
+        paletteOpen = !addOpen && !pickerOpen;
       },
+      "ctrl+r": openPicker,
       "ctrl+shift+h": () => {
         hud.toggle();
       },
@@ -59,6 +73,28 @@
   };
   /** The name of the open Repository, if one is. */
   const openName = $derived(home.current?.screen === "repository" ? home.current.repository.name : undefined);
+  /** The Repositories other than the open one, most recently opened first. */
+  const others = $derived(home.current?.screen === "repository" ? home.current.others : []);
+  /** Switches to `name`. The core read the files again to switch, so a problem the user has since fixed
+   * can go. */
+  const switchTo = (name: string) => {
+    void home.open(name).then(() => settings.load());
+  };
+  /** A row that switches to each Repository but the open one, titled `prefix` and its name. */
+  const switchRows = (prefix: string): PaletteCommand[] =>
+    others.map((name) => ({
+      title: `${prefix}${name}`,
+      run: () => {
+        switchTo(name);
+      },
+    }));
+  /** The picker's rows: the open Repository, named `open`, the others, then Add repository…. It opens on
+   * the one opened before the open one, so Ctrl+R and Enter go back to it. */
+  const pickerRows = (open: string): PaletteCommand[] => [
+    { title: open, current: true, run: () => {} },
+    ...switchRows(""),
+    { title: "Add repository…", run: openAdd },
+  ];
   /** The open Repository's last sync. After a switch the core tells of the new one's a moment later, and
    * until then the status bar shows no last sync. */
   const lastSync = $derived(
@@ -77,15 +113,7 @@
   let repositoryHome = $state<ReturnType<typeof RepositoryHome>>();
   const commands: PaletteCommand[] = $derived([
     ...(repositoryHome?.paletteCommands() ?? []),
-    ...settings.repositories
-      .filter((name) => name !== openName)
-      .map((name) => ({
-        title: `Repository: ${name}`,
-        run: () => {
-          // The core read the files again to switch, so a problem the user has since fixed can go.
-          void home.open(name).then(() => settings.load());
-        },
-      })),
+    ...switchRows("Repository: "),
     {
       title: hud.visible ? "Hide performance HUD" : "Show performance HUD",
       run: () => {
@@ -111,6 +139,7 @@
       bind:this={repositoryHome}
       name={home.current.repository.name}
       onadd={openAdd}
+      onpick={openPicker}
       {keysActive}
     />
   {:else if home.error}
@@ -150,6 +179,16 @@
     {commands}
     onclose={() => {
       paletteOpen = false;
+    }}
+  />
+{/if}
+{#if pickerOpen && openName !== undefined}
+  <Palette
+    commands={pickerRows(openName)}
+    words={PICKER_WORDS}
+    start={others.length > 0 ? 1 : 0}
+    onclose={() => {
+      pickerOpen = false;
     }}
   />
 {/if}

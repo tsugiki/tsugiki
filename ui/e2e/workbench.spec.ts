@@ -8,7 +8,7 @@ import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
 
 const mine = { name: "Mine", query: "is:open author:@me", count: 1, problem: null };
 const repository = { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] } as const;
-const cpython = { screen: "repository", repository } as const;
+const cpython = { screen: "repository", repository, others: [] as string[] } as const;
 
 const reviewRow: WorkbenchRow = {
   number: 160662,

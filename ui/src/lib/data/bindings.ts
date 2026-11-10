@@ -595,14 +595,14 @@ export type Home = Home_Serialize | Home_Deserialize;
 export type Home_Deserialize = 
 /**  No Repositories yet. */
 { screen: "onboarding"; token: TokenSource } | 
-/**  The last Repository the user had open. */
+/**  The Repository opened most recently on this machine that the settings still hold, or else the first. */
 { screen: "repository"; repository: RepositorySettings_Deserialize };
 
 /**  What the window opens on. */
 export type Home_Serialize = 
 /**  No Repositories yet. */
 { screen: "onboarding"; token: TokenSource } | 
-/**  The last Repository the user had open. */
+/**  The Repository opened most recently on this machine that the settings still hold, or else the first. */
 { screen: "repository"; repository: RepositorySettings_Serialize };
 
 /**  A key or a click. The key itself isn't named, so the log holds nothing the user typed. */

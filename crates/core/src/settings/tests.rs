@@ -2,14 +2,47 @@ use super::*;
 use crate::conventions::Conventions;
 use crate::filters::Filter;
 use crate::mirror::MirrorSource;
+use time::format_description::well_known::Rfc3339;
 
 const HIDDEN: Settings = Settings {
     status_bar: StatusBarSettings { visible: false },
     repositories: Vec::new(),
 };
 
+/// When a Repository was opened, for a test that doesn't look at the time.
+const WHENEVER: OffsetDateTime = OffsetDateTime::UNIX_EPOCH;
+
 fn repository(text: &str) -> RepositoryName {
     RepositoryName::parse(text).unwrap()
+}
+
+fn at(text: &str) -> OffsetDateTime {
+    OffsetDateTime::parse(text, &Rfc3339).unwrap()
+}
+
+/// Adds each of `names` through the settings' own write, the first at `first`, each later one an hour after
+/// the one before.
+fn add_all(files: &mut SettingsFiles, names: &[&str], first: OffsetDateTime) {
+    for (hours, name) in (0..).zip(names) {
+        drop(
+            files
+                .add_repository(
+                    &RepositorySettings::added(repository(name), RepositoryAccess::Other),
+                    &MirrorSource::Download,
+                    first + time::Duration::hours(hours),
+                )
+                .unwrap(),
+        );
+    }
+}
+
+/// Puts back `settings.toml` holding only `names`, as a user who removed the others by hand would.
+fn hold_only(folders: &Folders, names: &[&str]) {
+    let text: String = names
+        .iter()
+        .map(|name| format!("[[repositories]]\nname = \"{name}\"\n"))
+        .collect();
+    fs::write(folders.settings_file(), text).unwrap();
 }
 
 fn opened(name: &str, conventions: Conventions) -> Home {
@@ -212,9 +245,9 @@ fn adding_a_repository_writes_its_starter_filters_where_the_user_can_edit_them()
     drop(
         files
             .add_repository(
-                &repository("a/b"),
-                RepositoryAccess::Maintained,
+                &RepositorySettings::added(repository("a/b"), RepositoryAccess::Maintained),
                 &MirrorSource::Download,
+                WHENEVER,
             )
             .unwrap(),
     );
@@ -814,7 +847,7 @@ const WIDE: PaneLayout = PaneLayout {
 #[test]
 fn a_hidden_sidebar_stays_hidden_on_this_machine_until_it_shows_again() {
     let (folders, root) = temp_folders("panes-sidebar-hidden");
-    let mine = "last_repository = \"a/old\"\n";
+    let mine = "editor = \"code\"\n";
     fs::write(folders.machine_file(), mine).unwrap();
     let mut files = SettingsFiles::load(folders.clone());
     let hidden = PaneLayout {
@@ -917,7 +950,7 @@ fn a_shown_sidebar_keeps_the_users_comment_on_it() {
 #[test]
 fn the_panes_layout_stays_on_this_machine_beside_what_the_user_wrote() {
     let (folders, root) = temp_folders("panes");
-    let mine = "# This laptop.\nlast_repository = \"a/old\" # Mine.\n";
+    let mine = "# This laptop.\neditor = \"code\" # Mine.\n";
     fs::write(folders.machine_file(), mine).unwrap();
     let mut files = SettingsFiles::load(folders.clone());
 
@@ -940,7 +973,7 @@ fn the_panes_layout_stays_on_this_machine_beside_what_the_user_wrote() {
 #[test]
 fn a_pane_back_at_its_default_leaves_machine_toml() {
     let (folders, root) = temp_folders("panes-default");
-    let mine = "last_repository = \"a/old\"\n";
+    let mine = "editor = \"code\"\n";
     fs::write(folders.machine_file(), mine).unwrap();
     let mut files = SettingsFiles::load(folders.clone());
     files.save_panes(WIDE).unwrap();
@@ -1137,9 +1170,9 @@ fn adding_a_repository_saves_it_with_its_conventions() {
 
     let home = files
         .add_repository(
-            &repository("python/cpython"),
-            RepositoryAccess::Other,
+            &RepositorySettings::added(repository("python/cpython"), RepositoryAccess::Other),
             &MirrorSource::Download,
+            WHENEVER,
         )
         .unwrap();
     let text = fs::read_to_string(folders.settings_file()).unwrap();
@@ -1173,9 +1206,12 @@ visible = false
 
     let home = files
         .add_repository(
-            &repository("some-maintainer/gcmon"),
-            RepositoryAccess::Other,
+            &RepositorySettings::added(
+                repository("some-maintainer/gcmon"),
+                RepositoryAccess::Other,
+            ),
             &MirrorSource::Download,
+            WHENEVER,
         )
         .unwrap();
     let after = fs::read_to_string(folders.settings_file()).unwrap();
@@ -1222,9 +1258,9 @@ fn a_list_written_inline_stays_inline() {
     drop(
         files
             .add_repository(
-                &repository("c/d"),
-                RepositoryAccess::Maintained,
+                &RepositorySettings::added(repository("c/d"), RepositoryAccess::Maintained),
                 &MirrorSource::Download,
+                WHENEVER,
             )
             .unwrap(),
     );
@@ -1256,18 +1292,18 @@ fn adding_a_repository_twice_keeps_one_and_opens_it() {
     drop(
         files
             .add_repository(
-                &repository("python/cpython"),
-                RepositoryAccess::Other,
+                &RepositorySettings::added(repository("python/cpython"), RepositoryAccess::Other),
                 &MirrorSource::Download,
+                WHENEVER,
             )
             .unwrap(),
     );
     drop(
         files
             .add_repository(
-                &repository("a/b"),
-                RepositoryAccess::Other,
+                &RepositorySettings::added(repository("a/b"), RepositoryAccess::Other),
                 &MirrorSource::Download,
+                WHENEVER,
             )
             .unwrap(),
     );
@@ -1275,9 +1311,9 @@ fn adding_a_repository_twice_keeps_one_and_opens_it() {
 
     let home = files
         .add_repository(
-            &repository("Python/CPython"),
-            RepositoryAccess::Other,
+            &RepositorySettings::added(repository("Python/CPython"), RepositoryAccess::Other),
             &MirrorSource::Download,
+            WHENEVER,
         )
         .unwrap();
     let after = fs::read_to_string(folders.settings_file()).unwrap();
@@ -1288,27 +1324,41 @@ fn adding_a_repository_twice_keeps_one_and_opens_it() {
 }
 
 #[test]
-fn a_normal_launch_reopens_the_last_repository() {
+fn adding_puts_the_repository_first_in_recent_with_the_time() {
+    let (folders, root) = temp_folders("recent");
+    let mut files = SettingsFiles::load(folders.clone());
+
+    add_all(
+        &mut files,
+        &["a/first", "a/second", "A/First"],
+        at("2026-11-10T09:00:00.5+03:00"),
+    );
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    let settings = fs::read_to_string(folders.settings_file()).unwrap();
+    let home = files.home();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(
+        machine,
+        "recent = [
+    { name = \"A/First\", opened_at = 2026-11-10T08:00:00Z },
+    { name = \"a/second\", opened_at = 2026-11-10T07:00:00Z },
+]
+
+[mirrors]
+\"a/second\" = \"download\"
+\"A/First\" = \"download\"
+"
+    );
+    assert!(!settings.contains(RECENT), "{settings}");
+    assert_eq!(home, opened("a/first", Conventions::Github));
+}
+
+#[test]
+fn a_normal_launch_reopens_the_head_of_recent() {
     let (folders, root) = temp_folders("reopen");
     let mut files = SettingsFiles::load(folders.clone());
-    drop(
-        files
-            .add_repository(
-                &repository("a/first"),
-                RepositoryAccess::Other,
-                &MirrorSource::Download,
-            )
-            .unwrap(),
-    );
-    drop(
-        files
-            .add_repository(
-                &repository("a/second"),
-                RepositoryAccess::Other,
-                &MirrorSource::Download,
-            )
-            .unwrap(),
-    );
+    add_all(&mut files, &["a/first", "a/second"], WHENEVER);
 
     let reopened = SettingsFiles::load(folders).home();
     fs::remove_dir_all(root).unwrap();
@@ -1317,14 +1367,24 @@ fn a_normal_launch_reopens_the_last_repository() {
 }
 
 #[test]
-fn a_last_repository_the_settings_no_longer_hold_gives_way_to_the_first() {
+fn a_launch_skips_a_name_the_settings_no_longer_hold() {
+    let (folders, root) = temp_folders("reopen-skip");
+    let mut files = SettingsFiles::load(folders.clone());
+    add_all(&mut files, &["a/first", "a/second", "a/gone"], WHENEVER);
+    hold_only(&folders, &["a/first", "a/second"]);
+
+    let home = SettingsFiles::load(folders).home();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(home, opened("a/second", Conventions::Github));
+}
+
+#[test]
+fn with_no_name_in_recent_left_a_launch_opens_the_first_repository() {
     let (folders, root) = temp_folders("reopen-gone");
-    fs::write(
-        folders.settings_file(),
-        "[[repositories]]\nname = \"a/first\"\n[[repositories]]\nname = \"a/second\"\n",
-    )
-    .unwrap();
-    fs::write(folders.machine_file(), "last_repository = \"a/gone\"\n").unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+    add_all(&mut files, &["a/gone"], WHENEVER);
+    hold_only(&folders, &["a/first", "a/second"]);
 
     let home = SettingsFiles::load(folders).home();
     fs::remove_dir_all(root).unwrap();
@@ -1333,33 +1393,221 @@ fn a_last_repository_the_settings_no_longer_hold_gives_way_to_the_first() {
 }
 
 #[test]
-fn the_last_repository_stays_on_this_machine_beside_what_the_user_wrote() {
-    let (folders, root) = temp_folders("machine-last");
+fn an_entry_in_recent_it_cant_read_is_passed_over_and_kept() {
+    let (folders, root) = temp_folders("recent-unreadable");
+    hold_only(&folders, &["a/first", "a/second"]);
+    let mine = "recent = [
+    { name = \"nonsense\" },
+    7,
+    { name = \"a/second\", opened_at = \"yesterday\" },
+]
+";
+    fs::write(folders.machine_file(), mine).unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+    let home = files.home();
+    let problems = files.loaded().problems.clone();
+
+    add_all(&mut files, &["a/second"], at("2026-11-10T09:00:00Z"));
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(
+        (home, problems),
+        (
+            opened("a/second", Conventions::Github),
+            Vec::<String>::new()
+        )
+    );
+    assert!(
+        machine.starts_with(
+            "recent = [
+    { name = \"a/second\", opened_at = 2026-11-10T09:00:00Z },
+    { name = \"nonsense\" },
+    7,
+]
+"
+        ),
+        "{machine}"
+    );
+}
+
+#[test]
+fn a_last_repository_from_0_2_0_reopens_and_the_next_add_turns_it_into_recent() {
+    let (folders, root) = temp_folders("recent-from-last");
+    hold_only(&folders, &["a/first", "a/old"]);
     fs::write(
         folders.machine_file(),
         "# This laptop.\nlast_repository = \"a/old\" # Mine.\neditor = \"code\"\n",
     )
     .unwrap();
     let mut files = SettingsFiles::load(folders.clone());
+    let reopened = files.home();
 
-    drop(
-        files
-            .add_repository(
-                &repository("a/new"),
-                RepositoryAccess::Other,
-                &MirrorSource::Download,
-            )
-            .unwrap(),
-    );
+    add_all(&mut files, &["a/new"], at("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
-    let settings = fs::read_to_string(folders.settings_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(reopened, opened("a/old", Conventions::Github));
+    assert_eq!(
+        machine,
+        "# This laptop.
+recent = [
+    { name = \"a/new\", opened_at = 2026-11-10T09:00:00Z },
+    { name = \"a/old\" },
+] # Mine.
+editor = \"code\"
+
+[mirrors]
+\"a/new\" = \"download\"
+"
+    );
+}
+
+#[test]
+fn adding_the_last_repository_from_0_2_0_again_leaves_one_entry_for_it() {
+    let (folders, root) = temp_folders("recent-from-last-again");
+    fs::write(folders.machine_file(), "last_repository = \"a/old\"\n").unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+
+    add_all(&mut files, &["a/Old"], at("2026-11-10T09:00:00Z"));
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert!(
+        machine.starts_with(
+            "recent = [\n    { name = \"a/Old\", opened_at = 2026-11-10T09:00:00Z },\n]\n"
+        ),
+        "{machine}"
+    );
+}
+
+#[test]
+fn any_write_of_machine_toml_turns_a_last_repository_from_0_2_0_into_recent() {
+    let (folders, root) = temp_folders("recent-from-last-panes");
+    hold_only(&folders, &["a/first", "a/old"]);
+    let mine = "# This laptop.\nlast_repository = \"a/old\" # Mine.\neditor = \"code\"\n";
+    fs::write(folders.machine_file(), mine).unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+
+    files.save_panes(WIDE).unwrap();
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    let reopened = SettingsFiles::load(folders).home();
     fs::remove_dir_all(root).unwrap();
 
     assert_eq!(
         machine,
-        "# This laptop.\nlast_repository = \"a/new\" # Mine.\neditor = \"code\"\n\n[mirrors]\n\"a/new\" = \"download\"\n"
+        "# This laptop.
+recent = [
+    { name = \"a/old\" },
+] # Mine.
+editor = \"code\"
+
+[panes]
+sidebar = 240
+list = 500
+"
     );
-    assert!(!settings.contains(LAST_REPOSITORY), "{settings}");
+    assert_eq!(reopened, opened("a/old", Conventions::Github));
+}
+
+#[test]
+fn a_last_repository_written_by_0_2_0_after_recent_gives_way_to_the_list() {
+    let (folders, root) = temp_folders("recent-and-last");
+    hold_only(&folders, &["a/one", "a/old"]);
+    let mine = "recent = [\n    { name = \"a/one\" },\n]\nlast_repository = \"a/old\"\n";
+    fs::write(folders.machine_file(), mine).unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+    let reopened = files.home();
+
+    files.save_panes(PaneLayout::default()).unwrap();
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(reopened, opened("a/one", Conventions::Github));
+    assert_eq!(machine, "recent = [\n    { name = \"a/one\" },\n]\n");
+}
+
+#[test]
+fn a_recent_that_isnt_a_list_gives_way_to_a_last_repository() {
+    let (folders, root) = temp_folders("recent-not-a-list");
+    hold_only(&folders, &["a/first", "a/old"]);
+    let mine = "recent = \"a/first\" # Wrong.\nlast_repository = \"a/old\"\neditor = \"code\"\n";
+    fs::write(folders.machine_file(), mine).unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+    let reopened = files.home();
+
+    add_all(&mut files, &["a/new"], at("2026-11-10T09:00:00Z"));
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(reopened, opened("a/old", Conventions::Github));
+    assert!(
+        machine.starts_with(
+            "recent = [
+    { name = \"a/new\", opened_at = 2026-11-10T09:00:00Z },
+    { name = \"a/old\" },
+]
+editor = \"code\"
+"
+        ),
+        "{machine}"
+    );
+}
+
+#[test]
+fn a_recent_written_as_tables_keeps_its_entries() {
+    let (folders, root) = temp_folders("recent-tables");
+    hold_only(&folders, &["a/one", "a/two"]);
+    let mine = "[[recent]]\nname = \"a/one\"\n\n[[recent]]\nname = \"a/two\"\n";
+    fs::write(folders.machine_file(), mine).unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+    let reopened = files.home();
+
+    add_all(&mut files, &["a/three"], at("2026-11-10T09:00:00Z"));
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(reopened, opened("a/one", Conventions::Github));
+    assert!(
+        machine.starts_with(
+            "recent = [
+    { name = \"a/three\", opened_at = 2026-11-10T09:00:00Z },
+    { name = \"a/one\" },
+    { name = \"a/two\" },
+]
+"
+        ),
+        "{machine}"
+    );
+}
+
+#[test]
+fn a_repository_added_again_keeps_the_comment_on_its_entry() {
+    let (folders, root) = temp_folders("recent-comment");
+    let mine = "recent = [
+    { name = \"a/one\" },
+    # Work.
+    { name = \"a/two\" },
+]
+";
+    fs::write(folders.machine_file(), mine).unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+
+    add_all(&mut files, &["a/two"], at("2026-11-10T09:00:00Z"));
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert!(
+        machine.starts_with(
+            "recent = [
+    # Work.
+    { name = \"a/two\", opened_at = 2026-11-10T09:00:00Z },
+    { name = \"a/one\" },
+]
+"
+        ),
+        "{machine}"
+    );
 }
 
 #[test]
@@ -1372,9 +1620,9 @@ fn adding_follows_settings_path() {
     drop(
         files
             .add_repository(
-                &repository("a/b"),
-                RepositoryAccess::Other,
+                &RepositorySettings::added(repository("a/b"), RepositoryAccess::Other),
                 &MirrorSource::Download,
+                WHENEVER,
             )
             .unwrap(),
     );
@@ -1384,7 +1632,7 @@ fn adding_follows_settings_path() {
 
     assert!(text.contains("a/b"), "{text}");
     assert!(machine.contains("settings_path"), "{machine}");
-    assert!(machine.contains("last_repository = \"a/b\""), "{machine}");
+    assert!(machine.contains("{ name = \"a/b\""), "{machine}");
 }
 
 #[test]
@@ -1405,9 +1653,9 @@ fn adding_refuses_while_either_file_cant_be_used() {
 
         let refused = files
             .add_repository(
-                &repository("a/b"),
-                RepositoryAccess::Other,
+                &RepositorySettings::added(repository("a/b"), RepositoryAccess::Other),
                 &MirrorSource::Download,
+                WHENEVER,
             )
             .unwrap_err();
         let after = fs::read_to_string(folders.settings_file()).unwrap();
@@ -1434,9 +1682,9 @@ fn an_add_that_cant_save_machine_toml_says_so_and_adds_nothing() {
 
     let refused = files
         .add_repository(
-            &repository("a/b"),
-            RepositoryAccess::Other,
+            &RepositorySettings::added(repository("a/b"), RepositoryAccess::Other),
             &MirrorSource::Download,
+            WHENEVER,
         )
         .unwrap_err();
     let added = folders.settings_file().exists();

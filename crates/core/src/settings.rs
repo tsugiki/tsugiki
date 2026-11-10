@@ -14,7 +14,11 @@ use std::thread;
 use serde::de::{DeserializeOwned, IgnoredAny};
 use serde::{Deserialize, Deserializer, Serialize};
 use specta::Type;
-use toml_edit::{ArrayOfTables, DocumentMut, Item, Key, RawString, Table, TableLike, Value};
+use time::{OffsetDateTime, UtcOffset};
+use toml_edit::{
+    Array, ArrayOfTables, Datetime, DocumentMut, InlineTable, Item, Key, RawString, Table,
+    TableLike, Value,
+};
 
 use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
@@ -25,6 +29,10 @@ use crate::repository_settings::RepositorySettings;
 
 const REPOSITORIES: &str = "repositories";
 const FILTERS: &str = "filters";
+const RECENT: &str = "recent";
+/// The keys of an entry in `recent`.
+const NAME: &str = "name";
+const OPENED_AT: &str = "opened_at";
 const LAST_REPOSITORY: &str = "last_repository";
 const PANES: &str = "panes";
 const MIRRORS: &str = "mirrors";
@@ -93,7 +101,7 @@ pub enum TokenSource {
 pub enum Home {
     /// No Repositories yet.
     Onboarding { token: TokenSource },
-    /// The last Repository the user had open.
+    /// The Repository opened most recently on this machine that the settings still hold, or else the first.
     Repository { repository: RepositorySettings },
 }
 
@@ -159,55 +167,100 @@ impl Panes {
     }
 }
 
+/// A value of the type asked for, or anything else.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Read<T> {
+    Given(T),
+    Other(IgnoredAny),
+}
+
+impl<T> Read<T> {
+    fn given(self) -> Option<T> {
+        match self {
+            Self::Given(value) => Some(value),
+            Self::Other(_) => None,
+        }
+    }
+}
+
 /// The value, or its default for one Tsugiki can't read.
 fn or_default<'de, D: Deserializer<'de>, T: Deserialize<'de> + Default>(
     given: D,
 ) -> Result<T, D::Error> {
+    Ok(Read::<T>::deserialize(given)?.given().unwrap_or_default())
+}
+
+/// The names in `recent`, leaving out an entry Tsugiki can't read, for the reason `sources_or_skip` gives.
+/// A `recent` that isn't a list counts as none. Only the order is read: nothing asks when yet.
+fn recent_or_skip<'de, D: Deserializer<'de>>(
+    given: D,
+) -> Result<Option<Vec<RepositoryName>>, D::Error> {
+    /// An entry of `recent`. Its field is the `NAME` that `recent_entry` writes.
     #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum Read<T> {
-        Given(T),
-        Other(IgnoredAny),
+    struct Opened {
+        name: RepositoryName,
     }
-    Ok(match Read::<T>::deserialize(given)? {
-        Read::Given(value) => value,
-        Read::Other(_) => T::default(),
-    })
+    let entries = Read::<Vec<Read<Opened>>>::deserialize(given)?.given();
+    Ok(entries.map(|entries| {
+        entries
+            .into_iter()
+            .filter_map(|entry| Some(entry.given()?.name))
+            .collect()
+    }))
 }
 
 /// Each Repository's answer of where its mirror gets its objects, leaving out an entry Tsugiki can't read:
 /// one answer is too small a thing to lose the rest of `machine.toml` over. Its Repository asks again.
 fn sources_or_skip<'de, D: Deserializer<'de>>(given: D) -> Result<MirrorSources, D::Error> {
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum Answer {
-        Text(String),
-        Other(IgnoredAny),
-    }
-    let answers = BTreeMap::<String, Answer>::deserialize(given)?;
+    let answers = BTreeMap::<String, Read<String>>::deserialize(given)?;
     let read = answers.into_iter().filter_map(|(name, answer)| {
         let name = RepositoryName::parse(&name).ok()?;
-        match answer {
-            Answer::Text(text) => Some((name, MirrorSource::from_text(&text))),
-            Answer::Other(_) => None,
-        }
+        Some((name, MirrorSource::from_text(&answer.given()?)))
     });
     Ok(MirrorSources::new(read.collect()))
 }
 
-/// What `machine.toml` holds, as far as this file needs it.
-#[derive(Debug, Clone, Default, Deserialize)]
+/// `machine.toml` as serde reads it, before `Machine` settles which list of recent Repositories counts.
+#[derive(Default, Deserialize)]
 #[serde(default)]
-struct Machine {
-    /// Where `settings.toml` is, if not in its usual folder. A relative path starts at `machine.toml`'s
-    /// folder.
+struct MachineFile {
     settings_path: Option<PathBuf>,
-    /// The Repository the window last showed. It stays on this machine and is read with the settings, so a
-    /// normal launch knows what to reopen before the window exists.
+    #[serde(deserialize_with = "recent_or_skip")]
+    recent: Option<Vec<RepositoryName>>,
+    /// The Repository to reopen, as 0.2.0 kept it. It counts while the file has no `recent`, and the next
+    /// write of `machine.toml` puts `recent` in its place.
     last_repository: Option<RepositoryName>,
     panes: PaneLayout,
     #[serde(deserialize_with = "sources_or_skip")]
     mirrors: MirrorSources,
+}
+
+/// What `machine.toml` holds, as far as this file needs it.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(from = "MachineFile")]
+struct Machine {
+    /// Where `settings.toml` is, if not in its usual folder. A relative path starts at `machine.toml`'s
+    /// folder.
+    settings_path: Option<PathBuf>,
+    /// The Repositories opened most recently on this machine, newest first. They stay on this machine and
+    /// are read with the settings, so a normal launch knows what to reopen before the window exists.
+    recent: Vec<RepositoryName>,
+    panes: PaneLayout,
+    mirrors: MirrorSources,
+}
+
+impl From<MachineFile> for Machine {
+    fn from(file: MachineFile) -> Self {
+        Self {
+            settings_path: file.settings_path,
+            recent: file
+                .recent
+                .unwrap_or_else(|| file.last_repository.into_iter().collect()),
+            panes: file.panes,
+            mirrors: file.mirrors,
+        }
+    }
 }
 
 /// The two files and what was last read from them.
@@ -288,15 +341,18 @@ impl SettingsFiles {
         Ok(())
     }
 
-    /// What the window opens on: the last Repository if the settings still hold it, or else the first.
+    /// What the window opens on: the Repository opened most recently that the settings still hold, or else
+    /// the first.
     pub fn home(&self) -> Home {
         let repositories = &self.loaded.settings.repositories;
-        let last = self
+        let recent = self
             .machine
             .as_ref()
-            .and_then(|machine| machine.last_repository.as_ref())
-            .and_then(|last| repositories.iter().find(|one| one.name.is_same(last)));
-        match last.or_else(|| repositories.first()) {
+            .map_or(&[][..], |machine| &machine.recent);
+        let reopened = recent
+            .iter()
+            .find_map(|name| repositories.iter().find(|one| one.name.is_same(name)));
+        match reopened.or_else(|| repositories.first()) {
             Some(repository) => Home::Repository {
                 repository: repository.clone(),
             },
@@ -304,17 +360,19 @@ impl SettingsFiles {
         }
     }
 
-    /// Adds `name` to the settings, unless they hold it already, and makes it what the window opens on.
+    /// Adds `repository` to the settings, unless they hold its name already, and puts it at the head of
+    /// `recent`, opened at `opened_at`, so the window opens on it.
     ///
     /// Like `write`, it works from what the files say now and refuses while either can't be used. It saves
     /// `machine.toml` first: if that fails, nothing has changed. If `settings.toml` then fails, the name
     /// there holds nothing, and `home` passes over it.
     pub fn add_repository(
         &mut self,
-        name: &RepositoryName,
-        access: RepositoryAccess,
+        repository: &RepositorySettings,
         source: &MirrorSource,
+        opened_at: OffsetDateTime,
     ) -> Result<Home, Error> {
+        let name = &repository.name;
         let machine = self.machine_to_edit()?;
         let path = settings_file(&self.folders, &machine);
         let mut edit = TomlEdit::<Settings>::open(&path)?;
@@ -324,9 +382,9 @@ impl SettingsFiles {
             .iter()
             .any(|one| one.name.is_same(name));
         if !held {
-            edit.append(&RepositorySettings::added(name.clone(), access));
+            edit.append(repository);
         }
-        remember_added(&self.folders.machine_file(), name, source)?;
+        remember_added(&self.folders.machine_file(), name, source, opened_at)?;
         edit.save()?;
         self.reload();
         Ok(self.home())
@@ -336,7 +394,7 @@ impl SettingsFiles {
     /// It refuses while `machine.toml` can't be used.
     pub fn save_panes(&mut self, panes: PaneLayout) -> Result<(), Error> {
         let path = self.folders.machine_file();
-        let mut edit = TomlEdit::<Machine>::open(&path)?;
+        let mut edit = TomlEdit::open_machine(&path)?;
         edit_section(edit.document.as_table_mut(), PANES, |section| {
             for (key, width) in [("sidebar", panes.sidebar), ("list", panes.list)] {
                 // A reset takes the comment on its key too: kept, the key would hold the old width.
@@ -377,7 +435,7 @@ impl SettingsFiles {
         source: &MirrorSource,
     ) -> Result<(), Error> {
         let path = self.folders.machine_file();
-        let mut edit = TomlEdit::<Machine>::open(&path)?;
+        let mut edit = TomlEdit::open_machine(&path)?;
         set_mirror_source(edit.document.as_table_mut(), name, source);
         edit.save()?;
         self.reload();
@@ -436,7 +494,11 @@ impl SettingsOwner {
                             reply,
                         },
                     ) => {
-                        let saved = files.add_repository(&name, access, &source);
+                        let saved = files.add_repository(
+                            &RepositorySettings::added(name, access),
+                            &source,
+                            OffsetDateTime::now_utc(),
+                        );
                         (saved.map(|_| files.view()), reply)
                     }
                     (
@@ -577,6 +639,16 @@ impl<'a, T: DeserializeOwned> TomlEdit<'a, T> {
     }
 }
 
+impl<'a> TomlEdit<'a, Machine> {
+    /// `machine.toml` as it says now, open for changes, with its list of recent Repositories brought to the
+    /// form this version writes, so that any write leaves the file in that form.
+    fn open_machine(path: &'a Path) -> Result<Self, Error> {
+        let mut edit = Self::open(path)?;
+        tidy_recent(edit.document.as_table_mut());
+        Ok(edit)
+    }
+}
+
 impl TomlEdit<'_, Settings> {
     /// Adds a Repository after the others, in the form the file already uses for them.
     fn append(&mut self, repository: &RepositorySettings) {
@@ -612,13 +684,147 @@ fn without_repositories(mut document: DocumentMut) -> DocumentMut {
     document
 }
 
-/// Notes in `machine.toml` that `name` was added last, and where its mirror gets its objects.
-fn remember_added(path: &Path, name: &RepositoryName, source: &MirrorSource) -> Result<(), Error> {
-    let mut edit = TomlEdit::<Machine>::open(path)?;
-    let wanted = toml_edit::value(name.to_string());
-    merge_value(edit.document.as_table_mut(), LAST_REPOSITORY, &wanted, None);
+/// Notes in `machine.toml` that `name` was opened at `opened_at`, and where its mirror gets its objects.
+fn remember_added(
+    path: &Path,
+    name: &RepositoryName,
+    source: &MirrorSource,
+    opened_at: OffsetDateTime,
+) -> Result<(), Error> {
+    let mut edit = TomlEdit::open_machine(path)?;
+    put_first_in_recent(edit.document.as_table_mut(), name, opened_at);
     set_mirror_source(edit.document.as_table_mut(), name, source);
     edit.save()
+}
+
+/// Brings `file`'s list of recent Repositories to the form this version writes: one list, written inline.
+///
+/// A list of `[[recent]]` tables, written by hand, comes inline with its entries, though not the comments on
+/// their headers. A 0.2.0 `last_repository` becomes a list of its Repository, with no time, since 0.2.0
+/// kept none, where it stood and with its comments, unless the file has a list already. Such a file ran
+/// this version, then 0.2.0, and the list counts, as it does for a launch.
+fn tidy_recent(file: &mut Table) {
+    if file.get(RECENT).is_some_and(Item::is_array_of_tables)
+        && let Some(tables) = file.remove(RECENT)
+        && let Ok(list) = tables.into_value()
+    {
+        drop(file.insert(RECENT, Item::Value(list)));
+    }
+    let has_list = file.get(RECENT).is_some_and(Item::is_array);
+    let order: Vec<String> = file
+        .iter()
+        .filter(|(key, _)| *key != RECENT || has_list)
+        .map(|(key, _)| if key == LAST_REPOSITORY { RECENT } else { key }.to_owned())
+        .collect();
+    let Some((key, last)) = file.remove_entry(LAST_REPOSITORY) else {
+        return;
+    };
+    if has_list {
+        return;
+    }
+    // A `recent` that isn't a list counts as none, so `last_repository` takes its place.
+    drop(file.remove(RECENT));
+    let parsed = last
+        .as_str()
+        .and_then(|last| RepositoryName::parse(last).ok());
+    let mut recent: Array = parsed
+        .map(|last| recent_entry(&last, None))
+        .into_iter()
+        .collect();
+    one_per_line(&mut recent);
+    let mut recent = Value::Array(recent);
+    *recent.decor_mut() = last
+        .as_value()
+        .map(Value::decor)
+        .cloned()
+        .unwrap_or_default();
+    let key = Key::new(RECENT).with_leaf_decor(key.leaf_decor().clone());
+    drop(file.insert_formatted(&key, Item::Value(recent)));
+    let place = |key: &Key| order.iter().position(|one| one == key.get());
+    file.sort_values_by(|one, _, other, _| place(one).cmp(&place(other)));
+}
+
+/// Puts `name` at the head of `file`'s `recent`, opened at `opened_at`, with the comments the user wrote on
+/// its entry, and takes that entry out. An entry Tsugiki can't read stays where it is. A `recent` that isn't
+/// a list gives the list its place and its comments.
+fn put_first_in_recent(file: &mut Table, name: &RepositoryName, opened_at: OffsetDateTime) {
+    let mut recent = file
+        .get(RECENT)
+        .and_then(Item::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut head = recent_entry(name, Some(opened_at));
+    let held = recent.iter().position(|entry| names(entry, name));
+    if let Some(index) = held {
+        *head.decor_mut() = recent.remove(index).decor().clone();
+    }
+    recent.insert_formatted(0, head);
+    one_per_line(&mut recent);
+    merge_value(file, RECENT, &Item::Value(Value::Array(recent)), None);
+}
+
+/// An entry of `recent`: `name`, and when it was opened, to the second, in UTC.
+fn recent_entry(name: &RepositoryName, opened_at: Option<OffsetDateTime>) -> Value {
+    let mut entry = InlineTable::new();
+    drop(entry.insert(NAME, Value::from(name.to_string())));
+    if let Some(at) = opened_at.and_then(toml_time) {
+        drop(entry.insert(OPENED_AT, Value::from(at)));
+    }
+    entry.fmt();
+    Value::InlineTable(entry)
+}
+
+/// `at` as TOML writes a time, in UTC and to the second. Nothing for a year TOML can't write.
+fn toml_time(at: OffsetDateTime) -> Option<Datetime> {
+    let utc = at.to_offset(UtcOffset::UTC);
+    Some(Datetime {
+        date: Some(toml_edit::Date {
+            year: u16::try_from(utc.year())
+                .ok()
+                .filter(|year| *year <= 9999)?,
+            month: u8::from(utc.month()),
+            day: utc.day(),
+        }),
+        time: Some(toml_edit::Time {
+            hour: utc.hour(),
+            minute: utc.minute(),
+            second: Some(utc.second()),
+            nanosecond: None,
+        }),
+        offset: Some(toml_edit::Offset::Z),
+    })
+}
+
+/// Whether `entry` of `recent` is the one for `name`.
+fn names(entry: &Value, name: &RepositoryName) -> bool {
+    entry
+        .as_inline_table()
+        .and_then(|entry| entry.get(NAME))
+        .and_then(Value::as_str)
+        .and_then(|written| RepositoryName::parse(written).ok())
+        .is_some_and(|written| written.is_same(name))
+}
+
+/// Puts each entry of `list` on a line of its own, except where the user wrote a comment.
+fn one_per_line(list: &mut Array) {
+    for entry in list.iter_mut() {
+        let commented = entry
+            .decor()
+            .prefix()
+            .and_then(RawString::as_str)
+            .is_some_and(|prefix| prefix.contains('#'));
+        if !commented {
+            entry.decor_mut().set_prefix("\n    ");
+        }
+    }
+    let commented = list
+        .trailing()
+        .as_str()
+        .is_some_and(|after| after.contains('#'));
+    if !commented {
+        list.set_trailing("\n");
+    }
+    list.set_trailing_comma(true);
 }
 
 /// Makes `file`'s `[mirrors]` hold `source` for `name`, under one key: one written in another case goes.

@@ -138,6 +138,10 @@ export const commands = {
 	 *  the window holds only those it shows. It asks GitHub for nothing.
 	 */
 	pullRequestFind: (search: DiffSearch) => typedError<Found, Error_Serialize>(__TAURI_INVOKE("pull_request_find", { search })),
+	/**  PROTOTYPE, throwaway (#365): the definitions of `word` at `commit` in the Repository's mirror. */
+	prototypeDefinitions: (repository: string, commit: string, word: string, from: string) => typedError<ProtoHits, Error_Serialize>(__TAURI_INVOKE("prototype_definitions", { repository, commit, word, from })),
+	/**  PROTOTYPE, throwaway (#365): the whole file `path` at `commit`, highlighted. */
+	prototypeFile: (repository: string, commit: string, path: string) => typedError<HeadLine[], Error_Serialize>(__TAURI_INVOKE("prototype_file", { repository, commit, path })),
 	/**  Opens an Issue or a PR on GitHub in the system browser. */
 	openOnGithub: (repository: string, item: GitHubItem) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_on_github", { repository, item })),
 	/**
@@ -1402,6 +1406,25 @@ export type PrView_Serialize = {
 	/**  Its description, comments and Reviews. Nothing, until Tsugiki has read this PR from GitHub once. */
 	content: PullRequestContent_Serialize | null,
 } & WorkbenchRow_Serialize;
+
+/**  Where a symbol may be defined. */
+export type ProtoHit = {
+	path: string,
+	/**  Counted from 1. */
+	line: number,
+	text: string,
+	/**  "python", "c", "rest" or "word" for the whole-word fallback. */
+	kind: string,
+};
+
+export type ProtoHits = {
+	hits: ProtoHit[],
+	/**  Whether the hits come from the whole-word fallback. */
+	fallback: boolean,
+	millis: number,
+	/**  Whether the 50-hit cap cut the list. */
+	capped: boolean,
+};
 
 /**  A PR's description, its recent comments, and its Reviews. */
 export type PullRequestContent = PullRequestContent_Serialize | PullRequestContent_Deserialize;

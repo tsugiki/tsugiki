@@ -284,3 +284,35 @@ pub(crate) fn pull_request_lines(
 ) -> Result<Vec<HeadLine>, Error> {
     crate::read_pull_request_lines(lines, &work)
 }
+
+/// PROTOTYPE, throwaway (#365): the definitions of `word` at `commit` in the Repository's mirror.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn prototype_definitions(
+    repository: String,
+    commit: String,
+    word: String,
+    from: String,
+    work: State<'_, crate::DiffWork>,
+) -> Result<tsugiki_core::prototype_definitions::ProtoHits, Error> {
+    let name = tsugiki_core::repository::RepositoryName::parse(&repository)?;
+    let folders = work.folders.as_ref().map_err(Clone::clone)?;
+    let mirror = folders.mirror(&name);
+    Ok(tsugiki_core::prototype_definitions::definitions(&mirror, &commit, &word, &from))
+}
+
+/// PROTOTYPE, throwaway (#365): the whole file `path` at `commit`, highlighted.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn prototype_file(
+    repository: String,
+    commit: String,
+    path: String,
+    work: State<'_, crate::DiffWork>,
+) -> Result<Vec<HeadLine>, Error> {
+    let name = tsugiki_core::repository::RepositoryName::parse(&repository)?;
+    let folders = work.folders.as_ref().map_err(Clone::clone)?;
+    let mirror = folders.mirror(&name);
+    tsugiki_core::prototype_definitions::file(&mirror, &commit, &path)
+        .ok_or_else(|| Error::new(ErrorKind::NotFound, &format!("No {path} at {commit}.")))
+}

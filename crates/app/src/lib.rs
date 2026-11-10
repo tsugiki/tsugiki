@@ -672,6 +672,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::pull_request_spans,
             slow_commands::pull_request_lines,
             slow_commands::pull_request_find,
+            slow_commands::prototype_definitions,
+            slow_commands::prototype_file,
             slow_commands::open_on_github,
             slow_commands::open_link
         ])

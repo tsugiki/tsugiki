@@ -225,6 +225,11 @@ export class PrFilesState {
     return this.#repository;
   }
 
+  /** PROTOTYPE (#365): the PR's number, for the definition lookups. */
+  get number(): number {
+    return this.#number;
+  }
+
   /** Whether the tab shows the diff unified or side by side. */
   get shownAs(): DiffView {
     return this.#choice.view;

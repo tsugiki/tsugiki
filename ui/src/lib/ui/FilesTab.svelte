@@ -9,6 +9,7 @@
   import DiffRows from "./DiffRows.svelte";
   import FindBar from "./FindBar.svelte";
   import MirrorQuestion from "./MirrorQuestion.svelte";
+  import PeekHost from "./prototype/PeekHost.svelte";
   import { cloningWords } from "./synced";
 
   let { files, now, onlink }: { files: PrFilesState; now: Date; onlink: (address: string) => void } =
@@ -72,9 +73,11 @@
   {#if files.searching}
     <FindBar {files} />
   {/if}
-  <div class="diff">
-    <DiffRows diff={files} files={files.view.files} news={files.view.news} {now} {onlink} />
-  </div>
+  <PeekHost {files}>
+    <div class="diff">
+      <DiffRows diff={files} files={files.view.files} news={files.view.news} {now} {onlink} />
+    </div>
+  </PeekHost>
 {/if}
 
 <style>

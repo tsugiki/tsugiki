@@ -19,6 +19,8 @@
     type Span,
   } from "$lib/state/pr-files.svelte";
   import NewsEntries from "./NewsEntries.svelte";
+  import { proto } from "./prototype/definition-peek.svelte";
+  import PeekBody from "./prototype/PeekBody.svelte";
   import ReviewThread from "./ReviewThread.svelte";
   import { pieces, type Match } from "./spans";
 
@@ -59,6 +61,21 @@
   /** Room for the longest line, so the scroll width doesn't change as rows come and go. */
   const columns = $derived(files.reduce((widest, file) => Math.max(widest, file.columns), diff.columns));
   const sideBySide = $derived(diff.shownAs === "side-by-side");
+
+  // PROTOTYPE (#365): variant A's peek opens under its row and pushes the rows after it down.
+  const INLINE = 360;
+  const inline = $derived(proto.variant === "A" && proto.peek !== undefined && proto.peek.place >= 0);
+  const anchor = $derived(inline ? (proto.peek?.place ?? -1) : -1);
+  const top = (place: number) => place * ROW + (inline && place > anchor ? INLINE : 0);
+  const flashPlace = $derived(proto.flash === undefined ? undefined : diff.layout.placeOfRow(proto.flash));
+  // Brings the whole peek into view as it opens.
+  $effect(() => {
+    if (!inline || !scroller) return;
+    const bottom = newsHeight + (anchor + 1) * ROW + INLINE;
+    untrack(() => {
+      if (scroller && bottom > scroller.scrollTop + height) scroller.scrollTop = bottom - height + ROW;
+    });
+  });
 
   $effect(() => {
     diff.need(first, last);
@@ -248,7 +265,7 @@
   </div>
   <div
     class="spacer"
-    style:height={`${String(rows * ROW)}px`}
+    style:height={`${String(rows * ROW + (inline ? INLINE : 0))}px`}
     style:min-width={sideBySide
       ? `calc(${String(width)}px + max(0px, ${String(columns + 1)}ch + 56px - ${String(width / 2)}px))`
       : `calc(${String(columns)}ch + 112px)`}
@@ -261,12 +278,12 @@
         <!-- Drawn below, once for all its places. -->
       {:else if at.kind === "line" && sideBySide}
         {@const line = diff.line(at.file, at.new)}
-        <div class="row split" style:top={`${String(place * ROW)}px`}>
+        <div class="row split" style:top={`${String(top(place))}px`} data-place={place}>
           {@render both("context expanded", at.old, at.new, line.text, line.spans, [])}
         </div>
       {:else if at.kind === "line"}
         {@const line = diff.line(at.file, at.new)}
-        <div class="row context expanded" style:top={`${String(place * ROW)}px`}>
+        <div class="row context expanded" style:top={`${String(top(place))}px`} data-place={place}>
           <span class="number">{at.old}</span><span class="number">{at.new}</span>{@render code(
             " ",
             line.text,
@@ -275,18 +292,18 @@
           )}
         </div>
       {:else if at.kind === "pair"}
-        <div class="row split" style:top={`${String(place * ROW)}px`}>
+        <div class="row split" style:top={`${String(top(place))}px`} data-place={place}>
           {@render paired(at.removed)}{@render paired(at.added)}
         </div>
       {:else if at.kind === "hidden"}
-        <div class="row hunk" style:top={`${String(place * ROW)}px`}>{@render gap(at)}</div>
+        <div class="row hunk" style:top={`${String(top(place))}px`} data-place={place}>{@render gap(at)}</div>
       {:else if at.kind === "gone"}
-        <div class="row file" style:top={`${String(place * ROW)}px`}>
+        <div class="row file" style:top={`${String(top(place))}px`} data-place={place}>
           <span class="path">On files no longer in the diff</span>
         </div>
       {:else if at.kind === "more"}
         {@const file = at.file}
-        <div class="row more" style:top={`${String(place * ROW)}px`}>
+        <div class="row more" style:top={`${String(top(place))}px`} data-place={place}>
           <span class="expand"
             ><button
               type="button"
@@ -303,7 +320,7 @@
         {@const index = at.row}
         {@const row = diff.row(index)}
         {#if sideBySide && row?.kind === "context"}
-          <div class="row split" style:top={`${String(place * ROW)}px`}>
+          <div class="row split" style:top={`${String(top(place))}px`} data-place={place}>
             {@render both(
               "context",
               row.old,
@@ -314,7 +331,7 @@
             )}
           </div>
         {:else}
-          <div class={`row ${row?.kind ?? "waiting"}`} style:top={`${String(place * ROW)}px`}>
+          <div class={`row ${row?.kind ?? "waiting"}`} style:top={`${String(top(place))}px`} data-place={place}>
             {#if row?.kind === "file"}
               {@const file = generated(index)}
               {#if file === undefined}
@@ -372,7 +389,7 @@
         class="thread"
         role="group"
         aria-label="Review thread"
-        style:top={`${String(placed.shown * ROW)}px`}
+        style:top={`${String(top(placed.shown))}px`}
         {@attach measure(placed.laid.thread.id, placed.thread)}
       >
         <ReviewThread
@@ -386,10 +403,45 @@
         />
       </div>
     {/each}
+    {#if flashPlace !== undefined}
+      <div class="proto-flash" style:top={`${String(top(flashPlace))}px`}></div>
+    {/if}
+    {#if inline && proto.peek}
+      <div class="proto-inline" style:top={`${String((anchor + 1) * ROW)}px`} style:height={`${String(INLINE)}px`}>
+        <PeekBody peek={proto.peek} arrangement="right" />
+      </div>
+    {/if}
   </div>
 </div>
 
 <style>
+  /* PROTOTYPE (#365) */
+  .proto-inline {
+    position: absolute;
+    left: var(--across);
+    width: var(--width);
+    box-sizing: border-box;
+    border-top: 2px solid #0969da;
+    border-bottom: 2px solid #0969da;
+    background: Canvas;
+  }
+
+  .proto-flash {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 20px;
+    pointer-events: none;
+    background: color-mix(in srgb, #d4a72c 40%, transparent);
+    animation: proto-fade 1.6s ease-out forwards;
+  }
+
+  @keyframes proto-fade {
+    to {
+      opacity: 0;
+    }
+  }
+
   .scroller {
     position: absolute;
     inset: 0;

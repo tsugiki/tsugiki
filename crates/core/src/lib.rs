@@ -25,6 +25,7 @@ pub mod repository_settings;
 pub mod session;
 pub mod settings;
 pub mod status;
+pub mod prototype_definitions;
 pub mod store;
 pub mod sync;
 pub mod token;

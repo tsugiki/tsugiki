@@ -1,4 +1,5 @@
 use super::*;
+use crate::github::CommitSha;
 
 #[test]
 fn a_full_recording_says_each_number_with_the_version() {
@@ -44,10 +45,11 @@ fn a_full_recording_says_each_number_with_the_version() {
         long_frames: Vec::new(),
     };
 
+    let commit = CommitSha::parse("3a6dc89f0e1d2c3b4a5968778695a4b3c2d1e0f9");
     assert_eq!(
-        measurement.summary(),
+        measurement.summary(&Version::new(commit)),
         format!(
-            "Performance of Tsugiki {} over 42.3 s: frame p95 12.1 ms, worst frame 31.0 ms, 2 of 2530 \
+            "Performance of Tsugiki {} (3a6dc89) over 42.3 s: frame p95 12.1 ms, worst frame 31.0 ms, 2 of 2530 \
                  frames over 25 ms; start-up 812 ms; worst key to frame 9.0 ms of 14 keys; worst view query \
                  31.2 ms of 1 query; 0 frames dropped in 1 refresh; slowest Issue from the database 12.0 ms of \
                  5 Issues, from GitHub 640.0 ms of 2; slowest jump in a diff 61.0 ms of 3 jumps, 1 plain",
@@ -70,7 +72,7 @@ fn a_recording_that_saw_nothing_says_so() {
         long_frames: Vec::new(),
     };
 
-    let summary = measurement.summary();
+    let summary = measurement.summary(&Version::new(None));
     assert!(
             summary.ends_with(
                 "over 0.5 s: no frames; start-up not seen; no keys; no view queries; no refresh; no Issues \
@@ -89,7 +91,7 @@ fn the_window_sends_it_as_json() {
 
     let measurement: Measurement = serde_json::from_str(sent).unwrap();
 
-    let summary = measurement.summary();
+    let summary = measurement.summary(&Version::new(None));
     assert!(
             summary.ends_with(
                 "1 frame dropped in 2 refreshes; slowest Issue from the database 8.0 ms of 1 Issue, none \

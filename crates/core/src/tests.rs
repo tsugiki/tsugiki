@@ -55,11 +55,12 @@ fn a_backtrace_keeps_the_file_and_line() {
 
 #[test]
 fn about_names_the_app_and_its_version() {
+    let commit = github::CommitSha::parse("3a6dc89f0e1d2c3b4a5968778695a4b3c2d1e0f9");
     assert_eq!(
-        about(),
+        about(&version::Version::new(commit)),
         About {
             name: "Tsugiki".to_owned(),
-            version: env!("CARGO_PKG_VERSION").to_owned(),
+            version: format!("{} (3a6dc89)", env!("CARGO_PKG_VERSION")),
         }
     );
 }

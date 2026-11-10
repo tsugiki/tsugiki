@@ -34,7 +34,21 @@ pub(crate) fn cpython() -> Home {
 
 #[test]
 fn about_answers_with_what_the_core_says() {
-    assert_eq!(about(), tsugiki_core::about());
+    assert_eq!(about(), tsugiki_core::about(&version()));
+}
+
+/// `build.rs` ran in this checkout, so the version names the commit it's on, whichever that is (#238).
+#[test]
+fn the_version_names_the_commit_checked_out() {
+    let head = tsugiki_test_git::git(
+        Path::new(env!("CARGO_MANIFEST_DIR")),
+        &["rev-parse", "HEAD"],
+    );
+    let short = head.get(..7).unwrap();
+    assert_eq!(
+        version().to_string(),
+        format!("{} ({short})", env!("CARGO_PKG_VERSION"))
+    );
 }
 
 #[test]
@@ -56,7 +70,7 @@ fn a_measurement_answers_with_the_line_it_wrote() {
         )
         .unwrap();
     let line = record_measurement(measurement.clone());
-    assert_eq!(line, measurement.summary());
+    assert_eq!(line, measurement.summary(&version()));
 }
 
 #[test]

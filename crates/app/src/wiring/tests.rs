@@ -263,6 +263,20 @@ fn the_add_dialogs_check_goes_to_the_session_and_back() {
 }
 
 #[test]
+fn the_add_dialogs_check_of_a_repository_tsugiki_has_answers_without_github() {
+    let (folders, root) = temp_folders("wired-held");
+    let wired = Wired::start(Ok(folders), no_network());
+
+    let added = wired.ask("add_repository", add_cpython());
+    let answer = wired.ask("check_repository", json!({ "input": "Python/CPython" }));
+    drop(wired.stop());
+    std::fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(added.unwrap()["screen"], "repository");
+    assert_eq!(answer.unwrap(), json!({ "kind": "held", "name": CPYTHON }));
+}
+
+#[test]
 fn an_add_and_a_read_dont_wait_for_github() {
     let (folders, root) = temp_folders("wired-stuck");
     let (arrived, request_arrived) = channel();

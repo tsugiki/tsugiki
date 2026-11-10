@@ -53,10 +53,11 @@ The order in which v1 is built is in [build-order.md](build-order.md).
 
 - A **Home page** lists the Repositories, each with how many items Need attention there and what they are
   (Review requests, Stale reviews, failed CI on Own PRs, New activity, Dependency updates ready to merge) and
-  when it was last opened, plus **Add repository**. With no Repositories yet it shows onboarding instead: the
-  token (gh's, or a read-only one made from the Account page's guide), the first Repository, an existing clone
-  to borrow objects from. A normal launch reopens the last Repository; the Home page is one step away from the
-  Repository switcher.
+  when it was last opened, plus **Add repository**. Add repository on a Repository Tsugiki has already says
+  so and offers **Switch to it**, which keeps its mirror answer. With no Repositories yet it shows onboarding
+  instead: the token (gh's, or a read-only one made from the Account page's guide), the first Repository, an
+  existing clone to borrow objects from. A normal launch reopens the last Repository; the Home page is one
+  step away from the Repository switcher.
 - Inside a Repository the app uses three panes, like a mail client. This layout was chosen out of three that
   were prototyped on branch `prototype/app-shell`.
   - **Sidebar** (left): the Repository switcher on top (also `Ctrl+R`, and "Repository: …" in the command

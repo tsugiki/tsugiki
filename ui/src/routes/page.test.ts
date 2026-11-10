@@ -109,15 +109,18 @@ it("adds a Repository from onboarding and then shows it", async () => {
   core.checkRepository.mockResolvedValue({
     status: "ok",
     data: {
-      repository: gcmon,
-      open_issues: 10,
-      open_prs: 3,
-      size: "small",
-      window_days: 30,
-      first_sync_items: 48,
-      first_sync_seconds: 5,
-      first_sync_points: 12,
-      access: "other",
+      kind: "new",
+      check: {
+        repository: gcmon,
+        open_issues: 10,
+        open_prs: 3,
+        size: "small",
+        window_days: 30,
+        first_sync_items: 48,
+        first_sync_seconds: 5,
+        first_sync_points: 12,
+        access: "other",
+      },
     },
   });
   render(Page);
@@ -301,6 +304,43 @@ describe("a switch from the palette", () => {
     ).toBeTruthy();
     expect(screen.getByRole("heading", { name: gcmon.name })).toBeTruthy();
     expect(document.title).toBe("some-maintainer/gcmon · Tsugiki");
+  });
+});
+
+describe("Add repository on a Repository Tsugiki has", () => {
+  /** Opens Add repository, and checks a name the core says Tsugiki has as `name`. */
+  const checkHeld = async (name: string) => {
+    core.checkRepository.mockResolvedValue({ status: "ok", data: { kind: "held", name } });
+    await fireEvent.click(await screen.findByRole("button", { name: "Add repository" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Check" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "Switch to it" }));
+  };
+
+  beforeEach(() => {
+    core.home.mockResolvedValue(gcmonAfterPeps);
+  });
+
+  it("switches to it as the palette does, and adds nothing", async () => {
+    core.openRepository.mockResolvedValue({ status: "ok", data: pepsHome });
+    render(Page);
+    await checkHeld(peps.name);
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(await screen.findByRole("heading", { name: peps.name })).toBeTruthy();
+    expect(core.openRepository).toHaveBeenCalledWith("python/peps");
+    expect(core.addRepository).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(core.settings).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("closes without a switch on the open Repository", async () => {
+    render(Page);
+    await checkHeld(gcmon.name);
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(core.openRepository).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: gcmon.name })).toBeTruthy();
   });
 });
 

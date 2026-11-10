@@ -126,6 +126,16 @@ impl RepositoryCheck {
     }
 }
 
+/// What Add repository learns about the name the user typed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum NameCheck {
+    /// Tsugiki has this Repository already, by this name, so the dialog offers to switch to it.
+    Held { name: RepositoryName },
+    /// What adding it would give and cost.
+    New { check: RepositoryCheck },
+}
+
 /// `value`, or the largest `u32` for more.
 fn clamped(value: u64) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)

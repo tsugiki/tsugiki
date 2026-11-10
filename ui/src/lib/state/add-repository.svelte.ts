@@ -1,4 +1,5 @@
-// The add dialog's steps: the user types a Repository, the core asks GitHub about it, and the user decides.
+// The add dialog's steps: the user types a Repository, the core says Tsugiki has it or asks GitHub about it,
+// and the user decides.
 import {
   commands,
   type Conventions,
@@ -16,6 +17,8 @@ export type AddStep =
   | { step: "typing" }
   | { step: "checking" }
   | { step: "checked"; check: RepositoryCheck }
+  /** Tsugiki has the Repository already, by `name`, so the dialog offers to switch to it. */
+  | { step: "held"; name: string }
   | { step: "adding"; check: RepositoryCheck }
   | { step: "failed"; problem: string };
 
@@ -68,10 +71,13 @@ export class AddRepositoryState {
     if (asked !== this.#input) {
       return;
     }
+    if (answer.status === "error") {
+      this.step = { step: "failed", problem: answer.error.message };
+      return;
+    }
+    const found = answer.data;
     this.step =
-      answer.status === "ok"
-        ? { step: "checked", check: answer.data }
-        : { step: "failed", problem: answer.error.message };
+      found.kind === "held" ? { step: "held", name: found.name } : { step: "checked", check: found.check };
   }
 
   /** Adds what was checked, by the name GitHub gave, and returns what the window opens on now. It adds

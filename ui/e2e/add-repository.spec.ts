@@ -27,7 +27,7 @@ const onboarding = { screen: "onboarding", token: "gh" } as const;
 test("adding the first Repository goes from onboarding to the Repository", async ({ page }) => {
   await mockCore(page, {
     home: onboarding,
-    checkRepository: { status: "ok", data: check },
+    checkRepository: { status: "ok", data: { kind: "new", check } },
     addRepository: { status: "ok", data: cpython },
     workbench: { status: "ok", data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [] } },
   });
@@ -83,7 +83,7 @@ test("a normal launch opens on the Repository the core names", async ({ page }) 
 test("the dialog borrows objects from a clone the user picks", async ({ page }) => {
   await mockCore(page, {
     home: onboarding,
-    checkRepository: { status: "ok", data: check },
+    checkRepository: { status: "ok", data: { kind: "new", check } },
     pickFolder: { status: "ok", data: "D:/cpython" },
     checkClone: { status: "ok", data: null },
     addRepository: { status: "ok", data: cpython },

@@ -25,7 +25,7 @@ use crate::folders::Folders;
 use crate::latest::{self, LatestReader};
 use crate::mirror::{MirrorSource, MirrorSources};
 use crate::repository::{RepositoryAccess, RepositoryName};
-use crate::repository_settings::RepositorySettings;
+use crate::repository_settings::{NameCheck, RepositoryCheck, RepositorySettings};
 
 const REPOSITORIES: &str = "repositories";
 const FILTERS: &str = "filters";
@@ -55,6 +55,32 @@ impl Settings {
             .find(|repository| repository.name.is_same(&name))
             .cloned()
             .unwrap_or_else(|| RepositorySettings::new(name))
+    }
+
+    /// What Add repository says about `name`. A name these settings hold, in any case, is held by the name
+    /// they hold it by, and GitHub isn't asked. Otherwise `ask_github` checks it, and the name GitHub answers
+    /// with can still be one these settings hold: GitHub follows a renamed Repository to its new name.
+    pub fn check_name(
+        &self,
+        name: RepositoryName,
+        ask_github: impl FnOnce(RepositoryName) -> Result<RepositoryCheck, Error>,
+    ) -> Result<NameCheck, Error> {
+        if let Some(name) = self.held(&name) {
+            return Ok(NameCheck::Held { name });
+        }
+        let check = ask_github(name)?;
+        Ok(match self.held(&check.repository.name) {
+            Some(name) => NameCheck::Held { name },
+            None => NameCheck::New { check },
+        })
+    }
+
+    /// The name these settings hold `name` by, if they hold it.
+    fn held(&self, name: &RepositoryName) -> Option<RepositoryName> {
+        self.repositories
+            .iter()
+            .find(|repository| repository.name.is_same(name))
+            .map(|repository| repository.name.clone())
     }
 }
 
@@ -416,19 +442,12 @@ impl SettingsFiles {
         opened_at: OffsetDateTime,
     ) -> Result<Home, Error> {
         self.reload();
-        let held = self
-            .loaded
-            .settings
-            .repositories
-            .iter()
-            .find(|one| one.name.is_same(name))
-            .map(|one| one.name.clone())
-            .ok_or_else(|| {
-                Error::new(
-                    ErrorKind::NotFound,
-                    &format!("Tsugiki doesn't have {name}."),
-                )
-            })?;
+        let held = self.loaded.settings.held(name).ok_or_else(|| {
+            Error::new(
+                ErrorKind::NotFound,
+                &format!("Tsugiki doesn't have {name}."),
+            )
+        })?;
         let path = self.folders.machine_file();
         let mut edit = TomlEdit::open_machine(&path)?;
         put_first_in_recent(edit.document.as_table_mut(), &held, opened_at);
@@ -525,6 +544,9 @@ enum Request {
         name: RepositoryName,
         reply: Sender<Result<SettingsView, Error>>,
     },
+    Reread {
+        reply: Sender<Result<SettingsView, Error>>,
+    },
 }
 
 impl SettingsOwner {
@@ -570,12 +592,17 @@ impl SettingsOwner {
                         let opened = files.open_repository(&name, OffsetDateTime::now_utc());
                         (opened.map(|_| files.view()), reply)
                     }
+                    (Ok(files), Request::Reread { reply }) => {
+                        files.reload();
+                        (Ok(files.view()), reply)
+                    }
                     (
                         Err(problem),
                         Request::Add { reply, .. }
                         | Request::MirrorSource { reply, .. }
                         | Request::Panes { reply, .. }
-                        | Request::Open { reply, .. },
+                        | Request::Open { reply, .. }
+                        | Request::Reread { reply },
                     ) => (Err(problem.clone()), reply),
                 };
                 // Before the answer, so whoever asked finds the change in `view`. Changes come through here
@@ -645,6 +672,21 @@ impl SettingsOwner {
     pub fn open_repository(&self, name: RepositoryName) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
         self.ask(Request::Open { name, reply }, &answer)
+    }
+
+    /// What Add repository says about `name` (`Settings::check_name`), from what the files say now: a
+    /// Repository the user took out of `settings.toml` by hand is no longer held. Without files to read it
+    /// goes by the view. GitHub is asked on this thread, so the owner never waits for it.
+    pub fn check_name(
+        &self,
+        name: RepositoryName,
+        ask_github: impl FnOnce(RepositoryName) -> Result<RepositoryCheck, Error>,
+    ) -> Result<NameCheck, Error> {
+        let (reply, answer) = mpsc::channel();
+        let view = self
+            .ask(Request::Reread { reply }, &answer)
+            .unwrap_or_else(|_| self.view());
+        view.loaded.settings.check_name(name, ask_github)
     }
 
     fn ask(

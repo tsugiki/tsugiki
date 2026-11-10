@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { commands, type RepositoryCheck_Serialize } from "$lib/data/bindings";
+import { commands, type NameCheck_Serialize, type RepositoryCheck_Serialize } from "$lib/data/bindings";
 import { AddRepositoryState } from "./add-repository.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
@@ -21,6 +21,8 @@ const check: RepositoryCheck_Serialize = {
   access: "maintained",
 };
 
+const found: NameCheck_Serialize = { kind: "new", check };
+
 const notFound = { kind: "not_found", message: "GitHub has no Repository named a/b." } as const;
 
 beforeEach(() => {
@@ -28,7 +30,7 @@ beforeEach(() => {
 });
 
 it("asks about what the user typed and holds the answer", async () => {
-  vi.mocked(commands.checkRepository).mockResolvedValue({ status: "ok", data: check });
+  vi.mocked(commands.checkRepository).mockResolvedValue({ status: "ok", data: found });
   const state = new AddRepositoryState();
   state.input = "some-maintainer/gcmon";
 
@@ -38,6 +40,19 @@ it("asks about what the user typed and holds the answer", async () => {
 
   expect(commands.checkRepository).toHaveBeenCalledWith("some-maintainer/gcmon");
   expect(state.step).toEqual({ step: "checked", check });
+});
+
+it("holds the name Tsugiki has a Repository by when the core says it has it", async () => {
+  vi.mocked(commands.checkRepository).mockResolvedValue({
+    status: "ok",
+    data: { kind: "held", name: "python/cpython" },
+  });
+  const state = new AddRepositoryState();
+  state.input = "Python/CPython";
+
+  await state.check();
+
+  expect(state.step).toEqual({ step: "held", name: "python/cpython" });
 });
 
 it("says what the core says when it refuses", async () => {
@@ -55,7 +70,7 @@ it("says so when it can't ask", async () => {
 });
 
 it("forgets a check when the text changes", async () => {
-  vi.mocked(commands.checkRepository).mockResolvedValue({ status: "ok", data: check });
+  vi.mocked(commands.checkRepository).mockResolvedValue({ status: "ok", data: found });
   const state = new AddRepositoryState();
   state.input = "a/b";
   await state.check();
@@ -69,7 +84,7 @@ it("forgets a check when the text changes", async () => {
 it("ignores an answer about text the user has since changed", async () => {
   const { promise, resolve: answer } = Promise.withResolvers<{
     status: "ok";
-    data: RepositoryCheck_Serialize;
+    data: NameCheck_Serialize;
   }>();
   vi.mocked(commands.checkRepository).mockReturnValue(promise);
   const state = new AddRepositoryState();
@@ -77,7 +92,7 @@ it("ignores an answer about text the user has since changed", async () => {
   const checking = state.check();
 
   state.input = "a/bc";
-  answer({ status: "ok", data: check });
+  answer({ status: "ok", data: found });
   await checking;
 
   expect(state.step).toEqual({ step: "typing" });

@@ -42,25 +42,49 @@ const ESCAPE = 0x1b;
 const F5 = 0x74;
 const P = 0x50;
 
-// Brings the window forward, checks it got there, and presses the keys, last one first on the way up. Windows
-// refuses the foreground to a process that hasn't had input, so this presses F24, which nothing uses, first.
-// It finds the window by title, because `MainWindowHandle` can pick the single-instance plugin's invisible
-// window.
-const PRESS_KEYS = `
+// Finds the test's `tsg` and its window, in `$tsg` and `$window`. It takes the process's visible top-level
+// window that no other window owns: the title changes with the open Repository, and `MainWindowHandle` can
+// pick the single-instance plugin's invisible window.
+const FIND_WINDOW = `
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 public static class Input {
+  public delegate bool EachWindow(IntPtr window, IntPtr data);
   [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
   [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint type);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
-  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string kind, string title);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EachWindow each, IntPtr data);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
+  [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr window, uint relation);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowTextLength(IntPtr window);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr window, StringBuilder text, int size);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
-  public static uint ForegroundProcess() {
+  public static uint ProcessOf(IntPtr window) {
     uint process;
-    GetWindowThreadProcessId(GetForegroundWindow(), out process);
+    GetWindowThreadProcessId(window, out process);
     return process;
+  }
+  public static uint ForegroundProcess() {
+    return ProcessOf(GetForegroundWindow());
+  }
+  public static IntPtr VisibleWindowOf(uint process) {
+    IntPtr found = IntPtr.Zero;
+    EnumWindows((window, data) => {
+      // 4 is GW_OWNER: a dialog the window opened has it for its owner, and isn't the window itself.
+      bool owned = GetWindow(window, 4) != IntPtr.Zero;
+      if (ProcessOf(window) != process || !IsWindowVisible(window) || owned) { return true; }
+      found = window;
+      return false;
+    }, IntPtr.Zero);
+    return found;
+  }
+  public static string Title(IntPtr window) {
+    StringBuilder text = new StringBuilder(GetWindowTextLength(window) + 1);
+    GetWindowText(window, text, text.Capacity);
+    return text.ToString();
   }
   public static void Send(byte vk, uint flags) {
     keybd_event(vk, (byte)MapVirtualKey(vk, 0), flags, UIntPtr.Zero);
@@ -69,7 +93,28 @@ public static class Input {
 "@
 $tsg = Get-Process tsg | Where-Object { $_.Path -eq $env:SMOKE_EXE } | Select-Object -First 1
 if (-not $tsg) { Write-Error 'tsg is not running'; exit 3 }
-$window = [Input]::FindWindow([NullString]::Value, 'Tsugiki')
+$window = [Input]::VisibleWindowOf([uint32]$tsg.Id)
+if ($window -eq [IntPtr]::Zero) { Write-Error 'tsg has no visible window'; exit 5 }
+`;
+
+// Waits up to five seconds for the window's title to become SMOKE_TITLE, and prints the title it last saw. It
+// waits in here because each run of this script takes a second or two to start. It prints in UTF-8: the
+// page's title holds a "·", which the console's code page may lack.
+const WINDOW_TITLE = `
+${FIND_WINDOW}
+foreach ($try in 1..20) {
+  $title = [Input]::Title($window)
+  if ($title -ceq $env:SMOKE_TITLE) { break }
+  Start-Sleep -Milliseconds 250
+}
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+[Console]::Out.Write($title)
+`;
+
+// Brings the window forward, checks it got there, and presses the keys, last one first on the way up. Windows
+// refuses the foreground to a process that hasn't had input, so this presses F24, which nothing uses, first.
+const PRESS_KEYS = `
+${FIND_WINDOW}
 foreach ($try in 1..10) {
   [Input]::Send(0x87, 0)
   [Input]::Send(0x87, 2)
@@ -87,6 +132,11 @@ foreach ($key in $keys) { [Input]::Send($key, 2) }
 type Session = {
   run: <T>(expression: string) => Promise<T>;
   press: (...keys: number[]) => void;
+  /**
+   * Waits a few seconds for the window's title, the one the taskbar and Alt+Tab show, to become `title`, and
+   * returns the title it ends up with.
+   */
+  windowTitleAfter: (title: string) => string;
   github: FakeGitHub;
   secondsRunning: () => number;
 };
@@ -212,6 +262,25 @@ function evaluate(socket: WebSocket, expression: string): Promise<unknown> {
   });
 }
 
+/** Runs `script` in Windows PowerShell on the test's `tsg`, with `env` added, and returns what it prints. */
+function powershell(
+  script: string,
+  application: string,
+  failure: string,
+  env: Record<string, string>,
+): string {
+  const ran = spawnSync("powershell", ["-NoProfile", "-Command", script], {
+    env: { ...process.env, SMOKE_EXE: application, ...env },
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  if (ran.status !== 0) {
+    // A PowerShell that never started has no stderr, only the error.
+    throw new Error(`${failure}: ${ran.error?.message ?? ran.stderr}`);
+  }
+  return ran.stdout;
+}
+
 function sessionFor(
   socket: WebSocket,
   application: string,
@@ -223,16 +292,10 @@ function sessionFor(
     secondsRunning,
     run: async <T>(expression: string) => (await evaluate(socket, expression)) as T,
     press: (...keys) => {
-      const env = { ...process.env, SMOKE_EXE: application, SMOKE_KEYS: keys.join(",") };
-      const pressed = spawnSync("powershell", ["-NoProfile", "-Command", PRESS_KEYS], {
-        env,
-        encoding: "utf8",
-        windowsHide: true,
-      });
-      if (pressed.status !== 0) {
-        throw new Error(`The real keys didn't go in: ${pressed.stderr}`);
-      }
+      powershell(PRESS_KEYS, application, "The real keys didn't go in", { SMOKE_KEYS: keys.join(",") });
     },
+    windowTitleAfter: (title) =>
+      powershell(WINDOW_TITLE, application, "The window's title didn't come back", { SMOKE_TITLE: title }),
   };
 }
 
@@ -284,6 +347,15 @@ const CHECKS: Record<string, (session: Session) => Promise<string | undefined>> 
       // A request left waiting would fail later checks too, and blame the database when the window closes.
       github.cutOff();
     }
+  },
+
+  // `startup.rs` copies the page's title to the window, which no other test can see. The run stays on
+  // Onboarding, whose title is the window's own, so the check sets one as an open Repository would.
+  "a change to the page's title reaches the window's title": async ({ run, windowTitleAfter }) => {
+    const title = `smoke-test/title-${String(Date.now())} · Tsugiki`;
+    await run(`document.title = ${JSON.stringify(title)};`);
+    const shown = windowTitleAfter(title);
+    return shown === title ? undefined : `the window's title is "${shown}", and should be "${title}"`;
   },
 
   // Before the other key checks, because they would also pass if no key reached the window at all.

@@ -1,11 +1,12 @@
 // Tsugiki's keys (ADR 0013). The window's guard runs before anything else sees a key, and stops the browser
-// for every key Tsugiki owns, so a key with no action yet can't print or reload instead.
+// for every key Tsugiki owns, so a key with no action yet can't print or reload instead. Only the wait for a
+// chord's second key comes first: the key that ends it goes to neither.
 
 export type Os = "mac" | "other";
 
 /**
- * The keys from `docs/scope.md`, named as `keyName` names them. `ctrl+k` starts the chords `Ctrl+K M` and
- * `Ctrl+K P`, and most of these have no action until their stage arrives.
+ * The keys from `docs/scope.md`, named as `keyName` names them. `ctrl+k` starts the chords in
+ * `OWNED_CHORDS`, and most of these have no action until their stage arrives.
  */
 const OWNED_KEYS = [
   "ctrl+shift+p",
@@ -50,12 +51,54 @@ function isOwned(name: string): name is OwnedKey {
   return OWNED.has(name);
 }
 
+/** The first key of each chord. */
+const CHORD_STARTS = ["ctrl+k"] as const satisfies readonly OwnedKey[];
+
+export type ChordStart = (typeof CHORD_STARTS)[number];
+
+const STARTS: ReadonlySet<string> = new Set(CHORD_STARTS);
+
+export function isChordStart(name: string): name is ChordStart {
+  return STARTS.has(name);
+}
+
+/** The chords from `docs/scope.md`, named as `chordName` names them. None has an action until its stage. */
+const OWNED_CHORDS = [
+  "ctrl+k m",
+  "ctrl+k p",
+  "ctrl+k z",
+] as const satisfies readonly `${ChordStart} ${string}`[];
+
+export type OwnedChord = (typeof OWNED_CHORDS)[number];
+
+/** What a bound chord does. */
+export type ChordBindings = Readonly<Partial<Record<OwnedChord, () => void>>>;
+
+const CHORDS: ReadonlySet<string> = new Set(OWNED_CHORDS);
+
+export function isOwnedChord(name: string): name is OwnedChord {
+  return CHORDS.has(name);
+}
+
+/**
+ * A chord as a binding: its two presses, each named by `keyName`, joined by a space, such as "ctrl+k z". The
+ * Settings Keyboard page shows and remaps a chord by this name.
+ */
+export function chordName(first: ChordStart, second: string): string {
+  return `${first} ${second}`;
+}
+
 /** Whether `name` types in a text box: a plain key, or Ctrl+Alt+B, which AltGr sends too on Windows. */
 function typesInTextBox(name: OwnedKey): boolean {
   return name.length === 1 || name === "ctrl+alt+b";
 }
 
-const MODIFIERS = new Set(["control", "shift", "alt", "meta"]);
+const MODIFIERS = new Set(["control", "shift", "alt", "meta", "altgraph", "capslock", "numlock", "fn"]);
+
+/** Whether `e` presses a modifier or a lock alone, which `keyName` has no name for. */
+export function isModifier(e: KeyboardEvent): boolean {
+  return MODIFIERS.has(e.key.toLowerCase());
+}
 
 const PUNCTUATION: Readonly<Record<string, string>> = {
   Comma: ",",

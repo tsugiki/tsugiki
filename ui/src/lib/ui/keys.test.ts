@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { currentOs, keyGuard, keyLabel, keyName, keysForBrowser } from "./keys";
+import { chordName, currentOs, keyGuard, keyLabel, keyName, keysForBrowser } from "./keys";
 
 function press(init: KeyboardEventInit): KeyboardEvent {
   return new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
@@ -96,6 +96,12 @@ describe("keyName", () => {
     const altGr = press({ key: "€", code: "KeyU", ctrlKey: true, altKey: true });
     vi.spyOn(altGr, "getModifierState").mockImplementation((state) => state === "AltGraph");
     expect(keyName(altGr, "other")).toBeNull();
+  });
+});
+
+describe("chordName", () => {
+  it("joins a chord's two presses with a space", () => {
+    expect(chordName("ctrl+k", "z")).toBe("ctrl+k z");
   });
 });
 

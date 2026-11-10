@@ -4,7 +4,7 @@
     reason = "a build script reports a failure by panicking, which stops the build"
 )]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn main() {
     hand_over_the_commit();
@@ -29,35 +29,56 @@ fn main() {
 /// A build with no git, or outside a checkout, hands over nothing and shows the version alone.
 ///
 /// The script runs again when `HEAD` moves: a checkout rewrites `HEAD`, and a commit rewrites its branch's
-/// file under `refs/heads`, or adds one there if `git pack-refs` had moved the branch into `packed-refs`.
-/// Cargo then rebuilds the app alone, as the core never sees the SHA.
+/// file, or adds one under `refs/heads` if `git pack-refs` had moved the branch into `packed-refs`. A
+/// repository that keeps its refs in a `reftable` folder rewrites that instead. Cargo then rebuilds the app
+/// alone, as the core never sees the SHA. It watches the folder of branches only while the branch has no
+/// file, as each branch deleted or made there would rebuild the app and every test binary that links it.
 fn hand_over_the_commit() {
-    let Some(answer) = git(&[
+    let Some(answer) = git(&["rev-parse", "HEAD", "--symbolic-full-name", "HEAD"]) else {
+        return;
+    };
+    // A detached `HEAD` names no branch, and git prints `HEAD` as its name.
+    let (Some(sha), Some(branch)) = (answer.lines().next(), answer.lines().nth(1)) else {
+        return;
+    };
+    println!("cargo:rustc-env=TSUGIKI_COMMIT={sha}");
+    let Some(paths) = git(&[
         "rev-parse",
-        "HEAD",
         "--git-path",
         "HEAD",
+        "--git-path",
+        branch,
         "--git-path",
         "refs/heads",
         "--git-path",
         "packed-refs",
+        "--git-path",
+        "reftable",
     ]) else {
         return;
     };
-    let mut lines = answer.lines();
-    let Some(sha) = lines.next() else { return };
-    println!("cargo:rustc-env=TSUGIKI_COMMIT={sha}");
     let here = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let paths: Vec<PathBuf> = paths
+        .lines()
+        .map(|path| Path::new(&here).join(path))
+        .collect();
+    let Ok([head, branch, branches, packed, reftable]) = <[PathBuf; 5]>::try_from(paths) else {
+        return;
+    };
+    let branch = if branch.exists() { branch } else { branches };
+    let mut watched = vec![head, branch, packed, reftable];
+    // A detached `HEAD` is its own branch.
+    watched.dedup();
     // Cargo runs the script on every build while a path it watches is missing, and a repository may have
-    // no `packed-refs`.
-    for watched in lines.map(|path| Path::new(&here).join(path)) {
-        if watched.exists() {
-            println!("cargo:rerun-if-changed={}", watched.display());
-        }
+    // no `packed-refs` or `reftable`.
+    for path in watched.iter().filter(|path| path.exists()) {
+        println!("cargo:rerun-if-changed={}", path.display());
     }
 }
 
-/// What git printed, or nothing if git is missing or fails, as it does outside a checkout.
+/// What git printed, or nothing if git is missing or fails, as it does outside a checkout. It leaves out
+/// `GIT_DIR` and its kin, as `tsugiki_test_git` does: a hook or `git rebase -x` that runs the build may set
+/// them, and git would then ask another repository than the one the app's tests ask.
 #[expect(
     clippy::disallowed_types,
     reason = "the build runs git on the build machine, not the app on the user's"
@@ -65,6 +86,9 @@ fn hand_over_the_commit() {
 fn git(arguments: &[&str]) -> Option<String> {
     let output = std::process::Command::new("git")
         .args(arguments)
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
         .output()
         .ok()?;
     if !output.status.success() {

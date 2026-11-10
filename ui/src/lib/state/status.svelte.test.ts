@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands, events } from "$lib/data/bindings";
-import { StatusState, type Status } from "./status.svelte";
+import { StatusState, type RepositoryMirror, type Status } from "./status.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
   commands: {
@@ -10,6 +10,7 @@ vi.mock("$lib/data/bindings", () => ({
     cloning: vi.fn(),
     mirrorProblem: vi.fn(),
     mirrorQuestion: vi.fn(),
+    mirrorStates: vi.fn(),
     refresh: vi.fn(),
     checkMirrorsAgain: vi.fn(),
   },
@@ -20,6 +21,7 @@ vi.mock("$lib/data/bindings", () => ({
     cloningChanged: { listen: vi.fn() },
     mirrorProblemChanged: { listen: vi.fn() },
     mirrorQuestionChanged: { listen: vi.fn() },
+    mirrorStatesChanged: { listen: vi.fn() },
   },
 }));
 
@@ -194,6 +196,55 @@ describe("StatusState's last sync", () => {
       const state = new StatusState();
       await state.load();
       expect(state.mirrorQuestion).toBeNull();
+    });
+  });
+
+  describe("each Repository's mirror", () => {
+    const cloning: RepositoryMirror[] = [
+      { repository: "python/cpython", state: { state: "cloning", progress: { stage: "starting" } } },
+      { repository: "python/peps", state: { state: "waiting", behind: "python/cpython" } },
+    ];
+    const ready: RepositoryMirror[] = [{ repository: "python/cpython", state: { state: "ready" } }];
+    const catchStates = () => {
+      const listener = vi.fn<(payload: RepositoryMirror[]) => void>();
+      vi.mocked(events.mirrorStatesChanged.listen).mockImplementation(async (callback) => {
+        listener.mockImplementation((payload) => {
+          callback({ event: "mirror-states-changed", id: 1, payload });
+        });
+        return () => {};
+      });
+      return listener;
+    };
+
+    it("holds what the core says when the window loads", async () => {
+      catchLastSync();
+      catchStates();
+      vi.mocked(commands.mirrorStates).mockResolvedValue(cloning);
+      const state = new StatusState();
+      await state.load();
+      expect(state.mirrorStates).toEqual(cloning);
+    });
+
+    it("follows the core as a mirror changes", async () => {
+      catchLastSync();
+      const statesChanged = catchStates();
+      vi.mocked(commands.mirrorStates).mockResolvedValue(cloning);
+      const state = new StatusState();
+      await state.load();
+      statesChanged(ready);
+      expect(state.mirrorStates).toEqual(ready);
+    });
+
+    it("lets an event that arrives while asking win", async () => {
+      catchLastSync();
+      const statesChanged = catchStates();
+      vi.mocked(commands.mirrorStates).mockImplementation(async () => {
+        statesChanged(ready);
+        return cloning;
+      });
+      const state = new StatusState();
+      await state.load();
+      expect(state.mirrorStates).toEqual(ready);
     });
   });
 

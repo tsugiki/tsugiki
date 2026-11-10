@@ -82,6 +82,7 @@ struct Wired {
     clonings: Receiver<Value>,
     problems: Receiver<Value>,
     questions: Receiver<Value>,
+    states: Receiver<Value>,
     heads: Receiver<Value>,
     failed_heads: Receiver<Value>,
     _app: App<MockRuntime>,
@@ -122,6 +123,7 @@ impl Wired {
         let clonings = hear(&app, "cloning-changed");
         let problems = hear(&app, "mirror-problem-changed");
         let questions = hear(&app, "mirror-question-changed");
+        let states = hear(&app, "mirror-states-changed");
         let heads = hear(&app, "heads-fetched");
         let failed_heads = hear(&app, "heads-fetch-failed");
         let outside = Outside {
@@ -144,6 +146,7 @@ impl Wired {
             clonings,
             problems,
             questions,
+            states,
             heads,
             failed_heads,
             _app: app,
@@ -924,6 +927,30 @@ fn adding_a_repository_shows_its_clone_until_it_ends() {
     ));
     assert_eq!(asked, Value::Null);
     assert!(cloned);
+}
+
+#[test]
+fn the_window_hears_each_mirrors_state_as_it_changes_and_can_ask_for_it() {
+    let (folders, root) = temp_folders("wiring-mirror-states");
+    let remotes = remotes(&root, &[CPYTHON]);
+    let wired = Wired::start_cloning_from(Ok(folders), recordings(), remotes);
+
+    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    let ready = json!([{ "repository": CPYTHON, "state": { "state": "ready" } }]);
+    let mut heard = Vec::new();
+    while heard.last() != Some(&ready) {
+        heard.push(wired.states.recv_timeout(PLENTY).unwrap());
+    }
+    let asked = wired.ask("mirror_states", json!({})).unwrap();
+    drop(wired.stop());
+    std::fs::remove_dir_all(root).unwrap();
+
+    let starting = json!([{
+        "repository": CPYTHON,
+        "state": { "state": "cloning", "progress": { "stage": "starting" } },
+    }]);
+    assert!(heard.contains(&starting), "{heard:?}");
+    assert_eq!(asked, ready);
 }
 
 #[test]

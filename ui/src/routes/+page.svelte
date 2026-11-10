@@ -8,6 +8,7 @@
   import AddRepository from "$lib/ui/AddRepository.svelte";
   import { ChordWait } from "$lib/ui/chord.svelte";
   import { currentOs, keyGuard, keysForBrowser } from "$lib/ui/keys";
+  import { mirrorNote } from "$lib/ui/mirror-note";
   import Onboarding from "$lib/ui/Onboarding.svelte";
   import Palette, { type PaletteCommand, type PaletteWords } from "$lib/ui/Palette.svelte";
   import PerformanceHud from "$lib/ui/PerformanceHud.svelte";
@@ -80,19 +81,27 @@
   const switchTo = (name: string) => {
     void home.open(name).then(() => settings.load());
   };
-  /** A row that switches to each Repository but the open one, titled `prefix` and its name. */
-  const switchRows = (prefix: string): PaletteCommand[] =>
+  /** A row that switches to each Repository but the open one, titled `prefix` and its name, with the note
+   * `noteOf` gives it. */
+  const switchRows = (
+    prefix: string,
+    noteOf: (name: string) => string | null = () => null,
+  ): PaletteCommand[] =>
     others.map((name) => ({
       title: `${prefix}${name}`,
+      note: noteOf(name),
       run: () => {
         switchTo(name);
       },
     }));
+  /** Why `name`'s diffs aren't there yet, while its mirror isn't ready. */
+  const mirrorNoteOf = (name: string) =>
+    mirrorNote(name, status.mirrorStates.find((mirror) => mirror.repository === name)?.state);
   /** The picker's rows: the open Repository, named `open`, the others, then Add repository…. It opens on
    * the one opened before the open one, so Ctrl+R and Enter go back to it. */
   const pickerRows = (open: string): PaletteCommand[] => [
-    { title: open, current: true, run: () => {} },
-    ...switchRows(""),
+    { title: open, current: true, note: mirrorNoteOf(open), run: () => {} },
+    ...switchRows("", mirrorNoteOf),
     { title: "Add repository…", run: openAdd },
   ];
   /** The open Repository's last sync. After a switch the core tells of the new one's a moment later, and

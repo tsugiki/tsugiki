@@ -25,7 +25,8 @@ use tsugiki_core::highlight::Span;
 use tsugiki_core::latest::LatestReader;
 use tsugiki_core::measurement::Measurement;
 use tsugiki_core::mirror::{
-    CloneRefusal, Cloning, MirrorProblem, MirrorRequests, MirrorSource, MirrorSources, Unfetched,
+    CloneRefusal, Cloning, MirrorProblem, MirrorRequests, MirrorSource, MirrorSources,
+    RepositoryMirror, Unfetched,
 };
 use tsugiki_core::misses::Miss;
 use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
@@ -104,6 +105,15 @@ type LatestMirrorQuestion = LatestReader<Option<RepositoryName>>;
 #[tauri::command]
 #[specta::specta]
 fn mirror_question(latest: State<'_, LatestMirrorQuestion>) -> Option<RepositoryName> {
+    latest.get()
+}
+
+type LatestMirrorStates = LatestReader<Vec<RepositoryMirror>>;
+
+/// The state of each Repository's mirror the worker has heard of, for a window as it loads.
+#[tauri::command]
+#[specta::specta]
+fn mirror_states(latest: State<'_, LatestMirrorStates>) -> Vec<RepositoryMirror> {
     latest.get()
 }
 
@@ -579,6 +589,10 @@ struct MirrorProblemChanged(Option<MirrorProblem>);
 #[derive(Clone, Serialize, Type, Event)]
 struct MirrorQuestionChanged(Option<RepositoryName>);
 
+/// Sent when the state of a Repository's mirror changes, so the Repository picker can say (#320).
+#[derive(Clone, Serialize, Type, Event)]
+struct MirrorStatesChanged(Vec<RepositoryMirror>);
+
 /// Sent when PR heads arrive in a Repository's mirror, so a Files tab waiting for one asks again.
 #[derive(Clone, Serialize, Type, Event)]
 struct HeadsFetched(Change);
@@ -608,6 +622,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             mirror_problem,
             check_mirrors_again,
             mirror_question,
+            mirror_states,
             slow_commands::check_clone,
             slow_commands::choose_mirror_source,
             slow_commands::pick_folder,
@@ -646,6 +661,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             CloningChanged,
             MirrorProblemChanged,
             MirrorQuestionChanged,
+            MirrorStatesChanged,
             HeadsFetched,
             HeadsFetchFailed
         ])

@@ -37,7 +37,7 @@ flowchart LR
     session -->|PR heads to fetch| mirrors[Mirror worker]
     mirrors -->|git CLI| git[("repos/*/mirror.git")]
     session -->|status, changes| board[StatusBoard and<br>mirror Announce callbacks]
-    mirrors -->|cloning, problems| board
+    mirrors -->|cloning, problems, each Mirror's state| board
     board -->|latest copies + events| app[Commands in crates/app]
     reader --> app
     git --> highlighter[Highlighter thread]
@@ -77,9 +77,9 @@ Tauri's managed state.
    the window as the `changed` event, and each open screen that shows one of those items calls its command
    again.
 
-App-wide status (the connection, the last sync, cloning progress, a Mirror's problem) takes a shorter path.
-The app keeps the newest value in a `latest` copy for its command, then emits an event. A window that
-starts listening late asks the command and still gets the newest value.
+App-wide status (the connection, the last sync, cloning progress, a Mirror's problem, each Mirror's state)
+takes a shorter path. The app keeps the newest value in a `latest` copy for its command, then emits an
+event. A window that starts listening late asks the command and still gets the newest value.
 
 A diff takes a third path, because it is too big to send whole
 ([ADR 0001](adr/0001-standalone-tauri-gui-with-in-app-review.md)). The core runs `git diff` in the Mirror

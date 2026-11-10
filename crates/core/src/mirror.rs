@@ -66,6 +66,34 @@ pub enum MirrorProblem {
     },
 }
 
+/// How far a Repository's mirror is from ready, so the Repository picker can say why its diffs aren't there
+/// yet (#320).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum MirrorState {
+    /// The mirror is there.
+    Ready,
+    /// Its clone is under way.
+    Cloning { progress: CloneProgress },
+    /// Its clone waits for the user to say where it gets its objects.
+    Asking,
+    /// Its clone waits in line behind the clone of `behind`. With no `behind`, no clone is under way: a
+    /// fetch or a mirror's upkeep goes first, or GitHub can't be reached.
+    Waiting { behind: Option<RepositoryName> },
+    /// Its last clone failed, for the reason in `words`, and it goes back in line after a wait.
+    Failed { words: String },
+    /// `problem` keeps its clone from starting. A disk short of room for one clone holds back the others
+    /// too, and names the one it is short for.
+    Problem { problem: MirrorProblem },
+}
+
+/// The state of one Repository's mirror.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct RepositoryMirror {
+    pub repository: RepositoryName,
+    pub state: MirrorState,
+}
+
 /// The oldest git a mirror works with (ADR 0003): `git check-attr --source` and the partial clone's
 /// options came in 2.30 (#166).
 const OLDEST_GIT: (u32, u32) = (2, 30);
@@ -141,6 +169,10 @@ pub type AnnounceProblem = Box<dyn FnMut(Option<&MirrorProblem>) + Send>;
 /// once none waits.
 pub type AnnounceQuestion = Box<dyn FnMut(Option<&RepositoryName>) + Send>;
 
+/// Says the state of the mirror of each Repository the worker has heard of, in the order it heard of them,
+/// each time one changes.
+pub type AnnounceStates = Box<dyn FnMut(&[RepositoryMirror]) + Send>;
+
 /// What the worker tells the app as it goes.
 pub struct Announce {
     pub cloning: AnnounceCloning,
@@ -148,6 +180,7 @@ pub struct Announce {
     pub failed: AnnounceFailed,
     pub problem: AnnounceProblem,
     pub question: AnnounceQuestion,
+    pub states: AnnounceStates,
 }
 
 impl Announce {
@@ -159,6 +192,7 @@ impl Announce {
             failed: Box::new(|_, _, _| {}),
             problem: Box::new(|_| {}),
             question: Box::new(|_| {}),
+            states: Box::new(|_| {}),
         }
     }
 }
@@ -423,6 +457,8 @@ impl Mirrors {
             sources: MirrorSources::default(),
             asking: Vec::new(),
             told_asking: None,
+            heard: Vec::new(),
+            told_states: Vec::new(),
             upkept: Vec::new(),
             replaced: Vec::new(),
         };
@@ -697,9 +733,9 @@ struct Worker {
     /// For the thread that reads each git's progress.
     messages: Sender<Message>,
     waiting: VecDeque<RepositoryName>,
-    /// The Repositories whose clone failed, each with the time it goes back in line. A Repository is in
-    /// one of `waiting`, `failed` and the clone under way at most.
-    failed: Vec<(RepositoryName, Instant)>,
+    /// The Repositories whose clone failed. A Repository is in one of `waiting`, `failed`, `asking` and
+    /// the clone under way at most.
+    failed: Vec<FailedClone>,
     /// How many times in a row each Repository's clone has failed, which sets its next wait.
     clone_tries: Vec<(RepositoryName, u32)>,
     /// The Repository handed heads last comes first.
@@ -719,16 +755,32 @@ struct Worker {
     asking: Vec<RepositoryName>,
     /// The first of `asking` the window last heard of.
     told_asking: Option<RepositoryName>,
+    /// The Repositories the worker has heard of, in the order it heard of them. Each one in none of
+    /// `waiting`, `failed`, `asking` and the clone under way counts as ready: the worker cloned its mirror
+    /// or found it there. A broken one it can't move aside, or one deleted behind its back, still counts.
+    heard: Vec<RepositoryName>,
+    /// The states of their mirrors the window last heard of.
+    told_states: Vec<RepositoryMirror>,
     /// The times each Repository's mirror last had its upkeep, for those the worker has heard of.
     upkept: Vec<(RepositoryName, Upkept)>,
     /// The Repositories whose broken mirror the worker cloned again since launch.
     replaced: Vec<RepositoryName>,
 }
 
+/// A Repository whose clone failed.
+struct FailedClone {
+    repository: RepositoryName,
+    /// When it goes back in line.
+    retry_at: Instant,
+    /// Why it failed: git's last words, or what kept git from starting or the clone from being moved.
+    words: String,
+}
+
 impl Worker {
     fn run(&mut self, incoming: &Receiver<Message>) {
         loop {
             self.start_next();
+            self.tell_states();
             let message = match self.next_due() {
                 Some(at) => {
                     match incoming.recv_timeout(at.saturating_duration_since(Instant::now())) {
@@ -797,6 +849,16 @@ impl Worker {
             self.sources.set(repository.clone(), source);
         }
         self.note_for_upkeep(&repository);
+        // Without its folder, nothing can be said of a mirror, and the clone logs why it can't start.
+        if let Ok(folders) = &self.folders {
+            if !self.heard.iter().any(|one| one.is_same(&repository)) {
+                self.heard.push(repository.clone());
+            }
+            // So a mirror that is there doesn't look as if it waits for its clone.
+            if folders.mirror(&repository).exists() {
+                return;
+            }
+        }
         if let Some(index) = self.asking.iter().position(|one| one.is_same(&repository)) {
             if self.sources.get(&repository).is_none() {
                 return;
@@ -815,7 +877,7 @@ impl Worker {
         let failed = self
             .failed
             .iter()
-            .position(|(one, _)| one.is_same(&repository));
+            .position(|failed| failed.repository.is_same(&repository));
         match turn {
             // A clone that failed goes back in line once its wait is over.
             Turn::Last => {
@@ -994,7 +1056,7 @@ impl Worker {
             log::warn!(
                 "Tsugiki can't delete the clone of {repository} that a quit cut off: {cause}"
             );
-            self.fail_clone(repository);
+            self.fail_clone(repository, cause.to_string());
             return ControlFlow::Continue(());
         }
         let root = folders.data.clone();
@@ -1007,7 +1069,7 @@ impl Worker {
             }
             Err(cause) => {
                 log::warn!("Tsugiki can't say if {repository}'s mirror has room: {cause}");
-                self.fail_clone(repository);
+                self.fail_clone(repository, cause);
                 return ControlFlow::Continue(());
             }
         }
@@ -1019,7 +1081,7 @@ impl Worker {
             }
             Err((repository, cause)) => {
                 log::warn!("Tsugiki can't start cloning {repository}'s mirror: {cause}");
-                self.fail_clone(repository);
+                self.fail_clone(repository, cause.to_string());
             }
         }
         ControlFlow::Continue(())
@@ -1056,7 +1118,7 @@ impl Worker {
         self.problem = None;
         let failed = mem::take(&mut self.failed);
         self.waiting
-            .extend(failed.into_iter().map(|(repository, _)| repository));
+            .extend(failed.into_iter().map(|failed| failed.repository));
     }
 
     /// Notes `problem`, and tells the window if it hasn't heard of it.
@@ -1094,8 +1156,9 @@ impl Worker {
         (self.remotes.free_space)(root).map_err(|cause| cause.to_string())
     }
 
-    /// Tries a clone of `repository` again after a wait, which doubles each time it fails in a row.
-    fn fail_clone(&mut self, repository: RepositoryName) {
+    /// Tries a clone of `repository`, which failed for the reason in `words`, again after a wait, which
+    /// doubles each time it fails in a row.
+    fn fail_clone(&mut self, repository: RepositoryName, words: String) {
         let tries = match self
             .clone_tries
             .iter_mut()
@@ -1110,19 +1173,23 @@ impl Worker {
                 1
             }
         };
-        let at = Instant::now() + clone_wait(self.remotes.retry, tries);
-        self.failed.push((repository, at));
+        let retry_at = Instant::now() + clone_wait(self.remotes.retry, tries);
+        self.failed.push(FailedClone {
+            repository,
+            retry_at,
+            words,
+        });
     }
 
     /// Puts each clone that failed back in line once its wait is over.
     fn retry_failed(&mut self, now: Instant) {
         let (due, later) = mem::take(&mut self.failed)
             .into_iter()
-            .partition(|(_, at)| *at <= now);
+            .partition(|failed| failed.retry_at <= now);
         self.failed = later;
-        let due: Vec<(RepositoryName, Instant)> = due;
+        let due: Vec<FailedClone> = due;
         self.waiting
-            .extend(due.into_iter().map(|(repository, _)| repository));
+            .extend(due.into_iter().map(|failed| failed.repository));
     }
 
     /// The time the first head that is behind is due to be fetched once more, the first clone that failed
@@ -1136,7 +1203,7 @@ impl Worker {
                 Behind::Due { at, .. } => Some(*at),
                 Behind::Retried { .. } => None,
             });
-        let clones = self.failed.iter().map(|(_, at)| *at);
+        let clones = self.failed.iter().map(|failed| failed.retry_at);
         // Only an idle worker with a usable git starts an upkeep, so only it wakes for one.
         let git_unusable = matches!(
             self.problem,
@@ -1357,6 +1424,55 @@ impl Worker {
         }
     }
 
+    /// Tells the window the state of each mirror the worker has heard of, if one changed.
+    fn tell_states(&mut self) {
+        let states: Vec<RepositoryMirror> = (self.heard.iter())
+            .map(|repository| RepositoryMirror {
+                repository: repository.clone(),
+                state: self.state_of(repository),
+            })
+            .collect();
+        if states != self.told_states {
+            (self.announce.states)(&states);
+            self.told_states = states;
+        }
+    }
+
+    /// The state of `repository`'s mirror, which the worker has heard of.
+    fn state_of(&self, repository: &RepositoryName) -> MirrorState {
+        let cloning = match &self.job {
+            Some(Job::Clone(clone)) => Some(&clone.cloning),
+            Some(Job::Fetch(_) | Job::Upkeep(_)) | None => None,
+        };
+        if let Some(cloning) = cloning.filter(|cloning| cloning.repository.is_same(repository)) {
+            return MirrorState::Cloning {
+                progress: cloning.progress,
+            };
+        }
+        if self.asking.iter().any(|one| one.is_same(repository)) {
+            return MirrorState::Asking;
+        }
+        if let Some(failed) =
+            (self.failed.iter()).find(|failed| failed.repository.is_same(repository))
+        {
+            return MirrorState::Failed {
+                words: failed.words.clone(),
+            };
+        }
+        if !self.waiting.iter().any(|one| one.is_same(repository)) {
+            return MirrorState::Ready;
+        }
+        match &self.problem {
+            // A disk short for one clone holds back every clone until a Check again.
+            Some(problem) => MirrorState::Problem {
+                problem: problem.clone(),
+            },
+            None => MirrorState::Waiting {
+                behind: cloning.map(|cloning| cloning.repository.clone()),
+            },
+        }
+    }
+
     fn start_clone(
         &self,
         repository: RepositoryName,
@@ -1439,7 +1555,7 @@ impl Worker {
             log::warn!("Tsugiki couldn't clone {repository}'s mirror: {last_words}");
             // What is left goes before the next clone of this Repository, which says if it can't.
             drop(fs::remove_dir_all(&clone.partial));
-            self.fail_clone(repository);
+            self.fail_clone(repository, last_words.to_owned());
         }
         (self.announce.cloning)(None);
     }
@@ -1466,7 +1582,7 @@ impl Worker {
                     "Tsugiki can't move {repository}'s finished clone to its mirror: {cause}"
                 );
                 mark_cloned(&repository, partial);
-                self.fail_clone(repository);
+                self.fail_clone(repository, cause.to_string());
             }
         }
     }

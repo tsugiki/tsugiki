@@ -17,8 +17,8 @@ use tsugiki_core::status::{Change, Status, StatusBoard};
 
 use crate::{
     Changed, CloningChanged, DiffWork, FailedHeads, FolderPicker, HeadsFetchFailed, HeadsFetched,
-    LastSyncChanged, MirrorProblemChanged, MirrorQuestionChanged, PickFolder, ReadFailed,
-    RepositoryWork, StatusChanged, SyncActivityChanged,
+    LastSyncChanged, MirrorProblemChanged, MirrorQuestionChanged, MirrorStatesChanged, PickFolder,
+    ReadFailed, RepositoryWork, StatusChanged, SyncActivityChanged,
 };
 
 /// How often the open Repository refreshes: a refresh costs a few points, and this is about 60 points an
@@ -168,7 +168,13 @@ fn mirror_announcements<R: Runtime>(app: &AppHandle<R>) -> Announce {
         app.manage(question_reader),
         "only this manages the mirror's question"
     );
+    let (mut latest_states, states_reader) = latest::channel(Vec::new());
+    assert!(
+        app.manage(states_reader),
+        "only this manages the mirrors' states"
+    );
     let cloning_handle = app.clone();
+    let states_handle = app.clone();
     let problem_handle = app.clone();
     let question_handle = app.clone();
     let heads_handle = app.clone();
@@ -205,6 +211,11 @@ fn mirror_announcements<R: Runtime>(app: &AppHandle<R>) -> Announce {
             let repository = repository.cloned();
             latest_question.set(&repository);
             log_if_unsent(MirrorQuestionChanged(repository).emit(&question_handle));
+        }),
+        states: Box::new(move |states| {
+            let states = states.to_vec();
+            latest_states.set(&states);
+            log_if_unsent(MirrorStatesChanged(states).emit(&states_handle));
         }),
     }
 }

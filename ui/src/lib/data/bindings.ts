@@ -24,6 +24,8 @@ export const commands = {
 	checkMirrorsAgain: () => __TAURI_INVOKE<void>("check_mirrors_again"),
 	/**  The first Repository whose mirror waits to hear where it gets its objects, for a window as it loads. */
 	mirrorQuestion: () => __TAURI_INVOKE<RepositoryName | null>("mirror_question"),
+	/**  The state of each Repository's mirror the worker has heard of, for a window as it loads. */
+	mirrorStates: () => __TAURI_INVOKE<RepositoryMirror_Serialize[]>("mirror_states"),
 	/**
 	 *  Says why the clone in `folder` can't lend its objects to `repository`'s mirror, or nothing if it can.
 	 *  This waits on git commands that only read the clone.
@@ -148,6 +150,7 @@ export const events = {
 	lastSyncChanged: makeEvent<LastSyncChanged_Serialize, LastSyncChanged_Deserialize>("last-sync-changed"),
 	mirrorProblemChanged: makeEvent<MirrorProblemChanged_Serialize, MirrorProblemChanged_Deserialize>("mirror-problem-changed"),
 	mirrorQuestionChanged: makeEvent<MirrorQuestionChanged_Serialize, MirrorQuestionChanged_Deserialize>("mirror-question-changed"),
+	mirrorStatesChanged: makeEvent<MirrorStatesChanged_Serialize, MirrorStatesChanged_Deserialize>("mirror-states-changed"),
 	readFailed: makeEvent<ReadFailed, ReadFailed>("read-failed"),
 	statusChanged: makeEvent<StatusChanged_Serialize, StatusChanged_Deserialize>("status-changed"),
 	syncActivityChanged: makeEvent<SyncActivityChanged_Serialize, SyncActivityChanged_Deserialize>("sync-activity-changed"),
@@ -970,6 +973,69 @@ export type MirrorSource =
 { kind: "borrow"; folder: string };
 
 /**
+ *  How far a Repository's mirror is from ready, so the Repository picker can say why its diffs aren't there
+ *  yet (#320).
+ */
+export type MirrorState = MirrorState_Serialize | MirrorState_Deserialize;
+
+/**
+ *  How far a Repository's mirror is from ready, so the Repository picker can say why its diffs aren't there
+ *  yet (#320).
+ */
+export type MirrorState_Deserialize = 
+/**  The mirror is there. */
+{ state: "ready" } | 
+/**  Its clone is under way. */
+{ state: "cloning"; progress: CloneProgress } | 
+/**  Its clone waits for the user to say where it gets its objects. */
+{ state: "asking" } | 
+/**
+ *  Its clone waits in line behind the clone of `behind`. With no `behind`, no clone is under way: a
+ *  fetch or a mirror's upkeep goes first, or GitHub can't be reached.
+ */
+{ state: "waiting"; behind?: RepositoryName | null } | 
+/**  Its last clone failed, for the reason in `words`, and it goes back in line after a wait. */
+{ state: "failed"; words: string } | 
+/**
+ *  `problem` keeps its clone from starting. A disk short of room for one clone holds back the others
+ *  too, and names the one it is short for.
+ */
+{ state: "problem"; problem: MirrorProblem };
+
+/**
+ *  How far a Repository's mirror is from ready, so the Repository picker can say why its diffs aren't there
+ *  yet (#320).
+ */
+export type MirrorState_Serialize = 
+/**  The mirror is there. */
+{ state: "ready" } | 
+/**  Its clone is under way. */
+{ state: "cloning"; progress: CloneProgress } | 
+/**  Its clone waits for the user to say where it gets its objects. */
+{ state: "asking" } | 
+/**
+ *  Its clone waits in line behind the clone of `behind`. With no `behind`, no clone is under way: a
+ *  fetch or a mirror's upkeep goes first, or GitHub can't be reached.
+ */
+{ state: "waiting"; behind: RepositoryName | null } | 
+/**  Its last clone failed, for the reason in `words`, and it goes back in line after a wait. */
+{ state: "failed"; words: string } | 
+/**
+ *  `problem` keeps its clone from starting. A disk short of room for one clone holds back the others
+ *  too, and names the one it is short for.
+ */
+{ state: "problem"; problem: MirrorProblem };
+
+/**  Sent when the state of a Repository's mirror changes, so the Repository picker can say (#320). */
+export type MirrorStatesChanged = MirrorStatesChanged_Serialize | MirrorStatesChanged_Deserialize;
+
+/**  Sent when the state of a Repository's mirror changes, so the Repository picker can say (#320). */
+export type MirrorStatesChanged_Deserialize = RepositoryMirror_Deserialize[];
+
+/**  Sent when the state of a Repository's mirror changes, so the Repository picker can say (#320). */
+export type MirrorStatesChanged_Serialize = RepositoryMirror_Serialize[];
+
+/**
  *  One budget the window missed, or the start-up time, which it logs each launch. Each time is in
  *  milliseconds.
  */
@@ -1437,6 +1503,21 @@ export type RepositoryInFile_Serialize = {
 	name: RepositoryName,
 	conventions: Conventions | null,
 	filters: Filter[] | null,
+};
+
+/**  The state of one Repository's mirror. */
+export type RepositoryMirror = RepositoryMirror_Serialize | RepositoryMirror_Deserialize;
+
+/**  The state of one Repository's mirror. */
+export type RepositoryMirror_Deserialize = {
+	repository: RepositoryName,
+	state: MirrorState_Deserialize,
+};
+
+/**  The state of one Repository's mirror. */
+export type RepositoryMirror_Serialize = {
+	repository: RepositoryName,
+	state: MirrorState_Serialize,
 };
 
 /**  A Repository's `owner/name`, in the only form that reaches GitHub. It reaches the UI as a plain string. */

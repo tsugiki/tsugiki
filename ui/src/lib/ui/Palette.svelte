@@ -4,6 +4,9 @@
     run: () => void;
     /** Marks the row that stands for what is open now, such as the open Repository in the picker. */
     current?: boolean;
+    /** Words after the title, such as why a Repository's diffs aren't there yet. Typing doesn't match
+     * them. */
+    note?: string | null;
   }
 
   /** What a quick pick calls itself, its text box, its list, and a list with nothing in it. */
@@ -116,7 +119,8 @@
               run(command);
             }}
           >
-            {command.title}{#if command.current}&nbsp;<span class="note">open</span>{/if}
+            {command.title}{#if command.note}<span class="note">{` · ${command.note}`}</span
+              >{/if}{#if command.current}&nbsp;<span class="note open">open</span>{/if}
           </li>
         {/each}
       </ul>
@@ -169,8 +173,11 @@
   }
 
   .note {
-    float: right;
     color: #555;
+  }
+
+  .open {
+    float: right;
   }
 
   p {

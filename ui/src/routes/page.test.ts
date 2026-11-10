@@ -12,8 +12,12 @@ const core = vi.hoisted(() => ({
   mirrorProblem: vi.fn(),
   checkMirrorsAgain: vi.fn(),
   mirrorQuestion: vi.fn(),
+  mirrorStates: vi.fn(),
   chooseMirrorSource: vi.fn(),
 }));
+
+/** The listener for the mirrors' states, so a test can send it what the core would. */
+const mirrorStates = vi.hoisted(() => ({ changed: vi.fn<(payload: unknown) => void>() }));
 
 vi.mock("$lib/data/bindings", () => ({
   commands: {
@@ -32,6 +36,14 @@ vi.mock("$lib/data/bindings", () => ({
     cloningChanged: { listen: async () => () => {} },
     mirrorProblemChanged: { listen: async () => () => {} },
     mirrorQuestionChanged: { listen: async () => () => {} },
+    mirrorStatesChanged: {
+      listen: async (callback: (event: { payload: unknown }) => void) => {
+        mirrorStates.changed.mockImplementation((payload) => {
+          callback({ payload });
+        });
+        return () => {};
+      },
+    },
     changed: { listen: async () => () => {} },
     readFailed: { listen: async () => () => {} },
   },
@@ -48,6 +60,7 @@ beforeEach(() => {
   core.home.mockResolvedValue(onboarding);
   core.mirrorProblem.mockResolvedValue(null);
   core.mirrorQuestion.mockResolvedValue(null);
+  core.mirrorStates.mockResolvedValue([]);
   core.chooseMirrorSource.mockResolvedValue({ status: "ok", data: null });
   core.workbench.mockResolvedValue({
     status: "ok",
@@ -367,6 +380,53 @@ describe("the Repository picker", () => {
     expect(options()).toEqual(["some-maintainer/gcmon open", "python/peps", "a/third", "Add repository…"]);
     expect(spaced(screen.getByRole("option", { current: true }))).toBe("some-maintainer/gcmon open");
     expect(screen.getByRole("option", { selected: true }).textContent).toBe("python/peps");
+  });
+
+  it("notes why a Repository's diffs aren't there yet, and follows the clone while it is open", async () => {
+    core.mirrorStates.mockResolvedValue([
+      { repository: gcmon.name, state: { state: "ready" } },
+      { repository: peps.name, state: { state: "cloning", progress: { stage: "receiving", percent: 40 } } },
+      { repository: "a/third", state: { state: "waiting", behind: peps.name } },
+    ]);
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await ctrlR();
+    // The page asks for the states as it loads, after a few other answers.
+    await vi.waitFor(() => {
+      expect(options()).toEqual([
+        "some-maintainer/gcmon open",
+        "python/peps · cloning, 40%",
+        "a/third · waiting for python/peps's clone",
+        "Add repository…",
+      ]);
+    });
+
+    mirrorStates.changed([
+      { repository: gcmon.name, state: { state: "ready" } },
+      { repository: peps.name, state: { state: "ready" } },
+      { repository: "a/third", state: { state: "cloning", progress: { stage: "starting" } } },
+    ]);
+    await vi.waitFor(() => {
+      expect(options()).toEqual([
+        "some-maintainer/gcmon open",
+        "python/peps",
+        "a/third · cloning",
+        "Add repository…",
+      ]);
+    });
+    // The note is no part of the name, so typing doesn't match it.
+    await fireEvent.input(filter(), { target: { value: "cloning" } });
+    expect(screen.queryAllByRole("option")).toEqual([]);
+  });
+
+  it("notes the open Repository's mirror too", async () => {
+    core.mirrorStates.mockResolvedValue([{ repository: gcmon.name, state: { state: "asking" } }]);
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await ctrlR();
+    await vi.waitFor(() => {
+      expect(options()[0]).toBe("some-maintainer/gcmon · the mirror waits for your answer open");
+    });
   });
 
   it("picks the open Repository when it is the only one", async () => {

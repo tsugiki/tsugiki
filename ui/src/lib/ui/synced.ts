@@ -4,6 +4,9 @@ import type { Cloning, MirrorProblem, SyncActivity } from "$lib/state/status.sve
 
 type OpenSync = NonNullable<SyncActivity["open"]>;
 
+/** How far a clone has got once GitHub has started sending. */
+type CloneUnderWay = Exclude<Cloning["progress"], { stage: "starting" }>;
+
 const MINUTE_MS = 60_000;
 const MINUTES_IN_HOUR = 60;
 const MINUTES_IN_DAY = 1440;
@@ -49,13 +52,21 @@ export function elsewhereWords(activity: SyncActivity | null): string | null {
   return rest.length === 0 ? `${next} syncing` : `${next} and ${String(rest.length)} more syncing`;
 }
 
-/** A mirror's clone and how far it has got. Indexing what came down takes about as long as receiving it. */
+/** The stage a clone is at, after it has started. Indexing what came down takes about as long as receiving
+ * it. */
+export function cloneStage(progress: CloneUnderWay): "Cloning" | "Indexing" {
+  return progress.stage === "receiving" ? "Cloning" : "Indexing";
+}
+
+/** The oldest git a mirror works with (ADR 0003). */
+export const OLDEST_GIT = "git 2.30";
+
+/** A mirror's clone and how far it has got. */
 export function cloningWords(cloning: Cloning | null): string | null {
   if (cloning === null) return null;
   const { repository, progress } = cloning;
   if (progress.stage === "starting") return `Cloning ${repository}`;
-  const stage = progress.stage === "receiving" ? "Cloning" : "Indexing";
-  return `${stage} ${repository} ${String(progress.percent)}%`;
+  return `${cloneStage(progress)} ${repository} ${String(progress.percent)}%`;
 }
 
 const MB_IN_GB = 1024;
@@ -68,8 +79,9 @@ export function sizeWords(mb: number): string {
 /** The words for what keeps a mirror from being made. The Files tab needs one. */
 export function mirrorWords(problem: MirrorProblem | null): string | null {
   if (problem === null) return null;
-  if (problem.kind === "no_git") return "The Files tab needs git 2.30 or newer, and Tsugiki can't find git";
-  if (problem.kind === "old_git") return `The Files tab needs git 2.30 or newer: ${problem.version}`;
+  if (problem.kind === "no_git")
+    return `The Files tab needs ${OLDEST_GIT} or newer, and Tsugiki can't find git`;
+  if (problem.kind === "old_git") return `The Files tab needs ${OLDEST_GIT} or newer: ${problem.version}`;
   const { repository, folder, needed_mb, free_mb } = problem;
   return `No room to clone ${repository}: it needs ${sizeWords(needed_mb)} on the disk with ${folder}, which has ${sizeWords(free_mb)} free`;
 }

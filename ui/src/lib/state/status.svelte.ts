@@ -5,11 +5,13 @@ import {
   type Cloning,
   type LastSync,
   type MirrorProblem,
+  type MirrorState_Serialize as MirrorState,
+  type RepositoryMirror_Serialize as RepositoryMirror,
   type Status_Serialize as Status,
   type SyncActivity,
 } from "$lib/data/bindings";
 
-export type { Cloning, LastSync, MirrorProblem, Status, SyncActivity };
+export type { Cloning, LastSync, MirrorProblem, MirrorState, RepositoryMirror, Status, SyncActivity };
 
 export class StatusState {
   status = $state<Status>();
@@ -28,6 +30,9 @@ export class StatusState {
   /** The first Repository whose mirror waits to hear where it gets its objects. Nothing, while none waits. */
   mirrorQuestion = $state<string | null>(null);
   #heardQuestion = false;
+  /** The state of each Repository's mirror the core has heard of. */
+  mirrorStates = $state<RepositoryMirror[]>([]);
+  #heardStates = false;
   error = $state<string>();
 
   async load() {
@@ -55,12 +60,17 @@ export class StatusState {
         this.mirrorQuestion = payload;
         this.#heardQuestion = true;
       });
+      await events.mirrorStatesChanged.listen(({ payload }) => {
+        this.mirrorStates = payload;
+        this.#heardStates = true;
+      });
       const current = await commands.status();
       const lastSync = await commands.lastSync();
       const syncActivity = await commands.syncActivity();
       const cloning = await commands.cloning();
       const mirrorProblem = await commands.mirrorProblem();
       const mirrorQuestion = await commands.mirrorQuestion();
+      const mirrorStates = await commands.mirrorStates();
       // An event that arrived while asking is newer than these answers.
       this.status ??= current;
       this.lastSync ??= lastSync;
@@ -68,6 +78,7 @@ export class StatusState {
       if (!this.#heardCloning) this.cloning = cloning;
       if (!this.#heardProblem) this.mirrorProblem = mirrorProblem;
       if (!this.#heardQuestion) this.mirrorQuestion = mirrorQuestion;
+      if (!this.#heardStates) this.mirrorStates = mirrorStates;
     } catch (e) {
       this.error = String(e);
     }

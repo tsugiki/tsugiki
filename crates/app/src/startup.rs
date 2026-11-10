@@ -123,6 +123,12 @@ fn open_window(app: &AppHandle, webview_data: Option<PathBuf>) -> tauri::Result<
         .on_new_window(|url, _| {
             log::warn!("Tsugiki kept a window from opening on {url}");
             NewWindowResponse::Deny
+        })
+        // The page names the open Repository in its title, and the taskbar and Alt+Tab show the window's.
+        .on_document_title_changed(|window, title| {
+            if let Err(cause) = window.set_title(&title) {
+                log::warn!("Tsugiki can't change its window's title: {cause}");
+            }
         });
     let window = match webview_data {
         Some(folder) => window.data_directory(folder),

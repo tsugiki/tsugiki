@@ -57,6 +57,11 @@
   const endChord = () => {
     chord.end();
   };
+  /** Names the open Repository, so the user can tell which one this is with the Sidebar hidden, in the
+   * taskbar and in Alt+Tab. `startup.rs` copies it to the window. */
+  const title = $derived(
+    home.current?.screen === "repository" ? `${home.current.repository.name} · Tsugiki` : "Tsugiki",
+  );
   // A run that opens on Onboarding has no Workbench to time until the user adds a Repository.
   $effect(() => {
     if (home.current?.screen === "onboarding" || home.error) hud.skipStartup();
@@ -75,6 +80,7 @@
 </script>
 
 <svelte:window onkeydowncapture={readKey} onpointerdowncapture={endChord} onblur={endChord} />
+<svelte:head><title>{title}</title></svelte:head>
 
 <main>
   <AboutLine about={about.about} error={about.error} />

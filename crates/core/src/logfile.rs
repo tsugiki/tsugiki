@@ -17,6 +17,8 @@ use log::{Level, LevelFilter, Log, Metadata, Record};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
+use crate::version::Version;
+
 /// At this size the file becomes `.1`, replacing the one before, so the two take about twice this.
 const MAX_FILE_BYTES: u64 = 1024 * 1024;
 const MAX_LINE_CHARS: usize = 4096;
@@ -163,8 +165,8 @@ pub fn start(path: PathBuf) {
 
 /// Marks where a run begins in the log. A second `tsg` starts the logger too, for its panics, but it hands
 /// over to the first and exits without calling this.
-pub fn say_started() {
-    log::info!("Tsugiki {} started", env!("CARGO_PKG_VERSION"));
+pub fn say_started(version: &Version) {
+    log::info!("Tsugiki {version} started");
 }
 
 /// Keeps `secret` out of the file, whatever its shape, for lines sent after this. It does nothing before

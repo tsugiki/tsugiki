@@ -27,6 +27,7 @@ pub mod status;
 pub mod store;
 pub mod sync;
 pub mod token;
+pub mod version;
 pub mod web;
 pub mod workbench;
 
@@ -40,10 +41,10 @@ pub struct About {
     pub version: String,
 }
 
-pub fn about() -> About {
+pub fn about(version: &version::Version) -> About {
     About {
         name: "Tsugiki".to_owned(),
-        version: env!("CARGO_PKG_VERSION").to_owned(),
+        version: version.to_string(),
     }
 }
 

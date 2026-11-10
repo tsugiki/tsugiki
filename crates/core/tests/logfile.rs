@@ -13,6 +13,7 @@ use tsugiki_core::session::{Intervals, Session};
 use tsugiki_core::status::StatusBoard;
 use tsugiki_core::store::Store;
 use tsugiki_core::token::{GhOutput, Token};
+use tsugiki_core::version::Version;
 
 fn gh_prints_a_token_of_no_known_shape(_: &[&str]) -> io::Result<GhOutput> {
     Ok(GhOutput {
@@ -59,9 +60,12 @@ fn a_run_says_it_started_only_when_told_to(path: &Path) {
     log::logger().flush();
     assert!(!path.exists());
 
-    logfile::say_started();
+    logfile::say_started(&Version::new(Some(
+        "3a6dc89f0e1d2c3b4a5968778695a4b3c2d1e0f9",
+    )));
     log::logger().flush();
-    assert!(fs::read_to_string(path).unwrap().contains("started"));
+    let started = format!("Tsugiki {} (3a6dc89) started", env!("CARGO_PKG_VERSION"));
+    assert!(fs::read_to_string(path).unwrap().contains(&started));
 }
 
 #[test]

@@ -53,8 +53,13 @@ const LAYERS: &[Layer] = &[
         why: "Shares a value between threads, and knows no domain type.",
     },
     Layer {
-        module: "logfile",
+        module: "version",
         uses: &[],
+        why: "Names the version and the commit a build came from, which the log and the HUD write down.",
+    },
+    Layer {
+        module: "logfile",
+        uses: &["version"],
         why: "Takes the log lines from anywhere in the core, so it can't use what logs to it.",
     },
     Layer {
@@ -64,7 +69,7 @@ const LAYERS: &[Layer] = &[
     },
     Layer {
         module: "measurement",
-        uses: &[],
+        uses: &["version"],
         why: "Records the performance HUD, which times the window and not the core's data.",
     },
     Layer {

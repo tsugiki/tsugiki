@@ -18,6 +18,7 @@ use tsugiki_core::mirror::Remotes;
 use crate::Started;
 use crate::navigation;
 use crate::specta_builder;
+use crate::version;
 use crate::wiring::{Outside, connect_core};
 
 /// How often Tsugiki asks GitHub whether it is still there, at about one point of the hourly 5,000 each.
@@ -67,7 +68,7 @@ pub fn run() {
         .build(context)
         .expect("Tsugiki failed to start");
     assert!(app.manage(started), "only this manages the start");
-    logfile::say_started();
+    logfile::say_started(&version());
     #[cfg(all(windows, debug_assertions))]
     register_development_scheme(app.handle());
     launch::open_command_line(Build::CURRENT, &launch::command_line());

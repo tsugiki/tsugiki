@@ -5,6 +5,8 @@
 use serde::Deserialize;
 use specta::Type;
 
+use crate::version::Version;
+
 /// One recording, as the window sends it. Each time is in milliseconds.
 #[derive(Debug, Clone, PartialEq, Deserialize, Type)]
 pub struct Measurement {
@@ -126,7 +128,7 @@ impl Measurement {
     }
 
     /// The summary line, with this build's version.
-    pub fn summary(&self) -> String {
+    pub fn summary(&self, version: &Version) -> String {
         let frames = self.frames.map_or_else(
             || "no frames".to_owned(),
             |frames| {
@@ -200,8 +202,7 @@ impl Measurement {
             },
         );
         format!(
-            "Performance of Tsugiki {} over {:.1} s: {}",
-            env!("CARGO_PKG_VERSION"),
+            "Performance of Tsugiki {version} over {:.1} s: {}",
             self.seconds,
             [frames, startup, keys, queries, refreshes, issues, jumps].join("; ")
         )

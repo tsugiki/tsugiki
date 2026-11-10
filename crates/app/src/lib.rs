@@ -34,6 +34,7 @@ use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{Home, LoadedSettings, PaneLayout, SettingsOwner};
 use tsugiki_core::status::{Change, FailedRead, LastSync, Status, SyncActivity};
 use tsugiki_core::store::StoreReader;
+use tsugiki_core::version::Version;
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_files::{DiffSources, PrFiles};
@@ -43,7 +44,12 @@ use tsugiki_core::workbench::{Workbench, WorkbenchView};
 #[tauri::command]
 #[specta::specta]
 fn about() -> tsugiki_core::About {
-    tsugiki_core::about()
+    tsugiki_core::about(&version())
+}
+
+/// This build's version, with the commit `build.rs` found, if it found one.
+pub(crate) fn version() -> Version {
+    Version::new(option_env!("TSUGIKI_COMMIT"))
 }
 
 type LatestStatus = LatestReader<Status>;
@@ -240,7 +246,7 @@ fn time_running(started: State<'_, Started>) -> f64 {
 #[tauri::command]
 #[specta::specta]
 fn record_measurement(measurement: Measurement) -> String {
-    let summary = measurement.summary();
+    let summary = measurement.summary(&version());
     log::info!("{summary}");
     for line in measurement.long_frame_lines() {
         log::info!("{line}");

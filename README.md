@@ -87,13 +87,19 @@ command-line name is `tsg`.
 - A Repository picker on `Ctrl+R` and on the Repository's name in the Sidebar, which lists the Repositories
   in the order you last opened them. The window title names the open one.
 
+### In 0.2.2
+
+- The status bar says when a newer version of Tsugiki is out. `check = false` under `[releases]` in
+  `settings.toml` turns the check off.
+
 ### Planned
 
 The [Issues](https://github.com/tsugiki/tsugiki/issues) hold the work in flight, and
 [docs/build-order.md](docs/build-order.md) the stages after it:
 
-- 0.2.2: the token's code in a crate of its own ([#273](https://github.com/tsugiki/tsugiki/issues/273)),
-  and a word when a new version of Tsugiki is out ([#274](https://github.com/tsugiki/tsugiki/issues/274)).
+- 0.2.3: speed, such as opening a PR without building the whole Workbench
+  ([#193](https://github.com/tsugiki/tsugiki/issues/193)) and keeping frames in budget while you drag the
+  diff's scroll bar ([#225](https://github.com/tsugiki/tsugiki/issues/225)).
 - Reading PRs, continued: Stale reviews, Go to definition and Definition peek, the file view, the Review
   checkout, Open in editor, and reading offline.
 - Writing: comments, line comments in a Pending review, replies, resolving threads, `suggestion` blocks and

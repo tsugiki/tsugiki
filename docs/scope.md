@@ -327,7 +327,9 @@ The order in which v1 is built is in [build-order.md](build-order.md).
   PR's current head. If the user has edited files there, Tsugiki first offers Discard and switch, Copy as
   patch, or Cancel. Settings › Repositories shows the checkout's size, with Remove checkout.
 - A Repository's **Mirror** is first cloned as the Repository is added, alongside its first sync, one
-  Repository at a time with the open one first. Add repository offers to borrow objects from a clone the user
+  Repository at a time with the open one first. A switch puts the Repository's clone next, after the clone
+  under way, which goes on to its end since git can't resume a clone cut off. A clone waiting for the user's
+  answer waits on, and goes next once answered. Add repository offers to borrow objects from a clone the user
   has, picked as a folder, and gives the time and disk each choice takes. Tsugiki checks that the folder is a
   clone with a remote for that repository, and doesn't search the disk for one. The path is kept in
   `machine.toml`, so a new clone after a broken one borrows again. A Repository added before Tsugiki asked

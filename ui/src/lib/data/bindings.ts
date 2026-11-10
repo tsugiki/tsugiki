@@ -82,8 +82,8 @@ export const commands = {
 	 */
 	addRepository: (repository: NewRepository) => typedError<Home_Serialize, Error_Serialize>(__TAURI_INVOKE("add_repository", { repository })),
 	/**
-	 *  Makes `name` the open Repository and starts its sync, and says what the window shows now. This waits on
-	 *  a small file and never on GitHub or git.
+	 *  Makes `name` the open Repository, starts its sync and puts its mirror's clone next, and says what the
+	 *  window shows now. This waits on a small file and never on GitHub or git.
 	 */
 	openRepository: (name: string) => typedError<Home_Serialize, Error_Serialize>(__TAURI_INVOKE("open_repository", { name })),
 	/**

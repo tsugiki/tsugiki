@@ -29,7 +29,7 @@ use tsugiki_core::mirror::{
 };
 use tsugiki_core::misses::Miss;
 use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
-use tsugiki_core::repository_settings::RepositoryCheck;
+use tsugiki_core::repository_settings::{RepositoryCheck, RepositorySettings};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{Home, LoadedSettings, PaneLayout, SettingsOwner};
 use tsugiki_core::status::{Change, FailedRead, LastSync, Status, SyncActivity};
@@ -296,14 +296,14 @@ fn add_named_repository(
     Ok(view.home)
 }
 
-/// Makes the Repository the user picked the open one, and hands it to the session.
+/// Makes the Repository the user picked the open one, and hands it to the session and the mirrors.
 fn open_named_repository(
     name: &str,
     owner: &SettingsOwner,
     work: &RepositoryWork,
 ) -> Result<Home, Error> {
     let view = owner.open_repository(RepositoryName::parse(name)?)?;
-    work.open(&view.home);
+    work.switch(&view.home);
     Ok(view.home)
 }
 
@@ -314,24 +314,31 @@ struct RepositoryWork {
 }
 
 impl RepositoryWork {
-    /// Loads the user's work in the Repository the window opens on, under the name the window knows it by,
-    /// so the window recognises the changes. Its mirror's clone goes ahead of the other Repositories', and
-    /// neither waits on the other. `sources` says where its objects come from, if the user has said.
+    /// Opens the Repository the window launches on or the user added. `sources` says where its mirror's
+    /// objects come from, if the user has said.
     fn start(&self, home: &Home, sources: &MirrorSources) {
-        self.open(home);
         if let Home::Repository { repository } = home {
-            let source = sources.get(&repository.name).cloned();
-            self.mirrors
-                .clone_mirror_next(repository.name.clone(), source);
+            self.open(repository, sources.get(&repository.name).cloned());
         }
     }
 
-    /// Syncs the Repository the window opens on, which takes every other sync step and the timed refresh
-    /// from the one it opened before (ADR 0015). That one's sync, if unfinished, goes on in its turns.
-    fn open(&self, home: &Home) {
+    /// Opens the Repository the user switched to. It hands the mirrors no answer: they have each one saved
+    /// at launch, and each the user gave since, which `machine.toml` may have failed to keep.
+    fn switch(&self, home: &Home) {
         if let Home::Repository { repository } = home {
-            self.session.sync(repository.clone());
+            self.open(repository, None);
         }
+    }
+
+    /// Syncs `repository`, under the name the window knows it by, so the window recognises the changes. It
+    /// takes every other sync step and the timed refresh from the one open before (ADR 0015), whose sync, if
+    /// unfinished, goes on in its turns. Its mirror's clone goes ahead of the others waiting, after the one
+    /// under way, and doesn't wait on the sync. While neither `source` nor the mirrors hold an answer of
+    /// where its objects come from, the clone waits for one.
+    fn open(&self, repository: &RepositorySettings, source: Option<MirrorSource>) {
+        self.session.sync(repository.clone());
+        self.mirrors
+            .clone_mirror_next(repository.name.clone(), source);
     }
 }
 

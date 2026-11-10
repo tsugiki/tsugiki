@@ -1,8 +1,8 @@
-// `just ship` ends a PR's work: it runs `just check`, pushes the branch, and opens the PR, or says which PR
-// the push updated. `just check` writes to .temp/check.log, and the script prints only its outcome and, on a
-// failure, the failed recipe and the log's tail, so an agent reads a few lines of a long run.
-// The branch's first commit gives the PR its title and, without `just ship body.md`, its body.
-// `--no-check` skips `just check` when only a gate you reran yourself has changed since.
+// `just ship` pushes the branch and opens the PR, or says which PR the push updated. The branch's first
+// commit gives the PR its title and, without `just ship body.md`, its body.
+// `just ship --check` ends a PR's work: it runs `just check` first, which writes to .temp/check.log, and
+// prints only its outcome and, on a failure, the failed recipe and the log's tail, so an agent reads a few
+// lines of a long run. Plain `just ship` pushes a fix for a gate you reran yourself.
 import { execFileSync, spawnSync } from "node:child_process";
 import { closeSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 
@@ -33,15 +33,15 @@ function attempt(command: string, ...args: string[]): string | undefined {
 }
 
 const args = shipArgs(process.argv.slice(2));
-if (args === undefined) stop("Usage: `just ship [--no-check] [body.md]`.");
+if (args === undefined) stop("Usage: `just ship [--check] [body.md]`.");
 const { check, bodyFile } = args;
 
 const branch = run("git can't name the current branch.", "git", "branch", "--show-current");
 const refusal = branchRefusal(branch);
 if (refusal !== undefined) stop(refusal);
-// Untracked files count too: `just check` would test them, and the push would leave them out.
+// Untracked files count too: the tests saw them, and the push would leave them out.
 if (run("git status failed.", "git", "status", "--porcelain") !== "") {
-  stop("Commit, delete or ignore every change first: `just check` should test what the PR holds.");
+  stop("Commit, delete or ignore every change first: the PR should hold what you tested.");
 }
 mkdirSync(".temp", { recursive: true });
 

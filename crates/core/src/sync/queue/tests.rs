@@ -463,6 +463,28 @@ fn a_refresh_of_the_open_repository_joins_the_queue_once() {
 }
 
 #[test]
+fn after_a_switch_the_timer_refreshes_only_the_repository_opened_last() {
+    let mut replies = searches_finding(&[]);
+    replies.extend(searches_finding(&[]));
+    let harness = Harness::new("switch-refresh", replies);
+    let mut syncs = Syncs::default();
+    syncs.add(plain(cpython()));
+    drop(run_to_the_end(&mut syncs, &harness));
+    syncs.add(plain(peps()));
+    drop(run_to_the_end(&mut syncs, &harness));
+
+    syncs.refresh_open(&harness.store);
+
+    let queued: Vec<&RepositoryName> = syncs
+        .queue
+        .iter()
+        .map(|queued| &queued.sync.settings.name)
+        .collect();
+    assert_eq!(queued, [&peps()]);
+    harness.finish();
+}
+
+#[test]
 fn only_the_open_repository_says_its_sync_finished() {
     let peps = RepositoryName::parse("python/peps").unwrap();
     let mut replies = searches_finding(&[]);

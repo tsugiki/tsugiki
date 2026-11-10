@@ -296,6 +296,17 @@ fn add_named_repository(
     Ok(view.home)
 }
 
+/// Makes the Repository the user picked the open one, and hands it to the session.
+fn open_named_repository(
+    name: &str,
+    owner: &SettingsOwner,
+    work: &RepositoryWork,
+) -> Result<Home, Error> {
+    let view = owner.open_repository(RepositoryName::parse(name)?)?;
+    work.open(&view.home);
+    Ok(view.home)
+}
+
 /// The threads that work on Repositories: the session's sync queue, and the mirrors' one writer.
 struct RepositoryWork {
     session: SessionRequests,
@@ -307,14 +318,19 @@ impl RepositoryWork {
     /// so the window recognises the changes. Its mirror's clone goes ahead of the other Repositories', and
     /// neither waits on the other. `sources` says where its objects come from, if the user has said.
     fn start(&self, home: &Home, sources: &MirrorSources) {
-        match home {
-            Home::Repository { repository } => {
-                self.session.sync(repository.clone());
-                let source = sources.get(&repository.name).cloned();
-                self.mirrors
-                    .clone_mirror_next(repository.name.clone(), source);
-            }
-            Home::Onboarding { .. } => {}
+        self.open(home);
+        if let Home::Repository { repository } = home {
+            let source = sources.get(&repository.name).cloned();
+            self.mirrors
+                .clone_mirror_next(repository.name.clone(), source);
+        }
+    }
+
+    /// Syncs the Repository the window opens on, which takes every other sync step and the timed refresh
+    /// from the one it opened before (ADR 0015). That one's sync, if unfinished, goes on in its turns.
+    fn open(&self, home: &Home) {
+        if let Home::Repository { repository } = home {
+            self.session.sync(repository.clone());
         }
     }
 }
@@ -597,6 +613,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             record_miss,
             slow_commands::check_repository,
             slow_commands::add_repository,
+            slow_commands::open_repository,
             slow_commands::save_pane_layout,
             slow_commands::workbench,
             slow_commands::issue,

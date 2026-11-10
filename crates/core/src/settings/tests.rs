@@ -355,7 +355,7 @@ fn found(name: &str) -> RepositoryCheck {
 fn a_name_the_settings_hold_in_any_case_is_held_by_their_name_and_github_isnt_asked() {
     let settings = holding(&["python/cpython", "python/peps"]);
 
-    let checked = settings.check_name(repository("Python/CPython"), |_| {
+    let checked = settings.check_name(repository("Python/CPython"), &mut |_| {
         panic!("GitHub was asked about a Repository Tsugiki has")
     });
 
@@ -372,7 +372,7 @@ fn a_name_the_settings_dont_hold_gets_githubs_check() {
     let settings = holding(&["python/cpython"]);
     let mut asked = Vec::new();
 
-    let checked = settings.check_name(repository("python/peps"), |name| {
+    let checked = settings.check_name(repository("python/peps"), &mut |name| {
         asked.push(name.to_string());
         Ok(found("python/peps"))
     });
@@ -391,7 +391,7 @@ fn a_name_github_answers_with_that_the_settings_hold_is_held() {
     // GitHub follows a renamed Repository to its new name.
     let settings = holding(&["python/cpython"]);
 
-    let checked = settings.check_name(repository("python/old-cpython"), |_| {
+    let checked = settings.check_name(repository("python/old-cpython"), &mut |_| {
         Ok(found("python/CPython"))
     });
 
@@ -407,7 +407,8 @@ fn a_name_github_answers_with_that_the_settings_hold_is_held() {
 fn a_check_github_refuses_says_why() {
     let refused = Error::new(ErrorKind::NotFound, "GitHub has no python/no-such.");
 
-    let checked = holding(&[]).check_name(repository("python/no-such"), |_| Err(refused.clone()));
+    let checked =
+        holding(&[]).check_name(repository("python/no-such"), &mut |_| Err(refused.clone()));
 
     assert_eq!(checked.unwrap_err(), refused);
 }
@@ -1965,8 +1966,8 @@ fn the_owners_check_reads_the_files_again_so_a_repository_taken_out_by_hand_isnt
     let owner = SettingsOwner::start(Ok(files));
     hold_only(&folders, &["a/first"]);
 
-    let second = owner.check_name(repository("a/second"), |_| Ok(found("a/second")));
-    let first = owner.check_name(repository("A/First"), |_| {
+    let second = owner.check_name(repository("a/second"), &mut |_| Ok(found("a/second")));
+    let first = owner.check_name(repository("A/First"), &mut |_| {
         panic!("GitHub was asked about a Repository Tsugiki has")
     });
     fs::remove_dir_all(root).unwrap();
@@ -1991,7 +1992,7 @@ fn the_owners_check_reads_the_files_again_so_a_repository_taken_out_by_hand_isnt
 fn without_folders_the_owners_check_asks_github() {
     let owner = SettingsOwner::start(Err(Error::new(ErrorKind::Internal, "no folders")));
 
-    let checked = owner.check_name(repository("a/b"), |_| Ok(found("a/b")));
+    let checked = owner.check_name(repository("a/b"), &mut |_| Ok(found("a/b")));
 
     assert_eq!(
         checked.unwrap(),

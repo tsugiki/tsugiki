@@ -269,7 +269,9 @@ fn check_typed_repository(
     owner: &SettingsOwner,
     requests: &SessionRequests,
 ) -> Result<NameCheck, Error> {
-    owner.check_name(RepositoryName::parse(input)?, |name| requests.check(name))
+    owner.check_name(RepositoryName::parse(input)?, &mut |name| {
+        requests.check(name)
+    })
 }
 
 /// The user's choice in Add repository: the Repository, by the name GitHub gave it, what they may do in it,

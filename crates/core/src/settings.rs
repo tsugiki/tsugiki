@@ -60,10 +60,13 @@ impl Settings {
     /// What Add repository says about `name`. A name these settings hold, in any case, is held by the name
     /// they hold it by, and GitHub isn't asked. Otherwise `ask_github` checks it, and the name GitHub answers
     /// with can still be one these settings hold: GitHub follows a renamed Repository to its new name.
+    ///
+    /// `ask_github` isn't generic, so the app and the tests run one copy of this, and the coverage gate sees
+    /// each line run.
     pub fn check_name(
         &self,
         name: RepositoryName,
-        ask_github: impl FnOnce(RepositoryName) -> Result<RepositoryCheck, Error>,
+        ask_github: &mut dyn FnMut(RepositoryName) -> Result<RepositoryCheck, Error>,
     ) -> Result<NameCheck, Error> {
         if let Some(name) = self.held(&name) {
             return Ok(NameCheck::Held { name });
@@ -680,7 +683,7 @@ impl SettingsOwner {
     pub fn check_name(
         &self,
         name: RepositoryName,
-        ask_github: impl FnOnce(RepositoryName) -> Result<RepositoryCheck, Error>,
+        ask_github: &mut dyn FnMut(RepositoryName) -> Result<RepositoryCheck, Error>,
     ) -> Result<NameCheck, Error> {
         let (reply, answer) = mpsc::channel();
         let view = self

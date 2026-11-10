@@ -10,7 +10,8 @@ or `npm run`, and CI calls the same npm scripts.
 | --------------------- | -------------------------------- | ------------------------------------------------------------------------------- |
 | `ship.ts`             | `just ship`                      | Pushes the branch and opens the PR; with `--check`, runs `just check` first     |
 | `merged.ts`           | `just merged`                    | After GitHub merges a PR: switches to main, pulls, deletes the local branch     |
-| `next.ts`             | `just next`                      | Lists the open tickets of the release being built, ready-for-agent first        |
+| `next.ts`             | `just next`                      | Lists the open tickets of the release being built, each under its blockers      |
+| `tickets.ts`          | `next.ts`                        | The order and indent of those tickets: blockers first, then ready-for-agent     |
 | `pr.ts`               | `ship.ts`, `next.ts`             | Their arguments, branch rules, failure summary and milestone order              |
 | `doc-width.ts`        | `just doc-width`                 | Fails on a line of Markdown, a comment or a docstring past 110 columns          |
 | `doc-lines.ts`        | `doc-width.ts`, `prose-check.ts` | Picks out the lines of a file that hold prose                                   |

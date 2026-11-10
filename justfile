@@ -29,7 +29,7 @@ merged branch="":
 ship *args:
     node scripts/ship.ts {{args}}
 
-# List the open tickets of the earliest open milestone, the ones ready for an agent first
+# List the open tickets of the earliest open milestone, each under its blockers, ready for an agent first
 next:
     node scripts/next.ts
 

@@ -186,11 +186,14 @@ describe("StatusBar's line for a mirror that waits for an answer", () => {
   const online = { state: "online", login: "octocat" } as const;
   const line = () => screen.getByRole("button", { name: "python/cpython's mirror waits for your answer" });
 
-  it("says so in the live region, even when the settings hide the bar, and offers no answers", () => {
+  it("says so in the live region, even when the settings hide the bar, and offers no answers", async () => {
     render(StatusBar, { status: online, mirrorQuestion: "python/cpython", visible: false });
     expect(bar().textContent?.trim()).toBe("python/cpython's mirror waits for your answer");
     expect(bar().contains(line())).toBe(true);
     expect(screen.getAllByRole("button")).toEqual([line()]);
+    // With nobody to ask the question, a click does nothing.
+    await fireEvent.click(line());
+    expect(line()).toBeTruthy();
   });
 
   it("follows the status and the problems", () => {

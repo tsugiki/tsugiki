@@ -48,10 +48,11 @@
     keysForBrowser(import.meta.env.DEV),
   );
   /** Reads each key before anything else, so the key that ends a chord's wait goes nowhere else. Chords
-   * start where the list's keys work: on a Repository's screen, with no dialog or palette on top. No chord
-   * has an action yet. */
+   * start where the list's keys work: on a Repository's screen, with no dialog or palette on top, and the
+   * screen says what each does. */
   const readKey = (e: KeyboardEvent) => {
-    if (!chord.read(e, home.current?.screen === "repository" && keysActive, {})) guard(e);
+    const canStart = home.current?.screen === "repository" && keysActive;
+    if (!chord.read(e, canStart, repositoryHome?.chordBindings() ?? {})) guard(e);
   };
   const endChord = () => {
     chord.end();

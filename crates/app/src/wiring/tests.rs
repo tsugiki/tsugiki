@@ -291,8 +291,13 @@ fn the_panes_layout_stays_on_this_machine_across_a_restart() {
     let (folders, root) = temp_folders("wired-panes");
     let wired = Wired::start(Ok(folders.clone()), no_network());
     let before = wired.ask("pane_layout", json!({})).unwrap();
-    let layout =
-        json!({ "sidebar": 240, "list": null, "sidebar_hidden": true, "list_hidden": true });
+    let layout = json!({
+        "sidebar": 240,
+        "list": null,
+        "sidebar_hidden": true,
+        "list_hidden": true,
+        "detail_only_hid": "both",
+    });
     let saved = wired.ask("save_pane_layout", json!({ "layout": layout }));
     drop(wired.stop());
 
@@ -304,7 +309,13 @@ fn the_panes_layout_stays_on_this_machine_across_a_restart() {
 
     assert_eq!(
         before,
-        json!({ "sidebar": null, "list": null, "sidebar_hidden": false, "list_hidden": false })
+        json!({
+            "sidebar": null,
+            "list": null,
+            "sidebar_hidden": false,
+            "list_hidden": false,
+            "detail_only_hid": null,
+        })
     );
     assert_eq!(
         (saved.unwrap(), reopened, synced),

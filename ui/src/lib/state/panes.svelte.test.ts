@@ -5,7 +5,13 @@ import { PanesState } from "./panes.svelte";
 vi.mock("$lib/data/bindings", () => ({ commands: { paneLayout: vi.fn(), savePaneLayout: vi.fn() } }));
 
 const core = vi.mocked(commands);
-const DEFAULTS = { sidebar: null, list: null, sidebar_hidden: false, list_hidden: false };
+const DEFAULTS = {
+  sidebar: null,
+  list: null,
+  sidebar_hidden: false,
+  list_hidden: false,
+  detail_only_hid: null,
+};
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -115,7 +121,7 @@ it("hides each pane and shows it again, saving each time with its width", async 
   await panes.toggle("list");
 
   expect([hidden, panes.hidden("sidebar"), panes.hidden("list")]).toEqual([[true, true], false, false]);
-  const widths = { sidebar: 240, list: 500 };
+  const widths = { sidebar: 240, list: 500, detail_only_hid: null };
   expect(core.savePaneLayout.mock.calls).toEqual([
     [{ ...widths, sidebar_hidden: true, list_hidden: false }],
     [{ ...widths, sidebar_hidden: true, list_hidden: true }],
@@ -198,8 +204,14 @@ it("saves both widths, and a reset saves the default", async () => {
   expect([panes.list, panes.problem]).toEqual([null, undefined]);
 });
 
-it("puts the whole layout back to the defaults with one save", async () => {
-  core.paneLayout.mockResolvedValue({ sidebar: 240, list: 500, sidebar_hidden: true, list_hidden: true });
+it("puts the whole layout back to the defaults with one save, forgetting what Ctrl+K Z hid", async () => {
+  core.paneLayout.mockResolvedValue({
+    sidebar: 240,
+    list: 500,
+    sidebar_hidden: true,
+    list_hidden: true,
+    detail_only_hid: "list",
+  });
   core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
   const panes = new PanesState();
   await panes.load();
@@ -213,6 +225,108 @@ it("puts the whole layout back to the defaults with one save", async () => {
     false,
   ]);
   expect(core.savePaneLayout.mock.calls).toEqual([[DEFAULTS]]);
+});
+
+it("shows only the Detail pane, then brings back both panes, saving what it hid", async () => {
+  core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
+  const panes = new PanesState();
+
+  await panes.toggleDetailOnly();
+  const hidden = [panes.hidden("sidebar"), panes.hidden("list"), panes.detailOnly];
+  await panes.toggleDetailOnly();
+
+  expect([hidden, panes.hidden("sidebar"), panes.hidden("list"), panes.detailOnly]).toEqual([
+    [true, true, true],
+    false,
+    false,
+    false,
+  ]);
+  expect(core.savePaneLayout.mock.calls).toEqual([
+    [{ ...DEFAULTS, sidebar_hidden: true, list_hidden: true, detail_only_hid: "both" }],
+    [DEFAULTS],
+  ]);
+});
+
+it("brings back only the Sidebar when the list was hidden already", async () => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULTS, list_hidden: true });
+  core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
+  const panes = new PanesState();
+  await panes.load();
+
+  await panes.toggleDetailOnly();
+  await panes.toggleDetailOnly();
+
+  expect([panes.hidden("sidebar"), panes.hidden("list")]).toEqual([false, true]);
+  expect(core.savePaneLayout.mock.calls).toEqual([
+    [{ ...DEFAULTS, sidebar_hidden: true, list_hidden: true, detail_only_hid: "sidebar" }],
+    [{ ...DEFAULTS, list_hidden: true }],
+  ]);
+});
+
+it("brings back only the list when the Sidebar was hidden already", async () => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULTS, sidebar_hidden: true });
+  core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
+  const panes = new PanesState();
+  await panes.load();
+
+  await panes.toggleDetailOnly();
+  const saved = core.savePaneLayout.mock.lastCall;
+  await panes.toggleDetailOnly();
+
+  expect(saved).toEqual([{ ...DEFAULTS, sidebar_hidden: true, list_hidden: true, detail_only_hid: "list" }]);
+  expect([panes.hidden("sidebar"), panes.hidden("list")]).toEqual([true, false]);
+});
+
+it("brings back what the core says it hid before the restart", async () => {
+  core.paneLayout.mockResolvedValue({
+    ...DEFAULTS,
+    sidebar_hidden: true,
+    list_hidden: true,
+    detail_only_hid: "list",
+  });
+  core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
+  const panes = new PanesState();
+  await panes.load();
+
+  await panes.toggleDetailOnly();
+
+  expect([panes.hidden("sidebar"), panes.hidden("list")]).toEqual([true, false]);
+});
+
+it.each([
+  ["Ctrl+Alt+B", (panes: PanesState) => panes.toggle("list")],
+  ["a click on a view", (panes: PanesState) => panes.show("list")],
+])("forgets what it hid after %s, so it brings back both panes", async (_, change) => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULTS, list_hidden: true });
+  core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
+  const panes = new PanesState();
+  await panes.load();
+  await panes.toggleDetailOnly();
+
+  await change(panes);
+  await panes.toggle("list");
+  await panes.toggleDetailOnly();
+
+  expect([panes.hidden("sidebar"), panes.hidden("list")]).toEqual([false, false]);
+  expect(core.savePaneLayout.mock.calls.at(1)).toEqual([{ ...DEFAULTS, sidebar_hidden: true }]);
+});
+
+it("forgets what it hid when the user hides a pane before the core answers", async () => {
+  core.paneLayout.mockResolvedValue({
+    ...DEFAULTS,
+    sidebar_hidden: true,
+    list_hidden: true,
+    detail_only_hid: "list",
+  });
+  core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
+  const panes = new PanesState();
+  const loading = panes.load();
+  void panes.toggle("sidebar");
+  await loading;
+
+  await panes.toggleDetailOnly();
+
+  expect([panes.hidden("sidebar"), panes.hidden("list")]).toEqual([false, false]);
 });
 
 it("says why it couldn't save, until a save works", async () => {

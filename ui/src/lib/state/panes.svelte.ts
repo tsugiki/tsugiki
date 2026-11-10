@@ -1,7 +1,7 @@
 // How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list (#187), and
-// whether the Sidebar (#234) and the list (#242) show. The core keeps the layout in `machine.toml`, so it
-// stays on this machine and isn't synced.
-import { commands } from "$lib/data/bindings";
+// whether the Sidebar (#234) and the list (#242) show, and which of them `Ctrl+K Z` hid (#246). The core
+// keeps the layout in `machine.toml`, so it stays on this machine and isn't synced.
+import { commands, type Panes } from "$lib/data/bindings";
 
 /** The Sidebar's width until the user drags its edge, in CSS pixels. */
 export const SIDEBAR_WIDTH = 200;
@@ -23,6 +23,9 @@ export class PanesState {
   /** Whether `Ctrl+B` hid the Sidebar and `Ctrl+Alt+B` the list, each nothing until the core or the user
    * says. */
   #hidden = $state<Record<Pane, boolean | null>>({ sidebar: null, list: null });
+  /** The panes `Ctrl+K Z` hid, which it brings back next: null while it remembers none, and undefined until
+   * the core or the user says. */
+  #detailOnlyHid = $state<Panes | null | undefined>();
   #readProblem = $state<string>();
   #saveProblem = $state<string>();
   /** The last save, or else the first read, which the next save waits for. The layout then reaches the file
@@ -40,11 +43,12 @@ export class PanesState {
 
   async #read() {
     try {
-      const { sidebar, list, sidebar_hidden, list_hidden } = await commands.paneLayout();
+      const { sidebar, list, sidebar_hidden, list_hidden, detail_only_hid } = await commands.paneLayout();
       this.sidebar ??= sidebar === null ? null : Math.min(SIDEBAR_MOST, Math.max(SIDEBAR_LEAST, sidebar));
       this.list ??= list === null ? null : Math.max(LIST_LEAST, list);
       this.#hidden.sidebar ??= sidebar_hidden;
       this.#hidden.list ??= list_hidden;
+      if (this.#detailOnlyHid === undefined) this.#detailOnlyHid = detail_only_hid;
     } catch (e) {
       this.#readProblem = `Tsugiki can't read the panes' layout: ${String(e)}`;
     }
@@ -61,16 +65,40 @@ export class PanesState {
     return this.#saveProblem ?? this.#readProblem;
   }
 
-  /** Hides `pane`, or shows it again, and saves that. */
+  /** Whether the Detail pane shows alone, with both the Sidebar and the list hidden. */
+  get detailOnly(): boolean {
+    return this.hidden("sidebar") && this.hidden("list");
+  }
+
+  /** Hides `pane`, or shows it again, and saves that. `toggleDetailOnly` then forgets what it hid. */
   toggle(pane: Pane): Promise<void> {
     this.#hidden[pane] = !this.hidden(pane);
+    this.#detailOnlyHid = null;
     return this.save();
   }
 
-  /** Shows `pane` if it's hidden, or may be once the core answers, and saves that. */
+  /** Shows `pane` if it's hidden, or may be once the core answers, and saves that. `toggleDetailOnly` then
+   * forgets what it hid. */
   show(pane: Pane): Promise<void> {
     if (this.#hidden[pane] === false) return Promise.resolve();
     this.#hidden[pane] = false;
+    this.#detailOnlyHid = null;
+    return this.save();
+  }
+
+  /** `Ctrl+K Z`: while a pane shows, hides both and remembers which showed. While neither shows, brings back
+   * the ones it remembers, or both when it remembers none. Saves that. */
+  toggleDetailOnly(): Promise<void> {
+    if (this.detailOnly) {
+      const back = this.#detailOnlyHid ?? "both";
+      this.#hidden.sidebar = back === "list";
+      this.#hidden.list = back === "sidebar";
+      this.#detailOnlyHid = null;
+    } else {
+      this.#detailOnlyHid = this.hidden("sidebar") ? "list" : this.hidden("list") ? "sidebar" : "both";
+      this.#hidden.sidebar = true;
+      this.#hidden.list = true;
+    }
     return this.save();
   }
 
@@ -80,12 +108,14 @@ export class PanesState {
     return this.save();
   }
 
-  /** "Reset Layout": gives both panes their default widths and shows both, and saves that. */
+  /** "Reset Layout": gives both panes their default widths and shows both, forgets what `Ctrl+K Z` hid, and
+   * saves that. */
   resetLayout(): Promise<void> {
     this.sidebar = null;
     this.list = null;
     this.#hidden.sidebar = false;
     this.#hidden.list = false;
+    this.#detailOnlyHid = null;
     return this.save();
   }
 
@@ -102,6 +132,7 @@ export class PanesState {
       list: this.list,
       sidebar_hidden: this.hidden("sidebar"),
       list_hidden: this.hidden("list"),
+      detail_only_hid: this.#detailOnlyHid ?? null,
     };
     let problem: string | undefined;
     try {

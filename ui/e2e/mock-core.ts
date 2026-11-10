@@ -12,7 +12,13 @@ type MockWindow = { mockEventListeners: Record<string, Listener[]>; mockAnswers:
 /** Stands in for Tauri's IPC: the page's generated bindings get these answers instead of the core's. */
 export const mockCore = (page: Page, answers: CoreAnswers) =>
   page.addInitScript((given: Record<string, unknown>) => {
-    const panes = { sidebar: null, list: null, sidebar_hidden: false, list_hidden: false };
+    const panes = {
+      sidebar: null,
+      list: null,
+      sidebar_hidden: false,
+      list_hidden: false,
+      detail_only_hid: null,
+    };
     const answers = {
       lastSync: null,
       syncActivity: null,

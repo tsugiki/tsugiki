@@ -27,6 +27,11 @@ export const commands = {
 	/**  The state of each Repository's mirror the worker has heard of, for a window as it loads. */
 	mirrorStates: () => __TAURI_INVOKE<RepositoryMirror_Serialize[]>("mirror_states"),
 	/**
+	 *  The newest version out that is newer than the running one, for a window as it loads. Nothing, until a
+	 *  check finds one.
+	 */
+	newVersion: () => __TAURI_INVOKE<NewVersion | null>("new_version"),
+	/**
 	 *  Says why the clone in `folder` can't lend its objects to `repository`'s mirror, or nothing if it can.
 	 *  This waits on git commands that only read the clone.
 	 */
@@ -152,6 +157,7 @@ export const events = {
 	mirrorProblemChanged: makeEvent<MirrorProblemChanged_Serialize, MirrorProblemChanged_Deserialize>("mirror-problem-changed"),
 	mirrorQuestionChanged: makeEvent<MirrorQuestionChanged_Serialize, MirrorQuestionChanged_Deserialize>("mirror-question-changed"),
 	mirrorStatesChanged: makeEvent<MirrorStatesChanged_Serialize, MirrorStatesChanged_Deserialize>("mirror-states-changed"),
+	newVersionFound: makeEvent<NewVersionFound, NewVersionFound>("new-version-found"),
 	readFailed: makeEvent<ReadFailed, ReadFailed>("read-failed"),
 	statusChanged: makeEvent<StatusChanged_Serialize, StatusChanged_Deserialize>("status-changed"),
 	syncActivityChanged: makeEvent<SyncActivityChanged_Serialize, SyncActivityChanged_Deserialize>("sync-activity-changed"),
@@ -1126,6 +1132,16 @@ export type NewRepository = {
 	source: MirrorSource,
 };
 
+/**  A version newer than the running one, and its release page. */
+export type NewVersion = {
+	/**  As SemVer writes it, such as "0.3.0", with no `v`. */
+	version: string,
+	page: WebAddress,
+};
+
+/**  Sent when a check finds a newer version out than it last found, so the status bar can say. */
+export type NewVersionFound = NewVersion;
+
 /**  A paragraph, a list or a block of code. */
 export type NewsBlock = { kind: "paragraph"; pieces: NewsPiece[] } | 
 /**  Each item holds blocks of its own. */
@@ -1450,6 +1466,21 @@ export type Refreshes = {
 	dropped_frames: number,
 };
 
+/**  The `[releases]` table: whether Tsugiki asks GitHub Releases for a newer version (ADR 0012). */
+export type ReleaseSettings = ReleaseSettings_Serialize | ReleaseSettings_Deserialize;
+
+/**  The `[releases]` table: whether Tsugiki asks GitHub Releases for a newer version (ADR 0012). */
+export type ReleaseSettings_Deserialize = {
+	/**  Off, Tsugiki sends no request to Releases. A change takes effect at the next start. */
+	check?: boolean,
+};
+
+/**  The `[releases]` table: whether Tsugiki asks GitHub Releases for a newer version (ADR 0012). */
+export type ReleaseSettings_Serialize = {
+	/**  Off, Tsugiki sends no request to Releases. A change takes effect at the next start. */
+	check: boolean,
+};
+
 /**  The user's standing in a Repository, as far as adding it needs to know. */
 export type RepositoryAccess = 
 /**  The user administers it on GitHub. */
@@ -1642,12 +1673,14 @@ export type Settings = Settings_Serialize | Settings_Deserialize;
 /**  What `settings.toml` holds. A value the file leaves out takes its default. */
 export type Settings_Deserialize = {
 	status_bar?: StatusBarSettings_Deserialize,
+	releases?: ReleaseSettings_Deserialize,
 	repositories?: RepositorySettings_Deserialize[],
 };
 
 /**  What `settings.toml` holds. A value the file leaves out takes its default. */
 export type Settings_Serialize = {
 	status_bar: StatusBarSettings_Serialize,
+	releases: ReleaseSettings_Serialize,
 	repositories: RepositorySettings_Serialize[],
 };
 

@@ -99,6 +99,11 @@ const LAYERS: &[Layer] = &[
         why: "Checks an address before the browser opens it, and builds a Repository's addresses.",
     },
     Layer {
+        module: "releases",
+        uses: &["web"],
+        why: "Asks GitHub Releases for a newer Tsugiki, and links to its release page.",
+    },
+    Layer {
         module: "folders",
         uses: &["build", "error", "repository"],
         why: "Finds where this build keeps its files, a mirror folder for each Repository among them.",

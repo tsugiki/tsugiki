@@ -44,6 +44,7 @@ const STOPPED_SAVING: &str =
 #[serde(default)]
 pub struct Settings {
     pub status_bar: StatusBarSettings,
+    pub releases: ReleaseSettings,
     pub repositories: Vec<RepositorySettings>,
 }
 
@@ -97,6 +98,20 @@ pub struct StatusBarSettings {
 impl Default for StatusBarSettings {
     fn default() -> Self {
         Self { visible: true }
+    }
+}
+
+/// The `[releases]` table: whether Tsugiki asks GitHub Releases for a newer version (ADR 0012).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(default)]
+pub struct ReleaseSettings {
+    /// Off, Tsugiki sends no request to Releases. A change takes effect at the next start.
+    pub check: bool,
+}
+
+impl Default for ReleaseSettings {
+    fn default() -> Self {
+        Self { check: true }
     }
 }
 

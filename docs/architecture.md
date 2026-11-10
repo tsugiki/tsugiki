@@ -48,6 +48,8 @@ flowchart LR
     git --> app
     highlighter --> app
     settings[Settings owner<br>settings.toml, machine.toml] --> app
+    gh -->|latest release, no token| releases[Release check]
+    releases -->|a newer version| app
     app <-->|commands, events| ui[Webview]
 ```
 
@@ -60,6 +62,7 @@ flowchart LR
 | Highlighter | The parsed trees of the open PR's files. | `core/src/diff/highlighter.rs` |
 | Settings owner | `settings.toml` and `machine.toml`. Readers get a `latest` copy. | `core/src/settings.rs` |
 | Log | `tsugiki.log` and the tokens to scrub from it. | `core/src/logfile.rs` |
+| Release check | Nothing shared. Asks GitHub Releases for a newer Tsugiki at start-up and every 6 hours, without the token, unless the settings turn it off. | `core/src/releases.rs` |
 
 The session thread does one request to GitHub per step (`sync::Syncs`), so nothing it's asked waits for
 longer than one request ([ADR 0015](adr/0015-github-sync-serial-graphql-in-tiers-the-users-work-first.md)).
@@ -81,9 +84,9 @@ Tauri's managed state.
    the window as the `changed` event, and each open screen that shows one of those items calls its command
    again.
 
-App-wide status (the connection, the last sync, cloning progress, a Mirror's problem, each Mirror's state)
-takes a shorter path. The app keeps the newest value in a `latest` copy for its command, then emits an
-event. A window that starts listening late asks the command and still gets the newest value.
+App-wide status (the connection, the last sync, cloning progress, a Mirror's problem, each Mirror's state,
+a newer version) takes a shorter path. The app keeps the newest value in a `latest` copy for its command,
+then emits an event. A window that starts listening late asks the command and still gets the newest value.
 
 A diff takes a third path, because it is too big to send whole
 ([ADR 0001](adr/0001-standalone-tauri-gui-with-in-app-review.md)). The core runs `git diff` in the Mirror

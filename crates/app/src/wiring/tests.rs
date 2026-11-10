@@ -69,6 +69,23 @@ impl Transport for StuckGitHub {
     }
 }
 
+fn releases_offline() -> Result<tsugiki_token::Reply, tsugiki_token::Unreachable> {
+    Err(tsugiki_token::Unreachable::Offline(
+        "no network in tests".to_owned(),
+    ))
+}
+
+/// GitHub Releases with `tag` as the latest release.
+fn latest_release(tag: &str) -> Result<tsugiki_token::Reply, tsugiki_token::Unreachable> {
+    Ok(tsugiki_token::Reply {
+        status: 200,
+        body: json!({ "tag_name": tag }).to_string(),
+        date: None,
+        ratelimit_reset: None,
+        etag: None,
+    })
+}
+
 /// The app as `startup.rs` wires it, on Tauri's mock runtime with a webview to send commands from. It
 /// listens before the session starts, so it hears every event.
 struct Wired {
@@ -85,6 +102,7 @@ struct Wired {
     states: Receiver<Value>,
     heads: Receiver<Value>,
     failed_heads: Receiver<Value>,
+    new_versions: Receiver<Value>,
     _app: App<MockRuntime>,
 }
 
@@ -109,6 +127,16 @@ impl Wired {
         remotes: Remotes,
         pick_folder: PickFolder,
     ) -> Self {
+        let outside = Outside {
+            github,
+            releases: Box::new(|_| releases_offline()),
+            remotes,
+            pick_folder,
+        };
+        Self::start_outside(folders, outside)
+    }
+
+    fn start_outside(folders: Result<Folders, Error>, outside: Outside) -> Self {
         let builder = specta_builder();
         let app = mock_builder()
             .invoke_handler(builder.invoke_handler())
@@ -126,11 +154,7 @@ impl Wired {
         let states = hear(&app, "mirror-states-changed");
         let heads = hear(&app, "heads-fetched");
         let failed_heads = hear(&app, "heads-fetch-failed");
-        let outside = Outside {
-            github,
-            remotes,
-            pick_folder,
-        };
+        let new_versions = hear(&app, "new-version-found");
         let core = connect_core(app.handle(), folders, outside, Duration::from_secs(3600));
         let webview = tauri::WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::default())
             .build()
@@ -149,6 +173,7 @@ impl Wired {
             states,
             heads,
             failed_heads,
+            new_versions,
             _app: app,
         }
     }
@@ -279,6 +304,67 @@ fn the_add_dialogs_check_goes_to_the_session_and_back() {
     let answer = answer.unwrap_err();
     assert_eq!(answer["kind"], "offline");
     assert_eq!(answer["message"], "Tsugiki can't reach GitHub.");
+}
+
+#[test]
+fn a_newer_version_reaches_the_window_as_an_event_and_through_its_command() {
+    let (folders, root) = temp_folders("wired-new-version");
+    let outside = Outside {
+        github: no_network(),
+        releases: Box::new(|_| latest_release("v999.0.0")),
+        remotes: Remotes::under("no-remotes/".to_owned()),
+        pick_folder: Arc::new(|| None),
+    };
+    let wired = Wired::start_outside(Ok(folders), outside);
+
+    let heard = wired.new_versions.recv_timeout(PLENTY).unwrap();
+    let asked = wired.ask("new_version", json!({}));
+    drop(wired.stop());
+    std::fs::remove_dir_all(root).unwrap();
+
+    let expected = json!({
+        "version": "999.0.0",
+        "page": "https://github.com/tsugiki/tsugiki/releases/tag/v999.0.0",
+    });
+    assert_eq!(heard, expected);
+    assert_eq!(asked.unwrap(), expected);
+}
+
+#[test]
+fn with_the_check_off_tsugiki_sends_releases_nothing() {
+    assert_releases_hear_nothing("wired-no-check", "[releases]\ncheck = false\n");
+}
+
+#[test]
+fn settings_tsugiki_cant_read_send_releases_nothing_as_they_may_turn_the_check_off() {
+    assert_releases_hear_nothing("wired-unread-check", "[releases]\ncheck = \"no\"\n");
+}
+
+/// Starts the app with `settings` as its `settings.toml`, and checks that it neither asks Releases nor
+/// says that a version is out.
+fn assert_releases_hear_nothing(name: &str, settings: &str) {
+    let (folders, root) = temp_folders(name);
+    std::fs::write(folders.settings_file(), settings).unwrap();
+    let (asking, asks) = channel();
+    let outside = Outside {
+        github: no_network(),
+        releases: Box::new(move |_| {
+            asking.send(()).unwrap_or(());
+            latest_release("v999.0.0")
+        }),
+        remotes: Remotes::under("no-remotes/".to_owned()),
+        pick_folder: Arc::new(|| None),
+    };
+    let wired = Wired::start_outside(Ok(folders), outside);
+
+    // Without a check, nothing keeps the stand-in for Releases.
+    let asked = asks.recv_timeout(PLENTY);
+    let answer = wired.ask("new_version", json!({}));
+    drop(wired.stop());
+    std::fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(asked, Err(std::sync::mpsc::RecvTimeoutError::Disconnected));
+    assert_eq!(answer.unwrap(), Value::Null);
 }
 
 #[test]

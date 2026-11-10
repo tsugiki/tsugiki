@@ -288,6 +288,48 @@ describe("StatusBar's word on the mirror", () => {
   });
 });
 
+describe("StatusBar's new version", () => {
+  const online = { state: "online", login: "octocat" } as const;
+  const newVersion = {
+    version: "0.3.0",
+    page: "https://github.com/tsugiki/tsugiki/releases/tag/v0.3.0",
+  };
+  const release = () => screen.getByRole("button", { name: "Tsugiki 0.3.0 is out" });
+
+  it("says nothing until a check finds one", () => {
+    render(StatusBar, { status: online });
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("opens the release page in the browser at a click", async () => {
+    vi.mocked(openLink).mockResolvedValue(undefined);
+    render(StatusBar, { status: online, newVersion });
+    await fireEvent.click(release());
+    expect(openLink).toHaveBeenCalledWith(newVersion.page);
+    expect(bar().textContent?.trim()).toBe("octocat");
+  });
+
+  it("says when the browser didn't open", async () => {
+    vi.mocked(openLink).mockResolvedValue("Error: no browser");
+    render(StatusBar, { status: online, newVersion });
+    await fireEvent.click(release());
+    expect(bar().textContent).toContain("octocat · Error: no browser");
+  });
+
+  it("drops the browser's problem when the bar hides the button", async () => {
+    vi.mocked(openLink).mockResolvedValue("Error: no browser");
+    const { rerender } = render(StatusBar, { status: online, newVersion });
+    await fireEvent.click(release());
+    await rerender({ visible: false });
+    expect(bar().textContent?.trim()).toBe("");
+  });
+
+  it("hides with the bar", () => {
+    render(StatusBar, { status: online, newVersion, visible: false });
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+});
+
 describe("StatusBar's sync under way", () => {
   const online = { state: "online", login: "octocat" } as const;
   const repository = "python/cpython";

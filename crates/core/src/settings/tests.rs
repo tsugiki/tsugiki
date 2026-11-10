@@ -7,6 +7,7 @@ use time::format_description::well_known::Rfc3339;
 
 const HIDDEN: Settings = Settings {
     status_bar: StatusBarSettings { visible: false },
+    releases: ReleaseSettings { check: true },
     repositories: Vec::new(),
 };
 
@@ -112,7 +113,20 @@ fn with_no_files_tsugiki_starts_from_the_defaults_and_creates_nothing() {
 
     assert_eq!(files.loaded(), &LoadedSettings::default());
     assert!(files.loaded().settings.status_bar.visible);
+    assert!(files.loaded().settings.releases.check);
     assert!(!created);
+}
+
+#[test]
+fn the_check_for_a_new_version_turns_off_in_settings_toml() {
+    let (folders, root) = temp_folders("releases");
+    fs::write(folders.settings_file(), "[releases]\ncheck = false\n").unwrap();
+
+    let files = SettingsFiles::load(folders);
+    fs::remove_dir_all(root).unwrap();
+
+    assert!(!files.loaded().settings.releases.check);
+    assert!(files.loaded().problems.is_empty());
 }
 
 #[test]

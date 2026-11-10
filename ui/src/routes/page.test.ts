@@ -28,6 +28,7 @@ vi.mock("$lib/data/bindings", () => ({
     lastSync: async () => ({ repository: "some-maintainer/gcmon", at: null }),
     syncActivity: async () => null,
     cloning: async () => null,
+    newVersion: async () => null,
     refresh: async () => null,
     ...core,
   },
@@ -38,6 +39,7 @@ vi.mock("$lib/data/bindings", () => ({
     cloningChanged: { listen: async () => () => {} },
     mirrorProblemChanged: { listen: async () => () => {} },
     mirrorQuestionChanged: { listen: async () => () => {} },
+    newVersionFound: { listen: async () => () => {} },
     mirrorStatesChanged: {
       listen: async (callback: (event: { payload: unknown }) => void) => {
         mirrorStates.changed.mockImplementation((payload) => {
@@ -91,7 +93,7 @@ beforeEach(() => {
     data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [] },
   });
   core.settings.mockResolvedValue({
-    settings: { status_bar: { visible: true }, repositories: [] },
+    settings: { status_bar: { visible: true }, releases: { check: true }, repositories: [] },
     problems: [],
   });
 });

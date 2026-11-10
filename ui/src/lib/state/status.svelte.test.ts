@@ -11,6 +11,7 @@ vi.mock("$lib/data/bindings", () => ({
     mirrorProblem: vi.fn(),
     mirrorQuestion: vi.fn(),
     mirrorStates: vi.fn(),
+    newVersion: vi.fn(),
     refresh: vi.fn(),
     checkMirrorsAgain: vi.fn(),
   },
@@ -22,6 +23,7 @@ vi.mock("$lib/data/bindings", () => ({
     mirrorProblemChanged: { listen: vi.fn() },
     mirrorQuestionChanged: { listen: vi.fn() },
     mirrorStatesChanged: { listen: vi.fn() },
+    newVersionFound: { listen: vi.fn() },
   },
 }));
 
@@ -196,6 +198,56 @@ describe("StatusState's last sync", () => {
       const state = new StatusState();
       await state.load();
       expect(state.mirrorQuestion).toBeNull();
+    });
+  });
+
+  describe("a newer version", () => {
+    const newVersion = {
+      version: "0.3.0",
+      page: "https://github.com/tsugiki/tsugiki/releases/tag/v0.3.0",
+    };
+    const newer = { ...newVersion, version: "0.4.0" };
+    const catchNewVersion = () => {
+      const listener = vi.fn<(payload: typeof newVersion) => void>();
+      vi.mocked(events.newVersionFound.listen).mockImplementation(async (callback) => {
+        listener.mockImplementation((payload) => {
+          callback({ event: "new-version-found", id: 1, payload });
+        });
+        return () => {};
+      });
+      return listener;
+    };
+
+    it("is nothing until a check finds one", async () => {
+      catchLastSync();
+      catchNewVersion();
+      vi.mocked(commands.newVersion).mockResolvedValue(null);
+      const state = new StatusState();
+      await state.load();
+      expect(state.newVersion).toBeNull();
+    });
+
+    it("holds what the core found before the window loaded, then follows it", async () => {
+      catchLastSync();
+      const found = catchNewVersion();
+      vi.mocked(commands.newVersion).mockResolvedValue(newVersion);
+      const state = new StatusState();
+      await state.load();
+      expect(state.newVersion).toEqual(newVersion);
+      found(newer);
+      expect(state.newVersion).toEqual(newer);
+    });
+
+    it("lets an event that arrives while asking win", async () => {
+      catchLastSync();
+      const found = catchNewVersion();
+      vi.mocked(commands.newVersion).mockImplementation(async () => {
+        found(newer);
+        return newVersion;
+      });
+      const state = new StatusState();
+      await state.load();
+      expect(state.newVersion).toEqual(newer);
     });
   });
 

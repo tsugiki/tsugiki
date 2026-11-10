@@ -17,7 +17,7 @@ describe("SettingsState", () => {
 
   it("holds what the core read", async () => {
     vi.mocked(commands.settings).mockResolvedValue({
-      settings: { status_bar: { visible: false }, repositories: [] },
+      settings: { status_bar: { visible: false }, releases: { check: true }, repositories: [] },
       problems: ["settings.toml, line 3: expected a value"],
     });
     const state = new SettingsState();

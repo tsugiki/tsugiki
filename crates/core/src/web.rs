@@ -2,12 +2,16 @@
 //! it asks to open counts as untrusted input (ADR 0005): only a web page gets through, never a file or an
 //! installed app's scheme.
 
+use semver::Version;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use url::Url;
 
 use crate::error::{Error, ErrorKind};
 use crate::repository::RepositoryName;
+
+/// Tsugiki's own Repository on GitHub, where its releases are.
+pub(crate) const TSUGIKI: &str = "tsugiki/tsugiki";
 
 /// An Issue or a PR, as the window names it to open on GitHub.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Type)]
@@ -65,6 +69,14 @@ impl WebAddress {
                 format!("https://github.com/{repository}/pull/{number}")
             }
         })
+    }
+
+    /// The page of Tsugiki's release of `version` on GitHub, under its tag `v{version}`. SemVer writes a
+    /// version with letters, digits, `.`, `-` and `+` alone, which a path takes as they are.
+    pub(crate) fn of_release(version: &Version) -> Self {
+        Self(format!(
+            "https://github.com/{TSUGIKI}/releases/tag/v{version}"
+        ))
     }
 
     #[must_use]

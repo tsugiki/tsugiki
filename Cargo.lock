@@ -4726,6 +4726,7 @@ dependencies = [
  "log",
  "process-wrap",
  "rusqlite",
+ "semver",
  "serde",
  "serde_json",
  "specta",

@@ -29,6 +29,7 @@ use tsugiki_core::mirror::{
     RepositoryMirror, Unfetched,
 };
 use tsugiki_core::misses::Miss;
+use tsugiki_core::releases::NewVersion;
 use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
 use tsugiki_core::repository_settings::{MirrorCost, NameCheck, RepositorySettings};
 use tsugiki_core::session::SessionRequests;
@@ -105,6 +106,16 @@ type LatestMirrorQuestion = LatestReader<Option<RepositoryName>>;
 #[tauri::command]
 #[specta::specta]
 fn mirror_question(latest: State<'_, LatestMirrorQuestion>) -> Option<RepositoryName> {
+    latest.get()
+}
+
+type LatestNewVersion = LatestReader<Option<NewVersion>>;
+
+/// The newest version out that is newer than the running one, for a window as it loads. Nothing, until a
+/// check finds one.
+#[tauri::command]
+#[specta::specta]
+fn new_version(latest: State<'_, LatestNewVersion>) -> Option<NewVersion> {
     latest.get()
 }
 
@@ -599,6 +610,10 @@ struct MirrorQuestionChanged(Option<RepositoryName>);
 #[derive(Clone, Serialize, Type, Event)]
 struct MirrorStatesChanged(Vec<RepositoryMirror>);
 
+/// Sent when a check finds a newer version out than it last found, so the status bar can say.
+#[derive(Clone, Serialize, Type, Event)]
+struct NewVersionFound(NewVersion);
+
 /// Sent when PR heads arrive in a Repository's mirror, so a Files tab waiting for one asks again.
 #[derive(Clone, Serialize, Type, Event)]
 struct HeadsFetched(Change);
@@ -629,6 +644,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             check_mirrors_again,
             mirror_question,
             mirror_states,
+            new_version,
             slow_commands::check_clone,
             slow_commands::choose_mirror_source,
             slow_commands::pick_folder,
@@ -669,6 +685,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             MirrorProblemChanged,
             MirrorQuestionChanged,
             MirrorStatesChanged,
+            NewVersionFound,
             HeadsFetched,
             HeadsFetchFailed
         ])

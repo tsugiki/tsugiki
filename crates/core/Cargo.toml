@@ -16,6 +16,7 @@ fs4.workspace = true
 log.workspace = true
 process-wrap.workspace = true
 rusqlite.workspace = true
+semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 specta.workspace = true

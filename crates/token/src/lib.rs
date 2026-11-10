@@ -187,7 +187,8 @@ fn is_github(url: &Url) -> bool {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reply {
     pub status: u16,
-    /// The body of a GraphQL answer. A REST answer leaves it empty, since only its headers are read.
+    /// The body of a GraphQL answer or of [`Https::get_public`]'s. A signed-in REST answer leaves it empty,
+    /// since only its headers are read.
     pub body: String,
     /// The `Date` header.
     pub date: Option<String>,

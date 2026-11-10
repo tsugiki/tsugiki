@@ -26,6 +26,8 @@ export default defineConfig({
         "../scripts/bindings.ts",
         "../scripts/rust-coverage.ts",
         "../scripts/release-check.ts",
+        // coverage: reads the real manifest and exits, with its logic in token-crate.ts.
+        "../scripts/token-deps.ts",
         // coverage: command lines around git, with their logic in the files they call.
         "../scripts/doc-width.ts",
         "../scripts/prose-check.ts",

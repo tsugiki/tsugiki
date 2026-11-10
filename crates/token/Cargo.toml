@@ -1,0 +1,17 @@
+[package]
+name = "tsugiki-token"
+description = "Where Tsugiki's GitHub token comes from, the one place it goes, and how a secret is hidden"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Only these three, by rule (ADR 0019): `just lint` fails on any other. The README says why.
+[dependencies]
+rustls.workspace = true
+ureq.workspace = true
+url.workspace = true
+
+[lints]
+workspace = true

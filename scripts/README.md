@@ -21,6 +21,8 @@ or `npm run`, and CI calls the same npm scripts.
 | `scope.ts`            | `rust-gates.ts`, `changes.ts`    | Which paths count as docs or as `ui/`, so CI and `just check` agree             |
 | `rust-coverage.ts`    | `just rust-coverage`             | Rust's coverage gate: runs the tests and fails below 100%                       |
 | `coverage-gaps.ts`    | `rust-coverage.ts`               | Finds the lines and functions the Rust coverage gate fell short on              |
+| `token-deps.ts`       | `just lint`                      | Fails when `crates/token` gains a dependency off its list (ADR 0019)            |
+| `token-crate.ts`      | `token-deps.ts`                  | That list, and how the check reads a Cargo manifest                             |
 | `bindings.ts`         | `just bindings`                  | Regenerates the UI's TypeScript bindings from the Rust commands                 |
 | `release-check.ts`    | `just release-check`, CI         | Checks a version against CHANGELOG.md and prints its release notes              |
 | `release-notes.ts`    | `release-check.ts`               | The rules a version has to meet before a release builds                         |

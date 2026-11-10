@@ -52,9 +52,13 @@ fn hosts(text: &str) -> Vec<String> {
 #[test]
 fn rust_names_only_github_as_a_host() {
     let mut found = BTreeSet::new();
-    for crate_src in ["crates/core/src", "crates/app/src"] {
+    for crate_src in ["crates/core/src", "crates/app/src", "crates/token/src"] {
         for source in rust_sources(&repo().join(crate_src)) {
-            found.extend(hosts(&fs::read_to_string(source).unwrap()));
+            // The token crate's tests name other hosts to show that its client refuses them.
+            let refused_in_tests = crate_src == "crates/token/src" && source.ends_with("tests.rs");
+            if !refused_in_tests {
+                found.extend(hosts(&fs::read_to_string(source).unwrap()));
+            }
         }
     }
     assert!(found.contains("api.github.com"), "the scan found {found:?}");
@@ -78,11 +82,12 @@ fn rust_names_only_github_as_a_host() {
 }
 
 #[test]
-fn core_and_app_forbid_unsafe_code() {
+fn core_app_and_token_forbid_unsafe_code() {
     for root in [
         "crates/core/src/lib.rs",
         "crates/app/src/lib.rs",
         "crates/app/src/main.rs",
+        "crates/token/src/lib.rs",
     ] {
         let source = fs::read_to_string(repo().join(root)).unwrap();
         assert!(source.contains("#![forbid(unsafe_code)]"), "{root}");

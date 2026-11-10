@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/app", "crates/webview-keys", "crates/test-git"]
+members = ["crates/core", "crates/app", "crates/token", "crates/webview-keys", "crates/test-git"]
 
 [workspace.package]
 version = "0.2.1"
@@ -54,6 +54,7 @@ tree-sitter-typescript = "0.23.2"
 tree-sitter-yaml = "0.7.2"
 tsugiki-core = { path = "crates/core" }
 tsugiki-test-git = { path = "crates/test-git" }
+tsugiki-token = { path = "crates/token" }
 tsugiki-webview-keys = { path = "crates/webview-keys" }
 url = "2.5.8"
 ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
@@ -68,7 +69,7 @@ libc = "0.2.191"
 # when one doesn't. Several picks come from easy-peasy-rust (MIT,
 # https://github.com/skatromb/easy-peasy-rust).
 [workspace.lints.rust]
-unsafe_code = "deny" # A leaked token can reach python/cpython. Core and app forbid it; see webview-keys.
+unsafe_code = "deny" # A leaked token can reach python/cpython. Core, app and token forbid it; see webview-keys.
 unused_results = "deny" # A dropped value is often a dropped failure, so say `let _ =` when it is meant.
 
 [workspace.lints.clippy]

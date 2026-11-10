@@ -29,6 +29,7 @@ tauri-plugin-single-instance.workspace = true
 tauri-plugin-dialog.workspace = true
 tauri-specta.workspace = true
 tsugiki-core.workspace = true
+tsugiki-token.workspace = true # The client and gh that start-up hands the core (ADR 0019).
 
 # A development build writes its scheme to the registry with this. macOS can't register one at run time, and
 # the installers register `tsugiki` from tauri.conf.json without it (ADR 0016).

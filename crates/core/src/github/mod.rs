@@ -4,6 +4,7 @@ pub mod activity;
 pub mod checks;
 pub mod clock;
 pub mod filters;
+mod https;
 pub mod issue_content;
 pub mod issues;
 pub mod live;
@@ -30,6 +31,7 @@ use crate::repository::{
     FoundRepository, RepositoryAccess, RepositoryCounts, RepositoryName, WINDOW_DAYS,
 };
 use crate::token::{RunGh, Token};
+pub use tsugiki_token::RestPath;
 
 /// One GraphQL request. `operation` names the query, and the replayer finds its recording by that name.
 pub struct Request<'a> {
@@ -52,8 +54,8 @@ pub struct Reply {
 
 /// A REST request that can answer "not modified", which a refresh asks first (ADR 0015).
 pub struct ConditionalGet<'a> {
-    /// The path on GitHub's API, from its first `/`.
-    pub path: &'a str,
+    /// The path on GitHub's API, from its first `/`, with its query.
+    pub path: &'a RestPath,
     /// The tag of the last answer, sent as `If-None-Match`.
     pub etag: Option<&'a str>,
 }

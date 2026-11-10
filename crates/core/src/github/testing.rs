@@ -81,5 +81,5 @@ pub(crate) fn signed_in_gh(_: &[&str]) -> std::io::Result<GhOutput> {
 }
 
 pub(crate) fn token() -> Token {
-    Token::from_gh(signed_in_gh).unwrap()
+    crate::token::read_token(signed_in_gh).unwrap()
 }

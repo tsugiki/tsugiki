@@ -24,8 +24,9 @@ For the **Repositories** you add, such as `python/cpython` and your own projects
 - groups PRs under the Issues they fix, with each fix's Backports beside it;
 - works out what waits on you from GitHub's own data, so a notification you missed hides nothing;
 - lets you review inside the app, with a fast diff, review state kept per PR, and VS Code keybindings;
-- keeps your GitHub token in its Rust core, away from the webview, and works with a read-only token if you'd
-  rather not hand it write access.
+- keeps your GitHub token in its Rust core, away from the webview
+  ([what it does with the token](crates/token/README.md)), and works with a read-only token if you'd rather
+  not hand it write access.
 
 ## Status
 

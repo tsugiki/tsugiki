@@ -1,7 +1,8 @@
-//! The GitHub token. It lives only in the core and never reaches the webview (ADR 0005).
+//! Reads the GitHub token through `tsugiki-token`, the crate that holds it (ADR 0019). The token never
+//! reaches the webview (ADR 0005), and nothing in the core can read its string.
 
-use std::fmt;
-use std::io;
+use tsugiki_token::NoToken;
+pub use tsugiki_token::{GhOutput, RunGh, Token};
 
 use crate::error::{Error, ErrorKind};
 use crate::logfile;
@@ -9,49 +10,29 @@ use crate::logfile;
 const SIGN_IN: &str = "Tsugiki reads your token from the GitHub CLI. Install `gh`, run \
                        `gh auth login`, and restart Tsugiki.";
 
-/// What running `gh` printed.
-pub struct GhOutput {
-    pub success: bool,
-    pub stdout: String,
-}
-
-/// Runs `gh` with the given arguments: the real program in the app, a stand-in in tests.
-pub type RunGh = fn(&[&str]) -> io::Result<GhOutput>;
-
-/// A token, held in memory. It has no `Serialize`, so no command or event can carry it.
-pub struct Token(String);
-
-impl Token {
-    /// Asks `gh` for its token.
-    pub fn from_gh(run: RunGh) -> Result<Self, Error> {
-        let refused = || Error::new(ErrorKind::Unauthorized, SIGN_IN);
-        let output = run(&["auth", "token", "--hostname", "github.com"]).map_err(|cause| {
-            log::warn!("Tsugiki can't run gh: {cause}");
-            refused()
-        })?;
-        let token = output.stdout.trim();
-        if output.success && !token.is_empty() {
-            logfile::hide(token);
-            Ok(Self(token.to_owned()))
-        } else {
-            let what = if output.success {
-                "printed no token"
-            } else {
-                "failed"
-            };
-            log::warn!("gh {what} when asked for its token");
-            Err(refused())
+/// Asks `gh` for its token, and hands the logger a copy to hide. Without one, the log says why and the
+/// user reads how to sign in.
+pub fn read_token(run: RunGh) -> Result<Token, Error> {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the one caller clippy.toml allows, so every token is hidden in the log"
+    )]
+    let token = Token::from_gh(run);
+    match token {
+        Ok(token) => {
+            logfile::hide(token.clone());
+            Ok(token)
         }
-    }
-
-    pub fn expose(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Debug for Token {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Token(***)")
+        Err(no_token) => {
+            match no_token {
+                NoToken::GhMissing(cause) => log::warn!("Tsugiki can't run gh: {cause}"),
+                NoToken::GhFailed => log::warn!("gh failed when asked for its token"),
+                NoToken::GhPrintedNothing => {
+                    log::warn!("gh printed no token when asked for its token")
+                }
+            }
+            Err(Error::new(ErrorKind::Unauthorized, SIGN_IN))
+        }
     }
 }
 

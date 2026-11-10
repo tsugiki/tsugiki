@@ -16,7 +16,6 @@ fs4.workspace = true
 log.workspace = true
 process-wrap.workspace = true
 rusqlite.workspace = true
-rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 specta.workspace = true
@@ -38,7 +37,8 @@ tree-sitter-svelte-ng.workspace = true
 tree-sitter-toml-ng.workspace = true
 tree-sitter-typescript.workspace = true
 tree-sitter-yaml.workspace = true
-ureq.workspace = true
+# Holds the token and the only HTTP client (ADR 0019), so the core links no network library of its own.
+tsugiki-token.workspace = true
 url.workspace = true
 
 [target.'cfg(windows)'.dependencies]

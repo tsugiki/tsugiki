@@ -183,7 +183,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        check: [eslint, prettier, svelte-check, vitest]
+        check: [eslint, prettier, svelte-check, vitest, token-deps]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

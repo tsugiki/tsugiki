@@ -249,7 +249,7 @@ impl Transport for Lists {
         _: &Token,
         request: &ConditionalGet<'_>,
     ) -> Result<ConditionalReply, Unreachable> {
-        let seen = (request.path.to_owned(), request.etag.map(str::to_owned));
+        let seen = (request.path.to_string(), request.etag.map(str::to_owned));
         drop(self.asked.send(seen));
         self.answer.clone()
     }

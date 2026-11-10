@@ -16,6 +16,7 @@ use std::time::Duration;
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
+use tsugiki_token::{Token, hide_token_shapes};
 
 use crate::version::Version;
 
@@ -26,12 +27,10 @@ const MAX_LINE_CHARS: usize = 4096;
 const FLUSH_PATIENCE: Duration = Duration::from_secs(1);
 
 const HIDDEN: &str = "[token]";
-/// How GitHub's tokens start. `hide` covers a token in use whatever its shape.
-const TOKEN_PREFIXES: [&str; 6] = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_"];
 
 enum Message {
     Line { when: String, text: String },
-    Hide(String),
+    Hide(Token),
     Flush(Sender<()>),
 }
 
@@ -64,7 +63,7 @@ impl Logger {
                             last = text;
                         }
                     }
-                    Message::Hide(secret) => hidden.push(secret),
+                    Message::Hide(token) => hidden.push(token),
                     Message::Flush(done) => drop(done),
                 }
             }
@@ -114,32 +113,12 @@ impl Log for Logger {
     }
 }
 
-/// Hides what's in `hidden`, and anything shaped like a token.
-fn scrub(line: &str, hidden: &[String]) -> String {
-    let without_known = hidden.iter().fold(line.to_owned(), |text, secret| {
-        text.replace(secret.as_str(), HIDDEN)
-    });
-    TOKEN_PREFIXES.iter().fold(without_known, |text, prefix| {
-        hide_after_prefix(&text, prefix)
-    })
-}
-
-/// Hides each run of token characters that follows `prefix`. A prefix with nothing after it is only words.
-fn hide_after_prefix(text: &str, prefix: &str) -> String {
-    let mut kept = String::new();
-    let mut rest = text;
-    while let Some((before, after)) = rest.split_once(prefix) {
-        let tail = after.trim_start_matches(|c: char| c.is_ascii_alphanumeric() || c == '_');
-        kept.push_str(before);
-        kept.push_str(if tail.len() == after.len() {
-            prefix
-        } else {
-            HIDDEN
-        });
-        rest = tail;
-    }
-    kept.push_str(rest);
-    kept
+/// Hides the tokens in `hidden`, and anything shaped like a token.
+fn scrub(line: &str, hidden: &[Token]) -> String {
+    let without_known = hidden
+        .iter()
+        .fold(line.to_owned(), |text, token| token.hide_in(&text, HIDDEN));
+    hide_token_shapes(&without_known, HIDDEN)
 }
 
 /// Adds `line` to the file, moving the file aside first if it has grown too big. If something holds `.1` open
@@ -169,11 +148,11 @@ pub fn say_started(version: &Version) {
     log::info!("Tsugiki {version} started");
 }
 
-/// Keeps `secret` out of the file, whatever its shape, for lines sent after this. It does nothing before
+/// Keeps `token` out of the file, whatever its shape, for lines sent after this. It does nothing before
 /// `start`, which is why the app starts the log before it reads a token.
-pub(crate) fn hide(secret: &str) {
+pub(crate) fn hide(token: Token) {
     if let Some(logger) = LOGGER.get() {
-        logger.send(Message::Hide(secret.to_owned()));
+        logger.send(Message::Hide(token));
     }
 }
 

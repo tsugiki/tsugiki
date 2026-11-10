@@ -45,7 +45,7 @@ fn asked_by_post(request: &Request<'_>) -> Asked {
 }
 
 fn asked_by_get(request: &ConditionalGet<'_>) -> Asked {
-    (request.path.to_owned(), json!(request.etag))
+    (request.path.to_string(), json!(request.etag))
 }
 
 /// Answers from the scenario's lists in order, and keeps each answer for the runs that fail.

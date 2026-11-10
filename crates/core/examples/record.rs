@@ -18,14 +18,14 @@ use tsugiki_core::filters::Filter;
 use tsugiki_core::github::GitHub;
 use tsugiki_core::github::filters::{FilterHitKind, FilterSearch};
 use tsugiki_core::github::issues::ListedPr;
-use tsugiki_core::github::live::{Https, run_gh};
 use tsugiki_core::github::pull_requests::{NodeId, PageRequest, PrFetch};
 use tsugiki_core::github::record::Recorder;
 use tsugiki_core::github::refresh::{ListCheck, ListPlace, PollRequest};
 use tsugiki_core::links::{possible_numbers, possible_origin};
 use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
 use tsugiki_core::sync::{FETCH_BATCH, SEARCH_PAGE, WORK_SEARCHES};
-use tsugiki_core::token::Token;
+use tsugiki_core::token::read_token;
+use tsugiki_token::{Https, run_gh};
 
 // `WindowIssues.json` and `WindowPullRequests.json` aren't recorded here. A replay answers each page with the
 // same recording, so a real page with more to read would never end, and those two hold an empty page by hand.
@@ -48,10 +48,10 @@ const ONLY_PAGE: PageRequest<'static> = PageRequest {
 
 fn main() {
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
-    let token = Token::from_gh(run_gh).expect("read gh's token");
+    let token = read_token(run_gh).expect("read gh's token");
     let scout = GitHub::new(
         Box::new(Https::new()),
-        Token::from_gh(run_gh).expect("read gh's token"),
+        read_token(run_gh).expect("read gh's token"),
     );
     let recorder = Recorder::new(Box::new(Https::new()), fixtures.clone());
     let github = GitHub::new(Box::new(recorder), token);

@@ -6,11 +6,15 @@ types, not functions, so it stays true longer. Update it in the PR that moves a 
 
 ## The shape
 
-Tsugiki is a Tauri app with three crates and a webview
-([ADR 0007](adr/0007-core-library-and-thin-tauri-app.md)), and a fourth crate serves only the tests:
+Tsugiki is a Tauri app with four crates and a webview
+([ADR 0007](adr/0007-core-library-and-thin-tauri-app.md)), and a fifth crate serves only the tests:
 
 - `crates/core` (`tsugiki-core`) knows and decides everything: GitHub, the database, the **Mirrors**, the
   diff and every rule the screens show. It has no Tauri and no webview, and plain `cargo test` tests it.
+- `crates/token` (`tsugiki-token`) holds the GitHub token, `gh` and the only HTTP client, and hides tokens
+  in text ([ADR 0019](adr/0019-the-token-and-the-only-code-that-sends-it-have-a-crate-of-their-own.md)).
+  Nothing outside it can read the token's string. Its [README](../crates/token/README.md) says what it does
+  for readers who don't read Rust.
 - `crates/app` (`tsugiki-app`) is the Tauri app. It starts the core's threads, turns commands and events
   into calls on the core, and owns the window.
 - `crates/webview-keys` holds the one `unsafe` call that turns off WebView2's browser shortcuts
@@ -122,8 +126,9 @@ The smaller ones say what they do in their first `//!` line.
 
 ## Where tests draw the line
 
-- `github/live.rs` holds everything that touches the real network, `gh` and `git`. Tests swap the network
-  and `gh` for the replayer in `github/replay.rs`, and `github/record.rs` captures new answers
+- `token/src/live.rs` holds everything that touches the real network and `gh`, and the core's
+  `github/live.rs` runs the real `git` and hands requests to the token crate's client. Tests swap the
+  network and `gh` for the replayer in `github/replay.rs`, and `github/record.rs` captures new answers
   ([ADR 0009](adr/0009-testing-and-full-coverage.md)).
 - `app/src/wiring.rs` sets up the commands and events on any Tauri runtime, so its tests run on Tauri's
   mock runtime without a window. `app/src/startup.rs` opens the real window, and only `just smoke` tests it.

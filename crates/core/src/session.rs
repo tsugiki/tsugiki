@@ -17,7 +17,7 @@ use crate::repository_settings::{RepositoryCheck, RepositorySettings};
 use crate::status::{Change, FailedRead, LastSync, ReadFailure, Status, StatusBoard};
 use crate::store::{self, OpenReader, ReaderToOpen, Store, StoreReader};
 use crate::sync::{Progress, Syncs};
-use crate::token::Token;
+use crate::token::read_token;
 use crate::workbench::Workbench;
 
 // `run` catches a panic in its thread, to keep the window up and say that checking stopped. Tests unwind
@@ -37,7 +37,7 @@ fn connect(board: &mut StatusBoard, store: &Store, access: GitHubAccess) -> Opti
     if let Ok(Some(last_login)) = store.last_login() {
         board.set(Status::ConnectingAs { last_login });
     }
-    let token = match Token::from_gh(access.run_gh) {
+    let token = match read_token(access.run_gh) {
         Ok(token) => token,
         Err(problem) => {
             board.set(Status::Problem { problem });

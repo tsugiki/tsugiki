@@ -16,7 +16,7 @@ use super::pull_requests::{
     CiState, LastCommitNode, LatestReview, LatestReviewWire, NodeId, Nodes, PageRequest,
     PullRequestFacts, RateLimit, ReviewRequestWire, ci_of, requested_logins, reviews_of,
 };
-use super::{ConditionalGet, GitHub, Request};
+use super::{ConditionalGet, GitHub, Request, RestPath, Unreachable};
 use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::filters::FilterQuery;
@@ -261,16 +261,19 @@ impl GitHub {
     /// Asks whether anything in `repository` moved since `tag`. A 304 costs nothing. After a failure of any
     /// kind the refresh asks by GraphQL, which reports what went wrong.
     pub fn check_list(&self, repository: &RepositoryName, tag: Option<&Etag>) -> ListCheck {
-        let path = format!(
-            "/repos/{}/{}/issues?state=all&sort=updated&per_page=1",
-            repository.owner(),
-            repository.name()
-        );
-        let request = ConditionalGet {
-            path: &path,
-            etag: tag.map(Etag::as_str),
-        };
-        let reply = self.transport.get(&self.token, &request);
+        let path = format!("/repos/{}/{}/issues", repository.owner(), repository.name());
+        // A Repository's name holds nothing a path refuses, and if one did, the refresh would ask by GraphQL.
+        let reply = RestPath::parse(&path)
+            .ok_or(Unreachable::Offline)
+            .and_then(|path| {
+                let path =
+                    path.with_query(&[("state", "all"), ("sort", "updated"), ("per_page", "1")]);
+                let request = ConditionalGet {
+                    path: &path,
+                    etag: tag.map(Etag::as_str),
+                };
+                self.transport.get(&self.token, &request)
+            });
         if let Ok(reply) = &reply
             && (reply.status == NOT_MODIFIED || reply.status == OK)
         {

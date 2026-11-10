@@ -1,5 +1,4 @@
 use super::*;
-use crate::github::CommitSha;
 
 #[test]
 fn a_full_recording_says_each_number_with_the_version() {
@@ -45,9 +44,9 @@ fn a_full_recording_says_each_number_with_the_version() {
         long_frames: Vec::new(),
     };
 
-    let commit = CommitSha::parse("3a6dc89f0e1d2c3b4a5968778695a4b3c2d1e0f9");
+    let version = Version::new(Some("3a6dc89f0e1d2c3b4a5968778695a4b3c2d1e0f9"));
     assert_eq!(
-        measurement.summary(&Version::new(commit)),
+        measurement.summary(&version),
         format!(
             "Performance of Tsugiki {} (3a6dc89) over 42.3 s: frame p95 12.1 ms, worst frame 31.0 ms, 2 of 2530 \
                  frames over 25 ms; start-up 812 ms; worst key to frame 9.0 ms of 14 keys; worst view query \

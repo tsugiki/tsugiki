@@ -7,9 +7,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use tsugiki_core::error::{Error, ErrorKind};
-use tsugiki_core::github::{
-    CommitSha, GitHub, GitHubAccess, Reply, Request, Transport, Unreachable,
-};
+use tsugiki_core::github::{GitHub, GitHubAccess, Reply, Request, Transport, Unreachable};
 use tsugiki_core::logfile;
 use tsugiki_core::session::{Intervals, Session};
 use tsugiki_core::status::StatusBoard;
@@ -62,8 +60,9 @@ fn a_run_says_it_started_only_when_told_to(path: &Path) {
     log::logger().flush();
     assert!(!path.exists());
 
-    let commit = CommitSha::parse("3a6dc89f0e1d2c3b4a5968778695a4b3c2d1e0f9");
-    logfile::say_started(&Version::new(commit));
+    logfile::say_started(&Version::new(Some(
+        "3a6dc89f0e1d2c3b4a5968778695a4b3c2d1e0f9",
+    )));
     log::logger().flush();
     let started = format!("Tsugiki {} (3a6dc89) started", env!("CARGO_PKG_VERSION"));
     assert!(fs::read_to_string(path).unwrap().contains(&started));

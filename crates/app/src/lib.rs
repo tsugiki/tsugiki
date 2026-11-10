@@ -49,7 +49,7 @@ fn about() -> tsugiki_core::About {
 
 /// This build's version, with the commit `build.rs` found, if it found one.
 pub(crate) fn version() -> Version {
-    Version::new(option_env!("TSUGIKI_COMMIT").and_then(CommitSha::parse))
+    Version::new(option_env!("TSUGIKI_COMMIT"))
 }
 
 type LatestStatus = LatestReader<Status>;

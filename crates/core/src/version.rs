@@ -3,19 +3,25 @@
 
 use std::fmt;
 
-use crate::github::CommitSha;
-
 /// The version `Cargo.toml` gives, and the commit the build came from if the build could ask git. It reads
 /// "0.1.1 (3a6dc89)", or "0.1.1" alone.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Version {
-    commit: Option<CommitSha>,
+    /// The SHA's first 7 characters, as GitHub shows them.
+    commit: Option<String>,
 }
 
 impl Version {
-    /// The core can't know the commit, or it would rebuild for each one: the app's build script asks git and
-    /// hands it over.
-    pub const fn new(commit: Option<CommitSha>) -> Self {
+    /// How many characters of the SHA GitHub shows, and the fewest git's `rev-parse` gives.
+    const SHORT: usize = 7;
+
+    /// `sha` is what git's `rev-parse HEAD` printed: the core can't ask, or it would rebuild for each commit,
+    /// so the app's build script asks and hands it over. A text that isn't a SHA counts as no commit.
+    pub fn new(sha: Option<&str>) -> Self {
+        let commit = sha
+            .filter(|sha| sha.len() >= Self::SHORT && sha.chars().all(|c| c.is_ascii_hexdigit()))
+            .and_then(|sha| sha.get(..Self::SHORT))
+            .map(str::to_ascii_lowercase);
         Self { commit }
     }
 }
@@ -24,8 +30,7 @@ impl fmt::Display for Version {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(env!("CARGO_PKG_VERSION"))?;
         match &self.commit {
-            // A SHA has at least 7 characters, all ASCII, so `get` always finds them.
-            Some(commit) => write!(f, " ({})", commit.as_str().get(..7).unwrap_or_default()),
+            Some(commit) => write!(f, " ({commit})"),
             None => Ok(()),
         }
     }

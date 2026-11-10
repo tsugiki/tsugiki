@@ -285,6 +285,36 @@ fn a_clone_nobody_has_answered_for_asks_and_starts_on_the_answer() {
 }
 
 #[test]
+fn a_switch_to_a_clone_that_waits_for_an_answer_asks_nothing_new_and_the_answer_puts_it_next() {
+    let place = Place::new("borrow-ask-switch");
+    let asking = named("octo-org/asking");
+    let (mirrors, starts, asked) = start_asking(&place);
+    let requests = mirrors.requests();
+
+    requests.clone_mirror(asking.clone(), None);
+    let question = asked.recv_timeout(PLENTY).unwrap();
+    requests.clone_mirror(named("octo-org/running"), download());
+    let under_way = starts.recv_timeout(PLENTY).unwrap();
+    requests.clone_mirror(named("octo-org/waiting"), download());
+    // The switch, which has no answer to give.
+    requests.clone_mirror_next(asking.clone(), None);
+    let asked_again = asked.recv_timeout(A_MOMENT).ok();
+    // The answer, as the window gives it.
+    requests.clone_mirror_next(asking.clone(), download());
+    let answered = asked.recv_timeout(PLENTY).unwrap();
+    under_way.fail();
+    let next = starts.recv_timeout(PLENTY).unwrap();
+    let cloned = next.cloned();
+    next.fail();
+    mirrors.stop_cleanly(PLENTY);
+
+    assert_eq!(question.as_deref(), Some("octo-org/asking"));
+    assert_eq!(asked_again, None);
+    assert_eq!(answered, None);
+    assert_eq!(cloned, asking);
+}
+
+#[test]
 fn the_question_names_the_first_repository_that_waits_and_then_the_next() {
     let place = Place::new("borrow-ask-two");
     let [first, second] = [named("octo-org/first"), named("octo-org/second")];

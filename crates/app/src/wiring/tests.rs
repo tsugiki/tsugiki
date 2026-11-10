@@ -13,7 +13,7 @@ use tsugiki_core::github::replay::Replayer;
 use tsugiki_core::github::{Reply, Request, Transport, Unreachable};
 use tsugiki_core::login::Login;
 use tsugiki_core::mirror::MirrorSource;
-use tsugiki_core::repository::RepositoryAccess;
+use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
 use tsugiki_core::repository_settings::RepositorySettings;
 use tsugiki_core::settings::SettingsFiles;
 use tsugiki_core::token::{GhOutput, Token};
@@ -1061,12 +1061,12 @@ fn a_picker_the_user_cancels_gives_nothing() {
     assert_eq!(picked, Ok(Value::Null));
 }
 
-#[test]
-fn repositories_added_before_get_their_mirrors_at_launch_the_open_one_first() {
-    let (folders, root) = temp_folders("wiring-clones-at-launch");
+/// Adds each of `names` to the settings in `folders` before a launch, to download its mirror, so the last one
+/// opens.
+fn added_before_launch(folders: &Folders, names: &[&str]) {
     let mut files = SettingsFiles::load(folders.clone());
-    for name in ["octo-org/first", CPYTHON] {
-        let name = tsugiki_core::repository::RepositoryName::parse(name).unwrap();
+    for name in names {
+        let name = RepositoryName::parse(name).unwrap();
         let _ = files
             .add_repository(
                 &RepositorySettings::added(name, RepositoryAccess::Other),
@@ -1075,17 +1075,64 @@ fn repositories_added_before_get_their_mirrors_at_launch_the_open_one_first() {
             )
             .unwrap();
     }
+}
+
+/// The Repository each clone was of, in turn.
+fn clone_order(wired: &Wired, count: usize) -> Vec<Value> {
+    clones(wired, count)
+        .into_iter()
+        .map(|clone| clone[0]["repository"].clone())
+        .collect()
+}
+
+#[test]
+fn repositories_added_before_get_their_mirrors_at_launch_the_open_one_first() {
+    let (folders, root) = temp_folders("wiring-clones-at-launch");
+    added_before_launch(&folders, &["octo-org/first", CPYTHON]);
     let remotes = remotes(&root, &["octo-org/first", CPYTHON]);
     let wired = Wired::start_cloning_from(Ok(folders), recordings(), remotes);
 
-    let order: Vec<Value> = clones(&wired, 2)
-        .into_iter()
-        .map(|clone| clone[0]["repository"].clone())
-        .collect();
+    let order = clone_order(&wired, 2);
     drop(wired.stop());
     std::fs::remove_dir_all(root).unwrap();
 
     assert_eq!(order, [json!(CPYTHON), json!("octo-org/first")]);
+}
+
+#[test]
+fn a_switch_puts_the_repositorys_clone_next_after_the_one_under_way() {
+    let (folders, root) = temp_folders("wiring-switch-clones");
+    let names = ["octo-org/first", "octo-org/second", CPYTHON];
+    added_before_launch(&folders, &names);
+    // The open Repository's clone waits on its size until the switch is in, so the others can't start first.
+    let (release, gate) = channel::<()>();
+    let cpython = RepositoryName::parse(CPYTHON).unwrap();
+    let remotes = remotes(&root, &names).on_disk(
+        Box::new(move |name| {
+            if name.is_same(&cpython) {
+                gate.recv().unwrap_or_default();
+            }
+            Ok(0)
+        }),
+        Box::new(|_| Ok(u64::MAX)),
+    );
+    let wired = Wired::start_cloning_from(Ok(folders), recordings(), remotes);
+
+    let opened = wired.ask("open_repository", json!({ "name": "octo-org/second" }));
+    drop(release);
+    let order = clone_order(&wired, 3);
+    drop(wired.stop());
+    std::fs::remove_dir_all(root).unwrap();
+
+    assert!(opened.is_ok(), "{opened:?}");
+    assert_eq!(
+        order,
+        [
+            json!(CPYTHON),
+            json!("octo-org/second"),
+            json!("octo-org/first")
+        ]
+    );
 }
 
 /// Searches the diff of PR 1 in python/cpython between `head` and `base` for `query`.

@@ -61,8 +61,8 @@ pub(crate) fn add_repository(
     crate::add_named_repository(repository, &owner, &work)
 }
 
-/// Makes `name` the open Repository and starts its sync, and says what the window shows now. This waits on
-/// a small file and never on GitHub or git.
+/// Makes `name` the open Repository, starts its sync and puts its mirror's clone next, and says what the
+/// window shows now. This waits on a small file and never on GitHub or git.
 #[tauri::command(async)]
 #[specta::specta]
 pub(crate) fn open_repository(

@@ -230,6 +230,40 @@ fn the_open_repositorys_mirror_goes_ahead_of_those_waiting() {
 }
 
 #[test]
+fn a_clone_under_way_goes_on_to_its_end_and_the_one_asked_for_next_starts_after_it() {
+    let place = Place::new("next-after-running");
+    let [running, waiting, next] = [
+        named("octo-org/running"),
+        named("octo-org/waiting"),
+        named("octo-org/next"),
+    ];
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.clone_mirror(running.clone(), download());
+    let mut under_way = starts.recv_timeout(PLENTY).unwrap();
+    requests.clone_mirror(waiting.clone(), download());
+    requests.clone_mirror_next(next.clone(), download());
+    let mut order = vec![under_way.cloned()];
+    // Read once the worker has heard how the clone ended, which comes after both requests.
+    let stops = std::mem::replace(&mut under_way.stopped, channel().1);
+    under_way.fail();
+    let stopped = stops.try_recv();
+    for _ in 0..2 {
+        let clone = starts.recv_timeout(PLENTY).unwrap();
+        order.push(clone.cloned());
+        clone.fail();
+    }
+    mirrors.stop_cleanly(PLENTY);
+
+    assert!(
+        stopped.is_err(),
+        "the clone under way was cut off: {stopped:?}"
+    );
+    assert_eq!(order, [running, next, waiting]);
+}
+
+#[test]
 fn a_repository_whose_mirror_is_there_isnt_cloned_again() {
     let place = Place::new("cloned");
     let [cloned, next] = [named("octo-org/cloned"), named("octo-org/next")];
@@ -454,6 +488,14 @@ impl FakeStart {
 
     fn fail(self) {
         self.end(Outcome::Failed);
+    }
+
+    /// The Repository this clone is of, from the URL it clones from: the argument before the folder.
+    fn cloned(&self) -> RepositoryName {
+        let url = self.args.iter().rev().nth(1).unwrap();
+        let mut path = url.strip_suffix(".git").unwrap().rsplit('/');
+        let name = path.next().unwrap();
+        named(&format!("{}/{name}", path.next().unwrap()))
     }
 
     /// The refspecs of the PR heads this fetch asks for.

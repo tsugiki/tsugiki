@@ -7,9 +7,30 @@ const involved = { name: "Involved", query: "is:open involves:@me", count: 9, pr
 
 const whole = { kind: "whole" } as const;
 const button = (name: string) => screen.getByRole("button", { name });
+/** The open Repository, for the tests that don't look at it. */
+const cpython = { repository: "python/cpython", onpick: () => {} };
+
+it("starts with the open Repository's name, and a click on it asks for the Repository picker", async () => {
+  const onpick = vi.fn();
+  render(Sidebar, {
+    count: 12,
+    reviewRequests: 4,
+    filters: [],
+    selected: whole,
+    onselect: () => {},
+    ...cpython,
+    onpick,
+  });
+  const name = screen.getAllByRole("button")[0];
+  expect(name).toBe(button("python/cpython"));
+  expect(name?.getAttribute("aria-haspopup")).toBe("dialog");
+  await fireEvent.click(button("python/cpython"));
+  expect(onpick).toHaveBeenCalledOnce();
+});
 
 it("lists the Workbench and each Filter with its count", () => {
   render(Sidebar, {
+    ...cpython,
     count: 12,
     reviewRequests: 4,
     filters: [mine, involved],
@@ -17,6 +38,7 @@ it("lists the Workbench and each Filter with its count", () => {
     onselect: () => {},
   });
   expect(screen.getAllByRole("button").map((line) => line.textContent.replace(/\s+/g, " ").trim())).toEqual([
+    "python/cpython",
     "Workbench 12",
     "Review requests 4",
     "Mine 3",
@@ -25,13 +47,21 @@ it("lists the Workbench and each Filter with its count", () => {
 });
 
 it("marks the Workbench while nothing else is selected", () => {
-  render(Sidebar, { count: 12, reviewRequests: 4, filters: [mine], selected: whole, onselect: () => {} });
+  render(Sidebar, {
+    ...cpython,
+    count: 12,
+    reviewRequests: 4,
+    filters: [mine],
+    selected: whole,
+    onselect: () => {},
+  });
   expect(button("Workbench 12").getAttribute("aria-current")).toBe("true");
   expect(button("Mine 3").getAttribute("aria-current")).toBeNull();
 });
 
 it("marks the Filter selected", () => {
   render(Sidebar, {
+    ...cpython,
     count: 12,
     reviewRequests: 4,
     filters: [mine, involved],
@@ -45,6 +75,7 @@ it("marks the Filter selected", () => {
 
 it("marks Review requests selected", () => {
   render(Sidebar, {
+    ...cpython,
     count: 12,
     reviewRequests: 4,
     filters: [mine],
@@ -58,7 +89,14 @@ it("marks Review requests selected", () => {
 
 it("says which line the user picks", async () => {
   const onselect = vi.fn();
-  render(Sidebar, { count: 12, reviewRequests: 4, filters: [mine], selected: whole, onselect });
+  render(Sidebar, {
+    ...cpython,
+    count: 12,
+    reviewRequests: 4,
+    filters: [mine],
+    selected: whole,
+    onselect,
+  });
   await fireEvent.click(button("Mine 3"));
   expect(onselect).toHaveBeenLastCalledWith({ kind: "filter", query: mine.query });
   await fireEvent.click(button("Review requests 4"));
@@ -69,6 +107,7 @@ it("says which line the user picks", async () => {
 
 it("lists two Filters that share a search", () => {
   render(Sidebar, {
+    ...cpython,
     count: 12,
     reviewRequests: 4,
     filters: [mine, { ...mine, name: "Also mine" }],
@@ -82,6 +121,7 @@ it("lists two Filters that share a search", () => {
 it("says what stopped a Filter's last search", () => {
   const problem = "GitHub can't run this search.";
   render(Sidebar, {
+    ...cpython,
     count: 12,
     reviewRequests: 4,
     filters: [{ ...mine, problem }],

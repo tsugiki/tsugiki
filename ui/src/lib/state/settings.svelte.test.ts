@@ -26,23 +26,6 @@ describe("SettingsState", () => {
     expect(state.problems).toEqual(["settings.toml, line 3: expected a value"]);
   });
 
-  it("holds the names of the Repositories the settings hold, in their order", async () => {
-    vi.mocked(commands.settings).mockResolvedValue({
-      settings: {
-        status_bar: { visible: true },
-        repositories: [
-          { name: "python/peps", conventions: "github", filters: [] },
-          { name: "python/cpython", conventions: "cpython", filters: [] },
-        ],
-      },
-      problems: [],
-    });
-    const state = new SettingsState();
-    expect(state.repositories).toEqual([]);
-    await state.load();
-    expect(state.repositories).toEqual(["python/peps", "python/cpython"]);
-  });
-
   it("says so when it can't ask, and keeps the status bar", async () => {
     vi.mocked(commands.settings).mockRejectedValue(new Error("the core has gone"));
     const state = new SettingsState();

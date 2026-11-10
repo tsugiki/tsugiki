@@ -84,7 +84,7 @@ it("ignores an answer about text the user has since changed", async () => {
 });
 
 it("adds by the name GitHub gave and returns what the window opens on", async () => {
-  const home = { screen: "repository", repository: check.repository } as const;
+  const home = { screen: "repository", repository: check.repository, others: [] as string[] } as const;
   vi.mocked(commands.addRepository).mockResolvedValue({ status: "ok", data: home });
   const state = new AddRepositoryState();
 
@@ -145,7 +145,7 @@ it("keeps what was chosen when the user cancels the picker", async () => {
 });
 
 it("adds with the clone the user picked, and forgets it when the text changes", async () => {
-  const home = { screen: "repository", repository: check.repository } as const;
+  const home = { screen: "repository", repository: check.repository, others: [] as string[] } as const;
   vi.mocked(commands.addRepository).mockResolvedValue({ status: "ok", data: home });
   const state = new AddRepositoryState();
   picking(lender);

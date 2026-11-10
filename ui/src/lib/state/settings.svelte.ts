@@ -5,15 +5,12 @@ export class SettingsState {
   // Off until the core answers, so a status bar the settings hide doesn't appear for a moment.
   statusBarVisible = $state(false);
   problems = $state<string[]>([]);
-  /** The names of the Repositories Tsugiki holds, in the order the settings list them. */
-  repositories = $state<string[]>([]);
 
   async load() {
     try {
       const { settings, problems } = await commands.settings();
       this.statusBarVisible = settings.status_bar.visible;
       this.problems = problems;
-      this.repositories = settings.repositories.map((repository) => repository.name);
     } catch (e) {
       this.statusBarVisible = true;
       this.problems = [`Tsugiki can't read its settings: ${String(e)}`];

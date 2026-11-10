@@ -382,8 +382,11 @@ fn a_switch_opens_the_repository_syncs_it_and_a_restart_reopens_it() {
     drop(restarted.stop());
     std::fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(opened.unwrap(), json!(cpython()));
-    assert_eq!(home, json!(cpython()));
+    // The Repository picker lists the one left behind below the open one.
+    let mut switched = json!(cpython());
+    switched["others"] = json!(["python/peps"]);
+    assert_eq!(opened.unwrap(), switched);
+    assert_eq!(home, switched);
     // The session tells the status bar when each Repository opened last synced, the switched-to one last.
     assert_eq!(synced, [CPYTHON, "python/peps", CPYTHON]);
     assert_eq!(
@@ -391,7 +394,7 @@ fn a_switch_opens_the_repository_syncs_it_and_a_restart_reopens_it() {
         "Tsugiki doesn't have python/gone."
     );
     assert_eq!(nonsense.unwrap_err()["kind"], "not_found");
-    assert_eq!(reopened, json!(cpython()));
+    assert_eq!(reopened, switched);
 }
 
 #[test]

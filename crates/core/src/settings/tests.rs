@@ -45,13 +45,16 @@ fn hold_only(folders: &Folders, names: &[&str]) {
     fs::write(folders.settings_file(), text).unwrap();
 }
 
-fn opened(name: &str, conventions: Conventions) -> Home {
+/// The window open on the first of `names`, with `conventions`, and the picker listing the rest below it in
+/// their order.
+fn opened(names: &[&str], conventions: Conventions) -> Home {
     Home::Repository {
         repository: RepositorySettings {
-            name: repository(name),
+            name: repository(names[0]),
             conventions,
             filters: Filter::starters(RepositoryAccess::Other),
         },
+        others: names[1..].iter().map(|name| repository(name)).collect(),
     }
 }
 
@@ -727,7 +730,10 @@ fn the_owner_saves_an_addition_and_answers_with_what_the_files_say() {
     fs::remove_dir_all(root).unwrap();
 
     assert!(text.contains("python/cpython"), "{text}");
-    assert_eq!(saved.home, opened("python/cpython", Conventions::Cpython));
+    assert_eq!(
+        saved.home,
+        opened(&["python/cpython"], Conventions::Cpython)
+    );
     assert_eq!(saved.loaded.settings.repositories.len(), 1);
     // In the view by the time the owner answers.
     assert_eq!(owner.view(), saved);
@@ -1180,7 +1186,7 @@ fn adding_a_repository_saves_it_with_its_conventions() {
     let text = fs::read_to_string(folders.settings_file()).unwrap();
     fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(home, opened("python/cpython", Conventions::Cpython));
+    assert_eq!(home, opened(&["python/cpython"], Conventions::Cpython));
     assert_eq!(
         text,
         "[[repositories]]\nname = \"python/cpython\"\nconventions = \"cpython\"\n
@@ -1219,7 +1225,13 @@ visible = false
     let after = fs::read_to_string(folders.settings_file()).unwrap();
     fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(home, opened("some-maintainer/gcmon", Conventions::Github));
+    assert_eq!(
+        home,
+        opened(
+            &["some-maintainer/gcmon", "python/cpython"],
+            Conventions::Github
+        )
+    );
     assert_eq!(
         after,
         "\
@@ -1322,7 +1334,10 @@ fn adding_a_repository_twice_keeps_one_and_opens_it() {
     fs::remove_dir_all(root).unwrap();
 
     assert_eq!(after, before);
-    assert_eq!(home, opened("python/cpython", Conventions::Cpython));
+    assert_eq!(
+        home,
+        opened(&["python/cpython", "a/b"], Conventions::Cpython)
+    );
 }
 
 #[test]
@@ -1353,7 +1368,7 @@ fn adding_puts_the_repository_first_in_recent_with_the_time() {
 "
     );
     assert!(!settings.contains(RECENT), "{settings}");
-    assert_eq!(home, opened("a/first", Conventions::Github));
+    assert_eq!(home, opened(&["a/first", "a/second"], Conventions::Github));
 }
 
 #[test]
@@ -1365,7 +1380,10 @@ fn a_normal_launch_reopens_the_head_of_recent() {
     let reopened = SettingsFiles::load(folders).home();
     fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(reopened, opened("a/second", Conventions::Github));
+    assert_eq!(
+        reopened,
+        opened(&["a/second", "a/first"], Conventions::Github)
+    );
 }
 
 #[test]
@@ -1378,7 +1396,39 @@ fn a_launch_skips_a_name_the_settings_no_longer_hold() {
     let home = SettingsFiles::load(folders).home();
     fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(home, opened("a/second", Conventions::Github));
+    assert_eq!(home, opened(&["a/second", "a/first"], Conventions::Github));
+}
+
+#[test]
+fn the_home_lists_the_repositories_most_recently_opened_first_then_the_others() {
+    let (folders, root) = temp_folders("recent-order");
+    let mut files = SettingsFiles::load(folders.clone());
+    add_all(
+        &mut files,
+        &["a/first", "a/second", "a/third", "a/gone"],
+        WHENEVER,
+    );
+    drop(
+        files
+            .open_repository(&repository("a/first"), WHENEVER)
+            .unwrap(),
+    );
+    hold_only(
+        &folders,
+        &["a/never", "a/first", "a/second", "a/third", "a/later"],
+    );
+
+    let home = SettingsFiles::load(folders).home();
+    fs::remove_dir_all(root).unwrap();
+
+    // The settings no longer hold a/gone, and a/never and a/later were never opened on this machine.
+    assert_eq!(
+        home,
+        opened(
+            &["a/first", "a/third", "a/second", "a/never", "a/later"],
+            Conventions::Github
+        )
+    );
 }
 
 #[test]
@@ -1391,7 +1441,7 @@ fn with_no_name_in_recent_left_a_launch_opens_the_first_repository() {
     let home = SettingsFiles::load(folders).home();
     fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(home, opened("a/first", Conventions::Github));
+    assert_eq!(home, opened(&["a/first", "a/second"], Conventions::Github));
 }
 
 #[test]
@@ -1416,7 +1466,7 @@ fn an_entry_in_recent_it_cant_read_is_passed_over_and_kept() {
     assert_eq!(
         (home, problems),
         (
-            opened("a/second", Conventions::Github),
+            opened(&["a/second", "a/first"], Conventions::Github),
             Vec::<String>::new()
         )
     );
@@ -1449,7 +1499,7 @@ fn a_last_repository_from_0_2_0_reopens_and_the_next_add_turns_it_into_recent() 
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
     fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(reopened, opened("a/old", Conventions::Github));
+    assert_eq!(reopened, opened(&["a/old", "a/first"], Conventions::Github));
     assert_eq!(
         machine,
         "# This laptop.
@@ -1509,7 +1559,7 @@ sidebar = 240
 list = 500
 "
     );
-    assert_eq!(reopened, opened("a/old", Conventions::Github));
+    assert_eq!(reopened, opened(&["a/old", "a/first"], Conventions::Github));
 }
 
 #[test]
@@ -1525,7 +1575,7 @@ fn a_last_repository_written_by_0_2_0_after_recent_gives_way_to_the_list() {
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
     fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(reopened, opened("a/one", Conventions::Github));
+    assert_eq!(reopened, opened(&["a/one", "a/old"], Conventions::Github));
     assert_eq!(machine, "recent = [\n    { name = \"a/one\" },\n]\n");
 }
 
@@ -1542,7 +1592,7 @@ fn a_recent_that_isnt_a_list_gives_way_to_a_last_repository() {
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
     fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(reopened, opened("a/old", Conventions::Github));
+    assert_eq!(reopened, opened(&["a/old", "a/first"], Conventions::Github));
     assert!(
         machine.starts_with(
             "recent = [
@@ -1569,7 +1619,7 @@ fn a_recent_written_as_tables_keeps_its_entries() {
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
     fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(reopened, opened("a/one", Conventions::Github));
+    assert_eq!(reopened, opened(&["a/one", "a/two"], Conventions::Github));
     assert!(
         machine.starts_with(
             "recent = [
@@ -1722,7 +1772,7 @@ fn opening_a_repository_puts_it_first_in_recent_and_the_next_launch_opens_it() {
     let relaunched = SettingsFiles::load(folders).home();
     fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(home, opened("a/first", Conventions::Github));
+    assert_eq!(home, opened(&["a/first", "a/second"], Conventions::Github));
     assert_eq!(relaunched, home);
     // Under the name the settings hold, and with the mirror answers as they were.
     assert_eq!(
@@ -1756,7 +1806,10 @@ fn opening_a_repository_the_settings_dont_hold_is_refused_and_changes_nothing() 
     assert_eq!(refused.kind, ErrorKind::NotFound);
     assert_eq!(refused.message, "Tsugiki doesn't have a/gone.");
     assert_eq!(after, machine);
-    assert_eq!(files.home(), opened("a/second", Conventions::Github));
+    assert_eq!(
+        files.home(),
+        opened(&["a/second", "a/first"], Conventions::Github)
+    );
 }
 
 #[test]
@@ -1808,7 +1861,10 @@ fn the_owner_opens_a_repository_and_answers_with_what_the_files_say() {
     let saved = owner.open_repository(repository("a/first")).unwrap();
     fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(saved.home, opened("a/first", Conventions::Github));
+    assert_eq!(
+        saved.home,
+        opened(&["a/first", "a/second"], Conventions::Github)
+    );
     // In the view by the time the owner answers.
     assert_eq!(owner.view(), saved);
 }

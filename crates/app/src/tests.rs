@@ -29,6 +29,7 @@ pub(crate) fn cpython() -> Home {
             conventions: Conventions::Cpython,
             filters: Filter::starters(RepositoryAccess::Other),
         },
+        others: Vec::new(),
     }
 }
 

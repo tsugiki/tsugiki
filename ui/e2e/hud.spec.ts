@@ -9,7 +9,7 @@ import { changeAnswer, type CoreAnswers, emitFromCore, mockCore } from "./mock-c
 const repository = { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] } as const;
 
 const core: CoreAnswers = {
-  home: { screen: "repository", repository },
+  home: { screen: "repository", repository, others: [] as string[] },
   workbench: { status: "ok", data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [] } },
   timeRunning: 640,
   recordMeasurement: "Performance of Tsugiki 0.1.0 over 1.0 s: frame p95 16.7 ms",

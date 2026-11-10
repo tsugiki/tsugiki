@@ -317,7 +317,7 @@ impl RepositoryWork {
     /// Opens the Repository the window launches on or the user added. `sources` says where its mirror's
     /// objects come from, if the user has said.
     fn start(&self, home: &Home, sources: &MirrorSources) {
-        if let Home::Repository { repository } = home {
+        if let Home::Repository { repository, .. } = home {
             self.open(repository, sources.get(&repository.name).cloned());
         }
     }
@@ -325,7 +325,7 @@ impl RepositoryWork {
     /// Opens the Repository the user switched to. It hands the mirrors no answer: they have each one saved
     /// at launch, and each the user gave since, which `machine.toml` may have failed to keep.
     fn switch(&self, home: &Home) {
-        if let Home::Repository { repository } = home {
+        if let Home::Repository { repository, .. } = home {
             self.open(repository, None);
         }
     }

@@ -61,7 +61,7 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
   page,
 }) => {
   await mockCore(page, {
-    home: { screen: "repository", repository },
+    home: { screen: "repository", repository, others: [] as string[] },
     workbench: {
       status: "ok",
       data: { items: [issue], quiet: [], count: 0, review_requests: 0, filters: [] },
@@ -213,7 +213,7 @@ const threaded = async (page: Page, at: DiffThread["at"], words: string) => {
     },
   };
   await mockCore(page, {
-    home: { screen: "repository", repository },
+    home: { screen: "repository", repository, others: [] as string[] },
     workbench: {
       status: "ok",
       data: { items: [issue], quiet: [], count: 0, review_requests: 0, filters: [] },

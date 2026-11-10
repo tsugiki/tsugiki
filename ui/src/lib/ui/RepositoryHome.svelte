@@ -50,8 +50,15 @@
   let {
     name,
     onadd,
+    onpick,
     keysActive = true,
-  }: { name: string; onadd: () => void; keysActive?: boolean } = $props();
+  }: {
+    name: string;
+    onadd: () => void;
+    /** Opens the Repository picker, from the Repository's name atop the Sidebar. */
+    onpick: () => void;
+    keysActive?: boolean;
+  } = $props();
 
   // A window can stay open between syncs, so "3h ago" moves on by itself.
   let now = $state(new Date());
@@ -445,6 +452,8 @@
 >
   {#if !panes.hidden("sidebar")}
     <Sidebar
+      repository={name}
+      {onpick}
       count={workbench.count}
       reviewRequests={workbench.reviewRequests}
       filters={workbench.filters}

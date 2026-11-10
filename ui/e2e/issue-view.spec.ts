@@ -10,7 +10,7 @@ import type {
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
 
 const repository = { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] } as const;
-const cpython = { screen: "repository", repository } as const;
+const cpython = { screen: "repository", repository, others: [] as string[] } as const;
 
 const row: Omit<WorkbenchRow, "number"> = {
   title: "gh-7: Fix it",

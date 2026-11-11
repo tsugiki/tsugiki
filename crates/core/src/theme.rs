@@ -263,26 +263,25 @@ impl FromStr for Color {
             })
             .collect::<Option<Vec<u8>>>()
             .ok_or(NotAColor)?;
-        let channels: Vec<u8> = match nibbles.len() {
-            3 => nibbles.iter().map(|nibble| nibble * 17).collect(),
-            6 | 8 => nibbles
-                .chunks(2)
-                .map(|pair| pair.iter().fold(0, |high, low| high * 16 + low))
-                .collect(),
-            _ => return Err(NotAColor),
-        };
-        match *channels.as_slice() {
+        let pair = |high: u8, low: u8| high * 16 + low;
+        match *nibbles.as_slice() {
             [red, green, blue] => Ok(Self {
-                red,
-                green,
-                blue,
+                red: pair(red, red),
+                green: pair(green, green),
+                blue: pair(blue, blue),
                 alpha: u8::MAX,
             }),
-            [red, green, blue, alpha] => Ok(Self {
-                red,
-                green,
-                blue,
-                alpha,
+            [r1, r2, g1, g2, b1, b2] => Ok(Self {
+                red: pair(r1, r2),
+                green: pair(g1, g2),
+                blue: pair(b1, b2),
+                alpha: u8::MAX,
+            }),
+            [r1, r2, g1, g2, b1, b2, a1, a2] => Ok(Self {
+                red: pair(r1, r2),
+                green: pair(g1, g2),
+                blue: pair(b1, b2),
+                alpha: pair(a1, a2),
             }),
             _ => Err(NotAColor),
         }

@@ -6,168 +6,201 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 
 /** Commands */
 export const commands = {
-	about: () => __TAURI_INVOKE<About>("about"),
-	/**  The whole app-wide state, for a window that has just loaded (ADR 0008). */
-	status: () => __TAURI_INVOKE<Status_Serialize>("status"),
-	/**
-	 *  When the open Repository last finished a sync, for a window that has just loaded. A window asking before
-	 *  the core knows gets nothing, and the core's event then tells it.
-	 */
-	lastSync: () => __TAURI_INVOKE<LastSync_Serialize | null>("last_sync"),
-	/**  What the queue of syncs is doing, for a window that has just loaded. */
-	syncActivity: () => __TAURI_INVOKE<SyncActivity_Serialize | null>("sync_activity"),
-	/**  The clone of a mirror under way, for a window that has just loaded. */
-	cloning: () => __TAURI_INVOKE<Cloning | null>("cloning"),
-	/**  The latest reason no mirror can be made, for a window as it loads. */
-	mirrorProblem: () => __TAURI_INVOKE<MirrorProblem | null>("mirror_problem"),
-	/**  Looks at git and the disk again, and tries the clones that waited for them, and returns at once. */
-	checkMirrorsAgain: () => __TAURI_INVOKE<void>("check_mirrors_again"),
-	/**  The first Repository whose mirror waits to hear where it gets its objects, for a window as it loads. */
-	mirrorQuestion: () => __TAURI_INVOKE<RepositoryName | null>("mirror_question"),
-	/**  The state of each Repository's mirror the worker has heard of, for a window as it loads. */
-	mirrorStates: () => __TAURI_INVOKE<RepositoryMirror_Serialize[]>("mirror_states"),
-	/**
-	 *  The newest version out that is newer than the running one, for a window as it loads. Nothing, until a
-	 *  check finds one.
-	 */
-	newVersion: () => __TAURI_INVOKE<NewVersion | null>("new_version"),
-	/**
-	 *  Says why the clone in `folder` can't lend its objects to `repository`'s mirror, or nothing if it can.
-	 *  This waits on git commands that only read the clone.
-	 */
-	checkClone: (repository: string, folder: string) => typedError<CloneRefusal | null, Error_Serialize>(__TAURI_INVOKE("check_clone", { repository, folder })),
-	/**
-	 *  Starts `repository`'s clone ahead of the others, with its objects from `source`, and saves the answer in
-	 *  `machine.toml`. This waits on a small file.
-	 */
-	chooseMirrorSource: (repository: string, source: MirrorSource) => typedError<null, Error_Serialize>(__TAURI_INVOKE("choose_mirror_source", { repository, source })),
-	/**
-	 *  Opens the system's folder picker, and gives the folder the user picked, or nothing if they cancelled. It
-	 *  waits on the user, so it waits on a thread meant for blocking.
-	 */
-	pickFolder: () => typedError<string | null, Error_Serialize>(__TAURI_INVOKE("pick_folder")),
-	/**  Refreshes the open Repository now, and returns at once. */
-	refresh: () => __TAURI_INVOKE<void>("refresh"),
-	/**
-	 *  Tells the core the user opened an Issue, which moves its Last seen and reads what it says from GitHub, and
-	 *  returns at once.
-	 */
-	openIssue: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_issue", { repository, number })),
-	/**  Asks the core to read what an Issue on screen says now, and returns at once (ADR 0015). */
-	fetchIssue: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("fetch_issue", { repository, number })),
-	/**
-	 *  Tells the core the user opened a PR, and returns once git has said whether the mirror holds its head.
-	 *  GitHub's answer comes later.
-	 */
-	openPullRequest: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_pull_request", { repository, number })),
-	/**  Asks the core to read a PR's Conversation on screen now, and returns at once (ADR 0015). */
-	fetchPullRequest: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("fetch_pull_request", { repository, number })),
-	/**  The settings Tsugiki last read, and what was wrong with their files (ADR 0014). */
-	settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
-	/**  What the window opens on. */
-	home: () => __TAURI_INVOKE<Home_Serialize>("home"),
-	/**
-	 *  How the user laid out the panes on this machine: the Sidebar's and the Workbench list's widths (#187), and
-	 *  whether the Sidebar (#234) and the list (#242) show.
-	 */
-	paneLayout: () => __TAURI_INVOKE<PaneLayout_Serialize>("pane_layout"),
-	/**  The milliseconds since Tsugiki started running. */
-	timeRunning: () => __TAURI_INVOKE<number | null>("time_running"),
-	/**  Writes what the performance HUD measured to `tsugiki.log`, and says the summary line it wrote. */
-	recordMeasurement: (measurement: Measurement_Deserialize) => __TAURI_INVOKE<string>("record_measurement", { measurement }),
-	/**  Writes a budget the window missed to `tsugiki.log`, and says the line it wrote. */
-	recordMiss: (miss: Miss_Deserialize) => __TAURI_INVOKE<string>("record_miss", { miss }),
-	/**  Whether Tsugiki has the Repository the user typed, and if not, what adding it would load. */
-	checkRepository: (input: string) => typedError<NameCheck_Serialize, Error_Serialize>(__TAURI_INVOKE("check_repository", { input })),
-	/**
-	 *  Asks GitHub the disk and the time the mirror of `repository` takes, for the user to choose where it gets
-	 *  its objects.
-	 */
-	mirrorCost: (repository: string) => typedError<MirrorCost, Error_Serialize>(__TAURI_INVOKE("mirror_cost", { repository })),
-	/**
-	 *  Adds a Repository the user has seen the check for, starts its first sync and its mirror's clone, and says
-	 *  what the window opens on now. This waits on a small file and never on GitHub or git.
-	 */
-	addRepository: (repository: NewRepository) => typedError<Home_Serialize, Error_Serialize>(__TAURI_INVOKE("add_repository", { repository })),
-	/**
-	 *  Makes `name` the open Repository, starts its sync and puts its mirror's clone next, and says what the
-	 *  window shows now. This waits on a small file and never on GitHub or git.
-	 */
-	openRepository: (name: string) => typedError<Home_Serialize, Error_Serialize>(__TAURI_INVOKE("open_repository", { name })),
-	/**
-	 *  Saves how the user laid out the panes in `machine.toml`, and says the layout the window keeps now. This
-	 *  waits on a small file.
-	 */
-	savePaneLayout: (layout: PaneLayout_Deserialize) => typedError<PaneLayout_Serialize, Error_Serialize>(__TAURI_INVOKE("save_pane_layout", { layout })),
-	/**
-	 *  The rows of a view of a Repository's Workbench, with what its Sidebar shows. This waits
-	 *  on the database and never on GitHub (ADR 0018).
-	 */
-	workbench: (repository: string, view: WorkbenchView) => typedError<Workbench_Serialize, Error_Serialize>(__TAURI_INVOKE("workbench", { repository, view })),
-	/**
-	 *  The Issue view of Issue `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and
-	 *  never on GitHub (ADR 0018).
-	 */
-	issue: (repository: string, number: number) => typedError<IssueView_Serialize | null, Error_Serialize>(__TAURI_INVOKE("issue", { repository, number })),
-	/**
-	 *  The PR view of PR `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and never
-	 *  on GitHub (ADR 0018).
-	 */
-	pullRequest: (repository: string, number: number) => typedError<PrView_Serialize | null, Error_Serialize>(__TAURI_INVOKE("pull_request", { repository, number })),
-	/**
-	 *  What a PR's Files tab shows: its diff's files, or why they aren't there yet. A diff that isn't on show
-	 *  waits on git, and never on GitHub.
-	 */
-	pullRequestFiles: (repository: string, number: number) => typedError<PrFiles_Serialize | null, Error_Serialize>(__TAURI_INVOKE("pull_request_files", { repository, number })),
-	/**  Rows of a PR's diff, which come from the diff on show unless the user has opened another PR since. */
-	pullRequestRows: (chunk: DiffChunk) => typedError<DiffRow_Serialize[], Error_Serialize>(__TAURI_INVOKE("pull_request_rows", { chunk })),
-	/**
-	 *  The spans that highlight the code in a chunk of a PR's diff, which the Files tab asks for with its rows
-	 *  and paints when they come. `opened` names the Generated files it shows open, by their place among the
-	 *  files: the rows of the others get none.
-	 */
-	pullRequestSpans: (chunk: DiffChunk, opened: number[]) => typedError<Span[][], Error_Serialize>(__TAURI_INVOKE("pull_request_spans", { chunk, opened })),
-	/**
-	 *  The lines a gap of a PR's diff leaves out, read from the file at the PR's head in its mirror with their
-	 *  spans, which the Files tab shows when the user expands the gap. It asks GitHub for nothing. Those past
-	 *  the file's end don't come.
-	 */
-	pullRequestLines: (lines: GapLines) => typedError<HeadLine[], Error_Serialize>(__TAURI_INVOKE("pull_request_lines", { lines })),
-	/**
-	 *  Where the code of a PR's diff holds the text the user searches for, whatever the case, in every row:
-	 *  the window holds only those it shows. It asks GitHub for nothing.
-	 */
-	pullRequestFind: (search: DiffSearch) => typedError<Found, Error_Serialize>(__TAURI_INVOKE("pull_request_find", { search })),
-	/**  Opens an Issue or a PR on GitHub in the system browser. */
-	openOnGithub: (repository: string, item: GitHubItem) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_on_github", { repository, item })),
-	/**
-	 *  Opens a link from a description or a comment in the system browser. Tsugiki never navigates its own window
-	 *  to a web page.
-	 */
-	openLink: (address: string) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_link", { address })),
+  about: () => __TAURI_INVOKE<About>("about"),
+  /**  The whole app-wide state, for a window that has just loaded (ADR 0008). */
+  status: () => __TAURI_INVOKE<Status_Serialize>("status"),
+  /**
+   *  When the open Repository last finished a sync, for a window that has just loaded. A window asking before
+   *  the core knows gets nothing, and the core's event then tells it.
+   */
+  lastSync: () => __TAURI_INVOKE<LastSync_Serialize | null>("last_sync"),
+  /**  What the queue of syncs is doing, for a window that has just loaded. */
+  syncActivity: () => __TAURI_INVOKE<SyncActivity_Serialize | null>("sync_activity"),
+  /**  The clone of a mirror under way, for a window that has just loaded. */
+  cloning: () => __TAURI_INVOKE<Cloning | null>("cloning"),
+  /**  The latest reason no mirror can be made, for a window as it loads. */
+  mirrorProblem: () => __TAURI_INVOKE<MirrorProblem | null>("mirror_problem"),
+  /**  Looks at git and the disk again, and tries the clones that waited for them, and returns at once. */
+  checkMirrorsAgain: () => __TAURI_INVOKE<void>("check_mirrors_again"),
+  /**  The first Repository whose mirror waits to hear where it gets its objects, for a window as it loads. */
+  mirrorQuestion: () => __TAURI_INVOKE<RepositoryName | null>("mirror_question"),
+  /**  The state of each Repository's mirror the worker has heard of, for a window as it loads. */
+  mirrorStates: () => __TAURI_INVOKE<RepositoryMirror_Serialize[]>("mirror_states"),
+  /**
+   *  The newest version out that is newer than the running one, for a window as it loads. Nothing, until a
+   *  check finds one.
+   */
+  newVersion: () => __TAURI_INVOKE<NewVersion | null>("new_version"),
+  /**
+   *  Says why the clone in `folder` can't lend its objects to `repository`'s mirror, or nothing if it can.
+   *  This waits on git commands that only read the clone.
+   */
+  checkClone: (repository: string, folder: string) =>
+    typedError<CloneRefusal | null, Error_Serialize>(__TAURI_INVOKE("check_clone", { repository, folder })),
+  /**
+   *  Starts `repository`'s clone ahead of the others, with its objects from `source`, and saves the answer in
+   *  `machine.toml`. This waits on a small file.
+   */
+  chooseMirrorSource: (repository: string, source: MirrorSource) =>
+    typedError<null, Error_Serialize>(__TAURI_INVOKE("choose_mirror_source", { repository, source })),
+  /**
+   *  Opens the system's folder picker, and gives the folder the user picked, or nothing if they cancelled. It
+   *  waits on the user, so it waits on a thread meant for blocking.
+   */
+  pickFolder: () => typedError<string | null, Error_Serialize>(__TAURI_INVOKE("pick_folder")),
+  /**  Refreshes the open Repository now, and returns at once. */
+  refresh: () => __TAURI_INVOKE<void>("refresh"),
+  /**
+   *  Tells the core the user opened an Issue, which moves its Last seen and reads what it says from GitHub, and
+   *  returns at once.
+   */
+  openIssue: (repository: string, number: number) =>
+    typedError<null, Error_Serialize>(__TAURI_INVOKE("open_issue", { repository, number })),
+  /**  Asks the core to read what an Issue on screen says now, and returns at once (ADR 0015). */
+  fetchIssue: (repository: string, number: number) =>
+    typedError<null, Error_Serialize>(__TAURI_INVOKE("fetch_issue", { repository, number })),
+  /**
+   *  Tells the core the user opened a PR, and returns once git has said whether the mirror holds its head.
+   *  GitHub's answer comes later.
+   */
+  openPullRequest: (repository: string, number: number) =>
+    typedError<null, Error_Serialize>(__TAURI_INVOKE("open_pull_request", { repository, number })),
+  /**  Asks the core to read a PR's Conversation on screen now, and returns at once (ADR 0015). */
+  fetchPullRequest: (repository: string, number: number) =>
+    typedError<null, Error_Serialize>(__TAURI_INVOKE("fetch_pull_request", { repository, number })),
+  /**  The settings Tsugiki last read, and what was wrong with their files (ADR 0014). */
+  settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
+  /**  What the window opens on. */
+  home: () => __TAURI_INVOKE<Home_Serialize>("home"),
+  /**
+   *  How the user laid out the panes on this machine: the Sidebar's and the Workbench list's widths (#187), and
+   *  whether the Sidebar (#234) and the list (#242) show.
+   */
+  paneLayout: () => __TAURI_INVOKE<PaneLayout_Serialize>("pane_layout"),
+  /**  The milliseconds since Tsugiki started running. */
+  timeRunning: () => __TAURI_INVOKE<number | null>("time_running"),
+  /**  Writes what the performance HUD measured to `tsugiki.log`, and says the summary line it wrote. */
+  recordMeasurement: (measurement: Measurement_Deserialize) =>
+    __TAURI_INVOKE<string>("record_measurement", { measurement }),
+  /**  Writes a budget the window missed to `tsugiki.log`, and says the line it wrote. */
+  recordMiss: (miss: Miss_Deserialize) => __TAURI_INVOKE<string>("record_miss", { miss }),
+  /**  Whether Tsugiki has the Repository the user typed, and if not, what adding it would load. */
+  checkRepository: (input: string) =>
+    typedError<NameCheck_Serialize, Error_Serialize>(__TAURI_INVOKE("check_repository", { input })),
+  /**
+   *  Asks GitHub the disk and the time the mirror of `repository` takes, for the user to choose where it gets
+   *  its objects.
+   */
+  mirrorCost: (repository: string) =>
+    typedError<MirrorCost, Error_Serialize>(__TAURI_INVOKE("mirror_cost", { repository })),
+  /**
+   *  Adds a Repository the user has seen the check for, starts its first sync and its mirror's clone, and says
+   *  what the window opens on now. This waits on a small file and never on GitHub or git.
+   */
+  addRepository: (repository: NewRepository) =>
+    typedError<Home_Serialize, Error_Serialize>(__TAURI_INVOKE("add_repository", { repository })),
+  /**
+   *  Makes `name` the open Repository, starts its sync and puts its mirror's clone next, and says what the
+   *  window shows now. This waits on a small file and never on GitHub or git.
+   */
+  openRepository: (name: string) =>
+    typedError<Home_Serialize, Error_Serialize>(__TAURI_INVOKE("open_repository", { name })),
+  /**
+   *  Saves how the user laid out the panes in `machine.toml`, and says the layout the window keeps now. This
+   *  waits on a small file.
+   */
+  savePaneLayout: (layout: PaneLayout_Deserialize) =>
+    typedError<PaneLayout_Serialize, Error_Serialize>(__TAURI_INVOKE("save_pane_layout", { layout })),
+  /**
+   *  The rows of a view of a Repository's Workbench, with what its Sidebar shows. This waits
+   *  on the database and never on GitHub (ADR 0018).
+   */
+  workbench: (repository: string, view: WorkbenchView) =>
+    typedError<Workbench_Serialize, Error_Serialize>(__TAURI_INVOKE("workbench", { repository, view })),
+  /**
+   *  The Issue view of Issue `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and
+   *  never on GitHub (ADR 0018).
+   */
+  issue: (repository: string, number: number) =>
+    typedError<IssueView_Serialize | null, Error_Serialize>(__TAURI_INVOKE("issue", { repository, number })),
+  /**
+   *  The PR view of PR `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and never
+   *  on GitHub (ADR 0018).
+   */
+  pullRequest: (repository: string, number: number) =>
+    typedError<PrView_Serialize | null, Error_Serialize>(
+      __TAURI_INVOKE("pull_request", { repository, number }),
+    ),
+  /**
+   *  What a PR's Files tab shows: its diff's files, or why they aren't there yet. A diff that isn't on show
+   *  waits on git, and never on GitHub.
+   */
+  pullRequestFiles: (repository: string, number: number) =>
+    typedError<PrFiles_Serialize | null, Error_Serialize>(
+      __TAURI_INVOKE("pull_request_files", { repository, number }),
+    ),
+  /**  Rows of a PR's diff, which come from the diff on show unless the user has opened another PR since. */
+  pullRequestRows: (chunk: DiffChunk) =>
+    typedError<DiffRow_Serialize[], Error_Serialize>(__TAURI_INVOKE("pull_request_rows", { chunk })),
+  /**
+   *  The spans that highlight the code in a chunk of a PR's diff, which the Files tab asks for with its rows
+   *  and paints when they come. `opened` names the Generated files it shows open, by their place among the
+   *  files: the rows of the others get none.
+   */
+  pullRequestSpans: (chunk: DiffChunk, opened: number[]) =>
+    typedError<Span[][], Error_Serialize>(__TAURI_INVOKE("pull_request_spans", { chunk, opened })),
+  /**
+   *  The lines a gap of a PR's diff leaves out, read from the file at the PR's head in its mirror with their
+   *  spans, which the Files tab shows when the user expands the gap. It asks GitHub for nothing. Those past
+   *  the file's end don't come.
+   */
+  pullRequestLines: (lines: GapLines) =>
+    typedError<HeadLine[], Error_Serialize>(__TAURI_INVOKE("pull_request_lines", { lines })),
+  /**
+   *  Where the code of a PR's diff holds the text the user searches for, whatever the case, in every row:
+   *  the window holds only those it shows. It asks GitHub for nothing.
+   */
+  pullRequestFind: (search: DiffSearch) =>
+    typedError<Found, Error_Serialize>(__TAURI_INVOKE("pull_request_find", { search })),
+  /**  Opens an Issue or a PR on GitHub in the system browser. */
+  openOnGithub: (repository: string, item: GitHubItem) =>
+    typedError<null, Error_Serialize>(__TAURI_INVOKE("open_on_github", { repository, item })),
+  /**
+   *  Opens a link from a description or a comment in the system browser. Tsugiki never navigates its own window
+   *  to a web page.
+   */
+  openLink: (address: string) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_link", { address })),
 };
 
 /** Events */
 export const events = {
-	changed: makeEvent<Changed, Changed>("changed"),
-	cloningChanged: makeEvent<CloningChanged_Serialize, CloningChanged_Deserialize>("cloning-changed"),
-	headsFetchFailed: makeEvent<HeadsFetchFailed, HeadsFetchFailed>("heads-fetch-failed"),
-	headsFetched: makeEvent<HeadsFetched, HeadsFetched>("heads-fetched"),
-	lastSyncChanged: makeEvent<LastSyncChanged_Serialize, LastSyncChanged_Deserialize>("last-sync-changed"),
-	mirrorProblemChanged: makeEvent<MirrorProblemChanged_Serialize, MirrorProblemChanged_Deserialize>("mirror-problem-changed"),
-	mirrorQuestionChanged: makeEvent<MirrorQuestionChanged_Serialize, MirrorQuestionChanged_Deserialize>("mirror-question-changed"),
-	mirrorStatesChanged: makeEvent<MirrorStatesChanged_Serialize, MirrorStatesChanged_Deserialize>("mirror-states-changed"),
-	newVersionFound: makeEvent<NewVersionFound, NewVersionFound>("new-version-found"),
-	readFailed: makeEvent<ReadFailed, ReadFailed>("read-failed"),
-	statusChanged: makeEvent<StatusChanged_Serialize, StatusChanged_Deserialize>("status-changed"),
-	syncActivityChanged: makeEvent<SyncActivityChanged_Serialize, SyncActivityChanged_Deserialize>("sync-activity-changed"),
+  changed: makeEvent<Changed, Changed>("changed"),
+  cloningChanged: makeEvent<CloningChanged_Serialize, CloningChanged_Deserialize>("cloning-changed"),
+  headsFetchFailed: makeEvent<HeadsFetchFailed, HeadsFetchFailed>("heads-fetch-failed"),
+  headsFetched: makeEvent<HeadsFetched, HeadsFetched>("heads-fetched"),
+  lastSyncChanged: makeEvent<LastSyncChanged_Serialize, LastSyncChanged_Deserialize>("last-sync-changed"),
+  mirrorProblemChanged: makeEvent<MirrorProblemChanged_Serialize, MirrorProblemChanged_Deserialize>(
+    "mirror-problem-changed",
+  ),
+  mirrorQuestionChanged: makeEvent<MirrorQuestionChanged_Serialize, MirrorQuestionChanged_Deserialize>(
+    "mirror-question-changed",
+  ),
+  mirrorStatesChanged: makeEvent<MirrorStatesChanged_Serialize, MirrorStatesChanged_Deserialize>(
+    "mirror-states-changed",
+  ),
+  newVersionFound: makeEvent<NewVersionFound, NewVersionFound>("new-version-found"),
+  readFailed: makeEvent<ReadFailed, ReadFailed>("read-failed"),
+  statusChanged: makeEvent<StatusChanged_Serialize, StatusChanged_Deserialize>("status-changed"),
+  syncActivityChanged: makeEvent<SyncActivityChanged_Serialize, SyncActivityChanged_Deserialize>(
+    "sync-activity-changed",
+  ),
 };
 
 /* Types */
 /**  What Tsugiki says about itself: the first value that travels from the core to the window. */
 export type About = {
-	name: string,
-	version: string,
+  name: string;
+  version: string;
 };
 
 /**  Whether the code under a thread has changed since it began. */
@@ -178,53 +211,56 @@ export type Attention = Attention_Serialize | Attention_Deserialize;
 
 /**  The reasons an item Needs attention, and since when. */
 export type Attention_Deserialize = {
-	/**  The start of its oldest reason, which places the item in a list. */
-	since: string,
-	/**  The newest first, each once. */
-	why: Why[],
+  /**  The start of its oldest reason, which places the item in a list. */
+  since: string;
+  /**  The newest first, each once. */
+  why: Why[];
 };
 
 /**  The reasons an item Needs attention, and since when. */
 export type Attention_Serialize = {
-	/**  The start of its oldest reason, which places the item in a list. */
-	since: string,
-	/**  The newest first, each once. */
-	why: Why[],
+  /**  The start of its oldest reason, which places the item in a list. */
+  since: string;
+  /**  The newest first, each once. */
+  why: Why[];
 };
 
 /**  A Backport's kind: it shares its Origin PR's review state, or it gets a review of its own. */
-export type BackportKind = 
-/**  A backport bot opened it and committed every commit but merges. */
-"bot" | 
-/**  A person opened it, or someone else pushed to it. */
-"manual";
+export type BackportKind =
+  /**  A backport bot opened it and committed every commit but merges. */
+  | "bot"
+  /**  A person opened it, or someone else pushed to it. */
+  | "manual";
 
 /**  A Backport's line of the list. */
 export type BackportRow = BackportRow_Serialize | BackportRow_Deserialize;
 
 /**  A Backport's line of the list. */
 export type BackportRow_Deserialize = {
-	backport: BackportKind,
+  backport: BackportKind;
 } & WorkbenchRow_Deserialize;
 
 /**  A Backport's line of the list. */
 export type BackportRow_Serialize = {
-	backport: BackportKind,
+  backport: BackportKind;
 } & WorkbenchRow_Serialize;
 
 /**
  *  The last thing that happened before a long frame. A key isn't named, so the log holds nothing the
  *  user typed.
  */
-export type Cause = { kind: "key" } | { kind: "click" } | { kind: "view_query" } | 
-/**  An Issue's description and comments arrived from GitHub. */
-{ kind: "issue_text"; number: number };
+export type Cause =
+  | { kind: "key" }
+  | { kind: "click" }
+  | { kind: "view_query" }
+  /**  An Issue's description and comments arrived from GitHub. */
+  | { kind: "issue_text"; number: number };
 
 /**  What a sync changed in a Repository's stored facts (ADR 0008). */
 export type Change = {
-	repository: RepositoryName,
-	/**  The Issues and PRs it touched. A change to something else about the Repository names none. */
-	items: number[],
+  repository: RepositoryName;
+  /**  The Issues and PRs it touched. A change to something else about the Repository names none. */
+  items: number[];
 };
 
 /**  Sent when a Repository's stored facts change, so each screen showing them asks again (ADR 0008). */
@@ -234,27 +270,28 @@ export type Changed = Change;
 export type CiState = "EXPECTED" | "ERROR" | "FAILURE" | "PENDING" | "SUCCESS";
 
 /**  How far a clone has got, from what `git clone --progress` writes. */
-export type CloneProgress = 
-/**  GitHub is still counting and packing what it sends. */
-{ stage: "starting" } | 
-/**  The objects coming down. */
-{ stage: "receiving"; percent: number } | 
-/**  Indexing what came down, which takes about as long again. */
-{ stage: "resolving"; percent: number };
+export type CloneProgress =
+  /**  GitHub is still counting and packing what it sends. */
+  | { stage: "starting" }
+  /**  The objects coming down. */
+  | { stage: "receiving"; percent: number }
+  /**  Indexing what came down, which takes about as long again. */
+  | { stage: "resolving"; percent: number };
 
 /**  The reason a folder can't lend its objects to a Repository's mirror. */
-export type CloneRefusal = { kind: "not_a_folder" } | 
-/**  git can't read a clone there, for the reason it gives in `git_says`. */
-{ kind: "not_a_clone"; git_says: string } | 
-/**  None of its remotes is the Repository on GitHub. */
-{ kind: "no_remote" } | 
-/**  A shallow or grafted clone, which `git clone --reference` refuses. */
-{ kind: "shallow" };
+export type CloneRefusal =
+  | { kind: "not_a_folder" }
+  /**  git can't read a clone there, for the reason it gives in `git_says`. */
+  | { kind: "not_a_clone"; git_says: string }
+  /**  None of its remotes is the Repository on GitHub. */
+  | { kind: "no_remote" }
+  /**  A shallow or grafted clone, which `git clone --reference` refuses. */
+  | { kind: "shallow" };
 
 /**  The clone under way, for the status bar. */
 export type Cloning = {
-	repository: RepositoryName,
-	progress: CloneProgress,
+  repository: RepositoryName;
+  progress: CloneProgress;
 };
 
 /**  Sent when a mirror's clone moves on, and when it ends, so the status bar can say. */
@@ -270,21 +307,26 @@ export type CloningChanged_Serialize = Cloning | null;
  *  A row of a stored hunk: its `@@` line, a line of the diff, or what git says in place of a line, such as
  *  a missing newline at the end.
  */
-export type CodeRow = { kind: "hunk"; text: string } | { kind: "context"; old: number; new: number; text: string } | { kind: "added"; new: number; text: string } | { kind: "removed"; old: number; text: string } | { kind: "note"; text: string };
+export type CodeRow =
+  | { kind: "hunk"; text: string }
+  | { kind: "context"; old: number; new: number; text: string }
+  | { kind: "added"; new: number; text: string }
+  | { kind: "removed"; old: number; text: string }
+  | { kind: "note"; text: string };
 
 /**  How a Repository's PRs name their Issues and Backports (ADR 0011). `links.rs` reads this. */
 export type Conventions = "cpython" | "github";
 
 /**  Rows of a PR's diff, as the window asks for them. */
 export type DiffChunk = {
-	repository: string,
-	number: number,
-	/**  The commit the diff ends at, as the Files tab was told. */
-	head: string,
-	/**  The merge base the diff starts from, as the Files tab was told. */
-	base: string,
-	start: number,
-	end: number,
+  repository: string;
+  number: number;
+  /**  The commit the diff ends at, as the Files tab was told. */
+  head: string;
+  /**  The merge base the diff starts from, as the Files tab was told. */
+  base: string;
+  start: number;
+  end: number;
 };
 
 /**  A file the diff changes, as the Files tab lists it. */
@@ -292,92 +334,98 @@ export type DiffFile = DiffFile_Serialize | DiffFile_Deserialize;
 
 /**  A file the diff changes, as the Files tab lists it. */
 export type DiffFile_Deserialize = {
-	path: string,
-	/**  Where a renamed file was. */
-	old_path?: string | null,
-	change: FileChange,
-	/**  Its header's row. Its own rows follow, up to the next file's header. */
-	row: number,
-	/**
-	 *  How many characters its longest line has, so the window can make room for it before it scrolls
-	 *  there.
-	 */
-	columns: number,
-	/**
-	 *  Whether `.gitattributes` on the Target branch marks it `linguist-generated`, which the Files tab
-	 *  starts collapsed.
-	 */
-	generated: boolean,
-	/**  The lines its hunks leave out above each of them, which the window can show (#182). */
-	gaps: Gap[],
-	/**  Where the lines after its last hunk start, if the file may go on there. */
-	rest?: Rest | null,
-	/**
-	 *  Its changes, each a run of removed rows and the added rows after them, which the side-by-side view
-	 *  shows beside each other (#183).
-	 */
-	pairs: Pair[],
+  path: string;
+  /**  Where a renamed file was. */
+  old_path?: string | null;
+  change: FileChange;
+  /**  Its header's row. Its own rows follow, up to the next file's header. */
+  row: number;
+  /**
+   *  How many characters its longest line has, so the window can make room for it before it scrolls
+   *  there.
+   */
+  columns: number;
+  /**
+   *  Whether `.gitattributes` on the Target branch marks it `linguist-generated`, which the Files tab
+   *  starts collapsed.
+   */
+  generated: boolean;
+  /**  The lines its hunks leave out above each of them, which the window can show (#182). */
+  gaps: Gap[];
+  /**  Where the lines after its last hunk start, if the file may go on there. */
+  rest?: Rest | null;
+  /**
+   *  Its changes, each a run of removed rows and the added rows after them, which the side-by-side view
+   *  shows beside each other (#183).
+   */
+  pairs: Pair[];
 };
 
 /**  A file the diff changes, as the Files tab lists it. */
 export type DiffFile_Serialize = {
-	path: string,
-	/**  Where a renamed file was. */
-	old_path: string | null,
-	change: FileChange,
-	/**  Its header's row. Its own rows follow, up to the next file's header. */
-	row: number,
-	/**
-	 *  How many characters its longest line has, so the window can make room for it before it scrolls
-	 *  there.
-	 */
-	columns: number,
-	/**
-	 *  Whether `.gitattributes` on the Target branch marks it `linguist-generated`, which the Files tab
-	 *  starts collapsed.
-	 */
-	generated: boolean,
-	/**  The lines its hunks leave out above each of them, which the window can show (#182). */
-	gaps: Gap[],
-	/**  Where the lines after its last hunk start, if the file may go on there. */
-	rest: Rest | null,
-	/**
-	 *  Its changes, each a run of removed rows and the added rows after them, which the side-by-side view
-	 *  shows beside each other (#183).
-	 */
-	pairs: Pair[],
+  path: string;
+  /**  Where a renamed file was. */
+  old_path: string | null;
+  change: FileChange;
+  /**  Its header's row. Its own rows follow, up to the next file's header. */
+  row: number;
+  /**
+   *  How many characters its longest line has, so the window can make room for it before it scrolls
+   *  there.
+   */
+  columns: number;
+  /**
+   *  Whether `.gitattributes` on the Target branch marks it `linguist-generated`, which the Files tab
+   *  starts collapsed.
+   */
+  generated: boolean;
+  /**  The lines its hunks leave out above each of them, which the window can show (#182). */
+  gaps: Gap[];
+  /**  Where the lines after its last hunk start, if the file may go on there. */
+  rest: Rest | null;
+  /**
+   *  Its changes, each a run of removed rows and the added rows after them, which the side-by-side view
+   *  shows beside each other (#183).
+   */
+  pairs: Pair[];
 };
 
 /**  One row of the diff, as the window draws it. */
 export type DiffRow = DiffRow_Serialize | DiffRow_Deserialize;
 
 /**  One row of the diff, as the window draws it. */
-export type DiffRow_Deserialize = 
-/**  A file's header, as the list of files has it. */
-{ kind: "file"; path: string; old_path?: string | null; change: FileChange } | 
-/**  A hunk's `@@` line, with the function git found around it. */
-{ kind: "hunk"; text: string } | { kind: "context"; old: number; new: number; text: string } | { kind: "added"; new: number; text: string } | { kind: "removed"; old: number; text: string } | 
-/**  What git says in place of lines: a binary file, a new mode, a missing newline at the end. */
-{ kind: "note"; text: string };
+export type DiffRow_Deserialize =
+  /**  A file's header, as the list of files has it. */
+  | { kind: "file"; path: string; old_path?: string | null; change: FileChange }
+  /**  A hunk's `@@` line, with the function git found around it. */
+  | { kind: "hunk"; text: string }
+  | { kind: "context"; old: number; new: number; text: string }
+  | { kind: "added"; new: number; text: string }
+  | { kind: "removed"; old: number; text: string }
+  /**  What git says in place of lines: a binary file, a new mode, a missing newline at the end. */
+  | { kind: "note"; text: string };
 
 /**  One row of the diff, as the window draws it. */
-export type DiffRow_Serialize = 
-/**  A file's header, as the list of files has it. */
-{ kind: "file"; path: string; old_path: string | null; change: FileChange } | 
-/**  A hunk's `@@` line, with the function git found around it. */
-{ kind: "hunk"; text: string } | { kind: "context"; old: number; new: number; text: string } | { kind: "added"; new: number; text: string } | { kind: "removed"; old: number; text: string } | 
-/**  What git says in place of lines: a binary file, a new mode, a missing newline at the end. */
-{ kind: "note"; text: string };
+export type DiffRow_Serialize =
+  /**  A file's header, as the list of files has it. */
+  | { kind: "file"; path: string; old_path: string | null; change: FileChange }
+  /**  A hunk's `@@` line, with the function git found around it. */
+  | { kind: "hunk"; text: string }
+  | { kind: "context"; old: number; new: number; text: string }
+  | { kind: "added"; new: number; text: string }
+  | { kind: "removed"; old: number; text: string }
+  /**  What git says in place of lines: a binary file, a new mode, a missing newline at the end. */
+  | { kind: "note"; text: string };
 
 /**  A search in a PR's diff, as the window asks for it when the user types in the Files tab's search (#186). */
 export type DiffSearch = {
-	repository: string,
-	number: number,
-	/**  The commit the diff ends at, as the Files tab was told. */
-	head: string,
-	/**  The merge base the diff starts from, as the Files tab was told. */
-	base: string,
-	query: string,
+  repository: string;
+  number: number;
+  /**  The commit the diff ends at, as the Files tab was told. */
+  head: string;
+  /**  The merge base the diff starts from, as the Files tab was told. */
+  base: string;
+  query: string;
 };
 
 /**  A review thread, and where Files shows it. */
@@ -385,50 +433,50 @@ export type DiffThread = DiffThread_Serialize | DiffThread_Deserialize;
 
 /**  A review thread, and where Files shows it. */
 export type DiffThread_Deserialize = {
-	id: ThreadId,
-	at: Placement_Deserialize,
-	/**  Resolved also when GitHub hides each of its comments, which leaves nothing in it to answer. */
-	resolution: Resolution,
-	/**  Its first 100 comments, oldest first, with the user's drafts among them. */
-	comments: ThreadComment_Deserialize[],
-	/**  The count of later comments that only GitHub holds. */
-	later_comments: number,
+  id: ThreadId;
+  at: Placement_Deserialize;
+  /**  Resolved also when GitHub hides each of its comments, which leaves nothing in it to answer. */
+  resolution: Resolution;
+  /**  Its first 100 comments, oldest first, with the user's drafts among them. */
+  comments: ThreadComment_Deserialize[];
+  /**  The count of later comments that only GitHub holds. */
+  later_comments: number;
 };
 
 /**  A review thread, and where Files shows it. */
 export type DiffThread_Serialize = {
-	id: ThreadId,
-	at: Placement_Serialize,
-	/**  Resolved also when GitHub hides each of its comments, which leaves nothing in it to answer. */
-	resolution: Resolution,
-	/**  Its first 100 comments, oldest first, with the user's drafts among them. */
-	comments: ThreadComment_Serialize[],
-	/**  The count of later comments that only GitHub holds. */
-	later_comments: number,
+  id: ThreadId;
+  at: Placement_Serialize;
+  /**  Resolved also when GitHub hides each of its comments, which leaves nothing in it to answer. */
+  resolution: Resolution;
+  /**  Its first 100 comments, oldest first, with the user's drafts among them. */
+  comments: ThreadComment_Serialize[];
+  /**  The count of later comments that only GitHub holds. */
+  later_comments: number;
 };
 
 /**  The review threads the Files tab shows with a diff. */
 export type DiffThreads = DiffThreads_Serialize | DiffThreads_Deserialize;
 
 /**  The review threads the Files tab shows with a diff. */
-export type DiffThreads_Deserialize = 
-/**  The threads, in the order the tab shows them, from the PR's Conversation as Tsugiki last read it. */
-{ kind: "shown"; threads: DiffThread_Deserialize[] } | 
-/**
- *  The PR has moved on to `newer`, which the mirror is fetching, and the diff is the one before. The
- *  threads' lines count in `newer`, so the tab holds back all `count` of them until its diff comes.
- */
-{ kind: "held_back"; newer: string; count: number };
+export type DiffThreads_Deserialize =
+  /**  The threads, in the order the tab shows them, from the PR's Conversation as Tsugiki last read it. */
+  | { kind: "shown"; threads: DiffThread_Deserialize[] }
+  /**
+   *  The PR has moved on to `newer`, which the mirror is fetching, and the diff is the one before. The
+   *  threads' lines count in `newer`, so the tab holds back all `count` of them until its diff comes.
+   */
+  | { kind: "held_back"; newer: string; count: number };
 
 /**  The review threads the Files tab shows with a diff. */
-export type DiffThreads_Serialize = 
-/**  The threads, in the order the tab shows them, from the PR's Conversation as Tsugiki last read it. */
-{ kind: "shown"; threads: DiffThread_Serialize[] } | 
-/**
- *  The PR has moved on to `newer`, which the mirror is fetching, and the diff is the one before. The
- *  threads' lines count in `newer`, so the tab holds back all `count` of them until its diff comes.
- */
-{ kind: "held_back"; newer: string; count: number };
+export type DiffThreads_Serialize =
+  /**  The threads, in the order the tab shows them, from the PR's Conversation as Tsugiki last read it. */
+  | { kind: "shown"; threads: DiffThread_Serialize[] }
+  /**
+   *  The PR has moved on to `newer`, which the mirror is fetching, and the diff is the one before. The
+   *  threads' lines count in `newer`, so the tab holds back all `count` of them until its diff comes.
+   */
+  | { kind: "held_back"; newer: string; count: number };
 
 /**  A failure in plain words. Details go only to a local log, with tokens scrubbed. */
 export type Error = Error_Serialize | Error_Deserialize;
@@ -437,54 +485,73 @@ export type Error = Error_Serialize | Error_Deserialize;
 export type ErrorKind = ErrorKind_Serialize | ErrorKind_Deserialize;
 
 /**  What the UI can do something about. */
-export type ErrorKind_Deserialize = { kind: "offline" } | 
-/**  GitHub's certificate isn't valid at this computer's date and time, so no request reaches GitHub. */
-{ kind: "certificate_dates" } | { kind: "unauthorized" } | { kind: "write_refused" } | { kind: "rate_limited"; 
-/**  When the limit resets, in seconds since the Unix epoch, if GitHub said. */
-resets_at?: number | null } | { kind: "not_found" } | { kind: "conflict" } | 
-/**  GitHub took the request and answered with an error about it. A failed status is `Internal`. */
-{ kind: "query_refused" } | { kind: "internal" };
+export type ErrorKind_Deserialize =
+  | { kind: "offline" }
+  /**  GitHub's certificate isn't valid at this computer's date and time, so no request reaches GitHub. */
+  | { kind: "certificate_dates" }
+  | { kind: "unauthorized" }
+  | { kind: "write_refused" }
+  | {
+      kind: "rate_limited";
+      /**  When the limit resets, in seconds since the Unix epoch, if GitHub said. */
+      resets_at?: number | null;
+    }
+  | { kind: "not_found" }
+  | { kind: "conflict" }
+  /**  GitHub took the request and answered with an error about it. A failed status is `Internal`. */
+  | { kind: "query_refused" }
+  | { kind: "internal" };
 
 /**  What the UI can do something about. */
-export type ErrorKind_Serialize = { kind: "offline" } | 
-/**  GitHub's certificate isn't valid at this computer's date and time, so no request reaches GitHub. */
-{ kind: "certificate_dates" } | { kind: "unauthorized" } | { kind: "write_refused" } | { kind: "rate_limited"; 
-/**  When the limit resets, in seconds since the Unix epoch, if GitHub said. */
-resets_at: number | null } | { kind: "not_found" } | { kind: "conflict" } | 
-/**  GitHub took the request and answered with an error about it. A failed status is `Internal`. */
-{ kind: "query_refused" } | { kind: "internal" };
+export type ErrorKind_Serialize =
+  | { kind: "offline" }
+  /**  GitHub's certificate isn't valid at this computer's date and time, so no request reaches GitHub. */
+  | { kind: "certificate_dates" }
+  | { kind: "unauthorized" }
+  | { kind: "write_refused" }
+  | {
+      kind: "rate_limited";
+      /**  When the limit resets, in seconds since the Unix epoch, if GitHub said. */
+      resets_at: number | null;
+    }
+  | { kind: "not_found" }
+  | { kind: "conflict" }
+  /**  GitHub took the request and answered with an error about it. A failed status is `Internal`. */
+  | { kind: "query_refused" }
+  | { kind: "internal" };
 
 /**  A failure in plain words. Details go only to a local log, with tokens scrubbed. */
 export type Error_Deserialize = {
-	message: string,
+  message: string;
 } & ErrorKind_Deserialize;
 
 /**  A failure in plain words. Details go only to a local log, with tokens scrubbed. */
 export type Error_Serialize = {
-	message: string,
+  message: string;
 } & ErrorKind_Serialize;
 
 /**  The PR heads that aren't in a Repository's mirror once the worker stopped fetching them, and why. */
 export type FailedHeads = {
-	why: Unfetched,
+  why: Unfetched;
 } & Change;
 
 /**  A read of an Issue or a PR on screen that failed, so the window can say why it shows nothing new. */
 export type FailedRead = {
-	repository: RepositoryName,
-	number: number,
-	why: ReadFailure,
+  repository: RepositoryName;
+  number: number;
+  why: ReadFailure;
 };
 
 /**  How much a file changed. */
-export type FileChange = { kind: "lines"; added: number; removed: number } | 
-/**  git doesn't count the lines of a binary file. */
-{ kind: "binary" };
+export type FileChange =
+  | { kind: "lines"; added: number; removed: number }
+  /**  git doesn't count the lines of a binary file. */
+  | { kind: "binary" };
 
 /**  A saved GitHub search, as `settings.toml` holds it. */
 export type Filter = {
-	name: FilterName,
-	query: FilterQuery,
+  name: FilterName;
+  query: FilterQuery;
 };
 
 /**  A Filter's line of the Sidebar. */
@@ -492,22 +559,22 @@ export type FilterLine = FilterLine_Serialize | FilterLine_Deserialize;
 
 /**  A Filter's line of the Sidebar. */
 export type FilterLine_Deserialize = {
-	name: FilterName,
-	query: FilterQuery,
-	/**  The count of its items that Need attention. */
-	count: number,
-	/**  The words for the failure that stopped its last search from being whole. */
-	problem?: string | null,
+  name: FilterName;
+  query: FilterQuery;
+  /**  The count of its items that Need attention. */
+  count: number;
+  /**  The words for the failure that stopped its last search from being whole. */
+  problem?: string | null;
 };
 
 /**  A Filter's line of the Sidebar. */
 export type FilterLine_Serialize = {
-	name: FilterName,
-	query: FilterQuery,
-	/**  The count of its items that Need attention. */
-	count: number,
-	/**  The words for the failure that stopped its last search from being whole. */
-	problem: string | null,
+  name: FilterName;
+  query: FilterQuery;
+  /**  The count of its items that Need attention. */
+  count: number;
+  /**  The words for the failure that stopped its last search from being whole. */
+  problem: string | null;
 };
 
 /**  A Filter's name in the Sidebar. It reaches the UI as a plain string. */
@@ -522,18 +589,18 @@ export type FilterQuery = string;
 
 /**  What a search found, in the order the rows come. */
 export type Found = {
-	matches: Match[],
-	/**  Whether the diff holds more than [`MOST_MATCHES`] matches, and the search stopped there. */
-	more: boolean,
+  matches: Match[];
+  /**  Whether the diff holds more than [`MOST_MATCHES`] matches, and the search stopped there. */
+  more: boolean;
 };
 
 export type Frames = {
-	count: number,
-	p95_ms: number | null,
-	worst_ms: number | null,
-	/**  The longest a frame may take while the window scrolls. */
-	limit_ms: number | null,
-	over_limit: number,
+  count: number;
+  p95_ms: number | null;
+  worst_ms: number | null;
+  /**  The longest a frame may take while the window scrolls. */
+  limit_ms: number | null;
+  over_limit: number;
 };
 
 /**
@@ -541,14 +608,14 @@ export type Frames = {
  *  at the head, so either number counts on from the gap's first.
  */
 export type Gap = {
-	/**  The row of the hunk below the gap. */
-	row: number,
-	/**  The gap's first line at the merge base. */
-	old: number,
-	/**  The gap's first line at the head. */
-	new: number,
-	/**  How many lines it leaves out. */
-	lines: number,
+  /**  The row of the hunk below the gap. */
+  row: number;
+  /**  The gap's first line at the merge base. */
+  old: number;
+  /**  The gap's first line at the head. */
+  new: number;
+  /**  How many lines it leaves out. */
+  lines: number;
 };
 
 /**
@@ -556,18 +623,18 @@ export type Gap = {
  *  user expands the gap (#182).
  */
 export type GapLines = {
-	repository: string,
-	number: number,
-	/**  The commit the diff ends at, as the Files tab was told. */
-	head: string,
-	/**  The merge base the diff starts from, as the Files tab was told. */
-	base: string,
-	/**  The file's place among the diff's files. */
-	file: number,
-	/**  The first line, counted from 1. */
-	start: number,
-	/**  The line after the last. */
-	end: number,
+  repository: string;
+  number: number;
+  /**  The commit the diff ends at, as the Files tab was told. */
+  head: string;
+  /**  The merge base the diff starts from, as the Files tab was told. */
+  base: string;
+  /**  The file's place among the diff's files. */
+  file: number;
+  /**  The first line, counted from 1. */
+  start: number;
+  /**  The line after the last. */
+  end: number;
 };
 
 /**  An Issue or a PR, as the window names it to open on GitHub. */
@@ -578,8 +645,8 @@ export type GitHubItem = { kind: "issue"; number: number } | { kind: "pull_reque
  *  the gap (#182), and its spans.
  */
 export type HeadLine = {
-	text: string,
-	spans: Span[],
+  text: string;
+  spans: Span[];
 };
 
 /**
@@ -592,45 +659,65 @@ export type HeadsFetchFailed = FailedHeads;
 export type HeadsFetched = Change;
 
 /**  The reason someone gave for hiding a comment on GitHub. The comment folds to it until the user opens it. */
-export type HiddenReason = "abuse" | "off_topic" | "outdated" | "resolved" | "duplicate" | "spam" | 
-/**  GitHub gave a reason Tsugiki doesn't know, or none. */
-"unstated";
+export type HiddenReason =
+  | "abuse"
+  | "off_topic"
+  | "outdated"
+  | "resolved"
+  | "duplicate"
+  | "spam"
+  /**  GitHub gave a reason Tsugiki doesn't know, or none. */
+  | "unstated";
 
 /**  What a run of text shows as, in colors and styles that look like github.com's. */
-export type Highlight = "keyword" | "string" | "comment" | "constant" | "function" | "type" | 
-/**  An HTML tag's name, or a key in YAML or TOML. */
-"tag" | 
-/**  A heading in Markdown or reST. */
-"heading" | "strong" | "emphasis";
+export type Highlight =
+  | "keyword"
+  | "string"
+  | "comment"
+  | "constant"
+  | "function"
+  | "type"
+  /**  An HTML tag's name, or a key in YAML or TOML. */
+  | "tag"
+  /**  A heading in Markdown or reST. */
+  | "heading"
+  | "strong"
+  | "emphasis";
 
 /**  What the window opens on. */
 export type Home = Home_Serialize | Home_Deserialize;
 
 /**  What the window opens on. */
-export type Home_Deserialize = 
-/**  No Repositories yet. */
-{ screen: "onboarding"; token: TokenSource } | 
-/**  The Repository opened most recently on this machine that the settings still hold, or else the first. */
-{ screen: "repository"; repository: RepositorySettings_Deserialize; 
-/**
- *  The names of the other Repositories the settings hold, in the order the Repository picker lists
- *  them below the open one: those opened on this machine first, most recently opened first, and then
- *  the rest in the settings' order.
- */
-others: RepositoryName[] };
+export type Home_Deserialize =
+  /**  No Repositories yet. */
+  | { screen: "onboarding"; token: TokenSource }
+  /**  The Repository opened most recently on this machine that the settings still hold, or else the first. */
+  | {
+      screen: "repository";
+      repository: RepositorySettings_Deserialize;
+      /**
+       *  The names of the other Repositories the settings hold, in the order the Repository picker lists
+       *  them below the open one: those opened on this machine first, most recently opened first, and then
+       *  the rest in the settings' order.
+       */
+      others: RepositoryName[];
+    };
 
 /**  What the window opens on. */
-export type Home_Serialize = 
-/**  No Repositories yet. */
-{ screen: "onboarding"; token: TokenSource } | 
-/**  The Repository opened most recently on this machine that the settings still hold, or else the first. */
-{ screen: "repository"; repository: RepositorySettings_Serialize; 
-/**
- *  The names of the other Repositories the settings hold, in the order the Repository picker lists
- *  them below the open one: those opened on this machine first, most recently opened first, and then
- *  the rest in the settings' order.
- */
-others: RepositoryName[] };
+export type Home_Serialize =
+  /**  No Repositories yet. */
+  | { screen: "onboarding"; token: TokenSource }
+  /**  The Repository opened most recently on this machine that the settings still hold, or else the first. */
+  | {
+      screen: "repository";
+      repository: RepositorySettings_Serialize;
+      /**
+       *  The names of the other Repositories the settings hold, in the order the Repository picker lists
+       *  them below the open one: those opened on this machine first, most recently opened first, and then
+       *  the rest in the settings' order.
+       */
+      others: RepositoryName[];
+    };
 
 /**  A key or a click. The key itself isn't named, so the log holds nothing the user typed. */
 export type Input = "key" | "click";
@@ -640,24 +727,24 @@ export type IssueComment = IssueComment_Serialize | IssueComment_Deserialize;
 
 /**  A comment on an Issue. */
 export type IssueComment_Deserialize = {
-	/**  Nothing, for a comment whose author's account has gone. */
-	author?: Login | null,
-	created_at: string,
-	/**  GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005). */
-	body_html: string,
-	/**  The reason it is hidden on GitHub. Nothing, for a comment that isn't. */
-	hidden?: HiddenReason | null,
+  /**  Nothing, for a comment whose author's account has gone. */
+  author?: Login | null;
+  created_at: string;
+  /**  GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005). */
+  body_html: string;
+  /**  The reason it is hidden on GitHub. Nothing, for a comment that isn't. */
+  hidden?: HiddenReason | null;
 };
 
 /**  A comment on an Issue. */
 export type IssueComment_Serialize = {
-	/**  Nothing, for a comment whose author's account has gone. */
-	author: Login | null,
-	created_at: string,
-	/**  GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005). */
-	body_html: string,
-	/**  The reason it is hidden on GitHub. Nothing, for a comment that isn't. */
-	hidden: HiddenReason | null,
+  /**  Nothing, for a comment whose author's account has gone. */
+  author: Login | null;
+  created_at: string;
+  /**  GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005). */
+  body_html: string;
+  /**  The reason it is hidden on GitHub. Nothing, for a comment that isn't. */
+  hidden: HiddenReason | null;
 };
 
 /**  An Issue's description and its recent comments. */
@@ -665,22 +752,22 @@ export type IssueContent = IssueContent_Serialize | IssueContent_Deserialize;
 
 /**  An Issue's description and its recent comments. */
 export type IssueContent_Deserialize = {
-	/**  GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005). */
-	body_html: string,
-	/**  The most recent comments, oldest first. */
-	comments: IssueComment_Deserialize[],
-	/**  The count of older comments that only GitHub shows. */
-	earlier_comments: number,
+  /**  GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005). */
+  body_html: string;
+  /**  The most recent comments, oldest first. */
+  comments: IssueComment_Deserialize[];
+  /**  The count of older comments that only GitHub shows. */
+  earlier_comments: number;
 };
 
 /**  An Issue's description and its recent comments. */
 export type IssueContent_Serialize = {
-	/**  GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005). */
-	body_html: string,
-	/**  The most recent comments, oldest first. */
-	comments: IssueComment_Serialize[],
-	/**  The count of older comments that only GitHub shows. */
-	earlier_comments: number,
+  /**  GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005). */
+  body_html: string;
+  /**  The most recent comments, oldest first. */
+  comments: IssueComment_Serialize[];
+  /**  The count of older comments that only GitHub shows. */
+  earlier_comments: number;
 };
 
 /**  An Issue on the Workbench, with its tree: each PR Tsugiki knows that fixes it, whatever its state. */
@@ -688,28 +775,28 @@ export type IssueItem = IssueItem_Serialize | IssueItem_Deserialize;
 
 /**  An Issue on the Workbench, with its tree: each PR Tsugiki knows that fixes it, whatever its state. */
 export type IssueItem_Deserialize = {
-	number: number,
-	title: string,
-	/**  Nothing for an Issue stored before Tsugiki kept states, until GitHub sends it again. */
-	state?: IssueState | null,
-	/**  The Issue's author, then the PRs' authors, with each person once and no backport bot. */
-	people: Login[],
-	/**  The latest update of the Issue and its PRs. */
-	updated_at: string,
-	pull_requests: TreeEntry_Deserialize[],
+  number: number;
+  title: string;
+  /**  Nothing for an Issue stored before Tsugiki kept states, until GitHub sends it again. */
+  state?: IssueState | null;
+  /**  The Issue's author, then the PRs' authors, with each person once and no backport bot. */
+  people: Login[];
+  /**  The latest update of the Issue and its PRs. */
+  updated_at: string;
+  pull_requests: TreeEntry_Deserialize[];
 };
 
 /**  An Issue on the Workbench, with its tree: each PR Tsugiki knows that fixes it, whatever its state. */
 export type IssueItem_Serialize = {
-	number: number,
-	title: string,
-	/**  Nothing for an Issue stored before Tsugiki kept states, until GitHub sends it again. */
-	state: IssueState | null,
-	/**  The Issue's author, then the PRs' authors, with each person once and no backport bot. */
-	people: Login[],
-	/**  The latest update of the Issue and its PRs. */
-	updated_at: string,
-	pull_requests: TreeEntry_Serialize[],
+  number: number;
+  title: string;
+  /**  Nothing for an Issue stored before Tsugiki kept states, until GitHub sends it again. */
+  state: IssueState | null;
+  /**  The Issue's author, then the PRs' authors, with each person once and no backport bot. */
+  people: Login[];
+  /**  The latest update of the Issue and its PRs. */
+  updated_at: string;
+  pull_requests: TreeEntry_Serialize[];
 };
 
 /**  The Issues opened while recording, from the click to the Issue on screen. */
@@ -717,44 +804,54 @@ export type IssueOpenings = IssueOpenings_Serialize | IssueOpenings_Deserialize;
 
 /**  The Issues opened while recording, from the click to the Issue on screen. */
 export type IssueOpenings_Deserialize = {
-	/**  Each Issue, until the window showed what the database held. */
-	from_database: Slowest,
-	/**  The ones whose text the database didn't hold, until that text arrived from GitHub. */
-	from_github?: Slowest | null,
+  /**  Each Issue, until the window showed what the database held. */
+  from_database: Slowest;
+  /**  The ones whose text the database didn't hold, until that text arrived from GitHub. */
+  from_github?: Slowest | null;
 };
 
 /**  The Issues opened while recording, from the click to the Issue on screen. */
 export type IssueOpenings_Serialize = {
-	/**  Each Issue, until the window showed what the database held. */
-	from_database: Slowest,
-	/**  The ones whose text the database didn't hold, until that text arrived from GitHub. */
-	from_github: Slowest | null,
+  /**  Each Issue, until the window showed what the database held. */
+  from_database: Slowest;
+  /**  The ones whose text the database didn't hold, until that text arrived from GitHub. */
+  from_github: Slowest | null;
 };
 
 /**  Whether an Issue is open, and how it closed, as GitHub draws it (#188). */
-export type IssueState = "OPEN" | 
-/**  Closed as completed, or closed before GitHub said why. */
-"CLOSED" | "NOT_PLANNED" | 
-/**  Closed as a duplicate, which GitHub draws as it draws not planned. */
-"DUPLICATE";
+export type IssueState =
+  | "OPEN"
+  /**  Closed as completed, or closed before GitHub said why. */
+  | "CLOSED"
+  | "NOT_PLANNED"
+  /**  Closed as a duplicate, which GitHub draws as it draws not planned. */
+  | "DUPLICATE";
 
 /**  An Issue as the Detail pane shows it. */
 export type IssueView = IssueView_Serialize | IssueView_Deserialize;
 
 /**  An Issue as the Detail pane shows it. */
 export type IssueView_Deserialize = {
-	/**  Nothing, for an Issue whose author's account has gone. */
-	author?: Login | null,
-	/**  Nothing, until Tsugiki has read this Issue from GitHub once. */
-	content?: IssueContent_Deserialize | null,
+  /**  The Origin PRs that merged with each of their Backports, which the view folds into one line (#588). */
+  merged: TreeEntry_Deserialize[];
+  /**  How many PRs `merged` holds, Backports included. */
+  merged_count: number;
+  /**  Nothing, for an Issue whose author's account has gone. */
+  author?: Login | null;
+  /**  Nothing, until Tsugiki has read this Issue from GitHub once. */
+  content?: IssueContent_Deserialize | null;
 } & IssueItem_Deserialize;
 
 /**  An Issue as the Detail pane shows it. */
 export type IssueView_Serialize = {
-	/**  Nothing, for an Issue whose author's account has gone. */
-	author: Login | null,
-	/**  Nothing, until Tsugiki has read this Issue from GitHub once. */
-	content: IssueContent_Serialize | null,
+  /**  The Origin PRs that merged with each of their Backports, which the view folds into one line (#588). */
+  merged: TreeEntry_Serialize[];
+  /**  How many PRs `merged` holds, Backports included. */
+  merged_count: number;
+  /**  Nothing, for an Issue whose author's account has gone. */
+  author: Login | null;
+  /**  Nothing, until Tsugiki has read this Issue from GitHub once. */
+  content: IssueContent_Serialize | null;
 } & IssueItem_Serialize;
 
 /**
@@ -762,9 +859,9 @@ export type IssueView_Serialize = {
  *  they were on screen (#180).
  */
 export type Jumps = {
-	rows: Slowest,
-	/**  How many showed their rows plain, as their spans hadn't come in time. */
-	plain: number,
+  rows: Slowest;
+  /**  How many showed their rows plain, as their spans hadn't come in time. */
+  plain: number;
 };
 
 /**  When the open Repository last finished a sync. */
@@ -781,43 +878,46 @@ export type LastSyncChanged_Serialize = LastSync_Serialize;
 
 /**  When the open Repository last finished a sync. */
 export type LastSync_Deserialize = {
-	repository: RepositoryName,
-	/**  Nothing, until its first sync finishes. */
-	at: string | null,
+  repository: RepositoryName;
+  /**  Nothing, until its first sync finishes. */
+  at: string | null;
 };
 
 /**  When the open Repository last finished a sync. */
 export type LastSync_Serialize = {
-	repository: RepositoryName,
-	/**  Nothing, until its first sync finishes. */
-	at: string | null,
+  repository: RepositoryName;
+  /**  Nothing, until its first sync finishes. */
+  at: string | null;
 };
 
 /**
  *  What a link goes to. The window knows the address of each kind, as CPython's docs build does, so the core
  *  names no site but GitHub (ADR 0005).
  */
-export type LinkTo = 
-/**  A web page the entry gives the address of. */
-{ site: "web"; url: WebAddress } | { site: "pep"; number: number } | 
-/**  An issue in CPython's GitHub repository. */
-{ site: "gh_issue"; number: number } | 
-/**  An issue in bugs.python.org, CPython's tracker before GitHub. */
-{ site: "bpo"; number: number } | { site: "rfc"; number: number } | { site: "cve"; id: string } | 
-/**  A project on the Python Package Index. */
-{ site: "pypi"; project: string };
+export type LinkTo =
+  /**  A web page the entry gives the address of. */
+  | { site: "web"; url: WebAddress }
+  | { site: "pep"; number: number }
+  /**  An issue in CPython's GitHub repository. */
+  | { site: "gh_issue"; number: number }
+  /**  An issue in bugs.python.org, CPython's tracker before GitHub. */
+  | { site: "bpo"; number: number }
+  | { site: "rfc"; number: number }
+  | { site: "cve"; id: string }
+  /**  A project on the Python Package Index. */
+  | { site: "pypi"; project: string };
 
 /**  A top-level entry of the list, with why it Needs attention, if it does. */
 export type ListedItem = ListedItem_Serialize | ListedItem_Deserialize;
 
 /**  A top-level entry of the list, with why it Needs attention, if it does. */
 export type ListedItem_Deserialize = {
-	attention?: Attention_Deserialize | null,
+  attention?: Attention_Deserialize | null;
 } & WorkbenchItem_Deserialize;
 
 /**  A top-level entry of the list, with why it Needs attention, if it does. */
 export type ListedItem_Serialize = {
-	attention: Attention_Serialize | null,
+  attention: Attention_Serialize | null;
 } & WorkbenchItem_Serialize;
 
 /**  A first sync's progress through its queue. It learns of more PRs as it reads, so `prs_known` grows. */
@@ -825,20 +925,20 @@ export type LoadProgress = LoadProgress_Serialize | LoadProgress_Deserialize;
 
 /**  A first sync's progress through its queue. It learns of more PRs as it reads, so `prs_known` grows. */
 export type LoadProgress_Deserialize = {
-	issues_read: number,
-	/**  Nothing, until the first page of Issues says. */
-	issues_total?: number | null,
-	prs_fetched: number,
-	prs_known: number,
+  issues_read: number;
+  /**  Nothing, until the first page of Issues says. */
+  issues_total?: number | null;
+  prs_fetched: number;
+  prs_known: number;
 };
 
 /**  A first sync's progress through its queue. It learns of more PRs as it reads, so `prs_known` grows. */
 export type LoadProgress_Serialize = {
-	issues_read: number,
-	/**  Nothing, until the first page of Issues says. */
-	issues_total: number | null,
-	prs_fetched: number,
-	prs_known: number,
+  issues_read: number;
+  /**  Nothing, until the first page of Issues says. */
+  issues_total: number | null;
+  prs_fetched: number;
+  prs_known: number;
 };
 
 /**  The settings in force, and what is wrong with the files they came from, in words for the status bar. */
@@ -846,14 +946,14 @@ export type LoadedSettings = LoadedSettings_Serialize | LoadedSettings_Deseriali
 
 /**  The settings in force, and what is wrong with the files they came from, in words for the status bar. */
 export type LoadedSettings_Deserialize = {
-	settings: Settings_Deserialize,
-	problems: string[],
+  settings: Settings_Deserialize;
+  problems: string[];
 };
 
 /**  The settings in force, and what is wrong with the files they came from, in words for the status bar. */
 export type LoadedSettings_Serialize = {
-	settings: Settings_Serialize,
-	problems: string[],
+  settings: Settings_Serialize;
+  problems: string[];
 };
 
 /**  A GitHub username. It reaches the UI as a plain string, in GitHub's casing. */
@@ -864,20 +964,20 @@ export type LongFrame = LongFrame_Serialize | LongFrame_Deserialize;
 
 /**  A frame over the limit. */
 export type LongFrame_Deserialize = {
-	/**  Its end, in seconds from the start of the recording. */
-	at_s: number | null,
-	ms: number | null,
-	/**  Nothing, if Tsugiki did nothing the HUD knows of during it or right before. */
-	cause?: Cause | null,
+  /**  Its end, in seconds from the start of the recording. */
+  at_s: number | null;
+  ms: number | null;
+  /**  Nothing, if Tsugiki did nothing the HUD knows of during it or right before. */
+  cause?: Cause | null;
 };
 
 /**  A frame over the limit. */
 export type LongFrame_Serialize = {
-	/**  Its end, in seconds from the start of the recording. */
-	at_s: number | null,
-	ms: number | null,
-	/**  Nothing, if Tsugiki did nothing the HUD knows of during it or right before. */
-	cause: Cause | null,
+  /**  Its end, in seconds from the start of the recording. */
+  at_s: number | null;
+  ms: number | null;
+  /**  Nothing, if Tsugiki did nothing the HUD knows of during it or right before. */
+  cause: Cause | null;
 };
 
 /**
@@ -885,9 +985,9 @@ export type LongFrame_Serialize = {
  *  code units, as the webview and a [`crate::highlight::Span`] count.
  */
 export type Match = {
-	row: number,
-	start: number,
-	end: number,
+  row: number;
+  start: number;
+  end: number;
 };
 
 /**  One recording, as the window sends it. Each time is in milliseconds. */
@@ -895,64 +995,64 @@ export type Measurement = Measurement_Serialize | Measurement_Deserialize;
 
 /**  One recording, as the window sends it. Each time is in milliseconds. */
 export type Measurement_Deserialize = {
-	seconds: number | null,
-	/**  Nothing, if the window drew no frame while recording. */
-	frames?: Frames | null,
-	/**  From Tsugiki's code starting to run to a usable Workbench, if this run opened on one. */
-	startup_ms?: number | null,
-	/**  From each key to the frame after it. */
-	keys?: Slowest | null,
-	/**  The window's wait for each view query. */
-	view_queries?: Slowest | null,
-	refreshes?: Refreshes | null,
-	/**  The Issues opened while recording, if any. */
-	issues?: IssueOpenings_Deserialize | null,
-	/**  The jumps in a PR's diff while recording, if any. */
-	jumps?: Jumps | null,
-	/**  Each frame over the limit, in the order they came. */
-	long_frames: LongFrame_Deserialize[],
+  seconds: number | null;
+  /**  Nothing, if the window drew no frame while recording. */
+  frames?: Frames | null;
+  /**  From Tsugiki's code starting to run to a usable Workbench, if this run opened on one. */
+  startup_ms?: number | null;
+  /**  From each key to the frame after it. */
+  keys?: Slowest | null;
+  /**  The window's wait for each view query. */
+  view_queries?: Slowest | null;
+  refreshes?: Refreshes | null;
+  /**  The Issues opened while recording, if any. */
+  issues?: IssueOpenings_Deserialize | null;
+  /**  The jumps in a PR's diff while recording, if any. */
+  jumps?: Jumps | null;
+  /**  Each frame over the limit, in the order they came. */
+  long_frames: LongFrame_Deserialize[];
 };
 
 /**  One recording, as the window sends it. Each time is in milliseconds. */
 export type Measurement_Serialize = {
-	seconds: number | null,
-	/**  Nothing, if the window drew no frame while recording. */
-	frames: Frames | null,
-	/**  From Tsugiki's code starting to run to a usable Workbench, if this run opened on one. */
-	startup_ms: number | null,
-	/**  From each key to the frame after it. */
-	keys: Slowest | null,
-	/**  The window's wait for each view query. */
-	view_queries: Slowest | null,
-	refreshes: Refreshes | null,
-	/**  The Issues opened while recording, if any. */
-	issues: IssueOpenings_Serialize | null,
-	/**  The jumps in a PR's diff while recording, if any. */
-	jumps: Jumps | null,
-	/**  Each frame over the limit, in the order they came. */
-	long_frames: LongFrame_Serialize[],
+  seconds: number | null;
+  /**  Nothing, if the window drew no frame while recording. */
+  frames: Frames | null;
+  /**  From Tsugiki's code starting to run to a usable Workbench, if this run opened on one. */
+  startup_ms: number | null;
+  /**  From each key to the frame after it. */
+  keys: Slowest | null;
+  /**  The window's wait for each view query. */
+  view_queries: Slowest | null;
+  refreshes: Refreshes | null;
+  /**  The Issues opened while recording, if any. */
+  issues: IssueOpenings_Serialize | null;
+  /**  The jumps in a PR's diff while recording, if any. */
+  jumps: Jumps | null;
+  /**  Each frame over the limit, in the order they came. */
+  long_frames: LongFrame_Serialize[];
 };
 
 /**  What a Repository's mirror takes, for the user to choose where it gets its objects. */
 export type MirrorCost = {
-	/**  The size of the mirror on the disk, whether it borrows objects or not: `--dissociate` copies them. */
-	mirror_mb: number,
-	/**  About how long its clone takes from GitHub alone, and borrowing from a clone the user has. */
-	download_seconds: number,
-	borrow_seconds: number,
+  /**  The size of the mirror on the disk, whether it borrows objects or not: `--dissociate` copies them. */
+  mirror_mb: number;
+  /**  About how long its clone takes from GitHub alone, and borrowing from a clone the user has. */
+  download_seconds: number;
+  borrow_seconds: number;
 };
 
 /**  The reason no mirror can be made, for the status bar (#171). The rest of Tsugiki works without one. */
-export type MirrorProblem = 
-/**  git isn't on the `PATH`. */
-{ kind: "no_git" } | 
-/**  git is older than 2.30, as `git --version` says in `version`. */
-{ kind: "old_git"; version: string } | 
-/**
- *  The disk that holds `folder` has `free_mb` megabytes free, short of the `needed_mb` a clone of
- *  `repository` takes.
- */
-{ kind: "disk_short"; repository: RepositoryName; folder: string; needed_mb: number; free_mb: number };
+export type MirrorProblem =
+  /**  git isn't on the `PATH`. */
+  | { kind: "no_git" }
+  /**  git is older than 2.30, as `git --version` says in `version`. */
+  | { kind: "old_git"; version: string }
+  /**
+   *  The disk that holds `folder` has `free_mb` megabytes free, short of the `needed_mb` a clone of
+   *  `repository` takes.
+   */
+  | { kind: "disk_short"; repository: RepositoryName; folder: string; needed_mb: number; free_mb: number };
 
 /**  Sent when the worker finds no mirror can be made, and when one can again, so the status bar can say. */
 export type MirrorProblemChanged = MirrorProblemChanged_Serialize | MirrorProblemChanged_Deserialize;
@@ -982,11 +1082,11 @@ export type MirrorQuestionChanged_Deserialize = RepositoryName | null;
 export type MirrorQuestionChanged_Serialize = RepositoryName | null;
 
 /**  The user's answer of where a Repository's mirror gets its objects. */
-export type MirrorSource = 
-/**  All from GitHub. */
-{ kind: "download" } | 
-/**  Objects from the clone in `folder` where it has them, and the rest from GitHub. */
-{ kind: "borrow"; folder: string };
+export type MirrorSource =
+  /**  All from GitHub. */
+  | { kind: "download" }
+  /**  Objects from the clone in `folder` where it has them, and the rest from GitHub. */
+  | { kind: "borrow"; folder: string };
 
 /**
  *  How far a Repository's mirror is from ready, so the Repository picker can say why its diffs aren't there
@@ -998,49 +1098,49 @@ export type MirrorState = MirrorState_Serialize | MirrorState_Deserialize;
  *  How far a Repository's mirror is from ready, so the Repository picker can say why its diffs aren't there
  *  yet (#320).
  */
-export type MirrorState_Deserialize = 
-/**  The mirror is there. */
-{ state: "ready" } | 
-/**  Its clone is under way. */
-{ state: "cloning"; progress: CloneProgress } | 
-/**  Its clone waits for the user to say where it gets its objects. */
-{ state: "asking" } | 
-/**
- *  Its clone waits in line behind the clone of `behind`. With no `behind`, no clone is under way: a
- *  fetch or a mirror's upkeep goes first, or GitHub can't be reached.
- */
-{ state: "waiting"; behind?: RepositoryName | null } | 
-/**  Its last clone failed, for the reason in `words`, and it goes back in line after a wait. */
-{ state: "failed"; words: string } | 
-/**
- *  `problem` keeps its clone from starting. A disk short of room for one clone holds back the others
- *  too, and names the one it is short for.
- */
-{ state: "problem"; problem: MirrorProblem };
+export type MirrorState_Deserialize =
+  /**  The mirror is there. */
+  | { state: "ready" }
+  /**  Its clone is under way. */
+  | { state: "cloning"; progress: CloneProgress }
+  /**  Its clone waits for the user to say where it gets its objects. */
+  | { state: "asking" }
+  /**
+   *  Its clone waits in line behind the clone of `behind`. With no `behind`, no clone is under way: a
+   *  fetch or a mirror's upkeep goes first, or GitHub can't be reached.
+   */
+  | { state: "waiting"; behind?: RepositoryName | null }
+  /**  Its last clone failed, for the reason in `words`, and it goes back in line after a wait. */
+  | { state: "failed"; words: string }
+  /**
+   *  `problem` keeps its clone from starting. A disk short of room for one clone holds back the others
+   *  too, and names the one it is short for.
+   */
+  | { state: "problem"; problem: MirrorProblem };
 
 /**
  *  How far a Repository's mirror is from ready, so the Repository picker can say why its diffs aren't there
  *  yet (#320).
  */
-export type MirrorState_Serialize = 
-/**  The mirror is there. */
-{ state: "ready" } | 
-/**  Its clone is under way. */
-{ state: "cloning"; progress: CloneProgress } | 
-/**  Its clone waits for the user to say where it gets its objects. */
-{ state: "asking" } | 
-/**
- *  Its clone waits in line behind the clone of `behind`. With no `behind`, no clone is under way: a
- *  fetch or a mirror's upkeep goes first, or GitHub can't be reached.
- */
-{ state: "waiting"; behind: RepositoryName | null } | 
-/**  Its last clone failed, for the reason in `words`, and it goes back in line after a wait. */
-{ state: "failed"; words: string } | 
-/**
- *  `problem` keeps its clone from starting. A disk short of room for one clone holds back the others
- *  too, and names the one it is short for.
- */
-{ state: "problem"; problem: MirrorProblem };
+export type MirrorState_Serialize =
+  /**  The mirror is there. */
+  | { state: "ready" }
+  /**  Its clone is under way. */
+  | { state: "cloning"; progress: CloneProgress }
+  /**  Its clone waits for the user to say where it gets its objects. */
+  | { state: "asking" }
+  /**
+   *  Its clone waits in line behind the clone of `behind`. With no `behind`, no clone is under way: a
+   *  fetch or a mirror's upkeep goes first, or GitHub can't be reached.
+   */
+  | { state: "waiting"; behind: RepositoryName | null }
+  /**  Its last clone failed, for the reason in `words`, and it goes back in line after a wait. */
+  | { state: "failed"; words: string }
+  /**
+   *  `problem` keeps its clone from starting. A disk short of room for one clone holds back the others
+   *  too, and names the one it is short for.
+   */
+  | { state: "problem"; problem: MirrorProblem };
 
 /**  Sent when the state of a Repository's mirror changes, so the Repository picker can say (#320). */
 export type MirrorStatesChanged = MirrorStatesChanged_Serialize | MirrorStatesChanged_Deserialize;
@@ -1058,68 +1158,69 @@ export type MirrorStatesChanged_Serialize = RepositoryMirror_Serialize[];
 export type Miss = Miss_Serialize | Miss_Deserialize;
 
 /**  A kind of miss that can repeat. A launch has one start-up. */
-export type MissKind = "view_query" | "issue_from_database" | "issue_from_github" | "jump" | "input" | "long_frame";
+export type MissKind =
+  "view_query" | "issue_from_database" | "issue_from_github" | "jump" | "input" | "long_frame";
 
 /**
  *  One budget the window missed, or the start-up time, which it logs each launch. Each time is in
  *  milliseconds.
  */
-export type Miss_Deserialize = 
-/**  From Tsugiki's code starting to run to a usable Workbench, slow or not. */
-{ kind: "startup"; ms: number | null } | 
-/**  The window's wait for a view query. */
-{ kind: "view_query"; ms: number | null } | 
-/**  From the click on an Issue to the window showing what the database held of it. */
-{ kind: "issue_from_database"; number: number; ms: number | null } | 
-/**  From the click on an Issue to its text arriving from GitHub. */
-{ kind: "issue_from_github"; number: number; ms: number | null } | 
-/**  From a scroll in a PR's diff to the rows it hadn't held on screen (#180). */
-{ kind: "jump"; ms: number | null } | 
-/**  From a key or click to the next paint. */
-{ kind: "input"; input: Input; ms: number | null } | 
-/**  A frame the browser reports as long, with the scripts that ran in it, longest first. */
-{ kind: "long_frame"; ms: number | null; scripts: Script_Deserialize[] } | 
-/**  The window logged `limit` misses of one kind within a minute, and logs no more of them until it ends. */
-{ kind: "capped"; of: MissKind; limit: number };
+export type Miss_Deserialize =
+  /**  From Tsugiki's code starting to run to a usable Workbench, slow or not. */
+  | { kind: "startup"; ms: number | null }
+  /**  The window's wait for a view query. */
+  | { kind: "view_query"; ms: number | null }
+  /**  From the click on an Issue to the window showing what the database held of it. */
+  | { kind: "issue_from_database"; number: number; ms: number | null }
+  /**  From the click on an Issue to its text arriving from GitHub. */
+  | { kind: "issue_from_github"; number: number; ms: number | null }
+  /**  From a scroll in a PR's diff to the rows it hadn't held on screen (#180). */
+  | { kind: "jump"; ms: number | null }
+  /**  From a key or click to the next paint. */
+  | { kind: "input"; input: Input; ms: number | null }
+  /**  A frame the browser reports as long, with the scripts that ran in it, longest first. */
+  | { kind: "long_frame"; ms: number | null; scripts: Script_Deserialize[] }
+  /**  The window logged `limit` misses of one kind within a minute, and logs no more of them until it ends. */
+  | { kind: "capped"; of: MissKind; limit: number };
 
 /**
  *  One budget the window missed, or the start-up time, which it logs each launch. Each time is in
  *  milliseconds.
  */
-export type Miss_Serialize = 
-/**  From Tsugiki's code starting to run to a usable Workbench, slow or not. */
-{ kind: "startup"; ms: number | null } | 
-/**  The window's wait for a view query. */
-{ kind: "view_query"; ms: number | null } | 
-/**  From the click on an Issue to the window showing what the database held of it. */
-{ kind: "issue_from_database"; number: number; ms: number | null } | 
-/**  From the click on an Issue to its text arriving from GitHub. */
-{ kind: "issue_from_github"; number: number; ms: number | null } | 
-/**  From a scroll in a PR's diff to the rows it hadn't held on screen (#180). */
-{ kind: "jump"; ms: number | null } | 
-/**  From a key or click to the next paint. */
-{ kind: "input"; input: Input; ms: number | null } | 
-/**  A frame the browser reports as long, with the scripts that ran in it, longest first. */
-{ kind: "long_frame"; ms: number | null; scripts: Script_Serialize[] } | 
-/**  The window logged `limit` misses of one kind within a minute, and logs no more of them until it ends. */
-{ kind: "capped"; of: MissKind; limit: number };
+export type Miss_Serialize =
+  /**  From Tsugiki's code starting to run to a usable Workbench, slow or not. */
+  | { kind: "startup"; ms: number | null }
+  /**  The window's wait for a view query. */
+  | { kind: "view_query"; ms: number | null }
+  /**  From the click on an Issue to the window showing what the database held of it. */
+  | { kind: "issue_from_database"; number: number; ms: number | null }
+  /**  From the click on an Issue to its text arriving from GitHub. */
+  | { kind: "issue_from_github"; number: number; ms: number | null }
+  /**  From a scroll in a PR's diff to the rows it hadn't held on screen (#180). */
+  | { kind: "jump"; ms: number | null }
+  /**  From a key or click to the next paint. */
+  | { kind: "input"; input: Input; ms: number | null }
+  /**  A frame the browser reports as long, with the scripts that ran in it, longest first. */
+  | { kind: "long_frame"; ms: number | null; scripts: Script_Serialize[] }
+  /**  The window logged `limit` misses of one kind within a minute, and logs no more of them until it ends. */
+  | { kind: "capped"; of: MissKind; limit: number };
 
 /**  What Add repository learns about the name the user typed. */
 export type NameCheck = NameCheck_Serialize | NameCheck_Deserialize;
 
 /**  What Add repository learns about the name the user typed. */
-export type NameCheck_Deserialize = 
-/**  Tsugiki has this Repository already, by this name, so the dialog offers to switch to it. */
-{ kind: "held"; name: RepositoryName } | 
-/**  What adding it would give and cost. */
-{ kind: "new"; check: RepositoryCheck_Deserialize };
+export type NameCheck_Deserialize =
+  /**  Tsugiki has this Repository already, by this name, so the dialog offers to switch to it. */
+  | { kind: "held"; name: RepositoryName }
+  /**  What adding it would give and cost. */
+  | { kind: "new"; check: RepositoryCheck_Deserialize };
 
 /**  What Add repository learns about the name the user typed. */
-export type NameCheck_Serialize = 
-/**  Tsugiki has this Repository already, by this name, so the dialog offers to switch to it. */
-{ kind: "held"; name: RepositoryName } | 
-/**  What adding it would give and cost. */
-{ kind: "new"; check: RepositoryCheck_Serialize };
+export type NameCheck_Serialize =
+  /**  Tsugiki has this Repository already, by this name, so the dialog offers to switch to it. */
+  | { kind: "held"; name: RepositoryName }
+  /**  What adding it would give and cost. */
+  | { kind: "new"; check: RepositoryCheck_Serialize };
 
 /**
  *  The user's choice in Add repository: the Repository, by the name GitHub gave it, what they may do in it,
@@ -1127,81 +1228,88 @@ export type NameCheck_Serialize =
  *  one gets the same refusal as everywhere else.
  */
 export type NewRepository = {
-	name: string,
-	access: RepositoryAccess,
-	source: MirrorSource,
+  name: string;
+  access: RepositoryAccess;
+  source: MirrorSource;
 };
 
 /**  A version newer than the running one, and its release page. */
 export type NewVersion = {
-	/**  As SemVer writes it, such as "0.3.0", with no `v`. */
-	version: string,
-	page: WebAddress,
+  /**  As SemVer writes it, such as "0.3.0", with no `v`. */
+  version: string;
+  page: WebAddress;
 };
 
 /**  Sent when a check finds a newer version out than it last found, so the status bar can say. */
 export type NewVersionFound = NewVersion;
 
 /**  A paragraph, a list or a block of code. */
-export type NewsBlock = { kind: "paragraph"; pieces: NewsPiece[] } | 
-/**  Each item holds blocks of its own. */
-{ kind: "list"; items: NewsBlock[][] } | { kind: "code"; text: string };
+export type NewsBlock =
+  | { kind: "paragraph"; pieces: NewsPiece[] }
+  /**  Each item holds blocks of its own. */
+  | { kind: "list"; items: NewsBlock[][] }
+  | { kind: "code"; text: string };
 
 /**  A NEWS entry the PR adds or changes, as its head has it. */
 export type NewsEntry = NewsEntry_Serialize | NewsEntry_Deserialize;
 
 /**  A NEWS entry the PR adds or changes, as its head has it. */
 export type NewsEntry_Deserialize = {
-	/**  Its path in the diff. */
-	path: string,
-	/**  The changelog's section, as Sphinx titles it: "Core and Builtins" from `Core_and_Builtins`. */
-	section: string,
-	/**  The issue its file name gives. */
-	issue?: NewsLink | null,
-	blocks: NewsBlock[],
+  /**  Its path in the diff. */
+  path: string;
+  /**  The changelog's section, as Sphinx titles it: "Core and Builtins" from `Core_and_Builtins`. */
+  section: string;
+  /**  The issue its file name gives. */
+  issue?: NewsLink | null;
+  blocks: NewsBlock[];
 };
 
 /**  A NEWS entry the PR adds or changes, as its head has it. */
 export type NewsEntry_Serialize = {
-	/**  Its path in the diff. */
-	path: string,
-	/**  The changelog's section, as Sphinx titles it: "Core and Builtins" from `Core_and_Builtins`. */
-	section: string,
-	/**  The issue its file name gives. */
-	issue: NewsLink | null,
-	blocks: NewsBlock[],
+  /**  Its path in the diff. */
+  path: string;
+  /**  The changelog's section, as Sphinx titles it: "Core and Builtins" from `Core_and_Builtins`. */
+  section: string;
+  /**  The issue its file name gives. */
+  issue: NewsLink | null;
+  blocks: NewsBlock[];
 };
 
 /**  A link's text and what it goes to. */
 export type NewsLink = {
-	text: string,
-	to: LinkTo,
+  text: string;
+  to: LinkTo;
 };
 
 /**  A run of a paragraph's text, all shown one way. */
-export type NewsPiece = { kind: "text"; text: string } | { kind: "emphasis"; text: string } | { kind: "strong"; text: string } | { kind: "code"; text: string } | { kind: "link"; text: string; to: LinkTo };
+export type NewsPiece =
+  | { kind: "text"; text: string }
+  | { kind: "emphasis"; text: string }
+  | { kind: "strong"; text: string }
+  | { kind: "code"; text: string }
+  | { kind: "link"; text: string; to: LinkTo };
 
 /**  How far the open Repository's sync has got. */
 export type OpenSync = OpenSync_Serialize | OpenSync_Deserialize;
 
 /**  How far the open Repository's sync has got. */
 export type OpenSync_Deserialize = {
-	repository: RepositoryName,
-	part: SyncPart,
-	/**  The pages a first sync has read. */
-	pages: number,
-	/**  Its progress through the queue, once it gets there. */
-	load?: LoadProgress_Deserialize | null,
+  repository: RepositoryName;
+  part: SyncPart;
+  /**  The pages a first sync has read. */
+  pages: number;
+  /**  Its progress through the queue, once it gets there. */
+  load?: LoadProgress_Deserialize | null;
 };
 
 /**  How far the open Repository's sync has got. */
 export type OpenSync_Serialize = {
-	repository: RepositoryName,
-	part: SyncPart,
-	/**  The pages a first sync has read. */
-	pages: number,
-	/**  Its progress through the queue, once it gets there. */
-	load: LoadProgress_Serialize | null,
+  repository: RepositoryName;
+  part: SyncPart;
+  /**  The pages a first sync has read. */
+  pages: number;
+  /**  Its progress through the queue, once it gets there. */
+  load: LoadProgress_Serialize | null;
 };
 
 /**  The start of a thread's line: the first words of its first comment, or the reason that comment is hidden. */
@@ -1213,12 +1321,12 @@ export type Opening = { kind: "words"; words: string } | { kind: "hidden"; reaso
  *  wrote one.
  */
 export type Pair = {
-	/**  The pair's first row. The added rows start after the removed ones. */
-	row: number,
-	/**  How many rows the removed side has. */
-	removed: number,
-	/**  How many rows the added side has. */
-	added: number,
+  /**  The pair's first row. The added rows start after the removed ones. */
+  row: number;
+  /**  How many rows the removed side has. */
+  removed: number;
+  /**  How many rows the added side has. */
+  added: number;
 };
 
 /**
@@ -1238,18 +1346,18 @@ export type PaneLayout = PaneLayout_Serialize | PaneLayout_Deserialize;
  *  of pixels: a pane is too small a thing to lose the rest of `machine.toml` over.
  */
 export type PaneLayout_Deserialize = {
-	sidebar?: number | null,
-	list?: number | null,
-	/**  `Ctrl+B` hid the Sidebar. It keeps its width for when it shows again. */
-	sidebar_hidden?: boolean,
-	/**  `Ctrl+Alt+B` hid the Workbench list. It keeps its width for when it shows again. */
-	list_hidden?: boolean,
-	/**
-	 *  The panes `Ctrl+K Z` hid to show only the Detail pane, which its next press brings back. Nothing
-	 *  while it remembers none: before the first press, and after `Ctrl+B`, `Ctrl+Alt+B` or "Reset Layout"
-	 *  made it forget.
-	 */
-	detail_only_hid?: Panes | null,
+  sidebar?: number | null;
+  list?: number | null;
+  /**  `Ctrl+B` hid the Sidebar. It keeps its width for when it shows again. */
+  sidebar_hidden?: boolean;
+  /**  `Ctrl+Alt+B` hid the Workbench list. It keeps its width for when it shows again. */
+  list_hidden?: boolean;
+  /**
+   *  The panes `Ctrl+K Z` hid to show only the Detail pane, which its next press brings back. Nothing
+   *  while it remembers none: before the first press, and after `Ctrl+B`, `Ctrl+Alt+B` or "Reset Layout"
+   *  made it forget.
+   */
+  detail_only_hid?: Panes | null;
 };
 
 /**
@@ -1260,18 +1368,18 @@ export type PaneLayout_Deserialize = {
  *  of pixels: a pane is too small a thing to lose the rest of `machine.toml` over.
  */
 export type PaneLayout_Serialize = {
-	sidebar: number | null,
-	list: number | null,
-	/**  `Ctrl+B` hid the Sidebar. It keeps its width for when it shows again. */
-	sidebar_hidden: boolean,
-	/**  `Ctrl+Alt+B` hid the Workbench list. It keeps its width for when it shows again. */
-	list_hidden: boolean,
-	/**
-	 *  The panes `Ctrl+K Z` hid to show only the Detail pane, which its next press brings back. Nothing
-	 *  while it remembers none: before the first press, and after `Ctrl+B`, `Ctrl+Alt+B` or "Reset Layout"
-	 *  made it forget.
-	 */
-	detail_only_hid: Panes | null,
+  sidebar: number | null;
+  list: number | null;
+  /**  `Ctrl+B` hid the Sidebar. It keeps its width for when it shows again. */
+  sidebar_hidden: boolean;
+  /**  `Ctrl+Alt+B` hid the Workbench list. It keeps its width for when it shows again. */
+  list_hidden: boolean;
+  /**
+   *  The panes `Ctrl+K Z` hid to show only the Detail pane, which its next press brings back. Nothing
+   *  while it remembers none: before the first press, and after `Ctrl+B`, `Ctrl+Alt+B` or "Reset Layout"
+   *  made it forget.
+   */
+  detail_only_hid: Panes | null;
 };
 
 /**  The Sidebar, the Workbench list, or both. */
@@ -1281,97 +1389,107 @@ export type Panes = "sidebar" | "list" | "both";
 export type Placement = Placement_Serialize | Placement_Deserialize;
 
 /**  Where Files shows a thread. A file is named by its place among the diff's files. */
-export type Placement_Deserialize = 
-/**  Under the diff's row `row`, which shows its line. */
-{ kind: "row"; row: number } | 
-/**  At the top of file `file`, as it is on the whole file, above the file's Outdated threads. */
-{ kind: "file"; file: number } | 
-/**
- *  At the top of file `file`, as the code under it has changed since, with the code it was written
- *  against.
- */
-{ kind: "outdated"; file: number; code?: ThreadCode | null } | 
-/**
- *  Under line `head_line` of file `file` at the head, which no hunk shows, so the gap or the end of the
- *  file around it opens to show it. `line` is the line as the thread's side counts it.
- */
-{ kind: "outside"; file: number; line: number; head_line: number } | 
-/**
- *  After the last file, on file `path`, which the diff no longer holds, with the code it was written
- *  against.
- */
-{ kind: "gone"; path: string; code?: ThreadCode | null };
+export type Placement_Deserialize =
+  /**  Under the diff's row `row`, which shows its line. */
+  | { kind: "row"; row: number }
+  /**  At the top of file `file`, as it is on the whole file, above the file's Outdated threads. */
+  | { kind: "file"; file: number }
+  /**
+   *  At the top of file `file`, as the code under it has changed since, with the code it was written
+   *  against.
+   */
+  | { kind: "outdated"; file: number; code?: ThreadCode | null }
+  /**
+   *  Under line `head_line` of file `file` at the head, which no hunk shows, so the gap or the end of the
+   *  file around it opens to show it. `line` is the line as the thread's side counts it.
+   */
+  | { kind: "outside"; file: number; line: number; head_line: number }
+  /**
+   *  After the last file, on file `path`, which the diff no longer holds, with the code it was written
+   *  against.
+   */
+  | { kind: "gone"; path: string; code?: ThreadCode | null };
 
 /**  Where Files shows a thread. A file is named by its place among the diff's files. */
-export type Placement_Serialize = 
-/**  Under the diff's row `row`, which shows its line. */
-{ kind: "row"; row: number } | 
-/**  At the top of file `file`, as it is on the whole file, above the file's Outdated threads. */
-{ kind: "file"; file: number } | 
-/**
- *  At the top of file `file`, as the code under it has changed since, with the code it was written
- *  against.
- */
-{ kind: "outdated"; file: number; code: ThreadCode | null } | 
-/**
- *  Under line `head_line` of file `file` at the head, which no hunk shows, so the gap or the end of the
- *  file around it opens to show it. `line` is the line as the thread's side counts it.
- */
-{ kind: "outside"; file: number; line: number; head_line: number } | 
-/**
- *  After the last file, on file `path`, which the diff no longer holds, with the code it was written
- *  against.
- */
-{ kind: "gone"; path: string; code: ThreadCode | null };
+export type Placement_Serialize =
+  /**  Under the diff's row `row`, which shows its line. */
+  | { kind: "row"; row: number }
+  /**  At the top of file `file`, as it is on the whole file, above the file's Outdated threads. */
+  | { kind: "file"; file: number }
+  /**
+   *  At the top of file `file`, as the code under it has changed since, with the code it was written
+   *  against.
+   */
+  | { kind: "outdated"; file: number; code: ThreadCode | null }
+  /**
+   *  Under line `head_line` of file `file` at the head, which no hunk shows, so the gap or the end of the
+   *  file around it opens to show it. `line` is the line as the thread's side counts it.
+   */
+  | { kind: "outside"; file: number; line: number; head_line: number }
+  /**
+   *  After the last file, on file `path`, which the diff no longer holds, with the code it was written
+   *  against.
+   */
+  | { kind: "gone"; path: string; code: ThreadCode | null };
 
 /**  What the Files tab shows. */
 export type PrFiles = PrFiles_Serialize | PrFiles_Deserialize;
 
 /**  What the Files tab shows. */
-export type PrFiles_Deserialize = 
-/**  The Repository's mirror is still being cloned, and the clone says how far it is. */
-{ state: "cloning" } | 
-/**
- *  The Repository's mirror isn't cloned yet, and its clone waits for the user to say where it gets its
- *  objects.
- */
-{ state: "asking" } | 
-/**  The mirror lacks the PR's commits, and is fetching them. */
-{ state: "fetching" } | 
-/**  The diff, whose rows the window asks for by number. */
-{ state: "ready"; 
-/**  The commit the diff ends at, which each chunk names. */
-head: string; 
-/**
- *  The merge base the diff starts from, which each chunk names too. A PR moved to another
- *  Target branch keeps its head and gets another merge base (#211).
- */
-base: string; files: DiffFile_Deserialize[]; rows: number; 
-/**  The PR's NEWS entries, rendered above the rows. */
-news: NewsEntry_Deserialize[]; threads: DiffThreads_Deserialize };
+export type PrFiles_Deserialize =
+  /**  The Repository's mirror is still being cloned, and the clone says how far it is. */
+  | { state: "cloning" }
+  /**
+   *  The Repository's mirror isn't cloned yet, and its clone waits for the user to say where it gets its
+   *  objects.
+   */
+  | { state: "asking" }
+  /**  The mirror lacks the PR's commits, and is fetching them. */
+  | { state: "fetching" }
+  /**  The diff, whose rows the window asks for by number. */
+  | {
+      state: "ready";
+      /**  The commit the diff ends at, which each chunk names. */
+      head: string;
+      /**
+       *  The merge base the diff starts from, which each chunk names too. A PR moved to another
+       *  Target branch keeps its head and gets another merge base (#211).
+       */
+      base: string;
+      files: DiffFile_Deserialize[];
+      rows: number;
+      /**  The PR's NEWS entries, rendered above the rows. */
+      news: NewsEntry_Deserialize[];
+      threads: DiffThreads_Deserialize;
+    };
 
 /**  What the Files tab shows. */
-export type PrFiles_Serialize = 
-/**  The Repository's mirror is still being cloned, and the clone says how far it is. */
-{ state: "cloning" } | 
-/**
- *  The Repository's mirror isn't cloned yet, and its clone waits for the user to say where it gets its
- *  objects.
- */
-{ state: "asking" } | 
-/**  The mirror lacks the PR's commits, and is fetching them. */
-{ state: "fetching" } | 
-/**  The diff, whose rows the window asks for by number. */
-{ state: "ready"; 
-/**  The commit the diff ends at, which each chunk names. */
-head: string; 
-/**
- *  The merge base the diff starts from, which each chunk names too. A PR moved to another
- *  Target branch keeps its head and gets another merge base (#211).
- */
-base: string; files: DiffFile_Serialize[]; rows: number; 
-/**  The PR's NEWS entries, rendered above the rows. */
-news: NewsEntry_Serialize[]; threads: DiffThreads_Serialize };
+export type PrFiles_Serialize =
+  /**  The Repository's mirror is still being cloned, and the clone says how far it is. */
+  | { state: "cloning" }
+  /**
+   *  The Repository's mirror isn't cloned yet, and its clone waits for the user to say where it gets its
+   *  objects.
+   */
+  | { state: "asking" }
+  /**  The mirror lacks the PR's commits, and is fetching them. */
+  | { state: "fetching" }
+  /**  The diff, whose rows the window asks for by number. */
+  | {
+      state: "ready";
+      /**  The commit the diff ends at, which each chunk names. */
+      head: string;
+      /**
+       *  The merge base the diff starts from, which each chunk names too. A PR moved to another
+       *  Target branch keeps its head and gets another merge base (#211).
+       */
+      base: string;
+      files: DiffFile_Serialize[];
+      rows: number;
+      /**  The PR's NEWS entries, rendered above the rows. */
+      news: NewsEntry_Serialize[];
+      threads: DiffThreads_Serialize;
+    };
 
 export type PrState = "OPEN" | "CLOSED" | "MERGED";
 
@@ -1380,12 +1498,12 @@ export type PrTree = PrTree_Serialize | PrTree_Deserialize;
 
 /**  A PR with its Backports beneath it. */
 export type PrTree_Deserialize = {
-	backports: BackportRow_Deserialize[],
+  backports: BackportRow_Deserialize[];
 } & WorkbenchRow_Deserialize;
 
 /**  A PR with its Backports beneath it. */
 export type PrTree_Serialize = {
-	backports: BackportRow_Serialize[],
+  backports: BackportRow_Serialize[];
 } & WorkbenchRow_Serialize;
 
 /**  A PR as the Detail pane shows it. */
@@ -1393,14 +1511,14 @@ export type PrView = PrView_Serialize | PrView_Deserialize;
 
 /**  A PR as the Detail pane shows it. */
 export type PrView_Deserialize = {
-	/**  Its description, comments and Reviews. Nothing, until Tsugiki has read this PR from GitHub once. */
-	content?: PullRequestContent_Deserialize | null,
+  /**  Its description, comments and Reviews. Nothing, until Tsugiki has read this PR from GitHub once. */
+  content?: PullRequestContent_Deserialize | null;
 } & WorkbenchRow_Deserialize;
 
 /**  A PR as the Detail pane shows it. */
 export type PrView_Serialize = {
-	/**  Its description, comments and Reviews. Nothing, until Tsugiki has read this PR from GitHub once. */
-	content: PullRequestContent_Serialize | null,
+  /**  Its description, comments and Reviews. Nothing, until Tsugiki has read this PR from GitHub once. */
+  content: PullRequestContent_Serialize | null;
 } & WorkbenchRow_Serialize;
 
 /**  A PR's description, its recent comments, and its Reviews. */
@@ -1408,30 +1526,30 @@ export type PullRequestContent = PullRequestContent_Serialize | PullRequestConte
 
 /**  A PR's description, its recent comments, and its Reviews. */
 export type PullRequestContent_Deserialize = {
-	/**
-	 *  Its Reviews, oldest first. A Review that only replied in threads others started isn't one here, as
-	 *  GitHub doesn't show it either. Nor is the user's own Review before they submit it.
-	 */
-	reviews: Review_Deserialize[],
-	/**
-	 *  The count of older Reviews that only GitHub holds. Some may only have replied in threads, which GitHub
-	 *  doesn't show as Reviews, so the view says there are more without the count.
-	 */
-	earlier_reviews: number,
+  /**
+   *  Its Reviews, oldest first. A Review that only replied in threads others started isn't one here, as
+   *  GitHub doesn't show it either. Nor is the user's own Review before they submit it.
+   */
+  reviews: Review_Deserialize[];
+  /**
+   *  The count of older Reviews that only GitHub holds. Some may only have replied in threads, which GitHub
+   *  doesn't show as Reviews, so the view says there are more without the count.
+   */
+  earlier_reviews: number;
 } & IssueContent_Deserialize;
 
 /**  A PR's description, its recent comments, and its Reviews. */
 export type PullRequestContent_Serialize = {
-	/**
-	 *  Its Reviews, oldest first. A Review that only replied in threads others started isn't one here, as
-	 *  GitHub doesn't show it either. Nor is the user's own Review before they submit it.
-	 */
-	reviews: Review_Serialize[],
-	/**
-	 *  The count of older Reviews that only GitHub holds. Some may only have replied in threads, which GitHub
-	 *  doesn't show as Reviews, so the view says there are more without the count.
-	 */
-	earlier_reviews: number,
+  /**
+   *  Its Reviews, oldest first. A Review that only replied in threads others started isn't one here, as
+   *  GitHub doesn't show it either. Nor is the user's own Review before they submit it.
+   */
+  reviews: Review_Serialize[];
+  /**
+   *  The count of older Reviews that only GitHub holds. Some may only have replied in threads, which GitHub
+   *  doesn't show as Reviews, so the view says there are more without the count.
+   */
+  earlier_reviews: number;
 } & IssueContent_Serialize;
 
 /**
@@ -1441,29 +1559,29 @@ export type PullRequestContent_Serialize = {
 export type ReadFailed = FailedRead;
 
 /**  The reason a read of what an Issue or a PR says didn't bring it from GitHub. */
-export type ReadFailure = 
-/**
- *  Tsugiki has no token, so it asks GitHub nothing until it starts again, and the status bar says how to
- *  sign in.
- */
-"no_token" | 
-/**
- *  GitHub can't be asked anything now, and the status bar says why. A read after GitHub answers again
- *  brings it.
- */
-"waits_on_github" | 
-/**  GitHub has no such item, or the token can't see it. */
-"not_on_github" | 
-/**
- *  Anything else that went wrong with this one read, such as an answer Tsugiki couldn't parse. The log
- *  says what it was.
- */
-"other";
+export type ReadFailure =
+  /**
+   *  Tsugiki has no token, so it asks GitHub nothing until it starts again, and the status bar says how to
+   *  sign in.
+   */
+  | "no_token"
+  /**
+   *  GitHub can't be asked anything now, and the status bar says why. A read after GitHub answers again
+   *  brings it.
+   */
+  | "waits_on_github"
+  /**  GitHub has no such item, or the token can't see it. */
+  | "not_on_github"
+  /**
+   *  Anything else that went wrong with this one read, such as an answer Tsugiki couldn't parse. The log
+   *  says what it was.
+   */
+  | "other";
 
 /**  The background refreshes that ran while the window drew frames. */
 export type Refreshes = {
-	count: number,
-	dropped_frames: number,
+  count: number;
+  dropped_frames: number;
 };
 
 /**  The `[releases]` table: whether Tsugiki asks GitHub Releases for a newer version (ADR 0012). */
@@ -1471,52 +1589,52 @@ export type ReleaseSettings = ReleaseSettings_Serialize | ReleaseSettings_Deseri
 
 /**  The `[releases]` table: whether Tsugiki asks GitHub Releases for a newer version (ADR 0012). */
 export type ReleaseSettings_Deserialize = {
-	/**  Off, Tsugiki sends no request to Releases. A change takes effect at the next start. */
-	check?: boolean,
+  /**  Off, Tsugiki sends no request to Releases. A change takes effect at the next start. */
+  check?: boolean;
 };
 
 /**  The `[releases]` table: whether Tsugiki asks GitHub Releases for a newer version (ADR 0012). */
 export type ReleaseSettings_Serialize = {
-	/**  Off, Tsugiki sends no request to Releases. A change takes effect at the next start. */
-	check: boolean,
+  /**  Off, Tsugiki sends no request to Releases. A change takes effect at the next start. */
+  check: boolean;
 };
 
 /**  The user's standing in a Repository, as far as adding it needs to know. */
-export type RepositoryAccess = 
-/**  The user administers it on GitHub. */
-"maintained" | "other";
+export type RepositoryAccess =
+  /**  The user administers it on GitHub. */
+  "maintained" | "other";
 
 /**  What the add dialog shows before the user decides. */
 export type RepositoryCheck = RepositoryCheck_Serialize | RepositoryCheck_Deserialize;
 
 /**  What the add dialog shows before the user decides. */
 export type RepositoryCheck_Deserialize = {
-	repository: RepositorySettings_Deserialize,
-	access: RepositoryAccess,
-	open_issues: number,
-	open_prs: number,
-	size: RepositorySize,
-	window_days: number,
-	/**  How many Issues and PRs the first sync loads. */
-	first_sync_items: number,
-	first_sync_seconds: number,
-	first_sync_points: number,
-	mirror: MirrorCost,
+  repository: RepositorySettings_Deserialize;
+  access: RepositoryAccess;
+  open_issues: number;
+  open_prs: number;
+  size: RepositorySize;
+  window_days: number;
+  /**  How many Issues and PRs the first sync loads. */
+  first_sync_items: number;
+  first_sync_seconds: number;
+  first_sync_points: number;
+  mirror: MirrorCost;
 };
 
 /**  What the add dialog shows before the user decides. */
 export type RepositoryCheck_Serialize = {
-	repository: RepositorySettings_Serialize,
-	access: RepositoryAccess,
-	open_issues: number,
-	open_prs: number,
-	size: RepositorySize,
-	window_days: number,
-	/**  How many Issues and PRs the first sync loads. */
-	first_sync_items: number,
-	first_sync_seconds: number,
-	first_sync_points: number,
-	mirror: MirrorCost,
+  repository: RepositorySettings_Serialize;
+  access: RepositoryAccess;
+  open_issues: number;
+  open_prs: number;
+  size: RepositorySize;
+  window_days: number;
+  /**  How many Issues and PRs the first sync loads. */
+  first_sync_items: number;
+  first_sync_seconds: number;
+  first_sync_points: number;
+  mirror: MirrorCost;
 };
 
 /**
@@ -1532,9 +1650,9 @@ export type RepositoryInFile = RepositoryInFile_Serialize | RepositoryInFile_Des
  *  means no Filters.
  */
 export type RepositoryInFile_Deserialize = {
-	name: RepositoryName,
-	conventions?: Conventions | null,
-	filters?: Filter[] | null,
+  name: RepositoryName;
+  conventions?: Conventions | null;
+  filters?: Filter[] | null;
 };
 
 /**
@@ -1543,9 +1661,9 @@ export type RepositoryInFile_Deserialize = {
  *  means no Filters.
  */
 export type RepositoryInFile_Serialize = {
-	name: RepositoryName,
-	conventions: Conventions | null,
-	filters: Filter[] | null,
+  name: RepositoryName;
+  conventions: Conventions | null;
+  filters: Filter[] | null;
 };
 
 /**  The state of one Repository's mirror. */
@@ -1553,14 +1671,14 @@ export type RepositoryMirror = RepositoryMirror_Serialize | RepositoryMirror_Des
 
 /**  The state of one Repository's mirror. */
 export type RepositoryMirror_Deserialize = {
-	repository: RepositoryName,
-	state: MirrorState_Deserialize,
+  repository: RepositoryName;
+  state: MirrorState_Deserialize;
 };
 
 /**  The state of one Repository's mirror. */
 export type RepositoryMirror_Serialize = {
-	repository: RepositoryName,
-	state: MirrorState_Serialize,
+  repository: RepositoryName;
+  state: MirrorState_Serialize;
 };
 
 /**  A Repository's `owner/name`, in the only form that reaches GitHub. It reaches the UI as a plain string. */
@@ -1574,17 +1692,17 @@ export type RepositorySettings_Deserialize = RepositoryInFile_Deserialize;
 
 /**  A Repository the user added, as `settings.toml` holds it. */
 export type RepositorySettings_Serialize = {
-	name: RepositoryName,
-	conventions: Conventions,
-	filters: Filter[],
+  name: RepositoryName;
+  conventions: Conventions;
+  filters: Filter[];
 };
 
 /**  Which first sync a Repository gets (ADR 0015). */
-export type RepositorySize = 
-/**  Everything open, plus what closed in the window. */
-"small" | 
-/**  What was updated in the window. */
-"large";
+export type RepositorySize =
+  /**  Everything open, plus what closed in the window. */
+  | "small"
+  /**  What was updated in the window. */
+  | "large";
 
 /**  Whether someone marked a thread resolved. */
 export type Resolution = "open" | "resolved";
@@ -1595,8 +1713,8 @@ export type Resolution = "open" | "resolved";
  *  follow only the file at the head says.
  */
 export type Rest = {
-	old: number,
-	new: number,
+  old: number;
+  new: number;
 };
 
 /**  Someone's Review of a PR, as the Conversation shows it. */
@@ -1606,40 +1724,40 @@ export type ReviewState = "PENDING" | "COMMENTED" | "APPROVED" | "CHANGES_REQUES
 
 /**  Someone's Review of a PR, as the Conversation shows it. */
 export type Review_Deserialize = {
-	/**  Nothing, for a Review whose author's account has gone. */
-	author?: Login | null,
-	state: ReviewState,
-	/**  The commit it reviewed. Nothing, when GitHub no longer has it. */
-	commit?: string | null,
-	submitted_at: string,
-	/**
-	 *  GitHub's rendering, written by a stranger, and empty for a Review that says nothing beyond its state.
-	 *  The webview's content security policy holds it (ADR 0005).
-	 */
-	body_html: string,
-	/**  The reason its body is hidden on GitHub. Nothing, for one that isn't. */
-	hidden?: HiddenReason | null,
-	/**  A line for each thread it started, in the order GitHub gives them. */
-	threads: ThreadLine_Deserialize[],
+  /**  Nothing, for a Review whose author's account has gone. */
+  author?: Login | null;
+  state: ReviewState;
+  /**  The commit it reviewed. Nothing, when GitHub no longer has it. */
+  commit?: string | null;
+  submitted_at: string;
+  /**
+   *  GitHub's rendering, written by a stranger, and empty for a Review that says nothing beyond its state.
+   *  The webview's content security policy holds it (ADR 0005).
+   */
+  body_html: string;
+  /**  The reason its body is hidden on GitHub. Nothing, for one that isn't. */
+  hidden?: HiddenReason | null;
+  /**  A line for each thread it started, in the order GitHub gives them. */
+  threads: ThreadLine_Deserialize[];
 };
 
 /**  Someone's Review of a PR, as the Conversation shows it. */
 export type Review_Serialize = {
-	/**  Nothing, for a Review whose author's account has gone. */
-	author: Login | null,
-	state: ReviewState,
-	/**  The commit it reviewed. Nothing, when GitHub no longer has it. */
-	commit: string | null,
-	submitted_at: string,
-	/**
-	 *  GitHub's rendering, written by a stranger, and empty for a Review that says nothing beyond its state.
-	 *  The webview's content security policy holds it (ADR 0005).
-	 */
-	body_html: string,
-	/**  The reason its body is hidden on GitHub. Nothing, for one that isn't. */
-	hidden: HiddenReason | null,
-	/**  A line for each thread it started, in the order GitHub gives them. */
-	threads: ThreadLine_Serialize[],
+  /**  Nothing, for a Review whose author's account has gone. */
+  author: Login | null;
+  state: ReviewState;
+  /**  The commit it reviewed. Nothing, when GitHub no longer has it. */
+  commit: string | null;
+  submitted_at: string;
+  /**
+   *  GitHub's rendering, written by a stranger, and empty for a Review that says nothing beyond its state.
+   *  The webview's content security policy holds it (ADR 0005).
+   */
+  body_html: string;
+  /**  The reason its body is hidden on GitHub. Nothing, for one that isn't. */
+  hidden: HiddenReason | null;
+  /**  A line for each thread it started, in the order GitHub gives them. */
+  threads: ThreadLine_Serialize[];
 };
 
 /**  A script that ran in a long frame, as the browser names it. */
@@ -1647,24 +1765,24 @@ export type Script = Script_Serialize | Script_Deserialize;
 
 /**  A script that ran in a long frame, as the browser names it. */
 export type Script_Deserialize = {
-	/**  The script's caller, such as `HTMLButtonElement.onclick` or `FrameRequestCallback`. */
-	invoker: string,
-	/**  Nothing, when the browser doesn't know it. */
-	function?: string | null,
-	/**  The script's file, without the window's origin, or nothing when the browser doesn't know it. */
-	source?: string | null,
-	ms: number | null,
+  /**  The script's caller, such as `HTMLButtonElement.onclick` or `FrameRequestCallback`. */
+  invoker: string;
+  /**  Nothing, when the browser doesn't know it. */
+  function?: string | null;
+  /**  The script's file, without the window's origin, or nothing when the browser doesn't know it. */
+  source?: string | null;
+  ms: number | null;
 };
 
 /**  A script that ran in a long frame, as the browser names it. */
 export type Script_Serialize = {
-	/**  The script's caller, such as `HTMLButtonElement.onclick` or `FrameRequestCallback`. */
-	invoker: string,
-	/**  Nothing, when the browser doesn't know it. */
-	function: string | null,
-	/**  The script's file, without the window's origin, or nothing when the browser doesn't know it. */
-	source: string | null,
-	ms: number | null,
+  /**  The script's caller, such as `HTMLButtonElement.onclick` or `FrameRequestCallback`. */
+  invoker: string;
+  /**  Nothing, when the browser doesn't know it. */
+  function: string | null;
+  /**  The script's file, without the window's origin, or nothing when the browser doesn't know it. */
+  source: string | null;
+  ms: number | null;
 };
 
 /**  What `settings.toml` holds. A value the file leaves out takes its default. */
@@ -1672,36 +1790,36 @@ export type Settings = Settings_Serialize | Settings_Deserialize;
 
 /**  What `settings.toml` holds. A value the file leaves out takes its default. */
 export type Settings_Deserialize = {
-	status_bar?: StatusBarSettings_Deserialize,
-	releases?: ReleaseSettings_Deserialize,
-	repositories?: RepositorySettings_Deserialize[],
+  status_bar?: StatusBarSettings_Deserialize;
+  releases?: ReleaseSettings_Deserialize;
+  repositories?: RepositorySettings_Deserialize[];
 };
 
 /**  What `settings.toml` holds. A value the file leaves out takes its default. */
 export type Settings_Serialize = {
-	status_bar: StatusBarSettings_Serialize,
-	releases: ReleaseSettings_Serialize,
-	repositories: RepositorySettings_Serialize[],
+  status_bar: StatusBarSettings_Serialize;
+  releases: ReleaseSettings_Serialize;
+  repositories: RepositorySettings_Serialize[];
 };
 
 /**  The version of the file a thread's line is in, as GitHub's `diffSide` names it. */
-export type Side = 
-/**  The merge base's. */
-"LEFT" | 
-/**  The head's. */
-"RIGHT";
+export type Side =
+  /**  The merge base's. */
+  | "LEFT"
+  /**  The head's. */
+  | "RIGHT";
 
 /**  The slowest of `count` timings. */
 export type Slowest = {
-	count: number,
-	worst_ms: number | null,
+  count: number;
+  worst_ms: number | null;
 };
 
 /**  A run of one line's text in one color, from `start` to `end` in UTF-16 code units, as the webview counts. */
 export type Span = {
-	start: number,
-	end: number,
-	highlight: Highlight,
+  start: number;
+  end: number;
+  highlight: Highlight;
 };
 
 /**  The app's state, shown in the status bar. */
@@ -1710,13 +1828,13 @@ export type Status = Status_Serialize | Status_Deserialize;
 export type StatusBarSettings = StatusBarSettings_Serialize | StatusBarSettings_Deserialize;
 
 export type StatusBarSettings_Deserialize = {
-	/**  Being offline or a problem still shows when this is off, since nothing else would say so. */
-	visible?: boolean,
+  /**  Being offline or a problem still shows when this is off, since nothing else would say so. */
+  visible?: boolean;
 };
 
 export type StatusBarSettings_Serialize = {
-	/**  Being offline or a problem still shows when this is off, since nothing else would say so. */
-	visible: boolean,
+  /**  Being offline or a problem still shows when this is off, since nothing else would say so. */
+  visible: boolean;
 };
 
 /**  Sent whenever the app-wide state changes (ADR 0008). */
@@ -1729,65 +1847,71 @@ export type StatusChanged_Deserialize = Status_Deserialize;
 export type StatusChanged_Serialize = Status_Serialize;
 
 /**  The app's state, shown in the status bar. */
-export type Status_Deserialize = 
-/**  Nobody is known yet, and GitHub hasn't answered. */
-{ state: "connecting" } | 
-/**  GitHub hasn't answered yet, and this is who was signed in last time. */
-{ state: "connecting_as"; last_login: Login } | 
-/**  GitHub confirmed this login just now. */
-{ state: "online"; login: Login } | 
-/**  Nobody is known, and GitHub can't be reached. */
-{ state: "offline" } | 
-/**  GitHub can't be reached, and this is who was signed in last time. */
-{ state: "offline_as"; last_login: Login } | 
-/**  Something stops Tsugiki reading, such as a refused token. */
-{ state: "problem"; problem: Error_Deserialize };
+export type Status_Deserialize =
+  /**  Nobody is known yet, and GitHub hasn't answered. */
+  | { state: "connecting" }
+  /**  GitHub hasn't answered yet, and this is who was signed in last time. */
+  | { state: "connecting_as"; last_login: Login }
+  /**  GitHub confirmed this login just now. */
+  | { state: "online"; login: Login }
+  /**  Nobody is known, and GitHub can't be reached. */
+  | { state: "offline" }
+  /**  GitHub can't be reached, and this is who was signed in last time. */
+  | { state: "offline_as"; last_login: Login }
+  /**  Something stops Tsugiki reading, such as a refused token. */
+  | { state: "problem"; problem: Error_Deserialize };
 
 /**  The app's state, shown in the status bar. */
-export type Status_Serialize = 
-/**  Nobody is known yet, and GitHub hasn't answered. */
-{ state: "connecting" } | 
-/**  GitHub hasn't answered yet, and this is who was signed in last time. */
-{ state: "connecting_as"; last_login: Login } | 
-/**  GitHub confirmed this login just now. */
-{ state: "online"; login: Login } | 
-/**  Nobody is known, and GitHub can't be reached. */
-{ state: "offline" } | 
-/**  GitHub can't be reached, and this is who was signed in last time. */
-{ state: "offline_as"; last_login: Login } | 
-/**  Something stops Tsugiki reading, such as a refused token. */
-{ state: "problem"; problem: Error_Serialize };
+export type Status_Serialize =
+  /**  Nobody is known yet, and GitHub hasn't answered. */
+  | { state: "connecting" }
+  /**  GitHub hasn't answered yet, and this is who was signed in last time. */
+  | { state: "connecting_as"; last_login: Login }
+  /**  GitHub confirmed this login just now. */
+  | { state: "online"; login: Login }
+  /**  Nobody is known, and GitHub can't be reached. */
+  | { state: "offline" }
+  /**  GitHub can't be reached, and this is who was signed in last time. */
+  | { state: "offline_as"; last_login: Login }
+  /**  Something stops Tsugiki reading, such as a refused token. */
+  | { state: "problem"; problem: Error_Serialize };
 
 /**  A thread's subject: a whole file, or a line on one side of the diff. */
 export type Subject = Subject_Serialize | Subject_Deserialize;
 
 /**  A thread's subject: a whole file, or a line on one side of the diff. */
-export type Subject_Deserialize = 
-/**  The whole file. */
-{ kind: "file" } | 
-/**  Lines of the file at the head, on the right, or at the merge base, on the left. */
-{ kind: "line"; side: Side; 
-/**
- *  The line it is on now. Nothing, when the code under it has changed and GitHub can't place it in
- *  the diff any more.
- */
-line?: number | null; 
-/**  The line it was on when it began. */
-original?: number | null };
+export type Subject_Deserialize =
+  /**  The whole file. */
+  | { kind: "file" }
+  /**  Lines of the file at the head, on the right, or at the merge base, on the left. */
+  | {
+      kind: "line";
+      side: Side;
+      /**
+       *  The line it is on now. Nothing, when the code under it has changed and GitHub can't place it in
+       *  the diff any more.
+       */
+      line?: number | null;
+      /**  The line it was on when it began. */
+      original?: number | null;
+    };
 
 /**  A thread's subject: a whole file, or a line on one side of the diff. */
-export type Subject_Serialize = 
-/**  The whole file. */
-{ kind: "file" } | 
-/**  Lines of the file at the head, on the right, or at the merge base, on the left. */
-{ kind: "line"; side: Side; 
-/**
- *  The line it is on now. Nothing, when the code under it has changed and GitHub can't place it in
- *  the diff any more.
- */
-line: number | null; 
-/**  The line it was on when it began. */
-original: number | null };
+export type Subject_Serialize =
+  /**  The whole file. */
+  | { kind: "file" }
+  /**  Lines of the file at the head, on the right, or at the merge base, on the left. */
+  | {
+      kind: "line";
+      side: Side;
+      /**
+       *  The line it is on now. Nothing, when the code under it has changed and GitHub can't place it in
+       *  the diff any more.
+       */
+      line: number | null;
+      /**  The line it was on when it began. */
+      original: number | null;
+    };
 
 /**
  *  Whether others can read a comment, or it is a draft in the user's Pending review, which only they see
@@ -1809,43 +1933,45 @@ export type SyncActivityChanged_Serialize = SyncActivity_Serialize | null;
 
 /**  The work under way in the queue of syncs. */
 export type SyncActivity_Deserialize = {
-	/**  The open Repository's sync, or the tree of an Issue the user opened in it, while there is one. */
-	open?: OpenSync_Deserialize | null,
-	/**  The time GitHub's points come back, while the syncs wait for them. */
-	paused_until: string | null,
-	/**  The other Repositories with a sync queued, by name. They take turns with the open one (ADR 0015). */
-	elsewhere: RepositoryName[],
+  /**  The open Repository's sync, or the tree of an Issue the user opened in it, while there is one. */
+  open?: OpenSync_Deserialize | null;
+  /**  The time GitHub's points come back, while the syncs wait for them. */
+  paused_until: string | null;
+  /**  The other Repositories with a sync queued, by name. They take turns with the open one (ADR 0015). */
+  elsewhere: RepositoryName[];
 };
 
 /**  The work under way in the queue of syncs. */
 export type SyncActivity_Serialize = {
-	/**  The open Repository's sync, or the tree of an Issue the user opened in it, while there is one. */
-	open: OpenSync_Serialize | null,
-	/**  The time GitHub's points come back, while the syncs wait for them. */
-	paused_until: string | null,
-	/**  The other Repositories with a sync queued, by name. They take turns with the open one (ADR 0015). */
-	elsewhere: RepositoryName[],
+  /**  The open Repository's sync, or the tree of an Issue the user opened in it, while there is one. */
+  open: OpenSync_Serialize | null;
+  /**  The time GitHub's points come back, while the syncs wait for them. */
+  paused_until: string | null;
+  /**  The other Repositories with a sync queued, by name. They take turns with the open one (ADR 0015). */
+  elsewhere: RepositoryName[];
 };
 
 /**  The part of a sync under way, in the order a first sync runs them (ADR 0015). */
-export type SyncPart = "your_work" | 
-/**  The trees of the user's own Issues, and of any Issue they open. */
-"trees" | "window" | 
-/**  A small Repository's open items that last changed before the window. */
-"older_open" | 
-/**
- *  A refresh, or a sync that hasn't asked the store yet which it is. The status bar only mentions this
- *  when it has to wait.
- */
-"refresh";
+export type SyncPart =
+  | "your_work"
+  /**  The trees of the user's own Issues, and of any Issue they open. */
+  | "trees"
+  | "window"
+  /**  A small Repository's open items that last changed before the window. */
+  | "older_open"
+  /**
+   *  A refresh, or a sync that hasn't asked the store yet which it is. The status bar only mentions this
+   *  when it has to wait.
+   */
+  | "refresh";
 
 /**
  *  The code a thread was written against, from the hunk GitHub stored with it: its rows, the last of them
  *  the thread's line, and the spans that highlight each row.
  */
 export type ThreadCode = {
-	rows: CodeRow[],
-	spans: Span[][],
+  rows: CodeRow[];
+  spans: Span[][];
 };
 
 /**  A comment in a review thread. */
@@ -1853,12 +1979,12 @@ export type ThreadComment = ThreadComment_Serialize | ThreadComment_Deserialize;
 
 /**  A comment in a review thread. */
 export type ThreadComment_Deserialize = {
-	submission: Submission,
+  submission: Submission;
 } & IssueComment_Deserialize;
 
 /**  A comment in a review thread. */
 export type ThreadComment_Serialize = {
-	submission: Submission,
+  submission: Submission;
 } & IssueComment_Serialize;
 
 /**  GitHub's id of a review thread, which a thread's line in the Conversation names to open it in Files. */
@@ -1869,32 +1995,32 @@ export type ThreadLine = ThreadLine_Serialize | ThreadLine_Deserialize;
 
 /**  One thread a Review started: a line of the Conversation, and the comments Files shows under the code. */
 export type ThreadLine_Deserialize = {
-	/**  The thread, which a click on the line opens in Files. */
-	id: ThreadId,
-	/**  The file, as GitHub names it. */
-	path: string,
-	/**  The whole file, or the line it is on and the line it began on. */
-	subject: Subject_Deserialize,
-	opening: Opening,
-	/**  The comments after the first. */
-	replies: number,
-	resolution: Resolution,
-	anchor: Anchor,
+  /**  The thread, which a click on the line opens in Files. */
+  id: ThreadId;
+  /**  The file, as GitHub names it. */
+  path: string;
+  /**  The whole file, or the line it is on and the line it began on. */
+  subject: Subject_Deserialize;
+  opening: Opening;
+  /**  The comments after the first. */
+  replies: number;
+  resolution: Resolution;
+  anchor: Anchor;
 };
 
 /**  One thread a Review started: a line of the Conversation, and the comments Files shows under the code. */
 export type ThreadLine_Serialize = {
-	/**  The thread, which a click on the line opens in Files. */
-	id: ThreadId,
-	/**  The file, as GitHub names it. */
-	path: string,
-	/**  The whole file, or the line it is on and the line it began on. */
-	subject: Subject_Serialize,
-	opening: Opening,
-	/**  The comments after the first. */
-	replies: number,
-	resolution: Resolution,
-	anchor: Anchor,
+  /**  The thread, which a click on the line opens in Files. */
+  id: ThreadId;
+  /**  The file, as GitHub names it. */
+  path: string;
+  /**  The whole file, or the line it is on and the line it began on. */
+  subject: Subject_Serialize;
+  opening: Opening;
+  /**  The comments after the first. */
+  replies: number;
+  resolution: Resolution;
+  anchor: Anchor;
 };
 
 /**  Where the token comes from. A personal access token joins this with the Account page (ADR 0004). */
@@ -1904,52 +2030,65 @@ export type TokenSource = "gh";
 export type TreeEntry = TreeEntry_Serialize | TreeEntry_Deserialize;
 
 /**  A line directly under an Issue. */
-export type TreeEntry_Deserialize = {
-	kind: "pr",
-} & PrTree_Deserialize | 
-/**  A Backport whose Origin PR Tsugiki can't show: that number names no PR, or a Backport. */
-{
-	kind: "backport",
-} & BackportRow_Deserialize;
+export type TreeEntry_Deserialize =
+  | ({
+      kind: "pr";
+    } & PrTree_Deserialize)
+  /**  A Backport whose Origin PR Tsugiki can't show: that number names no PR, or a Backport. */
+  | ({
+      kind: "backport";
+    } & BackportRow_Deserialize);
 
 /**  A line directly under an Issue. */
-export type TreeEntry_Serialize = {
-	kind: "pr",
-} & PrTree_Serialize | 
-/**  A Backport whose Origin PR Tsugiki can't show: that number names no PR, or a Backport. */
-{
-	kind: "backport",
-} & BackportRow_Serialize;
+export type TreeEntry_Serialize =
+  | ({
+      kind: "pr";
+    } & PrTree_Serialize)
+  /**  A Backport whose Origin PR Tsugiki can't show: that number names no PR, or a Backport. */
+  | ({
+      kind: "backport";
+    } & BackportRow_Serialize);
 
 /**
  *  The reason PR heads aren't in a mirror once the worker stopped fetching them, for a Files tab waiting for
  *  one (#233, #213).
  */
-export type Unfetched = 
-/**  git failed, with its last line in `words`: the fetch, or reading back where its refs landed. */
-{ kind: "git"; words: string } | 
-/**
- *  GitHub's ref for the PR points at another commit. GitHub hadn't moved it yet (#201), or the head
- *  the last sync stored is no longer on the PR's branch.
- */
-{ kind: "behind" } | 
-/**  GitHub has no ref for the PR. */
-{ kind: "not_on_github" };
+export type Unfetched =
+  /**  git failed, with its last line in `words`: the fetch, or reading back where its refs landed. */
+  | { kind: "git"; words: string }
+  /**
+   *  GitHub's ref for the PR points at another commit. GitHub hadn't moved it yet (#201), or the head
+   *  the last sync stored is no longer on the PR's branch.
+   */
+  | { kind: "behind" }
+  /**  GitHub has no ref for the PR. */
+  | { kind: "not_on_github" };
 
 /**  A web page's address. */
 export type WebAddress = string;
 
 /**  One reason an item Needs attention. */
-export type Why = { kind: "review_requested" } | 
-/**  Empty `checks` means Tsugiki hasn't heard which ones failed, or GitHub names none. */
-{ kind: "ci_failed"; checks: string[] } | { kind: "ci_passed" } | { kind: "changes_requested"; by: Login } | { kind: "approved"; by: Login } | { kind: "reviewed"; by: Login } | { kind: "comment"; by: Login } | { kind: "commits"; by: Login } | { kind: "ready_for_review"; by: Login } | { kind: "mentioned" } | { kind: "backport_failed"; target: string };
+export type Why =
+  | { kind: "review_requested" }
+  /**  Empty `checks` means Tsugiki hasn't heard which ones failed, or GitHub names none. */
+  | { kind: "ci_failed"; checks: string[] }
+  | { kind: "ci_passed" }
+  | { kind: "changes_requested"; by: Login }
+  | { kind: "approved"; by: Login }
+  | { kind: "reviewed"; by: Login }
+  | { kind: "comment"; by: Login }
+  | { kind: "commits"; by: Login }
+  | { kind: "ready_for_review"; by: Login }
+  | { kind: "mentioned" }
+  | { kind: "backport_failed"; target: string };
 
 /**  The reason a PR is on the user's Workbench. */
-export type WorkReason = 
-/**  The user is a requested reviewer, or an assignee of someone else's PR who hasn't submitted a Review. */
-"review_request" | "own_pr" | 
-/**  The user has submitted a Review. */
-"reviewed";
+export type WorkReason =
+  /**  The user is a requested reviewer, or an assignee of someone else's PR who hasn't submitted a Review. */
+  | "review_request"
+  | "own_pr"
+  /**  The user has submitted a Review. */
+  | "reviewed";
 
 /**  A Repository's Workbench or one of its views, with what the Sidebar shows beside it. */
 export type Workbench = Workbench_Serialize | Workbench_Deserialize;
@@ -1958,127 +2097,142 @@ export type Workbench = Workbench_Serialize | Workbench_Deserialize;
 export type WorkbenchItem = WorkbenchItem_Serialize | WorkbenchItem_Deserialize;
 
 /**  A top-level entry of the list. */
-export type WorkbenchItem_Deserialize = {
-	kind: "issue",
-} & IssueItem_Deserialize | 
-/**  A PR that fixes no Issue, with its Backports. */
-{
-	kind: "standalone_pr",
-} & PrTree_Deserialize | 
-/**  A Backport with no Issue and no Origin PR to sit under. */
-{
-	kind: "standalone_backport",
-} & BackportRow_Deserialize;
+export type WorkbenchItem_Deserialize =
+  | ({
+      kind: "issue";
+    } & IssueItem_Deserialize)
+  /**  A PR that fixes no Issue, with its Backports. */
+  | ({
+      kind: "standalone_pr";
+    } & PrTree_Deserialize)
+  /**  A Backport with no Issue and no Origin PR to sit under. */
+  | ({
+      kind: "standalone_backport";
+    } & BackportRow_Deserialize);
 
 /**  A top-level entry of the list. */
-export type WorkbenchItem_Serialize = {
-	kind: "issue",
-} & IssueItem_Serialize | 
-/**  A PR that fixes no Issue, with its Backports. */
-{
-	kind: "standalone_pr",
-} & PrTree_Serialize | 
-/**  A Backport with no Issue and no Origin PR to sit under. */
-{
-	kind: "standalone_backport",
-} & BackportRow_Serialize;
+export type WorkbenchItem_Serialize =
+  | ({
+      kind: "issue";
+    } & IssueItem_Serialize)
+  /**  A PR that fixes no Issue, with its Backports. */
+  | ({
+      kind: "standalone_pr";
+    } & PrTree_Serialize)
+  /**  A Backport with no Issue and no Origin PR to sit under. */
+  | ({
+      kind: "standalone_backport";
+    } & BackportRow_Serialize);
 
 /**  A PR's line of the list. */
 export type WorkbenchRow = WorkbenchRow_Serialize | WorkbenchRow_Deserialize;
 
 /**  A PR's line of the list. */
 export type WorkbenchRow_Deserialize = {
-	number: number,
-	title: string,
-	author?: Login | null,
-	state: PrState,
-	is_draft: boolean,
-	target_branch: string,
-	ci?: CiState | null,
-	updated_at: string,
-	/**  Empty for a PR that another PR put on the Workbench, and for one no longer open. */
-	reasons: WorkReason[],
-	/**  The user's latest submitted Review. A pending Review is a draft, so it isn't one yet. */
-	your_review?: ReviewState | null,
+  number: number;
+  title: string;
+  author?: Login | null;
+  state: PrState;
+  is_draft: boolean;
+  target_branch: string;
+  ci?: CiState | null;
+  updated_at: string;
+  /**  Empty for a PR that another PR put on the Workbench, and for one no longer open. */
+  reasons: WorkReason[];
+  /**  The user's latest submitted Review. A pending Review is a draft, so it isn't one yet. */
+  your_review?: ReviewState | null;
 };
 
 /**  A PR's line of the list. */
 export type WorkbenchRow_Serialize = {
-	number: number,
-	title: string,
-	author: Login | null,
-	state: PrState,
-	is_draft: boolean,
-	target_branch: string,
-	ci: CiState | null,
-	updated_at: string,
-	/**  Empty for a PR that another PR put on the Workbench, and for one no longer open. */
-	reasons: WorkReason[],
-	/**  The user's latest submitted Review. A pending Review is a draft, so it isn't one yet. */
-	your_review: ReviewState | null,
+  number: number;
+  title: string;
+  author: Login | null;
+  state: PrState;
+  is_draft: boolean;
+  target_branch: string;
+  ci: CiState | null;
+  updated_at: string;
+  /**  Empty for a PR that another PR put on the Workbench, and for one no longer open. */
+  reasons: WorkReason[];
+  /**  The user's latest submitted Review. A pending Review is a draft, so it isn't one yet. */
+  your_review: ReviewState | null;
 };
 
 /**  The list the window asks for. */
-export type WorkbenchView = { kind: "whole" } | { kind: "filter"; query: FilterQuery } | { kind: "review_requests" };
+export type WorkbenchView =
+  { kind: "whole" } | { kind: "filter"; query: FilterQuery } | { kind: "review_requests" };
 
 /**  A Repository's Workbench or one of its views, with what the Sidebar shows beside it. */
 export type Workbench_Deserialize = {
-	/**  The items that Need attention, newest first by when they started to, then the rest by last update. */
-	items: ListedItem_Deserialize[],
-	/**  The Issues with nothing that Needs attention, the latest update first. */
-	quiet: ListedItem_Deserialize[],
-	/**  The count of items on the Workbench that Need attention. */
-	count: number,
-	/**  The count of items that hold a PR carrying a Review request. */
-	review_requests: number,
-	filters: FilterLine_Deserialize[],
+  /**  The items that Need attention, newest first by when they started to, then the rest by last update. */
+  items: ListedItem_Deserialize[];
+  /**  The Issues with nothing that Needs attention, the latest update first. */
+  quiet: ListedItem_Deserialize[];
+  /**  The count of items on the Workbench that Need attention. */
+  count: number;
+  /**  The count of items that hold a PR carrying a Review request. */
+  review_requests: number;
+  filters: FilterLine_Deserialize[];
 };
 
 /**  A Repository's Workbench or one of its views, with what the Sidebar shows beside it. */
 export type Workbench_Serialize = {
-	/**  The items that Need attention, newest first by when they started to, then the rest by last update. */
-	items: ListedItem_Serialize[],
-	/**  The Issues with nothing that Needs attention, the latest update first. */
-	quiet: ListedItem_Serialize[],
-	/**  The count of items on the Workbench that Need attention. */
-	count: number,
-	/**  The count of items that hold a PR carrying a Review request. */
-	review_requests: number,
-	filters: FilterLine_Serialize[],
+  /**  The items that Need attention, newest first by when they started to, then the rest by last update. */
+  items: ListedItem_Serialize[];
+  /**  The Issues with nothing that Needs attention, the latest update first. */
+  quiet: ListedItem_Serialize[];
+  /**  The count of items on the Workbench that Need attention. */
+  count: number;
+  /**  The count of items that hold a PR carrying a Review request. */
+  review_requests: number;
+  filters: FilterLine_Serialize[];
 };
 
 /* Tauri Specta runtime */
-async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {
-    try {
-        return { status: "ok", data: await result };
-    } catch (e) {
-        if (e instanceof Error) throw e;
-        return { status: "error", error: e as any };
-    }
+async function typedError<T, E>(
+  result: Promise<T>,
+): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {
+  try {
+    return { status: "ok", data: await result };
+  } catch (e) {
+    if (e instanceof Error) throw e;
+    return { status: "error", error: e as any };
+  }
 }
 
 type EventEmit<T> = [T] extends [null] ? () => Promise<void> : (payload: T) => Promise<void>;
 
-type EventEmitTo<T> = [T] extends [null] ? (target: __TAURI_EVENT.EventTarget | string) => Promise<void> : (target: __TAURI_EVENT.EventTarget | string, payload: T) => Promise<void>;
+type EventEmitTo<T> = [T] extends [null]
+  ? (target: __TAURI_EVENT.EventTarget | string) => Promise<void>
+  : (target: __TAURI_EVENT.EventTarget | string, payload: T) => Promise<void>;
 
-function makeEvent<TListen, TEmit = TListen>(name: string, serialize?: (payload: TEmit) => unknown, deserialize?: (payload: any) => TListen) {
-    const mapEvent = (cb: __TAURI_EVENT.EventCallback<TListen>) => (event: __TAURI_EVENT.Event<any>) => cb({ ...event, payload: deserialize ? deserialize(event.payload) : event.payload });
-    const mapPayload = (payload: TEmit) => serialize ? serialize(payload) : payload;
+function makeEvent<TListen, TEmit = TListen>(
+  name: string,
+  serialize?: (payload: TEmit) => unknown,
+  deserialize?: (payload: any) => TListen,
+) {
+  const mapEvent = (cb: __TAURI_EVENT.EventCallback<TListen>) => (event: __TAURI_EVENT.Event<any>) =>
+    cb({ ...event, payload: deserialize ? deserialize(event.payload) : event.payload });
+  const mapPayload = (payload: TEmit) => (serialize ? serialize(payload) : payload);
 
-    const base = {
-        listen: (cb: __TAURI_EVENT.EventCallback<TListen>) => __TAURI_EVENT.listen(name, mapEvent(cb)),
-        once: (cb: __TAURI_EVENT.EventCallback<TListen>) => __TAURI_EVENT.once(name, mapEvent(cb)),
-        emit: ((payload: TEmit) => __TAURI_EVENT.emit(name, mapPayload(payload)) as unknown) as EventEmit<TEmit>,
-        emitTo: ((to: __TAURI_EVENT.EventTarget | string, payload: TEmit) => __TAURI_EVENT.emitTo(to, name, mapPayload(payload)) as unknown) as EventEmitTo<TEmit>
-    };
+  const base = {
+    listen: (cb: __TAURI_EVENT.EventCallback<TListen>) => __TAURI_EVENT.listen(name, mapEvent(cb)),
+    once: (cb: __TAURI_EVENT.EventCallback<TListen>) => __TAURI_EVENT.once(name, mapEvent(cb)),
+    emit: ((payload: TEmit) => __TAURI_EVENT.emit(name, mapPayload(payload)) as unknown) as EventEmit<TEmit>,
+    emitTo: ((to: __TAURI_EVENT.EventTarget | string, payload: TEmit) =>
+      __TAURI_EVENT.emitTo(to, name, mapPayload(payload)) as unknown) as EventEmitTo<TEmit>,
+  };
 
-    const fn = (target: import("@tauri-apps/api/webview").Webview | import("@tauri-apps/api/window").Window) => ({
-        listen: (cb: __TAURI_EVENT.EventCallback<TListen>) => target.listen(name, mapEvent(cb)),
-        once: (cb: __TAURI_EVENT.EventCallback<TListen>) => target.once(name, mapEvent(cb)),
-        emit: ((payload: TEmit) => target.emit(name, mapPayload(payload)) as unknown) as EventEmit<TEmit>,
-        emitTo: ((to: __TAURI_EVENT.EventTarget | string, payload: TEmit) => target.emitTo(to, name, mapPayload(payload)) as unknown) as EventEmitTo<TEmit>
-    });
+  const fn = (
+    target: import("@tauri-apps/api/webview").Webview | import("@tauri-apps/api/window").Window,
+  ) => ({
+    listen: (cb: __TAURI_EVENT.EventCallback<TListen>) => target.listen(name, mapEvent(cb)),
+    once: (cb: __TAURI_EVENT.EventCallback<TListen>) => target.once(name, mapEvent(cb)),
+    emit: ((payload: TEmit) => target.emit(name, mapPayload(payload)) as unknown) as EventEmit<TEmit>,
+    emitTo: ((to: __TAURI_EVENT.EventTarget | string, payload: TEmit) =>
+      target.emitTo(to, name, mapPayload(payload)) as unknown) as EventEmitTo<TEmit>,
+  });
 
-    return Object.assign(fn, base);
+  return Object.assign(fn, base);
 }
-

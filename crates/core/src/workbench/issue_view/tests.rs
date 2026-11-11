@@ -5,7 +5,90 @@ use crate::github::issue_content::IssueComment;
 use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::{LatestReview, PullRequestFacts, ReviewState};
 use crate::workbench::WorkbenchRow;
-use crate::workbench::testing::{ViewWorld, fixing, issue};
+use crate::workbench::testing::{
+    ViewWorld, backport, bots_backport, first_issue, fixing, issue, workbench,
+};
+
+fn merged(facts: PullRequestFacts) -> PullRequestFacts {
+    PullRequestFacts {
+        state: PrState::Merged,
+        ..facts
+    }
+}
+
+/// Each entry of a tree as its PRs' numbers.
+fn numbers(entries: &[TreeEntry]) -> Vec<Vec<u32>> {
+    let numbers = |entry: &TreeEntry| entry.rows().iter().map(|row| row.number).collect();
+    entries.iter().map(numbers).collect()
+}
+
+#[test]
+fn origin_prs_that_merged_with_each_backport_fold_and_the_view_counts_them() {
+    let world = ViewWorld::new("issue-view-fold");
+    world.has(
+        vec![
+            merged(fixing(10, 1)),
+            merged(bots_backport(11, "[3.14] gh-1: Fix it (GH-10)")),
+            merged(fixing(20, 1)),
+            bots_backport(21, "[3.14] gh-1: Fix it (GH-20)"),
+            fixing(30, 1),
+            merged(backport(40, "[3.13] gh-1: Fix it (GH-99)", vec![])),
+        ],
+        vec![issue(1)],
+    );
+
+    let shown = view(&world, 1).unwrap();
+
+    assert_eq!(
+        numbers(&shown.issue.pull_requests),
+        [vec![30], vec![20, 21]]
+    );
+    assert_eq!(numbers(&shown.merged), [vec![40], vec![10, 11]]);
+    assert_eq!(shown.merged_count, 3);
+    world.finish();
+}
+
+#[test]
+fn an_issue_whose_prs_all_merged_lists_none_beside_the_fold() {
+    let world = ViewWorld::new("issue-view-all-merged");
+    world.has(
+        vec![merged(fixing(10, 1)), merged(fixing(11, 1))],
+        vec![issue(1)],
+    );
+
+    let shown = view(&world, 1).unwrap();
+
+    assert_eq!(numbers(&shown.issue.pull_requests), Vec::<Vec<u32>>::new());
+    assert_eq!(shown.merged_count, 2);
+    world.finish();
+}
+
+#[test]
+fn a_merged_pr_that_needs_attention_or_matched_a_filter_keeps_its_origin_pr_out_of_the_fold() {
+    // The open PR 30 keeps the Issue on the Workbench, where the test reads its tree.
+    let found = workbench(
+        vec![
+            merged(fixing(10, 1)),
+            merged(bots_backport(11, "[3.14] gh-1: Fix it (GH-10)")),
+            merged(fixing(20, 1)),
+            fixing(30, 1),
+        ],
+        vec![issue(1)],
+    );
+    let entries = first_issue(&found).pull_requests.clone();
+    let without = |mut entries: Vec<Vec<u32>>| {
+        entries.retain(|entry| entry != &[30]);
+        entries
+    };
+
+    let (open, folded) = fold(entries.clone(), |_| false);
+    assert_eq!(without(numbers(&open)), Vec::<Vec<u32>>::new());
+    assert_eq!(numbers(&folded), [vec![10, 11], vec![20]]);
+
+    let (open, folded) = fold(entries, |number| number == 11);
+    assert_eq!(without(numbers(&open)), [vec![10, 11]]);
+    assert_eq!(numbers(&folded), [vec![20]]);
+}
 
 fn view(world: &ViewWorld, number: u32) -> Option<IssueView> {
     IssueView::read(&world.reader, &world.settings(), number).unwrap()

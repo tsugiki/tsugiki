@@ -109,6 +109,11 @@ impl Causes {
         }
     }
 
+    /// True when Issue or PR `number` itself Needs attention.
+    pub(super) fn needs_attention(&self, number: u32) -> bool {
+        self.by_number.contains_key(&number)
+    }
+
     /// The sum of `item` and the rest of its tree.
     pub(super) fn attention_of(&self, item: &WorkbenchItem) -> Option<Attention> {
         let found = item

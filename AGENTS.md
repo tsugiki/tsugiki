@@ -2,7 +2,8 @@
 
 ### Issue tracker
 
-GitHub Issues on tsugiki/tsugiki, through the `gh` CLI. See `docs/agents/issue-tracker.md`.
+GitHub Issues on tsugiki/tsugiki, through the `gh` CLI. See `docs/agents/issue-tracker.md`. Each product
+ticket carries an `area:*` label for each file in `docs/devel/` it touches.
 
 ### Triage labels
 

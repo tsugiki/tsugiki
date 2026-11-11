@@ -21,7 +21,7 @@ pub struct IssueView {
     /// Its `pull_requests` leave out the ones in `merged`.
     #[serde(flatten)]
     pub issue: IssueItem,
-    /// The Origin PRs that merged with each of their Backports, which the view folds into one line (#588).
+    /// The entries of the tree that are done, which the view folds into one line (#588). `fold` says which.
     pub merged: Vec<TreeEntry>,
     /// How many PRs `merged` holds, Backports included.
     pub merged_count: u32,
@@ -70,15 +70,21 @@ impl IssueView {
     }
 }
 
-/// Splits an Issue's tree into the entries the view lists and the ones it folds: an Origin PR that merged
-/// with each of its Backports, unless one of them Needs attention or a Filter matched it, which `stays`
-/// says of each PR's number.
+/// Splits an Issue's tree into the entries the view lists and the ones it folds. An Origin PR folds once it
+/// has merged and none of its Backports is open: a Backport closed unmerged is done too, as when a manual one
+/// replaced a bot's that conflicted. A Backport listed on its own folds once it has merged. Either stays
+/// listed when one of its PRs Needs attention or a Filter matched it, which `stays` says of each number.
 fn fold(entries: Vec<TreeEntry>, stays: impl Fn(u32) -> bool) -> (Vec<TreeEntry>, Vec<TreeEntry>) {
     entries.into_iter().partition(|entry| {
-        let rows = entry.rows();
-        !rows
-            .iter()
-            .all(|row| row.state == PrState::Merged && !stays(row.number))
+        let done = match entry {
+            TreeEntry::Pr(tree) => {
+                let beneath = tree.backports.iter().map(|backport| &backport.row);
+                tree.row.state == PrState::Merged
+                    && beneath.into_iter().all(|row| row.state != PrState::Open)
+            }
+            TreeEntry::Backport(backport) => backport.row.state == PrState::Merged,
+        };
+        !done || entry.rows().iter().any(|row| stays(row.number))
     })
 }
 

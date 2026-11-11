@@ -5,7 +5,6 @@ import {
   type IssueComment_Serialize,
   type IssueContent_Serialize,
   type IssueView_Serialize,
-  type TreeEntry_Serialize,
 } from "$lib/data/bindings";
 import { DetailState } from "./detail-view.svelte";
 
@@ -15,8 +14,6 @@ export type HiddenReason = HiddenReasonData;
 /** The description and recent comments of an Issue or a PR. */
 export type IssueContent = IssueContent_Serialize;
 export type IssueView = IssueView_Serialize;
-/** A line of an Issue's tree: an Origin PR with its Backports, or a Backport on its own. */
-export type TreeEntry = TreeEntry_Serialize;
 
 export class IssueViewState extends DetailState<IssueView> {
   /** How far down the user scrolled this view's pane, in pixels, so the pane comes back there after a PR

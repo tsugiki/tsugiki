@@ -1,6 +1,7 @@
 <script lang="ts">
   import { openLink, openOnGitHub, type GitHubItem } from "$lib/state/browser";
-  import type { IssueViewState, TreeEntry } from "$lib/state/issue-view.svelte";
+  import type { IssueViewState } from "$lib/state/issue-view.svelte";
+  import type { TreeEntry } from "$lib/state/workbench.svelte";
   import Conversation from "./Conversation.svelte";
   import { issueIcon, prIcon } from "./octicons";
   import StateIcon from "./StateIcon.svelte";

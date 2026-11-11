@@ -1,9 +1,11 @@
 use time::OffsetDateTime;
 
 use super::*;
+use crate::filters::{Filter, FilterQuery};
 use crate::github::issue_content::IssueComment;
 use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::{LatestReview, PullRequestFacts, ReviewState};
+use crate::store::FilterResults;
 use crate::workbench::WorkbenchRow;
 use crate::workbench::testing::{
     ViewWorld, backport, bots_backport, first_issue, fixing, issue, workbench,
@@ -16,6 +18,13 @@ fn merged(facts: PullRequestFacts) -> PullRequestFacts {
     }
 }
 
+fn closed(facts: PullRequestFacts) -> PullRequestFacts {
+    PullRequestFacts {
+        state: PrState::Closed,
+        ..facts
+    }
+}
+
 /// Each entry of a tree as its PRs' numbers.
 fn numbers(entries: &[TreeEntry]) -> Vec<Vec<u32>> {
     let numbers = |entry: &TreeEntry| entry.rows().iter().map(|row| row.number).collect();
@@ -23,16 +32,20 @@ fn numbers(entries: &[TreeEntry]) -> Vec<Vec<u32>> {
 }
 
 #[test]
-fn origin_prs_that_merged_with_each_backport_fold_and_the_view_counts_them() {
+fn origin_prs_that_merged_with_each_backport_done_fold_and_the_view_counts_them() {
     let world = ViewWorld::new("issue-view-fold");
     world.has(
         vec![
             merged(fixing(10, 1)),
             merged(bots_backport(11, "[3.14] gh-1: Fix it (GH-10)")),
+            // The bot's Backport conflicted and closed, and a manual one merged in its place.
+            closed(bots_backport(12, "[3.13] gh-1: Fix it (GH-10)")),
+            merged(backport(13, "[3.13] gh-1: Fix it (GH-10)", vec![])),
             merged(fixing(20, 1)),
             bots_backport(21, "[3.14] gh-1: Fix it (GH-20)"),
             fixing(30, 1),
             merged(backport(40, "[3.13] gh-1: Fix it (GH-99)", vec![])),
+            closed(backport(41, "[3.12] gh-1: Fix it (GH-98)", vec![])),
         ],
         vec![issue(1)],
     );
@@ -41,10 +54,48 @@ fn origin_prs_that_merged_with_each_backport_fold_and_the_view_counts_them() {
 
     assert_eq!(
         numbers(&shown.issue.pull_requests),
-        [vec![30], vec![20, 21]]
+        [vec![41], vec![30], vec![20, 21]]
     );
-    assert_eq!(numbers(&shown.merged), [vec![40], vec![10, 11]]);
-    assert_eq!(shown.merged_count, 3);
+    assert_eq!(numbers(&shown.merged), [vec![40], vec![10, 13, 12, 11]]);
+    assert_eq!(shown.merged_count, 5);
+    world.finish();
+}
+
+/// `IssueView::read` hands `fold` the Matched PRs of the user's Filters.
+#[test]
+fn a_merged_backport_a_filter_matched_keeps_its_origin_pr_listed() {
+    let world = ViewWorld::new("issue-view-fold-matched");
+    world.has(
+        vec![
+            merged(fixing(10, 1)),
+            merged(bots_backport(11, "[3.14] gh-1: Fix it (GH-10)")),
+            merged(fixing(20, 1)),
+        ],
+        vec![issue(1)],
+    );
+    let query: FilterQuery = "is:pr label:needs-backport".to_owned().try_into().unwrap();
+    let settings = RepositorySettings {
+        filters: vec![Filter {
+            name: "Backports".to_owned().try_into().unwrap(),
+            query: query.clone(),
+        }],
+        ..world.settings()
+    };
+    let found = FilterResults {
+        numbers: [11].into(),
+        problem: None,
+    };
+    world
+        .store
+        .save_filter_results(&settings.name, &query, found)
+        .unwrap();
+
+    let shown = IssueView::read(&world.reader, &settings, 1)
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(numbers(&shown.issue.pull_requests), [vec![10, 11]]);
+    assert_eq!(numbers(&shown.merged), [vec![20]]);
     world.finish();
 }
 

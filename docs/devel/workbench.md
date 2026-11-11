@@ -50,10 +50,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 
 - Each **Origin PR** shows its **Backports** beneath it, and every PR shows its state, CI status, and the
   user's review state.
-- In the Issue view, an Origin PR that merged with each of its Backports folds into one line under the rest,
-  "Show 152 merged PRs", which counts the Backports too. A click unfolds them in place, and "Hide 152 merged
-  PRs" folds them again; the line keeps its state while a PR from the tree is on show. An Origin PR stays out
-  of the fold when it or one of its Backports Needs attention or is a **Matched PR**.
+- In the Issue view, an Origin PR that has merged, with none of its Backports open, folds into one line under
+  the rest, "Show 152 merged PRs", which counts the Backports too. A Backport closed unmerged counts as done,
+  as when a manual Backport replaced a bot's that conflicted. A Backport listed without its Origin PR folds
+  once it has merged. A click unfolds them in place, and "Hide 152 merged PRs" folds them again; the line
+  keeps its state while a PR from the tree is on show. An entry stays out of the fold when one of its PRs
+  Needs attention or is a **Matched PR**.
 - Only Backports that already exist are shown; Tsugiki does not try to work out which ones are missing.
 - Trees are whole for the user's own Issues and any Issue they open: its older PRs and Backports, and a
   Backport's Origin PR, are fetched even when they fall outside the synced window. Another Issue's row can

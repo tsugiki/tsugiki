@@ -6,11 +6,11 @@ Tsugiki v1 is built in stages, each a thin slice through every layer ([ADR
 0012](adr/0012-unsigned-v1-releases-from-a-tag-attested-and-checked.md)). A stage may be split into as many
 releases as is useful; version numbers are given as releases go out, not here. 1.0.0 follows the last stage.
 
-What v1 does is in [scope.md](scope.md), and the words are the glossary's ([CONTEXT.md](../CONTEXT.md)). The
-prototypes on `prototype/app-shell` and `prototype/diff-renderer` are the spec for behaviour, and their
-CPython snapshots are the first tests ([What carries over from the
-prototypes?](https://github.com/tsugiki/tsugiki/issues/8)). Every stage keeps the gates of [ADR
-0009](adr/0009-testing-and-full-coverage.md) and [ADR
+What v1 does is in [scope.md](scope.md) and the [devel/](devel/) files it links, and the words are the
+glossary's ([CONTEXT.md](../CONTEXT.md)). The prototypes on `prototype/app-shell` and
+`prototype/diff-renderer` are the spec for behaviour, and their CPython snapshots are the first tests ([What
+carries over from the prototypes?](https://github.com/tsugiki/tsugiki/issues/8)). Every stage keeps the
+gates of [ADR 0009](adr/0009-testing-and-full-coverage.md) and [ADR
 0017](adr/0017-performance-budgets-codspeed-gates-prs-the-window-is-measured-before-release.md) green.
 
 ## 0. Skeleton

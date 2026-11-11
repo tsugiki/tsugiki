@@ -1,5 +1,5 @@
-//! Keeps Tsugiki's window on Tsugiki's own pages (`docs/scope.md`). The UI sends links to the system browser,
-//! and this refuses whatever gets past it, such as a refresh GitHub's sanitizer missed.
+//! Keeps Tsugiki's window on Tsugiki's own pages (`docs/devel/links.md`). The UI sends links to the system
+//! browser, and this refuses whatever gets past it, such as a refresh GitHub's sanitizer missed.
 
 use tauri::Url;
 

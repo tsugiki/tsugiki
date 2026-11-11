@@ -1,4 +1,5 @@
-// Sends pages to the system browser. Tsugiki never navigates its own window to a web page (docs/scope.md).
+// Sends pages to the system browser. Tsugiki never navigates its own window to a web page
+// (docs/devel/links.md).
 import { commands, type GitHubItem } from "$lib/data/bindings";
 
 export type { GitHubItem };

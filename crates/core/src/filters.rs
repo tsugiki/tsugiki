@@ -68,7 +68,7 @@ impl Filter {
         }
     }
 
-    /// The Filters a new Repository starts with, which the user can edit or delete (docs/scope.md).
+    /// The Filters a new Repository starts with, which the user can edit or delete (docs/devel/workbench.md).
     pub fn starters(access: RepositoryAccess) -> Vec<Self> {
         match access {
             RepositoryAccess::Maintained => vec![

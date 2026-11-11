@@ -1,8 +1,11 @@
+inserted B1
+inserted B2
+inserted B3
 line 01 of moved.txt (B, head A)
 line 02 of moved.txt (B, head A)
 line 03 of moved.txt (B, head A)
 line 04 of moved.txt (B, head A)
-line 05 of moved.txt (B, head A)
+line 05 CHANGED at head B
 line 06 of moved.txt (B, head A)
 line 07 of moved.txt (B, head A)
 line 08 of moved.txt (B, head A)

@@ -4,6 +4,8 @@
   import type { PrTab, PrViewState } from "$lib/state/pr-view.svelte";
   import Conversation from "./Conversation.svelte";
   import FilesTab from "./FilesTab.svelte";
+  import ConversationComposer from "./prototype/ConversationComposer.svelte";
+  import { proto } from "./prototype/pending-review.svelte";
   import { prIcon } from "./octicons";
   import StateIcon from "./StateIcon.svelte";
   import { headline } from "./workbench-row";
@@ -38,6 +40,13 @@
     not_on_github: "GitHub doesn't have this PR, or your token can't see it.",
     other: "Tsugiki couldn't read this PR's Conversation from GitHub. tsugiki.log says why.",
   };
+
+  // PROTOTYPE (#367): tells the prototype which PR the Files tab shows.
+  $effect(() => {
+    const view = pr.view;
+    const files = pr.files;
+    if (view) proto.bind(files, view.number, view.author ?? null, files.view?.state === "ready" ? files.view.head : "");
+  });
 
   let browserProblem = $state<string>();
 
@@ -109,6 +118,7 @@
               pr.openThread(id);
             }}
           />
+          <ConversationComposer label={`PR #${String(view.number)}`} />
         {:else}
           <p class="by">{UNREAD[pr.failedRead ?? "reading"]}</p>
         {/if}

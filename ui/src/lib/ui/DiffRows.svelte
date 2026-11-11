@@ -18,7 +18,11 @@
     type PrFilesState,
     type Span,
   } from "$lib/state/pr-files.svelte";
+  import { SvelteMap } from "svelte/reactivity";
   import NewsEntries from "./NewsEntries.svelte";
+  import Composer from "./prototype/Composer.svelte";
+  import DraftCard from "./prototype/DraftCard.svelte";
+  import { proto, rowOf, type Draft } from "./prototype/pending-review.svelte";
   import ReviewThread from "./ReviewThread.svelte";
   import { pieces, type Match } from "./spans";
 
@@ -52,8 +56,69 @@
   let newsHeight = $state(0);
   /** The NEWS entries, whose height a scroll right after the tab opens reads before `newsHeight` has it. */
   let newsBox = $state<HTMLElement>();
+
+  // PROTOTYPE (#367): drafts and, in variant A, the composer take room under their line and push the rows
+  // after them down. A click on a line's number opens the composer there; Shift+click or a drag makes a
+  // range. Unified view only.
+  type Block = { key: string; place: number; draft?: Draft; composer?: boolean };
+  const heights = new SvelteMap<string, number>();
+  const blocks = $derived.by(() => {
+    const out: Block[] = [];
+    for (const draft of proto.drafts) {
+      if (draft.target.kind === "reply") continue;
+      const row = rowOf(draft.target);
+      const place = row === undefined ? undefined : diff.layout.placeOfRow(row);
+      if (place !== undefined) out.push({ key: `d${String(draft.id)}`, place, draft });
+    }
+    const open = proto.composer;
+    if (proto.variant === "A" && open && (open.target.kind === "lines" || open.target.kind === "file")) {
+      const row = rowOf(open.target);
+      const place = row === undefined ? undefined : diff.layout.placeOfRow(row);
+      if (place !== undefined) out.push({ key: "composer", place, composer: true });
+    }
+    return out.sort((a, b) => a.place - b.place);
+  });
+  const heightOf = (block: Block) =>
+    heights.get(block.key) ?? (block.composer ? 230 : proto.variant === "A" ? 80 : 20);
+  const offsets = $derived.by(() => {
+    const tops: number[] = [];
+    let sum = 0;
+    for (const block of blocks) {
+      tops.push(sum);
+      sum += heightOf(block);
+    }
+    return { tops, total: sum };
+  });
+  const top = (place: number) => {
+    let extra = 0;
+    for (const block of blocks) {
+      if (block.place >= place) break;
+      extra += heightOf(block);
+    }
+    return place * ROW + extra;
+  };
+  const blockTop = (k: number) => ((blocks[k]?.place ?? 0) + 1) * ROW + (offsets.tops[k] ?? 0);
+  const measureBlock = (key: string) => (element: HTMLElement) => {
+    const observer = new ResizeObserver(() => {
+      heights.set(key, element.offsetHeight);
+    });
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+    };
+  };
+  const selected = $derived(
+    new Set(proto.composer?.target.kind === "lines" ? proto.composer.target.lines.map((one) => one.row) : []),
+  );
+  const rowOfEvent = (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (!target.classList.contains("number")) return undefined;
+    const row = target.closest<HTMLElement>("[data-row]")?.dataset.row;
+    return row === undefined ? undefined : Number(row);
+  };
+
   const rows = $derived(diff.layout.count);
-  const first = $derived(Math.max(0, Math.floor((scrollTop - newsHeight) / ROW) - OVERSCAN));
+  const first = $derived(Math.max(0, Math.floor((scrollTop - newsHeight - offsets.total) / ROW) - OVERSCAN));
   const last = $derived(Math.min(rows - 1, Math.ceil((scrollTop + height - newsHeight) / ROW) + OVERSCAN));
   const shown = $derived(Array.from({ length: Math.max(0, last - first + 1) }, (_, i) => first + i));
   /** Room for the longest line, so the scroll width doesn't change as rows come and go. */
@@ -77,7 +142,7 @@
     untrack(() => {
       const target = scrolledTo(layout, before, jump);
       if (target === undefined || scroller === undefined || newsBox === undefined) return;
-      scroller.scrollTop = newsBox.offsetHeight + target.place * ROW + target.into;
+      scroller.scrollTop = newsBox.offsetHeight + top(target.place) + target.into;
       // The rows to draw follow at once, as the scroll event comes after the next frame.
       scrollTop = scroller.scrollTop;
     });
@@ -246,9 +311,22 @@
   <div bind:this={newsBox} bind:clientHeight={newsHeight}>
     <NewsEntries {news} {onlink} />
   </div>
+  <!-- svelte-ignore a11y_no_static_element_interactions, a11y_mouse_events_have_key_events -->
   <div
     class="spacer"
-    style:height={`${String(rows * ROW)}px`}
+    onmousedown={(e) => {
+      const row = rowOfEvent(e);
+      if (row === undefined || sideBySide) return;
+      e.preventDefault();
+      proto.pick(row, e.shiftKey);
+      if (!e.shiftKey) proto.dragging = true;
+    }}
+    onmouseover={(e) => {
+      if (!proto.dragging) return;
+      const row = rowOfEvent(e);
+      if (row !== undefined) proto.pick(row, true);
+    }}
+    style:height={`${String(rows * ROW + offsets.total)}px`}
     style:min-width={sideBySide
       ? `calc(${String(width)}px + max(0px, ${String(columns + 1)}ch + 56px - ${String(width / 2)}px))`
       : `calc(${String(columns)}ch + 112px)`}
@@ -261,12 +339,12 @@
         <!-- Drawn below, once for all its places. -->
       {:else if at.kind === "line" && sideBySide}
         {@const line = diff.line(at.file, at.new)}
-        <div class="row split" style:top={`${String(place * ROW)}px`}>
+        <div class="row split" style:top={`${String(top(place))}px`}>
           {@render both("context expanded", at.old, at.new, line.text, line.spans, [])}
         </div>
       {:else if at.kind === "line"}
         {@const line = diff.line(at.file, at.new)}
-        <div class="row context expanded" style:top={`${String(place * ROW)}px`}>
+        <div class="row context expanded" style:top={`${String(top(place))}px`}>
           <span class="number">{at.old}</span><span class="number">{at.new}</span>{@render code(
             " ",
             line.text,
@@ -275,18 +353,18 @@
           )}
         </div>
       {:else if at.kind === "pair"}
-        <div class="row split" style:top={`${String(place * ROW)}px`}>
+        <div class="row split" style:top={`${String(top(place))}px`}>
           {@render paired(at.removed)}{@render paired(at.added)}
         </div>
       {:else if at.kind === "hidden"}
-        <div class="row hunk" style:top={`${String(place * ROW)}px`}>{@render gap(at)}</div>
+        <div class="row hunk" style:top={`${String(top(place))}px`}>{@render gap(at)}</div>
       {:else if at.kind === "gone"}
-        <div class="row file" style:top={`${String(place * ROW)}px`}>
+        <div class="row file" style:top={`${String(top(place))}px`}>
           <span class="path">On files no longer in the diff</span>
         </div>
       {:else if at.kind === "more"}
         {@const file = at.file}
-        <div class="row more" style:top={`${String(place * ROW)}px`}>
+        <div class="row more" style:top={`${String(top(place))}px`}>
           <span class="expand"
             ><button
               type="button"
@@ -303,7 +381,7 @@
         {@const index = at.row}
         {@const row = diff.row(index)}
         {#if sideBySide && row?.kind === "context"}
-          <div class="row split" style:top={`${String(place * ROW)}px`}>
+          <div class="row split" style:top={`${String(top(place))}px`}>
             {@render both(
               "context",
               row.old,
@@ -314,11 +392,22 @@
             )}
           </div>
         {:else}
-          <div class={`row ${row?.kind ?? "waiting"}`} style:top={`${String(place * ROW)}px`}>
+          <div
+            class={[`row ${row?.kind ?? "waiting"}`, selected.has(index) && "proto-sel"]}
+            data-row={index}
+            style:top={`${String(top(place))}px`}
+          >
             {#if row?.kind === "file"}
               {@const file = generated(index)}
               {#if file === undefined}
-                <span class="path">{named(row)}</span><span class="count">{counted(row.change)}</span>
+                <span class="path">{named(row)}</span><span class="count">{counted(row.change)}</span><button
+                  type="button"
+                  class="proto-filec"
+                  title="Comment on the whole file"
+                  onclick={() => {
+                    proto.open({ kind: "file", path: row.path, row: index });
+                  }}>💬</button
+                >
               {:else}
                 <button
                   type="button"
@@ -372,7 +461,7 @@
         class="thread"
         role="group"
         aria-label="Review thread"
-        style:top={`${String(placed.shown * ROW)}px`}
+        style:top={`${String(top(placed.shown))}px`}
         {@attach measure(placed.laid.thread.id, placed.thread)}
       >
         <ReviewThread
@@ -384,12 +473,100 @@
           }}
           {onlink}
         />
+        {#if !diff.folded(placed.thread)}
+          {@const id = placed.laid.thread.id}
+          {@const replies = proto.drafts.filter((one) => one.target.kind === "reply" && one.target.thread === id)}
+          {#each replies as draft (draft.id)}
+            <DraftCard {draft} mode={proto.variant === "A" ? "full" : "line"} />
+          {/each}
+          {#if proto.variant === "A" && proto.composer?.target.kind === "reply" && proto.composer.target.thread === id}
+            <Composer composer={proto.composer} layout="inline" />
+          {:else}
+            <button
+              type="button"
+              class="proto-reply"
+              onclick={() => {
+                proto.open({
+                  kind: "reply",
+                  thread: id,
+                  path: "",
+                  to: placed.laid.thread.comments[0]?.author ?? "deleted user",
+                  row: undefined,
+                });
+              }}>Reply…</button
+            >
+          {/if}
+        {/if}
+      </div>
+    {/each}
+    {#each blocks as block, k (block.key)}
+      <div class="proto-block" style:top={`${String(blockTop(k))}px`} {@attach measureBlock(block.key)}>
+        {#if block.composer && proto.composer}
+          <Composer composer={proto.composer} layout="inline" />
+        {:else if block.draft}
+          <DraftCard draft={block.draft} mode={proto.variant === "A" ? "full" : "line"} />
+        {/if}
       </div>
     {/each}
   </div>
 </div>
 
+<svelte:window
+  onmouseup={() => {
+    proto.dragging = false;
+  }}
+/>
+
 <style>
+  /* PROTOTYPE (#367) */
+  .proto-block {
+    position: absolute;
+    left: var(--across);
+    width: var(--width);
+    box-sizing: border-box;
+    font-family: system-ui, sans-serif;
+  }
+
+  .row:is(.added, .removed, .context) .number {
+    cursor: pointer;
+  }
+
+  .row:is(.added, .removed, .context) .number:hover {
+    background: color-mix(in srgb, #0969da 25%, transparent);
+    opacity: 1;
+  }
+
+  .proto-sel {
+    box-shadow: inset 3px 0 0 #0969da;
+    background-image: linear-gradient(color-mix(in srgb, #d4a72c 22%, transparent), color-mix(in srgb, #d4a72c 22%, transparent));
+  }
+
+  .proto-filec {
+    margin-left: auto;
+    margin-right: 8px;
+    padding: 0 6px;
+    border: 0;
+    font: inherit;
+    background: none;
+    cursor: pointer;
+    opacity: 0.6;
+  }
+
+  .proto-filec:hover {
+    opacity: 1;
+  }
+
+  .proto-reply {
+    margin: 4px 0 6px;
+    padding: 2px 10px;
+    font: 12px system-ui, sans-serif;
+    color: inherit;
+    background: Canvas;
+    border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+    border-radius: 4px;
+    cursor: text;
+  }
+
   .scroller {
     position: absolute;
     inset: 0;

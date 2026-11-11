@@ -2,6 +2,7 @@
   import { openLink, openOnGitHub, type GitHubItem } from "$lib/state/browser";
   import type { IssueViewState } from "$lib/state/issue-view.svelte";
   import Conversation from "./Conversation.svelte";
+  import ConversationComposer from "./prototype/ConversationComposer.svelte";
   import { issueIcon, prIcon } from "./octicons";
   import StateIcon from "./StateIcon.svelte";
   import { backportWords, headline, prStateWords } from "./workbench-row";
@@ -96,6 +97,7 @@
 
     {#if view.content}
       <Conversation content={view.content} {now} onlink={(address) => void followLink(address)} />
+      <ConversationComposer label={`Issue #${String(view.number)}`} />
     {:else}
       <p class="by">Tsugiki hasn't read what this Issue says yet.</p>
     {/if}

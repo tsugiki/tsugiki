@@ -28,6 +28,7 @@
   import type { PaletteCommand } from "./Palette.svelte";
   import PaneEdge from "./PaneEdge.svelte";
   import PrDetail from "./PrDetail.svelte";
+  import { proto } from "./prototype/pending-review.svelte";
   import Sidebar from "./Sidebar.svelte";
   import StateIcon from "./StateIcon.svelte";
   import { details, headline, issueDetails, preview, standaloneDetails } from "./workbench-row";
@@ -232,7 +233,13 @@
 
   /** The chords this screen binds, each with the action the page runs once the chord's wait ends. */
   export function chordBindings(): ChordBindings {
-    return { "ctrl+k z": () => void toggleDetailOnly() };
+    return {
+      "ctrl+k z": () => void toggleDetailOnly(),
+      // PROTOTYPE (#367)
+      "ctrl+k m": () => {
+        proto.toggleMark();
+      },
+    };
   }
 
   /** What this screen adds to the command palette while it shows. Each command runs what its key runs. The

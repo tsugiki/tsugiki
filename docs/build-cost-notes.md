@@ -1,6 +1,6 @@
 # Build size, link time and disk use
 
-What our builds cost, what we changed about it in #57, and what to try next. Measure before and after any
+What our builds cost, what #57 changed about it, and what to try next. Measure before and after any
 change here, with `cargo build --tests --timings` on an empty target folder. Point `CARGO_TARGET_DIR` at a new
 folder under `.temp` so your `target/` stays as it is.
 

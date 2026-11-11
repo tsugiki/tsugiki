@@ -89,9 +89,12 @@ export function chordName(first: ChordStart, second: string): string {
   return `${first} ${second}`;
 }
 
-/** Whether `name` types in a text box: a plain key, or Ctrl+Alt+B, which AltGr sends too on Windows. */
+/** Keys AltGr sends too on Windows, so they type in a text box. */
+const ALTGR_KEYS: ReadonlySet<string> = new Set(["ctrl+alt+b", "ctrl+alt+e"]);
+
+/** Whether `name` types in a text box: a plain key, or one AltGr sends. */
 function typesInTextBox(name: OwnedKey): boolean {
-  return name.length === 1 || name === "ctrl+alt+b";
+  return name.length === 1 || ALTGR_KEYS.has(name);
 }
 
 const MODIFIERS = new Set(["control", "shift", "alt", "meta", "altgraph", "capslock", "numlock", "fn"]);

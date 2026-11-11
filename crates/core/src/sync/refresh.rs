@@ -24,10 +24,9 @@ use crate::repository_settings::RepositorySettings;
 use crate::store::{ChangeCheck, NarrowedResults, SyncState};
 use crate::workbench::{Workbench, reasons};
 
-/// GitHub's search can lag behind what it changed, so a refresh also asks about the minutes before the last
-/// one (ADR 0015). The fetches skip what Tsugiki already holds. A change this new can't yet say an item left
-/// a Filter, and the next refresh still sees it.
-const OVERLAP: Duration = Duration::minutes(2);
+/// GitHub's search lags behind what it changed, so a refresh also asks about the minutes before the last one
+/// (ADR 0015). The fetches skip what Tsugiki already holds.
+const OVERLAP: Duration = Duration::minutes(3);
 
 /// A refresh's poll: one request, and more only while a list has more that changed.
 pub(super) struct Poll {
@@ -311,13 +310,9 @@ fn plan_the_rest(link: &Link<'_>, poll: &mut Poll) -> Result<Changed, Error> {
     });
     walk.hold_issues(std::mem::take(&mut poll.moved_issues));
     if poll.redo {
-        // The refresh that stopped may have saved these, so the fetch can't tell they changed. It owed
-        // their Conversations in the store as it saved them.
-        let held = poll
-            .changed_prs
-            .iter()
-            .filter_map(|pr| stored.get(&pr.number));
-        for pull_request in held.filter(|pr| is_work(pr, viewer.as_ref())) {
+        // The refresh that stopped may have saved these, so the fetch can't tell they changed.
+        let saved = poll.changed_prs.iter().filter_map(|pr| stored.get(&pr.number));
+        for pull_request in saved.filter(|pr| is_work(pr, viewer.as_ref())) {
             walk.learn_from(pull_request, link.repository);
         }
     }

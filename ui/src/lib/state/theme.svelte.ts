@@ -10,6 +10,7 @@ export type DarkQuery = Pick<MediaQueryList, "matches" | "addEventListener">;
 
 export class ThemeState {
   themes = $state<Themes>();
+  /** Why the core sent no themes. The window then keeps the system's colours, which `app.html` sets. */
   error = $state<string>();
   /** Whether Windows is on its dark side. */
   dark = $state(false);

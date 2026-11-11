@@ -81,7 +81,7 @@ keyword = \"#333\"
 x = 1
 ";
     let theme = Theme::parse(text).unwrap();
-    let skipped: Vec<(usize, &str, SkipReason)> = theme
+    let skipped: Vec<(Option<usize>, &str, SkipReason)> = theme
         .skipped
         .iter()
         .map(|line| (line.line, line.key.as_str(), line.reason))
@@ -89,12 +89,12 @@ x = 1
     assert_eq!(
         skipped,
         [
-            (3, "font", SkipReason::UnknownKey),
-            (7, "bgg", SkipReason::UnknownKey),
-            (8, "fg", SkipReason::BadValue),
-            (9, "border", SkipReason::BadValue),
-            (10, "keyword", SkipReason::UnknownKey),
-            (15, "icons", SkipReason::UnknownKey),
+            (Some(3), "font", SkipReason::UnknownKey),
+            (Some(7), "bgg", SkipReason::UnknownKey),
+            (Some(8), "fg", SkipReason::BadValue),
+            (Some(9), "border", SkipReason::BadValue),
+            (Some(10), "keyword", SkipReason::UnknownKey),
+            (Some(15), "icons", SkipReason::UnknownKey),
         ]
     );
     let set: Vec<(Token, String)> = theme
@@ -117,9 +117,22 @@ fn a_table_that_isnt_a_table_is_skipped() {
     assert_eq!(
         theme.skipped,
         [SkippedLine {
-            line: 3,
+            line: Some(3),
             key: "colors".to_owned(),
             reason: SkipReason::BadValue
+        }]
+    );
+}
+
+#[test]
+fn dotted_keys_name_their_line_too() {
+    let theme = Theme::parse("name = \"Mine\"\nkind = \"light\"\ncolors.bgg = \"#fff\"\n").unwrap();
+    assert_eq!(
+        theme.skipped,
+        [SkippedLine {
+            line: Some(3),
+            key: "bgg".to_owned(),
+            reason: SkipReason::UnknownKey
         }]
     );
 }
@@ -182,6 +195,19 @@ fn a_theme_that_cant_be_read_says_why() {
             error.message
         );
     }
+}
+
+#[test]
+fn a_built_in_theme_must_set_every_token() {
+    let partial = "name = \"Part\"\nkind = \"dark\"\n[colors]\nbg = \"#000\"\n";
+    let error = Themes::from_files(LIGHT_MODERN, partial).unwrap_err();
+    assert!(
+        error
+            .message
+            .starts_with("A built-in theme can't be read: Part sets no fg, fg_muted, border,"),
+        "{}",
+        error.message
+    );
 }
 
 /// `docs/devel/themes.md` has a row for each token with both built-in themes' values, so the page can't drift

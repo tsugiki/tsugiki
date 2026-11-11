@@ -3,8 +3,8 @@ import type { commands } from "../src/lib/data/bindings.ts";
 
 /** What each command answers. A command left out rejects, as it would if the core failed, except for those
  * every page asks: a Repository isn't open yet, a refresh has nothing to say, a mirror can be made, asking to
- * check again has nothing to say, no mirror waits for an answer or has a state, no newer version is out, and
- * the panes take their default layout. */
+ * check again has nothing to say, no mirror waits for an answer or has a state, no newer version is out, the
+ * panes take their default layout, and the themes set no token, so the system's colours stand in. */
 export type CoreAnswers = { [C in keyof typeof commands]?: Awaited<ReturnType<(typeof commands)[C]>> };
 
 type Listener = (message: { event: string; id: number; payload: unknown }) => void;
@@ -31,6 +31,13 @@ export const mockCore = (page: Page, answers: CoreAnswers) =>
       newVersion: null,
       refresh: null,
       paneLayout: panes,
+      themes: {
+        status: "ok",
+        data: {
+          light: { name: "Light", kind: "light", tokens: [] },
+          dark: { name: "Dark", kind: "dark", tokens: [] },
+        },
+      },
       savePaneLayout: { status: "ok", data: panes },
       ...given,
     };

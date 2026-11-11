@@ -1,27 +1,8 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { mockCore } from "./mock-core.ts";
+import { themes } from "./themes.ts";
 
-/** Two themes cut down to the tokens the test reads. */
-const themes = {
-  light: {
-    name: "Light",
-    kind: "light" as const,
-    tokens: [
-      { property: "--bg", value: "#ffffff" },
-      { property: "--fg", value: "#3b3b3b" },
-    ],
-  },
-  dark: {
-    name: "Dark",
-    kind: "dark" as const,
-    tokens: [
-      { property: "--bg", value: "#1f1f1f" },
-      { property: "--fg", value: "#cccccc" },
-    ],
-  },
-};
-
-const colours = (page: import("@playwright/test").Page) =>
+const colours = (page: Page) =>
   page.evaluate(() => {
     const body = getComputedStyle(document.body);
     return {

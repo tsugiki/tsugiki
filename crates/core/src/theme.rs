@@ -301,8 +301,8 @@ pub enum SkipReason {
 /// A line of a theme file that was skipped, while the rest of the theme loaded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkippedLine {
-    /// Counted from 1.
-    pub line: usize,
+    /// Counted from 1, when the parser knows it.
+    pub line: Option<usize>,
     pub key: String,
     pub reason: SkipReason,
 }
@@ -422,7 +422,7 @@ impl Tokens {
         }
     }
 
-    fn skip(&mut self, line: usize, key: &str, reason: SkipReason) {
+    fn skip(&mut self, line: Option<usize>, key: &str, reason: SkipReason) {
         self.skipped.push(SkippedLine {
             line,
             key: key.to_owned(),
@@ -431,12 +431,12 @@ impl Tokens {
     }
 }
 
-/// The line, counted from 1, of the key `key` of `table`.
-fn key_line(text: &str, table: &dyn TableLike, key: &str) -> usize {
+/// The line, counted from 1, of the key `key` of `table`, when the parser knows it.
+fn key_line(text: &str, table: &dyn TableLike, key: &str) -> Option<usize> {
     table
         .get_key_value(key)
         .and_then(|(key, _)| key.span())
-        .map_or(0, |span| line_at(text, span.start))
+        .map(|span| line_at(text, span.start))
 }
 
 /// The line, counted from 1, that byte `offset` of `text` sits on.
@@ -480,16 +480,30 @@ impl Themes {
     }
 
     /// The themes the files `light` and `dark` hold.
+    /// Each must set every token, so the window turning from one to the other leaves no colour behind.
     fn from_files(light: &str, dark: &str) -> Result<Self, Error> {
+        let refused = |why: &str| {
+            Error::new(
+                ErrorKind::Internal,
+                &format!("A built-in theme can't be read: {why}"),
+            )
+        };
         let read = |text| {
-            Theme::parse(text)
-                .map(|theme| theme.view())
-                .map_err(|cause| {
-                    Error::new(
-                        ErrorKind::Internal,
-                        &format!("A built-in theme can't be read: {cause}"),
-                    )
-                })
+            let theme = Theme::parse(text).map_err(|cause| refused(&cause.to_string()))?;
+            let missing: Vec<&str> = Token::ALL
+                .into_iter()
+                .filter(|token| !theme.colors.contains_key(token))
+                .map(Token::key)
+                .collect();
+            if missing.is_empty() {
+                Ok(theme.view())
+            } else {
+                Err(refused(&format!(
+                    "{} sets no {}",
+                    theme.name,
+                    missing.join(", ")
+                )))
+            }
         };
         Ok(Self {
             light: read(light)?,

@@ -207,6 +207,7 @@
   /* A line of the status, which reads as a link to the question. */
   .question {
     padding: 0;
+    border: none;
     white-space: normal;
     font: inherit;
     color: inherit;
@@ -223,7 +224,9 @@
     color: var(--warn-fg);
   }
 
+  /* An empty bar takes no room and draws no line. */
   .empty {
     padding: 0;
+    border: none;
   }
 </style>

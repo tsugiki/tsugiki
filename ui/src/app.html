@@ -5,11 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <title>Tsugiki</title>
-    <!-- The theme in force sets the tokens and the color-scheme on the root (#515). Until it does, the
-         browser's own colours follow the side Windows is on. -->
+    <!-- The theme in force sets the tokens and the color-scheme on the root (#515). Until it does, or if
+         the core can't send it, the system's own colours stand in for the tokens that draw panes and
+         dialogs, and follow the side Windows is on. -->
     <style>
       :root {
         color-scheme: light dark;
+        --bg: Canvas;
+        --fg: CanvasText;
+        --fg-muted: GrayText;
+        --border: GrayText;
+        --bg-chrome: Canvas;
+        --fg-chrome: CanvasText;
+        --bg-overlay: Canvas;
+        --backdrop: transparent;
+        --shadow: transparent;
+        --selected: Highlight;
       }
 
       body {

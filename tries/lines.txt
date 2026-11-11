@@ -7,9 +7,9 @@ line 06 of lines.txt
 line 07 of lines.txt
 line 08 of lines.txt
 line 09 of lines.txt
-line 10 of lines.txt
-line 11 of lines.txt
-line 12 of lines.txt
+line 10 CHANGED
+line 11 CHANGED
+line 12 CHANGED
 line 13 of lines.txt
 line 14 of lines.txt
 line 15 of lines.txt
@@ -17,8 +17,6 @@ line 16 of lines.txt
 line 17 of lines.txt
 line 18 of lines.txt
 line 19 of lines.txt
-line 20 of lines.txt
-line 21 of lines.txt
 line 22 of lines.txt
 line 23 of lines.txt
 line 24 of lines.txt
@@ -28,6 +26,9 @@ line 27 of lines.txt
 line 28 of lines.txt
 line 29 of lines.txt
 line 30 of lines.txt
+added A1
+added A2
+added A3
 line 31 of lines.txt
 line 32 of lines.txt
 line 33 of lines.txt

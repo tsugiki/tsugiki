@@ -110,14 +110,22 @@
     browserProblem = await openOnGitHub(name, item);
   };
 
-  /** The headline of each Issue and PR the Detail pane has shown, for the history's arrows and lists. One
-   * whose view hadn't arrived takes its line's headline in the list. */
-  const headlines = new SvelteMap<number, string>();
+  /** The title of each Issue and PR the Detail pane has shown, for the history's arrows and lists. Each
+   * Repository has its own, as its numbers name other items. */
+  const titles = $derived.by(() => {
+    void name;
+    return new SvelteMap<number, string>();
+  });
   $effect(() => {
     const shown = detail?.view;
-    if (shown) headlines.set(shown.number, headline(shown));
+    if (shown) titles.set(shown.number, shown.title);
   });
-  const headlineOf = (stop: Stop) => headlines.get(stop.number) ?? workbench.headlineOf(stop.number);
+  /** Item `number`'s headline, from its view once that has arrived, or else from its line in the list, or its
+   * number alone when the list doesn't have it. */
+  const headlineOf = (number: number) => {
+    const title = titles.get(number) ?? workbench.titleOf(number);
+    return title === undefined ? `#${String(number)}` : headline({ number, title });
+  };
   /** How many items back the history's lists go, newest first. */
   const RECENT = 12;
 
@@ -127,27 +135,28 @@
     if (place) open(place, "through");
   }
 
-  /** The mouse's back and forward buttons go through the history. WebView2 would leave the page on them, so
-   * both presses are cancelled, and the release acts, as the engine does. */
+  /** The mouse's back and forward buttons go through the history, unless a dialog takes the keys. WebView2
+   * would leave the page on them, so both presses are cancelled, and the release acts, as the engine does. */
   function mouseButton(e: MouseEvent) {
     if (e.button !== 3 && e.button !== 4) return;
     e.preventDefault();
-    if (e.type === "mouseup") goThrough(e.button === 3 ? -1 : 1);
+    if (e.type === "mouseup" && keysActive) goThrough(e.button === 3 ? -1 : 1);
   }
 
   /**
    * Shows the Issue or PR on line `stop` in the Detail pane. The PR already on show switches tabs instead,
-   * and the Issue already on show reads GitHub again. Each counts as a visit, unless Alt+← or Alt+→ went
+   * and the Issue already on show reads GitHub again. Each counts as a visit, unless the history went
    * `"through"` the visits to it. Going `"back"` to the Issue the PR on show came from, or through the
    * visits to it, shows its view as it was and counts as no new opening. Both move the focus with the
-   * cursor, so the row the user left doesn't look selected too, and Enter doesn't open it again.
+   * cursor, so the row the user left doesn't look selected too, and Enter doesn't open it again. A pick
+   * from the history's list can land on the item on show, which then only takes the cursor.
    */
   function open(stop: Stop, how: "open" | "back" | "through" = "open") {
     if (how !== "through") visits.visit(stop);
     workbench.cursor = stop;
     if (how !== "open") focusCursor();
     if (stop.kind === "pull_request" && detail instanceof PrViewState && sameStop(detail.line, stop)) {
-      detail.switchTab();
+      if (how !== "through") detail.switchTab();
       return;
     }
     if (stop.kind === "issue" && kept?.number === stop.number) {
@@ -160,11 +169,16 @@
       // Opening the Issue from the list starts at the top. Going back to it leaves the user where they were.
       resumed.scrollTop = 0;
     }
+    const onShow =
+      stop.kind === "issue" && detail instanceof IssueViewState && detail.number === stop.number
+        ? detail
+        : undefined;
+    if (how === "through" && onShow) return;
     hud.issueOpened(stop.number);
-    if (stop.kind === "issue" && detail instanceof IssueViewState && detail.number === stop.number) {
+    if (onShow) {
       // Opening leaves a view that was hidden nothing to catch up on when it shows.
-      void detail.open();
-      detail.show();
+      void onShow.open();
+      onShow.show();
       return;
     }
     const next =
@@ -478,11 +492,12 @@
 
 <svelte:window {onkeydown} onmousedown={mouseButton} onmouseup={mouseButton} />
 
-{#snippet history()}
+<!-- The bar atop the Detail pane, over item `shown`. -->
+{#snippet history(shown: number)}
   <HistoryBar
-    back={visits.behind(RECENT).map(headlineOf)}
-    forward={visits.ahead(RECENT).map(headlineOf)}
-    current={detail?.view ? headline(detail.view) : undefined}
+    back={visits.behind(RECENT).map((stop) => headlineOf(stop.number))}
+    forward={visits.ahead(RECENT).map((stop) => headlineOf(stop.number))}
+    current={headlineOf(shown)}
     ongo={goThrough}
   />
 {/snippet}
@@ -566,23 +581,19 @@
         {issue}
         {now}
         focusable={panes.hidden("list")}
-        header={history}
         onopenpr={(number) => {
           open({ number, kind: "pull_request", issue: issue.number });
         }}
-      />
+      >
+        {#snippet header()}{@render history(issue.number)}{/snippet}
+      </IssueDetail>
     {/key}
   {:else if detail}
     {@const pr = detail}
     {#key pr}
-      <PrDetail
-        repository={name}
-        {pr}
-        {now}
-        onback={back}
-        focusable={panes.hidden("list")}
-        header={history}
-      />
+      <PrDetail repository={name} {pr} {now} onback={back} focusable={panes.hidden("list")}>
+        {#snippet header()}{@render history(pr.number)}{/snippet}
+      </PrDetail>
     {/key}
   {:else if panes.hidden("list")}
     <section class="empty" aria-label="Detail pane" tabindex="-1" data-pane="detail">

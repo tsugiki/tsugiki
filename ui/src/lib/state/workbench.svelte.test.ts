@@ -112,7 +112,7 @@ describe("WorkbenchState", () => {
     state.stop();
   });
 
-  it("names a line by its number and title, or by its number alone off the list", async () => {
+  it("knows the title of each line it lists", async () => {
     catchListener();
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
@@ -121,11 +121,7 @@ describe("WorkbenchState", () => {
     const state = new WorkbenchState("python/cpython");
     await state.load();
 
-    expect([state.headlineOf(3), state.headlineOf(2), state.headlineOf(4)]).toEqual([
-      "#3 PR 3",
-      "#2 PR 2",
-      "#4",
-    ]);
+    expect([state.titleOf(3), state.titleOf(2), state.titleOf(4)]).toEqual(["PR 3", "PR 2", undefined]);
     state.stop();
   });
 

@@ -58,8 +58,62 @@ it("closes the list on Esc, a second right-click or a click elsewhere", async ()
   expect(ongo).not.toHaveBeenCalled();
 });
 
-it("leaves the title blank until the item on show is known", () => {
-  render(HistoryBar, { back: [], forward: [], current: undefined, ongo: vi.fn() });
+it("moves through the list with its own keys, which don't reach the window", async () => {
+  const { bar } = shown(["#2 Before", "#1 First", "#0 Oldest"], []);
+  const heard = vi.fn();
+  window.addEventListener("keydown", heard);
+  await fireEvent.contextMenu(bar.getByRole("button", { name: "Back" }));
+  const menu = screen.getByRole("menu");
+  const focused = () => document.activeElement?.textContent;
 
-  expect(screen.getByRole("navigation", { name: "History" }).textContent?.replace(/[‹›\s]/g, "")).toBe("");
+  const moves = [];
+  for (const key of ["ArrowDown", "ArrowDown", "ArrowDown", "ArrowUp", "Home", "End", "a"]) {
+    await fireEvent.keyDown(document.activeElement ?? menu, { key });
+    moves.push(focused());
+  }
+
+  expect(moves).toEqual([
+    "#1 First",
+    "#0 Oldest",
+    "#0 Oldest",
+    "#1 First",
+    "#2 Before",
+    "#0 Oldest",
+    "#0 Oldest",
+  ]);
+  expect(heard).not.toHaveBeenCalled();
+  window.removeEventListener("keydown", heard);
+});
+
+it("closes the list when the focus or a right-click goes elsewhere, and not within the bar", async () => {
+  const { bar } = shown(["#2 Before", "#1 First"], []);
+  const back = bar.getByRole("button", { name: "Back" });
+  await fireEvent.contextMenu(back);
+  const first = screen.getByRole("menuitem", { name: "#2 Before" });
+
+  await fireEvent.focusOut(first, { relatedTarget: screen.getByRole("menuitem", { name: "#1 First" }) });
+  await fireEvent.contextMenu(bar.getByText("#3 Here"));
+  expect(screen.queryByRole("menu")).toBeTruthy();
+
+  await fireEvent.contextMenu(document.body);
+  expect(screen.queryByRole("menu")).toBeNull();
+  await fireEvent.contextMenu(back);
+  await fireEvent.contextMenu(window);
+  expect(screen.queryByRole("menu")).toBeNull();
+
+  for (const relatedTarget of [document.body, null]) {
+    await fireEvent.contextMenu(back);
+    await fireEvent.focusOut(screen.getByRole("menuitem", { name: "#2 Before" }), { relatedTarget });
+    expect(screen.queryByRole("menu")).toBeNull();
+  }
+});
+
+it("names the keys as macOS does there", () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+  const { bar } = shown(["#2 Before"], []);
+
+  expect(bar.getByRole("button", { name: "Back" }).getAttribute("title")).toBe(
+    "Back to #2 Before (Option+←)",
+  );
+  vi.restoreAllMocks();
 });

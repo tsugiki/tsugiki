@@ -136,11 +136,14 @@ export class WorkbenchState {
     this.cursor = stops.find((stop) => stop.number === cursor.number) ?? cursor;
   }
 
-  /** Line `number`'s number and title, as the history names it (#586), or its number alone when the list
-   * doesn't have it. */
-  headlineOf(number: number): string {
-    const line = this.#lines().find((found) => found.stop.number === number);
-    return line ? `#${String(number)} ${line.title}` : `#${String(number)}`;
+  /** The title of each line by its number, built once for each answer, which the history reads (#586). Made
+   * anew whenever the list changes, so it needn't be reactive itself. */
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  #titles = $derived(new Map(this.#lines().map((line) => [line.stop.number, line.title])));
+
+  /** The title of line `number`, if the list, or its quiet section, has it. */
+  titleOf(number: number): string | undefined {
+    return this.#titles.get(number);
   }
 
   #lines() {

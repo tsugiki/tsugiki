@@ -3,6 +3,7 @@
      that way, the nearest first. -->
 <script lang="ts">
   import { tick } from "svelte";
+  import { currentOs, keyLabel } from "./keys";
 
   let {
     back,
@@ -14,8 +15,8 @@
     back: string[];
     /** The titles of the items ahead of it, the nearest first. */
     forward: string[];
-    /** The title of the item on show, once it's known. */
-    current: string | undefined;
+    /** The title of the item on show. */
+    current: string;
     /** Goes `steps` items away, back for a negative number. */
     ongo: (steps: number) => void;
   } = $props();
@@ -23,12 +24,14 @@
   /** Which arrow's list shows, if one does: -1 for back, 1 for forward. */
   let menu = $state<-1 | 1>();
   let list = $state<HTMLElement>();
+  let bar = $state<HTMLElement>();
+  const os = currentOs();
 
   const titles = (way: -1 | 1) => (way < 0 ? back : forward);
   const tooltip = (way: -1 | 1) => {
     const target = titles(way)[0];
     const word = way < 0 ? "Back" : "Forward";
-    const key = way < 0 ? "Alt+←" : "Alt+→";
+    const key = keyLabel(way < 0 ? "alt+arrowleft" : "alt+arrowright", os);
     return target === undefined ? `${word} (${key}): nothing there` : `${word} to ${target} (${key})`;
   };
   const go = (steps: number) => {
@@ -41,15 +44,40 @@
     await tick();
     list?.querySelector("button")?.focus();
   };
+  /** The list's own keys: ↑ and ↓ move between its items, Home and End go to either end, and Esc closes it.
+   * No key goes on to the window, whose ↑ and ↓ would move the Workbench's cursor behind the list. */
+  const menuKey = (e: KeyboardEvent & { currentTarget: HTMLElement }) => {
+    e.stopPropagation();
+    if (e.key === "Escape") {
+      menu = undefined;
+      return;
+    }
+    const items = [...e.currentTarget.querySelectorAll("button")];
+    const at = items.findIndex((item) => item === document.activeElement);
+    const moves: Partial<Record<string, number>> = {
+      ArrowDown: at + 1,
+      ArrowUp: at - 1,
+      Home: 0,
+      End: items.length - 1,
+    };
+    const to = moves[e.key];
+    if (to === undefined) return;
+    e.preventDefault();
+    items[Math.min(Math.max(to, 0), items.length - 1)]?.focus();
+  };
 </script>
 
+<!-- A click, or a right-click, anywhere but the bar closes the list. -->
 <svelte:window
   onclick={() => {
     menu = undefined;
   }}
+  oncontextmenu={(e) => {
+    if (!(e.target instanceof Node && bar?.contains(e.target))) menu = undefined;
+  }}
 />
 
-<nav class="history" aria-label="History">
+<nav class="history" aria-label="History" bind:this={bar}>
   {#each [-1, 1] as const as way (way)}
     <button
       class="arrow"
@@ -62,7 +90,7 @@
       oncontextmenu={(e) => void openMenu(e, way)}>{way < 0 ? "‹" : "›"}</button
     >
   {/each}
-  <span class="current">{current ?? ""}</span>
+  <span class="current">{current}</span>
   {#if menu !== undefined}
     {@const way = menu}
     <div
@@ -72,11 +100,11 @@
       tabindex="-1"
       aria-label={way < 0 ? "Recent items back" : "Recent items forward"}
       bind:this={list}
-      onkeydown={(e) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          menu = undefined;
-        }
+      onkeydown={menuKey}
+      onfocusout={(e) => {
+        // Tab, or focus taken by a key, leaves the list, and closes it. A right-click on an arrow focuses
+        // the arrow first, and its own handler then closes or switches the list.
+        if (!(e.relatedTarget instanceof Node && bar?.contains(e.relatedTarget))) menu = undefined;
       }}
     >
       {#each titles(way) as title, index (index)}

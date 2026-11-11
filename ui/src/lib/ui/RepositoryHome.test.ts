@@ -985,6 +985,56 @@ it("goes back and forward on the mouse's own buttons, and keeps the page where i
   expect(other.defaultPrevented).toBe(false);
 });
 
+it("leaves the item on show as it is when a pick from the history's list lands on it", async () => {
+  const { issueRow, prRow } = await listing();
+  for (const row of [issueRow, prRow, issueRow, prRow]) await fireEvent.click(row);
+  await screen.findByRole("region", { name: "PR view" });
+  /** Picks the second item of an arrow's list, two steps away. */
+  const pick = async (way: "Back" | "Forward", title: string) => {
+    const history = within(screen.getByRole("navigation", { name: "History" }));
+    await fireEvent.contextMenu(history.getByRole("button", { name: way }));
+    const items = within(await screen.findByRole("menu")).getAllByRole("menuitem");
+    expect(items[1]?.textContent).toBe(title);
+    await fireEvent.click(items[1] ?? document.body);
+  };
+  await vi.waitFor(() => {
+    expect(screen.getByRole("navigation", { name: "History" }).textContent).toContain("#5 PR 5");
+  });
+  const readings = () => [core.openIssue.mock.calls.length, core.openPullRequest.mock.calls.length];
+  const before = readings();
+
+  await pick("Back", "#5 PR 5");
+  expect(screen.getByRole("tab", { name: "Conversation" }).getAttribute("aria-selected")).toBe("true");
+  expect(document.activeElement).toBe(prRow);
+  await press("ArrowLeft", { altKey: true });
+  await screen.findByRole("region", { name: "Issue view" });
+  const back = readings();
+  await pick("Forward", "#112564 GIL drop during collection");
+
+  expect(screen.getByRole("region", { name: "Issue view" })).toBeTruthy();
+  expect(document.activeElement).toBe(issueRow);
+  expect([before, readings()]).toEqual([before, back]);
+});
+
+it("leaves the mouse's own buttons to a dialog on top, and still keeps the page where it is", async () => {
+  core.workbench.mockResolvedValue({
+    status: "ok",
+    data: { items: [{ ...issue, attention: null }], quiet: [], count: 0, review_requests: 0, filters: [] },
+  });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn(), keysActive: false });
+  await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
+  await fireEvent.click(
+    screen.getByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" }),
+  );
+  await screen.findByRole("region", { name: "PR view" });
+
+  const released = new MouseEvent("mouseup", { button: 3, cancelable: true });
+  window.dispatchEvent(released);
+
+  expect(released.defaultPrevented).toBe(true);
+  expect(screen.getByRole("region", { name: "PR view" })).toBeTruthy();
+});
+
 it("offers the palette Go Back and Go Forward, each with its key", async () => {
   vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
   const { component, issueRow, prRow } = await listing();

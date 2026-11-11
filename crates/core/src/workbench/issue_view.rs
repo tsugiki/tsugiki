@@ -21,7 +21,8 @@ pub struct IssueView {
     /// Its `pull_requests` leave out the ones in `merged`.
     #[serde(flatten)]
     pub issue: IssueItem,
-    /// The entries of the tree that are done, which the view folds into one line (#588). `fold` says which.
+    /// The Origin PRs that merged with none of their Backports open, and the merged Backports listed on
+    /// their own, which the view folds into one line (#588).
     pub merged: Vec<TreeEntry>,
     /// How many PRs `merged` holds, Backports included.
     pub merged_count: u32,

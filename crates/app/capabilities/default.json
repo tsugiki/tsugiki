@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "The main window gets Tauri's core permissions and Tsugiki's own commands only: no shell, file system or HTTP plugins (ADR 0005).",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "core:window:allow-set-theme"]
 }

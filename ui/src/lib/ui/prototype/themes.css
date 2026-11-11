@@ -1,0 +1,133 @@
+/* PROTOTYPE, throwaway (#374): three palettes for the whole window, each with a light and a dark side.
+   `light-dark()` picks the side from `color-scheme`, which the switcher sets on the root: `light dark` for
+   System, so the side follows `prefers-color-scheme`, or one of the two to force it. Components read only
+   these tokens. */
+
+:root {
+  color-scheme: light dark;
+}
+
+:root[data-palette="A"] {
+  /* GitHub's Primer, light and dark default: what the diff and the state icons already use. */
+  --bg: light-dark(#ffffff, #0d1117);
+  --fg: light-dark(#1f2328, #f0f6fc);
+  --fg-muted: light-dark(#59636e, #9198a1);
+  --border: light-dark(#d1d9e0, #3d444d);
+  --bg-chrome: light-dark(#f6f8fa, #151b23);
+  --fg-chrome: var(--fg);
+  --bg-overlay: light-dark(#ffffff, #151b23);
+  --backdrop: light-dark(rgb(0 0 0 / 15%), rgb(1 4 9 / 55%));
+  --shadow: light-dark(rgb(0 0 0 / 25%), rgb(1 4 9 / 85%));
+  --selected: light-dark(#ddf4ff, #1b2b40);
+  --accent: light-dark(#0969da, #4493f8);
+  --add: light-dark(#2da44e, #2ea043);
+  --del: light-dark(#cf222e, #f85149);
+  --find: light-dark(#d4a72c, #bb8009);
+  --find-current: #ff9632;
+  --find-current-fg: #1f2328;
+  --attention: light-dark(#9a6700, #d29922);
+  --danger: light-dark(#d1242f, #f85149);
+  --warn-bg: light-dark(#a85000, #bd561d);
+  --warn-fg: #ffffff;
+  --state-open: light-dark(#1a7f37, #3fb950);
+  --state-done: light-dark(#8250df, #ab7df8);
+  --state-closed: light-dark(#d1242f, #f85149);
+  --state-muted: light-dark(#59636e, #9198a1);
+  --hl-keyword: light-dark(#cf222e, #ff7b72);
+  --hl-string: light-dark(#0a3069, #a5d6ff);
+  --hl-comment: light-dark(#59636e, #9198a1);
+  --hl-constant: light-dark(#0550ae, #79c0ff);
+  --hl-entity: light-dark(#6639ba, #d2a8ff);
+  --hl-tag: light-dark(#116329, #7ee787);
+}
+
+:root[data-palette="B"] {
+  /* VS Code's Light Modern and Dark Modern: the editor the user writes in, chrome a step off the content. */
+  --bg: light-dark(#ffffff, #1f1f1f);
+  --fg: light-dark(#3b3b3b, #cccccc);
+  --fg-muted: light-dark(#767676, #9d9d9d);
+  --border: light-dark(#e5e5e5, #2b2b2b);
+  --bg-chrome: light-dark(#f8f8f8, #181818);
+  --fg-chrome: var(--fg);
+  --bg-overlay: light-dark(#f8f8f8, #222222);
+  --backdrop: light-dark(rgb(0 0 0 / 15%), rgb(0 0 0 / 45%));
+  --shadow: light-dark(rgb(0 0 0 / 16%), rgb(0 0 0 / 60%));
+  --selected: light-dark(#e8e8e8, #04395e);
+  --accent: light-dark(#005fb8, #4daafc);
+  --add: light-dark(#48a14d, #2ea043);
+  --del: light-dark(#e51400, #f85149);
+  --find: light-dark(#f8c94a, #9e6a03);
+  --find-current: light-dark(#a8ac94, #515c6a);
+  --find-current-fg: var(--fg);
+  --attention: light-dark(#bf8803, #cca700);
+  --danger: light-dark(#e51400, #f14c4c);
+  --warn-bg: light-dark(#c72e0f, #c72e0f);
+  --warn-fg: #ffffff;
+  --state-open: light-dark(#1a7f37, #3fb950);
+  --state-done: light-dark(#8250df, #ab7df8);
+  --state-closed: light-dark(#d1242f, #f85149);
+  --state-muted: light-dark(#767676, #9d9d9d);
+  --hl-keyword: light-dark(#0000ff, #569cd6);
+  --hl-string: light-dark(#a31515, #ce9178);
+  --hl-comment: light-dark(#008000, #6a9955);
+  --hl-constant: light-dark(#098658, #b5cea8);
+  --hl-entity: light-dark(#795e26, #dcdcaa);
+  --hl-tag: light-dark(#267f99, #4ec9b0);
+}
+
+:root[data-palette="C"] {
+  /* The least change: the browser's own colours for each side (Canvas, CanvasText), nothing set apart as
+     chrome, and GitHub's colours only where a colour carries meaning. */
+  --bg: Canvas;
+  --fg: CanvasText;
+  --fg-muted: color-mix(in srgb, CanvasText 65%, Canvas);
+  --border: color-mix(in srgb, CanvasText 20%, Canvas);
+  --bg-chrome: Canvas;
+  --fg-chrome: CanvasText;
+  --bg-overlay: Canvas;
+  --backdrop: light-dark(rgb(0 0 0 / 15%), rgb(0 0 0 / 50%));
+  --shadow: light-dark(rgb(0 0 0 / 25%), rgb(0 0 0 / 80%));
+  --selected: color-mix(in srgb, Highlight 22%, Canvas);
+  --accent: light-dark(#0969da, #4493f8);
+  --add: light-dark(#2da44e, #2ea043);
+  --del: light-dark(#cf222e, #f85149);
+  --find: light-dark(#d4a72c, #bb8009);
+  --find-current: #ff9632;
+  --find-current-fg: #1f2328;
+  --attention: light-dark(#9a6700, #d29922);
+  --danger: light-dark(#d1242f, #f85149);
+  --warn-bg: light-dark(#a85000, #bd561d);
+  --warn-fg: #ffffff;
+  --state-open: light-dark(#1a7f37, #3fb950);
+  --state-done: light-dark(#8250df, #ab7df8);
+  --state-closed: light-dark(#d1242f, #f85149);
+  --state-muted: light-dark(#59636e, #9198a1);
+  --hl-keyword: light-dark(#cf222e, #ff7b72);
+  --hl-string: light-dark(#0a3069, #a5d6ff);
+  --hl-comment: light-dark(#59636e, #9198a1);
+  --hl-constant: light-dark(#0550ae, #79c0ff);
+  --hl-entity: light-dark(#6639ba, #d2a8ff);
+  --hl-tag: light-dark(#116329, #7ee787);
+}
+
+body {
+  color: var(--fg);
+  background: var(--bg);
+}
+
+/* A and B set the Sidebar apart as chrome, as github.com and VS Code do; C leaves it on the page. */
+:root:is([data-palette="A"], [data-palette="B"]) nav[aria-label="Sidebar"] {
+  align-self: stretch;
+  padding: 6px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-chrome);
+}
+
+/* What a running switch looks like when it fades instead of jumping. */
+:root.theme-fading,
+:root.theme-fading * {
+  transition:
+    background-color 200ms ease,
+    color 200ms ease,
+    border-color 200ms ease !important;
+}

@@ -471,7 +471,7 @@
 
   .hunk,
   .more {
-    background: color-mix(in srgb, #0969da 10%, transparent);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
     opacity: 0.8;
   }
 
@@ -505,7 +505,7 @@
 
   .step:hover,
   .whole:hover {
-    background: color-mix(in srgb, #0969da 20%, transparent);
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
   }
 
   /* Side by side, each side takes half the row, and keeps its own background. */
@@ -545,22 +545,22 @@
   }
 
   .added {
-    background: color-mix(in srgb, #2da44e 18%, transparent);
+    background: color-mix(in srgb, var(--add) 18%, transparent);
   }
 
   .removed {
-    background: color-mix(in srgb, #cf222e 18%, transparent);
+    background: color-mix(in srgb, var(--del) 18%, transparent);
   }
 
   /* The search's matches show on yellow, and the one the tab is on on orange, dark text on it in either
      theme. */
   .text :global(.match) {
-    background: color-mix(in srgb, #d4a72c 40%, transparent);
+    background: color-mix(in srgb, var(--find) 40%, transparent);
   }
 
   .text :global(.current) {
-    background: #ff9632;
-    color: #1f2328;
+    background: var(--find-current);
+    color: var(--find-current-fg);
   }
 
   /* github.com's colors for code, in the rows and in the code of a thread. The classes come from the spans,
@@ -601,25 +601,5 @@
 
   .scroller :global(.hl-emphasis) {
     font-style: italic;
-  }
-
-  /* github.com's light palette. The window has no dark theme yet: one that sets `data-theme="dark"` on the
-     root gets github.com's dark palette below. */
-  .scroller {
-    --hl-keyword: #cf222e;
-    --hl-string: #0a3069;
-    --hl-comment: #59636e;
-    --hl-constant: #0550ae;
-    --hl-entity: #6639ba;
-    --hl-tag: #116329;
-  }
-
-  :global(:root[data-theme="dark"]) .scroller {
-    --hl-keyword: #ff7b72;
-    --hl-string: #a5d6ff;
-    --hl-comment: #9198a1;
-    --hl-constant: #79c0ff;
-    --hl-entity: #d2a8ff;
-    --hl-tag: #7ee787;
   }
 </style>

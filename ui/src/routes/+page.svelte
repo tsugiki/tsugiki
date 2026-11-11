@@ -15,6 +15,7 @@
   import PerformanceHud from "$lib/ui/PerformanceHud.svelte";
   import RepositoryHome from "$lib/ui/RepositoryHome.svelte";
   import StatusBar from "$lib/ui/StatusBar.svelte";
+  import ThemeSwitcher from "$lib/ui/prototype/ThemeSwitcher.svelte";
 
   const PICKER_WORDS: PaletteWords = {
     dialog: "Repository picker",
@@ -224,3 +225,4 @@
 {#if hud.visible}
   <PerformanceHud {hud} refreshing={status.syncActivity !== null} />
 {/if}
+<ThemeSwitcher />

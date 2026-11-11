@@ -61,7 +61,7 @@
   fieldset {
     margin: 12px 0 0;
     padding: 4px 8px 8px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border);
   }
 
   label {

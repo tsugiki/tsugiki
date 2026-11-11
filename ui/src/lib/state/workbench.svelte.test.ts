@@ -112,6 +112,23 @@ describe("WorkbenchState", () => {
     state.stop();
   });
 
+  it("names a line by its number and title, or by its number alone off the list", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue({
+      status: "ok",
+      data: { items: [item(3)], quiet: [item(2)], count: 0, review_requests: 0, filters: [] },
+    });
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    expect([state.headlineOf(3), state.headlineOf(2), state.headlineOf(4)]).toEqual([
+      "#3 PR 3",
+      "#2 PR 2",
+      "#4",
+    ]);
+    state.stop();
+  });
+
   it("stops on each PR and Backport in an Issue's tree, and knows the Issue", async () => {
     catchListener();
     const tree: ListedItem = {

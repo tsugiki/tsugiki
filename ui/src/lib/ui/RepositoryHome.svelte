@@ -13,7 +13,8 @@
   } from "$lib/state/panes.svelte";
   import { DiffViewChoice } from "$lib/state/pr-files.svelte";
   import { PrViewState } from "$lib/state/pr-view.svelte";
-  import { Visits } from "$lib/state/visits";
+  import { Visits } from "$lib/state/visits.svelte";
+  import { SvelteMap } from "svelte/reactivity";
   import {
     sameStop,
     WorkbenchState,
@@ -22,6 +23,7 @@
     type Stop,
     type WorkbenchRow,
   } from "$lib/state/workbench.svelte";
+  import HistoryBar from "./HistoryBar.svelte";
   import IssueDetail from "./IssueDetail.svelte";
   import { type ChordBindings, currentOs, isTextBox, keyLabel, keyName } from "./keys";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
@@ -107,6 +109,31 @@
   const onGitHub = async (item: GitHubItem) => {
     browserProblem = await openOnGitHub(name, item);
   };
+
+  /** The headline of each Issue and PR the Detail pane has shown, for the history's arrows and lists. One
+   * whose view hadn't arrived takes its line's headline in the list. */
+  const headlines = new SvelteMap<number, string>();
+  $effect(() => {
+    const shown = detail?.view;
+    if (shown) headlines.set(shown.number, headline(shown));
+  });
+  const headlineOf = (stop: Stop) => headlines.get(stop.number) ?? workbench.headlineOf(stop.number);
+  /** How many items back the history's lists go, newest first. */
+  const RECENT = 12;
+
+  /** Goes `steps` items through the history, back for a negative number, as Alt+← and Alt+→ do. */
+  function goThrough(steps: number) {
+    const place = visits.go(steps);
+    if (place) open(place, "through");
+  }
+
+  /** The mouse's back and forward buttons go through the history. WebView2 would leave the page on them, so
+   * both presses are cancelled, and the release acts, as the engine does. */
+  function mouseButton(e: MouseEvent) {
+    if (e.button !== 3 && e.button !== 4) return;
+    e.preventDefault();
+    if (e.type === "mouseup") goThrough(e.button === 3 ? -1 : 1);
+  }
 
   /**
    * Shows the Issue or PR on line `stop` in the Detail pane. The PR already on show switches tabs instead,
@@ -252,6 +279,20 @@
         run: () => void toggleDetailOnly(),
       },
       { title: "Reset Layout", run: () => void resetLayout() },
+      {
+        title: "Go Back",
+        note: keyLabel("alt+arrowleft", currentOs()),
+        run: () => {
+          goThrough(-1);
+        },
+      },
+      {
+        title: "Go Forward",
+        note: keyLabel("alt+arrowright", currentOs()),
+        run: () => {
+          goThrough(1);
+        },
+      },
     ];
   }
 
@@ -344,8 +385,7 @@
       files.nextChange(key === "f7" ? 1 : -1);
     } else if (key === "alt+arrowleft" || key === "alt+arrowright") {
       e.preventDefault();
-      const place = key === "alt+arrowleft" ? visits.back() : visits.forward();
-      if (place) open(place, "through");
+      goThrough(key === "alt+arrowleft" ? -1 : 1);
     }
   }
 </script>
@@ -436,7 +476,16 @@
   {/if}
 {/snippet}
 
-<svelte:window {onkeydown} />
+<svelte:window {onkeydown} onmousedown={mouseButton} onmouseup={mouseButton} />
+
+{#snippet history()}
+  <HistoryBar
+    back={visits.behind(RECENT).map(headlineOf)}
+    forward={visits.ahead(RECENT).map(headlineOf)}
+    current={detail?.view ? headline(detail.view) : undefined}
+    ongo={goThrough}
+  />
+{/snippet}
 
 <!-- The list says what went wrong, and while it's hidden a row above the panes does. -->
 {#if panes.hidden("list")}
@@ -517,6 +566,7 @@
         {issue}
         {now}
         focusable={panes.hidden("list")}
+        header={history}
         onopenpr={(number) => {
           open({ number, kind: "pull_request", issue: issue.number });
         }}
@@ -525,7 +575,14 @@
   {:else if detail}
     {@const pr = detail}
     {#key pr}
-      <PrDetail repository={name} {pr} {now} onback={back} focusable={panes.hidden("list")} />
+      <PrDetail
+        repository={name}
+        {pr}
+        {now}
+        onback={back}
+        focusable={panes.hidden("list")}
+        header={history}
+      />
     {/key}
   {:else if panes.hidden("list")}
     <section class="empty" aria-label="Detail pane" tabindex="-1" data-pane="detail">

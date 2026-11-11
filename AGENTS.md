@@ -12,8 +12,9 @@ The five default roles, each label named after its role: `needs-triage`, `needs-
 ### Domain docs
 
 Single-context: `CONTEXT.md` and `docs/adr/` at the repo root, plus `docs/scope.md` and `docs/build-order.md`.
-See `docs/agents/domain.md`. `docs/architecture.md` maps the crates, threads and modules: read it before
-you search the code.
+`docs/scope.md` names what v1 does, and links each area to its file in `docs/devel/`: read only the files a
+ticket touches. See `docs/agents/domain.md`. `docs/architecture.md` maps the crates, threads and modules:
+read it before you search the code.
 
 ## Commands
 

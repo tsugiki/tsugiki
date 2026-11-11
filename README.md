@@ -35,7 +35,8 @@ on GitHub. 0.2, on main and not released yet, reads PRs in the app. Writing to G
 of [docs/build-order.md](docs/build-order.md). These files record the decisions behind it:
 
 - [CONTEXT.md](CONTEXT.md): the glossary. Terms in **bold** are defined there.
-- [docs/scope.md](docs/scope.md): what v1 does, and what it leaves out.
+- [docs/scope.md](docs/scope.md): what v1 does, and what it leaves out. [docs/devel](docs/devel/) says how
+  each area behaves.
 - [docs/adr](docs/adr/): architecture decisions, each with its reasons.
 - [docs/architecture.md](docs/architecture.md): where the code is, and how its threads talk.
 - [Issues](https://github.com/tsugiki/tsugiki/issues): open points and planned work.

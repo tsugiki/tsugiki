@@ -5,7 +5,7 @@
 export type Os = "mac" | "other";
 
 /**
- * The keys from `docs/scope.md`, named as `keyName` names them. `ctrl+k` starts the chords in
+ * The keys from `docs/devel/keyboard.md`, named as `keyName` names them. `ctrl+k` starts the chords in
  * `OWNED_CHORDS`, and most of these have no action until their stage arrives.
  */
 const OWNED_KEYS = [
@@ -62,8 +62,8 @@ export function isChordStart(name: string): name is ChordStart {
   return STARTS.has(name);
 }
 
-/** The chords from `docs/scope.md`, named as `chordName` names them. Each has no action until its stage:
- * the screen that owns one binds it, as `RepositoryHome` binds `ctrl+k z`. */
+/** The chords from `docs/devel/keyboard.md`, named as `chordName` names them. Each has no action until its
+ * stage: the screen that owns one binds it, as `RepositoryHome` binds `ctrl+k z`. */
 const OWNED_CHORDS = [
   "ctrl+k m",
   "ctrl+k p",
@@ -134,10 +134,11 @@ function goesByPlace(key: string): boolean {
 }
 
 /**
- * A key press as a binding: "ctrl+shift+p", "f7", "?". On macOS Cmd is called ctrl, as `docs/scope.md` has
- * it. Null for a key that can't be a binding: a modifier alone, AltGr, which types a character but reports
- * Ctrl and Alt, and the Windows key or macOS's Ctrl, which belong to the OS and to text boxes. On macOS a
- * key with Option goes by where it is, as Option makes it type something else: Option+B types "∫".
+ * A key press as a binding: "ctrl+shift+p", "f7", "?". On macOS Cmd is called ctrl, as
+ * `docs/devel/keyboard.md` has it. Null for a key that can't be a binding: a modifier alone, AltGr, which
+ * types a character but reports Ctrl and Alt, and the Windows key or macOS's Ctrl, which belong to the OS
+ * and to text boxes. On macOS a key with Option goes by where it is, as Option makes it type something
+ * else: Option+B types "∫".
  */
 export function keyName(e: KeyboardEvent, os: Os): string | null {
   const [primary, foreign] = os === "mac" ? [e.metaKey, e.ctrlKey] : [e.ctrlKey, e.metaKey];

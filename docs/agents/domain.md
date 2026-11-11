@@ -7,7 +7,8 @@ How the engineering skills should consume this repo's domain documentation when 
 - **`CONTEXT.md`** at the repo root, or
 - **`CONTEXT-MAP.md`** at the repo root if it exists — it points at one `CONTEXT.md` per context. Read each
   one relevant to the topic.
-- **`docs/scope.md`** — what v1 does and what it leaves out.
+- **`docs/scope.md`** — what v1 does and what it leaves out. Each area links to its file in `docs/devel/`,
+  which says how it behaves; read only the files of the areas you're about to work in.
 - **`docs/build-order.md`** — the stages v1 is built in, for cutting build tickets.
 - **`docs/adr/`** — read ADRs that touch the area you're about to work in. In multi-context repos, also check
   `src/<context>/docs/adr/` for context-scoped decisions.

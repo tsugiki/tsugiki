@@ -1,6 +1,8 @@
 # What GitHub's API takes and refuses when Tsugiki writes
 
 Research for [tsugiki/tsugiki#363](https://github.com/tsugiki/tsugiki/issues/363). Checked 2026-11-10.
+The [live tries](#live-tries) ran on 2026-11-11 for
+[tsugiki/tsugiki#373](https://github.com/tsugiki/tsugiki/issues/373).
 
 ## Question
 
@@ -42,7 +44,7 @@ on expanded lines and are not repeated here.
 | GitHub's MCP server (commit `b98d115`, 2026-10-21): how it builds and submits a pending review | [pkg/github/pullrequests.go](https://github.com/github/github-mcp-server/blob/b98d115bbb080e9555466a96656ec4df605aea21/pkg/github/pullrequests.go) |
 
 Read-only GraphQL queries run on 2026-11-10 show the error shapes and the `viewerCan…` fields quoted below.
-Nothing was written to GitHub.
+Nothing was written to GitHub then. The live tries of 2026-11-11 wrote to throwaway PRs in tsugiki/tsugiki.
 
 ## Answer in short
 
@@ -55,17 +57,22 @@ Nothing was written to GitHub.
 - A `suggestion` block is only Markdown in the body. GitHub has no field for it; the lines it replaces are the
   comment's own line or range.
 - Every payload field of every mutation is nullable in the schema, so the schema can't say which ones come
-  back null instead of raising an error. Only `addPullRequestReviewThread`'s null `thread` is confirmed.
-- Refusals: a classic or `gh` token without the scope should fail before anything runs, with
-  `type: INSUFFICIENT_SCOPES` and no `data`, as it does on reads. A fine-grained token without write gets
-  "Resource not accessible by personal access token" (documented for REST; its GraphQL shape is untested).
-  Locked and archived conversations show up in advance through `locked`, `isArchived` and
-  `viewerCannotUpdateReasons`.
-- Cost: a GraphQL call costs at least 1 point of the 5,000 an hour. Writes are bound by the secondary limits:
-  each mutation counts 5 points against 2,000 a minute, and content creation is capped at about 80 a minute
-  and 500 an hour, web UI included. GitHub asks for a pause of at least 1 second between writes.
-- The docs say nothing about what a moving head does to a Pending review, what a merged or closed PR refuses,
-  or whether a reply without a review ID lands in the Pending review. Those need the live tries at the end.
+  back null instead of raising an error. In the live tries only `addPullRequestReviewThread` returned null
+  without an error; every other refusal came with an `errors` entry.
+- Refusals: a classic or `gh` token without the scope fails before anything runs, with
+  `type: INSUFFICIENT_SCOPES` and no `data`. A fine-grained token without write gets `FORBIDDEN`, "Resource
+  not accessible by personal access token", with the payload null. Neither shows in advance: the
+  `viewerCan…` fields and `viewerPermission` describe the user, not the token. Locked and archived
+  conversations show up in advance through `locked`, `isArchived` and `viewerCannotUpdateReasons`.
+- Cost: every mutation costs 1 point of the user's 5,000 an hour, refused or not. Writes are bound by the
+  secondary limits: each mutation counts 5 points against 2,000 a minute, and content creation is capped at
+  about 80 a minute and 500 an hour, web UI included. GitHub asks for a pause of at least 1 second between
+  writes.
+- The live tries settled what the docs leave out. A thread or reply sent without a review ID opens the
+  Pending review or joins the open one, and a user has one per PR. Drafts follow a moving head, and a new
+  thread takes the current head's line numbers. A closed or merged PR refuses nothing to a user with write
+  access. A body holds up to 262,144 UTF-8 bytes. github.com won't apply a suggestion on a deleted line, on a
+  range that starts on one, or in a file thread.
 
 ## The mutations
 
@@ -363,7 +370,7 @@ documented `type`. REST's equivalents are 403 and 422 (below).
   are not a member of")
   ([tokens](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)).
   `Repository.viewerPermission` is "The users permission level on the repository", the user's and not the
-  token's, so it probably can't warn of these. Live try 10 checks it.
+  token's, so it can't warn of these, as live try 10 confirmed.
 - **Locked conversation.** "While a conversation is locked, only people with write access and repository
   owners and collaborators can add, hide, and delete comments. Reactions and votes in a locked conversation
   are disabled for all users"
@@ -385,8 +392,8 @@ documented `type`. REST's equivalents are 403 and 422 (below).
 - **PR merged or closed meanwhile.** The docs say nothing about comments, reviews or threads on a closed or
   merged PR. A read of the merged tsugiki/tsugiki#358 (viewer `ADMIN`) gave `viewerCanUpdate: true` and empty
   `viewerCannotUpdateReasons`, which suggests a merged PR still takes comments. Live try 8.
-- **The thread, comment or review was deleted meanwhile.** Presumably `NOT_FOUND` on the node ID, as for the
-  repository above. REST answers 404. Not documented for mutations.
+- **The thread, comment or review was deleted meanwhile.** `NOT_FOUND` on the node ID, as for the repository
+  above: live try 9 got it for a review already gone. REST answers 404. Not documented for mutations.
 
 ### Rate limits
 
@@ -453,63 +460,104 @@ try:
   `PUT .../reviews/{id}` then answered `422 "Could not edit a review with a missing body."`
   ([dgowrie/claude-workflows#144](https://github.com/dgowrie/claude-workflows/issues/144), 2026-10-06).
 
-## Live tries left for the maintainer
+## Live tries
 
-All on a throwaway PR in tsugiki/tsugiki unless noted, with `gh api -i graphql` so the headers show. Record
-the full response each time: HTTP status, `data`, `errors[].type`, `errors[].message`, and `x-ratelimit-used`
-before and after.
+Run on 2026-11-11 for [tsugiki/tsugiki#373](https://github.com/tsugiki/tsugiki/issues/373), on throwaway
+draft PRs #375 to #378 into a throwaway base branch, with the maintainer's `gh` token (`repo`, `read:org`,
+`gist`, `workflow`) unless noted. The maintainer opened every PR, so every review below is the author's
+own. Each call and its response are in [`write-api-tries.jsonl`](write-api-tries.jsonl), with strings over
+500 characters cut. A section above that ends in "Live try N" is answered under N here.
 
-1. **Cost.** For each mutation in the table, compare `x-ratelimit-used` (resource `graphql`) before and after.
-   Do the same for one REST `POST .../issues/{n}/comments` against resource `core`.
-2. **`pullRequestId` alone.** With no Pending review:
-   `addPullRequestReviewThread(input: {pullRequestId, path, line, side: RIGHT, body})`. Does it create a
-   Pending review, post a single comment, or return a null `thread`? Repeat with a Pending review open: does
-   the thread join it?
-3. **One Pending review.** `addPullRequestReview(input: {pullRequestId})` twice. Does the second fail (type,
-   message), or return the existing review? Repeat while a Pending review begun on github.com is open.
-4. **Replies.** `addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId, body})` without
-   `pullRequestReviewId`, (a) with no Pending review: posted at once? (b) with one: posted at once, joined to
-   it, or refused? Then with `pullRequestReviewId`: is `comment.state` `PENDING`, and does it go out on
-   submit? Also the REST reply in case (b), to confirm the 422 above.
-5. **Ranges and files.** `addPullRequestReviewThread` with (a) `startLine == line`; (b) `startLine > line`;
-   (c) `startSide: LEFT, side: RIGHT` inside one hunk; (d) a wrong `path`; (e) `side: LEFT` on an added line;
-   (f) `subjectType: FILE` with and without `line`; (g) `subjectType: FILE` on a deleted, a renamed and a
-   binary file. For each: a thread, a null `thread`, or an error?
-6. **Head moves.** Start a Pending review at head A with a thread on line N. Push commit B, once changing line
-   N and once leaving it. Then read `review.commit.oid`, the thread's `line`, `originalLine`, `isOutdated`.
-   Add a new thread using B's line numbers: is it placed against A or B? Submit, and read `review.commit.oid`
-   again.
-7. **Submit.** `submitPullRequestReview` with (a) `COMMENT`, threads, no `body`; (b) `COMMENT`, no threads, no
-   `body`; (c) `REQUEST_CHANGES` without `body`; (d) `APPROVE` and (e) `REQUEST_CHANGES` by the PR's author;
-   (f) `pullRequestId` instead of `pullRequestReviewId`. Also: a body set by `addPullRequestReview`, then
-   submit without `body`: is it kept?
-8. **Closed and merged.** On a closed and on a merged throwaway PR: `addComment`, `addPullRequestReview`,
-   `addPullRequestReviewThread`, `submitPullRequestReview`, `resolveReviewThread`. Also close the PR while a
-   Pending review is open, then try to submit.
-9. **Drafts.** `updatePullRequestReviewComment` and `deletePullRequestReviewComment` on a pending comment;
-   delete the only draft and read whether the Pending review remains; `deletePullRequestReview` on a submitted
-   review (expect an error); `deletePullRequestReviewComment` payload: is `pullRequestReviewComment` null
-   after a delete that worked?
-10. **Tokens.** (a) A classic token with no scopes: `addComment` on the PR. Expect `INSUFFICIENT_SCOPES` with
-    no `data`, and confirm nothing was posted. (b) A fine-grained token for tsugiki with Pull requests and
-    Issues set to read: `addComment`, `addPullRequestReviewThread`, `resolveReviewThread`, and the REST
-    `POST .../issues/{n}/comments`. Record `type`, message and `X-Accepted-GitHub-Permissions`. With the same
-    token, read `repository.viewerPermission` and a thread's `viewerCanResolve`: do they reflect the token or
-    the user?
-11. **Locked.** Needs a second account without write access. Lock the throwaway PR and try `addComment` and
-    `addPullRequestReviewThreadReply` from that account. Skip if no such account is at hand: Tsugiki can read
-    `locked` and `viewerPermission` first.
-12. **Archived.** Needs a throwaway repository under the maintainer's account, not tsugiki/tsugiki. Archive it
-    and try `addComment`. Skippable for the same reason: `isArchived` is known up front.
-13. **Suggestions.** Threads whose body holds a ```` ```suggestion ```` block: on a `LEFT` line, on a range
-    across sides, two blocks in one body, in a `FILE` thread, and in an `addComment`. Does GitHub accept each,
-    and which render as an applicable suggestion on github.com?
-14. **Body size.** `addComment` with a body of 65,537 characters. The limit isn't documented anywhere.
-15. **Resolve edge cases.** `resolveReviewThread` on a thread that is already resolved, and on the user's own
-    thread that is still in the Pending review.
+1. **Cost.** Every mutation cost 1 point of the GraphQL primary budget, refused ones included: `addComment`,
+   `updateIssueComment`, `deleteIssueComment`, `addPullRequestReview`, `addPullRequestReviewThread`,
+   `addPullRequestReviewThreadReply`, `updatePullRequestReviewComment`, `deletePullRequestReviewComment`,
+   `updatePullRequestReview`, `deletePullRequestReview`, `submitPullRequestReview`, `resolveReviewThread`,
+   `unresolveReviewThread`. The payload adds points by the query formula: an `addComment` that selected about
+   20,000 nodes cost 2. A REST `POST .../issues/{n}/comments` cost 1 request of `core`. Three tokens of one
+   user (try 10) drew on one counter, so the budget is the user's, not the token's. Now and then a response
+   reported a second counter, `x-ratelimit-used` near 10 and `x-ratelimit-reset` one second later, between
+   two responses of the main one. Keep the lowest `x-ratelimit-remaining` seen in a window, not the last.
+2. **`pullRequestId` alone.** With no Pending review, `addPullRequestReviewThread` creates one and the thread
+   lands in it as `PENDING`. With one open, the thread joins it. A thread GitHub refuses with a null `thread`
+   still creates an empty Pending review when none was open (try 5e). A thread asked without a range reports
+   `startLine` equal to `line`; a file thread reports `line: 1` and `startLine: null`.
+3. **One Pending review.** A second `addPullRequestReview` fails with `UNPROCESSABLE`, "User can only have one
+   pending review per pull request", and `addPullRequestReview: null`. The same happens while a review begun
+   on github.com is open. `reviews(states: [PENDING])` finds that review, and a thread sent by
+   `pullRequestId` joins it.
+4. **Replies.** (a) With no Pending review, a reply without `pullRequestReviewId` goes out at once, as a new
+   `COMMENTED` review of its own. (b) With one open, the reply joins it as `PENDING`, with or without
+   `pullRequestReviewId`, and goes out on submit. While a Pending review is open, no reply can go out at
+   once: the REST reply fails with 422, "user_id can only have one pending review per pull request", as the
+   third-party reports said.
+5. **Ranges and files.** (a) `startLine == line`: a one-line thread. (b) `startLine > line`: null `thread`,
+   no error. (c) `startSide: LEFT, side: RIGHT` in one hunk: a thread. Across two hunks, from LEFT 20 in the
+   first to RIGHT 30 in the second, also a thread, which github.com shows as "Comment on lines L20 to R30".
+   (d) A path not in the diff: null. (e) `side: LEFT` in a file that is all added: null. A RIGHT line outside
+   every hunk: null. `side: LEFT` on a deleted line: a thread. (f) `subjectType: FILE` without `line`: a file
+   thread. With `line`, `subjectType` is ignored and a line thread is made. (g) `FILE` on a deleted, a renamed
+   and a binary file: a thread each, and on the renamed file's old path too. On a file the PR doesn't touch,
+   or a path that doesn't exist: null. A line thread on a deleted file's LEFT side: a thread.
+6. **Head moves.** A Pending review began at head A with drafts on lines 5 and 15 of an added file. Head B
+   then inserted 3 lines at the top and changed line 5. After the push the review's `commit.oid` was still A.
+   The draft on the changed line read `line: null`, `originalLine: 5`, `isOutdated: true`, `commit` A. The
+   draft on the untouched line read `line: 18`, `originalLine: 15`, `isOutdated: false`, `commit` B,
+   `originalCommit` A. New threads go against the current head: line 18 landed on B's line 18, and line 33,
+   which only B has, was taken; both have `commit` and `originalCommit` B. Submit worked with the outdated
+   draft inside, and `commit.oid` stayed A after it. So drafts follow the head as posted comments do, and a
+   new thread must carry the current head's line numbers. `commitOID` on `addPullRequestReview` was not tried.
+7. **Submit.** (a) `COMMENT` with threads and no body: accepted, body `""`. (b) `COMMENT` with no threads and
+   no body: `UNPROCESSABLE`, "Could not comment for pull request review. You need to leave a comment
+   indicating the requested changes." (c) `REQUEST_CHANGES` without a body from someone other than the
+   author: not tried, as it needs a second account. (d) `APPROVE` by the author, with or without a body:
+   `UNPROCESSABLE`, "Could not approve for pull request review. Can not approve your own pull request".
+   (e) `REQUEST_CHANGES` by the author, with or without a body: `UNPROCESSABLE`, "Could not request_changes
+   for pull request review. Can not request changes on your own pull request". After each refusal the review
+   stayed `PENDING` with its drafts. (f) `pullRequestId` instead of `pullRequestReviewId` submits the open
+   Pending review. With none open: `VALIDATION`, "No pending reviews exist on this pull request." A body set
+   by `addPullRequestReview` and then a submit without `body`: the body is kept.
+8. **Closed and merged.** On a closed PR and on a merged one, `addComment`, `addPullRequestReview`,
+   `addPullRequestReviewThread`, `submitPullRequestReview`, `resolveReviewThread` and
+   `addPullRequestReviewThreadReply` all went through for a user with admin rights. A Pending review begun
+   while the PR was open was submitted after it closed. `viewerCanUpdate` stayed true and
+   `viewerCannotUpdateReasons` empty on both. Not tried for a user without write access.
+9. **Drafts.** `updatePullRequestReviewComment` on a draft edits it, and it stays `PENDING`.
+   `deletePullRequestReviewComment` returns the deleted comment, not null, and the review with
+   `comments.totalCount: 0`. Deleting the last draft then deletes the Pending review too, even one that was
+   there before the draft. An empty review made by `addPullRequestReview` stays until then.
+   `deletePullRequestReview` on a pending review returns it as it was, `PENDING` with its comments, and it is
+   gone. On a submitted review: `UNPROCESSABLE`, "Can not delete a non-pending pull request review". On a
+   review already gone: `NOT_FOUND`, "Could not resolve to a node with the global id of '…'".
+   `deleteIssueComment` returns only `clientMutationId: null`.
+10. **Tokens.** (a) A classic token with no scopes: GraphQL `addComment` fails with `INSUFFICIENT_SCOPES` and
+    no `data` key: "The 'addComment' field requires one of the following scopes: ['public_repo'], but your
+    token has only been granted the: [''] scopes." The REST comment fails with 403, "Must have admin rights
+    to Repository." Nothing was posted. (b) A fine-grained token for tsugiki/tsugiki with Issues and Pull
+    requests read-only: `addComment`, `addPullRequestReviewThread` and `resolveReviewThread` fail with
+    `FORBIDDEN`, `data: {<field>: null}`, "Resource not accessible by personal access token", and
+    `extensions: {saml_failure: false, ip_allow_list_failure: false}`. No GraphQL response carried
+    `X-Accepted-GitHub-Permissions`; the REST 403 did, `issues=write; pull_requests=write`. The refused thread
+    left no Pending review. With both tokens `viewerPermission` read `ADMIN`, and `viewerCanUpdate` and
+    `viewerCanResolve` read true. Those fields describe the user, not the token, so they can't warn of a
+    token's limits.
+11. **Locked.** Skipped: no second account.
+12. **Archived.** Skipped: `isArchived` is known up front.
+13. **Suggestions.** GitHub took every body. On github.com, a suggestion on a `LEFT` line renders as
+    "Suggested change" with "Unable to apply suggestions on deleted lines", and github.com offers no
+    suggestion there itself. A range from LEFT 10 to RIGHT 12 says the same, and its block stands for all six
+    lines of the range in diff order. Two blocks in one body each get their own Add to batch and Commit
+    suggestions. A file thread's block renders with an empty original and no buttons. The control, on an
+    added line, can be applied. In `addComment` the block stays a plain code block
+    (`<pre lang="suggestion">`).
+14. **Body size.** `addComment` takes up to 262,144 UTF-8 bytes: 262,144 ASCII characters pass and 262,145
+    fail, 65,536 four-byte emoji pass and 65,537 fail, 131,072 two-byte characters pass and 131,073 fail. The
+    refusal reads `UNPROCESSABLE`, "Body is too long (maximum is 65536 characters)", which is wrong for
+    anything but four-byte characters. The other mutations' limits were not tried.
+15. **Resolve.** On a thread already resolved: success, `isResolved: true`, no error. On the user's own
+    thread still in a Pending review: resolved, though `viewerCanResolve` read false on every pending thread.
 
-Not worth trying: the secondary limits. Provoking them risks a ban ("Continuing to make requests while you are
-rate limited may result in the banning of your integration").
+Not tried: the secondary limits. Provoking them risks a ban ("Continuing to make requests while you are rate
+limited may result in the banning of your integration").
 
 ## What this means for Tsugiki
 
@@ -524,8 +572,11 @@ rate limited may result in the banning of your integration").
 - Every new thread: `addPullRequestReviewThread` with `pullRequestReviewId`, `path`, `line`, `side`, and for a
   range `startLine`, `startSide`; `subjectType: FILE` for a file thread. Not the `threads` input, which can't
   make a file thread, and not the deprecated `comments` input or `addPullRequestReviewComment`.
-- Replies: `addPullRequestReviewThreadReply`. Whether a reply joins the Pending review or goes out at once is
-  a product choice that live try 4 makes possible to decide (#367).
+- Replies: `addPullRequestReviewThreadReply`. With no Pending review it goes out at once; with one open, it
+  joins it whether or not `pullRequestReviewId` is passed, and no API sends it out at once (live try 4).
+- A thread GitHub refuses still opens an empty Pending review when none was open (live try 2), and the user
+  may have one begun on github.com. So look for the open review first, start one only when there is none,
+  and always pass `pullRequestReviewId`.
 - Edit and delete drafts: `updatePullRequestReviewComment`, `deletePullRequestReviewComment`. Summary:
   `updatePullRequestReview`. Discard: `deletePullRequestReview`.
 - Submit: `submitPullRequestReview` with `pullRequestReviewId`, `event`, `body`.
@@ -541,23 +592,28 @@ A write succeeded only when there is no `errors` array **and** the payload holds
 |---|---|
 | `addComment` | `commentEdge.node` non-null |
 | `addPullRequestReview` | `pullRequestReview` non-null with `state: PENDING` |
-| `addPullRequestReviewThread` | `thread` non-null (null: line outside the diff, wrong path or wrong side) |
+| `addPullRequestReviewThread` | `thread` non-null (null: line outside the diff, wrong path or wrong side, `startLine > line`) |
 | `addPullRequestReviewThreadReply` | `comment` non-null |
 | `update…` mutations | the updated object non-null |
 | `submitPullRequestReview` | `pullRequestReview` non-null and its `state` no longer `PENDING` |
 | `resolveReviewThread`, `unresolveReviewThread` | `thread` non-null with `isResolved` as asked |
-| `deletePullRequestReview`, `deletePullRequestReviewComment` | no errors; whether the payload object is null after a delete that worked is live try 9 |
+| `deletePullRequestReview`, `deletePullRequestReviewComment` | no errors (the payload returns the deleted object as it was, live try 9) |
 | `deleteIssueComment` | no errors (the payload carries nothing) |
 
-The schema makes every payload field nullable, so only `addPullRequestReviewThread`'s null is known from use.
-Checking all of them costs nothing and covers the ones not yet seen.
+The schema makes every payload field nullable, and only `addPullRequestReviewThread` has returned null without
+an error. Checking all of them costs nothing and covers the ones not yet seen.
 
 Mapping the rest onto ADR 0008's kinds, as far as the sources go:
 
-- `INSUFFICIENT_SCOPES`, "Resource not accessible by personal access token", a locked or archived refusal →
-  `write_refused`, and the Repository becomes **Read-only** as scope.md says. Read `isArchived`, `locked`,
-  `viewerPermission` and `viewerCannotUpdateReasons` with the PR so the composer can say so before the user
-  types; only a fine-grained token's refusal arrives unannounced.
+- `INSUFFICIENT_SCOPES`, `FORBIDDEN` with "Resource not accessible by personal access token", a locked or
+  archived refusal → `write_refused`, and the Repository becomes **Read-only** as scope.md says. Read
+  `isArchived`, `locked`, `viewerPermission` and `viewerCannotUpdateReasons` with the PR so the composer can
+  say so before the user types. Those fields describe the user, not the token (live try 10): a classic
+  token's scopes come in `X-OAuth-Scopes` on every response, and a fine-grained token's refusal arrives
+  unannounced.
+- `UNPROCESSABLE` for a rule (a second Pending review, the author's own approval, an empty `COMMENT`, a body
+  too long, deleting a submitted review) → `write_refused` for that write only. GitHub's message can
+  mislead: the empty `COMMENT` speaks of "requested changes", and the size limit says 65,536 characters.
 - A rate-limit error, or 403 or 429 on REST → `rate_limited`, with the reset from `x-ratelimit-reset`, or
   `retry-after`, or one minute when neither is given.
 - `NOT_FOUND` on the thread, comment or review → `not_found`. On the PR or Repository, check the token first
@@ -569,27 +625,35 @@ Mapping the rest onto ADR 0008's kinds, as far as the sources go:
 
 - Does the core pace writes itself (one at a time, a second apart, as GitHub asks), or share the sync's queue
   from ADR 0015? Writes are the user's work and should go first.
-- After an unknown outcome, what does the read-back look for? A thread or reply has no ID until it exists, so
-  matching by body and position is the only way, unless the result of live try 2 or 4 offers better.
+- After an unknown outcome, what does the read-back look for? A thread or reply has no ID until it exists,
+  and live tries 2 and 4 offer nothing better, so matching by body and position in the open Pending review is
+  the only way.
 - Which payload fields does each mutation select, so `changed` can update the view without a second query, and
   is a selection with connections worth the points?
-- Where do unsent drafts go when the head moves under an open Pending review, once live try 6 says what GitHub
-  does?
-- If the user's Pending review is discarded or submitted on github.com meanwhile, the next
-  `addPullRequestReviewThread` with the old `pullRequestReviewId` presumably fails. Does the core then start a
-  new review and retry, or ask?
+- What does the app show when the head moves under an open Pending review? GitHub keeps the drafts in the
+  review: those on changed lines go outdated, the rest follow, and new threads take the current head's line
+  numbers (live try 6). Tsugiki must refetch the drafts and number new threads by the new head.
+- If the user's Pending review is discarded or submitted on github.com meanwhile, a write with the old
+  `pullRequestReviewId` fails with `NOT_FOUND` (live try 9). Does the core then start a new review and retry,
+  or ask?
+- How does the core pace and count writes? Each costs 1 point even when refused (live try 1), and the budget
+  is shared with every other token of the user.
 
 ### Open questions for #367 (writing a comment, building a Pending review, submitting)
 
-- Do replies join the Pending review, go out at once, or does the user choose?
+- Do replies join the Pending review, go out at once, or does the user choose? GitHub decides while a review
+  is open: the reply joins it (live try 4). The choice is left only when no review is open.
 - Can a line comment go straight out, as github.com's "If you only want to add this one comment, click
   Comment" allows
   ([commenting](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/reviewing-changes-in-pull-requests/commenting-on-a-pull-request))?
   That means a review created and submitted in one `addPullRequestReview` call. scope.md says comments go into
   the Pending review; does that cover every comment?
-- Should Submit with `COMMENT` require a body? It depends on live try 7.
-- Hide Approve and Request changes on the user's own PR, given "Pull request authors cannot approve their own
-  pull requests"?
-- How is a `suggestion` offered on a removed line or a mixed range, if live try 13 shows GitHub won't render
-  it as applicable there?
-- What does the composer show for a closed or merged PR, before live try 8 says what GitHub refuses?
+- Should Submit with `COMMENT` require a body? GitHub refuses a `COMMENT` with neither a body nor a draft
+  (live try 7), so Submit needs one or the other.
+- Hide Approve and Request changes on the user's own PR? GitHub refuses both from the author (live try 7).
+- How is a `suggestion` offered on a removed line, a range that starts on one, or a file thread? github.com
+  won't apply it in any of the three (live try 13), and offers none on a deleted line itself.
+- What does the composer show for a closed or merged PR? GitHub refuses nothing there to a user with write
+  access (live try 8), so it is Tsugiki's call.
+- A comment may hold 262,144 UTF-8 bytes (live try 14). Does the composer count them, and say so before the
+  limit?

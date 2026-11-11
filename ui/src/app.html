@@ -5,6 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <title>Tsugiki</title>
+    <!-- The theme in force sets the tokens and the color-scheme on the root (#515). Until it does, the
+         browser's own colours follow the side Windows is on. -->
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+
+      body {
+        color: var(--fg);
+        background: var(--bg);
+      }
+    </style>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

@@ -4,6 +4,7 @@
   import { hud } from "$lib/state/hud.svelte";
   import { SettingsState } from "$lib/state/settings.svelte";
   import { StatusState } from "$lib/state/status.svelte";
+  import { applyTheme, ThemeState } from "$lib/state/theme.svelte";
   import AboutLine from "$lib/ui/AboutLine.svelte";
   import AddRepository from "$lib/ui/AddRepository.svelte";
   import { ChordWait } from "$lib/ui/chord.svelte";
@@ -24,6 +25,11 @@
     none: "No Repository matches",
   };
 
+  const theme = new ThemeState(matchMedia("(prefers-color-scheme: dark)"));
+  void theme.load();
+  $effect(() => {
+    if (theme.current) applyTheme(document.documentElement, theme.current);
+  });
   const about = new AboutState();
   void about.load();
   const status = new StatusState();

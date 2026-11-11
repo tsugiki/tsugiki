@@ -64,6 +64,11 @@ export const commands = {
 	fetchPullRequest: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("fetch_pull_request", { repository, number })),
 	/**  The settings Tsugiki last read, and what was wrong with their files (ADR 0014). */
 	settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
+	/**
+	 *  The theme of each side, light and dark, as CSS variables (#515). The window shows the one for the side
+	 *  Windows is on.
+	 */
+	themes: () => typedError<Themes, Error_Serialize>(__TAURI_INVOKE("themes")),
 	/**  What the window opens on. */
 	home: () => __TAURI_INVOKE<Home_Serialize>("home"),
 	/**
@@ -1839,6 +1844,28 @@ export type SyncPart = "your_work" |
  */
 "refresh";
 
+/**  Whether a theme is for Windows' light side or its dark side. Each theme is one or the other, not a pair. */
+export type ThemeKind = "light" | "dark";
+
+/**
+ *  A theme ready for the window: each token as a CSS variable, and the kind, which the root's
+ *  `color-scheme` takes so scroll bars and form controls follow.
+ */
+export type ThemeView = {
+	name: string,
+	kind: ThemeKind,
+	tokens: TokenView[],
+};
+
+/**
+ *  The theme of each side. The window shows the one for the side Windows is on, and turns to the other when
+ *  Windows does.
+ */
+export type Themes = {
+	light: ThemeView,
+	dark: ThemeView,
+};
+
 /**
  *  The code a thread was written against, from the hunk GitHub stored with it: its rows, the last of them
  *  the thread's line, and the spans that highlight each row.
@@ -1899,6 +1926,12 @@ export type ThreadLine_Serialize = {
 
 /**  Where the token comes from. A personal access token joins this with the Account page (ADR 0004). */
 export type TokenSource = "gh";
+
+/**  A token as a CSS variable and its colour, such as `--fg-muted` and `#767676`. */
+export type TokenView = {
+	property: string,
+	value: string,
+};
 
 /**  A line directly under an Issue. */
 export type TreeEntry = TreeEntry_Serialize | TreeEntry_Deserialize;

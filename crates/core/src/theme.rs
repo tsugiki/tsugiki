@@ -382,7 +382,7 @@ impl Theme {
         })
     }
 
-    /// What the window sets on its root.
+    /// The theme as the window sets it on its root.
     pub fn view(&self) -> ThemeView {
         ThemeView {
             name: self.name.clone(),

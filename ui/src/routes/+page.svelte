@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { AboutState } from "$lib/state/about.svelte";
+  import { AboutState, openDevtools } from "$lib/state/about.svelte";
   import { HomeState } from "$lib/state/home.svelte";
   import { hud } from "$lib/state/hud.svelte";
   import { SettingsState } from "$lib/state/settings.svelte";
@@ -140,6 +140,8 @@
         hud.toggle();
       },
     },
+    // The core says which build it is, so a development UI over a release core lists nothing that fails.
+    ...(about.about?.build === "development" ? [{ title: "Open DevTools", run: openDevtools }] : []),
   ]);
 </script>
 

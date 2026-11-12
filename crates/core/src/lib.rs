@@ -41,12 +41,14 @@ use specta::Type;
 pub struct About {
     pub name: String,
     pub version: String,
+    pub build: build::Build,
 }
 
-pub fn about(version: &version::Version) -> About {
+pub fn about(version: &version::Version, build: build::Build) -> About {
     About {
         name: "Tsugiki".to_owned(),
         version: version.to_string(),
+        build,
     }
 }
 

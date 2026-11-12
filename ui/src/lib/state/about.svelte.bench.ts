@@ -2,7 +2,7 @@ import { expect, test, vi } from "vitest";
 import { AboutState } from "./about.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
-  commands: { about: async () => ({ name: "Tsugiki", version: "1.2.3" }) },
+  commands: { about: async () => ({ name: "Tsugiki", version: "1.2.3", build: "release" }) },
 }));
 
 test("AboutState", async ({ bench }) => {

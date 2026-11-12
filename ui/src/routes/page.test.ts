@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Page from "./+page.svelte";
 
 const core = vi.hoisted(() => ({
+  about: vi.fn(),
+  openDevtools: vi.fn(),
   settings: vi.fn(),
   home: vi.fn(),
   checkRepository: vi.fn(),
@@ -23,7 +25,6 @@ const mirrorStates = vi.hoisted(() => ({ changed: vi.fn<(payload: unknown) => vo
 
 vi.mock("$lib/data/bindings", () => ({
   commands: {
-    about: async () => ({ name: "Tsugiki", version: "1.2.3" }),
     status: async () => ({ state: "online", login: "octocat" }),
     lastSync: async () => ({ repository: "some-maintainer/gcmon", at: null }),
     syncActivity: async () => null,
@@ -93,6 +94,8 @@ const oneIssue = {
 beforeEach(() => {
   // The tests share one document, so each starts with no title of its own.
   document.title = "";
+  core.about.mockResolvedValue({ name: "Tsugiki", version: "1.2.3", build: "release" });
+  core.openDevtools.mockResolvedValue({ status: "ok", data: null });
   core.home.mockResolvedValue(onboarding);
   core.mirrorProblem.mockResolvedValue(null);
   core.mirrorQuestion.mockResolvedValue(null);
@@ -462,6 +465,31 @@ describe("the performance HUD", () => {
     expect(panel()).toBeTruthy();
     await fromPalette("Hide performance HUD");
     expect(panel()).toBeNull();
+  });
+});
+
+describe("Open DevTools", () => {
+  /** Opens the palette and gives the title of each of its rows. */
+  const paletteTitles = async () => {
+    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    return screen.getAllByRole("option").map((option) => option.textContent);
+  };
+
+  it("is in a development build's palette, and asks the core to open DevTools", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    core.about.mockResolvedValue({ name: "Tsugiki", version: "1.2.3", build: "development" });
+    render(Page);
+    expect(await screen.findByText("Tsugiki 1.2.3")).toBeTruthy();
+    expect(await paletteTitles()).toContain("Open DevTools");
+    await fireEvent.click(screen.getByRole("option", { name: "Open DevTools" }));
+    expect(core.openDevtools).toHaveBeenCalledOnce();
+  });
+
+  it("isn't in a release's palette", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    render(Page);
+    expect(await screen.findByText("Tsugiki 1.2.3")).toBeTruthy();
+    expect(await paletteTitles()).not.toContain("Open DevTools");
   });
 });
 

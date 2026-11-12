@@ -18,6 +18,7 @@ use specta::Type;
 pub use startup::run;
 use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
+use tsugiki_core::build::Build;
 use tsugiki_core::diff::{DiffOf, DiffRow, Diffs, Found, HeadLine, Highlighter, PrAt};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::folders::Folders;
@@ -48,8 +49,41 @@ use tsugiki_core::workbench::{Workbench, WorkbenchView};
 #[tauri::command]
 #[specta::specta]
 fn about() -> tsugiki_core::About {
-    tsugiki_core::about(&version())
+    tsugiki_core::about(&version(), Build::CURRENT)
 }
+
+/// Opens WebView2's DevTools for the window that asks, from the palette (#460). Only a development build
+/// has DevTools: a release turns the browser's keys off and refuses here too (ADR 0013).
+#[tauri::command]
+#[specta::specta]
+fn open_devtools<R: tauri::Runtime>(window: tauri::WebviewWindow<R>) -> Result<(), Error> {
+    open_devtools_in(Build::CURRENT, &window)
+}
+
+fn open_devtools_in<R: tauri::Runtime>(
+    build: Build,
+    window: &tauri::WebviewWindow<R>,
+) -> Result<(), Error> {
+    match build {
+        Build::Release => Err(Error::new(
+            ErrorKind::Internal,
+            "A release build of Tsugiki has no DevTools.",
+        )),
+        Build::Development => {
+            show_devtools(window);
+            Ok(())
+        }
+    }
+}
+
+/// Tauri has DevTools only in a debug build, and a release never asks for them.
+#[cfg(debug_assertions)]
+fn show_devtools<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
+    window.open_devtools();
+}
+
+#[cfg(not(debug_assertions))]
+fn show_devtools<R: tauri::Runtime>(_: &tauri::WebviewWindow<R>) {}
 
 /// This build's version, with the commit `build.rs` found, if it found one.
 pub(crate) fn version() -> Version {
@@ -647,6 +681,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
     Builder::<R>::new()
         .commands(collect_commands![
             about,
+            // Specta reads the types through `Wry`, and Tauri's handler takes the builder's runtime.
+            open_devtools::<tauri::Wry>,
             status,
             last_sync,
             sync_activity,

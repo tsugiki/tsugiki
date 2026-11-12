@@ -258,6 +258,18 @@ fn with_no_folders_every_command_that_needs_them_says_so_in_the_cores_form() {
 }
 
 #[test]
+fn a_development_build_opens_devtools_for_the_window_that_asks() {
+    let wired = Wired::start(Err(no_folders()), no_network());
+
+    let about = wired.ask("about", json!({}));
+    let opened = wired.ask("open_devtools", json!({}));
+    drop(wired.stop());
+
+    assert_eq!(about.unwrap()["build"], "development");
+    assert_eq!(opened, Ok(Value::Null));
+}
+
+#[test]
 fn a_name_that_isnt_one_is_refused_before_the_missing_folders_matter() {
     let wired = Wired::start(Err(no_folders()), no_network());
     let nonsense =

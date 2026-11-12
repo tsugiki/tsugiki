@@ -14,6 +14,8 @@ const view = (title: string): IssueView => ({
   people: ["issue-author"],
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [],
+  merged: [],
+  merged_count: 0,
   author: "issue-author",
   content: null,
 });

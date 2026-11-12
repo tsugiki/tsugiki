@@ -106,6 +106,8 @@ beforeEach(() => {
       people: [],
       updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [],
+      merged: [],
+      merged_count: 0,
       author: "issue-author",
       content: null,
     },
@@ -537,6 +539,35 @@ it("opens a PR in an Issue's tree with the way back to its Issue, and Esc goes b
   expect(screen.queryByRole("region", { name: "PR view" })).toBeNull();
   expect(core.openIssue).toHaveBeenCalledExactlyOnceWith("python/cpython", 112564);
   expect(issueRow.getAttribute("aria-current")).toBe("true");
+});
+
+it("keeps the merged PRs unfolded after one of them opens and Esc comes back", async () => {
+  const merged = { kind: "pr", ...row, number: 150001, title: "gh-112564: An old fix", backports: [] };
+  core.issue.mockResolvedValue({
+    status: "ok",
+    data: {
+      number: 112564,
+      title: "GIL drop during collection",
+      state: "OPEN",
+      people: [],
+      updated_at: "2026-11-04T10:00:00Z",
+      pull_requests: [],
+      merged: [{ ...merged, state: "MERGED" }],
+      merged_count: 1,
+      author: "issue-author",
+      content: null,
+    },
+  });
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  await fireEvent.click(await screen.findByRole("button", { name: "Show 1 merged PR" }));
+  await fireEvent.click(screen.getByRole("button", { name: "#150001 gh-112564: An old fix" }));
+  await screen.findByRole("region", { name: "PR view" });
+
+  await press("Escape");
+
+  expect(await screen.findByRole("button", { name: "Hide 1 merged PR" })).toBeTruthy();
+  expect(screen.getByRole("list", { name: "Merged PRs" })).toBeTruthy();
 });
 
 it("opens a PR that fixes two Issues again from its line under the other one", async () => {

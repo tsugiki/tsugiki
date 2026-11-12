@@ -64,6 +64,8 @@ const view = (bodyHtml: string): IssueView => ({
       backports: [{ number: 11, ...row, target_branch: "3.14", backport: "bot" }],
     },
   ],
+  merged: [],
+  merged_count: 0,
   content: {
     body_html: bodyHtml,
     comments: [

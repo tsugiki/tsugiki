@@ -1,6 +1,7 @@
 <script lang="ts">
   import { openLink, openOnGitHub, type GitHubItem } from "$lib/state/browser";
   import type { IssueViewState } from "$lib/state/issue-view.svelte";
+  import type { TreeEntry } from "$lib/state/workbench.svelte";
   import Conversation from "./Conversation.svelte";
   import { issueIcon, prIcon } from "./octicons";
   import StateIcon from "./StateIcon.svelte";
@@ -33,6 +34,9 @@
   const openPr = (number: number) => () => {
     onopenpr(number);
   };
+  /** The line the fully merged PRs fold into, which says what a click does (#588). */
+  const mergedWords = (shown: boolean, count: number) =>
+    `${shown ? "Hide" : "Show"} ${String(count)} merged ${count === 1 ? "PR" : "PRs"}`;
 </script>
 
 <!-- The pane mounts afresh each time the view shows, so it goes back to where the view says it was. -->
@@ -69,9 +73,9 @@
     </h2>
     <p class="by">{view.author ?? "deleted user"}</p>
 
-    {#if view.pull_requests.length > 0}
-      <ul class="prs">
-        {#each view.pull_requests as entry (entry.number)}
+    {#snippet tree(entries: TreeEntry[], label: string)}
+      <ul aria-label={label}>
+        {#each entries as entry (entry.number)}
           <li>
             <span>
               <StateIcon icon={prIcon(entry)} />
@@ -92,6 +96,17 @@
           </li>
         {/each}
       </ul>
+    {/snippet}
+    {#if view.pull_requests.length > 0}
+      {@render tree(view.pull_requests, "PRs")}
+    {/if}
+    {#if view.merged_count > 0}
+      <button class="link fold" aria-expanded={issue.mergedShown} onclick={() => issue.toggleMerged()}>
+        {mergedWords(issue.mergedShown, view.merged_count)}
+      </button>
+      {#if issue.mergedShown}
+        {@render tree(view.merged, "Merged PRs")}
+      {/if}
     {/if}
 
     {#if view.content}
@@ -139,6 +154,11 @@
     list-style: none;
     margin: 12px 0;
     padding: 0;
+  }
+
+  .fold {
+    font-size: 12px;
+    opacity: 0.75;
   }
 
   li {

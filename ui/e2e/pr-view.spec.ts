@@ -71,7 +71,10 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
     },
     openIssue: done,
     fetchIssue: done,
-    issue: { status: "ok", data: { ...issue, author: "issue-author", content: null } },
+    issue: {
+      status: "ok",
+      data: { ...issue, merged: [], merged_count: 0, author: "issue-author", content: null },
+    },
     openPullRequest: done,
     fetchPullRequest: done,
     pullRequest: { status: "ok", data: view },
@@ -221,7 +224,10 @@ const threaded = async (page: Page, at: DiffThread["at"], words: string) => {
     },
     openIssue: done,
     fetchIssue: done,
-    issue: { status: "ok", data: { ...issue, author: "issue-author", content: null } },
+    issue: {
+      status: "ok",
+      data: { ...issue, merged: [], merged_count: 0, author: "issue-author", content: null },
+    },
     openPullRequest: done,
     fetchPullRequest: done,
     pullRequest: { status: "ok", data: reviewed },

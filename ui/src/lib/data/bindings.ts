@@ -748,6 +748,13 @@ export type IssueView = IssueView_Serialize | IssueView_Deserialize;
 
 /**  An Issue as the Detail pane shows it. */
 export type IssueView_Deserialize = {
+	/**
+	 *  The Origin PRs that merged with none of their Backports open, and the merged Backports listed on
+	 *  their own, which the view folds into one line (#588).
+	 */
+	merged: TreeEntry_Deserialize[],
+	/**  How many PRs `merged` holds, Backports included. */
+	merged_count: number,
 	/**  Nothing, for an Issue whose author's account has gone. */
 	author?: Login | null,
 	/**  Nothing, until Tsugiki has read this Issue from GitHub once. */
@@ -756,6 +763,13 @@ export type IssueView_Deserialize = {
 
 /**  An Issue as the Detail pane shows it. */
 export type IssueView_Serialize = {
+	/**
+	 *  The Origin PRs that merged with none of their Backports open, and the merged Backports listed on
+	 *  their own, which the view folds into one line (#588).
+	 */
+	merged: TreeEntry_Serialize[],
+	/**  How many PRs `merged` holds, Backports included. */
+	merged_count: number,
 	/**  Nothing, for an Issue whose author's account has gone. */
 	author: Login | null,
 	/**  Nothing, until Tsugiki has read this Issue from GitHub once. */

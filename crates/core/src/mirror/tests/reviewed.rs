@@ -417,6 +417,22 @@ fn a_mirror_found_broken_while_fetching_reviewed_commits_is_cloned_again_and_get
 }
 
 #[test]
+fn quitting_stops_a_fetch_of_reviewed_commits_under_way() {
+    let place = Place::new("reviewed-quit");
+    let cpython = named("python/cpython");
+    place.bare_mirror(&cpython);
+    let (mirrors, starts) = place.start_faked();
+
+    mirrors
+        .requests()
+        .keep_reviewed(cpython.clone(), vec![reviewed(1, &head(1).commit)]);
+    let fetch = starts.recv_timeout(PLENTY).unwrap();
+    mirrors.stop_cleanly(PLENTY);
+
+    assert_eq!(fetch.stopped.recv_timeout(PLENTY), Ok(()));
+}
+
+#[test]
 fn keeping_reviewed_commits_that_cant_start_waits_for_news() {
     let place = Place::new("reviewed-cant-start");
     let cpython = named("python/cpython");

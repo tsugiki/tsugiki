@@ -389,12 +389,10 @@ impl Store {
         repository: &RepositoryName,
     ) -> Result<Vec<ReviewedCommit>, Error> {
         let repository = repository.clone();
-        let read = self.call(move |connection| match read_last_login(connection)? {
-            Some(viewer) => {
-                pull_request_content::reviewed_commits(connection, &repository, &viewer)
-            }
-            None => Ok(Vec::new()),
-        })?;
+        let reviewed = move |connection: &mut Connection| {
+            pull_request_content::reviewed_commits(connection, &repository)
+        };
+        let read = self.call(reviewed)?;
         read.map_err(saying(CANT_READ))
     }
 

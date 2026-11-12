@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import { openLink, openOnGitHub, type GitHubItem } from "$lib/state/browser";
   import type { IssueViewState } from "$lib/state/issue-view.svelte";
   import type { TreeEntry } from "$lib/state/workbench.svelte";
@@ -13,6 +14,7 @@
     now,
     onopenpr,
     focusable = false,
+    header,
   }: {
     repository: string;
     issue: IssueViewState;
@@ -21,6 +23,8 @@
     /** Whether the pane takes the focus, as it does while the Issue list is hidden. Otherwise a click in it
      * leaves the focus where it was, so Enter still opens the row under the cursor. */
     focusable?: boolean;
+    /** What sits at the top of the pane, such as the history's arrows (#586). */
+    header?: Snippet;
   } = $props();
 
   let browserProblem = $state<string>();
@@ -52,6 +56,7 @@
     issue.scrollTop = e.currentTarget.scrollTop;
   }}
 >
+  {@render header?.()}
   {#if issue.error}
     <p role="alert">{`Tsugiki can't show this Issue: ${issue.error}`}</p>
   {/if}

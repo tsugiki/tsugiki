@@ -117,8 +117,9 @@
    */
   function open(stop: Stop, how: "open" | "back" | "through" = "open") {
     if (how !== "through") visits.visit(stop);
-    workbench.cursor = stop;
-    if (how !== "open") focusCursor();
+    workbench.moveTo(stop);
+    // The cursor's row may be under an Issue that has only now unfolded, and drawn once the page updates.
+    if (how !== "open") void tick().then(focusCursor);
     if (stop.kind === "pull_request" && detail instanceof PrViewState && sameStop(detail.line, stop)) {
       detail.switchTab();
       return;
@@ -204,7 +205,7 @@
   /** Moves the cursor to the row of what the Detail pane shows, if the list has that row. */
   function cursorToDetail() {
     const line = detailLine();
-    if (line && workbench.lists(line)) workbench.cursor = line;
+    if (line && workbench.lists(line)) workbench.moveTo(line);
   }
 
   /** "Reset Layout": both panes on show at their default widths. A list it brings back takes the cursor and
@@ -263,6 +264,20 @@
     focusCursor();
   }
 
+  /** → unfolds the Issue under the cursor. ← folds the Issue under the cursor, or the one over the PR under
+   * it, which moves the cursor to the Issue (#593). A PR outside any Issue has nothing to fold. */
+  function foldByKey(key: "arrowright" | "arrowleft") {
+    const line = workbench.underCursor;
+    const issue = line?.kind === "issue" ? line.number : line?.issue;
+    if (issue === undefined) return;
+    if (key === "arrowleft") {
+      workbench.fold(issue);
+      focusCursor();
+    } else if (line?.kind === "issue") {
+      workbench.unfold(issue);
+    }
+  }
+
   /** Focuses the row under the cursor, so it scrolls into view, and Enter presses its button. While the list
    * is hidden the Detail pane takes the focus, once it shows what it's about to. */
   function focusCursor() {
@@ -317,6 +332,14 @@
     } else if (key === "arrowdown" || key === "arrowup") {
       e.preventDefault();
       moveCursor(key === "arrowdown" ? 1 : -1);
+    } else if (
+      (key === "arrowright" || key === "arrowleft") &&
+      !e.defaultPrevented &&
+      !panes.hidden("list")
+    ) {
+      // A pane's edge takes the bare arrows while it has the focus, and cancels them.
+      e.preventDefault();
+      foldByKey(key);
     } else if (
       key === "enter" &&
       e.target === document.body &&
@@ -391,7 +414,19 @@
 {/snippet}
 
 {#snippet listed(item: ListedItem)}
+  {@const unfolded = item.kind === "issue" && workbench.unfolded(item.number)}
   <li>
+    {#if item.kind === "issue" && item.pull_requests.length > 0}
+      <button
+        class="fold"
+        aria-label={`PRs of #${String(item.number)}`}
+        aria-expanded={unfolded}
+        onclick={() => {
+          if (unfolded) workbench.fold(item.number);
+          else workbench.unfold(item.number);
+        }}>{unfolded ? "⌄" : "›"}</button
+      >
+    {/if}
     {@render line(
       { number: item.number, kind: item.kind === "issue" ? "issue" : "pull_request", issue: undefined },
       headline(item),
@@ -403,17 +438,19 @@
     {/if}
     {#if item.kind === "issue"}
       <small>{issueDetails(item, now)}</small>
-      <ul class="pull-requests">
-        {#each item.pull_requests as entry (entry.number)}
-          <li>
-            {@render pullRequest(entry, item.number)}
-            <small>{details(entry)}</small>
-            {#if entry.kind === "pr"}
-              {@render backports(entry.backports, item.number)}
-            {/if}
-          </li>
-        {/each}
-      </ul>
+      {#if unfolded}
+        <ul class="pull-requests">
+          {#each item.pull_requests as entry (entry.number)}
+            <li>
+              {@render pullRequest(entry, item.number)}
+              <small>{details(entry)}</small>
+              {#if entry.kind === "pr"}
+                {@render backports(entry.backports, item.number)}
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
     {:else}
       <small>{standaloneDetails(item, now)}</small>
       {#if item.kind === "standalone_pr"}
@@ -575,6 +612,20 @@
   .open {
     all: unset;
     cursor: pointer;
+  }
+
+  /* › and ⌄ before an Issue with PRs, which fold and unfold its tree as ← and → do. */
+  .fold {
+    all: unset;
+    display: inline-block;
+    width: 1em;
+    text-align: center;
+    cursor: pointer;
+  }
+
+  .fold:hover,
+  .fold:focus-visible {
+    background: color-mix(in srgb, currentColor 12%, transparent);
   }
 
   .open:hover,

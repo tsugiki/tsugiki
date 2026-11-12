@@ -19,10 +19,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     issues, items that Need attention come first, newest first by when they started to need it, then the rest
     by last update, then the quiet section. The preview says why in the words an **Alert** would use: "CI
     failed: Tests / Ubuntu", "Changes requested by some-reviewer", "Review requested from you". An Issue's
-    Origin PRs and their Backports are listed under it, and ↑ ↓ stop on each of them. `Enter` or a click opens
-    the item or PR under the cursor in the Detail pane. Any item can be **Archived** or **Muted**, and its
-    author **Muted**. A footer under the list gives the legend and the list's keys (↑ ↓, E, M, `Alt+←`, `?`
-    for all); it can be switched off.
+    Origin PRs and their Backports are listed under it, folded at first like a conversation in a mail
+    client: the Issue's row shows `›` and its preview, and ↑ ↓ go from Issue to Issue. → or a click on `›`
+    unfolds the Issue, and ↑ ↓ then stop on each of its PRs. ← folds it, and on a PR's row moves the cursor
+    to its Issue first. Opening a PR of a folded Issue some other way, such as with `Alt+←` or from the Issue
+    view, unfolds the Issue. Each view keeps which Issues are unfolded until the window closes. `Enter` or a
+    click opens the item or PR under the cursor in the Detail pane. Any item can be **Archived** or
+    **Muted**, and its author **Muted**. A footer under the list gives the legend and the list's keys (↑ ↓, ←
+    →, E, M, `Alt+←`, `?` for all); it can be switched off.
 
     `Ctrl+Alt+B`, or "Hide Issue List" in the command palette, hides the list with its footer and its edge,
     so the Detail pane gets its room. The same key, or "Show Issue List", brings it back at its width. In a

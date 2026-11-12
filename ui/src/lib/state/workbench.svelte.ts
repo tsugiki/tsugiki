@@ -19,6 +19,7 @@ import {
   type WorkReason,
   type Why,
 } from "$lib/data/bindings";
+import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import { hud } from "./hud.svelte";
 
 export type Attention = Attention_Serialize;
@@ -36,10 +37,12 @@ export type Stop = { number: number; kind: "issue" | "pull_request"; issue: numb
 /** Whether two stops are the same line. A PR that fixes two Issues has a line under each. */
 export const sameStop = (a: Stop | undefined, b: Stop) => a?.number === b.number && a.issue === b.issue;
 
-/** The lines of `item` the cursor stops on, in the order the list shows them. */
-function stopsOf(item: ListedItem): Stop[] {
+/** The lines of `item` the cursor stops on, in the order the list shows them. An Issue's tree shows only
+ * while `unfolded` says it does. */
+function stopsOf(item: ListedItem, unfolded: (issue: number) => boolean): Stop[] {
   if (item.kind === "issue") {
-    const rows = item.pull_requests.flatMap((entry) =>
+    const tree = unfolded(item.number) ? item.pull_requests : [];
+    const rows = tree.flatMap((entry) =>
       entry.kind === "pr" ? [entry.number, ...entry.backports.map((b) => b.number)] : [entry.number],
     );
     return [
@@ -61,6 +64,8 @@ export class WorkbenchState {
   error = $state<string>();
   /** The line the list's keys act on. A re-query leaves it in place (ADR 0008). */
   cursor = $state<Stop>();
+  /** The Issues unfolded in each view, by the view's key. */
+  #unfolded = new SvelteMap<string, SvelteSet<number>>();
   #repository: string;
   #lastQuestion = 0;
   #stopListening: (() => void) | undefined;
@@ -101,9 +106,35 @@ export class WorkbenchState {
     return this.#stops().find((stop) => sameStop(this.cursor, stop));
   }
 
-  /** Whether the list, or its quiet section, has the line `stop`. */
+  /** Whether the list, or its quiet section, has the line `stop`, folded away or not. */
   lists(stop: Stop): boolean {
-    return this.#stops().some((line) => sameStop(line, stop));
+    return this.#allStops().some((line) => sameStop(line, stop));
+  }
+
+  /** Whether the list shows Issue `issue`'s PRs under it in the view on show. Each Issue starts folded, and
+   * each view keeps its own for the session (#593). */
+  unfolded(issue: number): boolean {
+    return this.#unfolded.get(this.#viewKey())?.has(issue) ?? false;
+  }
+
+  /** Shows Issue `issue`'s PRs under it. */
+  unfold(issue: number) {
+    const key = this.#viewKey();
+    const open = this.#unfolded.get(key) ?? new SvelteSet<number>();
+    open.add(issue);
+    this.#unfolded.set(key, open);
+  }
+
+  /** Hides Issue `issue`'s PRs. A cursor on one of them moves to the Issue. */
+  fold(issue: number) {
+    this.#unfolded.get(this.#viewKey())?.delete(issue);
+    if (this.cursor?.issue === issue) this.cursor = { number: issue, kind: "issue", issue: undefined };
+  }
+
+  /** Puts the cursor on line `stop`, unfolding the Issue it's under so the cursor has a row to stand on. */
+  moveTo(stop: Stop) {
+    if (stop.issue !== undefined) this.unfold(stop.issue);
+    this.cursor = stop;
   }
 
   /** Moves the cursor down the list, or up it, stopping at each end. With none yet it starts at the top. */
@@ -119,16 +150,33 @@ export class WorkbenchState {
     this.#stopListening?.();
   }
 
-  /** Moves the cursor after a PR that a change put under an Issue, or took out from under one. */
+  /** Moves the cursor after a PR that a change put under an Issue, or took out from under one, and unfolds
+   * the Issue a PR under the cursor is under, as another view may have it folded. */
   #followCursor() {
     const cursor = this.cursor;
-    const stops = this.#stops();
-    if (cursor === undefined || stops.some((stop) => sameStop(cursor, stop))) return;
-    this.cursor = stops.find((stop) => stop.number === cursor.number) ?? cursor;
+    if (cursor === undefined) return;
+    const stops = this.#allStops();
+    const line =
+      stops.find((stop) => sameStop(cursor, stop)) ?? stops.find((stop) => stop.number === cursor.number);
+    if (line) this.moveTo(line);
   }
 
+  /** The key of the view on show, which keeps its own unfolded Issues. */
+  #viewKey() {
+    const selected = this.selected;
+    return selected.kind === "filter" ? `filter ${selected.query}` : selected.kind;
+  }
+
+  /** The lines the list shows, in its order. */
   #stops() {
-    return [...(this.items ?? []), ...this.quiet].flatMap(stopsOf);
+    return [...(this.items ?? []), ...this.quiet].flatMap((item) =>
+      stopsOf(item, (issue) => this.unfolded(issue)),
+    );
+  }
+
+  /** Each line the list has, the PRs of folded Issues too. */
+  #allStops() {
+    return [...(this.items ?? []), ...this.quiet].flatMap((item) => stopsOf(item, () => true));
   }
 
   async #ask() {

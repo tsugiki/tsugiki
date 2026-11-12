@@ -1350,6 +1350,28 @@ fn offline_holds_the_worker() {
 }
 
 #[test]
+fn the_window_hears_when_the_worker_holds_back_git_and_when_it_goes_on() {
+    let place = Place::new("held-told");
+    let (telling, told) = channel();
+    let announce = Announce {
+        held: Box::new(move |held| telling.send(held).unwrap_or(())),
+        ..Announce::cloning_only(Box::new(|_| {}))
+    };
+    let (mirrors, _starts) = place.start_faked_announcing(PLENTY, announce);
+    let requests = mirrors.requests();
+
+    requests.follow(&Status::Offline);
+    requests.follow(&Status::Offline);
+    requests.follow(&Status::Online {
+        login: Login::new("octocat"),
+    });
+    requests.follow(&Status::Connecting);
+    mirrors.stop_cleanly(PLENTY);
+
+    assert_eq!(told.try_iter().collect::<Vec<_>>(), [true, false]);
+}
+
+#[test]
 fn back_online_the_worker_fetches_the_heads_it_held_back() {
     let place = Place::new("back-online");
     let cpython = named("python/cpython");

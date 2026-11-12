@@ -5,6 +5,7 @@
     LastSync,
     MirrorProblem,
     NewVersion,
+    RepositoryMirror,
     Status,
     SyncActivity,
   } from "$lib/state/status.svelte";
@@ -13,6 +14,7 @@
     cloningWords,
     elsewhereWords,
     mirrorWords,
+    offlineCloneWords,
     pausedWords,
     questionWords,
     syncedWords,
@@ -30,6 +32,7 @@
     lastSync = null,
     syncActivity = null,
     cloning = null,
+    mirrorStates = [],
     mirrorProblem = null,
     mirrorQuestion = null,
     newVersion = null,
@@ -45,6 +48,8 @@
     lastSync?: LastSync | null;
     syncActivity?: SyncActivity | null;
     cloning?: Cloning | null;
+    /** The state of each Repository's mirror, which says when a clone waits for the network. */
+    mirrorStates?: RepositoryMirror[];
     mirrorProblem?: MirrorProblem | null;
     mirrorQuestion?: string | null;
     /** A version newer than the running one, whose release page a click opens. */
@@ -106,7 +111,8 @@
     syncActivity?.open?.repository === lastSync?.repository ? syncingWords(syncActivity) : null,
   );
   const elsewhere = $derived(elsewhereWords(syncActivity));
-  const clone = $derived(cloningWords(cloning));
+  // The core says a clone waits for the network only while none is under way.
+  const clone = $derived(cloningWords(cloning) ?? offlineCloneWords(mirrorStates));
   const syncWords = $derived(
     [syncing ?? syncedWords(lastSync?.at ?? null, now), clone, elsewhere]
       .filter((words) => words !== null)

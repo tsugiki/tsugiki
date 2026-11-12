@@ -1,6 +1,6 @@
 // The status bar's words for when the open Repository last synced, for a sync under way, for the other
 // Repositories syncing, and for a mirror's clone and what keeps one from starting.
-import type { Cloning, MirrorProblem, SyncActivity } from "$lib/state/status.svelte";
+import type { Cloning, MirrorProblem, RepositoryMirror, SyncActivity } from "$lib/state/status.svelte";
 
 type OpenSync = NonNullable<SyncActivity["open"]>;
 
@@ -67,6 +67,16 @@ export function cloningWords(cloning: Cloning | null): string | null {
   const { repository, progress } = cloning;
   if (progress.stage === "starting") return `Cloning ${repository}`;
   return `${cloneStage(progress)} ${repository} ${String(progress.percent)}%`;
+}
+
+/** The words for the clones that wait for the network, as GitHub can't be reached (#390), or nothing if
+ * none waits. */
+export function offlineCloneWords(mirrors: RepositoryMirror[]): string | null {
+  const offline = mirrors.filter((mirror) => mirror.state.state === "offline");
+  const [first] = offline;
+  if (first === undefined) return null;
+  if (offline.length === 1) return `Cloning ${first.repository} starts once GitHub answers`;
+  return `${String(offline.length)} clones start once GitHub answers`;
 }
 
 const MB_IN_GB = 1024;

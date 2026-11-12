@@ -21,6 +21,8 @@ const core = vi.hoisted(() => ({
   pullRequestLines: vi.fn<(lines: { file: number; start: number; end: number }) => Promise<unknown>>(),
   pullRequestFind: vi.fn(),
   cloning: vi.fn(),
+  mirrorStates: vi.fn(),
+  mirrorsHeld: vi.fn(),
   listen: vi.fn(),
 }));
 
@@ -32,6 +34,8 @@ vi.mock("$lib/data/bindings", () => ({
     pullRequestLines: core.pullRequestLines,
     pullRequestFind: core.pullRequestFind,
     cloning: core.cloning,
+    mirrorStates: core.mirrorStates,
+    mirrorsHeld: core.mirrorsHeld,
   },
   events: {
     headsFetched: { listen: core.listen },
@@ -40,6 +44,7 @@ vi.mock("$lib/data/bindings", () => ({
     readFailed: { listen: core.listen },
     cloningChanged: { listen: core.listen },
     mirrorStatesChanged: { listen: core.listen },
+    mirrorsHeldChanged: { listen: core.listen },
   },
 }));
 
@@ -132,6 +137,8 @@ beforeEach(() => {
   );
   core.listen.mockResolvedValue(vi.fn());
   core.cloning.mockResolvedValue(null);
+  core.mirrorStates.mockResolvedValue([]);
+  core.mirrorsHeld.mockResolvedValue(false);
   core.pullRequestRows.mockResolvedValue(ok(rows));
   core.pullRequestSpans.mockReturnValue(new Promise(() => {}));
 });
@@ -225,6 +232,55 @@ describe("the question of where the mirror gets its objects", () => {
 it("waits for the PR's commits", async () => {
   await shown({ state: "fetching" });
   expect(screen.getByText("Fetching the PR's commits…")).toBeTruthy();
+});
+
+it("says the PR's commits wait for the network while the mirror holds back git, over a failed fetch", async () => {
+  core.mirrorsHeld.mockResolvedValue(true);
+  const files = await shown({ state: "fetching" });
+  expect(screen.getByRole("status").textContent).toBe("The PR's commits come once GitHub answers.");
+
+  files.unfetched = { kind: "git", words: "fatal: unable to access" };
+  await tick();
+  expect(screen.getByRole("status").textContent).toBe("The PR's commits come once GitHub answers.");
+  expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+});
+
+it("says why the PR's commits didn't come while the mirror holds back git, when the network doesn't explain it", async () => {
+  core.mirrorsHeld.mockResolvedValue(true);
+  const files = await shown(ready(rows.length, { waiting: 2 }));
+  files.unfetched = { kind: "not_on_github" };
+  await tick();
+
+  expect(screen.getByRole("alert").textContent).toBe(
+    "Showing abc · GitHub has no copy of this PR's branch. 2 threads wait for it. Try again",
+  );
+});
+
+it("says the newer head waits for the network over the diff before, with its threads counted", async () => {
+  core.mirrorsHeld.mockResolvedValue(true);
+  const files = await shown(ready(rows.length, { waiting: 2 }));
+  files.unfetched = { kind: "git", words: "" };
+  await tick();
+
+  expect(screen.getByRole("status").textContent).toBe(
+    "Showing abc · the newer def5678 comes once GitHub answers. 2 threads wait for it.",
+  );
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("counts no threads beside a newer head that waits for the network when none wait", async () => {
+  core.mirrorsHeld.mockResolvedValue(true);
+  await shown(ready(rows.length, { waiting: 0 }));
+
+  expect(screen.getByRole("status").textContent).toBe(
+    "Showing abc · the newer def5678 comes once GitHub answers. ",
+  );
+});
+
+it("says the mirror's clone waits for the network", async () => {
+  core.mirrorStates.mockResolvedValue([{ repository: "python/cpython", state: { state: "offline" } }]);
+  await shown({ state: "cloning" });
+  expect(screen.getByText("Cloning python/cpython starts once GitHub answers.")).toBeTruthy();
 });
 
 it("shows nothing for a PR Tsugiki doesn't hold", async () => {

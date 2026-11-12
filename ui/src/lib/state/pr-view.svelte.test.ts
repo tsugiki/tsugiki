@@ -9,6 +9,8 @@ vi.mock("$lib/data/bindings", () => ({
     fetchPullRequest: vi.fn(),
     pullRequestFiles: vi.fn(),
     cloning: vi.fn(),
+    mirrorStates: vi.fn(async () => []),
+    mirrorsHeld: vi.fn(async () => false),
   },
   events: {
     changed: { listen: vi.fn(async () => () => {}) },
@@ -17,6 +19,7 @@ vi.mock("$lib/data/bindings", () => ({
     headsFetchFailed: { listen: vi.fn(async () => () => {}) },
     cloningChanged: { listen: vi.fn(async () => () => {}) },
     mirrorStatesChanged: { listen: vi.fn(async () => () => {}) },
+    mirrorsHeldChanged: { listen: vi.fn(async () => () => {}) },
   },
 }));
 

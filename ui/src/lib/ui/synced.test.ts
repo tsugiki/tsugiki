@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { cloningWords, elsewhereWords, mirrorWords, questionWords, syncedWords } from "./synced";
+import {
+  cloningWords,
+  elsewhereWords,
+  mirrorWords,
+  offlineCloneWords,
+  questionWords,
+  syncedWords,
+} from "./synced";
 
 const now = new Date("2026-11-05T12:00:00Z");
 
@@ -94,5 +101,23 @@ describe("cloningWords", () => {
     [{ stage: "resolving", percent: 80 }, "Indexing python/cpython 80%"],
   ] as const)("says the stage of %o and how far it has got", (progress, words) => {
     expect(cloningWords({ repository, progress })).toBe(words);
+  });
+});
+
+describe("offlineCloneWords", () => {
+  const offline = (repository: string) => ({ repository, state: { state: "offline" } }) as const;
+
+  it("says nothing while no clone waits for the network", () => {
+    expect(offlineCloneWords([])).toBeNull();
+    expect(offlineCloneWords([{ repository: "python/cpython", state: { state: "ready" } }])).toBeNull();
+  });
+
+  it("names the one clone that waits for the network, and counts several", () => {
+    expect(offlineCloneWords([offline("python/cpython")])).toBe(
+      "Cloning python/cpython starts once GitHub answers",
+    );
+    expect(offlineCloneWords([offline("python/cpython"), offline("python/peps")])).toBe(
+      "2 clones start once GitHub answers",
+    );
   });
 });

@@ -53,12 +53,20 @@
 </nav>
 
 <style>
+  /* A step off the content, with a border, as VS Code draws its side bar (#374). */
   nav {
     display: flex;
     flex: none;
     flex-direction: column;
+    align-self: stretch;
     gap: 2px;
+    /* The edge measures the whole box, padding and border too, and gives that width back. */
+    box-sizing: border-box;
     width: var(--sidebar-width, 200px);
+    padding: 6px;
+    border-right: 1px solid var(--border);
+    color: var(--fg-chrome);
+    background: var(--bg-chrome);
   }
 
   button {

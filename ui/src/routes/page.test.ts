@@ -30,6 +30,13 @@ vi.mock("$lib/data/bindings", () => ({
     cloning: async () => null,
     newVersion: async () => null,
     refresh: async () => null,
+    themes: async () => ({
+      status: "ok",
+      data: {
+        light: { name: "Light", kind: "light", tokens: [{ property: "--bg", value: "#ffffff" }] },
+        dark: { name: "Dark", kind: "dark", tokens: [{ property: "--bg", value: "#1f1f1f" }] },
+      },
+    }),
     ...core,
   },
   events: {
@@ -52,6 +59,9 @@ vi.mock("$lib/data/bindings", () => ({
     readFailed: { listen: async () => () => {} },
   },
 }));
+
+// jsdom has no `matchMedia`: the system stays on its dark side.
+vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener: () => {} }));
 
 const onboarding = { screen: "onboarding", token: "gh" } as const;
 const gcmon = { name: "some-maintainer/gcmon", conventions: "github", filters: [] } as const;
@@ -106,6 +116,14 @@ it("says when the Repository last synced, and a click asks again", async () => {
   render(Page);
   await fireEvent.click(await screen.findByRole("button", { name: "Not synced yet" }));
   expect(await screen.findByRole("button", { name: "Not synced yet" })).toBeTruthy();
+});
+
+it("colours the window from the theme of the side the system is on", async () => {
+  render(Page);
+  await vi.waitFor(() => {
+    expect(document.documentElement.style.getPropertyValue("--bg")).toBe("#1f1f1f");
+  });
+  expect(document.documentElement.style.colorScheme).toBe("dark");
 });
 
 it("says why no mirror can be made, and a click asks the core to look again", async () => {

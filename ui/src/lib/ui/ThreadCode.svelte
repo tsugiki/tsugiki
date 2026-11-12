@@ -63,14 +63,14 @@
   }
 
   .hunk {
-    background: color-mix(in srgb, #0969da 10%, transparent);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
   }
 
   .added {
-    background: color-mix(in srgb, #2da44e 18%, transparent);
+    background: color-mix(in srgb, var(--add) 18%, transparent);
   }
 
   .removed {
-    background: color-mix(in srgb, #cf222e 18%, transparent);
+    background: color-mix(in srgb, var(--del) 18%, transparent);
   }
 </style>

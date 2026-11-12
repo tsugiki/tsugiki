@@ -13,18 +13,19 @@ file's length ([ADR 0001](adr/0001-standalone-tauri-gui-with-in-app-review.md)).
 A highlights query names nodes with captures such as `@keyword` or `@function.builtin`. `Paint::shared` in
 `crates/core/src/highlight.rs` maps each capture to one of a few highlights, by the longest leading part of
 its name that has a rule: `@function.builtin` paints as `@function` does. It leaves the rest, such as
-`@variable` and `@punctuation`, plain. `DiffRows.svelte` holds the colors.
+`@variable` and `@punctuation`, plain. `DiffRows.svelte` paints each highlight with a token of the **Theme**
+in force, from its `[syntax]` table ([devel/themes.md](devel/themes.md)).
 
-| Highlight | Light | Dark | Captures, among others |
-|---|---|---|---|
-| keyword | `#cf222e` | `#ff7b72` | `@keyword`, `@operator` |
-| string | `#0a3069` | `#a5d6ff` | `@string`, `@markup.link` |
-| comment | `#59636e` | `#9198a1` | `@comment` |
-| constant | `#0550ae` | `#79c0ff` | `@constant`, `@number`, `@string.escape`, `@markup.raw` |
-| function, type | `#6639ba` | `#d2a8ff` | `@function`, `@attribute`, `@type`, `@constructor` |
-| tag | `#116329` | `#7ee787` | `@tag` |
-| heading | as constant, bold | as constant, bold | `@markup.heading`, `@text.title` |
-| strong, emphasis | bold, italic | bold, italic | `@markup.bold`, `@markup.italic` |
+| Highlight | Painted with | Captures, among others |
+|---|---|---|
+| keyword | `keyword` | `@keyword`, `@operator` |
+| string | `string` | `@string`, `@markup.link` |
+| comment | `comment` | `@comment` |
+| constant | `constant` | `@constant`, `@number`, `@string.escape`, `@markup.raw` |
+| function, type | `entity` | `@function`, `@attribute`, `@type`, `@constructor` |
+| tag | `tag` | `@tag` |
+| heading | `constant`, bold | `@markup.heading`, `@text.title` |
+| strong, emphasis | bold, italic | `@markup.bold`, `@markup.italic` |
 
 Of two patterns that capture one node, the later in the query wins, as in Helix and Neovim, even when its
 capture paints nothing: Helix's C query leaves a call's arguments plain after it paints constants. A node

@@ -3,10 +3,14 @@
 // `just ship --check` ends a PR's work: it runs `just check` first, which writes to .temp/check.log, and
 // prints only its outcome and, on a failure, the failed recipe and the log's tail, so an agent reads a few
 // lines of a long run. Plain `just ship` pushes a fix for a gate you reran yourself.
+// `just ship --release` is the only way it pushes a `release/` branch, since that push rehearses the release
+// on CI: ask the user first. It refuses unless the branch names Cargo.toml's version and `just release-check`
+// passes. `just ship --release --check` opens the release PR, and `just ship --release` pushes a fix to it.
 import { execFileSync, spawnSync } from "node:child_process";
 import { closeSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 
 import { branchRefusal, failureSummary, shipArgs } from "./pr.ts";
+import { shipRefusal } from "./releasing.ts";
 
 const LOG = ".temp/check.log";
 
@@ -33,15 +37,19 @@ function attempt(command: string, ...args: string[]): string | undefined {
 }
 
 const args = shipArgs(process.argv.slice(2));
-if (args === undefined) stop("Usage: `just ship [--check] [body.md]`.");
-const { check, bodyFile } = args;
+if (args === undefined) stop("Usage: `just ship [--check] [--release] [body.md]`.");
+const { check, release, bodyFile } = args;
 
 const branch = run("git can't name the current branch.", "git", "branch", "--show-current");
-const refusal = branchRefusal(branch);
+const refusal = branchRefusal(branch, release);
 if (refusal !== undefined) stop(refusal);
 // Untracked files count too: the tests saw them, and the push would leave them out.
 if (run("git status failed.", "git", "status", "--porcelain") !== "") {
   stop("Commit, delete or ignore every change first: the PR should hold what you tested.");
+}
+if (release) {
+  const why = shipRefusal(branch, readFileSync("Cargo.toml", "utf8"), readFileSync("CHANGELOG.md", "utf8"));
+  if (why !== undefined) stop(why);
 }
 mkdirSync(".temp", { recursive: true });
 

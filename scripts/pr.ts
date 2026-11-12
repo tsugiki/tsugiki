@@ -4,25 +4,33 @@
 /** The options `just ship` was given. */
 export interface ShipArgs {
   check: boolean;
+  release: boolean;
   bodyFile: string | undefined;
 }
 
-/** `just ship [--check] [body.md]`, or `undefined` for anything else, such as a mistyped flag. */
+/** `just ship [--check] [--release] [body.md]`, or `undefined` for anything else, such as a mistyped flag. */
 export function shipArgs(args: string[]): ShipArgs | undefined {
-  const [bodyFile, ...extra] = args.filter((arg) => arg !== "--check");
+  const [bodyFile, ...extra] = args.filter((arg) => arg !== "--check" && arg !== "--release");
   if (bodyFile?.startsWith("-") || extra.length > 0) {
     return undefined;
   }
-  return { check: args.includes("--check"), bodyFile };
+  return { check: args.includes("--check"), release: args.includes("--release"), bodyFile };
 }
 
 /** The reason `just ship` won't push from `branch`, or `undefined` when it may. */
-export function branchRefusal(branch: string): string | undefined {
+export function branchRefusal(branch: string, release: boolean): string | undefined {
   if (branch === "" || branch === "main") {
     return "Ship from the PR's branch, not main.";
   }
-  if (branch.startsWith("release/")) {
-    return "A push to a release/ branch rehearses the release on CI: ask the user, then push by hand.";
+  const isRelease = branch.startsWith("release/");
+  if (isRelease && !release) {
+    return (
+      "A push to a release/ branch rehearses the release on CI, smoke test included: ask the user, then " +
+      "run `just ship --release`."
+    );
+  }
+  if (!isRelease && release) {
+    return `\`--release\` ships only a release/ branch, and this is ${branch}.`;
   }
   return undefined;
 }

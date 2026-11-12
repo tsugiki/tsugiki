@@ -6,20 +6,38 @@ and `.github/workflows/release.yml` holds the details.
 
 ## 1. Prepare the version
 
-In a PR to main from a `release/X.Y` branch, such as `release/0.1`:
+The version goes to main in a PR from a `release/X.Y.Z` branch, such as `release/0.2.4`. On a clean main
+that matches GitHub's, `just prepare-release X.Y.Z` does the mechanical part and commits nothing:
 
-1. Set `version` in `[workspace.package]` in `Cargo.toml`, and run `cargo check` so `Cargo.lock` follows. The
-   release builds use `--locked`, and they fail if it doesn't.
-2. Rename `## WIP` in `CHANGELOG.md` to `## Version X.Y.Z (YYYY-MM-DD)`, with today's date, and start a new
-   `## WIP` above it. ADR 0012 says what the section needs.
+1. It makes the branch `release/X.Y.Z`.
+2. It sets `version` in `[workspace.package]` in `Cargo.toml`, and runs `cargo check` so `Cargo.lock`
+   follows. The release builds use `--locked`, and they fail if it doesn't.
+3. It renames `## WIP` in `CHANGELOG.md` to `## Version X.Y.Z (YYYY-MM-DD)`, with today's date, and starts a
+   new empty `## WIP` above it.
 
-`just release-check` prints the notes the release will carry. CI's `release-check` job fails the PR if
-`CHANGELOG.md` has no section for that version, and the `deny` job fails it if `Cargo.lock` didn't follow.
-Each push to the PR also rehearses the release (see [Rehearsing](#rehearsing)).
+Then edit the notes under the new heading by hand: ADR 0012 says what the section needs, and
+`just release-check` prints the notes the release will carry. Commit, and run `just ship --release --check`,
+which pushes the branch and opens the PR after `just check` passes. It stops before the push unless the
+branch names `Cargo.toml`'s version and `just release-check` passes. Each push rehearses the release on CI
+(see [Rehearsing](#rehearsing)), so an agent asks the user first. Plain `just ship` refuses a `release/`
+branch, and `just ship --release` pushes a fix for a gate you reran yourself.
+
+CI's `release-check` job fails the PR if `CHANGELOG.md` has no section for that version, and the `deny` job
+fails it if `Cargo.lock` didn't follow.
+
+If `just prepare-release` stops halfway, finish by hand: `git switch -c release/X.Y.Z`, edit the two files as
+above, and run `cargo check`. If `just ship --release` can't push or open the PR,
+`git push -u origin release/X.Y.Z` and `gh pr create --base main` do it.
 
 ## 2. Tag it
 
-Once the PR has merged:
+Once the PR has merged, run `just release` on main; an agent asks the user first, since the tag starts the
+workflow. It fetches, then refuses unless the tree is clean and main matches `origin/main`. It takes the
+version from `Cargo.toml`, so the tag can't disagree with the downloads, and refuses when `vX.Y.Z` exists in
+this clone or on GitHub, or when `just release-check` fails. Then it tags HEAD, pushes the tag and prints
+the link to the release run.
+
+By hand, it does this:
 
 ```
 git switch main

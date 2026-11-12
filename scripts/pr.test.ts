@@ -4,10 +4,12 @@ import { branchRefusal, byVersion, failureSummary, shipArgs } from "./pr.ts";
 
 describe("shipArgs", () => {
   it.each([
-    [[], { check: false, bodyFile: undefined }],
-    [["--check"], { check: true, bodyFile: undefined }],
-    [["body.md"], { check: false, bodyFile: "body.md" }],
-    [["body.md", "--check"], { check: true, bodyFile: "body.md" }],
+    [[], { check: false, release: false, bodyFile: undefined }],
+    [["--check"], { check: true, release: false, bodyFile: undefined }],
+    [["body.md"], { check: false, release: false, bodyFile: "body.md" }],
+    [["body.md", "--check"], { check: true, release: false, bodyFile: "body.md" }],
+    [["--release"], { check: false, release: true, bodyFile: undefined }],
+    [["--release", "--check", "body.md"], { check: true, release: true, bodyFile: "body.md" }],
   ])("reads %j", (args, expected) => {
     expect(shipArgs(args)).toEqual(expected);
   });
@@ -19,15 +21,18 @@ describe("shipArgs", () => {
 
 describe("branchRefusal", () => {
   it.each([
-    ["", "not main"],
-    ["main", "not main"],
-    ["release/0.2", "ask the user"],
-  ])("refuses %j", (branch, words) => {
-    expect(branchRefusal(branch)).toContain(words);
+    ["", false, "not main"],
+    ["main", false, "not main"],
+    ["main", true, "not main"],
+    ["release/0.2.4", false, "--release"],
+    ["fewer-steps-per-pr", true, "only a release/ branch"],
+  ])("refuses %j with release %j", (branch, release, words) => {
+    expect(branchRefusal(branch, release)).toContain(words);
   });
 
-  it("lets a PR's branch push", () => {
-    expect(branchRefusal("fewer-steps-per-pr")).toBeUndefined();
+  it("lets a PR's branch push, and a release branch with --release", () => {
+    expect(branchRefusal("fewer-steps-per-pr", false)).toBeUndefined();
+    expect(branchRefusal("release/0.2.4", true)).toBeUndefined();
   });
 });
 

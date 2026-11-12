@@ -132,16 +132,28 @@ export function details(row: WorkbenchRow & { backport?: BackportKind }): string
   return parts.join(" · ");
 }
 
-/** A PR's line in the Issue view: its state, CI and where the user stands on it. */
-export function prStateWords(row: WorkbenchRow): string {
-  const parts = [
-    STATES[row.state],
-    ...(row.is_draft ? ["Draft"] : []),
-    ...(row.ci ? [CI[row.ci]] : []),
-    ...(row.reasons.includes("review_request") ? [REASONS.review_request] : []),
-    ...(row.your_review ? [YOUR_REVIEW[row.your_review]] : []),
+/** How a word of a PR's state stands out: a Review request, CI that failed or passed, or not at all. */
+export type WordTone = "request" | "bad" | "good" | "plain";
+
+const CI_TONES: Record<CiState, WordTone> = {
+  EXPECTED: "plain",
+  ERROR: "bad",
+  FAILURE: "bad",
+  PENDING: "plain",
+  SUCCESS: "good",
+};
+
+/** A PR's state words in the Issue view and the PR view: its state, CI and where the user stands on it. */
+export function prStateWords(row: WorkbenchRow): { words: string; tone: WordTone }[] {
+  return [
+    { words: STATES[row.state], tone: "plain" as const },
+    ...(row.is_draft ? [{ words: "Draft", tone: "plain" as const }] : []),
+    ...(row.ci ? [{ words: CI[row.ci], tone: CI_TONES[row.ci] }] : []),
+    ...(row.reasons.includes("review_request")
+      ? [{ words: REASONS.review_request, tone: "request" as const }]
+      : []),
+    ...(row.your_review ? [{ words: YOUR_REVIEW[row.your_review], tone: "plain" as const }] : []),
   ];
-  return parts.join(" · ");
 }
 
 /** A Backport in the line its Origin PR folds them into: its branch and state. */

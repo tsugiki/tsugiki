@@ -6,7 +6,8 @@
   import Conversation from "./Conversation.svelte";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
   import StateIcon from "./StateIcon.svelte";
-  import { ago, backportWords, commentCount, headline, openOfAll, prStateWords } from "./workbench-row";
+  import StateWords from "./StateWords.svelte";
+  import { ago, backportWords, commentCount, headline, openOfAll } from "./workbench-row";
 
   let {
     repository,
@@ -52,9 +53,9 @@
   const opened = (view: IssueView) => {
     const who = view.author ?? "deleted user";
     const at = view.content?.opened_at;
-    if (!at) return { words: who, title: undefined };
+    if (!at) return { who, words: "", title: undefined };
     const title = new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
-    return { words: `${who} opened this ${ago(at, now)}`, title };
+    return { who, words: ` opened this ${ago(at, now)}`, title };
   };
 
   /** The rest of the author line: how many comments, once Tsugiki has read them, and whom it is assigned
@@ -96,79 +97,90 @@
   {:else if issue.view}
     {@const view = issue.view}
     {@const icon = issueIcon(view.state)}
-    <h2>
-      {#if icon}
-        <StateIcon {icon} />
-      {/if}
-      <button class="link" onclick={() => void onGitHub({ kind: "issue", number: view.number })}>
-        {headline(view)}
-      </button>
-    </h2>
     {@const by = opened(view)}
-    <p class="by"><span title={by.title}>{by.words}</span>{restOfLine(view)}</p>
-
-    {#snippet tree(entries: TreeEntry[], label: string)}
-      <ul aria-label={label}>
-        {#each entries as entry (entry.number)}
-          <li>
-            <span>
-              <StateIcon icon={prIcon(entry)} />
-              <code>{entry.target_branch}</code>
-              <button
-                class={["link", { attention: view.needs_attention.includes(entry.number) }]}
-                onclick={openPr(entry.number)}>{headline(entry)}</button
-              >
-              <small>{entry.author ?? "deleted user"}</small>
-            </span>
-            <small>{prStateWords(entry)}</small>
-            {#if entry.kind === "pr" && entry.backports.length > 0}
-              <small class="backports">
-                Backports:
-                {#each entry.backports as backport (backport.number)}
-                  <span>
-                    <StateIcon icon={prIcon(backport)} />
-                    <button
-                      class={["link", { attention: view.needs_attention.includes(backport.number) }]}
-                      onclick={openPr(backport.number)}>{backportWords(backport)}</button
-                    >
-                  </span>
-                {/each}
-              </small>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    {/snippet}
-    {#if view.pull_requests.length > 0 || view.merged_count > 0}
-      <!-- The count takes in the merged PRs folded away too. -->
-      <h3>Origin PRs <small>{openOfAll([...view.pull_requests, ...view.merged])}</small></h3>
-      {#if view.pull_requests.length > 0}
-        {@render tree(view.pull_requests, "PRs")}
-      {/if}
-      {#if view.merged_count > 0}
-        <button class="link fold" aria-expanded={issue.mergedShown} onclick={() => issue.toggleMerged()}>
-          {mergedWords(issue.mergedShown, view.merged_count)}
-        </button>
-        {#if issue.mergedShown}
-          {@render tree(view.merged, "Merged PRs")}
+    <div class="page">
+      <p class="crumb">{icon?.label ?? "Issue"}</p>
+      <h2>
+        {#if icon}
+          <StateIcon {icon} />
         {/if}
-      {/if}
-      <p class="legend">
-        <!-- The words name each icon, so a screen reader skips the icons' own names. -->
-        {#each LEGEND as [words, icon] (words)}
-          <span><span aria-hidden="true"><StateIcon {icon} /></span><small>{words}</small></span>
-        {/each}
-        <small><b>Bold</b>: Needs attention</small>
-      </p>
-    {/if}
+        <button class="link" onclick={() => void onGitHub({ kind: "issue", number: view.number })}>
+          {headline(view)}
+        </button>
+      </h2>
+      <p class="by"><span title={by.title}><b>{by.who}</b>{by.words}</span>{restOfLine(view)}</p>
 
-    {#if view.content}
-      <Conversation content={view.content} {now} onlink={(address) => void followLink(address)} />
-    {:else}
-      <p class="by">Tsugiki hasn't read what this Issue says yet.</p>
-    {/if}
+      {#snippet tree(entries: TreeEntry[], name: string)}
+        <ul aria-label={name}>
+          {#each entries as entry (entry.number)}
+            <li>
+              <span class="pr">
+                <StateIcon icon={prIcon(entry)} />
+                <code class="branch" title={entry.target_branch}>{entry.target_branch}</code>
+                <button
+                  class={["link", "title", { attention: view.needs_attention.includes(entry.number) }]}
+                  onclick={openPr(entry.number)}>{@render numbered(entry)}</button
+                >
+                <small class="who">{entry.author ?? "deleted user"}</small>
+                <StateWords row={entry} />
+              </span>
+              {#if entry.kind === "pr" && entry.backports.length > 0}
+                <small class="backports">
+                  Backports:
+                  {#each entry.backports as backport (backport.number)}
+                    <span>
+                      <StateIcon icon={prIcon(backport)} />
+                      <button
+                        class={["link", { attention: view.needs_attention.includes(backport.number) }]}
+                        onclick={openPr(backport.number)}>{backportWords(backport)}</button
+                      >
+                    </span>
+                  {/each}
+                </small>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/snippet}
+      {#if view.pull_requests.length > 0 || view.merged_count > 0}
+        <!-- The count takes in the merged PRs folded away too. -->
+        <h3>Origin PRs <small>{openOfAll([...view.pull_requests, ...view.merged])}</small></h3>
+        <div class="prs">
+          {#if view.pull_requests.length > 0}
+            {@render tree(view.pull_requests, "PRs")}
+          {/if}
+          {#if view.merged_count > 0}
+            <button class="link fold" aria-expanded={issue.mergedShown} onclick={() => issue.toggleMerged()}>
+              {mergedWords(issue.mergedShown, view.merged_count)}
+            </button>
+            {#if issue.mergedShown}
+              {@render tree(view.merged, "Merged PRs")}
+            {/if}
+          {/if}
+        </div>
+        <p class="legend">
+          <!-- The words name each icon, so a screen reader skips the icons' own names. -->
+          {#each LEGEND as [words, icon] (words)}
+            <span><span aria-hidden="true"><StateIcon {icon} /></span><small>{words}</small></span>
+          {/each}
+          <small><b>Bold</b>: Needs attention</small>
+        </p>
+      {/if}
+
+      {#if view.content}
+        <Conversation content={view.content} {now} onlink={(address) => void followLink(address)} />
+      {:else}
+        <p class="by">Tsugiki hasn't read what this Issue says yet.</p>
+      {/if}
+    </div>
   {/if}
 </section>
+
+<!-- A PR's number in the code font, then its title: one expression each, as Svelte compiles `{a} {b}` with
+     branches no test can reach. -->
+{#snippet numbered(row: { number: number; title: string })}<code class="number"
+    >{`#${String(row.number)}`}</code
+  >{` ${row.title}`}{/snippet}
 
 <style>
   /* Stays on screen beside a long list, and scrolls by itself, clear of the status bar. */
@@ -182,25 +194,37 @@
     overflow-y: auto;
   }
 
-  h2 {
-    font-size: 16px;
-    margin: 0;
+  /* Lines stay short enough to read in a wide window. */
+  .page {
+    max-width: 900px;
+    padding: 10px 16px 24px;
   }
 
-  .by {
+  .crumb {
+    margin: 0;
     font-size: 12px;
-    margin: 4px 0;
     color: var(--fg-muted);
   }
 
-  /* As an item that Needs attention stands out in the Issue list. */
-  .attention {
+  h2 {
+    margin: 4px 0 2px;
+    font-size: 18px;
+  }
+
+  .by {
+    margin: 0 0 8px;
+    font-size: 13px;
+    color: var(--fg-muted);
+  }
+
+  .by b {
     font-weight: 600;
+    color: var(--fg);
   }
 
   h3 {
+    margin: 18px 0 6px;
     font-size: 13px;
-    margin: 12px 0 0;
   }
 
   /* The icons in the legend keep the colors of those in the tree, and only its words fade. */
@@ -215,7 +239,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
-    margin: 0 0 12px;
+    margin: 6px 0 0;
   }
 
   .legend span {
@@ -224,21 +248,100 @@
     align-items: center;
   }
 
+  /* The tree: a box with a line between its rows. */
+  .prs {
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+
   ul {
     list-style: none;
-    margin: 12px 0;
+    margin: 0;
     padding: 0;
   }
 
-  .fold {
+  li + li,
+  .prs > * + * {
+    border-top: 1px solid var(--border);
+  }
+
+  .pr {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 4px 10px;
+    font-size: 13px;
+  }
+
+  .pr:hover {
+    background: color-mix(in srgb, currentColor 8%, transparent);
+  }
+
+  .branch {
+    flex: none;
+    width: 32px;
+    overflow: hidden;
+    font-size: 11px;
+    color: var(--fg-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* The title takes the room the row has left, and an ellipsis cuts it. A PR that doesn't Need attention
+     steps back, and one that does stands out, as in the Issue list. */
+  .title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fg-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .title.attention {
+    font-weight: 600;
+    color: var(--fg);
+  }
+
+  .number {
+    font-size: 12px;
+    color: var(--accent);
+  }
+
+  .who {
+    flex: none;
     font-size: 12px;
     color: var(--fg-muted);
   }
 
-  li {
+  /* An Origin PR's Backports, on one line under it, indented on the panel colour. */
+  .backports {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 4px 0;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    padding: 2px 10px 4px 34px;
+    font-size: 12px;
+    color: var(--fg-muted);
+    background: var(--bg-chrome);
+  }
+
+  .backports span {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+  }
+
+  .backports .attention {
+    font-weight: 600;
+    color: var(--fg);
+  }
+
+  .fold {
+    display: block;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: var(--accent);
   }
 </style>

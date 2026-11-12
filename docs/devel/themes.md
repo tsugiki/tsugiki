@@ -49,7 +49,7 @@ A core test fails when this table and the built-in Themes disagree.
 | `fg` | Text | `#3b3b3b` | `#cccccc` |
 | `fg_muted` | Quieter text: notes, the HUD's headings | `#767676` | `#9d9d9d` |
 | `border` | Borders between panes, around dialogs and inside them | `#e5e5e5` | `#2b2b2b` |
-| `bg_chrome` | The Sidebar's and the status bar's background | `#f8f8f8` | `#181818` |
+| `bg_chrome` | The Sidebar's and the status bar's background, a comment's header, code in a description and Backports in the Issue view's tree | `#f8f8f8` | `#181818` |
 | `fg_chrome` | The Sidebar's and the status bar's text | `#3b3b3b` | `#cccccc` |
 | `bg_overlay` | Dialogs, the palette and the performance HUD | `#f8f8f8` | `#222222` |
 | `backdrop` | The scrim behind a dialog or the palette | `#00000026` | `#00000073` |
@@ -58,17 +58,17 @@ A core test fails when this table and the built-in Themes disagree.
 | `selection_active` | The Issue list's row under the cursor while the list holds the focus | `#e8e8e8` | `#04395e` |
 | `selection_inactive` | That row while the focus is elsewhere | `#e4e6f1` | `#37373d` |
 | `focus_border` | The line along the top of the pane that holds the focus | `#005fb8` | `#0078d4` |
-| `accent` | Hunk headers and the diff's Show more rows, as a tint | `#005fb8` | `#4daafc` |
+| `accent` | PR numbers, links and a Review request in the Detail pane, the open tab's line, and as a tint, hunk headers and the diff's Show more rows | `#005fb8` | `#4daafc` |
 | `add` | Added lines, as a tint | `#48a14d` | `#2ea043` |
 | `del` | Removed lines, as a tint | `#e51400` | `#f85149` |
 | `find` | The search's matches in the diff, as a tint | `#f8c94a` | `#9e6a03` |
 | `find_current` | The match the search is on | `#a8ac94` | `#515c6a` |
 | `find_current_fg` | The text of the match the search is on | `#3b3b3b` | `#cccccc` |
 | `attention` | The mark on a draft from the user's Pending review | `#bf8803` | `#cca700` |
-| `danger` | Errors and missed budgets in the HUD | `#e51400` | `#f14c4c` |
+| `danger` | Errors, missed budgets in the HUD, failed CI and a Review that requests changes | `#e51400` | `#f14c4c` |
 | `warn_bg` | The status bar's Offline background | `#c72e0f` | `#c72e0f` |
 | `warn_fg` | The status bar's Offline text | `#ffffff` | `#ffffff` |
-| `state_open` | The icon of an open Issue or PR | `#1a7f37` | `#3fb950` |
+| `state_open` | The icon of an open Issue or PR, CI that passed and an approving Review | `#1a7f37` | `#3fb950` |
 | `state_done` | The icon of a merged PR or an Issue closed as done | `#8250df` | `#ab7df8` |
 | `state_closed` | The icon of a PR closed unmerged | `#d1242f` | `#f85149` |
 | `state_muted` | The icon of a Draft PR or an Issue closed as not planned | `#767676` | `#9d9d9d` |

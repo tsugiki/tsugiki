@@ -106,20 +106,37 @@ it("opens on the Conversation: the title and author, the description, comments a
   await shown(view, 10);
 
   expect(screen.getByRole("region", { name: "PR view" })).toBeTruthy();
-  expect(screen.getByRole("heading").textContent).toContain("#11 gh-10: Fix the crash");
-  expect(screen.getByText("pr-author")).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 2 }).textContent).toContain("#11 gh-10: Fix the crash");
+  expect(screen.getByText("pr-author").tagName).toBe("B");
   expect(screen.getByRole("tab", { name: "Conversation" }).getAttribute("aria-selected")).toBe("true");
   expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("false");
   expect(screen.getByText("The description").tagName).toBe("P");
-  expect(screen.getByText("some-reviewer · 2h ago")).toBeTruthy();
+  const headers = [...document.querySelectorAll("article > header, p.review")].map(
+    (line) => line.textContent,
+  );
+  expect(headers).toEqual(["some-reviewer · 2h ago", "some-reviewer approved at 0123abc · 1h ago"]);
   expect(screen.getByText("2 earlier comments are on GitHub.")).toBeTruthy();
-  expect(screen.getByText("some-reviewer approved at 0123abc · 1h ago")).toBeTruthy();
+});
+
+it("says over the title which Issue the PR is under, where it goes and when it changed", async () => {
+  await shown(view, 10);
+
+  expect(document.querySelector(".crumb")?.textContent.replace(/\s+/g, " ").trim()).toBe(
+    "gh-10 › into main · updated 1h ago",
+  );
+  expect(document.querySelector("p.by")?.textContent).toBe(
+    `pr-author ${document.querySelector(".words")?.textContent ?? ""}`,
+  );
 });
 
 it("marks the PR's title with the icon of its state", async () => {
   await shown({ ...view, state: "OPEN", is_draft: true }, 10);
 
-  expect(within(screen.getByRole("heading")).getByRole("img").getAttribute("title")).toBe("Draft PR");
+  expect(
+    within(screen.getByRole("heading", { level: 2 }))
+      .getByRole("img")
+      .getAttribute("title"),
+  ).toBe("Draft PR");
 });
 
 it("says it's reading from GitHub until the first read lands", async () => {

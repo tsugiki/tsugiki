@@ -118,28 +118,34 @@ it("shows the title and author, the description and the recent comments", async 
 
   expect(screen.getByRole("heading", { level: 2 }).textContent).toContain("#7 It crashes");
   expect(screen.getByText("The description").tagName).toBe("P");
-  expect(screen.getByText("some-reviewer · 2h ago")).toBeTruthy();
-  expect(screen.getByText("deleted user · 1h ago")).toBeTruthy();
+  const headers = [...document.querySelectorAll("article > header")].map((header) => header.textContent);
+  expect(headers).toEqual(["some-reviewer · 2h ago", "deleted user · 1h ago"]);
   expect(screen.getByText("3 earlier comments are on GitHub.")).toBeTruthy();
 });
+
+/** The line under the title, and the part of it that names who opened the Issue, in the text colour. */
+const authorLine = () => {
+  const author = screen.getByText((_, element) => element?.matches("p.by b") ?? false);
+  return { author, opened: author.parentElement as HTMLElement, line: author.closest("p") as HTMLElement };
+};
 
 it("says under the title who opened the Issue and when, and how many comments it has", async () => {
   await shown(view);
 
-  const opened = screen.getByText("issue-author opened this 13d ago");
+  const { author, opened, line } = authorLine();
   const when = new Date("2026-10-22T10:00:00Z").toLocaleString([], {
     dateStyle: "medium",
     timeStyle: "short",
   });
+  expect(author.textContent).toBe("issue-author");
   expect(opened.getAttribute("title")).toBe(when);
-  expect(opened.parentElement?.textContent).toBe("issue-author opened this 13d ago · 5 comments");
+  expect(line.textContent).toBe("issue-author opened this 13d ago · 5 comments");
 });
 
 it("says whom the Issue is assigned to", async () => {
   await shown({ ...view, assignees: ["some-assignee", "other-assignee"] });
 
-  const opened = screen.getByText("issue-author opened this 13d ago");
-  expect(opened.parentElement?.textContent).toBe(
+  expect(authorLine().line.textContent).toBe(
     "issue-author opened this 13d ago · 5 comments · assigned to some-assignee, other-assignee",
   );
 });
@@ -147,9 +153,9 @@ it("says whom the Issue is assigned to", async () => {
 it("counts one comment as one, and leaves out when a read from before Tsugiki asked was opened", async () => {
   await shown({ ...view, content: content("<p>Short</p>", 1) });
 
-  const author = screen.getByText("issue-author");
-  expect(author.getAttribute("title")).toBeNull();
-  expect(author.parentElement?.textContent).toBe("issue-author · 1 comment");
+  const { opened, line } = authorLine();
+  expect(opened.getAttribute("title")).toBeNull();
+  expect(line.textContent).toBe("issue-author · 1 comment");
   expect(screen.getByText("1 earlier comment is on GitHub.")).toBeTruthy();
 });
 
@@ -162,23 +168,27 @@ it("says nothing about earlier comments when it shows them all", async () => {
 it("shows each Origin PR's state, CI and review state, and folds its Backports into one line", async () => {
   await shown(view);
 
-  expect(screen.getAllByText("Merged · CI passed · You approved")).toHaveLength(2);
-  expect(screen.getByText("Open · CI passed")).toBeTruthy();
+  const words = [...document.querySelectorAll(".words")].map((line) => line.textContent);
+  expect(words.filter((line) => line === "Merged · CI passed · You approved")).toHaveLength(2);
+  expect(words).toContain("Open · CI passed");
   const backports = screen.getByText(/Backports:/);
   expect(backports.textContent).toContain("3.14 Merged");
   expect(backports.textContent).toContain("3.13 Open");
 });
 
+/** The heading over the tree. The Conversation's headings follow it. */
+const treeHeading = () => screen.getByRole("heading", { level: 3, name: /^Origin PRs/ }).textContent;
+
 it("counts the open PRs of all the PRs in the tree, Backports included", async () => {
   await shown(view);
 
-  expect(screen.getByRole("heading", { level: 3 }).textContent).toBe("Origin PRs 2 open of 5 PRs");
+  expect(treeHeading()).toBe("Origin PRs 2 open of 5 PRs");
 });
 
 it("counts one PR as one", async () => {
   await shown({ ...view, pull_requests: [orphan] });
 
-  expect(screen.getByRole("heading", { level: 3 }).textContent).toBe("Origin PRs 0 open of 1 PR");
+  expect(treeHeading()).toBe("Origin PRs 0 open of 1 PR");
 });
 
 it("starts each PR's line with its branch and ends it with its author", async () => {
@@ -187,7 +197,10 @@ it("starts each PR's line with its branch and ends it with its author", async ()
   const lines = within(screen.getByRole("list", { name: "PRs" }))
     .getAllByRole("listitem")
     .map((item) => item.firstElementChild?.textContent?.trim());
-  expect(lines).toEqual(["main #13 gh-7: Fix it some-author", "3.12 #14 gh-7: Fix it deleted user"]);
+  expect(lines).toEqual([
+    "main #13 gh-7: Fix it some-author Open · CI passed",
+    "3.12 #14 gh-7: Fix it deleted user Merged · CI passed · You approved",
+  ]);
 });
 
 it("shows in bold each PR and Backport that Needs attention, and only those", async () => {
@@ -234,11 +247,11 @@ const withMerged: IssueView = {
 
 it("counts the merged PRs folded away in the heading, and gives an Issue with only those its heading", async () => {
   await shown(withMerged);
-  expect(screen.getByRole("heading", { level: 3 }).textContent).toBe("Origin PRs 2 open of 8 PRs");
+  expect(treeHeading()).toBe("Origin PRs 2 open of 8 PRs");
   cleanup();
 
   await shown({ ...withMerged, pull_requests: [] });
-  expect(screen.getByRole("heading", { level: 3 }).textContent).toBe("Origin PRs 0 open of 3 PRs");
+  expect(treeHeading()).toBe("Origin PRs 0 open of 3 PRs");
 });
 
 it("folds the fully merged PRs into one line that unfolds and folds them again", async () => {
@@ -250,7 +263,7 @@ it("folds the fully merged PRs into one line that unfolds and folds them again",
 
   await fireEvent.click(line);
   const merged = screen.getByRole("list", { name: "Merged PRs" });
-  expect(within(merged).getByText("#20 gh-7: First fix")).toBeTruthy();
+  expect(within(merged).getByRole("button", { name: "#20 gh-7: First fix" })).toBeTruthy();
   expect(within(merged).getByText(/Backports:/).textContent).toContain("3.14 Merged");
   expect(line.textContent?.trim()).toBe("Hide 3 merged PRs");
   expect(line.getAttribute("aria-expanded")).toBe("true");
@@ -342,9 +355,7 @@ it("shows the tree before Tsugiki has read what the Issue says", async () => {
   await shown({ ...view, content: null, author: null, assignees: ["some-assignee"], pull_requests: [] });
 
   expect(screen.getByText(/hasn't read what this Issue says/)).toBeTruthy();
-  expect(screen.getByText("deleted user").parentElement?.textContent).toBe(
-    "deleted user · assigned to some-assignee",
-  );
+  expect(authorLine().line.textContent).toBe("deleted user · assigned to some-assignee");
   expect(screen.queryByRole("list")).toBeNull();
 });
 

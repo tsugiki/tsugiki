@@ -135,6 +135,8 @@ The smaller ones say what they do in their first `//!` line.
   ([ADR 0009](adr/0009-testing-and-full-coverage.md)).
 - `app/src/wiring.rs` sets up the commands and events on any Tauri runtime, so its tests run on Tauri's
   mock runtime without a window. `app/src/startup.rs` opens the real window, and only `just smoke` tests it.
+  What it decides goes in a module its tests can reach, such as `app/src/first_frame.rs`, which paints the
+  window before it shows.
 - The UI's state files have Vitest tests beside them, with the bindings mocked. `ui/e2e/` runs the built UI
   in Chromium and WebKit with Playwright, with Tauri's IPC mocked in `ui/e2e/mock-core.ts`.
 - `just stale-bindings` fails when `bindings.ts` no longer matches the Rust commands. `just bindings`

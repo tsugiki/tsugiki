@@ -13,9 +13,11 @@ use tsugiki_core::github::GitHubAccess;
 use tsugiki_core::launch;
 use tsugiki_core::logfile;
 use tsugiki_core::mirror::Remotes;
+use tsugiki_core::theme::Themes;
 use tsugiki_token::{Https, run_gh};
 
 use crate::Started;
+use crate::first_frame;
 use crate::navigation;
 use crate::specta_builder;
 use crate::version;
@@ -138,8 +140,16 @@ fn open_window(app: &AppHandle, webview_data: Option<PathBuf>) -> tauri::Result<
         Some(folder) => window.data_directory(folder),
         None => window,
     };
-    // Tauri keeps the window, and `get_webview_window` finds it again.
-    window.build().map(drop)
+    // Tauri keeps the window, and `get_webview_window` finds it again. It opens hidden, and shows once it
+    // has the theme's background, so its first frame isn't the webview's white (#516).
+    let window = window.visible(false).build()?;
+    let background = Themes::built_in_background(first_frame::side(window.theme()));
+    first_frame::show_in(
+        background,
+        |color| window.set_background_color(Some(color)),
+        || window.show(),
+    );
+    Ok(())
 }
 
 /// Brings the window to the front of the user's desk, for a second `tsg` or a link. Before the window exists

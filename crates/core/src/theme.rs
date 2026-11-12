@@ -241,6 +241,11 @@ pub struct Color {
 }
 
 impl Color {
+    /// Red, green, blue and opacity, as a window's background takes them.
+    pub fn rgba(self) -> [u8; 4] {
+        [self.red, self.green, self.blue, self.alpha]
+    }
+
     /// The colour as CSS writes it: `#rrggbb`, or `#rrggbbaa` when it lets something show through.
     pub fn css(self) -> String {
         let Self {
@@ -490,6 +495,15 @@ impl Themes {
         Self::from_files(LIGHT_MODERN, DARK_MODERN)
     }
 
+    /// The `bg` of the built-in theme of side `kind`, which the window takes before it first shows, so a
+    /// dark theme doesn't flash white while the page loads (#516).
+    pub fn built_in_background(kind: ThemeKind) -> Result<Color, Error> {
+        background_of(match kind {
+            ThemeKind::Light => LIGHT_MODERN,
+            ThemeKind::Dark => DARK_MODERN,
+        })
+    }
+
     /// The themes the files `light` and `dark` hold.
     /// Each must set every token, so the window turning from one to the other leaves no colour behind.
     fn from_files(light: &str, dark: &str) -> Result<Self, Error> {
@@ -521,6 +535,22 @@ impl Themes {
             dark: read(dark)?,
         })
     }
+}
+
+/// The `bg` the theme file `text` sets.
+fn background_of(text: &str) -> Result<Color, Error> {
+    let refused = |why: &str| {
+        Error::new(
+            ErrorKind::Internal,
+            &format!("A built-in theme gives the window no background: {why}"),
+        )
+    };
+    let theme = Theme::parse(text).map_err(|cause| refused(&cause.to_string()))?;
+    theme
+        .colors
+        .get(&Token::Bg)
+        .copied()
+        .ok_or_else(|| refused(&format!("{} sets no bg", theme.name)))
 }
 
 #[cfg(test)]

@@ -33,7 +33,7 @@
   import PrDetail from "./PrDetail.svelte";
   import Sidebar from "./Sidebar.svelte";
   import StateIcon from "./StateIcon.svelte";
-  import { details, headline, issueDetails, preview, standaloneDetails } from "./workbench-row";
+  import { ago, details, headline, peopleOf, preview, summary, treeCount } from "./workbench-row";
 
   const MINUTE = 60_000;
   /** How far ↑ or ↓ scrolls the Detail pane while the list is hidden, in CSS pixels, as a browser does. */
@@ -465,92 +465,106 @@
   }
 </script>
 
-{#snippet line(stop: Stop, text: string, strong: boolean, icon: Octicon | undefined)}
-  <!-- The icon sits beside the button, so the button's name stays the item's headline. -->
-  <span>
-    {#if icon}
-      <StateIcon {icon} />
+<!-- An Issue's or a PR's number in the code font and its title, which name the button that opens it. One
+     expression for each: Svelte compiles `{a} {b}` with `?? ""` branches that no test can reach. -->
+{#snippet label(item: { number: number; title: string })}<code>{`#${String(item.number)}`}</code
+  >{` ${item.title}`}{/snippet}
+
+<!-- The icon sits beside the button, so the button's name stays the item's headline. The button's `::after`
+     covers its row, so a click anywhere on the row opens the item. -->
+{#snippet line(
+  stop: Stop,
+  item: { number: number; title: string },
+  attention: boolean,
+  icon: Octicon | undefined,
+)}
+  {#if icon}
+    <StateIcon {icon} />
+  {/if}
+  <button
+    class="link title"
+    data-item={lineName(stop)}
+    aria-current={sameStop(workbench.cursor, stop) ? "true" : undefined}
+    onclick={() => {
+      open(stop);
+    }}
+  >
+    {#if attention}
+      <strong>{@render label(item)}</strong>
+    {:else}
+      {@render label(item)}
     {/if}
-    <button
-      class="link"
-      data-item={lineName(stop)}
-      aria-current={sameStop(workbench.cursor, stop) ? "true" : undefined}
-      onclick={() => {
-        open(stop);
-      }}
-    >
-      {#if strong}
-        <strong>{text}</strong>
-      {:else}
-        <span>{text}</span>
-      {/if}
-    </button>
-  </span>
+  </button>
 {/snippet}
 
+<!-- A PR's or a Backport's row in an unfolded tree: its headline, and its facts under it. -->
 {#snippet pullRequest(row: WorkbenchRow, issue: number | undefined)}
-  {@render line({ number: row.number, kind: "pull_request", issue }, headline(row), false, prIcon(row))}
+  <div class="row">
+    <span class="headline">
+      {@render line({ number: row.number, kind: "pull_request", issue }, row, false, prIcon(row))}
+    </span>
+    <small class="facts">{details(row)}</small>
+  </div>
 {/snippet}
 
 {#snippet backports(rows: BackportRow[], issue: number | undefined)}
   {#if rows.length > 0}
     <ul class="pull-requests">
       {#each rows as row (row.number)}
-        <li>
-          {@render pullRequest(row, issue)}
-          <small>{details(row)}</small>
-        </li>
+        <li>{@render pullRequest(row, issue)}</li>
       {/each}
     </ul>
   {/if}
 {/snippet}
 
+<!-- An item's three lines: the people, its headline with the size of its tree and its age, then why it Needs
+     attention, or else a summary. -->
 {#snippet listed(item: ListedItem)}
   {@const unfolded = item.kind === "issue" && workbench.unfolded(item.number)}
-  <li>
-    {#if item.kind === "issue" && item.pull_requests.length > 0}
-      <button
-        class="fold"
-        aria-label={`PRs of #${String(item.number)}`}
-        aria-expanded={unfolded}
-        onclick={() => {
-          if (unfolded) workbench.fold(item.number);
-          else workbench.unfold(item.number);
-        }}>{unfolded ? "⌄" : "›"}</button
-      >
-    {:else}
-      <!-- Keeps the icons and headlines of rows with nothing to fold in line with those that have. -->
-      <span class="fold"></span>
-    {/if}
-    {@render line(
-      { number: item.number, kind: item.kind === "issue" ? "issue" : "pull_request", issue: undefined },
-      headline(item),
-      item.attention !== null,
-      item.kind === "issue" ? issueIcon(item.state) : prIcon(item),
-    )}
-    {#if item.attention}
-      <small class="preview">{preview(item.attention)}</small>
-    {/if}
-    {#if item.kind === "issue"}
-      <small>{issueDetails(item, now)}</small>
-      {#if unfolded}
-        <ul class="pull-requests">
-          {#each item.pull_requests as entry (entry.number)}
-            <li>
-              {@render pullRequest(entry, item.number)}
-              <small>{details(entry)}</small>
-              {#if entry.kind === "pr"}
-                {@render backports(entry.backports, item.number)}
-              {/if}
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    {:else}
-      <small>{standaloneDetails(item, now)}</small>
-      {#if item.kind === "standalone_pr"}
-        {@render backports(item.backports, undefined)}
-      {/if}
+  <li class={["item", { attention: item.attention !== null }]}>
+    <div class="row">
+      <span class="people">{peopleOf(item)}</span>
+      <span class="headline">
+        {#if item.kind === "issue" && item.pull_requests.length > 0}
+          <button
+            class="fold"
+            aria-label={`PRs of #${String(item.number)}`}
+            aria-expanded={unfolded}
+            onclick={() => {
+              if (unfolded) workbench.fold(item.number);
+              else workbench.unfold(item.number);
+            }}>{unfolded ? "⌄" : "›"}</button
+          >
+        {:else}
+          <!-- Keeps the icons and headlines of rows with nothing to fold in line with those that have. -->
+          <span class="fold"></span>
+        {/if}
+        {@render line(
+          { number: item.number, kind: item.kind === "issue" ? "issue" : "pull_request", issue: undefined },
+          item,
+          item.attention !== null,
+          item.kind === "issue" ? issueIcon(item.state) : prIcon(item),
+        )}
+        {#if item.kind === "issue"}
+          <small class="count">{treeCount(item)}</small>
+        {/if}
+        <small class="age">{ago(item.updated_at, now)}</small>
+      </span>
+      <small class="facts">{item.attention ? preview(item.attention) : summary(item)}</small>
+    </div>
+    {#if unfolded}
+      <ul class="pull-requests">
+        {#each item.pull_requests as entry (entry.number)}
+          <li>
+            {@render pullRequest(entry, item.number)}
+            {#if entry.kind === "pr"}
+              {@render backports(entry.backports, item.number)}
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {:else if item.kind === "standalone_pr"}
+      {@render backports(item.backports, undefined)}
     {/if}
   </li>
 {/snippet}
@@ -723,7 +737,12 @@
   }
 
   h1 {
+    margin: 8px 10px;
     font-size: 16px;
+  }
+
+  h1 + button {
+    margin: 0 10px 8px;
   }
 
   /* The view's name, with the list's order at the far end, as the prototype has it. */
@@ -731,6 +750,8 @@
     display: flex;
     align-items: baseline;
     gap: 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
   }
 
   .view h2 {
@@ -744,10 +765,104 @@
     color: var(--fg-muted);
   }
 
-  /* › and ⌄ before an Issue with PRs, which fold and unfold its tree as ← and → do. */
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* An item reads like a message in a mail client: a line under each, and a bar on the left of one that
+     Needs attention, as unread mail has. */
+  .item {
+    border-bottom: 1px solid var(--border);
+    border-left: 3px solid transparent;
+  }
+
+  .item.attention {
+    border-left-color: var(--accent);
+  }
+
+  .row {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 7px 10px 7px 12px;
+    font-size: 13px;
+  }
+
+  .row:hover {
+    background: color-mix(in srgb, currentColor 8%, transparent);
+  }
+
+  /* The row under the cursor. */
+  .row:has(.title[aria-current]) {
+    background: var(--selected);
+  }
+
+  .people,
+  .facts {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .attention > .row .people {
+    font-weight: 600;
+  }
+
+  .headline {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+
+  /* The title takes what room the line has left, and an ellipsis cuts it. */
+  .title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .title::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+
+  /* The row's tint shows the pointer, and an underline across every title it passes would be noise. */
+  .title:hover:not(:focus-visible) {
+    text-decoration: none;
+  }
+
+  .title code {
+    font-size: 12px;
+  }
+
+  .attention > .row .title {
+    color: var(--accent);
+  }
+
+  .count,
+  .age,
+  .facts {
+    font-size: 12px;
+    color: var(--fg-muted);
+  }
+
+  .attention > .row .age {
+    color: var(--accent);
+  }
+
+  /* › and ⌄ before an Issue with PRs, which fold and unfold its tree as ← and → do. It sits above the
+     title's cover, so a click on it folds rather than opens. */
   .fold {
     all: unset;
-    display: inline-block;
+    position: relative;
+    z-index: 1;
+    flex: none;
     width: 1em;
     text-align: center;
     cursor: pointer;
@@ -758,38 +873,22 @@
     background: color-mix(in srgb, currentColor 12%, transparent);
   }
 
-  /* The row under the cursor, underlined as a link is under the pointer. */
-  .link[aria-current] {
-    text-decoration: underline;
+  /* A tree's rows sit under the item's headline, past its fold. */
+  .pull-requests .row {
+    padding-left: calc(12px + 1em + 6px);
   }
 
-  /* A muted line at the end of the list until #599 styles it. */
+  .pull-requests .pull-requests .row {
+    padding-left: calc(12px + 2 * (1em + 6px));
+  }
+
+  /* The quiet section's heading, in the small heading style. */
   .quiet {
     display: block;
-    margin: 16px 0 0;
-    font-size: 12px;
+    padding: 12px 10px 4px;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
     color: var(--fg-muted);
-  }
-
-  .preview {
-    font-weight: 600;
-  }
-
-  ul {
-    list-style: none;
-    margin: 12px 0 0;
-    padding: 0;
-  }
-
-  li {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 6px 0;
-  }
-
-  .pull-requests {
-    margin-top: 2px;
-    padding-left: 16px;
   }
 </style>

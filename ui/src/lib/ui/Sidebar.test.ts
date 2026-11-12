@@ -46,6 +46,30 @@ it("lists the Workbench and each Filter with its count", () => {
   ]);
 });
 
+it("heads the built-in views, and the Filters while there are any", () => {
+  const headings = () => screen.queryAllByRole("heading").map((heading) => heading.textContent);
+  const { unmount } = render(Sidebar, {
+    ...cpython,
+    count: 12,
+    reviewRequests: 4,
+    filters: [mine],
+    selected: whole,
+    onselect: () => {},
+  });
+  expect(headings()).toEqual(["Built-in views", "Filters"]);
+  unmount();
+
+  render(Sidebar, {
+    ...cpython,
+    count: 12,
+    reviewRequests: 4,
+    filters: [],
+    selected: whole,
+    onselect: () => {},
+  });
+  expect(headings()).toEqual(["Built-in views"]);
+});
+
 it("marks the Workbench while nothing else is selected", () => {
   render(Sidebar, {
     ...cpython,

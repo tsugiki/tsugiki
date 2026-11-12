@@ -5,10 +5,11 @@ import {
   backportWords,
   details,
   headline,
-  issueDetails,
+  peopleOf,
   preview,
   prStateWords,
-  standaloneDetails,
+  summary,
+  treeCount,
 } from "./workbench-row";
 
 const row: WorkbenchRow = {
@@ -35,8 +36,6 @@ const issue: IssueItem = {
     { kind: "pr", ...row, number: 160663, backports: [] },
   ],
 };
-
-const threeHoursLater = new Date("2026-11-04T13:00:00Z");
 
 it("starts with the PR's number and title", () => {
   expect(headline(row)).toBe("#160662 gh-112564: Fix UAF for gc debug print");
@@ -117,35 +116,33 @@ it("counts each Backport and each PR in an Issue's tree", () => {
   const tree: IssueItem = {
     ...issue,
     pull_requests: [
-      { kind: "pr", ...row, backports: [{ ...row, number: 2, backport: "bot" }] },
+      { kind: "pr", ...row, backports: [{ ...row, number: 2, backport: "bot", state: "MERGED" }] },
       { kind: "backport", ...row, number: 3, backport: "manual" },
     ],
   };
-  expect(issueDetails(tree, threeHoursLater)).toBe("issue-author, some-author · 3 PRs · 3h ago");
+  expect(treeCount(tree)).toBe("3 PRs");
+  expect(summary({ kind: "issue", ...tree, attention: null })).toBe("2 open of 3 PRs");
+});
+
+it("counts one PR in the singular", () => {
+  expect(treeCount({ ...issue, pull_requests: [{ kind: "pr", ...row, backports: [] }] })).toBe("1 PR");
 });
 
 it("starts an Issue with its number and title", () => {
   expect(headline(issue)).toBe("#112564 GIL drop during collection");
 });
 
-it("says who an Issue involves, how many PRs fix it and when it changed", () => {
-  expect(issueDetails(issue, threeHoursLater)).toBe("issue-author, some-author · 2 PRs · 3h ago");
-});
-
-it("counts one PR in the singular", () => {
+it("names the people an Issue involves, or a PR's author", () => {
+  expect(peopleOf({ kind: "issue", ...issue, attention: null })).toBe("issue-author, some-author");
+  expect(peopleOf({ kind: "standalone_pr", ...row, backports: [], attention: null })).toBe("some-author");
   expect(
-    issueDetails({ ...issue, pull_requests: [{ kind: "pr", ...row, backports: [] }] }, threeHoursLater),
-  ).toBe("issue-author, some-author · 1 PR · 3h ago");
+    peopleOf({ kind: "standalone_backport", ...row, author: null, backport: "bot", attention: null }),
+  ).toBe("deleted user");
 });
 
-it("leaves people out of an Issue whose people have all gone", () => {
-  expect(issueDetails({ ...issue, people: [] }, threeHoursLater)).toBe("2 PRs · 3h ago");
-});
-
-it("says when a Standalone PR changed", () => {
-  expect(standaloneDetails(row, threeHoursLater)).toBe(
-    "Review request · some-author · into main · Open · CI passed · 3h ago",
-  );
+it("says an Issue has no PR yet, and gives a PR's facts", () => {
+  expect(summary({ kind: "issue", ...issue, pull_requests: [], attention: null })).toBe("No PR yet");
+  expect(summary({ kind: "standalone_pr", ...row, backports: [], attention: null })).toBe(details(row));
 });
 
 it.each<[Why, string]>([

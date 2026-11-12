@@ -83,11 +83,42 @@ test("the Workbench lists what waits on the user", async ({ page }) => {
   await expect(rows).toHaveCount(4);
   await expect(rows.nth(0).locator("strong")).toHaveText("#112564 GIL drop during collection");
   await expect(rows.nth(0)).toContainText("Review requested from you");
-  await expect(rows.nth(0)).toContainText("issue-author, some-author · 2 PRs · ");
+  await expect(rows.nth(0).locator(".people")).toHaveText("issue-author, some-author");
+  await expect(rows.nth(0).locator(".count").first()).toHaveText("2 PRs");
   await expect(rows.nth(1)).toContainText("#160662 gh-112564: Fix UAF for gc debug print");
   await expect(rows.nth(1)).toContainText("Review request · some-author · into main · Open · CI passed");
   await expect(rows.nth(2)).toContainText("Bot backport · some-author · into 3.14 · Merged · CI passed");
-  await expect(rows.nth(3)).toContainText("Own PR · octocat · into 3.14 · Open · Draft · CI failed · ");
+  await expect(rows.nth(3)).toContainText("Own PR · octocat · into 3.14 · Open · Draft · CI failed");
+});
+
+test("an item that Needs attention shows an accent bar and title, and a long title ends in an ellipsis", async ({
+  page,
+}) => {
+  const long = { ...own, title: "A title long enough to run past the list's edge ".repeat(4) };
+  await mockCore(page, {
+    home: cpython,
+    workbench: {
+      status: "ok",
+      data: { items: [review, long], quiet: [], count: 2, review_requests: 0, filters: [] },
+    },
+  });
+  await page.setViewportSize({ width: 900, height: 600 });
+  await page.goto("/");
+
+  const [unread, read] = [page.getByRole("listitem").nth(0), page.getByRole("listitem").nth(1)];
+  const title = (item: typeof unread) => item.locator("button.title");
+  const accent = await page.evaluate(() => {
+    const probe = document.body.appendChild(document.createElement("i"));
+    probe.style.color = "var(--accent)";
+    return getComputedStyle(probe).color;
+  });
+  await expect(unread).toHaveCSS("border-left-color", accent);
+  await expect(title(unread)).toHaveCSS("color", accent);
+  await expect(unread.locator(".people")).toHaveCSS("font-weight", "600");
+  await expect(title(read)).not.toHaveCSS("color", accent);
+  await expect(read).toHaveCSS("border-left-color", "rgba(0, 0, 0, 0)");
+  expect(await title(read).evaluate((button) => button.scrollWidth > button.clientWidth)).toBe(true);
+  await expect(title(read)).toHaveCSS("text-overflow", "ellipsis");
 });
 
 test("the quiet section unfolds, folds, and unfolds again for Alt+← back to an item in it", async ({

@@ -1,11 +1,12 @@
 //! The window's background, in the theme in force (#516). The webview paints white until the page loads, so
 //! the window opens hidden, takes the `bg` of the theme for the side the system is on, and only then shows.
 //! When the system changes sides, the window takes the other side's `bg`, so a resize doesn't show the old
-//! one.
+//! one. A Light or Dark mode in `settings.toml` keeps the window on its side whatever the system says
+//! (#517).
 
 use tauri::Theme;
 use tauri::window::Color;
-use tsugiki_core::theme::{ThemeKind, Themes};
+use tsugiki_core::theme::{ThemeKind, ThemeMode, Themes};
 
 /// The side the system is on, as `theme` gives it. One it can't tell reads as light, the side Windows
 /// starts on.
@@ -45,6 +46,24 @@ pub fn show_in(
 ) -> tauri::Result<()> {
     paint(theme, paint_with);
     show()
+}
+
+/// The theme Tauri gives the window in `mode`: none in System mode, so the window follows the system, and
+/// otherwise the side the mode keeps.
+pub fn window_theme(mode: ThemeMode) -> Option<Theme> {
+    match mode {
+        ThemeMode::System => None,
+        ThemeMode::Light => Some(Theme::Light),
+        ThemeMode::Dark => Some(Theme::Dark),
+    }
+}
+
+/// Turns the window to the side `mode` keeps through `set_theme`, and its title bar and native controls with
+/// it, or back to the system's side. A window that can't turn keeps the system's side, which the log says.
+pub fn turn(mode: ThemeMode, set_theme: impl FnOnce(Option<Theme>) -> tauri::Result<()>) {
+    if let Err(cause) = set_theme(window_theme(mode)) {
+        log::warn!("Tsugiki can't turn its window to the side its settings ask for: {cause}");
+    }
 }
 
 #[cfg(test)]

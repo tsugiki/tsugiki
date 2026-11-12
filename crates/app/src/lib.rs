@@ -34,7 +34,7 @@ use tsugiki_core::releases::NewVersion;
 use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
 use tsugiki_core::repository_settings::{MirrorCost, NameCheck, RepositorySettings};
 use tsugiki_core::session::SessionRequests;
-use tsugiki_core::settings::{Home, LoadedSettings, PaneLayout, SettingsOwner};
+use tsugiki_core::settings::{AppearanceSettings, Home, LoadedSettings, PaneLayout, SettingsOwner};
 use tsugiki_core::status::{Change, FailedRead, LastSync, Status, SyncActivity};
 use tsugiki_core::store::StoreReader;
 use tsugiki_core::theme::Themes;
@@ -233,12 +233,20 @@ fn settings(owner: State<'_, SettingsOwner>) -> LoadedSettings {
     owner.view().loaded
 }
 
-/// The theme of each side, light and dark, as CSS variables (#515). The window shows the one for the side
-/// Windows is on.
+/// `[appearance]` as `settings.toml` said when Tsugiki started, which the window turned to (#517).
+struct StartAppearance(AppearanceSettings);
+
+/// The theme of each side, light and dark, as CSS variables (#515), and the mode, as `settings.toml` chose
+/// them when Tsugiki started (#517). In System mode the window shows the theme for the side Windows is on.
 #[tauri::command]
 #[specta::specta]
-fn themes() -> Result<Themes, Error> {
-    Themes::built_in()
+fn themes(start: State<'_, StartAppearance>) -> Result<Themes, Error> {
+    let StartAppearance(appearance) = *start;
+    Themes::chosen(
+        appearance.theme,
+        appearance.light_theme,
+        appearance.dark_theme,
+    )
 }
 
 /// What the window opens on.

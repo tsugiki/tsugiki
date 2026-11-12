@@ -49,11 +49,14 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 
 - The Settings dialog and its pages.
 - Two TOML files, one that travels between machines and one that stays, and a portable mode.
+- `[appearance]` in `settings.toml`: `theme` (System, Light or Dark), and `light_theme` and `dark_theme`,
+  the **Theme** of each side.
 
 ### Themes ([themes.md](devel/themes.md))
 
 - A **Theme** for each side, light and dark, that colours the whole window and follows Windows when it
-  changes sides. VS Code's Light Modern and Dark Modern are built in.
+  changes sides, unless the settings keep one side. VS Code's Light Modern and Dark Modern and Gruvbox's
+  Light Hard and Dark Hard are built in.
 
 ### Workbench ([workbench.md](devel/workbench.md))
 

@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
 
-use serde::Serialize;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use specta::Type;
 use toml_edit::{Document, TableLike};
 
@@ -18,6 +18,110 @@ use crate::error::{Error, ErrorKind};
 /// The built-in themes, compiled in. Each sets every token.
 const LIGHT_MODERN: &str = include_str!("../themes/vscode-light-modern.toml");
 const DARK_MODERN: &str = include_str!("../themes/vscode-dark-modern.toml");
+const GRUVBOX_LIGHT_HARD: &str = include_str!("../themes/gruvbox-light-hard.toml");
+const GRUVBOX_DARK_HARD: &str = include_str!("../themes/gruvbox-dark-hard.toml");
+
+/// Whether the window follows Windows to its light or dark side, or keeps one side whatever Windows says:
+/// `[appearance] theme` in `settings.toml` (#517).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemeMode {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+/// A built-in theme for the light side: `[appearance] light_theme` in `settings.toml`, by its name.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum LightTheme {
+    #[default]
+    VsCodeLightModern,
+    GruvboxLightHard,
+}
+
+impl LightTheme {
+    /// Every built-in light theme, in the order a list shows them.
+    pub const ALL: [Self; 2] = [Self::VsCodeLightModern, Self::GruvboxLightHard];
+
+    /// The theme's name, as its file and `settings.toml` give it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::VsCodeLightModern => "VS Code Light Modern",
+            Self::GruvboxLightHard => "Gruvbox Light Hard",
+        }
+    }
+
+    /// The light theme named `name`, written as `name()` writes it.
+    pub fn named(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|theme| theme.name() == name)
+    }
+
+    /// The theme's file, compiled in.
+    pub fn file(self) -> &'static str {
+        match self {
+            Self::VsCodeLightModern => LIGHT_MODERN,
+            Self::GruvboxLightHard => GRUVBOX_LIGHT_HARD,
+        }
+    }
+}
+
+/// A built-in theme for the dark side: `[appearance] dark_theme` in `settings.toml`, by its name.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DarkTheme {
+    #[default]
+    VsCodeDarkModern,
+    GruvboxDarkHard,
+}
+
+impl DarkTheme {
+    /// Every built-in dark theme, in the order a list shows them.
+    pub const ALL: [Self; 2] = [Self::VsCodeDarkModern, Self::GruvboxDarkHard];
+
+    /// The theme's name, as its file and `settings.toml` give it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::VsCodeDarkModern => "VS Code Dark Modern",
+            Self::GruvboxDarkHard => "Gruvbox Dark Hard",
+        }
+    }
+
+    /// The dark theme named `name`, written as `name()` writes it.
+    pub fn named(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|theme| theme.name() == name)
+    }
+
+    /// The theme's file, compiled in.
+    pub fn file(self) -> &'static str {
+        match self {
+            Self::VsCodeDarkModern => DARK_MODERN,
+            Self::GruvboxDarkHard => GRUVBOX_DARK_HARD,
+        }
+    }
+}
+
+/// A theme's name in a settings file, and the error a name no theme of the side has gives.
+macro_rules! by_name {
+    ($side:ty, $what:literal) => {
+        impl Serialize for $side {
+            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                serializer.serialize_str(self.name())
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $side {
+            fn deserialize<D: Deserializer<'de>>(given: D) -> Result<Self, D::Error> {
+                let name = String::deserialize(given)?;
+                Self::named(&name).ok_or_else(|| {
+                    serde::de::Error::custom(format!("no {} is named {name:?}", $what))
+                })
+            }
+        }
+    };
+}
+
+by_name!(LightTheme, "light theme");
+by_name!(DarkTheme, "dark theme");
 
 /// Whether a theme is for Windows' light side or its dark side. Each theme is one or the other, not a pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
@@ -481,18 +585,20 @@ pub struct TokenView {
     pub value: String,
 }
 
-/// The theme of each side. The window shows the one for the side Windows is on, and turns to the other when
-/// Windows does.
+/// The theme of each side, and the mode. In System mode the window shows the theme for the side Windows is
+/// on, and turns to the other when Windows does. Light and Dark show that side's theme whatever Windows says.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct Themes {
+    pub mode: ThemeMode,
     pub light: ThemeView,
     pub dark: ThemeView,
 }
 
 impl Themes {
-    /// VS Code Light Modern and VS Code Dark Modern.
-    pub fn built_in() -> Result<Self, Error> {
-        Self::from_files(LIGHT_MODERN, DARK_MODERN)
+    /// The themes `settings.toml`'s `[appearance]` chose.
+    pub fn chosen(mode: ThemeMode, light: LightTheme, dark: DarkTheme) -> Result<Self, Error> {
+        let (light, dark) = Self::from_files(light.file(), dark.file())?;
+        Ok(Self { mode, light, dark })
     }
 
     /// The `bg` of the built-in theme of side `kind`, which the window takes before it first shows, so a
@@ -514,7 +620,7 @@ impl Themes {
 
     /// The themes the files `light` and `dark` hold.
     /// Each must set every token, so the window turning from one to the other leaves no colour behind.
-    fn from_files(light: &str, dark: &str) -> Result<Self, Error> {
+    fn from_files(light: &str, dark: &str) -> Result<(ThemeView, ThemeView), Error> {
         let refused = |why: &str| {
             Error::new(
                 ErrorKind::Internal,
@@ -538,10 +644,7 @@ impl Themes {
                 )))
             }
         };
-        Ok(Self {
-            light: read(light)?,
-            dark: read(dark)?,
-        })
+        Ok((read(light)?, read(dark)?))
     }
 }
 

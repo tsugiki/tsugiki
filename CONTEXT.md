@@ -253,5 +253,6 @@ _Avoid_: Unread, notifications
 
 **Theme**:
 A named set of colours for the whole window, for the light side or the dark side, never both. The window
-shows the Theme of the side Windows is on. Tsugiki builds some in, and the user can add their own as files.
+shows the Theme of the side Windows is on, unless the settings keep it on one side. Tsugiki builds some in,
+and the user can add their own as files.
 _Avoid_: Palette, skin, colour scheme

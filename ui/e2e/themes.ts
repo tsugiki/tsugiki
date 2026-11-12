@@ -1,7 +1,15 @@
-import type { Themes } from "../src/lib/data/bindings.ts";
+import type { AppearanceSettings, Themes } from "../src/lib/data/bindings.ts";
+
+/** `settings.toml`'s `[appearance]` with nothing set. */
+export const appearance: AppearanceSettings = {
+  theme: "system",
+  light_theme: "VS Code Light Modern",
+  dark_theme: "VS Code Dark Modern",
+};
 
 /** The built-in themes cut down to the tokens the tests read, with VS Code Modern's values. */
 export const themes: Themes = {
+  mode: "system",
   light: {
     name: "VS Code Light Modern",
     kind: "light",

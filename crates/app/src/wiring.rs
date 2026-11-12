@@ -16,10 +16,12 @@ use tsugiki_core::session::{Intervals, Session};
 use tsugiki_core::settings::{SettingsFiles, SettingsOwner};
 use tsugiki_core::status::{Change, Status, StatusBoard};
 
+use crate::first_frame;
 use crate::{
     Changed, CloningChanged, DiffWork, FailedHeads, FolderPicker, HeadsFetchFailed, HeadsFetched,
     LastSyncChanged, MirrorProblemChanged, MirrorQuestionChanged, MirrorStatesChanged,
-    NewVersionFound, PickFolder, ReadFailed, RepositoryWork, StatusChanged, SyncActivityChanged,
+    NewVersionFound, PickFolder, ReadFailed, RepositoryWork, StartAppearance, StatusChanged,
+    SyncActivityChanged,
 };
 
 /// How often the open Repository refreshes: a refresh costs a few points, and this is about 60 points an
@@ -83,10 +85,11 @@ pub(crate) fn connect_core<R: Runtime>(
         app.manage(FolderPicker(outside.pick_folder)),
         "only this manages the folder picker"
     );
-    // Two small files, read before the window exists so `settings` and `home` can always answer. A
-    // `settings_path` on a slow drive would delay the window. Without folders the defaults apply, and the
+    // Two small files, read before the page loads so `settings` and `home` can always answer. A
+    // `settings_path` on a slow drive would delay the page. Without folders the defaults apply, and the
     // session shows why. A thread of their own owns the files from here, so saving doesn't wait on GitHub.
     let settings = SettingsOwner::start(folders.clone().map(SettingsFiles::load));
+    turn_to_start_appearance(app, &settings);
     // Settings Tsugiki can't read fall back to the defaults, which check, though the file may turn the check
     // off. So only settings read without a problem start it.
     let check_releases_on = {
@@ -171,6 +174,21 @@ pub(crate) fn connect_core<R: Runtime>(
         mirrors,
         _releases: releases,
     }
+}
+
+/// Turns each window to the mode `settings` holds, and keeps their `[appearance]` for `themes` (#517).
+/// `startup.rs` opened the window first, on the system's side, so a Light or Dark mode turns it now, before
+/// the page asks for its themes. Both keep to what the settings said at start, as the docs say, so a later
+/// read of the files can't turn the page without the title bar.
+fn turn_to_start_appearance<R: Runtime>(app: &AppHandle<R>, settings: &SettingsOwner) {
+    let appearance = settings.view().loaded.settings.appearance;
+    for window in app.webview_windows().into_values() {
+        first_frame::turn(appearance.theme, |theme| window.set_theme(theme));
+    }
+    assert!(
+        app.manage(StartAppearance(appearance)),
+        "only this manages the appearance"
+    );
 }
 
 /// Starts the check for a new version with `ask`. Without it Tsugiki sends Releases nothing, and the command

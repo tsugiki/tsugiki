@@ -197,8 +197,10 @@ const LAYERS: &[Layer] = &[
             "mirror",
             "repository",
             "repository_settings",
+            "theme",
         ],
-        why: "Reads and writes the Repositories and mirror sources, and shares them through `latest`.",
+        why: "Reads and writes the Repositories, the mirror sources and the theme names, and shares them \
+              through `latest`.",
     },
     Layer {
         module: "workbench",

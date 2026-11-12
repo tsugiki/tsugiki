@@ -70,8 +70,8 @@ export const commands = {
 	/**  The settings Tsugiki last read, and what was wrong with their files (ADR 0014). */
 	settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
 	/**
-	 *  The theme of each side, light and dark, as CSS variables (#515). The window shows the one for the side
-	 *  Windows is on.
+	 *  The theme of each side, light and dark, as CSS variables (#515), and the mode, as `settings.toml` chose
+	 *  them when Tsugiki started (#517). In System mode the window shows the theme for the side Windows is on.
 	 */
 	themes: () => typedError<Themes, Error_Serialize>(__TAURI_INVOKE("themes")),
 	/**  What the window opens on. */
@@ -183,6 +183,18 @@ export type About = {
 
 /**  Whether the code under a thread has changed since it began. */
 export type Anchor = "current" | "outdated";
+
+/**
+ *  The `[appearance]` table: whether the window follows the system to its light or dark side, and the theme
+ *  of each side (#517). A key Tsugiki can't read takes its default, and `appearance_problems` says why: a
+ *  theme is too small a thing to lose the rest of `settings.toml` over. An `appearance` that isn't a table
+ *  fails the file, as any other table does.
+ */
+export type AppearanceSettings = {
+	theme: ThemeMode,
+	light_theme: string,
+	dark_theme: string,
+};
 
 /**  The reasons an item Needs attention, and since when. */
 export type Attention = Attention_Serialize | Attention_Deserialize;
@@ -1734,6 +1746,7 @@ export type Settings = Settings_Serialize | Settings_Deserialize;
 export type Settings_Deserialize = {
 	status_bar?: StatusBarSettings_Deserialize,
 	releases?: ReleaseSettings_Deserialize,
+	appearance?: AppearanceSettings,
 	repositories?: RepositorySettings_Deserialize[],
 };
 
@@ -1741,6 +1754,7 @@ export type Settings_Deserialize = {
 export type Settings_Serialize = {
 	status_bar: StatusBarSettings_Serialize,
 	releases: ReleaseSettings_Serialize,
+	appearance: AppearanceSettings,
 	repositories: RepositorySettings_Serialize[],
 };
 
@@ -1903,6 +1917,12 @@ export type SyncPart = "your_work" |
 export type ThemeKind = "light" | "dark";
 
 /**
+ *  Whether the window follows Windows to its light or dark side, or keeps one side whatever Windows says:
+ *  `[appearance] theme` in `settings.toml` (#517).
+ */
+export type ThemeMode = "system" | "light" | "dark";
+
+/**
  *  A theme ready for the window: each token as a CSS variable, and the kind, which the root's
  *  `color-scheme` takes so scroll bars and form controls follow.
  */
@@ -1913,10 +1933,11 @@ export type ThemeView = {
 };
 
 /**
- *  The theme of each side. The window shows the one for the side Windows is on, and turns to the other when
- *  Windows does.
+ *  The theme of each side, and the mode. In System mode the window shows the theme for the side Windows is
+ *  on, and turns to the other when Windows does. Light and Dark show that side's theme whatever Windows says.
  */
 export type Themes = {
+	mode: ThemeMode,
 	light: ThemeView,
 	dark: ThemeView,
 };

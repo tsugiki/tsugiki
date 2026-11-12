@@ -85,3 +85,34 @@ fn a_window_that_wont_show_fails_the_start() {
     let (_, shown) = steps(Ok(Theme::Dark), Ok(()), Err(tauri::Error::WindowNotFound));
     assert!(!shown);
 }
+
+#[test]
+fn system_mode_leaves_the_window_to_follow_the_system() {
+    assert_eq!(window_theme(ThemeMode::System), None);
+}
+
+#[test]
+fn light_and_dark_keep_the_window_on_their_side_whatever_the_system_says() {
+    assert_eq!(window_theme(ThemeMode::Light), Some(Theme::Light));
+    assert_eq!(window_theme(ThemeMode::Dark), Some(Theme::Dark));
+}
+
+#[test]
+fn the_window_turns_to_the_side_the_mode_keeps() {
+    let asked = RefCell::new(Vec::new());
+    for mode in [ThemeMode::Dark, ThemeMode::System] {
+        turn(mode, &|theme| {
+            asked.borrow_mut().push(theme);
+            Ok(())
+        });
+    }
+    // A window that can't turn keeps the system's side, and the start goes on.
+    turn(ThemeMode::Light, &|theme| {
+        asked.borrow_mut().push(theme);
+        Err(tauri::Error::WindowNotFound)
+    });
+    assert_eq!(
+        asked.into_inner(),
+        [Some(Theme::Dark), None, Some(Theme::Light)]
+    );
+}

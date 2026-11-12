@@ -1,5 +1,6 @@
-// The window's colours (#515). The core sends a theme for each side, light and dark, and the window shows
-// the one for the side Windows is on, jumping to the other when Windows changes sides.
+// The window's colours (#515). The core sends a theme for each side, light and dark, and the mode (#517). In
+// System mode the window shows the theme for the side Windows is on, jumping to the other when Windows
+// changes sides. Light and Dark show their side's theme whatever Windows says.
 import { commands, type Themes, type ThemeView } from "$lib/data/bindings";
 import { ask } from "./answer";
 
@@ -15,7 +16,12 @@ export class ThemeState {
   /** Whether Windows is on its dark side. */
   dark = $state(false);
   /** The theme in force, once the core has sent them. */
-  current = $derived(this.themes && (this.dark ? this.themes.dark : this.themes.light));
+  current = $derived.by(() => {
+    if (!this.themes) return undefined;
+    const { mode, light, dark } = this.themes;
+    const darkSide = mode === "system" ? this.dark : mode === "dark";
+    return darkSide ? dark : light;
+  });
 
   constructor(query: DarkQuery) {
     this.dark = query.matches;

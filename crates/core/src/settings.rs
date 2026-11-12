@@ -26,6 +26,7 @@ use crate::latest::{self, LatestReader};
 use crate::mirror::{MirrorSource, MirrorSources};
 use crate::repository::{RepositoryAccess, RepositoryName};
 use crate::repository_settings::{NameCheck, RepositoryCheck, RepositorySettings};
+use crate::theme::{DarkTheme, LightTheme, ThemeMode};
 
 const REPOSITORIES: &str = "repositories";
 const FILTERS: &str = "filters";
@@ -35,6 +36,7 @@ const NAME: &str = "name";
 const OPENED_AT: &str = "opened_at";
 const LAST_REPOSITORY: &str = "last_repository";
 const PANES: &str = "panes";
+const APPEARANCE: &str = "appearance";
 const MIRRORS: &str = "mirrors";
 const STOPPED_SAVING: &str =
     "Tsugiki stopped saving its settings. Restart Tsugiki to save them again.";
@@ -45,6 +47,7 @@ const STOPPED_SAVING: &str =
 pub struct Settings {
     pub status_bar: StatusBarSettings,
     pub releases: ReleaseSettings,
+    pub appearance: AppearanceSettings,
     pub repositories: Vec<RepositorySettings>,
 }
 
@@ -113,6 +116,106 @@ impl Default for ReleaseSettings {
     fn default() -> Self {
         Self { check: true }
     }
+}
+
+/// The `[appearance]` table: whether the window follows the system to its light or dark side, and the theme
+/// of each side (#517). A key Tsugiki can't read takes its default, and `appearance_problems` says why: a
+/// theme is too small a thing to lose the rest of `settings.toml` over. An `appearance` that isn't a table
+/// fails the file, as any other table does.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Type)]
+pub struct AppearanceSettings {
+    pub theme: ThemeMode,
+    #[specta(type = String)]
+    pub light_theme: LightTheme,
+    #[specta(type = String)]
+    pub dark_theme: DarkTheme,
+}
+
+impl<'de> Deserialize<'de> for AppearanceSettings {
+    fn deserialize<D: Deserializer<'de>>(given: D) -> Result<Self, D::Error> {
+        Ok(AppearanceRead::deserialize(given)?.settle().0)
+    }
+}
+
+/// `[appearance]` as the file gives it, before a value Tsugiki can't read takes its default.
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct AppearanceRead {
+    theme: Option<Read<ThemeMode>>,
+    light_theme: Option<Read<LightTheme>>,
+    dark_theme: Option<Read<DarkTheme>>,
+}
+
+/// A key of `[appearance]` given a value Tsugiki can't read, and what Tsugiki does instead, in words for the
+/// status bar.
+type Unread = (&'static str, String);
+
+impl AppearanceRead {
+    /// The values, with each one Tsugiki can't read at its default, and the keys that held those.
+    fn settle(self) -> (AppearanceSettings, Vec<Unread>) {
+        let mut unread = Vec::new();
+        let settings = AppearanceSettings {
+            theme: given_or_default(self.theme, "theme", &mut unread, || {
+                r#"isn't "system", "light" or "dark", so Tsugiki follows the system."#.to_owned()
+            }),
+            light_theme: given_or_default(self.light_theme, "light_theme", &mut unread, || {
+                let default = LightTheme::default().name();
+                format!("names no light theme, so Tsugiki uses {default}.")
+            }),
+            dark_theme: given_or_default(self.dark_theme, "dark_theme", &mut unread, || {
+                let default = DarkTheme::default().name();
+                format!("names no dark theme, so Tsugiki uses {default}.")
+            }),
+        };
+        (settings, unread)
+    }
+}
+
+/// The value the file gave `key`, or its default. One Tsugiki can't read joins `unread`, with `instead`.
+fn given_or_default<T: Default>(
+    given: Option<Read<T>>,
+    key: &'static str,
+    unread: &mut Vec<Unread>,
+    instead: impl FnOnce() -> String,
+) -> T {
+    match given {
+        None => T::default(),
+        Some(Read::Given(value)) => value,
+        Some(Read::Other(_)) => {
+            unread.push((key, instead()));
+            T::default()
+        }
+    }
+}
+
+/// What is wrong with the `[appearance]` of the settings file `text`, from `path`, in words for the status
+/// bar. Each names its line, when the parser knows it.
+fn appearance_problems(path: &Path, text: &str) -> Vec<String> {
+    /// Only `[appearance]` of the file.
+    #[derive(Default, Deserialize)]
+    #[serde(default)]
+    struct File {
+        appearance: AppearanceRead,
+    }
+    // Each caller has read the whole file by now, so this read finds what that one did.
+    let file = toml_edit::de::from_str::<File>(text).unwrap_or_default();
+    let document = toml_edit::Document::parse(text).ok();
+    let table = document
+        .as_ref()
+        .and_then(|document| document.get(APPEARANCE))
+        .and_then(Item::as_table_like);
+    file.appearance
+        .settle()
+        .1
+        .into_iter()
+        .map(|(key, problem)| {
+            let line = table
+                .and_then(|table| table.get_key_value(key))
+                .and_then(|(key, _)| key.span())
+                .map_or_else(String::new, |span| line_of(text, span.start));
+            format!("{}{line}: {key} {problem}", path.display())
+        })
+        .collect()
 }
 
 /// The settings in force, and what is wrong with the files they came from, in words for the status bar.
@@ -387,7 +490,10 @@ impl SettingsFiles {
         }
         if let Some(machine) = &self.machine {
             match read_settings(&self.folders, machine, &self.loaded.settings) {
-                Ok(settings) => self.loaded.settings = settings,
+                Ok((settings, unread)) => {
+                    self.loaded.settings = settings;
+                    problems.extend(unread);
+                }
                 Err(problem) => problems.push(problem),
             }
         }
@@ -402,11 +508,16 @@ impl SettingsFiles {
     ///
     /// It works from what the files say now, so an edit made since the last read stays. It refuses while
     /// either file can't be used: a broken `machine.toml` might point somewhere else, and a broken
-    /// `settings.toml` might hold work the user hasn't finished.
+    /// `settings.toml` might hold work the user hasn't finished. So does an `[appearance]` value Tsugiki
+    /// can't read.
     pub fn write(&mut self, settings: &Settings) -> Result<(), Error> {
         let machine = self.machine_to_edit()?;
         let path = settings_file(&self.folders, &machine);
         let mut edit = TomlEdit::<Settings>::open(&path)?;
+        // A key Tsugiki read as its default would be saved as the default, over what the user wrote.
+        if let Some(problem) = appearance_problems(&path, &edit.before).first() {
+            return Err(refused(problem));
+        }
         merge(
             edit.document.as_table_mut(),
             without_repositories(as_document(settings)).as_table(),
@@ -1135,15 +1246,20 @@ fn read_machine(path: &Path) -> Result<Machine, String> {
 
 /// The settings file's values. With no file in the usual place, the defaults are what the user asked for.
 /// With none where `settings_path` points, something is wrong, and it may only be a drive gone for now.
+/// Beside the values come the problems with values Tsugiki read as their defaults.
 fn read_settings(
     folders: &Folders,
     machine: &Machine,
     current: &Settings,
-) -> Result<Settings, String> {
+) -> Result<(Settings, Vec<String>), String> {
     let path = settings_file(folders, machine);
-    match read::<Settings>(&path)? {
-        Some(settings) => Ok(settings),
-        None if machine.settings_path.is_none() => Ok(Settings::default()),
+    match read_text(&path)? {
+        Some(text) => {
+            let settings =
+                toml_edit::de::from_str(&text).map_err(|cause| located(&path, &text, &cause))?;
+            Ok((settings, appearance_problems(&path, &text)))
+        }
+        None if machine.settings_path.is_none() => Ok((Settings::default(), Vec::new())),
         None => {
             let kept = if *current == Settings::default() {
                 "so Tsugiki is using the defaults"
@@ -1183,15 +1299,16 @@ fn read<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, String> {
 
 /// Names the file and, when the parser knows it, the line.
 fn located(path: &Path, text: &str, cause: &toml_edit::de::Error) -> String {
-    let line = cause.span().map_or_else(String::new, |span| {
-        let earlier_lines = text
-            .bytes()
-            .take(span.start)
-            .filter(|b| *b == b'\n')
-            .count();
-        format!(", line {}", earlier_lines.saturating_add(1))
-    });
+    let line = cause
+        .span()
+        .map_or_else(String::new, |span| line_of(text, span.start));
     format!("{}{line}: {}", path.display(), cause.message())
+}
+
+/// `, line N`, the line byte `offset` of `text` sits on, counted from 1.
+fn line_of(text: &str, offset: usize) -> String {
+    let earlier_lines = text.bytes().take(offset).filter(|b| *b == b'\n').count();
+    format!(", line {}", earlier_lines.saturating_add(1))
 }
 
 #[cfg(test)]

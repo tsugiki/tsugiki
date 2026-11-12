@@ -34,6 +34,7 @@ vi.mock("$lib/data/bindings", () => ({
     themes: async () => ({
       status: "ok",
       data: {
+        mode: "system",
         light: { name: "Light", kind: "light", tokens: [{ property: "--bg", value: "#ffffff" }] },
         dark: { name: "Dark", kind: "dark", tokens: [{ property: "--bg", value: "#1f1f1f" }] },
       },
@@ -106,7 +107,12 @@ beforeEach(() => {
     data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [] },
   });
   core.settings.mockResolvedValue({
-    settings: { status_bar: { visible: true }, releases: { check: true }, repositories: [] },
+    settings: {
+      status_bar: { visible: true },
+      releases: { check: true },
+      appearance: { theme: "system", light_theme: "VS Code Light Modern", dark_theme: "VS Code Dark Modern" },
+      repositories: [],
+    },
     problems: [],
   });
 });

@@ -155,10 +155,11 @@ impl Wired {
         let heads = hear(&app, "heads-fetched");
         let failed_heads = hear(&app, "heads-fetch-failed");
         let new_versions = hear(&app, "new-version-found");
-        let core = connect_core(app.handle(), folders, outside, Duration::from_secs(3600));
+        // The window opens before the core connects, as `startup.rs` opens it.
         let webview = tauri::WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::default())
             .build()
             .unwrap();
+        let core = connect_core(app.handle(), folders, outside, Duration::from_secs(3600));
         Self {
             core,
             webview,
@@ -377,6 +378,24 @@ fn assert_releases_hear_nothing(name: &str, settings: &str) {
 
     assert_eq!(asked, Err(std::sync::mpsc::RecvTimeoutError::Disconnected));
     assert_eq!(answer.unwrap(), Value::Null);
+}
+
+#[test]
+fn themes_answers_with_the_mode_and_the_theme_of_each_side_the_settings_chose() {
+    let (folders, root) = temp_folders("wired-themes");
+    let settings = "[appearance]\ntheme = \"light\"\ndark_theme = \"Gruvbox Dark Hard\"\n";
+    std::fs::write(folders.settings_file(), settings).unwrap();
+    let wired = Wired::start(Ok(folders), no_network());
+
+    let answer = wired.ask("themes", json!({}));
+    drop(wired.stop());
+    std::fs::remove_dir_all(root).unwrap();
+
+    let answer = answer.unwrap();
+    assert_eq!(answer["mode"], "light");
+    assert_eq!(answer["light"]["name"], "VS Code Light Modern");
+    assert_eq!(answer["dark"]["name"], "Gruvbox Dark Hard");
+    assert_eq!(answer["dark"]["tokens"][0]["value"], "#1d2021");
 }
 
 #[test]

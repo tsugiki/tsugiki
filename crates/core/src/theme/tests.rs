@@ -1,15 +1,19 @@
 use super::*;
 
+/// Each built-in theme's file, name and kind.
+fn built_in() -> Vec<(&'static str, &'static str, ThemeKind)> {
+    let light = LightTheme::ALL.map(|theme| (theme.file(), theme.name(), ThemeKind::Light));
+    let dark = DarkTheme::ALL.map(|theme| (theme.file(), theme.name(), ThemeKind::Dark));
+    light.into_iter().chain(dark).collect()
+}
+
 #[test]
-fn both_built_in_themes_set_every_token_and_skip_no_line() {
-    for (text, name, kind) in [
-        (LIGHT_MODERN, "VS Code Light Modern", ThemeKind::Light),
-        (DARK_MODERN, "VS Code Dark Modern", ThemeKind::Dark),
-    ] {
+fn every_built_in_theme_sets_every_token_and_skips_no_line() {
+    for (text, name, kind) in built_in() {
         let theme = Theme::parse(text).unwrap();
         assert_eq!(theme.name, name);
-        assert_eq!(theme.kind, kind);
-        assert_eq!(theme.skipped, []);
+        assert_eq!(theme.kind, kind, "{name}");
+        assert_eq!(theme.skipped, [], "{name}");
         assert_eq!(
             theme.colors.keys().copied().collect::<Vec<_>>(),
             Token::ALL,
@@ -19,8 +23,62 @@ fn both_built_in_themes_set_every_token_and_skip_no_line() {
 }
 
 #[test]
+fn four_themes_are_built_in_with_vs_codes_the_defaults() {
+    let names: Vec<&str> = built_in().into_iter().map(|(_, name, _)| name).collect();
+    assert_eq!(
+        names,
+        [
+            "VS Code Light Modern",
+            "Gruvbox Light Hard",
+            "VS Code Dark Modern",
+            "Gruvbox Dark Hard"
+        ]
+    );
+    assert_eq!(LightTheme::default(), LightTheme::VsCodeLightModern);
+    assert_eq!(DarkTheme::default(), DarkTheme::VsCodeDarkModern);
+    assert_eq!(ThemeMode::default(), ThemeMode::System);
+}
+
+#[test]
+fn a_side_finds_its_themes_by_name_and_no_other_sides() {
+    assert_eq!(
+        LightTheme::named("Gruvbox Light Hard"),
+        Some(LightTheme::GruvboxLightHard)
+    );
+    assert_eq!(
+        DarkTheme::named("Gruvbox Dark Hard"),
+        Some(DarkTheme::GruvboxDarkHard)
+    );
+    assert_eq!(LightTheme::named("Gruvbox Dark Hard"), None);
+    assert_eq!(DarkTheme::named("VS Code Light Modern"), None);
+    assert_eq!(LightTheme::named("gruvbox light hard"), None);
+    assert_eq!(DarkTheme::named("Solarized Dark"), None);
+}
+
+#[test]
+fn the_themes_sent_are_the_ones_chosen_for_each_side_with_the_mode() {
+    let themes = Themes::chosen(
+        ThemeMode::Dark,
+        LightTheme::GruvboxLightHard,
+        DarkTheme::GruvboxDarkHard,
+    )
+    .unwrap();
+    assert_eq!(themes.mode, ThemeMode::Dark);
+    assert_eq!(themes.light.name, "Gruvbox Light Hard");
+    assert_eq!(themes.dark.name, "Gruvbox Dark Hard");
+    let bg = |view: &ThemeView| view.tokens.first().unwrap().value.clone();
+    assert_eq!(bg(&themes.light), "#f9f5d7");
+    assert_eq!(bg(&themes.dark), "#1d2021");
+}
+
+#[test]
 fn the_view_carries_every_token_as_a_css_variable() {
-    let themes = Themes::built_in().unwrap();
+    let themes = Themes::chosen(
+        ThemeMode::System,
+        LightTheme::default(),
+        DarkTheme::default(),
+    )
+    .unwrap();
     for view in [&themes.light, &themes.dark] {
         let properties: Vec<String> = view
             .tokens
@@ -233,22 +291,31 @@ fn the_window_takes_the_bg_of_the_built_in_theme_of_its_side() {
     assert_eq!(dark.rgba(), [0x1f, 0x1f, 0x1f, 0xff]);
 }
 
-/// `docs/devel/themes.md` has a row for each token with both built-in themes' values, so the page can't drift
+/// `docs/devel/themes.md` has a row for each token with every built-in theme's value, so the page can't drift
 /// from the files.
 #[test]
-fn the_doc_page_lists_every_token_with_both_values() {
+fn the_doc_page_lists_every_token_with_each_built_in_themes_value() {
     let page = include_str!("../../../../docs/devel/themes.md");
-    let light = Theme::parse(LIGHT_MODERN).unwrap();
-    let dark = Theme::parse(DARK_MODERN).unwrap();
+    let themes: Vec<Theme> = built_in()
+        .into_iter()
+        .map(|(text, _, _)| Theme::parse(text).unwrap())
+        .collect();
     for token in Token::ALL {
         let start = format!("| `{}` |", token.key());
         let row = page
             .lines()
             .find(|line| line.starts_with(&start))
             .unwrap_or_else(|| panic!("no row for {}", token.key()));
-        for theme in [&light, &dark] {
-            let value = format!("`{}`", theme.colors[&token].css());
-            assert!(row.contains(&value), "{row} lacks {value}");
-        }
+        let values: Vec<String> = row
+            .split('|')
+            .skip(3)
+            .map(|cell| cell.trim().to_owned())
+            .filter(|cell| !cell.is_empty())
+            .collect();
+        let expected: Vec<String> = themes
+            .iter()
+            .map(|theme| format!("`{}`", theme.colors[&token].css()))
+            .collect();
+        assert_eq!(values, expected, "{row}");
     }
 }

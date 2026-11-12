@@ -5,6 +5,7 @@ import { applyTheme, type DarkQuery, ThemeState, type Themes } from "./theme.sve
 vi.mock("$lib/data/bindings", () => ({ commands: { themes: vi.fn() } }));
 
 const THEMES: Themes = {
+  mode: "system",
   light: {
     name: "VS Code Light Modern",
     kind: "light",
@@ -55,6 +56,21 @@ describe("ThemeState", () => {
     expect(state.current?.name).toBe("VS Code Dark Modern");
     turn(false);
     expect(state.current?.name).toBe("VS Code Light Modern");
+  });
+
+  it("keeps the side Light or Dark mode names, whichever side Windows is on", async () => {
+    for (const [mode, name] of [
+      ["light", "VS Code Light Modern"],
+      ["dark", "VS Code Dark Modern"],
+    ] as const) {
+      vi.mocked(commands.themes).mockResolvedValue({ status: "ok", data: { ...THEMES, mode } });
+      const { query, turn } = sides(mode === "light");
+      const state = new ThemeState(query);
+      await state.load();
+      expect(state.current?.name, mode).toBe(name);
+      turn(mode !== "light");
+      expect(state.current?.name, mode).toBe(name);
+    }
   });
 
   it("holds the core's refusal and shows no theme", async () => {

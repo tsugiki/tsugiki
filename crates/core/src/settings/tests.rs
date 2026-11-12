@@ -3,11 +3,17 @@ use crate::conventions::Conventions;
 use crate::filters::Filter;
 use crate::mirror::MirrorSource;
 use crate::repository::{FoundRepository, RepositoryCounts};
+use crate::theme::{DarkTheme, LightTheme, ThemeMode};
 use time::format_description::well_known::Rfc3339;
 
 const HIDDEN: Settings = Settings {
     status_bar: StatusBarSettings { visible: false },
     releases: ReleaseSettings { check: true },
+    appearance: AppearanceSettings {
+        theme: ThemeMode::System,
+        light_theme: LightTheme::VsCodeLightModern,
+        dark_theme: DarkTheme::VsCodeDarkModern,
+    },
     repositories: Vec::new(),
 };
 
@@ -151,6 +157,116 @@ fn values_a_file_leaves_out_or_this_version_doesnt_know_change_nothing() {
     fs::remove_dir_all(root).unwrap();
 
     assert_eq!(files.loaded(), &LoadedSettings::default());
+}
+
+/// What `settings.toml` holding `text` loads as.
+fn loaded_from(name: &str, text: &str) -> LoadedSettings {
+    let (folders, root) = temp_folders(name);
+    fs::write(folders.settings_file(), text).unwrap();
+    let files = SettingsFiles::load(folders);
+    fs::remove_dir_all(root).unwrap();
+    files.loaded().clone()
+}
+
+#[test]
+fn appearance_picks_the_mode_and_a_theme_for_each_side() {
+    let text = r#"
+[appearance]
+theme = "dark"
+light_theme = "Gruvbox Light Hard"
+dark_theme = "Gruvbox Dark Hard"
+"#;
+    let loaded = loaded_from("appearance", text);
+
+    assert_eq!(
+        loaded.settings.appearance,
+        AppearanceSettings {
+            theme: ThemeMode::Dark,
+            light_theme: LightTheme::GruvboxLightHard,
+            dark_theme: DarkTheme::GruvboxDarkHard,
+        }
+    );
+    assert_eq!(loaded.problems, Vec::<String>::new());
+}
+
+#[test]
+fn an_appearance_key_left_out_takes_its_default() {
+    let loaded = loaded_from("appearance-part", "[appearance]\ntheme = \"light\"\n");
+
+    assert_eq!(
+        loaded.settings.appearance,
+        AppearanceSettings {
+            theme: ThemeMode::Light,
+            ..AppearanceSettings::default()
+        }
+    );
+    assert_eq!(loaded.problems, Vec::<String>::new());
+    assert_eq!(Settings::default().appearance, HIDDEN.appearance);
+}
+
+#[test]
+fn a_bad_mode_or_a_name_no_theme_has_keeps_its_default_and_is_reported() {
+    let text = r#"[status_bar]
+visible = false
+
+[appearance]
+theme = "dusk"
+light_theme = "Gruvbox Dark Hard"
+dark_theme = 3
+"#;
+    let loaded = loaded_from("appearance-bad", text);
+
+    assert_eq!(loaded.settings, HIDDEN, "the rest of the file still counts");
+    let problems: Vec<&str> = loaded
+        .problems
+        .iter()
+        .map(|problem| problem.split_once("settings.toml").unwrap().1)
+        .collect();
+    assert_eq!(
+        problems,
+        [
+            r#", line 5: theme isn't "system", "light" or "dark", so Tsugiki follows the system."#,
+            ", line 6: light_theme names no light theme, so Tsugiki uses VS Code Light Modern.",
+            ", line 7: dark_theme names no dark theme, so Tsugiki uses VS Code Dark Modern.",
+        ]
+    );
+}
+
+/// Saving would write the default over the value Tsugiki couldn't read, and the user's text would go.
+#[test]
+fn a_save_refuses_while_appearance_holds_a_value_tsugiki_cant_read() {
+    let (folders, root) = temp_folders("appearance-unread-save");
+    let before = "[appearance]\ntheme = \"Dark\"\n";
+    fs::write(folders.settings_file(), before).unwrap();
+
+    let refusal = SettingsFiles::load(folders.clone()).write(&HIDDEN);
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    let message = refusal.unwrap_err().message;
+    assert!(
+        message.contains(r#"settings.toml, line 2: theme isn't "system""#),
+        "{message}"
+    );
+    assert_eq!(after, before);
+}
+
+#[test]
+fn appearance_is_saved_by_name_and_only_where_it_differs_from_the_default() {
+    let settings = Settings {
+        appearance: AppearanceSettings {
+            theme: ThemeMode::Light,
+            light_theme: LightTheme::GruvboxLightHard,
+            dark_theme: DarkTheme::VsCodeDarkModern,
+        },
+        ..Settings::default()
+    };
+    let after = saved_over("appearance-save", "", &settings);
+
+    assert_eq!(
+        after,
+        "[appearance]\ntheme = \"light\"\nlight_theme = \"Gruvbox Light Hard\"\n"
+    );
 }
 
 #[test]

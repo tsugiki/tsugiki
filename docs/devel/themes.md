@@ -3,18 +3,41 @@
 Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.md](../../CONTEXT.md).
 Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the prototype on `prototype/themes`.
 
-- Every colour in the window comes from the **Theme** in force. The window follows Windows to the light or
-  the dark side, and when Windows changes sides while Tsugiki runs, the window jumps to the other Theme with
-  no fade. The root's `color-scheme` takes the Theme's kind, so scroll bars and form controls follow too.
+- Every colour in the window comes from the **Theme** in force. By default the window follows Windows to the
+  light or the dark side, and when Windows changes sides while Tsugiki runs, the window jumps to the other
+  Theme with no fade. The root's `color-scheme` takes the Theme's kind, so scroll bars and form controls
+  follow too.
+- `settings.toml` picks the mode and one Theme for each side
+  ([#517](https://github.com/tsugiki/tsugiki/issues/517)):
+
+  ```toml
+  [appearance]
+  theme = "system"   # "system", "light" or "dark"
+  light_theme = "VS Code Light Modern"
+  dark_theme = "Gruvbox Dark Hard"
+  ```
+
+  System, the default, takes the side Windows is on. Light and Dark keep their side whatever Windows says,
+  and turn the title bar and the native controls with it through Tauri's `set_theme`. A key left out takes
+  its default: System, VS Code Light Modern and VS Code Dark Modern. A `theme` other than the three, or a
+  name no Theme of that side has, keeps that key's default, and the status bar names the file and the line.
+  Tsugiki reads them at start, so a hand edit takes effect at the next one.
 - The window opens hidden, takes the `bg` of the Theme for the side Windows is on, and only then shows, so
   a dark Theme doesn't flash white while the page loads
   ([#516](https://github.com/tsugiki/tsugiki/issues/516)). The page's own background starts on the same
   colour until the Theme arrives, and the window takes the other side's `bg` when Windows changes sides.
-  `app/src/first_frame.rs` does it. Two gaps remain: Tauri reads high contrast as the light side, so a dark
-  contrast theme still opens white, and on macOS Tauri can't colour the webview, so WKWebView paints white
-  until the page loads.
-- Two Themes are built in: VS Code Light Modern for the light side and VS Code Dark Modern for the dark side.
-  The Sidebar and the status bar sit a step off the content, with a border, as in VS Code.
+  `app/src/first_frame.rs` does it. Four gaps remain:
+  - Tauri reads high contrast as the light side, so a dark contrast theme still opens white.
+  - On macOS Tauri can't colour the webview, so WKWebView paints white until the page loads.
+  - The window opens before the core reads the settings, so it opens on the side Windows is on, and a Light
+    or Dark mode turns it a moment later.
+  - The window's own background is the `bg` of VS Code's Theme for its side, whichever Theme the settings
+    pick. The page covers it, and it shows only at the edge of a resize.
+- Four Themes are built in. VS Code Light Modern and Gruvbox Light Hard are for the light side, and VS Code
+  Dark Modern and Gruvbox Dark Hard for the dark side. In VS Code's two, the Sidebar and the status bar sit a
+  step off the content, with a border. The Gruvbox Themes take their colours from the palette in
+  [morhetz/gruvbox](https://github.com/morhetz/gruvbox): the hard background, `bg0_h`, with the faded
+  colours on the light side and the bright ones on the dark side.
 - A Theme is a TOML file: `name`, `kind` (`"light"` or `"dark"`), and `[colors]` and `[syntax]` tables of
   tokens. Colours are `#rgb`, `#rrggbb` or `#rrggbbaa`. An unknown key or a bad value skips its line and the
   rest still loads; a file that isn't TOML, or has no `name` or `kind`, can't be used. The built-in Themes
@@ -52,38 +75,38 @@ The rules sit in `:where()`, which weighs nothing, so a component's own rule for
 
 A core test fails when this table and the built-in Themes disagree.
 
-| Token | What it colours | Light Modern | Dark Modern |
-|---|---|---|---|
-| `bg` | The content's background: the Issue list and the Detail pane | `#ffffff` | `#1f1f1f` |
-| `fg` | Text | `#3b3b3b` | `#cccccc` |
-| `fg_muted` | Quieter text: notes, the HUD's headings | `#767676` | `#9d9d9d` |
-| `border` | Borders between panes, around dialogs and inside them | `#e5e5e5` | `#2b2b2b` |
-| `bg_chrome` | The Sidebar's and the status bar's background, a comment's header, code in a description and Backports in the Issue view's tree | `#f8f8f8` | `#181818` |
-| `fg_chrome` | The Sidebar's and the status bar's text | `#3b3b3b` | `#cccccc` |
-| `bg_overlay` | Dialogs, the palette and the performance HUD | `#f8f8f8` | `#222222` |
-| `backdrop` | The scrim behind a dialog or the palette | `#00000026` | `#00000073` |
-| `shadow` | The shadow under a dialog, the palette or the HUD | `#00000029` | `#00000099` |
-| `selected` | The palette's selected row and the Sidebar's open view | `#e8e8e8` | `#04395e` |
-| `selection_active` | The Issue list's row under the cursor while the list holds the focus | `#e8e8e8` | `#04395e` |
-| `selection_inactive` | That row while the focus is elsewhere | `#e4e6f1` | `#37373d` |
-| `focus_border` | The line along the top of the pane that holds the focus | `#005fb8` | `#0078d4` |
-| `accent` | The bar and the title of an item that Needs attention, focus borders, PR numbers, links and a Review request in the Detail pane, the open tab's line, and as a tint, hunk headers and the diff's Show more rows | `#005fb8` | `#4daafc` |
-| `add` | Added lines, as a tint | `#48a14d` | `#2ea043` |
-| `del` | Removed lines, as a tint | `#e51400` | `#f85149` |
-| `find` | The search's matches in the diff, as a tint | `#f8c94a` | `#9e6a03` |
-| `find_current` | The match the search is on | `#a8ac94` | `#515c6a` |
-| `find_current_fg` | The text of the match the search is on | `#3b3b3b` | `#cccccc` |
-| `attention` | The mark on a draft from the user's Pending review | `#bf8803` | `#cca700` |
-| `danger` | Errors, missed budgets in the HUD, failed CI and a Review that requests changes | `#e51400` | `#f14c4c` |
-| `warn_bg` | The status bar's Offline background | `#c72e0f` | `#c72e0f` |
-| `warn_fg` | The status bar's Offline text | `#ffffff` | `#ffffff` |
-| `state_open` | The icon of an open Issue or PR, CI that passed and an approving Review | `#1a7f37` | `#3fb950` |
-| `state_done` | The icon of a merged PR or an Issue closed as done | `#8250df` | `#ab7df8` |
-| `state_closed` | The icon of a PR closed unmerged | `#d1242f` | `#f85149` |
-| `state_muted` | The icon of a Draft PR or an Issue closed as not planned | `#767676` | `#9d9d9d` |
-| `keyword` | Keywords and operators in code, from `[syntax]` | `#0000ff` | `#569cd6` |
-| `string` | Strings in code, and links in Markdown | `#a31515` | `#ce9178` |
-| `comment` | Comments in code | `#008000` | `#6a9955` |
-| `constant` | Numbers, constants and escapes in code, and Markdown's headings | `#098658` | `#b5cea8` |
-| `entity` | Functions, attributes and types in code | `#795e26` | `#dcdcaa` |
-| `tag` | Tags in HTML and XML | `#267f99` | `#4ec9b0` |
+| Token | What it colours | Light Modern | Gruvbox Light Hard | Dark Modern | Gruvbox Dark Hard |
+|---|---|---|---|---|---|
+| `bg` | The content's background: the Issue list and the Detail pane | `#ffffff` | `#f9f5d7` | `#1f1f1f` | `#1d2021` |
+| `fg` | Text | `#3b3b3b` | `#3c3836` | `#cccccc` | `#ebdbb2` |
+| `fg_muted` | Quieter text: notes, the HUD's headings | `#767676` | `#7c6f64` | `#9d9d9d` | `#a89984` |
+| `border` | Borders between panes, around dialogs and inside them | `#e5e5e5` | `#ebdbb2` | `#2b2b2b` | `#3c3836` |
+| `bg_chrome` | The Sidebar's and the status bar's background, a comment's header, code in a description and Backports in the Issue view's tree | `#f8f8f8` | `#fbf1c7` | `#181818` | `#282828` |
+| `fg_chrome` | The Sidebar's and the status bar's text | `#3b3b3b` | `#3c3836` | `#cccccc` | `#ebdbb2` |
+| `bg_overlay` | Dialogs, the palette and the performance HUD | `#f8f8f8` | `#fbf1c7` | `#222222` | `#282828` |
+| `backdrop` | The scrim behind a dialog or the palette | `#00000026` | `#00000026` | `#00000073` | `#00000073` |
+| `shadow` | The shadow under a dialog, the palette or the HUD | `#00000029` | `#00000029` | `#00000099` | `#00000099` |
+| `selected` | The palette's selected row and the Sidebar's open view | `#e8e8e8` | `#ebdbb2` | `#04395e` | `#504945` |
+| `selection_active` | The Issue list's row under the cursor while the list holds the focus | `#e8e8e8` | `#ebdbb2` | `#04395e` | `#504945` |
+| `selection_inactive` | That row while the focus is elsewhere | `#e4e6f1` | `#f2e5bc` | `#37373d` | `#3c3836` |
+| `focus_border` | The line along the top of the pane that holds the focus | `#005fb8` | `#076678` | `#0078d4` | `#458588` |
+| `accent` | The bar and the title of an item that Needs attention, focus borders, PR numbers, links and a Review request in the Detail pane, the open tab's line, and as a tint, hunk headers and the diff's Show more rows | `#005fb8` | `#076678` | `#4daafc` | `#83a598` |
+| `add` | Added lines, as a tint | `#48a14d` | `#79740e` | `#2ea043` | `#b8bb26` |
+| `del` | Removed lines, as a tint | `#e51400` | `#9d0006` | `#f85149` | `#fb4934` |
+| `find` | The search's matches in the diff, as a tint | `#f8c94a` | `#d79921` | `#9e6a03` | `#d79921` |
+| `find_current` | The match the search is on | `#a8ac94` | `#d5c4a1` | `#515c6a` | `#665c54` |
+| `find_current_fg` | The text of the match the search is on | `#3b3b3b` | `#282828` | `#cccccc` | `#fbf1c7` |
+| `attention` | The mark on a draft from the user's Pending review | `#bf8803` | `#b57614` | `#cca700` | `#fabd2f` |
+| `danger` | Errors, missed budgets in the HUD, failed CI and a Review that requests changes | `#e51400` | `#9d0006` | `#f14c4c` | `#fb4934` |
+| `warn_bg` | The status bar's Offline background | `#c72e0f` | `#af3a03` | `#c72e0f` | `#af3a03` |
+| `warn_fg` | The status bar's Offline text | `#ffffff` | `#fbf1c7` | `#ffffff` | `#fbf1c7` |
+| `state_open` | The icon of an open Issue or PR, CI that passed and an approving Review | `#1a7f37` | `#79740e` | `#3fb950` | `#b8bb26` |
+| `state_done` | The icon of a merged PR or an Issue closed as done | `#8250df` | `#8f3f71` | `#ab7df8` | `#d3869b` |
+| `state_closed` | The icon of a PR closed unmerged | `#d1242f` | `#9d0006` | `#f85149` | `#fb4934` |
+| `state_muted` | The icon of a Draft PR or an Issue closed as not planned | `#767676` | `#928374` | `#9d9d9d` | `#928374` |
+| `keyword` | Keywords and operators in code, from `[syntax]` | `#0000ff` | `#9d0006` | `#569cd6` | `#fb4934` |
+| `string` | Strings in code, and links in Markdown | `#a31515` | `#79740e` | `#ce9178` | `#b8bb26` |
+| `comment` | Comments in code | `#008000` | `#928374` | `#6a9955` | `#928374` |
+| `constant` | Numbers, constants and escapes in code, and Markdown's headings | `#098658` | `#8f3f71` | `#b5cea8` | `#d3869b` |
+| `entity` | Functions, attributes and types in code | `#795e26` | `#b57614` | `#dcdcaa` | `#fabd2f` |
+| `tag` | Tags in HTML and XML | `#267f99` | `#427b58` | `#4ec9b0` | `#8ec07c` |

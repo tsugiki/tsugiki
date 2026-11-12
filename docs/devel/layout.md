@@ -3,7 +3,9 @@
 Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.md](../../CONTEXT.md).
 
 - Inside a Repository the app uses three panes, like a mail client. This layout was chosen out of three that
-  were prototyped on branch `prototype/app-shell`.
+  were prototyped on branch `prototype/app-shell`. The panes fill the window above the status bar, and each
+  scrolls by itself with a scrollbar at its own right edge. The wheel scrolls the pane under the pointer and
+  stops at that pane's end; the window itself doesn't scroll.
   - **Sidebar** (left): the Repository switcher on top (also `Ctrl+R`, and "Repository: …" in the command
     palette), then the Workbench, the Built-in views, All issues, the Filters and the Pinned issues. It can be
     full, icons only, or hidden. Dragged narrow (or with « in its header) it keeps only icons with their

@@ -735,13 +735,19 @@
 </div>
 
 <style>
+  /* The panes take the window's height, and each scrolls by itself. The wheel stops at a pane's end, even
+     when a short window lets the screen around the panes scroll too. */
   .home {
     display: flex;
+    flex: 1;
+    min-height: 0;
   }
   /* The Detail pane grows from nothing, so the list keeps its width and is the first to shrink. */
   .list {
     flex: 1;
     min-width: 280px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .list.sized {
@@ -752,6 +758,8 @@
   .empty {
     flex: 1;
     min-width: 320px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   h1 {
@@ -908,8 +916,8 @@
 
   /* The focus shows as VS Code shows it (#602): a line along the top of the pane that holds it, and the
      row under the cursor in the active selection colour while that pane is the list. The line sticks to
-     the pane's visible top, as the window scrolls the list and the Detail pane scrolls itself. Each pane
-     keeps the line's room, so the line comes and goes without moving anything. */
+     the top of the pane as it scrolls. Each pane keeps the line's room, so the line comes and goes without
+     moving anything. */
   .home :global([data-pane])::before {
     content: "";
     position: sticky;

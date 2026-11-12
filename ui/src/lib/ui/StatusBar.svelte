@@ -171,10 +171,10 @@
 </div>
 
 <style>
+  /* The last row of the window, under the screen. */
   .bar {
-    position: fixed;
-    inset: auto 0 0;
     display: flex;
+    flex: none;
   }
 
   footer {

@@ -235,6 +235,38 @@ test("the Issue view comes back where the user left it after a PR from its tree"
   expect([afterEsc, await scrolled(pane)]).toEqual([300, 200]);
 });
 
+test("the wheel scrolls the pane under the pointer, and stops at the pane's end", async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 400 });
+  const paragraphs = Array.from({ length: 60 }, (_, at) => `<p>Paragraph ${String(at)}</p>`).join("");
+  const many = [issue(7, false), ...Array.from({ length: 40 }, (_, at) => issue(100 + at, false))];
+  await mockCore(page, {
+    ...answers(paragraphs),
+    workbench: { ...listing(false), data: { ...listing(false).data, items: many } },
+  });
+  await page.goto("/");
+  await inList(page, "#7 Issue 7").click();
+  const pane = page.getByRole("region", { name: "Issue view" });
+  await expect(pane).toContainText("Paragraph 59");
+  const list = page.locator(".list");
+  const bottom = (part: Locator) => part.evaluate((element) => element.scrollHeight - element.clientHeight);
+
+  await page.getByRole("navigation", { name: "Sidebar" }).hover();
+  await page.mouse.wheel(0, 300);
+  await pane.hover();
+  for (let turn = 0; turn < 3; turn += 1) await page.mouse.wheel(0, 2000);
+  // A scroll offset can be a fraction of a pixel.
+  await expect.poll(async () => (await bottom(pane)) - (await scrolled(pane))).toBeLessThan(1);
+  await list.hover();
+  await page.mouse.wheel(0, 200);
+  await expect.poll(() => scrolled(list)).toBeGreaterThan(0);
+
+  // Only the wheel over the list scrolled it. Neither the window nor the screen around the panes scrolled,
+  // and the window has nothing to scroll, so no scrollbar of its own at the right edge.
+  expect(await scrolled(list)).toBeLessThanOrEqual(200);
+  expect(await scrolled(page.locator("main"))).toBe(0);
+  expect(await page.evaluate(() => document.documentElement.scrollHeight - innerHeight)).toBe(0);
+});
+
 test("an Issue's PRs fold away and come back, and Alt+← to one of them unfolds its Issue", async ({
   page,
 }) => {

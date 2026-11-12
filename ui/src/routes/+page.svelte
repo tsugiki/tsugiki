@@ -231,3 +231,16 @@
 {#if hud.visible}
   <PerformanceHud {hud} refreshing={status.syncActivity !== null} />
 {/if}
+
+<style>
+  /* The room above the status bar (window.css). A screen taller than the window, such as the first-run one,
+     scrolls inside it. */
+  main {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    padding: 8px;
+    overflow: auto;
+  }
+</style>

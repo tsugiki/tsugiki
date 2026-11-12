@@ -185,15 +185,12 @@
   >{` ${row.title}`}{/snippet}
 
 <style>
-  /* Stays on screen beside a long list, and scrolls by itself, clear of the status bar. */
+  /* Takes the window's height and scrolls by itself, as each pane does, and the wheel stops at its end. */
   .detail {
     flex: 1;
     min-width: 320px;
-    position: sticky;
-    top: 0;
-    align-self: flex-start;
-    max-height: calc(100vh - 48px);
     overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   /* Lines stay short enough to read in a wide window. */

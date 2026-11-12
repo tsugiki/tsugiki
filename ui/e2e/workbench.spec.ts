@@ -220,17 +220,19 @@ test("a change keeps the selected Filter and the place the user had scrolled to"
   const sidebar = page.getByRole("navigation", { name: "Sidebar" });
   await sidebar.getByRole("button", { name: "Mine 1" }).click();
   await expect(page.getByRole("listitem").first()).toBeVisible();
-  await page.evaluate(() => {
-    window.scrollTo(0, 600);
+  const list = page.locator(".list");
+  const scrolled = () => list.evaluate((element) => element.scrollTop);
+  await list.evaluate((element) => {
+    element.scrollTop = 600;
   });
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(600);
+  await expect.poll(scrolled).toBe(600);
 
   const fresher = many.map((item, at) => (at === 5 ? { ...item, title: "A title that changed" } : item));
   await changeAnswer(page, "workbench", { status: "ok", data: { ...whole, items: fresher } });
   await emitFromCore(page, "changed", { repository: repository.name, items: [1005] });
 
   await expect(page.getByText("A title that changed")).toBeAttached();
-  expect(await page.evaluate(() => window.scrollY)).toBe(600);
+  expect(await scrolled()).toBe(600);
   await expect(sidebar.getByRole("button", { name: "Mine 1" })).toHaveAttribute("aria-current", "true");
 });
 

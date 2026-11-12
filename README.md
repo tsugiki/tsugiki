@@ -31,7 +31,7 @@ For the **Repositories** you add, such as `python/cpython` and your own projects
 ## Status
 
 Tsugiki 0.1 is the first version for daily work. It lists the Issues that wait on you, and you answer them
-on GitHub. 0.2, on main and not released yet, reads PRs in the app. Writing to GitHub comes in a later stage
+on GitHub. 0.2 reads PRs in the app. Writing to GitHub comes in a later stage
 of [docs/build-order.md](docs/build-order.md). These files record the decisions behind it:
 
 - [CONTEXT.md](CONTEXT.md): the glossary. Terms in **bold** are defined there.
@@ -93,12 +93,19 @@ command-line name is `tsg`.
 - The status bar says when a newer version of Tsugiki is out. `check = false` under `[releases]` in
   `settings.toml` turns the check off.
 
+### In 0.2.3
+
+- The window follows Windows to light or dark, in VS Code's Light Modern and Dark Modern colours.
+- The Issue list folds each Issue's PRs and the quiet items, and sorts by attention or by last update. The
+  Issue view folds the merged PRs.
+- A line shows which pane holds the keyboard focus, and arrows over the Detail pane go back and forward.
+
 ### Planned
 
 The [Issues](https://github.com/tsugiki/tsugiki/issues) hold the work in flight, and
 [docs/build-order.md](docs/build-order.md) the stages after it:
 
-- 0.2.3: speed, such as opening a PR without building the whole Workbench
+- Speed, such as opening a PR without building the whole Workbench
   ([#193](https://github.com/tsugiki/tsugiki/issues/193)) and keeping frames in budget while you drag the
   diff's scroll bar ([#225](https://github.com/tsugiki/tsugiki/issues/225)).
 - Reading PRs, continued: Stale reviews, Go to definition and Definition peek, the file view, the Review

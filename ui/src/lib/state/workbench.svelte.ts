@@ -143,8 +143,8 @@ export class WorkbenchState {
   }
 
   /** Moves the cursor after a PR that a change put under an Issue, or took out from under one. An item that
-   * went quiet under the cursor, or is quiet in the view just selected, leaves a folded section folded: the
-   * cursor moves to the last line above it, as folding it would. */
+   * went quiet under the cursor, or is quiet in the view the user selected, leaves a folded section folded:
+   * the cursor moves to the last line above it, as folding it would. */
   #followCursor() {
     const cursor = this.cursor;
     if (cursor === undefined) return;

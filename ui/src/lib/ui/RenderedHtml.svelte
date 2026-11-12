@@ -103,18 +103,18 @@
   }
 
   .rendered :global(.blob-code-deletion) {
-    background: color-mix(in srgb, #cf222e 18%, transparent);
+    background: color-mix(in srgb, var(--del) 18%, transparent);
   }
 
   .rendered :global(.blob-code-addition) {
-    background: color-mix(in srgb, #2da44e 18%, transparent);
+    background: color-mix(in srgb, var(--add) 18%, transparent);
   }
 
   .rendered :global(.blob-code-deletion .x) {
-    background: color-mix(in srgb, #cf222e 35%, transparent);
+    background: color-mix(in srgb, var(--del) 35%, transparent);
   }
 
   .rendered :global(.blob-code-addition .x) {
-    background: color-mix(in srgb, #2da44e 35%, transparent);
+    background: color-mix(in srgb, var(--add) 35%, transparent);
   }
 </style>

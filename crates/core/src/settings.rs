@@ -164,10 +164,11 @@ impl Default for Home {
 }
 
 /// How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
-/// (#187), whether the Sidebar (#234) and the list (#242) show, and which of them `Ctrl+K Z` hid (#246),
-/// to bring back on the next press. All of it stays on this machine, like the window's place, and a value
-/// left out takes its default. So does a value Tsugiki can't read, such as a width that isn't a whole number
-/// of pixels: a pane is too small a thing to lose the rest of `machine.toml` over.
+/// (#187), whether the Sidebar (#234) and the list (#242) show, which of them `Ctrl+K Z` hid (#246), to
+/// bring back on the next press, and the list's order (#592). All of it stays on this machine, like the
+/// window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
+/// width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml`
+/// over.
 #[expect(
     clippy::struct_excessive_bools,
     reason = "Each pane hides by itself, so all four states are valid: both hidden leaves the Detail pane"
@@ -195,6 +196,31 @@ pub struct PaneLayout {
     #[serde(deserialize_with = "or_default")]
     #[specta(type = Option<Panes>)]
     pub detail_only_hid: Option<Panes>,
+    /// How the Issue list orders its items (#592).
+    #[serde(deserialize_with = "or_default")]
+    #[specta(type = ListOrder)]
+    pub order: ListOrder,
+}
+
+/// How the Issue list orders its items, apart from its quiet section, which comes last either way (#592).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ListOrder {
+    /// What Needs attention first, newest first by when it started to, then the rest by last update.
+    #[default]
+    Attention,
+    /// Newest first by last update.
+    LastUpdate,
+}
+
+impl ListOrder {
+    /// The name `machine.toml` gives it, as serde reads it.
+    fn to_text(self) -> &'static str {
+        match self {
+            Self::Attention => "attention",
+            Self::LastUpdate => "last_update",
+        }
+    }
 }
 
 /// The Sidebar, the Workbench list, or both.
@@ -505,6 +531,12 @@ impl SettingsFiles {
                 Some(hid) => merge_value(section, key, &toml_edit::value(hid.to_text()), None),
                 None => drop(section.remove(key)),
             }
+            merge_value(
+                section,
+                "order",
+                &toml_edit::value(panes.order.to_text()),
+                Some(&toml_edit::value(ListOrder::default().to_text())),
+            );
         });
         edit.save()?;
         self.reload();

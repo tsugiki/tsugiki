@@ -139,18 +139,13 @@
     line-height: 16px;
   }
 
-  /* github.com's attention color, for a draft only the user sees. */
+  /* The theme's attention colour, for a draft only the user sees. */
   .pending {
     margin-left: 6px;
-    border: 1px solid #9a6700;
+    border: 1px solid var(--attention);
     border-radius: 4px;
     padding: 0 4px;
-    color: #9a6700;
-  }
-
-  :global(:root[data-theme="dark"]) .pending {
-    border-color: #d29922;
-    color: #d29922;
+    color: var(--attention);
   }
 
   article {

@@ -7,6 +7,7 @@ use crate::github::{CommitSha, Reply, Request, Transport, Unreachable};
 use crate::login::Login;
 use crate::repository::{RepositoryName, RepositorySize};
 use crate::repository_settings::RepositorySettings;
+use crate::settings::ListOrder;
 use crate::status::testing::{
     announced, changes_board, failed_reads_board, heads_board, quiet_board, showing, watched_board,
 };
@@ -818,7 +819,13 @@ fn the_recorded_cpython_work_reads_as_an_inbox() {
     for _ in 0..6 {
         let _change = changes.recv_timeout(PLENTY).unwrap();
     }
-    let workbench = Workbench::read(&reader, &cpython, &WorkbenchView::Whole).unwrap();
+    let workbench = Workbench::read(
+        &reader,
+        &cpython,
+        &WorkbenchView::Whole,
+        ListOrder::Attention,
+    )
+    .unwrap();
     session.stop(PLENTY);
     fs::remove_dir_all(folders.data).unwrap();
 
@@ -846,7 +853,13 @@ fn a_sync_fills_the_workbench_and_says_so() {
 
     session.requests().sync(plain_gcmon());
     let changed = changes.recv().unwrap();
-    let workbench = Workbench::read(&reader, &plain_gcmon(), &WorkbenchView::Whole).unwrap();
+    let workbench = Workbench::read(
+        &reader,
+        &plain_gcmon(),
+        &WorkbenchView::Whole,
+        ListOrder::Attention,
+    )
+    .unwrap();
     session.stop(PLENTY);
     fs::remove_dir_all(folders.data).unwrap();
 
@@ -1037,7 +1050,13 @@ fn a_sync_waits_until_tsugiki_knows_who_the_user_is() {
 
     session.requests().sync(plain_gcmon());
     drop(changes.recv().unwrap());
-    let workbench = Workbench::read(&reader, &plain_gcmon(), &WorkbenchView::Whole).unwrap();
+    let workbench = Workbench::read(
+        &reader,
+        &plain_gcmon(),
+        &WorkbenchView::Whole,
+        ListOrder::Attention,
+    )
+    .unwrap();
     session.stop(PLENTY);
     fs::remove_dir_all(folders.data).unwrap();
 

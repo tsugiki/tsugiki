@@ -17,6 +17,7 @@ use tsugiki_core::github::pull_requests::{
 use tsugiki_core::login::Login;
 use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
 use tsugiki_core::repository_settings::RepositorySettings;
+use tsugiki_core::settings::ListOrder;
 use tsugiki_core::store::{self, FilterResults, OpenReader, Store, StoreReader};
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_view::PrView;
@@ -80,12 +81,13 @@ fn read_workbench(
 ) {
     let held = Held::with_views(name);
     let view = view_of(&held.settings);
-    let shown = Workbench::read(&held.reader, &held.settings, &view).expect("the view");
+    let order = ListOrder::Attention;
+    let shown = Workbench::read(&held.reader, &held.settings, &view, order).expect("the view");
     assert!(
         !shown.items.is_empty() || !shown.quiet.is_empty(),
         "the view lists items"
     );
-    bencher.bench(|| Workbench::read(&held.reader, &held.settings, &view));
+    bencher.bench(|| Workbench::read(&held.reader, &held.settings, &view, order));
     held.close();
 }
 

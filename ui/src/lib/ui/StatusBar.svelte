@@ -182,8 +182,9 @@
     min-width: 0;
     padding: 2px 8px;
     font-size: 12px;
-    background: #e8e8e8;
-    color: #222;
+    background: var(--bg-chrome);
+    color: var(--fg-chrome);
+    border-top: 1px solid var(--border);
   }
 
   button,
@@ -194,8 +195,9 @@
     padding: 2px 8px;
     border: none;
     font-size: 12px;
-    background: #e8e8e8;
-    color: #222;
+    background: var(--bg-chrome);
+    color: var(--fg-chrome);
+    border-top: 1px solid var(--border);
   }
 
   button {
@@ -205,6 +207,7 @@
   /* A line of the status, which reads as a link to the question. */
   .question {
     padding: 0;
+    border: none;
     white-space: normal;
     font: inherit;
     color: inherit;
@@ -217,11 +220,13 @@
   }
 
   .offline {
-    background: #a85000;
-    color: #fff;
+    background: var(--warn-bg);
+    color: var(--warn-fg);
   }
 
+  /* An empty bar takes no room and draws no line. */
   .empty {
     padding: 0;
+    border: none;
   }
 </style>

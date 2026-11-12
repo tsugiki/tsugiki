@@ -114,7 +114,14 @@ test("the HUD times an Issue whose text comes from GitHub", async ({ page }) => 
     pull_requests: [],
     attention: null,
   };
-  const unread: IssueView = { ...listed, author: "issue-author", assignees: [], content: null };
+  const unread: IssueView = {
+    ...listed,
+    merged: [],
+    merged_count: 0,
+    author: "issue-author",
+    assignees: [],
+    content: null,
+  };
   await mockCore(page, {
     ...core,
     workbench: {

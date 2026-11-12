@@ -7,6 +7,7 @@ import type {
   WorkbenchRow_Serialize as WorkbenchRow,
 } from "../src/lib/data/bindings.ts";
 import { changeAnswer, mockCore } from "./mock-core.ts";
+import { themes } from "./themes.ts";
 
 const repository = { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] } as const;
 
@@ -61,7 +62,9 @@ const done = { status: "ok", data: null } as const;
 test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc goes back", async ({
   page,
 }) => {
+  await page.emulateMedia({ colorScheme: "light" });
   await mockCore(page, {
+    themes: { status: "ok", data: themes },
     home: { screen: "repository", repository, others: [] as string[] },
     workbench: {
       status: "ok",
@@ -69,7 +72,10 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
     },
     openIssue: done,
     fetchIssue: done,
-    issue: { status: "ok", data: { ...issue, author: "issue-author", assignees: [], content: null } },
+    issue: {
+      status: "ok",
+      data: { ...issue, merged: [], merged_count: 0, author: "issue-author", assignees: [], content: null },
+    },
     openPullRequest: done,
     fetchPullRequest: done,
     pullRequest: { status: "ok", data: view },
@@ -134,15 +140,13 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
   const diff = pane.getByRole("region", { name: "Diff" });
   await expect(diff).toContainText("NEWS+1 −0");
   await expect(diff).toContainText("1+The fix");
-  // github.com's colors, light as the window is now, and dark under a dark theme.
+  // The theme's syntax colours, light as the system is now, and dark once it turns.
   const keyword = diff.locator(".hl-keyword");
   await expect(keyword).toHaveText("fix");
-  await expect(keyword).toHaveCSS("color", "rgb(207, 34, 46)");
+  await expect(keyword).toHaveCSS("color", "rgb(0, 0, 255)");
   await expect(diff.locator(".hl-heading")).toHaveCSS("font-weight", "600");
-  await page.evaluate(() => {
-    document.documentElement.dataset["theme"] = "dark";
-  });
-  await expect(keyword).toHaveCSS("color", "rgb(255, 123, 114)");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(keyword).toHaveCSS("color", "rgb(86, 156, 214)");
   // Side by side, the added line shows on the right half, and the key switches back.
   await page.keyboard.press("ControlOrMeta+Alt+u");
   const sideBySide = pane.getByRole("region", { name: "Side-by-side diff" });
@@ -221,7 +225,10 @@ const threaded = async (page: Page, at: DiffThread["at"], words: string) => {
     },
     openIssue: done,
     fetchIssue: done,
-    issue: { status: "ok", data: { ...issue, author: "issue-author", assignees: [], content: null } },
+    issue: {
+      status: "ok",
+      data: { ...issue, merged: [], merged_count: 0, author: "issue-author", assignees: [], content: null },
+    },
     openPullRequest: done,
     fetchPullRequest: done,
     pullRequest: { status: "ok", data: reviewed },

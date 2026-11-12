@@ -39,7 +39,7 @@
   .scrim {
     position: fixed;
     inset: 0;
-    background: rgb(0 0 0 / 15%);
+    background: var(--backdrop);
   }
 
   .dialog {
@@ -48,10 +48,10 @@
     padding: 12px;
     box-sizing: border-box;
     font-size: 13px;
-    background: #fff;
-    border: 1px solid #ccc;
+    background: var(--bg-overlay);
+    border: 1px solid var(--border);
     border-radius: 6px;
-    box-shadow: 0 8px 30px rgb(0 0 0 / 25%);
+    box-shadow: 0 8px 30px var(--shadow);
   }
 
   .dialog:focus {

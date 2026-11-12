@@ -61,6 +61,9 @@ export class WorkbenchState {
   error = $state<string>();
   /** The line the list's keys act on. A re-query leaves it in place (ADR 0008). */
   cursor = $state<Stop>();
+  /** Whether the list shows its quiet section. One choice holds for every view while the Repository stays
+   * open, and the section starts folded (#601). */
+  quietShown = $state(false);
   #repository: string;
   #lastQuestion = 0;
   #stopListening: (() => void) | undefined;
@@ -101,9 +104,27 @@ export class WorkbenchState {
     return this.#stops().find((stop) => sameStop(this.cursor, stop));
   }
 
-  /** Whether the list, or its quiet section, has the line `stop`. */
+  /** Whether the list, or its quiet section, has the line `stop`, folded or not. */
   lists(stop: Stop): boolean {
-    return this.#stops().some((line) => sameStop(line, stop));
+    return this.#allStops().some((line) => sameStop(line, stop));
+  }
+
+  /** Puts the cursor on line `stop`, and unfolds the quiet section if the line is in it, so the cursor has
+   * a row to stand on. */
+  moveTo(stop: Stop) {
+    this.cursor = stop;
+    if (this.#inQuiet(stop)) this.quietShown = true;
+  }
+
+  showQuiet() {
+    this.quietShown = true;
+  }
+
+  /** Folds the quiet section. A cursor in it moves to the last line above it. */
+  hideQuiet() {
+    const cursor = this.cursor;
+    this.quietShown = false;
+    if (cursor !== undefined && this.#inQuiet(cursor)) this.cursor = this.#stops().at(-1);
   }
 
   /** Moves the cursor down the list, or up it, stopping at each end. With none yet it starts at the top. */
@@ -119,16 +140,29 @@ export class WorkbenchState {
     this.#stopListening?.();
   }
 
-  /** Moves the cursor after a PR that a change put under an Issue, or took out from under one. */
+  /** Moves the cursor after a PR that a change put under an Issue, or took out from under one. An item that
+   * went quiet under the cursor unfolds the quiet section, so the row the user stood on stays in sight. */
   #followCursor() {
     const cursor = this.cursor;
-    const stops = this.#stops();
-    if (cursor === undefined || stops.some((stop) => sameStop(cursor, stop))) return;
-    this.cursor = stops.find((stop) => stop.number === cursor.number) ?? cursor;
+    if (cursor === undefined) return;
+    const stops = this.#allStops();
+    const found = stops.some((stop) => sameStop(cursor, stop))
+      ? cursor
+      : stops.find((stop) => stop.number === cursor.number);
+    if (found !== undefined) this.moveTo(found);
   }
 
+  /** The lines the cursor can stand on: those of the quiet section only while it shows. */
   #stops() {
+    return [...(this.items ?? []), ...(this.quietShown ? this.quiet : [])].flatMap(stopsOf);
+  }
+
+  #allStops() {
     return [...(this.items ?? []), ...this.quiet].flatMap(stopsOf);
+  }
+
+  #inQuiet(stop: Stop) {
+    return this.quiet.flatMap(stopsOf).some((line) => sameStop(line, stop));
   }
 
   async #ask() {

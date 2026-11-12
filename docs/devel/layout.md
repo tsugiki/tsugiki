@@ -17,8 +17,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 
     An item that Needs attention is marked the way unread mail is. In the Workbench, a Filter or Pinned
     issues, items that Need attention come first, newest first by when they started to need it, then the rest
-    by last update, then the quiet section. The preview says why in the words an **Alert** would use: "CI
-    failed: Tests / Ubuntu", "Changes requested by some-reviewer", "Review requested from you". An Issue's
+    by last update, then the quiet section. The quiet section starts folded behind a muted "Show 4 quiet
+    items" line at the end of the list. A click on the line, or "Show Quiet Items" in the command palette,
+    unfolds it, and the line turns to "Hide 4 quiet items" above it. ↑ ↓ skip a folded section. Folding it
+    moves a cursor in it to the last line above, and opening a quiet item another way, as with `Alt+←`,
+    unfolds it. The choice holds for every view while the Repository stays open. The preview says why in
+    the words an **Alert** would use: "CI failed: Tests / Ubuntu", "Changes requested by some-reviewer",
+    "Review requested from you". An Issue's
     Origin PRs and their Backports are listed under it, and ↑ ↓ stop on each of them. `Enter` or a click opens
     the item or PR under the cursor in the Detail pane. Any item can be **Archived** or **Muted**, and its
     author **Muted**. A footer under the list gives the legend and the list's keys (↑ ↓, E, M, `Alt+←`, `?`

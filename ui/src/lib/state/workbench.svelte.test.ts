@@ -83,10 +83,98 @@ describe("WorkbenchState", () => {
     state.moveCursor(-1);
     expect(state.cursor?.number).toBe(3);
     state.moveCursor(1);
+    expect(state.cursor?.number, "the folded quiet section has no lines to stop on").toBe(3);
+    state.showQuiet();
+    state.moveCursor(1);
     state.moveCursor(1);
     expect(state.underCursor?.number).toBe(1);
     state.moveCursor(1);
     expect(state.cursor?.number).toBe(1);
+    state.stop();
+  });
+
+  it("starts with the quiet section folded, and folding it moves a cursor in it to the last line above", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue({
+      status: "ok",
+      data: { items: [item(4), item(3)], quiet: [item(2)], count: 0, review_requests: 0, filters: [] },
+    });
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    expect(state.quietShown).toBe(false);
+    state.showQuiet();
+    state.moveCursor(1);
+    state.moveCursor(1);
+    state.moveCursor(1);
+    expect(state.cursor?.number).toBe(2);
+
+    state.hideQuiet();
+
+    expect(state.quietShown).toBe(false);
+    expect(state.cursor?.number).toBe(3);
+    state.stop();
+  });
+
+  it("leaves a cursor above the quiet section where it is when the section folds", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue({
+      status: "ok",
+      data: { items: [item(4), item(3)], quiet: [item(2)], count: 0, review_requests: 0, filters: [] },
+    });
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    state.hideQuiet();
+    expect(state.cursor).toBeUndefined();
+    state.showQuiet();
+    state.moveCursor(1);
+
+    state.hideQuiet();
+
+    expect(state.cursor?.number).toBe(4);
+    state.stop();
+  });
+
+  it("unfolds the quiet section for a cursor put on a line in it", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue({
+      status: "ok",
+      data: { items: [item(3)], quiet: [item(2)], count: 0, review_requests: 0, filters: [] },
+    });
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    const pr = (number: number) => ({ number, kind: "pull_request" as const, issue: undefined });
+
+    state.moveTo(pr(3));
+    expect(state.quietShown).toBe(false);
+    state.moveTo(pr(2));
+
+    expect(state.quietShown).toBe(true);
+    expect(state.underCursor?.number).toBe(2);
+    state.stop();
+  });
+
+  it("unfolds the quiet section when the item under the cursor goes quiet", async () => {
+    const { send } = catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue({
+      status: "ok",
+      data: { items: [item(3), item(2)], quiet: [], count: 0, review_requests: 0, filters: [] },
+    });
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    state.moveCursor(1);
+    state.moveCursor(1);
+    vi.mocked(commands.workbench).mockResolvedValue({
+      status: "ok",
+      data: { items: [item(3)], quiet: [item(2)], count: 0, review_requests: 0, filters: [] },
+    });
+
+    send("python/cpython");
+    await vi.waitFor(() => {
+      expect(state.quiet).toHaveLength(1);
+    });
+
+    expect(state.quietShown).toBe(true);
+    expect(state.underCursor?.number).toBe(2);
     state.stop();
   });
 

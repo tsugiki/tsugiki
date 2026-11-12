@@ -117,7 +117,7 @@
    */
   function open(stop: Stop, how: "open" | "back" | "through" = "open") {
     if (how !== "through") visits.visit(stop);
-    workbench.cursor = stop;
+    workbench.moveTo(stop);
     if (how !== "open") focusCursor();
     if (stop.kind === "pull_request" && detail instanceof PrViewState && sameStop(detail.line, stop)) {
       detail.switchTab();
@@ -204,7 +204,7 @@
   /** Moves the cursor to the row of what the Detail pane shows, if the list has that row. */
   function cursorToDetail() {
     const line = detailLine();
-    if (line && workbench.lists(line)) workbench.cursor = line;
+    if (line && workbench.lists(line)) workbench.moveTo(line);
   }
 
   /** "Reset Layout": both panes on show at their default widths. A list it brings back takes the cursor and
@@ -252,8 +252,29 @@
         run: () => void toggleDetailOnly(),
       },
       { title: "Reset Layout", run: () => void resetLayout() },
+      ...(workbench.quiet.length > 0
+        ? [{ title: workbench.quietShown ? "Hide Quiet Items" : "Show Quiet Items", run: toggleQuiet }]
+        : []),
     ];
   }
+
+  /** Unfolds the quiet section, or folds it. A cursor in it moves to the last line above it, and takes the
+   * focus with it if the focus was on a row that went away. */
+  function toggleQuiet() {
+    if (!workbench.quietShown) {
+      workbench.showQuiet();
+      return;
+    }
+    const focused = document.activeElement;
+    workbench.hideQuiet();
+    void tick().then(() => {
+      if (focused?.isConnected === false) focusCursor();
+    });
+  }
+
+  /** The line that folds the quiet section: what a click on it does, and to how many items. */
+  const quietLine = (shown: boolean, count: number) =>
+    `${shown ? "Hide" : "Show"} ${count === 1 ? "1 quiet item" : `${String(count)} quiet items`}`;
 
   /** Names a line for the page, which can list a PR under two Issues. */
   const lineName = (stop: Stop | undefined) => `${String(stop?.issue ?? "")}#${String(stop?.number)}`;
@@ -264,13 +285,17 @@
   }
 
   /** Focuses the row under the cursor, so it scrolls into view, and Enter presses its button. While the list
-   * is hidden the Detail pane takes the focus, once it shows what it's about to. */
+   * is hidden the Detail pane takes the focus, once it shows what it's about to. A row in a quiet section
+   * that has just unfolded takes it once the page has drawn the row. */
   function focusCursor() {
     if (panes.hidden("list")) {
       void tick().then(() => detailPane()?.focus());
       return;
     }
-    list?.querySelector<HTMLElement>(`[data-item="${lineName(workbench.cursor)}"]`)?.focus();
+    const row = () => list?.querySelector<HTMLElement>(`[data-item="${lineName(workbench.cursor)}"]`);
+    const drawn = row();
+    if (drawn) drawn.focus();
+    else void tick().then(() => row()?.focus());
   }
 
   const detailPane = () => home?.querySelector<HTMLElement>('[data-pane="detail"]');
@@ -488,12 +513,16 @@
           {/each}
         </ul>
         {#if workbench.quiet.length > 0}
-          <h2>Quiet</h2>
-          <ul>
-            {#each workbench.quiet as item (item.number)}
-              {@render listed(item)}
-            {/each}
-          </ul>
+          <button class="quiet" aria-expanded={workbench.quietShown} onclick={toggleQuiet}>
+            {quietLine(workbench.quietShown, workbench.quiet.length)}
+          </button>
+          {#if workbench.quietShown}
+            <ul aria-label="Quiet items">
+              {#each workbench.quiet as item (item.number)}
+                {@render listed(item)}
+              {/each}
+            </ul>
+          {/if}
         {/if}
       {/if}
     </section>
@@ -583,9 +612,19 @@
     text-decoration: underline;
   }
 
-  h2 {
-    font-size: 13px;
+  /* A muted line at the end of the list until #599 styles it. */
+  .quiet {
+    all: unset;
+    display: block;
     margin: 16px 0 0;
+    font-size: 12px;
+    opacity: 0.75;
+    cursor: pointer;
+  }
+
+  .quiet:hover,
+  .quiet:focus-visible {
+    text-decoration: underline;
   }
 
   .preview {

@@ -23,6 +23,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{RecvError, TryRecvError};
 
@@ -1119,32 +1120,14 @@ fn a_sync_github_cant_answer_shows_offline_and_waits_for_the_next_refresh() {
     assert_eq!(announced(&seen), [octocat(), offline_as, octocat()]);
 }
 
-/// Can't reach GitHub for its first question about the viewer. After that, answers each question by name.
-struct BlipThenWork {
-    blip: AtomicBool,
-}
-
-impl Transport for BlipThenWork {
-    fn post(&self, _: &crate::token::Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
-        match request.operation {
-            "Viewer" if self.blip.swap(false, Ordering::Relaxed) => Err(Unreachable::Offline),
-            "Viewer" => signed_in(),
-            "FetchPullRequests" => work_fetch(),
-            _ => work_search(&["a"]),
-        }
-    }
-}
-
 #[test]
 fn a_sync_waits_until_tsugiki_knows_who_the_user_is() {
-    let access = GitHubAccess {
-        transport: Box::new(BlipThenWork {
-            blip: AtomicBool::new(true),
-        }),
-        run_gh: signed_in_gh,
-    };
+    let (access, up, _asked) = outage();
+    // GitHub can't be reached for the first question about the viewer, and answers once the status says so.
+    up.store(false, Ordering::Relaxed);
+    let back = move |_| up.store(true, Ordering::Relaxed);
+    let (board, heard) = heard_board(back, |_| {});
     let folders = temp_folders("late-viewer");
-    let (board, changes) = changes_board();
     let session = Session::start(
         board,
         Ok(folders.clone()),
@@ -1157,7 +1140,7 @@ fn a_sync_waits_until_tsugiki_knows_who_the_user_is() {
     let reader = session.reader();
 
     session.requests().sync(plain_gcmon());
-    drop(changes.recv().unwrap());
+    while !matches!(heard.recv().unwrap(), Heard::Changed(_)) {}
     let workbench = Workbench::read(
         &reader,
         &plain_gcmon(),
@@ -1169,6 +1152,171 @@ fn a_sync_waits_until_tsugiki_knows_who_the_user_is() {
     fs::remove_dir_all(folders.data).unwrap();
 
     assert_eq!(workbench.items.len(), 1);
+}
+
+/// Answers each question by name while the network is up, and can't reach GitHub while it is down. Says
+/// which it was asked.
+struct Outage {
+    up: Arc<AtomicBool>,
+    asked: Sender<String>,
+}
+
+impl Transport for Outage {
+    fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
+        drop(self.asked.send(request.operation.to_owned()));
+        if !self.up.load(Ordering::Relaxed) {
+            return Err(Unreachable::Offline);
+        }
+        match request.operation {
+            "Viewer" => signed_in(),
+            "FetchPullRequests" => work_fetch(),
+            "FetchIssueContent" => issue_content_reply(),
+            _ => work_search(&["a"]),
+        }
+    }
+}
+
+/// An outage that starts with the network up, the switch that takes it down, and what it was asked.
+fn outage() -> (GitHubAccess, Arc<AtomicBool>, Receiver<String>) {
+    let up = Arc::new(AtomicBool::new(true));
+    let (asked, seen) = mpsc::channel();
+    let access = GitHubAccess {
+        transport: Box::new(Outage {
+            up: Arc::clone(&up),
+            asked,
+        }),
+        run_gh: signed_in_gh,
+    };
+    (access, up, seen)
+}
+
+/// The news a board passed on to the app and the mirrors, in order.
+#[derive(Debug, PartialEq, Eq)]
+enum Heard {
+    Status(Status),
+    Heads(Vec<u32>),
+    Changed(Vec<u32>),
+}
+
+/// A board that passes on its statuses, the PR heads it hands the mirrors and the changes, in one line.
+/// It runs `on_status` with how many statuses it has shown, and `on_change` with how many changes.
+fn heard_board(
+    mut on_status: impl FnMut(usize) + Send + 'static,
+    mut on_change: impl FnMut(usize) + Send + 'static,
+) -> (StatusBoard, Receiver<Heard>) {
+    let (heard, seen) = mpsc::channel();
+    let (heads, changes) = (heard.clone(), heard.clone());
+    let (mut shown, mut changed) = (0, 0);
+    let board = StatusBoard::new(Box::new(move |status: &Status| {
+        heard.send(Heard::Status(status.clone())).unwrap();
+        shown += 1;
+        on_status(shown);
+    }))
+    .with_heads(Box::new(
+        move |_: &RepositoryName, handed: Vec<PrHead>, _| {
+            let numbers = handed.iter().map(|head| head.number).collect();
+            heads.send(Heard::Heads(numbers)).unwrap();
+        },
+    ))
+    .with_changes(Box::new(move |change: &Change| {
+        changes.send(Heard::Changed(change.items.clone())).unwrap();
+        changed += 1;
+        on_change(changed);
+    }));
+    (board, seen)
+}
+
+#[test]
+fn a_refresh_while_offline_comes_back_online_before_the_next_status_check() {
+    let (access, up, _asked) = outage();
+    let (messages, incoming) = mpsc::channel();
+    let requests = SessionRequests {
+        messages: messages.clone(),
+    };
+    requests.sync(plain_gcmon());
+    let clicks = requests.clone();
+    // Online, the network goes; offline, it comes back and the user clicks Refresh.
+    let on_status = move |shown| match shown {
+        1 => up.store(false, Ordering::Relaxed),
+        2 => {
+            up.store(true, Ordering::Relaxed);
+            clicks.refresh();
+        }
+        _ => {}
+    };
+    // Once the sync saves, the open Issue's read comes round.
+    let on_change = move |changed| {
+        if changed == 1 {
+            requests.fetch_issue(gcmon(), 9);
+            messages.send(Message::Stop).unwrap();
+        }
+    };
+    let (mut board, heard) = heard_board(on_status, on_change);
+    let refreshes = Refreshes {
+        intervals: HOURLY,
+        incoming,
+    };
+
+    watch(&mut board, &empty_store(), access, &refreshes);
+
+    let offline_as = Status::OfflineAs {
+        last_login: Login::new("octocat"),
+    };
+    assert_eq!(
+        heard.try_iter().collect::<Vec<_>>(),
+        [
+            Heard::Status(octocat()),
+            Heard::Status(offline_as),
+            Heard::Status(octocat()),
+            Heard::Heads(vec![7]),
+            Heard::Changed(vec![7]),
+            Heard::Changed(vec![9]),
+        ]
+    );
+}
+
+#[test]
+fn a_refresh_while_github_is_still_away_stays_offline_and_runs_no_step() {
+    let (access, up, asked) = outage();
+    let (messages, incoming) = mpsc::channel();
+    let requests = SessionRequests {
+        messages: messages.clone(),
+    };
+    requests.sync(plain_gcmon());
+    let on_status = move |shown| match shown {
+        1 => up.store(false, Ordering::Relaxed),
+        2 => {
+            requests.refresh();
+            messages.send(Message::Stop).unwrap();
+        }
+        _ => {}
+    };
+    let (mut board, heard) = heard_board(on_status, |_| {});
+    let refreshes = Refreshes {
+        intervals: HOURLY,
+        incoming,
+    };
+
+    watch(&mut board, &empty_store(), access, &refreshes);
+
+    let offline_as = Status::OfflineAs {
+        last_login: Login::new("octocat"),
+    };
+    assert_eq!(
+        heard.try_iter().collect::<Vec<_>>(),
+        [Heard::Status(octocat()), Heard::Status(offline_as)]
+    );
+    let asked: Vec<String> = asked.try_iter().collect();
+    // The step asks again for half as much after no answer, and the click asks only who is signed in.
+    let viewers = asked
+        .iter()
+        .filter(|operation| *operation == "Viewer")
+        .count();
+    assert_eq!(
+        (viewers, asked.last().map(String::as_str)),
+        (2, Some("Viewer")),
+        "{asked:?}"
+    );
 }
 
 #[test]

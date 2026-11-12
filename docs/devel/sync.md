@@ -31,3 +31,6 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     after a not-found, that GitHub doesn't have it or the token can't see it. The words go once a later read
     saves the item.
   - Mark Seen and Mark Unseen keep working, as they write only to the database.
+- Tsugiki asks GitHub who is signed in about once a minute, and only that answer brings it back online.
+  Refresh while offline asks at once: if GitHub answers, the sync, the mirror's fetches and the open item's
+  reads carry on. If it still doesn't, Tsugiki stays offline and the sync waits for the next minute's ask.

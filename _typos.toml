@@ -1,0 +1,14 @@
+# pre-commit runs typos with this file. It skips the files below, and allows the words we spell this way
+# on purpose.
+
+[files]
+# Recorded replies from GitHub and git, which the tests read byte for byte. Their node IDs and cursors hold
+# letter runs such as `Ot`, and their titles are other people's text.
+extend-exclude = ["crates/core/tests/fixtures/"]
+
+[default.extend-words]
+# A test's name writes a possessive without its apostrophe: `a_repositorys_table` is a repository's table.
+repositorys = "repositorys"
+proxys = "proxys"
+# The `before` cursors a test sent, one for each page it asked for.
+befores = "befores"

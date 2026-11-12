@@ -19,9 +19,9 @@ concurrency:
 
 jobs:
   # Decides which checks run. It compares the PR's merge commit with its base, and a rename counts as both
-  # of its paths. `docs-only` skips every check but doc-width. `ui-only`, when each path is docs or under
-  # `ui/`, skips the Rust ones. scripts/scope.ts holds the rule, which `just check` applies too. A push to
-  # main sets neither, so it runs every check.
+  # of its paths. `docs-only` skips every check but doc-width and pre-commit. `ui-only`, when each path is
+  # docs or under `ui/`, skips the Rust ones. scripts/scope.ts holds the rule, which `just check` applies too.
+  # A push to main sets neither, so it runs every check.
   changes:
     name: changes
     runs-on: ubuntu-latest
@@ -56,6 +56,27 @@ jobs:
         with:
           node-version-file: .node-version
       - run: npm run doc-width
+
+  # Runs the hooks in .pre-commit-config.yaml on every PR, docs-only and ui-only too: typos reads the docs,
+  # and any PR can change a workflow. CONTRIBUTING.md pins the same pre-commit.
+  pre-commit:
+    name: pre-commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - run: pipx install pre-commit==4.7.0
+      # The hooks' environments, which a first run builds from the pinned commits. actionlint's is a Go build.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+      - run: npm run pre-commit
 
   rust:
     name: ${{ matrix.check }} (windows-latest)
@@ -310,7 +331,17 @@ jobs:
   ci-passed:
     name: CI passed
     if: ${{ always() }}
-    needs: [changes, doc-width, rust, dependencies, release-check, rust-coverage, ui, playwright, macos]
+    needs:
+      - changes
+      - doc-width
+      - pre-commit
+      - rust
+      - dependencies
+      - release-check
+      - rust-coverage
+      - ui
+      - playwright
+      - macos
     runs-on: ubuntu-latest
     steps:
       - name: Every job succeeded, or skipped on a docs-only PR, or skipped a Rust check on a ui-only PR

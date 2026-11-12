@@ -169,10 +169,10 @@
     font:
       12px/1.4 ui-monospace,
       monospace;
-    background: rgb(255 255 255 / 95%);
-    border: 1px solid #ccc;
+    background: color-mix(in srgb, var(--bg-overlay) 95%, transparent);
+    border: 1px solid var(--border);
     border-radius: 4px;
-    box-shadow: 0 2px 8px rgb(0 0 0 / 15%);
+    box-shadow: 0 2px 8px var(--shadow);
   }
 
   table {
@@ -188,7 +188,7 @@
   }
 
   thead th {
-    color: #666;
+    color: var(--fg-muted);
   }
 
   td {
@@ -196,7 +196,7 @@
   }
 
   .miss {
-    color: #c00;
+    color: var(--danger);
   }
 
   button {
@@ -211,6 +211,6 @@
   }
 
   [role="alert"] {
-    color: #c00;
+    color: var(--danger);
   }
 </style>

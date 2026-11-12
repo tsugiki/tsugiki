@@ -101,7 +101,10 @@ test("the quiet section unfolds, folds, and unfolds again for Alt+← back to an
     },
     openIssue: done,
     fetchIssue: done,
-    issue: { status: "ok", data: { ...review, author: "issue-author", content: null } },
+    issue: {
+      status: "ok",
+      data: { ...review, merged: [], merged_count: 0, author: "issue-author", content: null },
+    },
     openPullRequest: done,
     fetchPullRequest: done,
     pullRequest: { status: "ok", data: ownView },

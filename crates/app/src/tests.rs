@@ -38,6 +38,14 @@ fn about_answers_with_what_the_core_says() {
     assert_eq!(about(), tsugiki_core::about(&version()));
 }
 
+#[test]
+fn themes_answers_with_the_built_in_themes() {
+    assert_eq!(
+        themes().unwrap(),
+        tsugiki_core::theme::Themes::built_in().unwrap()
+    );
+}
+
 /// `build.rs` ran in this checkout, so the version names the commit it's on, whichever that is (#238).
 #[test]
 fn the_version_names_the_commit_checked_out() {

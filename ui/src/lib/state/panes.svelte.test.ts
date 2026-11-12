@@ -11,6 +11,7 @@ const DEFAULTS = {
   sidebar_hidden: false,
   list_hidden: false,
   detail_only_hid: null,
+  order: "attention" as const,
 };
 
 beforeEach(() => {
@@ -58,14 +59,16 @@ it("keeps what the user changed before the core answered", async () => {
   panes.sidebar = 300;
   void panes.toggle("sidebar");
   void panes.show("list");
+  void panes.setOrder("last_update");
 
   await loading;
 
-  expect([panes.sidebar, panes.list, panes.hidden("sidebar"), panes.hidden("list")]).toEqual([
+  expect([panes.sidebar, panes.list, panes.hidden("sidebar"), panes.hidden("list"), panes.order]).toEqual([
     300,
     500,
     true,
     false,
+    "last_update",
   ]);
 });
 
@@ -121,7 +124,7 @@ it("hides each pane and shows it again, saving each time with its width", async 
   await panes.toggle("list");
 
   expect([hidden, panes.hidden("sidebar"), panes.hidden("list")]).toEqual([[true, true], false, false]);
-  const widths = { sidebar: 240, list: 500, detail_only_hid: null };
+  const widths = { sidebar: 240, list: 500, detail_only_hid: null, order: "attention" };
   expect(core.savePaneLayout.mock.calls).toEqual([
     [{ ...widths, sidebar_hidden: true, list_hidden: false }],
     [{ ...widths, sidebar_hidden: true, list_hidden: true }],
@@ -211,6 +214,7 @@ it("puts the whole layout back to the defaults with one save, forgetting what Ct
     sidebar_hidden: true,
     list_hidden: true,
     detail_only_hid: "list",
+    order: "attention",
   });
   core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
   const panes = new PanesState();
@@ -225,6 +229,38 @@ it("puts the whole layout back to the defaults with one save, forgetting what Ct
     false,
   ]);
   expect(core.savePaneLayout.mock.calls).toEqual([[DEFAULTS]]);
+});
+
+it("puts the order back when it can't save it, as the core reads the list in the order it saved", async () => {
+  core.paneLayout.mockResolvedValue(DEFAULTS);
+  core.savePaneLayout.mockResolvedValue({ status: "error", error: { kind: "internal", message: "locked" } });
+  const panes = new PanesState();
+  await panes.load();
+
+  await panes.setOrder("last_update");
+
+  expect([panes.order, panes.problem]).toEqual(["attention", "Tsugiki can't save the panes' layout: locked"]);
+});
+
+it("orders the list by attention until the core says otherwise, and saves the order the user picks", async () => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULTS, order: "last_update" });
+  core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
+  const panes = new PanesState();
+  const before = panes.order;
+  await panes.load();
+  const read = panes.order;
+
+  await panes.resetLayout();
+  const reset = panes.order;
+  await panes.setOrder("attention");
+
+  expect([before, read, reset, panes.order]).toEqual([
+    "attention",
+    "last_update",
+    "last_update",
+    "attention",
+  ]);
+  expect(core.savePaneLayout.mock.calls).toEqual([[{ ...DEFAULTS, order: "last_update" }], [DEFAULTS]]);
 });
 
 it("shows only the Detail pane, then brings back both panes, saving what it hid", async () => {

@@ -126,7 +126,9 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
   await page.goto("/");
   await expect(page.getByRole("button", { name: "#7 Issue 7" })).toBeVisible();
 
+  // The Issue starts folded, and → unfolds it.
   await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowRight");
   await page.keyboard.press("ArrowDown");
   await expect(page.getByRole("button", { name: "#10 gh-7: Fix it" })).toBeFocused();
   await page.keyboard.press("Enter");
@@ -286,6 +288,7 @@ const threaded = async (page: Page, at: DiffThread["at"], words: string) => {
     pullRequestSpans: { status: "ok", data: [[], [], [], []] },
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "PRs of #7" }).click();
   await page.getByRole("button", { name: "#10 gh-7: Fix it" }).click();
   return page.getByRole("region", { name: "PR view" });
 };

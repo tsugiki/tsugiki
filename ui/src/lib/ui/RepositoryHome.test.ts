@@ -184,15 +184,23 @@ it("moves a time on while the window stays open", async () => {
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("lists an Issue with its PRs under it", async () => {
+it("lists an Issue folded, and its PRs under it once unfolded", async () => {
   vi.setSystemTime("2026-11-04T13:00:00Z");
+  const attention = { since: "2026-11-04T10:00:00Z", why: [{ kind: "review_requested" }] };
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [issue], quiet: [], count: 1, review_requests: 0, filters: [] },
+    data: { items: [{ ...issue, attention }], quiet: [], count: 1, review_requests: 0, filters: [] },
   });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
+  const fold = await screen.findByRole("button", { name: "PRs of #112564", expanded: false });
+  const folded = [screen.getAllByRole("listitem").length, fold.textContent];
+  // The folded row still says why the Issue Needs attention, though the PR that does is folded away.
+  expect(screen.getByText("Review requested from you")).toBeTruthy();
 
-  const [item, pullRequest] = await screen.findAllByRole("listitem");
+  await fireEvent.click(fold);
+  const [item, pullRequest] = screen.getAllByRole("listitem");
+
+  expect([...folded, fold.getAttribute("aria-expanded"), fold.textContent]).toEqual([1, "›", "true", "⌄"]);
 
   expect(within(item as HTMLElement).getByText("#112564 GIL drop during collection")).toBeTruthy();
   expect(within(item as HTMLElement).getByText("issue-author, some-author · 1 PR · 3h ago")).toBeTruthy();
@@ -354,6 +362,7 @@ const backportRow = {
 it("lists an Origin PR's Backports beneath it in the Issue", async () => {
   answering({ ...issue, pull_requests: [{ kind: "pr", ...row, backports: [backportRow] }] });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
+  await unfoldAll();
 
   const origin = (await screen.findByText(/^#160662 /)).closest("li") as HTMLElement;
 
@@ -366,6 +375,7 @@ it("lists an Origin PR's Backports beneath it in the Issue", async () => {
 it("lists a Backport with no Origin PR directly under its Issue", async () => {
   answering({ ...issue, pull_requests: [{ kind: "backport", ...backportRow }] });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
+  await unfoldAll();
 
   expect(await screen.findByText("Bot backport · some-author · into 3.14 · Open · CI passed")).toBeTruthy();
 });
@@ -402,12 +412,22 @@ const listing = async () => {
     },
   });
   const { component } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
+  const issueRow = await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
+  await unfoldAll();
   return {
     component,
-    issueRow: await screen.findByRole("button", { name: "#112564 GIL drop during collection" }),
+    issueRow,
     treeRow: screen.getByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" }),
     prRow: screen.getByRole("button", { name: "#5 Alone" }),
   };
+};
+
+/** Unfolds each Issue the list shows, once it shows one, as each starts folded (#593). */
+const unfoldAll = async () => {
+  await screen.findAllByRole("button", { name: /^PRs of #/ });
+  for (const fold of screen.queryAllByRole("button", { name: /^PRs of #/, expanded: false })) {
+    await fireEvent.click(fold);
+  }
 };
 
 const press = (key: string, init: KeyboardEventInit = {}) =>
@@ -574,6 +594,7 @@ it("keeps the merged PRs unfolded after one of them opens and Esc comes back", a
 it("opens a PR that fixes two Issues again from its line under the other one", async () => {
   answering(issue, { ...issue, number: 112565, title: "Another crash" });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
+  await unfoldAll();
   const [first, second] = await screen.findAllByRole("button", { name: /^#160662 / });
 
   await fireEvent.click(first as HTMLElement);
@@ -710,6 +731,7 @@ it("stops the Issue view it keeps when it goes", async () => {
 it("opens a Backport in the list in the PR view, with its Issue to go back to", async () => {
   answering({ ...issue, pull_requests: [{ kind: "pr", ...row, backports: [backportRow] }] });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
+  await unfoldAll();
 
   await fireEvent.click(await screen.findByRole("button", { name: /^#160700 / }));
 
@@ -1055,6 +1077,7 @@ it("leaves the mouse's own buttons to a dialog on top, and still keeps the page 
   });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn(), keysActive: false });
   await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
+  await unfoldAll();
   await fireEvent.click(
     screen.getByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" }),
   );
@@ -1112,6 +1135,7 @@ it("shows another Repository as a launch does: its Workbench, an empty Detail pa
   });
   const { rerender } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
   await fireEvent.click(await screen.findByRole("button", { name: "Mine 1" }));
+  await unfoldAll();
   await fireEvent.click(
     await screen.findByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" }),
   );
@@ -1133,11 +1157,82 @@ it("shows another Repository as a launch does: its Workbench, an empty Detail pa
   expect(first.getAttribute("aria-current")).toBe("true");
 });
 
+it("unfolds an Issue with → and folds it with ←, which on a PR's row goes to its Issue first", async () => {
+  const { issueRow, treeRow, prRow } = await listing();
+  const fold = screen.getByRole("button", { name: "PRs of #112564" });
+  const shown = () => fold.getAttribute("aria-expanded");
+  await press("ArrowDown");
+  await press("ArrowDown");
+  expect(document.activeElement).toBe(treeRow);
+
+  await press("ArrowRight");
+  await press("ArrowLeft");
+  const onIssue = [document.activeElement === issueRow, shown()];
+  await press("ArrowLeft");
+  const folded = shown();
+  await press("ArrowDown");
+  const skipped = document.activeElement === prRow;
+  await press("ArrowLeft");
+  await press("ArrowUp");
+  await press("ArrowRight");
+
+  expect([...onIssue, folded, skipped]).toEqual([true, "true", "false", true]);
+  expect([shown(), document.activeElement]).toEqual(["true", issueRow]);
+  await fireEvent.click(fold);
+  expect(shown()).toBe("false");
+});
+
+it("leaves ← and → to whatever has the focus outside the list, such as a diff that scrolls sideways", async () => {
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  const pane = await screen.findByRole("region", { name: "Issue view" });
+
+  const sideways = new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true });
+  pane.dispatchEvent(sideways);
+
+  expect(sideways.defaultPrevented).toBe(false);
+  expect(screen.getByRole("button", { name: "PRs of #112564" }).getAttribute("aria-expanded")).toBe("true");
+});
+
+it("leaves ← and → to a pane's edge that has the focus, and to a hidden list", async () => {
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  const fold = screen.getByRole("button", { name: "PRs of #112564" });
+  const edge = screen.getByRole("separator", { name: "Sidebar width" });
+
+  await fireEvent.keyDown(edge, { key: "ArrowLeft" });
+  const kept = fold.getAttribute("aria-expanded");
+  await press("B", { ctrlKey: true, altKey: true });
+  await press("ArrowLeft");
+  await press("B", { ctrlKey: true, altKey: true });
+
+  expect([
+    kept,
+    screen.getByRole("button", { name: "PRs of #112564" }).getAttribute("aria-expanded"),
+  ]).toEqual(["true", "true"]);
+});
+
+it("goes back with Alt+← to a PR in a folded Issue, and unfolds it to put the cursor on the PR", async () => {
+  const { treeRow, prRow } = await listing();
+  await fireEvent.click(treeRow);
+  await fireEvent.click(prRow);
+  await fireEvent.click(screen.getByRole("button", { name: "PRs of #112564" }));
+
+  await press("ArrowLeft", { altKey: true });
+
+  const back = await screen.findByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" });
+  expect(back.getAttribute("aria-current")).toBe("true");
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(back);
+  });
+});
+
 it("starts the way back fresh in another Repository", async () => {
   answering({ ...issue, attention: null });
   const { rerender } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
   await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
   await rerender({ name: "python/other" });
+  await unfoldAll();
   await fireEvent.click(
     await screen.findByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" }),
   );
@@ -2067,7 +2162,7 @@ it("marks each Issue and PR in the list with the icon of its state", async () =>
     },
   });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
-  await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
+  await unfoldAll();
 
   const icons = screen.getAllByRole("img").map((icon) => icon.getAttribute("title"));
 

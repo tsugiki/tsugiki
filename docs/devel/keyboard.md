@@ -15,6 +15,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 | Find in diff | `Ctrl+F` |
 | Hide / show the Sidebar | `Ctrl+B` |
 | Hide / show the Issue list | `Ctrl+Alt+B` |
+| Unfold / fold an Issue's PRs in the Issue list | `→` / `←` |
 | Show only the Detail pane / show the panes | `Ctrl+K Z` |
 | Unified ↔ side-by-side | `Ctrl+Alt+U` |
 | Next / previous tab in the PR view | `Ctrl+PageDown` / `Ctrl+PageUp` |

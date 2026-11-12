@@ -319,6 +319,37 @@ export type CloningChanged_Serialize = Cloning | null;
  */
 export type CodeRow = { kind: "hunk"; text: string } | { kind: "context"; old: number; new: number; text: string } | { kind: "added"; new: number; text: string } | { kind: "removed"; old: number; text: string } | { kind: "note"; text: string };
 
+/**  What a comment says and who wrote it when, on an Issue, in a PR's Conversation or in a review thread. */
+export type Comment = Comment_Serialize | Comment_Deserialize;
+
+/**
+ *  GitHub's number for a comment on an Issue or in a PR's Conversation, which a link names after
+ *  `#issuecomment-`. The window gets it as a number, which holds it exactly up to 2^53.
+ */
+export type CommentId = number;
+
+/**  What a comment says and who wrote it when, on an Issue, in a PR's Conversation or in a review thread. */
+export type Comment_Deserialize = {
+	/**  Nothing, for a comment whose author's account has gone. */
+	author?: Login | null,
+	created_at: string,
+	/**  GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005). */
+	body_html: string,
+	/**  The reason it is hidden on GitHub. Nothing, for a comment that isn't. */
+	hidden?: HiddenReason | null,
+};
+
+/**  What a comment says and who wrote it when, on an Issue, in a PR's Conversation or in a review thread. */
+export type Comment_Serialize = {
+	/**  Nothing, for a comment whose author's account has gone. */
+	author: Login | null,
+	created_at: string,
+	/**  GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005). */
+	body_html: string,
+	/**  The reason it is hidden on GitHub. Nothing, for a comment that isn't. */
+	hidden: HiddenReason | null,
+};
+
 /**  How a Repository's PRs name their Issues and Backports (ADR 0011). `links.rs` reads this. */
 export type Conventions = "cpython" | "github";
 
@@ -702,30 +733,20 @@ others: RepositoryName[] };
 /**  A key or a click. The key itself isn't named, so the log holds nothing the user typed. */
 export type Input = "key" | "click";
 
-/**  A comment on an Issue. */
+/**  A comment on an Issue, or in a PR's Conversation. */
 export type IssueComment = IssueComment_Serialize | IssueComment_Deserialize;
 
-/**  A comment on an Issue. */
+/**  A comment on an Issue, or in a PR's Conversation. */
 export type IssueComment_Deserialize = {
-	/**  Nothing, for a comment whose author's account has gone. */
-	author?: Login | null,
-	created_at: string,
-	/**  GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005). */
-	body_html: string,
-	/**  The reason it is hidden on GitHub. Nothing, for a comment that isn't. */
-	hidden?: HiddenReason | null,
-};
+	/**  Nothing, for a comment kept from before Tsugiki asked for it, until the next read. */
+	id?: CommentId | null,
+} & Comment_Deserialize;
 
-/**  A comment on an Issue. */
+/**  A comment on an Issue, or in a PR's Conversation. */
 export type IssueComment_Serialize = {
-	/**  Nothing, for a comment whose author's account has gone. */
-	author: Login | null,
-	created_at: string,
-	/**  GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005). */
-	body_html: string,
-	/**  The reason it is hidden on GitHub. Nothing, for a comment that isn't. */
-	hidden: HiddenReason | null,
-};
+	/**  Nothing, for a comment kept from before Tsugiki asked for it, until the next read. */
+	id: CommentId | null,
+} & Comment_Serialize;
 
 /**  An Issue's description and its recent comments. */
 export type IssueContent = IssueContent_Serialize | IssueContent_Deserialize;
@@ -1726,10 +1747,18 @@ export type Rest = {
 /**  Someone's Review of a PR, as the Conversation shows it. */
 export type Review = Review_Serialize | Review_Deserialize;
 
+/**
+ *  GitHub's number for a Review, which a link names after `#pullrequestreview-`. The window gets it as a
+ *  number, as it gets a comment's.
+ */
+export type ReviewId = number;
+
 export type ReviewState = "PENDING" | "COMMENTED" | "APPROVED" | "CHANGES_REQUESTED" | "DISMISSED";
 
 /**  Someone's Review of a PR, as the Conversation shows it. */
 export type Review_Deserialize = {
+	/**  Nothing, for a Review kept from before Tsugiki asked for it, until the next read. */
+	id?: ReviewId | null,
 	/**  Nothing, for a Review whose author's account has gone. */
 	author?: Login | null,
 	state: ReviewState,
@@ -1749,6 +1778,8 @@ export type Review_Deserialize = {
 
 /**  Someone's Review of a PR, as the Conversation shows it. */
 export type Review_Serialize = {
+	/**  Nothing, for a Review kept from before Tsugiki asked for it, until the next read. */
+	id: ReviewId | null,
 	/**  Nothing, for a Review whose author's account has gone. */
 	author: Login | null,
 	state: ReviewState,
@@ -2091,15 +2122,25 @@ export type ThreadCode = {
 /**  A comment in a review thread. */
 export type ThreadComment = ThreadComment_Serialize | ThreadComment_Deserialize;
 
+/**
+ *  GitHub's number for a comment in a review thread, which a link names after `#discussion_r`. The window
+ *  gets it as a number, as it gets a comment's.
+ */
+export type ThreadCommentId = number;
+
 /**  A comment in a review thread. */
 export type ThreadComment_Deserialize = {
+	/**  Nothing, for a comment kept from before Tsugiki asked for it, until the next read. */
+	id?: ThreadCommentId | null,
 	submission: Submission,
-} & IssueComment_Deserialize;
+} & Comment_Deserialize;
 
 /**  A comment in a review thread. */
 export type ThreadComment_Serialize = {
+	/**  Nothing, for a comment kept from before Tsugiki asked for it, until the next read. */
+	id: ThreadCommentId | null,
 	submission: Submission,
-} & IssueComment_Serialize;
+} & Comment_Serialize;
 
 /**  GitHub's id of a review thread, which a thread's line in the Conversation names to open it in Files. */
 export type ThreadId = string;

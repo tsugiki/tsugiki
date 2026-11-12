@@ -2,31 +2,31 @@
 source: crates/core/src/github/pull_request_content/tests.rs
 expression: outline
 ---
-10 comments, 0 earlier; 0 earlier Reviews
-Some("user-6") Commented at Some("5c6f5c1") with a body
-  Python/ceval.c "I agree with @user-5: self is " +3 resolved=false outdated=true at Right None, began at Some(1623), 4 read
-  Python/ceval.c "If PyUnicode_FromString fails," +2 resolved=false outdated=true at Right None, began at Some(1624), 3 read
-  Lib/test/test_call.py "Good setup for the happy path." +1 resolved=false outdated=true at Right None, began at Some(913), 2 read
-  Python/ceval.c "The heuristic of matching tp_n" +1 resolved=false outdated=true at Right None, began at Some(1778), 2 read
-  Python/ceval.c "Hmm, this fires whenever argco" +1 resolved=false outdated=true at Right None, began at Some(1649), 2 read
-Some("user-7") Commented at Some("5c6f5c1") with a body
-  Python/ceval.c "Suggested change" +1 resolved=false outdated=true at Right None, began at Some(1656), 2 read
-  Python/ceval.c "This feels like a nasty hack. " +1 resolved=false outdated=true at Right None, began at Some(1684), 2 read
-Some("user-8") Commented at Some("febd510") with a body
-  Lib/test/test_call.py "There's no real need for this " +2 resolved=false outdated=true at Right None, began at Some(931), 3 read
-  Lib/test/test_call.py "Please, add a test case for de" +1 resolved=false outdated=true at Right None, began at Some(919), 2 read
-Some("user-4") ChangesRequested at Some("febd510") with a body
-  Python/ceval.c "Your self_hint is non NULL (be" +3 resolved=false outdated=true at Right None, began at Some(1622), 4 read
-  Python/ceval.c "Would this suggestion be also " +1 resolved=false outdated=true at Right None, began at Some(1623), 2 read
-Some("user-9") Commented at Some("2b80cb2")
-  Python/ceval.c "The argcount == 0 condition is" +1 resolved=false outdated=true at Right None, began at Some(1675), 2 read
-Some("user-9") Commented at Some("f9fd4da")
-  Python/ceval.c "Why are we calling this here i" +2 resolved=false outdated=true at Right None, began at Some(1796), 3 read
-Some("user-7") Commented at Some("f6b4c69") with a body
-  Lib/test/test_call.py "We like to keep type hints out" +1 resolved=true outdated=true at Right None, began at Some(1007), 2 read
-  Lib/test/test_call.py "I find these docstrings really" +1 resolved=true outdated=true at Right None, began at Some(1013), 2 read
-  Lib/test/test_call.py "I think we should use assertRa" +1 resolved=true outdated=true at Right None, began at Some(1015), 2 read
-  Python/ceval.c "I think we can use PyStackRef_" +1 resolved=true outdated=true at Right None, began at Some(1802), 2 read
-  Python/ceval.c "This comment is long and very " +1 resolved=true outdated=true at Right None, began at Some(1800), 2 read
-  Python/ceval.c "This comment should be combine" +1 resolved=true outdated=false at Right Some(1690), began at Some(1692), 2 read
-Some("user-7") Approved at Some("a4c2623") with a body
+10 comments, 10 with GitHub's number, 0 earlier; 0 earlier Reviews
+Some(4582134258) Some("user-6") Commented at Some("5c6f5c1") with a body
+  Python/ceval.c "I agree with @user-5: self is " +3 resolved=false outdated=true at Right None, began at Some(1623), 4 read from Some(3483624570)
+  Python/ceval.c "If PyUnicode_FromString fails," +2 resolved=false outdated=true at Right None, began at Some(1624), 3 read from Some(3483632540)
+  Lib/test/test_call.py "Good setup for the happy path." +1 resolved=false outdated=true at Right None, began at Some(913), 2 read from Some(3483641252)
+  Python/ceval.c "The heuristic of matching tp_n" +1 resolved=false outdated=true at Right None, began at Some(1778), 2 read from Some(3483645902)
+  Python/ceval.c "Hmm, this fires whenever argco" +1 resolved=false outdated=true at Right None, began at Some(1649), 2 read from Some(3483656456)
+Some(4582956281) Some("user-7") Commented at Some("5c6f5c1") with a body
+  Python/ceval.c "Suggested change" +1 resolved=false outdated=true at Right None, began at Some(1656), 2 read from Some(3484304692)
+  Python/ceval.c "This feels like a nasty hack. " +1 resolved=false outdated=true at Right None, began at Some(1684), 2 read from Some(3484356730)
+Some(4584501961) Some("user-8") Commented at Some("febd510") with a body
+  Lib/test/test_call.py "There's no real need for this " +2 resolved=false outdated=true at Right None, began at Some(931), 3 read from Some(3485524550)
+  Lib/test/test_call.py "Please, add a test case for de" +1 resolved=false outdated=true at Right None, began at Some(919), 2 read from Some(3485531965)
+Some(4584795828) Some("user-4") ChangesRequested at Some("febd510") with a body
+  Python/ceval.c "Your self_hint is non NULL (be" +3 resolved=false outdated=true at Right None, began at Some(1622), 4 read from Some(3485731609)
+  Python/ceval.c "Would this suggestion be also " +1 resolved=false outdated=true at Right None, began at Some(1623), 2 read from Some(3485735055)
+Some(4893395993) Some("user-9") Commented at Some("2b80cb2")
+  Python/ceval.c "The argcount == 0 condition is" +1 resolved=false outdated=true at Right None, began at Some(1675), 2 read from Some(3746292581)
+Some(5003809934) Some("user-9") Commented at Some("f9fd4da")
+  Python/ceval.c "Why are we calling this here i" +2 resolved=false outdated=true at Right None, began at Some(1796), 3 read from Some(3840037032)
+Some(5462728415) Some("user-7") Commented at Some("f6b4c69") with a body
+  Lib/test/test_call.py "We like to keep type hints out" +1 resolved=true outdated=true at Right None, began at Some(1007), 2 read from Some(4224030545)
+  Lib/test/test_call.py "I find these docstrings really" +1 resolved=true outdated=true at Right None, began at Some(1013), 2 read from Some(4224045582)
+  Lib/test/test_call.py "I think we should use assertRa" +1 resolved=true outdated=true at Right None, began at Some(1015), 2 read from Some(4224069048)
+  Python/ceval.c "I think we can use PyStackRef_" +1 resolved=true outdated=true at Right None, began at Some(1802), 2 read from Some(4224079797)
+  Python/ceval.c "This comment is long and very " +1 resolved=true outdated=true at Right None, began at Some(1800), 2 read from Some(4224100034)
+  Python/ceval.c "This comment should be combine" +1 resolved=true outdated=false at Right Some(1690), began at Some(1692), 2 read from Some(4224108382)
+Some(5484466770) Some("user-7") Approved at Some("a4c2623") with a body

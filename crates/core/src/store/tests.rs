@@ -2,11 +2,11 @@ use super::file::{Contents, contents};
 use super::testing::{V1, V2, backups, has_table, migrated, temp_database, user_version};
 use super::*;
 use crate::github::CommitSha;
-use crate::github::issue_content::IssueComment;
+use crate::github::issue_content::Comment;
 use crate::github::issues::IssueState;
 use crate::github::pull_request_content::{
-    Anchor, DiffHunk, Opening, Resolution, Review, Side, Subject, Submission, ThreadComment,
-    ThreadId, ThreadLine,
+    Anchor, DiffHunk, Opening, Resolution, Review, ReviewId, Side, Subject, Submission,
+    ThreadComment, ThreadCommentId, ThreadId, ThreadLine,
 };
 use crate::github::pull_requests::{CiState, LatestReview, OffDefault, PrState, ReviewState};
 use rusqlite::trace::{TraceEvent, TraceEventCodes};
@@ -236,6 +236,7 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
         opened_at: Some(saved_at),
     };
     let review = Review {
+        id: Some(ReviewId::new(5_481_796_336)),
         author: Some(Login::new("some-reviewer")),
         state: ReviewState::Approved,
         commit: CommitSha::parse("0123abc"),
@@ -253,7 +254,8 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
             anchor: Anchor::Current,
             subject: Subject::File,
             comments: vec![ThreadComment {
-                comment: IssueComment {
+                id: Some(ThreadCommentId::new(4_224_108_382)),
+                comment: Comment {
                     author: None,
                     created_at: saved_at,
                     body_html: "<p>Why?</p>".to_owned(),
@@ -280,7 +282,8 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
             original: Some(2),
         },
         comments: vec![ThreadComment {
-            comment: IssueComment {
+            id: None,
+            comment: Comment {
                 author: Some(Login::new("the-user")),
                 created_at: saved_at,
                 body_html: "<p>A draft</p>".to_owned(),
@@ -368,12 +371,12 @@ fn a_row_for_an_item_the_store_doesnt_hold_is_refused() {
             "INSERT INTO issue_assignees VALUES ('python/cpython', 7, 'someone')",
             "INSERT INTO issue_labels VALUES ('python/cpython', 7, 'type-bug')",
             "INSERT INTO pull_request_labels VALUES ('python/cpython', 1, 'skip news')",
-            "INSERT INTO issue_comments VALUES ('python/cpython', 7, 0, 'someone', 0, '<p>Hi</p>', NULL)",
-            "INSERT INTO pr_reviews VALUES ('python/cpython', 1, 0, 'someone', 'APPROVED', NULL, 0, '', NULL)",
+            "INSERT INTO issue_comments VALUES ('python/cpython', 7, 0, 'someone', 0, '<p>Hi</p>', NULL, 1)",
+            "INSERT INTO pr_reviews VALUES ('python/cpython', 1, 0, 'someone', 'APPROVED', NULL, 0, '', NULL, 1)",
             "INSERT INTO review_threads VALUES ('python/cpython', 1, 0, 0, 'T1', 'a.py', 1, 'RIGHT', 1, 'Hm', NULL, 0,
                                                 'open', 'current', NULL)",
             "INSERT INTO review_thread_comments VALUES ('python/cpython', 1, 0, 0, 0, 'someone', 0, '<p>Hm</p>', NULL,
-                                                        'submitted')",
+                                                        'submitted', 1)",
         ];
     let refused = orphans.map(|sql| {
         let refusal = connection.execute(sql, []).err();

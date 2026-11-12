@@ -2,11 +2,10 @@ use time::OffsetDateTime;
 
 use super::*;
 use crate::github::CommitSha;
-use crate::github::issue_content::IssueComment;
-use crate::github::issue_content::{HiddenReason, IssueContent};
+use crate::github::issue_content::{Comment, CommentId, HiddenReason, IssueComment, IssueContent};
 use crate::github::pull_request_content::{
-    Anchor, DiffHunk, Opening, Resolution, Review, Side, Subject, Submission, ThreadComment,
-    ThreadId, ThreadLine,
+    Anchor, DiffHunk, Opening, Resolution, Review, ReviewId, Side, Subject, Submission,
+    ThreadComment, ThreadCommentId, ThreadId, ThreadLine,
 };
 use crate::github::pull_requests::{PullRequestFacts, ReviewState};
 use crate::login::Login;
@@ -41,7 +40,8 @@ fn a_pr_in_an_issues_tree_shows_its_row_before_tsugiki_has_read_its_conversation
 
 /// A PR's Conversation with two Reviews, oldest first, one of them hidden and with two threads.
 pub(crate) fn reviewed() -> PullRequestContent {
-    let thread = |line: Option<u32>, opening| ThreadLine {
+    // A thread on `line`, whose one comment GitHub numbers `number`.
+    let thread = |line: Option<u32>, number, opening| ThreadLine {
         id: ThreadId::new(&format!("T{line:?}")),
         path: "Lib/ast.py".to_owned(),
         opening,
@@ -58,7 +58,8 @@ pub(crate) fn reviewed() -> PullRequestContent {
             original: Some(7),
         },
         comments: vec![ThreadComment {
-            comment: IssueComment {
+            id: Some(ThreadCommentId::new(number)),
+            comment: Comment {
                 author: Some(Login::new("some-reviewer")),
                 created_at: OffsetDateTime::UNIX_EPOCH,
                 body_html: "<p>Why?</p>".to_owned(),
@@ -72,16 +73,20 @@ pub(crate) fn reviewed() -> PullRequestContent {
         conversation: IssueContent {
             body_html: "<p>Fixes the crash</p>".to_owned(),
             comments: vec![IssueComment {
-                author: None,
-                created_at: OffsetDateTime::UNIX_EPOCH,
-                body_html: "<p>Looks good</p>".to_owned(),
-                hidden: Some(HiddenReason::OffTopic),
+                id: Some(CommentId::new(6_065_108_504)),
+                comment: Comment {
+                    author: None,
+                    created_at: OffsetDateTime::UNIX_EPOCH,
+                    body_html: "<p>Looks good</p>".to_owned(),
+                    hidden: Some(HiddenReason::OffTopic),
+                },
             }],
             earlier_comments: 2,
             opened_at: Some(OffsetDateTime::UNIX_EPOCH),
         },
         reviews: vec![
             Review {
+                id: Some(ReviewId::new(5_481_796_336)),
                 author: Some(Login::new("some-reviewer")),
                 state: ReviewState::ChangesRequested,
                 commit: CommitSha::parse("0123abc"),
@@ -91,19 +96,23 @@ pub(crate) fn reviewed() -> PullRequestContent {
                 threads: vec![
                     thread(
                         Some(12),
+                        4_224_108_382,
                         Opening::Words {
                             words: "Why not a set?".to_owned(),
                         },
                     ),
                     thread(
                         None,
+                        4_240_170_720,
                         Opening::Hidden {
                             reason: HiddenReason::Abuse,
                         },
                     ),
                 ],
             },
+            // Kept from before Tsugiki asked for GitHub's numbers.
             Review {
+                id: None,
                 author: None,
                 state: ReviewState::Approved,
                 commit: None,
@@ -136,6 +145,36 @@ fn a_pr_shows_its_reviews_oldest_first_with_their_threads_as_last_read() {
 
     assert_eq!(view.row.number, 9);
     assert_eq!(view.content, Some(reviewed()));
+    world.finish();
+}
+
+#[test]
+fn the_window_gets_githubs_number_for_each_comment_and_review() {
+    let world = ViewWorld::new("pr-view-numbers");
+    world.has(
+        vec![PullRequestFacts {
+            number: 9,
+            ..stranger()
+        }],
+        vec![],
+    );
+    world
+        .store
+        .save_pull_request_content(&world.settings().name, 9, reviewed())
+        .unwrap();
+
+    let sent = serde_json::to_value(view(&world, 9).unwrap()).unwrap();
+
+    let content = &sent["content"];
+    assert_eq!(
+        content["comments"][0]["id"],
+        serde_json::json!(6_065_108_504_u64)
+    );
+    assert_eq!(
+        content["reviews"][0]["id"],
+        serde_json::json!(5_481_796_336_u64)
+    );
+    assert_eq!(content["reviews"][1]["id"], serde_json::Value::Null);
     world.finish();
 }
 

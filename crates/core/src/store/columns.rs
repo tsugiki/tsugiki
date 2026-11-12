@@ -7,10 +7,12 @@ use time::OffsetDateTime;
 
 use crate::filters::FilterQuery;
 use crate::github::CommitSha;
-use crate::github::issue_content::HiddenReason;
+use crate::github::issue_content::{CommentId, HiddenReason};
 use crate::github::issues::IssueState;
 use crate::github::labels::Label;
-use crate::github::pull_request_content::{Anchor, Resolution, Side, Submission};
+use crate::github::pull_request_content::{
+    Anchor, Resolution, ReviewId, Side, Submission, ThreadCommentId,
+};
 use crate::github::pull_requests::{CiState, PrState, ReviewState};
 use crate::github::refresh::Etag;
 use crate::login::Login;
@@ -95,6 +97,26 @@ impl FromSql for CommitSha {
             .ok_or_else(|| FromSqlError::Other(format!("{text} isn't a commit's SHA").into()))
     }
 }
+
+/// One of GitHub's numbers for a comment or a Review, as SQLite's signed integer bit for bit, so even a
+/// number past `i64::MAX` comes back as it went in.
+macro_rules! number_column {
+    ($($name:ident),+ $(,)?) => {$(
+        impl ToSql for $name {
+            fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+                Ok(ToSqlOutput::from(self.get().cast_signed()))
+            }
+        }
+
+        impl FromSql for $name {
+            fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+                value.as_i64().map(|number| Self::new(number.cast_unsigned()))
+            }
+        }
+    )+};
+}
+
+number_column!(CommentId, ReviewId, ThreadCommentId);
 
 /// A fieldless enum of GitHub's as text, spelled as GitHub spells it. The `match` makes a new variant name
 /// its text, and a test pins each text, because existing databases hold them.

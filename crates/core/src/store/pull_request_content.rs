@@ -9,7 +9,7 @@ use super::Connection;
 use super::columns::UnixTime;
 use super::{issue_content, sync_state};
 use crate::github::CommitSha;
-use crate::github::issue_content::IssueComment;
+use crate::github::issue_content::Comment;
 use crate::github::pull_request_content::{
     DiffHunk, Opening, PullRequestContent, Review, Side, Subject, ThreadComment, ThreadId,
     ThreadLine,
@@ -101,6 +101,14 @@ pub(super) const PENDING_REVIEW: &str = "
     ALTER TABLE review_thread_comments ADD COLUMN submission TEXT NOT NULL DEFAULT 'submitted';
 ";
 
+/// GitHub's number for each comment, Review and thread comment, which a link names (#473). A conversation
+/// read before this has none until the next read.
+pub(super) const DATABASE_IDS: &str = "
+    ALTER TABLE issue_comments ADD COLUMN database_id INTEGER;
+    ALTER TABLE pr_reviews ADD COLUMN database_id INTEGER;
+    ALTER TABLE review_thread_comments ADD COLUMN database_id INTEGER;
+";
+
 /// Replaces what's kept of PR `number` with `content`, in one transaction.
 pub(super) fn save(
     connection: &mut Connection,
@@ -164,14 +172,15 @@ fn save_review(
     review: &Review,
 ) -> rusqlite::Result<()> {
     let _ = transaction.execute(
-        "INSERT INTO pr_reviews
-             (repository, number, position, author, state, commit_sha, submitted_at, body_html, hidden)
-         VALUES (:repository, :number, :position, :author, :state, :commit, :submitted_at, :body_html,
-                 :hidden)",
+        "INSERT INTO pr_reviews (repository, number, position, database_id, author, state, commit_sha,
+                                 submitted_at, body_html, hidden)
+         VALUES (:repository, :number, :position, :database_id, :author, :state, :commit, :submitted_at,
+                 :body_html, :hidden)",
         named_params! {
             ":repository": repository,
             ":number": number,
             ":position": position,
+            ":database_id": review.id,
             ":author": review.author,
             ":state": review.state,
             ":commit": review.commit,
@@ -240,22 +249,24 @@ fn save_thread(
     for (
         at,
         ThreadComment {
+            id,
             comment,
             submission,
         },
     ) in (0_u32..).zip(&thread.comments)
     {
         let _ = transaction.execute(
-            "INSERT INTO review_thread_comments (repository, number, review, thread, position, author,
-                                                 created_at, body_html, hidden, submission)
-             VALUES (:repository, :number, :review, :thread, :position, :author, :created_at, :body_html,
-                     :hidden, :submission)",
+            "INSERT INTO review_thread_comments (repository, number, review, thread, position, database_id,
+                                                 author, created_at, body_html, hidden, submission)
+             VALUES (:repository, :number, :review, :thread, :position, :database_id, :author, :created_at,
+                     :body_html, :hidden, :submission)",
             named_params! {
                 ":repository": repository,
                 ":number": number,
                 ":review": review,
                 ":thread": position,
                 ":position": at,
+                ":database_id": id,
                 ":author": comment.author,
                 ":created_at": comment.created_at.unix_timestamp(),
                 ":body_html": comment.body_html,
@@ -270,6 +281,7 @@ fn save_thread(
 fn review_in(row: &Row<'_>) -> rusqlite::Result<(u32, Review)> {
     let UnixTime(submitted_at) = row.get("submitted_at")?;
     let review = Review {
+        id: row.get("database_id")?,
         author: row.get("author")?,
         state: row.get("state")?,
         commit: row.get("commit_sha")?,
@@ -316,7 +328,8 @@ fn thread_in(row: &Row<'_>) -> rusqlite::Result<((u32, u32), ThreadLine)> {
 fn comment_in(row: &Row<'_>) -> rusqlite::Result<((u32, u32), ThreadComment)> {
     let UnixTime(created_at) = row.get("created_at")?;
     let comment = ThreadComment {
-        comment: IssueComment {
+        id: row.get("database_id")?,
+        comment: Comment {
             author: row.get("author")?,
             created_at,
             body_html: row.get("body_html")?,
@@ -335,7 +348,7 @@ const SELECT_EARLIER: &str = "SELECT earlier_reviews, head_sha FROM issue_conten
                               WHERE repository = :repository AND number = :number";
 
 const SELECT_REVIEWS: &str =
-    "SELECT position, author, state, commit_sha, submitted_at, body_html, hidden FROM pr_reviews
+    "SELECT position, database_id, author, state, commit_sha, submitted_at, body_html, hidden FROM pr_reviews
      WHERE repository = :repository AND number = :number ORDER BY position";
 
 const SELECT_THREADS: &str =
@@ -344,8 +357,8 @@ const SELECT_THREADS: &str =
      WHERE repository = :repository AND number = :number ORDER BY review, position";
 
 const SELECT_COMMENTS: &str =
-    "SELECT review, thread, author, created_at, body_html, hidden, submission FROM review_thread_comments
-     WHERE repository = :repository AND number = :number ORDER BY review, thread, position";
+    "SELECT review, thread, database_id, author, created_at, body_html, hidden, submission
+     FROM review_thread_comments WHERE repository = :repository AND number = :number ORDER BY review, thread, position";
 
 /// The content kept for PR `number`, oldest Review first, with the threads of the user's Pending review.
 /// Nothing, until Tsugiki has read it once.
@@ -393,3 +406,6 @@ pub(super) fn read(
         pending,
     }))
 }
+
+#[cfg(test)]
+mod tests;

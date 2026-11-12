@@ -1,7 +1,7 @@
 use time::OffsetDateTime;
 
 use super::*;
-use crate::github::issue_content::{HiddenReason, IssueComment};
+use crate::github::issue_content::{Comment, HiddenReason};
 use crate::github::pull_request_content::{Opening, Submission};
 use crate::highlight::Highlight;
 
@@ -45,7 +45,8 @@ fn long() -> Diff {
 
 fn comment(hidden: Option<HiddenReason>) -> ThreadComment {
     ThreadComment {
-        comment: IssueComment {
+        id: None,
+        comment: Comment {
             author: None,
             created_at: OffsetDateTime::UNIX_EPOCH,
             body_html: "<p>Why?</p>".to_owned(),

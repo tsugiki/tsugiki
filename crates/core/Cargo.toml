@@ -20,6 +20,7 @@ semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 specta.workspace = true
+specta-typescript.workspace = true
 time.workspace = true
 toml_edit.workspace = true
 tree-sitter.workspace = true

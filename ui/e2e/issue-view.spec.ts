@@ -76,6 +76,7 @@ const view = (bodyHtml: string): IssueView => ({
     body_html: bodyHtml,
     comments: [
       {
+        id: 1,
         author: "some-reviewer",
         created_at: "2026-11-04T09:00:00Z",
         body_html: "<p>Which build?</p>",

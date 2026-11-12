@@ -84,7 +84,6 @@
 
   input {
     width: 24ch;
-    font: inherit;
   }
 
   .count {
@@ -94,14 +93,10 @@
 
   button {
     border: 0;
-    font: inherit;
-    color: inherit;
     background: none;
-    cursor: pointer;
   }
 
   button:disabled {
     opacity: 0.4;
-    cursor: default;
   }
 </style>

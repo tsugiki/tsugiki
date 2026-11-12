@@ -116,11 +116,8 @@
     height: 20px;
     padding: 0 8px;
     border: 0;
-    font: inherit;
-    color: inherit;
     text-align: left;
     background: none;
-    cursor: pointer;
   }
 
   .head:hover,
@@ -136,6 +133,7 @@
   .pending {
     margin-left: 6px;
     color: var(--attention);
+    border-color: var(--attention);
   }
 
   article {

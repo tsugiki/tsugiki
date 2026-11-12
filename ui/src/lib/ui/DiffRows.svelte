@@ -434,7 +434,7 @@
     padding-right: 8px;
     box-sizing: border-box;
     text-align: right;
-    opacity: 0.55;
+    color: var(--fg-muted);
     user-select: none;
   }
 
@@ -457,10 +457,7 @@
     gap: 4px;
     padding: 0;
     border: 0;
-    font: inherit;
-    color: inherit;
     background: none;
-    cursor: pointer;
   }
 
   .chevron {
@@ -470,7 +467,7 @@
   .hunk,
   .more {
     background: color-mix(in srgb, var(--accent) 10%, transparent);
-    opacity: 0.8;
+    color: var(--fg-muted);
   }
 
   /* A gap's buttons take the place of the two columns of line numbers. */
@@ -484,10 +481,7 @@
   .whole {
     padding: 0 6px;
     border: 0;
-    font: inherit;
-    color: inherit;
     background: none;
-    cursor: pointer;
   }
 
   .step {
@@ -539,7 +533,7 @@
 
   .note {
     font-style: italic;
-    opacity: 0.7;
+    color: var(--fg-muted);
   }
 
   .added {

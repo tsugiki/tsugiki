@@ -472,7 +472,7 @@
       <StateIcon {icon} />
     {/if}
     <button
-      class="open"
+      class="link"
       data-item={lineName(stop)}
       aria-current={sameStop(workbench.cursor, stop) ? "true" : undefined}
       onclick={() => {
@@ -744,11 +744,6 @@
     color: var(--fg-muted);
   }
 
-  .open {
-    all: unset;
-    cursor: pointer;
-  }
-
   /* › and ⌄ before an Issue with PRs, which fold and unfold its tree as ← and → do. */
   .fold {
     all: unset;
@@ -763,9 +758,8 @@
     background: color-mix(in srgb, currentColor 12%, transparent);
   }
 
-  .open:hover,
-  .open:focus-visible,
-  .open[aria-current] {
+  /* The row under the cursor, underlined as a link is under the pointer. */
+  .link[aria-current] {
     text-decoration: underline;
   }
 

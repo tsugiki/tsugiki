@@ -79,7 +79,8 @@ kbd {
 
 :where(input:not([type="radio"], [type="checkbox"]), textarea, select):where(:focus) {
   border-color: var(--accent);
-  outline: none;
+  /* Invisible, until Windows' contrast themes draw it in their own colour, where borders lose theirs. */
+  outline: 1px solid transparent;
 }
 
 /* A review's or a thread's state, or a label. One that sets a state's colour takes it on its border too. */

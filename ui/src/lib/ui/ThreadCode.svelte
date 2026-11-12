@@ -52,13 +52,13 @@
     padding-right: 8px;
     box-sizing: border-box;
     text-align: right;
-    opacity: 0.55;
+    color: var(--fg-muted);
     user-select: none;
   }
 
   .hunk,
   .note {
-    opacity: 0.7;
+    color: var(--fg-muted);
   }
 
   .hunk {

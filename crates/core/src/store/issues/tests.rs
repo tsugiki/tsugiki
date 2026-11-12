@@ -1,6 +1,7 @@
 use super::super::testing::temp_database;
 use super::super::*;
 use crate::github::issues::IssueState;
+use crate::github::labels::Label;
 use crate::login::Login;
 use time::OffsetDateTime;
 
@@ -14,6 +15,7 @@ fn issue(number: u32) -> IssueFacts {
         title: format!("Issue {number}"),
         author: Some(Login::new("some-author")),
         assignees: vec![],
+        labels: vec![],
         updated_at: OffsetDateTime::from_unix_timestamp(7).unwrap(),
         state: Some(IssueState::Open),
     }
@@ -85,6 +87,68 @@ fn each_state_reads_back_the_same() {
         vec![(cpython(), issues.clone())],
     );
     assert_eq!(read, issues);
+}
+
+fn labelled(number: u32, names: &[&str]) -> IssueFacts {
+    IssueFacts {
+        labels: names.iter().map(|name| Label::new(name)).collect(),
+        ..issue(number)
+    }
+}
+
+#[test]
+fn an_issue_keeps_its_labels_and_a_save_replaces_them() {
+    let read = saved(
+        "issues-labels",
+        &cpython(),
+        vec![
+            (
+                cpython(),
+                vec![
+                    labelled(1, &["3.14", "type-bug"]),
+                    labelled(2, &["awaiting", "Docs"]),
+                ],
+            ),
+            (cpython(), vec![labelled(1, &["3.14", "type-feature"])]),
+        ],
+    );
+    let names = |issue: &IssueFacts| -> Vec<String> {
+        issue
+            .labels
+            .iter()
+            .map(|label| label.as_str().to_owned())
+            .collect()
+    };
+    assert_eq!(
+        read.iter().map(names).collect::<Vec<_>>(),
+        [vec!["3.14", "type-feature"], vec!["awaiting", "Docs"]]
+    );
+}
+
+#[test]
+fn an_issue_stored_before_tsugiki_kept_labels_has_none_after_the_migration() {
+    let (path, folder) = temp_database("issues-before-labels");
+    let before = MIGRATIONS
+        .iter()
+        .position(|step| step.sql == super::LABELS)
+        .unwrap();
+    open_with(&path, &MIGRATIONS[..before]).unwrap().close();
+    // A store of that age can't run today's save, which writes labels, so SQL stands in for it.
+    let inserted = Connection::open(&path)
+        .unwrap()
+        .execute(
+            "INSERT INTO issues (repository, number, title, author, updated_at, state)
+             VALUES ('python/cpython', 1, 'Issue 1', 'some-author', 7, 'OPEN')",
+            [],
+        )
+        .unwrap();
+    assert_eq!(inserted, 1);
+
+    let store = Store::open(&path).unwrap();
+    let read = store.issues(&cpython()).unwrap();
+    store.close();
+    fs::remove_dir_all(folder).unwrap();
+    assert_eq!(read, [issue(1)]);
 }
 
 #[test]

@@ -946,6 +946,7 @@ fn facts_of_issue(number: u32) -> Vec<IssueFacts> {
         title: format!("Issue {number}"),
         author: None,
         assignees: Vec::new(),
+        labels: Vec::new(),
         updated_at: OffsetDateTime::now_utc(),
         state: Some(IssueState::Open),
     }]
@@ -1090,6 +1091,7 @@ fn a_fill_that_fails_for_all_of_github_waits_and_tries_again() {
         title: "Issue 7".to_owned(),
         author: None,
         assignees: vec![],
+        labels: vec![],
         updated_at: OffsetDateTime::UNIX_EPOCH,
         state: None,
     };

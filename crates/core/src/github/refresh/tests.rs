@@ -42,6 +42,7 @@ fn issue(number: u32) -> Value {
         "state": "OPEN",
         "stateReason": null,
         "assignees": { "nodes": [] },
+        "labels": { "nodes": [] },
         "timelineItems": { "nodes": [] },
         "author": { "login": "some-author" },
     })
@@ -407,6 +408,7 @@ fn a_probe_changes_only_what_it_read() {
         review_requests: Vec::new(),
         latest_reviews: Vec::new(),
         assignees: vec![Login::new("some-assignee")],
+        labels: vec![],
         closing_issues: vec![9],
         merge_commit: None,
         base: None,
@@ -454,6 +456,7 @@ fn the_recorded_poll_reads_as_a_poll() {
 
     assert!(answer.open_items > 0);
     assert_eq!(answer.filters.len(), 2);
+    assert!(answer.issues.iter().any(|issue| !issue.labels.is_empty()));
 }
 
 #[test]

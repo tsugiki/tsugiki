@@ -51,6 +51,7 @@ fn pull_request(number: u32) -> PullRequestFacts {
         review_requests: vec![],
         latest_reviews: vec![],
         assignees: vec![],
+        labels: vec![],
         closing_issues: vec![],
         merge_commit: None,
         base: None,
@@ -97,6 +98,7 @@ fn issue(number: u32) -> IssueFacts {
         title: format!("Issue {number}"),
         author: Some(Login::new("issue-author")),
         assignees: vec![],
+        labels: vec![],
         updated_at: hours_ago(100),
         state: Some(IssueState::Open),
     }

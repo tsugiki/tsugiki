@@ -9,6 +9,7 @@ use specta::Type;
 use time::OffsetDateTime;
 
 use super::activity::{ItemActivity, TimelineWire, pull_request_activity};
+use super::labels::{Label, LabelWire, label_names};
 use super::{BAD_GATEWAY, CommitSha, GitHub, Request, Unreachable, read};
 use crate::conventions::Conventions;
 use crate::error::Error;
@@ -52,6 +53,7 @@ pub(super) const PULL_REQUEST_FIELDS: &str = "number title state isDraft updated
                                    repository { nameWithOwner defaultBranchRef { name } } \
                                    closingIssuesReferences(first: 100) { nodes { number \
                                    repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } \
+                                   labels(first: 100) { nodes { name } } \
                                    reviewRequests(first: 100) { nodes { requestedReviewer { \
                                    ... on User { login } ... on Bot { login } } } } \
                                    latestReviews(first: 100) { nodes { author { login } state } } \
@@ -210,6 +212,9 @@ pub struct PullRequestFacts {
     pub review_requests: Vec<Login>,
     pub latest_reviews: Vec<LatestReview>,
     pub assignees: Vec<Login>,
+    /// In name order, ignoring case. Empty for a PR stored before Tsugiki kept labels, until GitHub sends
+    /// it again.
+    pub labels: Vec<Label>,
     /// The Issues in this Repository that GitHub says this PR closes.
     pub closing_issues: Vec<u32>,
     /// The commit a merged PR became. GitHub gives one only for a merged PR.
@@ -419,6 +424,7 @@ pub(super) struct PullRequestWire {
     closing_issues_references: Nodes<ClosingReference>,
     author: Option<Person>,
     assignees: Nodes<Person>,
+    labels: Option<Nodes<LabelWire>>,
     review_requests: Nodes<ReviewRequestWire>,
     latest_reviews: Nodes<LatestReviewWire>,
     last_commit: Nodes<LastCommitNode>,
@@ -538,6 +544,7 @@ impl From<PullRequestWire> for (PullRequestFacts, ItemActivity) {
             review_requests,
             latest_reviews,
             assignees,
+            labels: label_names(wire.labels),
             closing_issues,
             merge_commit: wire
                 .merge_commit

@@ -11,6 +11,7 @@ use specta::Type;
 use time::OffsetDateTime;
 
 use super::activity::{IssueTimelineWire, ItemActivity, issue_activity};
+use super::labels::{Label, LabelWire, label_names};
 use super::pull_requests::{NodeId, Nodes, PageRequest, Person, RateLimit};
 use super::references::{REFERENCE_FIELDS, ReferenceTimeline};
 use super::{GitHub, Request};
@@ -26,6 +27,9 @@ pub struct IssueFacts {
     /// Nothing, for an Issue whose author's account has gone.
     pub author: Option<Login>,
     pub assignees: Vec<Login>,
+    /// In name order, ignoring case. Empty for an Issue stored before Tsugiki kept labels, until GitHub
+    /// sends it again.
+    pub labels: Vec<Label>,
     pub updated_at: OffsetDateTime,
     /// Nothing for an Issue stored before Tsugiki kept states, until GitHub sends it again.
     pub state: Option<IssueState>,
@@ -91,6 +95,7 @@ pub(super) struct IssueWire {
     updated_at: OffsetDateTime,
     author: Option<Person>,
     assignees: Nodes<Person>,
+    labels: Option<Nodes<LabelWire>>,
     state: StateWire,
     state_reason: Option<StateReason>,
     timeline_items: Nodes<IssueTimelineWire>,
@@ -110,6 +115,7 @@ impl From<IssueWire> for (IssueFacts, ItemActivity) {
                 .flatten()
                 .map(|person| person.login)
                 .collect(),
+            labels: label_names(wire.labels),
             updated_at: wire.updated_at,
             state: Some(IssueState::of(wire.state, wire.state_reason)),
         };
@@ -120,7 +126,7 @@ impl From<IssueWire> for (IssueFacts, ItemActivity) {
 /// The fields of an Issue that `IssueWire` reads. The last comments and mentions are enough to say that
 /// someone posted, and whether the post named the user.
 pub(super) const ISSUE_FIELDS: &str = "number title updatedAt state stateReason author { login } \
-     assignees(first: 20) { nodes { login } } \
+     assignees(first: 20) { nodes { login } } labels(first: 100) { nodes { name } } \
      timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename \
      ... on IssueComment { createdAt author { __typename login } } \
      ... on MentionedEvent { createdAt actor { __typename login } } } }";

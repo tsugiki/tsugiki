@@ -199,6 +199,7 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
             state: ReviewState::Approved,
         }],
         assignees: vec![Login::new("some-assignee")],
+        labels: vec![],
         closing_issues: vec![7],
         merge_commit: CommitSha::parse("0123abc"),
         base: None,
@@ -214,6 +215,7 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
         title: "It broke".to_owned(),
         author: Some(Login::new("some-author")),
         assignees: vec![],
+        labels: vec![],
         updated_at: saved_at,
         state: Some(IssueState::Open),
     };
@@ -343,18 +345,20 @@ fn the_plan_check_sees_each_table_a_view_reads() {
         "review_requests",
         "latest_reviews",
         "assignees",
+        "pull_request_labels",
         "closing_references",
         "cherry_picks",
         "committers",
         "issues",
         "issue_assignees",
+        "issue_labels",
         "filter_matches",
         "filter_problems",
         "pr_reviews",
         "review_threads",
         "review_thread_comments",
     ];
-    assert_eq!(tables.map(reads), [true; 15]);
+    assert_eq!(tables.map(reads), [true; 17]);
 }
 
 #[test]
@@ -369,6 +373,8 @@ fn a_row_for_an_item_the_store_doesnt_hold_is_refused() {
             "INSERT INTO cherry_picks VALUES ('python/cpython', 1, '0123abc')",
             "INSERT INTO committers VALUES ('python/cpython', 1, 0, 'someone')",
             "INSERT INTO issue_assignees VALUES ('python/cpython', 7, 'someone')",
+            "INSERT INTO issue_labels VALUES ('python/cpython', 7, 'type-bug')",
+            "INSERT INTO pull_request_labels VALUES ('python/cpython', 1, 'skip news')",
             "INSERT INTO issue_comments VALUES ('python/cpython', 7, 0, 'someone', 0, '<p>Hi</p>', NULL)",
             "INSERT INTO pr_reviews VALUES ('python/cpython', 1, 0, 'someone', 'APPROVED', NULL, 0, '', NULL)",
             "INSERT INTO review_threads VALUES ('python/cpython', 1, 0, 0, 'T1', 'a.py', 1, 'RIGHT', 1, 'Hm', NULL, 0,
@@ -382,7 +388,7 @@ fn a_row_for_an_item_the_store_doesnt_hold_is_refused() {
     });
     assert_eq!(
         refused,
-        [Some(rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY); 11]
+        [Some(rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY); 13]
     );
 }
 

@@ -3,6 +3,7 @@ use crate::error::ErrorKind;
 use crate::filters::Filter;
 use crate::github::activity::{Activity, ActivityKind};
 use crate::github::issues::IssueState;
+use crate::github::labels::Label;
 use crate::github::pull_requests::{CiState, ReviewState};
 use crate::github::testing::{dated, reply_ok, signed_in_as};
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
@@ -76,6 +77,7 @@ fn holding_issue(harness: &Harness, number: u32, updated_at: &str) {
         title: format!("Issue {number}"),
         author: None,
         assignees: vec![],
+        labels: vec![],
         updated_at: at(updated_at),
         state: Some(IssueState::Open),
     };
@@ -143,6 +145,7 @@ fn issue_node(number: u32, updated_at: &str) -> Value {
         "state": "OPEN",
         "stateReason": null,
         "assignees": { "nodes": [] },
+        "labels": { "nodes": [] },
         "timelineItems": { "nodes": [] },
         "author": null,
     })
@@ -434,6 +437,7 @@ fn holding_issue_with_no_state(harness: &Harness, number: u32) {
         title: format!("Issue {number}"),
         author: None,
         assignees: vec![],
+        labels: vec![],
         updated_at: at(LONG_BEFORE),
         state: None,
     };
@@ -603,6 +607,74 @@ fn an_issue_the_poll_changed_is_saved_named_and_gets_its_tree_read() {
     harness.finish();
 }
 
+fn label_nodes(names: &[&str]) -> Value {
+    let nodes: Vec<Value> = names.iter().map(|name| json!({ "name": name })).collect();
+    json!({ "nodes": nodes })
+}
+
+fn labels(names: &[&str]) -> Vec<Label> {
+    names.iter().map(|name| Label::new(name)).collect()
+}
+
+#[test]
+fn a_refresh_keeps_the_labels_an_issue_gained_and_drops_those_it_lost() {
+    let mut relabelled = issue_node(1, AFTER_IT);
+    relabelled["labels"] = label_nodes(&["type-bug", "3.14"]);
+    let replies = vec![
+        polled(&list(&[relabelled], None), &list(&[], None), &[]),
+        cross_references(&[], None, LOTS),
+    ];
+    let harness = after_a_sync("issue-relabelled", replies);
+    let held = IssueFacts {
+        number: 1,
+        title: "Issue 1".to_owned(),
+        author: None,
+        assignees: vec![],
+        labels: labels(&["pending", "type-bug"]),
+        updated_at: at(LONG_BEFORE),
+        state: Some(IssueState::Open),
+    };
+    harness.store.save_issues(&cpython(), vec![held]).unwrap();
+    let mut syncs = refreshing(filtering(&[]));
+
+    drop(run(&mut syncs, &harness));
+
+    assert_eq!(
+        facts(&harness).issues[0].labels,
+        labels(&["3.14", "type-bug"])
+    );
+    harness.finish();
+}
+
+#[test]
+fn a_refresh_keeps_the_labels_a_pr_gained_and_drops_those_it_lost() {
+    let relabelled = |names: &[&str], updated_at: &str| {
+        let mut node = strangers_pr(1, updated_at);
+        node["labels"] = label_nodes(names);
+        node
+    };
+    let replies = vec![
+        polled(
+            &list(&[], None),
+            &list(&[changed_pr(1, AFTER_IT)], None),
+            &[],
+        ),
+        fetched_nodes(&[relabelled(&["awaiting merge"], AFTER_IT)], LOTS),
+    ];
+    let harness = after_a_sync("pr-relabelled", replies);
+    let held = read_pr(&relabelled(&["awaiting review", "skip news"], LONG_BEFORE));
+    harness.store.save_pull_requests(&cpython(), held).unwrap();
+    let mut syncs = refreshing(filtering(&[]));
+
+    drop(run(&mut syncs, &harness));
+
+    assert_eq!(
+        facts(&harness).pull_requests[0].labels,
+        labels(&["awaiting merge"])
+    );
+    harness.finish();
+}
+
 #[test]
 fn an_issue_nothing_shows_stays_out_and_an_unchanged_one_says_nothing() {
     let issues_list = list(&[issue_node(1, AFTER_IT), issue_node(2, LONG_BEFORE)], None);
@@ -615,6 +687,7 @@ fn an_issue_nothing_shows_stays_out_and_an_unchanged_one_says_nothing() {
         title: "Issue 2 now".to_owned(),
         author: None,
         assignees: vec![],
+        labels: vec![],
         updated_at: at(LONG_BEFORE),
         state: Some(IssueState::Open),
     };

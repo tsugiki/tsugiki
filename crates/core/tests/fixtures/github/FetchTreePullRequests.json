@@ -35,6 +35,9 @@
           },
           "headRefOid": "f459c4bdf1263973d18686f31af2a266038c380d",
           "isDraft": true,
+          "labels": {
+            "nodes": []
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -187,6 +190,9 @@
           },
           "headRefOid": "2d6f1ffb202690ff45f25d9477ce2412b75b6d43",
           "isDraft": true,
+          "labels": {
+            "nodes": []
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -323,6 +329,9 @@
           },
           "headRefOid": "277cbd6acab5a586a36d120a40293608f85505bb",
           "isDraft": true,
+          "labels": {
+            "nodes": []
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -463,6 +472,13 @@
           },
           "headRefOid": "058fd2afd4e8528251981e99a6f37af08b54b137",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting review"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -676,6 +692,9 @@
           },
           "headRefOid": "cd6dd6c396bc3fd78fb88a6e9f9418375fc2caca",
           "isDraft": false,
+          "labels": {
+            "nodes": []
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -830,6 +849,9 @@
           },
           "headRefOid": "73a238c5ac6446eae41f8a32004266ed8b02017e",
           "isDraft": false,
+          "labels": {
+            "nodes": []
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -975,6 +997,9 @@
           },
           "headRefOid": "481ed997a7148133ba70bb4fd409983e6f9f2d9a",
           "isDraft": false,
+          "labels": {
+            "nodes": []
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -1136,6 +1161,16 @@
           },
           "headRefOid": "9d47a7b82d22aec8db46e7ab014c1cf8968bab29",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting changes"
+              },
+              {
+                "name": "stale"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -1334,6 +1369,16 @@
           },
           "headRefOid": "f1b35194f497f53547d3616146282b27c6a5f2ef",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting review"
+              },
+              {
+                "name": "stale"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -1427,6 +1472,9 @@
           },
           "headRefOid": "3166ce0e8fe63754c589214d06cbb331c5f0a218",
           "isDraft": false,
+          "labels": {
+            "nodes": []
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -1535,6 +1583,9 @@
           },
           "headRefOid": "5f1116909dcff9588d385d3cb7d3b30fe0c2d5ef",
           "isDraft": false,
+          "labels": {
+            "nodes": []
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -1634,6 +1685,9 @@
           },
           "headRefOid": "a815197eba49c8b26fc9373ad494f8e5d03df37a",
           "isDraft": false,
+          "labels": {
+            "nodes": []
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -1733,6 +1787,13 @@
           },
           "headRefOid": "dcf5de8de6d84d7bd6d9bce1b57f4fa550aea7e5",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting review"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -1885,6 +1946,9 @@
           },
           "headRefOid": "0870a6061da920b32f91b5b6d7a62a9fc3106259",
           "isDraft": false,
+          "labels": {
+            "nodes": []
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -2141,6 +2205,13 @@
           },
           "headRefOid": "3e027a128e50b93e84b675188ffffcc52ebbcc4b",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "stale"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -2443,6 +2514,13 @@
           },
           "headRefOid": "bd3482d050284fbaaf8a2d810fc9197242f57fce",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "skip news"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -2529,6 +2607,13 @@
           },
           "headRefOid": "3bee42994d417290e2125ef54de6ca7d93cebcf1",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "skip news"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -2615,6 +2700,13 @@
           },
           "headRefOid": "62a346a6d51c8615d9c314cb09266758d90c49fe",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "skip news"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -2710,6 +2802,9 @@
           },
           "headRefOid": "08f03fa398d3c64f2abfdf6538b5f46c54608ab5",
           "isDraft": false,
+          "labels": {
+            "nodes": []
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -2809,6 +2904,9 @@
           },
           "headRefOid": "8eed594628d150ea13687984b66f7b4ed9c06110",
           "isDraft": false,
+          "labels": {
+            "nodes": []
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -2908,6 +3006,9 @@
           },
           "headRefOid": "a1ae864530ff551033da628c2d8154edda4ef0ae",
           "isDraft": false,
+          "labels": {
+            "nodes": []
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -3076,6 +3177,22 @@
           },
           "headRefOid": "0d4498d71d56bfff149932f3ec63b65aee41943d",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting core review"
+              },
+              {
+                "name": "needs backport to 3.13"
+              },
+              {
+                "name": "needs backport to 3.14"
+              },
+              {
+                "name": "needs backport to 3.15"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -3221,6 +3338,9 @@
           },
           "headRefOid": "1c1487c6f0f28b9f9488d5508e4bd7f67f75c8aa",
           "isDraft": false,
+          "labels": {
+            "nodes": []
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -3514,6 +3634,19 @@
           },
           "headRefOid": "d702f01a308049a9ce8bbbc25584d8ca7ffbc35f",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting review"
+              },
+              {
+                "name": "skip news"
+              },
+              {
+                "name": "stale"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -3717,6 +3850,16 @@
           },
           "headRefOid": "97f1148a52d5b0da12da5599a790ec4fd66fea8b",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting review"
+              },
+              {
+                "name": "stale"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -3830,7 +3973,7 @@
       }
     }
   },
-  "query": "query FetchTreePullRequests($ids: [ID!]!) { nodes(ids: $ids) { ... on PullRequest { number title state isDraft updatedAt baseRefName body mergeCommit { oid } baseRefOid headRefOid repository { nameWithOwner defaultBranchRef { name } } closingIssuesReferences(first: 100) { nodes { number repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } commits(first: 100) { totalCount nodes { commit { message parents { totalCount } committer { user { login } } } } } timelineItems(last: 50, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW, READY_FOR_REVIEW_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, MENTIONED_EVENT, REVIEW_REQUESTED_EVENT, ASSIGNED_EVENT]) { nodes { __typename ... on PullRequestCommit { commit { committedDate author { name user { login } } committer { name user { login } } } } ... on IssueComment { createdAt author { __typename login } bodyText } ... on PullRequestReview { submittedAt author { __typename login } } ... on ReadyForReviewEvent { createdAt actor { __typename login } } ... on HeadRefForcePushedEvent { createdAt actor { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } ... on ReviewRequestedEvent { createdAt requestedReviewer { ... on User { login } ... on Bot { login } } } ... on AssignedEvent { createdAt assignee { ... on User { login } ... on Bot { login } } } } } } } rateLimit { remaining resetAt } }",
+  "query": "query FetchTreePullRequests($ids: [ID!]!) { nodes(ids: $ids) { ... on PullRequest { number title state isDraft updatedAt baseRefName body mergeCommit { oid } baseRefOid headRefOid repository { nameWithOwner defaultBranchRef { name } } closingIssuesReferences(first: 100) { nodes { number repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } labels(first: 100) { nodes { name } } reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } commits(first: 100) { totalCount nodes { commit { message parents { totalCount } committer { user { login } } } } } timelineItems(last: 50, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW, READY_FOR_REVIEW_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, MENTIONED_EVENT, REVIEW_REQUESTED_EVENT, ASSIGNED_EVENT]) { nodes { __typename ... on PullRequestCommit { commit { committedDate author { name user { login } } committer { name user { login } } } } ... on IssueComment { createdAt author { __typename login } bodyText } ... on PullRequestReview { submittedAt author { __typename login } } ... on ReadyForReviewEvent { createdAt actor { __typename login } } ... on HeadRefForcePushedEvent { createdAt actor { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } ... on ReviewRequestedEvent { createdAt requestedReviewer { ... on User { login } ... on Bot { login } } } ... on AssignedEvent { createdAt assignee { ... on User { login } ... on Bot { login } } } } } } } rateLimit { remaining resetAt } }",
   "reset": 1794168674,
   "status": 200
 }

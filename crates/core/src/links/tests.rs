@@ -27,6 +27,7 @@ fn titled(title: &str) -> PullRequestFacts {
         review_requests: vec![],
         latest_reviews: vec![],
         assignees: vec![],
+        labels: vec![],
         closing_issues: vec![],
         merge_commit: None,
         base: None,

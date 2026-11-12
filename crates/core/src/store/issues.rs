@@ -10,6 +10,7 @@ use super::columns::UnixTime;
 use super::{activity, pull_requests};
 use crate::github::activity::ItemActivity;
 use crate::github::issues::IssueFacts;
+use crate::github::labels::Label;
 use crate::login::Login;
 use crate::repository::RepositoryName;
 
@@ -34,6 +35,18 @@ pub(super) const SCHEMA: &str = "
 /// Whether each Issue is open, and how it closed (#188).
 pub(super) const STATES: &str = "ALTER TABLE issues ADD COLUMN state TEXT;";
 
+/// The labels of each Issue, which a search of the cache matches (#463). An Issue stored before this has
+/// none until a sync reads it again.
+pub(super) const LABELS: &str = "
+    CREATE TABLE issue_labels (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        number INTEGER NOT NULL,
+        name TEXT NOT NULL COLLATE NOCASE,
+        PRIMARY KEY (repository, number, name),
+        FOREIGN KEY (repository, number) REFERENCES issues (repository, number)
+    ) WITHOUT ROWID;
+";
+
 /// Stores `issues` in one transaction, each replacing what Tsugiki knew about it (ADR 0010).
 pub(super) fn save(
     connection: &mut Connection,
@@ -47,6 +60,10 @@ pub(super) fn save(
         forget_assignees(&transaction, repository, issue.number)?;
         for login in &issue.assignees {
             save_assignee(&transaction, repository, issue.number, login)?;
+        }
+        forget_labels(&transaction, repository, issue.number)?;
+        for label in &issue.labels {
+            save_label(&transaction, repository, issue.number, label)?;
         }
     }
     activity::save(&transaction, repository, events)?;
@@ -107,6 +124,47 @@ fn save_assignee(
         .map(drop)
 }
 
+fn forget_labels(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "DELETE FROM issue_labels WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": number },
+        )
+        .map(drop)
+}
+
+fn save_label(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+    label: &Label,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO issue_labels (repository, number, name)
+             VALUES (:repository, :number, :name)",
+            named_params! { ":repository": repository, ":number": number, ":name": label },
+        )
+        .map(drop)
+}
+
+fn labels(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<BTreeMap<u32, Vec<Label>>> {
+    // In name order, ignoring case, as `IssueFacts` holds them.
+    let query = "SELECT number, name FROM issue_labels WHERE repository = :repository ORDER BY number, name";
+    pull_requests::values_by_number(
+        connection.prepare(query)?,
+        named_params! { ":repository": repository },
+        "name",
+    )
+}
+
 fn assignees(
     connection: &Connection,
     repository: &RepositoryName,
@@ -147,6 +205,7 @@ pub(super) fn read_all(
     let mut statement = connection.prepare(query)?;
     let mut rows = statement.query(named_params! { ":repository": repository })?;
     let mut assignees = assignees(connection, repository)?;
+    let mut labels = labels(connection, repository)?;
     let mut found = Vec::new();
     while let Some(row) = rows.next()? {
         let UnixTime(updated_at) = row.get("updated_at")?;
@@ -156,6 +215,7 @@ pub(super) fn read_all(
             title: row.get("title")?,
             author: row.get("author")?,
             assignees: assignees.remove(&number).unwrap_or_default(),
+            labels: labels.remove(&number).unwrap_or_default(),
             updated_at,
             state: row.get("state")?,
         });

@@ -10,6 +10,7 @@ use time::OffsetDateTime;
 use super::Connection;
 use crate::github::CommitSha;
 use crate::github::activity::ItemActivity;
+use crate::github::labels::Label;
 use crate::github::pull_requests::{LatestReview, OffDefault, PrState, PullRequestFacts};
 use crate::login::Login;
 use crate::repository::RepositoryName;
@@ -76,6 +77,18 @@ pub(super) const HEADS: &str = "ALTER TABLE pull_requests ADD COLUMN head TEXT;"
 /// none, and stays frozen without it.
 pub(super) const BASES: &str = "ALTER TABLE pull_requests ADD COLUMN base TEXT;";
 
+/// The labels of each PR, which a search of the cache matches (#463). A PR stored before this has none
+/// until a sync reads it again, which a merged or closed PR waits for until it changes.
+pub(super) const LABELS: &str = "
+    CREATE TABLE pull_request_labels (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        number INTEGER NOT NULL,
+        name TEXT NOT NULL COLLATE NOCASE,
+        PRIMARY KEY (repository, number, name),
+        FOREIGN KEY (repository, number) REFERENCES pull_requests (repository, number)
+    ) WITHOUT ROWID;
+";
+
 /// The facts the Backport rules read (ADR 0011). A PR stored before this has none, so it isn't a Bot
 /// backport until the next sync fetches it. A merged one isn't frozen until then either, because it has no
 /// merge commit.
@@ -135,6 +148,7 @@ fn replace(
     forget_review_requests(connection, repository, number)?;
     forget_latest_reviews(connection, repository, number)?;
     forget_assignees(connection, repository, number)?;
+    forget_labels(connection, repository, number)?;
     forget_closing_references(connection, repository, number)?;
     forget_cherry_picks(connection, repository, number)?;
     forget_committers(connection, repository, number)?;
@@ -149,6 +163,9 @@ fn replace(
     }
     for login in &facts.assignees {
         save_assignee(connection, repository, number, login)?;
+    }
+    for label in &facts.labels {
+        save_label(connection, repository, number, label)?;
     }
     for issue in &facts.closing_issues {
         save_closing_reference(connection, repository, number, *issue)?;
@@ -247,6 +264,48 @@ fn forget_assignees(
             named_params! { ":repository": repository, ":number": number },
         )
         .map(drop)
+}
+
+fn forget_labels(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "DELETE FROM pull_request_labels WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": number },
+        )
+        .map(drop)
+}
+
+fn save_label(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+    label: &Label,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO pull_request_labels (repository, number, name)
+             VALUES (:repository, :number, :name)",
+            named_params! { ":repository": repository, ":number": number, ":name": label },
+        )
+        .map(drop)
+}
+
+fn labels(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<BTreeMap<u32, Vec<Label>>> {
+    // In name order, ignoring case, as `PullRequestFacts` holds them.
+    let query = "SELECT number, name FROM pull_request_labels WHERE repository = :repository
+                 ORDER BY number, name";
+    values_by_number(
+        connection.prepare(query)?,
+        named_params! { ":repository": repository },
+        "name",
+    )
 }
 
 fn forget_closing_references(
@@ -547,6 +606,7 @@ pub(super) fn read_all(
     let mut requests = review_requests(connection, repository)?;
     let mut reviews = latest_reviews(connection, repository)?;
     let mut assigned = assignees(connection, repository)?;
+    let mut labelled = labels(connection, repository)?;
     let mut closing = closing_references(connection, repository)?;
     let mut picks = cherry_picks(connection, repository)?;
     let mut committed = committers(connection, repository)?;
@@ -575,6 +635,7 @@ pub(super) fn read_all(
             review_requests: requests.remove(&number).unwrap_or_default(),
             latest_reviews: reviews.remove(&number).unwrap_or_default(),
             assignees: assigned.remove(&number).unwrap_or_default(),
+            labels: labelled.remove(&number).unwrap_or_default(),
             closing_issues: closing.remove(&number).unwrap_or_default(),
             merge_commit: row.get(column.merge_commit)?,
             base: row.get(column.base)?,

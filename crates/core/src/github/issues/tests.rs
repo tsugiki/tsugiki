@@ -31,6 +31,7 @@ fn issue_json(number: u32) -> Value {
         "state": "OPEN",
         "stateReason": null,
         "assignees": { "nodes": [] },
+        "labels": { "nodes": [] },
         "timelineItems": { "nodes": [] },
         "author": { "login": "some-author" },
     })
@@ -166,6 +167,7 @@ fn a_fetched_issue_is_read_into_its_facts() {
             title: "Issue 7".to_owned(),
             author: Some(Login::new("some-author")),
             assignees: vec![],
+            labels: vec![],
             updated_at: OffsetDateTime::parse("2026-11-04T10:00:00Z", &Rfc3339).unwrap(),
             state: Some(IssueState::Open),
         }]
@@ -220,6 +222,33 @@ fn a_closed_issue_keeps_how_it_closed_as_github_draws_it() {
             (11, Some(IssueState::Closed)),
         ]
     );
+}
+
+#[test]
+fn an_issue_keeps_the_names_of_its_labels_in_name_order_whatever_their_case() {
+    let mut issue = issue_json(7);
+    issue["labels"] = json!({ "nodes": [
+        { "name": "type-bug" },
+        null,
+        { "name": "OS-windows" },
+        { "name": "3.14" },
+        { "name": "interpreter-core" },
+    ] });
+    let mut unlabelled = issue_json(8);
+    unlabelled["labels"] = Value::Null;
+    let repository = json!({ "i7": issue, "i8": unlabelled });
+    let (script, _asked) = Scripted::new(vec![answer(&repository)]);
+
+    let fetched = github(script)
+        .fetch_issues(&cpython(), &[7, 8], 25)
+        .unwrap();
+
+    let names: Vec<&str> = fetched.issues[0].labels.iter().map(Label::as_str).collect();
+    assert_eq!(
+        names,
+        ["3.14", "interpreter-core", "OS-windows", "type-bug"]
+    );
+    assert_eq!(fetched.issues[1].labels, []);
 }
 
 #[test]

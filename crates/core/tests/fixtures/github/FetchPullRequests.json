@@ -139,6 +139,13 @@
           },
           "headRefOid": "266e5ee85ea142279287028213b71498951ee0a0",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting merge"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -705,6 +712,25 @@
           },
           "headRefOid": "a7d31479d6909e16b9cf5bf663b0af3d448e9947",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting review"
+              },
+              {
+                "name": "stale"
+              },
+              {
+                "name": "needs backport to 3.13"
+              },
+              {
+                "name": "needs backport to 3.14"
+              },
+              {
+                "name": "needs backport to 3.15"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -1257,6 +1283,13 @@
           },
           "headRefOid": "3d020965a66d393f31de8e54b99e49872042863f",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting merge"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -1671,6 +1704,13 @@
           },
           "headRefOid": "bf360cd139e7a28600eaf8309cd44412a77a9d1f",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting merge"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -2162,6 +2202,19 @@
           },
           "headRefOid": "09302df59a35be43b86b23c2e3acb9c7556fc5ab",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting core review"
+              },
+              {
+                "name": "needs backport to 3.14"
+              },
+              {
+                "name": "needs backport to 3.15"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -2599,6 +2652,19 @@
           },
           "headRefOid": "fda2780d227915b0ce3173deeb26d31cf19184d5",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting core review"
+              },
+              {
+                "name": "needs backport to 3.14"
+              },
+              {
+                "name": "needs backport to 3.15"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -2907,6 +2973,19 @@
           },
           "headRefOid": "ab3f7bad99edffcab88d0c3876bcdf5bac07acc3",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting merge"
+              },
+              {
+                "name": "stale"
+              },
+              {
+                "name": "needs backport to 3.15"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -3059,6 +3138,16 @@
           },
           "headRefOid": "43d64543821de17882f513ce3714dbbacf4a5504",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "type-feature"
+              },
+              {
+                "name": "awaiting review"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -3362,6 +3451,9 @@
           },
           "headRefOid": "91bae934a3030660abf49dc83cdf9472b16bd516",
           "isDraft": false,
+          "labels": {
+            "nodes": []
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -3727,6 +3819,16 @@
           },
           "headRefOid": "8fdebd91ba20874a60e7402cd346aa06fb00cbb7",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting review"
+              },
+              {
+                "name": "stale"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -3942,6 +4044,19 @@
           },
           "headRefOid": "7cadf94257a6a3d92570d4d4c4d44724e3afda26",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting change review"
+              },
+              {
+                "name": "needs backport to 3.14"
+              },
+              {
+                "name": "needs backport to 3.15"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -4158,6 +4273,13 @@
           },
           "headRefOid": "36af6ce9ad48829919be2d1506733c06fa35af38",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting core review"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -4392,6 +4514,19 @@
           },
           "headRefOid": "d01f24365689dfec8bbe5c9e37ff1274c55fb53f",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting core review"
+              },
+              {
+                "name": "DO-NOT-MERGE"
+              },
+              {
+                "name": "stale"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -4651,6 +4786,13 @@
           },
           "headRefOid": "847cba1b6e09b398aa80399c0221135739dca295",
           "isDraft": true,
+          "labels": {
+            "nodes": [
+              {
+                "name": "stale"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -5767,6 +5909,16 @@
           },
           "headRefOid": "5d987e82724b53c92fdbfb74225b7588994bd356",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting core review"
+              },
+              {
+                "name": "stale"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -6708,6 +6860,16 @@
           },
           "headRefOid": "b8519e0883363d7abbf84f74a7581d0d2747513d",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting core review"
+              },
+              {
+                "name": "stale"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -7339,6 +7501,13 @@
           },
           "headRefOid": "5e907c6a96e48a0dbdd4811d37d94279ae656548",
           "isDraft": true,
+          "labels": {
+            "nodes": [
+              {
+                "name": "type-feature"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -8139,6 +8308,16 @@
           },
           "headRefOid": "9e94d404225e88285caffd04327008e1cb4e9f84",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting core review"
+              },
+              {
+                "name": "stale"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -8728,6 +8907,25 @@
           },
           "headRefOid": "c66edf4c3ae4ae7336a7255463e1b022f18b15e9",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting core review"
+              },
+              {
+                "name": "skip news"
+              },
+              {
+                "name": "stale"
+              },
+              {
+                "name": "needs backport to 3.14"
+              },
+              {
+                "name": "needs backport to 3.15"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -9116,6 +9314,16 @@
           },
           "headRefOid": "936fa8f6aa36f6db74460cd044ec24cd71702793",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting core review"
+              },
+              {
+                "name": "stale"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -10459,6 +10667,22 @@
           },
           "headRefOid": "5fc45d651f97f789e483a97ca26c302e39523a70",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "awaiting review"
+              },
+              {
+                "name": "awaiting core review"
+              },
+              {
+                "name": "stale"
+              },
+              {
+                "name": "topic-free-threading"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -11241,7 +11465,7 @@
       }
     }
   },
-  "query": "query FetchPullRequests($ids: [ID!]!) { nodes(ids: $ids) { ... on PullRequest { number title state isDraft updatedAt baseRefName body mergeCommit { oid } baseRefOid headRefOid repository { nameWithOwner defaultBranchRef { name } } closingIssuesReferences(first: 100) { nodes { number repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } commits(first: 100) { totalCount nodes { commit { message parents { totalCount } committer { user { login } } } } } timelineItems(last: 50, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW, READY_FOR_REVIEW_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, MENTIONED_EVENT, REVIEW_REQUESTED_EVENT, ASSIGNED_EVENT]) { nodes { __typename ... on PullRequestCommit { commit { committedDate author { name user { login } } committer { name user { login } } } } ... on IssueComment { createdAt author { __typename login } bodyText } ... on PullRequestReview { submittedAt author { __typename login } } ... on ReadyForReviewEvent { createdAt actor { __typename login } } ... on HeadRefForcePushedEvent { createdAt actor { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } ... on ReviewRequestedEvent { createdAt requestedReviewer { ... on User { login } ... on Bot { login } } } ... on AssignedEvent { createdAt assignee { ... on User { login } ... on Bot { login } } } } } } } rateLimit { remaining resetAt } }",
+  "query": "query FetchPullRequests($ids: [ID!]!) { nodes(ids: $ids) { ... on PullRequest { number title state isDraft updatedAt baseRefName body mergeCommit { oid } baseRefOid headRefOid repository { nameWithOwner defaultBranchRef { name } } closingIssuesReferences(first: 100) { nodes { number repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } labels(first: 100) { nodes { name } } reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } commits(first: 100) { totalCount nodes { commit { message parents { totalCount } committer { user { login } } } } } timelineItems(last: 50, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW, READY_FOR_REVIEW_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, MENTIONED_EVENT, REVIEW_REQUESTED_EVENT, ASSIGNED_EVENT]) { nodes { __typename ... on PullRequestCommit { commit { committedDate author { name user { login } } committer { name user { login } } } } ... on IssueComment { createdAt author { __typename login } bodyText } ... on PullRequestReview { submittedAt author { __typename login } } ... on ReadyForReviewEvent { createdAt actor { __typename login } } ... on HeadRefForcePushedEvent { createdAt actor { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } ... on ReviewRequestedEvent { createdAt requestedReviewer { ... on User { login } ... on Bot { login } } } ... on AssignedEvent { createdAt assignee { ... on User { login } ... on Bot { login } } } } } } } rateLimit { remaining resetAt } }",
   "reset": 1794168674,
   "status": 200
 }

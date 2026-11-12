@@ -178,6 +178,9 @@
           },
           "headRefOid": "462db8d9c32e051271cd5ee36bbea583c56528e1",
           "isDraft": true,
+          "labels": {
+            "nodes": []
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -473,6 +476,13 @@
           },
           "headRefOid": "6636b05ed53fb49860a5c25adc1e4265de0891a2",
           "isDraft": true,
+          "labels": {
+            "nodes": [
+              {
+                "name": "type-feature"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -610,6 +620,16 @@
           },
           "headRefOid": "fa0dea3a516095459bd217ae1f80f2faef4a19e9",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "type-feature"
+              },
+              {
+                "name": "awaiting core review"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -790,6 +810,16 @@
           },
           "headRefOid": "3379fd1ac668c91cdc09ba08acf5531ba3dceee0",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "type-feature"
+              },
+              {
+                "name": "skip news"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -905,6 +935,13 @@
           },
           "headRefOid": "3510f55bddf3d0e455a2009cf157d10338490755",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "skip news"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -1013,6 +1050,13 @@
           },
           "headRefOid": "3ed36bde28a323d9349fe549130f576e0a09b7eb",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "skip news"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -1112,6 +1156,13 @@
           },
           "headRefOid": "d16f9cbbd9b309fe2c8feed18fab4c5bdc6efa38",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "skip news"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -1239,6 +1290,13 @@
           },
           "headRefOid": "2b9b77edd7ee3385fde863f1ca0e9cc97c7507c5",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "skip news"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -1451,6 +1509,13 @@
           },
           "headRefOid": "6efd156b16dc38a254ae4f00c3427738d9828e45",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "build"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -1774,6 +1839,13 @@
           },
           "headRefOid": "08035102f82675f1622ab2b3b550eeff32be5f13",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "type-feature"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -2337,7 +2409,7 @@
       }
     }
   },
-  "query": "query FetchChangedPullRequests($ids: [ID!]!) { nodes(ids: $ids) { ... on PullRequest { number title state isDraft updatedAt baseRefName body mergeCommit { oid } baseRefOid headRefOid repository { nameWithOwner defaultBranchRef { name } } closingIssuesReferences(first: 100) { nodes { number repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } commits(first: 100) { totalCount nodes { commit { message parents { totalCount } committer { user { login } } } } } timelineItems(last: 50, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW, READY_FOR_REVIEW_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, MENTIONED_EVENT, REVIEW_REQUESTED_EVENT, ASSIGNED_EVENT]) { nodes { __typename ... on PullRequestCommit { commit { committedDate author { name user { login } } committer { name user { login } } } } ... on IssueComment { createdAt author { __typename login } bodyText } ... on PullRequestReview { submittedAt author { __typename login } } ... on ReadyForReviewEvent { createdAt actor { __typename login } } ... on HeadRefForcePushedEvent { createdAt actor { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } ... on ReviewRequestedEvent { createdAt requestedReviewer { ... on User { login } ... on Bot { login } } } ... on AssignedEvent { createdAt assignee { ... on User { login } ... on Bot { login } } } } } } } rateLimit { remaining resetAt } }",
+  "query": "query FetchChangedPullRequests($ids: [ID!]!) { nodes(ids: $ids) { ... on PullRequest { number title state isDraft updatedAt baseRefName body mergeCommit { oid } baseRefOid headRefOid repository { nameWithOwner defaultBranchRef { name } } closingIssuesReferences(first: 100) { nodes { number repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } labels(first: 100) { nodes { name } } reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } commits(first: 100) { totalCount nodes { commit { message parents { totalCount } committer { user { login } } } } } timelineItems(last: 50, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW, READY_FOR_REVIEW_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, MENTIONED_EVENT, REVIEW_REQUESTED_EVENT, ASSIGNED_EVENT]) { nodes { __typename ... on PullRequestCommit { commit { committedDate author { name user { login } } committer { name user { login } } } } ... on IssueComment { createdAt author { __typename login } bodyText } ... on PullRequestReview { submittedAt author { __typename login } } ... on ReadyForReviewEvent { createdAt actor { __typename login } } ... on HeadRefForcePushedEvent { createdAt actor { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } ... on ReviewRequestedEvent { createdAt requestedReviewer { ... on User { login } ... on Bot { login } } } ... on AssignedEvent { createdAt assignee { ... on User { login } ... on Bot { login } } } } } } } rateLimit { remaining resetAt } }",
   "reset": 1794168674,
   "status": 200
 }

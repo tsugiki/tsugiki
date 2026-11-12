@@ -56,6 +56,7 @@ const view = (bodyHtml: string): IssueView => ({
   people: ["issue-author"],
   updated_at: "2026-11-04T10:00:00Z",
   author: "issue-author",
+  assignees: ["some-assignee"],
   needs_attention: [10],
   pull_requests: [
     {
@@ -78,6 +79,7 @@ const view = (bodyHtml: string): IssueView => ({
       },
     ],
     earlier_comments: 0,
+    opened_at: "2026-11-01T09:00:00Z",
   },
 });
 
@@ -103,7 +105,9 @@ test("an Issue opens in the Detail pane and stops looking unread", async ({ page
   await expect(pane.getByRole("heading", { level: 2 })).toHaveText("#7 Issue 7");
   await expect(pane.getByRole("heading", { name: /Origin PRs/ })).toHaveText("Origin PRs 0 open of 2 PRs");
   await expect(pane.getByRole("button", { name: "#10 gh-7: Fix it" })).toHaveCSS("font-weight", "600");
-  await expect(pane).toContainText("issue-author");
+  await expect(pane).toContainText(
+    /issue-author opened this \d+d ago · 1 comment · assigned to some-assignee/,
+  );
   await expect(pane).toContainText("It crashes");
   await expect(pane).toContainText("Which build?");
   await expect(pane).toContainText("Merged · CI passed · You approved");
@@ -192,6 +196,7 @@ const longIssue = async (page: Page) => {
     pullRequest: done,
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "PRs of #7" }).click();
   await inList(page, "#7 Issue 7").click();
   const pane = page.getByRole("region", { name: "Issue view" });
   await expect(pane).toContainText("Paragraph 59");
@@ -228,6 +233,30 @@ test("the Issue view comes back where the user left it after a PR from its tree"
   await expect(pane).toBeVisible();
 
   expect([afterEsc, await scrolled(pane)]).toEqual([300, 200]);
+});
+
+test("an Issue's PRs fold away and come back, and Alt+← to one of them unfolds its Issue", async ({
+  page,
+}) => {
+  await longIssue(page);
+  const pr = inList(page, "#10 gh-7: Fix it");
+  await pr.click();
+  await expect(page.getByRole("region", { name: "PR view" })).toBeVisible();
+  await inList(page, "#8 Issue 8").click();
+  await page.getByRole("button", { name: "PRs of #7" }).click();
+  await expect(pr).toHaveCount(0);
+
+  await page.keyboard.press("Alt+ArrowLeft");
+  await expect(page.getByRole("region", { name: "PR view" })).toBeVisible();
+  await expect(pr).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(inList(page, "#7 Issue 7")).toBeFocused();
+  await expect(pr).toBeVisible();
+  await page.keyboard.press("ArrowLeft");
+  await expect(pr).toHaveCount(0);
+  await page.keyboard.press("ArrowRight");
+
+  await expect(pr).toBeVisible();
 });
 
 test("the Issue view starts at the top when the user opens it from the list", async ({ page }) => {

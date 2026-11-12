@@ -6,7 +6,9 @@ export type Os = "mac" | "other";
 
 /**
  * The keys from `docs/devel/keyboard.md`, named as `keyName` names them. `ctrl+k` starts the chords in
- * `OWNED_CHORDS`, and most of these have no action until their stage arrives.
+ * `OWNED_CHORDS`, and most of these have no action until their stage arrives. The bare ← and → that fold
+ * the Issue list stay out: the guard would take them from every text box, diff and pane edge, and the list
+ * acts on them only while it has the focus.
  */
 const OWNED_KEYS = [
   "ctrl+shift+p",

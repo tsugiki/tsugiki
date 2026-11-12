@@ -2,8 +2,8 @@
   "body": {
     "data": {
       "rateLimit": {
-        "remaining": 4994,
-        "resetAt": "2026-11-08T05:52:02Z"
+        "remaining": 4986,
+        "resetAt": "2026-11-12T00:55:59Z"
       },
       "repository": {
         "pullRequest": {
@@ -103,6 +103,7 @@
             ],
             "totalCount": 10
           },
+          "createdAt": "2026-06-26T18:36:12Z",
           "headRefOid": "a4c2623368acdf75d3c088f2f84c3ddc6d78c75e",
           "reviewThreads": {
             "nodes": [
@@ -1494,7 +1495,7 @@
       }
     }
   },
-  "query": "query FetchPullRequestContent($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { bodyHTML comments(last: 30) { totalCount nodes { author { login } createdAt bodyHTML isMinimized minimizedReason } } headRefOid reviews(last: 100) { totalCount nodes { id author { login } state submittedAt bodyHTML isMinimized minimizedReason commit { oid } } } reviewThreads(last: 100) { nodes { id path line originalLine diffSide subjectType isResolved isOutdated comments(first: 100) { totalCount nodes { pullRequestReview { id } author { login } createdAt bodyHTML bodyText isMinimized minimizedReason diffHunk } } } } } } rateLimit { remaining resetAt } }",
-  "reset": 1794117122,
+  "query": "query FetchPullRequestContent($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { bodyHTML createdAt comments(last: 30) { totalCount nodes { author { login } createdAt bodyHTML isMinimized minimizedReason } } headRefOid reviews(last: 100) { totalCount nodes { id author { login } state submittedAt bodyHTML isMinimized minimizedReason commit { oid } } } reviewThreads(last: 100) { nodes { id path line originalLine diffSide subjectType isResolved isOutdated comments(first: 100) { totalCount nodes { pullRequestReview { id } author { login } createdAt bodyHTML bodyText isMinimized minimizedReason diffHunk } } } } } } rateLimit { remaining resetAt } }",
+  "reset": 1794444959,
   "status": 200
 }

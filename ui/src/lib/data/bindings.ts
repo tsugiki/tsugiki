@@ -676,6 +676,11 @@ export type IssueContent_Deserialize = {
 	comments: IssueComment_Deserialize[],
 	/**  The count of older comments that only GitHub shows. */
 	earlier_comments: number,
+	/**
+	 *  The time its author opened it. Nothing, for a read kept from before Tsugiki asked, until the next
+	 *  read.
+	 */
+	opened_at: string | null,
 };
 
 /**  An Issue's description and its recent comments. */
@@ -686,6 +691,11 @@ export type IssueContent_Serialize = {
 	comments: IssueComment_Serialize[],
 	/**  The count of older comments that only GitHub shows. */
 	earlier_comments: number,
+	/**
+	 *  The time its author opened it. Nothing, for a read kept from before Tsugiki asked, until the next
+	 *  read.
+	 */
+	opened_at: string | null,
 };
 
 /**  An Issue on the Workbench, with its tree: each PR Tsugiki knows that fixes it, whatever its state. */
@@ -757,6 +767,8 @@ export type IssueView_Deserialize = {
 	merged_count: number,
 	/**  Nothing, for an Issue whose author's account has gone. */
 	author?: Login | null,
+	/**  Whom it is assigned to, as the sync last read them (#595). */
+	assignees: Login[],
 	/**  Nothing, until Tsugiki has read this Issue from GitHub once. */
 	content?: IssueContent_Deserialize | null,
 	/**  The PRs and Backports in its tree that Need attention, each by itself (#597). */
@@ -774,6 +786,8 @@ export type IssueView_Serialize = {
 	merged_count: number,
 	/**  Nothing, for an Issue whose author's account has gone. */
 	author: Login | null,
+	/**  Whom it is assigned to, as the sync last read them (#595). */
+	assignees: Login[],
 	/**  Nothing, until Tsugiki has read this Issue from GitHub once. */
 	content: IssueContent_Serialize | null,
 	/**  The PRs and Backports in its tree that Need attention, each by itself (#597). */

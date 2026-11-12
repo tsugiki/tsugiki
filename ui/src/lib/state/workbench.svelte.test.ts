@@ -63,6 +63,18 @@ const catchListener = () => {
 
 const numbers = (state: WorkbenchState) => state.items?.map((i) => i.number);
 
+/** Issue `number` with one PR, `pr`, in its tree. */
+const issueWith = (number: number, pr: number): ListedItem => ({
+  attention: null,
+  kind: "issue",
+  number,
+  title: `Issue ${String(number)}`,
+  state: "OPEN",
+  people: [],
+  updated_at: "2026-11-04T10:00:00Z",
+  pull_requests: [{ ...row, kind: "pr", number: pr, backports: [] }],
+});
+
 describe("WorkbenchState", () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -178,13 +190,18 @@ describe("WorkbenchState", () => {
     });
     const state = new WorkbenchState("python/cpython");
     await state.load();
+    const walk = (steps: number) =>
+      Array.from({ length: steps }, () => {
+        state.moveCursor(1);
+        return state.underCursor;
+      });
 
-    const stops = [];
-    for (let step = 0; step < 7; step += 1) {
-      state.moveCursor(1);
-      stops.push(state.underCursor);
-    }
+    const folded = walk(4).map((stop) => stop?.number);
+    state.cursor = undefined;
+    state.unfold(10);
+    const stops = walk(7);
 
+    expect(folded).toEqual([10, 20, 21, 30]);
     expect(stops).toEqual([
       { number: 10, kind: "issue", issue: undefined },
       { number: 11, kind: "pull_request", issue: 10 },
@@ -215,6 +232,8 @@ describe("WorkbenchState", () => {
     });
     const state = new WorkbenchState("python/cpython");
     await state.load();
+    state.unfold(10);
+    state.unfold(20);
 
     const stops = [];
     for (let step = 0; step < 5; step += 1) {
@@ -229,6 +248,101 @@ describe("WorkbenchState", () => {
       [5, 20],
       [30, undefined],
     ]);
+    state.stop();
+  });
+
+  it("starts each Issue folded, and keeps what each view unfolds for itself", async () => {
+    catchListener();
+    const mine = { name: "Mine", query: "is:open author:@me", count: 0, problem: null };
+    vi.mocked(commands.workbench).mockResolvedValue({
+      status: "ok",
+      data: { items: [issueWith(10, 11)], quiet: [], count: 0, review_requests: 0, filters: [mine] },
+    });
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    const pr = { number: 11, kind: "pull_request" as const, issue: 10 };
+
+    const first = [state.unfolded(10), state.lists(pr)];
+    state.unfold(10);
+    state.unfold(10);
+    await state.select({ kind: "filter", query: mine.query });
+    const inFilter = state.unfolded(10);
+    state.fold(10);
+    await state.select({ kind: "whole" });
+
+    expect([...first, inFilter, state.unfolded(10)]).toEqual([false, true, false, true]);
+    state.stop();
+  });
+
+  it("moves the cursor from a PR to its Issue as the Issue folds, and unfolds it to put the cursor on a PR", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue({
+      status: "ok",
+      data: {
+        items: [issueWith(10, 11), issueWith(20, 21)],
+        quiet: [],
+        count: 0,
+        review_requests: 0,
+        filters: [],
+      },
+    });
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    const pr = { number: 11, kind: "pull_request" as const, issue: 10 };
+
+    state.moveTo(pr);
+    const unfolded = [state.unfolded(10), state.underCursor];
+    state.fold(20);
+    const otherFolded = state.cursor;
+    state.fold(10);
+
+    expect(unfolded).toEqual([true, pr]);
+    expect(otherFolded).toEqual(pr);
+    expect([state.unfolded(10), state.cursor]).toEqual([
+      false,
+      { number: 10, kind: "issue", issue: undefined },
+    ]);
+    state.stop();
+  });
+
+  it("keeps the folds of the items on show until the newly selected view's answer arrives", async () => {
+    catchListener();
+    const mine = { name: "Mine", query: "is:open author:@me", count: 0, problem: null };
+    const listed = { items: [issueWith(10, 11)], quiet: [], count: 0, review_requests: 0, filters: [mine] };
+    vi.mocked(commands.workbench).mockResolvedValueOnce({ status: "ok", data: listed });
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    state.unfold(10);
+    let answer: (value: Awaited<ReturnType<typeof commands.workbench>>) => void = () => {};
+    vi.mocked(commands.workbench).mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+
+    const selecting = state.select({ kind: "filter", query: mine.query });
+    const meanwhile = state.unfolded(10);
+    answer({ status: "ok", data: listed });
+    await selecting;
+
+    expect([meanwhile, state.unfolded(10)]).toEqual([true, false]);
+    state.stop();
+  });
+
+  it("unfolds the Issue over the PR under the cursor in a view that has it folded", async () => {
+    catchListener();
+    const mine = { name: "Mine", query: "is:open author:@me", count: 0, problem: null };
+    vi.mocked(commands.workbench).mockResolvedValue({
+      status: "ok",
+      data: { items: [issueWith(10, 11)], quiet: [], count: 0, review_requests: 0, filters: [mine] },
+    });
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    state.moveTo({ number: 11, kind: "pull_request", issue: 10 });
+
+    await state.select({ kind: "filter", query: mine.query });
+
+    expect([state.unfolded(10), state.underCursor?.number]).toEqual([true, 11]);
     state.stop();
   });
 

@@ -27,10 +27,15 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 
     An item that Needs attention is marked the way unread mail is. The preview says why in the words an
     **Alert** would use: "CI failed: Tests / Ubuntu", "Changes requested by some-reviewer", "Review requested
-    from you". An Issue's Origin PRs and their Backports are listed under it, and ↑ ↓ stop on each of them.
-    `Enter` or a click opens the item or PR under the cursor in the Detail pane. Any item can be **Archived**
-    or **Muted**, and its author **Muted**. A footer under the list gives the legend and the list's keys (↑ ↓,
-    E, M, `Alt+←`, `?` for all); it can be switched off.
+    from you". An Issue's Origin PRs and their Backports are listed under it, folded at first like a
+    conversation in a mail client: the Issue's row shows `›` and its preview, and ↑ ↓ go from Issue to
+    Issue. → or a click on `›` unfolds the Issue, and ↑ ↓ then stop on each of its PRs. ← folds it; on a
+    PR's row ← moves the cursor to its Issue, as in VS Code's trees, and a second ← folds it. The list takes
+    ← and → only while it has the focus. Opening a PR of a folded Issue some other way, such as with `Alt+←`
+    or from the Issue view, unfolds the Issue. Each view keeps which Issues are unfolded while the Repository
+    stays open. `Enter` or a click opens the item or PR under the cursor in the Detail pane. Any item can be
+    **Archived** or **Muted**, and its author **Muted**. A footer under the list gives the legend and the
+    list's keys (↑ ↓, ← →, E, M, `Alt+←`, `?` for all); it can be switched off.
 
     `Ctrl+Alt+B`, or "Hide Issue List" in the command palette, hides the list with its footer and its edge,
     so the Detail pane gets its room. The same key, or "Show Issue List", brings it back at its width. In a
@@ -47,12 +52,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     row of the item the Detail pane shows, or to the cursor's row when that item isn't in the list or nothing
     is open.
   - **Detail pane** (right): the selected item. That is either an **Issue view** or a **PR view**.
-    - The Issue view shows the title and its author, the Origin PRs, the description, and recent comments,
-      with a box to comment. Each Origin PR's Backports are folded into one line that gives their branches and
-      states. The Origin PRs heading counts the open PRs of all of them, Backports and the folded merged PRs
-      included. Each PR's line starts with its branch and ends with its author, and a PR that Needs
-      attention shows in bold. A legend under the tree names the icons for open, draft, merged and closed,
-      and the bold.
+    - The Issue view shows the title, an author line, the Origin PRs, the description, and recent comments,
+      with a box to comment. The author line says who opened the Issue and how long ago, with the date and
+      time in its tooltip, how many comments it has, and whom it is assigned to, if anyone. Each Origin PR's
+      Backports are folded into one line that gives their branches and states. The Origin PRs heading counts
+      the open PRs of all of them, Backports and the folded merged PRs included. Each PR's line starts with
+      its branch and ends with its author, and a PR that Needs attention shows in bold. A legend under the
+      tree names the icons for open, draft, merged and closed, and the bold.
     - The PR view shows Conversation and Files as tabs, and opens on Conversation. `Ctrl+PageDown` and
       `Ctrl+PageUp` switch tabs, and so does `Enter` on the PR's row once the PR is open.
 

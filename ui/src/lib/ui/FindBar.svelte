@@ -84,24 +84,19 @@
 
   input {
     width: 24ch;
-    font: inherit;
   }
 
   .count {
     min-width: 10ch;
-    opacity: 0.75;
+    color: var(--fg-muted);
   }
 
   button {
     border: 0;
-    font: inherit;
-    color: inherit;
     background: none;
-    cursor: pointer;
   }
 
   button:disabled {
     opacity: 0.4;
-    cursor: default;
   }
 </style>

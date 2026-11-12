@@ -159,17 +159,7 @@
   .by {
     font-size: 12px;
     margin: 4px 0;
-    opacity: 0.75;
-  }
-
-  .link {
-    all: unset;
-    cursor: pointer;
-  }
-
-  .link:hover,
-  .link:focus-visible {
-    text-decoration: underline;
+    color: var(--fg-muted);
   }
 
   .back {

@@ -1256,7 +1256,7 @@ it("shows another Repository as a launch does: its Workbench, an empty Detail pa
   expect(screen.queryByRole("region", { name: "Issue view" })).toBeNull();
   // As at a launch, no line has the cursor yet, and the first ↓ puts it on the top one.
   const first = await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
-  expect(document.querySelector(".open[aria-current]")).toBeNull();
+  expect(document.querySelector("[data-item][aria-current]")).toBeNull();
   await press("ArrowDown");
   expect(first.getAttribute("aria-current")).toBe("true");
 });

@@ -27,7 +27,7 @@ const row: WorkbenchRow = {
   your_review: null,
 };
 
-const issue: ListedItem = {
+const issue: Extract<ListedItem, { kind: "issue" }> = {
   kind: "issue",
   number: 7,
   title: "Issue 7",

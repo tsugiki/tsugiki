@@ -105,6 +105,7 @@
   let kept: IssueViewState | undefined;
   let browserProblem = $state<string>();
   let list = $state<HTMLElement>();
+  let quietLineButton = $state<HTMLButtonElement>();
   let home = $state<HTMLElement>();
 
   const onGitHub = async (item: GitHubItem) => {
@@ -311,6 +312,9 @@
       panes.order === "attention"
         ? { title: "Sort by Last Update", run: () => void sortBy("last_update") }
         : { title: "Sort by Attention", run: () => void sortBy("attention") },
+      ...(workbench.quiet.length > 0
+        ? [{ title: workbench.quietShown ? "Hide Quiet Items" : "Show Quiet Items", run: toggleQuiet }]
+        : []),
     ];
   }
 
@@ -323,6 +327,27 @@
     await panes.setOrder(order);
     await workbench.refresh();
   }
+
+  /** Unfolds the quiet section, or folds it. A cursor in it moves to the last line above it, and takes the
+   * focus with it if the focus was on a row that went away. With no line above, the focus goes to the
+   * line that unfolds the section again. */
+  function toggleQuiet() {
+    if (!workbench.quietShown) {
+      workbench.showQuiet();
+      return;
+    }
+    const focused = document.activeElement;
+    workbench.hideQuiet();
+    void tick().then(() => {
+      if (focused?.isConnected !== false) return;
+      if (workbench.cursor) focusCursor();
+      else quietLineButton?.focus();
+    });
+  }
+
+  /** The line that folds the quiet section: what a click on it does, and to how many items. */
+  const quietLine = (shown: boolean, count: number) =>
+    `${shown ? "Hide" : "Show"} ${count === 1 ? "1 quiet item" : `${String(count)} quiet items`}`;
 
   /** Names a line for the page, which can list a PR under two Issues. */
   const lineName = (stop: Stop | undefined) => `${String(stop?.issue ?? "")}#${String(stop?.number)}`;
@@ -614,12 +639,21 @@
           {/each}
         </ul>
         {#if workbench.quiet.length > 0}
-          <h2>Quiet</h2>
-          <ul>
-            {#each workbench.quiet as item (item.number)}
-              {@render listed(item)}
-            {/each}
-          </ul>
+          <button
+            class="quiet"
+            aria-expanded={workbench.quietShown}
+            onclick={toggleQuiet}
+            bind:this={quietLineButton}
+          >
+            {quietLine(workbench.quietShown, workbench.quiet.length)}
+          </button>
+          {#if workbench.quietShown}
+            <ul aria-label="Quiet items">
+              {#each workbench.quiet as item (item.number)}
+                {@render listed(item)}
+              {/each}
+            </ul>
+          {/if}
         {/if}
       {/if}
     </section>
@@ -752,9 +786,19 @@
     text-decoration: underline;
   }
 
-  h2 {
-    font-size: 13px;
+  /* A muted line at the end of the list until #599 styles it. */
+  .quiet {
+    all: unset;
+    display: block;
     margin: 16px 0 0;
+    font-size: 12px;
+    opacity: 0.75;
+    cursor: pointer;
+  }
+
+  .quiet:hover,
+  .quiet:focus-visible {
+    text-decoration: underline;
   }
 
   .preview {

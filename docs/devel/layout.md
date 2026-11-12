@@ -23,7 +23,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     - **By last update**: each item newest first by its last update.
 
     The quiet section comes last either way. All issues, Archived and Muted keep their own order and show no
-    switch.
+    switch. The quiet section starts folded behind a muted "Show 4 quiet items" line at the end of the list.
+    A click on the line, or "Show Quiet Items" in the command palette, unfolds it, and the line turns to
+    "Hide 4 quiet items" above it. ↑ ↓ skip a folded section. Folding it moves a cursor in it to the last
+    line above, and opening a quiet item another way, as with `Alt+←`, unfolds it. The choice holds for every
+    view while the Repository stays open.
 
     An item that Needs attention is marked the way unread mail is. The preview says why in the words an
     **Alert** would use: "CI failed: Tests / Ubuntu", "Changes requested by some-reviewer", "Review requested

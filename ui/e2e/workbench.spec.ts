@@ -90,6 +90,51 @@ test("the Workbench lists what waits on the user", async ({ page }) => {
   await expect(rows.nth(3)).toContainText("Own PR · octocat · into 3.14 · Open · Draft · CI failed · ");
 });
 
+test("the quiet section unfolds, folds, and unfolds again for Alt+← back to an item in it", async ({
+  page,
+}) => {
+  const done = { status: "ok", data: null } as const;
+  const ownView = { ...reviewRow, ...own, content: null };
+  await mockCore(page, {
+    home: cpython,
+    workbench: {
+      status: "ok",
+      data: { items: [review], quiet: [own], count: 1, review_requests: 0, filters: [] },
+    },
+    openIssue: done,
+    fetchIssue: done,
+    issue: {
+      status: "ok",
+      data: { ...review, merged: [], merged_count: 0, author: "issue-author", assignees: [], content: null },
+    },
+    openPullRequest: done,
+    fetchPullRequest: done,
+    pullRequest: { status: "ok", data: ownView },
+  });
+  await page.goto("/");
+  const line = page.getByRole("button", { name: /quiet item/ });
+  const quietRow = page
+    .getByRole("list", { name: "Quiet items" })
+    .getByRole("button", { name: "#157178 GH-156425: Clear GC frame on early return" });
+  await expect(line).toHaveText("Show 1 quiet item");
+  await expect(quietRow).toBeHidden();
+
+  await line.click();
+  await expect(line).toHaveText("Hide 1 quiet item");
+  await quietRow.click();
+  await expect(page.getByRole("region", { name: "PR view" })).toBeVisible();
+  await page.getByRole("button", { name: "#112564 GIL drop during collection" }).click();
+  await expect(page.getByRole("region", { name: "Issue view" })).toBeVisible();
+  await line.click();
+  await expect(quietRow).toBeHidden();
+
+  await page.keyboard.press("Alt+ArrowLeft");
+
+  await expect(page.getByRole("region", { name: "PR view" })).toBeVisible();
+  await expect(line).toHaveText("Hide 1 quiet item");
+  await expect(quietRow).toBeFocused();
+});
+
 test("the first sync's rows appear as the core saves them", async ({ page }) => {
   await mockCore(page, {
     home: cpython,

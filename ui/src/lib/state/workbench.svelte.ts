@@ -71,6 +71,9 @@ export class WorkbenchState {
   error = $state<string>();
   /** The line the list's keys act on. A re-query leaves it in place (ADR 0008). */
   cursor = $state<Stop>();
+  /** Whether the list shows its quiet section. One choice holds for every view while the Repository stays
+   * open, and the section starts folded (#601). */
+  quietShown = $state(false);
   /** The Issues unfolded in each view, by the view's key. */
   #unfolded = new SvelteMap<string, SvelteSet<number>>();
   /** The view whose items the list shows: `selected` once its answer has arrived. */
@@ -129,9 +132,10 @@ export class WorkbenchState {
     return this.#stops().find((stop) => sameStop(this.cursor, stop));
   }
 
-  /** Whether the list, or its quiet section, has the line `stop`, folded away or not. */
+  /** Whether the list has the line `stop`, under a folded Issue or not, and in its quiet section only while
+   * that is unfolded. */
   lists(stop: Stop): boolean {
-    return this.#allStops().some((line) => sameStop(line, stop));
+    return this.#lines(() => true).some((line) => sameStop(line.stop, stop));
   }
 
   /** Whether the list shows Issue `issue`'s PRs under it in the view on show. Each Issue starts folded, and
@@ -156,10 +160,23 @@ export class WorkbenchState {
     if (this.cursor?.issue === issue) this.cursor = { number: issue, kind: "issue", issue: undefined };
   }
 
-  /** Puts the cursor on line `stop`, unfolding the Issue it's under so the cursor has a row to stand on. */
+  /** Puts the cursor on line `stop`, unfolding the Issue it's under, and the quiet section if the line is in
+   * it, so the cursor has a row to stand on. */
   moveTo(stop: Stop) {
     if (stop.issue !== undefined) this.unfold(stop.issue);
+    if (this.#inQuiet(stop)) this.quietShown = true;
     this.cursor = stop;
+  }
+
+  showQuiet() {
+    this.quietShown = true;
+  }
+
+  /** Folds the quiet section. A cursor in it moves to the last line above it. */
+  hideQuiet() {
+    const cursor = this.cursor;
+    this.quietShown = false;
+    if (cursor !== undefined && this.#inQuiet(cursor)) this.cursor = this.#stops().at(-1);
   }
 
   /** Moves the cursor down the list, or up it, stopping at each end. With none yet it starts at the top. */
@@ -176,14 +193,17 @@ export class WorkbenchState {
   }
 
   /** Moves the cursor after a PR that a change put under an Issue, or took out from under one, and unfolds
-   * the Issue over a PR under the cursor, as another view may have it folded. */
+   * the Issue over a PR under the cursor, as another view may have it folded. An item that went quiet under
+   * the cursor, or is quiet in the view the user selected, leaves a folded section folded: the cursor moves
+   * to the last line above it, as folding it would. */
   #followCursor() {
     const cursor = this.cursor;
     if (cursor === undefined) return;
     const stops = this.#allStops();
     const line =
       stops.find((stop) => sameStop(cursor, stop)) ?? stops.find((stop) => stop.number === cursor.number);
-    if (line) this.moveTo(line);
+    if (line && !this.quietShown && this.#inQuiet(line)) this.cursor = this.#stops().at(-1);
+    else if (line) this.moveTo(line);
   }
 
   /** The key of the view whose items the list shows, which keeps its own unfolded Issues. Until the answer
@@ -199,19 +219,22 @@ export class WorkbenchState {
   }
 
   /** The title of each line by its number, built once for each answer, which the history reads (#586). Made
-   * anew whenever the list changes, so it needn't be reactive itself. It names the PRs of folded Issues
-   * too. */
+   * anew whenever the list changes, so it needn't be reactive itself. It names the PRs of folded Issues and
+   * the lines of a folded quiet section too. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
-  #titles = $derived(new Map(this.#lines(() => true).map((line) => [line.stop.number, line.title])));
+  #titles = $derived(new Map(this.#lines(() => true, true).map((line) => [line.stop.number, line.title])));
 
   /** The title of line `number`, if the list, or its quiet section, has it. */
   titleOf(number: number): string | undefined {
     return this.#titles.get(number);
   }
 
-  /** The list's lines, in its order, with the trees `unfolded` says show. */
-  #lines(unfolded: (issue: number) => boolean) {
-    return [...(this.items ?? []), ...this.quiet].flatMap((item) => linesOf(item, unfolded));
+  /** The list's lines, in its order, with the trees `unfolded` says show: those of the quiet section only
+   * while it shows, or `withQuiet`. */
+  #lines(unfolded: (issue: number) => boolean, withQuiet = this.quietShown) {
+    return [...(this.items ?? []), ...(withQuiet ? this.quiet : [])].flatMap((item) =>
+      linesOf(item, unfolded),
+    );
   }
 
   /** The lines the list shows, in its order. */
@@ -220,9 +243,13 @@ export class WorkbenchState {
     return this.#lines((issue) => open?.has(issue) ?? false).map((line) => line.stop);
   }
 
-  /** Each line the list has, the PRs of folded Issues too. */
+  /** Each line the list has, the PRs of folded Issues and the lines of a folded quiet section too. */
   #allStops() {
-    return this.#lines(() => true).map((line) => line.stop);
+    return this.#lines(() => true, true).map((line) => line.stop);
+  }
+
+  #inQuiet(stop: Stop) {
+    return this.quiet.some((item) => linesOf(item, () => true).some((line) => sameStop(line.stop, stop)));
   }
 
   async #ask() {

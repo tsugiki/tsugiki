@@ -50,6 +50,11 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 - The Settings dialog and its pages.
 - Two TOML files, one that travels between machines and one that stays, and a portable mode.
 
+### Themes ([themes.md](devel/themes.md))
+
+- A **Theme** for each side, light and dark, that colours the whole window and follows Windows when it
+  changes sides. VS Code's Light Modern and Dark Modern are built in.
+
 ### Workbench ([workbench.md](devel/workbench.md))
 
 - The **Workbench**, **Filters**, **Pinned issues**, **All issues** and the **Built-in views**, with counts

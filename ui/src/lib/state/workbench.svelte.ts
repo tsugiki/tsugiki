@@ -37,21 +37,28 @@ export type Stop = { number: number; kind: "issue" | "pull_request"; issue: numb
 /** Whether two stops are the same line. A PR that fixes two Issues has a line under each. */
 export const sameStop = (a: Stop | undefined, b: Stop) => a?.number === b.number && a.issue === b.issue;
 
+/** A line of the list: where the cursor stops, and the title it shows. */
+type Line = { stop: Stop; title: string };
+
 /** The lines of `item` the cursor stops on, in the order the list shows them. An Issue's tree shows only
  * while `unfolded` says it does. */
-function stopsOf(item: ListedItem, unfolded: (issue: number) => boolean): Stop[] {
+function linesOf(item: ListedItem, unfolded: (issue: number) => boolean): Line[] {
   if (item.kind === "issue") {
     const tree = unfolded(item.number) ? item.pull_requests : [];
-    const rows = tree.flatMap((entry) =>
-      entry.kind === "pr" ? [entry.number, ...entry.backports.map((b) => b.number)] : [entry.number],
-    );
+    const rows = tree.flatMap((entry) => (entry.kind === "pr" ? [entry, ...entry.backports] : [entry]));
     return [
-      { number: item.number, kind: "issue", issue: undefined },
-      ...rows.map((number) => ({ number, kind: "pull_request" as const, issue: item.number })),
+      { stop: { number: item.number, kind: "issue", issue: undefined }, title: item.title },
+      ...rows.map((row) => ({
+        stop: { number: row.number, kind: "pull_request" as const, issue: item.number },
+        title: row.title,
+      })),
     ];
   }
-  const backports = item.kind === "standalone_pr" ? item.backports.map((b) => b.number) : [];
-  return [item.number, ...backports].map((number) => ({ number, kind: "pull_request", issue: undefined }));
+  const backports = item.kind === "standalone_pr" ? item.backports : [];
+  return [item, ...backports].map((row) => ({
+    stop: { number: row.number, kind: "pull_request", issue: undefined },
+    title: row.title,
+  }));
 }
 
 export class WorkbenchState {
@@ -101,6 +108,20 @@ export class WorkbenchState {
   async select(view: WorkbenchView) {
     this.selected = view;
     await this.#ask();
+  }
+
+  /** Asks for the view on show again, as after the list's order changed. */
+  async refresh() {
+    await this.#ask();
+  }
+
+  /** The name of the view on show, as the Sidebar gives it. A Filter the settings no longer hold goes by
+   * its search. */
+  get title(): string {
+    const selected = this.selected;
+    if (selected.kind === "whole") return "Workbench";
+    if (selected.kind === "review_requests") return "Review requests";
+    return this.filters.find((filter) => filter.query === selected.query)?.name ?? selected.query;
   }
 
   /** The line under the cursor, wherever the list now has it. */
@@ -177,17 +198,31 @@ export class WorkbenchState {
     return this.#unfolded.get(this.#viewKey());
   }
 
+  /** The title of each line by its number, built once for each answer, which the history reads (#586). Made
+   * anew whenever the list changes, so it needn't be reactive itself. It names the PRs of folded Issues
+   * too. */
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  #titles = $derived(new Map(this.#lines(() => true).map((line) => [line.stop.number, line.title])));
+
+  /** The title of line `number`, if the list, or its quiet section, has it. */
+  titleOf(number: number): string | undefined {
+    return this.#titles.get(number);
+  }
+
+  /** The list's lines, in its order, with the trees `unfolded` says show. */
+  #lines(unfolded: (issue: number) => boolean) {
+    return [...(this.items ?? []), ...this.quiet].flatMap((item) => linesOf(item, unfolded));
+  }
+
   /** The lines the list shows, in its order. */
   #stops() {
     const open = this.#open();
-    return [...(this.items ?? []), ...this.quiet].flatMap((item) =>
-      stopsOf(item, (issue) => open?.has(issue) ?? false),
-    );
+    return this.#lines((issue) => open?.has(issue) ?? false).map((line) => line.stop);
   }
 
   /** Each line the list has, the PRs of folded Issues too. */
   #allStops() {
-    return [...(this.items ?? []), ...this.quiet].flatMap((item) => stopsOf(item, () => true));
+    return this.#lines(() => true).map((line) => line.stop);
   }
 
   async #ask() {

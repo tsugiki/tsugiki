@@ -1,7 +1,9 @@
 // How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list (#187), and
-// whether the Sidebar (#234) and the list (#242) show, and which of them `Ctrl+K Z` hid (#246). The core
-// keeps the layout in `machine.toml`, so it stays on this machine and isn't synced.
-import { commands, type Panes } from "$lib/data/bindings";
+// whether the Sidebar (#234) and the list (#242) show, which of them `Ctrl+K Z` hid (#246), and the list's
+// order (#592). The core keeps the layout in `machine.toml`, so it stays on this machine and isn't synced.
+import { commands, type ListOrder, type Panes } from "$lib/data/bindings";
+
+export type { ListOrder };
 
 /** The Sidebar's width until the user drags its edge, in CSS pixels. */
 export const SIDEBAR_WIDTH = 200;
@@ -26,6 +28,8 @@ export class PanesState {
   /** The panes `Ctrl+K Z` hid, which it brings back next: null while it remembers none, and undefined until
    * the core or the user says. */
   #detailOnlyHid = $state<Panes | null | undefined>();
+  /** How the list orders its items, nothing until the core or the user says. */
+  #order = $state<ListOrder | null>(null);
   #readProblem = $state<string>();
   #saveProblem = $state<string>();
   /** The last save, or else the first read, which the next save waits for. The layout then reaches the file
@@ -43,7 +47,9 @@ export class PanesState {
 
   async #read() {
     try {
-      const { sidebar, list, sidebar_hidden, list_hidden, detail_only_hid } = await commands.paneLayout();
+      const { sidebar, list, sidebar_hidden, list_hidden, detail_only_hid, order } =
+        await commands.paneLayout();
+      this.#order ??= order;
       this.sidebar ??= sidebar === null ? null : Math.min(SIDEBAR_MOST, Math.max(SIDEBAR_LEAST, sidebar));
       this.list ??= list === null ? null : Math.max(LIST_LEAST, list);
       this.#hidden.sidebar ??= sidebar_hidden;
@@ -63,6 +69,20 @@ export class PanesState {
   /** Why the layout couldn't be saved, or else read. */
   get problem(): string | undefined {
     return this.#saveProblem ?? this.#readProblem;
+  }
+
+  /** How the list orders its items: by attention until the core or the user says otherwise. */
+  get order(): ListOrder {
+    return this.#order ?? "attention";
+  }
+
+  /** Orders the list by `order`, and saves that. The core reads the list in the order it saved, so a save
+   * that fails puts the order back, and the switch keeps saying how the list comes. */
+  async setOrder(order: ListOrder): Promise<void> {
+    const before = this.#order;
+    this.#order = order;
+    await this.save();
+    if (this.#saveProblem !== undefined) this.#order = before;
   }
 
   /** Whether the Detail pane shows alone, with both the Sidebar and the list hidden. */
@@ -133,6 +153,7 @@ export class PanesState {
       sidebar_hidden: this.hidden("sidebar"),
       list_hidden: this.hidden("list"),
       detail_only_hid: this.#detailOnlyHid ?? null,
+      order: this.order,
     };
     let problem: string | undefined;
     try {

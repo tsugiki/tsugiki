@@ -8,6 +8,7 @@ import type {
   WorkbenchRow_Serialize as WorkbenchRow,
 } from "../src/lib/data/bindings.ts";
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
+import { themes } from "./themes.ts";
 
 const repository = { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] } as const;
 const cpython = { screen: "repository", repository, others: [] as string[] } as const;
@@ -63,6 +64,8 @@ const view = (bodyHtml: string): IssueView => ({
       backports: [{ number: 11, ...row, target_branch: "3.14", backport: "bot" }],
     },
   ],
+  merged: [],
+  merged_count: 0,
   content: {
     body_html: bodyHtml,
     comments: [
@@ -482,8 +485,9 @@ test("Reset Layout in the palette brings back both panes, with the focus on the 
   await expect.poll(width).toBe(shown);
 });
 
-test("the Octicons take GitHub's colors in the light theme and the dark one", async ({ page }) => {
-  await mockCore(page, answers("<p>It crashes</p>"));
+test("the Octicons take the theme's state colours on either side", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await mockCore(page, { ...answers("<p>It crashes</p>"), themes: { status: "ok", data: themes } });
   await page.goto("/");
   await page.getByRole("button", { name: "#7 Issue 7" }).click();
   const pane = page.getByRole("region", { name: "Issue view" });
@@ -493,13 +497,8 @@ test("the Octicons take GitHub's colors in the light theme and the dark one", as
     await issue.evaluate((icon) => getComputedStyle(icon).color),
     await merged.evaluate((icon) => getComputedStyle(icon).color),
   ];
-  const light = await colors();
+  await expect.poll(colors).toEqual(["rgb(26, 127, 55)", "rgb(130, 80, 223)"]);
 
-  // The window has no dark theme yet; one sets this, as the diff's highlighting expects.
-  await page.evaluate(() => {
-    document.documentElement.dataset.theme = "dark";
-  });
-
-  expect(light).toEqual(["rgb(26, 127, 55)", "rgb(130, 80, 223)"]);
-  expect(await colors()).toEqual(["rgb(63, 185, 80)", "rgb(171, 125, 248)"]);
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect.poll(colors).toEqual(["rgb(63, 185, 80)", "rgb(171, 125, 248)"]);
 });

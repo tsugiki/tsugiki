@@ -113,6 +113,13 @@ describe("keyLabel", () => {
       keyLabel("f12", "other"),
     ]).toEqual(["Ctrl+Alt+B", "Cmd+Option+B", "F12"]);
   });
+
+  it("draws an arrow key as its arrow", () => {
+    expect([keyLabel("alt+arrowleft", "other"), keyLabel("alt+arrowright", "mac")]).toEqual([
+      "Alt+←",
+      "Option+→",
+    ]);
+  });
 });
 
 describe("currentOs", () => {

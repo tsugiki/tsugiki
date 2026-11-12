@@ -29,37 +29,20 @@
     fill: currentColor;
   }
 
-  /* GitHub's Primer colors, light. The window has no dark theme yet: one that sets `data-theme="dark"` on
-     the root gets GitHub's dark colors below, as the diff's highlighting does. */
+  /* GitHub's state colours, from the theme in force (#515). */
   .open {
-    color: #1a7f37;
+    color: var(--state-open);
   }
 
   .done {
-    color: #8250df;
+    color: var(--state-done);
   }
 
   .closed {
-    color: #d1242f;
+    color: var(--state-closed);
   }
 
   .muted {
-    color: #59636e;
-  }
-
-  :global(:root[data-theme="dark"]) .open {
-    color: #3fb950;
-  }
-
-  :global(:root[data-theme="dark"]) .done {
-    color: #ab7df8;
-  }
-
-  :global(:root[data-theme="dark"]) .closed {
-    color: #f85149;
-  }
-
-  :global(:root[data-theme="dark"]) .muted {
-    color: #9198a1;
+    color: var(--state-muted);
   }
 </style>

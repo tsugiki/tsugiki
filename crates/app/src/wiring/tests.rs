@@ -417,6 +417,7 @@ fn the_panes_layout_stays_on_this_machine_across_a_restart() {
         "sidebar_hidden": true,
         "list_hidden": true,
         "detail_only_hid": "both",
+        "order": "last_update",
     });
     let saved = wired.ask("save_pane_layout", json!({ "layout": layout }));
     drop(wired.stop());
@@ -435,6 +436,7 @@ fn the_panes_layout_stays_on_this_machine_across_a_restart() {
             "sidebar_hidden": false,
             "list_hidden": false,
             "detail_only_hid": null,
+            "order": "attention",
         })
     );
     assert_eq!(

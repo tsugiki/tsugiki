@@ -136,16 +136,16 @@
   .scrim {
     position: fixed;
     inset: 0;
-    background: rgb(0 0 0 / 15%);
+    background: var(--backdrop);
   }
 
   .palette {
     width: min(640px, calc(100vw - 32px));
     margin: 60px auto 0;
-    background: #fff;
-    border: 1px solid #ccc;
+    background: var(--bg-overlay);
+    border: 1px solid var(--border);
     border-radius: 6px;
-    box-shadow: 0 8px 30px rgb(0 0 0 / 25%);
+    box-shadow: 0 8px 30px var(--shadow);
   }
 
   input {
@@ -154,8 +154,10 @@
     padding: 8px 10px;
     font-size: 14px;
     border: 0;
-    border-bottom: 1px solid #ccc;
+    border-bottom: 1px solid var(--border);
     border-radius: 6px 6px 0 0;
+    color: inherit;
+    background: transparent;
   }
 
   ul {
@@ -171,11 +173,11 @@
   }
 
   li[aria-selected="true"] {
-    background: #e4ecf7;
+    background: var(--selected);
   }
 
   .note {
-    color: #555;
+    color: var(--fg-muted);
   }
 
   .open {
@@ -186,6 +188,6 @@
     margin: 0;
     padding: 8px 10px;
     font-size: 13px;
-    color: #555;
+    color: var(--fg-muted);
   }
 </style>

@@ -89,7 +89,7 @@
 
   .count {
     min-width: 10ch;
-    opacity: 0.75;
+    color: var(--fg-muted);
   }
 
   button {

@@ -42,7 +42,7 @@
 {#if news.length > 0}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
   <section
-    class="news"
+    class="news sans reading"
     aria-label="NEWS entries"
     onclick={followLink}
     onauxclick={(e) => {
@@ -67,7 +67,6 @@
 <style>
   .news {
     padding: 8px 12px;
-    font-family: system-ui, sans-serif;
     font-size: 13px;
     white-space: normal;
     border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent);
@@ -94,7 +93,6 @@
   }
 
   code {
-    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
     font-size: 12px;
   }
 

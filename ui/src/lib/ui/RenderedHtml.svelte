@@ -30,7 +30,7 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div
-  class="rendered"
+  class="rendered reading"
   {@attach show}
   onclick={followLink}
   onauxclick={(e) => {
@@ -51,10 +51,6 @@
     overflow-x: auto;
     padding: 8px;
     background: color-mix(in srgb, currentColor 8%, transparent);
-  }
-
-  .rendered :global(code) {
-    font-family: ui-monospace, Consolas, monospace;
   }
 
   .rendered :global(blockquote) {
@@ -98,7 +94,6 @@
   }
 
   .rendered :global(.blob-code-inner) {
-    font-family: ui-monospace, Consolas, monospace;
     white-space: pre;
   }
 

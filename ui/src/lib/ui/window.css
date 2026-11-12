@@ -1,0 +1,94 @@
+/* The window's type and controls, for every screen (#598). Colours come from the Theme's tokens (#515), and
+   docs/devel/themes.md lists these rules beside them. A component sets no font family of its own: it uses
+   an element that takes the code font, or the `mono` and `sans` classes. */
+
+:root {
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
+}
+
+body {
+  font: 14px var(--sans);
+}
+
+/* Code, SHAs and branches. A family list that ends in `monospace` keeps the text at 1em, where the bare
+   keyword would shrink it. GitHub's suggested changes put their lines in `.blob-code-inner`. */
+code,
+pre,
+samp,
+.blob-code-inner,
+.mono {
+  font-family: var(--mono);
+}
+
+/* Prose inside something in the code font, such as a review thread in the diff. */
+.sans {
+  font-family: var(--sans);
+}
+
+/* A key reads as a word of the UI, as in VS Code. */
+kbd {
+  font: inherit;
+}
+
+/* Descriptions, comments and other text the user reads at length. */
+.reading {
+  line-height: 1.5;
+}
+
+/* The controls' rules sit in `:where()`, which weighs nothing, so a component's own rule for a control, and
+   the `link` class, win over them. */
+:where(button) {
+  padding: 2px 8px;
+  font: inherit;
+  color: inherit;
+  background: var(--bg-chrome);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+:where(button:not(:disabled):hover) {
+  background: color-mix(in srgb, currentColor 8%, var(--bg-chrome));
+}
+
+:where(button:disabled) {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* A button that reads as a link: plain text, underlined under the pointer and with the focus. */
+.link {
+  all: unset;
+  cursor: pointer;
+}
+
+.link:hover,
+.link:focus-visible {
+  text-decoration: underline;
+}
+
+:where(input:not([type="radio"], [type="checkbox"]), textarea, select) {
+  padding: 2px 6px;
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+:where(input:not([type="radio"], [type="checkbox"]), textarea, select):where(:focus) {
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* A review's or a thread's state, or a label. One that sets a state's colour takes it on its border too. */
+.chip {
+  display: inline-block;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
+  border-radius: 999px;
+}

@@ -16,6 +16,29 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
   `--fg-muted`, and a syntax token takes `hl-` in front, so `keyword` is `--hl-keyword`. Components read only
   these variables, apart from borders and tints mixed from `currentColor`.
 
+## Type and controls
+
+`ui/src/lib/ui/window.css` holds these rules for every screen, from the prototype on `prototype/app-shell`
+([#598](https://github.com/tsugiki/tsugiki/issues/598)). Its colours come from the tokens below.
+
+- **Type.** The UI font is `system-ui, -apple-system, "Segoe UI", sans-serif` at 14 px. Code, SHAs and
+  branches take `ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace`: a `<code>` or `<pre>`
+  does, and so does anything with the `mono` class. Text in the UI font inside code, such as a review
+  thread in the diff, takes the `sans` class. Descriptions, comments and other long text take the
+  `reading` class, a line height of 1.5. A key in `<kbd>` keeps the UI font. No component names a font
+  family of its own, and a test fails on one that does.
+- **Buttons.** A 1 px `border`, 4 px corners, `2px 8px` padding, `bg_chrome` behind, a tint of the text
+  colour under the pointer, and half opacity when disabled. A button that reads as a link takes the `link`
+  class: plain text, underlined under the pointer and with the focus.
+- **Inputs.** Text inputs, text areas and selects take the same border and corners on `bg`, and an
+  `accent` border with the focus.
+- **Chips.** One pill for a review's or a thread's state (stale, outdated, resolved, approved, changes
+  requested) and for a label: the `chip` class, with a 1 px border, round ends and 11 px text. A chip
+  that sets a state's colour on its text takes it on its border too.
+- **Muted text.** Ages, counts and hints take `fg_muted`, and don't fade with opacity.
+
+The rules sit in `:where()`, which weighs nothing, so a component's own rule for a control wins over them.
+
 ## Tokens
 
 A core test fails when this table and the built-in Themes disagree.

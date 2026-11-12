@@ -58,7 +58,7 @@
 
 <button type="button" class="head" aria-expanded={!folded} aria-label={label} onclick={ontoggle}>
   <span class="chevron">{folded ? "▸" : "▾"}</span><span>{summary}</span
-  >{#each marks as mark, at (at)}{#if mark !== undefined}<span class="mark">{mark}</span>{/if}{/each}
+  >{#each marks as mark, at (at)}{#if mark !== undefined}<span class="chip">{mark}</span>{/if}{/each}
 </button>
 {#if !folded}
   {#if code !== null}
@@ -69,7 +69,7 @@
     {#if code.rows.length > CODE_ROWS}
       <button
         type="button"
-        class="fold more"
+        class="link fold more"
         aria-expanded={whole}
         onclick={() => {
           whole = !whole;
@@ -81,7 +81,7 @@
     <article>
       <p class="by">
         {`${comment.author ?? "deleted user"} · ${ago(comment.created_at, now)}`}{#if comment.submission === "pending"}<span
-            class="pending"
+            class="chip pending"
             title="Only you see it until you submit your review on github.com.">Pending, yours</span
           >{/if}
       </p>
@@ -90,7 +90,7 @@
       {:else}
         <button
           type="button"
-          class="fold"
+          class="link fold"
           aria-expanded={opened.has(at)}
           onclick={() => {
             if (!opened.delete(at)) opened.add(at);
@@ -132,19 +132,9 @@
     width: 1ch;
   }
 
-  .mark {
-    border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
-    border-radius: 4px;
-    padding: 0 4px;
-    line-height: 16px;
-  }
-
   /* The theme's attention colour, for a draft only the user sees. */
   .pending {
     margin-left: 6px;
-    border: 1px solid var(--attention);
-    border-radius: 4px;
-    padding: 0 4px;
     color: var(--attention);
   }
 
@@ -155,23 +145,16 @@
 
   .by {
     margin: 4px 0;
-    opacity: 0.75;
+    color: var(--fg-muted);
   }
 
   .fold {
-    all: unset;
-    cursor: pointer;
     display: block;
     margin: 4px 0;
-    opacity: 0.75;
+    color: var(--fg-muted);
   }
 
   .more {
     margin: 0 8px 4px;
-  }
-
-  .fold:hover,
-  .fold:focus-visible {
-    text-decoration: underline;
   }
 </style>

@@ -121,7 +121,7 @@
   });
 </script>
 
-<aside aria-label="Performance HUD">
+<aside class="mono" aria-label="Performance HUD">
   <table>
     <thead>
       <tr><th scope="col">Measure</th><th scope="col">Now</th><th scope="col">Budget</th></tr>
@@ -166,9 +166,8 @@
     bottom: 32px;
     width: 360px;
     padding: 6px 8px;
-    font:
-      12px/1.4 ui-monospace,
-      monospace;
+    font-size: 12px;
+    line-height: 1.4;
     background: color-mix(in srgb, var(--bg-overlay) 95%, transparent);
     border: 1px solid var(--border);
     border-radius: 4px;
@@ -201,7 +200,6 @@
 
   button {
     margin-top: 4px;
-    font: inherit;
   }
 
   p {

@@ -16,6 +16,7 @@
   import PerformanceHud from "$lib/ui/PerformanceHud.svelte";
   import RepositoryHome from "$lib/ui/RepositoryHome.svelte";
   import StatusBar from "$lib/ui/StatusBar.svelte";
+  import "$lib/ui/window.css";
 
   const PICKER_WORDS: PaletteWords = {
     dialog: "Repository picker",

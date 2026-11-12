@@ -224,7 +224,7 @@
      pane's ↑ and ↓ scroll it too while the Issue list is hidden, which `data-scrolls` marks it for. -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
-  class="scroller"
+  class="scroller mono"
   role="region"
   aria-label={sideBySide ? "Side-by-side diff" : "Diff"}
   tabindex="0"
@@ -369,7 +369,7 @@
     {/each}
     {#each diff.layout.threadsIn(first, last) as placed (placed.laid.thread.id)}
       <div
-        class="thread"
+        class="thread sans"
         role="group"
         aria-label="Review thread"
         style:top={`${String(placed.shown * ROW)}px`}
@@ -394,7 +394,6 @@
     position: absolute;
     inset: 0;
     overflow: auto;
-    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
     font-size: 12px;
   }
 
@@ -409,7 +408,6 @@
     width: var(--width);
     box-sizing: border-box;
     padding-left: 96px;
-    font-family: system-ui, sans-serif;
     border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
     border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
     background: color-mix(in srgb, currentColor 4%, transparent);
@@ -450,7 +448,7 @@
 
   .count {
     font-weight: normal;
-    opacity: 0.7;
+    color: var(--fg-muted);
   }
 
   /* A Generated file's header opens and closes it, and looks like any other header. */

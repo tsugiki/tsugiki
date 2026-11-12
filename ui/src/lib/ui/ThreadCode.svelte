@@ -22,7 +22,7 @@
   };
 </script>
 
-<div class="code">
+<div class="code mono">
   {#each rows as row, at (at)}
     {@const shown = parts(row)}
     <!-- prettier-ignore -->
@@ -34,7 +34,6 @@
   .code {
     margin: 0 8px 4px;
     overflow-x: auto;
-    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
     font-size: 12px;
     border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
   }

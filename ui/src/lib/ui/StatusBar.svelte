@@ -200,8 +200,9 @@
     border-top: 1px solid var(--border);
   }
 
+  /* A part of the bar, so square, unlike the window's other buttons. */
   button {
-    cursor: pointer;
+    border-radius: 0;
   }
 
   /* A line of the status, which reads as a link to the question. */
@@ -213,10 +214,6 @@
     color: inherit;
     background: none;
     text-decoration: underline;
-  }
-
-  kbd {
-    font-family: inherit;
   }
 
   .offline {

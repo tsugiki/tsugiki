@@ -158,7 +158,7 @@
     margin-left: 4px;
     text-overflow: ellipsis;
     white-space: nowrap;
-    opacity: 0.75;
+    color: var(--fg-muted);
   }
 
   .menu {

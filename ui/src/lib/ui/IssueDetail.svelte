@@ -190,17 +190,7 @@
   .by {
     font-size: 12px;
     margin: 4px 0;
-    opacity: 0.75;
-  }
-
-  .link {
-    all: unset;
-    cursor: pointer;
-  }
-
-  .link:hover,
-  .link:focus-visible {
-    text-decoration: underline;
+    color: var(--fg-muted);
   }
 
   /* As an item that Needs attention stands out in the Issue list. */
@@ -218,7 +208,7 @@
   .legend small {
     font-size: 11px;
     font-weight: normal;
-    opacity: 0.75;
+    color: var(--fg-muted);
   }
 
   .legend {
@@ -242,7 +232,7 @@
 
   .fold {
     font-size: 12px;
-    opacity: 0.75;
+    color: var(--fg-muted);
   }
 
   li {

@@ -1,11 +1,12 @@
 //! The labels of an Issue or a PR, which a search of the cache matches with `label:` (#463).
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use specta::Type;
 
 use super::pull_requests::Nodes;
 
-/// The name of a label, as GitHub spells it.
-#[derive(Debug, Clone, Deserialize)]
+/// The name of a label, as GitHub spells it. It reaches the UI as a plain string.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(transparent)]
 pub struct Label(String);
 

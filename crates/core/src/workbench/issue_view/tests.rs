@@ -6,6 +6,7 @@ use super::*;
 use crate::filters::{Filter, FilterQuery};
 use crate::github::issue_content::IssueComment;
 use crate::github::issues::IssueFacts;
+use crate::github::labels::Label;
 use crate::github::pull_requests::{LatestReview, PullRequestFacts, ReviewState};
 use crate::store::FilterResults;
 use crate::workbench::WorkbenchRow;
@@ -175,6 +176,32 @@ fn an_issue_shows_its_author_and_prs_before_tsugiki_has_read_what_it_says() {
     assert_eq!(shown.assignees, [Login::new("some-assignee")]);
     assert_eq!(pr_row(&shown).number, 5);
     assert_eq!(shown.content, None);
+    world.finish();
+}
+
+#[test]
+fn an_issue_shows_its_labels_as_the_last_sync_read_them() {
+    let world = ViewWorld::new("issue-view-labels");
+    let labelled = |names: &[&str]| IssueFacts {
+        labels: names.iter().map(|name| Label::new(name)).collect(),
+        ..issue(1)
+    };
+    // `Label` ignores case when it compares, so the names are compared as text, to keep GitHub's spelling.
+    let shown = |world: &ViewWorld| -> Vec<String> {
+        let labels = view(world, 1).unwrap().labels;
+        labels
+            .iter()
+            .map(|label| label.as_str().to_owned())
+            .collect()
+    };
+    world.has(vec![], vec![labelled(&["type-bug", "3.14"])]);
+    assert_eq!(shown(&world), ["3.14", "type-bug"]);
+
+    world.has(vec![], vec![labelled(&["type-bug", "3.14", "Easy"])]);
+    assert_eq!(shown(&world), ["3.14", "Easy", "type-bug"]);
+
+    world.has(vec![], vec![labelled(&[])]);
+    assert_eq!(shown(&world), Vec::<String>::new());
     world.finish();
 }
 

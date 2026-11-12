@@ -59,6 +59,7 @@ const view = (bodyHtml: string): IssueView => ({
   updated_at: "2026-11-04T10:00:00Z",
   author: "issue-author",
   assignees: ["some-assignee"],
+  labels: ["type-bug"],
   needs_attention: [10],
   seen: { mark: { numbers: [7, 10], up_to: null }, state: "seen" },
   pull_requests: [
@@ -111,6 +112,7 @@ test("an Issue opens in the Detail pane and stops looking unread", async ({ page
   await expect(pane).toContainText(
     /issue-author opened this \d+d ago · 1 comment · assigned to some-assignee/,
   );
+  await expect(pane.getByRole("list", { name: "Labels" }).getByRole("listitem")).toHaveText(["type-bug"]);
   await expect(pane).toContainText("It crashes");
   await expect(pane).toContainText("Which build?");
   await expect(pane).toContainText("Merged · CI passed · You approved");

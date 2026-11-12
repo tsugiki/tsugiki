@@ -1,10 +1,15 @@
 <!-- A PR's NEWS entries, rendered above its diff as CPython's changelog shows them (#181). The core turns
-     each entry's reStructuredText into blocks and pieces, so nothing here parses markup. -->
+     each entry's reStructuredText into blocks and pieces, so nothing here parses markup. Each entry's
+     "Show file" goes to its file in the diff (#605). -->
 <script lang="ts">
   import type { NewsBlock, NewsEntry, NewsPiece } from "$lib/state/pr-files.svelte";
   import { address } from "./news-links";
 
-  let { news, onlink }: { news: NewsEntry[]; onlink: (address: string) => void } = $props();
+  let {
+    news,
+    onlink,
+    onfile,
+  }: { news: NewsEntry[]; onlink: (address: string) => void; onfile: (path: string) => void } = $props();
 
   /** Follows a link in the system browser, as a link in a description does. Enter on a link arrives as a
    * click, and a middle click as an auxclick, which would otherwise ask the webview for a window. */
@@ -57,6 +62,14 @@
           {#if entry.issue}
             <a href={address(entry.issue.to)}>{entry.issue.text}</a>
           {/if}
+          <button
+            type="button"
+            class="file"
+            title={entry.path}
+            onclick={() => {
+              onfile(entry.path);
+            }}>Show file</button
+          >
         </p>
         {@render blocks(entry.blocks)}
       </article>
@@ -85,6 +98,16 @@
 
   .section {
     font-weight: 600;
+  }
+
+  /* Reads as a link, at the end of the entry's line. */
+  .file {
+    margin-left: auto;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent);
+    text-decoration: underline;
   }
 
   p,

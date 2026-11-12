@@ -10,7 +10,9 @@
 // around it, and those on files no longer in the diff come after the last file (#185). A fetch of the PR's
 // head that fails, or that the mirror stops fetching because GitHub has no ref for it at that commit, says
 // why until the tab asks again, which hands the head to the mirror once more (#233, #213). Hearing that
-// doesn't make the tab ask, so a ref GitHub leaves where it is starts no loop of fetches.
+// doesn't make the tab ask, so a ref GitHub leaves where it is starts no loop of fetches. The tab shows all
+// the files one under the other, or one file at a time, as `[diff] files` opens every PR and the user
+// switches the PR on show (#605).
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import {
   commands,
@@ -42,6 +44,7 @@ import {
   type Shown,
   type ThreadAnchor,
 } from "./diff-layout";
+import { FilePages, samePage, type FilesMode, type Page } from "./file-pages";
 import { hud, type Jump, type JumpTimer } from "./hud.svelte";
 
 export type PrFiles = PrFiles_Serialize;
@@ -56,6 +59,8 @@ export type {
   CodeRow,
   DiffView,
   FileChange,
+  FilesMode,
+  Page,
   Gap,
   HeadLine,
   HiddenLines,
@@ -114,8 +119,21 @@ export class PrFilesState {
   /** The reason the mirror stopped fetching the PR's head without bringing it, kept until the tab asks
    * again. */
   unfetched = $state<Unfetched>();
+  /** Whether the tab shows all the files or one at a time, which the user switches until the PR closes. */
+  mode = $state<FilesMode>("all");
+  /** The pages of the diff when it shows one file at a time: the NEWS entries, each file, and the threads
+   * on files no longer in the diff. */
+  pages = $derived.by(() => {
+    const view = this.view;
+    const ready = view?.state === "ready";
+    return new FilePages({
+      paths: ready ? view.files.map((file) => file.path) : [],
+      news: ready && view.news.length > 0,
+      gone: this.threads.some((thread) => thread.at.kind === "gone"),
+    });
+  });
   /** The rows that show, and where: a collapsed file shows only its header, and a gap the user expanded
-   * shows the lines it left out. */
+   * shows the lines it left out. One file at a time, only the page on show. */
   layout = $derived.by(() => {
     const view = this.view;
     const ready = view?.state === "ready";
@@ -133,11 +151,12 @@ export class PrFilesState {
         thread,
       })),
       this.#diff(view) ?? "",
+      this.shown,
     );
   });
-  /** The thread or the diff's row to scroll to, until the diff has scrolled there. Each move is a new one,
-   * so a move back to the same place scrolls again. */
-  jump = $state<{ id: string } | { row: number }>();
+  /** The thread, the diff's row or the top of the page to scroll to, until the diff has scrolled there.
+   * Each move is a new one, so a move back to the same place scrolls again. */
+  jump = $state<{ id: string } | { row: number } | { page: Page }>();
   /** Whether the search in the diff shows, which Ctrl+F opens (#186). */
   searching = $state(false);
   /** The text the user searches the diff for. */
@@ -180,8 +199,16 @@ export class PrFilesState {
   #revealing: string | undefined;
   /** The thread the tab last moved to, which F8 goes on from. */
   #current: string | undefined;
+  /** The place among the threads F8 goes on from once a move to a page has dropped the thread it was on:
+   * half a place before the page's first thread. */
+  #threadFrom: number | undefined;
   /** The row of the change the tab last moved to, which F7 goes on from. */
   #change: number | undefined;
+  /** The page the user last moved to, which the tab shows one file at a time. */
+  #page = $state<Page>();
+  /** The place at the top of the tab, as the user scrolled it: below 0 inside the NEWS entries. Nothing
+   * draws from it. */
+  #top = 0;
   /** What the search found in the diff `view` shows, and the files of that diff. The matches are many and
    * don't change, so they aren't deeply reactive. */
   #found = $state.raw<{ found: Found; files: DiffFile[] }>();
@@ -218,11 +245,13 @@ export class PrFilesState {
     number: number,
     jumps: JumpTimer = hud,
     choice: DiffViewChoice = new DiffViewChoice(),
+    mode: FilesMode = "all",
   ) {
     this.#repository = repository;
     this.#number = number;
     this.#jumps = jumps;
     this.#choice = choice;
+    this.mode = mode;
   }
 
   /** The Repository the PR is in. */
@@ -301,6 +330,7 @@ export class PrFilesState {
     // A newer question reads newer facts, so this drops an older answer that arrives late.
     if (question !== this.#lastQuestion || answer === undefined) return;
     const anew = this.#diff(answer) !== this.#diff(this.view);
+    const pagesBefore = this.pages;
     if (anew) {
       this.#chunks.clear();
       this.#spans.clear();
@@ -311,6 +341,7 @@ export class PrFilesState {
       this.#lengths.clear();
       this.columns = 0;
       this.#change = undefined;
+      this.#threadFrom = undefined;
       // The matches name rows of the diff before.
       this.#found = undefined;
       this.#at = undefined;
@@ -319,6 +350,8 @@ export class PrFilesState {
     // The threads the tab showed with the same diff, whose lines it has opened.
     const before = anew ? [] : this.threads;
     this.view = answer;
+    // The newer diff shows the same file, wherever it lists it.
+    if (anew && this.#page !== undefined) this.#page = this.pages.carried(this.#page, pagesBefore);
     // A thread on a line no hunk shows opens the lines around it, once.
     for (const thread of this.threads) {
       if (thread.at.kind !== "outside" || before.some((shown) => shown.id === thread.id)) continue;
@@ -378,9 +411,9 @@ export class PrFilesState {
     return this.folded(at) ? 1 : (this.#measured.get(thread.id) ?? guessPlaces(thread));
   }
 
-  /** Moves to thread `id`, open, and opens the Generated file it is in. Before the diff comes, or while the
-   * older diff of a moved head holds the threads back, it moves there once the threads come. A thread the tab
-   * doesn't show stays where it is. */
+  /** Moves to thread `id`, open, and opens the collapsed file it is in, showing that file's page one file at
+   * a time. Before the diff comes, or while the older diff of a moved head holds the threads back, it moves
+   * there once the threads come. A thread the tab doesn't show stays where it is. */
   reveal(id: string) {
     const view = this.view;
     if (view?.state !== "ready" || view.threads.kind === "held_back") {
@@ -389,23 +422,25 @@ export class PrFilesState {
     }
     this.#revealing = undefined;
     const thread = this.threads.findIndex((shown) => shown.id === id);
-    const at = this.threads[thread]?.at;
-    if (at === undefined) return;
+    const shown = this.threads[thread];
+    if (shown === undefined) return;
     if (this.folded(thread)) this.toggleThread(thread);
-    const file = at.kind === "row" ? fileOf(view.files, at.row) : "file" in at ? at.file : -1;
-    if (this.collapsed(file)) this.toggle(file);
+    const page = pageOf(shown, view.files);
+    if (page.kind === "file" && this.collapsed(page.file)) this.toggle(page.file);
+    this.#turnTo(page);
     this.#current = id;
+    this.#threadFrom = undefined;
     this.jump = { id };
   }
 
   /** Moves to the next unresolved thread after the one the tab last moved to, or by `step` -1 to the one
    * before, round from the end to the start. Without one, or once a new diff dropped it, it starts from the
-   * end it moves away from. */
+   * page the tab last moved to, or else from the end it moves away from. */
   nextThread(step: 1 | -1) {
     const threads = this.threads;
     const open = threads.flatMap((thread, at) => (thread.resolution === "open" ? [at] : []));
     const current = threads.findIndex((thread) => thread.id === this.#current);
-    const from = current !== -1 ? current : step === 1 ? -1 : threads.length;
+    const from = current !== -1 ? current : (this.#threadFrom ?? (step === 1 ? -1 : threads.length));
     const next = cycle(open, from, step);
     const id = next === undefined ? undefined : threads[next]?.id;
     if (id !== undefined) this.reveal(id);
@@ -422,6 +457,70 @@ export class PrFilesState {
     if (row === undefined) return;
     this.#change = row;
     this.#moveTo(view.files, row);
+  }
+
+  /** Notes that place `place` is at the top of the tab, below 0 inside the NEWS entries, as the user
+   * scrolls. */
+  scrolled(place: number) {
+    this.#top = place;
+  }
+
+  /** The page on show while the tab shows one file at a time: the one the user last moved to, or the first
+   * once the diff doesn't have that one. */
+  get shown(): Page | undefined {
+    if (this.mode === "all") return undefined;
+    const page = this.#page;
+    return page !== undefined && this.pages.has(page) ? page : this.pages.first;
+  }
+
+  /** The page on show, or with all the files, the page at the top of the tab. */
+  #atTop(): Page | undefined {
+    if (this.mode === "one") return this.shown;
+    const page = this.#top < 0 ? ({ kind: "news" } as const) : this.layout.pageAt(this.#top);
+    return page ?? this.pages.first;
+  }
+
+  /** Switches between all the files and one at a time. The file at the top of the tab becomes the one on
+   * show, and the tab keeps the place as it switches back. */
+  toggleMode() {
+    if (this.mode === "one") {
+      this.mode = "all";
+      return;
+    }
+    this.#page = this.#atTop();
+    this.mode = "one";
+  }
+
+  /** Goes to the next file, or by `step` -1 to the one before, from the page on show or at the top: one
+   * file at a time it shows that file, and with all the files it scrolls to its header. The NEWS entries
+   * come first and the threads on files no longer in the diff last, and it stops at either end. */
+  nextFile(step: 1 | -1) {
+    const from = this.#atTop();
+    const to = from === undefined ? undefined : this.pages.step(from, step);
+    if (to !== undefined) this.#show(to);
+  }
+
+  /** Goes to the file at `file` among the diff's files, as the tree and quick open will. */
+  showFile(file: number) {
+    this.#show({ kind: "file", file });
+  }
+
+  /** Goes to the file at `path`, as a NEWS entry does, if the diff changes it. */
+  showPath(path: string) {
+    const page = this.pages.ofPath(path);
+    if (page !== undefined) this.#show(page);
+  }
+
+  /** Shows `page` from its top, and F7 and F8 go on from there. */
+  #show(page: Page) {
+    const view = this.view;
+    if (view?.state !== "ready" || !this.pages.has(page)) return;
+    this.#turnTo(page);
+    this.#change = page.kind === "file" ? view.files[page.file]?.row : undefined;
+    const first = this.threads.findIndex((thread) => rank(pageOf(thread, view.files)) >= rank(page));
+    this.#current = undefined;
+    this.#threadFrom = (first === -1 ? this.threads.length : first) - 0.5;
+    this.jump = { page };
   }
 
   /** Shows the search, or gives its box focus again. */
@@ -518,7 +617,14 @@ export class PrFilesState {
   #moveTo(files: DiffFile[], row: number) {
     const file = fileOf(files, row);
     if (this.collapsed(file)) this.toggle(file);
+    this.#turnTo({ kind: "file", file });
     this.jump = { row };
+  }
+
+  /** Makes `page` the one shown one file at a time. The same page as before leaves the layout as it is,
+   * so a move within the file doesn't lay out the whole file again. */
+  #turnTo(page: Page) {
+    if (!samePage(this.#page, page)) this.#page = page;
   }
 
   /** Whether the file at `file` among the diff's files shows only its header: a Generated file starts so,
@@ -762,6 +868,20 @@ function cycle(items: readonly number[], from: number, step: 1 | -1): number | u
 /** The place among `files` of the file a code row `row` of the diff is in. */
 function fileOf(files: readonly DiffFile[], row: number): number {
   return files.findLastIndex((file) => file.row < row);
+}
+
+/** The page `thread` shows on one file at a time: its file's, or the last for one on no file in the diff. */
+function pageOf(thread: DiffThread, files: readonly DiffFile[]): Page {
+  const at = thread.at;
+  if (at.kind === "gone") return { kind: "gone" };
+  return { kind: "file", file: at.kind === "row" ? fileOf(files, at.row) : at.file };
+}
+
+/** The place `page` takes among the pages, for a comparison: the NEWS entries first and the threads on no
+ * file last. */
+function rank(page: Page): number {
+  if (page.kind === "file") return page.file;
+  return page.kind === "news" ? -1 : Infinity;
 }
 
 /** Where `thread` sits among the diff's `files`: under its row, under its file's header when it is on the

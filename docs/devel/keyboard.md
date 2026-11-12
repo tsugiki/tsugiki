@@ -18,7 +18,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 | Unfold / fold an Issue's PRs in the Issue list | `→` / `←` |
 | Show only the Detail pane / show the panes | `Ctrl+K Z` |
 | Unified ↔ side-by-side | `Ctrl+Alt+U` |
+| All files ↔ one file at a time | `Ctrl+K O`, or the command palette |
 | Next / previous tab in the PR view | `Ctrl+PageDown` / `Ctrl+PageUp` |
+| Next / previous file in the Files tab | `Alt+PageDown` / `Alt+PageUp` |
 | Send comment | `Ctrl+Enter` |
 | Open in editor | `Ctrl+Shift+E` |
 | Local mark | `Ctrl+K M` |
@@ -38,6 +40,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   Tsugiki's keys win, on any keyboard layout. Zoom is Tsugiki's, kept per machine, and Ctrl+wheel doesn't
   zoom. On macOS the standard menu stays, with Settings… on `Cmd+,`; a remap onto one of its shortcuts is
   refused ([ADR 0013](../adr/0013-webview2-browser-shortcuts-off-tsugiki-owns-its-keys.md)).
+- `Ctrl+K O`, "one", switches the Files tab between all files and one file at a time. It is a `Ctrl+K`
+  chord, as `Ctrl+K Z` is for the panes, because a free `Ctrl+Alt` letter would clash with AltGr, which
+  Windows sends as `Ctrl+Alt` to type characters such as Polish ó on `AltGr+O`. VS Code's own `Ctrl+K O`
+  opens the active file in a new window, which Tsugiki has no use for.
 - The command palette's quick open finds Issues, PRs, and files in the current PR. `?` lists the keys
   available in the current view.
 - Keybindings can be remapped on the Settings Keyboard page: click a key and press the new one; chords such as

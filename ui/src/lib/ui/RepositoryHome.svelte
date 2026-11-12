@@ -12,7 +12,7 @@
     SIDEBAR_MOST,
     SIDEBAR_WIDTH,
   } from "$lib/state/panes.svelte";
-  import { DiffViewChoice } from "$lib/state/pr-files.svelte";
+  import { DiffViewChoice, type FilesMode, type PrFilesState } from "$lib/state/pr-files.svelte";
   import { PrViewState } from "$lib/state/pr-view.svelte";
   import { Visits } from "$lib/state/visits.svelte";
   import { SvelteMap } from "svelte/reactivity";
@@ -27,7 +27,7 @@
   } from "$lib/state/workbench.svelte";
   import HistoryBar from "./HistoryBar.svelte";
   import IssueDetail from "./IssueDetail.svelte";
-  import { type ChordBindings, currentOs, isTextBox, keyLabel, keyName } from "./keys";
+  import { type ChordBindings, chordLabel, currentOs, isTextBox, keyLabel, keyName } from "./keys";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
   import type { PaletteCommand } from "./Palette.svelte";
   import PaneEdge from "./PaneEdge.svelte";
@@ -65,12 +65,15 @@
     onadd,
     onpick,
     keysActive = true,
+    diffFiles = "all",
   }: {
     name: string;
     onadd: () => void;
     /** Opens the Repository picker, from the Repository's name atop the Sidebar. */
     onpick: () => void;
     keysActive?: boolean;
+    /** Whether each PR's Files tab opens on all its files or one at a time, as `[diff] files` says. */
+    diffFiles?: FilesMode;
   } = $props();
 
   // A window can stay open between syncs, so "3h ago" moves on by itself.
@@ -202,7 +205,7 @@
     const next =
       stop.kind === "issue"
         ? new IssueViewState(name, stop.number)
-        : new PrViewState(name, stop.number, stop.issue, diffView);
+        : new PrViewState(name, stop.number, stop.issue, diffView, diffFiles);
     swap(next);
     void next.load();
   }
@@ -334,7 +337,32 @@
 
   /** The chords this screen binds, each with the action the page runs once the chord's wait ends. */
   export function chordBindings(): ChordBindings {
-    return { "ctrl+k z": () => void toggleDetailOnly() };
+    return {
+      "ctrl+k o": () => {
+        shownFiles()?.toggleMode();
+      },
+      "ctrl+k z": () => void toggleDetailOnly(),
+    };
+  }
+
+  /** The Files tab of the PR on show, while it shows. */
+  function shownFiles(): PrFilesState | undefined {
+    return detail instanceof PrViewState && detail.tab === "files" ? detail.files : undefined;
+  }
+
+  /** The palette's command that switches the Files tab on show to one file at a time, or back. */
+  function filesModeCommand(): PaletteCommand[] {
+    const files = shownFiles();
+    if (files === undefined) return [];
+    return [
+      {
+        title: files.mode === "one" ? "View: All Files" : "View: One File at a Time",
+        note: chordLabel("ctrl+k o", currentOs()),
+        run: () => {
+          files.toggleMode();
+        },
+      },
+    ];
   }
 
   /** What this screen adds to the command palette while it shows. Each command runs what its key runs. The
@@ -388,6 +416,7 @@
       ...(workbench.quiet.length > 0
         ? [{ title: workbench.quietShown ? "Hide Quiet Items" : "Show Quiet Items", run: toggleQuiet }]
         : []),
+      ...filesModeCommand(),
     ];
   }
 
@@ -477,7 +506,7 @@
   function onkeydown(e: KeyboardEvent) {
     if (!keysActive) return;
     const key = keyName(e, currentOs());
-    const files = detail instanceof PrViewState && detail.tab === "files" ? detail.files : undefined;
+    const files = shownFiles();
     if (key === "ctrl+b") {
       // A held key would flicker the Sidebar and save the file each time.
       if (!e.repeat) void toggleSidebarByKey();
@@ -532,6 +561,9 @@
     } else if ((key === "ctrl+pagedown" || key === "ctrl+pageup") && detail instanceof PrViewState) {
       e.preventDefault();
       detail.switchTab();
+    } else if ((key === "alt+pagedown" || key === "alt+pageup") && files) {
+      e.preventDefault();
+      files.nextFile(key === "alt+pagedown" ? 1 : -1);
     } else if ((key === "f8" || key === "shift+f8") && files) {
       e.preventDefault();
       files.nextThread(key === "f8" ? 1 : -1);

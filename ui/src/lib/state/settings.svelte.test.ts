@@ -13,6 +13,7 @@ describe("SettingsState", () => {
     const state = new SettingsState();
     expect(state.statusBarVisible).toBe(false);
     expect(state.problems).toEqual([]);
+    expect(state.diffFiles).toBe("all");
   });
 
   it("holds what the core read", async () => {
@@ -25,6 +26,7 @@ describe("SettingsState", () => {
           light_theme: "VS Code Light Modern",
           dark_theme: "VS Code Dark Modern",
         },
+        diff: { files: "one" },
         repositories: [],
       },
       problems: ["settings.toml, line 3: expected a value"],
@@ -32,6 +34,7 @@ describe("SettingsState", () => {
     const state = new SettingsState();
     await state.load();
     expect(state.statusBarVisible).toBe(false);
+    expect(state.diffFiles).toBe("one");
     expect(state.problems).toEqual(["settings.toml, line 3: expected a value"]);
   });
 

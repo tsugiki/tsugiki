@@ -9,7 +9,7 @@ import {
 } from "$lib/data/bindings";
 import { DetailState } from "./detail-view.svelte";
 import { hud } from "./hud.svelte";
-import { DiffViewChoice, PrFilesState } from "./pr-files.svelte";
+import { DiffViewChoice, PrFilesState, type FilesMode } from "./pr-files.svelte";
 import type { Stop } from "./workbench.svelte";
 
 export type PrView = PrView_Serialize;
@@ -30,12 +30,14 @@ export class PrViewState extends DetailState<PrView> {
   #tab = $state<PrTab>("conversation");
   #filesLoaded = false;
 
-  /** `choice` is the view of the diff, which the Repository's page keeps from PR to PR. */
+  /** `choice` is the view of the diff, which the Repository's page keeps from PR to PR, and `mode` whether
+   * the Files tab opens on all the files or one at a time, as the settings say. */
   constructor(
     repository: string,
     number: number,
     issue: number | undefined,
     choice: DiffViewChoice = new DiffViewChoice(),
+    mode: FilesMode = "all",
   ) {
     super(repository, number, {
       open: (repository, number) => commands.openPullRequest(repository, number),
@@ -43,7 +45,7 @@ export class PrViewState extends DetailState<PrView> {
       read: (repository, number) => commands.pullRequest(repository, number),
     });
     this.issue = issue;
-    this.files = new PrFilesState(repository, number, hud, choice);
+    this.files = new PrFilesState(repository, number, hud, choice, mode);
   }
 
   get tab(): PrTab {

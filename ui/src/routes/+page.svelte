@@ -163,6 +163,7 @@
       onadd={openAdd}
       onpick={openPicker}
       {keysActive}
+      diffFiles={settings.diffFiles}
     />
   {:else if home.error}
     <!-- One expression: Svelte compiles `{a} {b}` with `?? ""` branches that no test can reach. -->

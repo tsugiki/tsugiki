@@ -193,7 +193,7 @@ export type Anchor = "current" | "outdated";
 
 /**
  *  The `[appearance]` table: whether the window follows the system to its light or dark side, and the theme
- *  of each side (#517). A key Tsugiki can't read takes its default, and `appearance_problems` says why: a
+ *  of each side (#517). A key Tsugiki can't read takes its default, and `unread_problems` says why: a
  *  theme is too small a thing to lose the rest of `settings.toml` over. An `appearance` that isn't a table
  *  fails the file, as any other table does.
  */
@@ -381,6 +381,9 @@ export type DiffFile_Serialize = {
 	pairs: Pair[],
 };
 
+/**  Whether a PR opens on all its files, one under the other, or on one file at a time: `[diff] files`. */
+export type DiffFiles = "all" | "one";
+
 /**  One row of the diff, as the window draws it. */
 export type DiffRow = DiffRow_Serialize | DiffRow_Deserialize;
 
@@ -411,6 +414,14 @@ export type DiffSearch = {
 	/**  The merge base the diff starts from, as the Files tab was told. */
 	base: string,
 	query: string,
+};
+
+/**
+ *  The `[diff]` table: how the Files tab shows a PR's diff (#605). A `files` Tsugiki can't read takes its
+ *  default, and `unread_problems` says why, as for `[appearance]`.
+ */
+export type DiffSettings = {
+	files: DiffFiles,
 };
 
 /**  A review thread, and where Files shows it. */
@@ -1816,6 +1827,7 @@ export type Settings_Deserialize = {
 	status_bar?: StatusBarSettings_Deserialize,
 	releases?: ReleaseSettings_Deserialize,
 	appearance?: AppearanceSettings,
+	diff?: DiffSettings,
 	repositories?: RepositorySettings_Deserialize[],
 };
 
@@ -1824,6 +1836,7 @@ export type Settings_Serialize = {
 	status_bar: StatusBarSettings_Serialize,
 	releases: ReleaseSettings_Serialize,
 	appearance: AppearanceSettings,
+	diff: DiffSettings,
 	repositories: RepositorySettings_Serialize[],
 };
 

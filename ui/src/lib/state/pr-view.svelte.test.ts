@@ -163,6 +163,11 @@ describe("PrViewState", () => {
     expect(state.tab).toBe("conversation");
   });
 
+  it("opens its Files tab on all the files, or one at a time when the settings say so", () => {
+    expect(new PrViewState("python/cpython", 11, undefined).files.mode).toBe("all");
+    expect(new PrViewState("python/cpython", 11, undefined, undefined, "one").files.mode).toBe("one");
+  });
+
   it("opens a thread on the Files tab", () => {
     const state = new PrViewState("python/cpython", 11, undefined);
     const reveal = vi.spyOn(state.files, "reveal");

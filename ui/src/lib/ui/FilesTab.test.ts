@@ -433,7 +433,7 @@ it("renders the PR's NEWS entries above its rows, and follows their links in the
   expect(library.querySelector("li")?.textContent).toBe("One");
   expect(library.querySelector("pre")?.textContent).toBe("x = 1");
   const capi = screen.getByRole("article", { name: "NEWS entry in C API" });
-  expect(capi.querySelector(".about")?.textContent.trim()).toBe("C API");
+  expect(capi.querySelector(".about")?.textContent.replace(/\s+/g, " ").trim()).toBe("C API Show file");
   expect(entries.lastElementChild).toBe(capi);
   expect(onlink.mock.calls).toEqual([
     ["https://peps.python.org/pep-0008/"],
@@ -1065,4 +1065,126 @@ it("leaves a match it shows in place, and scrolls to one it doesn't", async () =
   await vi.waitFor(() => {
     expect(diff.scrollTop).toBe((10 - 3) * 20);
   });
+});
+
+/** The Files tab of PR 11 once the core answered `answer`, one file at a time. */
+const shownOne = async (answer: PrFiles) => {
+  core.pullRequestFiles.mockResolvedValue(ok(answer));
+  const files = new PrFilesState("python/cpython", 11, untimed, new DiffViewChoice(), "one");
+  await files.load();
+  render(FilesTab, { files, now: NOW, onlink });
+  return files;
+};
+
+const bar = () => screen.getByRole("navigation", { name: "File on show" });
+const previousFile = () => screen.getByRole<HTMLButtonElement>("button", { name: "Previous file" });
+const nextFile = () => screen.getByRole<HTMLButtonElement>("button", { name: "Next file" });
+
+it("shows one file at a time under a bar that counts the files, and walks them with its arrows", async () => {
+  await shownOne(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[0]).toBe("▾notes.txt → news.txt+1 −1");
+  });
+
+  expect(bar().textContent.replace(/\s+/g, " ").trim()).toBe("‹1 of 2› news.txt");
+  expect(lines()).toHaveLength(5);
+  expect(previousFile().disabled).toBe(true);
+  expect(nextFile().title).toBe("Next file (Alt+PageDown)");
+  expect(screen.getByRole("button", { name: "One file at a time" }).getAttribute("aria-pressed")).toBe(
+    "true",
+  );
+  await fireEvent.click(nextFile());
+  await vi.waitFor(() => {
+    expect(lines()).toEqual(["▾logo.pngbinary", "Binary files differ", "ast.py+0 −0"]);
+  });
+  expect(bar().textContent.replace(/\s+/g, " ").trim()).toBe("‹2 of 2› logo.png");
+  expect(nextFile().disabled).toBe(true);
+  await fireEvent.click(previousFile());
+  expect(bar().textContent).toContain("1 of 2");
+});
+
+it("switches between all the files and one at a time from the header, keeping the row at the top", async () => {
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[0]).toBe("▾notes.txt → news.txt+1 −1");
+  });
+  const diff = screen.getByRole("region", { name: "Diff" });
+  const toggle = screen.getByRole("button", { name: "One file at a time" });
+  expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  expect(screen.queryByRole("navigation", { name: "File on show" })).toBeNull();
+  // Five pixels into row 6, of the second file, which shows at its page's place 1.
+  diff.scrollTop = 6 * 20 + 5;
+  await fireEvent.scroll(diff);
+
+  await fireEvent.click(toggle);
+  await vi.waitFor(() => {
+    expect(diff.scrollTop).toBe(20 + 5);
+  });
+  expect([files.mode, bar().textContent.includes("2 of 2")]).toEqual(["one", true]);
+  await fireEvent.scroll(diff);
+  await fireEvent.click(toggle);
+  await vi.waitFor(() => {
+    expect(diff.scrollTop).toBe(6 * 20 + 5);
+  });
+});
+
+it("scrolls to the header of the next file with all the files, and to the very top for the NEWS entries", async () => {
+  const news: NewsEntry[] = [{ path: "logo.png", section: "Library", issue: null, blocks: [] }];
+  const files = await shown(ready(rows.length, { news }));
+  await vi.waitFor(() => {
+    expect(lines()[0]).toBe("▾notes.txt → news.txt+1 −1");
+  });
+  const diff = screen.getByRole("region", { name: "Diff" });
+
+  files.nextFile(1);
+  files.nextFile(1);
+  await vi.waitFor(() => {
+    expect(diff.scrollTop).toBe(5 * 20);
+  });
+  await fireEvent.scroll(diff);
+  files.nextFile(-1);
+  await vi.waitFor(() => {
+    expect(diff.scrollTop).toBe(0);
+  });
+  await fireEvent.scroll(diff);
+  files.nextFile(-1);
+  await vi.waitFor(() => {
+    expect(files.jump).toBeUndefined();
+  });
+  // A page the layout doesn't show leaves the tab where it is.
+  diff.scrollTop = 40;
+  files.jump = { page: { kind: "file", file: 9 } };
+  await settledTab();
+  expect([diff.scrollTop, files.jump]).toEqual([40, undefined]);
+});
+
+it("puts the NEWS entries on a page of their own, and a NEWS entry's Show file goes to its file", async () => {
+  const news: NewsEntry[] = [{ path: "logo.png", section: "Library", issue: null, blocks: [] }];
+  await shownOne(ready(rows.length, { news }));
+
+  expect(bar().textContent.replace(/\s+/g, " ").trim()).toBe("‹› NEWS entries");
+  screen.getByRole("article", { name: "NEWS entry in Library" });
+  expect(lines()).toEqual([]);
+  await fireEvent.click(screen.getByRole("button", { name: "Show file" }));
+
+  await vi.waitFor(() => {
+    expect(bar().textContent).toContain("2 of 2");
+  });
+  expect(screen.queryByRole("region", { name: "NEWS entries" })).toBeNull();
+});
+
+it("gives the threads on files no longer in the diff a last page of their own", async () => {
+  const files = await shownOne(
+    ready(rows.length, {
+      threads: [threadAt("lost", { kind: "gone", path: "Lib/old.py", code: null }, "open")],
+    }),
+  );
+  files.showFile(1);
+  await fireEvent.click(nextFile());
+
+  await vi.waitFor(() => {
+    expect(lines()).toEqual(["On files no longer in the diff"]);
+  });
+  expect(bar().textContent.replace(/\s+/g, " ").trim()).toBe("‹› On files no longer in the diff");
+  expect(threadBoxes()).toHaveLength(1);
 });

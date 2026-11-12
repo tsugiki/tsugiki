@@ -7,7 +7,7 @@ import type {
   WorkbenchRow_Serialize as WorkbenchRow,
 } from "../src/lib/data/bindings.ts";
 import { changeAnswer, mockCore } from "./mock-core.ts";
-import { themes } from "./themes.ts";
+import { appearance, themes } from "./themes.ts";
 
 const repository = { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] } as const;
 
@@ -400,4 +400,135 @@ test("Ctrl+F searches the diff, marks the match it moves to, and Escape gives th
   await page.keyboard.press("Escape");
   await expect(search).toHaveCount(0);
   await expect(pane.getByRole("region", { name: "Diff" })).toBeFocused();
+});
+
+test("a PR opens one file at a time as the settings say, walks its files, and switches to all of them in place", async ({
+  page,
+}) => {
+  const news = "Misc/NEWS.d/next/Library/2026-11-12.gh-issue-7.abc.rst";
+  /** A new file at `path` whose header is row `row`, adding `added` lines, each taller than the window. */
+  const diffFile = (path: string, row: number, added: number) => ({
+    path,
+    old_path: null,
+    change: { kind: "lines", added, removed: 0 } as const,
+    row,
+    columns: 20,
+    generated: false,
+    gaps: [],
+    rest: null,
+    pairs: [{ row: row + 2, removed: 0, added }],
+  });
+  /** The rows of that file, its first line saying `first`. */
+  const fileRows = (path: string, added: number, first: string) => [
+    { kind: "file" as const, path, old_path: null, change: { kind: "lines" as const, added, removed: 0 } },
+    { kind: "hunk" as const, text: `@@ -0,0 +1,${String(added)} @@` },
+    ...Array.from({ length: added }, (_, at) => ({
+      kind: "added" as const,
+      new: at + 1,
+      text: at === 0 ? first : `line ${String(at + 1)}`,
+    })),
+  ];
+  await mockCore(page, {
+    settings: {
+      settings: {
+        status_bar: { visible: true },
+        releases: { check: true },
+        appearance,
+        diff: { files: "one" },
+        repositories: [],
+      },
+      problems: [],
+    },
+    home: { screen: "repository", repository, others: [] as string[] },
+    workbench: {
+      status: "ok",
+      data: { items: [issue], quiet: [], count: 0, review_requests: 0, filters: [] },
+    },
+    openPullRequest: done,
+    fetchPullRequest: done,
+    pullRequest: { status: "ok", data: view },
+    pullRequestFiles: {
+      status: "ok",
+      data: {
+        state: "ready",
+        head: "0123abcdef",
+        base: "fedcba3210",
+        files: [diffFile("Lib/ast.py", 0, 98), diffFile(news, 100, 40)],
+        rows: 142,
+        news: [
+          {
+            path: news,
+            section: "Library",
+            issue: null,
+            blocks: [{ kind: "paragraph", pieces: [{ kind: "text", text: "Fixed the parser." }] }],
+          },
+        ],
+        threads: { kind: "shown", threads: [] },
+      },
+    },
+    pullRequestRows: {
+      status: "ok",
+      data: [...fileRows("Lib/ast.py", 98, "import ast"), ...fileRows(news, 40, "Fixed the parser.")],
+    },
+  });
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "#7 Issue 7" })).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  const pane = page.getByRole("region", { name: "PR view" });
+  await expect(pane).toContainText("The fix");
+  await page.keyboard.press("ControlOrMeta+PageDown");
+
+  // The NEWS entries come first, on a page of their own.
+  const bar = pane.getByRole("navigation", { name: "File on show" });
+  await expect(bar).toContainText("NEWS entries");
+  await expect(pane.getByRole("article", { name: "NEWS entry in Library" })).toContainText(
+    "Fixed the parser.",
+  );
+  const diff = pane.getByRole("region", { name: "Diff" });
+  await page.keyboard.press("Alt+PageDown");
+  await expect(bar).toContainText("1 of 2");
+  await expect(bar).toContainText("Lib/ast.py");
+  await expect(diff).toContainText("import ast");
+  await expect(diff).not.toContainText("Fixed the parser.");
+  await page.keyboard.press("Alt+PageDown");
+  await expect(bar).toHaveText(`‹2 of 2› ${news}`);
+  await page.keyboard.press("Alt+PageDown");
+  await expect(bar).toContainText("2 of 2");
+  await page.keyboard.press("Alt+PageUp");
+  await expect(bar).toContainText("1 of 2");
+  // F7 carries on into the next file at the end of one.
+  await page.keyboard.press("F7");
+  await page.keyboard.press("F7");
+  await expect(bar).toContainText("2 of 2");
+  await expect(diff).toContainText("Fixed the parser.");
+
+  /** The distance in whole pixels between the top of the diff's region and the header of the file at
+   * `path`: the NEWS entries above the rows can end part of the way into a pixel. */
+  const belowTop = (path: string) =>
+    diff.evaluate((region, path) => {
+      const header = [...region.querySelectorAll(".row.file")].find((row) => row.textContent.includes(path));
+      return header === undefined
+        ? undefined
+        : Math.trunc(Math.abs(header.getBoundingClientRect().top - region.getBoundingClientRect().top));
+    }, path);
+  // All the files, with the file that showed at the top.
+  await page.keyboard.press("ControlOrMeta+k");
+  await page.keyboard.press("o");
+  const toggle = pane.getByRole("button", { name: "One file at a time" });
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(bar).toHaveCount(0);
+  await expect.poll(() => belowTop(news)).toBe(0);
+  // Alt+PageUp goes to the header of the file before.
+  await page.keyboard.press("Alt+PageUp");
+  await expect.poll(() => belowTop("Lib/ast.py")).toBe(0);
+  // The first file stays at the top as the NEWS entries above it go, and as they come back.
+  await toggle.click();
+  await expect(bar).toContainText("1 of 2");
+  await expect.poll(() => belowTop("Lib/ast.py")).toBe(0);
+  await toggle.click();
+  await expect(bar).toHaveCount(0);
+  await expect.poll(() => belowTop("Lib/ast.py")).toBe(0);
 });

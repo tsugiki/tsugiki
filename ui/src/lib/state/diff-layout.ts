@@ -6,6 +6,7 @@
 // the diff.
 
 import type { Gap, Pair, Rest } from "$lib/data/bindings";
+import type { Page } from "./file-pages";
 
 /** The two views of a diff: each row under the one before, or the old lines beside the new. */
 export type DiffView = "unified" | "side-by-side";
@@ -129,7 +130,9 @@ export class DiffLayout<T extends LaidThread = LaidThread> {
    * stands for the hidden lines nearest it. Side by side, each change takes as many places as its longer
    * side. Each of `threads`, in the order they show, takes its places where it sits, unless a collapsed
    * file hides that; side by side, under the place that shows its row. A thread under a line that doesn't
-   * show sits under the buttons that show it. */
+   * show sits under the buttons that show it. With `only`, it shows that page alone, as the tab does one
+   * file at a time (#605): one file with its threads, the threads on files no longer in the diff, or no
+   * rows for the NEWS entries. */
   constructor(
     rows: number,
     files: readonly LaidFile[],
@@ -138,6 +141,7 @@ export class DiffLayout<T extends LaidThread = LaidThread> {
     view: DiffView = "unified",
     threads: readonly T[] = [],
     diff = "",
+    only?: Page,
   ) {
     this.#rows = rows;
     this.view = view;
@@ -155,7 +159,14 @@ export class DiffLayout<T extends LaidThread = LaidThread> {
         underLines.set(laid.at.file, file);
       }
     });
-    let row = 0;
+    // The rows the layout shows, from `start` up to `stop`: all of them, one file's, or none.
+    const [start, stop] =
+      only === undefined
+        ? [0, rows]
+        : only.kind === "file"
+          ? [files[only.file]?.row ?? rows, files[only.file + 1]?.row ?? rows]
+          : [rows, rows];
+    let row = start;
     // The changes of the file being laid out that show side by side, and the next to lay out.
     let pairs: readonly Pair[] = [];
     let next = 0;
@@ -236,6 +247,7 @@ export class DiffLayout<T extends LaidThread = LaidThread> {
       }
     };
     files.forEach((file, index) => {
+      if (file.row < start || file.row >= stop) return;
       this.#files.set(file.row, index);
       const end = files[index + 1]?.row ?? rows;
       // The rows the file before left, with its pairs.
@@ -288,9 +300,10 @@ export class DiffLayout<T extends LaidThread = LaidThread> {
       if (!after.ended) this.#add({ kind: "more", file: index, shown: 0, length: 1 });
       hiddenTo(Infinity);
     });
-    rowsTo(rows);
-    if (atEnd.length > 0) this.#add({ kind: "gone", shown: 0, length: 1 });
-    for (const ahead of atEnd) thread(ahead);
+    rowsTo(stop);
+    const gone = only === undefined || only.kind === "gone";
+    if (gone && atEnd.length > 0) this.#add({ kind: "gone", shown: 0, length: 1 });
+    for (const ahead of gone ? atEnd : []) thread(ahead);
     const last = this.#runs.at(-1);
     this.count = last === undefined ? 0 : last.shown + last.length;
   }
@@ -416,7 +429,8 @@ export class DiffLayout<T extends LaidThread = LaidThread> {
    * `place` was in, if this diff has it. */
   moved(from: DiffLayout<T>, place: number): number {
     if (from.diff !== this.diff) {
-      const path = from.#fileAt(place);
+      const page = from.pageAt(place);
+      const path = page?.kind === "file" ? from.#laidFiles[page.file]?.path : undefined;
       const file = this.#laidFiles.find((file) => file.path === path);
       const header = file === undefined ? undefined : this.placeOfRow(file.row);
       return header ?? place;
@@ -424,14 +438,26 @@ export class DiffLayout<T extends LaidThread = LaidThread> {
     return this.#placeOf(from.at(place)) ?? place;
   }
 
-  /** The name of the file that place `place` shows part of, if it shows part of one. */
-  #fileAt(place: number): string | undefined {
+  /** The place that heads `page`: a file's header, or the heading of the threads on files no longer in the
+   * diff. Nothing for the NEWS entries, which sit above every place, or a page the layout doesn't show. */
+  headerOf(page: Page): number | undefined {
+    if (page.kind === "gone") return this.#runs.find((run) => run.kind === "gone")?.shown;
+    const file = page.kind === "file" ? this.#laidFiles[page.file] : undefined;
+    return file === undefined ? undefined : this.placeOfRow(file.row);
+  }
+
+  /** The page that place `place` shows part of: a file, or the threads on files no longer in the diff. */
+  pageAt(place: number): Page | undefined {
     const run = this.#runAt(place);
-    const row = (row: number) => this.#laidFiles.findLast((file) => file.row <= row)?.path;
+    const row = (row: number): Page => ({
+      kind: "file",
+      file: this.#laidFiles.findLastIndex((file) => file.row <= row),
+    });
     switch (run?.kind) {
       case undefined:
-      case "gone":
         return undefined;
+      case "gone":
+        return { kind: "gone" };
       case "row":
         return row(run.row + place - run.shown);
       case "pair":
@@ -439,11 +465,11 @@ export class DiffLayout<T extends LaidThread = LaidThread> {
       case "line":
       case "hidden":
       case "more":
-        return this.#laidFiles[run.file]?.path;
+        return { kind: "file", file: run.file };
       case "thread": {
         const anchor = run.laid.at;
         if (anchor.kind === "row") return row(anchor.row);
-        return anchor.kind === "line" ? this.#laidFiles[anchor.file]?.path : undefined;
+        return anchor.kind === "line" ? { kind: "file", file: anchor.file } : { kind: "gone" };
       }
     }
   }

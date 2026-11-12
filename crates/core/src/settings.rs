@@ -37,6 +37,7 @@ const OPENED_AT: &str = "opened_at";
 const LAST_REPOSITORY: &str = "last_repository";
 const PANES: &str = "panes";
 const APPEARANCE: &str = "appearance";
+const DIFF: &str = "diff";
 const MIRRORS: &str = "mirrors";
 const STOPPED_SAVING: &str =
     "Tsugiki stopped saving its settings. Restart Tsugiki to save them again.";
@@ -48,6 +49,7 @@ pub struct Settings {
     pub status_bar: StatusBarSettings,
     pub releases: ReleaseSettings,
     pub appearance: AppearanceSettings,
+    pub diff: DiffSettings,
     pub repositories: Vec<RepositorySettings>,
 }
 
@@ -119,7 +121,7 @@ impl Default for ReleaseSettings {
 }
 
 /// The `[appearance]` table: whether the window follows the system to its light or dark side, and the theme
-/// of each side (#517). A key Tsugiki can't read takes its default, and `appearance_problems` says why: a
+/// of each side (#517). A key Tsugiki can't read takes its default, and `unread_problems` says why: a
 /// theme is too small a thing to lose the rest of `settings.toml` over. An `appearance` that isn't a table
 /// fails the file, as any other table does.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Type)]
@@ -188,34 +190,80 @@ fn given_or_default<T: Default>(
     }
 }
 
-/// What is wrong with the `[appearance]` of the settings file `text`, from `path`, in words for the status
-/// bar. Each names its line, when the parser knows it.
-fn appearance_problems(path: &Path, text: &str) -> Vec<String> {
-    /// Only `[appearance]` of the file.
+/// The `[diff]` table: how the Files tab shows a PR's diff (#605). A `files` Tsugiki can't read takes its
+/// default, and `unread_problems` says why, as for `[appearance]`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Type)]
+pub struct DiffSettings {
+    pub files: DiffFiles,
+}
+
+/// Whether a PR opens on all its files, one under the other, or on one file at a time: `[diff] files`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DiffFiles {
+    #[default]
+    All,
+    One,
+}
+
+impl<'de> Deserialize<'de> for DiffSettings {
+    fn deserialize<D: Deserializer<'de>>(given: D) -> Result<Self, D::Error> {
+        Ok(DiffRead::deserialize(given)?.settle().0)
+    }
+}
+
+/// `[diff]` as the file gives it, before a value Tsugiki can't read takes its default.
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct DiffRead {
+    files: Option<Read<DiffFiles>>,
+}
+
+impl DiffRead {
+    /// The values, with each one Tsugiki can't read at its default, and the keys that held those.
+    fn settle(self) -> (DiffSettings, Vec<Unread>) {
+        let mut unread = Vec::new();
+        let settings = DiffSettings {
+            files: given_or_default(self.files, "files", &mut unread, || {
+                r#"isn't "all" or "one", so each PR opens on all its files."#.to_owned()
+            }),
+        };
+        (settings, unread)
+    }
+}
+
+/// The problems with the `[appearance]` and `[diff]` of the settings file `text`, from `path`, in words for
+/// the status bar. Each names its line, when the parser knows it.
+fn unread_problems(path: &Path, text: &str) -> Vec<String> {
+    /// Only the tables of the file whose values fall back to their defaults.
     #[derive(Default, Deserialize)]
     #[serde(default)]
     struct File {
         appearance: AppearanceRead,
+        diff: DiffRead,
     }
     // Each caller has read the whole file by now, so this read finds what that one did.
     let file = toml_edit::de::from_str::<File>(text).unwrap_or_default();
     let document = toml_edit::Document::parse(text).ok();
-    let table = document
-        .as_ref()
-        .and_then(|document| document.get(APPEARANCE))
-        .and_then(Item::as_table_like);
-    file.appearance
-        .settle()
-        .1
-        .into_iter()
-        .map(|(key, problem)| {
+    [
+        (APPEARANCE, file.appearance.settle().1),
+        (DIFF, file.diff.settle().1),
+    ]
+    .into_iter()
+    .flat_map(|(name, unread)| {
+        let table = document
+            .as_ref()
+            .and_then(|document| document.get(name))
+            .and_then(Item::as_table_like);
+        unread.into_iter().map(move |(key, problem)| {
             let line = table
                 .and_then(|table| table.get_key_value(key))
                 .and_then(|(key, _)| key.span())
                 .map_or_else(String::new, |span| line_of(text, span.start));
             format!("{}{line}: {key} {problem}", path.display())
         })
-        .collect()
+    })
+    .collect()
 }
 
 /// The settings in force, and what is wrong with the files they came from, in words for the status bar.
@@ -508,14 +556,14 @@ impl SettingsFiles {
     ///
     /// It works from what the files say now, so an edit made since the last read stays. It refuses while
     /// either file can't be used: a broken `machine.toml` might point somewhere else, and a broken
-    /// `settings.toml` might hold work the user hasn't finished. So does an `[appearance]` value Tsugiki
-    /// can't read.
+    /// `settings.toml` might hold work the user hasn't finished. So does an `[appearance]` or `[diff]` value
+    /// Tsugiki can't read.
     pub fn write(&mut self, settings: &Settings) -> Result<(), Error> {
         let machine = self.machine_to_edit()?;
         let path = settings_file(&self.folders, &machine);
         let mut edit = TomlEdit::<Settings>::open(&path)?;
         // A key Tsugiki read as its default would be saved as the default, over what the user wrote.
-        if let Some(problem) = appearance_problems(&path, &edit.before).first() {
+        if let Some(problem) = unread_problems(&path, &edit.before).first() {
             return Err(refused(problem));
         }
         merge(
@@ -1257,7 +1305,7 @@ fn read_settings(
         Some(text) => {
             let settings =
                 toml_edit::de::from_str(&text).map_err(|cause| located(&path, &text, &cause))?;
-            Ok((settings, appearance_problems(&path, &text)))
+            Ok((settings, unread_problems(&path, &text)))
         }
         None if machine.settings_path.is_none() => Ok((Settings::default(), Vec::new())),
         None => {

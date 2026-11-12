@@ -3,11 +3,14 @@
      on since the mirror's copy, the diff before shows while the mirror fetches the newer one, with its
      threads held back and counted (#185). A fetch of the PR's head that fails says why, and so does one that
      leaves GitHub's ref somewhere else or finds none, and "Try again" asks the core once more, which hands
-     the head to the mirror again (#233, #213). Ctrl+F opens a search over the diff's rows (#186). -->
+     the head to the mirror again (#233, #213). Ctrl+F opens a search over the diff's rows (#186). The
+     header's toggle switches between all the files and one at a time, and one at a time a bar says which
+     file shows, "‹ 12 of 48 ›" and its path (#605). -->
 <script lang="ts">
-  import type { PrFilesState, Unfetched } from "$lib/state/pr-files.svelte";
+  import type { Page, PrFilesState, Unfetched } from "$lib/state/pr-files.svelte";
   import DiffRows from "./DiffRows.svelte";
   import FindBar from "./FindBar.svelte";
+  import { chordLabel, currentOs, keyLabel } from "./keys";
   import MirrorQuestion from "./MirrorQuestion.svelte";
   import { cloningWords } from "./synced";
 
@@ -33,7 +36,32 @@
         return "GitHub has no copy of this PR's branch.";
     }
   };
+  const os = currentOs();
+  /** The bar's words for `page`: where its file comes among the files, and its path, or what it shows. */
+  const pageWords = (page: Page) => {
+    const counted = files.pages.counted(page);
+    if (counted !== undefined)
+      return { count: `${String(counted.at)} of ${String(counted.count)}`, path: counted.path };
+    return { count: "", path: page.kind === "news" ? "NEWS entries" : "On files no longer in the diff" };
+  };
 </script>
+
+<!-- The bar's button for the file before or after the one on show. -->
+{#snippet stepper(page: Page, by: 1 | -1)}
+  {@const [name, key, arrow] =
+    by === 1
+      ? (["Next file", "alt+pagedown", "›"] as const)
+      : (["Previous file", "alt+pageup", "‹"] as const)}
+  <button
+    type="button"
+    aria-label={name}
+    title={`${name} (${keyLabel(key, os)})`}
+    disabled={files.pages.step(page, by) === undefined}
+    onclick={() => {
+      files.nextFile(by);
+    }}>{arrow}</button
+  >
+{/snippet}
 
 {#if files.error}
   <p role="alert">{`Tsugiki can't show this PR's files: ${files.error}`}</p>
@@ -69,6 +97,25 @@
       {#if files.heldBack.count > 0}{waiting(files.heldBack.count)}{/if}
     </p>
   {/if}
+  <div class="header">
+    {#if files.shown !== undefined}
+      {@const shown = files.shown}
+      {@const words = pageWords(shown)}
+      <nav class="bar" aria-label="File on show">
+        {@render stepper(shown, -1)}<span class="count">{words.count}</span>{@render stepper(shown, 1)}
+        <span class="path">{words.path}</span>
+      </nav>
+    {/if}
+    <button
+      type="button"
+      class="mode"
+      aria-pressed={files.mode === "one"}
+      title={`One file at a time (${chordLabel("ctrl+k o", os)})`}
+      onclick={() => {
+        files.toggleMode();
+      }}>One file at a time</button
+    >
+  </div>
   {#if files.searching}
     <FindBar {files} />
   {/if}
@@ -81,6 +128,55 @@
   .waiting {
     font-size: 12px;
     color: var(--fg-muted);
+  }
+
+  /* One line over the diff: the bar on the left, the toggle on the right. */
+  .header {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 2px 8px;
+    font-size: 12px;
+  }
+
+  .bar {
+    display: flex;
+    flex: 1;
+    gap: 4px;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .bar button,
+  .mode {
+    border: 0;
+    background: none;
+  }
+
+  .bar button:disabled {
+    opacity: 0.4;
+  }
+
+  .count {
+    color: var(--fg-muted);
+    white-space: nowrap;
+  }
+
+  .path {
+    overflow: hidden;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mode {
+    margin-left: auto;
+    color: var(--fg-muted);
+  }
+
+  .mode[aria-pressed="true"] {
+    color: var(--fg);
+    font-weight: 600;
   }
 
   /* The diff fills what the tab leaves, and scrolls by itself. */

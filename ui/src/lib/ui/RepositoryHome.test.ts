@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { PrFilesState } from "$lib/state/pr-files.svelte";
+import { PrFilesState, type FilesMode } from "$lib/state/pr-files.svelte";
 import type { ChordBindings } from "./keys";
 import RepositoryHome from "./RepositoryHome.svelte";
 
@@ -466,7 +466,7 @@ const standalone = { kind: "standalone_pr", ...row, number: 5, title: "Alone", b
 
 /** A window on two items: the Issue, which it unfolds, and, in the quiet section it unfolds too, a
  * Standalone PR. */
-const listing = async () => {
+const listing = async (settings: { diffFiles?: FilesMode } = {}) => {
   core.workbench.mockResolvedValue({
     status: "ok",
     data: {
@@ -477,7 +477,12 @@ const listing = async () => {
       filters: [],
     },
   });
-  const { component } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
+  const { component } = render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onadd: vi.fn(),
+    ...settings,
+  });
   const issueRow = await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
   await unfoldAll();
   await fireEvent.click(screen.getByRole("button", { name: "Show 1 quiet item" }));
@@ -988,6 +993,59 @@ it("moves through a PR's changes with F7 and Shift+F7 on its Files tab", async (
   await press("F7", { shiftKey: true });
 
   expect(next.mock.calls).toEqual([[1], [-1]]);
+});
+
+it("moves between a PR's files with Alt+PageDown and Alt+PageUp on its Files tab", async () => {
+  const next = vi.spyOn(PrFilesState.prototype, "nextFile");
+  const files = await onFiles();
+  // The Conversation tab has no files to move through.
+  await press("PageDown", { altKey: true });
+  await fireEvent.click(files);
+
+  await press("PageDown", { altKey: true });
+  await press("PageUp", { altKey: true });
+
+  expect(next.mock.calls).toEqual([[1], [-1]]);
+});
+
+it("opens a PR's Files tab one file at a time as the settings say, and switches it with Ctrl+K O and the palette", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  core.pullRequestFiles.mockResolvedValue({
+    status: "ok",
+    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
+  });
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const { component, treeRow } = await listing({ diffFiles: "one" });
+  await fireEvent.click(treeRow);
+  const tab = await screen.findByRole("tab", { name: "Files" });
+  const command = (title: string) => component.paletteCommands().find((found) => found.title === title);
+  const pressed = () =>
+    screen.getByRole("button", { name: "One file at a time" }).getAttribute("aria-pressed");
+  // The Conversation tab shows no files to switch.
+  component.chordBindings()["ctrl+k o"]?.();
+  expect([command("View: All Files"), command("View: One File at a Time")]).toEqual([undefined, undefined]);
+  await fireEvent.click(tab);
+  // The tab reads the diff the first time it shows.
+  await screen.findByRole("region", { name: "Diff" });
+  expect(pressed()).toBe("true");
+
+  expect(command("View: All Files")?.note).toBe("Ctrl+K O");
+  command("View: All Files")?.run();
+  await tick();
+  expect([pressed(), command("View: One File at a Time")?.title]).toEqual([
+    "false",
+    "View: One File at a Time",
+  ]);
+  component.chordBindings()["ctrl+k o"]?.();
+  await tick();
+  expect(pressed()).toBe("true");
 });
 
 it("opens the search in the diff with Ctrl+F on the Files tab, and gives its box focus again from it", async () => {

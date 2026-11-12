@@ -28,6 +28,8 @@ pub struct IssueView {
     pub merged_count: u32,
     /// Nothing, for an Issue whose author's account has gone.
     pub author: Option<Login>,
+    /// Whom it is assigned to, as the sync last read them (#595).
+    pub assignees: Vec<Login>,
     /// Nothing, until Tsugiki has read this Issue from GitHub once.
     pub content: Option<IssueContent>,
 }
@@ -43,6 +45,9 @@ impl IssueView {
         let (mut facts, content) = reader.issue_facts(&repository.name, number)?;
         let held = facts.issues.iter().find(|issue| issue.number == number);
         let author = held.and_then(|issue| issue.author.clone());
+        let assignees = held
+            .map(|issue| issue.assignees.clone())
+            .unwrap_or_default();
         let matched = FilterFacts::new(repository, std::mem::take(&mut facts.filters)).matched();
         let causes = Causes::of(&facts, repository.conventions);
         let found = candidates(facts, repository, &BTreeSet::new())
@@ -65,6 +70,7 @@ impl IssueView {
                 merged,
                 merged_count: u32::try_from(merged_count).unwrap_or(u32::MAX),
                 author,
+                assignees,
                 content,
             }
         }))

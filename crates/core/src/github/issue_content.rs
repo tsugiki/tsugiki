@@ -64,9 +64,10 @@ impl Thread {
     }
 }
 
-/// The fields an Issue and a PR share: the description and the last 30 comments.
-pub(super) const CONVERSATION_FIELDS: &str = "bodyHTML comments(last: 30) { totalCount nodes { author { login } \
-                                              createdAt bodyHTML isMinimized minimizedReason } }";
+/// The fields an Issue and a PR share: the description, when it was opened, and the last 30 comments.
+pub(super) const CONVERSATION_FIELDS: &str = "bodyHTML createdAt comments(last: 30) { totalCount \
+                                              nodes { author { login } createdAt bodyHTML isMinimized \
+                                              minimizedReason } }";
 
 /// The reason someone gave for hiding a comment on GitHub. The comment folds to it until the user opens it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
@@ -135,6 +136,11 @@ pub struct IssueContent {
     pub comments: Vec<IssueComment>,
     /// The count of older comments that only GitHub shows.
     pub earlier_comments: u32,
+    /// The time its author opened it. Nothing, for a read kept from before Tsugiki asked, until the next
+    /// read.
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[specta(type = Option<String>)]
+    pub opened_at: Option<OffsetDateTime>,
 }
 
 #[derive(Deserialize)]
@@ -161,6 +167,8 @@ struct CommentsWire {
 pub(super) struct IssueWire {
     #[serde(rename = "bodyHTML")]
     body_html: String,
+    #[serde(rename = "createdAt", with = "time::serde::rfc3339")]
+    created_at: OffsetDateTime,
     comments: CommentsWire,
 }
 
@@ -183,6 +191,7 @@ impl From<IssueWire> for IssueContent {
             body_html: wire.body_html,
             comments,
             earlier_comments: wire.comments.total_count.saturating_sub(held),
+            opened_at: Some(wire.created_at),
         }
     }
 }

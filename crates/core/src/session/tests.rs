@@ -288,7 +288,7 @@ fn watching_follows_github_until_told_to_stop() {
 /// The answer to `FetchIssueContent`.
 fn issue_content_reply() -> Result<Reply, Unreachable> {
     reply_ok(
-        r#"{"data":{"repository":{"issue":{"bodyHTML":"<p>It crashes</p>",
+        r#"{"data":{"repository":{"issue":{"bodyHTML":"<p>It crashes</p>","createdAt":"2026-11-01T09:00:00Z",
             "comments":{"totalCount":0,"nodes":[]}}},
             "rateLimit":{"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
     )
@@ -414,7 +414,7 @@ fn opening_a_pr_records_last_seen_and_keeps_its_recorded_conversation() {
 #[test]
 fn reading_a_pr_on_screen_again_leaves_last_seen_where_it_is() {
     let reply = reply_ok(
-        r#"{"data":{"repository":{"pullRequest":{"bodyHTML":"<p>Fixes the crash</p>",
+        r#"{"data":{"repository":{"pullRequest":{"bodyHTML":"<p>Fixes the crash</p>","createdAt":"2026-11-01T09:00:00Z",
             "comments":{"totalCount":0,"nodes":[]},"reviews":{"totalCount":0,"nodes":[]},
             "reviewThreads":{"nodes":[]},"headRefOid":"0123abc"}},
             "rateLimit":{"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
@@ -614,7 +614,7 @@ fn a_pr_whose_answer_cant_be_read_says_so() {
 #[test]
 fn a_pr_read_that_lands_fails_nothing() {
     let reply = reply_ok(
-        r#"{"data":{"repository":{"pullRequest":{"bodyHTML":"<p>Fixes the crash</p>",
+        r#"{"data":{"repository":{"pullRequest":{"bodyHTML":"<p>Fixes the crash</p>","createdAt":"2026-11-01T09:00:00Z",
             "comments":{"totalCount":0,"nodes":[]},"reviews":{"totalCount":0,"nodes":[]},
             "reviewThreads":{"nodes":[]},"headRefOid":"0123abc"}},
             "rateLimit":{"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,

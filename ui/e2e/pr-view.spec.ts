@@ -41,6 +41,7 @@ const view: PrView = {
     body_html: "<p>The fix</p>",
     comments: [],
     earlier_comments: 0,
+    opened_at: null,
     reviews: [
       {
         author: "some-reviewer",
@@ -73,7 +74,7 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
     fetchIssue: done,
     issue: {
       status: "ok",
-      data: { ...issue, merged: [], merged_count: 0, author: "issue-author", content: null },
+      data: { ...issue, merged: [], merged_count: 0, author: "issue-author", assignees: [], content: null },
     },
     openPullRequest: done,
     fetchPullRequest: done,
@@ -126,7 +127,9 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
   await page.goto("/");
   await expect(page.getByRole("button", { name: "#7 Issue 7" })).toBeVisible();
 
+  // The Issue starts folded, and → unfolds it.
   await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowRight");
   await page.keyboard.press("ArrowDown");
   await expect(page.getByRole("button", { name: "#10 gh-7: Fix it" })).toBeFocused();
   await page.keyboard.press("Enter");
@@ -226,7 +229,7 @@ const threaded = async (page: Page, at: DiffThread["at"], words: string) => {
     fetchIssue: done,
     issue: {
       status: "ok",
-      data: { ...issue, merged: [], merged_count: 0, author: "issue-author", content: null },
+      data: { ...issue, merged: [], merged_count: 0, author: "issue-author", assignees: [], content: null },
     },
     openPullRequest: done,
     fetchPullRequest: done,
@@ -286,6 +289,7 @@ const threaded = async (page: Page, at: DiffThread["at"], words: string) => {
     pullRequestSpans: { status: "ok", data: [[], [], [], []] },
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "PRs of #7" }).click();
   await page.getByRole("button", { name: "#10 gh-7: Fix it" }).click();
   return page.getByRole("region", { name: "PR view" });
 };

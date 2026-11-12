@@ -81,6 +81,7 @@ fn read_comment(words: &str) -> ThreadComment {
 fn read(comments: Value, reviews: (u32, Value), threads: Value) -> PullRequestContent {
     let pr = json!({
         "bodyHTML": "<p>Fixes it</p>",
+        "createdAt": "2026-11-01T09:00:00Z",
         "comments": { "totalCount": comments.as_array().unwrap().len(), "nodes": comments },
         "reviews": { "totalCount": reviews.0, "nodes": reviews.1 },
         "reviewThreads": { "nodes": threads },

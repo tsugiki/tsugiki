@@ -161,6 +161,7 @@ fn an_issue_shows_its_author_and_prs_before_tsugiki_has_read_what_it_says() {
     let world = ViewWorld::new("issue-view-before-reading");
     let written = IssueFacts {
         author: Some(Login::new("issue-author")),
+        assignees: vec![Login::new("some-assignee")],
         ..issue(1)
     };
     world.has(vec![fixing(5, 1)], vec![written]);
@@ -169,6 +170,7 @@ fn an_issue_shows_its_author_and_prs_before_tsugiki_has_read_what_it_says() {
 
     assert_eq!(shown.issue.number, 1);
     assert_eq!(shown.author, Some(Login::new("issue-author")));
+    assert_eq!(shown.assignees, [Login::new("some-assignee")]);
     assert_eq!(pr_row(&shown).number, 5);
     assert_eq!(shown.content, None);
     world.finish();
@@ -187,6 +189,7 @@ fn an_issue_nobody_has_to_act_on_still_has_a_view_with_what_was_last_read() {
             hidden: None,
         }],
         earlier_comments: 0,
+        opened_at: Some(OffsetDateTime::UNIX_EPOCH),
     };
     world
         .store

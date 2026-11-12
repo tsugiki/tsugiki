@@ -78,6 +78,8 @@ test("the Workbench lists what waits on the user", async ({ page }) => {
   await page.goto("/");
 
   const rows = page.getByRole("listitem");
+  await expect(rows).toHaveCount(2);
+  await page.getByRole("button", { name: "PRs of #112564" }).click();
   await expect(rows).toHaveCount(4);
   await expect(rows.nth(0).locator("strong")).toHaveText("#112564 GIL drop during collection");
   await expect(rows.nth(0)).toContainText("Review requested from you");
@@ -103,7 +105,7 @@ test("the quiet section unfolds, folds, and unfolds again for Alt+← back to an
     fetchIssue: done,
     issue: {
       status: "ok",
-      data: { ...review, merged: [], merged_count: 0, author: "issue-author", content: null },
+      data: { ...review, merged: [], merged_count: 0, author: "issue-author", assignees: [], content: null },
     },
     openPullRequest: done,
     fetchPullRequest: done,
@@ -159,7 +161,7 @@ test("the Sidebar lists the Filters, and selecting one shows its Issues", async 
 
   const sidebar = page.getByRole("navigation", { name: "Sidebar" });
   await expect(sidebar.getByRole("button", { name: "Workbench 2" })).toHaveAttribute("aria-current", "true");
-  await expect(page.getByRole("listitem")).toHaveCount(4);
+  await expect(page.getByRole("listitem")).toHaveCount(2);
 
   await changeAnswer(page, "workbench", { status: "ok", data: { ...whole, items: [own] } });
   await sidebar.getByRole("button", { name: "Mine 1" }).click();

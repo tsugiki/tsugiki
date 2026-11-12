@@ -32,6 +32,7 @@ const reviewed = (reviews: Review[], changes: Partial<PullRequestContent> = {}):
   body_html: "<p>The description</p>",
   comments: [],
   earlier_comments: 0,
+  opened_at: null,
   reviews,
   earlier_reviews: 0,
   ...changes,
@@ -214,7 +215,12 @@ it("says how many earlier comments only GitHub shows, and that it holds older Re
 });
 
 it("says nothing of Reviews for an Issue", () => {
-  const container = shown({ body_html: "<p>It crashes</p>", comments: [], earlier_comments: 0 });
+  const container = shown({
+    body_html: "<p>It crashes</p>",
+    comments: [],
+    earlier_comments: 0,
+    opened_at: null,
+  });
 
   expect(container.textContent).not.toContain("Review");
 });

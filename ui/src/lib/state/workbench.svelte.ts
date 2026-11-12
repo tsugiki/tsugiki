@@ -19,6 +19,7 @@ import {
   type WorkReason,
   type Why,
 } from "$lib/data/bindings";
+import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import { hud } from "./hud.svelte";
 
 export type Attention = Attention_Serialize;
@@ -39,12 +40,12 @@ export const sameStop = (a: Stop | undefined, b: Stop) => a?.number === b.number
 /** A line of the list: where the cursor stops, and the title it shows. */
 type Line = { stop: Stop; title: string };
 
-/** The lines of `item` the cursor stops on, in the order the list shows them. */
-function linesOf(item: ListedItem): Line[] {
+/** The lines of `item` the cursor stops on, in the order the list shows them. An Issue's tree shows only
+ * while `unfolded` says it does. */
+function linesOf(item: ListedItem, unfolded: (issue: number) => boolean): Line[] {
   if (item.kind === "issue") {
-    const rows = item.pull_requests.flatMap((entry) =>
-      entry.kind === "pr" ? [entry, ...entry.backports] : [entry],
-    );
+    const tree = unfolded(item.number) ? item.pull_requests : [];
+    const rows = tree.flatMap((entry) => (entry.kind === "pr" ? [entry, ...entry.backports] : [entry]));
     return [
       { stop: { number: item.number, kind: "issue", issue: undefined }, title: item.title },
       ...rows.map((row) => ({
@@ -73,6 +74,10 @@ export class WorkbenchState {
   /** Whether the list shows its quiet section. One choice holds for every view while the Repository stays
    * open, and the section starts folded (#601). */
   quietShown = $state(false);
+  /** The Issues unfolded in each view, by the view's key. */
+  #unfolded = new SvelteMap<string, SvelteSet<number>>();
+  /** The view whose items the list shows: `selected` once its answer has arrived. */
+  #shown = $state<WorkbenchView>({ kind: "whole" });
   #repository: string;
   #lastQuestion = 0;
   #stopListening: (() => void) | undefined;
@@ -127,18 +132,40 @@ export class WorkbenchState {
     return this.#stops().find((stop) => sameStop(this.cursor, stop));
   }
 
-  /** Whether the list shows the line `stop`: in its quiet section only while that is unfolded. */
+  /** Whether the list has the line `stop`, under a folded Issue or not, and in its quiet section only while
+   * that is unfolded. */
   lists(stop: Stop): boolean {
-    return this.#stops().some((line) => sameStop(line, stop));
+    return this.#lines(() => true).some((line) => sameStop(line.stop, stop));
   }
 
-  /** Puts the cursor on line `stop`, and unfolds the quiet section if the line is in it, so the cursor has
-   * a row to stand on. True when it unfolded the section, whose row the page has yet to draw. */
-  moveTo(stop: Stop): boolean {
+  /** Whether the list shows Issue `issue`'s PRs under it in the view on show. Each Issue starts folded, and
+   * each view keeps its own while the Repository stays open (#593). */
+  unfolded(issue: number): boolean {
+    return this.#open()?.has(issue) ?? false;
+  }
+
+  /** Shows Issue `issue`'s PRs under it. */
+  unfold(issue: number) {
+    const open = this.#open();
+    if (open) {
+      open.add(issue);
+    } else {
+      this.#unfolded.set(this.#viewKey(), new SvelteSet([issue]));
+    }
+  }
+
+  /** Hides Issue `issue`'s PRs. A cursor on one of them moves to the Issue. */
+  fold(issue: number) {
+    this.#open()?.delete(issue);
+    if (this.cursor?.issue === issue) this.cursor = { number: issue, kind: "issue", issue: undefined };
+  }
+
+  /** Puts the cursor on line `stop`, unfolding the Issue it's under, and the quiet section if the line is in
+   * it, so the cursor has a row to stand on. */
+  moveTo(stop: Stop) {
+    if (stop.issue !== undefined) this.unfold(stop.issue);
+    if (this.#inQuiet(stop)) this.quietShown = true;
     this.cursor = stop;
-    const unfolds = !this.quietShown && this.#inQuiet(stop);
-    if (unfolds) this.quietShown = true;
-    return unfolds;
   }
 
   showQuiet() {
@@ -165,49 +192,72 @@ export class WorkbenchState {
     this.#stopListening?.();
   }
 
-  /** Moves the cursor after a PR that a change put under an Issue, or took out from under one. An item that
-   * went quiet under the cursor, or is quiet in the view the user selected, leaves a folded section folded:
-   * the cursor moves to the last line above it, as folding it would. */
+  /** Moves the cursor after a PR that a change put under an Issue, or took out from under one, and unfolds
+   * the Issue over a PR under the cursor, as another view may have it folded. An item that went quiet under
+   * the cursor, or is quiet in the view the user selected, leaves a folded section folded: the cursor moves
+   * to the last line above it, as folding it would. */
   #followCursor() {
     const cursor = this.cursor;
     if (cursor === undefined) return;
-    const stops = this.#stops(true);
-    const found = stops.some((stop) => sameStop(cursor, stop))
-      ? cursor
-      : (stops.find((stop) => stop.number === cursor.number) ?? cursor);
-    this.cursor = !this.quietShown && this.#inQuiet(found) ? this.#stops().at(-1) : found;
+    const stops = this.#allStops();
+    const line =
+      stops.find((stop) => sameStop(cursor, stop)) ?? stops.find((stop) => stop.number === cursor.number);
+    if (line && !this.quietShown && this.#inQuiet(line)) this.cursor = this.#stops().at(-1);
+    else if (line) this.moveTo(line);
+  }
+
+  /** The key of the view whose items the list shows, which keeps its own unfolded Issues. Until the answer
+   * for a newly selected view arrives, the list still shows the last one's items, folded as it had them. */
+  #viewKey() {
+    const shown = this.#shown;
+    return shown.kind === "filter" ? `filter ${shown.query}` : shown.kind;
+  }
+
+  /** The Issues unfolded in the view on show, if it has unfolded any yet. */
+  #open() {
+    return this.#unfolded.get(this.#viewKey());
   }
 
   /** The title of each line by its number, built once for each answer, which the history reads (#586). Made
-   * anew whenever the list changes, so it needn't be reactive itself. It names a folded quiet section's
-   * lines too. */
+   * anew whenever the list changes, so it needn't be reactive itself. It names the PRs of folded Issues and
+   * the lines of a folded quiet section too. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
-  #titles = $derived(new Map(this.#lines(true).map((line) => [line.stop.number, line.title])));
+  #titles = $derived(new Map(this.#lines(() => true, true).map((line) => [line.stop.number, line.title])));
 
   /** The title of line `number`, if the list, or its quiet section, has it. */
   titleOf(number: number): string | undefined {
     return this.#titles.get(number);
   }
 
-  /** The list's lines, in its order: those of the quiet section only while it shows, or `withQuiet`. */
-  #lines(withQuiet = this.quietShown) {
-    return [...(this.items ?? []), ...(withQuiet ? this.quiet : [])].flatMap(linesOf);
+  /** The list's lines, in its order, with the trees `unfolded` says show: those of the quiet section only
+   * while it shows, or `withQuiet`. */
+  #lines(unfolded: (issue: number) => boolean, withQuiet = this.quietShown) {
+    return [...(this.items ?? []), ...(withQuiet ? this.quiet : [])].flatMap((item) =>
+      linesOf(item, unfolded),
+    );
   }
 
-  /** The lines the cursor can stand on: those of the quiet section only while it shows, or `withQuiet`. */
-  #stops(withQuiet = this.quietShown) {
-    return this.#lines(withQuiet).map((line) => line.stop);
+  /** The lines the list shows, in its order. */
+  #stops() {
+    const open = this.#open();
+    return this.#lines((issue) => open?.has(issue) ?? false).map((line) => line.stop);
+  }
+
+  /** Each line the list has, the PRs of folded Issues and the lines of a folded quiet section too. */
+  #allStops() {
+    return this.#lines(() => true, true).map((line) => line.stop);
   }
 
   #inQuiet(stop: Stop) {
-    return this.quiet.some((item) => linesOf(item).some((line) => sameStop(line.stop, stop)));
+    return this.quiet.some((item) => linesOf(item, () => true).some((line) => sameStop(line.stop, stop)));
   }
 
   async #ask() {
     this.#lastQuestion += 1;
     const question = this.#lastQuestion;
+    const view = this.selected;
     const answer = await hud
-      .timed(() => commands.workbench(this.#repository, this.selected))
+      .timed(() => commands.workbench(this.#repository, view))
       .catch((e: unknown) => ({
         status: "error" as const,
         error: { message: String(e) },
@@ -217,6 +267,7 @@ export class WorkbenchState {
     if (answer.status === "ok") {
       this.items = answer.data.items;
       this.quiet = answer.data.quiet;
+      this.#shown = view;
       this.#followCursor();
       this.count = answer.data.count;
       this.reviewRequests = answer.data.review_requests;

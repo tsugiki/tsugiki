@@ -927,6 +927,7 @@ fn approved() -> Result<Reply, Unreachable> {
     });
     let pull_request = json!({
         "bodyHTML": "<p>A change</p>",
+        "createdAt": "2026-11-01T09:00:00Z",
         "comments": { "totalCount": 0, "nodes": [] },
         "reviews": { "totalCount": 1, "nodes": [review] },
         "reviewThreads": { "nodes": [] },

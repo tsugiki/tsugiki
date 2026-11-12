@@ -89,6 +89,9 @@ export function ago(updatedAt: string, now: Date): string {
   return `${String(Math.floor(minutes / MINUTES_IN_DAY))}d ago`;
 }
 
+/** How many comments an Issue, a PR or a review thread has. */
+export const commentCount = (count: number) => (count === 1 ? "1 comment" : `${String(count)} comments`);
+
 /** An Issue's or a PR's first line. */
 export const headline = (item: { number: number; title: string }) => `#${String(item.number)} ${item.title}`;
 

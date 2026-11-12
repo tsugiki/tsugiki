@@ -358,6 +358,7 @@ fn content() -> IssueContent {
             })
             .collect(),
         earlier_comments: 40,
+        opened_at: Some(updated(40)),
     }
 }
 

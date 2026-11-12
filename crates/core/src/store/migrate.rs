@@ -100,6 +100,10 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         version: 19,
         sql: super::sync_state::READ_AHEAD,
     },
+    Migration {
+        version: 20,
+        sql: super::issue_content::OPENED,
+    },
 ];
 
 /// The version a file has after all of `migrations`.

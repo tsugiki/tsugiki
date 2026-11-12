@@ -162,10 +162,12 @@ it("lists a Standalone PR with the time it changed", async () => {
   const item = await screen.findByRole("listitem");
 
   expect(core.workbench).toHaveBeenCalledWith("python/cpython", { kind: "whole" });
-  expect(within(item).getByText("#160662 gh-112564: Fix UAF for gc debug print")).toBeTruthy();
   expect(
-    within(item).getByText("Review request · some-author · into main · Open · CI passed · 3h ago"),
+    within(item).getByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" }),
   ).toBeTruthy();
+  expect(within(item).getByText("some-author")).toBeTruthy();
+  expect(within(item).getByText("3h ago")).toBeTruthy();
+  expect(within(item).getByText("Review request · some-author · into main · Open · CI passed")).toBeTruthy();
 });
 
 it("moves a time on while the window stays open", async () => {
@@ -177,13 +179,35 @@ it("moves a time on while the window stays open", async () => {
     data: { items: [issue], quiet: [], count: 1, review_requests: 0, filters: [] },
   });
   const { unmount } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
-  await screen.findByText("issue-author, some-author · 1 PR · 3h ago");
+  await screen.findByText("3h ago");
 
   await vi.advanceTimersByTimeAsync(60 * 60_000);
 
-  expect(screen.getByText("issue-author, some-author · 1 PR · 4h ago")).toBeTruthy();
+  expect(screen.getByText("4h ago")).toBeTruthy();
   unmount();
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it("says an Issue has no PR yet, with no count of none", async () => {
+  core.workbench.mockResolvedValue({
+    status: "ok",
+    data: {
+      items: [{ ...issue, people: [], pull_requests: [] }],
+      quiet: [],
+      count: 1,
+      review_requests: 0,
+      filters: [],
+    },
+  });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
+
+  const item = await screen.findByRole("listitem");
+
+  expect([".people", ".count", ".facts"].map((part) => item.querySelector(part)?.textContent)).toEqual([
+    "—",
+    undefined,
+    "No PR yet",
+  ]);
 });
 
 it("lists an Issue folded, and its PRs under it once unfolded", async () => {
@@ -204,10 +228,18 @@ it("lists an Issue folded, and its PRs under it once unfolded", async () => {
 
   expect([...folded, fold.getAttribute("aria-expanded"), fold.textContent]).toEqual([1, "›", "true", "⌄"]);
 
-  expect(within(item as HTMLElement).getByText("#112564 GIL drop during collection")).toBeTruthy();
-  expect(within(item as HTMLElement).getByText("issue-author, some-author · 1 PR · 3h ago")).toBeTruthy();
   expect(
-    within(pullRequest as HTMLElement).getByText("#160662 gh-112564: Fix UAF for gc debug print"),
+    within(item as HTMLElement).getByRole("button", { name: "#112564 GIL drop during collection" }),
+  ).toBeTruthy();
+  expect([".people", ".count", ".age"].map((part) => item?.querySelector(part)?.textContent)).toEqual([
+    "issue-author, some-author",
+    "1 PR",
+    "3h ago",
+  ]);
+  expect(
+    within(pullRequest as HTMLElement).getByRole("button", {
+      name: "#160662 gh-112564: Fix UAF for gc debug print",
+    }),
   ).toBeTruthy();
   expect(
     within(pullRequest as HTMLElement).getByText(
@@ -238,7 +270,7 @@ it("shows a Filter's Issues when the user selects it, with the Sidebar's counts"
   await fireEvent.click(await screen.findByRole("button", { name: "Mine 1" }));
 
   expect(core.workbench).toHaveBeenLastCalledWith("python/cpython", { kind: "filter", query: mine.query });
-  expect(await screen.findByText("#112564 GIL drop during collection")).toBeTruthy();
+  expect(await screen.findByRole("button", { name: "#112564 GIL drop during collection" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Workbench 7" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Mine 1" }).getAttribute("aria-current")).toBe("true");
 });
@@ -257,7 +289,9 @@ it("marks what Needs attention the way unread mail is, and says why", async () =
 
   const item = await screen.findByRole("listitem");
 
-  expect(within(item).getByText("#160662 gh-112564: Fix UAF for gc debug print").tagName).toBe("STRONG");
+  const title = within(item).getByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" });
+  expect(title.firstElementChild?.tagName).toBe("STRONG");
+  expect(item.classList.contains("attention")).toBe(true);
   expect(
     within(item).getByText("Changes requested by some-reviewer · Review requested from you"),
   ).toBeTruthy();
@@ -274,15 +308,17 @@ it("folds the Issues with nothing waiting into a quiet section, and a click unfo
 
   const line = await screen.findByRole("button", { name: "Show 2 quiet items" });
   expect(line.getAttribute("aria-expanded")).toBe("false");
-  expect(screen.queryByText("#112564 GIL drop during collection")).toBeNull();
-  expect(screen.getByText("#7 gh-112564: Fix UAF for gc debug print").tagName).toBe("SPAN");
+  expect(screen.queryByRole("button", { name: "#112564 GIL drop during collection" })).toBeNull();
+  const title = screen.getByRole("button", { name: "#7 gh-112564: Fix UAF for gc debug print" });
+  expect(title.querySelector("strong")).toBeNull();
+  expect(title.closest("li")?.classList.contains("attention")).toBe(false);
 
   await fireEvent.click(line);
 
   expect(line.textContent?.trim()).toBe("Hide 2 quiet items");
   expect(line.getAttribute("aria-expanded")).toBe("true");
   const quiet = screen.getByRole("list", { name: "Quiet items" });
-  expect(within(quiet).getByText("#112564 GIL drop during collection")).toBeTruthy();
+  expect(within(quiet).getByRole("button", { name: "#112564 GIL drop during collection" })).toBeTruthy();
 
   await fireEvent.click(line);
 
@@ -378,10 +414,10 @@ it("lists an Origin PR's Backports beneath it in the Issue", async () => {
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
   await unfoldAll();
 
-  const origin = (await screen.findByText(/^#160662 /)).closest("li") as HTMLElement;
+  const origin = (await screen.findByRole("button", { name: /^#160662 / })).closest("li") as HTMLElement;
 
   const beneath = within(origin)
-    .getByText(/^#160700 /)
+    .getByRole("button", { name: /^#160700 / })
     .closest("li") as HTMLElement;
   expect(within(beneath).getByText("Bot backport · some-author · into 3.14 · Open · CI passed")).toBeTruthy();
 });
@@ -398,16 +434,16 @@ it("lists a Standalone PR's Backports beneath it", async () => {
   answering({ kind: "standalone_pr", ...row, backports: [backportRow] });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
 
-  const origin = (await screen.findByText(/^#160662 /)).closest("li") as HTMLElement;
+  const origin = (await screen.findByRole("button", { name: /^#160662 / })).closest("li") as HTMLElement;
 
-  expect(within(origin).getByText(/^#160700 /)).toBeTruthy();
+  expect(within(origin).getByRole("button", { name: /^#160700 / })).toBeTruthy();
 });
 
 it("lists a Backport with no Issue and no Origin PR by itself", async () => {
   answering({ kind: "standalone_backport", ...backportRow });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
 
-  expect(await screen.findByText(/^#160700 /)).toBeTruthy();
+  expect(await screen.findByRole("button", { name: /^#160700 / })).toBeTruthy();
   expect(screen.getAllByRole("listitem")).toHaveLength(1);
 });
 

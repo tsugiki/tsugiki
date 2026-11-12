@@ -69,7 +69,7 @@ const lined = (page: Page) =>
 /** The background of the list's row under the cursor. */
 const selection = (page: Page) =>
   page.evaluate(() => {
-    const current = document.querySelector('[data-pane="list"] [aria-current]');
+    const current = document.querySelector('[data-pane="list"] [aria-current]')?.closest(".row");
     return current ? getComputedStyle(current).backgroundColor : undefined;
   });
 

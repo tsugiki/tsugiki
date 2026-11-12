@@ -30,6 +30,7 @@
     <span>Workbench</span>
     <span>{count}</span>
   </button>
+  <h2 class="small-heading">Built-in views</h2>
   <button
     aria-current={shown(selected.kind === "review_requests")}
     onclick={() => onselect({ kind: "review_requests" })}
@@ -37,6 +38,9 @@
     <span>Review requests</span>
     <span>{reviewRequests}</span>
   </button>
+  {#if filters.length > 0}
+    <h2 class="small-heading">Filters</h2>
+  {/if}
   <!-- Two Filters may share a search, so a search can't be the key. -->
   {#each filters as filter, index (index)}
     <button
@@ -59,34 +63,66 @@
     flex: none;
     flex-direction: column;
     align-self: stretch;
-    gap: 2px;
+    gap: 1px;
     /* The edge measures the whole box, padding and border too, and gives that width back. */
     box-sizing: border-box;
     width: var(--sidebar-width, 200px);
     padding: 6px;
     border-right: 1px solid var(--border);
+    font-size: 13px;
     color: var(--fg-chrome);
     background: var(--bg-chrome);
   }
 
+  /* An entry: a line of text with its count at the right, tinted under the pointer. */
   button {
+    all: unset;
     display: flex;
     justify-content: space-between;
     gap: 8px;
-    text-align: left;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  button:hover {
+    background: color-mix(in srgb, currentColor 8%, transparent);
+  }
+
+  button:focus-visible {
+    outline: 1px solid var(--accent);
+  }
+
+  button > span + span {
+    color: var(--fg-muted);
   }
 
   [aria-current] {
     font-weight: 600;
+    background: var(--selected);
+  }
+
+  [aria-current] > span + span {
+    font-weight: 400;
   }
 
   .repository {
     /* Not flex like the other lines: the ellipsis shows only on a block's own text. */
     display: block;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
     overflow: hidden;
-    font-weight: 600;
+    font-weight: 700;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  h2 {
+    margin: 0;
+    padding: 12px 8px 4px;
+  }
+
+  /* What went wrong with the Filter above. */
+  small {
+    padding: 0 8px 4px;
   }
 </style>

@@ -5,6 +5,7 @@ import {
   type BackportKind,
   type CiState,
   type IssueItem,
+  type ListedItem,
   type PrState,
   type ReviewState,
   type TreeEntry,
@@ -98,13 +99,20 @@ export const headline = (item: { number: number; title: string }) => `#${String(
 
 const prCount = (count: number) => (count === 1 ? "1 PR" : `${String(count)} PRs`);
 
-/** An Issue's second line: who is involved, how many PRs its tree holds and when it last changed. */
-export function issueDetails(issue: IssueItem, now: Date): string {
-  return [
-    ...(issue.people.length > 0 ? [issue.people.join(", ")] : []),
-    prCount(treeRows(issue.pull_requests).length),
-    ago(issue.updated_at, now),
-  ].join(" · ");
+/** An item's first line: the people an Issue involves, a dash once they have all gone, or a PR's author. */
+export function peopleOf(item: ListedItem): string {
+  if (item.kind !== "issue") return item.author ?? "deleted user";
+  return item.people.length > 0 ? item.people.join(", ") : "—";
+}
+
+/** How many PRs an Issue's tree holds, Backports included. */
+export const treeCount = (issue: IssueItem) => prCount(treeRows(issue.pull_requests).length);
+
+/** An item's third line while nothing in it waits on the user: how many of an Issue's PRs are open, or a
+ * PR's facts. */
+export function summary(item: ListedItem): string {
+  if (item.kind !== "issue") return details(item);
+  return item.pull_requests.length > 0 ? openOfAll(item.pull_requests) : "No PR yet";
 }
 
 /** The count beside an Issue's Origin PRs: its open PRs of all of them, Backports included. */
@@ -113,10 +121,6 @@ export function openOfAll(entries: TreeEntry[]): string {
   const open = rows.filter((row) => row.state === "OPEN").length;
   return `${String(open)} open of ${prCount(rows.length)}`;
 }
-
-/** A Standalone PR's second line, which has no Issue above it to say when it last changed. */
-export const standaloneDetails = (row: WorkbenchRow, now: Date) =>
-  `${details(row)} · ${ago(row.updated_at, now)}`;
 
 /** A PR's second line, with only the facts this PR has. */
 export function details(row: WorkbenchRow & { backport?: BackportKind }): string {

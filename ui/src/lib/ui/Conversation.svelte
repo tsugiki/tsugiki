@@ -61,11 +61,11 @@
     DISMISSED: "reviewed",
     PENDING: "has a pending Review",
   };
-  const reviewLine = (review: Review) => {
+  /** What follows a Review's state chip: the commit it reviewed, whether it was dismissed, and when. */
+  const reviewRest = (review: Review) => {
     const at = review.commit === null ? "" : ` at ${review.commit.slice(0, 7)}`;
     const dismissed = review.state === "DISMISSED" ? ", since dismissed" : "";
-    const when = ago(review.submitted_at, now);
-    return `${review.author ?? "deleted user"} ${DID[review.state]}${at}${dismissed} · ${when}`;
+    return `${at}${dismissed} · ${ago(review.submitted_at, now)}`;
   };
 
   /** The file, and the line the thread is on, or began on once the code under it changed. */
@@ -89,73 +89,132 @@
   {/if}
 {/snippet}
 
-<RenderedHtml html={content.body_html} {onlink} />
-{#if content.earlier_comments > 0}
-  <p class="by">{earlierComments(content.earlier_comments)}</p>
-{/if}
-{#if earlierReviews > 0}
-  <!-- Some of them may only have replied in threads, which GitHub doesn't show as Reviews. -->
-  <p class="by">Older Reviews are on GitHub.</p>
-{/if}
-{#each entries as entry (entry.key)}
-  {#if entry.kind === "comment"}
-    <article>
-      <p class="by">{`${entry.comment.author ?? "deleted user"} · ${ago(entry.comment.created_at, now)}`}</p>
-      {@render body(entry.id, entry.comment.body_html, entry.comment.hidden)}
-    </article>
-  {:else if entry.review.body_html === "" && entry.review.threads.length === 0}
-    <p class="by review">{reviewLine(entry.review)}</p>
-  {:else}
-    <article>
-      <p class="by">{reviewLine(entry.review)}</p>
-      {#if entry.review.body_html !== ""}
-        {@render body(entry.id, entry.review.body_html, entry.review.hidden)}
-      {/if}
-      <ul class="threads">
-        {#each entry.review.threads as thread, position (position)}
-          <li>
-            {#if onthread}
-              <button class="place" onclick={() => onthread(thread.id)}><code>{place(thread)}</code></button>
-            {:else}
-              <code class="place">{place(thread)}</code>
-            {/if}
-            {#if thread.opening.kind === "words"}
-              <span>{thread.opening.words}</span>
-            {:else}
-              <span class="by">{REASONS[thread.opening.reason]}</span>
-            {/if}
-            {#if thread.replies > 0}
-              <span class="by">{replies(thread.replies)}</span>
-            {/if}
-            {#if thread.resolution === "resolved"}
-              <span class="chip">Resolved</span>
-            {/if}
-            {#if thread.anchor === "outdated"}
-              <span class="chip">Outdated</span>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    </article>
+<!-- A Review's author, its state as a chip, then the rest: the words read as one line, as before. -->
+{#snippet reviewLine(review: Review)}<b>{review.author ?? "deleted user"}</b>
+  <span class={["chip", review.state.toLowerCase()]}>{DID[review.state]}</span><span class="muted"
+    >{reviewRest(review)}</span
+  >{/snippet}
+
+<div class="conversation">
+  <h3>Description</h3>
+  <div class="post">
+    {#if content.body_html === ""}
+      <p class="muted">No description.</p>
+    {:else}
+      <RenderedHtml html={content.body_html} {onlink} />
+    {/if}
+  </div>
+  {#if content.earlier_comments > 0}
+    <p class="by">{earlierComments(content.earlier_comments)}</p>
   {/if}
-{/each}
+  {#if earlierReviews > 0}
+    <!-- Some of them may only have replied in threads, which GitHub doesn't show as Reviews. -->
+    <p class="by">Older Reviews are on GitHub.</p>
+  {/if}
+  {#each entries as entry (entry.key)}
+    {#if entry.kind === "comment"}
+      <article>
+        <header>
+          <b>{entry.comment.author ?? "deleted user"}</b><span class="muted"
+            >{` · ${ago(entry.comment.created_at, now)}`}</span
+          >
+        </header>
+        <div class="body">{@render body(entry.id, entry.comment.body_html, entry.comment.hidden)}</div>
+      </article>
+    {:else if entry.review.body_html === "" && entry.review.threads.length === 0}
+      <p class="review">{@render reviewLine(entry.review)}</p>
+    {:else}
+      <article>
+        <header>{@render reviewLine(entry.review)}</header>
+        {#if entry.review.body_html !== ""}
+          <div class="body">{@render body(entry.id, entry.review.body_html, entry.review.hidden)}</div>
+        {/if}
+        <ul class="threads">
+          {#each entry.review.threads as thread, position (position)}
+            <li>
+              {#if onthread}
+                <button class="place" onclick={() => onthread(thread.id)}><code>{place(thread)}</code></button
+                >
+              {:else}
+                <code class="place">{place(thread)}</code>
+              {/if}
+              {#if thread.opening.kind === "words"}
+                <span>{thread.opening.words}</span>
+              {:else}
+                <span class="by">{REASONS[thread.opening.reason]}</span>
+              {/if}
+              {#if thread.replies > 0}
+                <span class="by">{replies(thread.replies)}</span>
+              {/if}
+              {#if thread.resolution === "resolved"}
+                <span class="chip">Resolved</span>
+              {/if}
+              {#if thread.anchor === "outdated"}
+                <span class="chip">Outdated</span>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      </article>
+    {/if}
+  {/each}
+</div>
 
 <style>
+  /* Lines stay short enough to read in a wide window. */
+  .conversation {
+    max-width: 860px;
+  }
+
+  h3 {
+    margin: 18px 0 6px;
+    font-size: 13px;
+  }
+
   .by {
     font-size: 12px;
     margin: 4px 0;
     color: var(--fg-muted);
   }
 
-  .review {
-    border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
-    margin-top: 12px;
-    padding-top: 8px;
+  .muted {
+    color: var(--fg-muted);
   }
 
+  /* The description, each comment and each Review with a body: a box with a header on the panel colour. */
+  .post,
   article {
-    border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
-    margin-top: 12px;
+    margin: 10px 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+
+  .post,
+  .body {
+    padding: 4px 12px;
+  }
+
+  header {
+    padding: 6px 12px;
+    font-size: 13px;
+    background: var(--bg-chrome);
+    border-bottom: 1px solid var(--border);
+    border-radius: 6px 6px 0 0;
+  }
+
+  /* A Review with nothing to show but its state. */
+  .review {
+    margin: 10px 0;
+    padding: 0 12px;
+    font-size: 13px;
+  }
+
+  .chip.approved {
+    color: var(--state-open);
+  }
+
+  .chip.changes_requested {
+    color: var(--danger);
   }
 
   .fold {
@@ -168,7 +227,7 @@
   .threads {
     list-style: none;
     margin: 4px 0 8px;
-    padding: 0;
+    padding: 0 12px;
   }
 
   .threads li {

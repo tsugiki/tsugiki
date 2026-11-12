@@ -536,7 +536,7 @@ it("says how long ago each comment in the Detail pane came", async () => {
 
   await fireEvent.click(issueRow);
 
-  expect(await screen.findByText("some-reviewer · just now")).toBeTruthy();
+  expect((await screen.findByText("· just now")).parentElement?.textContent).toBe("some-reviewer · just now");
 });
 
 it("opening the Issue on show again moves Last seen again", async () => {
@@ -594,7 +594,7 @@ it("opens a Standalone PR in the Detail pane on a click, on its Conversation, an
   const conversation = await screen.findByRole("tab", { name: "Conversation" });
   expect(conversation.getAttribute("aria-selected")).toBe("true");
   expect(screen.getByText("Why it fails")).toBeTruthy();
-  expect(screen.getByText("some-reviewer · 2h ago")).toBeTruthy();
+  expect(screen.getByText("· 2h ago").parentElement?.textContent).toBe("some-reviewer · 2h ago");
   expect(core.openPullRequest).toHaveBeenCalledExactlyOnceWith("python/cpython", 5);
   expect(core.openOnGithub).not.toHaveBeenCalled();
   expect(prRow.getAttribute("aria-current")).toBe("true");

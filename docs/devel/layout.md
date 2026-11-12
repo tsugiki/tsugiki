@@ -65,6 +65,23 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       tree names the icons for open, draft, merged and closed, and the bold.
     - The PR view shows Conversation and Files as tabs, and opens on Conversation. `Ctrl+PageDown` and
       `Ctrl+PageUp` switch tabs, and so does `Enter` on the PR's row once the PR is open.
+    - **Look**, which the prototype settled, with colours from the Theme's tokens ([themes.md](themes.md)):
+      - A muted 12 px line over the title gives the Issue's state, or the Issue a PR was opened under, the
+        branch it goes into and when it changed. The title is 18 px. The 13 px line under it names the
+        author in the text colour at weight 600, and a PR's state words follow.
+      - The Issue view keeps to 900 px and the Conversation to 860 px, so lines stay short in a wide
+        window. Section headings, "Origin PRs" and "Description", are 13 px with 18 px above.
+      - The PR tree is a box with 6 px corners and a line between rows. Each row is 13 px, with the number
+        in the code font in the accent colour. A PR that doesn't Need attention is muted, and the Backports'
+        line sits indented on the panel colour.
+      - The description, each comment and each Review with a body sit in a box with 6 px corners: a 13 px
+        header on the panel colour with the author, the age and a Review's state chip, green for an
+        approval and red for changes requested, then the body.
+      - A PR's state words are 11.5 px, joined by a muted "·": a Review request in the accent colour at
+        weight 600, failed CI in the danger colour and passed CI in green.
+      - In a description or comment, code sits on the panel colour, a quote has a muted line on its left,
+        images keep inside the pane and emoji images are as tall as the text.
+      - The tabs are 12 px, with the open one underlined in the accent colour.
 
     Esc closes what is on top, wherever the focus is: a dialog, the palette or a Peek first, then the wait
     for a chord's second key, a Definition peek or the diff's search, and last a PR, which goes back to the

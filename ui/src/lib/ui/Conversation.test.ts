@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { expect, it, vi } from "vitest";
 import type { IssueContent } from "$lib/state/issue-view.svelte";
 import type { PullRequestContent, Review, ThreadLine } from "$lib/state/pr-view.svelte";
@@ -47,7 +47,32 @@ const shown = (content: IssueContent | PullRequestContent, onthread?: (id: strin
 
 /** Each block's first line, top to bottom. */
 const blocks = (container: HTMLElement) =>
-  [...container.querySelectorAll("article > .by")].map((line) => line.textContent.trim());
+  [...container.querySelectorAll("article > header")].map((line) => line.textContent.trim());
+
+it("heads the description, and says when there is none", () => {
+  const container = shown(reviewed([]));
+  expect(screen.getByRole("heading", { name: "Description" })).toBeTruthy();
+  expect(container.querySelector(".post")?.textContent.trim()).toBe("The description");
+  cleanup();
+
+  shown(reviewed([], { body_html: "" }));
+  expect(screen.getByText("No description.")).toBeTruthy();
+});
+
+it("puts a Review's state in a chip, green for an approval and red for changes requested", () => {
+  const container = shown(reviewed([review({ state: "APPROVED" }), review({ state: "CHANGES_REQUESTED" })]));
+
+  const chips = [...container.querySelectorAll(".chip")];
+  expect(
+    chips.map((chip) => [
+      chip.textContent,
+      chip.classList.contains(chip.textContent === "approved" ? "approved" : "changes_requested"),
+    ]),
+  ).toEqual([
+    ["approved", true],
+    ["requested changes", true],
+  ]);
+});
 
 it("shows each Review as a block in time order among the comments, with a line for each thread", () => {
   const container = shown(

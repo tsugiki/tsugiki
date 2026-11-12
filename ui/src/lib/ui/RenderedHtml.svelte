@@ -47,20 +47,50 @@
     overflow-wrap: anywhere;
   }
 
+  .rendered :global(p) {
+    margin: 6px 0;
+  }
+
+  .rendered :global(a) {
+    color: var(--accent);
+  }
+
+  .rendered :global(code) {
+    padding: 1px 4px;
+    /* 12.5 px beside 14 px text, and in step with a heading's. */
+    font-size: 0.9em;
+    background: var(--bg-chrome);
+    border-radius: 4px;
+  }
+
   .rendered :global(pre) {
     overflow-x: auto;
     padding: 8px;
-    background: color-mix(in srgb, currentColor 8%, transparent);
+    background: var(--bg-chrome);
+    border-radius: 6px;
+  }
+
+  .rendered :global(pre code) {
+    padding: 0;
+    background: none;
   }
 
   .rendered :global(blockquote) {
-    margin: 0;
-    padding-left: 12px;
-    border-left: 3px solid color-mix(in srgb, currentColor 25%, transparent);
+    margin: 6px 0;
+    padding-left: 10px;
+    color: var(--fg-muted);
+    border-left: 3px solid var(--fg-muted);
   }
 
   .rendered :global(img) {
     max-width: 100%;
+  }
+
+  /* GitHub's custom emoji come as images, and sit in the line at its height. */
+  .rendered :global(img.emoji),
+  .rendered :global(g-emoji img) {
+    height: 1em;
+    vertical-align: -0.1em;
   }
 
   .rendered :global(table) {

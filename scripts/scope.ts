@@ -10,6 +10,8 @@ const READ_BY_RUST = new Set([
   "ui/src/lib/data/bindings.ts",
   // crates/app/tests/security.rs fails on a Tauri plugin listed here.
   "ui/package.json",
+  // crates/app/src/first_frame/tests.rs checks that the page starts on the window's background.
+  "ui/src/app.html",
 ]);
 
 /** Markdown under `crates/` doesn't count: the highlighter's tests read a sample there. */

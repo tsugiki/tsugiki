@@ -241,6 +241,11 @@ pub struct Color {
 }
 
 impl Color {
+    /// Red, green, blue and opacity, as a window's background takes them.
+    pub fn rgba(self) -> [u8; 4] {
+        [self.red, self.green, self.blue, self.alpha]
+    }
+
     /// The colour as CSS writes it: `#rrggbb`, or `#rrggbbaa` when it lets something show through.
     pub fn css(self) -> String {
         let Self {
@@ -488,6 +493,23 @@ impl Themes {
     /// VS Code Light Modern and VS Code Dark Modern.
     pub fn built_in() -> Result<Self, Error> {
         Self::from_files(LIGHT_MODERN, DARK_MODERN)
+    }
+
+    /// The `bg` of the built-in theme of side `kind`, which the window takes before it first shows, so a
+    /// dark theme doesn't flash white while the page loads (#516).
+    #[expect(
+        clippy::expect_used,
+        reason = "the built-in files are compiled in, and a test reads the `bg` of each"
+    )]
+    pub fn built_in_background(kind: ThemeKind) -> Color {
+        let text = match kind {
+            ThemeKind::Light => LIGHT_MODERN,
+            ThemeKind::Dark => DARK_MODERN,
+        };
+        Theme::parse(text)
+            .ok()
+            .and_then(|theme| theme.colors.get(&Token::Bg).copied())
+            .expect("each built-in theme sets bg")
     }
 
     /// The themes the files `light` and `dark` hold.

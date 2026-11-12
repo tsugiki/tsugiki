@@ -224,6 +224,15 @@ fn a_built_in_theme_must_set_every_token() {
     );
 }
 
+#[test]
+fn the_window_takes_the_bg_of_the_built_in_theme_of_its_side() {
+    let light = Themes::built_in_background(ThemeKind::Light);
+    let dark = Themes::built_in_background(ThemeKind::Dark);
+    assert_eq!(light.rgba(), [0xff, 0xff, 0xff, 0xff]);
+    assert_eq!(dark.css(), "#1f1f1f");
+    assert_eq!(dark.rgba(), [0x1f, 0x1f, 0x1f, 0xff]);
+}
+
 /// `docs/devel/themes.md` has a row for each token with both built-in themes' values, so the page can't drift
 /// from the files.
 #[test]

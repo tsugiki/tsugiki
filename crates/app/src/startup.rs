@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use tauri::webview::NewWindowResponse;
-use tauri::{AppHandle, Manager, RunEvent, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, RunEvent, WebviewWindowBuilder, WindowEvent};
 use tsugiki_core::build::Build;
 use tsugiki_core::folders::Folders;
 use tsugiki_core::github::GitHubAccess;
@@ -16,6 +16,7 @@ use tsugiki_core::mirror::Remotes;
 use tsugiki_token::{Https, run_gh};
 
 use crate::Started;
+use crate::first_frame;
 use crate::navigation;
 use crate::specta_builder;
 use crate::version;
@@ -138,8 +139,22 @@ fn open_window(app: &AppHandle, webview_data: Option<PathBuf>) -> tauri::Result<
         Some(folder) => window.data_directory(folder),
         None => window,
     };
-    // Tauri keeps the window, and `get_webview_window` finds it again.
-    window.build().map(drop)
+    // Tauri keeps the window, and `get_webview_window` finds it again. It opens hidden, and shows once it
+    // has the theme's background, so its first frame isn't the webview's white (#516).
+    let window = window.visible(false).build()?;
+    let painted = window.clone();
+    window.on_window_event(move |event| {
+        if let WindowEvent::ThemeChanged(theme) = event {
+            first_frame::paint(Ok(*theme), |color| {
+                painted.set_background_color(Some(color))
+            });
+        }
+    });
+    first_frame::show_in(
+        window.theme(),
+        |color| window.set_background_color(Some(color)),
+        || window.show(),
+    )
 }
 
 /// Brings the window to the front of the user's desk, for a second `tsg` or a link. Before the window exists

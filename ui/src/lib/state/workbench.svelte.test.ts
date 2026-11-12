@@ -268,6 +268,30 @@ describe("WorkbenchState", () => {
     state.stop();
   });
 
+  it("keeps the folds of the items on show until the newly selected view's answer arrives", async () => {
+    catchListener();
+    const mine = { name: "Mine", query: "is:open author:@me", count: 0, problem: null };
+    const listed = { items: [issueWith(10, 11)], quiet: [], count: 0, review_requests: 0, filters: [mine] };
+    vi.mocked(commands.workbench).mockResolvedValueOnce({ status: "ok", data: listed });
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    state.unfold(10);
+    let answer: (value: Awaited<ReturnType<typeof commands.workbench>>) => void = () => {};
+    vi.mocked(commands.workbench).mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+
+    const selecting = state.select({ kind: "filter", query: mine.query });
+    const meanwhile = state.unfolded(10);
+    answer({ status: "ok", data: listed });
+    await selecting;
+
+    expect([meanwhile, state.unfolded(10)]).toEqual([true, false]);
+    state.stop();
+  });
+
   it("unfolds the Issue over the PR under the cursor in a view that has it folded", async () => {
     catchListener();
     const mine = { name: "Mine", query: "is:open author:@me", count: 0, problem: null };

@@ -66,6 +66,8 @@ export class WorkbenchState {
   cursor = $state<Stop>();
   /** The Issues unfolded in each view, by the view's key. */
   #unfolded = new SvelteMap<string, SvelteSet<number>>();
+  /** The view whose items the list shows: `selected` once its answer has arrived. */
+  #shown = $state<WorkbenchView>({ kind: "whole" });
   #repository: string;
   #lastQuestion = 0;
   #stopListening: (() => void) | undefined;
@@ -112,22 +114,24 @@ export class WorkbenchState {
   }
 
   /** Whether the list shows Issue `issue`'s PRs under it in the view on show. Each Issue starts folded, and
-   * each view keeps its own for the session (#593). */
+   * each view keeps its own while the Repository stays open (#593). */
   unfolded(issue: number): boolean {
-    return this.#unfolded.get(this.#viewKey())?.has(issue) ?? false;
+    return this.#open()?.has(issue) ?? false;
   }
 
   /** Shows Issue `issue`'s PRs under it. */
   unfold(issue: number) {
-    const key = this.#viewKey();
-    const open = this.#unfolded.get(key) ?? new SvelteSet<number>();
-    open.add(issue);
-    this.#unfolded.set(key, open);
+    const open = this.#open();
+    if (open) {
+      open.add(issue);
+    } else {
+      this.#unfolded.set(this.#viewKey(), new SvelteSet([issue]));
+    }
   }
 
   /** Hides Issue `issue`'s PRs. A cursor on one of them moves to the Issue. */
   fold(issue: number) {
-    this.#unfolded.get(this.#viewKey())?.delete(issue);
+    this.#open()?.delete(issue);
     if (this.cursor?.issue === issue) this.cursor = { number: issue, kind: "issue", issue: undefined };
   }
 
@@ -151,7 +155,7 @@ export class WorkbenchState {
   }
 
   /** Moves the cursor after a PR that a change put under an Issue, or took out from under one, and unfolds
-   * the Issue a PR under the cursor is under, as another view may have it folded. */
+   * the Issue over a PR under the cursor, as another view may have it folded. */
   #followCursor() {
     const cursor = this.cursor;
     if (cursor === undefined) return;
@@ -161,16 +165,23 @@ export class WorkbenchState {
     if (line) this.moveTo(line);
   }
 
-  /** The key of the view on show, which keeps its own unfolded Issues. */
+  /** The key of the view whose items the list shows, which keeps its own unfolded Issues. Until the answer
+   * for a newly selected view arrives, the list still shows the last one's items, folded as it had them. */
   #viewKey() {
-    const selected = this.selected;
-    return selected.kind === "filter" ? `filter ${selected.query}` : selected.kind;
+    const shown = this.#shown;
+    return shown.kind === "filter" ? `filter ${shown.query}` : shown.kind;
+  }
+
+  /** The Issues unfolded in the view on show, if it has unfolded any yet. */
+  #open() {
+    return this.#unfolded.get(this.#viewKey());
   }
 
   /** The lines the list shows, in its order. */
   #stops() {
+    const open = this.#open();
     return [...(this.items ?? []), ...this.quiet].flatMap((item) =>
-      stopsOf(item, (issue) => this.unfolded(issue)),
+      stopsOf(item, (issue) => open?.has(issue) ?? false),
     );
   }
 
@@ -182,8 +193,9 @@ export class WorkbenchState {
   async #ask() {
     this.#lastQuestion += 1;
     const question = this.#lastQuestion;
+    const view = this.selected;
     const answer = await hud
-      .timed(() => commands.workbench(this.#repository, this.selected))
+      .timed(() => commands.workbench(this.#repository, view))
       .catch((e: unknown) => ({
         status: "error" as const,
         error: { message: String(e) },
@@ -193,6 +205,7 @@ export class WorkbenchState {
     if (answer.status === "ok") {
       this.items = answer.data.items;
       this.quiet = answer.data.quiet;
+      this.#shown = view;
       this.#followCursor();
       this.count = answer.data.count;
       this.reviewRequests = answer.data.review_requests;

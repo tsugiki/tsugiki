@@ -238,8 +238,10 @@ test("an Issue's PRs fold away and come back, and Alt+← to one of them unfolds
   await expect(page.getByRole("region", { name: "PR view" })).toBeVisible();
   await expect(pr).toBeFocused();
   await page.keyboard.press("ArrowLeft");
-  await expect(pr).toHaveCount(0);
   await expect(inList(page, "#7 Issue 7")).toBeFocused();
+  await expect(pr).toBeVisible();
+  await page.keyboard.press("ArrowLeft");
+  await expect(pr).toHaveCount(0);
   await page.keyboard.press("ArrowRight");
 
   await expect(pr).toBeVisible();

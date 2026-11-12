@@ -118,8 +118,7 @@
   function open(stop: Stop, how: "open" | "back" | "through" = "open") {
     if (how !== "through") visits.visit(stop);
     workbench.moveTo(stop);
-    // The cursor's row may be under an Issue that has only now unfolded, and drawn once the page updates.
-    if (how !== "open") void tick().then(focusCursor);
+    if (how !== "open") focusCursor();
     if (stop.kind === "pull_request" && detail instanceof PrViewState && sameStop(detail.line, stop)) {
       detail.switchTab();
       return;
@@ -264,28 +263,32 @@
     focusCursor();
   }
 
-  /** → unfolds the Issue under the cursor. ← folds the Issue under the cursor, or the one over the PR under
-   * it, which moves the cursor to the Issue (#593). A PR outside any Issue has nothing to fold. */
+  /** Whether a key went to the list, or to no control at all, while the list shows. */
+  const inList = (target: EventTarget | null) =>
+    !panes.hidden("list") &&
+    (target === document.body || (target instanceof HTMLElement && target.closest(".list") !== null));
+
+  /** → unfolds the Issue under the cursor, and ← folds it. ← on a PR in an Issue's tree moves the cursor to
+   * the Issue, as in VS Code's trees (#593). A PR outside any Issue has nothing to fold. */
   function foldByKey(key: "arrowright" | "arrowleft") {
     const line = workbench.underCursor;
-    const issue = line?.kind === "issue" ? line.number : line?.issue;
-    if (issue === undefined) return;
-    if (key === "arrowleft") {
-      workbench.fold(issue);
+    if (line?.kind === "issue") {
+      if (key === "arrowright") workbench.unfold(line.number);
+      else workbench.fold(line.number);
+    } else if (line?.issue !== undefined && key === "arrowleft") {
+      workbench.moveTo({ number: line.issue, kind: "issue", issue: undefined });
       focusCursor();
-    } else if (line?.kind === "issue") {
-      workbench.unfold(issue);
     }
   }
 
   /** Focuses the row under the cursor, so it scrolls into view, and Enter presses its button. While the list
-   * is hidden the Detail pane takes the focus, once it shows what it's about to. */
+   * is hidden the Detail pane takes the focus. Either waits for the page to update: the Detail pane to show
+   * what it's about to, or the row to be drawn under an Issue that has only now unfolded. */
   function focusCursor() {
-    if (panes.hidden("list")) {
-      void tick().then(() => detailPane()?.focus());
-      return;
-    }
-    list?.querySelector<HTMLElement>(`[data-item="${lineName(workbench.cursor)}"]`)?.focus();
+    void tick().then(() => {
+      if (panes.hidden("list")) detailPane()?.focus();
+      else list?.querySelector<HTMLElement>(`[data-item="${lineName(workbench.cursor)}"]`)?.focus();
+    });
   }
 
   const detailPane = () => home?.querySelector<HTMLElement>('[data-pane="detail"]');
@@ -332,12 +335,8 @@
     } else if (key === "arrowdown" || key === "arrowup") {
       e.preventDefault();
       moveCursor(key === "arrowdown" ? 1 : -1);
-    } else if (
-      (key === "arrowright" || key === "arrowleft") &&
-      !e.defaultPrevented &&
-      !panes.hidden("list")
-    ) {
-      // A pane's edge takes the bare arrows while it has the focus, and cancels them.
+    } else if ((key === "arrowright" || key === "arrowleft") && inList(e.target)) {
+      // Elsewhere the bare arrows are a pane edge's, or scroll a diff or a code block sideways.
       e.preventDefault();
       foldByKey(key);
     } else if (
@@ -426,6 +425,9 @@
           else workbench.unfold(item.number);
         }}>{unfolded ? "⌄" : "›"}</button
       >
+    {:else}
+      <!-- Keeps the icons and headlines of rows with nothing to fold in line with those that have. -->
+      <span class="fold"></span>
     {/if}
     {@render line(
       { number: item.number, kind: item.kind === "issue" ? "issue" : "pull_request", issue: undefined },
@@ -623,8 +625,8 @@
     cursor: pointer;
   }
 
-  .fold:hover,
-  .fold:focus-visible {
+  button.fold:hover,
+  button.fold:focus-visible {
     background: color-mix(in srgb, currentColor 12%, transparent);
   }
 

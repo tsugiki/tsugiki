@@ -993,30 +993,41 @@ it("shows another Repository as a launch does: its Workbench, an empty Detail pa
   expect(first.getAttribute("aria-current")).toBe("true");
 });
 
-it("unfolds an Issue with →, and folds it with ←, which on a PR's row goes to its Issue first", async () => {
+it("unfolds an Issue with → and folds it with ←, which on a PR's row goes to its Issue first", async () => {
   const { issueRow, treeRow, prRow } = await listing();
   const fold = screen.getByRole("button", { name: "PRs of #112564" });
-  const shown = () => screen.queryByRole("button", { name: treeRow.textContent.trim() }) !== null;
+  const shown = () => fold.getAttribute("aria-expanded");
   await press("ArrowDown");
   await press("ArrowDown");
   expect(document.activeElement).toBe(treeRow);
 
   await press("ArrowRight");
-  const kept = shown();
   await press("ArrowLeft");
-  const issueFocused = document.activeElement === issueRow;
-  const afterPr = [shown(), fold.getAttribute("aria-expanded")];
+  const onIssue = [document.activeElement === issueRow, shown()];
   await press("ArrowLeft");
+  const folded = shown();
   await press("ArrowDown");
   const skipped = document.activeElement === prRow;
   await press("ArrowLeft");
   await press("ArrowUp");
   await press("ArrowRight");
 
-  expect([kept, issueFocused, ...afterPr, skipped]).toEqual([true, true, false, "false", true]);
-  expect([shown(), document.activeElement]).toEqual([true, issueRow]);
+  expect([...onIssue, folded, skipped]).toEqual([true, "true", "false", true]);
+  expect([shown(), document.activeElement]).toEqual(["true", issueRow]);
   await fireEvent.click(fold);
-  expect(shown()).toBe(false);
+  expect(shown()).toBe("false");
+});
+
+it("leaves ← and → to whatever has the focus outside the list, such as a diff that scrolls sideways", async () => {
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  const pane = await screen.findByRole("region", { name: "Issue view" });
+
+  const sideways = new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true });
+  pane.dispatchEvent(sideways);
+
+  expect(sideways.defaultPrevented).toBe(false);
+  expect(screen.getByRole("button", { name: "PRs of #112564" }).getAttribute("aria-expanded")).toBe("true");
 });
 
 it("leaves ← and → to a pane's edge that has the focus, and to a hidden list", async () => {

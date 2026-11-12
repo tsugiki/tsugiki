@@ -1583,6 +1583,20 @@ const laidOut = (sidebar: number, list: number, detail: number) => {
 
 const home = () => document.querySelector<HTMLElement>(".home") as HTMLElement;
 
+// The panes read which of them holds the focus with :focus-within, which e2e/focus.spec.ts checks in a
+// browser. Only whether the window holds it needs the page's help.
+it("marks the panes as out of focus while another app is in front", async () => {
+  await listing();
+  const marked = () => home().classList.contains("window-focused");
+
+  await fireEvent.blur(window);
+  const away = marked();
+  await fireEvent.focus(window);
+
+  expect([away, marked()]).toEqual([false, true]);
+  expect(document.querySelector('[data-pane="list"]')).toBe(document.querySelector(".list"));
+});
+
 it("drags the Sidebar's edge between its minimum and maximum, saves where it stops, and resets on a double-click", async () => {
   laidOut(200, 600, 0);
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });

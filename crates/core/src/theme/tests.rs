@@ -39,6 +39,23 @@ fn the_view_carries_every_token_as_a_css_variable() {
     );
 }
 
+// The window keeps its own defaults for a token a file leaves out, until #519 builds such a file on the
+// built-in Theme of its kind.
+#[test]
+fn a_file_from_before_the_focus_tokens_still_loads_whole() {
+    let text = "name = \"Old\"\nkind = \"light\"\n\n[colors]\nbg = \"#ffffff\"\nselected = \"#e8e8e8\"\n";
+    let theme = Theme::parse(text).unwrap();
+    assert_eq!(theme.skipped, []);
+    assert_eq!(
+        theme.colors.keys().copied().collect::<Vec<_>>(),
+        [Token::Bg, Token::Selected]
+    );
+    assert_eq!(
+        Token::SelectionInactive.property(),
+        "--selection-inactive"
+    );
+}
+
 #[test]
 fn a_token_becomes_a_css_variable_with_dashes() {
     assert_eq!(Token::Bg.property(), "--bg");

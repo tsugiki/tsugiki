@@ -32,6 +32,9 @@ A core test fails when this table and the built-in Themes disagree.
 | `backdrop` | The scrim behind a dialog or the palette | `#00000026` | `#00000073` |
 | `shadow` | The shadow under a dialog, the palette or the HUD | `#00000029` | `#00000099` |
 | `selected` | The palette's selected row | `#e8e8e8` | `#04395e` |
+| `selection_active` | The Issue list's row under the cursor while the list holds the focus | `#e8e8e8` | `#04395e` |
+| `selection_inactive` | That row while the focus is elsewhere | `#e4e6f1` | `#37373d` |
+| `focus_border` | The line along the top of the pane that holds the focus | `#005fb8` | `#0078d4` |
 | `accent` | Hunk headers and the diff's Show more rows, as a tint | `#005fb8` | `#4daafc` |
 | `add` | Added lines, as a tint | `#48a14d` | `#2ea043` |
 | `del` | Removed lines, as a tint | `#e51400` | `#f85149` |

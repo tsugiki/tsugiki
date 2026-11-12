@@ -107,6 +107,9 @@
   let list = $state<HTMLElement>();
   let quietLineButton = $state<HTMLButtonElement>();
   let home = $state<HTMLElement>();
+  /** Whether the window holds the system's focus, which no CSS can ask. Which pane holds it inside the
+   * window, the panes read with `:focus-within` (#602). */
+  let windowFocused = $state(document.hasFocus());
 
   const onGitHub = async (item: GitHubItem) => {
     browserProblem = await openOnGitHub(name, item);
@@ -568,7 +571,13 @@
   {/if}
 {/snippet}
 
-<svelte:window {onkeydown} onmousedown={mouseButton} onmouseup={mouseButton} />
+<svelte:window
+  {onkeydown}
+  onmousedown={mouseButton}
+  onmouseup={mouseButton}
+  onfocus={() => (windowFocused = true)}
+  onblur={() => (windowFocused = false)}
+/>
 
 <!-- The bar atop the Detail pane, over item `shown`. -->
 {#snippet history(shown: number)}
@@ -584,8 +593,9 @@
 {#if panes.hidden("list")}
   {@render problems()}
 {/if}
+<!-- With another app in front, no pane shows the focus: the next key goes to that app. -->
 <div
-  class="home"
+  class={["home", { "window-focused": windowFocused }]}
   style:--sidebar-width={`${String(panes.sidebar ?? SIDEBAR_WIDTH)}px`}
   style:--list-width={panes.list === null ? undefined : `${String(panes.list)}px`}
   bind:this={home}
@@ -617,7 +627,11 @@
   {#if !panes.hidden("list")}
     <!-- The list keeps the width the user gave it beside the Detail pane, and fills the window without
          one. -->
-    <section class={["list", { sized: panes.list !== null && detail !== undefined }]} bind:this={list}>
+    <section
+      class={["list", { sized: panes.list !== null && detail !== undefined }]}
+      data-pane="list"
+      bind:this={list}
+    >
       <h1>{name}</h1>
       <button onclick={onadd}>Add repository</button>
       <header class="view">
@@ -784,6 +798,25 @@
   .open:focus-visible,
   .open[aria-current] {
     text-decoration: underline;
+  }
+
+  /* The focus shows as VS Code shows it (#602): a line along the top of the pane that holds it, and the
+     row under the cursor in the active selection colour while that pane is the list. Each pane keeps the
+     line's room, so the line comes and goes without moving anything. */
+  .home :global([data-pane]) {
+    border-top: 2px solid transparent;
+  }
+
+  .home.window-focused :global([data-pane]:focus-within) {
+    border-top-color: var(--focus-border);
+  }
+
+  .open[aria-current] {
+    background: var(--selection-inactive);
+  }
+
+  .window-focused .list:focus-within .open[aria-current] {
+    background: var(--selection-active);
   }
 
   /* A muted line at the end of the list until #599 styles it. */

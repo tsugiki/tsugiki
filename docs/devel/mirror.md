@@ -19,6 +19,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   incremental maintenance; each week it runs `git gc`. A mirror git says is broken is moved aside and cloned
   again, borrowing again where it can, while the status bar shows the clone. Its PRs' heads are then fetched
   again.
+- Each mirror keeps the commit the user's **Review** of each PR covered, under a ref of its own, so a Stale
+  review check finds both sides there. That Review is the user's latest submitted one in any state, a
+  dismissed one included, and the commit comes with the Conversation read ahead for PRs with the user's
+  Review. The daily upkeep leaves these refs in place, and one moves only when the user's Review moves to
+  another commit. A reviewed commit the mirror lacks, from a Review older than the mirror or on a commit a
+  force-push dropped before the mirror fetched it, is fetched by its SHA, once. A commit GitHub refuses to
+  send is noted beside the mirror and not asked for again.
 - While a Repository's mirror is still being cloned, the diff, the definitions and Open in editor say how far
   it has got. The Conversation tab works meanwhile.
 - Without git 2.30 or newer, or without room on the disk for the clone, the diff says what is missing, with a

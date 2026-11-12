@@ -1,6 +1,9 @@
 use super::*;
 use crate::github::issue_content::IssueContent;
-use crate::github::pull_requests::{PrHead, PrState, PullRequestFacts, ReviewState};
+use crate::github::pull_request_content::Review;
+use crate::github::pull_requests::{
+    PrHead, PrState, PullRequestFacts, ReviewState, ReviewedCommit,
+};
 use crate::github::replay::Replayer;
 use crate::github::testing::{Canned, Scripted, answered, reply_ok, signed_in_as, signed_in_gh};
 use crate::github::{CommitSha, Reply, Request, Transport, Unreachable};
@@ -937,7 +940,8 @@ fn stored_pr(number: u32, author: &str, head: &str) -> PullRequestFacts {
 }
 
 #[test]
-fn a_sync_hands_the_mirror_the_heads_it_saved_of_the_prs_the_users_work_reaches() {
+fn a_sync_hands_the_mirror_the_heads_it_saved_of_the_prs_the_users_work_reaches_and_the_reviewed_commits()
+ {
     let (script, _asked) = Scripted::new(vec![
         signed_in(),
         work_search(&["a"]),
@@ -958,6 +962,11 @@ fn a_sync_hands_the_mirror_the_heads_it_saved_of_the_prs_the_users_work_reaches(
         stored_pr(8, "some-author", "4567def"),
     ];
     store.save_pull_requests(&gcmon(), stored).unwrap();
+    // The user reviewed someone else's PR at a commit it has since moved on from.
+    let reviewed = CommitSha::parse("0123abc").unwrap();
+    store
+        .save_pull_request_content(&gcmon(), 8, reviewed_by("octocat", &reviewed))
+        .unwrap();
     store.close();
     let (board, heads) = heads_board();
     let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
@@ -976,9 +985,37 @@ fn a_sync_hands_the_mirror_the_heads_it_saved_of_the_prs_the_users_work_reaches(
                 number: 7,
                 commit: moved,
                 target_branch: "main".to_owned(),
+            }],
+            vec![ReviewedCommit {
+                number: 8,
+                commit: reviewed,
             }]
         )
     );
+}
+
+/// A PR's Conversation with one Review by `author`, of `commit`.
+fn reviewed_by(author: &str, commit: &CommitSha) -> PullRequestContent {
+    PullRequestContent {
+        conversation: IssueContent {
+            body_html: String::new(),
+            comments: vec![],
+            earlier_comments: 0,
+            opened_at: None,
+        },
+        reviews: vec![Review {
+            author: Some(Login::new(author)),
+            state: ReviewState::Approved,
+            commit: Some(commit.clone()),
+            submitted_at: time::OffsetDateTime::UNIX_EPOCH,
+            body_html: String::new(),
+            hidden: None,
+            threads: vec![],
+        }],
+        earlier_reviews: 0,
+        head: Some(commit.clone()),
+        pending: vec![],
+    }
 }
 
 #[test]

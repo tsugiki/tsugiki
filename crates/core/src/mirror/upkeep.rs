@@ -1,7 +1,7 @@
-//! Keeping each mirror in shape (#174). The refs of PRs the user's work no longer reaches go, git's packs get
-//! their upkeep on a schedule, and a mirror git says is broken is cloned again. The worker runs it all
-//! itself, with `maintenance.auto=false` in each mirror, and never `git maintenance start`, which writes to
-//! the user's global config and installs a job in the OS.
+//! Keeping each mirror in shape (#174). The refs of PRs the user's work no longer reaches go, though their
+//! reviewed refs stay (#382), git's packs get their upkeep on a schedule, and a mirror git says is broken is
+//! cloned again. The worker runs it all itself, with `maintenance.auto=false` in each mirror, and never
+//! `git maintenance start`, which writes to the user's global config and installs a job in the OS.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -387,7 +387,8 @@ impl Worker {
     }
 
     /// Moves `repository`'s mirror aside, as git says it is broken, and clones it again ahead of the others.
-    /// The heads fetched since launch wait for the new mirror, and the broken one goes once it is there.
+    /// The heads fetched and the reviewed commits kept since launch wait for the new mirror, and the broken
+    /// one goes once it is there.
     /// Says whether it moved the mirror: Windows refuses while another program has a file in it open, and
     /// the worker replaces each mirror once a launch, so words it misreads can't keep it cloning.
     pub(super) fn replace_broken(
@@ -425,6 +426,7 @@ impl Worker {
         for (number, commit) in settled.into_iter().chain(behind) {
             let _ = known.waiting.entry(number).or_insert(commit);
         }
+        known.reviews.keep_again();
         self.heads.push_front(known);
         self.wait(repository.clone(), Turn::Next, None);
         true

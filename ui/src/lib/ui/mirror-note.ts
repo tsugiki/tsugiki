@@ -15,6 +15,7 @@ export function mirrorNote(repository: string, state: MirrorState | undefined): 
   if (state.state === "waiting") {
     return state.behind === null ? "waiting to clone" : `waiting for ${state.behind}'s clone`;
   }
+  if (state.state === "offline") return "cloning starts once GitHub answers";
   // git can fail without a word, as when something kills it.
   if (state.state === "failed")
     return state.words === "" ? "the clone failed" : `the clone failed: ${state.words}`;

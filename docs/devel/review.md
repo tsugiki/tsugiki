@@ -44,6 +44,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   the newer def5678", with the threads held back and counted, since their lines belong to the newer commit.
   The newer diff then takes its place at the same file. A fetch that fails says so, keeps the older diff and
   offers Try again.
+- Offline, the mirror holds back git, so the Files tab shows what the mirror holds and says what waits for
+  the network: "The PR's commits come once GitHub answers.", or "Showing abc1234 · the newer def5678 comes
+  once GitHub answers." over the older diff. Before a Repository's mirror is cloned, it says "Cloning
+  python/cpython starts once GitHub answers." Back online, the fetch or the clone starts by itself, and the
+  diff follows without a click. A PR whose head the mirror holds shows its diff offline as it does online,
+  with its highlighting, expanded lines and threads.
 - Every **NEWS entry** in the PR is rendered at the top. A PR can have several, or none.
 - A thread someone started on github.com on a line outside every hunk is shown in place: the hidden gap around
   it opens by itself to show that line with 3 lines either side, marked as outside the diff, and the thread

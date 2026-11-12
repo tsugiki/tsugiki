@@ -28,6 +28,8 @@ import {
   type HeadLine,
   type Highlight,
   type LinkTo,
+  type MirrorState_Serialize as MirrorState,
+  type RepositoryMirror_Serialize as RepositoryMirror,
   type Rest,
   type NewsBlock,
   type NewsEntry_Serialize,
@@ -116,6 +118,12 @@ export class PrFilesState {
   error = $state<string>();
   /** The mirror's clone under way, which a Repository's first diff waits for. */
   cloning = $state<Cloning | null>(null);
+  /** The state of the Repository's mirror the core last told of, which says when its clone waits for the
+   * network (#390). Undefined while the core has told of none. */
+  mirror = $state<MirrorState>();
+  /** Whether the mirrors' worker holds back git while GitHub can't be reached, so the PR's commits wait for
+   * the network (#390). */
+  held = $state(false);
   /** The reason the mirror stopped fetching the PR's head without bringing it, kept until the tab asks
    * again. */
   unfetched = $state<Unfetched>();
@@ -173,8 +181,6 @@ export class PrFilesState {
   readonly #number: number;
   readonly #jumps: JumpTimer;
   readonly #choice: DiffViewChoice;
-  /** Whether the mirror's clone waited for an answer in the mirror states the core last told of. */
-  #mirrorAsks = false;
   /** How many times the core has told of the mirror states, so an answer can tell it is older than one. */
   #statesHeard = 0;
   /** The rows the core has sent, by chunk, for the diff `view` shows. */
@@ -268,6 +274,7 @@ export class PrFilesState {
   async load() {
     try {
       let heardCloning = false;
+      let heardHeld = false;
       const mine = (repository: string, items: number[]) =>
         repository === this.#repository && items.includes(this.#number);
       const listening = await Promise.all([
@@ -287,12 +294,13 @@ export class PrFilesState {
           if (payload === null) void this.ask();
         }),
         events.mirrorStatesChanged.listen(({ payload }) => {
-          // The core matches names in any case.
-          const name = this.#repository.toLowerCase();
-          const mirror = payload.find((one) => one.repository.toLowerCase() === name);
-          this.#mirrorAsks = mirror?.state.state === "asking";
+          this.mirror = this.#mine(payload);
           this.#statesHeard += 1;
           this.#followMirror();
+        }),
+        events.mirrorsHeldChanged.listen(({ payload }) => {
+          heardHeld = true;
+          this.#heardHeld(payload);
         }),
       ]);
       this.#stopListening = listening;
@@ -300,9 +308,16 @@ export class PrFilesState {
         this.stop();
         return;
       }
-      const cloning = await commands.cloning();
-      // An event that arrived while asking is newer than this answer.
+      const statesHeard = this.#statesHeard;
+      const [cloning, states, held] = await Promise.all([
+        commands.cloning(),
+        commands.mirrorStates(),
+        commands.mirrorsHeld(),
+      ]);
+      // An event that arrived while asking is newer than these answers.
       if (!heardCloning) this.cloning = cloning;
+      if (statesHeard === this.#statesHeard) this.mirror = this.#mine(states);
+      if (!heardHeld) this.held = held;
       await this.ask();
     } catch (e) {
       this.error = String(e);
@@ -369,9 +384,24 @@ export class PrFilesState {
    * answered where the mirror gets its objects, or the clone came to wait for that answer. */
   #followMirror() {
     const view = this.view?.state;
-    if ((view === "asking" || view === "cloning") && this.#mirrorAsks !== (view === "asking")) {
+    const asks = this.mirror?.state === "asking";
+    if ((view === "asking" || view === "cloning") && asks !== (view === "asking")) {
       void this.ask();
     }
+  }
+
+  /** The state of the Repository's mirror among `states`. The core matches names in any case. */
+  #mine(states: RepositoryMirror[]): MirrorState | undefined {
+    const name = this.#repository.toLowerCase();
+    return states.find((one) => one.repository.toLowerCase() === name)?.state;
+  }
+
+  /** Keeps whether the worker holds back git. Back online, a tab that waits for the PR's commits asks
+   * again, as Try again does, so a fetch that failed for want of the network goes on without a click. */
+  #heardHeld(held: boolean) {
+    const back = this.held && !held;
+    this.held = held;
+    if (back && (this.view?.state === "fetching" || this.heldBack !== undefined)) void this.ask();
   }
 
   /** The review threads, in the order the tab shows them. */
@@ -387,6 +417,13 @@ export class PrFilesState {
     if (view?.state !== "ready" || view.threads.kind !== "held_back") return undefined;
     const { newer, count } = view.threads;
     return { newer, count };
+  }
+
+  /** Whether the PR's commits wait for the network: the worker holds back git, and no fetch stopped for a
+   * reason the network doesn't explain, such as GitHub having no ref for the PR. A failed git counts as the
+   * network's, as offline it most likely is. */
+  get waitsForNetwork(): boolean {
+    return this.held && (this.unfetched === undefined || this.unfetched.kind === "git");
   }
 
   /** Whether thread `thread`, by its place among the threads, shows only its first line. */

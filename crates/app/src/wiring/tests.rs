@@ -8,7 +8,12 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use tauri::test::{MockRuntime, mock_builder, mock_context, noop_assets};
 use tauri::{App, Listener, WebviewWindow};
 use tsugiki_core::github::CommitSha;
-use tsugiki_core::github::pull_requests::{PrState, PullRequestFacts};
+use tsugiki_core::github::issue_content::{IssueComment, IssueContent};
+use tsugiki_core::github::pull_request_content::{
+    Anchor, DiffHunk, Opening, PullRequestContent, Resolution, Review, Side, Subject, Submission,
+    ThreadComment, ThreadId, ThreadLine,
+};
+use tsugiki_core::github::pull_requests::{PrState, PullRequestFacts, ReviewState};
 use tsugiki_core::github::replay::Replayer;
 use tsugiki_core::github::{Reply, Request, Transport, Unreachable};
 use tsugiki_core::login::Login;
@@ -100,6 +105,7 @@ struct Wired {
     problems: Receiver<Value>,
     questions: Receiver<Value>,
     states: Receiver<Value>,
+    held: Receiver<Value>,
     heads: Receiver<Value>,
     failed_heads: Receiver<Value>,
     new_versions: Receiver<Value>,
@@ -152,6 +158,7 @@ impl Wired {
         let problems = hear(&app, "mirror-problem-changed");
         let questions = hear(&app, "mirror-question-changed");
         let states = hear(&app, "mirror-states-changed");
+        let held = hear(&app, "mirrors-held-changed");
         let heads = hear(&app, "heads-fetched");
         let failed_heads = hear(&app, "heads-fetch-failed");
         let new_versions = hear(&app, "new-version-found");
@@ -172,6 +179,7 @@ impl Wired {
             problems,
             questions,
             states,
+            held,
             heads,
             failed_heads,
             new_versions,
@@ -1591,4 +1599,146 @@ fn a_failed_fetch_of_a_prs_head_reaches_the_window_with_why() {
     assert_eq!(heard["why"]["kind"], "git");
     let words = heard["why"]["words"].as_str();
     assert!(words.is_some_and(|words| !words.is_empty()));
+}
+
+/// A mirror of cpython in `folders` whose `Lib/spam.py` has 30 lines on main, and PR #1's commit, which
+/// changes line 15, on the branch `pr`. Gives the PR's commit.
+fn mirror_with_pr_1(folders: &Folders, root: &Path) -> String {
+    let work = root.join("work");
+    std::fs::create_dir_all(work.join("Lib")).unwrap();
+    let lines = |line_15: &str| {
+        (1..=30)
+            .map(|line| match line {
+                15 => format!("{line_15}\n"),
+                _ => format!("x{line} = {line}\n"),
+            })
+            .collect::<String>()
+    };
+    let _ = git(&work, &["init", "-q", "-b", "main"]);
+    std::fs::write(work.join("Lib/spam.py"), lines("x15 = 15")).unwrap();
+    let _ = git(&work, &["add", "."]);
+    let _ = git(&work, &["commit", "-qm", "One"]);
+    let _ = git(&work, &["switch", "-qc", "pr"]);
+    std::fs::write(work.join("Lib/spam.py"), lines("x15 = 'fifteen'")).unwrap();
+    let _ = git(&work, &["commit", "-qam", "PR 1"]);
+    let commit = git(&work, &["rev-parse", "HEAD"]).trim().to_owned();
+    let mirror = folders.mirror(&RepositoryName::parse(CPYTHON).unwrap());
+    std::fs::create_dir_all(mirror.parent().unwrap()).unwrap();
+    let (work, mirror) = (work.to_string_lossy(), mirror.to_string_lossy());
+    let _ = git(root, &["clone", "-q", "--bare", &work, &mirror]);
+    commit
+}
+
+/// What PR #1 says as GitHub had it at `head`: a Review with a thread on line 15, which the diff shows, one
+/// on line 25, which it doesn't, and an Outdated one.
+fn conversation_of_pr_1(head: &str) -> PullRequestContent {
+    let thread = |id: &str, line: Option<u32>| ThreadLine {
+        id: ThreadId::new(id),
+        path: "Lib/spam.py".to_owned(),
+        subject: Subject::Line {
+            side: Side::Right,
+            line,
+            original: Some(line.unwrap_or(7)),
+        },
+        opening: Opening::Words {
+            words: "Why?".to_owned(),
+        },
+        replies: 0,
+        resolution: Resolution::Open,
+        anchor: if line.is_some() {
+            Anchor::Current
+        } else {
+            Anchor::Outdated
+        },
+        comments: vec![ThreadComment {
+            comment: IssueComment {
+                author: Some(Login::new("some-reviewer")),
+                created_at: time::OffsetDateTime::UNIX_EPOCH,
+                body_html: "<p>Why?</p>".to_owned(),
+                hidden: None,
+            },
+            submission: Submission::Submitted,
+        }],
+        hunk: DiffHunk::parse("@@ -6,2 +6,2 @@\n x6 = 6\n-x7 = 7\n+x7 = 'seven'"),
+    };
+    PullRequestContent {
+        conversation: IssueContent {
+            body_html: String::new(),
+            comments: vec![],
+            earlier_comments: 0,
+            opened_at: Some(time::OffsetDateTime::UNIX_EPOCH),
+        },
+        reviews: vec![Review {
+            author: Some(Login::new("some-reviewer")),
+            state: ReviewState::Commented,
+            commit: CommitSha::parse(head),
+            submitted_at: time::OffsetDateTime::UNIX_EPOCH,
+            body_html: String::new(),
+            hidden: None,
+            threads: vec![
+                thread("in-diff", Some(15)),
+                thread("outside", Some(25)),
+                thread("outdated", None),
+            ],
+        }],
+        earlier_reviews: 0,
+        head: CommitSha::parse(head),
+        pending: vec![],
+    }
+}
+
+#[test]
+fn offline_a_pr_whose_head_the_mirror_holds_shows_its_diff_highlighting_and_threads() {
+    let (folders, root) = temp_folders("wiring-offline-files");
+    let commit = mirror_with_pr_1(&folders, &root);
+    someone_elses_pr_1(&folders, &commit);
+    let store = tsugiki_core::store::Store::open(&folders.database()).unwrap();
+    let name = RepositoryName::parse(CPYTHON).unwrap();
+    let content = conversation_of_pr_1(&commit);
+    store.save_pull_request_content(&name, 1, content).unwrap();
+    store.close();
+    let wired = Wired::start(Ok(folders), no_network());
+
+    let held = wired.held.recv_timeout(PLENTY).unwrap();
+    let asked_held = wired.ask("mirrors_held", json!({})).unwrap();
+    let pr = json!({ "repository": CPYTHON, "number": 1 });
+    let files = wired.ask("pull_request_files", pr).unwrap();
+    let base = files["base"].as_str().unwrap_or_default().to_owned();
+    let chunk = json!({ "repository": CPYTHON, "number": 1, "head": commit, "base": base, "start": 0, "end": 512 });
+    let rows = wired.ask("pull_request_rows", json!({ "chunk": chunk }));
+    let spans = wired.ask(
+        "pull_request_spans",
+        json!({ "chunk": chunk, "collapsed": [] }),
+    );
+    let gap = json!({ "repository": CPYTHON, "number": 1, "head": commit, "base": base, "file": 0, "start": 1, "end": 3 });
+    let lines = wired.ask("pull_request_lines", json!({ "lines": gap }));
+    drop(wired.stop());
+    std::fs::remove_dir_all(root).unwrap();
+
+    assert_eq!((held, asked_held), (json!(true), json!(true)));
+    assert_eq!(files["state"], "ready");
+    assert_eq!(files["head"], json!(commit));
+    let rows = rows.unwrap();
+    let added = json!({ "kind": "added", "new": 15, "text": "x15 = 'fifteen'" });
+    assert!(rows.as_array().unwrap().contains(&added), "{rows}");
+    let spans = spans.unwrap();
+    let spans = spans.as_array().unwrap();
+    assert_eq!(spans.len(), rows.as_array().unwrap().len());
+    assert!(spans.iter().any(|row| row != &json!([])), "{spans:?}");
+    let threads = &files["threads"]["threads"];
+    let placed: Vec<(&Value, &Value)> = (threads.as_array().unwrap().iter())
+        .map(|thread| (&thread["id"], &thread["at"]["kind"]))
+        .collect();
+    assert_eq!(
+        placed,
+        [
+            (&json!("outdated"), &json!("outdated")),
+            (&json!("in-diff"), &json!("row")),
+            (&json!("outside"), &json!("outside")),
+        ]
+    );
+    let lines = lines.unwrap();
+    assert_eq!(lines[0]["text"], "x1 = 1");
+    assert_eq!(lines[1]["text"], "x2 = 2");
+    assert_ne!(lines[0]["spans"], json!([]));
 }

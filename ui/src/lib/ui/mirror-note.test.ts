@@ -26,6 +26,10 @@ describe("mirrorNote", () => {
     expect(note({ state: "waiting", behind: null })).toBe("waiting to clone");
   });
 
+  it("says a clone waits for the network", () => {
+    expect(note({ state: "offline" })).toBe("cloning starts once GitHub answers");
+  });
+
   it("says why the last clone failed, if git said", () => {
     expect(note({ state: "failed", words: "fatal: repository not found" })).toBe(
       "the clone failed: fatal: repository not found",

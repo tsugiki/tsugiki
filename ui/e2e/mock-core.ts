@@ -29,6 +29,7 @@ export const mockCore = (page: Page, answers: CoreAnswers) =>
       checkMirrorsAgain: null,
       mirrorQuestion: null,
       mirrorStates: [],
+      mirrorsHeld: false,
       newVersion: null,
       refresh: null,
       paneLayout: panes,

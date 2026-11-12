@@ -434,6 +434,18 @@ describe("StatusBar's sync under way", () => {
     expect(bar().textContent).not.toContain("Cloning");
   });
 
+  it("says a clone waits for the network while none is under way", () => {
+    const offline = { state: "offline" } as const;
+    const mirrorStates = [
+      { repository: "python/peps", state: { state: "ready" } },
+      { repository, state: { state: "offline" } },
+    ] as const;
+    render(StatusBar, { status: offline, lastSync, mirrorStates: [...mirrorStates] });
+    expect(screen.getByRole("button").textContent).toBe(
+      "Not synced yet · Cloning python/cpython starts once GitHub answers",
+    );
+  });
+
   it("puts a clone before the other Repositories syncing", () => {
     const cloning = { repository: "python/peps", progress: { stage: "starting" } } as const;
     const other = { open: null, paused_until: null, elsewhere: ["python/peps"] };

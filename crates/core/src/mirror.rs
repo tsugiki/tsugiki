@@ -80,9 +80,12 @@ pub enum MirrorState {
     Cloning { progress: CloneProgress },
     /// Its clone waits for the user to say where it gets its objects.
     Asking,
-    /// Its clone waits in line behind the clone of `behind`. With no `behind`, no clone is under way: a
-    /// fetch or a mirror's upkeep goes first, or GitHub can't be reached.
+    /// Its clone waits in line behind the clone of `behind`. With no `behind`, no clone is under way, and a
+    /// fetch, the keeping of reviewed commits or a mirror's upkeep goes first.
     Waiting { behind: Option<RepositoryName> },
+    /// Its clone waits for GitHub, which can't be reached, with no clone under way ahead of it. It starts
+    /// once Tsugiki is back online (#390).
+    Offline,
     /// Its last clone failed, for the reason in `words`, and it goes back in line after a wait.
     Failed { words: String },
     /// `problem` keeps its clone from starting. A disk short of room for one clone holds back the others
@@ -176,6 +179,10 @@ pub type AnnounceQuestion = Box<dyn FnMut(Option<&RepositoryName>) + Send>;
 /// each time one changes.
 pub type AnnounceStates = Box<dyn FnMut(&[RepositoryMirror]) + Send>;
 
+/// Says whether the worker holds back git while GitHub can't be reached, each time that changes, so the
+/// Files tab can say that the PR's commits wait for the network (#390).
+pub type AnnounceHeld = Box<dyn FnMut(bool) + Send>;
+
 /// What the worker tells the app as it goes.
 pub struct Announce {
     pub cloning: AnnounceCloning,
@@ -184,6 +191,7 @@ pub struct Announce {
     pub problem: AnnounceProblem,
     pub question: AnnounceQuestion,
     pub states: AnnounceStates,
+    pub held: AnnounceHeld,
 }
 
 impl Announce {
@@ -196,6 +204,7 @@ impl Announce {
             problem: Box::new(|_| {}),
             question: Box::new(|_| {}),
             states: Box::new(|_| {}),
+            held: Box::new(|_| {}),
         }
     }
 }
@@ -847,6 +856,9 @@ impl Worker {
                 Ok(Message::Opened(repository, number)) => self.note_opened(&repository, number),
                 Ok(Message::Hold(held)) => {
                     self.heard_news();
+                    if held != (self.pace == Pace::Held) {
+                        (self.announce.held)(held);
+                    }
                     self.pace = if held { Pace::Held } else { Pace::Going };
                 }
                 Ok(Message::CheckAgain) => self.check_again(),
@@ -1503,8 +1515,12 @@ impl Worker {
             Some(problem) => MirrorState::Problem {
                 problem: problem.clone(),
             },
-            None => MirrorState::Waiting {
-                behind: cloning.map(|cloning| cloning.repository.clone()),
+            None => match cloning {
+                Some(cloning) => MirrorState::Waiting {
+                    behind: Some(cloning.repository.clone()),
+                },
+                None if self.pace == Pace::Held => MirrorState::Offline,
+                None => MirrorState::Waiting { behind: None },
             },
         }
     }

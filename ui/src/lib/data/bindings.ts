@@ -31,6 +31,8 @@ export const commands = {
 	mirrorQuestion: () => __TAURI_INVOKE<RepositoryName | null>("mirror_question"),
 	/**  The state of each Repository's mirror the worker has heard of, for a window as it loads. */
 	mirrorStates: () => __TAURI_INVOKE<RepositoryMirror_Serialize[]>("mirror_states"),
+	/**  Whether the mirrors' worker holds back git while GitHub can't be reached, for a window as it loads. */
+	mirrorsHeld: () => __TAURI_INVOKE<boolean>("mirrors_held"),
 	/**
 	 *  The newest version out that is newer than the running one, for a window as it loads. Nothing, until a
 	 *  check finds one.
@@ -184,6 +186,7 @@ export const events = {
 	mirrorProblemChanged: makeEvent<MirrorProblemChanged_Serialize, MirrorProblemChanged_Deserialize>("mirror-problem-changed"),
 	mirrorQuestionChanged: makeEvent<MirrorQuestionChanged_Serialize, MirrorQuestionChanged_Deserialize>("mirror-question-changed"),
 	mirrorStatesChanged: makeEvent<MirrorStatesChanged_Serialize, MirrorStatesChanged_Deserialize>("mirror-states-changed"),
+	mirrorsHeldChanged: makeEvent<MirrorsHeldChanged, MirrorsHeldChanged>("mirrors-held-changed"),
 	newVersionFound: makeEvent<NewVersionFound, NewVersionFound>("new-version-found"),
 	readFailed: makeEvent<ReadFailed, ReadFailed>("read-failed"),
 	statusChanged: makeEvent<StatusChanged_Serialize, StatusChanged_Deserialize>("status-changed"),
@@ -1123,10 +1126,15 @@ export type MirrorState_Deserialize =
 /**  Its clone waits for the user to say where it gets its objects. */
 { state: "asking" } | 
 /**
- *  Its clone waits in line behind the clone of `behind`. With no `behind`, no clone is under way: a
- *  fetch or a mirror's upkeep goes first, or GitHub can't be reached.
+ *  Its clone waits in line behind the clone of `behind`. With no `behind`, no clone is under way, and a
+ *  fetch, the keeping of reviewed commits or a mirror's upkeep goes first.
  */
 { state: "waiting"; behind?: RepositoryName | null } | 
+/**
+ *  Its clone waits for GitHub, which can't be reached, with no clone under way ahead of it. It starts
+ *  once Tsugiki is back online (#390).
+ */
+{ state: "offline" } | 
 /**  Its last clone failed, for the reason in `words`, and it goes back in line after a wait. */
 { state: "failed"; words: string } | 
 /**
@@ -1147,10 +1155,15 @@ export type MirrorState_Serialize =
 /**  Its clone waits for the user to say where it gets its objects. */
 { state: "asking" } | 
 /**
- *  Its clone waits in line behind the clone of `behind`. With no `behind`, no clone is under way: a
- *  fetch or a mirror's upkeep goes first, or GitHub can't be reached.
+ *  Its clone waits in line behind the clone of `behind`. With no `behind`, no clone is under way, and a
+ *  fetch, the keeping of reviewed commits or a mirror's upkeep goes first.
  */
 { state: "waiting"; behind: RepositoryName | null } | 
+/**
+ *  Its clone waits for GitHub, which can't be reached, with no clone under way ahead of it. It starts
+ *  once Tsugiki is back online (#390).
+ */
+{ state: "offline" } | 
 /**  Its last clone failed, for the reason in `words`, and it goes back in line after a wait. */
 { state: "failed"; words: string } | 
 /**
@@ -1167,6 +1180,12 @@ export type MirrorStatesChanged_Deserialize = RepositoryMirror_Deserialize[];
 
 /**  Sent when the state of a Repository's mirror changes, so the Repository picker can say (#320). */
 export type MirrorStatesChanged_Serialize = RepositoryMirror_Serialize[];
+
+/**
+ *  Sent when the mirrors' worker starts or stops holding back git while GitHub can't be reached, so a Files
+ *  tab waiting for the PR's commits can say they wait for the network (#390).
+ */
+export type MirrorsHeldChanged = boolean;
 
 /**
  *  One budget the window missed, or the start-up time, which it logs each launch. Each time is in

@@ -19,9 +19,9 @@ use tsugiki_core::status::{Change, Status, StatusBoard};
 use crate::first_frame;
 use crate::{
     Changed, CloningChanged, DiffWork, FailedHeads, FolderPicker, HeadsFetchFailed, HeadsFetched,
-    LastSyncChanged, MirrorProblemChanged, MirrorQuestionChanged, MirrorStatesChanged,
-    NewVersionFound, PickFolder, ReadFailed, RepositoryWork, StartMode, StatusChanged,
-    SyncActivityChanged,
+    LastSyncChanged, MirrorProblemChanged, MirrorQuestionChanged, MirrorStatesChanged, MirrorsHeld,
+    MirrorsHeldChanged, NewVersionFound, PickFolder, ReadFailed, RepositoryWork, StartMode,
+    StatusChanged, SyncActivityChanged,
 };
 
 /// How often the open Repository refreshes: a refresh costs a few points, and this is about 60 points an
@@ -231,12 +231,18 @@ fn mirror_announcements<R: Runtime>(app: &AppHandle<R>) -> Announce {
         app.manage(states_reader),
         "only this manages the mirrors' states"
     );
+    let (mut latest_held, held_reader) = latest::channel(MirrorsHeld(false));
+    assert!(
+        app.manage(held_reader),
+        "only this manages whether the mirrors' worker holds back git"
+    );
     let cloning_handle = app.clone();
     let states_handle = app.clone();
     let problem_handle = app.clone();
     let question_handle = app.clone();
     let heads_handle = app.clone();
     let failed_handle = app.clone();
+    let held_handle = app.clone();
     Announce {
         cloning: Box::new(move |cloning| {
             let cloning = cloning.cloned();
@@ -274,6 +280,10 @@ fn mirror_announcements<R: Runtime>(app: &AppHandle<R>) -> Announce {
             let states = states.to_vec();
             latest_states.set(&states);
             log_if_unsent(MirrorStatesChanged(states).emit(&states_handle));
+        }),
+        held: Box::new(move |held| {
+            latest_held.set(&MirrorsHeld(held));
+            log_if_unsent(MirrorsHeldChanged(held).emit(&held_handle));
         }),
     }
 }

@@ -3,9 +3,10 @@
      on since the mirror's copy, the diff before shows while the mirror fetches the newer one, with its
      threads held back and counted (#185). A fetch of the PR's head that fails says why, and so does one that
      leaves GitHub's ref somewhere else or finds none, and "Try again" asks the core once more, which hands
-     the head to the mirror again (#233, #213). Ctrl+F opens a search over the diff's rows (#186). The
-     header's toggle switches between all the files and one at a time, and one at a time a bar says which
-     file shows, "‹ 12 of 48 ›" and its path (#605). -->
+     the head to the mirror again (#233, #213). While GitHub can't be reached, the mirror holds back git, and
+     the tab says the PR's commits or the mirror's clone come once GitHub answers (#390). Ctrl+F opens a
+     search over the diff's rows (#186). The header's toggle switches between all the files and one at a
+     time, and one at a time a bar says which file shows, "‹ 12 of 48 ›" and its path (#605). -->
 <script lang="ts">
   import type { Page, PrFilesState, Unfetched } from "$lib/state/pr-files.svelte";
   import DiffRows from "./DiffRows.svelte";
@@ -69,9 +70,15 @@
 {#if files.view?.state === "asking"}
   <MirrorQuestion repository={files.repository} />
 {:else if files.view?.state === "cloning"}
-  <p class="waiting">{cloningWords(files.cloning) ?? "Cloning the Repository's mirror…"}</p>
+  {#if files.mirror?.state === "offline"}
+    <p class="waiting" role="status">{`Cloning ${files.repository} starts once GitHub answers.`}</p>
+  {:else}
+    <p class="waiting">{cloningWords(files.cloning) ?? "Cloning the Repository's mirror…"}</p>
+  {/if}
 {:else if files.view?.state === "fetching"}
-  {#if files.unfetched !== undefined}
+  {#if files.waitsForNetwork}
+    <p class="waiting" role="status">The PR's commits come once GitHub answers.</p>
+  {:else if files.unfetched !== undefined}
     <p class="waiting" role="alert">
       {unfetchedWords(
         files.unfetched,
@@ -84,7 +91,12 @@
     <p class="waiting">Fetching the PR's commits…</p>
   {/if}
 {:else if files.view?.state === "ready"}
-  {#if files.heldBack !== undefined && files.unfetched !== undefined}
+  {#if files.heldBack !== undefined && files.waitsForNetwork}
+    <p class="waiting" role="status">
+      {`Showing ${short(files.view.head)} · the newer ${short(files.heldBack.newer)} comes once GitHub answers.`}
+      {#if files.heldBack.count > 0}{waiting(files.heldBack.count)}{/if}
+    </p>
+  {:else if files.heldBack !== undefined && files.unfetched !== undefined}
     {@const [shown, newer] = [short(files.view.head), short(files.heldBack.newer)]}
     <p class="waiting" role="alert">
       {`Showing ${shown} · ${unfetchedWords(files.unfetched, newer, `Tsugiki couldn't fetch the newer ${newer}`)}`}

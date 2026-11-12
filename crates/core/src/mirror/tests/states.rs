@@ -227,16 +227,82 @@ fn short_of_disk_each_clone_waiting_names_the_problem() {
 }
 
 #[test]
-fn offline_a_clone_waits_with_no_clone_ahead_of_it() {
+fn offline_a_clone_waits_for_the_network_and_starts_once_tsugiki_is_back_online() {
     let place = Place::new("states-offline");
     let hello = named("octo-org/hello");
-    let (mirrors, _starts, told) = place.start_hearing();
+    let (mirrors, starts, told) = place.start_hearing();
+    let requests = mirrors.requests();
 
-    mirrors.requests().follow(&Status::Offline);
-    mirrors.requests().clone_mirror(hello.clone(), download());
+    requests.follow(&Status::Offline);
+    requests.clone_mirror(hello.clone(), download());
+    wait_for(&told, &[mirror(&hello, MirrorState::Offline)]);
+    requests.follow(&Status::Online {
+        login: Login::new("octocat"),
+    });
+    let clone = starts.recv_timeout(PLENTY).unwrap();
+    wait_for(&told, &[mirror(&hello, cloning(CloneProgress::Starting))]);
+
+    assert_eq!(clone.cloned(), hello);
+    clone.succeed();
+    mirrors.stop_cleanly(PLENTY);
+}
+
+#[test]
+fn a_clone_waits_with_no_clone_ahead_of_it_while_a_fetch_goes_first() {
+    let place = Place::new("states-behind-fetch");
+    let [cpython, hello] = [named("python/cpython"), named("octo-org/hello")];
+    place.mirrored(&cpython);
+    let (mirrors, starts, told) = place.start_hearing();
+    let requests = mirrors.requests();
+
+    requests.clone_mirror(cpython.clone(), download());
+    requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    let fetch = starts.recv_timeout(PLENTY).unwrap();
+    requests.clone_mirror(hello.clone(), download());
     wait_for(
         &told,
-        &[mirror(&hello, MirrorState::Waiting { behind: None })],
+        &[
+            mirror(&cpython, MirrorState::Ready),
+            mirror(&hello, MirrorState::Waiting { behind: None }),
+        ],
+    );
+
+    fetch.succeed();
+    starts.recv_timeout(PLENTY).unwrap().succeed();
+    mirrors.stop_cleanly(PLENTY);
+}
+
+#[test]
+fn offline_a_clone_behind_the_clone_under_way_still_waits_for_it() {
+    let place = Place::new("states-offline-behind");
+    let [first, second] = [named("octo-org/first"), named("octo-org/second")];
+    let (mirrors, starts, told) = place.start_hearing();
+    let requests = mirrors.requests();
+
+    requests.clone_mirror(first.clone(), download());
+    let clone = starts.recv_timeout(PLENTY).unwrap();
+    requests.follow(&Status::Offline);
+    requests.clone_mirror(second.clone(), download());
+    wait_for(
+        &told,
+        &[
+            mirror(&first, cloning(CloneProgress::Starting)),
+            mirror(&second, waiting_behind(&first)),
+        ],
+    );
+
+    clone.fail();
+    wait_for(
+        &told,
+        &[
+            mirror(
+                &first,
+                MirrorState::Failed {
+                    words: String::new(),
+                },
+            ),
+            mirror(&second, MirrorState::Offline),
+        ],
     );
     mirrors.stop_cleanly(PLENTY);
 }

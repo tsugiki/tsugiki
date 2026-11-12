@@ -11,6 +11,8 @@ const core = vi.hoisted(() => ({
   openLink: vi.fn(),
   pullRequestFiles: vi.fn(),
   cloning: vi.fn(),
+  mirrorStates: vi.fn(),
+  mirrorsHeld: vi.fn(),
   listen: vi.fn(),
 }));
 
@@ -23,6 +25,8 @@ vi.mock("$lib/data/bindings", () => ({
     openLink: core.openLink,
     pullRequestFiles: core.pullRequestFiles,
     cloning: core.cloning,
+    mirrorStates: core.mirrorStates,
+    mirrorsHeld: core.mirrorsHeld,
   },
   events: {
     changed: { listen: core.listen },
@@ -31,6 +35,7 @@ vi.mock("$lib/data/bindings", () => ({
     headsFetchFailed: { listen: core.listen },
     cloningChanged: { listen: core.listen },
     mirrorStatesChanged: { listen: core.listen },
+    mirrorsHeldChanged: { listen: core.listen },
   },
 }));
 
@@ -106,6 +111,8 @@ beforeEach(() => {
   core.openLink.mockResolvedValue({ status: "ok", data: null });
   core.pullRequestFiles.mockResolvedValue({ status: "ok", data: { state: "fetching" } });
   core.cloning.mockResolvedValue(null);
+  core.mirrorStates.mockResolvedValue([]);
+  core.mirrorsHeld.mockResolvedValue(false);
 });
 
 it("opens on the Conversation: the title and author, the description, comments and Reviews", async () => {

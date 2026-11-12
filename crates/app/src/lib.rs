@@ -164,6 +164,20 @@ fn mirror_states(latest: State<'_, LatestMirrorStates>) -> Vec<RepositoryMirror>
     latest.get()
 }
 
+/// Whether the mirrors' worker holds back git while GitHub can't be reached. A type of its own, as Tauri
+/// tells managed state apart by type, and another `bool` would take its place.
+#[derive(Clone, Copy)]
+struct MirrorsHeld(bool);
+
+type LatestMirrorsHeld = LatestReader<MirrorsHeld>;
+
+/// Whether the mirrors' worker holds back git while GitHub can't be reached, for a window as it loads.
+#[tauri::command]
+#[specta::specta]
+fn mirrors_held(latest: State<'_, LatestMirrorsHeld>) -> bool {
+    latest.get().0
+}
+
 /// Says why the clone in `folder` can't lend its objects to `repository`'s mirror, or nothing if it can.
 fn check_named_clone(
     repository: &str,
@@ -671,6 +685,11 @@ struct MirrorQuestionChanged(Option<RepositoryName>);
 #[derive(Clone, Serialize, Type, Event)]
 struct MirrorStatesChanged(Vec<RepositoryMirror>);
 
+/// Sent when the mirrors' worker starts or stops holding back git while GitHub can't be reached, so a Files
+/// tab waiting for the PR's commits can say they wait for the network (#390).
+#[derive(Clone, Serialize, Type, Event)]
+struct MirrorsHeldChanged(bool);
+
 /// Sent when a check finds a newer version out than it last found, so the status bar can say.
 #[derive(Clone, Serialize, Type, Event)]
 struct NewVersionFound(NewVersion);
@@ -707,6 +726,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             check_mirrors_again,
             mirror_question,
             mirror_states,
+            mirrors_held,
             new_version,
             slow_commands::check_clone,
             slow_commands::choose_mirror_source,
@@ -752,6 +772,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             MirrorProblemChanged,
             MirrorQuestionChanged,
             MirrorStatesChanged,
+            MirrorsHeldChanged,
             NewVersionFound,
             HeadsFetched,
             HeadsFetchFailed

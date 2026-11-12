@@ -28,6 +28,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   send is noted beside the mirror and not asked for again.
 - While a Repository's mirror is still being cloned, the diff, the definitions and Open in editor say how far
   it has got. The Conversation tab works meanwhile.
+- Offline, Tsugiki starts no clone and no fetch, though upkeep, which needs no network, goes on. A clone or
+  fetch under way goes on until it ends. A clone that waits for GitHub says so in the status bar, the Files
+  tab and the Repository picker, and starts once Tsugiki is back online, as do the fetches held back.
 - Without git 2.30 or newer, or without room on the disk for the clone, the diff says what is missing, with a
   link to git's downloads or the space needed, and offers Check again. The rest of Tsugiki works without it.
 - "Open in editor" runs the editor command (`code -g` by default) on the **Review checkout**, moved to the

@@ -19,6 +19,8 @@ const core = vi.hoisted(() => ({
   pullRequestFiles: vi.fn(),
   pullRequestFind: vi.fn(),
   cloning: vi.fn(),
+  mirrorStates: vi.fn(),
+  mirrorsHeld: vi.fn(),
   paneLayout: vi.fn(),
   savePaneLayout: vi.fn(),
   // The HUD logs a slow opening of an Issue whether or not it shows.
@@ -42,6 +44,8 @@ vi.mock("$lib/data/bindings", () => ({
     pullRequestFiles: core.pullRequestFiles,
     pullRequestFind: core.pullRequestFind,
     cloning: core.cloning,
+    mirrorStates: core.mirrorStates,
+    mirrorsHeld: core.mirrorsHeld,
     paneLayout: core.paneLayout,
     savePaneLayout: core.savePaneLayout,
     recordMiss: core.recordMiss,
@@ -53,6 +57,7 @@ vi.mock("$lib/data/bindings", () => ({
     headsFetchFailed: { listen: core.listen },
     cloningChanged: { listen: core.listen },
     mirrorStatesChanged: { listen: core.listen },
+    mirrorsHeldChanged: { listen: core.listen },
   },
 }));
 
@@ -104,6 +109,8 @@ beforeEach(() => {
   core.pullRequestFiles.mockResolvedValue({ status: "ok", data: { state: "fetching" } });
   core.pullRequestFind.mockResolvedValue({ status: "ok", data: { matches: [], more: false } });
   core.cloning.mockResolvedValue(null);
+  core.mirrorStates.mockResolvedValue([]);
+  core.mirrorsHeld.mockResolvedValue(false);
   core.paneLayout.mockResolvedValue(DEFAULT_LAYOUT);
   core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULT_LAYOUT });
   core.pullRequest.mockImplementation((_repository: string, number: number) =>
@@ -1088,6 +1095,7 @@ it("closes the search with Escape from anywhere, then leaves the PR with the foc
 it("leaves the focus where it is when the Files tab is drawn again with the search open", async () => {
   const files = await onFiles();
   await fireEvent.click(files);
+  await screen.findByRole("region", { name: "Diff" });
   await press("f", { ctrlKey: true });
   const conversation = screen.getByRole("tab", { name: "Conversation" });
   await fireEvent.click(conversation);

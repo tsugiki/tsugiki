@@ -211,6 +211,7 @@
   {lastSync}
   syncActivity={status.syncActivity}
   cloning={status.cloning}
+  mirrorStates={status.mirrorStates}
   mirrorProblem={status.mirrorProblem}
   mirrorQuestion={status.mirrorQuestion}
   newVersion={status.newVersion}

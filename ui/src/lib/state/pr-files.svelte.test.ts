@@ -21,6 +21,8 @@ const core = vi.hoisted(() => {
     pullRequestLines: vi.fn<(lines: { file: number; start: number; end: number }) => Promise<unknown>>(),
     pullRequestFind: vi.fn<(search: { query: string }) => Promise<unknown>>(),
     cloning: vi.fn(),
+    mirrorStates: vi.fn(),
+    mirrorsHeld: vi.fn(),
     heard: {} as Record<string, Heard>,
     stopped: [] as string[],
     /** An event whose listener lands in `heard`, and whose stop lands in `stopped`. */
@@ -42,6 +44,8 @@ vi.mock("$lib/data/bindings", () => ({
     pullRequestLines: core.pullRequestLines,
     pullRequestFind: core.pullRequestFind,
     cloning: core.cloning,
+    mirrorStates: core.mirrorStates,
+    mirrorsHeld: core.mirrorsHeld,
   },
   events: {
     headsFetched: core.listener("headsFetched"),
@@ -49,6 +53,7 @@ vi.mock("$lib/data/bindings", () => ({
     changed: core.listener("changed"),
     cloningChanged: core.listener("cloningChanged"),
     mirrorStatesChanged: core.listener("mirrorStatesChanged"),
+    mirrorsHeldChanged: core.listener("mirrorsHeldChanged"),
   },
 }));
 
@@ -154,6 +159,8 @@ beforeEach(() => {
   core.heard = {};
   core.stopped = [];
   core.cloning.mockResolvedValue(null);
+  core.mirrorStates.mockResolvedValue([]);
+  core.mirrorsHeld.mockResolvedValue(false);
   core.pullRequestRows.mockImplementation(({ start }: { start: number }) =>
     Promise.resolve(ok([added(`row ${String(start)}`)])),
   );
@@ -396,6 +403,69 @@ it("finds its Repository's mirror by its name in any case", async () => {
   expect(files.view).toEqual({ state: "asking" });
 });
 
+it("keeps its Repository's mirror state, as the core answers and then tells of it", async () => {
+  core.mirrorStates.mockResolvedValue([{ repository: "Python/CPython", state: { state: "offline" } }]);
+  const files = await loaded({ state: "cloning" });
+  expect(files.mirror).toEqual({ state: "offline" });
+
+  core.heard.mirrorStatesChanged?.({
+    payload: [{ repository: "python/cpython", state: { state: "cloning", progress: { stage: "starting" } } }],
+  });
+
+  expect(files.mirror).toEqual({ state: "cloning", progress: { stage: "starting" } });
+  expect(core.pullRequestFiles).toHaveBeenCalledOnce();
+});
+
+it("keeps mirror states and a hold it heard of while asking over the older answers", async () => {
+  core.pullRequestFiles.mockResolvedValue(ok({ state: "cloning" }));
+  core.mirrorStates.mockImplementation(() => {
+    core.heard.mirrorStatesChanged?.(states("waiting"));
+    return Promise.resolve([{ repository: "python/cpython", state: { state: "offline" } }]);
+  });
+  core.mirrorsHeld.mockImplementation(() => {
+    core.heard.mirrorsHeldChanged?.({ payload: true });
+    return Promise.resolve(false);
+  });
+  const files = new PrFilesState("python/cpython", 11);
+
+  await files.load();
+
+  expect(files.mirror).toEqual({ state: "waiting", behind: null });
+  expect(files.held).toBe(true);
+});
+
+it("hears that the worker holds back git, and asks again once it goes on", async () => {
+  core.mirrorsHeld.mockResolvedValue(true);
+  const files = await loaded({ state: "fetching" });
+  expect(files.held).toBe(true);
+  core.heard.mirrorsHeldChanged?.({ payload: true });
+  expect(core.pullRequestFiles).toHaveBeenCalledOnce();
+
+  core.pullRequestFiles.mockResolvedValue(ok(ready("abc", 3)));
+  core.heard.mirrorsHeldChanged?.({ payload: false });
+
+  expect(files.held).toBe(false);
+  await vi.waitFor(() => {
+    expect(files.view).toEqual(ready("abc", 3));
+  });
+});
+
+it("back online, asks again for a newer head it waits for, and not for a diff it has", async () => {
+  const before = { ...ready("older", 3), threads: { kind: "held_back" as const, newer: "newer", count: 0 } };
+  const files = await loaded(before);
+  core.heard.mirrorsHeldChanged?.({ payload: true });
+  core.pullRequestFiles.mockResolvedValue(ok(ready("newer", 3)));
+  core.heard.mirrorsHeldChanged?.({ payload: false });
+  await vi.waitFor(() => {
+    expect(files.view).toEqual(ready("newer", 3));
+  });
+
+  core.heard.mirrorsHeldChanged?.({ payload: true });
+  core.heard.mirrorsHeldChanged?.({ payload: false });
+
+  expect(core.pullRequestFiles).toHaveBeenCalledTimes(2);
+});
+
 it("keeps a clone it heard of while asking over the older answer", async () => {
   core.pullRequestFiles.mockResolvedValue(ok({ state: "cloning" }));
   core.cloning.mockImplementation(() => {
@@ -418,6 +488,7 @@ it("stops listening, even when it stops before it started", async () => {
     "headsFetchFailed",
     "headsFetched",
     "mirrorStatesChanged",
+    "mirrorsHeldChanged",
   ]);
 
   core.stopped = [];
@@ -426,7 +497,7 @@ it("stops listening, even when it stops before it started", async () => {
   early.stop();
   await loading;
 
-  expect(core.stopped).toHaveLength(5);
+  expect(core.stopped).toHaveLength(6);
   expect(core.cloning).toHaveBeenCalledTimes(1);
 });
 

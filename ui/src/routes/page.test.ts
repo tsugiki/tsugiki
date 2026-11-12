@@ -18,6 +18,7 @@ const core = vi.hoisted(() => ({
   mirrorStates: vi.fn(),
   chooseMirrorSource: vi.fn(),
   mirrorCost: vi.fn(),
+  saveTheme: vi.fn(),
 }));
 
 /** The listener for the mirrors' states, so a test can send it what the core would. */
@@ -35,8 +36,17 @@ vi.mock("$lib/data/bindings", () => ({
       status: "ok",
       data: {
         mode: "system",
-        light: { name: "Light", kind: "light", tokens: [{ property: "--bg", value: "#ffffff" }] },
-        dark: { name: "Dark", kind: "dark", tokens: [{ property: "--bg", value: "#1f1f1f" }] },
+        light: {
+          chosen: "Light",
+          all: [{ name: "Light", kind: "light", tokens: [{ property: "--bg", value: "#ffffff" }] }],
+        },
+        dark: {
+          chosen: "Dark",
+          all: [
+            { name: "Dark", kind: "dark", tokens: [{ property: "--bg", value: "#1f1f1f" }] },
+            { name: "Gruvbox Dark Hard", kind: "dark", tokens: [{ property: "--bg", value: "#1d2021" }] },
+          ],
+        },
       },
     }),
     ...core,
@@ -102,6 +112,7 @@ beforeEach(() => {
   core.mirrorQuestion.mockResolvedValue(null);
   core.mirrorStates.mockResolvedValue([]);
   core.chooseMirrorSource.mockResolvedValue({ status: "ok", data: null });
+  core.saveTheme.mockResolvedValue({ status: "ok", data: null });
   core.workbench.mockResolvedValue({
     status: "ok",
     data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [] },
@@ -881,5 +892,97 @@ describe("a chord", () => {
     await screen.findByText(/Your token comes from/);
     await ctrlK();
     expect(chord()).toBeNull();
+  });
+});
+
+describe("the theme picker", () => {
+  const ctrlK = () => fireEvent.keyDown(document.body, { key: "k", code: "KeyK", ctrlKey: true });
+  const ctrlKT = async () => {
+    await ctrlK();
+    await fireEvent.keyDown(document.body, { key: "t", code: "KeyT" });
+  };
+  const themePicker = () => screen.queryByRole("dialog", { name: "Theme picker" });
+  const bg = () => document.documentElement.style.getPropertyValue("--bg");
+
+  beforeEach(() => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    core.home.mockResolvedValue(gcmonHome);
+  });
+
+  /** The page on gcmon, with the theme in force on the window. */
+  const opened = async () => {
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await vi.waitFor(() => {
+      expect(bg()).toBe("#1f1f1f");
+    });
+  };
+
+  it("opens on Ctrl+K T on the side in use, previews on the window, and Esc puts the theme back", async () => {
+    await opened();
+    await ctrlKT();
+
+    expect(themePicker()).toBeTruthy();
+    expect(options()).toEqual(["Dark chosen", "Gruvbox Dark Hard", "Light themes…"]);
+    await fireEvent.keyDown(screen.getByRole("combobox", { name: "Theme" }), { key: "ArrowDown" });
+    expect(bg()).toBe("#1d2021");
+    await fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(themePicker()).toBeNull();
+    expect(bg()).toBe("#1f1f1f");
+    expect(core.saveTheme).not.toHaveBeenCalled();
+  });
+
+  it("opens from the palette, and Enter saves the theme, which stays on the window", async () => {
+    await opened();
+    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    await fireEvent.click(screen.getByRole("option", { name: "Pick a Theme" }));
+    const box = await screen.findByRole("combobox", { name: "Theme" });
+    const reads = core.settings.mock.calls.length;
+
+    await fireEvent.keyDown(box, { key: "ArrowDown" });
+    await fireEvent.keyDown(box, { key: "Enter" });
+
+    await vi.waitFor(() => {
+      expect(core.saveTheme).toHaveBeenCalledExactlyOnceWith("dark", "Gruvbox Dark Hard");
+    });
+    expect(themePicker()).toBeNull();
+    expect(bg()).toBe("#1d2021");
+    // The save read the files again, so a problem the user has since fixed can go.
+    await vi.waitFor(() => {
+      expect(core.settings.mock.calls.length).toBe(reads + 1);
+    });
+  });
+
+  it("says in the status bar why a theme couldn't be saved, and puts the old one back", async () => {
+    core.saveTheme.mockResolvedValue({
+      status: "error",
+      error: { kind: "internal", message: "settings.toml, line 1: expected `]`" },
+    });
+    await opened();
+    await ctrlKT();
+    const box = screen.getByRole("combobox", { name: "Theme" });
+    await fireEvent.keyDown(box, { key: "ArrowDown" });
+    await fireEvent.keyDown(box, { key: "Enter" });
+
+    await vi.waitFor(() => {
+      expect(screen.getByRole("status").textContent).toContain(
+        "Tsugiki can't save the theme: settings.toml, line 1: expected `]`",
+      );
+    });
+    expect(bg()).toBe("#1f1f1f");
+  });
+
+  it("keeps the palette, the Repository picker and the chords from opening over it", async () => {
+    await opened();
+    await ctrlKT();
+    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    await fireEvent.keyDown(document.body, { key: "r", code: "KeyR", ctrlKey: true });
+    await ctrlK();
+
+    expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Repository picker" })).toBeNull();
+    expect(screen.queryByText("Ctrl+K")).toBeNull();
+    expect(themePicker()).toBeTruthy();
   });
 });

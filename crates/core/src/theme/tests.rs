@@ -56,7 +56,35 @@ fn a_side_finds_its_themes_by_name_and_no_other_sides() {
 }
 
 #[test]
-fn the_themes_sent_are_the_ones_chosen_for_each_side_with_the_mode() {
+fn a_choice_names_a_theme_of_its_own_side() {
+    assert_eq!(
+        ThemeChoice::named(ThemeKind::Light, "Gruvbox Light Hard").unwrap(),
+        ThemeChoice::Light(LightTheme::GruvboxLightHard)
+    );
+    assert_eq!(
+        ThemeChoice::named(ThemeKind::Dark, "VS Code Dark Modern").unwrap(),
+        ThemeChoice::Dark(DarkTheme::VsCodeDarkModern)
+    );
+    for (kind, name, message) in [
+        (
+            ThemeKind::Light,
+            "Gruvbox Dark Hard",
+            r#"No light theme is named "Gruvbox Dark Hard"."#,
+        ),
+        (
+            ThemeKind::Dark,
+            "Solarized Dark",
+            r#"No dark theme is named "Solarized Dark"."#,
+        ),
+    ] {
+        let error = ThemeChoice::named(kind, name).unwrap_err();
+        assert_eq!(error.kind, ErrorKind::NotFound);
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
+fn the_themes_sent_are_each_sides_built_in_ones_with_the_chosen_named_and_the_mode() {
     let themes = Themes::chosen(
         ThemeMode::Dark,
         LightTheme::GruvboxLightHard,
@@ -64,11 +92,35 @@ fn the_themes_sent_are_the_ones_chosen_for_each_side_with_the_mode() {
     )
     .unwrap();
     assert_eq!(themes.mode, ThemeMode::Dark);
-    assert_eq!(themes.light.name, "Gruvbox Light Hard");
-    assert_eq!(themes.dark.name, "Gruvbox Dark Hard");
-    let bg = |view: &ThemeView| view.tokens.first().unwrap().value.clone();
-    assert_eq!(bg(&themes.light), "#f9f5d7");
-    assert_eq!(bg(&themes.dark), "#1d2021");
+    assert_eq!(themes.light.chosen, "Gruvbox Light Hard");
+    assert_eq!(themes.dark.chosen, "Gruvbox Dark Hard");
+    // Each with its `bg`, in the order the picker lists them.
+    let listed = |side: &SideThemes| -> Vec<(String, String)> {
+        side.all
+            .iter()
+            .map(|view| {
+                (
+                    view.name.clone(),
+                    view.tokens.first().unwrap().value.clone(),
+                )
+            })
+            .collect()
+    };
+    let pair = |name: &str, bg: &str| (name.to_owned(), bg.to_owned());
+    assert_eq!(
+        listed(&themes.light),
+        [
+            pair("VS Code Light Modern", "#ffffff"),
+            pair("Gruvbox Light Hard", "#f9f5d7")
+        ]
+    );
+    assert_eq!(
+        listed(&themes.dark),
+        [
+            pair("VS Code Dark Modern", "#1f1f1f"),
+            pair("Gruvbox Dark Hard", "#1d2021")
+        ]
+    );
 }
 
 #[test]
@@ -79,7 +131,7 @@ fn the_view_carries_every_token_as_a_css_variable() {
         DarkTheme::default(),
     )
     .unwrap();
-    for view in [&themes.light, &themes.dark] {
+    for view in themes.light.all.iter().chain(&themes.dark.all) {
         let properties: Vec<String> = view
             .tokens
             .iter()
@@ -88,9 +140,21 @@ fn the_view_carries_every_token_as_a_css_variable() {
         let expected: Vec<String> = Token::ALL.into_iter().map(Token::property).collect();
         assert_eq!(properties, expected, "{}", view.name);
     }
-    assert_eq!(themes.light.kind, ThemeKind::Light);
-    assert_eq!(themes.dark.kind, ThemeKind::Dark);
-    let first = themes.dark.tokens.first().unwrap();
+    assert!(
+        themes
+            .light
+            .all
+            .iter()
+            .all(|view| view.kind == ThemeKind::Light)
+    );
+    assert!(
+        themes
+            .dark
+            .all
+            .iter()
+            .all(|view| view.kind == ThemeKind::Dark)
+    );
+    let first = themes.dark.all.first().unwrap().tokens.first().unwrap();
     assert_eq!(
         (first.property.as_str(), first.value.as_str()),
         ("--bg", "#1f1f1f")
@@ -253,11 +317,8 @@ fn a_file_that_isnt_toml_names_the_line() {
 
 #[test]
 fn a_theme_that_cant_be_read_says_why() {
-    for (light, dark) in [
-        ("kind = \"light\"", DARK_MODERN),
-        (LIGHT_MODERN, "name = \"x\""),
-    ] {
-        let error = Themes::from_files(light, dark).unwrap_err();
+    for text in ["kind = \"light\"", "name = \"x\""] {
+        let error = Themes::built_in(text).unwrap_err();
         assert_eq!(error.kind, ErrorKind::Internal);
         assert!(
             error
@@ -272,7 +333,7 @@ fn a_theme_that_cant_be_read_says_why() {
 #[test]
 fn a_built_in_theme_must_set_every_token() {
     let partial = "name = \"Part\"\nkind = \"dark\"\n[colors]\nbg = \"#000\"\n";
-    let error = Themes::from_files(LIGHT_MODERN, partial).unwrap_err();
+    let error = Themes::built_in(partial).unwrap_err();
     assert!(
         error
             .message

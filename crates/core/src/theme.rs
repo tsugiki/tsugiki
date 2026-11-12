@@ -123,8 +123,31 @@ macro_rules! by_name {
 by_name!(LightTheme, "light theme");
 by_name!(DarkTheme, "dark theme");
 
+/// A built-in theme of either side, as the theme picker saves it to `light_theme` or `dark_theme` (#518).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThemeChoice {
+    Light(LightTheme),
+    Dark(DarkTheme),
+}
+
+impl ThemeChoice {
+    /// The theme of side `kind` named `name`, as the window sends it.
+    pub fn named(kind: ThemeKind, name: &str) -> Result<Self, Error> {
+        let found = match kind {
+            ThemeKind::Light => LightTheme::named(name).map(Self::Light),
+            ThemeKind::Dark => DarkTheme::named(name).map(Self::Dark),
+        };
+        found.ok_or_else(|| {
+            Error::new(
+                ErrorKind::NotFound,
+                &format!("No {} theme is named {name:?}.", kind.name()),
+            )
+        })
+    }
+}
+
 /// Whether a theme is for Windows' light side or its dark side. Each theme is one or the other, not a pair.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ThemeKind {
     Light,
@@ -132,12 +155,18 @@ pub enum ThemeKind {
 }
 
 impl ThemeKind {
-    fn parse(text: &str) -> Option<Self> {
-        match text {
-            "light" => Some(Self::Light),
-            "dark" => Some(Self::Dark),
-            _ => None,
+    /// The kind as a theme file and the window write it: `"light"` or `"dark"`.
+    fn name(self) -> &'static str {
+        match self {
+            Self::Light => "light",
+            Self::Dark => "dark",
         }
+    }
+
+    fn parse(text: &str) -> Option<Self> {
+        [Self::Light, Self::Dark]
+            .into_iter()
+            .find(|kind| kind.name() == text)
     }
 }
 
@@ -585,20 +614,42 @@ pub struct TokenView {
     pub value: String,
 }
 
-/// The theme of each side, and the mode. In System mode the window shows the theme for the side Windows is
-/// on, and turns to the other when Windows does. Light and Dark show that side's theme whatever Windows says.
+/// The themes of each side, and the mode. In System mode the window shows the chosen theme of the side
+/// Windows is on, and turns to the other when Windows does. Light and Dark show that side's chosen theme
+/// whatever Windows says. The theme picker lists the rest (#518).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct Themes {
     pub mode: ThemeMode,
-    pub light: ThemeView,
-    pub dark: ThemeView,
+    pub light: SideThemes,
+    pub dark: SideThemes,
+}
+
+/// The themes of one side, and the one `settings.toml` chose for it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SideThemes {
+    /// The name of the chosen theme, one of `all`.
+    pub chosen: String,
+    /// Every theme of the side, in the order the theme picker lists them.
+    pub all: Vec<ThemeView>,
 }
 
 impl Themes {
-    /// The themes `settings.toml`'s `[appearance]` chose.
+    /// Every built-in theme of each side, with the ones `settings.toml`'s `[appearance]` chose.
     pub fn chosen(mode: ThemeMode, light: LightTheme, dark: DarkTheme) -> Result<Self, Error> {
-        let (light, dark) = Self::from_files(light.file(), dark.file())?;
-        Ok(Self { mode, light, dark })
+        let side = |chosen: &str, files: &[&str]| -> Result<SideThemes, Error> {
+            Ok(SideThemes {
+                chosen: chosen.to_owned(),
+                all: files
+                    .iter()
+                    .map(|file| Self::built_in(file))
+                    .collect::<Result<_, _>>()?,
+            })
+        };
+        Ok(Self {
+            mode,
+            light: side(light.name(), &LightTheme::ALL.map(LightTheme::file))?,
+            dark: side(dark.name(), &DarkTheme::ALL.map(DarkTheme::file))?,
+        })
     }
 
     /// The `bg` of the built-in theme of side `kind`, which the window takes before it first shows, so a
@@ -618,33 +669,30 @@ impl Themes {
             .expect("each built-in theme sets bg")
     }
 
-    /// The themes the files `light` and `dark` hold.
-    /// Each must set every token, so the window turning from one to the other leaves no colour behind.
-    fn from_files(light: &str, dark: &str) -> Result<(ThemeView, ThemeView), Error> {
+    /// The built-in theme the file `text` holds. It must set every token, so the window turning from one
+    /// theme to another leaves no colour behind.
+    fn built_in(text: &str) -> Result<ThemeView, Error> {
         let refused = |why: &str| {
             Error::new(
                 ErrorKind::Internal,
                 &format!("A built-in theme can't be read: {why}"),
             )
         };
-        let read = |text| {
-            let theme = Theme::parse(text).map_err(|cause| refused(&cause.to_string()))?;
-            let missing: Vec<&str> = Token::ALL
-                .into_iter()
-                .filter(|token| !theme.colors.contains_key(token))
-                .map(Token::key)
-                .collect();
-            if missing.is_empty() {
-                Ok(theme.view())
-            } else {
-                Err(refused(&format!(
-                    "{} sets no {}",
-                    theme.name,
-                    missing.join(", ")
-                )))
-            }
-        };
-        Ok((read(light)?, read(dark)?))
+        let theme = Theme::parse(text).map_err(|cause| refused(&cause.to_string()))?;
+        let missing: Vec<&str> = Token::ALL
+            .into_iter()
+            .filter(|token| !theme.colors.contains_key(token))
+            .map(Token::key)
+            .collect();
+        if missing.is_empty() {
+            Ok(theme.view())
+        } else {
+            Err(refused(&format!(
+                "{} sets no {}",
+                theme.name,
+                missing.join(", ")
+            )))
+        }
     }
 }
 

@@ -1,10 +1,11 @@
-// The window's colours (#515). The core sends a theme for each side, light and dark, and the mode (#517). In
-// System mode the window shows the theme for the side Windows is on, jumping to the other when Windows
-// changes sides. Light and Dark show their side's theme whatever Windows says.
-import { commands, type Themes, type ThemeView } from "$lib/data/bindings";
+// The window's colours (#515). The core sends every theme of each side, light and dark, with the one chosen
+// for each side and the mode (#517). In System mode the window shows the chosen theme for the side Windows
+// is on, jumping to the other when Windows changes sides. Light and Dark show their side's theme whatever
+// Windows says. The theme picker previews a theme over the one in force, and saves a side's choice (#518).
+import { commands, type ThemeKind, type Themes, type ThemeView } from "$lib/data/bindings";
 import { ask } from "./answer";
 
-export type { Themes, ThemeView };
+export type { ThemeKind, Themes, ThemeView };
 
 /** Says which side Windows is on: `matchMedia("(prefers-color-scheme: dark)")` in the window. */
 export type DarkQuery = Pick<MediaQueryList, "matches" | "addEventListener">;
@@ -15,13 +16,20 @@ export class ThemeState {
   error = $state<string>();
   /** Whether Windows is on its dark side. */
   dark = $state(false);
-  /** The theme in force, once the core has sent them. */
-  current = $derived.by(() => {
-    if (!this.themes) return undefined;
-    const { mode, light, dark } = this.themes;
-    const darkSide = mode === "system" ? this.dark : mode === "dark";
-    return darkSide ? dark : light;
+  /** A theme the picker shows on the window for now, over the one in force. */
+  preview = $state<ThemeView>();
+  /** Why the last choice couldn't be saved, until one is. */
+  problem = $state<string>();
+  /** The side in use: the one Windows is on in System mode, and otherwise the mode's. */
+  side: ThemeKind = $derived.by(() => {
+    const mode = this.themes?.mode ?? "system";
+    if (mode !== "system") return mode;
+    return this.dark ? "dark" : "light";
   });
+  /** The theme in force, once the core has sent them: the chosen one of the side in use. */
+  current = $derived(this.themesOf(this.side).find((theme) => theme.name === this.chosen(this.side)));
+  /** What the window shows: the preview, or else the theme in force. */
+  shown = $derived(this.preview ?? this.current);
 
   constructor(query: DarkQuery) {
     this.dark = query.matches;
@@ -34,6 +42,33 @@ export class ThemeState {
     const answer = await ask(commands.themes());
     if (answer.status === "ok") this.themes = answer.data;
     else this.error = answer.error.message;
+  }
+
+  /** Every theme of side `kind`, in the order the picker lists them. */
+  themesOf(kind: ThemeKind): readonly ThemeView[] {
+    return this.themes?.[kind].all ?? [];
+  }
+
+  /** The name of the theme chosen for side `kind`. */
+  chosen(kind: ThemeKind): string | undefined {
+    return this.themes?.[kind].chosen;
+  }
+
+  /** Chooses the theme named `name` for side `kind`, and saves it to `settings.toml` at once, without
+   * Settings' Apply. One that can't be saved puts the old choice back, unless the user has chosen again
+   * since, and `problem` says why. */
+  async choose(kind: ThemeKind, name: string): Promise<void> {
+    if (!this.themes) return;
+    const side = this.themes[kind];
+    const before = side.chosen;
+    side.chosen = name;
+    const answer = await ask(commands.saveTheme(kind, name));
+    if (answer.status === "ok") {
+      this.problem = undefined;
+    } else {
+      if (side.chosen === name) side.chosen = before;
+      this.problem = `Tsugiki can't save the theme: ${answer.error.message}`;
+    }
   }
 }
 

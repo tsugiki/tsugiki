@@ -26,7 +26,7 @@ use crate::latest::{self, LatestReader};
 use crate::mirror::{MirrorSource, MirrorSources};
 use crate::repository::{RepositoryAccess, RepositoryName};
 use crate::repository_settings::{NameCheck, RepositoryCheck, RepositorySettings};
-use crate::theme::{DarkTheme, LightTheme, ThemeMode};
+use crate::theme::{DarkTheme, LightTheme, ThemeChoice, ThemeMode};
 
 const REPOSITORIES: &str = "repositories";
 const FILTERS: &str = "filters";
@@ -702,6 +702,32 @@ impl SettingsFiles {
         Ok(())
     }
 
+    /// Saves the theme the picker chose for its side to `light_theme` or `dark_theme`, keeping everything
+    /// else in `settings.toml`, and reads the files again (#518). Like `write`, it works from what the files
+    /// say now and refuses while either can't be used.
+    pub fn save_theme(&mut self, choice: ThemeChoice) -> Result<(), Error> {
+        let machine = self.machine_to_edit()?;
+        let path = settings_file(&self.folders, &machine);
+        let mut edit = TomlEdit::<Settings>::open(&path)?;
+        let (key, name, default) = match choice {
+            ThemeChoice::Light(theme) => {
+                ("light_theme", theme.name(), LightTheme::default().name())
+            }
+            ThemeChoice::Dark(theme) => ("dark_theme", theme.name(), DarkTheme::default().name()),
+        };
+        edit_section(edit.document.as_table_mut(), APPEARANCE, |section| {
+            merge_value(
+                section,
+                key,
+                &toml_edit::value(name),
+                Some(&toml_edit::value(default)),
+            );
+        });
+        edit.save()?;
+        self.reload();
+        Ok(())
+    }
+
     /// Saves where `name`'s mirror gets its objects in `machine.toml`, keeping everything else in it, and
     /// reads the files again.
     pub fn save_mirror_source(
@@ -747,6 +773,10 @@ enum Request {
     },
     Panes {
         layout: PaneLayout,
+        reply: Sender<Result<SettingsView, Error>>,
+    },
+    Theme {
+        choice: ThemeChoice,
         reply: Sender<Result<SettingsView, Error>>,
     },
     Open {
@@ -797,6 +827,9 @@ impl SettingsOwner {
                     (Ok(files), Request::Panes { layout, reply }) => {
                         (files.save_panes(layout).map(|()| files.view()), reply)
                     }
+                    (Ok(files), Request::Theme { choice, reply }) => {
+                        (files.save_theme(choice).map(|()| files.view()), reply)
+                    }
                     (Ok(files), Request::Open { name, reply }) => {
                         let opened = files.open_repository(&name, OffsetDateTime::now_utc());
                         (opened.map(|_| files.view()), reply)
@@ -810,6 +843,7 @@ impl SettingsOwner {
                         Request::Add { reply, .. }
                         | Request::MirrorSource { reply, .. }
                         | Request::Panes { reply, .. }
+                        | Request::Theme { reply, .. }
                         | Request::Open { reply, .. }
                         | Request::Reread { reply },
                     ) => (Err(problem.clone()), reply),
@@ -875,6 +909,13 @@ impl SettingsOwner {
     pub fn save_panes(&self, layout: PaneLayout) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
         self.ask(Request::Panes { layout, reply }, &answer)
+    }
+
+    /// Saves the theme the picker chose for its side in `settings.toml`, and answers with what the settings
+    /// say now.
+    pub fn save_theme(&self, choice: ThemeChoice) -> Result<SettingsView, Error> {
+        let (reply, answer) = mpsc::channel();
+        self.ask(Request::Theme { choice, reply }, &answer)
     }
 
     /// Makes `name` the open Repository, and answers with what the settings say now.

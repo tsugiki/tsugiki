@@ -22,6 +22,16 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
   its default: System, VS Code Light Modern and VS Code Dark Modern. A `theme` other than the three, or a
   name no Theme of that side has, keeps that key's default, and the status bar names the file and the line.
   Tsugiki reads them at start, so a hand edit takes effect at the next one.
+- `Ctrl+K T`, or Pick a Theme in the command palette, opens the theme picker in the palette, as VS Code's
+  `Ctrl+K Ctrl+T` does ([#518](https://github.com/tsugiki/tsugiki/issues/518)). It lists the Themes of the
+  side in use, opens on the one in force and marks it "chosen". Each Theme the list moves to shows on the
+  whole window, with no fade. Enter saves the Theme picked to `light_theme` or `dark_theme` at once, as
+  Tsugiki saves the panes' layout, without Settings' Apply. Esc or a click outside puts the Theme in force
+  back, and so does moving to the last row. That row,
+  "Dark themes…" on the light side or "Light themes…" on the dark side, lists the other side's Themes with
+  that side's choice marked: a pick there saves that side's setting and leaves the mode alone, so the window
+  goes back to the Theme in force. A save that fails puts the old choice back, and the status bar says why.
+  `ui/src/lib/state/theme-picker.svelte.ts` decides what each row does.
 - The window opens hidden, takes the `bg` of the Theme for the side Windows is on, and only then shows, so
   a dark Theme doesn't flash white while the page loads
   ([#516](https://github.com/tsugiki/tsugiki/issues/516)). The page's own background starts on the same

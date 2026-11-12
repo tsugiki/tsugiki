@@ -3,7 +3,7 @@ use crate::conventions::Conventions;
 use crate::filters::Filter;
 use crate::mirror::MirrorSource;
 use crate::repository::{FoundRepository, RepositoryCounts};
-use crate::theme::{DarkTheme, LightTheme, ThemeMode};
+use crate::theme::{DarkTheme, LightTheme, ThemeChoice, ThemeMode};
 use time::format_description::well_known::Rfc3339;
 
 const HIDDEN: Settings = Settings {
@@ -344,6 +344,85 @@ fn appearance_is_saved_by_name_and_only_where_it_differs_from_the_default() {
     assert_eq!(
         after,
         "[appearance]\ntheme = \"light\"\nlight_theme = \"Gruvbox Light Hard\"\n"
+    );
+}
+
+/// The theme picker's Enter (#518) changes one key and leaves the user's comments and other keys as they
+/// were.
+#[test]
+fn a_picked_theme_is_saved_to_its_sides_key_alone() {
+    let (folders, root) = temp_folders("appearance-picked");
+    let before = "# Mine\n[releases]\ncheck = true\n\n[appearance]\ntheme = \"light\" # by day\n";
+    fs::write(folders.settings_file(), before).unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+
+    files
+        .save_theme(ThemeChoice::Dark(DarkTheme::GruvboxDarkHard))
+        .unwrap();
+    let dark = fs::read_to_string(folders.settings_file()).unwrap();
+    let loaded = files.loaded().settings.appearance;
+    files
+        .save_theme(ThemeChoice::Light(LightTheme::GruvboxLightHard))
+        .unwrap();
+    files
+        .save_theme(ThemeChoice::Dark(DarkTheme::VsCodeDarkModern))
+        .unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(
+        dark,
+        format!("{before}dark_theme = \"Gruvbox Dark Hard\"\n"),
+        "the default `check` stays as the user wrote it"
+    );
+    assert_eq!(
+        loaded,
+        AppearanceSettings {
+            theme: ThemeMode::Light,
+            light_theme: LightTheme::VsCodeLightModern,
+            dark_theme: DarkTheme::GruvboxDarkHard,
+        }
+    );
+    assert_eq!(
+        after,
+        format!("{before}light_theme = \"Gruvbox Light Hard\"\n"),
+        "a default leaves the file"
+    );
+}
+
+#[test]
+fn a_picked_theme_isnt_saved_over_a_settings_file_that_doesnt_parse() {
+    let (folders, root) = temp_folders("appearance-picked-broken");
+    let before = "[appearance\n";
+    fs::write(folders.settings_file(), before).unwrap();
+
+    let refusal = SettingsFiles::load(folders.clone())
+        .save_theme(ThemeChoice::Light(LightTheme::GruvboxLightHard));
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert!(
+        refusal.unwrap_err().message.contains("settings.toml"),
+        "names the file"
+    );
+    assert_eq!(after, before);
+}
+
+#[test]
+fn the_owner_saves_a_picked_theme_and_answers_with_it() {
+    let (folders, root) = temp_folders("owner-theme");
+    let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+
+    let answer = owner.save_theme(ThemeChoice::Light(LightTheme::GruvboxLightHard));
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    let appearance = answer.unwrap().loaded.settings.appearance;
+    assert_eq!(appearance.light_theme, LightTheme::GruvboxLightHard);
+    assert_eq!(owner.view().loaded.settings.appearance, appearance);
+    assert_eq!(
+        after,
+        "[appearance]\nlight_theme = \"Gruvbox Light Hard\"\n"
     );
 }
 
@@ -1071,7 +1150,9 @@ fn without_folders_the_owner_says_what_went_wrong_with_them() {
     let answering = owner.save_mirror_source(repository("a/b"), MirrorSource::Download);
     let resizing = owner.save_panes(WIDE);
     let opening = owner.open_repository(repository("a/b"));
+    let picking = owner.save_theme(ThemeChoice::Dark(DarkTheme::GruvboxDarkHard));
 
+    assert_eq!(picking.unwrap_err(), lost);
     assert_eq!(adding.unwrap_err(), lost);
     assert_eq!(opening.unwrap_err(), lost);
     assert_eq!(answering.unwrap_err(), lost);

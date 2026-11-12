@@ -136,8 +136,10 @@ impl World {
             .unwrap();
     }
 
-    fn opened(&self, number: u32, at: OffsetDateTime) {
-        self.store.mark_seen(&cpython(), number, at).unwrap();
+    fn marked_seen(&self, number: u32, up_to: OffsetDateTime) {
+        self.store
+            .mark_seen(&cpython(), vec![number], Some(up_to))
+            .unwrap();
     }
 
     /// CI on `pull_request` reaches `result`, and a sync saves it.
@@ -197,7 +199,7 @@ impl World {
 fn someone_elses_comment_after_last_seen_is_new_activity() {
     let world = World::new("comment-after");
     world.has(vec![pull_request(COLLEAGUES_PR, &colleague())]);
-    world.opened(COLLEAGUES_PR, hours_ago(2));
+    world.marked_seen(COLLEAGUES_PR, hours_ago(2));
     let comment = event(ActivityKind::Comment, &colleague(), hours_ago(1));
     world.happened(COLLEAGUES_PR, vec![comment]);
 
@@ -209,12 +211,12 @@ fn someone_elses_comment_after_last_seen_is_new_activity() {
 }
 
 #[test]
-fn opening_a_pr_clears_what_happened_before_it() {
+fn marking_a_pr_seen_clears_what_happened_before_it() {
     let world = World::new("comment-before");
     world.has(vec![pull_request(COLLEAGUES_PR, &colleague())]);
     let comment = event(ActivityKind::Comment, &colleague(), hours_ago(2));
     world.happened(COLLEAGUES_PR, vec![comment]);
-    world.opened(COLLEAGUES_PR, hours_ago(1));
+    world.marked_seen(COLLEAGUES_PR, hours_ago(1));
 
     assert_eq!(world.new_on_pull_request(COLLEAGUES_PR), []);
     world.finish();
@@ -225,7 +227,7 @@ fn peoples_commits_reviews_and_a_draft_turning_ready_are_new_activity_in_the_ord
  {
     let world = World::new("kinds");
     world.has(vec![pull_request(COLLEAGUES_PR, &colleague())]);
-    world.opened(COLLEAGUES_PR, hours_ago(5));
+    world.marked_seen(COLLEAGUES_PR, hours_ago(5));
     let reviewer = Login::new("some-reviewer");
     world.happened(
         COLLEAGUES_PR,
@@ -251,7 +253,7 @@ fn peoples_commits_reviews_and_a_draft_turning_ready_are_new_activity_in_the_ord
 fn what_the_user_did_isnt_new_activity() {
     let world = World::new("own");
     world.has(vec![pull_request(COLLEAGUES_PR, &colleague())]);
-    world.opened(COLLEAGUES_PR, hours_ago(5));
+    world.marked_seen(COLLEAGUES_PR, hours_ago(5));
     let at = hours_ago(1);
     world.happened(
         COLLEAGUES_PR,
@@ -271,7 +273,7 @@ fn what_the_user_did_isnt_new_activity() {
 fn a_bot_that_github_takes_for_a_person_isnt_new_activity() {
     let world = World::new("bot-account");
     world.has(vec![pull_request(COLLEAGUES_PR, &colleague())]);
-    world.opened(COLLEAGUES_PR, hours_ago(5));
+    world.marked_seen(COLLEAGUES_PR, hours_ago(5));
     let at = hours_ago(1);
     world.happened(
         COLLEAGUES_PR,
@@ -289,7 +291,7 @@ fn a_bot_that_github_takes_for_a_person_isnt_new_activity() {
 fn a_label_change_moves_a_pr_on_github_and_isnt_new_activity() {
     let world = World::new("label");
     world.has(vec![pull_request(COLLEAGUES_PR, &colleague())]);
-    world.opened(COLLEAGUES_PR, hours_ago(5));
+    world.marked_seen(COLLEAGUES_PR, hours_ago(5));
     let labelled = PullRequestFacts {
         updated_at: hours_ago(1),
         ..pull_request(COLLEAGUES_PR, &colleague())
@@ -308,7 +310,7 @@ fn ci_finishing_on_an_own_pr_is_new_activity() {
         ..pull_request(OWN_PR, &me())
     };
     world.has(vec![own.clone()]);
-    world.opened(OWN_PR, hours_ago(1));
+    world.marked_seen(OWN_PR, hours_ago(1));
 
     world.ci_reaches(&own, CiState::Failure);
 
@@ -331,7 +333,7 @@ fn ci_finishing_on_a_pr_the_user_has_a_review_on_is_new_activity() {
         ..pull_request(COLLEAGUES_PR, &colleague())
     };
     world.has(vec![reviewed.clone()]);
-    world.opened(COLLEAGUES_PR, hours_ago(1));
+    world.marked_seen(COLLEAGUES_PR, hours_ago(1));
 
     world.ci_reaches(&reviewed, CiState::Success);
 
@@ -347,7 +349,7 @@ fn ci_on_someone_elses_pr_the_user_hasnt_reviewed_isnt_new_activity() {
     let world = World::new("ci-other");
     let theirs = pull_request(COLLEAGUES_PR, &colleague());
     world.has(vec![theirs.clone()]);
-    world.opened(COLLEAGUES_PR, hours_ago(1));
+    world.marked_seen(COLLEAGUES_PR, hours_ago(1));
 
     world.ci_reaches(&theirs, CiState::Failure);
 
@@ -363,7 +365,7 @@ fn ci_going_back_to_pending_after_a_push_isnt_new_activity() {
         ..pull_request(OWN_PR, &me())
     };
     world.has(vec![own.clone()]);
-    world.opened(OWN_PR, hours_ago(1));
+    world.marked_seen(OWN_PR, hours_ago(1));
 
     world.ci_reaches(&own, CiState::Pending);
 
@@ -378,7 +380,7 @@ fn ci_that_finished_before_last_seen_isnt_new_activity() {
     world.has(vec![own.clone()]);
     world.ci_reaches(&own, CiState::Success);
 
-    world.opened(OWN_PR, OffsetDateTime::now_utc() + Duration::hours(1));
+    world.marked_seen(OWN_PR, OffsetDateTime::now_utc() + Duration::hours(1));
 
     assert_eq!(world.new_on_pull_request(OWN_PR), []);
     world.finish();
@@ -425,7 +427,7 @@ fn a_review_the_user_hasnt_submitted_doesnt_make_ci_news() {
         ..pull_request(COLLEAGUES_PR, &colleague())
     };
     world.has(vec![drafted.clone()]);
-    world.opened(COLLEAGUES_PR, hours_ago(1));
+    world.marked_seen(COLLEAGUES_PR, hours_ago(1));
 
     world.ci_reaches(&drafted, CiState::Failure);
 
@@ -437,7 +439,7 @@ fn a_review_the_user_hasnt_submitted_doesnt_make_ci_news() {
 fn a_commit_made_before_last_seen_and_pushed_after_it_is_new_activity() {
     let world = World::new("commit-pushed-later");
     world.has(vec![pull_request(COLLEAGUES_PR, &colleague())]);
-    world.opened(COLLEAGUES_PR, hours_ago(1));
+    world.marked_seen(COLLEAGUES_PR, hours_ago(1));
 
     let made_earlier = event(ActivityKind::Commit, &colleague(), hours_ago(2));
     world.happened(COLLEAGUES_PR, vec![made_earlier]);
@@ -455,7 +457,7 @@ fn a_commit_tsugiki_already_read_stays_seen_when_github_lists_it_again() {
     world.has(vec![pull_request(COLLEAGUES_PR, &colleague())]);
     let commit = event(ActivityKind::Commit, &colleague(), hours_ago(2));
     world.happened(COLLEAGUES_PR, vec![commit.clone()]);
-    world.opened(
+    world.marked_seen(
         COLLEAGUES_PR,
         OffsetDateTime::now_utc() + Duration::hours(1),
     );
@@ -488,7 +490,7 @@ fn the_old_commits_of_a_pr_tsugiki_first_sees_after_the_first_sync_arent_new_act
 fn a_bot_backport_tsugiki_first_sees_with_failed_ci_is_new_activity_on_its_origin_pr() {
     let world = World::new("backport-first-sight");
     world.has(vec![pull_request(OWN_PR, &me())]);
-    world.opened(OWN_PR, hours_ago(1));
+    world.marked_seen(OWN_PR, hours_ago(1));
 
     let failed = PullRequestFacts {
         ci: Some(CiState::Failure),
@@ -517,7 +519,7 @@ fn one_failure_on_a_bot_backport_the_user_reviewed_is_one_item() {
         ..backport(BOT_BACKPORT, CPYTHON_BACKPORT_BOT)
     };
     world.has(vec![pull_request(OWN_PR, &me()), reviewed.clone()]);
-    world.opened(BOT_BACKPORT, hours_ago(1));
+    world.marked_seen(BOT_BACKPORT, hours_ago(1));
 
     world.ci_reaches(&reviewed, CiState::Failure);
 
@@ -535,7 +537,7 @@ fn one_failure_on_a_bot_backport_the_user_reviewed_is_one_item() {
 fn the_bot_failing_to_make_a_backport_is_new_activity_on_the_origin_pr() {
     let world = World::new("backport-conflict");
     world.has(vec![pull_request(OWN_PR, &me())]);
-    world.opened(OWN_PR, hours_ago(2));
+    world.marked_seen(OWN_PR, hours_ago(2));
     let failed = ActivityKind::BackportFailed {
         target: "3.14".to_owned(),
     };
@@ -556,8 +558,8 @@ fn a_bot_backport_whose_ci_fails_is_new_activity_on_it_and_on_its_origin_pr() {
     let world = World::new("backport-ci");
     let bot_backport = backport(BOT_BACKPORT, CPYTHON_BACKPORT_BOT);
     world.has(vec![pull_request(OWN_PR, &me()), bot_backport.clone()]);
-    world.opened(OWN_PR, hours_ago(1));
-    world.opened(BOT_BACKPORT, hours_ago(1));
+    world.marked_seen(OWN_PR, hours_ago(1));
+    world.marked_seen(BOT_BACKPORT, hours_ago(1));
 
     world.ci_reaches(&bot_backport, CiState::Failure);
 
@@ -575,7 +577,7 @@ fn a_bot_backport_whose_ci_passes_isnt_a_failed_bot_backport() {
     let world = World::new("backport-ci-passed");
     let bot_backport = backport(BOT_BACKPORT, CPYTHON_BACKPORT_BOT);
     world.has(vec![pull_request(OWN_PR, &me()), bot_backport.clone()]);
-    world.opened(OWN_PR, hours_ago(1));
+    world.marked_seen(OWN_PR, hours_ago(1));
 
     world.ci_reaches(&bot_backport, CiState::Success);
 
@@ -590,7 +592,7 @@ fn a_failed_bot_backport_seen_on_its_origin_pr_is_no_longer_new_there() {
     world.has(vec![pull_request(OWN_PR, &me()), bot_backport.clone()]);
     world.ci_reaches(&bot_backport, CiState::Error);
 
-    world.opened(OWN_PR, OffsetDateTime::now_utc() + Duration::hours(1));
+    world.marked_seen(OWN_PR, OffsetDateTime::now_utc() + Duration::hours(1));
 
     assert_eq!(world.new_on_pull_request(OWN_PR), []);
     world.finish();
@@ -601,7 +603,7 @@ fn a_manual_backport_whose_ci_fails_isnt_a_failed_bot_backport() {
     let world = World::new("manual-backport-ci");
     let manual = backport(BOT_BACKPORT, "some-author");
     world.has(vec![pull_request(OWN_PR, &me()), manual.clone()]);
-    world.opened(OWN_PR, hours_ago(1));
+    world.marked_seen(OWN_PR, hours_ago(1));
 
     world.ci_reaches(&manual, CiState::Failure);
 
@@ -610,8 +612,8 @@ fn a_manual_backport_whose_ci_fails_isnt_a_failed_bot_backport() {
 }
 
 #[test]
-fn a_pr_never_opened_shows_what_happened_since_the_first_sync_and_nothing_older() {
-    let world = World::new("never-opened");
+fn a_pr_never_marked_seen_shows_what_happened_since_the_first_sync_and_nothing_older() {
+    let world = World::new("never-seen");
     world.has(vec![pull_request(COLLEAGUES_PR, &colleague())]);
     let older = event(ActivityKind::Comment, &colleague(), hours_ago(100));
     let since = event(ActivityKind::Review, &colleague(), hours_ago(1));
@@ -676,7 +678,7 @@ fn someone_elses_comment_on_an_issue_is_new_activity() {
         .store
         .save_fetched_issues(&cpython(), vec![issue], activity)
         .unwrap();
-    world.opened(ISSUE, hours_ago(2));
+    world.marked_seen(ISSUE, hours_ago(2));
 
     assert_eq!(
         world.new_on_issue(ISSUE),
@@ -686,11 +688,11 @@ fn someone_elses_comment_on_an_issue_is_new_activity() {
 }
 
 #[test]
-fn last_seen_doesnt_move_back_when_the_clock_does() {
+fn last_seen_never_moves_back() {
     let world = World::new("clock");
     let later = hours_ago(1).replace_nanosecond(0).unwrap();
-    world.opened(ISSUE, later);
-    world.opened(ISSUE, hours_ago(5));
+    world.marked_seen(ISSUE, later);
+    world.marked_seen(ISSUE, hours_ago(5));
 
     assert_eq!(world.facts().activity.last_seen.get(&ISSUE), Some(&later));
     world.finish();

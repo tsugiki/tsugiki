@@ -28,6 +28,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 | Switch Repository | `Ctrl+R`, or the command palette |
 | Reset the layout | the command palette |
 | Archive / Mute the selected item | `E` / `M` |
+| Mark seen / unseen, the row under the cursor or the Detail pane's item, by focus | `Q` / `Shift+Q` |
 | Settings | `Ctrl+,` |
 | Zoom in / out / reset | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
 | Show or hide the performance HUD | `Ctrl+Shift+H` |

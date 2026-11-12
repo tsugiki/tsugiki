@@ -4,6 +4,7 @@ use serde::Serialize;
 use specta::Type;
 use time::OffsetDateTime;
 
+use super::Seen;
 use crate::github::pull_requests::{CiState, PrState, PullRequestFacts, ReviewState};
 use crate::login::Login;
 
@@ -35,10 +36,12 @@ pub struct WorkbenchRow {
     pub reasons: Vec<WorkReason>,
     /// The user's latest submitted Review. A pending Review is a draft, so it isn't one yet.
     pub your_review: Option<ReviewState>,
+    /// Its part in Mark Seen, which covers this PR alone.
+    pub seen: Seen,
 }
 
 /// The PR's line of the list, whatever it has to do with `viewer`.
-pub(super) fn row(facts: PullRequestFacts, viewer: &Login) -> WorkbenchRow {
+pub(super) fn row(facts: PullRequestFacts, viewer: &Login, seen: Seen) -> WorkbenchRow {
     let reasons = reasons(&facts, viewer);
     let your_review = facts
         .latest_reviews
@@ -56,6 +59,7 @@ pub(super) fn row(facts: PullRequestFacts, viewer: &Login) -> WorkbenchRow {
         updated_at: facts.updated_at,
         reasons,
         your_review,
+        seen,
     }
 }
 

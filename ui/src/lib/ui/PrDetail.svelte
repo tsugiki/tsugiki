@@ -5,6 +5,7 @@
   import type { PrTab, PrViewState } from "$lib/state/pr-view.svelte";
   import Conversation from "./Conversation.svelte";
   import FilesTab from "./FilesTab.svelte";
+  import MarkButton from "./MarkButton.svelte";
   import { prIcon } from "./octicons";
   import StateIcon from "./StateIcon.svelte";
   import StateWords from "./StateWords.svelte";
@@ -15,6 +16,7 @@
     pr,
     now,
     onback,
+    onmark,
     focusable = false,
     header,
   }: {
@@ -22,6 +24,8 @@
     pr: PrViewState;
     now: Date;
     onback: (issue: number) => void;
+    /** Mark Seen or Mark Unseen, whichever the header's button offers. */
+    onmark: () => void;
     /** Whether the pane takes the focus, as it does while the Issue list is hidden. Otherwise a click in it
      * leaves the focus where it was, so Enter still opens the row under the cursor. */
     focusable?: boolean;
@@ -97,6 +101,7 @@
       </button>
     </h2>
     <p class="by"><b>{view.author ?? "deleted user"}</b> <StateWords row={view} /></p>
+    <MarkButton seen={view.seen} {onmark} />
 
     <div class="tabs" role="tablist">
       {#each TABS as { tab, name } (tab)}

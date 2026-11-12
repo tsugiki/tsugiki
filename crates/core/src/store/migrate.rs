@@ -112,6 +112,10 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         version: 22,
         sql: super::pull_requests::LABELS,
     },
+    Migration {
+        version: 23,
+        sql: super::activity::MARKED_UNSEEN,
+    },
 ];
 
 /// The version a file has after all of `migrations`.

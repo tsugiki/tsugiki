@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 use specta::Type;
 
+use super::attention::Causes;
 use super::{WorkbenchRow, candidates};
 use crate::error::Error;
 use crate::github::pull_request_content::PullRequestContent;
@@ -29,7 +30,8 @@ impl PrView {
         number: u32,
     ) -> Result<Option<Self>, Error> {
         let (facts, content) = reader.pull_request_facts(&repository.name, number)?;
-        let row = candidates(facts, repository, &BTreeSet::new())
+        let causes = Causes::of(&facts, repository.conventions);
+        let row = candidates(facts, repository, &BTreeSet::new(), &causes)
             .iter()
             .find_map(|item| {
                 item.rows()

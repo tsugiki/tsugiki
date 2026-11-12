@@ -29,19 +29,22 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     A click on the line, or "Show Quiet Items" in the command palette, unfolds it, and the line turns to
     "Hide 4 quiet items" above it. ↑ ↓ skip a folded section. Folding it moves a cursor in it to the last
     line above, and opening a quiet item another way, as with `Alt+←`, unfolds it. The choice holds for every
-    view while the Repository stays open.
+    view while the Repository stays open. An item moves to the quiet section when the user marks it seen
+    and nothing else there Needs attention, and the cursor lands on the row that takes its place.
 
-    An item that Needs attention is marked the way unread mail is. The preview says why in the words an
-    **Alert** would use: "CI failed: Tests / Ubuntu", "Changes requested by some-reviewer", "Review requested
-    from you". An Issue's Origin PRs and their Backports are listed under it, folded at first like a
-    conversation in a mail client: the Issue's row shows `›` and its preview, and ↑ ↓ go from Issue to
-    Issue. → or a click on `›` unfolds the Issue, and ↑ ↓ then stop on each of its PRs. ← folds it; on a
-    PR's row ← moves the cursor to its Issue, as in VS Code's trees, and a second ← folds it. The list takes
-    ← and → only while it has the focus. Opening a PR of a folded Issue some other way, such as with `Alt+←`
-    or from the Issue view, unfolds the Issue. Each view keeps which Issues are unfolded while the Repository
-    stays open. `Enter` or a click opens the item or PR under the cursor in the Detail pane. Any item can be
-    **Archived** or **Muted**, and its author **Muted**. A footer under the list gives the legend and the
-    list's keys (↑ ↓, ← →, E, M, `Alt+←`, `?` for all); it can be switched off.
+    An item that Needs attention is marked the way unread mail is, and keeps that look until the user marks
+    it seen. The preview says why in the words an **Alert** would use: "CI failed: Tests / Ubuntu", "Changes
+    requested by some-reviewer", "Review requested from you", or "Marked unseen". An Issue's Origin PRs and
+    their Backports are listed under it, folded at first like a conversation in a mail client: the Issue's
+    row shows `›` and its preview, and ↑ ↓ go from Issue to Issue. → or a click on `›` unfolds the Issue,
+    and ↑ ↓ then stop on each of its PRs. ← folds it; on a PR's row ← moves the cursor to its Issue, as in
+    VS Code's trees, and a second ← folds it. The list takes ← and → only while it has the focus. Opening a
+    PR of a folded Issue some other way, such as with `Alt+←` or from the Issue view, unfolds the Issue.
+    Each view keeps which Issues are unfolded while the Repository stays open. `Enter` or a click opens the
+    item or PR under the cursor in the Detail pane. `Q` marks the row under the cursor seen and `Shift+Q`
+    marks it unseen; with the focus in the Detail pane, they act on its item. Any item can be **Archived**
+    or **Muted**, and its author **Muted**. A footer under the list gives the legend and the list's keys
+    (↑ ↓, ← →, E, M, `Alt+←`, `?` for all); it can be switched off.
 
     `Ctrl+Alt+B`, or "Hide Issue List" in the command palette, hides the list with its footer and its edge,
     so the Detail pane gets its room. The same key, or "Show Issue List", brings it back at its width. In a
@@ -49,7 +52,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     - ↑ ↓ scroll the Detail pane, and the cursor stays where it was. `Alt+←` and `Alt+→` still go through
       history.
     - E and M act on the Detail pane's item; with a PR open, on the item the PR belongs to. With nothing open
-      they do nothing.
+      they do nothing. Q and Shift+Q act on the Detail pane's item too, and on a PR view that is the PR.
     - A click on a view in the Sidebar brings the list back, showing that view.
     - With nothing open, the Detail pane says "Nothing open. Ctrl+Alt+B shows the Issue list.", naming the
       current binding, and a click on the key runs it.
@@ -58,6 +61,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     row of the item the Detail pane shows, or to the cursor's row when that item isn't in the list or nothing
     is open.
   - **Detail pane** (right): the selected item. That is either an **Issue view** or a **PR view**.
+    - Under the title, a button reads "Mark Seen" while the item has New activity or is Marked unseen, and
+      "Mark Unseen" otherwise. The command palette's "Mark Seen" and "Mark Unseen" act on the item on show.
     - The Issue view shows the title, an author line, the Origin PRs, the description, and recent comments,
       with a box to comment. The author line says who opened the Issue and how long ago, with the date and
       time in its tooltip, how many comments it has, and whom it is assigned to, if anyone. Each Origin PR's

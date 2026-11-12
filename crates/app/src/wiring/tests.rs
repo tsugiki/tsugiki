@@ -572,20 +572,53 @@ fn no_browser(_: &WebAddress) -> Result<(), Error> {
 }
 
 #[test]
-fn opening_an_issue_moves_its_last_seen_and_tells_the_window() {
+fn opening_an_issue_moves_nothing_and_mark_unseen_and_mark_seen_tell_the_window() {
     let (folders, root) = temp_folders("wired-open-issue");
     let wired = Wired::start(Ok(folders), no_network());
     let issue_7 = json!({ "repository": CPYTHON, "number": 7 });
+    let mark = json!({ "numbers": [7, 8], "up_to": "2026-11-01T09:00:00Z" });
 
     drop(wired.ask("open_issue", issue_7.clone()).unwrap());
-    let changed = wired.workbenches.recv_timeout(PLENTY).unwrap();
     drop(wired.ask("fetch_issue", issue_7.clone()).unwrap());
+    drop(
+        wired
+            .ask("mark_unseen", json!({ "repository": CPYTHON, "number": 8 }))
+            .unwrap(),
+    );
+    // The session takes its messages in order, so opening would have told the window first.
+    let flagged = wired.workbenches.recv_timeout(PLENTY).unwrap();
+    drop(
+        wired
+            .ask("mark_seen", json!({ "repository": CPYTHON, "mark": mark }))
+            .unwrap(),
+    );
+    let seen = wired.workbenches.recv_timeout(PLENTY).unwrap();
     let held = wired.ask("issue", issue_7).unwrap();
     drop(wired.stop());
     std::fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(changed, json!({ "repository": CPYTHON, "items": [7] }));
+    assert_eq!(flagged, json!({ "repository": CPYTHON, "items": [8] }));
+    assert_eq!(seen, json!({ "repository": CPYTHON, "items": [7, 8] }));
     assert_eq!(held, Value::Null, "nothing has saved an Issue #7");
+}
+
+#[test]
+fn a_mark_seen_with_a_moment_that_isnt_one_is_refused() {
+    let (folders, root) = temp_folders("wired-bad-mark");
+    let wired = Wired::start(Ok(folders), no_network());
+    let mark = json!({ "numbers": [7], "up_to": "yesterday" });
+
+    let refused = wired.ask("mark_seen", json!({ "repository": CPYTHON, "mark": mark }));
+    let bad_name = wired.ask(
+        "mark_unseen",
+        json!({ "repository": "not a name", "number": 7 }),
+    );
+    let wired = wired.stop();
+    std::fs::remove_dir_all(root).unwrap();
+
+    assert!(refused.is_err());
+    assert_eq!(bad_name.unwrap_err()["kind"], "not_found");
+    assert!(wired.workbenches.try_recv().is_err());
 }
 
 #[test]
@@ -661,13 +694,7 @@ fn a_name_that_isnt_a_repository_opens_nothing() {
         .into_iter()
         .map(|command| wired.ask(command, bad.clone()).unwrap_err()["kind"].clone())
         .collect();
-    let requests = wired.core.session.requests();
-    let page = crate::open_github_page(
-        "not a name",
-        GitHubItem::Issue { number: 7 },
-        &requests,
-        no_browser,
-    );
+    let page = crate::open_github_page("not a name", GitHubItem::Issue { number: 7 }, no_browser);
     drop(wired.stop());
     std::fs::remove_dir_all(root).unwrap();
 
@@ -679,24 +706,22 @@ fn a_name_that_isnt_a_repository_opens_nothing() {
 }
 
 #[test]
-fn opening_an_item_on_github_shows_its_page_and_then_moves_its_last_seen() {
+fn opening_an_item_on_github_shows_its_page_and_leaves_last_seen_alone() {
     let (folders, root) = temp_folders("wired-open-on-github");
     let wired = Wired::start(Ok(folders), no_network());
-    let requests = wired.core.session.requests();
     let shown = std::cell::RefCell::new(Vec::new());
     for item in [
         GitHubItem::Issue { number: 7 },
         GitHubItem::PullRequest { number: 8 },
     ] {
-        crate::open_github_page(CPYTHON, item, &requests, |address| {
+        crate::open_github_page(CPYTHON, item, |address| {
             shown.borrow_mut().push(address.as_str().to_owned());
             Ok(())
         })
         .unwrap();
     }
-    let first = wired.workbenches.recv_timeout(PLENTY).unwrap();
-    let second = wired.workbenches.recv_timeout(PLENTY).unwrap();
-    drop(wired.stop());
+    let opened = crate::open_github_page(CPYTHON, GitHubItem::Issue { number: 9 }, no_browser);
+    let wired = wired.stop();
     std::fs::remove_dir_all(root).unwrap();
 
     assert_eq!(
@@ -706,26 +731,7 @@ fn opening_an_item_on_github_shows_its_page_and_then_moves_its_last_seen() {
             "https://github.com/python/cpython/pull/8",
         ]
     );
-    assert_eq!(first, json!({ "repository": CPYTHON, "items": [7] }));
-    assert_eq!(second, json!({ "repository": CPYTHON, "items": [8] }));
-}
-
-#[test]
-fn a_browser_that_doesnt_open_leaves_last_seen_where_it_is() {
-    let (folders, root) = temp_folders("wired-no-browser");
-    let wired = Wired::start(Ok(folders), no_network());
-    let requests = wired.core.session.requests();
-
-    let opened = crate::open_github_page(
-        CPYTHON,
-        GitHubItem::PullRequest { number: 8 },
-        &requests,
-        no_browser,
-    );
-    let wired = wired.stop();
-    std::fs::remove_dir_all(root).unwrap();
-
-    assert!(opened.is_err());
+    assert!(opened.is_err(), "a browser that doesn't open is a problem");
     assert!(wired.workbenches.try_recv().is_err());
 }
 

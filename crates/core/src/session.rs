@@ -18,7 +18,7 @@ use crate::status::{Change, FailedRead, LastSync, ReadFailure, Status, StatusBoa
 use crate::store::{self, OpenReader, ReaderToOpen, Store, StoreReader};
 use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
-use crate::workbench::Workbench;
+use crate::workbench::{SeenMark, Workbench};
 
 // `run` catches a panic in its thread, to keep the window up and say that checking stopped. Tests unwind
 // whatever the release profile says, so only this line can catch the setting (docs/build-costs.md).
@@ -76,11 +76,19 @@ enum Message {
         repository: RepositorySettings,
     },
     Refresh,
-    Seen {
-        item: Item,
-        at: OffsetDateTime,
-    },
+    Mark(Marked),
     Fetch(Fetched),
+}
+
+/// A mark the user made on an item: seen or unseen.
+#[derive(Debug, PartialEq, Eq)]
+enum Marked {
+    Seen {
+        repository: RepositoryName,
+        mark: SeenMark,
+    },
+    /// The flag starts at `at`.
+    Unseen { item: Item, at: OffsetDateTime },
 }
 
 /// An Issue or a PR on screen, whose conversation the session reads from GitHub.
@@ -129,29 +137,15 @@ impl SessionRequests {
         drop(self.messages.send(Message::Refresh));
     }
 
-    /// Tells the session the user opened Issue `number`, which moves its Last seen and reads what it says
-    /// from GitHub, and returns at once. A session that can't ask GitHub still records Last seen.
-    pub fn open_issue(&self, repository: RepositoryName, number: u32) {
-        self.seen(repository.clone(), number);
-        self.fetch_issue(repository, number);
-    }
-
-    /// Asks the session to read what an Issue on screen says now, and returns at once. This leaves Last seen
-    /// where it is, since a window left open doesn't mean the user read what came in.
+    /// Asks the session to read what an Issue on screen says now, and returns at once. Only Mark Seen moves
+    /// Last seen, so opening the Issue or reading it again leaves it alone.
     pub fn fetch_issue(&self, repository: RepositoryName, number: u32) {
         let item = Item { repository, number };
         drop(self.messages.send(Message::Fetch(Fetched::Issue(item))));
     }
 
-    /// Tells the session the user opened PR `number`, which moves its Last seen and reads its Conversation
-    /// from GitHub, and returns at once. A session that can't ask GitHub still records Last seen.
-    pub fn open_pull_request(&self, repository: RepositoryName, number: u32) {
-        self.seen(repository.clone(), number);
-        self.fetch_pull_request(repository, number);
-    }
-
-    /// Asks the session to read a PR's Conversation on screen now, and returns at once. Like
-    /// `fetch_issue`, this leaves Last seen where it is.
+    /// Asks the session to read a PR's Conversation on screen now, and returns at once. Like `fetch_issue`,
+    /// this leaves Last seen alone.
     pub fn fetch_pull_request(&self, repository: RepositoryName, number: u32) {
         let item = Item { repository, number };
         drop(
@@ -160,11 +154,23 @@ impl SessionRequests {
         );
     }
 
-    /// Tells the session the user opened item `number`, which moves its Last seen, and returns at once.
-    pub fn seen(&self, repository: RepositoryName, number: u32) {
+    /// Mark Seen on what `mark` names, as the window drew it, and returns at once. A session that can't ask
+    /// GitHub still records it.
+    pub fn mark_seen(&self, repository: RepositoryName, mark: SeenMark) {
+        drop(
+            self.messages
+                .send(Message::Mark(Marked::Seen { repository, mark })),
+        );
+    }
+
+    /// Mark Unseen on item `number`, from now, and returns at once.
+    pub fn mark_unseen(&self, repository: RepositoryName, number: u32) {
         let item = Item { repository, number };
         let at = OffsetDateTime::now_utc();
-        drop(self.messages.send(Message::Seen { item, at }));
+        drop(
+            self.messages
+                .send(Message::Mark(Marked::Unseen { item, at })),
+        );
     }
 
     /// Asks GitHub what adding `name` would load. A session with no token or no database answers with an
@@ -280,8 +286,8 @@ enum Turn {
     RefreshNow,
     /// The window opened this Repository, so it needs to know when its last sync was.
     Opened(RepositoryName),
-    /// The user opened this item at this moment.
-    Seen(Item, OffsetDateTime),
+    /// The user marked an item seen or unseen.
+    Mark(Marked),
     /// An Issue or a PR on screen needs its conversation read from GitHub.
     Fetch(Fetched),
     SyncStep,
@@ -290,12 +296,13 @@ enum Turn {
 
 impl Refreshes {
     /// Waits for a stop message, for a session with nothing to ask GitHub with. A check dropped here tells
-    /// the one asking that the session isn't connected. Last seen needs only the database, so it still moves.
+    /// the one asking that the session isn't connected. Mark Seen and Mark Unseen need only the database, so
+    /// they still work.
     fn wait_for_stop(&self, board: &mut StatusBoard, store: &Store) {
         while let Ok(message) = self.incoming.recv() {
             match message {
                 Message::Stop => return,
-                Message::Seen { item, at } => mark_seen(board, store, &item, at),
+                Message::Mark(marked) => mark(board, store, marked),
                 Message::Fetch(fetched) => {
                     board.failed_read(&fetched.item().failed(ReadFailure::NoToken));
                 }
@@ -322,7 +329,7 @@ impl Refreshes {
                     return Turn::Opened(opened);
                 }
                 Ok(Message::Refresh) => return Turn::RefreshNow,
-                Ok(Message::Seen { item, at }) => return Turn::Seen(item, at),
+                Ok(Message::Mark(marked)) => return Turn::Mark(marked),
                 Ok(Message::Fetch(fetched)) => return Turn::Fetch(fetched),
                 Ok(Message::Check { name, reply }) => {
                     let today = github.clock().now().date();
@@ -412,7 +419,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                 due.repository = Instant::now() + intervals.repository;
             }
             Turn::Opened(repository) => show_last_sync(board, store, repository),
-            Turn::Seen(item, at) => mark_seen(board, store, &item, at),
+            Turn::Mark(marked) => mark(board, store, marked),
             Turn::Fetch(fetched) => {
                 if let Fetched::Issue(item) = &fetched {
                     syncs.open_issue(&item.repository, item.number);
@@ -462,13 +469,28 @@ fn hand_over_heads(
     }
 }
 
-/// Moves the Last seen of `item`, and tells the window, whose lists go by it.
-fn mark_seen(board: &mut StatusBoard, store: &Store, item: &Item, at: OffsetDateTime) {
-    match store.mark_seen(&item.repository, item.number, at) {
-        Ok(()) => board.changed(&Change {
-            repository: item.repository.clone(),
-            items: vec![item.number],
-        }),
+/// Keeps what the user marked, and tells the window, whose lists go by it.
+fn mark(board: &mut StatusBoard, store: &Store, marked: Marked) {
+    let (saved, change) = match marked {
+        Marked::Seen { repository, mark } => {
+            let SeenMark { numbers, up_to } = mark;
+            let change = Change {
+                repository,
+                items: numbers.clone(),
+            };
+            (store.mark_seen(&change.repository, numbers, up_to), change)
+        }
+        Marked::Unseen {
+            item: Item { repository, number },
+            at,
+        } => {
+            let saved = store.mark_unseen(&repository, number, at);
+            let items = vec![number];
+            (saved, Change { repository, items })
+        }
+    };
+    match saved {
+        Ok(()) => board.changed(&change),
         Err(problem) => board.set(Status::Problem { problem }),
     }
 }

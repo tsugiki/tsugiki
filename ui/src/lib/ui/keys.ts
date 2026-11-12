@@ -35,6 +35,8 @@ const OWNED_KEYS = [
   "ctrl+r",
   "e",
   "m",
+  "q",
+  "shift+q",
   "ctrl+,",
   "ctrl+=",
   "ctrl+-",
@@ -91,9 +93,10 @@ export function chordName(first: ChordStart, second: string): string {
   return `${first} ${second}`;
 }
 
-/** Whether `name` types in a text box: a plain key, or Ctrl+Alt+B, which AltGr sends too on Windows. */
+/** Whether `name` types in a text box: a plain key, a capital letter such as Shift+Q, or Ctrl+Alt+B, which
+ * AltGr sends too on Windows. */
 function typesInTextBox(name: OwnedKey): boolean {
-  return name.length === 1 || name === "ctrl+alt+b";
+  return /^(?:shift\+)?.$/.test(name) || name === "ctrl+alt+b";
 }
 
 const MODIFIERS = new Set(["control", "shift", "alt", "meta", "altgraph", "capslock", "numlock", "fn"]);

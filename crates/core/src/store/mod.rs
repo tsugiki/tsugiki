@@ -379,16 +379,31 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// Records that the user looked at item `number` at `at`.
+    /// Mark Seen on items `numbers`: clears their Marked unseen, and moves their Last seen on to `up_to`, if
+    /// it's given.
     pub fn mark_seen(
+        &self,
+        repository: &RepositoryName,
+        numbers: Vec<u32>,
+        up_to: Option<OffsetDateTime>,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| {
+            activity::mark_seen(connection, &repository, &numbers, up_to)
+        })?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Flags item `number` Marked unseen from `at`.
+    pub fn mark_unseen(
         &self,
         repository: &RepositoryName,
         number: u32,
         at: OffsetDateTime,
     ) -> Result<(), Error> {
         let repository = repository.clone();
-        let saved =
-            self.call(move |connection| activity::mark_seen(connection, &repository, number, at))?;
+        let saved = self
+            .call(move |connection| activity::mark_unseen(connection, &repository, number, at))?;
         saved.map_err(saying(CANT_WRITE))
     }
 

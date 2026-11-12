@@ -11,7 +11,7 @@ pub mod pr_files;
 pub mod pr_view;
 mod rows;
 
-pub use attention::{Attention, Why};
+pub use attention::{Attention, Seen, SeenMark, SeenState, Why};
 pub use filters::FilterLine;
 pub use issues::IssueItem;
 pub(crate) use rows::reasons;
@@ -37,6 +37,7 @@ use backports::{plant, standalone};
 use filters::FilterFacts;
 use issues::issue_item;
 use links::link;
+use rows::row;
 
 /// A Backport's line of the list.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -222,13 +223,14 @@ impl Workbench {
             WorkbenchView::Filter { query } => Some(filters.numbers_of(query)),
             WorkbenchView::ReviewRequests => Some(&causes.review_requests),
         };
-        let listed: Vec<ListedItem> = candidates(facts, repository, selected.unwrap_or(&matched))
-            .into_iter()
-            .map(|item| ListedItem {
-                attention: causes.attention_of(&item),
-                item,
-            })
-            .collect();
+        let listed: Vec<ListedItem> =
+            candidates(facts, repository, selected.unwrap_or(&matched), &causes)
+                .into_iter()
+                .map(|item| ListedItem {
+                    attention: causes.attention_of(&item),
+                    item,
+                })
+                .collect();
         let on_workbench = |listed: &&ListedItem| {
             listed.attention.is_some()
                 || any_reason(&listed.item.rows())
@@ -280,16 +282,21 @@ fn count_of<'a>(items: impl Iterator<Item = &'a ListedItem>) -> u32 {
 }
 
 /// Each item the Repository's facts could show, on the Workbench or not. A PR in `first`, the Matched PRs of
-/// the view on show, comes first in its Issue's tree.
+/// the view on show, comes first in its Issue's tree. `causes` are the facts' own, and give each item and PR
+/// its part in Mark Seen.
 fn candidates(
     facts: WorkFacts,
     repository: &RepositorySettings,
     first: &BTreeSet<u32>,
+    causes: &Causes,
 ) -> Vec<WorkbenchItem> {
     let Some(viewer) = facts.viewer else {
         return Vec::new();
     };
-    let linked = link(facts.pull_requests, &facts.issues, repository, &viewer);
+    let linked = link(facts.pull_requests, &facts.issues, repository, |pr| {
+        let seen = causes.seen_of(vec![pr.number]);
+        row(pr, &viewer, seen)
+    });
     let mut issues: BTreeMap<u32, (IssueFacts, Vec<TreeEntry>)> = facts
         .issues
         .into_iter()
@@ -309,7 +316,12 @@ fn candidates(
     }
     items.extend(issues.into_values().map(|(issue, mut entries)| {
         entries.sort_by_key(|entry| !entry.rows().iter().any(|row| first.contains(&row.number)));
-        issue_item(issue, entries, repository.conventions)
+        let tree = entries
+            .iter()
+            .flat_map(TreeEntry::rows)
+            .map(|row| row.number);
+        let seen = causes.seen_of(std::iter::once(issue.number).chain(tree).collect());
+        issue_item(issue, entries, repository.conventions, seen)
     }));
     items
 }

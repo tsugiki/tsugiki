@@ -1,5 +1,6 @@
-//! The store's part of New activity: Last seen, the timeline GitHub reported, and when a first sync
-//! began. Issues and PRs share their numbers in a Repository, so a number says which item a row is about.
+//! The store's part of New activity: Last seen, Marked unseen, the timeline GitHub reported, and when a
+//! first sync began. Issues and PRs share their numbers in a Repository, so a number says which item a row is
+//! about.
 
 use std::collections::BTreeMap;
 
@@ -43,6 +44,17 @@ pub(super) const SCHEMA: &str = "
     ) WITHOUT ROWID;
     INSERT INTO first_syncs (repository, started_at) SELECT repository, started_at FROM sync_state;
     ALTER TABLE pull_requests ADD COLUMN ci_finished_at INTEGER;
+";
+
+/// The items the user marked unseen, each with the moment of the flag, which Needs attention counts from.
+/// Like Last seen, it is the user's own state, kept in Tsugiki only.
+pub(super) const MARKED_UNSEEN: &str = "
+    CREATE TABLE marked_unseen (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        number INTEGER NOT NULL,
+        at INTEGER NOT NULL,
+        PRIMARY KEY (repository, number)
+    ) WITHOUT ROWID;
 ";
 
 const COMMIT: &str = "commit";
@@ -150,8 +162,38 @@ pub(super) fn read(
     Ok(events.into_iter().flatten().collect())
 }
 
-/// Moves Last seen on to `at`. A clock set back doesn't move it back.
+/// Mark Seen on `numbers`, all at once: clears their Marked unseen, and moves their Last seen on to `up_to`,
+/// if it's given. Last seen never moves back.
 pub(super) fn mark_seen(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+    numbers: &[u32],
+    up_to: Option<OffsetDateTime>,
+) -> rusqlite::Result<()> {
+    let transaction = connection.transaction()?;
+    for number in numbers {
+        let item = named_params! { ":repository": repository, ":number": number };
+        let _cleared = transaction.execute(
+            "DELETE FROM marked_unseen WHERE repository = :repository AND number = :number",
+            item,
+        )?;
+        if let Some(at) = up_to {
+            let _moved = transaction.execute(
+                "INSERT INTO last_seen (repository, number, at) VALUES (:repository, :number, :at)
+                 ON CONFLICT (repository, number) DO UPDATE SET at = MAX(at, excluded.at)",
+                named_params! {
+                    ":repository": repository,
+                    ":number": number,
+                    ":at": at.unix_timestamp(),
+                },
+            )?;
+        }
+    }
+    transaction.commit()
+}
+
+/// Flags item `number` Marked unseen from `at`. Marking it again starts the flag afresh.
+pub(super) fn mark_unseen(
     connection: &Connection,
     repository: &RepositoryName,
     number: u32,
@@ -159,8 +201,8 @@ pub(super) fn mark_seen(
 ) -> rusqlite::Result<()> {
     connection
         .execute(
-            "INSERT INTO last_seen (repository, number, at) VALUES (:repository, :number, :at)
-             ON CONFLICT (repository, number) DO UPDATE SET at = MAX(at, excluded.at)",
+            "INSERT INTO marked_unseen (repository, number, at) VALUES (:repository, :number, :at)
+             ON CONFLICT (repository, number) DO UPDATE SET at = excluded.at",
             named_params! {
                 ":repository": repository,
                 ":number": number,
@@ -192,6 +234,8 @@ pub struct ActivityFacts {
     /// The moment the Repository's first sync began, once a first sync has finished.
     pub first_sync: Option<OffsetDateTime>,
     pub last_seen: BTreeMap<u32, OffsetDateTime>,
+    /// The moment the user marked each item unseen, for the items still flagged.
+    pub marked_unseen: BTreeMap<u32, OffsetDateTime>,
     /// Each event that names the user, and what happened after the first sync began on the items they wrote,
     /// reviewed, are assigned to or commented on, each at the time New activity goes by, oldest first. Only
     /// those can make an item Need attention, and a Repository holds too many others to read with each list.
@@ -203,6 +247,8 @@ pub struct ActivityFacts {
 }
 
 const SELECT_LAST_SEEN: &str = "SELECT number, at FROM last_seen WHERE repository = :repository";
+const SELECT_MARKED_UNSEEN: &str =
+    "SELECT number, at FROM marked_unseen WHERE repository = :repository";
 const SELECT_CI_FINISHED: &str = "SELECT number, ci_finished_at AS at FROM pull_requests
      WHERE repository = :repository AND ci_finished_at IS NOT NULL";
 const SELECT_LISTED_EVENTS: &str =
@@ -279,6 +325,7 @@ pub(super) fn read_facts(
     Ok(ActivityFacts {
         first_sync,
         last_seen: moments(connection, SELECT_LAST_SEEN, repository)?,
+        marked_unseen: moments(connection, SELECT_MARKED_UNSEEN, repository)?,
         events: listed_events(connection, repository, first_sync, viewer)?,
         ci_finished: moments(connection, SELECT_CI_FINISHED, repository)?,
         failed_checks: failed_checks::read_all(connection, repository)?,

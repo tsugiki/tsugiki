@@ -3,11 +3,9 @@
 use std::collections::BTreeSet;
 
 use super::WorkbenchRow;
-use super::rows::row;
 use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::PullRequestFacts;
 use crate::links::{BackportLink, MergeCommits, backport_of, fixed_numbers};
-use crate::login::Login;
 use crate::repository_settings::RepositorySettings;
 
 /// A PR with what the link rules say about it.
@@ -19,11 +17,12 @@ pub(super) struct Linked {
     pub(super) backport: Option<BackportLink>,
 }
 
+/// Links each PR, whose line of the list `row` draws.
 pub(super) fn link(
     pull_requests: Vec<PullRequestFacts>,
     issues: &[IssueFacts],
     repository: &RepositorySettings,
-    viewer: &Login,
+    row: impl Fn(PullRequestFacts) -> WorkbenchRow,
 ) -> Vec<Linked> {
     let merges = MergeCommits::of(&pull_requests);
     let known: BTreeSet<u32> = issues.iter().map(|issue| issue.number).collect();
@@ -34,7 +33,7 @@ pub(super) fn link(
             Linked {
                 issues: fixed.intersection(&known).copied().collect(),
                 backport: backport_of(&facts, repository.conventions, &merges),
-                row: row(facts, viewer),
+                row: row(facts),
             }
         })
         .collect()

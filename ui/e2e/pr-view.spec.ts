@@ -22,6 +22,7 @@ const row: WorkbenchRow = {
   updated_at: "2026-11-04T10:00:00Z",
   reasons: [],
   your_review: null,
+  seen: { mark: { numbers: [10], up_to: null }, state: "seen" },
 };
 
 const issue: ListedItem = {
@@ -32,6 +33,7 @@ const issue: ListedItem = {
   people: ["issue-author"],
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [{ ...row, kind: "pr", backports: [] }],
+  seen: { mark: { numbers: [7, 10], up_to: null }, state: "seen" },
   attention: null,
 };
 

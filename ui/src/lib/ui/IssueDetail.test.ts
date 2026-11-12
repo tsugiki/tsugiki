@@ -34,6 +34,7 @@ const row = {
   updated_at: "2026-11-04T10:00:00Z",
   reasons: [],
   your_review: "APPROVED" as const,
+  seen: { mark: { numbers: [], up_to: null }, state: "seen" as const },
 };
 
 const opened: TreeEntry = {
@@ -71,6 +72,10 @@ const view: IssueView = {
   ],
   merged: [],
   merged_count: 0,
+  seen: {
+    mark: { numbers: [7, 10, 11, 12, 13, 14], up_to: null },
+    state: "seen",
+  },
   content: {
     body_html: "<p>The description</p>",
     comments: [
@@ -96,11 +101,11 @@ const content = (body_html: string, earlier_comments: number) => ({
 
 const NOW = new Date("2026-11-04T11:00:00Z");
 
-const shown = async (answer: IssueView | null, onopenpr = vi.fn()) => {
+const shown = async (answer: IssueView | null, onopenpr = vi.fn(), onmark = vi.fn()) => {
   core.issue.mockResolvedValue({ status: "ok", data: answer });
   const state = new IssueViewState("python/cpython", 7);
   await state.load();
-  render(IssueDetail, { repository: "python/cpython", issue: state, now: NOW, onopenpr });
+  render(IssueDetail, { repository: "python/cpython", issue: state, now: NOW, onopenpr, onmark });
   state.stop();
   return state;
 };
@@ -121,6 +126,24 @@ it("shows the title and author, the description and the recent comments", async 
   const headers = [...document.querySelectorAll("article > header")].map((header) => header.textContent);
   expect(headers).toEqual(["some-reviewer · 2h ago", "deleted user · 1h ago"]);
   expect(screen.getByText("3 earlier comments are on GitHub.")).toBeTruthy();
+});
+
+it("offers Mark Seen in its header while something is new or it is Marked unseen, and Mark Unseen otherwise", async () => {
+  const onmark = vi.fn();
+  const seen = (state: "seen" | "new_activity" | "marked_unseen") => ({
+    ...view,
+    seen: { mark: { numbers: [7], up_to: "2026-11-04T10:00:00Z" }, state },
+  });
+
+  await shown(seen("seen"), vi.fn(), onmark);
+  await fireEvent.click(screen.getByRole("button", { name: "Mark Unseen" }));
+  expect(onmark).toHaveBeenCalledOnce();
+  cleanup();
+  await shown(seen("new_activity"));
+  expect(screen.getByRole("button", { name: "Mark Seen" })).toBeTruthy();
+  cleanup();
+  await shown(seen("marked_unseen"));
+  expect(screen.getByRole("button", { name: "Mark Seen" })).toBeTruthy();
 });
 
 /** The line under the title, and the part of it that names who opened the Issue, in the text colour. */
@@ -380,7 +403,13 @@ it("says why it can't show the Issue", async () => {
   core.issue.mockResolvedValue({ status: "error", error: { kind: "internal", message: "no database" } });
   const state = new IssueViewState("python/cpython", 7);
   await state.load();
-  render(IssueDetail, { repository: "python/cpython", issue: state, now: NOW, onopenpr: vi.fn() });
+  render(IssueDetail, {
+    repository: "python/cpython",
+    issue: state,
+    now: NOW,
+    onopenpr: vi.fn(),
+    onmark: vi.fn(),
+  });
   state.stop();
 
   expect(screen.getByRole("alert").textContent).toContain("Tsugiki can't show this Issue: no database");

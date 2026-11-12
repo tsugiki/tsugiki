@@ -199,12 +199,8 @@ pub(crate) fn pull_request(
 /// Opens an Issue or a PR on GitHub in the system browser.
 #[tauri::command(async)]
 #[specta::specta]
-pub(crate) fn open_on_github(
-    repository: &str,
-    item: GitHubItem,
-    requests: State<'_, SessionRequests>,
-) -> Result<(), Error> {
-    crate::open_github_page(repository, item, &requests, show_in_browser)
+pub(crate) fn open_on_github(repository: &str, item: GitHubItem) -> Result<(), Error> {
+    crate::open_github_page(repository, item, show_in_browser)
 }
 
 /// Opens a link from a description or a comment in the system browser. Tsugiki never navigates its own window

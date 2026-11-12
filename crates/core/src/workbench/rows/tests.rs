@@ -1,7 +1,9 @@
 use crate::github::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
 use crate::login::Login;
 use crate::workbench::testing::{at, me, mine, reasons_for, someone, stranger, workbench};
-use crate::workbench::{PrTree, WorkReason, WorkbenchItem, WorkbenchRow};
+use crate::workbench::{
+    PrTree, Seen, SeenMark, SeenState, WorkReason, WorkbenchItem, WorkbenchRow,
+};
 
 fn review(author: Login, state: ReviewState) -> LatestReview {
     LatestReview { author, state }
@@ -131,6 +133,13 @@ fn a_row_carries_what_the_list_shows() {
                 updated_at: at(3),
                 reasons: vec![WorkReason::OwnPr],
                 your_review: None,
+                seen: Seen {
+                    mark: SeenMark {
+                        numbers: vec![3],
+                        up_to: Some(at(3)),
+                    },
+                    state: SeenState::Seen,
+                },
             },
             backports: vec![],
         })

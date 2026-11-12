@@ -54,8 +54,8 @@ export const commands = {
 	/**  Refreshes the open Repository now, and returns at once. */
 	refresh: () => __TAURI_INVOKE<void>("refresh"),
 	/**
-	 *  Tells the core the user opened an Issue, which moves its Last seen and reads what it says from GitHub, and
-	 *  returns at once.
+	 *  Tells the core the user opened an Issue, which reads what it says from GitHub, and returns at once. Its
+	 *  Last seen stays: only Mark Seen moves it.
 	 */
 	openIssue: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_issue", { repository, number })),
 	/**  Asks the core to read what an Issue on screen says now, and returns at once (ADR 0015). */
@@ -67,6 +67,13 @@ export const commands = {
 	openPullRequest: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_pull_request", { repository, number })),
 	/**  Asks the core to read a PR's Conversation on screen now, and returns at once (ADR 0015). */
 	fetchPullRequest: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("fetch_pull_request", { repository, number })),
+	/**
+	 *  Mark Seen on what `mark` names, as the window drew it: an item, and for an Issue every PR in its tree.
+	 *  Returns at once, and the `changed` event follows.
+	 */
+	markSeen: (repository: string, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_seen", { repository, mark })),
+	/**  Mark Unseen on item `number`, and returns at once. */
+	markUnseen: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_unseen", { repository, number })),
 	/**  The settings Tsugiki last read, and what was wrong with their files (ADR 0014). */
 	settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
 	/**
@@ -733,6 +740,8 @@ export type IssueItem_Deserialize = {
 	/**  The latest update of the Issue and its PRs. */
 	updated_at: string,
 	pull_requests: TreeEntry_Deserialize[],
+	/**  Its part in Mark Seen, which covers the Issue and every PR in its tree. */
+	seen: Seen_Deserialize,
 };
 
 /**  An Issue on the Workbench, with its tree: each PR Tsugiki knows that fixes it, whatever its state. */
@@ -746,6 +755,8 @@ export type IssueItem_Serialize = {
 	/**  The latest update of the Issue and its PRs. */
 	updated_at: string,
 	pull_requests: TreeEntry_Serialize[],
+	/**  Its part in Mark Seen, which covers the Issue and every PR in its tree. */
+	seen: Seen_Serialize,
 };
 
 /**  The Issues opened while recording, from the click to the Issue on screen. */
@@ -1739,6 +1750,64 @@ export type Script_Serialize = {
 	ms: number | null,
 };
 
+/**  An item's part in Mark Seen and Mark Unseen: what Mark Seen sends, and which of the two its button offers. */
+export type Seen = Seen_Serialize | Seen_Deserialize;
+
+/**
+ *  The numbers Mark Seen marks and the moment it marks them up to, as the window drew them. The window sends
+ *  it back as it got it.
+ */
+export type SeenMark = SeenMark_Serialize | SeenMark_Deserialize;
+
+/**
+ *  The numbers Mark Seen marks and the moment it marks them up to, as the window drew them. The window sends
+ *  it back as it got it.
+ */
+export type SeenMark_Deserialize = {
+	/**  The item, and for an Issue every PR in its tree. */
+	numbers: number[],
+	/**
+	 *  The moment Last seen moves on to: the newest the window drew of GitHub's last update, CI reaching a
+	 *  result and each event on them. Whatever a later sync brings stays new. Nothing for numbers the facts
+	 *  don't hold, and Last seen then stays.
+	 */
+	up_to: string | null,
+};
+
+/**
+ *  The numbers Mark Seen marks and the moment it marks them up to, as the window drew them. The window sends
+ *  it back as it got it.
+ */
+export type SeenMark_Serialize = {
+	/**  The item, and for an Issue every PR in its tree. */
+	numbers: number[],
+	/**
+	 *  The moment Last seen moves on to: the newest the window drew of GitHub's last update, CI reaching a
+	 *  result and each event on them. Whatever a later sync brings stays new. Nothing for numbers the facts
+	 *  don't hold, and Last seen then stays.
+	 */
+	up_to: string | null,
+};
+
+/**  Whether the user has seen an item as it now is. The header offers Mark Seen unless they have. */
+export type SeenState = 
+/**  The item, or a PR in an Issue's tree, is Marked unseen, whatever its activity. */
+"marked_unseen" | 
+/**  The item, or a PR in an Issue's tree, has New activity, whoever it waits on. */
+"new_activity" | "seen";
+
+/**  An item's part in Mark Seen and Mark Unseen: what Mark Seen sends, and which of the two its button offers. */
+export type Seen_Deserialize = {
+	mark: SeenMark_Deserialize,
+	state: SeenState,
+};
+
+/**  An item's part in Mark Seen and Mark Unseen: what Mark Seen sends, and which of the two its button offers. */
+export type Seen_Serialize = {
+	mark: SeenMark_Serialize,
+	state: SeenState,
+};
+
 /**  What `settings.toml` holds. A value the file leaves out takes its default. */
 export type Settings = Settings_Serialize | Settings_Deserialize;
 
@@ -2051,7 +2120,9 @@ export type WebAddress = string;
 /**  One reason an item Needs attention. */
 export type Why = { kind: "review_requested" } | 
 /**  Empty `checks` means Tsugiki hasn't heard which ones failed, or GitHub names none. */
-{ kind: "ci_failed"; checks: string[] } | { kind: "ci_passed" } | { kind: "changes_requested"; by: Login } | { kind: "approved"; by: Login } | { kind: "reviewed"; by: Login } | { kind: "comment"; by: Login } | { kind: "commits"; by: Login } | { kind: "ready_for_review"; by: Login } | { kind: "mentioned" } | { kind: "backport_failed"; target: string };
+{ kind: "ci_failed"; checks: string[] } | { kind: "ci_passed" } | { kind: "changes_requested"; by: Login } | { kind: "approved"; by: Login } | { kind: "reviewed"; by: Login } | { kind: "comment"; by: Login } | { kind: "commits"; by: Login } | { kind: "ready_for_review"; by: Login } | { kind: "mentioned" } | { kind: "backport_failed"; target: string } | 
+/**  The user marked the item unseen. */
+{ kind: "marked_unseen" };
 
 /**  The reason a PR is on the user's Workbench. */
 export type WorkReason = 
@@ -2109,6 +2180,8 @@ export type WorkbenchRow_Deserialize = {
 	reasons: WorkReason[],
 	/**  The user's latest submitted Review. A pending Review is a draft, so it isn't one yet. */
 	your_review?: ReviewState | null,
+	/**  Its part in Mark Seen, which covers this PR alone. */
+	seen: Seen_Deserialize,
 };
 
 /**  A PR's line of the list. */
@@ -2125,6 +2198,8 @@ export type WorkbenchRow_Serialize = {
 	reasons: WorkReason[],
 	/**  The user's latest submitted Review. A pending Review is a draft, so it isn't one yet. */
 	your_review: ReviewState | null,
+	/**  Its part in Mark Seen, which covers this PR alone. */
+	seen: Seen_Serialize,
 };
 
 /**  The list the window asks for. */

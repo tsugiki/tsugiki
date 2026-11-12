@@ -21,6 +21,7 @@ const reviewRow: WorkbenchRow = {
   updated_at: "2026-11-04T10:00:00Z",
   reasons: ["review_request"],
   your_review: null,
+  seen: { mark: { numbers: [160662], up_to: null }, state: "seen" },
 };
 
 const review: ListedItem = {
@@ -44,11 +45,16 @@ const review: ListedItem = {
           target_branch: "3.14",
           reasons: [],
           your_review: null,
+          seen: { mark: { numbers: [160700], up_to: null }, state: "seen" },
           backport: "bot",
         },
       ],
     },
   ],
+  seen: {
+    mark: { numbers: [112564, 160662, 160700], up_to: null },
+    state: "seen",
+  },
 };
 
 const own: ListedItem = {
@@ -64,6 +70,7 @@ const own: ListedItem = {
   updated_at: "2026-11-04T09:00:00Z",
   reasons: ["own_pr"],
   your_review: null,
+  seen: { mark: { numbers: [157178], up_to: null }, state: "seen" },
   backports: [],
 };
 

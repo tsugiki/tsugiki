@@ -13,6 +13,8 @@ const core = vi.hoisted(() => ({
   pullRequest: vi.fn(),
   openPullRequest: vi.fn(),
   fetchPullRequest: vi.fn(),
+  markSeen: vi.fn(),
+  markUnseen: vi.fn(),
   openOnGithub: vi.fn(),
   pullRequestFiles: vi.fn(),
   pullRequestFind: vi.fn(),
@@ -34,6 +36,8 @@ vi.mock("$lib/data/bindings", () => ({
     pullRequest: core.pullRequest,
     openPullRequest: core.openPullRequest,
     fetchPullRequest: core.fetchPullRequest,
+    markSeen: core.markSeen,
+    markUnseen: core.markUnseen,
     openOnGithub: core.openOnGithub,
     pullRequestFiles: core.pullRequestFiles,
     pullRequestFind: core.pullRequestFind,
@@ -63,6 +67,10 @@ const row = {
   updated_at: "2026-11-04T10:00:00Z",
   reasons: ["review_request"],
   your_review: null,
+  seen: {
+    mark: { numbers: [160662], up_to: "2026-11-04T10:00:00Z" },
+    state: "new_activity",
+  },
 };
 
 const issue = {
@@ -73,6 +81,10 @@ const issue = {
   people: ["issue-author", "some-author"],
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [{ kind: "pr", ...row, backports: [] }],
+  seen: {
+    mark: { numbers: [112564, 160662], up_to: "2026-11-04T10:00:00Z" },
+    state: "new_activity",
+  },
 };
 
 const DEFAULT_LAYOUT = {
@@ -98,6 +110,8 @@ beforeEach(() => {
     Promise.resolve({ status: "ok", data: { ...row, number, title: `PR ${String(number)}`, content: null } }),
   );
   core.openOnGithub.mockResolvedValue({ status: "ok", data: null });
+  core.markSeen.mockResolvedValue({ status: "ok", data: null });
+  core.markUnseen.mockResolvedValue({ status: "ok", data: null });
   core.issue.mockResolvedValue({
     status: "ok",
     data: {
@@ -113,6 +127,7 @@ beforeEach(() => {
       assignees: [],
       needs_attention: [],
       content: null,
+      seen: issue.seen,
     },
   });
   core.workbench.mockResolvedValue({
@@ -495,12 +510,12 @@ const catchChanged = () => {
     callbacks.push(callback);
     return Promise.resolve(core.stopListening);
   });
-  return (repository: string) => {
-    for (const callback of callbacks) callback({ payload: { repository, items: [] } });
+  return (repository: string, items: number[] = []) => {
+    for (const callback of callbacks) callback({ payload: { repository, items } });
   };
 };
 
-it("opens an Issue in the Detail pane on a click, and moves Last seen", async () => {
+it("opens an Issue in the Detail pane on a click, and tells the core", async () => {
   const { issueRow } = await listing();
 
   await fireEvent.click(issueRow);
@@ -523,6 +538,7 @@ it("says how long ago each comment in the Detail pane came", async () => {
       author: "issue-author",
       assignees: [],
       needs_attention: [],
+      seen: issue.seen,
       content: {
         body_html: "<p>It crashes</p>",
         comments: [
@@ -539,7 +555,7 @@ it("says how long ago each comment in the Detail pane came", async () => {
   expect((await screen.findByText("· just now")).parentElement?.textContent).toBe("some-reviewer · just now");
 });
 
-it("opening the Issue on show again moves Last seen again", async () => {
+it("opening the Issue on show again tells the core again", async () => {
   const { issueRow } = await listing();
 
   await fireEvent.click(issueRow);
@@ -574,7 +590,7 @@ it("swaps the Detail pane for the next Issue", async () => {
   });
 });
 
-it("opens a Standalone PR in the Detail pane on a click, on its Conversation, and moves Last seen", async () => {
+it("opens a Standalone PR in the Detail pane on a click, on its Conversation, and tells the core", async () => {
   vi.setSystemTime("2026-11-04T12:00:00Z");
   core.pullRequest.mockResolvedValue({
     status: "ok",
@@ -633,6 +649,7 @@ it("keeps the merged PRs unfolded after one of them opens and Esc comes back", a
       assignees: [],
       needs_attention: [],
       content: null,
+      seen: issue.seen,
     },
   });
   const { issueRow } = await listing();
@@ -717,7 +734,7 @@ it("keeps the Issue view while a PR from its tree is on show, and shows it again
   expect(core.openPullRequest).toHaveBeenCalledTimes(3);
 });
 
-it("shows the Issue view it keeps at once on a click on the Issue's line, and moves Last seen", async () => {
+it("shows the Issue view it keeps at once on a click on the Issue's line, and tells the core", async () => {
   const send = catchChanged();
   const { issueRow, treeRow } = await listing();
   await fireEvent.click(issueRow);
@@ -1183,6 +1200,172 @@ it("moves the focus with the cursor on Alt+← and Alt+→", async () => {
 
   expect(await screen.findByRole("region", { name: "PR view" })).toBeTruthy();
   expect(document.activeElement).toBe(treeRow);
+});
+
+/** The PR view's item as the core reads it after the list did: newer activity, so another mark. */
+const laterMark = { numbers: [160662], up_to: "2026-11-05T10:00:00Z" };
+
+it("marks the line under the cursor on Q and Shift+Q, and the Detail pane's item when it holds the focus", async () => {
+  core.pullRequest.mockResolvedValue({
+    status: "ok",
+    data: { ...row, seen: { mark: laterMark, state: "new_activity" }, content: null },
+  });
+  const { issueRow, treeRow } = await listing();
+  await fireEvent.click(treeRow);
+  const view = await screen.findByRole("region", { name: "PR view" });
+  await screen.findByRole("button", { name: "Mark Seen" });
+
+  await fireEvent.keyDown(issueRow, { key: "q" });
+  await fireEvent.keyDown(view, { key: "q" });
+  await fireEvent.keyDown(issueRow, { key: "Q", shiftKey: true });
+  await fireEvent.keyDown(issueRow, { key: "Q", shiftKey: true, repeat: true });
+
+  expect(core.markSeen.mock.calls).toEqual([
+    ["python/cpython", row.seen.mark],
+    ["python/cpython", laterMark],
+  ]);
+  expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith("python/cpython", 160662);
+});
+
+/** A window on three Standalone PRs, #5, #6 and #8, the cursor on #5 and #5 on show. `markedSeen` answers
+ * as the core does once it saved Mark Seen on #5, which sends it to the quiet section. */
+const threeAlone = async () => {
+  const send = catchChanged();
+  const alone = (number: number, title: string) => ({
+    ...standalone,
+    number,
+    title,
+    attention: null,
+    seen: { mark: { numbers: [number], up_to: "2026-11-04T10:00:00Z" }, state: "new_activity" },
+  });
+  const [first, next, last] = [alone(5, "Alone"), alone(6, "Next"), alone(8, "Last")];
+  core.pullRequest.mockImplementation((_repository: string, number: number) =>
+    Promise.resolve({
+      status: "ok",
+      data: { ...row, ...alone(number, `PR ${String(number)}`), content: null },
+    }),
+  );
+  const answer = (items: object[], quiet: object[]) => ({
+    status: "ok",
+    data: { items, quiet, count: items.length, review_requests: 0, filters: [] },
+  });
+  core.workbench.mockResolvedValue(answer([first, next, last], []));
+  const { component } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
+  const marked = await screen.findByRole("button", { name: "#5 Alone" });
+  await fireEvent.click(marked);
+  const markedSeen = () => {
+    core.workbench.mockResolvedValue(answer([next, last], [first]));
+    send("python/cpython", [5]);
+  };
+  return { component, marked, markedSeen };
+};
+
+it("moves the cursor and the focus to the next row once Q sends the row under the cursor to the quiet section", async () => {
+  const { marked, markedSeen } = await threeAlone();
+
+  await fireEvent.keyDown(marked, { key: "q" });
+  markedSeen();
+
+  const landed = await screen.findByRole("button", { name: "#6 Next" });
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(landed);
+  });
+  expect(landed.getAttribute("aria-current")).toBe("true");
+});
+
+it("moves only the cursor to the next row once the palette's Mark Seen sends the item on show to the quiet section", async () => {
+  const { component, markedSeen } = await threeAlone();
+  await screen.findByRole("button", { name: "Mark Seen" });
+  const before = document.activeElement;
+
+  component
+    .paletteCommands()
+    .find(({ title }) => title === "Mark Seen")
+    ?.run();
+  await vi.waitFor(() => {
+    expect(core.markSeen).toHaveBeenCalledOnce();
+  });
+  markedSeen();
+
+  const landed = await screen.findByRole("button", { name: "#6 Next" });
+  await vi.waitFor(() => {
+    expect(landed.getAttribute("aria-current")).toBe("true");
+  });
+  await tick();
+  expect(document.activeElement).toBe(before);
+});
+
+it("marks nothing on Q and Shift+Q with no line under the cursor, or with the list hidden and nothing open", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  await listing();
+
+  await press("q");
+  await press("Q", { shiftKey: true });
+  await fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true, altKey: true });
+  await screen.findByText(/Nothing open/);
+  await press("q");
+  await press("Q", { shiftKey: true });
+
+  expect(core.markSeen).not.toHaveBeenCalled();
+  expect(core.markUnseen).not.toHaveBeenCalled();
+});
+
+it("offers Mark Unseen in the header of an item with nothing new, and the button marks it unseen", async () => {
+  core.pullRequest.mockResolvedValue({
+    status: "ok",
+    data: { ...row, number: 5, seen: { mark: row.seen.mark, state: "seen" }, content: null },
+  });
+  const { prRow } = await listing();
+  await fireEvent.click(prRow);
+
+  await fireEvent.click(await screen.findByRole("button", { name: "Mark Unseen" }));
+
+  expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith("python/cpython", 5);
+  expect(core.markSeen).not.toHaveBeenCalled();
+});
+
+it("lets Q and Shift+Q type in a text box", async () => {
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  const box = document.body.appendChild(document.createElement("input"));
+
+  await fireEvent.keyDown(box, { key: "q" });
+  await fireEvent.keyDown(box, { key: "Q", shiftKey: true });
+
+  expect(core.markSeen).not.toHaveBeenCalled();
+  expect(core.markUnseen).not.toHaveBeenCalled();
+  box.remove();
+});
+
+it("offers the palette Mark Seen and Mark Unseen on the item on show, each with its key", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const { component, issueRow } = await listing();
+  const command = (title: string) => component.paletteCommands().find((found) => found.title === title);
+  expect(command("Mark Seen")).toBeUndefined();
+  await fireEvent.click(issueRow);
+  await screen.findByRole("button", { name: "Mark Seen" });
+
+  expect([command("Mark Seen")?.note, command("Mark Unseen")?.note]).toEqual(["Q", "Shift+Q"]);
+  command("Mark Seen")?.run();
+  command("Mark Unseen")?.run();
+
+  await vi.waitFor(() => {
+    expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith("python/cpython", 112564);
+  });
+  expect(core.markSeen).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.seen.mark);
+});
+
+it("marks the item on show from its header's button, and says why the core refused", async () => {
+  core.markSeen.mockResolvedValue({ status: "error", error: { kind: "internal", message: "no database" } });
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+
+  await fireEvent.click(await screen.findByRole("button", { name: "Mark Seen" }));
+
+  expect(core.markSeen).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.seen.mark);
+  expect((await screen.findByText(/couldn't mark/)).textContent).toBe(
+    "Tsugiki couldn't mark this item: no database",
+  );
 });
 
 it("unfolds the quiet section when Alt+← goes back to an item in it, and puts the cursor and focus there", async () => {

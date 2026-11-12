@@ -44,7 +44,7 @@ use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_files::{DiffSources, PrFiles};
 use tsugiki_core::workbench::pr_view::PrView;
-use tsugiki_core::workbench::{Workbench, WorkbenchView};
+use tsugiki_core::workbench::{SeenMark, Workbench, WorkbenchView};
 
 #[tauri::command]
 #[specta::specta]
@@ -210,8 +210,8 @@ fn refresh(requests: State<'_, SessionRequests>) {
     requests.refresh();
 }
 
-/// Tells the core the user opened an Issue, which moves its Last seen and reads what it says from GitHub, and
-/// returns at once.
+/// Tells the core the user opened an Issue, which reads what it says from GitHub, and returns at once. Its
+/// Last seen stays: only Mark Seen moves it.
 #[tauri::command]
 #[specta::specta]
 fn open_issue(
@@ -219,12 +219,12 @@ fn open_issue(
     number: u32,
     requests: State<'_, SessionRequests>,
 ) -> Result<(), Error> {
-    requests.open_issue(RepositoryName::parse(repository)?, number);
+    requests.fetch_issue(RepositoryName::parse(repository)?, number);
     Ok(())
 }
 
-/// Tells the core the user opened PR `number`, which moves its Last seen, reads its Conversation from GitHub
-/// and hands its head to the mirror if the mirror lacks it. The Files tab reads the diff once it shows.
+/// Tells the core the user opened PR `number`, which reads its Conversation from GitHub and hands its head to
+/// the mirror if the mirror lacks it. The Files tab reads the diff once it shows. Its Last seen stays.
 fn open_pull_request(
     repository: &str,
     number: u32,
@@ -232,8 +232,33 @@ fn open_pull_request(
     work: &DiffWork,
 ) -> Result<(), Error> {
     let name = RepositoryName::parse(repository)?;
-    requests.open_pull_request(name.clone(), number);
+    requests.fetch_pull_request(name.clone(), number);
     PrFiles::fetch_missing_head(&work.sources()?, &name, number)
+}
+
+/// Mark Seen on what `mark` names, as the window drew it: an item, and for an Issue every PR in its tree.
+/// Returns at once, and the `changed` event follows.
+#[tauri::command]
+#[specta::specta]
+fn mark_seen(
+    repository: &str,
+    mark: SeenMark,
+    requests: State<'_, SessionRequests>,
+) -> Result<(), Error> {
+    requests.mark_seen(RepositoryName::parse(repository)?, mark);
+    Ok(())
+}
+
+/// Mark Unseen on item `number`, and returns at once.
+#[tauri::command]
+#[specta::specta]
+fn mark_unseen(
+    repository: &str,
+    number: u32,
+    requests: State<'_, SessionRequests>,
+) -> Result<(), Error> {
+    requests.mark_unseen(RepositoryName::parse(repository)?, number);
+    Ok(())
 }
 
 /// Asks the core to read a PR's Conversation on screen now, and returns at once (ADR 0015).
@@ -611,18 +636,14 @@ fn read_pull_request_lines(lines: GapLines, work: &DiffWork) -> Result<Vec<HeadL
     PrFiles::lines(&work.sources()?, &of, file, lines)
 }
 
-/// Opens the page of `item` on GitHub with `show`, and then moves its Last seen, since the user has it in
-/// front of them. If the browser didn't open, they haven't seen it.
+/// Opens the page of `item` on GitHub with `show`. It leaves Last seen alone: only Mark Seen moves it.
 fn open_github_page(
     repository: &str,
     item: GitHubItem,
-    requests: &SessionRequests,
     show: impl FnOnce(&WebAddress) -> Result<(), Error>,
 ) -> Result<(), Error> {
     let name = RepositoryName::parse(repository)?;
-    show(&WebAddress::of_item(&name, item))?;
-    requests.seen(name, item.number());
-    Ok(())
+    show(&WebAddress::of_item(&name, item))
 }
 
 /// Sent whenever the app-wide state changes (ADR 0008).
@@ -708,6 +729,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             fetch_issue,
             slow_commands::open_pull_request,
             fetch_pull_request,
+            mark_seen,
+            mark_unseen,
             settings,
             themes,
             home,

@@ -6,6 +6,7 @@ import ReviewThread from "./ReviewThread.svelte";
 const NOW = new Date("2026-11-04T12:00:00Z");
 
 const comment = (changes: Partial<DiffThread["comments"][number]> = {}) => ({
+  id: null,
   author: "some-reviewer",
   created_at: "2026-11-04T10:00:00Z",
   body_html: "<p>Why not a set?</p>",

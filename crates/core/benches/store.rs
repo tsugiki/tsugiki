@@ -9,7 +9,7 @@ use tsugiki_core::conventions::Conventions;
 use tsugiki_core::filters::Filter;
 use tsugiki_core::github::CommitSha;
 use tsugiki_core::github::activity::{Activity, ActivityKind, ItemActivity};
-use tsugiki_core::github::issue_content::{IssueComment, IssueContent};
+use tsugiki_core::github::issue_content::{Comment, CommentId, IssueComment, IssueContent};
 use tsugiki_core::github::issues::{IssueFacts, IssueState};
 use tsugiki_core::github::labels::Label;
 use tsugiki_core::github::pull_requests::{
@@ -354,10 +354,13 @@ fn content() -> IssueContent {
         body_html: paragraph.repeat(20),
         comments: (0..20)
             .map(|at| IssueComment {
-                author: Some(someone("core-dev", at, 30)),
-                created_at: updated(at),
-                body_html: paragraph.repeat(3),
-                hidden: None,
+                id: Some(CommentId::new(u64::from(at))),
+                comment: Comment {
+                    author: Some(someone("core-dev", at, 30)),
+                    created_at: updated(at),
+                    body_html: paragraph.repeat(3),
+                    hidden: None,
+                },
             })
             .collect(),
         earlier_comments: 40,

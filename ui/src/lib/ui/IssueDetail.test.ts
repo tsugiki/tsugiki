@@ -81,12 +81,13 @@ const view: IssueView = {
     body_html: "<p>The description</p>",
     comments: [
       {
+        id: 1,
         author: "some-reviewer",
         created_at: "2026-11-04T09:00:00Z",
         body_html: '<p><a href="https://github.com/python/cpython/issues/1">A link</a></p>',
         hidden: null,
       },
-      { author: null, created_at: "2026-11-04T10:00:00Z", body_html: "<p>Gone</p>", hidden: null },
+      { id: null, author: null, created_at: "2026-11-04T10:00:00Z", body_html: "<p>Gone</p>", hidden: null },
     ],
     earlier_comments: 3,
     opened_at: "2026-10-22T10:00:00Z",

@@ -31,6 +31,7 @@ fn an_issue_reads_as_its_rendering_with_the_comments_oldest_first() {
             "totalCount": 32,
             "nodes": [
                 {
+                    "fullDatabaseId": "6065108504",
                     "author": { "login": "some-reviewer" },
                     "createdAt": "2026-11-04T10:00:00Z",
                     "bodyHTML": "<p>Which build?</p>",
@@ -39,6 +40,7 @@ fn an_issue_reads_as_its_rendering_with_the_comments_oldest_first() {
                 },
                 null,
                 {
+                    "fullDatabaseId": null,
                     "author": null,
                     "createdAt": "2026-11-04T11:00:00Z",
                     "bodyHTML": "<p>Debug</p>",
@@ -57,16 +59,22 @@ fn an_issue_reads_as_its_rendering_with_the_comments_oldest_first() {
             body_html: "<p>It crashes</p>".to_owned(),
             comments: vec![
                 IssueComment {
-                    author: Some(Login::new("some-reviewer")),
-                    created_at: moment("2026-11-04T10:00:00Z"),
-                    body_html: "<p>Which build?</p>".to_owned(),
-                    hidden: None,
+                    id: Some(CommentId::new(6_065_108_504)),
+                    comment: Comment {
+                        author: Some(Login::new("some-reviewer")),
+                        created_at: moment("2026-11-04T10:00:00Z"),
+                        body_html: "<p>Which build?</p>".to_owned(),
+                        hidden: None,
+                    },
                 },
                 IssueComment {
-                    author: None,
-                    created_at: moment("2026-11-04T11:00:00Z"),
-                    body_html: "<p>Debug</p>".to_owned(),
-                    hidden: None,
+                    id: None,
+                    comment: Comment {
+                        author: None,
+                        created_at: moment("2026-11-04T11:00:00Z"),
+                        body_html: "<p>Debug</p>".to_owned(),
+                        hidden: None,
+                    },
                 },
             ],
             earlier_comments: 30,
@@ -77,6 +85,35 @@ fn an_issue_reads_as_its_rendering_with_the_comments_oldest_first() {
     assert_eq!(operation, "FetchIssueContent");
     assert_eq!(variables["number"], 7);
     assert_eq!(variables["owner"], "python");
+}
+
+#[test]
+fn a_comment_number_that_isnt_digits_fails_the_read() {
+    let (github, _asked) = answering(&json!({
+        "bodyHTML": "",
+        "createdAt": "2026-11-01T09:00:00Z",
+        "comments": {
+            "totalCount": 1,
+            "nodes": [{
+                "fullDatabaseId": "60x5",
+                "author": null,
+                "createdAt": "2026-11-04T10:00:00Z",
+                "bodyHTML": "",
+                "isMinimized": false,
+                "minimizedReason": null,
+            }],
+        },
+    }));
+
+    let problem = github.issue_content(&cpython(), 7).unwrap_err();
+
+    // The parser's words, which name the number, go to the log alone.
+    assert_eq!(problem.kind, ErrorKind::Internal);
+    assert!(
+        problem.message.contains("can't read"),
+        "{}",
+        problem.message
+    );
 }
 
 #[test]

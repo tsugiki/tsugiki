@@ -82,6 +82,7 @@ erDiagram
         INTEGER submitted_at
         TEXT body_html
         TEXT hidden "nullable"
+        INTEGER database_id "nullable"
     }
     review_threads {
         TEXT repository PK, FK
@@ -111,6 +112,7 @@ erDiagram
         TEXT body_html
         TEXT hidden "nullable"
         TEXT submission
+        INTEGER database_id "nullable"
     }
     review_requests }o--|| pull_requests : "repository, number"
     latest_reviews }o--|| pull_requests : "repository, number"
@@ -167,6 +169,7 @@ erDiagram
         INTEGER created_at
         TEXT body_html
         TEXT hidden "nullable"
+        INTEGER database_id "nullable"
     }
     activity {
         TEXT repository PK

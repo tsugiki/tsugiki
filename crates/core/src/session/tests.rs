@@ -1005,6 +1005,7 @@ fn reviewed_by(author: &str, commit: &CommitSha) -> PullRequestContent {
             opened_at: None,
         },
         reviews: vec![Review {
+            id: None,
             author: Some(Login::new(author)),
             state: ReviewState::Approved,
             commit: Some(commit.clone()),

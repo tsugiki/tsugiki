@@ -67,7 +67,8 @@ const HUNK: &str = "@@ -1,2 +1,2 @@\n x = 1\n-y = 2\n+y = 3";
 /// The comment `comment` reads as, by `some-reviewer`.
 fn read_comment(words: &str) -> ThreadComment {
     ThreadComment {
-        comment: IssueComment {
+        id: None,
+        comment: Comment {
             author: Some(Login::new("some-reviewer")),
             created_at: moment("2026-11-04T10:00:00Z"),
             body_html: format!("<p>{words}</p>"),
@@ -188,6 +189,31 @@ fn reviews_read_oldest_first_each_with_the_threads_it_started() {
 }
 
 #[test]
+fn each_review_and_thread_comment_keeps_githubs_number_for_it() {
+    let mut notes = review("R1", "COMMENTED", "2026-11-04T10:00:00Z", "<p>Notes</p>");
+    notes["fullDatabaseId"] = json!("5481796336");
+    let mut asked = thread("R1", 12, "Why not a set?", 2);
+    asked["comments"]["nodes"] = json!([comment("R1", "Why not a set?"), comment("R2", "Order")]);
+    asked["comments"]["nodes"][0]["fullDatabaseId"] = json!("4224108382");
+    asked["comments"]["nodes"][1]["fullDatabaseId"] = Value::Null;
+
+    let content = read(
+        json!([]),
+        (
+            2,
+            json!([notes, review("R2", "APPROVED", "2026-11-04T12:00:00Z", "")]),
+        ),
+        json!([asked]),
+    );
+
+    let numbers: Vec<Option<ReviewId>> = content.reviews.iter().map(|review| review.id).collect();
+    assert_eq!(numbers, [Some(ReviewId::new(5_481_796_336)), None]);
+    let comments = &content.reviews[0].threads[0].comments;
+    let numbers: Vec<Option<ThreadCommentId>> = comments.iter().map(|comment| comment.id).collect();
+    assert_eq!(numbers, [Some(ThreadCommentId::new(4_224_108_382)), None]);
+}
+
+#[test]
 fn a_thread_holds_its_replies_from_other_reviews_and_its_side() {
     let mut on_the_base = thread("R1", 5, "Why remove this?", 3);
     on_the_base["diffSide"] = json!("LEFT");
@@ -274,7 +300,7 @@ fn a_hidden_comment_review_or_thread_says_why() {
         .conversation
         .comments
         .iter()
-        .map(|comment| comment.hidden)
+        .map(|comment| comment.comment.hidden)
         .collect();
     assert_eq!(
         hidden,
@@ -454,8 +480,10 @@ fn a_recorded_pr_reads_as_its_reviews_and_their_threads() {
         .unwrap()
         .content;
 
+    let numbered = content.conversation.comments.iter();
+    let numbered = numbered.filter(|comment| comment.id.is_some()).count();
     let mut outline = format!(
-        "{} comments, {} earlier; {} earlier Reviews\n",
+        "{} comments, {numbered} with GitHub's number, {} earlier; {} earlier Reviews\n",
         content.conversation.comments.len(),
         content.conversation.earlier_comments,
         content.earlier_reviews
@@ -468,7 +496,13 @@ fn a_recorded_pr_reads_as_its_reviews_and_their_threads() {
             " with a body"
         };
         let author = review.author.as_ref().map(Login::as_str);
-        writeln!(outline, "{author:?} {:?} at {commit:?}{said}", review.state).unwrap();
+        let number = review.id.map(ReviewId::get);
+        writeln!(
+            outline,
+            "{number:?} {author:?} {:?} at {commit:?}{said}",
+            review.state
+        )
+        .unwrap();
         for thread in &review.threads {
             let opening = match &thread.opening {
                 Opening::Words { words } => words.chars().take(30).collect::<String>(),
@@ -482,14 +516,16 @@ fn a_recorded_pr_reads_as_its_reviews_and_their_threads() {
                     original,
                 } => format!("{side:?} {line:?}, began at {original:?}"),
             };
+            let first = thread.comments.first().and_then(|comment| comment.id);
             writeln!(
                 outline,
-                "  {} {opening:?} +{} resolved={} outdated={} at {placed}, {} read",
+                "  {} {opening:?} +{} resolved={} outdated={} at {placed}, {} read from {:?}",
                 thread.path,
                 thread.replies,
                 thread.resolution == Resolution::Resolved,
                 thread.anchor == Anchor::Outdated,
-                thread.comments.len()
+                thread.comments.len(),
+                first.map(ThreadCommentId::get),
             )
             .unwrap();
         }

@@ -7,7 +7,7 @@ use time::OffsetDateTime;
 
 use super::Connection;
 use super::columns::UnixTime;
-use crate::github::issue_content::{IssueComment, IssueContent};
+use crate::github::issue_content::{Comment, IssueComment, IssueContent};
 use crate::repository::RepositoryName;
 
 pub(super) const SCHEMA: &str = "
@@ -103,17 +103,19 @@ fn save_comment(
     connection: &Connection,
     repository: &RepositoryName,
     (number, position): (u32, u32),
-    comment: &IssueComment,
+    IssueComment { id, comment }: &IssueComment,
 ) -> rusqlite::Result<()> {
     connection
         .execute(
             "INSERT INTO issue_comments
-                 (repository, number, position, author, created_at, body_html, hidden)
-             VALUES (:repository, :number, :position, :author, :created_at, :body_html, :hidden)",
+                 (repository, number, position, database_id, author, created_at, body_html, hidden)
+             VALUES (:repository, :number, :position, :database_id, :author, :created_at, :body_html,
+                     :hidden)",
             named_params! {
                 ":repository": repository,
                 ":number": number,
                 ":position": position,
+                ":database_id": id,
                 ":author": comment.author,
                 ":created_at": comment.created_at.unix_timestamp(),
                 ":body_html": comment.body_html,
@@ -126,16 +128,20 @@ fn save_comment(
 fn comment_in(row: &Row<'_>) -> rusqlite::Result<IssueComment> {
     let UnixTime(created_at) = row.get("created_at")?;
     Ok(IssueComment {
-        author: row.get("author")?,
-        created_at,
-        body_html: row.get("body_html")?,
-        hidden: row.get("hidden")?,
+        id: row.get("database_id")?,
+        comment: Comment {
+            author: row.get("author")?,
+            created_at,
+            body_html: row.get("body_html")?,
+            hidden: row.get("hidden")?,
+        },
     })
 }
 
 const SELECT_BODY: &str = "SELECT body_html, earlier_comments, opened_at FROM issue_content
      WHERE repository = :repository AND number = :number";
-const SELECT_COMMENTS: &str = "SELECT author, created_at, body_html, hidden FROM issue_comments
+const SELECT_COMMENTS: &str =
+    "SELECT database_id, author, created_at, body_html, hidden FROM issue_comments
      WHERE repository = :repository AND number = :number ORDER BY position";
 
 /// The content kept for Issue `number`. Nothing, until Tsugiki has read it once.

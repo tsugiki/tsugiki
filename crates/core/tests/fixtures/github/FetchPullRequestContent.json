@@ -2,8 +2,8 @@
   "body": {
     "data": {
       "rateLimit": {
-        "remaining": 4986,
-        "resetAt": "2026-11-12T00:55:59Z"
+        "remaining": 4985,
+        "resetAt": "2026-11-12T21:57:17Z"
       },
       "repository": {
         "pullRequest": {
@@ -14,8 +14,9 @@
                 "author": {
                   "login": "user-0"
                 },
-                "bodyHTML": "<p dir=\"auto\">All commit authors signed the Contributor License Agreement.</p>\n<p dir=\"auto\"><a href=\"https://cla.python.org/\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/1c7e7ec4141b7323ee376d8a3a48e6acfaa33577216949150bd85c32e231b8db/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f434c412532305369676e65642d4641453038353f7374796c653d666c61742d737175617265266c6f676f3d507974686f6e\" alt=\"CLA signed\" data-canonical-src=\"https://img.shields.io/badge/CLA%20Signed-FAE085?style=flat-square&amp;logo=Python\" style=\"max-width: 100%;\"></a></p>",
+                "bodyHTML": "<p dir=\"auto\">All commit authors signed the Contributor License Agreement.</p>\n<p dir=\"auto\"><a href=\"https://cla.python.org/\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/d56598b4641208fb8de29804badec76a940e3df016a9f6a2c86828cfce5f687b/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f434c412532305369676e65642d4641453038353f7374796c653d666c61742d737175617265266c6f676f3d507974686f6e\" alt=\"CLA signed\" data-canonical-src=\"https://img.shields.io/badge/CLA%20Signed-FAE085?style=flat-square&amp;logo=Python\" style=\"max-width: 100%;\"></a></p>",
                 "createdAt": "2026-06-26T18:36:17Z",
+                "fullDatabaseId": "4812397428",
                 "isMinimized": false,
                 "minimizedReason": null
               },
@@ -25,6 +26,7 @@
                 },
                 "bodyHTML": "\n<p dir=\"auto\">A Python core developer has requested some changes be made to your pull request before we can consider merging it. If you could please address their requests along with any other requests in other reviews from core developers that would be appreciated.</p>\n<p dir=\"auto\">Once you have made the requested changes, please leave a comment on this pull request containing the phrase <code class=\"notranslate\">I have made the requested changes; please review again</code>. I will then notify any core developers who have left a review that you're ready for them to take another look at this pull request.</p>\n",
                 "createdAt": "2026-06-27T09:16:15Z",
+                "fullDatabaseId": "4816329233",
                 "isMinimized": false,
                 "minimizedReason": null
               },
@@ -34,6 +36,7 @@
                 },
                 "bodyHTML": "\n<h3 dir=\"auto\">Documentation build overview</h3>\n<blockquote>\n<p dir=\"auto\">📚 <a href=\"https://app.readthedocs.org/projects/cpython-previews/\" rel=\"nofollow\">cpython-previews</a> | 🛠️ Build <a href=\"https://app.readthedocs.org/projects/cpython-previews/builds/35068046/\" rel=\"nofollow\">#35068046</a> | 📁 Comparing <a class=\"commit-link\" data-hovercard-type=\"commit\" data-hovercard-url=\"https://github.com/python/cpython/commit/a4c2623368acdf75d3c088f2f84c3ddc6d78c75e/hovercard\" href=\"https://github.com/python/cpython/commit/a4c2623368acdf75d3c088f2f84c3ddc6d78c75e\"><tt>a4c2623</tt></a> against <a href=\"https://cpython-previews.readthedocs.io/en/main/\" rel=\"nofollow\">main</a> (<a class=\"commit-link\" data-hovercard-type=\"commit\" data-hovercard-url=\"https://github.com/python/cpython/commit/0a13efc3fb0bf0896612ed20decce3ce4eb5e05b/hovercard\" href=\"https://github.com/python/cpython/commit/0a13efc3fb0bf0896612ed20decce3ce4eb5e05b\"><tt>0a13efc</tt></a>)</p>\n</blockquote>\n<p dir=\"auto\"><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/\" rel=\"nofollow\"><kbd>   🔍 Preview build   </kbd></a></p>\n<details>\n<summary>427 files changed · <code class=\"notranslate\">+</code> 12 added · <code class=\"notranslate\">±</code> 415 modified</summary>\n<br>\n<p dir=\"auto\"><code class=\"notranslate\">+</code> <strong>Added</strong></p>\n<ul dir=\"auto\">\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/builtins/constants.html\" rel=\"nofollow\"><code class=\"notranslate\">builtins/constants.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/builtins/exceptions.html\" rel=\"nofollow\"><code class=\"notranslate\">builtins/exceptions.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/builtins/functions.html\" rel=\"nofollow\"><code class=\"notranslate\">builtins/functions.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/builtins/index.html\" rel=\"nofollow\"><code class=\"notranslate\">builtins/index.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/builtins/stdtypes.html\" rel=\"nofollow\"><code class=\"notranslate\">builtins/stdtypes.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/builtins/threadsafety.html\" rel=\"nofollow\"><code class=\"notranslate\">builtins/threadsafety.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/builtins/time-complexity.html\" rel=\"nofollow\"><code class=\"notranslate\">builtins/time-complexity.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/library/asyncio-tools.html\" rel=\"nofollow\"><code class=\"notranslate\">library/asyncio-tools.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/library/time-complexity.html\" rel=\"nofollow\"><code class=\"notranslate\">library/time-complexity.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/library/tkinter.dialogs.html\" rel=\"nofollow\"><code class=\"notranslate\">library/tkinter.dialogs.html</code></a></li>\n<li><em>and 2 more...</em></li>\n</ul>\n<p dir=\"auto\"><code class=\"notranslate\">±</code> <strong>Modified</strong></p>\n<ul dir=\"auto\">\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/glossary.html\" rel=\"nofollow\"><code class=\"notranslate\">glossary.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/index.html\" rel=\"nofollow\"><code class=\"notranslate\">index.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/license.html\" rel=\"nofollow\"><code class=\"notranslate\">license.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/py-modindex.html\" rel=\"nofollow\"><code class=\"notranslate\">py-modindex.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/_static/tachyon-example-heatmap.html\" rel=\"nofollow\"><code class=\"notranslate\">_static/tachyon-example-heatmap.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/c-api/arg.html\" rel=\"nofollow\"><code class=\"notranslate\">c-api/arg.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/c-api/bool.html\" rel=\"nofollow\"><code class=\"notranslate\">c-api/bool.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/c-api/buffer.html\" rel=\"nofollow\"><code class=\"notranslate\">c-api/buffer.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/c-api/bytearray.html\" rel=\"nofollow\"><code class=\"notranslate\">c-api/bytearray.html</code></a></li>\n<li><a href=\"https://cpython-previews--152326.org.readthedocs.build/en/152326/c-api/bytes.html\" rel=\"nofollow\"><code class=\"notranslate\">c-api/bytes.html</code></a></li>\n<li><em>and 405 more...</em></li>\n</ul>\n</details>",
                 "createdAt": "2026-07-03T04:09:10Z",
+                "fullDatabaseId": "4872505335",
                 "isMinimized": false,
                 "minimizedReason": null
               },
@@ -43,6 +46,7 @@
                 },
                 "bodyHTML": "<p dir=\"auto\"><a class=\"user-mention notranslate\" data-hovercard-type=\"user\" data-hovercard-url=\"/users/user-4/hovercard\" data-octo-click=\"hovercard-link-click\" data-octo-dimensions=\"link_type:self\" href=\"https://github.com/user-4\">@user-4</a> , I've added tests with classmethods, staticmethods and instancemethods with classes/metaclasses.</p>\n<p dir=\"auto\"><a class=\"user-mention notranslate\" data-hovercard-type=\"user\" data-hovercard-url=\"/users/user-8/hovercard\" data-octo-click=\"hovercard-link-click\" data-octo-dimensions=\"link_type:self\" href=\"https://github.com/user-8\">@user-8</a>, I've added tests.</p>\n<p dir=\"auto\"><a class=\"user-mention notranslate\" data-hovercard-type=\"user\" data-hovercard-url=\"/users/user-7/hovercard\" data-octo-click=\"hovercard-link-click\" data-octo-dimensions=\"link_type:self\" href=\"https://github.com/user-7\">@user-7</a> , I've added news.</p>\n<p dir=\"auto\">At a high level, I feel like I've taken on too much complexity in one PR. If people can chime on what feels good enough, that'd be great.</p>\n<p dir=\"auto\">This is ready for next round of review.</p>",
                 "createdAt": "2026-07-03T05:54:36Z",
+                "fullDatabaseId": "4872998967",
                 "isMinimized": false,
                 "minimizedReason": null
               },
@@ -52,6 +56,7 @@
                 },
                 "bodyHTML": "<p dir=\"auto\">I have made the requested changes; please review again</p>",
                 "createdAt": "2026-07-03T19:34:04Z",
+                "fullDatabaseId": "4878942063",
                 "isMinimized": false,
                 "minimizedReason": null
               },
@@ -61,6 +66,7 @@
                 },
                 "bodyHTML": "<p dir=\"auto\">Thanks for making the requested changes!</p>\n<p dir=\"auto\"><a class=\"user-mention notranslate\" data-hovercard-type=\"user\" data-hovercard-url=\"/users/user-4/hovercard\" data-octo-click=\"hovercard-link-click\" data-octo-dimensions=\"link_type:self\" href=\"https://github.com/user-4\">@user-4</a>: please review the changes made to this pull request.</p>",
                 "createdAt": "2026-07-03T19:34:09Z",
+                "fullDatabaseId": "4878942434",
                 "isMinimized": false,
                 "minimizedReason": null
               },
@@ -70,6 +76,7 @@
                 },
                 "bodyHTML": "<p dir=\"auto\"><a class=\"user-mention notranslate\" data-hovercard-type=\"user\" data-hovercard-url=\"/users/user-3/hovercard\" data-octo-click=\"hovercard-link-click\" data-octo-dimensions=\"link_type:self\" href=\"https://github.com/user-3\">@user-3</a> Please, don't force-push. It's impossible to make incremental reviews otherwise.</p>",
                 "createdAt": "2026-08-23T09:15:38Z",
+                "fullDatabaseId": "5385249736",
                 "isMinimized": false,
                 "minimizedReason": null
               },
@@ -79,6 +86,7 @@
                 },
                 "bodyHTML": "<p dir=\"auto\">reminder to review</p>",
                 "createdAt": "2026-10-08T15:49:03Z",
+                "fullDatabaseId": "6063690368",
                 "isMinimized": false,
                 "minimizedReason": null
               },
@@ -88,6 +96,7 @@
                 },
                 "bodyHTML": "<blockquote>\n<p dir=\"auto\">reminder to review</p>\n</blockquote>\n<p dir=\"auto\">If you get a hard time getting reviews, you can request one in <a href=\"https://discuss.python.org/c/core-dev/23\" rel=\"nofollow\">https://discuss.python.org/c/core-dev/23</a> under the tag #review-request</p>",
                 "createdAt": "2026-10-08T17:10:02Z",
+                "fullDatabaseId": "6065108504",
                 "isMinimized": false,
                 "minimizedReason": null
               },
@@ -97,6 +106,7 @@
                 },
                 "bodyHTML": "<p dir=\"auto\">🤖 New build scheduled with the buildbot fleet by <a class=\"user-mention notranslate\" data-hovercard-type=\"user\" data-hovercard-url=\"/users/user-7/hovercard\" data-octo-click=\"hovercard-link-click\" data-octo-dimensions=\"link_type:self\" href=\"https://github.com/user-7\">@user-7</a> for commit <a class=\"commit-link\" data-hovercard-type=\"commit\" data-hovercard-url=\"https://github.com/python/cpython/commit/a4c2623368acdf75d3c088f2f84c3ddc6d78c75e/hovercard\" href=\"https://github.com/python/cpython/commit/a4c2623368acdf75d3c088f2f84c3ddc6d78c75e\"><tt>a4c2623</tt></a> 🤖</p>\n<p dir=\"auto\">Results will be shown at:</p>\n<p dir=\"auto\"><a href=\"https://buildbot.python.org/all/#/grid?branch=refs%2Fpull%2F152326%2Fmerge\" rel=\"nofollow\">https://buildbot.python.org/all/#/grid?branch=refs%2Fpull%2F152326%2Fmerge</a></p>\n<p dir=\"auto\">If you want to schedule another build, you need to add the <kbd>🔨 test-with-buildbots</kbd> label again.</p>",
                 "createdAt": "2026-10-11T18:43:40Z",
+                "fullDatabaseId": "6112396466",
                 "isMinimized": false,
                 "minimizedReason": null
               }
@@ -118,6 +128,7 @@
                       "bodyText": "I agree with @user-5: self is only a naming convention. What matters is that the first parameter receives the instance. Consider something like:\n\". Did you forget the instance parameter (e.g. self) in the function definition?\"\nThis avoids misleading beginners into adding a parameter named self in the wrong position.",
                       "createdAt": "2026-06-26T19:20:55Z",
                       "diffHunk": "@@ -1617,18 +1618,71 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (suggest_missing_self) {\n+        self_hint = PyUnicode_FromString(\n+            \". Did you forget to declare 'self' as the first parameter?\");",
+                      "fullDatabaseId": "3483624570",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -132,6 +143,7 @@
                       "bodyText": "This avoids misleading beginners into adding a parameter named self in the wrong position.\n\nI'm not so sure that \"instance parameter\" means anything more to a beginner than a \"self\" parameter. \"Self\" has the advantage of being a very, very common pattern in Python, and I think that's more easily searchable than \"instance parameter\". For reference, our docs use \"self\" hundreds of times, whereas \"instance parameter\" does not appear once.\nI would lean more towards this:\nDid you forget the 'self' parameter in the function definition?\n\n\"self parameter python\" on Google will yield millions of results describing exactly what the user wants, whereas \"instance parameter python\" returns some unrelated results about class methods vs. instance methods and similar.",
                       "createdAt": "2026-06-26T21:51:24Z",
                       "diffHunk": "@@ -1617,18 +1618,71 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (suggest_missing_self) {\n+        self_hint = PyUnicode_FromString(\n+            \". Did you forget to declare 'self' as the first parameter?\");",
+                      "fullDatabaseId": "3484298330",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -146,6 +158,7 @@
                       "bodyText": "I must agree with\n'\"self parameter python\"' on Google will yield millions of results'.",
                       "createdAt": "2026-06-26T22:12:38Z",
                       "diffHunk": "@@ -1617,18 +1618,71 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (suggest_missing_self) {\n+        self_hint = PyUnicode_FromString(\n+            \". Did you forget to declare 'self' as the first parameter?\");",
+                      "fullDatabaseId": "3484369594",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -160,6 +173,7 @@
                       "bodyText": "I've updated the error message to include the self parameter:\n        self_hint = \". Did you forget the 'self' parameter \"\n                    \"in the function definition?\";",
                       "createdAt": "2026-07-03T04:53:42Z",
                       "diffHunk": "@@ -1617,18 +1618,71 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (suggest_missing_self) {\n+        self_hint = PyUnicode_FromString(\n+            \". Did you forget to declare 'self' as the first parameter?\");",
+                      "fullDatabaseId": "3517541917",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -189,6 +203,7 @@
                       "bodyText": "If PyUnicode_FromString fails, the original TypeError is never raised and the user gets no error message. Better to skip the hint and still emit the normal _PyErr_Format.",
                       "createdAt": "2026-06-26T19:22:28Z",
                       "diffHunk": "@@ -1617,18 +1618,71 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (suggest_missing_self) {\n+        self_hint = PyUnicode_FromString(\n+            \". Did you forget to declare 'self' as the first parameter?\");\n+        if (self_hint == NULL) {",
+                      "fullDatabaseId": "3483632540",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -203,6 +218,7 @@
                       "bodyText": "We should actually propagate the exception in this case, and not suggest anything at all. This is already the case when creating kwonly_sig",
                       "createdAt": "2026-06-27T09:11:37Z",
                       "diffHunk": "@@ -1617,18 +1618,71 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (suggest_missing_self) {\n+        self_hint = PyUnicode_FromString(\n+            \". Did you forget to declare 'self' as the first parameter?\");\n+        if (self_hint == NULL) {",
+                      "fullDatabaseId": "3485734379",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -217,6 +233,7 @@
                       "bodyText": "I've switched it to a char*. Does that suffice?",
                       "createdAt": "2026-07-03T04:55:12Z",
                       "diffHunk": "@@ -1617,18 +1618,71 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (suggest_missing_self) {\n+        self_hint = PyUnicode_FromString(\n+            \". Did you forget to declare 'self' as the first parameter?\");\n+        if (self_hint == NULL) {",
+                      "fullDatabaseId": "3517546162",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -246,6 +263,7 @@
                       "bodyText": "Good setup for the happy path. If possible, add a def method_with_self(self, x) on the same class A to cover the false positive case.",
                       "createdAt": "2026-06-26T19:24:20Z",
                       "diffHunk": "@@ -910,6 +910,12 @@ def static_no_args():\n     def positional_only(arg, /):\n         pass\n \n+    def missing_self(another_arg):",
+                      "fullDatabaseId": "3483641252",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -260,6 +278,7 @@
                       "bodyText": "Can you take another look: https://github.com/python/cpython/pull/152326/changes#diff-f27c08f13ff54ee9a69325f9291a3a2510a05b82ff8d813a8ab2e0072af632bb\nI've added coverage for common cases.",
                       "createdAt": "2026-07-03T04:56:57Z",
                       "diffHunk": "@@ -910,6 +910,12 @@ def static_no_args():\n     def positional_only(arg, /):\n         pass\n \n+    def missing_self(another_arg):",
+                      "fullDatabaseId": "3517550960",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -289,6 +308,7 @@
                       "bodyText": "The heuristic of matching tp_name against the class segment in qualname is solid. A negative test for a @user-10 missing cls would be useful, it probably shouldnt trigger the hint, and that would document the expected behavior.",
                       "createdAt": "2026-06-26T19:25:19Z",
                       "diffHunk": "@@ -1721,6 +1775,7 @@ initialize_locals(PyThreadState *tstate, PyFunctionObject *func,\n \n     /* Copy all positional arguments into local variables */\n     Py_ssize_t j, n;\n+    int missing_self_hint = suggest_missing_self(func, co, args, argcount);",
+                      "fullDatabaseId": "3483645902",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -303,6 +323,7 @@
                       "bodyText": "I've switched it to checking function name matching the self dictionary. Please take a fresh look at the PR and lmk if it suffices.",
                       "createdAt": "2026-07-03T04:57:02Z",
                       "diffHunk": "@@ -1721,6 +1775,7 @@ initialize_locals(PyThreadState *tstate, PyFunctionObject *func,\n \n     /* Copy all positional arguments into local variables */\n     Py_ssize_t j, n;\n+    int missing_self_hint = suggest_missing_self(func, co, args, argcount);",
+                      "fullDatabaseId": "3517551159",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -332,6 +353,7 @@
                       "bodyText": "Hmm, this fires whenever argcount > co_argcount and the first argument's type matches the class in qualname. That's broader than the beginner mistake this PR targets.\nEx:\nThis should hint\ndef lol(a): ...\nA().lol(1)   \nbut his should not:\ndef method(self, x): ...\nA().method(1, 2, 3) \nI'd suggest combining argcount == co_argcount + 1 with a second check, like, the first declared parameter is not named \"self\", or verifying via _PyType_Lookup that this code object is the function bound on the instance's type.",
                       "createdAt": "2026-06-26T19:27:35Z",
                       "diffHunk": "@@ -1617,18 +1618,71 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (suggest_missing_self) {\n+        self_hint = PyUnicode_FromString(\n+            \". Did you forget to declare 'self' as the first parameter?\");\n+        if (self_hint == NULL) {\n+            Py_DECREF(sig);\n+            Py_DECREF(kwonly_sig);\n+            return;\n+        }\n+    }\n     _PyErr_Format(tstate, PyExc_TypeError,\n-                  \"%U() takes %U positional argument%s but %zd%U %s given\",\n+                  \"%U() takes %U positional argument%s but %zd%U %s given%U\",\n                   qualname,\n                   sig,\n                   plural ? \"s\" : \"\",\n                   given,\n                   kwonly_sig,\n-                  given == 1 && !kwonly_given ? \"was\" : \"were\");\n+                  given == 1 && !kwonly_given ? \"was\" : \"were\",\n+                  self_hint\n+                );\n+    Py_DECREF(self_hint);\n     Py_DECREF(sig);\n     Py_DECREF(kwonly_sig);\n }\n \n+static int\n+suggest_missing_self(PyFunctionObject *func, PyCodeObject *co,\n+                     _PyStackRef const *args, Py_ssize_t argcount)\n+{\n+    if (co->co_argcount >= argcount) {",
+                      "fullDatabaseId": "3483656456",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -346,6 +368,7 @@
                       "bodyText": "ok, I've included your runtime arg count == defined arg count + 1 check. It also does both of your suggested checks on the first parameter. Please review it again",
                       "createdAt": "2026-07-03T05:00:29Z",
                       "diffHunk": "@@ -1617,18 +1618,71 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (suggest_missing_self) {\n+        self_hint = PyUnicode_FromString(\n+            \". Did you forget to declare 'self' as the first parameter?\");\n+        if (self_hint == NULL) {\n+            Py_DECREF(sig);\n+            Py_DECREF(kwonly_sig);\n+            return;\n+        }\n+    }\n     _PyErr_Format(tstate, PyExc_TypeError,\n-                  \"%U() takes %U positional argument%s but %zd%U %s given\",\n+                  \"%U() takes %U positional argument%s but %zd%U %s given%U\",\n                   qualname,\n                   sig,\n                   plural ? \"s\" : \"\",\n                   given,\n                   kwonly_sig,\n-                  given == 1 && !kwonly_given ? \"was\" : \"were\");\n+                  given == 1 && !kwonly_given ? \"was\" : \"were\",\n+                  self_hint\n+                );\n+    Py_DECREF(self_hint);\n     Py_DECREF(sig);\n     Py_DECREF(kwonly_sig);\n }\n \n+static int\n+suggest_missing_self(PyFunctionObject *func, PyCodeObject *co,\n+                     _PyStackRef const *args, Py_ssize_t argcount)\n+{\n+    if (co->co_argcount >= argcount) {",
+                      "fullDatabaseId": "3517561062",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -375,6 +398,7 @@
                       "bodyText": "Suggested change\n      \n    \n    \n      \n          \n            \n                    // When first arg is NULL, its not really about self\n          \n          \n            \n                    // When first arg is NULL, it's not really about self",
                       "createdAt": "2026-06-26T21:53:25Z",
                       "diffHunk": "@@ -1617,18 +1618,71 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (suggest_missing_self) {\n+        self_hint = PyUnicode_FromString(\n+            \". Did you forget to declare 'self' as the first parameter?\");\n+        if (self_hint == NULL) {\n+            Py_DECREF(sig);\n+            Py_DECREF(kwonly_sig);\n+            return;\n+        }\n+    }\n     _PyErr_Format(tstate, PyExc_TypeError,\n-                  \"%U() takes %U positional argument%s but %zd%U %s given\",\n+                  \"%U() takes %U positional argument%s but %zd%U %s given%U\",\n                   qualname,\n                   sig,\n                   plural ? \"s\" : \"\",\n                   given,\n                   kwonly_sig,\n-                  given == 1 && !kwonly_given ? \"was\" : \"were\");\n+                  given == 1 && !kwonly_given ? \"was\" : \"were\",\n+                  self_hint\n+                );\n+    Py_DECREF(self_hint);\n     Py_DECREF(sig);\n     Py_DECREF(kwonly_sig);\n }\n \n+static int\n+suggest_missing_self(PyFunctionObject *func, PyCodeObject *co,\n+                     _PyStackRef const *args, Py_ssize_t argcount)\n+{\n+    if (co->co_argcount >= argcount) {\n+        // When declared count is more than provided, there is nothing to add\n+        return 0;\n+    }\n+\n+    PyObject *self = PyStackRef_AsPyObjectBorrow(args[0]);\n+    if (self == NULL) {\n+        // When first arg is NULL, its not really about self",
+                      "fullDatabaseId": "3484304692",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -389,6 +413,7 @@
                       "bodyText": "Added it in the HEAD",
                       "createdAt": "2026-07-03T05:08:07Z",
                       "diffHunk": "@@ -1617,18 +1618,71 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (suggest_missing_self) {\n+        self_hint = PyUnicode_FromString(\n+            \". Did you forget to declare 'self' as the first parameter?\");\n+        if (self_hint == NULL) {\n+            Py_DECREF(sig);\n+            Py_DECREF(kwonly_sig);\n+            return;\n+        }\n+    }\n     _PyErr_Format(tstate, PyExc_TypeError,\n-                  \"%U() takes %U positional argument%s but %zd%U %s given\",\n+                  \"%U() takes %U positional argument%s but %zd%U %s given%U\",\n                   qualname,\n                   sig,\n                   plural ? \"s\" : \"\",\n                   given,\n                   kwonly_sig,\n-                  given == 1 && !kwonly_given ? \"was\" : \"were\");\n+                  given == 1 && !kwonly_given ? \"was\" : \"were\",\n+                  self_hint\n+                );\n+    Py_DECREF(self_hint);\n     Py_DECREF(sig);\n     Py_DECREF(kwonly_sig);\n }\n \n+static int\n+suggest_missing_self(PyFunctionObject *func, PyCodeObject *co,\n+                     _PyStackRef const *args, Py_ssize_t argcount)\n+{\n+    if (co->co_argcount >= argcount) {\n+        // When declared count is more than provided, there is nothing to add\n+        return 0;\n+    }\n+\n+    PyObject *self = PyStackRef_AsPyObjectBorrow(args[0]);\n+    if (self == NULL) {\n+        // When first arg is NULL, its not really about self",
+                      "fullDatabaseId": "3517584932",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -418,6 +443,7 @@
                       "bodyText": "This feels like a nasty hack. Relying on the __qualname__ feels very icky. I need to look into this more, but it's probably possible to determine whether this is an instance method earlier in the eval loop. That would be much cleaner.",
                       "createdAt": "2026-06-26T22:08:08Z",
                       "diffHunk": "@@ -1617,18 +1618,71 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (suggest_missing_self) {\n+        self_hint = PyUnicode_FromString(\n+            \". Did you forget to declare 'self' as the first parameter?\");\n+        if (self_hint == NULL) {\n+            Py_DECREF(sig);\n+            Py_DECREF(kwonly_sig);\n+            return;\n+        }\n+    }\n     _PyErr_Format(tstate, PyExc_TypeError,\n-                  \"%U() takes %U positional argument%s but %zd%U %s given\",\n+                  \"%U() takes %U positional argument%s but %zd%U %s given%U\",\n                   qualname,\n                   sig,\n                   plural ? \"s\" : \"\",\n                   given,\n                   kwonly_sig,\n-                  given == 1 && !kwonly_given ? \"was\" : \"were\");\n+                  given == 1 && !kwonly_given ? \"was\" : \"were\",\n+                  self_hint\n+                );\n+    Py_DECREF(self_hint);\n     Py_DECREF(sig);\n     Py_DECREF(kwonly_sig);\n }\n \n+static int\n+suggest_missing_self(PyFunctionObject *func, PyCodeObject *co,\n+                     _PyStackRef const *args, Py_ssize_t argcount)\n+{\n+    if (co->co_argcount >= argcount) {\n+        // When declared count is more than provided, there is nothing to add\n+        return 0;\n+    }\n+\n+    PyObject *self = PyStackRef_AsPyObjectBorrow(args[0]);\n+    if (self == NULL) {\n+        // When first arg is NULL, its not really about self\n+        return 0;\n+    }\n+\n+    Py_ssize_t qualname_len;\n+    const char *qualname = PyUnicode_AsUTF8AndSize(\n+        func->func_qualname, &qualname_len);\n+    if (qualname == NULL) {\n+        PyErr_Clear();\n+        return 0;\n+    }\n+\n+    const char *method_dot = strrchr(qualname, '.');\n+    if (method_dot == NULL) {\n+        return 0;\n+    }\n+\n+    const char *class_start = qualname;\n+    for (const char *p = qualname; p < method_dot; p++) {\n+        if (*p == '.') {\n+            class_start = p + 1;\n+        }\n+    }\n+    Py_ssize_t class_len = method_dot - class_start;\n+    const char *type_name = Py_TYPE(self)->tp_name;\n+\n+    return (strlen(type_name) == (size_t)class_len\n+            && strncmp(type_name, class_start, (size_t)class_len) == 0);\n+}",
+                      "fullDatabaseId": "3484356730",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -432,6 +458,7 @@
                       "bodyText": "I asked AI on other options. Please review this approach",
                       "createdAt": "2026-07-03T05:07:51Z",
                       "diffHunk": "@@ -1617,18 +1618,71 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (suggest_missing_self) {\n+        self_hint = PyUnicode_FromString(\n+            \". Did you forget to declare 'self' as the first parameter?\");\n+        if (self_hint == NULL) {\n+            Py_DECREF(sig);\n+            Py_DECREF(kwonly_sig);\n+            return;\n+        }\n+    }\n     _PyErr_Format(tstate, PyExc_TypeError,\n-                  \"%U() takes %U positional argument%s but %zd%U %s given\",\n+                  \"%U() takes %U positional argument%s but %zd%U %s given%U\",\n                   qualname,\n                   sig,\n                   plural ? \"s\" : \"\",\n                   given,\n                   kwonly_sig,\n-                  given == 1 && !kwonly_given ? \"was\" : \"were\");\n+                  given == 1 && !kwonly_given ? \"was\" : \"were\",\n+                  self_hint\n+                );\n+    Py_DECREF(self_hint);\n     Py_DECREF(sig);\n     Py_DECREF(kwonly_sig);\n }\n \n+static int\n+suggest_missing_self(PyFunctionObject *func, PyCodeObject *co,\n+                     _PyStackRef const *args, Py_ssize_t argcount)\n+{\n+    if (co->co_argcount >= argcount) {\n+        // When declared count is more than provided, there is nothing to add\n+        return 0;\n+    }\n+\n+    PyObject *self = PyStackRef_AsPyObjectBorrow(args[0]);\n+    if (self == NULL) {\n+        // When first arg is NULL, its not really about self\n+        return 0;\n+    }\n+\n+    Py_ssize_t qualname_len;\n+    const char *qualname = PyUnicode_AsUTF8AndSize(\n+        func->func_qualname, &qualname_len);\n+    if (qualname == NULL) {\n+        PyErr_Clear();\n+        return 0;\n+    }\n+\n+    const char *method_dot = strrchr(qualname, '.');\n+    if (method_dot == NULL) {\n+        return 0;\n+    }\n+\n+    const char *class_start = qualname;\n+    for (const char *p = qualname; p < method_dot; p++) {\n+        if (*p == '.') {\n+            class_start = p + 1;\n+        }\n+    }\n+    Py_ssize_t class_len = method_dot - class_start;\n+    const char *type_name = Py_TYPE(self)->tp_name;\n+\n+    return (strlen(type_name) == (size_t)class_len\n+            && strncmp(type_name, class_start, (size_t)class_len) == 0);\n+}",
+                      "fullDatabaseId": "3517584210",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -461,6 +488,7 @@
                       "bodyText": "There's no real need for this test. We test method calling in many other test cases in CPython. It does not add any real value.",
                       "createdAt": "2026-06-27T07:09:24Z",
                       "diffHunk": "@@ -910,15 +910,36 @@ def static_no_args():\n     def positional_only(arg, /):\n         pass\n \n+    def method_with_self(self, arg, kwarg=1):\n+        pass\n+\n+    def missing_self(another_arg):\n+        pass\n+\n+    def missing_self_no_args():\n+        pass\n+\n @cpython_only\n class TestErrorMessagesUseQualifiedName(unittest.TestCase):\n-\n     @contextlib.contextmanager\n     def check_raises_type_error(self, message):\n         with self.assertRaises(TypeError) as cm:\n             yield\n         self.assertEqual(str(cm.exception), message)\n \n+    def test_happy_path(self):\n+        self.assertIs(None, A().method_with_self(1, kwarg=2))",
+                      "fullDatabaseId": "3485524550",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -475,6 +503,7 @@
                       "bodyText": "This was my response to #152326 (comment) . I think I interpreted the happy path incorrectly",
                       "createdAt": "2026-06-27T21:41:11Z",
                       "diffHunk": "@@ -910,15 +910,36 @@ def static_no_args():\n     def positional_only(arg, /):\n         pass\n \n+    def method_with_self(self, arg, kwarg=1):\n+        pass\n+\n+    def missing_self(another_arg):\n+        pass\n+\n+    def missing_self_no_args():\n+        pass\n+\n @cpython_only\n class TestErrorMessagesUseQualifiedName(unittest.TestCase):\n-\n     @contextlib.contextmanager\n     def check_raises_type_error(self, message):\n         with self.assertRaises(TypeError) as cm:\n             yield\n         self.assertEqual(str(cm.exception), message)\n \n+    def test_happy_path(self):\n+        self.assertIs(None, A().method_with_self(1, kwarg=2))",
+                      "fullDatabaseId": "3486832381",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -489,6 +518,7 @@
                       "bodyText": "Removed it.",
                       "createdAt": "2026-07-03T05:09:04Z",
                       "diffHunk": "@@ -910,15 +910,36 @@ def static_no_args():\n     def positional_only(arg, /):\n         pass\n \n+    def method_with_self(self, arg, kwarg=1):\n+        pass\n+\n+    def missing_self(another_arg):\n+        pass\n+\n+    def missing_self_no_args():\n+        pass\n+\n @cpython_only\n class TestErrorMessagesUseQualifiedName(unittest.TestCase):\n-\n     @contextlib.contextmanager\n     def check_raises_type_error(self, message):\n         with self.assertRaises(TypeError) as cm:\n             yield\n         self.assertEqual(str(cm.exception), message)\n \n+    def test_happy_path(self):\n+        self.assertIs(None, A().method_with_self(1, kwarg=2))",
+                      "fullDatabaseId": "3517587494",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -518,6 +548,7 @@
                       "bodyText": "Please, add a test case for def method_with_self_arg(x, self): ...\nand then call it like inst.method_with_self().\nAlso: you can add def zero_args_self(self): ... and call it like: A.zero_args_self() and check that error message is also correct.",
                       "createdAt": "2026-06-27T07:12:17Z",
                       "diffHunk": "@@ -910,15 +910,36 @@ def static_no_args():\n     def positional_only(arg, /):\n         pass\n \n+    def method_with_self(self, arg, kwarg=1):\n+        pass\n+\n+    def missing_self(another_arg):\n+        pass\n+\n+    def missing_self_no_args():",
+                      "fullDatabaseId": "3485531965",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -532,6 +563,7 @@
                       "bodyText": "added bark_with_self_arg and test_unbound_method_with_self_keeps_missing_argument_error for this.",
                       "createdAt": "2026-07-03T05:47:13Z",
                       "diffHunk": "@@ -910,15 +910,36 @@ def static_no_args():\n     def positional_only(arg, /):\n         pass\n \n+    def method_with_self(self, arg, kwarg=1):\n+        pass\n+\n+    def missing_self(another_arg):\n+        pass\n+\n+    def missing_self_no_args():",
+                      "fullDatabaseId": "3517727990",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -561,6 +593,7 @@
                       "bodyText": "Your self_hint is non NULL (before assignment). While empty strings are immortal, you still need to decref it if this ever changes. For that use Py_SETREF.",
                       "createdAt": "2026-06-27T09:08:58Z",
                       "diffHunk": "@@ -1617,18 +1618,40 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (should_suggest_missing_self) {\n+        self_hint = PyUnicode_FromString(",
+                      "fullDatabaseId": "3485731609",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -575,6 +608,7 @@
                       "bodyText": "I don't feel super strongly about this, but I disagree with refcounting immortal objects. I've expressed before that too many users rely on certain things being immortal (such as empty strings), so changing that would be very difficult anyway. We might as well enjoy the performance boost rather than trying to maintain forward compatibility with a seemingly impossible case.",
                       "createdAt": "2026-06-27T13:35:55Z",
                       "diffHunk": "@@ -1617,18 +1618,40 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (should_suggest_missing_self) {\n+        self_hint = PyUnicode_FromString(",
+                      "fullDatabaseId": "3486104568",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -589,6 +623,7 @@
                       "bodyText": "I'm ok with not changing this path though I would prefer to have it initialized to NULL instead in this case and before constructing the message we would put it to something. But I won't be strongly opposed to keep things as is.",
                       "createdAt": "2026-06-27T15:06:23Z",
                       "diffHunk": "@@ -1617,18 +1618,40 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (should_suggest_missing_self) {\n+        self_hint = PyUnicode_FromString(",
+                      "fullDatabaseId": "3486260801",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -603,6 +638,7 @@
                       "bodyText": "I've switched it to char*. Does that suffice?",
                       "createdAt": "2026-07-03T05:48:33Z",
                       "diffHunk": "@@ -1617,18 +1618,40 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (should_suggest_missing_self) {\n+        self_hint = PyUnicode_FromString(",
+                      "fullDatabaseId": "3517733888",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -632,6 +668,7 @@
                       "bodyText": "Would this suggestion be also there if we are using classmethods? Or what about methodws on metaclasses? they can have cls as the first parameter name.",
                       "createdAt": "2026-06-27T09:12:21Z",
                       "diffHunk": "@@ -1617,18 +1618,40 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (should_suggest_missing_self) {\n+        self_hint = PyUnicode_FromString(\n+            \". Did you forget the 'self' parameter in the function definition?\");",
+                      "fullDatabaseId": "3485735055",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -646,6 +683,7 @@
                       "bodyText": "I've added exemption for those cases.",
                       "createdAt": "2026-07-03T05:50:50Z",
                       "diffHunk": "@@ -1617,18 +1618,40 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (should_suggest_missing_self) {\n+        self_hint = PyUnicode_FromString(\n+            \". Did you forget the 'self' parameter in the function definition?\");",
+                      "fullDatabaseId": "3517745379",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -675,6 +713,7 @@
                       "bodyText": "The argcount == 0 condition is redundant, right?",
                       "createdAt": "2026-08-10T02:53:09Z",
                       "diffHunk": "@@ -1647,18 +1649,57 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (should_suggest_missing_self) {\n+        self_hint = \". Did you forget the 'self' parameter \"\n+                    \"in the function definition?\";\n+    }\n     _PyErr_Format(tstate, PyExc_TypeError,\n-                  \"%U() takes %U positional argument%s but %zd%U %s given\",\n+                  \"%U() takes %U positional argument%s but %zd%U %s given%s\",\n                   qualname,\n                   sig,\n                   plural ? \"s\" : \"\",\n                   given,\n                   kwonly_sig,\n-                  given == 1 && !kwonly_given ? \"was\" : \"were\");\n+                  given == 1 && !kwonly_given ? \"was\" : \"were\",\n+                  self_hint\n+                );\n     Py_DECREF(sig);\n     Py_DECREF(kwonly_sig);\n }\n \n+static int\n+suggest_missing_self(PyFunctionObject *func, PyCodeObject *co,\n+                     _PyStackRef const *args, Py_ssize_t argcount)\n+{\n+    /* Missing self shows up as exactly one extra positional argument. */\n+    if ((co->co_argcount + 1) != argcount || argcount == 0) {",
+                      "fullDatabaseId": "3746292581",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -689,6 +728,7 @@
                       "bodyText": "Yes, I missed that.\nFixed it.",
                       "createdAt": "2026-08-23T04:53:46Z",
                       "diffHunk": "@@ -1647,18 +1649,57 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (should_suggest_missing_self) {\n+        self_hint = \". Did you forget the 'self' parameter \"\n+                    \"in the function definition?\";\n+    }\n     _PyErr_Format(tstate, PyExc_TypeError,\n-                  \"%U() takes %U positional argument%s but %zd%U %s given\",\n+                  \"%U() takes %U positional argument%s but %zd%U %s given%s\",\n                   qualname,\n                   sig,\n                   plural ? \"s\" : \"\",\n                   given,\n                   kwonly_sig,\n-                  given == 1 && !kwonly_given ? \"was\" : \"were\");\n+                  given == 1 && !kwonly_given ? \"was\" : \"were\",\n+                  self_hint\n+                );\n     Py_DECREF(sig);\n     Py_DECREF(kwonly_sig);\n }\n \n+static int\n+suggest_missing_self(PyFunctionObject *func, PyCodeObject *co,\n+                     _PyStackRef const *args, Py_ssize_t argcount)\n+{\n+    /* Missing self shows up as exactly one extra positional argument. */\n+    if ((co->co_argcount + 1) != argcount || argcount == 0) {",
+                      "fullDatabaseId": "3837732159",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -718,6 +758,7 @@
                       "bodyText": "Why are we calling this here instead of only in the error path below on line 1939?",
                       "createdAt": "2026-08-24T00:36:32Z",
                       "diffHunk": "@@ -1752,6 +1793,7 @@ initialize_locals(PyThreadState *tstate, PyFunctionObject *func,\n \n     /* Copy all positional arguments into local variables */\n     Py_ssize_t j, n;\n+    int missing_self_hint = suggest_missing_self(func, co, args, argcount);",
+                      "fullDatabaseId": "3840037032",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -732,6 +773,7 @@
                       "bodyText": "We close the args parameter here. I can extract what I need from args and then pass it when I need it if you'd like",
                       "createdAt": "2026-08-24T03:17:31Z",
                       "diffHunk": "@@ -1752,6 +1793,7 @@ initialize_locals(PyThreadState *tstate, PyFunctionObject *func,\n \n     /* Copy all positional arguments into local variables */\n     Py_ssize_t j, n;\n+    int missing_self_hint = suggest_missing_self(func, co, args, argcount);",
+                      "fullDatabaseId": "3840480327",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -746,6 +788,7 @@
                       "bodyText": "This is ready for review now.",
                       "createdAt": "2026-09-14T01:40:24Z",
                       "diffHunk": "@@ -1752,6 +1793,7 @@ initialize_locals(PyThreadState *tstate, PyFunctionObject *func,\n \n     /* Copy all positional arguments into local variables */\n     Py_ssize_t j, n;\n+    int missing_self_hint = suggest_missing_self(func, co, args, argcount);",
+                      "fullDatabaseId": "4001642080",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -775,6 +818,7 @@
                       "bodyText": "We like to keep type hints out of unchecked files:\n  \n    \n      \n        Suggested change\n      \n    \n    \n      \n          \n            \n                def assert_type_error_and_msg_in(self, message: str):\n          \n          \n            \n                def assert_type_error_and_msg_in(self, message):",
                       "createdAt": "2026-10-08T20:54:16Z",
                       "diffHunk": "@@ -947,50 +947,188 @@ def f(self, *args, **kwargs):\n         self.assertEqual(kwargs_captured, [{\"baz\": \"bar\"}])\n \n class A:\n-    def method_two_args(self, x, y):\n+    def method_two_args(arg1=None, arg2=None):\n+        pass\n+\n+    def method_one_arg(arg1):\n+        pass\n+\n+    def method_zero_arg():\n+        pass\n+\n+    @classmethod\n+    def classmethod_one_arg(arg1):\n         pass\n \n     @staticmethod\n     def static_no_args():\n         pass\n \n     @staticmethod\n-    def positional_only(arg, /):\n+    def static_positional_only_one_arg(arg1, /):\n         pass\n \n-@cpython_only\n-class TestErrorMessagesUseQualifiedName(unittest.TestCase):\n+    @staticmethod\n+    def static_one_arg(arg1):\n+        pass\n+\n+    def method_one_arg_named_self(self):\n+        pass\n+\n+    def method_one_arg_named_cls(cls):\n+        pass\n+\n+    def method_two_arg_second_param_self(arg1, self):\n+        pass\n+\n+\n+class AMeta(type):\n+\n+    def method_one_arg(arg1):\n+        pass\n \n+    def method_two_arg(arg1, arg2):\n+        pass\n+\n+    @classmethod\n+    def classmethod_one_arg(arg1):\n+        pass\n+\n+    @staticmethod\n+    def static_one_arg(arg1):\n+        pass\n+\n+class AClassWithMetaclass(metaclass=AMeta):\n+    pass\n+\n+@cpython_only\n+class TestIncorrectNumberOfPositionalArgs(unittest.TestCase):\n     @contextlib.contextmanager\n-    def check_raises_type_error(self, message):\n+    def assert_type_error_and_msg_in(self, message: str):",
+                      "fullDatabaseId": "4224030545",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -789,6 +833,7 @@
                       "bodyText": "ack. removed. There was only one. Please rereview.",
                       "createdAt": "2026-10-11T03:55:09Z",
                       "diffHunk": "@@ -947,50 +947,188 @@ def f(self, *args, **kwargs):\n         self.assertEqual(kwargs_captured, [{\"baz\": \"bar\"}])\n \n class A:\n-    def method_two_args(self, x, y):\n+    def method_two_args(arg1=None, arg2=None):\n+        pass\n+\n+    def method_one_arg(arg1):\n+        pass\n+\n+    def method_zero_arg():\n+        pass\n+\n+    @classmethod\n+    def classmethod_one_arg(arg1):\n         pass\n \n     @staticmethod\n     def static_no_args():\n         pass\n \n     @staticmethod\n-    def positional_only(arg, /):\n+    def static_positional_only_one_arg(arg1, /):\n         pass\n \n-@cpython_only\n-class TestErrorMessagesUseQualifiedName(unittest.TestCase):\n+    @staticmethod\n+    def static_one_arg(arg1):\n+        pass\n+\n+    def method_one_arg_named_self(self):\n+        pass\n+\n+    def method_one_arg_named_cls(cls):\n+        pass\n+\n+    def method_two_arg_second_param_self(arg1, self):\n+        pass\n+\n+\n+class AMeta(type):\n+\n+    def method_one_arg(arg1):\n+        pass\n \n+    def method_two_arg(arg1, arg2):\n+        pass\n+\n+    @classmethod\n+    def classmethod_one_arg(arg1):\n+        pass\n+\n+    @staticmethod\n+    def static_one_arg(arg1):\n+        pass\n+\n+class AClassWithMetaclass(metaclass=AMeta):\n+    pass\n+\n+@cpython_only\n+class TestIncorrectNumberOfPositionalArgs(unittest.TestCase):\n     @contextlib.contextmanager\n-    def check_raises_type_error(self, message):\n+    def assert_type_error_and_msg_in(self, message: str):",
+                      "fullDatabaseId": "4240166144",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -818,6 +863,7 @@
                       "bodyText": "I find these docstrings really distracting. Tests don't really need docstrings; nobody is calling them and the name or behavior of the test should document what it's looking for.",
                       "createdAt": "2026-10-08T20:56:01Z",
                       "diffHunk": "@@ -947,50 +947,188 @@ def f(self, *args, **kwargs):\n         self.assertEqual(kwargs_captured, [{\"baz\": \"bar\"}])\n \n class A:\n-    def method_two_args(self, x, y):\n+    def method_two_args(arg1=None, arg2=None):\n+        pass\n+\n+    def method_one_arg(arg1):\n+        pass\n+\n+    def method_zero_arg():\n+        pass\n+\n+    @classmethod\n+    def classmethod_one_arg(arg1):\n         pass\n \n     @staticmethod\n     def static_no_args():\n         pass\n \n     @staticmethod\n-    def positional_only(arg, /):\n+    def static_positional_only_one_arg(arg1, /):\n         pass\n \n-@cpython_only\n-class TestErrorMessagesUseQualifiedName(unittest.TestCase):\n+    @staticmethod\n+    def static_one_arg(arg1):\n+        pass\n+\n+    def method_one_arg_named_self(self):\n+        pass\n+\n+    def method_one_arg_named_cls(cls):\n+        pass\n+\n+    def method_two_arg_second_param_self(arg1, self):\n+        pass\n+\n+\n+class AMeta(type):\n+\n+    def method_one_arg(arg1):\n+        pass\n \n+    def method_two_arg(arg1, arg2):\n+        pass\n+\n+    @classmethod\n+    def classmethod_one_arg(arg1):\n+        pass\n+\n+    @staticmethod\n+    def static_one_arg(arg1):\n+        pass\n+\n+class AClassWithMetaclass(metaclass=AMeta):\n+    pass\n+\n+@cpython_only\n+class TestIncorrectNumberOfPositionalArgs(unittest.TestCase):\n     @contextlib.contextmanager\n-    def check_raises_type_error(self, message):\n+    def assert_type_error_and_msg_in(self, message: str):\n         with self.assertRaises(TypeError) as cm:\n-            yield\n-        self.assertEqual(str(cm.exception), message)\n-\n-    def test_missing_arguments(self):\n-        msg = \"A.method_two_args() missing 1 required positional argument: 'y'\"\n-        with self.check_raises_type_error(msg):\n-            A().method_two_args(\"x\")\n+            yield cm\n+        self.assertIn(message, str(cm.exception))\n+\n+    def test_too_many_positional_with_defaults_suggests_missing_self(self):\n+        \"\"\"A method with defaults that omits self should still get the hint.\"\"\"",
+                      "fullDatabaseId": "4224045582",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -832,6 +878,7 @@
                       "bodyText": "Removed",
                       "createdAt": "2026-10-11T03:55:58Z",
                       "diffHunk": "@@ -947,50 +947,188 @@ def f(self, *args, **kwargs):\n         self.assertEqual(kwargs_captured, [{\"baz\": \"bar\"}])\n \n class A:\n-    def method_two_args(self, x, y):\n+    def method_two_args(arg1=None, arg2=None):\n+        pass\n+\n+    def method_one_arg(arg1):\n+        pass\n+\n+    def method_zero_arg():\n+        pass\n+\n+    @classmethod\n+    def classmethod_one_arg(arg1):\n         pass\n \n     @staticmethod\n     def static_no_args():\n         pass\n \n     @staticmethod\n-    def positional_only(arg, /):\n+    def static_positional_only_one_arg(arg1, /):\n         pass\n \n-@cpython_only\n-class TestErrorMessagesUseQualifiedName(unittest.TestCase):\n+    @staticmethod\n+    def static_one_arg(arg1):\n+        pass\n+\n+    def method_one_arg_named_self(self):\n+        pass\n+\n+    def method_one_arg_named_cls(cls):\n+        pass\n+\n+    def method_two_arg_second_param_self(arg1, self):\n+        pass\n+\n+\n+class AMeta(type):\n+\n+    def method_one_arg(arg1):\n+        pass\n \n+    def method_two_arg(arg1, arg2):\n+        pass\n+\n+    @classmethod\n+    def classmethod_one_arg(arg1):\n+        pass\n+\n+    @staticmethod\n+    def static_one_arg(arg1):\n+        pass\n+\n+class AClassWithMetaclass(metaclass=AMeta):\n+    pass\n+\n+@cpython_only\n+class TestIncorrectNumberOfPositionalArgs(unittest.TestCase):\n     @contextlib.contextmanager\n-    def check_raises_type_error(self, message):\n+    def assert_type_error_and_msg_in(self, message: str):\n         with self.assertRaises(TypeError) as cm:\n-            yield\n-        self.assertEqual(str(cm.exception), message)\n-\n-    def test_missing_arguments(self):\n-        msg = \"A.method_two_args() missing 1 required positional argument: 'y'\"\n-        with self.check_raises_type_error(msg):\n-            A().method_two_args(\"x\")\n+            yield cm\n+        self.assertIn(message, str(cm.exception))\n+\n+    def test_too_many_positional_with_defaults_suggests_missing_self(self):\n+        \"\"\"A method with defaults that omits self should still get the hint.\"\"\"",
+                      "fullDatabaseId": "4240167896",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -861,6 +908,7 @@
                       "bodyText": "I think we should use assertRaisesRegex instead of brewing our own helper for this.",
                       "createdAt": "2026-10-08T20:58:45Z",
                       "diffHunk": "@@ -947,50 +947,188 @@ def f(self, *args, **kwargs):\n         self.assertEqual(kwargs_captured, [{\"baz\": \"bar\"}])\n \n class A:\n-    def method_two_args(self, x, y):\n+    def method_two_args(arg1=None, arg2=None):\n+        pass\n+\n+    def method_one_arg(arg1):\n+        pass\n+\n+    def method_zero_arg():\n+        pass\n+\n+    @classmethod\n+    def classmethod_one_arg(arg1):\n         pass\n \n     @staticmethod\n     def static_no_args():\n         pass\n \n     @staticmethod\n-    def positional_only(arg, /):\n+    def static_positional_only_one_arg(arg1, /):\n         pass\n \n-@cpython_only\n-class TestErrorMessagesUseQualifiedName(unittest.TestCase):\n+    @staticmethod\n+    def static_one_arg(arg1):\n+        pass\n+\n+    def method_one_arg_named_self(self):\n+        pass\n+\n+    def method_one_arg_named_cls(cls):\n+        pass\n+\n+    def method_two_arg_second_param_self(arg1, self):\n+        pass\n+\n+\n+class AMeta(type):\n+\n+    def method_one_arg(arg1):\n+        pass\n \n+    def method_two_arg(arg1, arg2):\n+        pass\n+\n+    @classmethod\n+    def classmethod_one_arg(arg1):\n+        pass\n+\n+    @staticmethod\n+    def static_one_arg(arg1):\n+        pass\n+\n+class AClassWithMetaclass(metaclass=AMeta):\n+    pass\n+\n+@cpython_only\n+class TestIncorrectNumberOfPositionalArgs(unittest.TestCase):\n     @contextlib.contextmanager\n-    def check_raises_type_error(self, message):\n+    def assert_type_error_and_msg_in(self, message: str):\n         with self.assertRaises(TypeError) as cm:\n-            yield\n-        self.assertEqual(str(cm.exception), message)\n-\n-    def test_missing_arguments(self):\n-        msg = \"A.method_two_args() missing 1 required positional argument: 'y'\"\n-        with self.check_raises_type_error(msg):\n-            A().method_two_args(\"x\")\n+            yield cm\n+        self.assertIn(message, str(cm.exception))\n+\n+    def test_too_many_positional_with_defaults_suggests_missing_self(self):\n+        \"\"\"A method with defaults that omits self should still get the hint.\"\"\"\n+        msg = \".method_two_args() takes from 0 to 2 positional arguments but 3 were given. Did you forget the 'self' parameter in the function definition?\"\n+        with self.assert_type_error_and_msg_in(msg):",
+                      "fullDatabaseId": "4224069048",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -875,6 +923,7 @@
                       "bodyText": "Migrated. It reads good enough to not warrant its own helper. Please rereview",
                       "createdAt": "2026-10-11T03:56:43Z",
                       "diffHunk": "@@ -947,50 +947,188 @@ def f(self, *args, **kwargs):\n         self.assertEqual(kwargs_captured, [{\"baz\": \"bar\"}])\n \n class A:\n-    def method_two_args(self, x, y):\n+    def method_two_args(arg1=None, arg2=None):\n+        pass\n+\n+    def method_one_arg(arg1):\n+        pass\n+\n+    def method_zero_arg():\n+        pass\n+\n+    @classmethod\n+    def classmethod_one_arg(arg1):\n         pass\n \n     @staticmethod\n     def static_no_args():\n         pass\n \n     @staticmethod\n-    def positional_only(arg, /):\n+    def static_positional_only_one_arg(arg1, /):\n         pass\n \n-@cpython_only\n-class TestErrorMessagesUseQualifiedName(unittest.TestCase):\n+    @staticmethod\n+    def static_one_arg(arg1):\n+        pass\n+\n+    def method_one_arg_named_self(self):\n+        pass\n+\n+    def method_one_arg_named_cls(cls):\n+        pass\n+\n+    def method_two_arg_second_param_self(arg1, self):\n+        pass\n+\n+\n+class AMeta(type):\n+\n+    def method_one_arg(arg1):\n+        pass\n \n+    def method_two_arg(arg1, arg2):\n+        pass\n+\n+    @classmethod\n+    def classmethod_one_arg(arg1):\n+        pass\n+\n+    @staticmethod\n+    def static_one_arg(arg1):\n+        pass\n+\n+class AClassWithMetaclass(metaclass=AMeta):\n+    pass\n+\n+@cpython_only\n+class TestIncorrectNumberOfPositionalArgs(unittest.TestCase):\n     @contextlib.contextmanager\n-    def check_raises_type_error(self, message):\n+    def assert_type_error_and_msg_in(self, message: str):\n         with self.assertRaises(TypeError) as cm:\n-            yield\n-        self.assertEqual(str(cm.exception), message)\n-\n-    def test_missing_arguments(self):\n-        msg = \"A.method_two_args() missing 1 required positional argument: 'y'\"\n-        with self.check_raises_type_error(msg):\n-            A().method_two_args(\"x\")\n+            yield cm\n+        self.assertIn(message, str(cm.exception))\n+\n+    def test_too_many_positional_with_defaults_suggests_missing_self(self):\n+        \"\"\"A method with defaults that omits self should still get the hint.\"\"\"\n+        msg = \".method_two_args() takes from 0 to 2 positional arguments but 3 were given. Did you forget the 'self' parameter in the function definition?\"\n+        with self.assert_type_error_and_msg_in(msg):",
+                      "fullDatabaseId": "4240169926",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -904,6 +953,7 @@
                       "bodyText": "I think we can use PyStackRef_AsPyObjectNew instead?",
                       "createdAt": "2026-10-08T21:00:00Z",
                       "diffHunk": "@@ -1752,6 +1794,14 @@ initialize_locals(PyThreadState *tstate, PyFunctionObject *func,\n         kwdict = NULL;\n     }\n \n+    /* Pin the first argument for the \"missing self\" hint: the surplus\n+       argument cleanup below may close args[0] before the hint is computed.\n+       The pin is only needed when the \"too many positional arguments\"\n+       error is about to be raised. */\n+    if (argcount > co->co_argcount && !(co->co_flags & CO_VARARGS)) {\n+        first_argument = Py_NewRef(PyStackRef_AsPyObjectBorrow(args[0]));",
+                      "fullDatabaseId": "4224079797",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -918,6 +968,7 @@
                       "bodyText": "Yes. Fixed.",
                       "createdAt": "2026-10-11T03:56:48Z",
                       "diffHunk": "@@ -1752,6 +1794,14 @@ initialize_locals(PyThreadState *tstate, PyFunctionObject *func,\n         kwdict = NULL;\n     }\n \n+    /* Pin the first argument for the \"missing self\" hint: the surplus\n+       argument cleanup below may close args[0] before the hint is computed.\n+       The pin is only needed when the \"too many positional arguments\"\n+       error is about to be raised. */\n+    if (argcount > co->co_argcount && !(co->co_flags & CO_VARARGS)) {\n+        first_argument = Py_NewRef(PyStackRef_AsPyObjectBorrow(args[0]));",
+                      "fullDatabaseId": "4240170173",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -947,6 +998,7 @@
                       "bodyText": "This comment is long and very LLM-esque. Let's be simple:\n  \n    \n      \n        Suggested change\n      \n    \n    \n      \n          \n            \n                /* Pin the first argument for the \"missing self\" hint: the surplus\n          \n          \n            \n                   argument cleanup below may close args[0] before the hint is computed.\n          \n          \n            \n                   The pin is only needed when the \"too many positional arguments\"\n          \n          \n            \n                   error is about to be raised. */\n          \n          \n            \n                // We need to keep the argument alive for a missing \"self\" hint later.\n          \n      \n    \n    \n  \n\nOr, just remove the comment entirely:\n  \n    \n      \n        Suggested change\n      \n    \n    \n      \n          \n            \n                /* Pin the first argument for the \"missing self\" hint: the surplus\n          \n          \n            \n                   argument cleanup below may close args[0] before the hint is computed.\n          \n          \n            \n                   The pin is only needed when the \"too many positional arguments\"\n          \n          \n            \n                   error is about to be raised. */",
                       "createdAt": "2026-10-08T21:02:17Z",
                       "diffHunk": "@@ -1752,6 +1794,14 @@ initialize_locals(PyThreadState *tstate, PyFunctionObject *func,\n         kwdict = NULL;\n     }\n \n+    /* Pin the first argument for the \"missing self\" hint: the surplus\n+       argument cleanup below may close args[0] before the hint is computed.\n+       The pin is only needed when the \"too many positional arguments\"\n+       error is about to be raised. */",
+                      "fullDatabaseId": "4224100034",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -961,6 +1013,7 @@
                       "bodyText": "done",
                       "createdAt": "2026-10-11T03:56:56Z",
                       "diffHunk": "@@ -1752,6 +1794,14 @@ initialize_locals(PyThreadState *tstate, PyFunctionObject *func,\n         kwdict = NULL;\n     }\n \n+    /* Pin the first argument for the \"missing self\" hint: the surplus\n+       argument cleanup below may close args[0] before the hint is computed.\n+       The pin is only needed when the \"too many positional arguments\"\n+       error is about to be raised. */",
+                      "fullDatabaseId": "4240170561",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -990,6 +1043,7 @@
                       "bodyText": "This comment should be combined with the one above.",
                       "createdAt": "2026-10-08T21:03:21Z",
                       "diffHunk": "@@ -1650,18 +1652,57 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (should_suggest_missing_self) {\n+        self_hint = \". Did you forget the 'self' parameter \"\n+                    \"in the function definition?\";\n+    }\n     _PyErr_Format(tstate, PyExc_TypeError,\n-                  \"%U() takes %U positional argument%s but %zd%U %s given\",\n+                  \"%U() takes %U positional argument%s but %zd%U %s given%s\",\n                   qualname,\n                   sig,\n                   plural ? \"s\" : \"\",\n                   given,\n                   kwonly_sig,\n-                  given == 1 && !kwonly_given ? \"was\" : \"were\");\n+                  given == 1 && !kwonly_given ? \"was\" : \"were\",\n+                  self_hint\n+                );\n     Py_DECREF(sig);\n     Py_DECREF(kwonly_sig);\n }\n \n+static int\n+suggest_missing_self(PyFunctionObject *func, PyCodeObject *co,\n+                     PyObject *first_argument, Py_ssize_t argcount)\n+{\n+    /* Missing self shows up as exactly one extra positional argument. */\n+    if ((co->co_argcount + 1) != argcount) {\n+        return 0;\n+    }\n+\n+    if (first_argument == NULL || PyType_Check(first_argument)) {\n+        /* When first arg is NULL, it's not really about self.\n+           If it's a type object, then it's a classmethod. */\n+        return 0;\n+    }\n+\n+    if (co->co_argcount > 0) {\n+        /* Don't confuse the user when they've already declared a\n+           common convention of cls/self. */\n+        PyObject *first_parameter_name = PyTuple_GET_ITEM(co->co_localsplusnames, 0);\n+        /* If the receiver parameter is already declared, another hint would be misleading. */",
+                      "fullDatabaseId": "4224108382",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -1004,6 +1058,7 @@
                       "bodyText": "fixed",
                       "createdAt": "2026-10-11T03:57:00Z",
                       "diffHunk": "@@ -1650,18 +1652,57 @@ too_many_positional(PyThreadState *tstate, PyCodeObject *co,\n         kwonly_sig = Py_GetConstant(Py_CONSTANT_EMPTY_STR);\n         assert(kwonly_sig != NULL);\n     }\n+    if (should_suggest_missing_self) {\n+        self_hint = \". Did you forget the 'self' parameter \"\n+                    \"in the function definition?\";\n+    }\n     _PyErr_Format(tstate, PyExc_TypeError,\n-                  \"%U() takes %U positional argument%s but %zd%U %s given\",\n+                  \"%U() takes %U positional argument%s but %zd%U %s given%s\",\n                   qualname,\n                   sig,\n                   plural ? \"s\" : \"\",\n                   given,\n                   kwonly_sig,\n-                  given == 1 && !kwonly_given ? \"was\" : \"were\");\n+                  given == 1 && !kwonly_given ? \"was\" : \"were\",\n+                  self_hint\n+                );\n     Py_DECREF(sig);\n     Py_DECREF(kwonly_sig);\n }\n \n+static int\n+suggest_missing_self(PyFunctionObject *func, PyCodeObject *co,\n+                     PyObject *first_argument, Py_ssize_t argcount)\n+{\n+    /* Missing self shows up as exactly one extra positional argument. */\n+    if ((co->co_argcount + 1) != argcount) {\n+        return 0;\n+    }\n+\n+    if (first_argument == NULL || PyType_Check(first_argument)) {\n+        /* When first arg is NULL, it's not really about self.\n+           If it's a type object, then it's a classmethod. */\n+        return 0;\n+    }\n+\n+    if (co->co_argcount > 0) {\n+        /* Don't confuse the user when they've already declared a\n+           common convention of cls/self. */\n+        PyObject *first_parameter_name = PyTuple_GET_ITEM(co->co_localsplusnames, 0);\n+        /* If the receiver parameter is already declared, another hint would be misleading. */",
+                      "fullDatabaseId": "4240170720",
                       "isMinimized": false,
                       "minimizedReason": null,
                       "pullRequestReview": {
@@ -1034,6 +1089,7 @@
                 "commit": {
                   "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
                 },
+                "fullDatabaseId": "4582134258",
                 "id": "PRR_kwDOBN0Z8c8AAAABER3R8g",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1048,6 +1104,7 @@
                 "commit": {
                   "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
                 },
+                "fullDatabaseId": "4582949670",
                 "id": "PRR_kwDOBN0Z8c8AAAABESpDJg",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1062,6 +1119,7 @@
                 "commit": {
                   "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
                 },
+                "fullDatabaseId": "4582956281",
                 "id": "PRR_kwDOBN0Z8c8AAAABESpc-Q",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1076,6 +1134,7 @@
                 "commit": {
                   "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
                 },
+                "fullDatabaseId": "4583024096",
                 "id": "PRR_kwDOBN0Z8c8AAAABEStl4A",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1090,6 +1149,7 @@
                 "commit": {
                   "oid": "febd510542f57ac638be3e9f307afc7b5486c530"
                 },
+                "fullDatabaseId": "4584501961",
                 "id": "PRR_kwDOBN0Z8c8AAAABEUHyyQ",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1104,6 +1164,7 @@
                 "commit": {
                   "oid": "febd510542f57ac638be3e9f307afc7b5486c530"
                 },
+                "fullDatabaseId": "4584795828",
                 "id": "PRR_kwDOBN0Z8c8AAAABEUZutA",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1118,6 +1179,7 @@
                 "commit": {
                   "oid": "febd510542f57ac638be3e9f307afc7b5486c530"
                 },
+                "fullDatabaseId": "4585329272",
                 "id": "PRR_kwDOBN0Z8c8AAAABEU6SeA",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1132,6 +1194,7 @@
                 "commit": {
                   "oid": "febd510542f57ac638be3e9f307afc7b5486c530"
                 },
+                "fullDatabaseId": "4585536988",
                 "id": "PRR_kwDOBN0Z8c8AAAABEVG93A",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1146,6 +1209,7 @@
                 "commit": {
                   "oid": "febd510542f57ac638be3e9f307afc7b5486c530"
                 },
+                "fullDatabaseId": "4586311387",
                 "id": "PRR_kwDOBN0Z8c8AAAABEV2O2w",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1160,6 +1224,7 @@
                 "commit": {
                   "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
                 },
+                "fullDatabaseId": "4622873471",
                 "id": "PRR_kwDOBN0Z8c8AAAABE4tzfw",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1174,6 +1239,7 @@
                 "commit": {
                   "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
                 },
+                "fullDatabaseId": "4622878726",
                 "id": "PRR_kwDOBN0Z8c8AAAABE4uIBg",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1188,6 +1254,7 @@
                 "commit": {
                   "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
                 },
+                "fullDatabaseId": "4622884300",
                 "id": "PRR_kwDOBN0Z8c8AAAABE4udzA",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1202,6 +1269,7 @@
                 "commit": {
                   "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
                 },
+                "fullDatabaseId": "4622884649",
                 "id": "PRR_kwDOBN0Z8c8AAAABE4ufKQ",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1216,6 +1284,7 @@
                 "commit": {
                   "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
                 },
+                "fullDatabaseId": "4622896751",
                 "id": "PRR_kwDOBN0Z8c8AAAABE4vObw",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1230,6 +1299,7 @@
                 "commit": {
                   "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
                 },
+                "fullDatabaseId": "4622923754",
                 "id": "PRR_kwDOBN0Z8c8AAAABE4w36g",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1244,6 +1314,7 @@
                 "commit": {
                   "oid": "5c6f5c1b5d8b8d1e6f7227e7b5100da17764e599"
                 },
+                "fullDatabaseId": "4622924562",
                 "id": "PRR_kwDOBN0Z8c8AAAABE4w7Eg",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1258,6 +1329,7 @@
                 "commit": {
                   "oid": "febd510542f57ac638be3e9f307afc7b5486c530"
                 },
+                "fullDatabaseId": "4622927315",
                 "id": "PRR_kwDOBN0Z8c8AAAABE4xF0w",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1272,6 +1344,7 @@
                 "commit": {
                   "oid": "febd510542f57ac638be3e9f307afc7b5486c530"
                 },
+                "fullDatabaseId": "4623095685",
                 "id": "PRR_kwDOBN0Z8c8AAAABE47XhQ",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1286,6 +1359,7 @@
                 "commit": {
                   "oid": "febd510542f57ac638be3e9f307afc7b5486c530"
                 },
+                "fullDatabaseId": "4623103008",
                 "id": "PRR_kwDOBN0Z8c8AAAABE470IA",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1300,6 +1374,7 @@
                 "commit": {
                   "oid": "febd510542f57ac638be3e9f307afc7b5486c530"
                 },
+                "fullDatabaseId": "4623117932",
                 "id": "PRR_kwDOBN0Z8c8AAAABE48ubA",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1314,6 +1389,7 @@
                 "commit": {
                   "oid": "2b80cb293b51f2fda4709782abddb03dcecef53e"
                 },
+                "fullDatabaseId": "4893395993",
                 "id": "PRR_kwDOBN0Z8c8AAAABI6tMGQ",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1328,6 +1404,7 @@
                 "commit": {
                   "oid": "2b80cb293b51f2fda4709782abddb03dcecef53e"
                 },
+                "fullDatabaseId": "5001684523",
                 "id": "PRR_kwDOBN0Z8c8AAAABKh-mKw",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1342,6 +1419,7 @@
                 "commit": {
                   "oid": "f9fd4da670bfeef4c7a98479c308c003327cad58"
                 },
+                "fullDatabaseId": "5003809934",
                 "id": "PRR_kwDOBN0Z8c8AAAABKkAUjg",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1356,6 +1434,7 @@
                 "commit": {
                   "oid": "f9fd4da670bfeef4c7a98479c308c003327cad58"
                 },
+                "fullDatabaseId": "5004296527",
                 "id": "PRR_kwDOBN0Z8c8AAAABKkeBTw",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1370,6 +1449,7 @@
                 "commit": {
                   "oid": "f9fd4da670bfeef4c7a98479c308c003327cad58"
                 },
+                "fullDatabaseId": "5193182635",
                 "id": "PRR_kwDOBN0Z8c8AAAABNYmtqw",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1384,6 +1464,7 @@
                 "commit": {
                   "oid": "f6b4c696a6dad81b48b37233db2a96fa3f7bc4b8"
                 },
+                "fullDatabaseId": "5462728415",
                 "id": "PRR_kwDOBN0Z8c8AAAABRZqe3w",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1398,6 +1479,7 @@
                 "commit": {
                   "oid": "f6b4c696a6dad81b48b37233db2a96fa3f7bc4b8"
                 },
+                "fullDatabaseId": "5481791289",
                 "id": "PRR_kwDOBN0Z8c8AAAABRr1_OQ",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1412,6 +1494,7 @@
                 "commit": {
                   "oid": "f6b4c696a6dad81b48b37233db2a96fa3f7bc4b8"
                 },
+                "fullDatabaseId": "5481792897",
                 "id": "PRR_kwDOBN0Z8c8AAAABRr2FgQ",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1426,6 +1509,7 @@
                 "commit": {
                   "oid": "f6b4c696a6dad81b48b37233db2a96fa3f7bc4b8"
                 },
+                "fullDatabaseId": "5481795328",
                 "id": "PRR_kwDOBN0Z8c8AAAABRr2PAA",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1440,6 +1524,7 @@
                 "commit": {
                   "oid": "f6b4c696a6dad81b48b37233db2a96fa3f7bc4b8"
                 },
+                "fullDatabaseId": "5481795679",
                 "id": "PRR_kwDOBN0Z8c8AAAABRr2QXw",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1454,6 +1539,7 @@
                 "commit": {
                   "oid": "f6b4c696a6dad81b48b37233db2a96fa3f7bc4b8"
                 },
+                "fullDatabaseId": "5481796192",
                 "id": "PRR_kwDOBN0Z8c8AAAABRr2SYA",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1468,6 +1554,7 @@
                 "commit": {
                   "oid": "f6b4c696a6dad81b48b37233db2a96fa3f7bc4b8"
                 },
+                "fullDatabaseId": "5481796336",
                 "id": "PRR_kwDOBN0Z8c8AAAABRr2S8A",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1482,6 +1569,7 @@
                 "commit": {
                   "oid": "a4c2623368acdf75d3c088f2f84c3ddc6d78c75e"
                 },
+                "fullDatabaseId": "5484466770",
                 "id": "PRR_kwDOBN0Z8c8AAAABRuZSUg",
                 "isMinimized": false,
                 "minimizedReason": null,
@@ -1495,7 +1583,7 @@
       }
     }
   },
-  "query": "query FetchPullRequestContent($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { bodyHTML createdAt comments(last: 30) { totalCount nodes { author { login } createdAt bodyHTML isMinimized minimizedReason } } headRefOid reviews(last: 100) { totalCount nodes { id author { login } state submittedAt bodyHTML isMinimized minimizedReason commit { oid } } } reviewThreads(last: 100) { nodes { id path line originalLine diffSide subjectType isResolved isOutdated comments(first: 100) { totalCount nodes { pullRequestReview { id } author { login } createdAt bodyHTML bodyText isMinimized minimizedReason diffHunk } } } } } } rateLimit { remaining resetAt } }",
-  "reset": 1794444959,
+  "query": "query FetchPullRequestContent($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { bodyHTML createdAt comments(last: 30) { totalCount nodes { fullDatabaseId author { login } createdAt bodyHTML isMinimized minimizedReason } } headRefOid reviews(last: 100) { totalCount nodes { id fullDatabaseId author { login } state submittedAt bodyHTML isMinimized minimizedReason commit { oid } } } reviewThreads(last: 100) { nodes { id path line originalLine diffSide subjectType isResolved isOutdated comments(first: 100) { totalCount nodes { fullDatabaseId pullRequestReview { id } author { login } createdAt bodyHTML bodyText isMinimized minimizedReason diffHunk } } } } } } rateLimit { remaining resetAt } }",
+  "reset": 1794520637,
   "status": 200
 }

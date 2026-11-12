@@ -50,6 +50,7 @@ const view: PrView = {
     body_html: "<p>The description</p>",
     comments: [
       {
+        id: 1,
         author: "some-reviewer",
         created_at: "2026-11-04T09:00:00Z",
         body_html: '<p><a href="https://github.com/python/cpython/pull/1">A link</a></p>',
@@ -60,6 +61,7 @@ const view: PrView = {
     opened_at: null,
     reviews: [
       {
+        id: 2,
         author: "some-reviewer",
         state: "APPROVED",
         commit: "0123abcdef",

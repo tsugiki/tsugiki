@@ -6,7 +6,7 @@ use specta::Type;
 use time::OffsetDateTime;
 
 use super::issue_content::{
-    HiddenReason, IssueComment, IssueContent, IssueWire, MinimizedWire, Thread,
+    Comment, HiddenReason, IssueContent, IssueWire, MinimizedWire, Thread, big_int,
 };
 use super::pull_requests::{Person, RateLimit, ReviewState};
 use super::{CommitSha, GitHub};
@@ -18,12 +18,14 @@ use crate::repository::RepositoryName;
 /// threads, with the first 100 comments of each, cost GitHub about 104 requests: one point (ADR 0015). GitHub
 /// counts a request for each thread's comments, however many it gives. Each reply in a thread is a Review of
 /// its own on GitHub, so a busy PR needs all 100 to hold the Reviews worth showing.
-pub(super) const REVIEW_FIELDS: &str = " headRefOid reviews(last: 100) { totalCount nodes { id author { login } state \
-                                        submittedAt bodyHTML isMinimized minimizedReason commit { oid } } } \
+pub(super) const REVIEW_FIELDS: &str = " headRefOid reviews(last: 100) { totalCount nodes { id \
+                                        fullDatabaseId author { login } state submittedAt bodyHTML \
+                                        isMinimized minimizedReason commit { oid } } } \
                                         reviewThreads(last: 100) { nodes { id path line originalLine \
                                         diffSide subjectType isResolved isOutdated comments(first: 100) { \
-                                        totalCount nodes { pullRequestReview { id } author { login } \
-                                        createdAt bodyHTML bodyText isMinimized minimizedReason diffHunk } } } }";
+                                        totalCount nodes { fullDatabaseId pullRequestReview { id } \
+                                        author { login } createdAt bodyHTML bodyText isMinimized \
+                                        minimizedReason diffHunk } } } }";
 
 /// The longest start of a thread's first comment that Tsugiki keeps. The line cuts it again to fit the
 /// pane.
@@ -102,9 +104,43 @@ pub enum Side {
     Right,
 }
 
+/// GitHub's number for a Review, which a link names after `#pullrequestreview-`. The window gets it as a
+/// number, as it gets a comment's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Type)]
+#[serde(transparent)]
+pub struct ReviewId(#[specta(type = specta_typescript::Number)] u64);
+
+impl ReviewId {
+    pub const fn new(id: u64) -> Self {
+        Self(id)
+    }
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+/// GitHub's number for a comment in a review thread, which a link names after `#discussion_r`. The window
+/// gets it as a number, as it gets a comment's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Type)]
+#[serde(transparent)]
+pub struct ThreadCommentId(#[specta(type = specta_typescript::Number)] u64);
+
+impl ThreadCommentId {
+    pub const fn new(id: u64) -> Self {
+        Self(id)
+    }
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
 /// Someone's Review of a PR, as the Conversation shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct Review {
+    /// Nothing, for a Review kept from before Tsugiki asked for it, until the next read.
+    pub id: Option<ReviewId>,
     /// Nothing, for a Review whose author's account has gone.
     pub author: Option<Login>,
     pub state: ReviewState,
@@ -152,8 +188,10 @@ pub struct ThreadLine {
 /// A comment in a review thread.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct ThreadComment {
+    /// Nothing, for a comment kept from before Tsugiki asked for it, until the next read.
+    pub id: Option<ThreadCommentId>,
     #[serde(flatten)]
-    pub comment: IssueComment,
+    pub comment: Comment,
     pub submission: Submission,
 }
 
@@ -304,8 +342,9 @@ pub enum Opening {
     Hidden { reason: HiddenReason },
 }
 
+/// GitHub's node id of a Review, which ties a thread's comments to the Review that wrote them.
 #[derive(Deserialize, PartialEq, Eq, Clone)]
-struct ReviewId(String);
+struct ReviewNodeId(String);
 
 #[derive(Deserialize)]
 struct CommitWire {
@@ -315,7 +354,9 @@ struct CommitWire {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ReviewWire {
-    id: ReviewId,
+    id: ReviewNodeId,
+    #[serde(default, deserialize_with = "big_int")]
+    full_database_id: Option<u64>,
     author: Option<Person>,
     state: ReviewState,
     #[serde(with = "time::serde::rfc3339::option")]
@@ -344,6 +385,8 @@ enum SubjectType {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ThreadCommentWire {
+    #[serde(default, deserialize_with = "big_int")]
+    full_database_id: Option<u64>,
     pull_request_review: Option<ReviewIdWire>,
     author: Option<Person>,
     #[serde(with = "time::serde::rfc3339")]
@@ -358,7 +401,7 @@ struct ThreadCommentWire {
 
 #[derive(Deserialize)]
 struct ReviewIdWire {
-    id: ReviewId,
+    id: ReviewNodeId,
 }
 
 #[derive(Deserialize)]
@@ -408,7 +451,7 @@ fn first_words(text: &str) -> String {
 impl ThreadWire {
     /// The id of the Review that started it, and the thread. Nothing, for a thread with no first comment.
     /// A comment of the user's Pending review, `pending`, is a draft, which the replies don't count.
-    fn into_line(self, pending: Option<&ReviewId>) -> Option<(ReviewId, ThreadLine)> {
+    fn into_line(self, pending: Option<&ReviewNodeId>) -> Option<(ReviewNodeId, ThreadLine)> {
         let total = self.comments.total_count;
         let comments: Vec<ThreadCommentWire> = self.comments.nodes.into_iter().flatten().collect();
         let first = comments.first()?;
@@ -435,7 +478,8 @@ impl ThreadWire {
                 .pull_request_review
                 .is_some_and(|review| Some(&review.id) == pending);
             ThreadComment {
-                comment: IssueComment {
+                id: comment.full_database_id.map(ThreadCommentId::new),
+                comment: Comment {
                     author: comment.author.map(|person| person.login),
                     created_at: comment.created_at,
                     body_html: comment.body_html,
@@ -478,7 +522,7 @@ impl From<PullRequestWire> for PullRequestContent {
             .iter()
             .find(|review| review.state == ReviewState::Pending)
             .map(|review| review.id.clone());
-        let mut threads: Vec<(ReviewId, ThreadLine)> = wire
+        let mut threads: Vec<(ReviewNodeId, ThreadLine)> = wire
             .review_threads
             .nodes
             .into_iter()
@@ -498,6 +542,7 @@ impl From<PullRequestWire> for PullRequestContent {
                     && review.body_html.trim().is_empty()
                     && started.is_empty();
                 (review.state != ReviewState::Pending && !only_replied).then(|| Review {
+                    id: review.full_database_id.map(ReviewId::new),
                     author: review.author.map(|person| person.login),
                     state: review.state,
                     commit: review

@@ -8,7 +8,11 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
   no fade. The root's `color-scheme` takes the Theme's kind, so scroll bars and form controls follow too.
 - The window opens hidden, takes the `bg` of the Theme for the side Windows is on, and only then shows, so
   a dark Theme doesn't flash white while the page loads
-  ([#516](https://github.com/tsugiki/tsugiki/issues/516)). `app/src/first_frame.rs` does it.
+  ([#516](https://github.com/tsugiki/tsugiki/issues/516)). The page's own background starts on the same
+  colour until the Theme arrives, and the window takes the other side's `bg` when Windows changes sides.
+  `app/src/first_frame.rs` does it. Two gaps remain: Tauri reads high contrast as the light side, so a dark
+  contrast theme still opens white, and on macOS Tauri can't colour the webview, so WKWebView paints white
+  until the page loads.
 - Two Themes are built in: VS Code Light Modern for the light side and VS Code Dark Modern for the dark side.
   The Sidebar and the status bar sit a step off the content, with a border, as in VS Code.
 - A Theme is a TOML file: `name`, `kind` (`"light"` or `"dark"`), and `[colors]` and `[syntax]` tables of

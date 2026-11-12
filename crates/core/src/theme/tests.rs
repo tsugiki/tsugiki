@@ -226,26 +226,11 @@ fn a_built_in_theme_must_set_every_token() {
 
 #[test]
 fn the_window_takes_the_bg_of_the_built_in_theme_of_its_side() {
-    let light = Themes::built_in_background(ThemeKind::Light).unwrap();
-    let dark = Themes::built_in_background(ThemeKind::Dark).unwrap();
+    let light = Themes::built_in_background(ThemeKind::Light);
+    let dark = Themes::built_in_background(ThemeKind::Dark);
     assert_eq!(light.rgba(), [0xff, 0xff, 0xff, 0xff]);
     assert_eq!(dark.css(), "#1f1f1f");
     assert_eq!(dark.rgba(), [0x1f, 0x1f, 0x1f, 0xff]);
-}
-
-#[test]
-fn a_theme_without_a_bg_gives_the_window_none_and_says_why() {
-    for (text, why) in [
-        ("name = \"Part\"\nkind = \"dark\"\n", "Part sets no bg"),
-        ("kind = \"dark\"", "the theme has no `name`"),
-    ] {
-        let error = background_of(text).unwrap_err();
-        assert_eq!(error.kind, ErrorKind::Internal);
-        assert_eq!(
-            error.message,
-            format!("A built-in theme gives the window no background: {why}")
-        );
-    }
 }
 
 /// `docs/devel/themes.md` has a row for each token with both built-in themes' values, so the page can't drift

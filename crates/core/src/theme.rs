@@ -497,11 +497,19 @@ impl Themes {
 
     /// The `bg` of the built-in theme of side `kind`, which the window takes before it first shows, so a
     /// dark theme doesn't flash white while the page loads (#516).
-    pub fn built_in_background(kind: ThemeKind) -> Result<Color, Error> {
-        background_of(match kind {
+    #[expect(
+        clippy::expect_used,
+        reason = "the built-in files are compiled in, and a test reads the `bg` of each"
+    )]
+    pub fn built_in_background(kind: ThemeKind) -> Color {
+        let text = match kind {
             ThemeKind::Light => LIGHT_MODERN,
             ThemeKind::Dark => DARK_MODERN,
-        })
+        };
+        Theme::parse(text)
+            .ok()
+            .and_then(|theme| theme.colors.get(&Token::Bg).copied())
+            .expect("each built-in theme sets bg")
     }
 
     /// The themes the files `light` and `dark` hold.
@@ -535,22 +543,6 @@ impl Themes {
             dark: read(dark)?,
         })
     }
-}
-
-/// The `bg` the theme file `text` sets.
-fn background_of(text: &str) -> Result<Color, Error> {
-    let refused = |why: &str| {
-        Error::new(
-            ErrorKind::Internal,
-            &format!("A built-in theme gives the window no background: {why}"),
-        )
-    };
-    let theme = Theme::parse(text).map_err(|cause| refused(&cause.to_string()))?;
-    theme
-        .colors
-        .get(&Token::Bg)
-        .copied()
-        .ok_or_else(|| refused(&format!("{} sets no bg", theme.name)))
 }
 
 #[cfg(test)]

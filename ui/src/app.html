@@ -9,12 +9,12 @@
          core can't send it, or for a token its file leaves out, the system's own colours stand in for the
          tokens that draw panes, dialogs and the focus, and follow the side Windows is on. The list's
          selection follows the palette's, `selected`. The accent is the link colour, since it colours text
-         on the selected row too. -->
-
+         on the selected row too. The background is each side's built-in `bg`, as the window's first
+         frame is (#516), so the page doesn't change shade while the theme is on its way. -->
     <style>
       :root {
         color-scheme: light dark;
-        --bg: Canvas;
+        --bg: light-dark(#ffffff, #1f1f1f);
         --fg: CanvasText;
         --fg-muted: GrayText;
         --border: GrayText;

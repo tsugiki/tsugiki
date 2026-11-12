@@ -231,6 +231,17 @@ it("puts the whole layout back to the defaults with one save, forgetting what Ct
   expect(core.savePaneLayout.mock.calls).toEqual([[DEFAULTS]]);
 });
 
+it("puts the order back when it can't save it, as the core reads the list in the order it saved", async () => {
+  core.paneLayout.mockResolvedValue(DEFAULTS);
+  core.savePaneLayout.mockResolvedValue({ status: "error", error: { kind: "internal", message: "locked" } });
+  const panes = new PanesState();
+  await panes.load();
+
+  await panes.setOrder("last_update");
+
+  expect([panes.order, panes.problem]).toEqual(["attention", "Tsugiki can't save the panes' layout: locked"]);
+});
+
 it("orders the list by attention until the core says otherwise, and saves the order the user picks", async () => {
   core.paneLayout.mockResolvedValue({ ...DEFAULTS, order: "last_update" });
   core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });

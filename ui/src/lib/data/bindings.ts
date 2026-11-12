@@ -2037,7 +2037,10 @@ export type WorkbenchView = { kind: "whole" } | { kind: "filter"; query: FilterQ
 
 /**  A Repository's Workbench or one of its views, with what the Sidebar shows beside it. */
 export type Workbench_Deserialize = {
-	/**  The items that Need attention, newest first by when they started to, then the rest by last update. */
+	/**
+	 *  The items outside the quiet section, in the list's order: by attention, what Needs attention newest
+	 *  first by when it started to, then the rest by last update; or by last update alone.
+	 */
 	items: ListedItem_Deserialize[],
 	/**  The Issues with nothing that Needs attention, the latest update first. */
 	quiet: ListedItem_Deserialize[],
@@ -2050,7 +2053,10 @@ export type Workbench_Deserialize = {
 
 /**  A Repository's Workbench or one of its views, with what the Sidebar shows beside it. */
 export type Workbench_Serialize = {
-	/**  The items that Need attention, newest first by when they started to, then the rest by last update. */
+	/**
+	 *  The items outside the quiet section, in the list's order: by attention, what Needs attention newest
+	 *  first by when it started to, then the rest by last update; or by last update alone.
+	 */
 	items: ListedItem_Serialize[],
 	/**  The Issues with nothing that Needs attention, the latest update first. */
 	quiet: ListedItem_Serialize[],

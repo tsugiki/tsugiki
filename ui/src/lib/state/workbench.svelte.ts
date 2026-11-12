@@ -96,6 +96,11 @@ export class WorkbenchState {
     await this.#ask();
   }
 
+  /** Asks for the view on show again, as after the list's order changed. */
+  async refresh() {
+    await this.#ask();
+  }
+
   /** The name of the view on show, as the Sidebar gives it. A Filter the settings no longer hold goes by
    * its search. */
   get title(): string {

@@ -957,6 +957,16 @@ const WIDE: PaneLayout = PaneLayout {
 };
 
 #[test]
+fn machine_toml_names_each_order_and_pane_as_serde_reads_them() {
+    for order in [ListOrder::Attention, ListOrder::LastUpdate] {
+        assert_eq!(serde_json::to_value(order).unwrap(), order.to_text());
+    }
+    for pane in [Panes::Sidebar, Panes::List, Panes::Both] {
+        assert_eq!(serde_json::to_value(pane).unwrap(), pane.to_text());
+    }
+}
+
+#[test]
 fn the_lists_order_stays_on_this_machine_until_it_goes_back_to_attention() {
     let (folders, root) = temp_folders("panes-order");
     let mut files = SettingsFiles::load(folders.clone());

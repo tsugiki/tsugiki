@@ -266,7 +266,7 @@
    * once that's saved. */
   async function sortBy(order: ListOrder) {
     await panes.setOrder(order);
-    await workbench.select(workbench.selected);
+    await workbench.refresh();
   }
 
   /** Names a line for the page, which can list a PR under two Issues. */

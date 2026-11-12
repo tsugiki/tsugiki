@@ -76,10 +76,13 @@ export class PanesState {
     return this.#order ?? "attention";
   }
 
-  /** Orders the list by `order`, and saves that. The core reads the list in the order it saved. */
-  setOrder(order: ListOrder): Promise<void> {
+  /** Orders the list by `order`, and saves that. The core reads the list in the order it saved, so a save
+   * that fails puts the order back, and the switch keeps saying how the list comes. */
+  async setOrder(order: ListOrder): Promise<void> {
+    const before = this.#order;
     this.#order = order;
-    return this.save();
+    await this.save();
+    if (this.#saveProblem !== undefined) this.#order = before;
   }
 
   /** Whether the Detail pane shows alone, with both the Sidebar and the list hidden. */

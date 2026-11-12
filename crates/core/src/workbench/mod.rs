@@ -132,7 +132,8 @@ pub enum WorkbenchView {
 /// A Repository's Workbench or one of its views, with what the Sidebar shows beside it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct Workbench {
-    /// The items that Need attention, newest first by when they started to, then the rest by last update.
+    /// The items outside the quiet section, in the list's order: by attention, what Needs attention newest
+    /// first by when it started to, then the rest by last update; or by last update alone.
     pub items: Vec<ListedItem>,
     /// The Issues with nothing that Needs attention, the latest update first.
     pub quiet: Vec<ListedItem>,

@@ -147,6 +147,26 @@ After the change, with no Rust changed since the last coverage run, `just check`
 
 A change to `tsugiki-core` adds about 8 seconds of compiling to `rust-coverage`, as in runs 2 and 4.
 
+## Linker
+
+On 2026-11-12 we timed `rust-lld` against the MSVC linker (#253), with Rust 1.99.1 and
+`CARGO_BUILD_JOBS=4`. Each command ran after touching `crates/core/src/lib.rs` or `crates/app/src/lib.rs`,
+so it rebuilt one crate and linked it again. Each linker had its own target folder under `.temp`, and
+`CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=rust-lld` picked `rust-lld` without editing any file. After two
+rounds to warm both folders, five rounds alternated the linkers. Medians, in seconds:
+
+| Command, after touching the crate | MSVC | `rust-lld` | Saved |
+|---|---|---|---|
+| `cargo test -p tsugiki-core --no-run` | 4.25 | 4.12 | 3% |
+| `cargo test -p tsugiki-app --no-run` | 5.32 | 4.67 | 12% |
+| `cargo build -p tsugiki-app` | 3.04 | 2.85 | 6% |
+
+The commands differ only in the linker, so the difference is what `rust-lld` saves: under a fifth everywhere,
+and about half a second at most. So we kept the MSVC linker, and CI and the release job keep it too.
+Switching would mean checking that `rust-lld` keeps the icon, version info and manifest Tauri embeds in
+`tsg.exe`, and running a smoke test, for less than a second a build. Try again if link times grow, for
+example once `crates/app/tests/` holds several binaries that link Tauri.
+
 ## What to try next, in order
 
 1. **Tests inside the crates.** `AGENTS.md` has the rule. `core` doesn't depend on Tauri, so its tests don't
@@ -156,7 +176,5 @@ A change to `tsugiki-core` adds about 8 seconds of compiling to `rust-coverage`,
    `tests/app/main.rs`, and filter with `cargo test --test app <name>`. Leave out files that don't use it, or
    they'll start linking Tauri. `stale-bindings` in `package.json` names `--test bindings`, so change it in
    the same PR.
-3. **`rust-lld`.** Set `linker = "rust-lld"` for `x86_64-pc-windows-msvc` in `.cargo/config.toml` when link
-   times start to bother someone. We haven't checked how it handles the Windows resources Tauri embeds.
-4. **More crates.** This costs the most and gains the least, because a ticket that touches several crates
+3. **More crates.** This costs the most and gains the least, because a ticket that touches several crates
    rebuilds them anyway. Consider it only if builds stay slow after the steps above.

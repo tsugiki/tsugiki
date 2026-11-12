@@ -25,9 +25,18 @@ merged branch="":
     node scripts/merged.ts {{quote(branch)}}
 
 # `just ship body.md` takes the PR's body from a file
-# Push the branch and open its PR; `just ship --check` runs `just check` first
+# Push the branch and open its PR; `just ship --check` runs `just check` first, and `--release` ships a
+# release/ branch: ask first
 ship *args:
     node scripts/ship.ts {{args}}
+
+# Start a release's PR on a clean, current main: make the branch, set the version, rename CHANGELOG's WIP
+prepare-release version:
+    node scripts/prepare-release.ts {{quote(version)}}
+
+# Tag main with Cargo.toml's version once the release PR merged, and push the tag: ask first
+release:
+    node scripts/tag-release.ts
 
 # List the open tickets of the earliest open milestone, each under its blockers, ready for an agent first
 next:

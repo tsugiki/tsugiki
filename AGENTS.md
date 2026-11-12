@@ -44,7 +44,9 @@ the Tauri version. Test everything else without a window: `wiring.rs` drives the
 Tauri's mock runtime.
 
 Each push to a PR from a `release/` branch rehearses the release on CI, smoke test included, so ask before
-opening one or pushing to it.
+opening one or pushing to it. `just ship` refuses that branch, and `just ship --release` pushes it. A tag
+starts the release workflow, so ask before `just release` too. `docs/releasing.md` has the steps, from
+`just prepare-release X.Y.Z` on.
 
 ## Where tests go
 

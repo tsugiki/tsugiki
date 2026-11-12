@@ -60,7 +60,10 @@ pub fn window_theme(mode: ThemeMode) -> Option<Theme> {
 
 /// Turns the window to the side `mode` keeps through `set_theme`, and its title bar and native controls with
 /// it, or back to the system's side. A window that can't turn keeps the system's side, which the log says.
-pub fn turn(mode: ThemeMode, set_theme: impl FnOnce(Option<Theme>) -> tauri::Result<()>) {
+///
+/// `set_theme` isn't generic, so the app and the tests run one copy of this, and the coverage gate sees each
+/// line run.
+pub fn turn(mode: ThemeMode, set_theme: &dyn Fn(Option<Theme>) -> tauri::Result<()>) {
     if let Err(cause) = set_theme(window_theme(mode)) {
         log::warn!("Tsugiki can't turn its window to the side its settings ask for: {cause}");
     }

@@ -101,13 +101,13 @@ fn light_and_dark_keep_the_window_on_their_side_whatever_the_system_says() {
 fn the_window_turns_to_the_side_the_mode_keeps() {
     let asked = RefCell::new(Vec::new());
     for mode in [ThemeMode::Dark, ThemeMode::System] {
-        turn(mode, |theme| {
+        turn(mode, &|theme| {
             asked.borrow_mut().push(theme);
             Ok(())
         });
     }
     // A window that can't turn keeps the system's side, and the start goes on.
-    turn(ThemeMode::Light, |theme| {
+    turn(ThemeMode::Light, &|theme| {
         asked.borrow_mut().push(theme);
         Err(tauri::Error::WindowNotFound)
     });

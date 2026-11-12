@@ -197,9 +197,8 @@ fn appearance_problems(path: &Path, text: &str) -> Vec<String> {
     struct File {
         appearance: AppearanceRead,
     }
-    let Ok(file) = toml_edit::de::from_str::<File>(text) else {
-        return Vec::new();
-    };
+    // Each caller has read the whole file by now, so this read finds what that one did.
+    let file = toml_edit::de::from_str::<File>(text).unwrap_or_default();
     let document = toml_edit::Document::parse(text).ok();
     let table = document
         .as_ref()

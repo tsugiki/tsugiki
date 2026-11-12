@@ -183,7 +183,7 @@ pub(crate) fn connect_core<R: Runtime>(
 fn turn_to_start_appearance<R: Runtime>(app: &AppHandle<R>, settings: &SettingsOwner) {
     let appearance = settings.view().loaded.settings.appearance;
     for window in app.webview_windows().into_values() {
-        first_frame::turn(appearance.theme, |theme| window.set_theme(theme));
+        first_frame::turn(appearance.theme, &|theme| window.set_theme(theme));
     }
     assert!(
         app.manage(StartAppearance(appearance)),

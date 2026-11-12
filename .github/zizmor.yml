@@ -1,0 +1,10 @@
+# pre-commit runs zizmor with this file. Each finding it ignores says why.
+rules:
+  # setup-node caches npm's downloads only when package.json names `packageManager`, and ours doesn't, so
+  # these steps restore no cache. The fix, `package-manager-cache: false` on each, changes release.yml, which
+  # only a `release/` branch may do: add it on the next one and drop these lines.
+  cache-poisoning:
+    ignore:
+      - release.yml:49
+      - release.yml:76
+      - release.yml:103

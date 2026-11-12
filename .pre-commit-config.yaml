@@ -1,0 +1,29 @@
+# Checks that read the workflows and the spelling. `just lint` runs them through `npm run pre-commit`, and so
+# does CI's `pre-commit` job. Dependabot bumps each `rev`: a commit, with its tag in the `frozen` comment.
+repos:
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: 06a39750ec31860bb44f2acf67182c40016cd1e7  # frozen: v1.32.0
+    hooks:
+      - id: zizmor
+
+  # actionlint also runs shellcheck on each `run:` script when shellcheck is on PATH, as it is on CI's runner.
+  - repo: https://github.com/rhysd/actionlint
+    rev: 914e7df21a07ef503a81201c76d2b11c789d3fca  # frozen: v1.7.12
+    hooks:
+      - id: actionlint
+
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: a76b92851fc9eede9f9bc4073eb55202f34eb0df  # frozen: 0.39.0
+    hooks:
+      - id: check-github-workflows
+      - id: check-dependabot
+
+  - repo: https://github.com/crate-ci/typos
+    rev: 4c8b7f51ca60df14e3c5ca82770dfbbe6c3dae85  # frozen: v1.52.0
+    hooks:
+      - id: typos
+        # Report, and leave the fix to whoever reads it: the hook's own args add `--write-changes`.
+        # pre-commit would start one typos for each core. One process on two threads leaves the rest free
+        # for the person working on the computer while `just check` runs.
+        args: [--force-exclude, --threads=2]
+        require_serial: true

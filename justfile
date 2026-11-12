@@ -64,7 +64,7 @@ fmt:
 # Like CI, it skips the Rust gates on a branch that changes only `ui/` and docs
 check: lint doc-width svelte-check vitest rust-gates release-check e2e
 
-# Check the formatting and lint with ESLint
+# Check the formatting, lint with ESLint, and run the pre-commit hooks on the workflows and the spelling
 lint:
     npm run lint
 

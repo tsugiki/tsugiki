@@ -1,10 +1,10 @@
-# Dependabot proposes new versions of our crates, npm packages and pinned actions. Each waits 7 days after a
-# release (`cooldown`), so a release its authors yank in that week doesn't reach us.
+# Dependabot proposes new versions of our crates, npm packages, pinned actions and pre-commit hooks. Each
+# waits 7 days after a release (`cooldown`), so a release its authors yank in that week doesn't reach us.
 #
-# Cargo and npm group minor and patch bumps into one weekly PR each, and a major bump gets a PR of its own.
-# Tauri stays out of the groups: a PR that changes the Tauri version needs `just smoke` (AGENTS.md), and in
-# its own PR that run covers one bump, not the whole week's. Dependabot still proposes Tauri's bumps, one
-# PR each.
+# Cargo, npm and pre-commit group minor and patch bumps into one weekly PR each, and a major bump gets a PR of
+# its own. Tauri stays out of the groups: a PR that changes the Tauri version needs `just smoke` (AGENTS.md),
+# and in its own PR that run covers one bump, not the whole week's. Dependabot still proposes Tauri's bumps,
+# one PR each.
 version: 2
 updates:
   - package-ecosystem: cargo
@@ -31,6 +31,18 @@ updates:
       npm:
         patterns: ["*"]
         exclude-patterns: ["@tauri-apps/*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: pre-commit
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 7
+    groups:
+      pre-commit:
+        patterns: ["*"]
         update-types: [minor, patch]
 
   - package-ecosystem: github-actions

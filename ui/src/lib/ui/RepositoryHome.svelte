@@ -102,6 +102,7 @@
   let kept: IssueViewState | undefined;
   let browserProblem = $state<string>();
   let list = $state<HTMLElement>();
+  let quietLineButton = $state<HTMLButtonElement>();
   let home = $state<HTMLElement>();
 
   const onGitHub = async (item: GitHubItem) => {
@@ -117,8 +118,10 @@
    */
   function open(stop: Stop, how: "open" | "back" | "through" = "open") {
     if (how !== "through") visits.visit(stop);
-    workbench.moveTo(stop);
-    if (how !== "open") focusCursor();
+    // A quiet section the move unfolds draws the row after this returns.
+    const unfolded = workbench.moveTo(stop);
+    if (how !== "open" && unfolded) void tick().then(focusCursor);
+    else if (how !== "open") focusCursor();
     if (stop.kind === "pull_request" && detail instanceof PrViewState && sameStop(detail.line, stop)) {
       detail.switchTab();
       return;
@@ -204,7 +207,7 @@
   /** Moves the cursor to the row of what the Detail pane shows, if the list has that row. */
   function cursorToDetail() {
     const line = detailLine();
-    if (line && workbench.lists(line)) workbench.moveTo(line);
+    if (line && workbench.lists(line)) workbench.cursor = line;
   }
 
   /** "Reset Layout": both panes on show at their default widths. A list it brings back takes the cursor and
@@ -259,7 +262,8 @@
   }
 
   /** Unfolds the quiet section, or folds it. A cursor in it moves to the last line above it, and takes the
-   * focus with it if the focus was on a row that went away. */
+   * focus with it if the focus was on a row that went away. With no line above, the focus goes to the
+   * line that unfolds the section again. */
   function toggleQuiet() {
     if (!workbench.quietShown) {
       workbench.showQuiet();
@@ -268,7 +272,9 @@
     const focused = document.activeElement;
     workbench.hideQuiet();
     void tick().then(() => {
-      if (focused?.isConnected === false) focusCursor();
+      if (focused?.isConnected !== false) return;
+      if (workbench.cursor) focusCursor();
+      else quietLineButton?.focus();
     });
   }
 
@@ -285,17 +291,13 @@
   }
 
   /** Focuses the row under the cursor, so it scrolls into view, and Enter presses its button. While the list
-   * is hidden the Detail pane takes the focus, once it shows what it's about to. A row in a quiet section
-   * that has just unfolded takes it once the page has drawn the row. */
+   * is hidden the Detail pane takes the focus, once it shows what it's about to. */
   function focusCursor() {
     if (panes.hidden("list")) {
       void tick().then(() => detailPane()?.focus());
       return;
     }
-    const row = () => list?.querySelector<HTMLElement>(`[data-item="${lineName(workbench.cursor)}"]`);
-    const drawn = row();
-    if (drawn) drawn.focus();
-    else void tick().then(() => row()?.focus());
+    list?.querySelector<HTMLElement>(`[data-item="${lineName(workbench.cursor)}"]`)?.focus();
   }
 
   const detailPane = () => home?.querySelector<HTMLElement>('[data-pane="detail"]');
@@ -513,7 +515,12 @@
           {/each}
         </ul>
         {#if workbench.quiet.length > 0}
-          <button class="quiet" aria-expanded={workbench.quietShown} onclick={toggleQuiet}>
+          <button
+            class="quiet"
+            aria-expanded={workbench.quietShown}
+            onclick={toggleQuiet}
+            bind:this={quietLineButton}
+          >
             {quietLine(workbench.quietShown, workbench.quiet.length)}
           </button>
           {#if workbench.quietShown}

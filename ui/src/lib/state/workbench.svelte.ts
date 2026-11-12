@@ -104,16 +104,18 @@ export class WorkbenchState {
     return this.#stops().find((stop) => sameStop(this.cursor, stop));
   }
 
-  /** Whether the list, or its quiet section, has the line `stop`, folded or not. */
+  /** Whether the list shows the line `stop`: in its quiet section only while that is unfolded. */
   lists(stop: Stop): boolean {
-    return this.#allStops().some((line) => sameStop(line, stop));
+    return this.#stops().some((line) => sameStop(line, stop));
   }
 
   /** Puts the cursor on line `stop`, and unfolds the quiet section if the line is in it, so the cursor has
-   * a row to stand on. */
-  moveTo(stop: Stop) {
+   * a row to stand on. True when it unfolded the section, whose row the page has yet to draw. */
+  moveTo(stop: Stop): boolean {
     this.cursor = stop;
-    if (this.#inQuiet(stop)) this.quietShown = true;
+    const unfolds = !this.quietShown && this.#inQuiet(stop);
+    if (unfolds) this.quietShown = true;
+    return unfolds;
   }
 
   showQuiet() {
@@ -141,28 +143,25 @@ export class WorkbenchState {
   }
 
   /** Moves the cursor after a PR that a change put under an Issue, or took out from under one. An item that
-   * went quiet under the cursor unfolds the quiet section, so the row the user stood on stays in sight. */
+   * went quiet under the cursor, or is quiet in the view just selected, leaves a folded section folded: the
+   * cursor moves to the last line above it, as folding it would. */
   #followCursor() {
     const cursor = this.cursor;
     if (cursor === undefined) return;
-    const stops = this.#allStops();
+    const stops = this.#stops(true);
     const found = stops.some((stop) => sameStop(cursor, stop))
       ? cursor
-      : stops.find((stop) => stop.number === cursor.number);
-    if (found !== undefined) this.moveTo(found);
+      : (stops.find((stop) => stop.number === cursor.number) ?? cursor);
+    this.cursor = !this.quietShown && this.#inQuiet(found) ? this.#stops().at(-1) : found;
   }
 
-  /** The lines the cursor can stand on: those of the quiet section only while it shows. */
-  #stops() {
-    return [...(this.items ?? []), ...(this.quietShown ? this.quiet : [])].flatMap(stopsOf);
-  }
-
-  #allStops() {
-    return [...(this.items ?? []), ...this.quiet].flatMap(stopsOf);
+  /** The lines the cursor can stand on: those of the quiet section only while it shows, or `withQuiet`. */
+  #stops(withQuiet = this.quietShown) {
+    return [...(this.items ?? []), ...(withQuiet ? this.quiet : [])].flatMap(stopsOf);
   }
 
   #inQuiet(stop: Stop) {
-    return this.quiet.flatMap(stopsOf).some((line) => sameStop(line, stop));
+    return this.quiet.some((item) => stopsOf(item).some((line) => sameStop(line, stop)));
   }
 
   async #ask() {

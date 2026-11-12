@@ -144,16 +144,17 @@ describe("WorkbenchState", () => {
     await state.load();
     const pr = (number: number) => ({ number, kind: "pull_request" as const, issue: undefined });
 
-    state.moveTo(pr(3));
+    expect(state.moveTo(pr(3))).toBe(false);
     expect(state.quietShown).toBe(false);
-    state.moveTo(pr(2));
+    expect(state.moveTo(pr(2)), "it unfolded the section").toBe(true);
+    expect(state.moveTo(pr(2)), "the section was unfolded already").toBe(false);
 
     expect(state.quietShown).toBe(true);
     expect(state.underCursor?.number).toBe(2);
     state.stop();
   });
 
-  it("unfolds the quiet section when the item under the cursor goes quiet", async () => {
+  it("leaves a folded quiet section folded when the item under the cursor goes quiet", async () => {
     const { send } = catchListener();
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
@@ -173,8 +174,8 @@ describe("WorkbenchState", () => {
       expect(state.quiet).toHaveLength(1);
     });
 
-    expect(state.quietShown).toBe(true);
-    expect(state.underCursor?.number).toBe(2);
+    expect(state.quietShown).toBe(false);
+    expect(state.cursor?.number, "the cursor moves to the last line above, as folding would").toBe(3);
     state.stop();
   });
 
@@ -190,13 +191,17 @@ describe("WorkbenchState", () => {
 
     await state.load();
 
+    const folded = state.lists(pr(2));
+    state.showQuiet();
+
     expect([
       before,
+      folded,
       state.lists(pr(3)),
       state.lists(pr(2)),
       state.lists(pr(3, 1)),
       state.lists(pr(4)),
-    ]).toEqual([false, true, true, false, false]);
+    ]).toEqual([false, false, true, true, false, false]);
     state.stop();
   });
 

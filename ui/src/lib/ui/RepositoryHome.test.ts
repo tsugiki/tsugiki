@@ -990,6 +990,33 @@ it("folds and unfolds the quiet section from the palette, and folding moves the 
   expect(document.activeElement, "the focus wasn't on a row that went").toBe(issueRow);
 });
 
+it("gives the quiet line the focus when folding leaves no line above for the cursor", async () => {
+  core.workbench.mockResolvedValue({
+    status: "ok",
+    data: {
+      items: [],
+      quiet: [{ ...standalone, attention: null }],
+      count: 0,
+      review_requests: 0,
+      filters: [],
+    },
+  });
+  const { component } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
+  await fireEvent.click(await screen.findByRole("button", { name: "Show 1 quiet item" }));
+  const prRow = screen.getByRole("button", { name: "#5 Alone" });
+  await fireEvent.click(prRow);
+  prRow.focus();
+
+  component
+    .paletteCommands()
+    .find((one) => one.title === "Hide Quiet Items")
+    ?.run();
+
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Show 1 quiet item" }));
+  });
+});
+
 it("offers no quiet command with nothing quiet", async () => {
   answering({ ...issue, attention: null });
   const { component } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });

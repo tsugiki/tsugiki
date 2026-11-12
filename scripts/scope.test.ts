@@ -32,6 +32,8 @@ describe("scope", () => {
     [["crates/core/src/lib.rs"]],
     [["uix/a.ts"]],
     [["crates/core/src/highlight/samples/markdown.md"]],
+    [["docs/schema.md"]],
+    [["ui/src/App.svelte", "docs/schema.md"]],
   ])("runs everything for %j", (given) => {
     expect(scope(given)).toBe("all");
   });

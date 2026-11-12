@@ -40,6 +40,15 @@ pub(super) fn has_table(path: &Path, table: &str) -> bool {
         .is_ok()
 }
 
+/// A database in memory with every step of the schema run on it.
+pub(super) fn migrated() -> Connection {
+    let connection = Connection::open_in_memory().unwrap();
+    for step in super::migrate::MIGRATIONS {
+        connection.execute_batch(step.sql).unwrap();
+    }
+    connection
+}
+
 pub(super) fn backups(folder: &Path) -> Vec<String> {
     let mut names: Vec<String> = fs::read_dir(folder)
         .unwrap()

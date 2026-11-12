@@ -111,6 +111,10 @@ stale-bindings:
 bindings:
     npm run bindings
 
+# Draw docs/schema.md afresh from the migrations, after a PR adds one
+schema $TSUGIKI_UPDATE_SCHEMA="1":
+    cargo test -p tsugiki-core --lib store::schema
+
 # Write the snapshot of each sample in crates/core/src/highlight/samples afresh, for you to read in git's diff
 highlight-samples $INSTA_UPDATE="always" $INSTA_FORCE_PASS="1":
     npm run highlight-samples

@@ -20,8 +20,10 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
   System, the default, takes the side Windows is on. Light and Dark keep their side whatever Windows says,
   and turn the title bar and the native controls with it through Tauri's `set_theme`. A key left out takes
   its default: System, VS Code Light Modern and VS Code Dark Modern. A `theme` other than the three, or a
-  name no Theme of that side has, keeps that key's default, and the status bar names the file and the line.
-  Tsugiki reads them at start, so a hand edit takes effect at the next one.
+  name that isn't text, keeps that key's default, and the status bar names the file and the line. A name
+  no Theme of that side has stays in the settings, as its file may be mended: until then the window shows
+  the side's default, and the status bar says so. Tsugiki reads `settings.toml` at start, so a hand edit
+  takes effect at the next one.
 - `Ctrl+K T`, or Pick a Theme in the command palette, opens the theme picker in the palette, as VS Code's
   `Ctrl+K Ctrl+T` does ([#518](https://github.com/tsugiki/tsugiki/issues/518)). It lists the Themes of the
   side in use, opens on the one in force and marks it "chosen". Each Theme the list moves to shows on the
@@ -31,7 +33,10 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
   "Dark themes…" on the light side or "Light themes…" on the dark side, lists the other side's Themes with
   that side's choice marked: a pick there saves that side's setting and leaves the mode alone, so the window
   goes back to the Theme in force. A save that fails puts the old choice back, and the status bar says why.
-  `ui/src/lib/state/theme-picker.svelte.ts` decides what each row does.
+  The user's own Themes come after the built-in ones, in name order, and then each file that can't be used,
+  greyed, with its file and why. Enter on it does nothing. Then comes "Reload themes", which reads the
+  `themes` folder again and keeps the list open. `ui/src/lib/state/theme-picker.svelte.ts` decides what each
+  row does.
 - The window opens hidden, takes the `bg` of the Theme for the side Windows is on, and only then shows, so
   a dark Theme doesn't flash white while the page loads
   ([#516](https://github.com/tsugiki/tsugiki/issues/516)). The page's own background starts on the same
@@ -52,6 +57,35 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
   tokens. Colours are `#rgb`, `#rrggbb` or `#rrggbbaa`. An unknown key or a bad value skips its line and the
   rest still loads; a file that isn't TOML, or has no `name` or `kind`, can't be used. The built-in Themes
   are in `crates/core/themes/`, compiled in.
+- The user's own Themes are `.toml` files in a `themes` folder beside the settings file in use, so a
+  `settings_path` synced from elsewhere brings its Themes along
+  ([#519](https://github.com/tsugiki/tsugiki/issues/519)). Each joins its `kind`'s list, and `light_theme`
+  and `dark_theme` can name it:
+
+  ```toml
+  name = "Solarized Dark"
+  kind = "dark"
+  extends = "VS Code Dark Modern"   # optional
+
+  [colors]
+  bg = "#002b36"
+  fg = "#839496"
+
+  [syntax]
+  keyword = "#859900"
+  ```
+
+  A file sets only the tokens it changes. The rest come from the Theme `extends` names, a built-in one or
+  another file, or else from its `kind`'s default: VS Code Light Modern or VS Code Dark Modern. A file of
+  five colours then works, and a token added later gets a value in old files. An `extends` that loops, names
+  no Theme, names a Theme of the other side, or names a file that can't be used fails the whole file. A
+  file can't take a built-in Theme's name. When two files share a name, the first in file-name order keeps
+  it, and the later one fails.
+- Tsugiki reads the folder when it starts, when the picker opens, and on Reload themes: `Ctrl+K R`, the
+  palette command or the picker's row. It has no watcher. A skipped line, or a file that isn't a Theme,
+  shows in the status bar with its file and line, and a skipped line names its key too. So does a folder
+  Tsugiki can't list; one that isn't there holds no Theme. A file that can't
+  be used shows greyed in the picker. `ThemeLibrary::read` in `core/src/theme.rs` reads the folder.
 - The core parses the file and sends the window each token as a CSS variable on the root: `fg_muted` is
   `--fg-muted`, and a syntax token takes `hl-` in front, so `keyword` is `--hl-keyword`. Components read only
   these variables, apart from borders and tints mixed from `currentColor`.

@@ -51,6 +51,7 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 - Two TOML files, one that travels between machines and one that stays, and a portable mode.
 - `[appearance]` in `settings.toml`: `theme` (System, Light or Dark), and `light_theme` and `dark_theme`,
   the **Theme** of each side.
+- A `themes` folder beside `settings.toml`, which holds the user's own **Themes**.
 - `[diff]` in `settings.toml`: `files`, whether each PR's Files tab opens on all its files or one at a
   time.
 
@@ -60,6 +61,8 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
   changes sides, unless the settings keep one side. VS Code's Light Modern and Dark Modern and Gruvbox's
   Light Hard and Dark Hard are built in.
 - A theme picker on `Ctrl+K T` that previews each **Theme** on the window and saves the one picked.
+- The user's own **Themes** as TOML files that set a few tokens and take the rest from another **Theme**,
+  and Reload themes on `Ctrl+K R`.
 
 ### Workbench ([workbench.md](devel/workbench.md))
 
@@ -114,6 +117,7 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 
 - Every action from the keyboard, with default keys, and remapping.
 - The command palette, quick open, and the list of the current view's keys.
+- `Ctrl+K` chords, such as `Ctrl+K T` for the theme picker and `Ctrl+K R` to reload themes.
 - Tsugiki's keys over the webview's browser shortcuts.
 
 ## Not in Tsugiki

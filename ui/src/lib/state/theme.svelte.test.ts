@@ -21,8 +21,9 @@ const GRUVBOX_DARK = view("Gruvbox Dark Hard", "dark", "#1d2021");
 
 const THEMES: Themes = {
   mode: "system",
-  light: { chosen: "VS Code Light Modern", all: [LIGHT_MODERN, GRUVBOX_LIGHT] },
-  dark: { chosen: "VS Code Dark Modern", all: [DARK_MODERN, GRUVBOX_DARK] },
+  light: { chosen: "VS Code Light Modern", all: [LIGHT_MODERN, GRUVBOX_LIGHT], failed: [] },
+  dark: { chosen: "VS Code Dark Modern", all: [DARK_MODERN, GRUVBOX_DARK], failed: [] },
+  problems: [],
 };
 
 /** Stands in for the window's `prefers-color-scheme` query, and turns Windows to the other side. */
@@ -101,10 +102,39 @@ describe("ThemeState", () => {
     expect(state.current).toBeUndefined();
     expect(state.shown).toBeUndefined();
     expect(state.themesOf("light")).toEqual([]);
+    expect(state.failedOf("light")).toEqual([]);
+    expect(state.problems).toEqual([]);
     expect(state.chosen("light")).toBeUndefined();
     expect(state.error).toBe("A built-in theme can't be read");
     await state.choose("light", "Gruvbox Light Hard");
     expect(commands.saveTheme).not.toHaveBeenCalled();
+  });
+
+  it("reads the themes again on each load, with the files' problems and those that failed", async () => {
+    const state = await loaded(THEMES, false);
+    const failed = { name: "Night", file: "night.toml", reason: "it extends itself: Night, Night" };
+    const problem = "themes\\mine.toml, line 6: fg isn't a colour, so Tsugiki skips it.";
+    vi.mocked(commands.themes).mockResolvedValue({
+      status: "ok",
+      data: { ...THEMES, dark: { ...THEMES.dark, failed: [failed] }, problems: [problem] },
+    });
+    await state.load();
+    expect(state.problems).toEqual([problem]);
+    expect(state.failedOf("dark")).toEqual([failed]);
+    expect(state.failedOf("light")).toEqual([]);
+  });
+
+  it("forgets a refusal once the core sends the themes", async () => {
+    vi.mocked(commands.themes).mockResolvedValue({
+      status: "error",
+      error: { kind: "internal", message: "No" },
+    });
+    const state = new ThemeState(sides(false).query);
+    await state.load();
+    vi.mocked(commands.themes).mockResolvedValue({ status: "ok", data: structuredClone(THEMES) });
+    await state.load();
+    expect(state.error).toBeUndefined();
+    expect(state.current?.name).toBe("VS Code Light Modern");
   });
 
   it("shows a preview over the theme in force until it's dropped", async () => {
@@ -180,6 +210,43 @@ describe("ThemeState's saves", () => {
 
     expect(state.current?.name).toBe("Solarized Dark");
     expect(state.problem).toBe("Tsugiki can't save the theme: the drive went away");
+  });
+
+  it("keep a choice made while a load was on its way, which read the settings before it", async () => {
+    const state = await loaded(THEMES, true);
+    let answer: (themes: { status: "ok"; data: Themes }) => void = () => {};
+    vi.mocked(commands.themes).mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    vi.mocked(commands.saveTheme).mockResolvedValueOnce({ status: "ok", data: null });
+
+    const reload = state.load();
+    await state.choose("dark", "Gruvbox Dark Hard");
+    answer({ status: "ok", data: structuredClone(THEMES) });
+    await reload;
+
+    expect(state.current?.name).toBe("Gruvbox Dark Hard");
+    expect(state.chosen("light")).toBe("VS Code Light Modern");
+  });
+
+  it("put the old choice back on the themes a load brought while the save was on its way", async () => {
+    const state = await loaded(THEMES, true);
+    let fail: (answer: { status: "error"; error: { kind: "internal"; message: string } }) => void = () => {};
+    vi.mocked(commands.saveTheme).mockReturnValueOnce(
+      new Promise((resolve) => {
+        fail = resolve;
+      }),
+    );
+
+    const choice = state.choose("dark", "Gruvbox Dark Hard");
+    await state.load();
+    expect(state.current?.name).toBe("Gruvbox Dark Hard");
+    fail({ status: "error", error: { kind: "internal", message: "the drive went away" } });
+    await choice;
+
+    expect(state.current?.name).toBe("VS Code Dark Modern");
   });
 });
 

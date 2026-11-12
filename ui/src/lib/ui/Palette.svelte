@@ -1,7 +1,13 @@
 <script lang="ts" module>
-  export interface PaletteCommand {
+  /** A row: one that runs, or one that shows greyed and runs nothing, such as a theme file that can't be
+   * used, whose note says why. */
+  export type PaletteCommand = PaletteAction | (PaletteRow & { disabled: true; run?: never });
+
+  /** A row that runs. */
+  export type PaletteAction = PaletteRow & { run: () => void; disabled?: false };
+
+  interface PaletteRow {
     title: string;
-    run: () => void;
     /** Marks the row that stands for what is open now, such as the open Repository in the picker. */
     current?: boolean;
     /** Words after the title, such as why a Repository's diffs aren't there yet. Typing doesn't match
@@ -57,21 +63,30 @@
   } = $props();
 
   let typed = $state("");
-  let picked = $state(untrack(() => start));
+  // The picked row goes by its title, so a list that changes while open, as Reload themes does, keeps the
+  // pick on the same row. No title, or one the list no longer holds, picks the first.
+  let pickedTitle = $state(untrack(() => commands[start]?.title));
   const matching = $derived(
     commands.filter((command) => command.title.toLowerCase().includes(typed.trim().toLowerCase())),
   );
+  const picked = $derived(
+    Math.max(
+      0,
+      matching.findIndex((command) => command.title === pickedTitle),
+    ),
+  );
   const pickedCommand = $derived(matching[picked]);
   // By its title, so rows built again as they were don't preview again, after a pick has run, say.
-  const pickedTitle = $derived(pickedCommand?.title);
+  const shownTitle = $derived(pickedCommand?.title);
   $effect(() => {
-    if (pickedTitle !== undefined) untrack(() => pickedCommand?.preview?.());
+    if (shownTitle !== undefined) untrack(() => pickedCommand?.preview?.());
   });
 
   /** Closes, and runs `command` once the palette has gone and handed the focus back, so the command finds
    * the focus where the user left it: a pane command then moves it as its key would. A row that keeps it
    * open runs at once. */
   function run(command: PaletteCommand) {
+    if (command.disabled) return;
     if (command.keepsOpen) {
       command.run();
       return;
@@ -88,7 +103,8 @@
   function pick(e: KeyboardEvent) {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      picked = Math.max(Math.min(picked + (e.key === "ArrowDown" ? 1 : -1), matching.length - 1), 0);
+      const next = Math.max(Math.min(picked + (e.key === "ArrowDown" ? 1 : -1), matching.length - 1), 0);
+      pickedTitle = matching[next]?.title;
     } else if (e.key === "Enter") {
       if (pickedCommand) run(pickedCommand);
     }
@@ -121,7 +137,7 @@
       {@attach takeFocus}
       bind:value={typed}
       oninput={() => {
-        picked = 0;
+        pickedTitle = undefined;
       }}
       onkeydown={pick}
       role="combobox"
@@ -141,6 +157,7 @@
             role="option"
             aria-selected={i === picked}
             aria-current={command.current ? "true" : undefined}
+            aria-disabled={command.disabled ? "true" : undefined}
             onclick={() => {
               run(command);
             }}
@@ -203,6 +220,11 @@
 
   li[aria-selected="true"] {
     background: var(--selected);
+  }
+
+  /* Greyed text, as muted text is: its note says why it can't run. */
+  li[aria-disabled="true"] {
+    color: var(--fg-muted);
   }
 
   .note {

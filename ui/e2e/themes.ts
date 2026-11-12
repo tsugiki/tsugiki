@@ -50,6 +50,7 @@ const GRUVBOX_DARK: ThemeView = {
 /** The themes with VS Code Modern's chosen for each side, and Gruvbox Dark Hard to pick. */
 export const themes: Themes = {
   mode: "system",
-  light: { chosen: LIGHT_MODERN.name, all: [LIGHT_MODERN] },
-  dark: { chosen: DARK_MODERN.name, all: [DARK_MODERN, GRUVBOX_DARK] },
+  light: { chosen: LIGHT_MODERN.name, all: [LIGHT_MODERN], failed: [] },
+  dark: { chosen: DARK_MODERN.name, all: [DARK_MODERN, GRUVBOX_DARK], failed: [] },
+  problems: [],
 };

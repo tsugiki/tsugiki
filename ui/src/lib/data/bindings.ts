@@ -80,7 +80,9 @@ export const commands = {
 	 *  Every theme of each side, light and dark, as CSS variables (#515), with the theme the settings choose for
 	 *  each side, and the mode they held when Tsugiki started (#517), which the title bar keeps. In System mode
 	 *  the window shows the chosen theme for the side Windows is on. The theme picker lists the others, and a
-	 *  theme it saved is the chosen one from then on (#518).
+	 *  theme it saved is the chosen one from then on (#518). The user's theme files come after the built-in ones,
+	 *  read again from the `themes` folder on each ask, so the window asks when it starts, when the picker opens
+	 *  and on Reload themes (#519). This waits on the folder, which may sit on a synced drive.
 	 */
 	themes: () => typedError<Themes, Error_Serialize>(__TAURI_INVOKE("themes")),
 	/**  What the window opens on. */
@@ -120,7 +122,8 @@ export const commands = {
 	savePaneLayout: (layout: PaneLayout_Deserialize) => typedError<PaneLayout_Serialize, Error_Serialize>(__TAURI_INVOKE("save_pane_layout", { layout })),
 	/**
 	 *  Saves the theme the picker chose for side `kind` to `light_theme` or `dark_theme` in `settings.toml`,
-	 *  without Settings' Apply (#518). The window shows it already. This waits on a small file.
+	 *  without Settings' Apply (#518). The window shows it already. It may be a file of the `themes` folder
+	 *  (#519). This waits on small files.
 	 */
 	saveTheme: (kind: ThemeKind, name: string) => typedError<null, Error_Serialize>(__TAURI_INVOKE("save_theme", { kind, name })),
 	/**
@@ -203,11 +206,15 @@ export type Anchor = "current" | "outdated";
  *  of each side (#517). A key Tsugiki can't read takes its default, and `unread_problems` says why: a
  *  theme is too small a thing to lose the rest of `settings.toml` over. An `appearance` that isn't a table
  *  fails the file, as any other table does.
+ * 
+ *  A theme's name may be a built-in theme's or a file's of the `themes` folder beside the settings file
+ *  (#519). It stays as the user wrote it: the folder can change while Tsugiki runs, so the `themes` command
+ *  checks it against the folder each time, and a name no theme has shows its side's default until one does.
  */
 export type AppearanceSettings = {
 	theme: ThemeMode,
-	light_theme: string,
-	dark_theme: string,
+	light_theme: ThemeName,
+	dark_theme: ThemeName,
 };
 
 /**  The reasons an item Needs attention, and since when. */
@@ -525,6 +532,15 @@ export type FailedRead = {
 	repository: RepositoryName,
 	number: number,
 	why: ReadFailure,
+};
+
+/**  A theme file of the `themes` folder that read as a theme, but can't be used. */
+export type FailedThemeView = {
+	name: string,
+	/**  The file's name in the folder, such as `solarized.toml`. */
+	file: string,
+	/**  Why, in words for the picker. */
+	reason: string,
 };
 
 /**  How much a file changed. */
@@ -1865,8 +1881,13 @@ export type Side =
 export type SideThemes = {
 	/**  The name of the chosen theme, one of `all`. */
 	chosen: string,
-	/**  Every theme of the side, in the order the theme picker lists them. */
+	/**
+	 *  Every theme of the side, in the order the theme picker lists them: the built-in ones, then the files
+	 *  of the `themes` folder in name order.
+	 */
 	all: ThemeView[],
+	/**  The files of the side that can't be used, in name order, which the picker shows greyed with why. */
+	failed: FailedThemeView[],
 };
 
 /**  The slowest of `count` timings. */
@@ -2027,6 +2048,12 @@ export type ThemeKind = "light" | "dark";
 export type ThemeMode = "system" | "light" | "dark";
 
 /**
+ *  A theme's name, as its file and `[appearance] light_theme` and `dark_theme` give it: a built-in theme's or
+ *  one from the user's `themes` folder. It reaches the UI as a plain string.
+ */
+export type ThemeName = string;
+
+/**
  *  A theme ready for the window: each token as a CSS variable, and the kind, which the root's
  *  `color-scheme` takes so scroll bars and form controls follow.
  */
@@ -2045,6 +2072,11 @@ export type Themes = {
 	mode: ThemeMode,
 	light: SideThemes,
 	dark: SideThemes,
+	/**
+	 *  What is wrong with the files of the `themes` folder, in words for the status bar, each naming its file
+	 *  and, when the parser knows it, its line (#519).
+	 */
+	problems: string[],
 };
 
 /**

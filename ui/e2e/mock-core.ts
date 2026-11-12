@@ -36,8 +36,9 @@ export const mockCore = (page: Page, answers: CoreAnswers) =>
         status: "ok",
         data: {
           mode: "system",
-          light: { chosen: "Light", all: [{ name: "Light", kind: "light", tokens: [] }] },
-          dark: { chosen: "Dark", all: [{ name: "Dark", kind: "dark", tokens: [] }] },
+          light: { chosen: "Light", all: [{ name: "Light", kind: "light", tokens: [] }], failed: [] },
+          dark: { chosen: "Dark", all: [{ name: "Dark", kind: "dark", tokens: [] }], failed: [] },
+          problems: [],
         },
       },
       savePaneLayout: { status: "ok", data: panes },

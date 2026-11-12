@@ -26,6 +26,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 | Local mark | `Ctrl+K M` |
 | Pin or unpin | `Ctrl+K P` |
 | Pick a theme | `Ctrl+K T`, or the command palette |
+| Reload themes | `Ctrl+K R`, or the command palette |
 | Back / forward | `Alt+←` / `Alt+→` |
 | Open on GitHub | `Ctrl+Shift+G` |
 | Switch Repository | `Ctrl+R`, or the command palette |

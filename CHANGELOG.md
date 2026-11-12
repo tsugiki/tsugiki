@@ -7,6 +7,50 @@ release's body, and fails without it
 
 ## WIP
 
+## Version 0.2.3 (2026-11-12)
+
+Tsugiki takes the look of its prototype and follows Windows to light or dark. The Issue list and the Issue
+view fold what can wait, and a line shows which pane your keys go to.
+
+### Added
+
+- The window takes its colours from a Theme, VS Code Light Modern or Dark Modern, whichever matches the
+  side Windows is on, and switches when Windows does. It opens in that Theme's background, with no white
+  flash before the page loads.
+- A line along the top of the Issue list or the Detail pane shows which one holds the keyboard focus. The
+  row under the cursor takes the active selection colour while the list holds it. With the focus in the
+  Detail pane, as after a click on one of its buttons, `↑` and `↓` scroll it.
+- Back and forward arrows over the Detail pane walk its history, as `Alt+←` and `Alt+→` do, and their
+  tooltips name where they go. A right-click on one lists up to 12 items that way. The mouse's back and
+  forward buttons, and "Go Back" and "Go Forward" in the command palette, do the same.
+- A header over the Issue list names the view on show. A switch at its end sorts the list "By attention" or
+  "By last update", and so do "Sort by Attention" and "Sort by Last Update" in the palette. `machine.toml`
+  keeps the choice as `order` under `[panes]`.
+- The Issue view says when the Issue was opened, how many comments it has and who it's assigned to.
+- An "Origin PRs" heading over the Issue view's PRs counts them, as "2 open of 5 PRs". Each PR names its
+  target branch and its author, a PR that Needs attention shows in bold, and a legend under the tree says
+  what the icons and the bold mean.
+
+### Changed
+
+- The Issue list folds each Issue's PRs, as a mail client folds a conversation. `→` or a click on `›`
+  unfolds them and `←` folds them; on a PR's row, `←` moves the cursor to its Issue. Opening a PR some
+  other way, such as with `Alt+←`, unfolds its Issue.
+- The Issue list folds its quiet items behind "Show 4 quiet items", and "Show Quiet Items" in the palette
+  unfolds them too. `↑` and `↓` skip a folded section.
+- The Issue view folds the Origin PRs that merged, with no Backport left open, into one line: "Show 12
+  merged PRs". A PR that Needs attention or matches one of your Filters stays out of the fold.
+- The Issue list, the Sidebar, the Issue view and the PR view take the prototype's look. The UI and code
+  each get one font, buttons and inputs share one style, each item in the Issue list takes three lines, and
+  the PR tree, the description and each comment sit in boxes. A Review's state shows as a green or red chip.
+  A click anywhere on a row of the Issue list or the PR tree opens it.
+
+### Fixed
+
+- The Sidebar, the Issue list and the Detail pane each scroll by themselves, with the scrollbar at their own
+  right edge. Before, the window scrolled the Issue list, so the wheel over the Sidebar, or past the end of
+  the Detail pane, scrolled the list.
+
 ## Version 0.2.2 (2026-11-10)
 
 The status bar tells you when a newer Tsugiki is out, and one small crate holds the only code that can read

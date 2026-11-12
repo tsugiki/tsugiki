@@ -126,6 +126,12 @@ fn the_webview_has_the_strict_csp() {
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
          img-src 'self' data:; connect-src ipc: http://ipc.localhost; base-uri 'none'; form-action 'none'"
     );
+    // A nonce Tauri put in `style-src` would void its 'unsafe-inline': the browser would refuse the `style`
+    // attribute that keeps app.html's wrapper out of the layout, and the window would scroll as one page.
+    assert_eq!(
+        config["app"]["security"]["dangerousDisableAssetCspModification"],
+        serde_json::json!(["style-src"])
+    );
 }
 
 #[test]

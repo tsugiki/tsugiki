@@ -80,7 +80,7 @@
 <style>
   .waiting {
     font-size: 12px;
-    opacity: 0.75;
+    color: var(--fg-muted);
   }
 
   /* The diff fills what the tab leaves, and scrolls by itself. */

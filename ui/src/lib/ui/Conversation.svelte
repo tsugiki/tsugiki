@@ -80,7 +80,9 @@
   {#if hidden === null}
     <RenderedHtml {html} {onlink} />
   {:else}
-    <button class="fold" aria-expanded={opened.has(id)} onclick={() => toggle(id)}>{REASONS[hidden]}</button>
+    <button class="link fold" aria-expanded={opened.has(id)} onclick={() => toggle(id)}
+      >{REASONS[hidden]}</button
+    >
     {#if opened.has(id)}
       <RenderedHtml {html} {onlink} />
     {/if}
@@ -113,9 +115,9 @@
         {#each entry.review.threads as thread, position (position)}
           <li>
             {#if onthread}
-              <button class="place" onclick={() => onthread(thread.id)}>{place(thread)}</button>
+              <button class="place" onclick={() => onthread(thread.id)}><code>{place(thread)}</code></button>
             {:else}
-              <span class="place">{place(thread)}</span>
+              <code class="place">{place(thread)}</code>
             {/if}
             {#if thread.opening.kind === "words"}
               <span>{thread.opening.words}</span>
@@ -126,10 +128,10 @@
               <span class="by">{replies(thread.replies)}</span>
             {/if}
             {#if thread.resolution === "resolved"}
-              <span class="mark">Resolved</span>
+              <span class="chip">Resolved</span>
             {/if}
             {#if thread.anchor === "outdated"}
-              <span class="mark">Outdated</span>
+              <span class="chip">Outdated</span>
             {/if}
           </li>
         {/each}
@@ -142,7 +144,7 @@
   .by {
     font-size: 12px;
     margin: 4px 0;
-    opacity: 0.75;
+    color: var(--fg-muted);
   }
 
   .review {
@@ -157,17 +159,10 @@
   }
 
   .fold {
-    all: unset;
-    cursor: pointer;
     display: block;
     font-size: 12px;
     margin: 4px 0;
-    opacity: 0.75;
-  }
-
-  .fold:hover,
-  .fold:focus-visible {
-    text-decoration: underline;
+    color: var(--fg-muted);
   }
 
   .threads {
@@ -189,28 +184,20 @@
     text-overflow: ellipsis;
   }
 
-  .place {
+  .place,
+  .chip {
     flex: none;
-    font-family: ui-monospace, Consolas, monospace;
   }
 
   /* A thread's place opens it in Files, and looks like a link. */
   button.place {
     all: unset;
     flex: none;
-    font-family: ui-monospace, Consolas, monospace;
     cursor: pointer;
     text-decoration: underline;
   }
 
   button.place:focus-visible {
     outline: 1px solid currentColor;
-  }
-
-  .mark {
-    flex: none;
-    border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
-    border-radius: 4px;
-    padding: 0 4px;
   }
 </style>

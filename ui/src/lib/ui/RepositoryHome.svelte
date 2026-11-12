@@ -472,7 +472,7 @@
       <StateIcon {icon} />
     {/if}
     <button
-      class="open"
+      class="link"
       data-item={lineName(stop)}
       aria-current={sameStop(workbench.cursor, stop) ? "true" : undefined}
       onclick={() => {
@@ -623,7 +623,7 @@
       <header class="view">
         <h2>{workbench.title}</h2>
         <button
-          class="order"
+          class="link order"
           title="Change the order"
           onclick={() => void sortBy(panes.order === "attention" ? "last_update" : "attention")}
           >{ORDERS[panes.order]}</button
@@ -640,7 +640,7 @@
         </ul>
         {#if workbench.quiet.length > 0}
           <button
-            class="quiet"
+            class="link quiet"
             aria-expanded={workbench.quietShown}
             onclick={toggleQuiet}
             bind:this={quietLineButton}
@@ -694,7 +694,7 @@
   {:else if panes.hidden("list")}
     <section class="empty" aria-label="Detail pane" tabindex="-1" data-pane="detail">
       <p>
-        Nothing open. <button class="key" onclick={() => void toggleListByKey()}
+        Nothing open. <button class="link" onclick={() => void toggleListByKey()}
           ><kbd>{keyLabel("ctrl+alt+b", currentOs())}</kbd></button
         > shows the Issue list.
       </p>
@@ -722,16 +722,6 @@
     min-width: 320px;
   }
 
-  .key {
-    all: unset;
-    cursor: pointer;
-  }
-
-  .key:hover,
-  .key:focus-visible {
-    text-decoration: underline;
-  }
-
   h1 {
     font-size: 16px;
   }
@@ -750,20 +740,8 @@
   }
 
   .order {
-    all: unset;
     font-size: 12px;
     color: var(--fg-muted);
-    cursor: pointer;
-  }
-
-  .order:hover,
-  .order:focus-visible {
-    text-decoration: underline;
-  }
-
-  .open {
-    all: unset;
-    cursor: pointer;
   }
 
   /* › and ⌄ before an Issue with PRs, which fold and unfold its tree as ← and → do. */
@@ -780,25 +758,17 @@
     background: color-mix(in srgb, currentColor 12%, transparent);
   }
 
-  .open:hover,
-  .open:focus-visible,
-  .open[aria-current] {
+  /* The row under the cursor, underlined as a link is under the pointer. */
+  .link[aria-current] {
     text-decoration: underline;
   }
 
   /* A muted line at the end of the list until #599 styles it. */
   .quiet {
-    all: unset;
     display: block;
     margin: 16px 0 0;
     font-size: 12px;
-    opacity: 0.75;
-    cursor: pointer;
-  }
-
-  .quiet:hover,
-  .quiet:focus-visible {
-    text-decoration: underline;
+    color: var(--fg-muted);
   }
 
   .preview {

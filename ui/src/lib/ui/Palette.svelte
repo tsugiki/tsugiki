@@ -160,6 +160,11 @@
     background: transparent;
   }
 
+  /* The line under the box takes the accent with the focus, as other inputs' borders do. */
+  input:focus {
+    border-bottom-color: var(--accent);
+  }
+
   ul {
     margin: 0;
     padding: 4px 0;

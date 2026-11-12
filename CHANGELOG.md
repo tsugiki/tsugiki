@@ -7,6 +7,42 @@ release's body, and fails without it
 
 ## WIP
 
+## Version 0.2.4 (2026-11-13)
+
+You pick your Themes, and can write your own. An item stays in the Issue list until you mark it seen, and
+the Files tab can show one file at a time.
+
+### Added
+
+- Gruvbox Light Hard and Gruvbox Dark Hard join the built-in Themes. `[appearance]` in `settings.toml`
+  picks the mode, `theme = "system"`, `"light"` or `"dark"`, and one Theme for each side with
+  `light_theme` and `dark_theme`. Light and Dark keep their side whatever Windows says, title bar included.
+- `Ctrl+K T`, or "Pick a Theme" in the command palette, lists the Themes of the side in use. Each one the
+  list moves to shows on the whole window, Enter saves it to `settings.toml`, and Esc puts the old one
+  back. The last row lists the other side's Themes.
+- Your own Themes are TOML files in a `themes` folder beside `settings.toml`. A file sets only the colours
+  it changes and takes the rest from the Theme it `extends`, or from VS Code's Theme for its side.
+  `Ctrl+K R`, "Reload Themes" in the palette, or opening the picker reads the folder again. The picker
+  shows a file that can't be used greyed, with why, and the status bar names the file, the line and the
+  key of each line Tsugiki skipped. `docs/devel/themes.md` describes the format.
+- The Files tab can show one file at a time, with a bar over it that reads "‹ 12 of 48 ›". `Ctrl+K O`, the
+  switch in the tab's header, or "View: One File at a Time" in the palette switches the PR on show, and
+  `[diff] files = "one"` in `settings.toml` makes it the default. `Alt+PageDown` and `Alt+PageUp` go to
+  the next and the previous file either way.
+- Every file in the Files tab collapses to its header with a click on its chevron, as Generated files did.
+  A jump into a collapsed file, with `F7`, `F8` or Find in diff, opens it.
+- The Issue view shows the Issue's labels. An item cached before this version shows its labels once a sync
+  reads it again.
+- Mark Unseen, on `Shift+Q`, in the palette, or the button under the item's title, flags an item so it
+  Needs attention again and its preview says "Marked unseen".
+
+### Changed
+
+- Opening an item, opening it on GitHub or handing a PR to a review tool no longer marks it seen, so it
+  keeps its place in the Issue list. Mark Seen does that: `Q`, the palette, or the button under the item's
+  title. On an Issue it marks every PR in its tree too, and the cursor moves to the next item that still
+  Needs attention. A Review request, a Stale review or failed CI keeps an item in Needs attention.
+
 ## Version 0.2.3 (2026-11-12)
 
 Tsugiki takes the look of its prototype and follows Windows to light or dark. The Issue list and the Issue

@@ -4694,7 +4694,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tsugiki-app"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "log",
  "open",
@@ -4717,7 +4717,7 @@ dependencies = [
 
 [[package]]
 name = "tsugiki-core"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "codspeed-divan-compat",
  "fs4",
@@ -4756,11 +4756,11 @@ dependencies = [
 
 [[package]]
 name = "tsugiki-test-git"
-version = "0.2.3"
+version = "0.2.4"
 
 [[package]]
 name = "tsugiki-token"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "rustls",
  "ureq",
@@ -4769,7 +4769,7 @@ dependencies = [
 
 [[package]]
 name = "tsugiki-webview-keys"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "webview2-com",
  "windows-core",

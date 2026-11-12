@@ -37,7 +37,9 @@ test("Ctrl+Shift+H shows the performance HUD, and its numbers move", async ({ pa
   await page.keyboard.press("ControlOrMeta+Shift+H");
 
   await expect(hud(page)).toBeVisible();
-  await expect(value(page, "Start-up")).toHaveText("640 ms");
+  // The HUD takes half the round trip of the time_running call off the core's 640 ms, and on a slow runner
+  // that call takes a few ms.
+  await expect(value(page, "Start-up")).toHaveText(/^(6[0-3]\d|640) ms$/);
   await expect(value(page, "View query")).toHaveText(/^\d+\.\d ms$/);
   await expect(value(page, "Frame, latest")).toHaveText(/^\d+\.\d ms$/);
   const frames = value(page, "Frames over");

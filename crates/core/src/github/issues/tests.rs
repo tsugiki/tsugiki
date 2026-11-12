@@ -239,10 +239,15 @@ fn an_issue_keeps_the_names_of_its_labels_in_name_order_whatever_their_case() {
     let repository = json!({ "i7": issue, "i8": unlabelled });
     let (script, _asked) = Scripted::new(vec![answer(&repository)]);
 
-    let fetched = github(script).fetch_issues(&cpython(), &[7, 8], 25).unwrap();
+    let fetched = github(script)
+        .fetch_issues(&cpython(), &[7, 8], 25)
+        .unwrap();
 
     let names: Vec<&str> = fetched.issues[0].labels.iter().map(Label::as_str).collect();
-    assert_eq!(names, ["3.14", "interpreter-core", "OS-windows", "type-bug"]);
+    assert_eq!(
+        names,
+        ["3.14", "interpreter-core", "OS-windows", "type-bug"]
+    );
     assert_eq!(fetched.issues[1].labels, []);
 }
 

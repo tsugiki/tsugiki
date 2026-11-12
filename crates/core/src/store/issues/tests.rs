@@ -113,7 +113,11 @@ fn an_issue_keeps_its_labels_and_a_save_replaces_them() {
         ],
     );
     let names = |issue: &IssueFacts| -> Vec<String> {
-        issue.labels.iter().map(|label| label.as_str().to_owned()).collect()
+        issue
+            .labels
+            .iter()
+            .map(|label| label.as_str().to_owned())
+            .collect()
     };
     assert_eq!(
         read.iter().map(names).collect::<Vec<_>>(),

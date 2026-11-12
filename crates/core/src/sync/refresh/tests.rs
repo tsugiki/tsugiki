@@ -639,7 +639,10 @@ fn a_refresh_keeps_the_labels_an_issue_gained_and_drops_those_it_lost() {
 
     drop(run(&mut syncs, &harness));
 
-    assert_eq!(facts(&harness).issues[0].labels, labels(&["3.14", "type-bug"]));
+    assert_eq!(
+        facts(&harness).issues[0].labels,
+        labels(&["3.14", "type-bug"])
+    );
     harness.finish();
 }
 

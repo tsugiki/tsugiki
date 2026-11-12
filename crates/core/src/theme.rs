@@ -73,6 +73,9 @@ pub enum Token {
     Backdrop,
     Shadow,
     Selected,
+    SelectionActive,
+    SelectionInactive,
+    FocusBorder,
     Accent,
     Add,
     Del,
@@ -97,7 +100,7 @@ pub enum Token {
 
 impl Token {
     /// Every token, in the order the doc page lists them.
-    pub const ALL: [Self; 30] = [
+    pub const ALL: [Self; 33] = [
         Self::Bg,
         Self::Fg,
         Self::FgMuted,
@@ -108,6 +111,9 @@ impl Token {
         Self::Backdrop,
         Self::Shadow,
         Self::Selected,
+        Self::SelectionActive,
+        Self::SelectionInactive,
+        Self::FocusBorder,
         Self::Accent,
         Self::Add,
         Self::Del,
@@ -143,6 +149,9 @@ impl Token {
             Self::Backdrop => "backdrop",
             Self::Shadow => "shadow",
             Self::Selected => "selected",
+            Self::SelectionActive => "selection_active",
+            Self::SelectionInactive => "selection_inactive",
+            Self::FocusBorder => "focus_border",
             Self::Accent => "accent",
             Self::Add => "add",
             Self::Del => "del",
@@ -185,6 +194,9 @@ impl Token {
             | Self::Backdrop
             | Self::Shadow
             | Self::Selected
+            | Self::SelectionActive
+            | Self::SelectionInactive
+            | Self::FocusBorder
             | Self::Accent
             | Self::Add
             | Self::Del

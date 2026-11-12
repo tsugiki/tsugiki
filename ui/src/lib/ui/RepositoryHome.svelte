@@ -107,6 +107,9 @@
   let list = $state<HTMLElement>();
   let quietLineButton = $state<HTMLButtonElement>();
   let home = $state<HTMLElement>();
+  /** Whether the window holds the system's focus, which no CSS can ask. The panes read which of them holds
+   * it with `:focus-within` (#602). */
+  let windowFocused = $state(document.hasFocus());
 
   const onGitHub = async (item: GitHubItem) => {
     browserProblem = await openOnGitHub(name, item);
@@ -398,7 +401,8 @@
    * The list's keys and the PR view's. A dialog on top keeps them, and a text box or a focused control
    * keeps its own. The window's guard has already stopped the browser for Ctrl+B, Ctrl+Shift+G, Ctrl+Alt+U
    * and Ctrl+F, which work in a text box too, and for Ctrl+Alt+B outside one, as AltGr sends it to type.
-   * While the list is hidden, ↑ and ↓ scroll the Detail pane, and Enter has no row to open.
+   * ↑ and ↓ go where the focus line shows (#602): they scroll the Detail pane while it holds the focus or
+   * the list is hidden, and move the list's cursor otherwise. With the list hidden, Enter has no row to open.
    */
   function onkeydown(e: KeyboardEvent) {
     if (!keysActive) return;
@@ -423,7 +427,10 @@
     } else if (key === "enter" && e.repeat) {
       // Each opening asks GitHub, and a held key isn't more than one.
       e.preventDefault();
-    } else if ((key === "arrowdown" || key === "arrowup") && panes.hidden("list")) {
+    } else if (
+      (key === "arrowdown" || key === "arrowup") &&
+      (panes.hidden("list") || (e.target instanceof Node && detailPane()?.contains(e.target) === true))
+    ) {
       e.preventDefault();
       scrollDetail(key === "arrowdown" ? 1 : -1);
     } else if (key === "arrowdown" || key === "arrowup") {
@@ -582,7 +589,13 @@
   {/if}
 {/snippet}
 
-<svelte:window {onkeydown} onmousedown={mouseButton} onmouseup={mouseButton} />
+<svelte:window
+  {onkeydown}
+  onmousedown={mouseButton}
+  onmouseup={mouseButton}
+  onfocus={() => (windowFocused = true)}
+  onblur={() => (windowFocused = false)}
+/>
 
 <!-- The bar atop the Detail pane, over item `shown`. -->
 {#snippet history(shown: number)}
@@ -598,8 +611,9 @@
 {#if panes.hidden("list")}
   {@render problems()}
 {/if}
+<!-- With another app in front, no pane shows the focus: the next key goes to that app. -->
 <div
-  class="home"
+  class={["home", { "window-focused": windowFocused }]}
   style:--sidebar-width={`${String(panes.sidebar ?? SIDEBAR_WIDTH)}px`}
   style:--list-width={panes.list === null ? undefined : `${String(panes.list)}px`}
   bind:this={home}
@@ -631,7 +645,11 @@
   {#if !panes.hidden("list")}
     <!-- The list keeps the width the user gave it beside the Detail pane, and fills the window without
          one. -->
-    <section class={["list", { sized: panes.list !== null && detail !== undefined }]} bind:this={list}>
+    <section
+      class={["list", { sized: panes.list !== null && detail !== undefined }]}
+      data-pane="list"
+      bind:this={list}
+    >
       <h1>{name}</h1>
       <button onclick={onadd}>Add repository</button>
       <header class="view">
@@ -795,9 +813,9 @@
     background: color-mix(in srgb, currentColor 8%, transparent);
   }
 
-  /* The row under the cursor. */
+  /* The row under the cursor, on the inactive selection until the list holds the focus. */
   .row:has(.title[aria-current]) {
-    background: var(--selected);
+    background: var(--selection-inactive);
   }
 
   .people,
@@ -886,6 +904,31 @@
 
   .pull-requests .pull-requests .row {
     padding-left: calc(12px + 2 * (1em + 6px));
+  }
+
+  /* The focus shows as VS Code shows it (#602): a line along the top of the pane that holds it, and the
+     row under the cursor in the active selection colour while that pane is the list. The line sticks to
+     the pane's visible top, as the window scrolls the list and the Detail pane scrolls itself. Each pane
+     keeps the line's room, so the line comes and goes without moving anything. */
+  .home :global([data-pane])::before {
+    content: "";
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: block;
+    flex: none;
+    height: 2px;
+  }
+
+  /* With the focus on no element, as at launch, the list takes the keys, so it shows the line too. */
+  .home.window-focused :global([data-pane]:focus-within)::before,
+  :global(html:not(:has(:focus))) .home.window-focused .list::before {
+    background: var(--focus-border);
+  }
+
+  .window-focused .list:focus-within .row:has(.title[aria-current]),
+  :global(html:not(:has(:focus))) .window-focused .row:has(.title[aria-current]) {
+    background: var(--selection-active);
   }
 
   .quiet {

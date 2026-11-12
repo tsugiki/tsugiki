@@ -81,6 +81,7 @@ const DEFAULT_LAYOUT = {
   sidebar_hidden: false,
   list_hidden: false,
   detail_only_hid: null,
+  order: "attention",
 };
 
 beforeEach(() => {
@@ -1672,9 +1673,54 @@ it("offers the palette a command that hides or shows the Issue list, named for w
   });
 
   expect([before, titles()]).toEqual([
-    ["Hide Sidebar", "Hide Issue List", "Show Only the Detail Pane", "Reset Layout", "Go Back", "Go Forward"],
-    ["Hide Sidebar", "Show Issue List", "Show Only the Detail Pane", "Reset Layout", "Go Back", "Go Forward"],
+    [
+      "Hide Sidebar",
+      "Hide Issue List",
+      "Show Only the Detail Pane",
+      "Reset Layout",
+      "Go Back",
+      "Go Forward",
+      "Sort by Last Update",
+    ],
+    [
+      "Hide Sidebar",
+      "Show Issue List",
+      "Show Only the Detail Pane",
+      "Reset Layout",
+      "Go Back",
+      "Go Forward",
+      "Sort by Last Update",
+    ],
   ]);
+});
+
+it("names the view over the list, and switches its order, which the list asks for once it's saved", async () => {
+  const { component } = await listing();
+  expect(screen.getByRole("heading", { name: "Workbench" })).toBeTruthy();
+  const asked = core.workbench.mock.calls.length;
+
+  await fireEvent.click(screen.getByRole("button", { name: "By attention ⇅" }));
+
+  await vi.waitFor(() => {
+    expect(core.workbench).toHaveBeenCalledTimes(asked + 1);
+  });
+  expect(core.savePaneLayout).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_LAYOUT, order: "last_update" });
+  expect(core.savePaneLayout.mock.invocationCallOrder[0]).toBeLessThan(
+    core.workbench.mock.invocationCallOrder[asked] ?? 0,
+  );
+  await fireEvent.click(screen.getByRole("button", { name: "By last update ⇅" }));
+  expect(await screen.findByRole("button", { name: "By attention ⇅" })).toBeTruthy();
+  expect(core.savePaneLayout).toHaveBeenLastCalledWith(DEFAULT_LAYOUT);
+
+  // The palette offers the order the list isn't in.
+  const sort = () => component.paletteCommands().find((command) => command.title.startsWith("Sort by"));
+  const offered = [sort()?.title];
+  sort()?.run();
+  await screen.findByRole("button", { name: "By last update ⇅" });
+  offered.push(sort()?.title);
+  sort()?.run();
+  expect(await screen.findByRole("button", { name: "By attention ⇅" })).toBeTruthy();
+  expect(offered).toEqual(["Sort by Last Update", "Sort by Attention"]);
 });
 
 /** Presses Ctrl+K Z, which the page hands the screen once the chord ends. */

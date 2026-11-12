@@ -216,6 +216,7 @@ const LAYERS: &[Layer] = &[
             "mirror",
             "repository",
             "repository_settings",
+            "settings",
             "store",
         ],
         why: "Builds the view models, which show what each module below works out.",

@@ -389,8 +389,9 @@ fn read_workbench(
     reader: &StoreReader,
 ) -> Result<Workbench, Error> {
     let name = RepositoryName::parse(repository)?;
-    let repository = owner.view().loaded.settings.repository(name);
-    Workbench::read(reader, &repository, view)
+    let settings = owner.view();
+    let repository = settings.loaded.settings.repository(name);
+    Workbench::read(reader, &repository, view, settings.panes.order)
 }
 
 fn read_issue(

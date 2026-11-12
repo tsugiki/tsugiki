@@ -105,8 +105,8 @@ export const commands = {
 	 */
 	savePaneLayout: (layout: PaneLayout_Deserialize) => typedError<PaneLayout_Serialize, Error_Serialize>(__TAURI_INVOKE("save_pane_layout", { layout })),
 	/**
-	 *  The rows of a view of a Repository's Workbench, with what its Sidebar shows. This waits
-	 *  on the database and never on GitHub (ADR 0018).
+	 *  The rows of a view of a Repository's Workbench, with what its Sidebar shows, in the order `machine.toml`
+	 *  keeps for the list (#592). This waits on the database and never on GitHub (ADR 0018).
 	 */
 	workbench: (repository: string, view: WorkbenchView) => typedError<Workbench_Serialize, Error_Serialize>(__TAURI_INVOKE("workbench", { repository, view })),
 	/**
@@ -826,6 +826,13 @@ export type LinkTo =
 /**  A project on the Python Package Index. */
 { site: "pypi"; project: string };
 
+/**  How the Issue list orders its items, apart from its quiet section, which comes last either way (#592). */
+export type ListOrder = 
+/**  What Needs attention first, newest first by when it started to, then the rest by last update. */
+"attention" | 
+/**  Newest first by last update. */
+"last_update";
+
 /**  A top-level entry of the list, with why it Needs attention, if it does. */
 export type ListedItem = ListedItem_Serialize | ListedItem_Deserialize;
 
@@ -1242,19 +1249,21 @@ export type Pair = {
 
 /**
  *  How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
- *  (#187), whether the Sidebar (#234) and the list (#242) show, and which of them `Ctrl+K Z` hid (#246),
- *  to bring back on the next press. All of it stays on this machine, like the window's place, and a value
- *  left out takes its default. So does a value Tsugiki can't read, such as a width that isn't a whole number
- *  of pixels: a pane is too small a thing to lose the rest of `machine.toml` over.
+ *  (#187), whether the Sidebar (#234) and the list (#242) show, which of them `Ctrl+K Z` hid (#246), to
+ *  bring back on the next press, and the list's order (#592). All of it stays on this machine, like the
+ *  window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
+ *  width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml`
+ *  over.
  */
 export type PaneLayout = PaneLayout_Serialize | PaneLayout_Deserialize;
 
 /**
  *  How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
- *  (#187), whether the Sidebar (#234) and the list (#242) show, and which of them `Ctrl+K Z` hid (#246),
- *  to bring back on the next press. All of it stays on this machine, like the window's place, and a value
- *  left out takes its default. So does a value Tsugiki can't read, such as a width that isn't a whole number
- *  of pixels: a pane is too small a thing to lose the rest of `machine.toml` over.
+ *  (#187), whether the Sidebar (#234) and the list (#242) show, which of them `Ctrl+K Z` hid (#246), to
+ *  bring back on the next press, and the list's order (#592). All of it stays on this machine, like the
+ *  window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
+ *  width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml`
+ *  over.
  */
 export type PaneLayout_Deserialize = {
 	sidebar?: number | null,
@@ -1269,14 +1278,17 @@ export type PaneLayout_Deserialize = {
 	 *  made it forget.
 	 */
 	detail_only_hid?: Panes | null,
+	/**  How the Issue list orders its items (#592). */
+	order?: ListOrder,
 };
 
 /**
  *  How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
- *  (#187), whether the Sidebar (#234) and the list (#242) show, and which of them `Ctrl+K Z` hid (#246),
- *  to bring back on the next press. All of it stays on this machine, like the window's place, and a value
- *  left out takes its default. So does a value Tsugiki can't read, such as a width that isn't a whole number
- *  of pixels: a pane is too small a thing to lose the rest of `machine.toml` over.
+ *  (#187), whether the Sidebar (#234) and the list (#242) show, which of them `Ctrl+K Z` hid (#246), to
+ *  bring back on the next press, and the list's order (#592). All of it stays on this machine, like the
+ *  window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
+ *  width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml`
+ *  over.
  */
 export type PaneLayout_Serialize = {
 	sidebar: number | null,
@@ -1291,6 +1303,8 @@ export type PaneLayout_Serialize = {
 	 *  made it forget.
 	 */
 	detail_only_hid: Panes | null,
+	/**  How the Issue list orders its items (#592). */
+	order: ListOrder,
 };
 
 /**  The Sidebar, the Workbench list, or both. */
@@ -2070,7 +2084,10 @@ export type WorkbenchView = { kind: "whole" } | { kind: "filter"; query: FilterQ
 
 /**  A Repository's Workbench or one of its views, with what the Sidebar shows beside it. */
 export type Workbench_Deserialize = {
-	/**  The items that Need attention, newest first by when they started to, then the rest by last update. */
+	/**
+	 *  The items outside the quiet section, in the list's order: by attention, what Needs attention newest
+	 *  first by when it started to, then the rest by last update; or by last update alone.
+	 */
 	items: ListedItem_Deserialize[],
 	/**  The Issues with nothing that Needs attention, the latest update first. */
 	quiet: ListedItem_Deserialize[],
@@ -2083,7 +2100,10 @@ export type Workbench_Deserialize = {
 
 /**  A Repository's Workbench or one of its views, with what the Sidebar shows beside it. */
 export type Workbench_Serialize = {
-	/**  The items that Need attention, newest first by when they started to, then the rest by last update. */
+	/**
+	 *  The items outside the quiet section, in the list's order: by attention, what Needs attention newest
+	 *  first by when it started to, then the rest by last update; or by last update alone.
+	 */
 	items: ListedItem_Serialize[],
 	/**  The Issues with nothing that Needs attention, the latest update first. */
 	quiet: ListedItem_Serialize[],

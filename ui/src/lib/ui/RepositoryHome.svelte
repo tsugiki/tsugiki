@@ -6,6 +6,7 @@
   import {
     DETAIL_LEAST,
     LIST_LEAST,
+    type ListOrder,
     PanesState,
     SIDEBAR_LEAST,
     SIDEBAR_MOST,
@@ -307,7 +308,20 @@
           goThrough(1);
         },
       },
+      panes.order === "attention"
+        ? { title: "Sort by Last Update", run: () => void sortBy("last_update") }
+        : { title: "Sort by Attention", run: () => void sortBy("attention") },
     ];
+  }
+
+  /** The names the list's switch gives each order. */
+  const ORDERS: Record<ListOrder, string> = { attention: "By attention ⇅", last_update: "By last update ⇅" };
+
+  /** Orders the list by `order`: the core reads it in the order `machine.toml` keeps, so the list asks again
+   * once that's saved. */
+  async function sortBy(order: ListOrder) {
+    await panes.setOrder(order);
+    await workbench.refresh();
   }
 
   /** Names a line for the page, which can list a PR under two Issues. */
@@ -542,6 +556,15 @@
     <section class={["list", { sized: panes.list !== null && detail !== undefined }]} bind:this={list}>
       <h1>{name}</h1>
       <button onclick={onadd}>Add repository</button>
+      <header class="view">
+        <h2>{workbench.title}</h2>
+        <button
+          class="order"
+          title="Change the order"
+          onclick={() => void sortBy(panes.order === "attention" ? "last_update" : "attention")}
+          >{ORDERS[panes.order]}</button
+        >
+      </header>
       {@render problems()}
       {#if workbench.items?.length === 0 && workbench.quiet.length === 0}
         <p>{EMPTY[workbench.selected.kind]}</p>
@@ -638,6 +661,31 @@
 
   h1 {
     font-size: 16px;
+  }
+
+  /* The view's name, with the list's order at the far end, as the prototype has it. */
+  .view {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .view h2 {
+    flex: 1;
+    margin: 4px 0;
+    font-size: 13px;
+  }
+
+  .order {
+    all: unset;
+    font-size: 12px;
+    color: var(--fg-muted);
+    cursor: pointer;
+  }
+
+  .order:hover,
+  .order:focus-visible {
+    text-decoration: underline;
   }
 
   .open {

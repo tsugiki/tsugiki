@@ -15,14 +15,22 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     - the Issue's number and title, with the number of PRs and the time of the last update
     - a preview of what is waiting on the user
 
-    An item that Needs attention is marked the way unread mail is. In the Workbench, a Filter or Pinned
-    issues, items that Need attention come first, newest first by when they started to need it, then the rest
-    by last update, then the quiet section. The preview says why in the words an **Alert** would use: "CI
-    failed: Tests / Ubuntu", "Changes requested by some-reviewer", "Review requested from you". An Issue's
-    Origin PRs and their Backports are listed under it, and ↑ ↓ stop on each of them. `Enter` or a click opens
-    the item or PR under the cursor in the Detail pane. Any item can be **Archived** or **Muted**, and its
-    author **Muted**. A footer under the list gives the legend and the list's keys (↑ ↓, E, M, `Alt+←`, `?`
-    for all); it can be switched off.
+    A header over the list names the view on show. In the Workbench, a Built-in view, a Filter or Pinned
+    issues, a switch at the header's far end, or "Sort by Attention" and "Sort by Last Update" in the command
+    palette, picks one of two orders, and `machine.toml` keeps the choice:
+    - **By attention**: items that Need attention come first, newest first by when they started to need it,
+      then the rest by last update.
+    - **By last update**: each item newest first by its last update.
+
+    The quiet section comes last either way. All issues, Archived and Muted keep their own order and show no
+    switch.
+
+    An item that Needs attention is marked the way unread mail is. The preview says why in the words an
+    **Alert** would use: "CI failed: Tests / Ubuntu", "Changes requested by some-reviewer", "Review requested
+    from you". An Issue's Origin PRs and their Backports are listed under it, and ↑ ↓ stop on each of them.
+    `Enter` or a click opens the item or PR under the cursor in the Detail pane. Any item can be **Archived**
+    or **Muted**, and its author **Muted**. A footer under the list gives the legend and the list's keys (↑ ↓,
+    E, M, `Alt+←`, `?` for all); it can be switched off.
 
     `Ctrl+Alt+B`, or "Hide Issue List" in the command palette, hides the list with its footer and its edge,
     so the Detail pane gets its room. The same key, or "Show Issue List", brings it back at its width. In a

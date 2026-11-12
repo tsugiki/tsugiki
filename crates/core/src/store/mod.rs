@@ -13,6 +13,9 @@ mod issues;
 mod migrate;
 mod pull_request_content;
 mod pull_requests;
+/// Draws the schema in `docs/schema.md` and keeps it current. Only its tests use it.
+#[cfg(test)]
+mod schema;
 mod sync_state;
 
 use std::collections::{BTreeMap, BTreeSet};

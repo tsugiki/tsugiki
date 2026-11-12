@@ -116,7 +116,7 @@ The big ones, in the order data passes through them:
 |---|---|
 | `github/` | The GitHub client: the GraphQL queries and their answers, parsed into typed facts. It talks through a `Transport`, so tests replay recorded answers. |
 | `sync/` | Decides what to ask GitHub for, how much at a time and when to pause: the first sync in tiers, then `refresh`. It saves its place after each step. |
-| `store/` | Saves and reads the facts, a file for each kind: Issues, PRs, activity, Filters, sync state. |
+| `store/` | Saves and reads the facts, a file for each kind: Issues, PRs, activity, Filters, sync state. [schema.md](schema.md) draws its tables. |
 | `links.rs`, `conventions.rs` | Which Issues a PR fixes and which **Origin PR** a Backport comes from, read through the Repository's Conventions ([ADR 0011](adr/0011-pr-links-from-github-signals-by-repository-conventions.md)). |
 | `workbench/` | The view models: the Issue list, the Issue view, the PR view and its Files tab. `attention.rs` holds Needs attention. |
 | `mirror.rs`, `mirror/` | Cloning, fetching PR heads, upkeep. |

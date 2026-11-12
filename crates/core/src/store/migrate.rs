@@ -18,6 +18,9 @@ const KEPT_OTHER_BACKUPS: usize = 2;
 /// One numbered step of the schema. A released step never changes, since a user's file has already run it.
 /// Until 0.1 nothing is released, so a step can change in place, and a file from before the change has to be
 /// deleted by hand.
+///
+/// A PR that adds a step also runs `just schema` to draw `docs/schema.md` again, and gives each new table its
+/// side in `schema::TABLES`. A test fails on that PR otherwise (#323).
 pub(super) struct Migration {
     pub(super) version: u32,
     pub(super) sql: &'static str,

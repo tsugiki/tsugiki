@@ -1,5 +1,5 @@
 use super::file::{Contents, contents};
-use super::testing::{V1, V2, backups, has_table, temp_database, user_version};
+use super::testing::{V1, V2, backups, has_table, migrated, temp_database, user_version};
 use super::*;
 use crate::github::CommitSha;
 use crate::github::issue_content::IssueComment;
@@ -314,14 +314,6 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
     let no_trace = None::<fn(TraceEvent<'_>)>;
     connection.trace_v2(codes, no_trace).unwrap();
     statements.try_iter().collect()
-}
-
-fn migrated() -> Connection {
-    let connection = Connection::open_in_memory().unwrap();
-    for step in MIGRATIONS {
-        connection.execute_batch(step.sql).unwrap();
-    }
-    connection
 }
 
 #[test]

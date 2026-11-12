@@ -4,8 +4,10 @@
 /** The part of the repo a change touches: only docs, only the window's code and docs, or anything else. */
 export type Scope = "docs" | "ui" | "all";
 
-/** Files under `ui/` that a Rust check reads, so a change to one runs the Rust checks. */
+/** Files outside `crates/` that a Rust check reads, so a change to one runs the Rust checks. */
 const READ_BY_RUST = new Set([
+  // Drawn from the migrations, and crates/core/src/store/schema/tests.rs compares the two.
+  "docs/schema.md",
   // Generated from the Rust commands, and the stale-bindings check compares the two.
   "ui/src/lib/data/bindings.ts",
   // crates/app/tests/security.rs fails on a Tauri plugin listed here.
@@ -16,6 +18,7 @@ const READ_BY_RUST = new Set([
 
 /** Markdown under `crates/` doesn't count: the highlighter's tests read a sample there. */
 function isDocs(path: string): boolean {
+  if (READ_BY_RUST.has(path)) return false;
   return path.startsWith("docs/") || (path.endsWith(".md") && !path.startsWith("crates/"));
 }
 

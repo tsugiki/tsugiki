@@ -19,7 +19,27 @@ const core = vi.hoisted(() => ({
   chooseMirrorSource: vi.fn(),
   mirrorCost: vi.fn(),
   saveTheme: vi.fn(),
+  themes: vi.fn(),
 }));
+
+/** The themes the core sends unless a test says otherwise. */
+const THEMES = {
+  mode: "system",
+  light: {
+    chosen: "Light",
+    all: [{ name: "Light", kind: "light", tokens: [{ property: "--bg", value: "#ffffff" }] }],
+    failed: [],
+  },
+  dark: {
+    chosen: "Dark",
+    all: [
+      { name: "Dark", kind: "dark", tokens: [{ property: "--bg", value: "#1f1f1f" }] },
+      { name: "Gruvbox Dark Hard", kind: "dark", tokens: [{ property: "--bg", value: "#1d2021" }] },
+    ],
+    failed: [],
+  },
+  problems: [] as string[],
+};
 
 /** The listener for the mirrors' states, so a test can send it what the core would. */
 const mirrorStates = vi.hoisted(() => ({ changed: vi.fn<(payload: unknown) => void>() }));
@@ -32,23 +52,6 @@ vi.mock("$lib/data/bindings", () => ({
     cloning: async () => null,
     newVersion: async () => null,
     refresh: async () => null,
-    themes: async () => ({
-      status: "ok",
-      data: {
-        mode: "system",
-        light: {
-          chosen: "Light",
-          all: [{ name: "Light", kind: "light", tokens: [{ property: "--bg", value: "#ffffff" }] }],
-        },
-        dark: {
-          chosen: "Dark",
-          all: [
-            { name: "Dark", kind: "dark", tokens: [{ property: "--bg", value: "#1f1f1f" }] },
-            { name: "Gruvbox Dark Hard", kind: "dark", tokens: [{ property: "--bg", value: "#1d2021" }] },
-          ],
-        },
-      },
-    }),
     ...core,
   },
   events: {
@@ -113,6 +116,7 @@ beforeEach(() => {
   core.mirrorStates.mockResolvedValue([]);
   core.chooseMirrorSource.mockResolvedValue({ status: "ok", data: null });
   core.saveTheme.mockResolvedValue({ status: "ok", data: null });
+  core.themes.mockResolvedValue({ status: "ok", data: structuredClone(THEMES) });
   core.workbench.mockResolvedValue({
     status: "ok",
     data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [] },
@@ -923,7 +927,7 @@ describe("the theme picker", () => {
     await ctrlKT();
 
     expect(themePicker()).toBeTruthy();
-    expect(options()).toEqual(["Dark chosen", "Gruvbox Dark Hard", "Light themes…"]);
+    expect(options()).toEqual(["Dark chosen", "Gruvbox Dark Hard", "Reload themes", "Light themes…"]);
     await fireEvent.keyDown(screen.getByRole("combobox", { name: "Theme" }), { key: "ArrowDown" });
     expect(bg()).toBe("#1d2021");
     await fireEvent.keyDown(window, { key: "Escape" });
@@ -971,6 +975,42 @@ describe("the theme picker", () => {
       );
     });
     expect(bg()).toBe("#1f1f1f");
+  });
+
+  /** The core's answer from now on: THEMES with a dark theme file named `name`, and `problems`. */
+  const withFile = (name: string, problems: string[] = []) => {
+    const file = { name, kind: "dark", tokens: [{ property: "--bg", value: "#002b36" }] };
+    const data = { ...THEMES, dark: { ...THEMES.dark, all: [...THEMES.dark.all, file] }, problems };
+    core.themes.mockResolvedValue({ status: "ok", data });
+  };
+
+  it("reads the themes folder again as it opens, so a file added since is listed", async () => {
+    await opened();
+    withFile("Solarized Dark");
+    await ctrlKT();
+
+    await vi.waitFor(() => {
+      expect(options()).toContain("Solarized Dark");
+    });
+  });
+
+  it("reads the themes folder again on Ctrl+K R and from the palette, and names a file's problems", async () => {
+    const problem = "themes\\mine.toml, line 6: fg isn't a colour, so Tsugiki skips it.";
+    await opened();
+    const reads = core.themes.mock.calls.length;
+    withFile("Mine", [problem]);
+    await ctrlK();
+    await fireEvent.keyDown(document.body, { key: "r", code: "KeyR" });
+
+    await vi.waitFor(() => {
+      expect(screen.getByRole("status").textContent).toContain(problem);
+    });
+    expect(core.themes).toHaveBeenCalledTimes(reads + 1);
+    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    await fireEvent.click(screen.getByRole("option", { name: /^Reload Themes/ }));
+    await vi.waitFor(() => {
+      expect(core.themes).toHaveBeenCalledTimes(reads + 2);
+    });
   });
 
   it("keeps the palette, the Repository picker and the chords from opening over it", async () => {

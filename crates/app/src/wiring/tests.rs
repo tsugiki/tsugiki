@@ -399,6 +399,43 @@ fn themes_answers_with_the_mode_and_the_theme_of_each_side_the_settings_chose() 
     assert_eq!(answer["dark"]["all"][1]["tokens"][0]["value"], "#1d2021");
 }
 
+/// The themes come from the folder beside the settings file in use, read again on each ask, so an edited
+/// file shows without a restart (#519).
+#[test]
+fn themes_reads_the_themes_folder_beside_settings_path_on_each_ask() {
+    let (folders, root) = temp_folders("wired-theme-files");
+    let dotfiles = root.join("dotfiles");
+    std::fs::create_dir_all(dotfiles.join("themes")).unwrap();
+    std::fs::write(dotfiles.join("tsugiki.toml"), "").unwrap();
+    let path = dotfiles.join("tsugiki.toml");
+    let path = path.to_str().unwrap().replace('\\', "/");
+    std::fs::write(
+        folders.machine_file(),
+        format!("settings_path = \"{path}\"\n"),
+    )
+    .unwrap();
+    let night = |bg: &str| format!("name = \"Night\"\nkind = \"dark\"\n[colors]\nbg = \"{bg}\"\n");
+    let file = dotfiles.join("themes").join("night.toml");
+    std::fs::write(&file, night("#000010")).unwrap();
+    let wired = Wired::start(Ok(folders), no_network());
+
+    let first = wired.ask("themes", json!({})).unwrap();
+    std::fs::write(&file, night("#000020")).unwrap();
+    let saved = wired.ask("save_theme", json!({ "kind": "dark", "name": "Night" }));
+    let second = wired.ask("themes", json!({})).unwrap();
+    drop(wired.stop());
+    let settings = std::fs::read_to_string(dotfiles.join("tsugiki.toml")).unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(first["dark"]["all"][2]["name"], "Night");
+    assert_eq!(first["dark"]["all"][2]["tokens"][0]["value"], "#000010");
+    assert_eq!(first["dark"]["chosen"], "VS Code Dark Modern");
+    assert_eq!(saved.unwrap(), Value::Null);
+    assert_eq!(second["dark"]["all"][2]["tokens"][0]["value"], "#000020");
+    assert_eq!(second["dark"]["chosen"], "Night");
+    assert_eq!(settings, "[appearance]\ndark_theme = \"Night\"\n");
+}
+
 #[test]
 fn a_theme_the_picker_saves_is_chosen_after_a_restart() {
     let (folders, root) = temp_folders("wired-pick-theme");

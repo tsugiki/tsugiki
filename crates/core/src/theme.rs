@@ -1,15 +1,18 @@
 //! The window's colours: each **Theme** is a TOML file of tokens, parsed into typed colours here and sent to
 //! the window as CSS variables (#374, #515). `docs/devel/themes.md` lists the tokens.
 //!
-//! A file has a `name`, a `kind` (`"light"` or `"dark"`), and `[colors]` and `[syntax]` tables of tokens. An
-//! unknown key or a value that isn't a colour skips its line, and the rest of the theme still loads. A file
-//! that isn't TOML, or has no `name` or `kind`, fails whole.
+//! A file has a `name`, a `kind` (`"light"` or `"dark"`), maybe the theme it `extends`, and `[colors]` and
+//! `[syntax]` tables of tokens. An unknown key or a value that isn't a colour skips its line, and the rest of
+//! the theme still loads. A file that isn't TOML, or has no `name` or `kind`, fails whole. Four themes are
+//! built in, and `ThemeLibrary` adds the files of the user's `themes` folder (#519).
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::{fs, io};
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use specta::Type;
 use toml_edit::{Document, TableLike};
 
@@ -52,11 +55,6 @@ impl LightTheme {
         }
     }
 
-    /// The light theme named `name`, written as `name()` writes it.
-    pub fn named(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|theme| theme.name() == name)
-    }
-
     /// The theme's file, compiled in.
     pub fn file(self) -> &'static str {
         match self {
@@ -86,11 +84,6 @@ impl DarkTheme {
         }
     }
 
-    /// The dark theme named `name`, written as `name()` writes it.
-    pub fn named(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|theme| theme.name() == name)
-    }
-
     /// The theme's file, compiled in.
     pub fn file(self) -> &'static str {
         match self {
@@ -100,49 +93,27 @@ impl DarkTheme {
     }
 }
 
-/// A theme's name in a settings file, and the error a name no theme of the side has gives.
-macro_rules! by_name {
-    ($side:ty, $what:literal) => {
-        impl Serialize for $side {
-            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                serializer.serialize_str(self.name())
-            }
+/// A theme's name, as its file and `[appearance] light_theme` and `dark_theme` give it: a built-in theme's or
+/// one from the user's `themes` folder. It reaches the UI as a plain string.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(transparent)]
+pub struct ThemeName(String);
+
+impl ThemeName {
+    pub fn new(name: &str) -> Self {
+        Self(name.to_owned())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// The name of the theme side `kind` takes unless the settings choose another.
+    pub fn default_of(kind: ThemeKind) -> Self {
+        match kind {
+            ThemeKind::Light => Self::new(LightTheme::default().name()),
+            ThemeKind::Dark => Self::new(DarkTheme::default().name()),
         }
-
-        impl<'de> Deserialize<'de> for $side {
-            fn deserialize<D: Deserializer<'de>>(given: D) -> Result<Self, D::Error> {
-                let name = String::deserialize(given)?;
-                Self::named(&name).ok_or_else(|| {
-                    serde::de::Error::custom(format!("no {} is named {name:?}", $what))
-                })
-            }
-        }
-    };
-}
-
-by_name!(LightTheme, "light theme");
-by_name!(DarkTheme, "dark theme");
-
-/// A built-in theme of either side, as the theme picker saves it to `light_theme` or `dark_theme` (#518).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ThemeChoice {
-    Light(LightTheme),
-    Dark(DarkTheme),
-}
-
-impl ThemeChoice {
-    /// The theme of side `kind` named `name`, as the window sends it.
-    pub fn named(kind: ThemeKind, name: &str) -> Result<Self, Error> {
-        let found = match kind {
-            ThemeKind::Light => LightTheme::named(name).map(Self::Light),
-            ThemeKind::Dark => DarkTheme::named(name).map(Self::Dark),
-        };
-        found.ok_or_else(|| {
-            Error::new(
-                ErrorKind::NotFound,
-                &format!("No {} theme is named {name:?}.", kind.name()),
-            )
-        })
     }
 }
 
@@ -156,7 +127,7 @@ pub enum ThemeKind {
 
 impl ThemeKind {
     /// The kind as a theme file and the window write it: `"light"` or `"dark"`.
-    fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Self::Light => "light",
             Self::Dark => "dark",
@@ -445,6 +416,8 @@ pub enum SkipReason {
     UnknownKey,
     /// The value isn't `#rgb`, `#rrggbb` or `#rrggbbaa` text, or a table isn't a table.
     BadValue,
+    /// `extends` isn't text.
+    NotAName,
 }
 
 /// A line of a theme file that was skipped, while the rest of the theme loaded.
@@ -487,11 +460,15 @@ impl fmt::Display for ThemeError {
     }
 }
 
-/// A theme as its file gives it: the colours of the tokens it sets, and the lines it skipped.
+/// A theme as its file gives it: the colours of the tokens it sets, the theme it builds on, and the lines it
+/// skipped.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Theme {
     pub name: String,
     pub kind: ThemeKind,
+    /// The theme whose colours it takes for the tokens it leaves out, by name. Without one, a file in the
+    /// `themes` folder builds on the default theme of its kind.
+    pub extends: Option<ThemeName>,
     pub colors: BTreeMap<Token, Color>,
     pub skipped: Vec<SkippedLine>,
 }
@@ -507,10 +484,15 @@ impl Theme {
         let mut tokens = Tokens::default();
         let mut name = None;
         let mut kind = None;
+        let mut extends = None;
         for (key, item) in root.iter() {
             match key {
                 "name" => name = item.as_str().map(str::to_owned),
                 "kind" => kind = item.as_str().and_then(ThemeKind::parse),
+                "extends" => match item.as_str() {
+                    Some(base) => extends = Some(ThemeName::new(base)),
+                    None => tokens.skip(key_line(text, root, key), key, SkipReason::NotAName),
+                },
                 _ => {
                     let line = key_line(text, root, key);
                     match TokenTable::named(key) {
@@ -526,6 +508,7 @@ impl Theme {
         Ok(Self {
             name: name.ok_or(ThemeError::NoName)?,
             kind: kind.ok_or(ThemeError::NoKind)?,
+            extends,
             colors: tokens.colors,
             skipped: tokens.skipped,
         })
@@ -622,6 +605,9 @@ pub struct Themes {
     pub mode: ThemeMode,
     pub light: SideThemes,
     pub dark: SideThemes,
+    /// What is wrong with the files of the `themes` folder, in words for the status bar, each naming its file
+    /// and, when the parser knows it, its line (#519).
+    pub problems: Vec<String>,
 }
 
 /// The themes of one side, and the one `settings.toml` chose for it.
@@ -629,29 +615,361 @@ pub struct Themes {
 pub struct SideThemes {
     /// The name of the chosen theme, one of `all`.
     pub chosen: String,
-    /// Every theme of the side, in the order the theme picker lists them.
+    /// Every theme of the side, in the order the theme picker lists them: the built-in ones, then the files
+    /// of the `themes` folder in name order.
     pub all: Vec<ThemeView>,
+    /// The files of the side that can't be used, in name order, which the picker shows greyed with why.
+    pub failed: Vec<FailedThemeView>,
 }
 
-impl Themes {
-    /// Every built-in theme of each side, with the ones `settings.toml`'s `[appearance]` chose.
-    pub fn chosen(mode: ThemeMode, light: LightTheme, dark: DarkTheme) -> Result<Self, Error> {
-        let side = |chosen: &str, files: &[&str]| -> Result<SideThemes, Error> {
-            Ok(SideThemes {
-                chosen: chosen.to_owned(),
-                all: files
-                    .iter()
-                    .map(|file| Self::built_in(file))
-                    .collect::<Result<_, _>>()?,
-            })
+/// A theme file of the `themes` folder that read as a theme, but can't be used.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct FailedThemeView {
+    pub name: String,
+    /// The file's name in the folder, such as `solarized.toml`.
+    pub file: String,
+    /// Why, in words for the picker.
+    pub reason: String,
+}
+
+/// Every theme Tsugiki can show: the built-in ones, then the files of the user's `themes` folder, beside the
+/// settings file in use (#519). There is no watcher: the window asks for them again when it starts, when the
+/// theme picker opens and on Reload themes.
+///
+/// A file builds on the theme it `extends`, a built-in one or another file, and without `extends` on the
+/// default theme of its kind, so every theme sets every token. A theme name is taken by a built-in theme,
+/// then by the files in the order of their file names: a later file with a taken name can't be used.
+#[derive(Debug, Clone)]
+pub struct ThemeLibrary {
+    /// Each theme that can be used, with every token set: the built-in ones in their order, then the files'
+    /// in name order.
+    usable: Vec<Theme>,
+    /// In name order.
+    failed: Vec<FailedTheme>,
+    /// Lines the files skipped, and files that aren't themes, in words for the status bar.
+    problems: Vec<String>,
+}
+
+/// A theme file that read as a theme, but can't be used.
+#[derive(Debug, Clone)]
+struct FailedTheme {
+    name: String,
+    kind: ThemeKind,
+    file: String,
+    why: ThemeFailure,
+}
+
+/// Why a theme file that read as a theme can't be used.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ThemeFailure {
+    /// A built-in theme has its name.
+    BuiltInName,
+    /// The file named, by its file name, has its name and comes first.
+    NameTaken(String),
+    /// Following `extends` comes back to it, through the names given, it first and last.
+    Loop(Vec<ThemeName>),
+    /// It extends the name given, which no theme has.
+    NoSuchTheme(ThemeName),
+    /// It extends the theme named, which is for the other side.
+    OtherSide(ThemeName, ThemeKind),
+    /// It extends the theme named, which can't be used.
+    BaseFailed(ThemeName),
+}
+
+impl FailedTheme {
+    fn view(&self) -> FailedThemeView {
+        let reason = match &self.why {
+            ThemeFailure::BuiltInName => "a built-in theme has this name".to_owned(),
+            ThemeFailure::NameTaken(first) => format!("{first} names a theme {} first", self.name),
+            ThemeFailure::Loop(names) => {
+                let names: Vec<&str> = names.iter().map(ThemeName::as_str).collect();
+                format!("it extends itself: {}", names.join(", "))
+            }
+            ThemeFailure::NoSuchTheme(base) => {
+                format!("it extends {}, which no theme is named", base.as_str())
+            }
+            ThemeFailure::OtherSide(base, kind) => {
+                format!("it extends {}, a {} theme", base.as_str(), kind.name())
+            }
+            ThemeFailure::BaseFailed(base) => {
+                format!("it extends {}, which can't be used", base.as_str())
+            }
         };
+        FailedThemeView {
+            name: self.name.clone(),
+            file: self.file.clone(),
+            reason,
+        }
+    }
+}
+
+impl ThemeLibrary {
+    /// The built-in themes and the files of `folder`. A folder that isn't there holds no theme.
+    pub fn read(folder: &Path) -> Result<Self, Error> {
+        let built_in: Vec<Theme> = LightTheme::ALL
+            .map(LightTheme::file)
+            .into_iter()
+            .chain(DarkTheme::ALL.map(DarkTheme::file))
+            .map(Themes::built_in)
+            .collect::<Result<_, _>>()?;
+        let mut problems = Vec::new();
+        let mut files = Vec::new();
+        for (path, text) in theme_files(folder, &mut problems) {
+            match Theme::parse(&text) {
+                Ok(theme) => {
+                    problems.extend(theme.skipped.iter().map(|line| skipped(&path, line)));
+                    let file = path.file_name().unwrap_or_default().to_string_lossy();
+                    files.push((file.into_owned(), theme));
+                }
+                Err(cause) => problems.push(not_a_theme(&path, &cause)),
+            }
+        }
+        let (mut usable, mut failed) = resolve(&built_in, &files);
+        let by_name = |name: &str| name.to_lowercase();
+        usable.sort_by_cached_key(|theme| by_name(&theme.name));
+        failed.sort_by_cached_key(|theme| (by_name(&theme.name), theme.file.clone()));
         Ok(Self {
-            mode,
-            light: side(light.name(), &LightTheme::ALL.map(LightTheme::file))?,
-            dark: side(dark.name(), &DarkTheme::ALL.map(DarkTheme::file))?,
+            usable: built_in.into_iter().chain(usable).collect(),
+            failed,
+            problems,
         })
     }
 
+    /// The name of the usable theme of side `kind` named `name`, as the theme picker saves it.
+    pub fn named(&self, kind: ThemeKind, name: &str) -> Result<ThemeName, Error> {
+        let found = self
+            .usable
+            .iter()
+            .find(|theme| theme.kind == kind && theme.name == name);
+        found
+            .map(|theme| ThemeName::new(&theme.name))
+            .ok_or_else(|| {
+                let message = format!("No {} theme is named {name:?}.", kind.name());
+                Error::new(ErrorKind::NotFound, &message)
+            })
+    }
+
+    /// The themes for the window, with `light` and `dark` chosen. A name no usable theme of its side has, as
+    /// when its file has a mistake or has gone, gives way to the side's default, and the problems say so.
+    pub fn themes(&self, mode: ThemeMode, light: &ThemeName, dark: &ThemeName) -> Themes {
+        let mut problems = self.problems.clone();
+        let light = self.side(ThemeKind::Light, light, &mut problems);
+        let dark = self.side(ThemeKind::Dark, dark, &mut problems);
+        Themes {
+            mode,
+            light,
+            dark,
+            problems,
+        }
+    }
+
+    fn side(&self, kind: ThemeKind, chosen: &ThemeName, problems: &mut Vec<String>) -> SideThemes {
+        let all: Vec<ThemeView> = self
+            .usable
+            .iter()
+            .filter(|theme| theme.kind == kind)
+            .map(Theme::view)
+            .collect();
+        let held = all.iter().any(|theme| theme.name == chosen.as_str());
+        let chosen = if held {
+            chosen.clone()
+        } else {
+            let default = ThemeName::default_of(kind);
+            let (side, missing, shown) = (kind.name(), chosen.as_str(), default.as_str());
+            problems.push(format!(
+                "No {side} theme is named {missing:?}, so Tsugiki shows {shown}."
+            ));
+            default
+        };
+        SideThemes {
+            chosen: chosen.0,
+            all,
+            failed: self
+                .failed
+                .iter()
+                .filter(|theme| theme.kind == kind)
+                .map(FailedTheme::view)
+                .collect(),
+        }
+    }
+}
+
+/// The path and the text of each `.toml` file of `folder`, in the order of their names. A folder that isn't
+/// there holds none. One that can't be listed, or a file that can't be read, joins `problems`.
+fn theme_files(folder: &Path, problems: &mut Vec<String>) -> Vec<(PathBuf, String)> {
+    let is_toml = |path: &PathBuf| {
+        path.extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("toml"))
+    };
+    let listed = fs::read_dir(folder).and_then(Iterator::collect::<Result<Vec<_>, _>>);
+    let entries = match listed {
+        Ok(entries) => entries,
+        Err(cause) if cause.kind() == io::ErrorKind::NotFound => Vec::new(),
+        Err(cause) => {
+            problems.push(format!("Tsugiki can't read {}: {cause}", folder.display()));
+            Vec::new()
+        }
+    };
+    let mut paths: Vec<PathBuf> = entries
+        .iter()
+        .map(fs::DirEntry::path)
+        .filter(is_toml)
+        .collect();
+    paths.sort();
+    let mut files = Vec::new();
+    for path in paths {
+        match fs::read_to_string(&path) {
+            Ok(text) => files.push((path, text)),
+            Err(cause) => problems.push(format!("Tsugiki can't read {}: {cause}", path.display())),
+        }
+    }
+    files
+}
+
+/// A line `path` skipped, in words for the status bar.
+fn skipped(path: &Path, line: &SkippedLine) -> String {
+    let at = line
+        .line
+        .map_or_else(String::new, |line| format!(", line {line}"));
+    let why = match line.reason {
+        SkipReason::UnknownKey => "names no token",
+        SkipReason::BadValue => "isn't a colour",
+        SkipReason::NotAName => "isn't a theme's name",
+    };
+    format!(
+        "{}{at}: {} {why}, so Tsugiki skips it.",
+        path.display(),
+        line.key
+    )
+}
+
+/// Why `path` isn't a theme, in words for the status bar.
+fn not_a_theme(path: &Path, cause: &ThemeError) -> String {
+    match cause {
+        ThemeError::NotToml {
+            line: Some(line),
+            message,
+        } => format!("{}, line {line}: {message}", path.display()),
+        other @ (ThemeError::NotToml { line: None, .. }
+        | ThemeError::NoName
+        | ThemeError::NoKind) => format!("{}: {other}", path.display()),
+    }
+}
+
+/// The themes of `files` that can be used, with every token set, and the ones that can't. `files` holds each
+/// file's name and theme, in the order of the file names, which is the order they take theme names in.
+fn resolve(built_in: &[Theme], files: &[(String, Theme)]) -> (Vec<Theme>, Vec<FailedTheme>) {
+    let mut failed = Vec::new();
+    // The file that took each theme name first.
+    let mut first: BTreeMap<&str, &str> = BTreeMap::new();
+    let mut owners = Vec::new();
+    for (file, theme) in files {
+        let taken = if built_in.iter().any(|built| built.name == theme.name) {
+            Some(ThemeFailure::BuiltInName)
+        } else {
+            let earlier = first.get(theme.name.as_str());
+            earlier.map(|&earlier| ThemeFailure::NameTaken(earlier.to_owned()))
+        };
+        match taken {
+            Some(why) => failed.push(FailedTheme::of(file, theme, why)),
+            None => {
+                let _ = first.insert(&theme.name, file);
+                owners.push((file, theme));
+            }
+        }
+    }
+    let resolver = Resolver {
+        built_in,
+        named: owners
+            .iter()
+            .map(|&(_, theme)| (theme.name.as_str(), theme))
+            .collect(),
+    };
+    let mut usable = Vec::new();
+    for (file, theme) in owners {
+        match resolver.colors(theme, &mut Vec::new()) {
+            Ok(colors) => usable.push(Theme {
+                colors,
+                ..theme.clone()
+            }),
+            Err(why) => failed.push(FailedTheme::of(file, theme, why)),
+        }
+    }
+    (usable, failed)
+}
+
+impl FailedTheme {
+    fn of(file: &str, theme: &Theme, why: ThemeFailure) -> Self {
+        Self {
+            name: theme.name.clone(),
+            kind: theme.kind,
+            file: file.to_owned(),
+            why,
+        }
+    }
+}
+
+/// Works out a file's colours from the theme it extends.
+struct Resolver<'a> {
+    built_in: &'a [Theme],
+    /// The file's theme that took each theme name first.
+    named: BTreeMap<&'a str, &'a Theme>,
+}
+
+impl<'a> Resolver<'a> {
+    /// Every token's colour for `theme`: its own, and the rest from the theme it builds on. `through` holds
+    /// the names of the files followed to get here, so a loop back to one of them is found.
+    fn colors(
+        &self,
+        theme: &'a Theme,
+        through: &mut Vec<&'a str>,
+    ) -> Result<BTreeMap<Token, Color>, ThemeFailure> {
+        if let Some(start) = through.iter().position(|&name| name == theme.name) {
+            let mut names: Vec<ThemeName> = through
+                .iter()
+                .skip(start)
+                .map(|&name| ThemeName::new(name))
+                .collect();
+            names.push(ThemeName::new(&theme.name));
+            return Err(ThemeFailure::Loop(names));
+        }
+        let default = ThemeName::default_of(theme.kind);
+        let base = theme.extends.as_ref().unwrap_or(&default);
+        let built = self
+            .built_in
+            .iter()
+            .find(|built| built.name == base.as_str());
+        let found = built.or_else(|| self.named.get(base.as_str()).copied());
+        let base_theme = found.ok_or_else(|| ThemeFailure::NoSuchTheme(base.clone()))?;
+        if base_theme.kind != theme.kind {
+            return Err(ThemeFailure::OtherSide(base.clone(), base_theme.kind));
+        }
+        let mut colors = match built {
+            Some(built) => built.colors.clone(),
+            None => {
+                through.push(&theme.name);
+                let found = self.colors(base_theme, through);
+                let _ = through.pop();
+                let in_loop =
+                    |names: &[ThemeName]| names.iter().any(|name| name.as_str() == theme.name);
+                // A loop through this file fails it with the loop; any other failure is its base's.
+                found.map_err(|why| match why {
+                    ThemeFailure::Loop(names) if in_loop(&names) => ThemeFailure::Loop(names),
+                    ThemeFailure::Loop(_)
+                    | ThemeFailure::BuiltInName
+                    | ThemeFailure::NameTaken(_)
+                    | ThemeFailure::NoSuchTheme(_)
+                    | ThemeFailure::OtherSide(..)
+                    | ThemeFailure::BaseFailed(_) => ThemeFailure::BaseFailed(base.clone()),
+                })?
+            }
+        };
+        colors.extend(theme.colors.iter().map(|(&token, &color)| (token, color)));
+        Ok(colors)
+    }
+}
+
+impl Themes {
     /// The `bg` of the built-in theme of side `kind`, which the window takes before it first shows, so a
     /// dark theme doesn't flash white while the page loads (#516).
     #[expect(
@@ -671,7 +989,7 @@ impl Themes {
 
     /// The built-in theme the file `text` holds. It must set every token, so the window turning from one
     /// theme to another leaves no colour behind.
-    fn built_in(text: &str) -> Result<ThemeView, Error> {
+    fn built_in(text: &str) -> Result<Theme, Error> {
         let refused = |why: &str| {
             Error::new(
                 ErrorKind::Internal,
@@ -685,7 +1003,7 @@ impl Themes {
             .map(Token::key)
             .collect();
         if missing.is_empty() {
-            Ok(theme.view())
+            Ok(theme)
         } else {
             Err(refused(&format!(
                 "{} sets no {}",

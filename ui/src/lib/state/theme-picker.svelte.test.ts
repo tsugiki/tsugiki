@@ -12,10 +12,23 @@ const THEMES: Themes = {
   light: {
     chosen: "VS Code Light Modern",
     all: [view("VS Code Light Modern", "light"), view("Gruvbox Light Hard", "light")],
+    failed: [],
   },
   dark: {
     chosen: "Gruvbox Dark Hard",
     all: [view("VS Code Dark Modern", "dark"), view("Gruvbox Dark Hard", "dark")],
+    failed: [],
+  },
+  problems: [],
+};
+
+/** THEMES with a file of the dark side that loaded and one that failed. */
+const WITH_FILES: Themes = {
+  ...THEMES,
+  dark: {
+    ...THEMES.dark,
+    all: [...THEMES.dark.all, view("Solarized Dark", "dark")],
+    failed: [{ name: "Night", file: "night.toml", reason: "it extends Dusk, which no theme is named" }],
   },
 };
 
@@ -48,14 +61,58 @@ describe("ThemePicker", () => {
   it("lists the themes of the side in use, marks the theme in force and opens on it", async () => {
     const { picker } = await opened(true);
     expect(picker.side).toBe("dark");
-    expect(titles(picker)).toEqual(["VS Code Dark Modern", "Gruvbox Dark Hard *", "Light themes…"]);
+    expect(titles(picker)).toEqual([
+      "VS Code Dark Modern",
+      "Gruvbox Dark Hard *",
+      "Reload themes",
+      "Light themes…",
+    ]);
     expect(picker.start).toBe(1);
   });
 
   it("lists the side the mode keeps, whichever side Windows is on", async () => {
     const { picker } = await opened(true, { ...THEMES, mode: "light" });
-    expect(titles(picker)).toEqual(["VS Code Light Modern *", "Gruvbox Light Hard", "Dark themes…"]);
+    expect(titles(picker)).toEqual([
+      "VS Code Light Modern *",
+      "Gruvbox Light Hard",
+      "Reload themes",
+      "Dark themes…",
+    ]);
     expect(picker.start).toBe(0);
+  });
+
+  it("lists the theme files after the built-in themes, then each file that failed with its file and why", async () => {
+    const { picker } = await opened(true, WITH_FILES);
+    expect(titles(picker)).toEqual([
+      "VS Code Dark Modern",
+      "Gruvbox Dark Hard *",
+      "Solarized Dark",
+      "Night (night.toml)",
+      "Reload themes",
+      "Light themes…",
+    ]);
+    expect(picker.rows[3]).toEqual({
+      kind: "failed",
+      title: "Night (night.toml)",
+      reason: "it extends Dusk, which no theme is named",
+    });
+  });
+
+  it("shows the theme in force on a file that failed and on Reload themes", async () => {
+    const { theme, picker } = await opened(true, WITH_FILES);
+    for (const title of ["Night (night.toml)", "Reload themes"]) {
+      picker.move(themeRow(picker, "Solarized Dark"));
+      const row = picker.rows.find((one) => one.title === title);
+      if (row) picker.move(row);
+      expect(theme.shown?.name, title).toBe("Gruvbox Dark Hard");
+    }
+  });
+
+  it("reads the themes folder again on Reload themes, so an edited file shows at once", async () => {
+    const { picker } = await opened(true);
+    vi.mocked(commands.themes).mockResolvedValue({ status: "ok", data: structuredClone(WITH_FILES) });
+    await picker.reload();
+    expect(titles(picker)).toContain("Solarized Dark");
   });
 
   it("previews each theme it moves to on the whole window at once, and the theme in force on the last row", async () => {
@@ -89,7 +146,12 @@ describe("ThemePicker", () => {
     const { picker } = await opened(true);
     picker.switchSide();
     expect(picker.side).toBe("light");
-    expect(titles(picker)).toEqual(["VS Code Light Modern *", "Gruvbox Light Hard", "Dark themes…"]);
+    expect(titles(picker)).toEqual([
+      "VS Code Light Modern *",
+      "Gruvbox Light Hard",
+      "Reload themes",
+      "Dark themes…",
+    ]);
     expect(picker.start).toBe(0);
     picker.switchSide();
     expect(picker.side).toBe("dark");

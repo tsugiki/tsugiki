@@ -20,14 +20,16 @@ use tsugiki_core::highlight::Span;
 use tsugiki_core::mirror::{CloneRefusal, MirrorSource};
 use tsugiki_core::repository_settings::{MirrorCost, NameCheck};
 use tsugiki_core::session::SessionRequests;
-use tsugiki_core::settings::{Home, PaneLayout, SettingsOwner};
+use tsugiki_core::settings::{AppearanceSettings, Home, PaneLayout, SettingsOwner};
 use tsugiki_core::store::StoreReader;
-use tsugiki_core::theme::{ThemeChoice, ThemeKind};
+use tsugiki_core::theme::{ThemeKind, ThemeLibrary, Themes};
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_files::PrFiles;
 use tsugiki_core::workbench::pr_view::PrView;
 use tsugiki_core::workbench::{Workbench, WorkbenchView};
+
+use crate::StartMode;
 
 /// Whether Tsugiki has the Repository the user typed, and if not, what adding it would load.
 #[tauri::command]
@@ -145,8 +147,32 @@ pub(crate) fn save_pane_layout(
     Ok(owner.save_panes(layout)?.panes)
 }
 
+/// Every theme of each side, light and dark, as CSS variables (#515), with the theme the settings choose for
+/// each side, and the mode they held when Tsugiki started (#517), which the title bar keeps. In System mode
+/// the window shows the chosen theme for the side Windows is on. The theme picker lists the others, and a
+/// theme it saved is the chosen one from then on (#518). The user's theme files come after the built-in ones,
+/// read again from the `themes` folder on each ask, so the window asks when it starts, when the picker opens
+/// and on Reload themes (#519). This waits on the folder, which may sit on a synced drive.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn themes(
+    start: State<'_, StartMode>,
+    owner: State<'_, SettingsOwner>,
+) -> Result<Themes, Error> {
+    let StartMode(mode) = *start;
+    let view = owner.view();
+    let AppearanceSettings {
+        light_theme,
+        dark_theme,
+        ..
+    } = &view.loaded.settings.appearance;
+    let library = ThemeLibrary::read(&view.themes_folder)?;
+    Ok(library.themes(mode, light_theme, dark_theme))
+}
+
 /// Saves the theme the picker chose for side `kind` to `light_theme` or `dark_theme` in `settings.toml`,
-/// without Settings' Apply (#518). The window shows it already. This waits on a small file.
+/// without Settings' Apply (#518). The window shows it already. It may be a file of the `themes` folder
+/// (#519). This waits on small files.
 #[tauri::command(async)]
 #[specta::specta]
 pub(crate) fn save_theme(
@@ -154,7 +180,8 @@ pub(crate) fn save_theme(
     name: &str,
     owner: State<'_, SettingsOwner>,
 ) -> Result<(), Error> {
-    owner.save_theme(ThemeChoice::named(kind, name)?).map(drop)
+    let library = ThemeLibrary::read(&owner.view().themes_folder)?;
+    owner.save_theme(kind, library.named(kind, name)?).map(drop)
 }
 
 /// The rows of a view of a Repository's Workbench, with what its Sidebar shows, in the order `machine.toml`

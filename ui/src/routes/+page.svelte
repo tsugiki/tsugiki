@@ -65,9 +65,16 @@
     )
       pickerOpen = true;
   };
-  /** Opens the theme picker, from `Ctrl+K T` or the palette, which has closed by then. */
+  /** Opens the theme picker, from `Ctrl+K T` or the palette, which has closed by then. It reads the themes
+   * folder again, so a file saved since shows up as the list fills in. */
   const openThemePicker = () => {
     themePickerOpen = true;
+    void theme.load();
+  };
+  /** Reads the themes folder again, from `Ctrl+K R` or the palette: a theme file edited since takes effect,
+   * and the status bar names what is wrong with each (#519). */
+  const reloadThemes = () => {
+    void theme.load();
   };
   /** Whether the list's keys and the chords work: a dialog, the palette or a picker on top keeps them. */
   const keysActive = $derived(
@@ -90,10 +97,14 @@
   );
   /** Reads each key before anything else, so the key that ends a chord's wait goes nowhere else. Chords
    * start where the list's keys work: on a Repository's screen, with no dialog or palette on top. The
-   * screen says what most do, and `Ctrl+K T` opens the theme picker. */
+   * screen says what most do, `Ctrl+K T` opens the theme picker and `Ctrl+K R` reads the themes again. */
   const readKey = (e: KeyboardEvent) => {
     const canStart = home.current?.screen === "repository" && keysActive;
-    const bindings = { ...repositoryHome?.chordBindings(), "ctrl+k t": openThemePicker };
+    const bindings = {
+      ...repositoryHome?.chordBindings(),
+      "ctrl+k t": openThemePicker,
+      "ctrl+k r": reloadThemes,
+    };
     if (!chord.read(e, canStart, bindings)) guard(e);
   };
   const endChord = () => {
@@ -151,6 +162,7 @@
     ...(repositoryHome?.paletteCommands() ?? []),
     ...switchRows("Repository: "),
     { title: "Pick a Theme", run: openThemePicker },
+    { title: "Reload Themes", run: reloadThemes },
     {
       title: hud.visible ? "Hide performance HUD" : "Show performance HUD",
       run: () => {
@@ -191,7 +203,11 @@
   status={status.status}
   error={status.error}
   visible={settings.statusBarVisible}
-  problems={theme.problem === undefined ? settings.problems : [...settings.problems, theme.problem]}
+  problems={[
+    ...settings.problems,
+    ...theme.problems,
+    ...(theme.problem === undefined ? [] : [theme.problem]),
+  ]}
   {lastSync}
   syncActivity={status.syncActivity}
   cloning={status.cloning}

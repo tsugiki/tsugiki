@@ -3,22 +3,28 @@ use crate::conventions::Conventions;
 use crate::filters::Filter;
 use crate::mirror::MirrorSource;
 use crate::repository::{FoundRepository, RepositoryCounts};
-use crate::theme::{DarkTheme, LightTheme, ThemeChoice, ThemeMode};
+use crate::theme::{ThemeKind, ThemeMode, ThemeName};
 use time::format_description::well_known::Rfc3339;
 
-const HIDDEN: Settings = Settings {
-    status_bar: StatusBarSettings { visible: false },
-    releases: ReleaseSettings { check: true },
-    appearance: AppearanceSettings {
-        theme: ThemeMode::System,
-        light_theme: LightTheme::VsCodeLightModern,
-        dark_theme: DarkTheme::VsCodeDarkModern,
-    },
-    diff: DiffSettings {
-        files: DiffFiles::All,
-    },
-    repositories: Vec::new(),
-};
+fn hidden() -> Settings {
+    Settings {
+        status_bar: StatusBarSettings { visible: false },
+        releases: ReleaseSettings { check: true },
+        appearance: AppearanceSettings {
+            theme: ThemeMode::System,
+            light_theme: ThemeName::new("VS Code Light Modern"),
+            dark_theme: ThemeName::new("VS Code Dark Modern"),
+        },
+        diff: DiffSettings {
+            files: DiffFiles::All,
+        },
+        repositories: Vec::new(),
+    }
+}
+
+fn named(name: &str) -> ThemeName {
+    ThemeName::new(name)
+}
 
 /// When a Repository was opened, for a test that doesn't look at the time.
 const WHENEVER: OffsetDateTime = OffsetDateTime::UNIX_EPOCH;
@@ -146,7 +152,7 @@ fn a_value_in_settings_toml_is_read_at_start() {
     let files = SettingsFiles::load(folders);
     fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(files.loaded().settings, HIDDEN);
+    assert_eq!(files.loaded().settings, hidden());
     assert!(files.loaded().problems.is_empty());
 }
 
@@ -185,8 +191,8 @@ dark_theme = "Gruvbox Dark Hard"
         loaded.settings.appearance,
         AppearanceSettings {
             theme: ThemeMode::Dark,
-            light_theme: LightTheme::GruvboxLightHard,
-            dark_theme: DarkTheme::GruvboxDarkHard,
+            light_theme: named("Gruvbox Light Hard"),
+            dark_theme: named("Gruvbox Dark Hard"),
         }
     );
     assert_eq!(loaded.problems, Vec::<String>::new());
@@ -204,22 +210,26 @@ fn an_appearance_key_left_out_takes_its_default() {
         }
     );
     assert_eq!(loaded.problems, Vec::<String>::new());
-    assert_eq!(Settings::default().appearance, HIDDEN.appearance);
+    assert_eq!(Settings::default().appearance, hidden().appearance);
 }
 
 #[test]
-fn a_bad_mode_or_a_name_no_theme_has_keeps_its_default_and_is_reported() {
+fn a_bad_mode_or_a_theme_name_that_isnt_a_string_keeps_its_default_and_is_reported() {
     let text = r#"[status_bar]
 visible = false
 
 [appearance]
 theme = "dusk"
-light_theme = "Gruvbox Dark Hard"
+light_theme = ["Gruvbox Light Hard"]
 dark_theme = 3
 "#;
     let loaded = loaded_from("appearance-bad", text);
 
-    assert_eq!(loaded.settings, HIDDEN, "the rest of the file still counts");
+    assert_eq!(
+        loaded.settings,
+        hidden(),
+        "the rest of the file still counts"
+    );
     let problems: Vec<&str> = loaded
         .problems
         .iter()
@@ -229,8 +239,8 @@ dark_theme = 3
         problems,
         [
             r#", line 5: theme isn't "system", "light" or "dark", so Tsugiki follows the system."#,
-            ", line 6: light_theme names no light theme, so Tsugiki uses VS Code Light Modern.",
-            ", line 7: dark_theme names no dark theme, so Tsugiki uses VS Code Dark Modern.",
+            ", line 6: light_theme isn't a theme's name, so Tsugiki uses VS Code Light Modern.",
+            ", line 7: dark_theme isn't a theme's name, so Tsugiki uses VS Code Dark Modern.",
         ]
     );
 }
@@ -242,7 +252,7 @@ fn a_save_refuses_while_appearance_holds_a_value_tsugiki_cant_read() {
     let before = "[appearance]\ntheme = \"Dark\"\n";
     fs::write(folders.settings_file(), before).unwrap();
 
-    let refusal = SettingsFiles::load(folders.clone()).write(&HIDDEN);
+    let refusal = SettingsFiles::load(folders.clone()).write(&hidden());
     let after = fs::read_to_string(folders.settings_file()).unwrap();
     fs::remove_dir_all(root).unwrap();
 
@@ -275,7 +285,11 @@ fn a_diff_files_tsugiki_cant_read_keeps_all_files_and_is_reported() {
     let text = "[status_bar]\nvisible = false\n\n[diff]\nfiles = \"two\"\n";
     let loaded = loaded_from("diff-bad", text);
 
-    assert_eq!(loaded.settings, HIDDEN, "the rest of the file still counts");
+    assert_eq!(
+        loaded.settings,
+        hidden(),
+        "the rest of the file still counts"
+    );
     let problems: Vec<&str> = loaded
         .problems
         .iter()
@@ -294,7 +308,7 @@ fn a_save_refuses_while_diff_holds_a_value_tsugiki_cant_read() {
     let before = "[diff]\nfiles = \"One\"\n";
     fs::write(folders.settings_file(), before).unwrap();
 
-    let refusal = SettingsFiles::load(folders.clone()).write(&HIDDEN);
+    let refusal = SettingsFiles::load(folders.clone()).write(&hidden());
     let after = fs::read_to_string(folders.settings_file()).unwrap();
     fs::remove_dir_all(root).unwrap();
 
@@ -334,8 +348,8 @@ fn appearance_is_saved_by_name_and_only_where_it_differs_from_the_default() {
     let settings = Settings {
         appearance: AppearanceSettings {
             theme: ThemeMode::Light,
-            light_theme: LightTheme::GruvboxLightHard,
-            dark_theme: DarkTheme::VsCodeDarkModern,
+            light_theme: named("Gruvbox Light Hard"),
+            dark_theme: named("VS Code Dark Modern"),
         },
         ..Settings::default()
     };
@@ -357,15 +371,15 @@ fn a_picked_theme_is_saved_to_its_sides_key_alone() {
     let mut files = SettingsFiles::load(folders.clone());
 
     files
-        .save_theme(ThemeChoice::Dark(DarkTheme::GruvboxDarkHard))
+        .save_theme(ThemeKind::Dark, &named("Gruvbox Dark Hard"))
         .unwrap();
     let dark = fs::read_to_string(folders.settings_file()).unwrap();
-    let loaded = files.loaded().settings.appearance;
+    let loaded = files.loaded().settings.appearance.clone();
     files
-        .save_theme(ThemeChoice::Light(LightTheme::GruvboxLightHard))
+        .save_theme(ThemeKind::Light, &named("Gruvbox Light Hard"))
         .unwrap();
     files
-        .save_theme(ThemeChoice::Dark(DarkTheme::VsCodeDarkModern))
+        .save_theme(ThemeKind::Dark, &named("VS Code Dark Modern"))
         .unwrap();
     let after = fs::read_to_string(folders.settings_file()).unwrap();
     fs::remove_dir_all(root).unwrap();
@@ -379,8 +393,8 @@ fn a_picked_theme_is_saved_to_its_sides_key_alone() {
         loaded,
         AppearanceSettings {
             theme: ThemeMode::Light,
-            light_theme: LightTheme::VsCodeLightModern,
-            dark_theme: DarkTheme::GruvboxDarkHard,
+            light_theme: named("VS Code Light Modern"),
+            dark_theme: named("Gruvbox Dark Hard"),
         }
     );
     assert_eq!(
@@ -397,7 +411,7 @@ fn a_picked_theme_isnt_saved_over_a_settings_file_that_doesnt_parse() {
     fs::write(folders.settings_file(), before).unwrap();
 
     let refusal = SettingsFiles::load(folders.clone())
-        .save_theme(ThemeChoice::Light(LightTheme::GruvboxLightHard));
+        .save_theme(ThemeKind::Light, &named("Gruvbox Light Hard"));
     let after = fs::read_to_string(folders.settings_file()).unwrap();
     fs::remove_dir_all(root).unwrap();
 
@@ -413,12 +427,12 @@ fn the_owner_saves_a_picked_theme_and_answers_with_it() {
     let (folders, root) = temp_folders("owner-theme");
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
 
-    let answer = owner.save_theme(ThemeChoice::Light(LightTheme::GruvboxLightHard));
+    let answer = owner.save_theme(ThemeKind::Light, named("Gruvbox Light Hard"));
     let after = fs::read_to_string(folders.settings_file()).unwrap();
     fs::remove_dir_all(root).unwrap();
 
     let appearance = answer.unwrap().loaded.settings.appearance;
-    assert_eq!(appearance.light_theme, LightTheme::GruvboxLightHard);
+    assert_eq!(appearance.light_theme, named("Gruvbox Light Hard"));
     assert_eq!(owner.view().loaded.settings.appearance, appearance);
     assert_eq!(
         after,
@@ -477,7 +491,7 @@ fn a_reload_of_a_broken_file_keeps_the_last_good_values_until_it_is_fixed() {
     files.reload();
     fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(while_broken.settings, HIDDEN);
+    assert_eq!(while_broken.settings, hidden());
     assert_eq!(while_broken.problems.len(), 1);
     assert_eq!(files.loaded(), &LoadedSettings::default());
 }
@@ -720,7 +734,7 @@ fn settings_path_moves_settings_toml() {
     let files = SettingsFiles::load(folders);
     fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(files.loaded().settings, HIDDEN);
+    assert_eq!(files.loaded().settings, hidden());
     assert!(files.loaded().problems.is_empty());
 }
 
@@ -737,7 +751,33 @@ fn a_relative_settings_path_starts_at_machine_toml() {
     let files = SettingsFiles::load(folders);
     fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(files.loaded().settings, HIDDEN);
+    assert_eq!(files.loaded().settings, hidden());
+}
+
+/// A theme file travels with a `settings_path` synced from elsewhere (#519). The folder can change while
+/// Tsugiki runs, so a name stays as written until the `themes` command checks it, and a theme file mended
+/// later shows without a restart.
+#[test]
+fn a_theme_name_stays_as_written_and_the_themes_folder_is_beside_the_settings_file_in_use() {
+    let (folders, root) = temp_folders("themes-beside");
+    let dotfiles = root.join("dotfiles");
+    fs::create_dir_all(&dotfiles).unwrap();
+    fs::create_dir_all(&folders.settings).unwrap();
+    let text = "[appearance]\ndark_theme = \"Night\"\nlight_theme = \"Gruvbox Dark Hard\"\n";
+    fs::write(dotfiles.join("tsugiki.toml"), text).unwrap();
+    point_at(&folders, &dotfiles.join("tsugiki.toml"));
+
+    let files = SettingsFiles::load(folders);
+    fs::remove_dir_all(root).unwrap();
+
+    let loaded = files.loaded();
+    assert_eq!(loaded.settings.appearance.dark_theme, named("Night"));
+    assert_eq!(
+        loaded.settings.appearance.light_theme,
+        named("Gruvbox Dark Hard")
+    );
+    assert_eq!(loaded.problems, Vec::<String>::new());
+    assert_eq!(files.view().themes_folder, dotfiles.join("themes"));
 }
 
 #[test]
@@ -767,7 +807,7 @@ fn a_broken_machine_toml_is_named_with_its_line_and_keeps_the_last_good_path() {
     files.reload();
     fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(files.loaded().settings, HIDDEN);
+    assert_eq!(files.loaded().settings, hidden());
     let problem = only_problem(&files);
     assert!(problem.contains("machine.toml, line 2"), "{problem}");
 }
@@ -777,12 +817,12 @@ fn saving_writes_only_what_differs_from_the_defaults() {
     let (folders, root) = temp_folders("save-new");
     let mut files = SettingsFiles::load(folders.clone());
 
-    files.write(&HIDDEN).unwrap();
+    files.write(&hidden()).unwrap();
     let after = fs::read_to_string(folders.settings_file()).unwrap();
     fs::remove_dir_all(root).unwrap();
 
     assert_eq!(after, "[status_bar]\nvisible = false\n");
-    assert_eq!(files.loaded().settings, HIDDEN);
+    assert_eq!(files.loaded().settings, hidden());
 }
 
 #[test]
@@ -803,7 +843,9 @@ fn saving_creates_the_folder_it_needs() {
     let (folders, root) = temp_folders("save-folder");
     fs::remove_dir(&folders.settings).unwrap();
 
-    SettingsFiles::load(folders.clone()).write(&HIDDEN).unwrap();
+    SettingsFiles::load(folders.clone())
+        .write(&hidden())
+        .unwrap();
     let created = folders.settings_file().exists();
     fs::remove_dir_all(root).unwrap();
 
@@ -825,7 +867,7 @@ another = 2
 [later]
 alpha = \"x\"
 ";
-    let after = saved_over("save-keeps", before, &HIDDEN);
+    let after = saved_over("save-keeps", before, &hidden());
 
     assert_eq!(
         after,
@@ -849,7 +891,7 @@ alpha = \"x\"
 #[test]
 fn changing_a_value_keeps_the_comment_beside_it() {
     let before = "[status_bar]\nvisible = true # For now.\n";
-    let after = saved_over("save-beside", before, &HIDDEN);
+    let after = saved_over("save-beside", before, &hidden());
     assert_eq!(after, "[status_bar]\nvisible = false # For now.\n");
 }
 
@@ -877,11 +919,15 @@ fn a_value_back_at_its_default_stays_if_the_user_commented_on_it() {
 #[test]
 fn a_section_written_inline_or_dotted_is_changed_where_it_is() {
     assert_eq!(
-        saved_over("save-inline", "status_bar = { visible = true }\n", &HIDDEN),
+        saved_over(
+            "save-inline",
+            "status_bar = { visible = true }\n",
+            &hidden()
+        ),
         "status_bar = { visible = false }\n"
     );
     assert_eq!(
-        saved_over("save-dotted", "status_bar.visible = true\n", &HIDDEN),
+        saved_over("save-dotted", "status_bar.visible = true\n", &hidden()),
         "status_bar.visible = false\n"
     );
 }
@@ -892,7 +938,7 @@ fn saving_keeps_an_edit_made_since_the_last_read() {
     let mut files = SettingsFiles::load(folders.clone());
 
     fs::write(folders.settings_file(), "# Added by hand.\nmine = 1\n").unwrap();
-    files.write(&HIDDEN).unwrap();
+    files.write(&hidden()).unwrap();
     let after = fs::read_to_string(folders.settings_file()).unwrap();
     fs::remove_dir_all(root).unwrap();
 
@@ -909,7 +955,7 @@ fn saving_follows_settings_path() {
     point_at(&folders, &moved);
     let mut files = SettingsFiles::load(folders.clone());
 
-    files.write(&HIDDEN).unwrap();
+    files.write(&hidden()).unwrap();
     let after = fs::read_to_string(&moved).unwrap();
     let usual_folder_used = folders.settings_file().exists();
     let loaded = files.loaded().clone();
@@ -917,7 +963,7 @@ fn saving_follows_settings_path() {
 
     assert_eq!(after, "[status_bar]\nvisible = false\n");
     assert!(!usual_folder_used);
-    assert_eq!(loaded.settings, HIDDEN);
+    assert_eq!(loaded.settings, hidden());
     assert!(loaded.problems.is_empty(), "the file is there now");
 }
 
@@ -931,7 +977,7 @@ fn saving_over_a_file_that_doesnt_parse_refuses_and_leaves_it_alone() {
         fs::write(folders.settings_file(), text).unwrap();
         let mut files = SettingsFiles::load(folders.clone());
 
-        let refused = files.write(&HIDDEN).unwrap_err();
+        let refused = files.write(&hidden()).unwrap_err();
         let after = fs::read_to_string(folders.settings_file()).unwrap();
         fs::remove_dir_all(root).unwrap();
 
@@ -951,7 +997,7 @@ fn a_broken_machine_toml_refuses_rather_than_saving_to_the_wrong_place() {
     fs::write(folders.machine_file(), "settings_path =\n").unwrap();
     let mut files = SettingsFiles::load(folders.clone());
 
-    let refused = files.write(&HIDDEN).unwrap_err();
+    let refused = files.write(&hidden()).unwrap_err();
     let created = folders.settings_file().exists();
     fs::remove_dir_all(root).unwrap();
 
@@ -970,7 +1016,7 @@ fn a_settings_file_it_cant_read_refuses() {
     fs::create_dir(folders.settings_file()).unwrap();
     let mut files = SettingsFiles::load(folders.clone());
 
-    let refused = files.write(&HIDDEN).unwrap_err();
+    let refused = files.write(&hidden()).unwrap_err();
     fs::remove_dir_all(root).unwrap();
 
     assert!(
@@ -995,7 +1041,7 @@ fn a_save_that_fails_says_so_and_leaves_the_file_alone() {
     fs::set_permissions(&file, permissions.clone()).unwrap();
     let mut files = SettingsFiles::load(folders);
 
-    let refused = files.write(&HIDDEN).unwrap_err();
+    let refused = files.write(&hidden()).unwrap_err();
     let after = fs::read_to_string(&file).unwrap();
     permissions.set_readonly(false);
     fs::set_permissions(&file, permissions).unwrap();
@@ -1042,11 +1088,11 @@ fn a_comment_on_a_section_keeps_it_when_it_empties() {
 #[test]
 fn saving_keeps_a_files_line_endings_and_byte_order_mark() {
     assert_eq!(
-        saved_over("save-crlf", "# Mine.\r\nmine = 1\r\n", &HIDDEN),
+        saved_over("save-crlf", "# Mine.\r\nmine = 1\r\n", &hidden()),
         "# Mine.\r\nmine = 1\r\n\r\n[status_bar]\r\nvisible = false\r\n"
     );
     assert_eq!(
-        saved_over("save-bom", "\u{feff}mine = 1\n", &HIDDEN),
+        saved_over("save-bom", "\u{feff}mine = 1\n", &hidden()),
         "\u{feff}mine = 1\n\n[status_bar]\nvisible = false\n"
     );
 }
@@ -1054,7 +1100,7 @@ fn saving_keeps_a_files_line_endings_and_byte_order_mark() {
 #[test]
 fn saving_what_a_file_already_says_changes_nothing() {
     let before = "\u{feff}# Mine.\r\n[status_bar]\r\nvisible = false\r\n";
-    assert_eq!(saved_over("save-same", before, &HIDDEN), before);
+    assert_eq!(saved_over("save-same", before, &hidden()), before);
 }
 
 #[test]
@@ -1065,7 +1111,7 @@ fn a_settings_path_starting_with_a_tilde_is_a_problem_not_a_folder() {
     fs::write(folders.machine_file(), machine).unwrap();
 
     let mut files = SettingsFiles::load(folders.clone());
-    let refused = files.write(&HIDDEN).unwrap_err();
+    let refused = files.write(&hidden()).unwrap_err();
     let tilde_folder = folders.data.join("~").exists();
     fs::remove_dir_all(root).unwrap();
 
@@ -1150,7 +1196,7 @@ fn without_folders_the_owner_says_what_went_wrong_with_them() {
     let answering = owner.save_mirror_source(repository("a/b"), MirrorSource::Download);
     let resizing = owner.save_panes(WIDE);
     let opening = owner.open_repository(repository("a/b"));
-    let picking = owner.save_theme(ThemeChoice::Dark(DarkTheme::GruvboxDarkHard));
+    let picking = owner.save_theme(ThemeKind::Dark, named("Gruvbox Dark Hard"));
 
     assert_eq!(picking.unwrap_err(), lost);
     assert_eq!(adding.unwrap_err(), lost);
@@ -2362,7 +2408,7 @@ name = \"python/cpython\" # The big one.
     fs::write(folders.settings_file(), before).unwrap();
     let mut files = SettingsFiles::load(folders.clone());
 
-    files.write(&HIDDEN).unwrap();
+    files.write(&hidden()).unwrap();
     let after = fs::read_to_string(folders.settings_file()).unwrap();
     let held = files.loaded().settings.repositories.len();
     fs::remove_dir_all(root).unwrap();
@@ -2384,7 +2430,7 @@ fn a_file_gone_from_settings_path_on_a_reload_keeps_the_last_good_values() {
     files.reload();
     fs::remove_dir_all(root).unwrap();
 
-    assert_eq!(files.loaded().settings, HIDDEN);
+    assert_eq!(files.loaded().settings, hidden());
     let problem = only_problem(&files);
     assert!(problem.contains("dotfiles.toml"), "{problem}");
     assert!(problem.contains("last values"), "{problem}");

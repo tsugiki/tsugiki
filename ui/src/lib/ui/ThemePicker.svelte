@@ -27,14 +27,26 @@
     mark: "chosen",
   });
 
-  /** Each row previews while it's picked, and the last row switches the list without closing it. */
+  /** Each row previews while it's picked. A file that failed shows greyed with why, and Reload themes and
+   * the last row act without closing the list. */
   const command = (row: PickerRow): PaletteCommand => {
     const preview = () => {
       picker.move(row);
     };
-    return row.kind === "theme"
-      ? { title: row.title, current: row.chosen, preview, run: () => void picker.pick(row).then(onsaved) }
-      : {
+    switch (row.kind) {
+      case "theme":
+        return {
+          title: row.title,
+          current: row.chosen,
+          preview,
+          run: () => void picker.pick(row).then(onsaved),
+        };
+      case "failed":
+        return { title: row.title, note: row.reason, disabled: true, preview };
+      case "reload":
+        return { title: row.title, keepsOpen: true, preview, run: () => void picker.reload() };
+      case "switch":
+        return {
           title: row.title,
           keepsOpen: true,
           preview,
@@ -42,6 +54,7 @@
             picker.switchSide();
           },
         };
+    }
   };
 </script>
 

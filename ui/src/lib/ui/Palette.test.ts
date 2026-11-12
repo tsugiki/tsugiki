@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
+import { tick } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import Palette from "./Palette.svelte";
 
@@ -268,6 +269,49 @@ describe("as a picker that previews", () => {
     expect(oncancel).toHaveBeenCalledTimes(2);
     expect(onclose).toHaveBeenCalledTimes(3);
   });
+});
+
+it("keeps the pick on the same row when the list changes under it, and on the first if that row goes", async () => {
+  const ran: string[] = [];
+  const row = (title: string) => ({ title, run: () => ran.push(title) });
+  const { rerender } = render(Palette, {
+    commands: [row("A"), row("B"), row("Reload")],
+    onclose: () => {},
+    start: 2,
+  });
+
+  await rerender({ commands: [row("A"), row("B"), row("New"), row("Reload")] });
+  expect(screen.getByRole("option", { selected: true }).textContent).toBe("Reload");
+  await rerender({ commands: [row("A"), row("B")] });
+  expect(screen.getByRole("option", { selected: true }).textContent).toBe("A");
+  await fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
+  await tick();
+  expect(ran).toEqual(["A"]);
+});
+
+it("moves no pick on an arrow while no command matches", async () => {
+  const { ran, input } = withCommands();
+  await fireEvent.input(input, { target: { value: "print" } });
+  await fireEvent.keyDown(input, { key: "ArrowDown" });
+  await fireEvent.input(input, { target: { value: "" } });
+  await fireEvent.keyDown(input, { key: "Enter" });
+  expect(ran).toEqual(["Show performance HUD"]);
+});
+
+it("shows a row that can't run greyed with its note, and Enter or a click on it does nothing", async () => {
+  const onclose = vi.fn();
+  render(Palette, {
+    commands: [{ title: "Night (night.toml)", note: "it extends Dusk", disabled: true }],
+    onclose,
+  });
+  const row = screen.getByRole("option");
+  expect(row.getAttribute("aria-disabled")).toBe("true");
+  expect(row.textContent).toBe("Night (night.toml) · it extends Dusk");
+
+  await fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
+  await fireEvent.click(row);
+
+  expect(onclose).not.toHaveBeenCalled();
 });
 
 it("leaves other keys to the text box", async () => {

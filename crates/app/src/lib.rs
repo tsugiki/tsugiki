@@ -35,10 +35,10 @@ use tsugiki_core::releases::NewVersion;
 use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
 use tsugiki_core::repository_settings::{MirrorCost, NameCheck, RepositorySettings};
 use tsugiki_core::session::SessionRequests;
-use tsugiki_core::settings::{AppearanceSettings, Home, LoadedSettings, PaneLayout, SettingsOwner};
+use tsugiki_core::settings::{Home, LoadedSettings, PaneLayout, SettingsOwner};
 use tsugiki_core::status::{Change, FailedRead, LastSync, Status, SyncActivity};
 use tsugiki_core::store::StoreReader;
-use tsugiki_core::theme::{ThemeMode, Themes};
+use tsugiki_core::theme::ThemeMode;
 use tsugiki_core::version::Version;
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
@@ -294,22 +294,6 @@ fn settings(owner: State<'_, SettingsOwner>) -> LoadedSettings {
 
 /// The mode `settings.toml` held when Tsugiki started, which the window turned to (#517).
 struct StartMode(ThemeMode);
-
-/// Every theme of each side, light and dark, as CSS variables (#515), with the theme the settings choose for
-/// each side, and the mode they held when Tsugiki started (#517), which the title bar keeps. In System mode
-/// the window shows the chosen theme for the side Windows is on. The theme picker lists the others, and a
-/// theme it saved is the chosen one from then on (#518).
-#[tauri::command]
-#[specta::specta]
-fn themes(start: State<'_, StartMode>, owner: State<'_, SettingsOwner>) -> Result<Themes, Error> {
-    let StartMode(mode) = *start;
-    let AppearanceSettings {
-        light_theme,
-        dark_theme,
-        ..
-    } = owner.view().loaded.settings.appearance;
-    Themes::chosen(mode, light_theme, dark_theme)
-}
 
 /// What the window opens on.
 #[tauri::command]
@@ -735,7 +719,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             mark_seen,
             mark_unseen,
             settings,
-            themes,
+            slow_commands::themes,
             home,
             pane_layout,
             time_running,

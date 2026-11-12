@@ -26,7 +26,7 @@ use crate::latest::{self, LatestReader};
 use crate::mirror::{MirrorSource, MirrorSources};
 use crate::repository::{RepositoryAccess, RepositoryName};
 use crate::repository_settings::{NameCheck, RepositoryCheck, RepositorySettings};
-use crate::theme::{DarkTheme, LightTheme, ThemeChoice, ThemeMode};
+use crate::theme::{ThemeKind, ThemeMode, ThemeName};
 
 const REPOSITORIES: &str = "repositories";
 const FILTERS: &str = "filters";
@@ -124,13 +124,25 @@ impl Default for ReleaseSettings {
 /// of each side (#517). A key Tsugiki can't read takes its default, and `unread_problems` says why: a
 /// theme is too small a thing to lose the rest of `settings.toml` over. An `appearance` that isn't a table
 /// fails the file, as any other table does.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Type)]
+///
+/// A theme's name may be a built-in theme's or a file's of the `themes` folder beside the settings file
+/// (#519). It stays as the user wrote it: the folder can change while Tsugiki runs, so the `themes` command
+/// checks it against the folder each time, and a name no theme has shows its side's default until one does.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct AppearanceSettings {
     pub theme: ThemeMode,
-    #[specta(type = String)]
-    pub light_theme: LightTheme,
-    #[specta(type = String)]
-    pub dark_theme: DarkTheme,
+    pub light_theme: ThemeName,
+    pub dark_theme: ThemeName,
+}
+
+impl Default for AppearanceSettings {
+    fn default() -> Self {
+        Self {
+            theme: ThemeMode::default(),
+            light_theme: ThemeName::default_of(ThemeKind::Light),
+            dark_theme: ThemeName::default_of(ThemeKind::Dark),
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for AppearanceSettings {
@@ -144,8 +156,8 @@ impl<'de> Deserialize<'de> for AppearanceSettings {
 #[serde(default)]
 struct AppearanceRead {
     theme: Option<Read<ThemeMode>>,
-    light_theme: Option<Read<LightTheme>>,
-    dark_theme: Option<Read<DarkTheme>>,
+    light_theme: Option<Read<ThemeName>>,
+    dark_theme: Option<Read<ThemeName>>,
 }
 
 /// A key of `[appearance]` given a value Tsugiki can't read, and what Tsugiki does instead, in words for the
@@ -156,18 +168,28 @@ impl AppearanceRead {
     /// The values, with each one Tsugiki can't read at its default, and the keys that held those.
     fn settle(self) -> (AppearanceSettings, Vec<Unread>) {
         let mut unread = Vec::new();
+        let theme = given_or_default(self.theme, "theme", &mut unread, || {
+            r#"isn't "system", "light" or "dark", so Tsugiki follows the system."#.to_owned()
+        });
+        let mut side = |given: Option<Read<ThemeName>>, key: &'static str, kind: ThemeKind| {
+            let default = ThemeName::default_of(kind);
+            match given {
+                None => default,
+                Some(Read::Given(name)) => name,
+                Some(Read::Other(_)) => {
+                    let instead = default.as_str();
+                    let problem = format!("isn't a theme's name, so Tsugiki uses {instead}.");
+                    unread.push((key, problem));
+                    default
+                }
+            }
+        };
+        let light_theme = side(self.light_theme, "light_theme", ThemeKind::Light);
+        let dark_theme = side(self.dark_theme, "dark_theme", ThemeKind::Dark);
         let settings = AppearanceSettings {
-            theme: given_or_default(self.theme, "theme", &mut unread, || {
-                r#"isn't "system", "light" or "dark", so Tsugiki follows the system."#.to_owned()
-            }),
-            light_theme: given_or_default(self.light_theme, "light_theme", &mut unread, || {
-                let default = LightTheme::default().name();
-                format!("names no light theme, so Tsugiki uses {default}.")
-            }),
-            dark_theme: given_or_default(self.dark_theme, "dark_theme", &mut unread, || {
-                let default = DarkTheme::default().name();
-                format!("names no dark theme, so Tsugiki uses {default}.")
-            }),
+            theme,
+            light_theme,
+            dark_theme,
         };
         (settings, unread)
     }
@@ -281,6 +303,8 @@ pub struct SettingsView {
     pub panes: PaneLayout,
     /// The user's answer, on this machine, of where each Repository's mirror gets its objects.
     pub mirror_sources: MirrorSources,
+    /// The folder of the user's theme files, beside the settings file in use (#519).
+    pub themes_folder: PathBuf,
 }
 
 /// Where the token comes from. A personal access token joins this with the Account page (ADR 0004).
@@ -526,6 +550,10 @@ impl SettingsFiles {
                 .machine
                 .as_ref()
                 .map_or_else(MirrorSources::default, |machine| machine.mirrors.clone()),
+            themes_folder: themes_folder(&settings_file(
+                &self.folders,
+                self.machine.as_ref().unwrap_or(&Machine::default()),
+            )),
         }
     }
 
@@ -705,22 +733,21 @@ impl SettingsFiles {
     /// Saves the theme the picker chose for its side to `light_theme` or `dark_theme`, keeping everything
     /// else in `settings.toml`, and reads the files again (#518). Like `write`, it works from what the files
     /// say now and refuses while either can't be used.
-    pub fn save_theme(&mut self, choice: ThemeChoice) -> Result<(), Error> {
+    pub fn save_theme(&mut self, kind: ThemeKind, name: &ThemeName) -> Result<(), Error> {
         let machine = self.machine_to_edit()?;
         let path = settings_file(&self.folders, &machine);
         let mut edit = TomlEdit::<Settings>::open(&path)?;
-        let (key, name, default) = match choice {
-            ThemeChoice::Light(theme) => {
-                ("light_theme", theme.name(), LightTheme::default().name())
-            }
-            ThemeChoice::Dark(theme) => ("dark_theme", theme.name(), DarkTheme::default().name()),
+        let key = match kind {
+            ThemeKind::Light => "light_theme",
+            ThemeKind::Dark => "dark_theme",
         };
+        let default = ThemeName::default_of(kind);
         edit_section(edit.document.as_table_mut(), APPEARANCE, |section| {
             merge_value(
                 section,
                 key,
-                &toml_edit::value(name),
-                Some(&toml_edit::value(default)),
+                &toml_edit::value(name.as_str()),
+                Some(&toml_edit::value(default.as_str())),
             );
         });
         edit.save()?;
@@ -776,7 +803,8 @@ enum Request {
         reply: Sender<Result<SettingsView, Error>>,
     },
     Theme {
-        choice: ThemeChoice,
+        kind: ThemeKind,
+        name: ThemeName,
         reply: Sender<Result<SettingsView, Error>>,
     },
     Open {
@@ -827,8 +855,8 @@ impl SettingsOwner {
                     (Ok(files), Request::Panes { layout, reply }) => {
                         (files.save_panes(layout).map(|()| files.view()), reply)
                     }
-                    (Ok(files), Request::Theme { choice, reply }) => {
-                        (files.save_theme(choice).map(|()| files.view()), reply)
+                    (Ok(files), Request::Theme { kind, name, reply }) => {
+                        (files.save_theme(kind, &name).map(|()| files.view()), reply)
                     }
                     (Ok(files), Request::Open { name, reply }) => {
                         let opened = files.open_repository(&name, OffsetDateTime::now_utc());
@@ -913,9 +941,9 @@ impl SettingsOwner {
 
     /// Saves the theme the picker chose for its side in `settings.toml`, and answers with what the settings
     /// say now.
-    pub fn save_theme(&self, choice: ThemeChoice) -> Result<SettingsView, Error> {
+    pub fn save_theme(&self, kind: ThemeKind, name: ThemeName) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
-        self.ask(Request::Theme { choice, reply }, &answer)
+        self.ask(Request::Theme { kind, name, reply }, &answer)
     }
 
     /// Makes `name` the open Repository, and answers with what the settings say now.
@@ -1361,6 +1389,12 @@ fn read_settings(
             ))
         }
     }
+}
+
+/// The folder of the user's theme files, beside the settings file at `settings_file`, so a `settings_path`
+/// synced from elsewhere brings its themes along (#519).
+fn themes_folder(settings_file: &Path) -> PathBuf {
+    settings_file.with_file_name("themes")
 }
 
 fn settings_file(folders: &Folders, machine: &Machine) -> PathBuf {

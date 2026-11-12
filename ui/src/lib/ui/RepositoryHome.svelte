@@ -29,7 +29,7 @@
   import IssueDetail from "./IssueDetail.svelte";
   import { type ChordBindings, chordLabel, currentOs, isTextBox, keyLabel, keyName } from "./keys";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
-  import type { PaletteCommand } from "./Palette.svelte";
+  import type { PaletteAction } from "./Palette.svelte";
   import PaneEdge from "./PaneEdge.svelte";
   import PrDetail from "./PrDetail.svelte";
   import Sidebar from "./Sidebar.svelte";
@@ -351,7 +351,7 @@
   }
 
   /** The palette's command that switches the Files tab on show to one file at a time, or back. */
-  function filesModeCommand(): PaletteCommand[] {
+  function filesModeCommand(): PaletteAction[] {
     const files = shownFiles();
     if (files === undefined) return [];
     return [
@@ -367,7 +367,7 @@
 
   /** What this screen adds to the command palette while it shows. Each command runs what its key runs. The
    * palette runs it once it has handed the focus back, so the focus goes where the key would put it. */
-  export function paletteCommands(): PaletteCommand[] {
+  export function paletteCommands(): PaletteAction[] {
     return [
       {
         title: panes.hidden("sidebar") ? "Show Sidebar" : "Hide Sidebar",

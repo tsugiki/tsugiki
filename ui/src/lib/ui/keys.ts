@@ -74,6 +74,7 @@ const OWNED_CHORDS = [
   "ctrl+k m",
   "ctrl+k o",
   "ctrl+k p",
+  "ctrl+k r",
   "ctrl+k t",
   "ctrl+k z",
 ] as const satisfies readonly `${ChordStart} ${string}`[];

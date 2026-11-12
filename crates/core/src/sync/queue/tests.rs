@@ -420,6 +420,24 @@ fn a_click_ends_a_wait_for_the_network_and_keeps_a_wait_for_points() {
 }
 
 #[test]
+fn a_click_while_github_stays_away_queues_the_open_repository_behind_the_wait() {
+    let harness = Harness::new("click-offline", Vec::new());
+    let later = Instant::now() + Duration::from_secs(3600);
+    let mut syncs = Syncs::default();
+    syncs.add(plain(cpython()));
+    for _ in 0..TRIES {
+        syncs.after_failure(&failed(broken()), soon(), GitHubClock::default());
+    }
+    syncs.wait_until(later);
+
+    syncs.put_open_first();
+
+    assert_eq!(syncs.queue.len(), 1);
+    assert_eq!(syncs.ready_at(), Some(later));
+    harness.finish();
+}
+
+#[test]
 fn the_last_sync_says_when_it_finished_and_the_next_asks_from_when_it_started() {
     // GitHub's clock is an hour behind, so the sync starts an hour before it ends by the local clock.
     let began = OffsetDateTime::now_utc() - time::Duration::hours(1);

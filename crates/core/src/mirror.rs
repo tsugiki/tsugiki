@@ -395,14 +395,7 @@ impl MirrorRequests {
     /// Holds back the next git while `status` says GitHub can't be reached. A rate limit is the API's, and
     /// git doesn't use the API, so it holds back nothing.
     pub fn follow(&self, status: &Status) {
-        let held = match status {
-            Status::Offline | Status::OfflineAs { .. } => true,
-            Status::Connecting
-            | Status::ConnectingAs { .. }
-            | Status::Online { .. }
-            | Status::Problem { .. } => false,
-        };
-        self.send(Message::Hold(held));
+        self.send(Message::Hold(status.is_offline()));
     }
 
     fn send(&self, message: Message) {

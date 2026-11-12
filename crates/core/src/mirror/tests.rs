@@ -1350,6 +1350,26 @@ fn offline_holds_the_worker() {
 }
 
 #[test]
+fn back_online_the_worker_fetches_the_heads_it_held_back() {
+    let place = Place::new("back-online");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.follow(&Status::Offline);
+    requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    requests.follow(&Status::Online {
+        login: Login::new("octocat"),
+    });
+    let fetch = starts.recv_timeout(PLENTY).unwrap();
+
+    assert_eq!(fetch.refspecs(), [refspec(1)]);
+    fetch.succeed();
+    mirrors.stop_cleanly(PLENTY);
+}
+
+#[test]
 fn a_rate_limit_doesnt_hold_the_worker() {
     let place = Place::new("rate-limited");
     let cpython = named("python/cpython");

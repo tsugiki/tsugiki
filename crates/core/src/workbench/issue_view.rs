@@ -19,6 +19,8 @@ pub struct IssueView {
     pub issue: IssueItem,
     /// Nothing, for an Issue whose author's account has gone.
     pub author: Option<Login>,
+    /// Whom it is assigned to, as the sync last read them (#595).
+    pub assignees: Vec<Login>,
     /// Nothing, until Tsugiki has read this Issue from GitHub once.
     pub content: Option<IssueContent>,
 }
@@ -34,6 +36,9 @@ impl IssueView {
         let (facts, content) = reader.issue_facts(&repository.name, number)?;
         let held = facts.issues.iter().find(|issue| issue.number == number);
         let author = held.and_then(|issue| issue.author.clone());
+        let assignees = held
+            .map(|issue| issue.assignees.clone())
+            .unwrap_or_default();
         let found = candidates(facts, repository, &BTreeSet::new())
             .into_iter()
             .find_map(|item| match item {
@@ -45,6 +50,7 @@ impl IssueView {
         Ok(found.map(|issue| Self {
             issue,
             author,
+            assignees,
             content,
         }))
     }

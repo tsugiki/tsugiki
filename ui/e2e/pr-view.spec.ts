@@ -40,6 +40,7 @@ const view: PrView = {
     body_html: "<p>The fix</p>",
     comments: [],
     earlier_comments: 0,
+    opened_at: null,
     reviews: [
       {
         author: "some-reviewer",
@@ -68,7 +69,7 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
     },
     openIssue: done,
     fetchIssue: done,
-    issue: { status: "ok", data: { ...issue, author: "issue-author", content: null } },
+    issue: { status: "ok", data: { ...issue, author: "issue-author", assignees: [], content: null } },
     openPullRequest: done,
     fetchPullRequest: done,
     pullRequest: { status: "ok", data: view },
@@ -220,7 +221,7 @@ const threaded = async (page: Page, at: DiffThread["at"], words: string) => {
     },
     openIssue: done,
     fetchIssue: done,
-    issue: { status: "ok", data: { ...issue, author: "issue-author", content: null } },
+    issue: { status: "ok", data: { ...issue, author: "issue-author", assignees: [], content: null } },
     openPullRequest: done,
     fetchPullRequest: done,
     pullRequest: { status: "ok", data: reviewed },

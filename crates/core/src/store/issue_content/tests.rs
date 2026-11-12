@@ -24,6 +24,7 @@ fn content(body_html: &str, comments: Vec<IssueComment>) -> IssueContent {
         body_html: body_html.to_owned(),
         comments,
         earlier_comments: 2,
+        opened_at: OffsetDateTime::from_unix_timestamp(1_700_000_000).ok(),
     }
 }
 
@@ -39,7 +40,11 @@ fn each_read_replaces_the_last_and_other_issues_keep_theirs() {
     store
         .save_issue_content(&cpython(), 2, other.clone())
         .unwrap();
-    let second = content("<p>Two</p>", vec![comment("<p>d</p>")]);
+    // A read kept from before Tsugiki asked when an Issue was opened has no time for it.
+    let second = IssueContent {
+        opened_at: None,
+        ..content("<p>Two</p>", vec![comment("<p>d</p>")])
+    };
     store
         .save_issue_content(&cpython(), 1, second.clone())
         .unwrap();

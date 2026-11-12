@@ -1,10 +1,10 @@
 <script lang="ts">
   import { openLink, openOnGitHub, type GitHubItem } from "$lib/state/browser";
-  import type { IssueViewState } from "$lib/state/issue-view.svelte";
+  import type { IssueView, IssueViewState } from "$lib/state/issue-view.svelte";
   import Conversation from "./Conversation.svelte";
   import { issueIcon, prIcon } from "./octicons";
   import StateIcon from "./StateIcon.svelte";
-  import { backportWords, headline, prStateWords } from "./workbench-row";
+  import { ago, backportWords, headline, prStateWords } from "./workbench-row";
 
   let {
     repository,
@@ -32,6 +32,28 @@
   };
   const openPr = (number: number) => () => {
     onopenpr(number);
+  };
+
+  /** Who opened the Issue and how long ago, with the date and time for the tooltip. A read kept from before
+   * Tsugiki asked when has neither, until the next read. */
+  const opened = (view: IssueView) => {
+    const who = view.author ?? "deleted user";
+    const at = view.content?.opened_at;
+    if (!at) return { words: who, title: undefined };
+    const title = new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+    return { words: `${who} opened this ${ago(at, now)}`, title };
+  };
+
+  /** The rest of the author line: how many comments, once Tsugiki has read them, and whom it is assigned
+   * to. */
+  const restOfLine = (view: IssueView) => {
+    const parts: string[] = [];
+    if (view.content) {
+      const count = view.content.comments.length + view.content.earlier_comments;
+      parts.push(count === 1 ? "1 comment" : `${String(count)} comments`);
+    }
+    if (view.assignees.length > 0) parts.push(`assigned to ${view.assignees.join(", ")}`);
+    return parts.map((part) => ` · ${part}`).join("");
   };
 </script>
 
@@ -67,7 +89,8 @@
         {headline(view)}
       </button>
     </h2>
-    <p class="by">{view.author ?? "deleted user"}</p>
+    {@const by = opened(view)}
+    <p class="by"><span title={by.title}>{by.words}</span>{restOfLine(view)}</p>
 
     {#if view.pull_requests.length > 0}
       <ul class="prs">

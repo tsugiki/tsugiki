@@ -39,9 +39,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     row of the item the Detail pane shows, or to the cursor's row when that item isn't in the list or nothing
     is open.
   - **Detail pane** (right): the selected item. That is either an **Issue view** or a **PR view**.
-    - The Issue view shows the title and its author, the Origin PRs, the description, and recent comments,
-      with a box to comment. Each Origin PR's Backports are folded into one line that gives their branches and
-      states.
+    - The Issue view shows the title, an author line, the Origin PRs, the description, and recent comments,
+      with a box to comment. The author line says who opened the Issue and how long ago, with the date and
+      time in its tooltip, how many comments it has, and whom it is assigned to, if anyone. Each Origin PR's
+      Backports are folded into one line that gives their branches and states.
     - The PR view shows Conversation and Files as tabs, and opens on Conversation. `Ctrl+PageDown` and
       `Ctrl+PageUp` switch tabs, and so does `Enter` on the PR's row once the PR is open.
 

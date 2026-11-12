@@ -15,6 +15,7 @@ const view = (title: string): IssueView => ({
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [],
   author: "issue-author",
+  assignees: [],
   content: null,
 });
 

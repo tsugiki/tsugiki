@@ -3,6 +3,7 @@
 //! against `WITHOUT ROWID` for large rows.
 
 use rusqlite::{Row, Transaction, named_params};
+use time::OffsetDateTime;
 
 use super::Connection;
 use super::columns::UnixTime;
@@ -28,6 +29,9 @@ pub(super) const SCHEMA: &str = "
         FOREIGN KEY (repository, number) REFERENCES issue_content (repository, number)
     );
 ";
+
+/// When each Issue and PR was opened, which a read kept from before this step lacks until the next (#595).
+pub(super) const OPENED: &str = "ALTER TABLE issue_content ADD COLUMN opened_at INTEGER;";
 
 /// Replaces what's kept of Issue `number` with `content`, in one transaction.
 pub(super) fn save(
@@ -64,16 +68,18 @@ fn save_body(
 ) -> rusqlite::Result<()> {
     connection
         .execute(
-            "INSERT INTO issue_content (repository, number, body_html, earlier_comments)
-             VALUES (:repository, :number, :body_html, :earlier_comments)
+            "INSERT INTO issue_content (repository, number, body_html, earlier_comments, opened_at)
+             VALUES (:repository, :number, :body_html, :earlier_comments, :opened_at)
              ON CONFLICT (repository, number) DO UPDATE SET
                  body_html = excluded.body_html,
-                 earlier_comments = excluded.earlier_comments",
+                 earlier_comments = excluded.earlier_comments,
+                 opened_at = excluded.opened_at",
             named_params! {
                 ":repository": repository,
                 ":number": number,
                 ":body_html": content.body_html,
                 ":earlier_comments": content.earlier_comments,
+                ":opened_at": content.opened_at.map(OffsetDateTime::unix_timestamp),
             },
         )
         .map(drop)
@@ -126,7 +132,7 @@ fn comment_in(row: &Row<'_>) -> rusqlite::Result<IssueComment> {
     })
 }
 
-const SELECT_BODY: &str = "SELECT body_html, earlier_comments FROM issue_content
+const SELECT_BODY: &str = "SELECT body_html, earlier_comments, opened_at FROM issue_content
      WHERE repository = :repository AND number = :number";
 const SELECT_COMMENTS: &str = "SELECT author, created_at, body_html, hidden FROM issue_comments
      WHERE repository = :repository AND number = :number ORDER BY position";
@@ -145,12 +151,14 @@ pub(super) fn read(
     };
     let body_html = row.get("body_html")?;
     let earlier_comments = row.get("earlier_comments")?;
+    let opened_at: Option<UnixTime> = row.get("opened_at")?;
     let mut statement = connection.prepare(SELECT_COMMENTS)?;
     let comments = statement.query_map(asked, comment_in)?;
     Ok(Some(IssueContent {
         body_html,
         comments: comments.collect::<rusqlite::Result<_>>()?,
         earlier_comments,
+        opened_at: opened_at.map(|UnixTime(at)| at),
     }))
 }
 

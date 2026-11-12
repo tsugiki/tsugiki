@@ -55,6 +55,7 @@ const view = (bodyHtml: string): IssueView => ({
   people: ["issue-author"],
   updated_at: "2026-11-04T10:00:00Z",
   author: "issue-author",
+  assignees: ["some-assignee"],
   pull_requests: [
     {
       kind: "pr",
@@ -74,6 +75,7 @@ const view = (bodyHtml: string): IssueView => ({
       },
     ],
     earlier_comments: 0,
+    opened_at: "2026-11-01T09:00:00Z",
   },
 });
 
@@ -97,7 +99,9 @@ test("an Issue opens in the Detail pane and stops looking unread", async ({ page
 
   const pane = page.getByRole("region", { name: "Issue view" });
   await expect(pane.getByRole("heading")).toHaveText("#7 Issue 7");
-  await expect(pane).toContainText("issue-author");
+  await expect(pane).toContainText(
+    /issue-author opened this \d+d ago · 1 comment · assigned to some-assignee/,
+  );
   await expect(pane).toContainText("It crashes");
   await expect(pane).toContainText("Which build?");
   await expect(pane).toContainText("Merged · CI passed · You approved");

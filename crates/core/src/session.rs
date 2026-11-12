@@ -414,8 +414,20 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                 syncs.refresh_open(store);
                 due.repository = Instant::now() + intervals.repository;
             }
+            // Only asking who is signed in sets the status back online, so offline a click asks that first.
+            // While GitHub stays away, the syncs keep waiting for the next status check.
             Turn::RefreshNow => {
-                syncs.refresh_now();
+                if board.is_offline() {
+                    refresh(board, store, &github);
+                    if !board.is_offline() {
+                        due.status = Instant::now() + intervals.status;
+                    }
+                }
+                if board.is_offline() {
+                    syncs.put_open_first();
+                } else {
+                    syncs.refresh_now();
+                }
                 due.repository = Instant::now() + intervals.repository;
             }
             Turn::Opened(repository) => show_last_sync(board, store, repository),
@@ -455,8 +467,10 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
 }
 
 /// Hands the mirrors the heads of the PRs the user's work reaches in `repository`, after a step saved its
-/// facts. The mirror fetches only the heads that moved. A store that can't answer just saved, and the next
-/// step that saves says if it is in trouble, and hands the heads.
+/// facts, and the commit each of the user's Reviews there covered. The mirror fetches only the heads that
+/// moved, and the reviewed commits it doesn't keep yet. A store that can't answer just saved, and the next
+/// step that saves says if it is in trouble, and hands the heads. The heads go though the reviewed commits
+/// can't be read, and those wait for a step whose read works.
 fn hand_over_heads(
     board: &mut StatusBoard,
     store: &Store,
@@ -465,7 +479,9 @@ fn hand_over_heads(
 ) {
     if let (Some(settings), Ok(facts)) = (syncs.settings(repository), store.work_facts(repository))
     {
-        board.reached_heads(repository, Workbench::reached_heads(facts, settings));
+        let reviewed = store.reviewed_commits(repository).unwrap_or_default();
+        let heads = Workbench::reached_heads(facts, settings);
+        board.reached_heads(repository, heads, reviewed);
     }
 }
 

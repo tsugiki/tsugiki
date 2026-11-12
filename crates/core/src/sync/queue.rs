@@ -191,11 +191,17 @@ impl Syncs {
     /// Answers the user's click: the open Repository takes the next step, and stops waiting for the next
     /// look at GitHub. A wait for GitHub's points stays.
     pub fn refresh_now(&mut self) {
-        if let Some(open) = self.open.clone() {
-            self.add(open);
-        }
+        self.put_open_first();
         if let Some(Hold::Retry(_)) = self.not_before {
             self.not_before = None;
+        }
+    }
+
+    /// Answers the user's click while GitHub can't be reached: the open Repository takes the next step once
+    /// the wait for the next look at GitHub ends.
+    pub fn put_open_first(&mut self) {
+        if let Some(open) = self.open.clone() {
+            self.add(open);
         }
     }
 

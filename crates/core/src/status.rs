@@ -5,7 +5,7 @@ use specta::Type;
 use time::OffsetDateTime;
 
 use crate::error::Error;
-use crate::github::pull_requests::PrHead;
+use crate::github::pull_requests::{PrHead, ReviewedCommit};
 use crate::login::Login;
 use crate::repository::RepositoryName;
 
@@ -26,6 +26,19 @@ pub enum Status {
     OfflineAs { last_login: Login },
     /// Something stops Tsugiki reading, such as a refused token.
     Problem { problem: Error },
+}
+
+impl Status {
+    /// Whether it says GitHub can't be reached. A rate limit is a problem of the API's alone.
+    pub(crate) fn is_offline(&self) -> bool {
+        match self {
+            Self::Offline | Self::OfflineAs { .. } => true,
+            Self::Connecting
+            | Self::ConnectingAs { .. }
+            | Self::Online { .. }
+            | Self::Problem { .. } => false,
+        }
+    }
 }
 
 /// What a sync changed in a Repository's stored facts (ADR 0008).
@@ -124,7 +137,7 @@ pub struct OpenSync {
 
 type AnnounceActivity = Box<dyn FnMut(Option<&SyncActivity>) + Send>;
 
-type AnnounceHeads = Box<dyn FnMut(&RepositoryName, Vec<PrHead>) + Send>;
+type AnnounceHeads = Box<dyn FnMut(&RepositoryName, Vec<PrHead>, Vec<ReviewedCommit>) + Send>;
 
 /// Holds the status and announces each change, so the app can pass it on as an event. It also announces when
 /// a Repository's stored facts change, so an open screen can ask again, and when a sync of the open
@@ -150,7 +163,7 @@ impl StatusBoard {
             announce_last_sync: Box::new(|_| {}),
             sync_activity: None,
             announce_sync_activity: Box::new(|_| {}),
-            announce_heads: Box::new(|_, _| {}),
+            announce_heads: Box::new(|_, _, _| {}),
         }
     }
 
@@ -182,16 +195,21 @@ impl StatusBoard {
         self
     }
 
-    /// Also hands `announce` the heads of the PRs the user's work reaches in a Repository, each time a sync
-    /// saves its facts, for its mirror to fetch.
+    /// Also hands `announce` the heads of the PRs the user's work reaches in a Repository, and the commits
+    /// the user's Reviews there covered, each time a sync saves its facts, for its mirror to fetch and keep.
     #[must_use]
     pub fn with_heads(mut self, announce: AnnounceHeads) -> Self {
         self.announce_heads = announce;
         self
     }
 
-    pub(crate) fn reached_heads(&mut self, repository: &RepositoryName, heads: Vec<PrHead>) {
-        (self.announce_heads)(repository, heads);
+    pub(crate) fn reached_heads(
+        &mut self,
+        repository: &RepositoryName,
+        heads: Vec<PrHead>,
+        reviewed: Vec<ReviewedCommit>,
+    ) {
+        (self.announce_heads)(repository, heads, reviewed);
     }
 
     pub(crate) fn sync_activity(&mut self, activity: Option<SyncActivity>) {
@@ -211,6 +229,11 @@ impl StatusBoard {
 
     pub(crate) fn last_sync(&mut self, last_sync: &LastSync) {
         (self.announce_last_sync)(last_sync);
+    }
+
+    /// Whether the status says GitHub can't be reached.
+    pub(crate) fn is_offline(&self) -> bool {
+        self.current.is_offline()
     }
 
     pub(crate) fn set(&mut self, status: Status) {

@@ -130,8 +130,9 @@ pub(crate) fn connect_core<R: Runtime>(
         latest_activity.set(&activity);
         log_if_unsent(SyncActivityChanged(activity).emit(&activity_handle));
     }))
-    .with_heads(Box::new(move |repository, heads| {
+    .with_heads(Box::new(move |repository, heads, reviewed| {
         fetching.fetch_heads(repository.clone(), heads);
+        fetching.keep_reviewed(repository.clone(), reviewed);
     }));
     let intervals = Intervals {
         status: refresh,

@@ -17,15 +17,17 @@ use specta::Type;
 
 use crate::error::Error;
 use crate::folders::Folders;
-use crate::github::pull_requests::PrHead;
+use crate::github::pull_requests::{PrHead, ReviewedCommit};
 use crate::github::{CommitSha, GitHub, Transport, live};
 use crate::latest::{self, LatestReader, LatestWriter};
 use crate::repository::RepositoryName;
 use crate::status::Status;
 use crate::token::{RunGh, read_token};
 
+mod reviewed;
 mod source;
 mod upkeep;
+use reviewed::{KeepReviewed, Reviews};
 pub use source::{CloneRefusal, MirrorSource, MirrorSources};
 use source::{GITHUB_PREFIXES, lender};
 use upkeep::{Schedule, Upkeep, Upkept, delete_broken, says_broken};
@@ -285,6 +287,8 @@ enum Message {
     Clone(RepositoryName, Turn, Option<MirrorSource>),
     /// The heads of the PRs the user's work reaches in a Repository, as the store has them now.
     Heads(RepositoryName, Vec<PrHead>),
+    /// The commits the user's Reviews in a Repository covered, as the store has them now.
+    Reviewed(RepositoryName, Vec<ReviewedCommit>),
     /// The head of a PR the user opened, which the mirror lacks.
     First(RepositoryName, PrHead),
     /// A PR the user opened, whose ref stays until the next launch.
@@ -365,6 +369,13 @@ impl MirrorRequests {
         self.send(Message::Heads(repository, heads));
     }
 
+    /// Keeps each commit in `reviewed` under `refs/tsugiki/reviewed/N` in `repository`'s mirror, once its
+    /// mirror is there, after the heads waiting. A commit the mirror lacks is fetched by its SHA, once: one
+    /// GitHub refuses to send is noted beside the mirror and not asked for again.
+    pub fn keep_reviewed(&self, repository: RepositoryName, reviewed: Vec<ReviewedCommit>) {
+        self.send(Message::Reviewed(repository, reviewed));
+    }
+
     /// Fetches the head of a PR the user opened, which `repository`'s mirror lacks, ahead of the heads
     /// waiting. The worker fetches it whatever it noted of it before, so a ref GitHub made late arrives.
     pub fn fetch_first(&self, repository: RepositoryName, head: PrHead) {
@@ -384,14 +395,7 @@ impl MirrorRequests {
     /// Holds back the next git while `status` says GitHub can't be reached. A rate limit is the API's, and
     /// git doesn't use the API, so it holds back nothing.
     pub fn follow(&self, status: &Status) {
-        let held = match status {
-            Status::Offline | Status::OfflineAs { .. } => true,
-            Status::Connecting
-            | Status::ConnectingAs { .. }
-            | Status::Online { .. }
-            | Status::Problem { .. } => false,
-        };
-        self.send(Message::Hold(held));
+        self.send(Message::Hold(status.is_offline()));
     }
 
     fn send(&self, message: Message) {
@@ -430,6 +434,7 @@ impl HeardRequests {
             Message::First(repository, head) => Some((repository, head)),
             Message::Clone(..)
             | Message::Heads(..)
+            | Message::Reviewed(..)
             | Message::Opened(..)
             | Message::Hold(_)
             | Message::CheckAgain
@@ -609,6 +614,7 @@ impl Run for live::StartedGit {
 enum Job {
     Clone(Clone),
     Fetch(Fetch),
+    Reviewed(KeepReviewed),
     Upkeep(Upkeep),
 }
 
@@ -671,6 +677,8 @@ struct Heads {
     handed: Option<BTreeSet<u32>>,
     /// The PRs the user opened since launch, whose refs stay though the user's work doesn't reach them.
     viewed: BTreeSet<u32>,
+    /// The commits the user's Reviews covered.
+    reviews: Reviews,
 }
 
 /// The outcome of a fetch that succeeded, for the heads it asked for.
@@ -822,6 +830,13 @@ impl Worker {
                     }
                     self.hand_over(&repository, heads);
                 }
+                Ok(Message::Reviewed(repository, reviewed)) => {
+                    self.heard_news();
+                    if self.pace == Pace::Stalled {
+                        self.pace = Pace::Going;
+                    }
+                    self.hand_over_reviewed(&repository, reviewed);
+                }
                 Ok(Message::First(repository, head)) => {
                     self.heard_news();
                     if self.pace == Pace::Stalled {
@@ -859,7 +874,11 @@ impl Worker {
                 }
                 wait_for_helpers(incoming);
             }
-            Some(Job::Fetch(Fetch { mut git, .. }) | Job::Upkeep(Upkeep { mut git, .. })) => {
+            Some(
+                Job::Fetch(Fetch { mut git, .. })
+                | Job::Reviewed(KeepReviewed { mut git, .. })
+                | Job::Upkeep(Upkeep { mut git, .. }),
+            ) => {
                 let _succeeded = git.stop();
                 wait_for_helpers(incoming);
             }
@@ -891,7 +910,7 @@ impl Worker {
         }
         let cloning = match &self.job {
             Some(Job::Clone(clone)) => Some(&clone.cloning.repository),
-            Some(Job::Fetch(_) | Job::Upkeep(_)) | None => None,
+            Some(Job::Fetch(_) | Job::Reviewed(_) | Job::Upkeep(_)) | None => None,
         };
         if cloning.is_some_and(|cloning| cloning.is_same(&repository)) {
             return;
@@ -925,6 +944,7 @@ impl Worker {
         match job {
             Job::Clone(clone) => self.finish(clone, last_words),
             Job::Fetch(fetch) => self.finish_fetch(fetch, last_words),
+            Job::Reviewed(keeping) => self.finish_reviewed(keeping, last_words),
             Job::Upkeep(upkeep) => self.finish_upkeep(upkeep, last_words),
         }
     }
@@ -944,12 +964,15 @@ impl Worker {
                 opened: false,
                 handed: None,
                 viewed: BTreeSet::new(),
+                reviews: Reviews::default(),
             })
     }
 
     fn heard_news(&mut self) {
-        if let Some(Job::Fetch(fetch)) = &mut self.job {
-            fetch.news = true;
+        match &mut self.job {
+            Some(Job::Fetch(fetch)) => fetch.news = true,
+            Some(Job::Reviewed(keeping)) => keeping.news = true,
+            Some(Job::Clone(_) | Job::Upkeep(_)) | None => {}
         }
     }
 
@@ -1023,11 +1046,15 @@ impl Worker {
         }
     }
 
-    /// Starts a fetch, or else a clone, unless GitHub can't be reached.
+    /// Starts a fetch of heads, or else the keeping of reviewed commits, or else a clone, unless GitHub can't
+    /// be reached.
     fn start_fetch_or_clone(&mut self) {
         while self.job.is_none() && self.pace != Pace::Held {
             if let Some((repository, batch, mirror)) = self.next_batch() {
                 self.start_fetch(repository, batch, mirror);
+                continue;
+            }
+            if self.start_keeping_reviewed() {
                 continue;
             }
             if self.problem.is_some() {
@@ -1287,23 +1314,7 @@ impl Worker {
         let branches = (batch.branches.iter())
             .map(|branch| format!("+refs/heads/{branch}*:refs/heads/{branch}*\n"));
         let refspecs: String = heads.chain(branches).collect();
-        let args = [
-            // A mirror cloned before Tsugiki kept it has no `maintenance.auto=false` of its own.
-            OsStr::new("-c"),
-            OsStr::new("maintenance.auto=false"),
-            OsStr::new("-c"),
-            OsStr::new("http.lowSpeedLimit=1"),
-            OsStr::new("-c"),
-            OsStr::new("http.lowSpeedTime=60"),
-            OsStr::new("-C"),
-            mirror.as_os_str(),
-            OsStr::new("fetch"),
-            OsStr::new("--stdin"),
-            OsStr::new("--no-tags"),
-            OsStr::new("--no-write-fetch-head"),
-            OsStr::new("--prune"),
-            OsStr::new("origin"),
-        ];
+        let args = fetch_args(&mirror, &["--prune"]);
         match self.git.start(&args, refspecs.as_bytes()) {
             Ok(started) => {
                 self.listen(started.output);
@@ -1467,7 +1478,7 @@ impl Worker {
     fn state_of(&self, repository: &RepositoryName) -> MirrorState {
         let cloning = match &self.job {
             Some(Job::Clone(clone)) => Some(&clone.cloning),
-            Some(Job::Fetch(_) | Job::Upkeep(_)) | None => None,
+            Some(Job::Fetch(_) | Job::Reviewed(_) | Job::Upkeep(_)) | None => None,
         };
         if let Some(cloning) = cloning.filter(|cloning| cloning.repository.is_same(repository)) {
             return MirrorState::Cloning {
@@ -1658,6 +1669,32 @@ fn git_version(said: &str) -> Option<(u32, u32)> {
 /// `bytes` in whole megabytes, at most `u32::MAX`, which the window shows as it is.
 fn megabytes(bytes: u64) -> u32 {
     u32::try_from(bytes >> 20).unwrap_or(u32::MAX)
+}
+
+/// The arguments of a `git fetch` into `mirror` of the refspecs on its input, with `extra` options. A mirror
+/// cloned before Tsugiki kept it has no `maintenance.auto=false` of its own, and a connection that stalls
+/// for a minute fails the fetch.
+fn fetch_args<'a>(mirror: &'a Path, extra: &[&'a str]) -> Vec<&'a OsStr> {
+    let config = [
+        "-c",
+        "maintenance.auto=false",
+        "-c",
+        "http.lowSpeedLimit=1",
+        "-c",
+        "http.lowSpeedTime=60",
+        "-C",
+    ];
+    let options = ["--stdin", "--no-tags", "--no-write-fetch-head"];
+    (config.into_iter().map(OsStr::new))
+        .chain([mirror.as_os_str(), OsStr::new("fetch")])
+        .chain(
+            options
+                .into_iter()
+                .chain(extra.iter().copied())
+                .map(OsStr::new),
+        )
+        .chain([OsStr::new("origin")])
+        .collect()
 }
 
 /// Reads `git for-each-ref`'s lines of a commit and a ref. A ref the glob matched beside the head, such as

@@ -4,7 +4,7 @@
   import Conversation from "./Conversation.svelte";
   import { issueIcon, prIcon } from "./octicons";
   import StateIcon from "./StateIcon.svelte";
-  import { ago, backportWords, headline, prStateWords } from "./workbench-row";
+  import { ago, backportWords, commentCount, headline, prStateWords } from "./workbench-row";
 
   let {
     repository,
@@ -48,10 +48,7 @@
    * to. */
   const restOfLine = (view: IssueView) => {
     const parts: string[] = [];
-    if (view.content) {
-      const count = view.content.comments.length + view.content.earlier_comments;
-      parts.push(count === 1 ? "1 comment" : `${String(count)} comments`);
-    }
+    if (view.content) parts.push(commentCount(view.content.comments.length + view.content.earlier_comments));
     if (view.assignees.length > 0) parts.push(`assigned to ${view.assignees.join(", ")}`);
     return parts.map((part) => ` · ${part}`).join("");
   };

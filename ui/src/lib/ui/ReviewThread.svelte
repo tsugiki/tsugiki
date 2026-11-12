@@ -9,7 +9,7 @@
   import { REASONS } from "./hidden";
   import RenderedHtml from "./RenderedHtml.svelte";
   import ThreadCode from "./ThreadCode.svelte";
-  import { ago } from "./workbench-row";
+  import { ago, commentCount } from "./workbench-row";
 
   let {
     thread,
@@ -32,7 +32,7 @@
 
   const count = $derived(thread.comments.length + thread.later_comments);
   const started = $derived(thread.comments.at(0)?.author ?? "deleted user");
-  const summary = $derived(`${started} · ${count === 1 ? "1 comment" : `${String(count)} comments`}`);
+  const summary = $derived(`${started} · ${commentCount(count)}`);
   /** Where the thread is, when it isn't under a line of the diff. */
   const where = $derived.by(() => {
     const at = thread.at;

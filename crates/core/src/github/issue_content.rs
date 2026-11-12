@@ -65,8 +65,9 @@ impl Thread {
 }
 
 /// The fields an Issue and a PR share: the description, when it was opened, and the last 30 comments.
-pub(super) const CONVERSATION_FIELDS: &str = "bodyHTML createdAt comments(last: 30) { totalCount nodes { \
-                                              author { login } createdAt bodyHTML isMinimized minimizedReason } }";
+pub(super) const CONVERSATION_FIELDS: &str = "bodyHTML createdAt comments(last: 30) { totalCount \
+                                              nodes { author { login } createdAt bodyHTML isMinimized \
+                                              minimizedReason } }";
 
 /// The reason someone gave for hiding a comment on GitHub. The comment folds to it until the user opens it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]

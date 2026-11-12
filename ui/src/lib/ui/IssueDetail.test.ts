@@ -135,11 +135,6 @@ it("counts one comment as one, and leaves out when a read from before Tsugiki as
   const author = screen.getByText("issue-author");
   expect(author.getAttribute("title")).toBeNull();
   expect(author.parentElement?.textContent).toBe("issue-author · 1 comment");
-});
-
-it("counts one earlier comment as one", async () => {
-  await shown({ ...view, content: content("<p>Short</p>", 1) });
-
   expect(screen.getByText("1 earlier comment is on GitHub.")).toBeTruthy();
 });
 

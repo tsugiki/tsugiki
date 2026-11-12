@@ -8,6 +8,7 @@ import {
   type Lines,
   type ThreadAnchor,
 } from "./diff-layout";
+import type { Page } from "./file-pages";
 
 /** Files whose headers sit at `rows`, with no gaps and no changes to pair. */
 const at = (...rows: number[]): LaidFile[] =>
@@ -470,5 +471,77 @@ describe("DiffLayout", () => {
 
     expect(layout.count).toBe(0);
     expect(layout.pieces(0, 10)).toEqual([]);
+  });
+
+  describe("one page at a time", () => {
+    /** Three files at rows 0, 5 and 9 of 12, with threads under rows 2 and 6, and one on a file no longer
+     * in the diff. */
+    const files = at(0, 5, 9);
+    const laid = anchored({ kind: "row", row: 2 }, { kind: "row", row: 6 }, { kind: "end" });
+    const page = (only: Page, collapsed: (file: number) => boolean = () => false) =>
+      new DiffLayout(12, files, collapsed, undefined, "unified", laid, "", only);
+
+    it("shows only one file's rows, with its own threads", () => {
+      const layout = page({ kind: "file", file: 1 });
+
+      expect(places(layout)).toEqual([5, 6, "t1", 7, 8]);
+      expect(layout.pieces(0, layout.count - 1)).toEqual([[5, 9]]);
+      expect(layout.fileAt(5)).toBe(1);
+      expect(layout.fileAt(0)).toBeUndefined();
+    });
+
+    it("shows the last file to the diff's end", () => {
+      expect(places(page({ kind: "file", file: 2 }))).toEqual([9, 10, 11]);
+    });
+
+    it("shows only the header of a collapsed file", () => {
+      expect(places(page({ kind: "file", file: 1 }, (file) => file === 1))).toEqual([5]);
+    });
+
+    it("shows the threads on files no longer in the diff on a page of their own", () => {
+      expect(places(page({ kind: "gone" }))).toEqual(["gone", "t2"]);
+    });
+
+    it("shows no rows on the page of NEWS entries, nor for a file the diff doesn't have", () => {
+      expect(page({ kind: "news" }).count).toBe(0);
+      expect(page({ kind: "file", file: 3 }).count).toBe(0);
+    });
+
+    it("keeps the place as the tab switches between all files and one", () => {
+      const all = new DiffLayout(12, files, () => false, undefined, "unified", laid);
+      const one = page({ kind: "file", file: 1 });
+      const sixth = all.placeOfRow(6) ?? -1;
+
+      expect(one.moved(all, sixth)).toBe(1);
+      expect(all.moved(one, 1)).toBe(sixth);
+      expect(all.moved(one, 2)).toBe(all.threadAt("t1"));
+    });
+  });
+
+  it("names the page each place belongs to, so the tab can show the one at the top alone", () => {
+    const layout = new DiffLayout(
+      12,
+      at(0, 5, 9),
+      () => false,
+      undefined,
+      "unified",
+      anchored({ kind: "row", row: 2 }, { kind: "end" }),
+    );
+    const pageAt = (place: number) => layout.pageAt(place);
+
+    expect([
+      layout.headerOf({ kind: "file", file: 1 }),
+      layout.headerOf({ kind: "file", file: 5 }),
+      layout.headerOf({ kind: "gone" }),
+      layout.headerOf({ kind: "news" }),
+    ]).toEqual([layout.placeOfRow(5), undefined, layout.count - 2, undefined]);
+
+    expect(pageAt(0)).toEqual({ kind: "file", file: 0 });
+    expect(pageAt(layout.threadAt("t0") ?? -1)).toEqual({ kind: "file", file: 0 });
+    expect(pageAt(layout.placeOfRow(7) ?? -1)).toEqual({ kind: "file", file: 1 });
+    expect(pageAt(layout.placeOfRow(11) ?? -1)).toEqual({ kind: "file", file: 2 });
+    expect(pageAt(layout.threadAt("t1") ?? -1)).toEqual({ kind: "gone" });
+    expect(pageAt(layout.count - 2)).toEqual({ kind: "gone" });
+    expect(pageAt(layout.count + 5)).toBeUndefined();
   });
 });

@@ -3,6 +3,29 @@
 Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.md](../../CONTEXT.md).
 
 - The whole PR scrolls as one list, in unified or side-by-side view.
+- The Files tab has two modes, all files and one file at a time
+  ([#605](https://github.com/tsugiki/tsugiki/issues/605)). All files, the default, is the one list above
+  ([ADR 0001](../adr/0001-standalone-tauri-gui-with-in-app-review.md)). One file at a time shows a single
+  file under a bar that reads "‹ 12 of 48 ›" and the file's path. `settings.toml` picks the mode every PR
+  opens in:
+
+  ```toml
+  [diff]
+  files = "one"   # "all" or "one"
+  ```
+
+  A value other than the two keeps "all", and the status bar names the file and the line. The toggle in
+  the Files tab's header, `Ctrl+K O` and "View: One File at a Time" / "View: All Files" in the command
+  palette switch the PR on show until it closes. Switching keeps the place: the file at the top of the tab
+  becomes the one shown, and switching back scrolls to where it was. Tsugiki never switches by itself,
+  however large the PR.
+- One file at a time, the NEWS entries come first, on a page of their own, then each file in the order of
+  all files, a Generated file collapsed to its header as there. The threads on files no longer in the diff
+  get a last page. `Alt+PageDown` and `Alt+PageUp` go to the next and the previous page, and stop at either
+  end; with all files they scroll to the next or the previous file's header. `F7`, `F8` and Find in diff
+  cover the whole PR, and show the file of the change, the thread or the match they move to. So does
+  anything that opens a file: a thread opened from the Conversation, and a NEWS entry's Show file. After a
+  move to a page, `F7` and `F8` go on from there.
 - Hidden lines around each change can be shown, as on GitHub: 20 more above or below a hunk, the rest of a
   short gap, or the whole file. They are read from the file at the PR’s head in the mirror, so expanding costs
   no API call. New line comments stay on lines of the diff, because GitHub's API accepts them only there; the

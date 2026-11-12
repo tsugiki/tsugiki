@@ -51,6 +51,8 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 - Two TOML files, one that travels between machines and one that stays, and a portable mode.
 - `[appearance]` in `settings.toml`: `theme` (System, Light or Dark), and `light_theme` and `dark_theme`,
   the **Theme** of each side.
+- `[diff]` in `settings.toml`: `files`, whether each PR's Files tab opens on all its files or one at a
+  time.
 
 ### Themes ([themes.md](devel/themes.md))
 
@@ -82,6 +84,7 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 
 - The whole PR as one list, unified or side by side, with hidden lines on demand, any file collapsible to its
   header, Generated files collapsed from the start, and the NEWS entries on top.
+- One file at a time, as an option beside the whole list.
 - Threads in place, **Outdated threads**, folded resolved and hidden comments, and each Review as one block
   in the Conversation tab.
 

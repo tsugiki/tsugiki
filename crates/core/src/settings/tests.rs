@@ -14,6 +14,9 @@ const HIDDEN: Settings = Settings {
         light_theme: LightTheme::VsCodeLightModern,
         dark_theme: DarkTheme::VsCodeDarkModern,
     },
+    diff: DiffSettings {
+        files: DiffFiles::All,
+    },
     repositories: Vec::new(),
 };
 
@@ -249,6 +252,81 @@ fn a_save_refuses_while_appearance_holds_a_value_tsugiki_cant_read() {
         "{message}"
     );
     assert_eq!(after, before);
+}
+
+#[test]
+fn diff_files_picks_one_file_at_a_time() {
+    let loaded = loaded_from("diff-one", "[diff]\nfiles = \"one\"\n");
+
+    assert_eq!(loaded.settings.diff.files, DiffFiles::One);
+    assert_eq!(loaded.problems, Vec::<String>::new());
+}
+
+#[test]
+fn every_pr_opens_on_all_its_files_unless_diff_files_says_otherwise() {
+    let loaded = loaded_from("diff-left-out", "[diff]\n");
+
+    assert_eq!(loaded.settings.diff.files, DiffFiles::All);
+    assert_eq!(Settings::default().diff.files, DiffFiles::All);
+}
+
+#[test]
+fn a_diff_files_tsugiki_cant_read_keeps_all_files_and_is_reported() {
+    let text = "[status_bar]\nvisible = false\n\n[diff]\nfiles = \"two\"\n";
+    let loaded = loaded_from("diff-bad", text);
+
+    assert_eq!(loaded.settings, HIDDEN, "the rest of the file still counts");
+    let problems: Vec<&str> = loaded
+        .problems
+        .iter()
+        .map(|problem| problem.split_once("settings.toml").unwrap().1)
+        .collect();
+    assert_eq!(
+        problems,
+        [r#", line 5: files isn't "all" or "one", so each PR opens on all its files."#]
+    );
+}
+
+/// As with `[appearance]`, saving would write the default over what the user wrote.
+#[test]
+fn a_save_refuses_while_diff_holds_a_value_tsugiki_cant_read() {
+    let (folders, root) = temp_folders("diff-unread-save");
+    let before = "[diff]\nfiles = \"One\"\n";
+    fs::write(folders.settings_file(), before).unwrap();
+
+    let refusal = SettingsFiles::load(folders.clone()).write(&HIDDEN);
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    let message = refusal.unwrap_err().message;
+    assert!(
+        message.contains(r#"settings.toml, line 2: files isn't "all" or "one""#),
+        "{message}"
+    );
+    assert_eq!(after, before);
+}
+
+#[test]
+fn diff_files_is_saved_only_when_it_isnt_all() {
+    let one = Settings {
+        diff: DiffSettings {
+            files: DiffFiles::One,
+        },
+        ..Settings::default()
+    };
+
+    assert_eq!(
+        saved_over("diff-save", "", &one),
+        "[diff]\nfiles = \"one\"\n"
+    );
+    assert_eq!(
+        saved_over(
+            "diff-save-default",
+            "[diff]\nfiles = \"one\"\n",
+            &Settings::default()
+        ),
+        ""
+    );
 }
 
 #[test]

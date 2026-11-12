@@ -1470,3 +1470,210 @@ it("closes the search, forgetting its text and its matches", async () => {
   expect([files.searching, files.query, files.search, files.foundIn(3)]).toEqual([false, "", undefined, []]);
   expect(files.diffWantsFocus).toBe(true);
 });
+
+/** A Files tab for PR 11 that shows one file at a time, as `[diff] files = "one"` opens it. */
+const oneAtATime = async (answer: PrFiles) => {
+  core.pullRequestFiles.mockResolvedValue(ok(answer));
+  const files = new PrFilesState("python/cpython", 11, timer(), new DiffViewChoice(), "one");
+  await files.load();
+  return files;
+};
+
+/** A NEWS entry added at `path`. */
+const newsEntry = (path: string) => ({ path, section: "Library", issue: null, blocks: [] });
+
+/** The layout's places: a row by its number, a thread once by its id, and anything else by its kind. */
+const placesOf = (files: PrFilesState) =>
+  Array.from({ length: files.layout.count }, (_, place) => files.layout.at(place)).flatMap(
+    (at): (string | number)[] => {
+      if (at.kind === "thread") return at.into === 0 ? [at.id] : [];
+      return [at.kind === "row" ? at.row : at.kind];
+    },
+  );
+
+it("opens on all the files unless the settings say one at a time", async () => {
+  const files = await loaded(changed());
+
+  expect([files.mode, files.shown]).toEqual(["all", undefined]);
+});
+
+it("opens one file at a time on the NEWS entries, then walks the files in order and stops at either end", async () => {
+  const files = await oneAtATime({
+    ...ready("abc", 6, [file("Lib/ast.py", 0), file("Misc/NEWS.d/next/x.rst", 3)]),
+    news: [newsEntry("Misc/NEWS.d/next/x.rst")],
+  });
+
+  expect([files.mode, files.shown, files.layout.count]).toEqual(["one", { kind: "news" }, 0]);
+  files.nextFile(-1);
+  expect([files.shown, files.jump]).toEqual([{ kind: "news" }, undefined]);
+  files.nextFile(1);
+  expect([files.shown, files.jump, placesOf(files)]).toEqual([
+    { kind: "file", file: 0 },
+    { page: { kind: "file", file: 0 } },
+    [0, 1, 2],
+  ]);
+  files.nextFile(1);
+  files.nextFile(1);
+  expect([files.shown, placesOf(files)]).toEqual([{ kind: "file", file: 1 }, [3, 4, 5]]);
+  files.nextFile(-1);
+  expect(files.shown).toEqual({ kind: "file", file: 0 });
+});
+
+it("gives a Generated file its turn, collapsed to its header", async () => {
+  const files = await oneAtATime(changed());
+
+  files.nextFile(1);
+
+  expect([files.shown, placesOf(files)]).toEqual([{ kind: "file", file: 1 }, [20]]);
+});
+
+it("shows the threads on files the PR no longer changes on a last page of their own", async () => {
+  const files = await oneAtATime({
+    ...threaded(),
+    threads: shown(thread("T2", 2), thread("gone", { kind: "gone", path: "Lib/old.py", code: null })),
+  });
+
+  files.nextFile(1);
+  files.nextFile(1);
+
+  expect([files.shown, placesOf(files)]).toEqual([{ kind: "gone" }, ["gone", "gone"]]);
+  files.reveal("T2");
+  expect([files.shown, placesOf(files)]).toEqual([
+    { kind: "file", file: 0 },
+    [0, 1, 2, "T2", ...range(3, 20)],
+  ]);
+  files.reveal("gone");
+  expect(files.shown).toEqual({ kind: "gone" });
+});
+
+/** The numbers from `start` up to `end`. */
+const range = (start: number, end: number) => Array.from({ length: end - start }, (_, at) => start + at);
+
+it("goes to the header of the file after the one at the top in all files, and back to the NEWS entries", async () => {
+  const files = await loaded({ ...changed(), news: [newsEntry("Misc/NEWS.d/next/x.rst")] });
+
+  files.scrolled(-2);
+  files.nextFile(-1);
+  expect(files.jump).toBeUndefined();
+  files.nextFile(1);
+  expect(files.jump).toEqual({ page: { kind: "file", file: 0 } });
+  files.scrolled(files.layout.placeOfRow(7) ?? -1);
+  files.nextFile(1);
+  expect(files.jump).toEqual({ page: { kind: "file", file: 1 } });
+  files.nextFile(-1);
+  expect(files.jump).toEqual({ page: { kind: "news" } });
+  // Past the last place, as a scroll can land while the layout shrinks, it starts from the first page.
+  files.scrolled(999);
+  files.nextFile(1);
+  expect(files.jump).toEqual({ page: { kind: "file", file: 0 } });
+});
+
+it("switches to one file at a time on the file at the top, and back, for as long as the PR stays open", async () => {
+  const files = await loaded(changed());
+  files.scrolled(files.layout.placeOfRow(20) ?? -1);
+
+  files.toggleMode();
+  expect([files.mode, files.shown, placesOf(files)]).toEqual(["one", { kind: "file", file: 1 }, [20]]);
+  files.toggleMode();
+  expect([files.mode, files.shown, files.layout.count]).toEqual(["all", undefined, 21]);
+});
+
+it("carries F7 on into the next file, showing it, and goes on from a file a move shows", async () => {
+  const files = await oneAtATime(changed());
+
+  expect(changes(files, 1, 3)).toEqual([{ row: 2 }, { row: 6 }, { row: 23 }]);
+  expect([files.shown, files.collapsed(1)]).toEqual([{ kind: "file", file: 1 }, false]);
+  files.nextFile(-1);
+  expect(changes(files, 1, 1)).toEqual([{ row: 2 }]);
+  files.showFile(1);
+  expect(changes(files, -1, 1)).toEqual([{ row: 6 }]);
+  expect(files.shown).toEqual({ kind: "file", file: 0 });
+});
+
+it("carries F8 on into the next file, and goes on from a file a move shows", async () => {
+  const files = await oneAtATime(threaded());
+
+  files.nextThread(1);
+  files.nextThread(1);
+  files.nextThread(1);
+  expect([files.jump, files.shown]).toEqual([{ id: "T25" }, { kind: "file", file: 1 }]);
+  files.showFile(1);
+  files.nextThread(-1);
+  expect([files.jump, files.shown]).toEqual([{ id: "T9" }, { kind: "file", file: 0 }]);
+  files.showFile(1);
+  files.nextThread(1);
+  expect(files.jump).toEqual({ id: "T25" });
+});
+
+it("keeps the layout as F7 moves within the file on show", async () => {
+  const files = await oneAtATime(changed());
+  files.nextChange(1);
+  const layout = files.layout;
+
+  files.nextChange(1);
+
+  expect(files.jump).toEqual({ row: 6 });
+  expect(files.layout).toBe(layout);
+});
+
+it("starts F8 from the first thread of a newer diff, not from the page of the one before", async () => {
+  const files = await oneAtATime(threaded());
+  files.showFile(1);
+
+  core.pullRequestFiles.mockResolvedValue(ok({ ...threaded(), head: "def" }));
+  await files.ask();
+  files.nextThread(1);
+
+  expect(files.jump).toEqual({ id: "T2" });
+});
+
+it("starts F8 from the first thread after a move to the NEWS entries", async () => {
+  const files = await oneAtATime({ ...threaded(), news: [newsEntry("Misc/NEWS.d/next/x.rst")] });
+  files.reveal("T25");
+
+  files.nextFile(-1);
+  files.nextFile(-1);
+  files.nextThread(1);
+
+  expect([files.jump, files.shown]).toEqual([{ id: "T2" }, { kind: "file", file: 0 }]);
+});
+
+it("finds text across the whole PR, showing the file of each match", async () => {
+  const files = await oneAtATime(changed());
+  core.pullRequestFind.mockResolvedValue(
+    found([
+      [3, 0, 2],
+      [24, 1, 3],
+    ]),
+  );
+
+  await files.find("ab");
+  expect(files.shown).toEqual({ kind: "file", file: 0 });
+  files.nextMatch(1);
+  expect([files.shown, files.jump]).toEqual([{ kind: "file", file: 1 }, { row: 24 }]);
+});
+
+it("shows a file by its path, as a NEWS entry asks, and nothing for a path the diff doesn't change", async () => {
+  const files = await oneAtATime(changed());
+
+  files.showPath("Python/generated.c.h");
+  expect([files.shown, files.jump]).toEqual([{ kind: "file", file: 1 }, { page: { kind: "file", file: 1 } }]);
+  files.jump = undefined;
+  files.showPath("Lib/old.py");
+  files.showFile(7);
+  expect([files.shown, files.jump]).toEqual([{ kind: "file", file: 1 }, undefined]);
+});
+
+it("keeps the file on show when a newer diff comes, wherever that one lists it", async () => {
+  const files = await oneAtATime(changed());
+  files.showFile(1);
+
+  core.pullRequestFiles.mockResolvedValue(
+    ok(
+      ready("def", 30, [file("Lib/new.py", 0), file("Lib/os.py", 5), file("Python/generated.c.h", 10, true)]),
+    ),
+  );
+  await files.ask();
+
+  expect(files.shown).toEqual({ kind: "file", file: 2 });
+});

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { chordName, currentOs, keyGuard, keyLabel, keyName, keysForBrowser } from "./keys";
+import { chordLabel, chordName, currentOs, keyGuard, keyLabel, keyName, keysForBrowser } from "./keys";
 
 function press(init: KeyboardEventInit): KeyboardEvent {
   return new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
@@ -118,6 +118,17 @@ describe("keyLabel", () => {
     expect([keyLabel("alt+arrowleft", "other"), keyLabel("alt+arrowright", "mac")]).toEqual([
       "Alt+←",
       "Option+→",
+    ]);
+  });
+
+  it("names a chord's two presses, with Cmd on macOS", () => {
+    expect([chordLabel("ctrl+k o", "other"), chordLabel("ctrl+k z", "mac")]).toEqual(["Ctrl+K O", "Cmd+K Z"]);
+  });
+
+  it("names Page Down and Page Up as keyboard.md does", () => {
+    expect([keyLabel("alt+pagedown", "other"), keyLabel("ctrl+pageup", "mac")]).toEqual([
+      "Alt+PageDown",
+      "Cmd+PageUp",
     ]);
   });
 });

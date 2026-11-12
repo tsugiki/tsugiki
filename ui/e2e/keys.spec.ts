@@ -4,7 +4,13 @@ import { appearance } from "./themes.ts";
 
 const core: CoreAnswers = {
   settings: {
-    settings: { status_bar: { visible: true }, releases: { check: true }, appearance, repositories: [] },
+    settings: {
+      status_bar: { visible: true },
+      releases: { check: true },
+      appearance,
+      diff: { files: "all" },
+      repositories: [],
+    },
     problems: [],
   },
   status: { state: "online", login: "octocat" },

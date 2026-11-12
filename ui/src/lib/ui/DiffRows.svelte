@@ -6,7 +6,8 @@
      beside its added ones on the right (#183). A review thread takes as many rows' places under its line
      as it is tall, and the tab measures it once drawn (#184). A thread on a line no hunk shows opens the
      lines around it, with buttons above and below for the lines still hidden, and the threads on files no
-     longer in the diff come under a heading after the last file (#185). -->
+     longer in the diff come under a heading after the last file (#185). One file at a time, it shows the
+     page on show: the NEWS entries, one file, or those threads (#605). -->
 <script lang="ts">
   import { untrack } from "svelte";
   import {
@@ -59,13 +60,22 @@
   /** Room for the longest line, so the scroll width doesn't change as rows come and go. */
   const columns = $derived(files.reduce((widest, file) => Math.max(widest, file.columns), diff.columns));
   const sideBySide = $derived(diff.shownAs === "side-by-side");
+  /** The NEWS entries, which show above all the files, or on a page of their own one file at a time. */
+  const newsShown = $derived(diff.shown === undefined || diff.shown.kind === "news" ? news : []);
 
   $effect(() => {
     diff.need(first, last);
   });
 
+  // The tab goes to the file after the one at the top, and shows that one alone as it switches.
+  $effect(() => {
+    diff.scrolled(Math.floor((scrollTop - newsHeight) / ROW));
+  });
+
   /** The layout the rows were last drawn from, which a new layout starts from. */
   let drawn: PrFilesState["layout"] | undefined;
+  /** Whether the NEWS entries showed above the rows last drawn. */
+  let drawnNews = false;
   /** Scrolls to the thread, the change or the match the user moved to, with a few rows of code above it.
    * Otherwise, keeps the place at the top in view as the layout changes, as the view switches or a thread
    * above it grows: the same row, line, button or thread, as far into it as it was. */
@@ -73,35 +83,46 @@
     const layout = diff.layout;
     const jump = diff.jump;
     const before = drawn;
+    const newsBefore = drawnNews;
     drawn = layout;
+    drawnNews = untrack(() => newsShown.length > 0);
     untrack(() => {
-      const target = scrolledTo(layout, before, jump);
+      const target = scrolledTo(layout, before, jump, newsBefore !== drawnNews);
       if (target === undefined || scroller === undefined || newsBox === undefined) return;
-      scroller.scrollTop = newsBox.offsetHeight + target.place * ROW + target.into;
+      scroller.scrollTop = target === "top" ? 0 : newsBox.offsetHeight + target.place * ROW + target.into;
       // The rows to draw follow at once, as the scroll event comes after the next frame.
       scrollTop = scroller.scrollTop;
     });
   });
 
-  /** The place the tab scrolls to as `layout` replaces `before` or the user moves to a thread, a change or a
-   * match, and how many pixels into it, if it scrolls. It takes the move, so a later layout doesn't scroll
-   * back to it. */
+  /** The place the tab scrolls to as `layout` replaces `before` or the user moves to a thread, a change, a
+   * match or a page, and how many pixels into it, if it scrolls, or the top for the NEWS entries, which
+   * sit above every place. It takes the move, so a later layout doesn't scroll back to it. `newsMoved`
+   * says the NEWS entries above the rows went or came back with the layout, as switching between all
+   * the files and one at a time does, so the same place sits higher or lower. */
   function scrolledTo(
     layout: PrFilesState["layout"],
     before: PrFilesState["layout"] | undefined,
     jump: PrFilesState["jump"],
-  ): { place: number; into: number } | undefined {
+    newsMoved: boolean,
+  ): { place: number; into: number } | "top" | undefined {
     if (jump !== undefined) {
       diff.jump = undefined;
+      if ("page" in jump) {
+        if (jump.page.kind === "news") return "top";
+        const header = layout.headerOf(jump.page);
+        return header === undefined ? undefined : { place: header, into: 0 };
+      }
       const place = "id" in jump ? layout.threadAt(jump.id) : layout.placeOfRow(jump.row);
       if (place === undefined || ("row" in jump && inView(place))) return undefined;
       return { place: Math.max(0, place - LEAD), into: 0 };
     }
+    // `newsHeight` is still the height of the NEWS entries above the rows last drawn.
     const into = scrollTop - newsHeight;
-    if (before === undefined || into <= 0) return undefined;
+    if (before === undefined || into < 0) return undefined;
     const place = Math.floor(into / ROW);
     const moved = layout.moved(before, place);
-    return moved === place ? undefined : { place: moved, into: into % ROW };
+    return moved === place && !newsMoved ? undefined : { place: moved, into: into % ROW };
   }
 
   /** Whether place `place` shows whole: a change or a match there stays where it is, as VS Code leaves a
@@ -243,7 +264,13 @@
   }}
 >
   <div bind:this={newsBox} bind:clientHeight={newsHeight}>
-    <NewsEntries {news} {onlink} />
+    <NewsEntries
+      news={newsShown}
+      {onlink}
+      onfile={(path) => {
+        diff.showPath(path);
+      }}
+    />
   </div>
   <div
     class="spacer"

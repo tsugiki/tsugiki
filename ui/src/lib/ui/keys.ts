@@ -26,6 +26,8 @@ const OWNED_KEYS = [
   "ctrl+alt+u",
   "ctrl+pagedown",
   "ctrl+pageup",
+  "alt+pagedown",
+  "alt+pageup",
   "ctrl+enter",
   "ctrl+shift+e",
   "ctrl+k",
@@ -70,6 +72,7 @@ export function isChordStart(name: string): name is ChordStart {
  * stage: the screen that owns one binds it, as `RepositoryHome` binds `ctrl+k z`. */
 const OWNED_CHORDS = [
   "ctrl+k m",
+  "ctrl+k o",
   "ctrl+k p",
   "ctrl+k z",
 ] as const satisfies readonly `${ChordStart} ${string}`[];
@@ -160,25 +163,33 @@ export function keyName(e: KeyboardEvent, os: Os): string | null {
 }
 
 const MAC_NAMES: Readonly<Record<string, string>> = { ctrl: "Cmd", alt: "Option" };
-const ARROWS: Readonly<Record<string, string>> = {
+const KEY_NAMES: Readonly<Record<string, string>> = {
   arrowleft: "←",
   arrowright: "→",
   arrowup: "↑",
   arrowdown: "↓",
+  pagedown: "PageDown",
+  pageup: "PageUp",
 };
 
-/** A binding as the user reads it: "ctrl+alt+b" is "Ctrl+Alt+B", or "Cmd+Option+B" on macOS, and
- * "alt+arrowleft" is "Alt+←". */
+/** A binding as the user reads it: "ctrl+alt+b" is "Ctrl+Alt+B", or "Cmd+Option+B" on macOS,
+ * "alt+arrowleft" is "Alt+←", and "alt+pagedown" is "Alt+PageDown". */
 export function keyLabel(name: OwnedKey, os: Os): string {
   return name
     .split("+")
     .map(
       (part) =>
         (os === "mac" ? MAC_NAMES[part] : undefined) ??
-        ARROWS[part] ??
+        KEY_NAMES[part] ??
         part.charAt(0).toUpperCase() + part.slice(1),
     )
     .join("+");
+}
+
+/** A chord as the user reads it: "ctrl+k o" is "Ctrl+K O", or "Cmd+K O" on macOS. */
+export function chordLabel(chord: OwnedChord, os: Os): string {
+  const [first, second] = chord.split(" ") as [ChordStart, string];
+  return `${keyLabel(first, os)} ${second.toUpperCase()}`;
 }
 
 /** Which OS this is, for `keyName`. */

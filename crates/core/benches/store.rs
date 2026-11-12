@@ -11,6 +11,7 @@ use tsugiki_core::github::CommitSha;
 use tsugiki_core::github::activity::{Activity, ActivityKind, ItemActivity};
 use tsugiki_core::github::issue_content::{IssueComment, IssueContent};
 use tsugiki_core::github::issues::{IssueFacts, IssueState};
+use tsugiki_core::github::labels::Label;
 use tsugiki_core::github::pull_requests::{
     CiState, LatestReview, OffDefault, PrState, PullRequestFacts, ReviewState,
 };
@@ -317,6 +318,7 @@ fn pull_request(number: u32) -> (PullRequestFacts, ItemActivity) {
             .then(|| someone("core-dev", number + 3, 30))
             .into_iter()
             .collect(),
+        labels: vec![Label::new("awaiting review"), Label::new("type-bug")],
         closing_issues: vec![FIRST_ISSUE + number % ISSUES],
         off_default,
     };
@@ -334,6 +336,7 @@ fn issue(offset: u32) -> (IssueFacts, ItemActivity) {
             .then(|| someone("core-dev", offset, 30))
             .into_iter()
             .collect(),
+        labels: vec![Label::new("3.14"), Label::new("type-bug")],
         updated_at: updated(offset),
         state: Some(IssueState::Open),
     };

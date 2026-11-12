@@ -9,6 +9,7 @@ use crate::filters::FilterQuery;
 use crate::github::CommitSha;
 use crate::github::issue_content::HiddenReason;
 use crate::github::issues::IssueState;
+use crate::github::labels::Label;
 use crate::github::pull_request_content::{Anchor, Resolution, Side, Submission};
 use crate::github::pull_requests::{CiState, PrState, ReviewState};
 use crate::github::refresh::Etag;
@@ -39,6 +40,18 @@ impl ToSql for Login {
 }
 
 impl FromSql for Login {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        value.as_str().map(Self::new)
+    }
+}
+
+impl ToSql for Label {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        self.as_str().to_sql()
+    }
+}
+
+impl FromSql for Label {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         value.as_str().map(Self::new)
     }

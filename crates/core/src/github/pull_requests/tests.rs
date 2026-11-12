@@ -62,6 +62,7 @@ fn pr_json() -> serde_json::Value {
         ] },
         "author": { "login": "some-author" },
         "assignees": { "nodes": [{ "login": "some-reviewer" }] },
+        "labels": { "nodes": [{ "name": "skip news" }, null, { "name": "awaiting review" }] },
         "reviewRequests": { "nodes": [
             { "requestedReviewer": { "login": "Octocat" } },
             { "requestedReviewer": {} },
@@ -352,6 +353,7 @@ fn a_fetched_pr_is_read_into_its_facts() {
                 state: ReviewState::ChangesRequested,
             }],
             assignees: vec![Login::new("some-reviewer")],
+            labels: vec![Label::new("awaiting review"), Label::new("skip news")],
             closing_issues: vec![7],
             merge_commit: None,
             base: Some(sha("0123456789abcdef0123456789abcdef01234567")),
@@ -447,6 +449,7 @@ fn a_null_in_a_pull_requests_lists_is_left_out() {
         "closingIssuesReferences": { "nodes": [null] },
         "author": null,
         "assignees": { "nodes": [null, { "login": "octocat" }] },
+        "labels": { "nodes": [null] },
         "reviewRequests": { "nodes": [null] },
         "timelineItems": { "nodes": [] },
         "latestReviews": { "nodes": [null] },
@@ -579,6 +582,7 @@ fn a_recorded_pr_carries_the_commit_its_branch_is_at() {
     for pr in &batch.pull_requests {
         assert!(pr.head.is_some(), "PR #{} has no head", pr.number);
     }
+    assert!(batch.pull_requests.iter().any(|pr| !pr.labels.is_empty()));
 }
 
 #[test]

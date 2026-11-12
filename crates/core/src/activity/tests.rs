@@ -50,6 +50,7 @@ fn pull_request(number: u32, author: &Login) -> PullRequestFacts {
         review_requests: vec![],
         latest_reviews: vec![],
         assignees: vec![],
+        labels: vec![],
         closing_issues: vec![],
         merge_commit: None,
         base: None,
@@ -660,6 +661,7 @@ fn someone_elses_comment_on_an_issue_is_new_activity() {
         title: "An Issue".to_owned(),
         author: Some(colleague()),
         assignees: vec![],
+        labels: vec![],
         updated_at: hours_ago(1),
         state: Some(IssueState::Open),
     };

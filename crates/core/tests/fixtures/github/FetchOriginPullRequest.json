@@ -78,6 +78,13 @@
           },
           "headRefOid": "c8b5a796b157527afefa6cc09edc875a4740b909",
           "isDraft": false,
+          "labels": {
+            "nodes": [
+              {
+                "name": "skip news"
+              }
+            ]
+          },
           "lastCommit": {
             "nodes": [
               {
@@ -372,7 +379,7 @@
       }
     }
   },
-  "query": "query FetchOriginPullRequest($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { number title state isDraft updatedAt baseRefName body mergeCommit { oid } baseRefOid headRefOid repository { nameWithOwner defaultBranchRef { name } } closingIssuesReferences(first: 100) { nodes { number repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } commits(first: 100) { totalCount nodes { commit { message parents { totalCount } committer { user { login } } } } } timelineItems(last: 50, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW, READY_FOR_REVIEW_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, MENTIONED_EVENT, REVIEW_REQUESTED_EVENT, ASSIGNED_EVENT]) { nodes { __typename ... on PullRequestCommit { commit { committedDate author { name user { login } } committer { name user { login } } } } ... on IssueComment { createdAt author { __typename login } bodyText } ... on PullRequestReview { submittedAt author { __typename login } } ... on ReadyForReviewEvent { createdAt actor { __typename login } } ... on HeadRefForcePushedEvent { createdAt actor { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } ... on ReviewRequestedEvent { createdAt requestedReviewer { ... on User { login } ... on Bot { login } } } ... on AssignedEvent { createdAt assignee { ... on User { login } ... on Bot { login } } } } } } } rateLimit { remaining resetAt } }",
+  "query": "query FetchOriginPullRequest($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { number title state isDraft updatedAt baseRefName body mergeCommit { oid } baseRefOid headRefOid repository { nameWithOwner defaultBranchRef { name } } closingIssuesReferences(first: 100) { nodes { number repository { nameWithOwner } } } author { login } assignees(first: 20) { nodes { login } } labels(first: 100) { nodes { name } } reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } } } } latestReviews(first: 100) { nodes { author { login } state } } lastCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } commits(first: 100) { totalCount nodes { commit { message parents { totalCount } committer { user { login } } } } } timelineItems(last: 50, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW, READY_FOR_REVIEW_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, MENTIONED_EVENT, REVIEW_REQUESTED_EVENT, ASSIGNED_EVENT]) { nodes { __typename ... on PullRequestCommit { commit { committedDate author { name user { login } } committer { name user { login } } } } ... on IssueComment { createdAt author { __typename login } bodyText } ... on PullRequestReview { submittedAt author { __typename login } } ... on ReadyForReviewEvent { createdAt actor { __typename login } } ... on HeadRefForcePushedEvent { createdAt actor { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } ... on ReviewRequestedEvent { createdAt requestedReviewer { ... on User { login } ... on Bot { login } } } ... on AssignedEvent { createdAt assignee { ... on User { login } ... on Bot { login } } } } } } } rateLimit { remaining resetAt } }",
   "reset": 1794168674,
   "status": 200
 }

@@ -2,6 +2,7 @@ use super::super::testing::temp_database;
 use super::super::*;
 use crate::error::ErrorKind;
 use crate::github::CommitSha;
+use crate::github::labels::Label;
 use crate::github::pull_requests::{CiState, LatestReview, OffDefault, PrState, ReviewState};
 use crate::repository::RepositoryName;
 use std::fs;
@@ -28,6 +29,7 @@ fn facts(number: u32) -> PullRequestFacts {
             state: ReviewState::Approved,
         }],
         assignees: vec![Login::new("some-assignee")],
+        labels: vec![Label::new("awaiting review"), Label::new("skip news")],
         closing_issues: vec![7, 8],
         merge_commit: None,
         base: Some(sha("4567abcd")),
@@ -226,6 +228,7 @@ fn saving_a_pr_again_replaces_what_was_known() {
         review_requests: vec![],
         latest_reviews: vec![],
         assignees: vec![],
+        labels: vec![Label::new("awaiting merge")],
         closing_issues: vec![],
         merge_commit: None,
         base: None,
@@ -243,6 +246,34 @@ fn saving_a_pr_again_replaces_what_was_known() {
     fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(read.pull_requests, [changed]);
+}
+
+#[test]
+fn a_pr_stored_before_tsugiki_kept_labels_has_none_after_the_migration() {
+    let (path, folder) = temp_database("pr-before-labels");
+    let before = MIGRATIONS
+        .iter()
+        .position(|step| step.sql == super::LABELS)
+        .unwrap();
+    open_with(&path, &MIGRATIONS[..before]).unwrap().close();
+    // A store of that age can't run today's save, which writes labels, so SQL stands in for it.
+    let inserted = Connection::open(&path)
+        .unwrap()
+        .execute(
+            "INSERT INTO pull_requests (repository, number, title, state, is_draft, author, target_branch,
+                                        ci, updated_at)
+             VALUES ('python/cpython', 1, 'gh-1: Fix it', 'OPEN', 0, 'some-author', 'main', NULL, 1)",
+            [],
+        )
+        .unwrap();
+    assert_eq!(inserted, 1);
+
+    let store = Store::open(&path).unwrap();
+    let read = store.pull_requests(&cpython()).unwrap();
+    store.close();
+    fs::remove_dir_all(folder).unwrap();
+    assert_eq!(read.len(), 1);
+    assert_eq!(read[0].labels, []);
 }
 
 #[test]
@@ -411,6 +442,7 @@ fn a_row_an_earlier_tsugiki_wrote_reads_back() {
     fs::remove_dir_all(folder).unwrap();
 
     let earlier = PullRequestFacts {
+        labels: vec![],
         closing_issues: vec![],
         merge_commit: None,
         base: None,

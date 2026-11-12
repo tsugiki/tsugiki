@@ -393,9 +393,44 @@ fn themes_answers_with_the_mode_and_the_theme_of_each_side_the_settings_chose() 
 
     let answer = answer.unwrap();
     assert_eq!(answer["mode"], "light");
-    assert_eq!(answer["light"]["name"], "VS Code Light Modern");
-    assert_eq!(answer["dark"]["name"], "Gruvbox Dark Hard");
-    assert_eq!(answer["dark"]["tokens"][0]["value"], "#1d2021");
+    assert_eq!(answer["light"]["chosen"], "VS Code Light Modern");
+    assert_eq!(answer["dark"]["chosen"], "Gruvbox Dark Hard");
+    assert_eq!(answer["dark"]["all"][1]["name"], "Gruvbox Dark Hard");
+    assert_eq!(answer["dark"]["all"][1]["tokens"][0]["value"], "#1d2021");
+}
+
+#[test]
+fn a_theme_the_picker_saves_is_chosen_after_a_restart() {
+    let (folders, root) = temp_folders("wired-pick-theme");
+    let wired = Wired::start(Ok(folders.clone()), no_network());
+    let saved = wired.ask(
+        "save_theme",
+        json!({ "kind": "dark", "name": "Gruvbox Dark Hard" }),
+    );
+    let unknown = wired.ask(
+        "save_theme",
+        json!({ "kind": "light", "name": "Gruvbox Dark Hard" }),
+    );
+    // A page that loads again, as after a crash of the webview, finds the theme picked.
+    let reloaded = wired.ask("themes", json!({})).unwrap();
+    drop(wired.stop());
+
+    let restarted = Wired::start(Ok(folders.clone()), no_network());
+    let themes = restarted.ask("themes", json!({})).unwrap();
+    drop(restarted.stop());
+    let file = std::fs::read_to_string(folders.settings_file()).unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(saved.unwrap(), Value::Null);
+    let unknown = unknown.unwrap_err();
+    assert_eq!(unknown["kind"], "not_found");
+    assert_eq!(
+        unknown["message"],
+        r#"No light theme is named "Gruvbox Dark Hard"."#
+    );
+    assert_eq!(reloaded["dark"]["chosen"], "Gruvbox Dark Hard");
+    assert_eq!(themes["dark"]["chosen"], "Gruvbox Dark Hard");
+    assert_eq!(file, "[appearance]\ndark_theme = \"Gruvbox Dark Hard\"\n");
 }
 
 #[test]

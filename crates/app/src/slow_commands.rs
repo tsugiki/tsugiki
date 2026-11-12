@@ -22,6 +22,7 @@ use tsugiki_core::repository_settings::{MirrorCost, NameCheck};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{Home, PaneLayout, SettingsOwner};
 use tsugiki_core::store::StoreReader;
+use tsugiki_core::theme::{ThemeChoice, ThemeKind};
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_files::PrFiles;
@@ -142,6 +143,18 @@ pub(crate) fn save_pane_layout(
     owner: State<'_, SettingsOwner>,
 ) -> Result<PaneLayout, Error> {
     Ok(owner.save_panes(layout)?.panes)
+}
+
+/// Saves the theme the picker chose for side `kind` to `light_theme` or `dark_theme` in `settings.toml`,
+/// without Settings' Apply (#518). The window shows it already. This waits on a small file.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn save_theme(
+    kind: ThemeKind,
+    name: &str,
+    owner: State<'_, SettingsOwner>,
+) -> Result<(), Error> {
+    owner.save_theme(ThemeChoice::named(kind, name)?).map(drop)
 }
 
 /// The rows of a view of a Repository's Workbench, with what its Sidebar shows, in the order `machine.toml`

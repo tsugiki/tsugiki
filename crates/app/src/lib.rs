@@ -38,7 +38,7 @@ use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{AppearanceSettings, Home, LoadedSettings, PaneLayout, SettingsOwner};
 use tsugiki_core::status::{Change, FailedRead, LastSync, Status, SyncActivity};
 use tsugiki_core::store::StoreReader;
-use tsugiki_core::theme::Themes;
+use tsugiki_core::theme::{ThemeMode, Themes};
 use tsugiki_core::version::Version;
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
@@ -292,20 +292,23 @@ fn settings(owner: State<'_, SettingsOwner>) -> LoadedSettings {
     owner.view().loaded
 }
 
-/// `[appearance]` as `settings.toml` said when Tsugiki started, which the window turned to (#517).
-struct StartAppearance(AppearanceSettings);
+/// The mode `settings.toml` held when Tsugiki started, which the window turned to (#517).
+struct StartMode(ThemeMode);
 
-/// The theme of each side, light and dark, as CSS variables (#515), and the mode, as `settings.toml` chose
-/// them when Tsugiki started (#517). In System mode the window shows the theme for the side Windows is on.
+/// Every theme of each side, light and dark, as CSS variables (#515), with the theme the settings choose for
+/// each side, and the mode they held when Tsugiki started (#517), which the title bar keeps. In System mode
+/// the window shows the chosen theme for the side Windows is on. The theme picker lists the others, and a
+/// theme it saved is the chosen one from then on (#518).
 #[tauri::command]
 #[specta::specta]
-fn themes(start: State<'_, StartAppearance>) -> Result<Themes, Error> {
-    let StartAppearance(appearance) = *start;
-    Themes::chosen(
-        appearance.theme,
-        appearance.light_theme,
-        appearance.dark_theme,
-    )
+fn themes(start: State<'_, StartMode>, owner: State<'_, SettingsOwner>) -> Result<Themes, Error> {
+    let StartMode(mode) = *start;
+    let AppearanceSettings {
+        light_theme,
+        dark_theme,
+        ..
+    } = owner.view().loaded.settings.appearance;
+    Themes::chosen(mode, light_theme, dark_theme)
 }
 
 /// What the window opens on.
@@ -743,6 +746,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::add_repository,
             slow_commands::open_repository,
             slow_commands::save_pane_layout,
+            slow_commands::save_theme,
             slow_commands::workbench,
             slow_commands::issue,
             slow_commands::pull_request,

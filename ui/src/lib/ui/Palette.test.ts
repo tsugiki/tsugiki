@@ -208,6 +208,66 @@ describe("as another quick pick", () => {
     expect(spaced(open)).toBe("a/open open");
     expect(previous?.getAttribute("aria-current")).toBeNull();
   });
+
+  it("marks the current row with the word it is given", () => {
+    render(Palette, { commands: rows, onclose: () => {}, words: { ...words, mark: "current" } });
+    expect(spaced(screen.getAllByRole("option")[0])).toBe("a/open current");
+  });
+});
+
+describe("as a picker that previews", () => {
+  /** Rows that note each preview, and a last row that stays open. */
+  function withPreviews(start = 0) {
+    const previewed: string[] = [];
+    const ran: string[] = [];
+    const row = (title: string) => ({
+      title,
+      preview: () => {
+        previewed.push(title);
+      },
+      run: () => {
+        ran.push(title);
+      },
+    });
+    const onclose = vi.fn();
+    const oncancel = vi.fn();
+    const stays = { title: "Dark themes…", keepsOpen: true, run: () => ran.push("Dark themes…") };
+    render(Palette, { commands: [row("Light"), row("Gruvbox"), stays], onclose, oncancel, start });
+    return { previewed, ran, onclose, oncancel, input: screen.getByRole("combobox") };
+  }
+
+  it("previews the row it opens on, and each row the pick moves to", async () => {
+    const { previewed, input } = withPreviews(1);
+    await fireEvent.keyDown(input, { key: "ArrowUp" });
+    await fireEvent.keyDown(input, { key: "ArrowUp" });
+    await fireEvent.keyDown(input, { key: "ArrowDown" });
+    await fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(previewed).toEqual(["Gruvbox", "Light", "Gruvbox"]);
+  });
+
+  it("previews the first row that matches what was typed", async () => {
+    const { previewed, input } = withPreviews(0);
+    await fireEvent.input(input, { target: { value: "gruv" } });
+    expect(previewed).toEqual(["Light", "Gruvbox"]);
+  });
+
+  it("runs a row that keeps it open without closing", async () => {
+    const { ran, onclose, oncancel, input } = withPreviews(2);
+    await fireEvent.keyDown(input, { key: "Enter" });
+    expect(ran).toEqual(["Dark themes…"]);
+    expect(onclose).not.toHaveBeenCalled();
+    expect(oncancel).not.toHaveBeenCalled();
+  });
+
+  it("cancels on Esc or a press outside, but not on a pick", async () => {
+    const { onclose, oncancel, input } = withPreviews();
+    await fireEvent.keyDown(window, { key: "Escape" });
+    await fireEvent.mouseDown(screen.getByTestId("palette-scrim"));
+    expect(oncancel).toHaveBeenCalledTimes(2);
+    await fireEvent.keyDown(input, { key: "Enter" });
+    expect(oncancel).toHaveBeenCalledTimes(2);
+    expect(onclose).toHaveBeenCalledTimes(3);
+  });
 });
 
 it("leaves other keys to the text box", async () => {

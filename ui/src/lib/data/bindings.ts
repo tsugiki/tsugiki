@@ -77,8 +77,10 @@ export const commands = {
 	/**  The settings Tsugiki last read, and what was wrong with their files (ADR 0014). */
 	settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
 	/**
-	 *  The theme of each side, light and dark, as CSS variables (#515), and the mode, as `settings.toml` chose
-	 *  them when Tsugiki started (#517). In System mode the window shows the theme for the side Windows is on.
+	 *  Every theme of each side, light and dark, as CSS variables (#515), with the theme the settings choose for
+	 *  each side, and the mode they held when Tsugiki started (#517), which the title bar keeps. In System mode
+	 *  the window shows the chosen theme for the side Windows is on. The theme picker lists the others, and a
+	 *  theme it saved is the chosen one from then on (#518).
 	 */
 	themes: () => typedError<Themes, Error_Serialize>(__TAURI_INVOKE("themes")),
 	/**  What the window opens on. */
@@ -116,6 +118,11 @@ export const commands = {
 	 *  waits on a small file.
 	 */
 	savePaneLayout: (layout: PaneLayout_Deserialize) => typedError<PaneLayout_Serialize, Error_Serialize>(__TAURI_INVOKE("save_pane_layout", { layout })),
+	/**
+	 *  Saves the theme the picker chose for side `kind` to `light_theme` or `dark_theme` in `settings.toml`,
+	 *  without Settings' Apply (#518). The window shows it already. This waits on a small file.
+	 */
+	saveTheme: (kind: ThemeKind, name: string) => typedError<null, Error_Serialize>(__TAURI_INVOKE("save_theme", { kind, name })),
 	/**
 	 *  The rows of a view of a Repository's Workbench, with what its Sidebar shows, in the order `machine.toml`
 	 *  keeps for the list (#592). This waits on the database and never on GitHub (ADR 0018).
@@ -1834,6 +1841,14 @@ export type Side =
 /**  The head's. */
 "RIGHT";
 
+/**  The themes of one side, and the one `settings.toml` chose for it. */
+export type SideThemes = {
+	/**  The name of the chosen theme, one of `all`. */
+	chosen: string,
+	/**  Every theme of the side, in the order the theme picker lists them. */
+	all: ThemeView[],
+};
+
 /**  The slowest of `count` timings. */
 export type Slowest = {
 	count: number,
@@ -2002,13 +2017,14 @@ export type ThemeView = {
 };
 
 /**
- *  The theme of each side, and the mode. In System mode the window shows the theme for the side Windows is
- *  on, and turns to the other when Windows does. Light and Dark show that side's theme whatever Windows says.
+ *  The themes of each side, and the mode. In System mode the window shows the chosen theme of the side
+ *  Windows is on, and turns to the other when Windows does. Light and Dark show that side's chosen theme
+ *  whatever Windows says. The theme picker lists the rest (#518).
  */
 export type Themes = {
 	mode: ThemeMode,
-	light: ThemeView,
-	dark: ThemeView,
+	light: SideThemes,
+	dark: SideThemes,
 };
 
 /**

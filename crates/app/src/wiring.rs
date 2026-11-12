@@ -20,7 +20,7 @@ use crate::first_frame;
 use crate::{
     Changed, CloningChanged, DiffWork, FailedHeads, FolderPicker, HeadsFetchFailed, HeadsFetched,
     LastSyncChanged, MirrorProblemChanged, MirrorQuestionChanged, MirrorStatesChanged,
-    NewVersionFound, PickFolder, ReadFailed, RepositoryWork, StartAppearance, StatusChanged,
+    NewVersionFound, PickFolder, ReadFailed, RepositoryWork, StartMode, StatusChanged,
     SyncActivityChanged,
 };
 
@@ -176,19 +176,16 @@ pub(crate) fn connect_core<R: Runtime>(
     }
 }
 
-/// Turns each window to the mode `settings` holds, and keeps their `[appearance]` for `themes` (#517).
-/// `startup.rs` opened the window first, on the system's side, so a Light or Dark mode turns it now, before
-/// the page asks for its themes. Both keep to what the settings said at start, as the docs say, so a later
-/// read of the files can't turn the page without the title bar.
+/// Turns each window to the mode `settings` holds, and keeps the mode for `themes` (#517). `startup.rs`
+/// opened the window first, on the system's side, so a Light or Dark mode turns it now, before the page asks
+/// for its themes. Both keep to the mode the settings held at start, as the docs say, so a later read of the
+/// files can't turn the page without the title bar.
 fn turn_to_start_appearance<R: Runtime>(app: &AppHandle<R>, settings: &SettingsOwner) {
-    let appearance = settings.view().loaded.settings.appearance;
+    let mode = settings.view().loaded.settings.appearance.theme;
     for window in app.webview_windows().into_values() {
-        first_frame::turn(appearance.theme, &|theme| window.set_theme(theme));
+        first_frame::turn(mode, &|theme| window.set_theme(theme));
     }
-    assert!(
-        app.manage(StartAppearance(appearance)),
-        "only this manages the appearance"
-    );
+    assert!(app.manage(StartMode(mode)), "only this manages the mode");
 }
 
 /// Starts the check for a new version with `ask`. Without it Tsugiki sends Releases nothing, and the command

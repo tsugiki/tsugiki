@@ -57,6 +57,7 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 - A **Theme** for each side, light and dark, that colours the whole window and follows Windows when it
   changes sides, unless the settings keep one side. VS Code's Light Modern and Dark Modern and Gruvbox's
   Light Hard and Dark Hard are built in.
+- A theme picker on `Ctrl+K T` that previews each **Theme** on the window and saves the one picked.
 
 ### Workbench ([workbench.md](devel/workbench.md))
 

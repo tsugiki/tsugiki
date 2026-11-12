@@ -7,15 +7,21 @@
     /** Words after the title, such as why a Repository's diffs aren't there yet. Typing doesn't match
      * them. */
     note?: string | null;
+    /** Runs while the row is the one picked, such as a theme that shows on the window before it's chosen. */
+    preview?: () => void;
+    /** Runs without closing, such as the theme picker's row that lists the other side. */
+    keepsOpen?: boolean;
   }
 
-  /** What a quick pick calls itself, its text box, its list, and a list with nothing in it. */
+  /** What a quick pick calls itself, its text box, its list, a list with nothing in it, and the current
+   * row: "open" unless it says. */
   export interface PaletteWords {
     dialog: string;
     input: string;
     placeholder: string;
     list: string;
     none: string;
+    mark?: string;
   }
 
   const COMMAND_WORDS: PaletteWords = {
@@ -37,11 +43,14 @@
   let {
     commands,
     onclose,
+    oncancel = () => {},
     words = COMMAND_WORDS,
     start = 0,
   }: {
     commands: readonly PaletteCommand[];
     onclose: () => void;
+    /** Runs before `onclose` when it closes without running a row: on Esc or a press outside it. */
+    oncancel?: () => void;
     words?: PaletteWords;
     /** The row picked when it opens. Typing picks the first. */
     start?: number;
@@ -52,12 +61,28 @@
   const matching = $derived(
     commands.filter((command) => command.title.toLowerCase().includes(typed.trim().toLowerCase())),
   );
+  const pickedCommand = $derived(matching[picked]);
+  // By its title, so rows built again as they were don't preview again, after a pick has run, say.
+  const pickedTitle = $derived(pickedCommand?.title);
+  $effect(() => {
+    if (pickedTitle !== undefined) untrack(() => pickedCommand?.preview?.());
+  });
 
   /** Closes, and runs `command` once the palette has gone and handed the focus back, so the command finds
-   * the focus where the user left it: a pane command then moves it as its key would. */
+   * the focus where the user left it: a pane command then moves it as its key would. A row that keeps it
+   * open runs at once. */
   function run(command: PaletteCommand) {
+    if (command.keepsOpen) {
+      command.run();
+      return;
+    }
     onclose();
     void tick().then(command.run);
+  }
+
+  function cancel() {
+    oncancel();
+    onclose();
   }
 
   function pick(e: KeyboardEvent) {
@@ -65,14 +90,13 @@
       e.preventDefault();
       picked = Math.max(Math.min(picked + (e.key === "ArrowDown" ? 1 : -1), matching.length - 1), 0);
     } else if (e.key === "Enter") {
-      const command = matching[picked];
-      if (command) run(command);
+      if (pickedCommand) run(pickedCommand);
     }
   }
 
   function closeOnEscape(e: KeyboardEvent) {
     if (e.key === "Escape") {
-      onclose();
+      cancel();
     }
   }
 </script>
@@ -82,7 +106,7 @@
 <!-- The keyboard's way out is Esc, on the window above. This is the mouse's. It goes by the press, because a
      drag that starts in the text box and ends out here also counts as a click out here. -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="scrim" data-testid="palette-scrim" onmousedown={closeOnPress(onclose)}>
+<div class="scrim" data-testid="palette-scrim" onmousedown={closeOnPress(cancel)}>
   <div
     class="palette"
     role="dialog"
@@ -122,7 +146,7 @@
             }}
           >
             {command.title}{#if command.note}<span class="note">{` · ${command.note}`}</span
-              >{/if}{#if command.current}&nbsp;<span class="note open">open</span>{/if}
+              >{/if}{#if command.current}&nbsp;<span class="note open">{words.mark ?? "open"}</span>{/if}
           </li>
         {/each}
       </ul>

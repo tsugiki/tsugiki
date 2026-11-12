@@ -16,6 +16,7 @@
   import PerformanceHud from "$lib/ui/PerformanceHud.svelte";
   import RepositoryHome from "$lib/ui/RepositoryHome.svelte";
   import StatusBar from "$lib/ui/StatusBar.svelte";
+  import ThemePicker from "$lib/ui/ThemePicker.svelte";
   import "$lib/ui/window.css";
 
   const PICKER_WORDS: PaletteWords = {
@@ -28,8 +29,9 @@
 
   const theme = new ThemeState(matchMedia("(prefers-color-scheme: dark)"));
   void theme.load();
+  // The theme picker's preview too, with no fade.
   $effect(() => {
-    if (theme.current) applyTheme(document.documentElement, theme.current);
+    if (theme.shown) applyTheme(document.documentElement, theme.shown);
   });
   const about = new AboutState();
   void about.load();
@@ -48,22 +50,35 @@
   };
   let paletteOpen = $state(false);
   let pickerOpen = $state(false);
+  let themePickerOpen = $state(false);
   /** The Repository whose mirror's question the dialog asks, while it's open. */
   let questionFor = $state<string>();
   /** Opens the Repository picker, which only a Repository's screen has. */
   const openPicker = () => {
     // Each dialog closes on Esc, so one on top of another would lose what the user typed below.
-    if (home.current?.screen === "repository" && !addOpen && !paletteOpen && questionFor === undefined)
+    if (
+      home.current?.screen === "repository" &&
+      !addOpen &&
+      !paletteOpen &&
+      !themePickerOpen &&
+      questionFor === undefined
+    )
       pickerOpen = true;
   };
-  /** Whether the list's keys and the chords work: a dialog, the palette or the picker on top keeps them. */
-  const keysActive = $derived(!addOpen && !paletteOpen && !pickerOpen && questionFor === undefined);
+  /** Opens the theme picker, from `Ctrl+K T` or the palette, which has closed by then. */
+  const openThemePicker = () => {
+    themePickerOpen = true;
+  };
+  /** Whether the list's keys and the chords work: a dialog, the palette or a picker on top keeps them. */
+  const keysActive = $derived(
+    !addOpen && !paletteOpen && !pickerOpen && !themePickerOpen && questionFor === undefined,
+  );
   const os = currentOs();
   const chord = new ChordWait(os);
   const guard = keyGuard(
     {
       "ctrl+shift+p": () => {
-        paletteOpen = !addOpen && !pickerOpen && questionFor === undefined;
+        paletteOpen = !addOpen && !pickerOpen && !themePickerOpen && questionFor === undefined;
       },
       "ctrl+r": openPicker,
       "ctrl+shift+h": () => {
@@ -74,11 +89,12 @@
     keysForBrowser(import.meta.env.DEV),
   );
   /** Reads each key before anything else, so the key that ends a chord's wait goes nowhere else. Chords
-   * start where the list's keys work: on a Repository's screen, with no dialog or palette on top, and the
-   * screen says what each does. */
+   * start where the list's keys work: on a Repository's screen, with no dialog or palette on top. The
+   * screen says what most do, and `Ctrl+K T` opens the theme picker. */
   const readKey = (e: KeyboardEvent) => {
     const canStart = home.current?.screen === "repository" && keysActive;
-    if (!chord.read(e, canStart, repositoryHome?.chordBindings() ?? {})) guard(e);
+    const bindings = { ...repositoryHome?.chordBindings(), "ctrl+k t": openThemePicker };
+    if (!chord.read(e, canStart, bindings)) guard(e);
   };
   const endChord = () => {
     chord.end();
@@ -134,6 +150,7 @@
   const commands: PaletteCommand[] = $derived([
     ...(repositoryHome?.paletteCommands() ?? []),
     ...switchRows("Repository: "),
+    { title: "Pick a Theme", run: openThemePicker },
     {
       title: hud.visible ? "Hide performance HUD" : "Show performance HUD",
       run: () => {
@@ -173,7 +190,7 @@
   status={status.status}
   error={status.error}
   visible={settings.statusBarVisible}
-  problems={settings.problems}
+  problems={theme.problem === undefined ? settings.problems : [...settings.problems, theme.problem]}
   {lastSync}
   syncActivity={status.syncActivity}
   cloning={status.cloning}
@@ -228,6 +245,15 @@
     onclose={() => {
       pickerOpen = false;
     }}
+  />
+{/if}
+{#if themePickerOpen}
+  <ThemePicker
+    {theme}
+    onclose={() => {
+      themePickerOpen = false;
+    }}
+    onsaved={() => void settings.load()}
   />
 {/if}
 {#if hud.visible}

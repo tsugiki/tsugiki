@@ -414,8 +414,20 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                 syncs.refresh_open(store);
                 due.repository = Instant::now() + intervals.repository;
             }
+            // Only asking who is signed in sets the status back online, so offline a click asks that first.
+            // While GitHub stays away, the syncs keep waiting for the next status check.
             Turn::RefreshNow => {
-                syncs.refresh_now();
+                if board.is_offline() {
+                    refresh(board, store, &github);
+                    if !board.is_offline() {
+                        due.status = Instant::now() + intervals.status;
+                    }
+                }
+                if board.is_offline() {
+                    syncs.put_open_first();
+                } else {
+                    syncs.refresh_now();
+                }
                 due.repository = Instant::now() + intervals.repository;
             }
             Turn::Opened(repository) => show_last_sync(board, store, repository),

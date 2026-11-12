@@ -28,6 +28,19 @@ pub enum Status {
     Problem { problem: Error },
 }
 
+impl Status {
+    /// Whether it says GitHub can't be reached. A rate limit is a problem of the API's alone.
+    pub(crate) fn is_offline(&self) -> bool {
+        match self {
+            Self::Offline | Self::OfflineAs { .. } => true,
+            Self::Connecting
+            | Self::ConnectingAs { .. }
+            | Self::Online { .. }
+            | Self::Problem { .. } => false,
+        }
+    }
+}
+
 /// What a sync changed in a Repository's stored facts (ADR 0008).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct Change {
@@ -216,6 +229,11 @@ impl StatusBoard {
 
     pub(crate) fn last_sync(&mut self, last_sync: &LastSync) {
         (self.announce_last_sync)(last_sync);
+    }
+
+    /// Whether the status says GitHub can't be reached.
+    pub(crate) fn is_offline(&self) -> bool {
+        self.current.is_offline()
     }
 
     pub(crate) fn set(&mut self, status: Status) {

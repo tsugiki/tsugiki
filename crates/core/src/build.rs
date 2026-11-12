@@ -1,8 +1,12 @@
 //! What keeps a development build apart from an installed Tsugiki, so the two can run side by side without
 //! taking each other's links or sharing a database (ADR 0016).
 
-/// Which kind of program this is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use serde::Serialize;
+use specta::Type;
+
+/// Which kind of program this is. The window reads it to list the commands only a development build has.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "snake_case")]
 pub enum Build {
     Release,
     Development,

@@ -54,13 +54,21 @@ fn a_backtrace_keeps_the_file_and_line() {
 }
 
 #[test]
-fn about_names_the_app_and_its_version() {
+fn about_names_the_app_its_version_and_its_build() {
     let version = version::Version::new(Some("3a6dc89f0e1d2c3b4a5968778695a4b3c2d1e0f9"));
     assert_eq!(
-        about(&version),
+        about(&version, build::Build::Release),
         About {
             name: "Tsugiki".to_owned(),
             version: format!("{} (3a6dc89)", env!("CARGO_PKG_VERSION")),
+            build: build::Build::Release,
         }
     );
+}
+
+#[test]
+fn the_window_reads_the_build_in_lower_case() {
+    let json = |build| serde_json::to_value(build).unwrap();
+    assert_eq!(json(build::Build::Release), "release");
+    assert_eq!(json(build::Build::Development), "development");
 }

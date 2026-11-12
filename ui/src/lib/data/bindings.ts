@@ -7,6 +7,11 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 /** Commands */
 export const commands = {
 	about: () => __TAURI_INVOKE<About>("about"),
+	/**
+	 *  Opens WebView2's DevTools for the window that asks, from the palette (#460). Only a development build
+	 *  has DevTools: a release turns the browser's keys off and refuses here too (ADR 0013).
+	 */
+	openDevtools: () => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_devtools")),
 	/**  The whole app-wide state, for a window that has just loaded (ADR 0008). */
 	status: () => __TAURI_INVOKE<Status_Serialize>("status"),
 	/**
@@ -173,6 +178,7 @@ export const events = {
 export type About = {
 	name: string,
 	version: string,
+	build: Build,
 };
 
 /**  Whether the code under a thread has changed since it began. */
@@ -216,6 +222,9 @@ export type BackportRow_Deserialize = {
 export type BackportRow_Serialize = {
 	backport: BackportKind,
 } & WorkbenchRow_Serialize;
+
+/**  Which kind of program this is. The window reads it to list the commands only a development build has. */
+export type Build = "release" | "development";
 
 /**
  *  The last thing that happened before a long frame. A key isn't named, so the log holds nothing the

@@ -31,6 +31,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 | Settings | `Ctrl+,` |
 | Zoom in / out / reset | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
 | Show or hide the performance HUD | `Ctrl+Shift+H` |
+| Open DevTools, in a development build only | `Ctrl+Shift+I`, or the command palette |
 
 - The webview's own browser shortcuts (Print, Reload, Find, zoom, DevTools) never fire in a release build;
   Tsugiki's keys win, on any keyboard layout. Zoom is Tsugiki's, kept per machine, and Ctrl+wheel doesn't

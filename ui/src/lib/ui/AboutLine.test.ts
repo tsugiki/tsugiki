@@ -4,7 +4,7 @@ import AboutLine from "./AboutLine.svelte";
 
 describe("AboutLine", () => {
   it("names the app and its version", () => {
-    render(AboutLine, { about: { name: "Tsugiki", version: "1.2.3" } });
+    render(AboutLine, { about: { name: "Tsugiki", version: "1.2.3", build: "release" } });
     expect(screen.getByText("Tsugiki 1.2.3")).toBeTruthy();
   });
 

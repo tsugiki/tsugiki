@@ -35,7 +35,19 @@ pub(crate) fn cpython() -> Home {
 
 #[test]
 fn about_answers_with_what_the_core_says() {
-    assert_eq!(about(), tsugiki_core::about(&version()));
+    assert_eq!(about(), tsugiki_core::about(&version(), Build::CURRENT));
+}
+
+#[test]
+fn a_release_refuses_to_open_devtools() {
+    let app = mock_app();
+    let window = tauri::WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::default())
+        .build()
+        .unwrap();
+    let refusal = open_devtools_in(Build::Release, &window).unwrap_err();
+    assert_eq!(refusal.kind, ErrorKind::Internal);
+    assert!(refusal.message.contains("DevTools"), "{}", refusal.message);
+    open_devtools_in(Build::Development, &window).unwrap();
 }
 
 #[test]

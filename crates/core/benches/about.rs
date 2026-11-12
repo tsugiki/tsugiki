@@ -6,5 +6,8 @@ fn main() {
 
 #[divan::bench]
 fn about() -> tsugiki_core::About {
-    tsugiki_core::about(&tsugiki_core::version::Version::new(None))
+    tsugiki_core::about(
+        &tsugiki_core::version::Version::new(None),
+        tsugiki_core::build::Build::Release,
+    )
 }

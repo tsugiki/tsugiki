@@ -30,7 +30,7 @@
     <span>Workbench</span>
     <span>{count}</span>
   </button>
-  <h2>Built-in views</h2>
+  <h2 class="small-heading">Built-in views</h2>
   <button
     aria-current={shown(selected.kind === "review_requests")}
     onclick={() => onselect({ kind: "review_requests" })}
@@ -39,7 +39,7 @@
     <span>{reviewRequests}</span>
   </button>
   {#if filters.length > 0}
-    <h2>Filters</h2>
+    <h2 class="small-heading">Filters</h2>
   {/if}
   <!-- Two Filters may share a search, so a search can't be the key. -->
   {#each filters as filter, index (index)}
@@ -116,15 +116,9 @@
     white-space: nowrap;
   }
 
-  /* A section's heading, in the small heading style the list's quiet section uses too. */
   h2 {
     margin: 0;
     padding: 12px 8px 4px;
-    font-size: 11px;
-    font-weight: 400;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--fg-muted);
   }
 
   /* What went wrong with the Filter above. */

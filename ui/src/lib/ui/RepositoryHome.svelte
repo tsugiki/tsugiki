@@ -545,7 +545,7 @@
           item.attention !== null,
           item.kind === "issue" ? issueIcon(item.state) : prIcon(item),
         )}
-        {#if item.kind === "issue"}
+        {#if item.kind === "issue" && item.pull_requests.length > 0}
           <small class="count">{treeCount(item)}</small>
         {/if}
         <small class="age">{ago(item.updated_at, now)}</small>
@@ -654,7 +654,7 @@
         </ul>
         {#if workbench.quiet.length > 0}
           <button
-            class="link quiet"
+            class="link quiet small-heading"
             aria-expanded={workbench.quietShown}
             onclick={toggleQuiet}
             bind:this={quietLineButton}
@@ -832,6 +832,12 @@
     inset: 0;
   }
 
+  /* The state icon sits above the title's cover, so its tooltip names the state. */
+  .headline > :global(.octicon) {
+    position: relative;
+    z-index: 1;
+  }
+
   /* The row's tint shows the pointer, and an underline across every title it passes would be noise. */
   .title:hover:not(:focus-visible) {
     text-decoration: none;
@@ -882,13 +888,30 @@
     padding-left: calc(12px + 2 * (1em + 6px));
   }
 
-  /* The quiet section's heading, in the small heading style. */
   .quiet {
     display: block;
     padding: 12px 10px 4px;
-    font-size: 11px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--fg-muted);
+  }
+
+  /* The empty view's words and the problems line up with the header. */
+  .list > p {
+    margin: 8px 10px;
+  }
+
+  /* Windows' contrast themes draw every border in their own colour, the clear ones too, and drop the
+     tints. Only an item that Needs attention keeps its bar, and the cursor's row gets an outline. */
+  @media (forced-colors: active) {
+    .item {
+      border-left-color: Canvas;
+    }
+
+    .item.attention {
+      border-left-color: Highlight;
+    }
+
+    .row:has(.title[aria-current]) {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
   }
 </style>

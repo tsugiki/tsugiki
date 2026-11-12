@@ -188,6 +188,28 @@ it("moves a time on while the window stays open", async () => {
   expect(vi.getTimerCount()).toBe(0);
 });
 
+it("says an Issue has no PR yet, with no count of none", async () => {
+  core.workbench.mockResolvedValue({
+    status: "ok",
+    data: {
+      items: [{ ...issue, people: [], pull_requests: [] }],
+      quiet: [],
+      count: 1,
+      review_requests: 0,
+      filters: [],
+    },
+  });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
+
+  const item = await screen.findByRole("listitem");
+
+  expect([".people", ".count", ".facts"].map((part) => item.querySelector(part)?.textContent)).toEqual([
+    "—",
+    undefined,
+    "No PR yet",
+  ]);
+});
+
 it("lists an Issue folded, and its PRs under it once unfolded", async () => {
   vi.setSystemTime("2026-11-04T13:00:00Z");
   const attention = { since: "2026-11-04T10:00:00Z", why: [{ kind: "review_requested" }] };

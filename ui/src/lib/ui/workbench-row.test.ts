@@ -140,6 +140,10 @@ it("names the people an Issue involves, or a PR's author", () => {
   ).toBe("deleted user");
 });
 
+it("shows a dash for an Issue whose people have all gone", () => {
+  expect(peopleOf({ kind: "issue", ...issue, people: [], attention: null })).toBe("—");
+});
+
 it("says an Issue has no PR yet, and gives a PR's facts", () => {
   expect(summary({ kind: "issue", ...issue, pull_requests: [], attention: null })).toBe("No PR yet");
   expect(summary({ kind: "standalone_pr", ...row, backports: [], attention: null })).toBe(details(row));

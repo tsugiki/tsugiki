@@ -83,6 +83,15 @@ kbd {
   outline: 1px solid transparent;
 }
 
+/* A section's heading in the Sidebar, and the Issue list's quiet line. */
+.small-heading {
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
 /* A review's or a thread's state, or a label. One that sets a state's colour takes it on its border too. */
 .chip {
   display: inline-block;

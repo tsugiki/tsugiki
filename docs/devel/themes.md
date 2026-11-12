@@ -36,6 +36,8 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
   requested) and for a label: the `chip` class, with a 1 px border, round ends and 11 px text. A chip
   that sets a state's colour on its text takes it on its border too.
 - **Muted text.** Ages, counts and hints take `fg_muted`, and don't fade with opacity.
+- **Small headings.** A section's heading in the Sidebar, and the Issue list's quiet line, take the
+  `small-heading` class: 11 px, `fg_muted`, upper case and 0.04 em apart.
 
 The rules sit in `:where()`, which weighs nothing, so a component's own rule for a control wins over them.
 
@@ -54,8 +56,8 @@ A core test fails when this table and the built-in Themes disagree.
 | `bg_overlay` | Dialogs, the palette and the performance HUD | `#f8f8f8` | `#222222` |
 | `backdrop` | The scrim behind a dialog or the palette | `#00000026` | `#00000073` |
 | `shadow` | The shadow under a dialog, the palette or the HUD | `#00000029` | `#00000099` |
-| `selected` | The palette's selected row | `#e8e8e8` | `#04395e` |
-| `accent` | Hunk headers and the diff's Show more rows, as a tint | `#005fb8` | `#4daafc` |
+| `selected` | The palette's selected row, the Issue list's cursor row and the Sidebar's open view | `#e8e8e8` | `#04395e` |
+| `accent` | The bar and the title of an item that Needs attention, focus borders, and as a tint, hunk headers and the diff's Show more rows | `#005fb8` | `#4daafc` |
 | `add` | Added lines, as a tint | `#48a14d` | `#2ea043` |
 | `del` | Removed lines, as a tint | `#e51400` | `#f85149` |
 | `find` | The search's matches in the diff, as a tint | `#f8c94a` | `#9e6a03` |

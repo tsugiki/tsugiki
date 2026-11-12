@@ -7,7 +7,8 @@
   import FilesTab from "./FilesTab.svelte";
   import { prIcon } from "./octicons";
   import StateIcon from "./StateIcon.svelte";
-  import { headline } from "./workbench-row";
+  import StateWords from "./StateWords.svelte";
+  import { ago, headline } from "./workbench-row";
 
   let {
     repository,
@@ -67,14 +68,23 @@
   {#if browserProblem}
     <p role="alert">{browserProblem}</p>
   {/if}
-  {#if pr.issue !== undefined}
-    {@const issue = pr.issue}
-    <button
-      class="link back"
-      onclick={() => {
-        onback(issue);
-      }}>{`gh-${String(issue)}`}</button
-    >
+  <!-- The line over the title: the Issue the PR was opened under, where it goes and when it changed. -->
+  {#if pr.issue !== undefined || pr.view}
+    <p class="crumb">
+      {#if pr.issue !== undefined}
+        {@const issue = pr.issue}
+        <button
+          class="link back"
+          onclick={() => {
+            onback(issue);
+          }}>{`gh-${String(issue)}`}</button
+        >
+        <span aria-hidden="true">›</span>
+      {/if}
+      {#if pr.view}
+        <span>{`into ${pr.view.target_branch} · updated ${ago(pr.view.updated_at, now)}`}</span>
+      {/if}
+    </p>
   {/if}
   {#if pr.view === null}
     <p>{`Tsugiki doesn't hold PR #${String(pr.number)}.`}</p>
@@ -86,7 +96,7 @@
         {headline(view)}
       </button>
     </h2>
-    <p class="by">{view.author ?? "deleted user"}</p>
+    <p class="by"><b>{view.author ?? "deleted user"}</b> <StateWords row={view} /></p>
 
     <div class="tabs" role="tablist">
       {#each TABS as { tab, name } (tab)}
@@ -151,39 +161,70 @@
     min-height: 0;
   }
 
-  h2 {
-    font-size: 16px;
-    margin: 0;
+  /* The header and the Conversation sit in from the pane's edges; the diff in Files keeps its full width. */
+  [role="alert"],
+  .crumb,
+  h2,
+  h2 + .by,
+  .tabs,
+  .detail:not(.files) [role="tabpanel"] {
+    padding-inline: 16px;
   }
 
-  .by {
+  .detail:not(.files) [role="tabpanel"] {
+    padding-bottom: 24px;
+  }
+
+  .crumb {
+    display: flex;
+    gap: 4px;
+    margin: 10px 0 0;
     font-size: 12px;
-    margin: 4px 0;
     color: var(--fg-muted);
   }
 
   .back {
-    font-size: 12px;
+    color: var(--accent);
   }
 
+  h2 {
+    margin: 4px 0 2px;
+    font-size: 18px;
+  }
+
+  .by {
+    margin: 0 0 8px;
+    font-size: 13px;
+    color: var(--fg-muted);
+  }
+
+  .by b {
+    font-weight: 600;
+    color: var(--fg);
+  }
+
+  /* The open tab underlined in the accent colour, on a line across the pane. */
   .tabs {
     display: flex;
-    gap: 4px;
-    margin: 12px 0;
-    border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+    gap: 2px;
+    margin: 8px 0 0;
+    border-bottom: 1px solid var(--border);
   }
 
   [role="tab"] {
     all: unset;
     cursor: pointer;
-    padding: 4px 8px;
+    padding: 6px 12px;
+    font-size: 12px;
+    border-bottom: 2px solid transparent;
   }
 
   [role="tab"][aria-selected="true"] {
-    border-bottom: 2px solid currentColor;
+    font-weight: 600;
+    border-bottom-color: var(--accent);
   }
 
   [role="tab"]:focus-visible {
-    outline: 1px solid currentColor;
+    outline: 1px solid var(--focus-border);
   }
 </style>

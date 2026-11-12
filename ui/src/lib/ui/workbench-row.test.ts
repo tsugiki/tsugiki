@@ -171,12 +171,28 @@ it("a preview lists every reason in the order it came", () => {
   expect(preview({ since: "2026-11-04T10:00:00Z", why })).toBe("CI passed · You were mentioned");
 });
 
-it("says a PR's state, CI and where the user stands in the Issue view", () => {
-  expect(prStateWords(row)).toBe("Open · CI passed · Review request");
-  expect(prStateWords({ ...row, reasons: [], your_review: "CHANGES_REQUESTED" })).toBe(
-    "Open · CI passed · You requested changes",
-  );
-  expect(prStateWords({ ...row, reasons: [], is_draft: true, ci: null })).toBe("Open · Draft");
+it("says a PR's state, CI and where the user stands in the Issue view, each with its tone", () => {
+  expect(prStateWords(row)).toEqual([
+    { words: "Open", tone: "plain" },
+    { words: "CI passed", tone: "good" },
+    { words: "Review request", tone: "request" },
+  ]);
+  const words = (changes: Partial<WorkbenchRow>) => prStateWords({ ...row, ...changes }).map((w) => w.words);
+  expect(words({ reasons: [], your_review: "CHANGES_REQUESTED" })).toEqual([
+    "Open",
+    "CI passed",
+    "You requested changes",
+  ]);
+  expect(words({ reasons: [], is_draft: true, ci: null })).toEqual(["Open", "Draft"]);
+});
+
+it.each([
+  ["FAILURE", "bad"],
+  ["ERROR", "bad"],
+  ["PENDING", "plain"],
+  ["EXPECTED", "plain"],
+] as const)("gives CI that is %s the %s tone", (ci, tone) => {
+  expect(prStateWords({ ...row, reasons: [], ci })[1]?.tone).toBe(tone);
 });
 
 it("names a Backport by its branch and state", () => {

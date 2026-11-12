@@ -19,8 +19,12 @@
 >
 
 <style>
+  /* A narrow pane wraps the line between words, and never inside one. */
   .words {
     font-size: 11.5px;
+  }
+
+  .words > span {
     white-space: nowrap;
   }
 

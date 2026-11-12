@@ -99,7 +99,8 @@
     {@const icon = issueIcon(view.state)}
     {@const by = opened(view)}
     <div class="page">
-      <p class="crumb">{icon?.label ?? "Issue"}</p>
+      <!-- The icon in the heading names the state to a screen reader already. -->
+      <p class="crumb" aria-hidden="true">{icon?.label ?? "Issue"}</p>
       <h2>
         {#if icon}
           <StateIcon {icon} />
@@ -119,6 +120,7 @@
                 <code class="branch" title={entry.target_branch}>{entry.target_branch}</code>
                 <button
                   class={["link", "title", { attention: view.needs_attention.includes(entry.number) }]}
+                  title={entry.title}
                   onclick={openPr(entry.number)}>{@render numbered(entry)}</button
                 >
                 <small class="who">{entry.author ?? "deleted user"}</small>
@@ -266,9 +268,12 @@
     border-top: 1px solid var(--border);
   }
 
+  /* A row wraps its state words under it once the pane is too narrow for them. */
   .pr {
+    position: relative;
     display: flex;
-    gap: 8px;
+    flex-wrap: wrap;
+    gap: 0 8px;
     align-items: center;
     padding: 4px 10px;
     font-size: 13px;
@@ -278,9 +283,26 @@
     background: color-mix(in srgb, currentColor 8%, transparent);
   }
 
+  /* The title's cover takes a click anywhere on the row; the icon sits above it to keep its tooltip. */
+  .title::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+
+  .pr > :global(.octicon) {
+    position: relative;
+    z-index: 1;
+  }
+
+  .title:hover:not(:focus-visible) {
+    text-decoration: none;
+  }
+
   .branch {
     flex: none;
-    width: 32px;
+    min-width: 32px;
+    max-width: 8em;
     overflow: hidden;
     font-size: 11px;
     color: var(--fg-muted);
@@ -292,14 +314,15 @@
      steps back, and one that does stands out, as in the Issue list. */
   .title {
     flex: 1;
-    min-width: 0;
+    min-width: 8em;
     overflow: hidden;
     color: var(--fg-muted);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .title.attention {
+  .title.attention,
+  .backports .attention {
     font-weight: 600;
     color: var(--fg);
   }
@@ -331,11 +354,6 @@
     display: inline-flex;
     gap: 4px;
     align-items: center;
-  }
-
-  .backports .attention {
-    font-weight: 600;
-    color: var(--fg);
   }
 
   .fold {

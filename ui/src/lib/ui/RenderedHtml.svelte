@@ -57,7 +57,8 @@
 
   .rendered :global(code) {
     padding: 1px 4px;
-    font-size: 12.5px;
+    /* 12.5 px beside 14 px text, and in step with a heading's. */
+    font-size: 0.9em;
     background: var(--bg-chrome);
     border-radius: 4px;
   }

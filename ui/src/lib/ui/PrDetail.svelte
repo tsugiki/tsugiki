@@ -69,21 +69,23 @@
     <p role="alert">{browserProblem}</p>
   {/if}
   <!-- The line over the title: the Issue the PR was opened under, where it goes and when it changed. -->
-  <p class="crumb">
-    {#if pr.issue !== undefined}
-      {@const issue = pr.issue}
-      <button
-        class="link back"
-        onclick={() => {
-          onback(issue);
-        }}>{`gh-${String(issue)}`}</button
-      >
-      <span aria-hidden="true">›</span>
-    {/if}
-    {#if pr.view}
-      <span>{`into ${pr.view.target_branch} · updated ${ago(pr.view.updated_at, now)}`}</span>
-    {/if}
-  </p>
+  {#if pr.issue !== undefined || pr.view}
+    <p class="crumb">
+      {#if pr.issue !== undefined}
+        {@const issue = pr.issue}
+        <button
+          class="link back"
+          onclick={() => {
+            onback(issue);
+          }}>{`gh-${String(issue)}`}</button
+        >
+        <span aria-hidden="true">›</span>
+      {/if}
+      {#if pr.view}
+        <span>{`into ${pr.view.target_branch} · updated ${ago(pr.view.updated_at, now)}`}</span>
+      {/if}
+    </p>
+  {/if}
   {#if pr.view === null}
     <p>{`Tsugiki doesn't hold PR #${String(pr.number)}.`}</p>
   {:else if pr.view}
@@ -163,7 +165,7 @@
   [role="alert"],
   .crumb,
   h2,
-  .by,
+  h2 + .by,
   .tabs,
   .detail:not(.files) [role="tabpanel"] {
     padding-inline: 16px;

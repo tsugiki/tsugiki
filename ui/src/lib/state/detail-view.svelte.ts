@@ -22,8 +22,8 @@ export class DetailState<View extends { content: unknown }> {
   /** Undefined until the core answers, and null if Tsugiki doesn't hold this item. */
   view = $state<View | null>();
   error = $state<string>();
-  /** The reason the last read from GitHub failed. Nothing, until one fails. A view that holds what the item
-   * says shows that instead. */
+  /** The reason the last read from GitHub failed. Nothing, until one fails, and nothing again once a later
+   * read saves an item Tsugiki didn't hold. A view that holds what the item says shows that instead. */
   failedRead = $state<ReadFailure>();
   readonly number: number;
   #repository: string;
@@ -50,6 +50,9 @@ export class DetailState<View extends { content: unknown }> {
       // A change can touch a PR in an Issue's tree, or give the Issue a new one, so any change asks again.
       events.changed.listen(({ payload }) => {
         if (payload.repository !== this.#repository) return;
+        // Only a read from GitHub changes an item Tsugiki doesn't hold, so the last failure no longer stands.
+        // A held item's failure stays, as Mark Seen changes it too, and what the item says replaces it.
+        if (this.view === null && payload.items.includes(this.number)) this.failedRead = undefined;
         if (this.#hidden) this.#missedChange = true;
         else void this.#ask();
       }),

@@ -589,18 +589,51 @@ fn losing_the_network_while_reading_an_issue_shows_on_the_status_bar() {
     assert_eq!(shown.last(), Some(&offline_as));
 }
 
-/// The reads that failed while a session with `access` read PR 7 of gcmon.
-fn failed_reads_of_pr_7(name: &str, access: GitHubAccess) -> Vec<FailedRead> {
+/// The reads that failed while a session with `access` ran `ask`.
+fn failed_reads(name: &str, access: GitHubAccess, ask: fn(&SessionRequests)) -> Vec<FailedRead> {
     let folders = temp_folders(name);
     let (board, failed) = failed_reads_board();
     let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
-    session.requests().fetch_pull_request(gcmon(), 7);
+    ask(&session.requests());
     session.stop(PLENTY);
     fs::remove_dir_all(folders.data).unwrap();
     failed.try_iter().collect()
 }
 
-fn pr_7_failed(why: ReadFailure) -> FailedRead {
+/// The reads that failed while a session with `access` read PR 7 of gcmon.
+fn failed_reads_of_pr_7(name: &str, access: GitHubAccess) -> Vec<FailedRead> {
+    failed_reads(name, access, |asked| asked.fetch_pull_request(gcmon(), 7))
+}
+
+/// The reads that failed while a session with `access` read Issue 7 of gcmon.
+fn failed_reads_of_issue_7(name: &str, access: GitHubAccess) -> Vec<FailedRead> {
+    failed_reads(name, access, |asked| asked.fetch_issue(gcmon(), 7))
+}
+
+#[test]
+fn an_issue_read_without_the_network_waits_on_github() {
+    let access = replying(vec![signed_in(), Err(Unreachable::Offline)]);
+
+    let failed = failed_reads_of_issue_7("offline-issue-read", access);
+
+    assert_eq!(failed, [item_7_failed(ReadFailure::WaitsOnGitHub)]);
+}
+
+#[test]
+fn an_issue_github_doesnt_have_says_so() {
+    let gone = reply_ok(
+        r#"{"data":{"repository":{"issue":null},
+            "rateLimit":{"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
+    );
+    let access = replying(vec![signed_in(), gone]);
+
+    let failed = failed_reads_of_issue_7("gone-issue", access);
+
+    assert_eq!(failed, [item_7_failed(ReadFailure::NotOnGitHub)]);
+}
+
+/// Item 7 of gcmon, a PR or an Issue, whose read failed for `why`.
+fn item_7_failed(why: ReadFailure) -> FailedRead {
     FailedRead {
         repository: gcmon(),
         number: 7,
@@ -614,7 +647,7 @@ fn a_pr_read_without_the_network_waits_on_github() {
 
     let failed = failed_reads_of_pr_7("offline-pr", access);
 
-    assert_eq!(failed, [pr_7_failed(ReadFailure::WaitsOnGitHub)]);
+    assert_eq!(failed, [item_7_failed(ReadFailure::WaitsOnGitHub)]);
 }
 
 #[test]
@@ -626,7 +659,7 @@ fn a_pr_read_with_no_token_says_so() {
 
     let failed = failed_reads_of_pr_7("no-token-pr", access);
 
-    assert_eq!(failed, [pr_7_failed(ReadFailure::NoToken)]);
+    assert_eq!(failed, [item_7_failed(ReadFailure::NoToken)]);
 }
 
 #[test]
@@ -639,7 +672,7 @@ fn a_pr_github_doesnt_have_says_so() {
 
     let failed = failed_reads_of_pr_7("gone-pr", access);
 
-    assert_eq!(failed, [pr_7_failed(ReadFailure::NotOnGitHub)]);
+    assert_eq!(failed, [item_7_failed(ReadFailure::NotOnGitHub)]);
 }
 
 #[test]
@@ -648,7 +681,7 @@ fn a_pr_whose_answer_cant_be_read_says_so() {
 
     let failed = failed_reads_of_pr_7("garbled-pr", access);
 
-    assert_eq!(failed, [pr_7_failed(ReadFailure::Other)]);
+    assert_eq!(failed, [item_7_failed(ReadFailure::Other)]);
 }
 
 #[test]

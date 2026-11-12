@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import { openLink, openOnGitHub, type GitHubItem } from "$lib/state/browser";
+  import type { ReadFailure } from "$lib/state/detail-view.svelte";
   import type { IssueView, IssueViewState } from "$lib/state/issue-view.svelte";
   import type { TreeEntry } from "$lib/state/workbench.svelte";
   import Conversation from "./Conversation.svelte";
@@ -31,6 +32,29 @@
     /** What sits at the top of the pane, such as the history's arrows (#586). */
     header?: Snippet;
   } = $props();
+
+  /** The words in place of what the Issue says before a read lands, and why it hasn't once a read failed. */
+  const UNREAD: Record<ReadFailure | "reading", string> = {
+    reading: "Tsugiki hasn't read what this Issue says yet.",
+    no_token:
+      "Tsugiki can't ask GitHub what this Issue says without a token. The status bar says how to sign in.",
+    waits_on_github: "What this Issue says comes once GitHub answers.",
+    not_on_github: "GitHub doesn't have this Issue, or your token can't see it.",
+    other: "Tsugiki couldn't read what this Issue says from GitHub. tsugiki.log says why.",
+  };
+
+  /** The words for an Issue Tsugiki doesn't hold, such as one a link named, and why once a read failed. */
+  const notHeld = (number: number, why: ReadFailure | undefined) => {
+    const issue = `Issue #${String(number)}`;
+    const words: Record<ReadFailure | "reading", string> = {
+      reading: `Tsugiki doesn't hold ${issue}.`,
+      no_token: `Tsugiki doesn't hold ${issue}, and can't ask GitHub for it without a token. The status bar says how to sign in.`,
+      waits_on_github: `Tsugiki doesn't hold ${issue}. It comes once GitHub answers.`,
+      not_on_github: `GitHub doesn't have ${issue}, or your token can't see it.`,
+      other: `Tsugiki doesn't hold ${issue}, and couldn't read it from GitHub. tsugiki.log says why.`,
+    };
+    return words[why ?? "reading"];
+  };
 
   let browserProblem = $state<string>();
 
@@ -97,7 +121,7 @@
     <p role="alert">{browserProblem}</p>
   {/if}
   {#if issue.view === null}
-    <p>{`Tsugiki doesn't hold Issue #${String(issue.number)}.`}</p>
+    <p>{notHeld(issue.number, issue.failedRead)}</p>
   {:else if issue.view}
     {@const view = issue.view}
     {@const icon = issueIcon(view.state)}
@@ -186,7 +210,7 @@
       {#if view.content}
         <Conversation content={view.content} {now} onlink={(address) => void followLink(address)} />
       {:else}
-        <p class="by">Tsugiki hasn't read what this Issue says yet.</p>
+        <p class="by">{UNREAD[issue.failedRead ?? "reading"]}</p>
       {/if}
     </div>
   {/if}

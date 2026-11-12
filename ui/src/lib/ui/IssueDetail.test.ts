@@ -56,6 +56,7 @@ const view: IssueView = {
   updated_at: "2026-11-04T10:00:00Z",
   author: "issue-author",
   assignees: [],
+  labels: [],
   needs_attention: [],
   pull_requests: [
     {
@@ -171,6 +172,22 @@ it("says whom the Issue is assigned to", async () => {
   expect(authorLine().line.textContent).toBe(
     "issue-author opened this 13d ago · 5 comments · assigned to some-assignee, other-assignee",
   );
+});
+
+it("shows the Issue's labels as chips in the order the core gives", async () => {
+  await shown({ ...view, labels: ["3.14", "type-bug"] });
+
+  const labels = screen.getByRole("list", { name: "Labels" });
+  const chips = within(labels).getAllByRole("listitem");
+  expect(chips.map((chip) => chip.textContent)).toEqual(["3.14", "type-bug"]);
+  expect(chips.every((chip) => chip.classList.contains("chip"))).toBe(true);
+});
+
+it("shows no row of chips for an Issue with no labels", async () => {
+  await shown(view);
+
+  expect(screen.queryByRole("list", { name: "Labels" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Mark Unseen" })).toBeTruthy();
 });
 
 it("counts one comment as one, and leaves out when a read from before Tsugiki asked was opened", async () => {

@@ -819,6 +819,8 @@ export type IssueView_Deserialize = {
 	author?: Login | null,
 	/**  Whom it is assigned to, as the sync last read them (#595). */
 	assignees: Login[],
+	/**  Its labels as the sync last read them, in name order, as GitHub lists them (#594). */
+	labels: Label[],
 	/**  Nothing, until Tsugiki has read this Issue from GitHub once. */
 	content?: IssueContent_Deserialize | null,
 	/**  The PRs and Backports in its tree that Need attention, each by itself (#597). */
@@ -838,6 +840,8 @@ export type IssueView_Serialize = {
 	author: Login | null,
 	/**  Whom it is assigned to, as the sync last read them (#595). */
 	assignees: Login[],
+	/**  Its labels as the sync last read them, in name order, as GitHub lists them (#594). */
+	labels: Label[],
 	/**  Nothing, until Tsugiki has read this Issue from GitHub once. */
 	content: IssueContent_Serialize | null,
 	/**  The PRs and Backports in its tree that Need attention, each by itself (#597). */
@@ -853,6 +857,9 @@ export type Jumps = {
 	/**  How many showed their rows plain, as their spans hadn't come in time. */
 	plain: number,
 };
+
+/**  The name of a label, as GitHub spells it. It reaches the UI as a plain string. */
+export type Label = string;
 
 /**  When the open Repository last finished a sync. */
 export type LastSync = LastSync_Serialize | LastSync_Deserialize;

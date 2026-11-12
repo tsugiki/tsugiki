@@ -121,6 +121,7 @@ test("the HUD times an Issue whose text comes from GitHub", async ({ page }) => 
     merged_count: 0,
     author: "issue-author",
     assignees: [],
+    labels: [],
     content: null,
     needs_attention: [],
   };

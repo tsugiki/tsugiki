@@ -10,6 +10,8 @@ use super::filters::FilterFacts;
 use super::{IssueItem, TreeEntry, WorkbenchItem, candidates};
 use crate::error::Error;
 use crate::github::issue_content::IssueContent;
+use crate::github::issues::IssueFacts;
+use crate::github::labels::Label;
 use crate::github::pull_requests::PrState;
 use crate::login::Login;
 use crate::repository_settings::RepositorySettings;
@@ -30,6 +32,8 @@ pub struct IssueView {
     pub author: Option<Login>,
     /// Whom it is assigned to, as the sync last read them (#595).
     pub assignees: Vec<Login>,
+    /// Its labels as the sync last read them, in name order, as GitHub lists them (#594).
+    pub labels: Vec<Label>,
     /// Nothing, until Tsugiki has read this Issue from GitHub once.
     pub content: Option<IssueContent>,
     /// The PRs and Backports in its tree that Need attention, each by itself (#597).
@@ -46,9 +50,16 @@ impl IssueView {
     ) -> Result<Option<Self>, Error> {
         let (mut facts, content) = reader.issue_facts(&repository.name, number)?;
         let held = facts.issues.iter().find(|issue| issue.number == number);
-        let author = held.and_then(|issue| issue.author.clone());
-        let assignees = held
-            .map(|issue| issue.assignees.clone())
+        let (author, assignees, labels) = held
+            .map(|issue| {
+                let IssueFacts {
+                    author,
+                    assignees,
+                    labels,
+                    ..
+                } = issue.clone();
+                (author, assignees, labels)
+            })
             .unwrap_or_default();
         let matched = FilterFacts::new(repository, std::mem::take(&mut facts.filters)).matched();
         let causes = Causes::of(&facts, repository.conventions);
@@ -79,6 +90,7 @@ impl IssueView {
                 merged_count: u32::try_from(merged_count).unwrap_or(u32::MAX),
                 author,
                 assignees,
+                labels,
                 content,
                 needs_attention,
             }

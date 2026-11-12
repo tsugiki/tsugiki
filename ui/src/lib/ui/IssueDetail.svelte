@@ -114,7 +114,16 @@
         </button>
       </h2>
       <p class="by"><span title={by.title}><b>{by.who}</b>{by.words}</span>{restOfLine(view)}</p>
-      <MarkButton seen={view.seen} {onmark} />
+      <div class="meta">
+        {#if view.labels.length > 0}
+          <ul class="labels" aria-label="Labels">
+            {#each view.labels as label (label)}
+              <li class="chip">{label}</li>
+            {/each}
+          </ul>
+        {/if}
+        <MarkButton seen={view.seen} {onmark} />
+      </div>
 
       {#snippet tree(entries: TreeEntry[], name: string)}
         <ul aria-label={name}>
@@ -226,6 +235,26 @@
     color: var(--fg);
   }
 
+  /* The labels' chips, then the Mark Seen button, on one line that wraps in a narrow pane. */
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin: 0 0 8px;
+  }
+
+  /* The row keeps the space around the button, as margins don't collapse in a flex row. */
+  .meta :global(.actions) {
+    margin: 0;
+  }
+
+  .labels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
   h3 {
     margin: 18px 0 6px;
     font-size: 13px;
@@ -265,7 +294,7 @@
     padding: 0;
   }
 
-  li + li,
+  .prs li + li,
   .prs > * + * {
     border-top: 1px solid var(--border);
   }

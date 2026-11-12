@@ -20,6 +20,13 @@ export class IssueViewState extends DetailState<IssueView> {
    * from its tree has hidden it (#296). The pane writes it as it scrolls, and reads it when it shows. It
    * isn't `$state`: the pane would then set its scroll on each scroll event, and fight a smooth scroll. */
   scrollTop = 0;
+  /** Whether the Issue's fully merged PRs show, unfolded from their line (#588). It stays as the user left
+   * it while a PR from the tree hides the view. */
+  mergedShown = $state(false);
+
+  toggleMerged() {
+    this.mergedShown = !this.mergedShown;
+  }
 
   constructor(repository: string, number: number) {
     super(repository, number, {

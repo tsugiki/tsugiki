@@ -73,6 +73,11 @@ const LAYERS: &[Layer] = &[
         why: "Records the performance HUD, which times the window and not the core's data.",
     },
     Layer {
+        module: "theme",
+        uses: &["error"],
+        why: "Turns theme files into the window's colours, and knows nothing of GitHub or the settings.",
+    },
+    Layer {
         module: "misses",
         uses: &[],
         why: "Logs the budgets the window misses, from its timings alone.",

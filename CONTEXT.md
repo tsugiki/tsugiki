@@ -248,3 +248,10 @@ and never changes it. A Bot backport has failed when the bot says it could not m
 **Origin PR**, or when its CI fails, which counts on it and on its Origin PR. On an item the user has never
 opened, only what happened since the **Repository**'s first sync counts.
 _Avoid_: Unread, notifications
+
+### Look
+
+**Theme**:
+A named set of colours for the whole window, for the light side or the dark side, never both. The window
+shows the Theme of the side Windows is on. Tsugiki builds some in, and the user can add their own as files.
+_Avoid_: Palette, skin, colour scheme

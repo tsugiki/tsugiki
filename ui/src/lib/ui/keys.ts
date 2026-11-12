@@ -155,13 +155,23 @@ export function keyName(e: KeyboardEvent, os: Os): string | null {
 }
 
 const MAC_NAMES: Readonly<Record<string, string>> = { ctrl: "Cmd", alt: "Option" };
+const ARROWS: Readonly<Record<string, string>> = {
+  arrowleft: "←",
+  arrowright: "→",
+  arrowup: "↑",
+  arrowdown: "↓",
+};
 
-/** A binding as the user reads it: "ctrl+alt+b" is "Ctrl+Alt+B", or "Cmd+Option+B" on macOS. */
+/** A binding as the user reads it: "ctrl+alt+b" is "Ctrl+Alt+B", or "Cmd+Option+B" on macOS, and
+ * "alt+arrowleft" is "Alt+←". */
 export function keyLabel(name: OwnedKey, os: Os): string {
   return name
     .split("+")
     .map(
-      (part) => (os === "mac" ? MAC_NAMES[part] : undefined) ?? part.charAt(0).toUpperCase() + part.slice(1),
+      (part) =>
+        (os === "mac" ? MAC_NAMES[part] : undefined) ??
+        ARROWS[part] ??
+        part.charAt(0).toUpperCase() + part.slice(1),
     )
     .join("+");
 }

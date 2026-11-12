@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import { openLink, openOnGitHub, type GitHubItem } from "$lib/state/browser";
   import type { ReadFailure } from "$lib/state/detail-view.svelte";
   import type { PrTab, PrViewState } from "$lib/state/pr-view.svelte";
@@ -14,6 +15,7 @@
     now,
     onback,
     focusable = false,
+    header,
   }: {
     repository: string;
     pr: PrViewState;
@@ -22,6 +24,8 @@
     /** Whether the pane takes the focus, as it does while the Issue list is hidden. Otherwise a click in it
      * leaves the focus where it was, so Enter still opens the row under the cursor. */
     focusable?: boolean;
+    /** What sits at the top of the pane, such as the history's arrows (#586). */
+    header?: Snippet;
   } = $props();
 
   const TABS: { tab: PrTab; name: string }[] = [
@@ -56,6 +60,7 @@
   tabindex={focusable ? -1 : undefined}
   data-pane="detail"
 >
+  {@render header?.()}
   {#if pr.error}
     <p role="alert">{`Tsugiki can't show this PR: ${pr.error}`}</p>
   {/if}

@@ -28,9 +28,8 @@ label of each file its work reads or changes, so a ticket can carry several: a S
 intervals is `area:settings` and `area:sync`. A ticket about the repo itself, such as CI, the build or these
 docs, takes none. Read the labelled files before you start the ticket.
 
-`gh label list --search area:` lists them, and each label's description names its file. `area:themes` comes
-before its file: the first theme ticket writes `docs/devel/themes.md`. A ticket that adds a file to
-`docs/devel/` also adds its label with `gh label create`.
+`gh label list --search area:` lists them, and each label's description names its file. A ticket that adds a
+file to `docs/devel/` also adds its label with `gh label create`.
 
 The labels on a ticket may change after it is filed. Go by the labels it has now.
 

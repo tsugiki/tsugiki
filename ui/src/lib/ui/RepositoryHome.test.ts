@@ -107,6 +107,8 @@ beforeEach(() => {
       people: [],
       updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [],
+      merged: [],
+      merged_count: 0,
       author: "issue-author",
       content: null,
     },
@@ -540,6 +542,35 @@ it("opens a PR in an Issue's tree with the way back to its Issue, and Esc goes b
   expect(issueRow.getAttribute("aria-current")).toBe("true");
 });
 
+it("keeps the merged PRs unfolded after one of them opens and Esc comes back", async () => {
+  const merged = { kind: "pr", ...row, number: 150001, title: "gh-112564: An old fix", backports: [] };
+  core.issue.mockResolvedValue({
+    status: "ok",
+    data: {
+      number: 112564,
+      title: "GIL drop during collection",
+      state: "OPEN",
+      people: [],
+      updated_at: "2026-11-04T10:00:00Z",
+      pull_requests: [],
+      merged: [{ ...merged, state: "MERGED" }],
+      merged_count: 1,
+      author: "issue-author",
+      content: null,
+    },
+  });
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  await fireEvent.click(await screen.findByRole("button", { name: "Show 1 merged PR" }));
+  await fireEvent.click(screen.getByRole("button", { name: "#150001 gh-112564: An old fix" }));
+  await screen.findByRole("region", { name: "PR view" });
+
+  await press("Escape");
+
+  expect(await screen.findByRole("button", { name: "Hide 1 merged PR" })).toBeTruthy();
+  expect(screen.getByRole("list", { name: "Merged PRs" })).toBeTruthy();
+});
+
 it("opens a PR that fixes two Issues again from its line under the other one", async () => {
   answering(issue, { ...issue, number: 112565, title: "Another crash" });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
@@ -918,6 +949,137 @@ it("goes back and forward through the Issues and PRs it opened with Alt+← and 
   expect(await screen.findByRole("region", { name: "PR view" })).toBeTruthy();
   await press("ArrowRight", { altKey: true });
   expect(screen.getByRole("region", { name: "PR view" })).toBeTruthy();
+});
+
+it("goes back and forward with the arrows over the Detail pane, which name their target", async () => {
+  const { issueRow, prRow } = await listing();
+  await fireEvent.click(issueRow);
+  await fireEvent.click(prRow);
+  const history = within(await screen.findByRole("navigation", { name: "History" }));
+  const back = history.getByRole("button", { name: "Back" });
+  const forward = history.getByRole("button", { name: "Forward" });
+  await vi.waitFor(() => {
+    expect(back.getAttribute("title")).toBe("Back to #112564 GIL drop during collection (Alt+←)");
+  });
+  expect(forward.hasAttribute("disabled")).toBe(true);
+  expect(forward.getAttribute("title")).toBe("Forward (Alt+→): nothing there");
+
+  await fireEvent.click(back);
+
+  expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
+  expect(issueRow.getAttribute("aria-current")).toBe("true");
+  const now = within(screen.getByRole("navigation", { name: "History" }));
+  expect(now.getByRole("button", { name: "Back" }).hasAttribute("disabled")).toBe(true);
+  expect(now.getByRole("button", { name: "Forward" }).getAttribute("title")).toBe(
+    "Forward to #5 PR 5 (Alt+→)",
+  );
+  expect(now.getByText("#112564 GIL drop during collection")).toBeTruthy();
+});
+
+it("lists the recent items back on a right-click, and opens the one picked with the cursor on its row", async () => {
+  const { issueRow, prRow, treeRow } = await listing();
+  await fireEvent.click(issueRow);
+  await fireEvent.click(prRow);
+  await fireEvent.click(treeRow);
+  await screen.findByRole("region", { name: "PR view" });
+  const history = within(screen.getByRole("navigation", { name: "History" }));
+
+  await fireEvent.contextMenu(history.getByRole("button", { name: "Back" }));
+  const menu = within(await screen.findByRole("menu", { name: "Recent items back" }));
+  const items = menu.getAllByRole("menuitem").map((item) => item.textContent);
+  expect(items).toHaveLength(2);
+  expect(items[1]).toBe("#112564 GIL drop during collection");
+
+  await fireEvent.click(menu.getByText("#112564 GIL drop during collection"));
+
+  expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
+  expect(issueRow.getAttribute("aria-current")).toBe("true");
+  expect(screen.queryByRole("menu")).toBeNull();
+});
+
+it("goes back and forward on the mouse's own buttons, and keeps the page where it is", async () => {
+  const { issueRow, prRow } = await listing();
+  await fireEvent.click(issueRow);
+  await fireEvent.click(prRow);
+  await screen.findByRole("region", { name: "PR view" });
+
+  const pressed = new MouseEvent("mousedown", { button: 3, cancelable: true });
+  window.dispatchEvent(pressed);
+  const released = new MouseEvent("mouseup", { button: 3, cancelable: true });
+  window.dispatchEvent(released);
+
+  expect([pressed.defaultPrevented, released.defaultPrevented]).toEqual([true, true]);
+  expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
+  await fireEvent.mouseUp(window, { button: 4 });
+  expect(await screen.findByRole("region", { name: "PR view" })).toBeTruthy();
+  const other = new MouseEvent("mouseup", { button: 0, cancelable: true });
+  window.dispatchEvent(other);
+  expect(other.defaultPrevented).toBe(false);
+});
+
+it("leaves the item on show as it is when a pick from the history's list lands on it", async () => {
+  const { issueRow, prRow } = await listing();
+  for (const row of [issueRow, prRow, issueRow, prRow]) await fireEvent.click(row);
+  await screen.findByRole("region", { name: "PR view" });
+  /** Picks the second item of an arrow's list, two steps away. */
+  const pick = async (way: "Back" | "Forward", title: string) => {
+    const history = within(screen.getByRole("navigation", { name: "History" }));
+    await fireEvent.contextMenu(history.getByRole("button", { name: way }));
+    const items = within(await screen.findByRole("menu")).getAllByRole("menuitem");
+    expect(items[1]?.textContent).toBe(title);
+    await fireEvent.click(items[1] ?? document.body);
+  };
+  await vi.waitFor(() => {
+    expect(screen.getByRole("navigation", { name: "History" }).textContent).toContain("#5 PR 5");
+  });
+  const readings = () => [core.openIssue.mock.calls.length, core.openPullRequest.mock.calls.length];
+  const before = readings();
+
+  await pick("Back", "#5 PR 5");
+  expect(screen.getByRole("tab", { name: "Conversation" }).getAttribute("aria-selected")).toBe("true");
+  expect(document.activeElement).toBe(prRow);
+  await press("ArrowLeft", { altKey: true });
+  await screen.findByRole("region", { name: "Issue view" });
+  const back = readings();
+  await pick("Forward", "#112564 GIL drop during collection");
+
+  expect(screen.getByRole("region", { name: "Issue view" })).toBeTruthy();
+  expect(document.activeElement).toBe(issueRow);
+  expect([before, readings()]).toEqual([before, back]);
+});
+
+it("leaves the mouse's own buttons to a dialog on top, and still keeps the page where it is", async () => {
+  core.workbench.mockResolvedValue({
+    status: "ok",
+    data: { items: [{ ...issue, attention: null }], quiet: [], count: 0, review_requests: 0, filters: [] },
+  });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn(), keysActive: false });
+  await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
+  await fireEvent.click(
+    screen.getByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" }),
+  );
+  await screen.findByRole("region", { name: "PR view" });
+
+  const released = new MouseEvent("mouseup", { button: 3, cancelable: true });
+  window.dispatchEvent(released);
+
+  expect(released.defaultPrevented).toBe(true);
+  expect(screen.getByRole("region", { name: "PR view" })).toBeTruthy();
+});
+
+it("offers the palette Go Back and Go Forward, each with its key", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const { component, issueRow, prRow } = await listing();
+  await fireEvent.click(issueRow);
+  await fireEvent.click(prRow);
+  await screen.findByRole("region", { name: "PR view" });
+  const command = (title: string) => component.paletteCommands().find((found) => found.title === title);
+
+  expect([command("Go Back")?.note, command("Go Forward")?.note]).toEqual(["Alt+←", "Alt+→"]);
+  command("Go Back")?.run();
+  expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
+  command("Go Forward")?.run();
+  expect(await screen.findByRole("region", { name: "PR view" })).toBeTruthy();
 });
 
 it("moves the focus with the cursor on Alt+← and Alt+→", async () => {
@@ -1511,8 +1673,24 @@ it("offers the palette a command that hides or shows the Issue list, named for w
   });
 
   expect([before, titles()]).toEqual([
-    ["Hide Sidebar", "Hide Issue List", "Show Only the Detail Pane", "Reset Layout", "Sort by Last Update"],
-    ["Hide Sidebar", "Show Issue List", "Show Only the Detail Pane", "Reset Layout", "Sort by Last Update"],
+    [
+      "Hide Sidebar",
+      "Hide Issue List",
+      "Show Only the Detail Pane",
+      "Reset Layout",
+      "Go Back",
+      "Go Forward",
+      "Sort by Last Update",
+    ],
+    [
+      "Hide Sidebar",
+      "Show Issue List",
+      "Show Only the Detail Pane",
+      "Reset Layout",
+      "Go Back",
+      "Go Forward",
+      "Sort by Last Update",
+    ],
   ]);
 });
 

@@ -36,19 +36,28 @@ export type Stop = { number: number; kind: "issue" | "pull_request"; issue: numb
 /** Whether two stops are the same line. A PR that fixes two Issues has a line under each. */
 export const sameStop = (a: Stop | undefined, b: Stop) => a?.number === b.number && a.issue === b.issue;
 
+/** A line of the list: where the cursor stops, and the title it shows. */
+type Line = { stop: Stop; title: string };
+
 /** The lines of `item` the cursor stops on, in the order the list shows them. */
-function stopsOf(item: ListedItem): Stop[] {
+function linesOf(item: ListedItem): Line[] {
   if (item.kind === "issue") {
     const rows = item.pull_requests.flatMap((entry) =>
-      entry.kind === "pr" ? [entry.number, ...entry.backports.map((b) => b.number)] : [entry.number],
+      entry.kind === "pr" ? [entry, ...entry.backports] : [entry],
     );
     return [
-      { number: item.number, kind: "issue", issue: undefined },
-      ...rows.map((number) => ({ number, kind: "pull_request" as const, issue: item.number })),
+      { stop: { number: item.number, kind: "issue", issue: undefined }, title: item.title },
+      ...rows.map((row) => ({
+        stop: { number: row.number, kind: "pull_request" as const, issue: item.number },
+        title: row.title,
+      })),
     ];
   }
-  const backports = item.kind === "standalone_pr" ? item.backports.map((b) => b.number) : [];
-  return [item.number, ...backports].map((number) => ({ number, kind: "pull_request", issue: undefined }));
+  const backports = item.kind === "standalone_pr" ? item.backports : [];
+  return [item, ...backports].map((row) => ({
+    stop: { number: row.number, kind: "pull_request", issue: undefined },
+    title: row.title,
+  }));
 }
 
 export class WorkbenchState {
@@ -141,8 +150,22 @@ export class WorkbenchState {
     this.cursor = stops.find((stop) => stop.number === cursor.number) ?? cursor;
   }
 
+  /** The title of each line by its number, built once for each answer, which the history reads (#586). Made
+   * anew whenever the list changes, so it needn't be reactive itself. */
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  #titles = $derived(new Map(this.#lines().map((line) => [line.stop.number, line.title])));
+
+  /** The title of line `number`, if the list, or its quiet section, has it. */
+  titleOf(number: number): string | undefined {
+    return this.#titles.get(number);
+  }
+
+  #lines() {
+    return [...(this.items ?? []), ...this.quiet].flatMap(linesOf);
+  }
+
   #stops() {
-    return [...(this.items ?? []), ...this.quiet].flatMap(stopsOf);
+    return this.#lines().map((line) => line.stop);
   }
 
   async #ask() {

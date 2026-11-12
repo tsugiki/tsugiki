@@ -6,7 +6,7 @@ use serde::Serialize;
 use specta::Type;
 
 use super::attention::Causes;
-use super::{IssueItem, TreeEntry, WorkbenchItem, candidates};
+use super::{IssueItem, WorkbenchItem, candidates};
 use crate::error::Error;
 use crate::github::issue_content::IssueContent;
 use crate::login::Login;
@@ -48,9 +48,8 @@ impl IssueView {
             });
         Ok(found.map(|issue| {
             let needs_attention = issue
-                .pull_requests
-                .iter()
-                .flat_map(TreeEntry::rows)
+                .rows()
+                .into_iter()
                 .map(|row| row.number)
                 .filter(|&pr| causes.needs_attention(pr))
                 .collect();

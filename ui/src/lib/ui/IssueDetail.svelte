@@ -34,7 +34,7 @@
     onopenpr(number);
   };
 
-  /** What each icon in the tree says, under it. */
+  /** The legend under the tree: the words for each icon in it. */
   const LEGEND: [string, Octicon][] = [
     ["Open", prIcon({ state: "OPEN", is_draft: false })],
     ["Draft", prIcon({ state: "OPEN", is_draft: true })],
@@ -110,10 +110,11 @@
         {/each}
       </ul>
       <p class="legend">
+        <!-- The words name each icon, so a screen reader skips the icons' own names. -->
         {#each LEGEND as [words, icon] (words)}
-          <span><StateIcon {icon} />{words}</span>
+          <span><span aria-hidden="true"><StateIcon {icon} /></span><small>{words}</small></span>
         {/each}
-        <span><b>Bold</b>: Needs attention</span>
+        <small><b>Bold</b>: Needs attention</small>
       </p>
     {/if}
 
@@ -168,8 +169,9 @@
     margin: 12px 0 0;
   }
 
+  /* The icons in the legend keep the colors of those in the tree, and only its words fade. */
   h3 small,
-  .legend {
+  .legend small {
     font-size: 11px;
     font-weight: normal;
     opacity: 0.75;

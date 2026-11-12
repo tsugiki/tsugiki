@@ -171,7 +171,7 @@ it("says under the tree what each icon and the bold mean", async () => {
   await shown(view);
 
   const legend = screen.getByText("Needs attention", { exact: false });
-  const icons = within(legend.parentElement as HTMLElement).getAllByRole("img");
+  const icons = within(legend.parentElement as HTMLElement).getAllByRole("img", { hidden: true });
 
   expect(legend.parentElement?.textContent).toBe("OpenDraftMergedClosed Bold: Needs attention");
   expect(icons.map((icon) => icon.getAttribute("title"))).toEqual([

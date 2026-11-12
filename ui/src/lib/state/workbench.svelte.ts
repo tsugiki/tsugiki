@@ -36,12 +36,14 @@ export type Stop = { number: number; kind: "issue" | "pull_request"; issue: numb
 /** Whether two stops are the same line. A PR that fixes two Issues has a line under each. */
 export const sameStop = (a: Stop | undefined, b: Stop) => a?.number === b.number && a.issue === b.issue;
 
+/** Each PR an Issue's tree holds, in the order the list shows them: each entry, then its Backports. */
+export const treeRows = (entries: TreeEntry[]): WorkbenchRow[] =>
+  entries.flatMap((entry) => (entry.kind === "pr" ? [entry, ...entry.backports] : [entry]));
+
 /** The lines of `item` the cursor stops on, in the order the list shows them. */
 function stopsOf(item: ListedItem): Stop[] {
   if (item.kind === "issue") {
-    const rows = item.pull_requests.flatMap((entry) =>
-      entry.kind === "pr" ? [entry.number, ...entry.backports.map((b) => b.number)] : [entry.number],
-    );
+    const rows = treeRows(item.pull_requests).map((row) => row.number);
     return [
       { number: item.number, kind: "issue", issue: undefined },
       ...rows.map((number) => ({ number, kind: "pull_request" as const, issue: item.number })),

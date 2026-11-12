@@ -10,8 +10,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   ([research](https://github.com/tsugiki/tsugiki/blob/research/expanded-line-comments/research/expanded-line-comments.md)).
   Expanded lines show no + in the gutter, and hovering it says why: reply to a thread there, or comment on the
   PR.
-- Generated files are collapsed by default and shown with line counts. Whether a file is generated comes from
-  `.gitattributes` on the PR's **Target branch**.
+- Each file's header has a ▸/▾ chevron that collapses the file to its header or opens it, as on github.com.
+  Generated files start collapsed and shown with line counts, and the rest start open. Whether a file is
+  generated comes from `.gitattributes` on the PR's **Target branch**. Tsugiki saves nothing of a click and
+  sends nothing to GitHub, so a reopened PR starts each file as before. A jump into a collapsed file
+  (`F7`, `F8`, Find in diff, **Go to definition**) opens it, and the rows of a collapsed file aren't
+  highlighted until it opens.
 - A PR whose commits the mirror doesn't hold yet says "Fetching the PR's commits…" until they arrive. When
   the PR has moved on since the mirror's copy, the older diff stays readable under "Showing abc1234 · fetching
   the newer def5678", with the threads held back and counted, since their lines belong to the newer commit.

@@ -1,6 +1,6 @@
 <!-- The rows of a PR's diff, drawn only near what the tab shows, below its NEWS entries. Every row has the
      same height, so a row's place follows from where it shows, and the core sends the rows in chunks as they
-     come near (ADR 0001). A collapsed Generated file shows only its header (#181). A hunk's row offers to
+     come near (ADR 0001). A collapsed file shows only its header (#181, #581). A hunk's row offers to
      show the lines its gap leaves out, and the row after a file's last hunk the lines after it (#182).
      Side by side, a line of context shows on both sides, and a change shows its removed rows on the left
      beside its added ones on the right (#183). A review thread takes as many rows' places under its line
@@ -127,11 +127,10 @@
     change.kind === "binary" ? "binary" : `+${String(change.added)} −${String(change.removed)}`;
   const named = (file: { path: string; old_path: string | null }) =>
     file.old_path === null ? file.path : `${file.old_path} → ${file.path}`;
-  /** The place among the files of the Generated file whose header is row `index` of the diff, if it is
-   * one. */
-  const generated = (index: number) => {
+  /** The place among the files of the file whose header is row `index` of the diff, if the tab has it. */
+  const fileOfHeader = (index: number) => {
     const at = diff.layout.fileAt(index);
-    return at !== undefined && files[at]?.generated ? at : undefined;
+    return at !== undefined && files[at] !== undefined ? at : undefined;
   };
 </script>
 
@@ -316,7 +315,7 @@
         {:else}
           <div class={`row ${row?.kind ?? "waiting"}`} style:top={`${String(place * ROW)}px`}>
             {#if row?.kind === "file"}
-              {@const file = generated(index)}
+              {@const file = fileOfHeader(index)}
               {#if file === undefined}
                 <span class="path">{named(row)}</span><span class="count">{counted(row.change)}</span>
               {:else}
@@ -330,7 +329,9 @@
                   ><span class="chevron">{diff.collapsed(file) ? "▸" : "▾"}</span><span class="path"
                     >{named(row)}</span
                   ></button
-                ><span class="count">{counted(row.change)}</span><span class="count">Generated</span>
+                ><span class="count">{counted(row.change)}</span>{#if files[file]?.generated}<span
+                    class="count">Generated</span
+                  >{/if}
               {/if}
             {:else if row?.kind === "hunk"}
               {@const hidden = diff.layout.gapAt(index)}
@@ -452,7 +453,7 @@
     color: var(--fg-muted);
   }
 
-  /* A Generated file's header opens and closes it, and looks like any other header. */
+  /* A file's header opens and closes it, and looks like the text around it. */
   .toggle {
     display: flex;
     gap: 4px;

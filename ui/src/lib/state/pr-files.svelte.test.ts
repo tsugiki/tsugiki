@@ -537,38 +537,109 @@ it("starts a Generated file collapsed, asks for none of its rows, and opens it o
   expect(files.collapsed(1)).toBe(true);
 });
 
-it("asks again for the spans of the chunks it holds once a Generated file opens, naming it", async () => {
-  // Spans that name the files the window has opened, so the test can tell an answer to a later ask.
-  core.pullRequestSpans.mockImplementation(({ start }, opened = []) =>
-    Promise.resolve(ok([keyword(start + opened.length)])),
+it("collapses any file on a toggle, names it when asking for spans, and opens it on another", async () => {
+  const files = await loaded(withGenerated("abc"));
+
+  files.toggle(0);
+  const collapsed = [0, 1, 2].map((at) => files.collapsed(at));
+  const shown = files.layout.count;
+  files.need(0, 20);
+  await vi.waitFor(() => {
+    expect(core.pullRequestSpans).toHaveBeenCalledTimes(2);
+  });
+  files.toggle(0);
+
+  expect(collapsed).toEqual([true, true, false]);
+  // Two headers and the last file's rows.
+  expect(shown).toBe(2 + CHUNK);
+  // Opening the file asks again for the spans of the chunk that holds its rows.
+  expect(core.pullRequestSpans.mock.calls.map(([chunk, collapsed]) => [chunk.start, collapsed])).toEqual([
+    [0, [0, 1]],
+    [2 * CHUNK, [0, 1]],
+    [0, [1]],
+  ]);
+  expect(files.collapsed(0)).toBe(false);
+  expect(files.layout.count).toBe(11 + CHUNK);
+});
+
+it("starts each file afresh when the PR opens again, whatever the user collapsed or opened before", async () => {
+  const before = await loaded(withGenerated("abc"));
+  before.toggle(0);
+  before.toggle(1);
+
+  const again = await loaded(withGenerated("abc"));
+
+  expect([0, 1, 2].map((at) => again.collapsed(at))).toEqual([false, true, false]);
+});
+
+it("collapses nothing on a toggle of a file the diff lacks", async () => {
+  const files = await loaded(withGenerated("abc"));
+
+  files.toggle(3);
+
+  expect(files.collapsed(3)).toBe(false);
+});
+
+it("paints the answer to the latest ask for a chunk's spans, whichever comes last", async () => {
+  const files = await loaded(withGenerated("abc"));
+  files.toggle(0);
+  files.need(0, 20);
+  await vi.waitFor(() => {
+    expect(files.spans(0)).toEqual(keyword(0));
+  });
+  const answerOlder = heldSpans();
+
+  // Each asks again for the first chunk's spans: the first while Lib/ast.py is still collapsed.
+  files.toggle(1);
+  files.toggle(0);
+  await vi.waitFor(() => {
+    expect(core.pullRequestSpans).toHaveBeenCalledTimes(4);
+  });
+  answerOlder(ok([keyword(99)]));
+  await settled();
+
+  expect(files.spans(0)).toEqual(keyword(0));
+});
+
+it("asks again for the spans of the chunks that hold a collapsed file's rows once it opens, naming those still collapsed", async () => {
+  // Spans that count the files the window shows collapsed, so the test can tell an answer to a later ask.
+  core.pullRequestSpans.mockImplementation(({ start }, collapsed = []) =>
+    Promise.resolve(ok([keyword(start + collapsed.length)])),
   );
   const files = await loaded(withGenerated("abc"));
   files.need(0, 20);
   await vi.waitFor(() => {
-    expect(files.spans(2 * CHUNK)).toEqual(keyword(2 * CHUNK));
+    expect(files.spans(2 * CHUNK)).toEqual(keyword(2 * CHUNK + 1));
   });
 
   files.toggle(1);
   files.need(0, 20);
 
   await vi.waitFor(() => {
-    expect(core.pullRequestSpans).toHaveBeenCalledTimes(5);
+    expect(core.pullRequestSpans).toHaveBeenCalledTimes(4);
   });
-  const asked = core.pullRequestSpans.mock.calls.map(([chunk, opened]) => [chunk.start, opened]);
+  // The last file's chunk holds none of the Generated file's rows, so its spans stand.
+  const asked = core.pullRequestSpans.mock.calls.map(([chunk, collapsed]) => [chunk.start, collapsed]);
   expect(asked).toEqual([
-    [0, []],
-    [2 * CHUNK, []],
     [0, [1]],
     [2 * CHUNK, [1]],
-    [CHUNK, [1]],
+    [0, []],
+    [CHUNK, []],
   ]);
   await vi.waitFor(() => {
-    expect(files.spans(0)).toEqual(keyword(1));
+    expect(files.spans(0)).toEqual(keyword(0));
   });
 });
 
 it("keeps a chunk's spans when asking again fails, and drops those that come once it's gone", async () => {
-  const files = await loaded(withGenerated("abc"));
+  // The Generated file's rows reach into the last file's first chunk.
+  const diff = (head: string) =>
+    ready(head, 3 * CHUNK, [
+      file("Lib/ast.py", 0),
+      file("Python/generated_cases.c.h", 10, true),
+      file("Lib/os.py", 2 * CHUNK + 10),
+    ]);
+  const files = await loaded(diff("abc"));
   files.need(0, 5);
   await vi.waitFor(() => {
     expect(files.spans(2 * CHUNK)).toEqual(keyword(2 * CHUNK));
@@ -577,7 +648,7 @@ it("keeps a chunk's spans when asking again fails, and drops those that come onc
   const answerLate = heldSpans();
 
   files.toggle(1);
-  core.pullRequestFiles.mockResolvedValue(ok(withGenerated("def")));
+  core.pullRequestFiles.mockResolvedValue(ok(diff("def")));
   const failed = files.spans(0);
   await files.ask();
   answerLate(ok([keyword(99)]));
@@ -1198,6 +1269,14 @@ it("moves to the next change across files with F7, opening a Generated file, and
   expect(changes(files, 1, 4)).toEqual([{ row: 2 }, { row: 6 }, { row: 23 }, { row: 2 }]);
   expect(files.collapsed(1)).toBe(false);
   expect(changes(files, -1, 2)).toEqual([{ row: 23 }, { row: 6 }]);
+});
+
+it("opens a file the user collapsed when F7 moves into it", async () => {
+  const files = await loaded(changed());
+  files.toggle(0);
+
+  expect(changes(files, 1, 1)).toEqual([{ row: 2 }]);
+  expect(files.collapsed(0)).toBe(false);
 });
 
 it("moves to the last change first with Shift+F7, and nowhere in a diff without changes or before it comes", async () => {

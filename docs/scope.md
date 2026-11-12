@@ -75,8 +75,8 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 
 ### In-app review ([review.md](devel/review.md))
 
-- The whole PR as one list, unified or side by side, with hidden lines on demand, collapsed Generated files
-  and the NEWS entries on top.
+- The whole PR as one list, unified or side by side, with hidden lines on demand, any file collapsible to its
+  header, Generated files collapsed from the start, and the NEWS entries on top.
 - Threads in place, **Outdated threads**, folded resolved and hidden comments, and each Review as one block
   in the Conversation tab.
 

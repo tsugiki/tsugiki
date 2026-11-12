@@ -157,12 +157,12 @@ pub struct FileLines {
     pub lines: Range<u32>,
 }
 
-/// Rows of a diff the window asks spans for, and the Generated files it shows open, by their place among
-/// the files.
+/// Rows of a diff the window asks spans for, and the files it shows collapsed to their headers, by their
+/// place among the files.
 #[derive(Debug, Clone)]
 pub struct Chunk<'a> {
     pub rows: Range<u32>,
-    pub opened: &'a [u32],
+    pub collapsed: &'a [u32],
 }
 
 /// The thread that parses the versions of the open PR's files and keeps their trees: their one writer. Each
@@ -187,16 +187,19 @@ impl Highlighter {
     }
 
     /// The spans of each row of `chunk`, read from the versions of its files in `mirror`. A row that shows
-    /// no line of code, or whose file Tsugiki doesn't highlight, has none. Nor has a row of a Generated file
-    /// the chunk doesn't name as opened: a collapsed file's rows don't show, and parsing it would hold up
-    /// the files that do (#181).
+    /// no line of code, or whose file Tsugiki doesn't highlight, has none. Nor has a row of a file the chunk
+    /// names as collapsed: its rows don't show, and parsing it would hold up the files that do (#181).
     pub fn spans(&self, diff: &Arc<OpenDiff>, mirror: &Path, chunk: Chunk<'_>) -> Vec<Vec<Span>> {
         let Chunk {
             rows: range,
-            opened,
+            collapsed,
         } = chunk;
         let first = range.start;
-        let shown = |&((file, _), _): &(Version, u32)| !diff.collapsed(file, opened);
+        // A PR can have thousands of Generated files, each collapsed.
+        let collapsed: BTreeSet<u32> = collapsed.iter().copied().collect();
+        let shown = |&((file, _), _): &(Version, u32)| {
+            !u32::try_from(file).is_ok_and(|file| collapsed.contains(&file))
+        };
         let lines: Vec<Option<(Version, u32)>> = (first..)
             .zip(diff.diff.rows(range))
             .map(|(row, shown_row)| diff.line(row, shown_row).filter(shown))
@@ -629,12 +632,6 @@ impl OpenDiff {
         Some(((file, side), line))
     }
 
-    /// Whether file `file` is Generated and `opened` doesn't name it.
-    fn collapsed(&self, file: usize, opened: &[u32]) -> bool {
-        let generated = self.diff.files.get(file).is_some_and(|file| file.generated);
-        generated && !u32::try_from(file).is_ok_and(|file| opened.contains(&file))
-    }
-
     /// The versions to parse ahead, in order: those the rows show and Tsugiki highlights, NEWS entries
     /// first, then the rest in the diff's order, each file's merge base before its head. A Generated file
     /// waits for a chunk to ask for it, as it starts collapsed (#181).
@@ -654,7 +651,8 @@ impl OpenDiff {
         let (news, rest): (Vec<Version>, Vec<Version>) = shown
             .into_iter()
             .filter(|&(file, side)| {
-                !self.collapsed(file, &[]) && self.object((file, side)).is_some()
+                let generated = self.diff.files.get(file).is_some_and(|file| file.generated);
+                !generated && self.object((file, side)).is_some()
             })
             .partition(is_news);
         news.into_iter().chain(rest).collect()

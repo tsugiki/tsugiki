@@ -1382,7 +1382,7 @@ fn opening_a_pr_fetches_its_head_first_and_its_files_tab_then_reads_its_diff_in_
     let rows = chunk(&commit, &base).unwrap();
     let spans = wired.ask(
         "pull_request_spans",
-        json!({ "chunk": chunk_of(&commit, &base), "opened": [] }),
+        json!({ "chunk": chunk_of(&commit, &base), "collapsed": [] }),
     );
     let lines_of = |start: u32, end: u32| {
         wired.ask(

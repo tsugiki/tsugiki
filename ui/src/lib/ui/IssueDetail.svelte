@@ -2,9 +2,9 @@
   import { openLink, openOnGitHub, type GitHubItem } from "$lib/state/browser";
   import type { IssueViewState } from "$lib/state/issue-view.svelte";
   import Conversation from "./Conversation.svelte";
-  import { issueIcon, prIcon } from "./octicons";
+  import { issueIcon, prIcon, type Octicon } from "./octicons";
   import StateIcon from "./StateIcon.svelte";
-  import { backportWords, headline, prStateWords } from "./workbench-row";
+  import { backportWords, headline, openOfAll, prStateWords } from "./workbench-row";
 
   let {
     repository,
@@ -33,6 +33,14 @@
   const openPr = (number: number) => () => {
     onopenpr(number);
   };
+
+  /** What each icon in the tree says, under it. */
+  const LEGEND: [string, Octicon][] = [
+    ["Open", prIcon({ state: "OPEN", is_draft: false })],
+    ["Draft", prIcon({ state: "OPEN", is_draft: true })],
+    ["Merged", prIcon({ state: "MERGED", is_draft: false })],
+    ["Closed", prIcon({ state: "CLOSED", is_draft: false })],
+  ];
 </script>
 
 <!-- The pane mounts afresh each time the view shows, so it goes back to where the view says it was. -->
@@ -70,12 +78,18 @@
     <p class="by">{view.author ?? "deleted user"}</p>
 
     {#if view.pull_requests.length > 0}
-      <ul class="prs">
+      <h3>Origin PRs <small>{openOfAll(view.pull_requests)}</small></h3>
+      <ul class="prs" aria-label="Origin PRs">
         {#each view.pull_requests as entry (entry.number)}
           <li>
             <span>
               <StateIcon icon={prIcon(entry)} />
-              <button class="link" onclick={openPr(entry.number)}>{headline(entry)}</button>
+              <code>{entry.target_branch}</code>
+              <button
+                class={["link", { attention: view.needs_attention.includes(entry.number) }]}
+                onclick={openPr(entry.number)}>{headline(entry)}</button
+              >
+              <small>{entry.author ?? "deleted user"}</small>
             </span>
             <small>{prStateWords(entry)}</small>
             {#if entry.kind === "pr" && entry.backports.length > 0}
@@ -84,7 +98,10 @@
                 {#each entry.backports as backport (backport.number)}
                   <span>
                     <StateIcon icon={prIcon(backport)} />
-                    <button class="link" onclick={openPr(backport.number)}>{backportWords(backport)}</button>
+                    <button
+                      class={["link", { attention: view.needs_attention.includes(backport.number) }]}
+                      onclick={openPr(backport.number)}>{backportWords(backport)}</button
+                    >
                   </span>
                 {/each}
               </small>
@@ -92,6 +109,12 @@
           </li>
         {/each}
       </ul>
+      <p class="legend">
+        {#each LEGEND as [words, icon] (words)}
+          <span><StateIcon {icon} />{words}</span>
+        {/each}
+        <span><b>Bold</b>: Needs attention</span>
+      </p>
     {/if}
 
     {#if view.content}
@@ -133,6 +156,36 @@
   .link:hover,
   .link:focus-visible {
     text-decoration: underline;
+  }
+
+  /* As an item that Needs attention stands out in the Issue list. */
+  .attention {
+    font-weight: 600;
+  }
+
+  h3 {
+    font-size: 13px;
+    margin: 12px 0 0;
+  }
+
+  h3 small,
+  .legend {
+    font-size: 11px;
+    font-weight: normal;
+    opacity: 0.75;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 0 0 12px;
+  }
+
+  .legend span {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
   }
 
   ul {

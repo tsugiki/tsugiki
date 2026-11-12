@@ -747,6 +747,8 @@ export type IssueView_Deserialize = {
 	author?: Login | null,
 	/**  Nothing, until Tsugiki has read this Issue from GitHub once. */
 	content?: IssueContent_Deserialize | null,
+	/**  The PRs and Backports in its tree that Need attention, each by itself (#597). */
+	needs_attention: number[],
 } & IssueItem_Deserialize;
 
 /**  An Issue as the Detail pane shows it. */
@@ -755,6 +757,8 @@ export type IssueView_Serialize = {
 	author: Login | null,
 	/**  Nothing, until Tsugiki has read this Issue from GitHub once. */
 	content: IssueContent_Serialize | null,
+	/**  The PRs and Backports in its tree that Need attention, each by itself (#597). */
+	needs_attention: number[],
 } & IssueItem_Serialize;
 
 /**

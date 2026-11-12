@@ -41,7 +41,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   - **Detail pane** (right): the selected item. That is either an **Issue view** or a **PR view**.
     - The Issue view shows the title and its author, the Origin PRs, the description, and recent comments,
       with a box to comment. Each Origin PR's Backports are folded into one line that gives their branches and
-      states.
+      states. The Origin PRs heading counts the open PRs of all of them, Backports included. Each PR's line
+      starts with its branch and ends with its author, and a PR that Needs attention shows in bold. A legend
+      under the tree names the icons for open, draft, merged and closed, and the bold.
     - The PR view shows Conversation and Files as tabs, and opens on Conversation. `Ctrl+PageDown` and
       `Ctrl+PageUp` switch tabs, and so does `Enter` on the PR's row once the PR is open.
 

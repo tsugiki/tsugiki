@@ -92,17 +92,26 @@ export function ago(updatedAt: string, now: Date): string {
 /** An Issue's or a PR's first line. */
 export const headline = (item: { number: number; title: string }) => `#${String(item.number)} ${item.title}`;
 
-/** The lines an entry of an Issue's tree takes: the PR and the Backports beneath it. */
-const rowsIn = (entry: TreeEntry) => (entry.kind === "pr" ? 1 + entry.backports.length : 1);
+/** Each PR an Issue's tree holds: each entry, then the Backports beneath it. */
+const rowsOf = (entries: TreeEntry[]): WorkbenchRow[] =>
+  entries.flatMap((entry) => (entry.kind === "pr" ? [entry, ...entry.backports] : [entry]));
+
+const prCount = (count: number) => (count === 1 ? "1 PR" : `${String(count)} PRs`);
 
 /** An Issue's second line: who is involved, how many PRs its tree holds and when it last changed. */
 export function issueDetails(issue: IssueItem, now: Date): string {
-  const count = issue.pull_requests.reduce((total, entry) => total + rowsIn(entry), 0);
   return [
     ...(issue.people.length > 0 ? [issue.people.join(", ")] : []),
-    count === 1 ? "1 PR" : `${String(count)} PRs`,
+    prCount(rowsOf(issue.pull_requests).length),
     ago(issue.updated_at, now),
   ].join(" · ");
+}
+
+/** How many of the PRs an Issue's tree holds are open, of all of them, Backports included. */
+export function openOfAll(entries: TreeEntry[]): string {
+  const rows = rowsOf(entries);
+  const open = rows.filter((row) => row.state === "OPEN").length;
+  return `${String(open)} open of ${prCount(rows.length)}`;
 }
 
 /** A Standalone PR's second line, which has no Issue above it to say when it last changed. */

@@ -5,7 +5,8 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 use specta::Type;
 
-use super::{IssueItem, WorkbenchItem, candidates};
+use super::attention::Causes;
+use super::{IssueItem, TreeEntry, WorkbenchItem, candidates};
 use crate::error::Error;
 use crate::github::issue_content::IssueContent;
 use crate::login::Login;
@@ -21,6 +22,8 @@ pub struct IssueView {
     pub author: Option<Login>,
     /// Nothing, until Tsugiki has read this Issue from GitHub once.
     pub content: Option<IssueContent>,
+    /// The PRs and Backports in its tree that Need attention, each by itself (#597).
+    pub needs_attention: BTreeSet<u32>,
 }
 
 impl IssueView {
@@ -34,6 +37,7 @@ impl IssueView {
         let (facts, content) = reader.issue_facts(&repository.name, number)?;
         let held = facts.issues.iter().find(|issue| issue.number == number);
         let author = held.and_then(|issue| issue.author.clone());
+        let causes = Causes::of(&facts, repository.conventions);
         let found = candidates(facts, repository, &BTreeSet::new())
             .into_iter()
             .find_map(|item| match item {
@@ -42,10 +46,20 @@ impl IssueView {
                 | WorkbenchItem::StandalonePr(_)
                 | WorkbenchItem::StandaloneBackport(_) => None,
             });
-        Ok(found.map(|issue| Self {
-            issue,
-            author,
-            content,
+        Ok(found.map(|issue| {
+            let needs_attention = issue
+                .pull_requests
+                .iter()
+                .flat_map(TreeEntry::rows)
+                .map(|row| row.number)
+                .filter(|&pr| causes.needs_attention(pr))
+                .collect();
+            Self {
+                issue,
+                author,
+                content,
+                needs_attention,
+            }
         }))
     }
 }

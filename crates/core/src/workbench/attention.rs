@@ -3,13 +3,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
 use time::OffsetDateTime;
 
 use super::rows::reasons;
 use super::{IssueItem, WorkReason, WorkbenchItem};
-use crate::activity::{News, WhatHappened, has_failed};
+use crate::activity::{NewActivity, News, WhatHappened, has_failed};
 use crate::conventions::Conventions;
 use crate::github::activity::{Activity, ActivityKind};
 use crate::github::issues::IssueFacts;
@@ -49,6 +49,40 @@ pub enum Why {
     BackportFailed {
         target: String,
     },
+    /// The user marked the item unseen.
+    MarkedUnseen,
+}
+
+/// The numbers Mark Seen marks and the moment it marks them up to, as the window drew them. The window sends
+/// it back as it got it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct SeenMark {
+    /// The item, and for an Issue every PR in its tree.
+    pub numbers: Vec<u32>,
+    /// The moment Last seen moves on to: the newest the window drew of GitHub's last update, CI reaching a
+    /// result and each event on them. Whatever a later sync brings stays new. Nothing for numbers the facts
+    /// don't hold, and Last seen then stays.
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[specta(type = Option<String>)]
+    pub up_to: Option<OffsetDateTime>,
+}
+
+/// An item's part in Mark Seen and Mark Unseen: what Mark Seen sends, and which of the two its button offers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct Seen {
+    pub mark: SeenMark,
+    pub state: SeenState,
+}
+
+/// Whether the user has seen an item as it now is. The header offers Mark Seen unless they have.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum SeenState {
+    /// The item, or a PR in an Issue's tree, is Marked unseen, whatever its activity.
+    MarkedUnseen,
+    /// The item, or a PR in an Issue's tree, has New activity, whoever it waits on.
+    NewActivity,
+    Seen,
 }
 
 /// The reasons an item Needs attention, and since when.
@@ -74,6 +108,13 @@ pub(super) struct Causes {
     by_number: BTreeMap<u32, Vec<Cause>>,
     /// The PRs that carry a Review request.
     pub(super) review_requests: BTreeSet<u32>,
+    /// The Issues and PRs with New activity, whoever it waits on.
+    with_news: BTreeSet<u32>,
+    /// The newest moment the facts hold on each Issue and PR: GitHub's last update, CI reaching a result, or
+    /// an event.
+    known_until: BTreeMap<u32, OffsetDateTime>,
+    /// The Issues and PRs the user marked unseen.
+    marked_unseen: BTreeSet<u32>,
 }
 
 impl Causes {
@@ -87,18 +128,22 @@ impl Causes {
             facts: &facts.activity,
             viewer,
         };
-        let on_pull_requests = facts
-            .pull_requests
-            .iter()
-            .map(|pr| (pr.number, rules.on_pull_request(pr)));
-        let on_issues = facts
-            .issues
-            .iter()
-            .map(|issue| (issue.number, rules.on_issue(issue)));
-        let by_number = on_pull_requests
-            .chain(on_issues)
-            .filter(|(_, causes)| !causes.is_empty())
-            .collect();
+        let on_pull_requests = facts.pull_requests.iter().map(|pr| {
+            let news = rules.news.on_pull_request(pr);
+            (pr.number, rules.on_pull_request(pr, &news), news)
+        });
+        let on_issues = facts.issues.iter().map(|issue| {
+            let news = rules.news.on_issue(issue.number);
+            (issue.number, rules.on_issue(issue, &news), news)
+        });
+        let mut with_news = BTreeSet::new();
+        let mut by_number = BTreeMap::new();
+        for (number, causes, news) in on_pull_requests.chain(on_issues) {
+            with_news.extend((!news.is_empty()).then_some(number));
+            if !causes.is_empty() {
+                by_number.extend([(number, causes)]);
+            }
+        }
         let requested = facts
             .pull_requests
             .iter()
@@ -106,12 +151,36 @@ impl Causes {
         Self {
             by_number,
             review_requests: requested.map(|pr| pr.number).collect(),
+            with_news,
+            known_until: known_until(facts),
+            marked_unseen: facts.activity.marked_unseen.keys().copied().collect(),
         }
     }
 
     /// True when Issue or PR `number` itself Needs attention.
     pub(super) fn needs_attention(&self, number: u32) -> bool {
         self.by_number.contains_key(&number)
+    }
+
+    /// The part in Mark Seen of the item whose numbers are `numbers`, the item's own first.
+    pub(super) fn seen_of(&self, numbers: Vec<u32>) -> Seen {
+        let up_to = numbers
+            .iter()
+            .filter_map(|number| self.known_until.get(number))
+            .max()
+            .copied();
+        let any_in = |set: &BTreeSet<u32>| numbers.iter().any(|number| set.contains(number));
+        let state = if any_in(&self.marked_unseen) {
+            SeenState::MarkedUnseen
+        } else if any_in(&self.with_news) {
+            SeenState::NewActivity
+        } else {
+            SeenState::Seen
+        };
+        Seen {
+            mark: SeenMark { numbers, up_to },
+            state,
+        }
     }
 
     /// The sum of `item` and the rest of its tree.
@@ -131,6 +200,36 @@ impl Causes {
         }
         Some(Attention { since, why })
     }
+}
+
+/// The newest moment `facts` hold on each Issue and PR, which Mark Seen moves Last seen to. It covers what
+/// isn't New activity yet, such as CI on a PR the user hasn't reviewed, so that stays seen once it would be.
+fn known_until(facts: &WorkFacts) -> BTreeMap<u32, OffsetDateTime> {
+    let updated = facts
+        .pull_requests
+        .iter()
+        .map(|pr| (pr.number, pr.updated_at))
+        .chain(
+            facts
+                .issues
+                .iter()
+                .map(|issue| (issue.number, issue.updated_at)),
+        );
+    let activity = &facts.activity;
+    let events = activity
+        .events
+        .iter()
+        .flat_map(|(number, events)| events.iter().map(|event| (*number, event.at)));
+    let ci = activity
+        .ci_finished
+        .iter()
+        .map(|(number, at)| (*number, *at));
+    let mut newest = BTreeMap::new();
+    for (number, at) in updated.chain(events).chain(ci) {
+        let known = newest.entry(number).or_insert(at);
+        *known = (*known).max(at);
+    }
+    newest
 }
 
 impl WorkbenchItem {
@@ -207,9 +306,19 @@ impl Rules<'_> {
         requested.into_iter().chain(failed).collect()
     }
 
-    fn on_pull_request(&self, pull_request: &PullRequestFacts) -> Vec<Cause> {
-        let mut causes = self.standing(pull_request);
+    /// Marked unseen, from the moment of the flag, whatever the user's part in the item.
+    fn flag(&self, number: u32) -> Option<Cause> {
+        let at = *self.facts.marked_unseen.get(&number)?;
+        Some(Cause {
+            at,
+            why: Why::MarkedUnseen,
+        })
+    }
+
+    fn on_pull_request(&self, pull_request: &PullRequestFacts, news: &[NewActivity]) -> Vec<Cause> {
         let number = pull_request.number;
+        let mut causes = self.standing(pull_request);
+        causes.extend(self.flag(number));
         let own = pull_request.author.as_ref() == Some(self.viewer);
         // A colleague's Draft PR needs attention only when it carries a Review request.
         if pull_request.is_draft && !own {
@@ -222,12 +331,11 @@ impl Rules<'_> {
         } else {
             Involvement::Follows
         };
-        let news = self.news.on_pull_request(pull_request).into_iter();
-        let counted = news.filter(|new| involvement.counts(&new.what));
+        let counted = news.iter().filter(|new| involvement.counts(&new.what));
         causes.extend(counted.map(|new| Cause {
             at: new.at,
             why: why_of(
-                new.what,
+                new.what.clone(),
                 &pull_request.latest_reviews,
                 self.failed_checks_of(number),
             ),
@@ -235,7 +343,7 @@ impl Rules<'_> {
         causes
     }
 
-    fn on_issue(&self, issue: &IssueFacts) -> Vec<Cause> {
+    fn on_issue(&self, issue: &IssueFacts, news: &[NewActivity]) -> Vec<Cause> {
         let involvement = if issue.author.as_ref() == Some(self.viewer)
             || issue.assignees.contains(self.viewer)
             || self.has_commented(issue.number)
@@ -244,14 +352,12 @@ impl Rules<'_> {
         } else {
             Involvement::Follows
         };
-        let news = self.news.on_issue(issue.number).into_iter();
-        let counted = news.filter(|new| involvement.counts(&new.what));
-        counted
-            .map(|new| Cause {
-                at: new.at,
-                why: why_of(new.what, &[], &[]),
-            })
-            .collect()
+        let counted = news.iter().filter(|new| involvement.counts(&new.what));
+        let causes = counted.map(|new| Cause {
+            at: new.at,
+            why: why_of(new.what.clone(), &[], &[]),
+        });
+        causes.chain(self.flag(issue.number)).collect()
     }
 }
 

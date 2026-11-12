@@ -357,8 +357,9 @@ fn the_plan_check_sees_each_table_a_view_reads() {
         "pr_reviews",
         "review_threads",
         "review_thread_comments",
+        "marked_unseen",
     ];
-    assert_eq!(tables.map(reads), [true; 17]);
+    assert_eq!(tables.map(reads), [true; 18]);
 }
 
 #[test]

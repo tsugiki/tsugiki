@@ -64,6 +64,8 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
   in the Sidebar.
 - **Needs attention**, **Standalone PRs**, **Dependency updates**, and hiding an item with Archive, Mute and
   Mute author.
+- Mark Seen, which moves **Last seen**, and Mark Unseen, which flags an item **Marked unseen**. Opening an
+  item marks nothing, so it keeps its place in the list.
 - The Issue tree: Origin PRs with their Backports, **Draft PRs** and **Stacked PRs**.
 
 ### Review state and activity ([review-state.md](devel/review-state.md))

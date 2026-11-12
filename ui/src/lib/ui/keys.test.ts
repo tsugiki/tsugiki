@@ -173,6 +173,8 @@ describe("keyGuard", () => {
       { key: "0", code: "Digit0", ctrlKey: true },
       { key: "e", code: "KeyE" },
       { key: "m", code: "KeyM" },
+      { key: "q", code: "KeyQ" },
+      { key: "Q", code: "KeyQ", shiftKey: true },
       { key: "?", code: "Slash", shiftKey: true },
     ];
     for (const init of owned) {
@@ -214,6 +216,10 @@ describe("keyGuard", () => {
     it("lets a plain key type", () => {
       expect(typedIn("input", { key: "e", code: "KeyE" }).defaultPrevented).toBe(false);
       expect(typedIn("textarea", { key: "?", code: "Slash", shiftKey: true }).defaultPrevented).toBe(false);
+    });
+
+    it("lets a capital letter type, though Shift+Q is Tsugiki's elsewhere", () => {
+      expect(typedIn("textarea", { key: "Q", code: "KeyQ", shiftKey: true }).defaultPrevented).toBe(false);
     });
 
     it("still owns a key with a modifier", () => {

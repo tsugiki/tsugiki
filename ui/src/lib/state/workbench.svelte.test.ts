@@ -1,11 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands, events } from "$lib/data/bindings";
-import { WorkbenchState, type ListedItem, type WorkbenchRow } from "./workbench.svelte";
+import { WorkbenchState, type ListedItem, type Seen, type WorkbenchRow } from "./workbench.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
-  commands: { workbench: vi.fn() },
+  commands: { workbench: vi.fn(), markSeen: vi.fn(), markUnseen: vi.fn() },
   events: { changed: { listen: vi.fn() } },
 }));
+
+/** The mark that Mark Seen sends for `numbers`, with nothing new on them. */
+const seen = (...numbers: number[]): Seen => ({
+  mark: { numbers, up_to: null },
+  state: "seen",
+});
 
 const item = (number: number): ListedItem => ({
   attention: null,
@@ -20,6 +26,7 @@ const item = (number: number): ListedItem => ({
   updated_at: "2026-11-04T10:00:00Z",
   reasons: ["own_pr"],
   your_review: null,
+  seen: seen(number),
   backports: [],
 });
 
@@ -35,6 +42,7 @@ const row: WorkbenchRow = {
   updated_at: "2026-11-04T10:00:00Z",
   reasons: [],
   your_review: null,
+  seen: seen(0),
 };
 
 const mine = { name: "Mine", query: "is:open author:@me", count: 1, problem: null };
@@ -48,13 +56,14 @@ const answer = (...numbers: number[]) => ({
 
 const refused = { status: "error" as const, error: { kind: "internal" as const, message: "no database" } };
 
-/** Catches the listener the state registers, so a test can say a Repository changed as the core would. */
+/** Catches the listener the state registers, so a test can say a Repository changed as the core would, and
+ * which items. */
 const catchListener = () => {
   const stop = vi.fn();
   const send = vi.fn();
   vi.mocked(events.changed.listen).mockImplementation(async (callback) => {
-    send.mockImplementation((repository: string) => {
-      callback({ event: "changed", id: 1, payload: { repository, items: [] } });
+    send.mockImplementation((repository: string, items: number[] = []) => {
+      callback({ event: "changed", id: 1, payload: { repository, items } });
     });
     return stop;
   });
@@ -72,7 +81,8 @@ const issueWith = (number: number, pr: number): ListedItem => ({
   state: "OPEN",
   people: [],
   updated_at: "2026-11-04T10:00:00Z",
-  pull_requests: [{ ...row, kind: "pr", number: pr, backports: [] }],
+  pull_requests: [{ ...row, kind: "pr", number: pr, seen: seen(pr), backports: [] }],
+  seen: seen(number, pr),
 });
 
 describe("WorkbenchState", () => {
@@ -264,6 +274,7 @@ describe("WorkbenchState", () => {
       state: "OPEN",
       people: [],
       updated_at: "2026-11-04T10:00:00Z",
+      seen: seen(10, 11, 12, 13),
       pull_requests: [
         { ...row, kind: "pr", number: 11, backports: [{ ...row, number: 12, backport: "bot" }] },
         { ...row, kind: "backport", number: 13, backport: "manual" },
@@ -318,6 +329,7 @@ describe("WorkbenchState", () => {
       people: [],
       updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [{ ...row, kind: "pr", number: 5, backports: [] }],
+      seen: seen(number, 5),
     });
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
@@ -473,6 +485,7 @@ describe("WorkbenchState", () => {
       people: [],
       updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [{ ...row, kind: "pr", number: 5, backports: [] }],
+      seen: seen(10, 5),
     };
     vi.mocked(commands.workbench).mockResolvedValueOnce({
       status: "ok",
@@ -728,5 +741,186 @@ describe("WorkbenchState", () => {
 
   it("has nothing to stop if it never loaded", () => {
     new WorkbenchState("python/cpython").stop();
+  });
+
+  it("finds each line's part in Mark Seen: an Issue's covers its tree, and a PR's the PR alone", async () => {
+    catchListener();
+    const standalone = {
+      ...item(3),
+      backports: [{ ...row, number: 4, seen: seen(4), backport: "bot" as const }],
+    };
+    vi.mocked(commands.workbench).mockResolvedValue({
+      status: "ok",
+      data: {
+        items: [issueWith(1, 2), standalone],
+        quiet: [item(5)],
+        count: 0,
+        review_requests: 0,
+        filters: [],
+      },
+    });
+    const state = new WorkbenchState("python/cpython");
+    const numbersOf = (number: number, kind: "issue" | "pull_request", issue?: number) =>
+      state.seenOf({ number, kind, issue })?.mark.numbers;
+    expect(numbersOf(1, "issue"), "before the first answer").toBeUndefined();
+    await state.load();
+
+    expect(numbersOf(1, "issue")).toEqual([1, 2]);
+    expect(numbersOf(2, "pull_request", 1)).toEqual([2]);
+    expect(numbersOf(3, "pull_request")).toEqual([3]);
+    expect(numbersOf(4, "pull_request")).toEqual([4]);
+    expect(numbersOf(5, "pull_request"), "the folded quiet section's lines too").toEqual([5]);
+    expect(numbersOf(9, "issue")).toBeUndefined();
+    state.stop();
+  });
+
+  it("sends Mark Seen and Mark Unseen to the core, and says what went wrong", async () => {
+    vi.mocked(commands.markSeen).mockResolvedValue({ status: "ok", data: null });
+    vi.mocked(commands.markUnseen).mockResolvedValue(refused);
+    const state = new WorkbenchState("python/cpython");
+    const mark = { numbers: [1, 2], up_to: "2026-11-04T10:00:00Z" };
+
+    expect(await state.markSeen(mark, undefined)).toBeUndefined();
+    expect(await state.markUnseen(7)).toBe("no database");
+
+    expect(commands.markSeen).toHaveBeenCalledWith("python/cpython", mark);
+    expect(commands.markUnseen).toHaveBeenCalledWith("python/cpython", 7);
+  });
+
+  /** Line `number` of the list, a PR by itself. */
+  const lineOf = (number: number) => ({ number, kind: "pull_request" as const, issue: undefined });
+
+  /** The list the core answers: `items` Need attention, and `quiet` don't. */
+  const answering = (items: number[], quiet: number[] = []) => {
+    vi.mocked(commands.workbench).mockResolvedValue({
+      status: "ok",
+      data: { items: items.map(item), quiet: quiet.map(item), count: 0, review_requests: 0, filters: [] },
+    });
+  };
+
+  /** A list of `items` with the cursor on its line `at`, counted from the top. */
+  const listingWithCursor = async (items: number[], at: number) => {
+    const { send } = catchListener();
+    vi.mocked(commands.markSeen).mockResolvedValue({ status: "ok", data: null });
+    answering(items);
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    for (let step = 0; step <= at; step++) state.moveCursor(1);
+    return { state, send };
+  };
+
+  it("lands the cursor on the line that takes the place of the item it marked seen, once the core says so", async () => {
+    const { state, send } = await listingWithCursor([4, 3, 2, 1], 1);
+    const landed = vi.fn();
+
+    await state.markSeen(seen(3).mark, lineOf(3), landed);
+    // A sync's change, which the mark isn't part of yet.
+    send("python/cpython");
+    await vi.waitFor(() => {
+      expect(commands.workbench).toHaveBeenCalledTimes(2);
+    });
+    expect(state.cursor?.number).toBe(3);
+    answering([4, 2, 1], [3]);
+    send("python/cpython", [3]);
+
+    await vi.waitFor(() => {
+      expect(state.cursor?.number).toBe(2);
+    });
+    expect(landed).toHaveBeenCalledOnce();
+    state.stop();
+  });
+
+  it("lands the cursor on the item that came after the one it marked seen, though one above went quiet too", async () => {
+    const { state, send } = await listingWithCursor([4, 3, 2, 1], 1);
+
+    await state.markSeen(seen(3, 4).mark, lineOf(3));
+    answering([2, 1], [4, 3]);
+    send("python/cpython", [3, 4]);
+
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([2, 1]);
+    });
+    expect(state.cursor?.number).toBe(2);
+    state.stop();
+  });
+
+  it("lands the cursor on the last line when the item it marked seen was the last", async () => {
+    const { state, send } = await listingWithCursor([3, 2], 1);
+
+    await state.markSeen(seen(2).mark, lineOf(2));
+    answering([3], [2]);
+    send("python/cpython", [2]);
+
+    await vi.waitFor(() => {
+      expect(state.cursor?.number).toBe(3);
+    });
+    state.stop();
+  });
+
+  it("lands the cursor on no line when nothing Needs attention after Mark Seen, and the quiet section is folded", async () => {
+    const { state, send } = await listingWithCursor([3], 0);
+    const landed = vi.fn();
+
+    await state.markSeen(seen(3).mark, lineOf(3), landed);
+    answering([], [3]);
+    send("python/cpython", [3]);
+
+    await vi.waitFor(() => {
+      expect(landed).toHaveBeenCalledOnce();
+    });
+    expect(state.cursor).toBeUndefined();
+    state.stop();
+  });
+
+  it("forgets where to land once the item marked seen stays in its place, or the core refuses the mark", async () => {
+    const { state, send } = await listingWithCursor([4, 3, 2, 1], 1);
+    const landed = vi.fn();
+
+    // A Review request still waits on the user, so the item stays, if no longer where it was.
+    await state.markSeen(seen(3).mark, lineOf(3), landed);
+    answering([3, 4, 2, 1]);
+    send("python/cpython", [3]);
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([3, 4, 2, 1]);
+    });
+    answering([4, 2, 1], [3]);
+    send("python/cpython");
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([4, 2, 1]);
+    });
+    expect(
+      state.cursor?.number,
+      "an item that went quiet under the cursor leaves it on the last line above",
+    ).toBe(1);
+    expect(landed).not.toHaveBeenCalled();
+
+    state.moveTo(lineOf(4));
+    vi.mocked(commands.markSeen).mockResolvedValue(refused);
+    expect(await state.markSeen(seen(4).mark, lineOf(4), landed)).toBe("no database");
+    answering([2, 1], [4, 3]);
+    send("python/cpython", [4]);
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([2, 1]);
+    });
+    expect(state.cursor?.number).toBe(1);
+    expect(landed).not.toHaveBeenCalled();
+    state.stop();
+  });
+
+  it("leaves the cursor alone when the item marked seen isn't under it, or the user moved it since", async () => {
+    const { state, send } = await listingWithCursor([3, 2, 1], 0);
+
+    await state.markSeen(seen(2).mark, lineOf(2));
+    await state.markSeen(seen(3).mark, lineOf(3));
+    state.moveCursor(1);
+    state.moveCursor(-1);
+    answering([1], [3, 2]);
+    send("python/cpython", [2, 3]);
+
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([1]);
+    });
+    expect(state.cursor?.number, "folding moves it to the last line above, as before").toBe(1);
+    state.stop();
   });
 });

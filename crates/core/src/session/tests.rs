@@ -12,11 +12,11 @@ use crate::status::testing::{
     announced, changes_board, failed_reads_board, heads_board, quiet_board, showing, watched_board,
 };
 use crate::status::{Change, FailedRead, ReadFailure};
-use crate::store::{ChangeCheck, SyncState};
+use crate::store::{ActivityFacts, ChangeCheck, SyncState};
 use crate::token::Token;
 use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
 use std::cell::RefCell;
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -294,12 +294,13 @@ fn issue_content_reply() -> Result<Reply, Unreachable> {
     )
 }
 
-/// A session that runs `ask` and stops, and what the database then holds of Issue 7.
+/// A session that runs `ask` and stops, what the database then holds of Issue 7, and the activity facts of
+/// its Repository.
 fn after_asking(
     name: &str,
     access: GitHubAccess,
     ask: impl FnOnce(&SessionRequests),
-) -> (Option<IssueContent>, Option<OffsetDateTime>, Vec<Status>) {
+) -> (Option<IssueContent>, ActivityFacts, Vec<Status>) {
     let folders = temp_folders(name);
     let (board, seen) = watched_board();
     let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
@@ -314,49 +315,63 @@ fn after_asking(
     open.close();
     store.close();
     fs::remove_dir_all(folders.data).unwrap();
-    (
-        content,
-        facts.activity.last_seen.get(&7).copied(),
-        announced(&seen),
-    )
+    (content, facts.activity, announced(&seen))
 }
 
 #[test]
-fn opening_an_issue_records_last_seen_and_keeps_what_it_says() {
-    let access = replying(vec![signed_in(), issue_content_reply()]);
-    let before = OffsetDateTime::now_utc();
-
-    let (content, last_seen, _) =
-        after_asking("open-issue", access, |asked| asked.open_issue(gcmon(), 7));
-
-    assert_eq!(content.unwrap().body_html, "<p>It crashes</p>");
-    assert!(last_seen.unwrap() >= before.replace_nanosecond(0).unwrap());
-}
-
-#[test]
-fn reading_an_issue_on_screen_again_leaves_last_seen_where_it_is() {
+fn opening_an_issue_keeps_what_it_says_and_leaves_last_seen_alone() {
     let access = replying(vec![signed_in(), issue_content_reply()]);
 
-    let (content, last_seen, _) =
+    let (content, activity, _) =
         after_asking("fetch-issue", access, |asked| asked.fetch_issue(gcmon(), 7));
 
-    assert!(content.is_some());
-    assert_eq!(last_seen, None);
+    assert_eq!(content.unwrap().body_html, "<p>It crashes</p>");
+    assert_eq!(activity.last_seen, BTreeMap::new());
+}
+
+/// A moment in whole seconds, as the database keeps it.
+fn hours_ago(hours: i64) -> OffsetDateTime {
+    let at = OffsetDateTime::now_utc() - time::Duration::hours(hours);
+    at.replace_nanosecond(0).unwrap()
 }
 
 #[test]
-fn opening_a_github_page_records_last_seen_and_asks_github_nothing() {
+fn mark_seen_moves_last_seen_to_the_moment_the_window_drew_and_asks_github_nothing() {
     // `Replies` panics if it is asked a second time.
     let access = replying(vec![signed_in()]);
+    let drawn = hours_ago(2);
 
-    let (content, last_seen, _) = after_asking("seen-pr", access, |asked| asked.seen(gcmon(), 7));
+    let (content, activity, _) = after_asking("mark-seen", access, |asked| {
+        asked.mark_unseen(gcmon(), 8);
+        asked.mark_seen(
+            gcmon(),
+            SeenMark {
+                numbers: vec![7, 8],
+                up_to: Some(drawn),
+            },
+        );
+    });
 
     assert_eq!(content, None);
-    assert!(last_seen.is_some());
+    assert_eq!(activity.last_seen, BTreeMap::from([(7, drawn), (8, drawn)]));
+    assert_eq!(activity.marked_unseen, BTreeMap::new());
 }
 
 #[test]
-fn opening_a_pr_records_last_seen_and_keeps_its_recorded_conversation() {
+fn mark_unseen_flags_the_item_from_now() {
+    let access = replying(vec![signed_in()]);
+    let before = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
+
+    let (_, activity, _) =
+        after_asking("mark-unseen", access, |asked| asked.mark_unseen(gcmon(), 7));
+
+    let flagged = activity.marked_unseen.get(&7).copied().unwrap();
+    assert!(flagged >= before, "{flagged} {before}");
+    assert_eq!(activity.last_seen, BTreeMap::new());
+}
+
+#[test]
+fn opening_a_pr_keeps_its_recorded_conversation_and_leaves_last_seen_alone() {
     let recordings = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
     let access = GitHubAccess {
         transport: Box::new(Replayer::new(recordings)),
@@ -369,11 +384,8 @@ fn opening_a_pr_records_last_seen_and_keeps_its_recorded_conversation() {
 
     session
         .requests()
-        .open_pull_request(cpython.clone(), 152_326);
-    // Last seen moves, and then the Conversation comes from GitHub.
-    for _ in 0..2 {
-        let _change = changes.recv_timeout(PLENTY).unwrap();
-    }
+        .fetch_pull_request(cpython.clone(), 152_326);
+    let _change = changes.recv_timeout(PLENTY).unwrap();
     let (facts, content) = session
         .reader()
         .pull_request_facts(&cpython, 152_326)
@@ -408,11 +420,11 @@ fn opening_a_pr_records_last_seen_and_keeps_its_recorded_conversation() {
         Some(&(some("user-7"), ReviewState::Approved, 0))
     );
     assert_eq!((reviewers.len(), content.earlier_reviews), (8, 0));
-    assert!(facts.activity.last_seen.contains_key(&152_326));
+    assert_eq!(facts.activity.last_seen, BTreeMap::new());
 }
 
 #[test]
-fn reading_a_pr_on_screen_again_leaves_last_seen_where_it_is() {
+fn reading_a_pr_on_screen_leaves_last_seen_alone() {
     let reply = reply_ok(
         r#"{"data":{"repository":{"pullRequest":{"bodyHTML":"<p>Fixes the crash</p>","createdAt":"2026-11-01T09:00:00Z",
             "comments":{"totalCount":0,"nodes":[]},"reviews":{"totalCount":0,"nodes":[]},
@@ -421,31 +433,40 @@ fn reading_a_pr_on_screen_again_leaves_last_seen_where_it_is() {
     );
     let access = replying(vec![signed_in(), reply]);
 
-    let (content, last_seen, _) = after_asking("fetch-pr", access, |asked| {
+    let (content, activity, _) = after_asking("fetch-pr", access, |asked| {
         asked.fetch_pull_request(gcmon(), 7)
     });
 
     assert_eq!(content.unwrap().body_html, "<p>Fixes the crash</p>");
-    assert_eq!(last_seen, None);
+    assert_eq!(activity.last_seen, BTreeMap::new());
 }
 
 #[test]
-fn opening_an_issue_with_no_token_still_records_last_seen() {
+fn mark_seen_and_mark_unseen_work_with_no_token() {
     let access = GitHubAccess {
         transport: Box::new(Canned(Err(Unreachable::Offline))),
         run_gh: without_gh,
     };
+    let drawn = hours_ago(1);
 
-    let (content, last_seen, _) = after_asking("no-token-last-seen", access, |asked| {
-        asked.open_issue(gcmon(), 7)
+    let (content, activity, _) = after_asking("no-token-marks", access, |asked| {
+        asked.mark_seen(
+            gcmon(),
+            SeenMark {
+                numbers: vec![7],
+                up_to: Some(drawn),
+            },
+        );
+        asked.mark_unseen(gcmon(), 8);
     });
 
     assert_eq!(content, None);
-    assert!(last_seen.is_some());
+    assert_eq!(activity.last_seen, BTreeMap::from([(7, drawn)]));
+    assert!(activity.marked_unseen.contains_key(&8));
 }
 
 #[test]
-fn opening_an_issue_tells_the_window_each_time_its_facts_change() {
+fn marking_an_issue_seen_and_reading_it_each_tell_the_window() {
     let (changes_sent, changes) = mpsc::channel();
     let board = quiet_board().with_changes(Box::new(move |change: &Change| {
         changes_sent.send(change.clone()).unwrap();
@@ -454,17 +475,25 @@ fn opening_an_issue_tells_the_window_each_time_its_facts_change() {
     let access = replying(vec![signed_in(), issue_content_reply()]);
     let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
 
-    session.requests().open_issue(gcmon(), 7);
+    let requests = session.requests();
+    requests.mark_seen(
+        gcmon(),
+        SeenMark {
+            numbers: vec![7, 8],
+            up_to: None,
+        },
+    );
+    requests.fetch_issue(gcmon(), 7);
     session.stop(PLENTY);
     fs::remove_dir_all(folders.data).unwrap();
 
-    let change = Change {
+    let change = |items| Change {
         repository: gcmon(),
-        items: vec![7],
+        items,
     };
     assert_eq!(
         changes.try_iter().collect::<Vec<_>>(),
-        [change.clone(), change]
+        [change(vec![7, 8]), change(vec![7])]
     );
 }
 
@@ -476,11 +505,10 @@ fn an_issue_github_has_lost_troubles_only_the_log() {
     );
     let access = replying(vec![signed_in(), gone]);
 
-    let (content, last_seen, shown) =
-        after_asking("gone-issue", access, |asked| asked.open_issue(gcmon(), 7));
+    let (content, _, shown) =
+        after_asking("gone-issue", access, |asked| asked.fetch_issue(gcmon(), 7));
 
     assert_eq!(content, None);
-    assert!(last_seen.is_some());
     assert_eq!(shown.last(), Some(&octocat()));
 }
 
@@ -489,7 +517,7 @@ fn an_answer_about_one_issue_that_cant_be_read_troubles_only_the_log() {
     let access = replying(vec![signed_in(), reply_ok("not json")]);
 
     let (content, _, shown) = after_asking("garbled-issue", access, |asked| {
-        asked.open_issue(gcmon(), 7);
+        asked.fetch_issue(gcmon(), 7);
     });
 
     assert_eq!(content, None);
@@ -504,17 +532,25 @@ fn issue_7() -> Item {
 }
 
 #[test]
-fn a_last_seen_that_cant_be_stored_is_a_problem() {
-    let (mut board, seen) = watched_board();
+fn a_mark_that_cant_be_stored_is_a_problem() {
+    let seen_mark = Marked::Seen {
+        repository: gcmon(),
+        mark: SeenMark {
+            numbers: vec![7],
+            up_to: None,
+        },
+    };
+    let unseen = Marked::Unseen {
+        item: issue_7(),
+        at: OffsetDateTime::UNIX_EPOCH,
+    };
+    for marked in [seen_mark, unseen] {
+        let (mut board, seen) = watched_board();
 
-    mark_seen(
-        &mut board,
-        &Store::stopped(),
-        &issue_7(),
-        OffsetDateTime::UNIX_EPOCH,
-    );
+        mark(&mut board, &Store::stopped(), marked);
 
-    assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
+        assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
+    }
 }
 
 #[test]
@@ -539,7 +575,7 @@ fn losing_the_network_while_reading_an_issue_shows_on_the_status_bar() {
     let access = replying(vec![signed_in(), Err(Unreachable::Offline)]);
 
     let (content, _, shown) = after_asking("offline-issue", access, |asked| {
-        asked.open_issue(gcmon(), 7)
+        asked.fetch_issue(gcmon(), 7)
     });
 
     assert_eq!(content, None);

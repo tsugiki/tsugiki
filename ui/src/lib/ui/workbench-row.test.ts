@@ -23,6 +23,7 @@ const row: WorkbenchRow = {
   updated_at: "2026-11-04T10:00:00Z",
   reasons: ["review_request"],
   your_review: null,
+  seen: { mark: { numbers: [160662], up_to: null }, state: "seen" },
 };
 
 const issue: IssueItem = {
@@ -35,6 +36,10 @@ const issue: IssueItem = {
     { kind: "pr", ...row, backports: [] },
     { kind: "pr", ...row, number: 160663, backports: [] },
   ],
+  seen: {
+    mark: { numbers: [112564, 160662, 160663], up_to: null },
+    state: "seen",
+  },
 };
 
 it("starts with the PR's number and title", () => {
@@ -162,6 +167,7 @@ it.each<[Why, string]>([
   [{ kind: "ready_for_review", by: "some-author" }, "Ready for review, from some-author"],
   [{ kind: "mentioned" }, "You were mentioned"],
   [{ kind: "backport_failed", target: "3.13" }, "Bot backport to 3.13 failed"],
+  [{ kind: "marked_unseen" }, "Marked unseen"],
 ])("a preview says %j as %s", (why, words) => {
   expect(preview({ since: "2026-11-04T10:00:00Z", why: [why] })).toBe(words);
 });

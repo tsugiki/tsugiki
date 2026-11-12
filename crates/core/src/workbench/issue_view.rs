@@ -52,7 +52,7 @@ impl IssueView {
             .unwrap_or_default();
         let matched = FilterFacts::new(repository, std::mem::take(&mut facts.filters)).matched();
         let causes = Causes::of(&facts, repository.conventions);
-        let found = candidates(facts, repository, &BTreeSet::new())
+        let found = candidates(facts, repository, &BTreeSet::new(), &causes)
             .into_iter()
             .find_map(|item| match item {
                 WorkbenchItem::Issue(issue) if issue.number == number => Some(issue),

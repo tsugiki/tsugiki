@@ -13,6 +13,8 @@ import {
   type ListedItem_Serialize,
   type PrState,
   type ReviewState,
+  type SeenMark_Serialize,
+  type Seen_Serialize,
   type TreeEntry_Serialize,
   type WorkbenchRow_Serialize,
   type WorkbenchView,
@@ -27,6 +29,9 @@ export type BackportRow = BackportRow_Serialize;
 export type FilterLine = FilterLine_Serialize;
 export type IssueItem = IssueItem_Serialize;
 export type ListedItem = ListedItem_Serialize;
+/** An item's part in Mark Seen and Mark Unseen, as the core drew it. */
+export type Seen = Seen_Serialize;
+export type SeenMark = SeenMark_Serialize;
 export type TreeEntry = TreeEntry_Serialize;
 export type WorkbenchRow = WorkbenchRow_Serialize;
 export type { BackportKind, CiState, IssueState, PrState, ReviewState, WorkbenchView, WorkReason, Why };
@@ -41,8 +46,25 @@ export const sameStop = (a: Stop | undefined, b: Stop) => a?.number === b.number
 export const treeRows = (entries: TreeEntry[]): WorkbenchRow[] =>
   entries.flatMap((entry) => (entry.kind === "pr" ? [entry, ...entry.backports] : [entry]));
 
+/** The problem a command that answers nothing ran into, if it ran into one. */
+const said = (answer: { status: "ok" } | { status: "error"; error: { message: string } }) =>
+  answer.status === "error" ? answer.error.message : undefined;
+
 /** A line of the list: where the cursor stops, and the title it shows. */
 type Line = { stop: Stop; title: string };
+
+/** The facts that place the cursor after Mark Seen on the item under it. */
+type Landing = {
+  /** The item under the cursor. */
+  item: number;
+  /** The numbers the mark covers, which the core's change names once it saved the mark. */
+  marked: number[];
+  /** The items that came after it, in the list's order. */
+  after: number[];
+  /** The first question that reads the saved mark, once the change has come. */
+  settledBy: number | undefined;
+  landed: () => void;
+};
 
 /** The lines of `item` the cursor stops on, in the order the list shows them. An Issue's tree shows only
  * while `unfolded` says it does. */
@@ -81,6 +103,9 @@ export class WorkbenchState {
   #unfolded = new SvelteMap<string, SvelteSet<number>>();
   /** The view whose items the list shows: `selected` once its answer has arrived. */
   #shown = $state<WorkbenchView>({ kind: "whole" });
+  /** The landing of a Mark Seen on the item under the cursor, until the answer to the first change that
+   * names the mark settles it. */
+  #landing: Landing | undefined;
   #repository: string;
   #lastQuestion = 0;
   #stopListening: (() => void) | undefined;
@@ -96,7 +121,12 @@ export class WorkbenchState {
       // The list can gain an item it doesn't hold yet, so any change in this Repository asks again, whichever
       // items it names.
       const stopListening = await events.changed.listen(({ payload }) => {
-        if (payload.repository === this.#repository) void this.#ask();
+        if (payload.repository !== this.#repository) return;
+        const landing = this.#landing;
+        // The question asked next is the first to read the saved mark.
+        if (landing && payload.items.some((number) => landing.marked.includes(number)))
+          landing.settledBy ??= this.#lastQuestion + 1;
+        void this.#ask();
       });
       if (this.#stopped) {
         stopListening();
@@ -166,9 +196,55 @@ export class WorkbenchState {
   /** Puts the cursor on line `stop`, unfolding the Issue it's under, and the quiet section if the line is in
    * it, so the cursor has a row to stand on. */
   moveTo(stop: Stop) {
+    this.#landing = undefined;
+    this.#moveTo(stop);
+  }
+
+  #moveTo(stop: Stop) {
     if (stop.issue !== undefined) this.unfold(stop.issue);
     if (this.#inQuiet(stop)) this.quietShown = true;
     this.cursor = stop;
+  }
+
+  /** The part in Mark Seen of line `stop`: an Issue's covers its tree, and a PR's the PR alone. */
+  seenOf(stop: Stop): Seen | undefined {
+    const item = this.#itemOf(stop, [...(this.items ?? []), ...this.quiet]);
+    if (item?.number === stop.number) return item.seen;
+    const rows =
+      item?.kind === "issue"
+        ? treeRows(item.pull_requests)
+        : item?.kind === "standalone_pr"
+          ? item.backports
+          : [];
+    return rows.find((row) => row.number === stop.number)?.seen;
+  }
+
+  /**
+   * Mark Seen with `mark`, as the window drew it, on line `stop`'s item. When that item is under the cursor
+   * and no longer Needs attention once the core saved the mark, the cursor lands on the next item that
+   * still does, and `landed` runs. Says what went wrong, if anything did.
+   */
+  async markSeen(mark: SeenMark, stop: Stop | undefined, landed: () => void = () => {}) {
+    const items = this.items ?? [];
+    const marked = stop && this.#itemOf(stop, items);
+    const landing = marked &&
+      this.cursor &&
+      this.#itemOf(this.cursor, items) === marked && {
+        item: marked.number,
+        marked: mark.numbers,
+        after: items.slice(items.indexOf(marked) + 1).map((item) => item.number),
+        settledBy: undefined,
+        landed,
+      };
+    if (landing) this.#landing = landing;
+    const problem = said(await commands.markSeen(this.#repository, mark));
+    if (problem !== undefined && this.#landing === landing) this.#landing = undefined;
+    return problem;
+  }
+
+  /** Mark Unseen on item `number`. Says what went wrong, if anything did. */
+  async markUnseen(number: number) {
+    return said(await commands.markUnseen(this.#repository, number));
   }
 
   showQuiet() {
@@ -184,6 +260,7 @@ export class WorkbenchState {
 
   /** Moves the cursor down the list, or up it, stopping at each end. With none yet it starts at the top. */
   moveCursor(step: 1 | -1) {
+    this.#landing = undefined;
     const stops = this.#stops();
     const at = stops.findIndex((stop) => sameStop(this.cursor, stop));
     const next = at === -1 ? 0 : Math.min(Math.max(at + step, 0), stops.length - 1);
@@ -199,14 +276,37 @@ export class WorkbenchState {
    * the Issue over a PR under the cursor, as another view may have it folded. An item that went quiet under
    * the cursor, or is quiet in the view the user selected, leaves a folded section folded: the cursor moves
    * to the last line above it, as folding it would. */
-  #followCursor() {
+  #followCursor(question: number, items: ListedItem[]) {
     const cursor = this.cursor;
     if (cursor === undefined) return;
+    if (this.#land(question, items)) return;
     const stops = this.#allStops();
     const line =
       stops.find((stop) => sameStop(cursor, stop)) ?? stops.find((stop) => stop.number === cursor.number);
     if (line && !this.quietShown && this.#inQuiet(line)) this.cursor = this.#stops().at(-1);
-    else if (line) this.moveTo(line);
+    else if (line) this.#moveTo(line);
+  }
+
+  /** Settles the landing once the answer to question `question` reads the mark: an item marked seen that no
+   * longer Needs attention leaves the cursor on the first item after it that still does, or else on the
+   * last one that does. Says whether the cursor landed. */
+  #land(question: number, items: ListedItem[]): boolean {
+    const landing = this.#landing;
+    if (landing?.settledBy === undefined || question < landing.settledBy) return false;
+    this.#landing = undefined;
+    const listed = items.map((item) => item.number);
+    if (listed.includes(landing.item)) return false;
+    const target = landing.after.find((number) => listed.includes(number)) ?? listed.at(-1);
+    // An item's own line is the one with no Issue above it.
+    const stops = this.#stops();
+    this.cursor = stops.find((stop) => stop.number === target && stop.issue === undefined) ?? stops.at(-1);
+    landing.landed();
+    return true;
+  }
+
+  /** The item of `items` that holds line `stop`, under a folded Issue or not. */
+  #itemOf(stop: Stop, items: ListedItem[]): ListedItem | undefined {
+    return items.find((item) => linesOf(item, () => true).some((line) => sameStop(line.stop, stop)));
   }
 
   /** The key of the view whose items the list shows, which keeps its own unfolded Issues. Until the answer
@@ -271,7 +371,7 @@ export class WorkbenchState {
       this.items = answer.data.items;
       this.quiet = answer.data.quiet;
       this.#shown = view;
-      this.#followCursor();
+      this.#followCursor(question, answer.data.items);
       this.count = answer.data.count;
       this.reviewRequests = answer.data.review_requests;
       this.filters = answer.data.filters;

@@ -21,15 +21,6 @@ pub enum GitHubItem {
     PullRequest { number: u32 },
 }
 
-impl GitHubItem {
-    #[must_use]
-    pub fn number(self) -> u32 {
-        match self {
-            Self::Issue { number } | Self::PullRequest { number } => number,
-        }
-    }
-}
-
 /// A web page's address.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(transparent)]

@@ -8,6 +8,7 @@ import {
   type ListedItem,
   type PrState,
   type ReviewState,
+  type Seen,
   type TreeEntry,
   type WorkbenchRow,
   type WorkReason,
@@ -72,8 +73,14 @@ function saying(why: Why): string {
       return "You were mentioned";
     case "backport_failed":
       return `Bot backport to ${why.target} failed`;
+    case "marked_unseen":
+      return "Marked unseen";
   }
 }
+
+/** Whether an item's header offers Mark Seen: it has New activity, or the user marked it unseen. Otherwise
+ * the header offers Mark Unseen. */
+export const offersMarkSeen = (seen: Seen) => seen.state !== "seen";
 
 /** The reasons an item Needs attention, the newest first. */
 export const preview = (attention: Attention) => attention.why.map(saying).join(" · ");

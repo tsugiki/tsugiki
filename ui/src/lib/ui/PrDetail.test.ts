@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { PrViewState, type PrView } from "$lib/state/pr-view.svelte";
 import PrDetail from "./PrDetail.svelte";
@@ -45,6 +45,7 @@ const view: PrView = {
   updated_at: "2026-11-04T10:00:00Z",
   reasons: [],
   your_review: null,
+  seen: { mark: { numbers: [11], up_to: "2026-11-04T10:00:00Z" }, state: "new_activity" },
   content: {
     body_html: "<p>The description</p>",
     comments: [
@@ -78,12 +79,17 @@ const NOW = new Date("2026-11-04T11:00:00Z");
 let onShow: PrViewState | undefined;
 
 /** Shows the PR as opened from Issue `issue`. */
-const shown = async (answer: PrView | null, issue: number | undefined, onback = vi.fn()) => {
+const shown = async (
+  answer: PrView | null,
+  issue: number | undefined,
+  onback = vi.fn(),
+  onmark = vi.fn(),
+) => {
   core.pullRequest.mockResolvedValue({ status: "ok", data: answer });
   const state = new PrViewState("python/cpython", 11, issue);
   onShow = state;
   await state.load();
-  render(PrDetail, { repository: "python/cpython", pr: state, now: NOW, onback });
+  render(PrDetail, { repository: "python/cpython", pr: state, now: NOW, onback, onmark });
   return state;
 };
 
@@ -305,8 +311,20 @@ it("says why it can't show the PR", async () => {
   });
   const state = new PrViewState("python/cpython", 11, 10);
   await state.load();
-  render(PrDetail, { repository: "python/cpython", pr: state, now: NOW, onback: vi.fn() });
+  render(PrDetail, { repository: "python/cpython", pr: state, now: NOW, onback: vi.fn(), onmark: vi.fn() });
   state.stop();
 
   expect(screen.getByRole("alert").textContent).toContain("Tsugiki can't show this PR: no database");
+});
+
+it("offers Mark Seen in its header while the PR has New activity, and Mark Unseen once it has none", async () => {
+  const onmark = vi.fn();
+  await shown(view, 10, vi.fn(), onmark);
+
+  await fireEvent.click(screen.getByRole("button", { name: "Mark Seen" }));
+  expect(onmark).toHaveBeenCalledOnce();
+  cleanup();
+  onShow?.stop();
+  await shown({ ...view, seen: { ...view.seen, state: "seen" } }, 10);
+  expect(screen.getByRole("button", { name: "Mark Unseen" })).toBeTruthy();
 });

@@ -4,7 +4,7 @@ use serde::Serialize;
 use specta::Type;
 use time::OffsetDateTime;
 
-use super::{TreeEntry, WorkbenchItem};
+use super::{Seen, TreeEntry, WorkbenchItem};
 use crate::conventions::Conventions;
 use crate::github::issues::{IssueFacts, IssueState};
 use crate::login::Login;
@@ -23,12 +23,15 @@ pub struct IssueItem {
     #[specta(type = String)]
     pub updated_at: OffsetDateTime,
     pub pull_requests: Vec<TreeEntry>,
+    /// Its part in Mark Seen, which covers the Issue and every PR in its tree.
+    pub seen: Seen,
 }
 
 pub(super) fn issue_item(
     issue: IssueFacts,
     pull_requests: Vec<TreeEntry>,
     conventions: Conventions,
+    seen: Seen,
 ) -> WorkbenchItem {
     let people = people(&issue, &pull_requests, conventions);
     let updated_at = pull_requests
@@ -43,6 +46,7 @@ pub(super) fn issue_item(
         people,
         updated_at,
         pull_requests,
+        seen,
     })
 }
 

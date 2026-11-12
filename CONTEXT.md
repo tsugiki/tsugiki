@@ -64,7 +64,8 @@ closes or reviews it; **Dependency updates** need it only when one is ready to m
 An Issue, or a PR's conversation, also needs attention when someone else has posted since the user's **Last
 seen** and the user is in the conversation: they opened it, it is assigned to them, they commented in it, or
 the new posts mention them. An Issue the user only follows through a **Filter** or a pin shows its New
-activity but does not need attention.
+activity but does not need attention. Any Issue or PR the user **Marked unseen** needs attention, followed
+Issues included.
 _Avoid_: Pending, todo
 
 **Maintained repository**:
@@ -152,8 +153,10 @@ _Avoid_: No issue, orphan PR, unlinked PR
 
 **Archived**:
 A **Workbench** item (an Issue, a **Standalone PR** or **Dependency updates**) the user has put away until
-something new needs their attention there; then it comes back by itself. Like archiving a mail thread. Kept in
-Tsugiki only.
+something new needs their attention there; then it comes back by itself. Like archiving a mail thread.
+Archiving marks the item seen and clears **Marked unseen**, so New activity after it brings the item back, and
+so does a Review request or a CI failure that starts after it. Mark Unseen on an Archived item unarchives it.
+Kept in Tsugiki only.
 _Avoid_: Dismissed, done, snoozed
 
 **Muted**:
@@ -219,10 +222,18 @@ to Generated files does not make a review stale.
 _Avoid_: Outdated, dismissed
 
 **Last seen**:
-The moment the user last opened a PR or an **Issue** in Tsugiki, opened one on GitHub from Tsugiki, or handed
-a PR off to a review tool. It is tracked per PR and per Issue; opening an Issue's tree does not update its
-PRs' Last seen.
+The moment up to which the user has seen a PR or an **Issue**, tracked per PR and per Issue. Mark Seen moves
+it to the moment of the item's last sync that the window drew, so a comment that came in while the user read
+stays **New activity**. Mark Seen on an Issue moves the Last seen of the Issue and of every PR in its tree; on
+a PR, only that PR's. Archive, Mute, Unmute and a write to GitHub move it too. Opening an item, in Tsugiki or
+on GitHub, and handing a PR to a review tool leave it alone. It never moves back.
 _Avoid_: Last visited, read
+
+**Marked unseen**:
+An Issue or PR the user flagged with Mark Unseen, to come back to it. It **Needs attention** from the moment
+of the flag, whatever its activity, until Mark Seen, Archive, Mute or a write to GitHub clears it. Flagging a
+PR brings its Issue back with it. Kept in Tsugiki only, per **Repository** and item.
+_Avoid_: Unread, flagged, starred, snoozed
 
 **Read-only**:
 Tsugiki shows a **Repository** but can't write to GitHub there: when offline, or when the token can't write to
@@ -246,7 +257,8 @@ than the user, a failed **Bot backport**, or a change in CI status on an **Own P
 **Review** on. Other bot activity and label changes do not count. It is reported alongside the review state
 and never changes it. A Bot backport has failed when the bot says it could not make it, which counts on the
 **Origin PR**, or when its CI fails, which counts on it and on its Origin PR. On an item the user has never
-opened, only what happened since the **Repository**'s first sync counts.
+marked seen, only what happened since the **Repository**'s first sync counts. Mark Seen clears it, and
+opening the item doesn't.
 _Avoid_: Unread, notifications
 
 ### Look

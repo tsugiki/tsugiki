@@ -36,6 +36,32 @@ fn a_file_from_before_new_activity_counts_from_its_last_sync() {
 }
 
 #[test]
+fn marked_unseen_survives_a_restart_until_mark_seen_clears_it() {
+    let (path, folder) = temp_database("activity-marked-unseen");
+    let repository = RepositoryName::parse("python/cpython").unwrap();
+    let flagged = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
+    let store = Store::open(&path).unwrap();
+    store.mark_unseen(&repository, 7, flagged).unwrap();
+    store.mark_unseen(&repository, 8, flagged).unwrap();
+    store.close();
+
+    let store = Store::open(&path).unwrap();
+    let restarted = store
+        .work_facts(&repository)
+        .unwrap()
+        .activity
+        .marked_unseen;
+    store.mark_seen(&repository, vec![7], None).unwrap();
+    let after = store.work_facts(&repository).unwrap().activity;
+
+    store.close();
+    std::fs::remove_dir_all(folder).unwrap();
+    assert_eq!(restarted, BTreeMap::from([(7, flagged), (8, flagged)]));
+    assert_eq!(after.marked_unseen, BTreeMap::from([(8, flagged)]));
+    assert_eq!(after.last_seen, BTreeMap::new(), "nothing new to see");
+}
+
+#[test]
 fn a_kind_from_a_later_version_is_left_alone() {
     let (path, folder) = temp_database("activity-later-kind");
     let repository = RepositoryName::parse("python/cpython").unwrap();

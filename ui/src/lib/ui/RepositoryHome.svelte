@@ -21,6 +21,7 @@
     WorkbenchState,
     type BackportRow,
     type ListedItem,
+    type Seen,
     type Stop,
     type WorkbenchRow,
   } from "$lib/state/workbench.svelte";
@@ -33,7 +34,16 @@
   import PrDetail from "./PrDetail.svelte";
   import Sidebar from "./Sidebar.svelte";
   import StateIcon from "./StateIcon.svelte";
-  import { ago, details, headline, peopleOf, preview, summary, treeCount } from "./workbench-row";
+  import {
+    ago,
+    details,
+    headline,
+    offersMarkSeen,
+    peopleOf,
+    preview,
+    summary,
+    treeCount,
+  } from "./workbench-row";
 
   const MINUTE = 60_000;
   /** How far ↑ or ↓ scrolls the Detail pane while the list is hidden, in CSS pixels, as a browser does. */
@@ -90,6 +100,7 @@
       opened.stop();
       swap(undefined);
       browserProblem = undefined;
+      markProblem = undefined;
     };
   });
 
@@ -104,6 +115,8 @@
   /** The view of the Issue the PR on show came from, hidden until the user goes back to it (#191). */
   let kept: IssueViewState | undefined;
   let browserProblem = $state<string>();
+  /** The reason the last Mark Seen or Mark Unseen didn't reach the core. */
+  let markProblem = $state<string>();
   let list = $state<HTMLElement>();
   let quietLineButton = $state<HTMLButtonElement>();
   let home = $state<HTMLElement>();
@@ -231,6 +244,49 @@
     if (focused?.isConnected === false) focusCursor();
   }
 
+  /** The item Mark Seen and Mark Unseen act on: the item on show, or the line `stop` of the list. */
+  type Marked = { stop: Stop | undefined; number: number; seen: Seen };
+
+  /** The item the Detail pane shows, once its view has arrived. */
+  function detailMarked(): Marked | undefined {
+    const view = detail?.view;
+    return view ? { stop: detailLine(), number: view.number, seen: view.seen } : undefined;
+  }
+
+  /** Whether a key pressed on `target` goes to the Detail pane: the pane holds the focus, or the list is
+   * hidden. ↑ ↓ then scroll it, and `Q` marks its item. */
+  const forDetail = (target: EventTarget | null) =>
+    panes.hidden("list") || (target instanceof Node && detailPane()?.contains(target) === true);
+
+  /** The item `Q` and `Shift+Q` act on: the Detail pane's item while it holds the focus or the list is
+   * hidden, and otherwise the line under the cursor. */
+  function keyMarked(target: EventTarget | null): Marked | undefined {
+    if (forDetail(target)) return detailMarked();
+    const stop = workbench.underCursor;
+    const seen = stop && workbench.seenOf(stop);
+    return stop && seen ? { stop, number: stop.number, seen } : undefined;
+  }
+
+  /** Mark Seen on `marked`, as the window drew it. A cursor on its row lands on the row that takes its place
+   * once it moves, and takes the focus there when `focus` says so. */
+  async function markSeen(marked: Marked | undefined, focus = false) {
+    if (!marked) return;
+    markProblem = await workbench.markSeen(marked.seen.mark, marked.stop, () => {
+      if (focus) focusCursor();
+    });
+  }
+
+  async function markUnseen(marked: Marked | undefined) {
+    if (marked) markProblem = await workbench.markUnseen(marked.number);
+  }
+
+  /** Mark Seen or Mark Unseen on the item on show, whichever its header's button offers. */
+  function markByButton() {
+    const marked = detailMarked();
+    if (marked && offersMarkSeen(marked.seen)) void markSeen(marked);
+    else void markUnseen(marked);
+  }
+
   /** The line of the list the Detail pane shows, if it shows one. */
   function detailLine(): Stop | undefined {
     if (detail instanceof IssueViewState) return { number: detail.number, kind: "issue", issue: undefined };
@@ -312,6 +368,20 @@
           goThrough(1);
         },
       },
+      ...(detail?.view
+        ? [
+            {
+              title: "Mark Seen",
+              note: keyLabel("q", currentOs()),
+              run: () => void markSeen(detailMarked()),
+            },
+            {
+              title: "Mark Unseen",
+              note: keyLabel("shift+q", currentOs()),
+              run: () => void markUnseen(detailMarked()),
+            },
+          ]
+        : []),
       panes.order === "attention"
         ? { title: "Sort by Last Update", run: () => void sortBy("last_update") }
         : { title: "Sort by Attention", run: () => void sortBy("attention") },
@@ -421,16 +491,19 @@
       files.openSearch();
     } else if (isTextBox(e.target)) {
       return;
+    } else if (key === "q" || key === "shift+q") {
+      // A held key would ask the core again and again.
+      if (e.repeat) return;
+      const marked = keyMarked(e.target);
+      if (key === "q") void markSeen(marked, !forDetail(e.target));
+      else void markUnseen(marked);
     } else if (key === "ctrl+alt+b") {
       // A held key would flicker the list and save the file each time.
       if (!e.repeat) void toggleListByKey();
     } else if (key === "enter" && e.repeat) {
       // Each opening asks GitHub, and a held key isn't more than one.
       e.preventDefault();
-    } else if (
-      (key === "arrowdown" || key === "arrowup") &&
-      (panes.hidden("list") || (e.target instanceof Node && detailPane()?.contains(e.target) === true))
-    ) {
+    } else if ((key === "arrowdown" || key === "arrowup") && forDetail(e.target)) {
       e.preventDefault();
       scrollDetail(key === "arrowdown" ? 1 : -1);
     } else if (key === "arrowdown" || key === "arrowup") {
@@ -584,6 +657,9 @@
   {#if browserProblem}
     <p role="alert">{browserProblem}</p>
   {/if}
+  {#if markProblem}
+    <p role="alert">{`Tsugiki couldn't mark this item: ${markProblem}`}</p>
+  {/if}
   {#if panes.problem}
     <p role="alert">{panes.problem}</p>
   {/if}
@@ -709,6 +785,7 @@
         {issue}
         {now}
         focusable={panes.hidden("list")}
+        onmark={markByButton}
         onopenpr={(number) => {
           open({ number, kind: "pull_request", issue: issue.number });
         }}
@@ -719,7 +796,14 @@
   {:else if detail}
     {@const pr = detail}
     {#key pr}
-      <PrDetail repository={name} {pr} {now} onback={back} focusable={panes.hidden("list")}>
+      <PrDetail
+        repository={name}
+        {pr}
+        {now}
+        onback={back}
+        onmark={markByButton}
+        focusable={panes.hidden("list")}
+      >
         {#snippet header()}{@render history(pr.number)}{/snippet}
       </PrDetail>
     {/key}

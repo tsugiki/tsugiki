@@ -20,6 +20,7 @@ const view = (title: string): IssueView => ({
   assignees: [],
   needs_attention: [],
   content: null,
+  seen: { mark: { numbers: [7], up_to: null }, state: "seen" },
 });
 
 const ok = (data: IssueView | null) => ({ status: "ok" as const, data });
@@ -93,7 +94,7 @@ describe("IssueViewState", () => {
     state.stop();
   });
 
-  it("opening it again moves Last seen again", async () => {
+  it("opening it again tells the core again", async () => {
     catchListener();
     const state = new IssueViewState("python/cpython", 7);
     await state.load();
@@ -104,7 +105,7 @@ describe("IssueViewState", () => {
     state.stop();
   });
 
-  it("reads the Issue from GitHub once a minute while it's on screen, without moving Last seen", async () => {
+  it("reads the Issue from GitHub once a minute while it's on screen, without opening it again", async () => {
     vi.useFakeTimers();
     catchListener();
     const state = new IssueViewState("python/cpython", 7);

@@ -35,6 +35,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   - in a **Maintained repository** (one the user administers on GitHub): every open PR someone else opened,
     until the user merges, closes or reviews it. Dependabot's PRs fold into one **Dependency updates** item,
     which needs attention only when one of them is ready to merge or its CI failed.
+  - on any item, followed Issues included: the user **Marked unseen** it.
+- Opening an item leaves its Last seen alone, so it keeps its place in the list while the user reads it.
+  - **Mark Seen** moves Last seen to the moment of the item's last sync that the window drew, never back,
+    and clears Marked unseen. On an Issue it marks the Issue and every PR in its tree; on a PR, that PR. It
+    clears only what Last seen measures: a Review request, a Stale review or failed CI stays.
+  - **Mark Unseen** flags the item Marked unseen. It then Needs attention from the moment of the flag, so By
+    attention sorts it first, and its preview says "Marked unseen". Flagging a PR brings its Issue back with
+    it. Tsugiki keeps the flag per Repository and item.
 - An Issue with nothing that Needs attention moves to a "quiet" section at the bottom, unless it is pinned.
 - A PR that fixes no Issue is a **Standalone PR**: its own item in the Issue list.
 - A Pinned issue stays until the user unpins it.

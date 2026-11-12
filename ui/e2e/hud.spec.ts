@@ -112,6 +112,7 @@ test("the HUD times an Issue whose text comes from GitHub", async ({ page }) => 
     people: ["issue-author"],
     updated_at: "2026-11-04T10:00:00Z",
     pull_requests: [],
+    seen: { mark: { numbers: [7], up_to: null }, state: "seen" },
     attention: null,
   };
   const unread: IssueView = {

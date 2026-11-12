@@ -14,7 +14,9 @@ use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
 use crate::store::{ChangeCheck, OpenReader, Store, StoreReader, SyncState, reader};
-use crate::workbench::{ListedItem, Workbench, WorkbenchView};
+use crate::workbench::{
+    ListedItem, Seen, SeenMark, SeenState, Workbench, WorkbenchItem, WorkbenchView,
+};
 
 fn me() -> Login {
     Login::new("octocat")
@@ -164,8 +166,30 @@ impl World {
             .unwrap();
     }
 
-    fn opened(&self, number: u32, at: OffsetDateTime) {
-        self.store.mark_seen(&cpython(), number, at).unwrap();
+    fn marked_seen(&self, number: u32, up_to: OffsetDateTime) {
+        self.store
+            .mark_seen(&cpython(), vec![number], Some(up_to))
+            .unwrap();
+    }
+
+    fn marked_unseen(&self, number: u32, at: OffsetDateTime) {
+        self.store.mark_unseen(&cpython(), number, at).unwrap();
+    }
+
+    /// The mark that Mark Seen on item `number`'s line of the Workbench sends, as the window drew it.
+    fn seen(&self, number: u32) -> Seen {
+        let workbench = self.workbench();
+        match &listed_at(&workbench, number).item {
+            WorkbenchItem::Issue(issue) => issue.seen.clone(),
+            WorkbenchItem::StandalonePr(tree) => tree.row.seen.clone(),
+            WorkbenchItem::StandaloneBackport(backport) => backport.row.seen.clone(),
+        }
+    }
+
+    /// Mark Seen with what the window drew in `seen`.
+    fn mark_seen(&self, seen: Seen) {
+        let SeenMark { numbers, up_to } = seen.mark;
+        self.store.mark_seen(&cpython(), numbers, up_to).unwrap();
     }
 
     fn view(&self, view: &WorkbenchView) -> Workbench {
@@ -244,10 +268,10 @@ fn a_review_request_on_a_colleagues_draft_needs_attention() {
 }
 
 #[test]
-fn opening_a_pr_with_a_review_request_leaves_it_waiting() {
+fn marking_a_pr_with_a_review_request_seen_leaves_it_waiting() {
     let world = World::new("request-stays");
     world.has(vec![requested(1)]);
-    world.opened(1, hours_ago(1));
+    world.marked_seen(1, hours_ago(1));
 
     assert_eq!(world.why(1), [Why::ReviewRequested]);
     world.finish();
@@ -331,13 +355,13 @@ fn assigning_yourself_to_your_own_pr_asks_nothing_of_you() {
 }
 
 #[test]
-fn failed_ci_on_an_own_pr_needs_attention_and_stays_after_opening_it() {
+fn failed_ci_on_an_own_pr_needs_attention_and_stays_after_mark_seen() {
     let world = World::new("own-ci");
     world.has(vec![PullRequestFacts {
         ci: Some(CiState::Failure),
         ..own(1)
     }]);
-    world.opened(1, OffsetDateTime::now_utc() + Duration::hours(1));
+    world.marked_seen(1, OffsetDateTime::now_utc() + Duration::hours(1));
 
     assert_eq!(world.why(1), [Why::CiFailed { checks: vec![] }]);
     world.finish();
@@ -392,7 +416,7 @@ fn failed_ci_on_a_colleagues_pr_doesnt_list_it() {
 }
 
 #[test]
-fn a_passing_run_on_an_own_pr_is_new_activity_until_it_is_opened() {
+fn a_passing_run_on_an_own_pr_is_new_activity_until_it_is_marked_seen() {
     let world = World::new("own-ci-pass");
     world.has(vec![PullRequestFacts {
         ci: Some(CiState::Success),
@@ -400,7 +424,7 @@ fn a_passing_run_on_an_own_pr_is_new_activity_until_it_is_opened() {
     }]);
     assert_eq!(world.why(1), [Why::CiPassed]);
 
-    world.opened(1, OffsetDateTime::now_utc() + Duration::hours(1));
+    world.marked_seen(1, OffsetDateTime::now_utc() + Duration::hours(1));
 
     assert_eq!(world.why(1), []);
     world.finish();
@@ -756,5 +780,205 @@ fn the_sidebar_counts_what_needs_attention_and_review_requests_lists_those_prs()
     assert_eq!(numbers(&requests.items), [5, 1]);
     assert_eq!(requests.quiet, []);
     assert_eq!(requests.count, 3);
+    world.finish();
+}
+
+#[test]
+fn an_item_marked_unseen_needs_attention_from_the_moment_of_the_flag() {
+    let world = World::new("marked-unseen");
+    // An Issue the user only follows, a colleague's PR and a colleague's Draft PR need nothing of the user
+    // until they flag them.
+    world.has_issues(vec![issue(1)]);
+    world.has(vec![
+        pull_request(2),
+        PullRequestFacts {
+            is_draft: true,
+            ..pull_request(3)
+        },
+    ]);
+    let flagged = hours_ago(1);
+    for number in [1, 2, 3] {
+        world.marked_unseen(number, flagged);
+    }
+
+    for number in [1, 2, 3] {
+        assert_eq!(world.why(number), [Why::MarkedUnseen], "{number}");
+        assert_eq!(world.since(number), flagged, "{number}");
+    }
+    world.finish();
+}
+
+#[test]
+fn a_pr_marked_unseen_brings_its_issue_back_with_it() {
+    let world = World::new("marked-unseen-tree");
+    world.has_issues(vec![issue(5)]);
+    world.has(vec![fixing(1, 5)]);
+
+    world.marked_unseen(1, hours_ago(1));
+
+    assert_eq!(numbers(&world.workbench().items), [5]);
+    assert_eq!(world.why(5), [Why::MarkedUnseen]);
+    world.finish();
+}
+
+#[test]
+fn by_attention_sorts_a_fresh_flag_first() {
+    let world = World::new("marked-unseen-order");
+    world.has_issues(vec![issue(2)]);
+    world.has(vec![requested(1)]);
+    world.happened(
+        1,
+        vec![Activity {
+            kind: ActivityKind::ReviewRequested,
+            who: me(),
+            at: hours_ago(5),
+        }],
+    );
+
+    world.marked_unseen(2, hours_ago(1));
+
+    assert_eq!(numbers(&world.workbench().items), [2, 1]);
+    world.finish();
+}
+
+#[test]
+fn mark_seen_clears_the_flag_and_only_what_last_seen_measures() {
+    let world = World::new("mark-seen-clears");
+    world.has(vec![
+        requested(1),
+        PullRequestFacts {
+            ci: Some(CiState::Success),
+            ..own(2)
+        },
+    ]);
+    world.marked_unseen(1, hours_ago(1));
+    world.marked_unseen(2, hours_ago(1));
+
+    world.mark_seen(world.seen(1));
+    world.mark_seen(world.seen(2));
+
+    assert_eq!(world.why(1), [Why::ReviewRequested]);
+    assert_eq!(world.why(2), []);
+    world.finish();
+}
+
+#[test]
+fn mark_seen_with_nothing_new_clears_the_flag_and_moves_last_seen_to_the_last_update() {
+    let world = World::new("mark-seen-flag-only");
+    let updated = hours_ago(100);
+    world.has(vec![PullRequestFacts {
+        updated_at: updated,
+        ..own(1)
+    }]);
+    world.marked_unseen(1, hours_ago(1));
+    let seen = world.seen(1);
+    assert_eq!(seen.mark.up_to, Some(updated));
+    assert_eq!(seen.state, SeenState::MarkedUnseen);
+
+    world.mark_seen(seen);
+    // A colleague's commit from before now that a sync brings later is still news.
+    world.happened(
+        1,
+        vec![Activity {
+            kind: ActivityKind::Commit,
+            who: colleague(),
+            at: hours_ago(1),
+        }],
+    );
+
+    assert_eq!(world.why(1), [Why::Commits { by: colleague() }]);
+    assert_eq!(world.seen(1).state, SeenState::NewActivity);
+    world.finish();
+}
+
+#[test]
+fn a_comment_a_sync_brings_after_the_window_drew_the_item_stays_new_after_mark_seen() {
+    let world = World::new("mark-seen-drawn");
+    world.has(vec![own(1)]);
+    let read = hours_ago(3);
+    world.happened(1, vec![comment(&colleague(), read)]);
+    let drawn = world.seen(1);
+    assert_eq!(drawn.mark.up_to, Some(read));
+    assert_eq!(drawn.state, SeenState::NewActivity);
+
+    let later = hours_ago(1);
+    world.happened(1, vec![comment(&reviewer(), later)]);
+    world.mark_seen(drawn);
+
+    assert_eq!(world.why(1), [Why::Comment { by: reviewer() }]);
+    assert_eq!(world.since(1), later);
+    world.finish();
+}
+
+#[test]
+fn mark_seen_covers_what_wasnt_news_yet_when_the_window_drew_it() {
+    let world = World::new("mark-seen-not-news-yet");
+    let passed = |pr: PullRequestFacts| PullRequestFacts {
+        ci: Some(CiState::Success),
+        ..pr
+    };
+    world.has(vec![passed(pull_request(1))]);
+    world.happened(
+        1,
+        vec![
+            comment(&me(), hours_ago(4)),
+            comment(&colleague(), hours_ago(3)),
+        ],
+    );
+    world.mark_seen(world.seen(1));
+
+    // CI passed before the user marked the PR seen, though it was no news to them until they reviewed it.
+    world.has(vec![passed(reviewed_by_me(1))]);
+
+    assert_eq!(world.why(1), []);
+    world.finish();
+}
+
+#[test]
+fn mark_seen_on_an_issue_marks_every_pr_in_its_tree_and_on_a_pr_only_that_pr() {
+    let world = World::new("mark-seen-tree");
+    world.has_issues(vec![issue(5)]);
+    world.has(vec![
+        PullRequestFacts {
+            author: Some(me()),
+            ..fixing(1, 5)
+        },
+        PullRequestFacts {
+            author: Some(me()),
+            ..fixing(2, 5)
+        },
+    ]);
+    let (older, newer) = (hours_ago(3), hours_ago(2));
+    world.happened(1, vec![comment(&colleague(), older)]);
+    world.happened(2, vec![comment(&colleague(), newer)]);
+
+    let workbench = world.workbench();
+    let WorkbenchItem::Issue(drawn) = &listed_at(&workbench, 5).item else {
+        panic!("Issue 5 is an Issue");
+    };
+    let mut marked = drawn.seen.mark.numbers.clone();
+    marked.sort_unstable();
+    assert_eq!(marked, [1, 2, 5]);
+    assert_eq!(drawn.seen.mark.up_to, Some(newer));
+    let rows = drawn.rows();
+    let pr_1: &SeenMark = &rows.iter().find(|row| row.number == 1).unwrap().seen.mark;
+    assert_eq!(
+        pr_1,
+        &SeenMark {
+            numbers: vec![1],
+            up_to: Some(older)
+        }
+    );
+
+    world
+        .store
+        .mark_seen(&cpython(), pr_1.numbers.clone(), pr_1.up_to)
+        .unwrap();
+    assert_eq!(world.why(5), [Why::Comment { by: colleague() }]);
+    assert_eq!(world.since(5), newer);
+
+    world.mark_seen(world.seen(5));
+    assert_eq!(world.why(5), []);
+    assert_eq!(numbers(&world.workbench().quiet), [5]);
     world.finish();
 }

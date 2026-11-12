@@ -4,6 +4,7 @@
   import type { IssueView, IssueViewState } from "$lib/state/issue-view.svelte";
   import type { TreeEntry } from "$lib/state/workbench.svelte";
   import Conversation from "./Conversation.svelte";
+  import MarkButton from "./MarkButton.svelte";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
   import StateIcon from "./StateIcon.svelte";
   import StateWords from "./StateWords.svelte";
@@ -14,6 +15,7 @@
     issue,
     now,
     onopenpr,
+    onmark,
     focusable = false,
     header,
   }: {
@@ -21,6 +23,8 @@
     issue: IssueViewState;
     now: Date;
     onopenpr: (number: number) => void;
+    /** Mark Seen or Mark Unseen, whichever the header's button offers. */
+    onmark: () => void;
     /** Whether the pane takes the focus, as it does while the Issue list is hidden. Otherwise a click in it
      * leaves the focus where it was, so Enter still opens the row under the cursor. */
     focusable?: boolean;
@@ -110,6 +114,7 @@
         </button>
       </h2>
       <p class="by"><span title={by.title}><b>{by.who}</b>{by.words}</span>{restOfLine(view)}</p>
+      <MarkButton seen={view.seen} {onmark} />
 
       {#snippet tree(entries: TreeEntry[], name: string)}
         <ul aria-label={name}>

@@ -109,7 +109,7 @@ impl Causes {
         }
     }
 
-    /// True when Issue or PR `number` Needs attention by itself, whatever the rest of its tree does.
+    /// True when Issue or PR `number` itself Needs attention.
     pub(super) fn needs_attention(&self, number: u32) -> bool {
         self.by_number.contains_key(&number)
     }

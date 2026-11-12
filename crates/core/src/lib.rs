@@ -27,6 +27,7 @@ pub mod settings;
 pub mod status;
 pub mod store;
 pub mod sync;
+pub mod theme;
 pub mod token;
 pub mod version;
 pub mod web;

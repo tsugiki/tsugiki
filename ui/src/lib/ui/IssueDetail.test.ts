@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { beforeEach, expect, it, vi } from "vitest";
 import { IssueViewState, type IssueView } from "$lib/state/issue-view.svelte";
 import type { TreeEntry } from "$lib/state/workbench.svelte";
@@ -68,6 +68,8 @@ const view: IssueView = {
     opened,
     orphan,
   ],
+  merged: [],
+  merged_count: 0,
   content: {
     body_html: "<p>The description</p>",
     comments: [
@@ -150,7 +152,7 @@ it("counts one PR as one", async () => {
 it("starts each PR's line with its branch and ends it with its author", async () => {
   await shown({ ...view, pull_requests: [opened, { ...orphan, author: null }] });
 
-  const lines = within(screen.getByRole("list", { name: "Origin PRs" }))
+  const lines = within(screen.getByRole("list", { name: "PRs" }))
     .getAllByRole("listitem")
     .map((item) => item.firstElementChild?.textContent?.trim());
   expect(lines).toEqual(["main #13 gh-7: Fix it some-author", "3.12 #14 gh-7: Fix it deleted user"]);
@@ -182,11 +184,68 @@ it("says under the tree what each icon and the bold mean", async () => {
   ]);
 });
 
+/** The Issue with two Origin PRs that merged with their Backport, three PRs in all, folded away. */
+const withMerged: IssueView = {
+  ...view,
+  merged: [
+    {
+      kind: "pr",
+      number: 20,
+      ...row,
+      title: "gh-7: First fix",
+      backports: [{ number: 21, ...row, target_branch: "3.14", backport: "bot" }],
+    },
+    { kind: "pr", number: 22, ...row, title: "gh-7: Second fix", backports: [] },
+  ],
+  merged_count: 3,
+};
+
+it("counts the merged PRs folded away in the heading, and gives an Issue with only those its heading", async () => {
+  await shown(withMerged);
+  expect(screen.getByRole("heading", { level: 3 }).textContent).toBe("Origin PRs 2 open of 8 PRs");
+  cleanup();
+
+  await shown({ ...withMerged, pull_requests: [] });
+  expect(screen.getByRole("heading", { level: 3 }).textContent).toBe("Origin PRs 0 open of 3 PRs");
+});
+
+it("folds the fully merged PRs into one line that unfolds and folds them again", async () => {
+  await shown(withMerged);
+
+  const line = screen.getByRole("button", { name: "Show 3 merged PRs" });
+  expect(line.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("list", { name: "Merged PRs" })).toBeNull();
+
+  await fireEvent.click(line);
+  const merged = screen.getByRole("list", { name: "Merged PRs" });
+  expect(within(merged).getByText("#20 gh-7: First fix")).toBeTruthy();
+  expect(within(merged).getByText(/Backports:/).textContent).toContain("3.14 Merged");
+  expect(line.textContent?.trim()).toBe("Hide 3 merged PRs");
+  expect(line.getAttribute("aria-expanded")).toBe("true");
+
+  await fireEvent.click(line);
+  expect(screen.queryByRole("list", { name: "Merged PRs" })).toBeNull();
+  expect(line.textContent?.trim()).toBe("Show 3 merged PRs");
+});
+
+it("shows only the line for an Issue whose PRs have all merged, and names one PR as one", async () => {
+  await shown({ ...withMerged, pull_requests: [], merged: withMerged.merged.slice(1), merged_count: 1 });
+
+  expect(screen.queryByRole("list", { name: "PRs" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Show 1 merged PR" })).toBeTruthy();
+});
+
+it("leaves the line out when nothing has fully merged", async () => {
+  await shown(view);
+
+  expect(screen.queryByRole("button", { name: /merged PR/ })).toBeNull();
+});
+
 it("marks the Issue, each PR in its tree and each Backport with the icon of its state", async () => {
   await shown({ ...view, state: "CLOSED" });
 
   const heading = screen.getByRole("heading", { level: 2 });
-  const tree = screen.getByRole("list", { name: "Origin PRs" });
+  const tree = screen.getByRole("list", { name: "PRs" });
   const icons = within(tree)
     .getAllByRole("img")
     .map((icon) => icon.getAttribute("title"));

@@ -36,6 +36,7 @@ use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{Home, LoadedSettings, PaneLayout, SettingsOwner};
 use tsugiki_core::status::{Change, FailedRead, LastSync, Status, SyncActivity};
 use tsugiki_core::store::StoreReader;
+use tsugiki_core::theme::Themes;
 use tsugiki_core::version::Version;
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
@@ -231,6 +232,14 @@ fn settings(owner: State<'_, SettingsOwner>) -> LoadedSettings {
     owner.view().loaded
 }
 
+/// The theme of each side, light and dark, as CSS variables (#515). The window shows the one for the side
+/// Windows is on.
+#[tauri::command]
+#[specta::specta]
+fn themes() -> Result<Themes, Error> {
+    Themes::built_in()
+}
+
 /// What the window opens on.
 #[tauri::command]
 #[specta::specta]
@@ -380,8 +389,9 @@ fn read_workbench(
     reader: &StoreReader,
 ) -> Result<Workbench, Error> {
     let name = RepositoryName::parse(repository)?;
-    let repository = owner.view().loaded.settings.repository(name);
-    Workbench::read(reader, &repository, view)
+    let settings = owner.view();
+    let repository = settings.loaded.settings.repository(name);
+    Workbench::read(reader, &repository, view, settings.panes.order)
 }
 
 fn read_issue(
@@ -654,6 +664,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::open_pull_request,
             fetch_pull_request,
             settings,
+            themes,
             home,
             pane_layout,
             time_running,

@@ -144,8 +144,8 @@ pub(crate) fn save_pane_layout(
     Ok(owner.save_panes(layout)?.panes)
 }
 
-/// The rows of a view of a Repository's Workbench, with what its Sidebar shows. This waits
-/// on the database and never on GitHub (ADR 0018).
+/// The rows of a view of a Repository's Workbench, with what its Sidebar shows, in the order `machine.toml`
+/// keeps for the list (#592). This waits on the database and never on GitHub (ADR 0018).
 #[tauri::command(async)]
 #[specta::specta]
 pub(crate) fn workbench(

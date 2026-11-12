@@ -1,6 +1,8 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import { openLink, openOnGitHub, type GitHubItem } from "$lib/state/browser";
   import type { IssueViewState } from "$lib/state/issue-view.svelte";
+  import type { TreeEntry } from "$lib/state/workbench.svelte";
   import Conversation from "./Conversation.svelte";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
   import StateIcon from "./StateIcon.svelte";
@@ -12,6 +14,7 @@
     now,
     onopenpr,
     focusable = false,
+    header,
   }: {
     repository: string;
     issue: IssueViewState;
@@ -20,6 +23,8 @@
     /** Whether the pane takes the focus, as it does while the Issue list is hidden. Otherwise a click in it
      * leaves the focus where it was, so Enter still opens the row under the cursor. */
     focusable?: boolean;
+    /** What sits at the top of the pane, such as the history's arrows (#586). */
+    header?: Snippet;
   } = $props();
 
   let browserProblem = $state<string>();
@@ -41,6 +46,10 @@
     ["Merged", prIcon({ state: "MERGED", is_draft: false })],
     ["Closed", prIcon({ state: "CLOSED", is_draft: false })],
   ];
+
+  /** The line the fully merged PRs fold into, which says what a click does (#588). */
+  const mergedWords = (shown: boolean, count: number) =>
+    `${shown ? "Hide" : "Show"} ${String(count)} merged ${count === 1 ? "PR" : "PRs"}`;
 </script>
 
 <!-- The pane mounts afresh each time the view shows, so it goes back to where the view says it was. -->
@@ -56,6 +65,7 @@
     issue.scrollTop = e.currentTarget.scrollTop;
   }}
 >
+  {@render header?.()}
   {#if issue.error}
     <p role="alert">{`Tsugiki can't show this Issue: ${issue.error}`}</p>
   {/if}
@@ -77,10 +87,9 @@
     </h2>
     <p class="by">{view.author ?? "deleted user"}</p>
 
-    {#if view.pull_requests.length > 0}
-      <h3>Origin PRs <small>{openOfAll(view.pull_requests)}</small></h3>
-      <ul class="prs" aria-label="Origin PRs">
-        {#each view.pull_requests as entry (entry.number)}
+    {#snippet tree(entries: TreeEntry[], label: string)}
+      <ul aria-label={label}>
+        {#each entries as entry (entry.number)}
           <li>
             <span>
               <StateIcon icon={prIcon(entry)} />
@@ -109,6 +118,21 @@
           </li>
         {/each}
       </ul>
+    {/snippet}
+    {#if view.pull_requests.length > 0 || view.merged_count > 0}
+      <!-- The count takes in the merged PRs folded away too. -->
+      <h3>Origin PRs <small>{openOfAll([...view.pull_requests, ...view.merged])}</small></h3>
+      {#if view.pull_requests.length > 0}
+        {@render tree(view.pull_requests, "PRs")}
+      {/if}
+      {#if view.merged_count > 0}
+        <button class="link fold" aria-expanded={issue.mergedShown} onclick={() => issue.toggleMerged()}>
+          {mergedWords(issue.mergedShown, view.merged_count)}
+        </button>
+        {#if issue.mergedShown}
+          {@render tree(view.merged, "Merged PRs")}
+        {/if}
+      {/if}
       <p class="legend">
         <!-- The words name each icon, so a screen reader skips the icons' own names. -->
         {#each LEGEND as [words, icon] (words)}
@@ -194,6 +218,11 @@
     list-style: none;
     margin: 12px 0;
     padding: 0;
+  }
+
+  .fold {
+    font-size: 12px;
+    opacity: 0.75;
   }
 
   li {

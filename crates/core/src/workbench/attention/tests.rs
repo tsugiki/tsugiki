@@ -12,6 +12,7 @@ use crate::github::pull_requests::{CiState, LatestReview, PrState, PullRequestFa
 use crate::login::Login;
 use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
+use crate::settings::ListOrder;
 use crate::store::{ChangeCheck, OpenReader, Store, StoreReader, SyncState, reader};
 use crate::workbench::{ListedItem, Workbench, WorkbenchView};
 
@@ -166,7 +167,7 @@ impl World {
     }
 
     fn view(&self, view: &WorkbenchView) -> Workbench {
-        Workbench::read(&self.reader, &self.settings, view).unwrap()
+        Workbench::read(&self.reader, &self.settings, view, ListOrder::Attention).unwrap()
     }
 
     fn workbench(&self) -> Workbench {
@@ -712,9 +713,18 @@ fn what_needs_attention_comes_first_newest_first_then_the_rest_then_the_quiet_se
     ]);
 
     let workbench = world.workbench();
+    let by_update = Workbench::read(
+        &world.reader,
+        &world.settings,
+        &WorkbenchView::Whole,
+        ListOrder::LastUpdate,
+    )
+    .unwrap();
 
     assert_eq!(numbers(&workbench.items), [2, 1, 3, 4]);
     assert_eq!(numbers(&workbench.quiet), [10, 11]);
+    assert_eq!(numbers(&by_update.items), [3, 4, 2, 1]);
+    assert_eq!(numbers(&by_update.quiet), [10, 11]);
     world.finish();
 }
 

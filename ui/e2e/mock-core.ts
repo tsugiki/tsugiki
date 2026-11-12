@@ -19,6 +19,7 @@ export const mockCore = (page: Page, answers: CoreAnswers) =>
       sidebar_hidden: false,
       list_hidden: false,
       detail_only_hid: null,
+      order: "attention",
     };
     const answers = {
       lastSync: null,

@@ -953,7 +953,32 @@ const WIDE: PaneLayout = PaneLayout {
     sidebar_hidden: false,
     list_hidden: false,
     detail_only_hid: None,
+    order: ListOrder::Attention,
 };
+
+#[test]
+fn the_lists_order_stays_on_this_machine_until_it_goes_back_to_attention() {
+    let (folders, root) = temp_folders("panes-order");
+    let mut files = SettingsFiles::load(folders.clone());
+    let by_update = PaneLayout {
+        order: ListOrder::LastUpdate,
+        ..WIDE
+    };
+
+    files.save_panes(by_update).unwrap();
+    let saved = fs::read_to_string(folders.machine_file()).unwrap();
+    let read_again = SettingsFiles::load(folders.clone()).view().panes;
+    files.save_panes(WIDE).unwrap();
+    let back = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(
+        saved,
+        "[panes]\nsidebar = 240\nlist = 500\norder = \"last_update\"\n"
+    );
+    assert_eq!(read_again, by_update);
+    assert_eq!(back, "[panes]\nsidebar = 240\nlist = 500\n");
+}
 
 #[test]
 fn a_hidden_sidebar_stays_hidden_on_this_machine_until_it_shows_again() {
@@ -1114,6 +1139,7 @@ list = 500
 sidebar_hidden = \"yes\"
 list_hidden = 1
 detail_only_hid = \"everything\"
+order = \"by_mood\"
 ";
     fs::write(folders.machine_file(), text).unwrap();
 
@@ -1126,6 +1152,7 @@ detail_only_hid = \"everything\"
         sidebar_hidden: false,
         list_hidden: false,
         detail_only_hid: None,
+        order: ListOrder::Attention,
     };
     assert_eq!(
         (files.view().panes, files.loaded().problems.len()),

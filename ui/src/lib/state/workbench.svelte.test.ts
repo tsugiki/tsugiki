@@ -112,6 +112,30 @@ describe("WorkbenchState", () => {
     state.stop();
   });
 
+  it("names the view on show as the Sidebar does, and a Filter it no longer has by its search", async () => {
+    catchListener();
+    const mine = { name: "Mine", query: "is:open author:@me", count: 0, problem: null };
+    vi.mocked(commands.workbench).mockResolvedValue({
+      status: "ok",
+      data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [mine] },
+    });
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    const titles = [state.title];
+    for (const view of [
+      { kind: "review_requests" as const },
+      { kind: "filter" as const, query: mine.query },
+      { kind: "filter" as const, query: "label:gone" },
+    ]) {
+      await state.select(view);
+      titles.push(state.title);
+    }
+
+    expect(titles).toEqual(["Workbench", "Review requests", "Mine", "label:gone"]);
+    state.stop();
+  });
+
   it("stops on each PR and Backport in an Issue's tree, and knows the Issue", async () => {
     catchListener();
     const tree: ListedItem = {

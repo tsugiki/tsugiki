@@ -96,6 +96,15 @@ export class WorkbenchState {
     await this.#ask();
   }
 
+  /** The name of the view on show, as the Sidebar gives it. A Filter the settings no longer hold goes by
+   * its search. */
+  get title(): string {
+    const selected = this.selected;
+    if (selected.kind === "whole") return "Workbench";
+    if (selected.kind === "review_requests") return "Review requests";
+    return this.filters.find((filter) => filter.query === selected.query)?.name ?? selected.query;
+  }
+
   /** The line under the cursor, wherever the list now has it. */
   get underCursor(): Stop | undefined {
     return this.#stops().find((stop) => sameStop(this.cursor, stop));

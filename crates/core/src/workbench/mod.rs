@@ -30,6 +30,7 @@ use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::PrHead;
 use crate::links::BackportKind;
 use crate::repository_settings::RepositorySettings;
+use crate::settings::ListOrder;
 use crate::store::{StoreReader, WorkFacts};
 use attention::Causes;
 use backports::{plant, standalone};
@@ -177,15 +178,27 @@ impl Workbench {
             .collect()
     }
 
-    /// Reads the view `view` of `repository`'s Workbench. This waits on the database and never on a sync
-    /// (ADR 0018).
+    /// Reads the view `view` of `repository`'s Workbench, its items in `order`. This waits on the database
+    /// and never on a sync (ADR 0018).
     pub fn read(
         reader: &StoreReader,
         repository: &RepositorySettings,
         view: &WorkbenchView,
+        order: ListOrder,
     ) -> Result<Self, Error> {
         let facts = reader.work_facts(&repository.name)?;
-        Ok(Self::from_facts(facts, repository, view))
+        Ok(Self::from_facts(facts, repository, view).ordered(order))
+    }
+
+    /// The Workbench with its items in `order`. Its quiet section keeps its own, the latest update first.
+    fn ordered(mut self, order: ListOrder) -> Self {
+        match order {
+            ListOrder::Attention => {}
+            ListOrder::LastUpdate => self
+                .items
+                .sort_by_key(|listed| Reverse(listed.item.updated_at_and_number())),
+        }
+        self
     }
 
     /// No viewer means nobody has signed in yet, so no PR is the user's.

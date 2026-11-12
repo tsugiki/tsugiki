@@ -1,12 +1,12 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import { openLink, openOnGitHub, type GitHubItem } from "$lib/state/browser";
-  import type { IssueViewState } from "$lib/state/issue-view.svelte";
+  import type { IssueView, IssueViewState } from "$lib/state/issue-view.svelte";
   import type { TreeEntry } from "$lib/state/workbench.svelte";
   import Conversation from "./Conversation.svelte";
   import { issueIcon, prIcon } from "./octicons";
   import StateIcon from "./StateIcon.svelte";
-  import { backportWords, headline, prStateWords } from "./workbench-row";
+  import { ago, backportWords, commentCount, headline, prStateWords } from "./workbench-row";
 
   let {
     repository,
@@ -38,6 +38,26 @@
   const openPr = (number: number) => () => {
     onopenpr(number);
   };
+
+  /** The start of the author line: the Issue's author and how long ago they opened it, with the date and time
+   * for the tooltip. A read kept from before Tsugiki asked has neither time, until the next read. */
+  const opened = (view: IssueView) => {
+    const who = view.author ?? "deleted user";
+    const at = view.content?.opened_at;
+    if (!at) return { words: who, title: undefined };
+    const title = new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+    return { words: `${who} opened this ${ago(at, now)}`, title };
+  };
+
+  /** The rest of the author line: how many comments, once Tsugiki has read them, and whom it is assigned
+   * to. */
+  const restOfLine = (view: IssueView) => {
+    const parts: string[] = [];
+    if (view.content) parts.push(commentCount(view.content.comments.length + view.content.earlier_comments));
+    if (view.assignees.length > 0) parts.push(`assigned to ${view.assignees.join(", ")}`);
+    return parts.map((part) => ` · ${part}`).join("");
+  };
+
   /** The line the fully merged PRs fold into, which says what a click does (#588). */
   const mergedWords = (shown: boolean, count: number) =>
     `${shown ? "Hide" : "Show"} ${String(count)} merged ${count === 1 ? "PR" : "PRs"}`;
@@ -76,7 +96,8 @@
         {headline(view)}
       </button>
     </h2>
-    <p class="by">{view.author ?? "deleted user"}</p>
+    {@const by = opened(view)}
+    <p class="by"><span title={by.title}>{by.words}</span>{restOfLine(view)}</p>
 
     {#snippet tree(entries: TreeEntry[], label: string)}
       <ul aria-label={label}>

@@ -118,6 +118,7 @@ fn no_conversation() -> PullRequestContent {
             body_html: String::new(),
             comments: vec![],
             earlier_comments: 0,
+            opened_at: None,
         },
         reviews: vec![],
         earlier_reviews: 0,

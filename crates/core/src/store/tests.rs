@@ -231,6 +231,7 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
         body_html: "<p>It crashes</p>".to_owned(),
         comments: Vec::new(),
         earlier_comments: 0,
+        opened_at: Some(saved_at),
     };
     let review = Review {
         author: Some(Login::new("some-reviewer")),

@@ -56,6 +56,7 @@ const view: PrView = {
       },
     ],
     earlier_comments: 2,
+    opened_at: null,
     reviews: [
       {
         author: "some-reviewer",

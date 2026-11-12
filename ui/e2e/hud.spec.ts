@@ -114,7 +114,14 @@ test("the HUD times an Issue whose text comes from GitHub", async ({ page }) => 
     pull_requests: [],
     attention: null,
   };
-  const unread: IssueView = { ...listed, merged: [], merged_count: 0, author: "issue-author", content: null };
+  const unread: IssueView = {
+    ...listed,
+    merged: [],
+    merged_count: 0,
+    author: "issue-author",
+    assignees: [],
+    content: null,
+  };
   await mockCore(page, {
     ...core,
     workbench: {
@@ -133,7 +140,7 @@ test("the HUD times an Issue whose text comes from GitHub", async ({ page }) => 
   await expect(value(page, "Issue from the database")).toHaveText(/^\d+\.\d ms$/);
   await expect(value(page, "Issue from GitHub")).toHaveText("waiting");
 
-  const content = { body_html: "<p>It crashes</p>", comments: [], earlier_comments: 0 };
+  const content = { body_html: "<p>It crashes</p>", comments: [], earlier_comments: 0, opened_at: null };
   await changeAnswer(page, "issue", { status: "ok", data: { ...unread, content } });
   await emitFromCore(page, "changed", { repository: repository.name, items: [7] });
   await expect(value(page, "Issue from GitHub")).toHaveText(/^\d+\.\d ms$/);

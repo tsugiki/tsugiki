@@ -26,6 +26,7 @@ fn answering(issue: &Value) -> (GitHub, Receiver<(String, Value)>) {
 fn an_issue_reads_as_its_rendering_with_the_comments_oldest_first() {
     let (github, asked) = answering(&json!({
         "bodyHTML": "<p>It crashes</p>",
+        "createdAt": "2026-11-01T09:00:00Z",
         "comments": {
             "totalCount": 32,
             "nodes": [
@@ -69,6 +70,7 @@ fn an_issue_reads_as_its_rendering_with_the_comments_oldest_first() {
                 },
             ],
             earlier_comments: 30,
+            opened_at: Some(moment("2026-11-01T09:00:00Z")),
         }
     );
     let (operation, variables) = asked.recv().unwrap();

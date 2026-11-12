@@ -78,6 +78,7 @@ pub(crate) fn reviewed() -> PullRequestContent {
                 hidden: Some(HiddenReason::OffTopic),
             }],
             earlier_comments: 2,
+            opened_at: Some(OffsetDateTime::UNIX_EPOCH),
         },
         reviews: vec![
             Review {

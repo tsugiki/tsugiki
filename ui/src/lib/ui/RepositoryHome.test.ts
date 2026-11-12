@@ -110,6 +110,7 @@ beforeEach(() => {
       merged: [],
       merged_count: 0,
       author: "issue-author",
+      assignees: [],
       content: null,
     },
   });
@@ -469,6 +470,7 @@ it("says how long ago each comment in the Detail pane came", async () => {
       updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [],
       author: "issue-author",
+      assignees: [],
       content: {
         body_html: "<p>It crashes</p>",
         comments: [
@@ -576,6 +578,7 @@ it("keeps the merged PRs unfolded after one of them opens and Esc comes back", a
       merged: [{ ...merged, state: "MERGED" }],
       merged_count: 1,
       author: "issue-author",
+      assignees: [],
       content: null,
     },
   });
@@ -752,7 +755,7 @@ it("opens a Standalone PR's Backport in the PR view, with no Issue to go back to
 it("opens a PR from the Issue view, and puts the cursor on its line in the tree", async () => {
   core.issue.mockResolvedValue({
     status: "ok",
-    data: { ...issue, author: "issue-author", content: null },
+    data: { ...issue, author: "issue-author", assignees: [], content: null },
   });
   const { issueRow, treeRow } = await listing();
   await fireEvent.click(issueRow);

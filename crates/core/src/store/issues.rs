@@ -111,7 +111,8 @@ fn assignees(
     connection: &Connection,
     repository: &RepositoryName,
 ) -> rusqlite::Result<BTreeMap<u32, Vec<Login>>> {
-    let query = "SELECT number, login FROM issue_assignees WHERE repository = :repository";
+    // In login order, which the Issue view's author line shows them in.
+    let query = "SELECT number, login FROM issue_assignees WHERE repository = :repository ORDER BY number, login";
     pull_requests::values_by_number(
         connection.prepare(query)?,
         named_params! { ":repository": repository },

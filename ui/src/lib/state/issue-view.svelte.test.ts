@@ -17,6 +17,7 @@ const view = (title: string): IssueView => ({
   merged: [],
   merged_count: 0,
   author: "issue-author",
+  assignees: [],
   content: null,
 });
 

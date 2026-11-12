@@ -42,6 +42,7 @@ const view: IssueView = {
   people: ["issue-author"],
   updated_at: "2026-11-04T10:00:00Z",
   author: "issue-author",
+  assignees: [],
   pull_requests: [
     {
       kind: "pr",
@@ -69,8 +70,16 @@ const view: IssueView = {
       { author: null, created_at: "2026-11-04T10:00:00Z", body_html: "<p>Gone</p>", hidden: null },
     ],
     earlier_comments: 3,
+    opened_at: "2026-10-22T10:00:00Z",
   },
 };
+
+const content = (body_html: string, earlier_comments: number) => ({
+  body_html,
+  comments: [],
+  earlier_comments,
+  opened_at: null,
+});
 
 const NOW = new Date("2026-11-04T11:00:00Z");
 
@@ -95,21 +104,44 @@ it("shows the title and author, the description and the recent comments", async 
   await shown(view);
 
   expect(screen.getByRole("heading").textContent).toContain("#7 It crashes");
-  expect(screen.getByText("issue-author")).toBeTruthy();
   expect(screen.getByText("The description").tagName).toBe("P");
   expect(screen.getByText("some-reviewer · 2h ago")).toBeTruthy();
   expect(screen.getByText("deleted user · 1h ago")).toBeTruthy();
   expect(screen.getByText("3 earlier comments are on GitHub.")).toBeTruthy();
 });
 
-it("counts one earlier comment as one", async () => {
-  await shown({ ...view, content: { body_html: "<p>Short</p>", comments: [], earlier_comments: 1 } });
+it("says under the title who opened the Issue and when, and how many comments it has", async () => {
+  await shown(view);
 
+  const opened = screen.getByText("issue-author opened this 13d ago");
+  const when = new Date("2026-10-22T10:00:00Z").toLocaleString([], {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  expect(opened.getAttribute("title")).toBe(when);
+  expect(opened.parentElement?.textContent).toBe("issue-author opened this 13d ago · 5 comments");
+});
+
+it("says whom the Issue is assigned to", async () => {
+  await shown({ ...view, assignees: ["some-assignee", "other-assignee"] });
+
+  const opened = screen.getByText("issue-author opened this 13d ago");
+  expect(opened.parentElement?.textContent).toBe(
+    "issue-author opened this 13d ago · 5 comments · assigned to some-assignee, other-assignee",
+  );
+});
+
+it("counts one comment as one, and leaves out when a read from before Tsugiki asked was opened", async () => {
+  await shown({ ...view, content: content("<p>Short</p>", 1) });
+
+  const author = screen.getByText("issue-author");
+  expect(author.getAttribute("title")).toBeNull();
+  expect(author.parentElement?.textContent).toBe("issue-author · 1 comment");
   expect(screen.getByText("1 earlier comment is on GitHub.")).toBeTruthy();
 });
 
 it("says nothing about earlier comments when it shows them all", async () => {
-  await shown({ ...view, content: { body_html: "<p>Short</p>", comments: [], earlier_comments: 0 } });
+  await shown({ ...view, content: content("<p>Short</p>", 0) });
 
   expect(screen.queryByText(/earlier comment/)).toBeNull();
 });
@@ -226,7 +258,7 @@ it("sends a link in a comment to the browser, and says if that fails", async () 
 it("sends a link in the description to the browser", async () => {
   await shown({
     ...view,
-    content: { body_html: '<a href="https://github.com/">Home</a>', comments: [], earlier_comments: 0 },
+    content: content('<a href="https://github.com/">Home</a>', 0),
   });
 
   await fireEvent.click(screen.getByRole("link", { name: "Home" }));
@@ -235,10 +267,12 @@ it("sends a link in the description to the browser", async () => {
 });
 
 it("shows the tree before Tsugiki has read what the Issue says", async () => {
-  await shown({ ...view, content: null, author: null, pull_requests: [] });
+  await shown({ ...view, content: null, author: null, assignees: ["some-assignee"], pull_requests: [] });
 
   expect(screen.getByText(/hasn't read what this Issue says/)).toBeTruthy();
-  expect(screen.getByText("deleted user")).toBeTruthy();
+  expect(screen.getByText("deleted user").parentElement?.textContent).toBe(
+    "deleted user · assigned to some-assignee",
+  );
   expect(screen.queryByRole("list")).toBeNull();
 });
 

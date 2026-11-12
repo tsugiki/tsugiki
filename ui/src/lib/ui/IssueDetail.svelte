@@ -34,8 +34,8 @@
     onopenpr(number);
   };
 
-  /** Who opened the Issue and how long ago, with the date and time for the tooltip. A read kept from before
-   * Tsugiki asked when has neither, until the next read. */
+  /** The start of the author line: the Issue's author and how long ago they opened it, with the date and time
+   * for the tooltip. A read kept from before Tsugiki asked has neither time, until the next read. */
   const opened = (view: IssueView) => {
     const who = view.author ?? "deleted user";
     const at = view.content?.opened_at;

@@ -135,7 +135,8 @@ pub struct IssueContent {
     pub comments: Vec<IssueComment>,
     /// The count of older comments that only GitHub shows.
     pub earlier_comments: u32,
-    /// When its author opened it. Nothing, for a read kept from before Tsugiki asked, until the next read.
+    /// The time its author opened it. Nothing, for a read kept from before Tsugiki asked, until the next
+    /// read.
     #[serde(with = "time::serde::rfc3339::option")]
     #[specta(type = Option<String>)]
     pub opened_at: Option<OffsetDateTime>,

@@ -30,7 +30,8 @@ pub(super) const SCHEMA: &str = "
     );
 ";
 
-/// When each Issue and PR was opened, which a read kept from before this step lacks until the next (#595).
+/// Adds the time each Issue and PR was opened. A read kept from before this step lacks it until the next
+/// read (#595).
 pub(super) const OPENED: &str = "ALTER TABLE issue_content ADD COLUMN opened_at INTEGER;";
 
 /// Replaces what's kept of Issue `number` with `content`, in one transaction.

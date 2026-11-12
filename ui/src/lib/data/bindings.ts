@@ -671,7 +671,10 @@ export type IssueContent_Deserialize = {
 	comments: IssueComment_Deserialize[],
 	/**  The count of older comments that only GitHub shows. */
 	earlier_comments: number,
-	/**  When its author opened it. Nothing, for a read kept from before Tsugiki asked, until the next read. */
+	/**
+	 *  The time its author opened it. Nothing, for a read kept from before Tsugiki asked, until the next
+	 *  read.
+	 */
 	opened_at: string | null,
 };
 
@@ -683,7 +686,10 @@ export type IssueContent_Serialize = {
 	comments: IssueComment_Serialize[],
 	/**  The count of older comments that only GitHub shows. */
 	earlier_comments: number,
-	/**  When its author opened it. Nothing, for a read kept from before Tsugiki asked, until the next read. */
+	/**
+	 *  The time its author opened it. Nothing, for a read kept from before Tsugiki asked, until the next
+	 *  read.
+	 */
 	opened_at: string | null,
 };
 

@@ -46,6 +46,7 @@ const view: PrView = {
     opened_at: null,
     reviews: [
       {
+        id: 1,
         author: "some-reviewer",
         state: "APPROVED",
         commit: "0123abcdef",
@@ -284,6 +285,7 @@ const threaded = async (page: Page, at: DiffThread["at"], words: string) => {
               resolution: "open",
               comments: [
                 {
+                  id: 2,
                   author: "some-reviewer",
                   created_at: "2026-11-04T10:00:00Z",
                   body_html: `<p>${words}</p>`,

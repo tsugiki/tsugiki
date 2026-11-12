@@ -4,7 +4,7 @@ use time::OffsetDateTime;
 
 use super::*;
 use crate::filters::{Filter, FilterQuery};
-use crate::github::issue_content::IssueComment;
+use crate::github::issue_content::{Comment, CommentId, IssueComment};
 use crate::github::issues::IssueFacts;
 use crate::github::labels::Label;
 use crate::github::pull_requests::{LatestReview, PullRequestFacts, ReviewState};
@@ -212,10 +212,13 @@ fn an_issue_nobody_has_to_act_on_still_has_a_view_with_what_was_last_read() {
     let content = IssueContent {
         body_html: "<p>It crashes</p>".to_owned(),
         comments: vec![IssueComment {
-            author: None,
-            created_at: OffsetDateTime::UNIX_EPOCH,
-            body_html: "<p>Which build?</p>".to_owned(),
-            hidden: None,
+            id: Some(CommentId::new(6_065_108_504)),
+            comment: Comment {
+                author: None,
+                created_at: OffsetDateTime::UNIX_EPOCH,
+                body_html: "<p>Which build?</p>".to_owned(),
+                hidden: None,
+            },
         }],
         earlier_comments: 0,
         opened_at: Some(OffsetDateTime::UNIX_EPOCH),
@@ -225,7 +228,13 @@ fn an_issue_nobody_has_to_act_on_still_has_a_view_with_what_was_last_read() {
         .save_issue_content(&world.settings().name, 1, content.clone())
         .unwrap();
 
-    assert_eq!(view(&world, 1).unwrap().content, Some(content));
+    let view = view(&world, 1).unwrap();
+    assert_eq!(view.content, Some(content));
+    // The number a link names, beside what the comment says.
+    let sent = serde_json::to_value(&view).unwrap();
+    let comment = &sent["content"]["comments"][0];
+    assert_eq!(comment["id"], serde_json::json!(6_065_108_504_u64));
+    assert_eq!(comment["body_html"], "<p>Which build?</p>");
     world.finish();
 }
 

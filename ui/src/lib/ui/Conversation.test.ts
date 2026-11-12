@@ -18,6 +18,7 @@ const thread = (changes: Partial<ThreadLine>): ThreadLine => ({
 });
 
 const review = (changes: Partial<Review>): Review => ({
+  id: null,
   author: "some-reviewer",
   state: "COMMENTED",
   commit: "0123abcdef",
@@ -101,6 +102,7 @@ it("shows each Review as a block in time order among the comments, with a line f
       {
         comments: [
           {
+            id: 1,
             author: "pr-author",
             created_at: "2026-11-04T10:00:00Z",
             body_html: "<p>Done</p>",
@@ -192,12 +194,14 @@ it("folds a hidden comment or Review to its reason, and shows it on a click", as
       {
         comments: [
           {
+            id: 2,
             author: "some-author",
             created_at: "2026-11-04T11:00:00Z",
             body_html: "<p>Unrelated</p>",
             hidden: "off_topic",
           },
           {
+            id: 3,
             author: "other-author",
             created_at: "2026-11-04T11:30:00Z",
             body_html: "<p>Who knows</p>",
@@ -252,6 +256,7 @@ it("says nothing of Reviews for an Issue", () => {
 
 it("keeps a hidden comment open through a read that brings a newer comment", async () => {
   const offTopic = {
+    id: 4,
     author: "some-author",
     created_at: "2026-11-04T10:00:00Z",
     body_html: "<p>Unrelated</p>",
@@ -259,6 +264,7 @@ it("keeps a hidden comment open through a read that brings a newer comment", asy
   } as const;
   const spam = {
     ...offTopic,
+    id: 5,
     created_at: "2026-11-04T10:30:00Z",
     body_html: "<p>Buy now</p>",
     hidden: "spam",

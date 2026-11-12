@@ -33,8 +33,8 @@ const catchListener = () => {
   const stop = vi.fn();
   const send = vi.fn();
   vi.mocked(events.changed.listen).mockImplementation(async (callback) => {
-    send.mockImplementation((repository: string) => {
-      callback({ event: "changed", id: 1, payload: { repository, items: [] } });
+    send.mockImplementation((repository: string, items: number[] = []) => {
+      callback({ event: "changed", id: 1, payload: { repository, items } });
     });
     return stop;
   });
@@ -74,6 +74,33 @@ describe("IssueViewState", () => {
     await state.load();
 
     expect(state.view).toBeNull();
+    state.stop();
+  });
+
+  it("forgets why a read failed once a later read saves the Issue it doesn't hold", async () => {
+    const { send } = catchListener();
+    vi.mocked(commands.issue).mockResolvedValue(ok(null));
+    const state = new IssueViewState("python/cpython", 7);
+    await state.load();
+    state.failedRead = "waits_on_github";
+
+    send("python/cpython", [8]);
+    expect(state.failedRead).toBe("waits_on_github");
+    send("python/cpython", [7]);
+
+    expect(state.failedRead).toBeUndefined();
+    state.stop();
+  });
+
+  it("keeps why a read failed when the Issue it holds changes, as Mark Seen changes it too", async () => {
+    const { send } = catchListener();
+    const state = new IssueViewState("python/cpython", 7);
+    await state.load();
+    state.failedRead = "waits_on_github";
+
+    send("python/cpython", [7]);
+
+    expect(state.failedRead).toBe("waits_on_github");
     state.stop();
   });
 

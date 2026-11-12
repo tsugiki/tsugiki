@@ -81,12 +81,13 @@ const view: IssueView = {
     body_html: "<p>The description</p>",
     comments: [
       {
+        id: 1,
         author: "some-reviewer",
         created_at: "2026-11-04T09:00:00Z",
         body_html: '<p><a href="https://github.com/python/cpython/issues/1">A link</a></p>',
         hidden: null,
       },
-      { author: null, created_at: "2026-11-04T10:00:00Z", body_html: "<p>Gone</p>", hidden: null },
+      { id: null, author: null, created_at: "2026-11-04T10:00:00Z", body_html: "<p>Gone</p>", hidden: null },
     ],
     earlier_comments: 3,
     opened_at: "2026-10-22T10:00:00Z",
@@ -403,6 +404,51 @@ it("says so for an Issue Tsugiki doesn't hold", async () => {
   await shown(null);
 
   expect(screen.getByText("Tsugiki doesn't hold Issue #7.")).toBeTruthy();
+});
+
+it.each([
+  [
+    "no_token",
+    "Tsugiki can't ask GitHub what this Issue says without a token. The status bar says how to sign in.",
+  ],
+  ["waits_on_github", "What this Issue says comes once GitHub answers."],
+  ["not_on_github", "GitHub doesn't have this Issue, or your token can't see it."],
+  ["other", "Tsugiki couldn't read what this Issue says from GitHub. tsugiki.log says why."],
+] as const)("says why it hasn't read what the Issue says: %s", async (why, words) => {
+  const state = await shown({ ...view, content: null });
+
+  state.failedRead = why;
+
+  await vi.waitFor(() => expect(screen.getByText(words)).toBeTruthy());
+  expect(screen.queryByText(/hasn't read what this Issue says/)).toBeNull();
+  expect(screen.getByRole("list", { name: "PRs" })).toBeTruthy();
+});
+
+it.each([
+  [
+    "no_token",
+    "Tsugiki doesn't hold Issue #7, and can't ask GitHub for it without a token. The status bar says how to sign in.",
+  ],
+  ["waits_on_github", "Tsugiki doesn't hold Issue #7. It comes once GitHub answers."],
+  ["not_on_github", "GitHub doesn't have Issue #7, or your token can't see it."],
+  ["other", "Tsugiki doesn't hold Issue #7, and couldn't read it from GitHub. tsugiki.log says why."],
+] as const)("says why it doesn't hold the Issue: %s", async (why, words) => {
+  const state = await shown(null);
+
+  state.failedRead = why;
+
+  await vi.waitFor(() => expect(screen.getByText(words)).toBeTruthy());
+  expect(screen.queryByText("Tsugiki doesn't hold Issue #7.")).toBeNull();
+});
+
+it("shows what the Issue says once a later read saves it", async () => {
+  const state = await shown({ ...view, content: null });
+  state.failedRead = "waits_on_github";
+
+  state.view = view;
+
+  await vi.waitFor(() => expect(screen.getByText("The description")).toBeTruthy());
+  expect(screen.queryByText("What this Issue says comes once GitHub answers.")).toBeNull();
 });
 
 // jsdom doesn't keep `scrollTop`, so `e2e/issue-view.spec.ts` checks that the pane comes back there.

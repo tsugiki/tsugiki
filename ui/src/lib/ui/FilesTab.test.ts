@@ -859,6 +859,7 @@ const threadAt = (
   at: typeof row === "number" ? { kind: "row", row } : row,
   resolution,
   comments: Array.from({ length: comments }, () => ({
+    id: null,
     author: "some-reviewer",
     created_at: "2026-11-04T10:00:00Z",
     body_html: "<p>Why?</p>",

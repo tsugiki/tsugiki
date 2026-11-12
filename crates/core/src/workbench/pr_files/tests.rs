@@ -5,7 +5,7 @@ use tsugiki_test_git::git;
 use super::*;
 use crate::diff::MirrorDiff;
 use crate::diff::tests::Mirrored;
-use crate::github::pull_request_content::{Side, Subject};
+use crate::github::pull_request_content::{Side, Subject, ThreadCommentId};
 use crate::mirror::HeardRequests;
 use crate::workbench::testing::{ViewWorld, mine};
 
@@ -370,6 +370,7 @@ fn a_thread_tsugiki_read_in_the_conversation_sits_under_its_line() {
         line: Some(line),
         original: Some(line),
     };
+    let numbered = thread.comments[0].id.map(ThreadCommentId::get).unwrap();
     let name = world.repository();
     let save = |content| {
         world
@@ -402,6 +403,11 @@ fn a_thread_tsugiki_read_in_the_conversation_sits_under_its_line() {
         "the other thread is Outdated, at the top of its file"
     );
     assert_eq!(placed.as_array().map(Vec::len), Some(2));
+    assert_eq!(
+        placed[0]["comments"][0]["id"],
+        serde_json::json!(numbered),
+        "a link names a thread's comment by GitHub's number"
+    );
     assert_eq!(threads(elsewhere), serde_json::json!([]));
     mirrored.finish();
     world.finish();

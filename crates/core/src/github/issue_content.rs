@@ -2,8 +2,8 @@
 //! the PR view's Conversation show them, so Tsugiki asks when one opens and while it's on screen. A refresh
 //! reads ahead only the Conversations of the PRs the user's work reaches (ADR 0015).
 
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::de::{DeserializeOwned, Error as _};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::json;
 use specta::Type;
 use time::OffsetDateTime;
@@ -66,8 +66,22 @@ impl Thread {
 
 /// The fields an Issue and a PR share: the description, when it was opened, and the last 30 comments.
 pub(super) const CONVERSATION_FIELDS: &str = "bodyHTML createdAt comments(last: 30) { totalCount \
-                                              nodes { author { login } createdAt bodyHTML isMinimized \
-                                              minimizedReason } }";
+                                              nodes { fullDatabaseId author { login } createdAt bodyHTML \
+                                              isMinimized minimizedReason } }";
+
+/// GitHub's `BigInt`, such as a `fullDatabaseId`, which it sends as a string of digits. Its `databaseId` is
+/// a 32-bit `Int`, too small for the numbers of comments and Reviews today. Nothing, for null.
+pub(super) fn big_int<'de, D: Deserializer<'de>>(answer: D) -> Result<Option<u64>, D::Error> {
+    let Some(digits) = Option::<String>::deserialize(answer)? else {
+        return Ok(None);
+    };
+    let number = digits.parse().map_err(|cause| {
+        D::Error::custom(format!(
+            "GitHub's BigInt {digits:?} isn't a number: {cause}"
+        ))
+    })?;
+    Ok(Some(number))
+}
 
 /// The reason someone gave for hiding a comment on GitHub. The comment folds to it until the user opens it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
@@ -113,9 +127,34 @@ impl MinimizedWire {
     }
 }
 
-/// A comment on an Issue.
+/// GitHub's number for a comment on an Issue or in a PR's Conversation, which a link names after
+/// `#issuecomment-`. The window gets it as a number, which holds it exactly up to 2^53.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Type)]
+#[serde(transparent)]
+pub struct CommentId(#[specta(type = specta_typescript::Number)] u64);
+
+impl CommentId {
+    pub const fn new(id: u64) -> Self {
+        Self(id)
+    }
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+/// A comment on an Issue, or in a PR's Conversation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct IssueComment {
+    /// Nothing, for a comment kept from before Tsugiki asked for it, until the next read.
+    pub id: Option<CommentId>,
+    #[serde(flatten)]
+    pub comment: Comment,
+}
+
+/// What a comment says and who wrote it when, on an Issue, in a PR's Conversation or in a review thread.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct Comment {
     /// Nothing, for a comment whose author's account has gone.
     pub author: Option<Login>,
     #[serde(with = "time::serde::rfc3339")]
@@ -146,6 +185,8 @@ pub struct IssueContent {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CommentWire {
+    #[serde(default, deserialize_with = "big_int")]
+    full_database_id: Option<u64>,
     author: Option<Person>,
     #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
@@ -180,10 +221,13 @@ impl From<IssueWire> for IssueContent {
             .into_iter()
             .flatten()
             .map(|comment| IssueComment {
-                author: comment.author.map(|person| person.login),
-                created_at: comment.created_at,
-                body_html: comment.body_html,
-                hidden: comment.minimized.reason(),
+                id: comment.full_database_id.map(CommentId::new),
+                comment: Comment {
+                    author: comment.author.map(|person| person.login),
+                    created_at: comment.created_at,
+                    body_html: comment.body_html,
+                    hidden: comment.minimized.reason(),
+                },
             })
             .collect();
         let held = u32::try_from(comments.len()).unwrap_or(u32::MAX);

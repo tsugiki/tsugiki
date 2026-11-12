@@ -100,6 +100,22 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     pane sizes, the Sidebar full and on show, the Issue list on show, and nothing remembered by `Ctrl+K Z`.
     The status bar, the list's footer, zoom, the diff view, the performance HUD and the window stay as they
     are. It has no key until the user gives it one.
+  - **Look** of the Sidebar and the Issue list, which the prototype settled. The colours come from the
+    Theme's tokens ([themes.md](themes.md)).
+    - The Sidebar has the panel colour and a line on its right. The Repository's name tops it in bold 13 px.
+      Its section headings, "Built-in views", "Filters" and "Pinned", use the small heading style: 11 px,
+      muted, upper case, 0.04 em apart. Its entries are 13 px with 4 px by 8 px padding and 4 px corners,
+      with their counts muted at the right. The open view takes the selected tint at weight 600.
+    - The list's header, 8 px by 10 px with a line under it, names the view. Each item is three lines of
+      13 px, 7 px above and below, with a line between items: the people; the state icon, the number in the
+      code font, the title, then the PR count and the age in muted 12 px; and the preview in muted 12 px.
+      An Issue with nothing waiting on the user counts its open PRs on the third line, or says it has none
+      yet, and a PR gives its facts there. An ellipsis cuts a long title, people or preview.
+    - An item that Needs attention looks like unread mail: a 3 px accent bar on its left edge, the title in
+      the accent colour at weight 600, the people at weight 600 and the age in the accent colour.
+    - The row under the cursor takes the selected tint, and a row under the pointer a light tint of the
+      text colour. A click anywhere on a row opens it. The quiet section's line uses the small heading
+      style.
 - A **status bar** runs along the bottom of every screen, the Home page included, for what is app-wide and has
   no other place. It stays when the Sidebar is hidden.
   - Left, where the eye spends its time: sync status ("Synced 2 min ago", a click refreshes) with the

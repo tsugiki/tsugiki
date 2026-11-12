@@ -69,6 +69,7 @@
     width: var(--sidebar-width, 200px);
     padding: 6px;
     border-right: 1px solid var(--border);
+    overflow-y: auto;
     font-size: 13px;
     color: var(--fg-chrome);
     background: var(--bg-chrome);

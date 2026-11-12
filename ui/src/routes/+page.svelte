@@ -231,3 +231,24 @@
 {#if hud.visible}
   <PerformanceHud {hud} refreshing={status.syncActivity !== null} />
 {/if}
+
+<style>
+  /* The window doesn't scroll: the screen takes the room above the status bar, and each pane in it scrolls
+     by itself, so the wheel scrolls the pane under the pointer and stops at its end. */
+  :global(body) {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    margin: 0;
+  }
+
+  /* A screen taller than the window, such as the first-run one, scrolls inside it. */
+  main {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    padding: 8px;
+    overflow: auto;
+  }
+</style>

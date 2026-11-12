@@ -26,3 +26,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   cache follow the user. The mirrors are cloned again on the new machine.
 - Offline, Tsugiki is **Read-only**: it shows the mirror and the cached GitHub data. Writing anything needs
   the network. A token that can't write makes a Repository Read-only too: see [token.md](token.md).
+  - An Issue view or a PR view without what the item says, and an Issue view of an Issue Tsugiki doesn't
+    hold, say why the read failed: while GitHub can't be reached, that it comes once GitHub answers, and
+    after a not-found, that GitHub doesn't have it or the token can't see it. The words go once a later read
+    saves the item.
+  - Mark Seen and Mark Unseen keep working, as they write only to the database.

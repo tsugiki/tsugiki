@@ -716,6 +716,79 @@ fn a_pr_read_github_cant_answer_tells_the_window_it_waits_on_github() {
     );
 }
 
+/// The Issue a Workbench lists with PR `number` in its tree.
+fn issue_over(workbench: &Value, number: u64) -> &Value {
+    listed(workbench)
+        .into_iter()
+        .find(|item| {
+            let entries = item["pull_requests"].as_array().unwrap();
+            entries.iter().any(|entry| entry["number"] == number)
+        })
+        .unwrap()
+}
+
+/// Waits for a `changed` event that names item `number`.
+fn wait_for_change_to(changes: &Receiver<Value>, number: &Value) {
+    while !changes.recv_timeout(PLENTY).unwrap()["items"]
+        .as_array()
+        .unwrap()
+        .contains(number)
+    {}
+}
+
+#[test]
+fn started_with_no_network_on_a_synced_database_tsugiki_shows_what_it_holds_and_marks_seen() {
+    let (folders, root) = temp_folders("wired-offline-start");
+    let wired = Wired::start(Ok(folders.clone()), recordings());
+    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    let synced = workbench_after_sync(&wired);
+    let number = issue_over(&synced, 154_019)["number"].clone();
+    let issue = json!({ "repository": CPYTHON, "number": number });
+    let pr = json!({ "repository": CPYTHON, "number": 154_019 });
+    // Reading a PR's Conversation keeps it, as a read ahead does.
+    drop(wired.ask("open_pull_request", pr.clone()).unwrap());
+    while wired.ask("pull_request", pr.clone()).unwrap()["content"].is_null() {
+        let _changed = wired.workbenches.recv_timeout(PLENTY).unwrap();
+    }
+    drop(wired.stop());
+
+    let offline = Wired::start(Ok(folders), no_network());
+    let workbench = offline.ask("workbench", the_whole_workbench()).unwrap();
+    let held = offline.ask("issue", issue.clone()).unwrap();
+    drop(offline.ask("open_issue", issue.clone()).unwrap());
+    let failed = offline.failed_reads.recv_timeout(PLENTY).unwrap();
+    let conversation = offline.ask("pull_request", pr).unwrap();
+    drop(offline.ask("mark_unseen", issue.clone()).unwrap());
+    wait_for_change_to(&offline.workbenches, &number);
+    let flagged = offline.ask("issue", issue.clone()).unwrap();
+    let mark = json!({ "repository": CPYTHON, "mark": flagged["seen"]["mark"] });
+    drop(offline.ask("mark_seen", mark).unwrap());
+    wait_for_change_to(&offline.workbenches, &number);
+    let seen = offline.ask("issue", issue).unwrap();
+    drop(offline.stop());
+    std::fs::remove_dir_all(root).unwrap();
+
+    assert_is_the_recorded_work(&workbench);
+    let tree = held["pull_requests"].as_array().unwrap();
+    assert!(
+        tree.iter().any(|entry| entry["number"] == 154_019),
+        "{held}"
+    );
+    assert_eq!(
+        failed,
+        json!({ "repository": CPYTHON, "number": number, "why": "waits_on_github" })
+    );
+    assert!(
+        conversation["content"]["body_html"].is_string(),
+        "{conversation}"
+    );
+    assert_eq!(flagged["seen"]["state"], "marked_unseen");
+    assert_eq!(
+        seen["seen"]["state"], "seen",
+        "Mark Seen recorded Last seen"
+    );
+}
+
 #[test]
 fn opening_a_pr_shows_its_row_at_once_and_its_conversation_once_github_answers() {
     let (folders, root) = temp_folders("wired-open-pr");

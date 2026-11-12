@@ -133,10 +133,10 @@ export const commands = {
 	pullRequestRows: (chunk: DiffChunk) => typedError<DiffRow_Serialize[], Error_Serialize>(__TAURI_INVOKE("pull_request_rows", { chunk })),
 	/**
 	 *  The spans that highlight the code in a chunk of a PR's diff, which the Files tab asks for with its rows
-	 *  and paints when they come. `opened` names the Generated files it shows open, by their place among the
-	 *  files: the rows of the others get none.
+	 *  and paints when they come. `collapsed` names the files it shows collapsed to their headers, by their
+	 *  place among the files: their rows get none.
 	 */
-	pullRequestSpans: (chunk: DiffChunk, opened: number[]) => typedError<Span[][], Error_Serialize>(__TAURI_INVOKE("pull_request_spans", { chunk, opened })),
+	pullRequestSpans: (chunk: DiffChunk, collapsed: number[]) => typedError<Span[][], Error_Serialize>(__TAURI_INVOKE("pull_request_spans", { chunk, collapsed })),
 	/**
 	 *  The lines a gap of a PR's diff leaves out, read from the file at the PR's head in its mirror with their
 	 *  spans, which the Files tab shows when the user expands the gap. It asks GitHub for nothing. Those past

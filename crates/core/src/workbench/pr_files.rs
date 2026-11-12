@@ -220,19 +220,20 @@ impl PrFiles {
         Ok(Self::open(sources, of)?.diff.find(query))
     }
 
-    /// The spans of the rows in `range`, which highlight their code (#178). Those of a Generated file come
-    /// only once the window opens it, and `opened` names those, by their place among the files (#181).
+    /// The spans of the rows in `range`, which highlight their code (#178). Those of a file the window shows
+    /// collapsed come only once it opens the file, and `collapsed` names those, by their place among the
+    /// files (#181).
     pub fn spans(
         sources: &DiffSources<'_>,
         of: &DiffOf,
         range: Range<u32>,
-        opened: &[u32],
+        collapsed: &[u32],
     ) -> Result<Vec<Vec<Span>>, Error> {
         let mirror = sources.folders.mirror(&of.pr.repository);
         let open = Self::open(sources, of)?;
         let chunk = Chunk {
             rows: range,
-            opened,
+            collapsed,
         };
         Ok(sources.highlighter.spans(&open, &mirror, chunk))
     }

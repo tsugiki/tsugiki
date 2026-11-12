@@ -591,11 +591,11 @@ fn find_in_pull_request(search: DiffSearch, work: &DiffWork) -> Result<Found, Er
 
 fn read_pull_request_spans(
     chunk: DiffChunk,
-    opened: &[u32],
+    collapsed: &[u32],
     work: &DiffWork,
 ) -> Result<Vec<Vec<Span>>, Error> {
     let (of, rows) = chunk.parse()?;
-    PrFiles::spans(&work.sources()?, &of, rows, opened)
+    PrFiles::spans(&work.sources()?, &of, rows, collapsed)
 }
 
 fn read_pull_request_lines(lines: GapLines, work: &DiffWork) -> Result<Vec<HeadLine>, Error> {

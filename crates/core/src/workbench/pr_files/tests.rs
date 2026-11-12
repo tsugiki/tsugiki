@@ -322,10 +322,9 @@ fn a_head_in_the_mirror_shows_its_files_and_each_chunk_of_rows() {
     let files = world.files().unwrap();
     let of = world.diff_of(&head, &read.base);
     let rows = PrFiles::rows(&world.sources(), &of, 0..3).unwrap();
-    // main marks Lib/ast.py generated, and the window has opened each file.
-    let opened: Vec<u32> = (0..).take(whole.files().len()).collect();
+    // main marks Lib/ast.py generated, and the window has collapsed no file.
     let all = 0..whole.row_count();
-    let spans = PrFiles::spans(&world.sources(), &of, all, &opened).unwrap();
+    let spans = PrFiles::spans(&world.sources(), &of, all, &[]).unwrap();
 
     let expected = PrFiles::Ready {
         head,

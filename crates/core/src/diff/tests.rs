@@ -463,13 +463,11 @@ fn each_row_is_highlighted_from_its_version_and_a_removed_line_from_the_merge_ba
         })
         .unwrap();
     let all = 0..open.diff.row_count();
-    // main marks Lib/ast.py generated, and the window has opened each file.
-    let opened: Vec<u32> = (0..).take(open.diff.files().len()).collect();
-
+    // main marks Lib/ast.py generated, and the window has collapsed no file.
     let highlighter = Highlighter::start();
     let rows = |rows| Chunk {
         rows,
-        opened: &opened,
+        collapsed: &[],
     };
     let spans = highlighter.spans(&open, &mirrored.mirror, rows(all.clone()));
     let chunk = highlighter.spans(&open, &mirrored.mirror, rows(3..9));

@@ -1,9 +1,10 @@
 // A PR's Files tab: its diff from the Repository's mirror, or why it isn't there yet. The rows stay in the
 // core, and this asks for them in chunks near what the tab shows (ADR 0001), with the spans that highlight
 // them (#178). A chunk's rows wait a moment for their spans, so a jump into a file the core has parsed shows
-// it highlighted at once (#180). Generated files start collapsed, and their rows aren't asked for until the
-// user opens one (#181). The user can expand the lines a gap between hunks leaves out, which the core reads
-// from the file at the PR's head (#182), and switch between the unified and side-by-side views (#183).
+// it highlighted at once (#180). The user can collapse any file to its header, and Generated files start
+// collapsed. A collapsed file's rows aren't asked for until the user opens it (#181, #581). The user can
+// expand the lines a gap between hunks leaves out, which the core reads from the file at the PR's head
+// (#182), and switch between the unified and side-by-side views (#183).
 // Review threads sit under their lines, and a resolved one starts folded to a line (#184). A thread on a
 // whole file or an Outdated one sits at the top of its file, a thread on a line no hunk shows opens the lines
 // around it, and those on files no longer in the diff come after the last file (#185). A fetch of the PR's
@@ -113,8 +114,8 @@ export class PrFilesState {
   /** The reason the mirror stopped fetching the PR's head without bringing it, kept until the tab asks
    * again. */
   unfetched = $state<Unfetched>();
-  /** The rows that show, and where: a Generated file the user hasn't opened shows only its header, and a
-   * gap the user expanded shows the lines it left out. */
+  /** The rows that show, and where: a collapsed file shows only its header, and a gap the user expanded
+   * shows the lines it left out. */
   layout = $derived.by(() => {
     const view = this.view;
     const ready = view?.state === "ready";
@@ -161,8 +162,8 @@ export class PrFilesState {
   #chunks = new SvelteMap<number, DiffRow[]>();
   /** The spans of each row, by chunk, which come after its rows. */
   #spans = new SvelteMap<number, Span[][]>();
-  /** The Generated files the user has opened, by their place among the files. */
-  #opened = new SvelteSet<number>();
+  /** The files the user collapsed or opened, against how each starts, by their place among the files. */
+  #flippedFiles = new SvelteSet<number>();
   /** The lines expanded gaps show, by `file:line` at the head, once the core sends them. A gap shows the
    * lines held, so a click that fails shows nothing, and two that overlap ask for the same lines. */
   #lines = new SvelteMap<string, HeadLine>();
@@ -204,6 +205,10 @@ export class PrFilesState {
   /** The chunks asked for. Nothing draws from it, and the effect that asks shouldn't rerun on it. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   #asked = new Set<number>();
+  /** The count of asks for each chunk's spans, so the answer to an older ask doesn't paint over a newer
+   * one's. Nothing draws from it either. */
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  #spanAsks = new Map<number, number>();
   #lastQuestion = 0;
   #stopListening: (() => void)[] = [];
   #stopped = false;
@@ -300,7 +305,7 @@ export class PrFilesState {
       this.#chunks.clear();
       this.#spans.clear();
       this.#asked.clear();
-      this.#opened.clear();
+      this.#flippedFiles.clear();
       this.#lines.clear();
       this.#held.clear();
       this.#lengths.clear();
@@ -407,8 +412,8 @@ export class PrFilesState {
   }
 
   /** Moves to the change after the one the tab last moved to, or by `step` -1 to the one before, round from
-   * the end to the start, and opens the Generated file it is in. Without one, it starts from the end it
-   * moves away from. */
+   * the end to the start, and opens the file it is in if that is collapsed. Without one, it starts from the
+   * end it moves away from. */
   nextChange(step: 1 | -1) {
     const view = this.view;
     if (view?.state !== "ready") return;
@@ -509,31 +514,35 @@ export class PrFilesState {
     this.#moveTo(found.files, match.row);
   }
 
-  /** Scrolls to the diff's row `row`, and opens the Generated file among `files` it is in. */
+  /** Scrolls to the diff's row `row`, and opens the file among `files` it is in if that is collapsed. */
   #moveTo(files: DiffFile[], row: number) {
     const file = fileOf(files, row);
     if (this.collapsed(file)) this.toggle(file);
     this.jump = { row };
   }
 
-  /** Whether the file at `file` among the diff's files shows only its header: a Generated file starts so. */
+  /** Whether the file at `file` among the diff's files shows only its header: a Generated file starts so,
+   * the rest start open, and the user's toggle turns either over until the PR opens again. */
   collapsed(file: number): boolean {
     const view = this.view;
-    return view?.state === "ready" && view.files[file]?.generated === true && !this.#opened.has(file);
+    const shown = view?.state === "ready" ? view.files[file] : undefined;
+    return shown !== undefined && shown.generated !== this.#flippedFiles.has(file);
   }
 
-  /** Opens a collapsed Generated file, or collapses it again. The core gave the chunks the tab holds no
-   * spans for the file's rows while it was collapsed, so opening it asks for their spans again. The tab
-   * holds a few chunks, and the core keeps the trees of the other files, so that costs little. */
+  /** Collapses the file at `file` to its header, or opens it. The core gave the chunks the tab holds no
+   * spans for the file's rows while it was collapsed, so opening it asks again for the spans of those that
+   * hold its rows. The core keeps the trees of the other files, so that costs little. */
   toggle(file: number) {
-    if (this.#opened.has(file)) {
-      this.#opened.delete(file);
-      return;
-    }
-    this.#opened.add(file);
     const view = this.view;
-    if (view?.state !== "ready") return;
-    for (const chunk of this.#asked) void this.#respan(view, chunk);
+    const shown = view?.state === "ready" ? view.files[file] : undefined;
+    if (view?.state !== "ready" || shown === undefined) return;
+    const opening = this.collapsed(file);
+    if (!this.#flippedFiles.delete(file)) this.#flippedFiles.add(file);
+    if (!opening) return;
+    const end = view.files[file + 1]?.row ?? view.rows;
+    for (const chunk of this.#asked) {
+      if (chunk * CHUNK < end && shown.row < (chunk + 1) * CHUNK) void this.#respan(view, chunk);
+    }
   }
 
   /** Asks for a chunk's spans again, and paints them if they come while it still belongs. */
@@ -688,9 +697,17 @@ export class PrFilesState {
 
   /** A chunk's spans, or nothing if they don't come. Its rows fail for the same causes, and say so. */
   async #fetchSpans(diff: Ready, chunk: number): Promise<Span[][] | undefined> {
+    const ask = (this.#spanAsks.get(chunk) ?? 0) + 1;
+    this.#spanAsks.set(chunk, ask);
     const answer = await commands
-      .pullRequestSpans(this.#chunk(diff, chunk), [...this.#opened])
+      .pullRequestSpans(
+        this.#chunk(diff, chunk),
+        // The files that show only their header, which the core gives no spans.
+        diff.files.flatMap((_, file) => (this.collapsed(file) ? [file] : [])),
+      )
       .catch(() => undefined);
+    // A later ask named the files collapsed since, so its answer is the one to paint.
+    if (this.#spanAsks.get(chunk) !== ask) return undefined;
     return answer?.status === "ok" ? answer.data : undefined;
   }
 

@@ -247,16 +247,16 @@ it("draws each kind of row once the core sends them", async () => {
   await shown(ready(rows.length));
 
   await vi.waitFor(() => {
-    expect(lines()[0]).toBe("notes.txt → news.txt+1 −1");
+    expect(lines()[0]).toBe("▾notes.txt → news.txt+1 −1");
   });
 
   expect(lines()).toEqual([
-    "notes.txt → news.txt+1 −1",
+    "▾notes.txt → news.txt+1 −1",
     "@@ -1,2 +1,2 @@",
     "11 Notes",
     "2-old line",
     "2+new line",
-    "logo.pngbinary",
+    "▾logo.pngbinary",
     "Binary files differ",
     "ast.py+0 −0",
   ]);
@@ -280,7 +280,7 @@ it("draws rows near what shows, and asks for the chunks there as it scrolls", as
   await shown(ready(10 * CHUNK));
   // Nothing is visible in a test, so it draws only the rows above and below.
   await vi.waitFor(() => {
-    expect(lines()[0]).toBe("notes.txt → news.txt+1 −1");
+    expect(lines()[0]).toBe("▾notes.txt → news.txt+1 −1");
   });
   expect(lines()).toHaveLength(41);
   expect(lines()[40]).toBe("");
@@ -318,7 +318,7 @@ it("paints each line of code in its spans' colors once they come", async () => {
   expect(lines()[3]).toBe("2-old line");
 });
 
-it("starts a Generated file collapsed to its header, and opens it on a click", async () => {
+it("starts a Generated file collapsed to its header, and collapses or opens any file on a click", async () => {
   const file = (path: string, row: number, generated: boolean): DiffFile => ({
     path,
     old_path: null,
@@ -333,7 +333,7 @@ it("starts a Generated file collapsed to its header, and opens it on a click", a
   const files = [file("news.txt", 0, false), file("logo.png", 5, true), file("ast.py", 7, false)];
   await shown(ready(rows.length, { files }));
   await vi.waitFor(() => {
-    expect(lines()[0]).toBe("notes.txt → news.txt+1 −1");
+    expect(lines()[0]).toBe("▾notes.txt → news.txt+1 −1");
   });
   const toggle = screen.getByRole("button", { name: "▸logo.png" });
   const collapsed = [lines(), toggle.getAttribute("aria-expanded")];
@@ -342,18 +342,27 @@ it("starts a Generated file collapsed to its header, and opens it on a click", a
 
   expect(collapsed).toEqual([
     [
-      "notes.txt → news.txt+1 −1",
+      "▾notes.txt → news.txt+1 −1",
       "@@ -1,2 +1,2 @@",
       "11 Notes",
       "2-old line",
       "2+new line",
       "▸logo.pngbinaryGenerated",
-      "ast.py+0 −0",
+      "▾ast.py+0 −0",
     ],
     "false",
   ]);
-  expect(lines().slice(5)).toEqual(["▾logo.pngbinaryGenerated", "Binary files differ", "ast.py+0 −0"]);
+  expect(lines().slice(5)).toEqual(["▾logo.pngbinaryGenerated", "Binary files differ", "▾ast.py+0 −0"]);
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  const first = screen.getByRole("button", { name: "▾notes.txt → news.txt" });
+  await fireEvent.click(first);
+  expect(lines()).toEqual([
+    "▸notes.txt → news.txt+1 −1",
+    "▾logo.pngbinaryGenerated",
+    "Binary files differ",
+    "▾ast.py+0 −0",
+  ]);
+  expect(first.getAttribute("aria-expanded")).toBe("false");
 });
 
 it("renders the PR's NEWS entries above its rows, and follows their links in the browser", async () => {
@@ -700,11 +709,11 @@ it("draws a change's removed rows beside its added ones side by side, and contex
   core.pullRequestRows.mockResolvedValue(ok(changed));
   await shown(ready(changed.length, { files: [changedFile] }), sideBySide());
   await vi.waitFor(() => {
-    expect(lines()[0]).toBe("a.py+2 −3");
+    expect(lines()[0]).toBe("▾a.py+2 −3");
   });
 
   expect(lines()).toEqual([
-    "a.py+2 −3",
+    "▾a.py+2 −3",
     "@@ -1,6 +1,5 @@",
     "1 a1 a",
     "2-b2+B",
@@ -757,7 +766,7 @@ it("keeps the row at the top in view as the view switches", async () => {
   const choice = new DiffViewChoice();
   await shown(ready(changed.length, { files: [changedFile] }), choice);
   await vi.waitFor(() => {
-    expect(lines()[0]).toBe("a.py+2 −3");
+    expect(lines()[0]).toBe("▾a.py+2 −3");
   });
   const diff = screen.getByRole("region", { name: "Diff" });
   // Five pixels into row 7, the context line "d", which shows at place 6 side by side.
@@ -816,7 +825,7 @@ const threadBoxes = () => screen.getAllByRole("group", { name: "Review thread" }
 it("draws each thread under its line, and a resolved one folded until a click opens it", async () => {
   await shown(threadedDiff());
   await vi.waitFor(() => {
-    expect(lines()[0]).toBe("notes.txt → news.txt+1 −1");
+    expect(lines()[0]).toBe("▾notes.txt → news.txt+1 −1");
   });
 
   expect(threadBoxes().map((box) => box.style.top)).toEqual([`${String(3 * 20)}px`, `${String(12 * 20)}px`]);
@@ -850,7 +859,7 @@ it("measures each open thread, and keeps the row at the top in view as a thread 
   );
   await shown(threadedDiff());
   await vi.waitFor(() => {
-    expect(lines()[0]).toBe("notes.txt → news.txt+1 −1");
+    expect(lines()[0]).toBe("▾notes.txt → news.txt+1 −1");
   });
   const diff = screen.getByRole("region", { name: "Diff" });
   // A thread below the top that opens leaves the tab where it is.
@@ -878,7 +887,7 @@ it("measures each open thread, and keeps the row at the top in view as a thread 
 it("scrolls to the thread it moves to, with a few rows of its code above it", async () => {
   const files = await shown(threadedDiff());
   await vi.waitFor(() => {
-    expect(lines()[0]).toBe("notes.txt → news.txt+1 −1");
+    expect(lines()[0]).toBe("▾notes.txt → news.txt+1 −1");
   });
   const diff = screen.getByRole("region", { name: "Diff" });
 
@@ -899,7 +908,7 @@ it("scrolls to the change it moves to, with a few rows of code above it", async 
   core.pullRequestRows.mockResolvedValue(ok(changed));
   const files = await shown(ready(changed.length, { files: [changedFile] }));
   await vi.waitFor(() => {
-    expect(lines()[0]).toBe("a.py+2 −3");
+    expect(lines()[0]).toBe("▾a.py+2 −3");
   });
 
   files.nextChange(1);
@@ -927,7 +936,7 @@ const searching = async (choice = new DiffViewChoice()) => {
   core.pullRequestRows.mockResolvedValue(ok(changed));
   const files = await shown(ready(changed.length, { files: [changedFile] }), choice);
   await vi.waitFor(() => {
-    expect(lines()[0]).toBe("a.py+2 −3");
+    expect(lines()[0]).toBe("▾a.py+2 −3");
   });
   files.openSearch();
   return { files, box: await screen.findByRole("textbox", { name: "Find" }) };

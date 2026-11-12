@@ -247,7 +247,7 @@ fn generated_files_are_parsed_only_when_a_chunk_asks_for_them() {
 }
 
 #[test]
-fn a_collapsed_generated_file_s_rows_get_no_spans_until_the_window_opens_it() {
+fn a_collapsed_file_s_rows_get_no_spans_until_the_window_opens_it() {
     let base = [
         (".gitattributes", "Lib/gen.py linguist-generated\n"),
         ("Lib/ast.py", "x = 1\n"),
@@ -266,16 +266,19 @@ fn a_collapsed_generated_file_s_rows_get_no_spans_until_the_window_opens_it() {
             .collect::<Vec<_>>()
     };
 
-    let chunk = |opened| Chunk {
+    let chunk = |collapsed| Chunk {
         rows: 0..rows,
-        opened,
+        collapsed,
     };
-    let collapsed = highlighter.spans(&diff, &repo.mirror, chunk(&[]));
-    let opened = highlighter.spans(&diff, &repo.mirror, chunk(&[1]));
+    // The window starts the Generated file collapsed, opens it, then collapses the other one.
+    let generated = highlighter.spans(&diff, &repo.mirror, chunk(&[1]));
+    let opened = highlighter.spans(&diff, &repo.mirror, chunk(&[]));
+    let other = highlighter.spans(&diff, &repo.mirror, chunk(&[0]));
 
-    let ast = [false, false, true, true];
-    assert_eq!(painted(&collapsed), [ast, [false; 4]].concat());
-    assert_eq!(painted(&opened), [ast, [false, false, true, true]].concat());
+    let code = [false, false, true, true];
+    assert_eq!(painted(&generated), [code, [false; 4]].concat());
+    assert_eq!(painted(&opened), [code, code].concat());
+    assert_eq!(painted(&other), [[false; 4], code].concat());
     repo.finish();
 }
 
@@ -492,7 +495,7 @@ fn a_highlighter_whose_thread_has_stopped_shows_the_diff_plain() {
 
     let chunk = Chunk {
         rows: 0..100,
-        opened: &[],
+        collapsed: &[],
     };
     let spans = highlighter.spans(&repo.source(7).diff, &repo.mirror, chunk);
 

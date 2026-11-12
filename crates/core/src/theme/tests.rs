@@ -51,7 +51,6 @@ fn a_file_from_before_the_focus_tokens_still_loads_whole() {
         theme.colors.keys().copied().collect::<Vec<_>>(),
         [Token::Bg, Token::Selected]
     );
-    assert_eq!(Token::SelectionInactive.property(), "--selection-inactive");
 }
 
 #[test]

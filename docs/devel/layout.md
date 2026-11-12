@@ -76,7 +76,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     panes as they are.
 
     The pane that holds the keyboard focus, the Issue list or the Detail pane, shows a 2 px line in the
-    Theme's focus colour along its top edge, as VS Code does, so the user can tell where ↑ ↓ go. While the
+    Theme's focus colour along its top edge, as VS Code does, so the user can tell where ↑ ↓ go. With the
+    focus in the Detail pane, as after a click on one of its buttons, ↑ ↓ scroll it even while the list
+    shows. With the focus on no control, as at launch, the list takes the keys and shows the line. While the
     list holds the focus, its row under the cursor takes the active selection colour, and the inactive one,
     a dim tint, once the focus moves away. The palette or a dialog on top, or another app in front, leaves
     every pane inactive. No ring goes round a whole pane.

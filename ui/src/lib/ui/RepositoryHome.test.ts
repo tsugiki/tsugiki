@@ -1594,7 +1594,7 @@ it("marks the panes as out of focus while another app is in front", async () => 
   await fireEvent.focus(window);
 
   expect([away, marked()]).toEqual([false, true]);
-  expect(document.querySelector('[data-pane="list"]')).toBe(document.querySelector(".list"));
+  expect(document.querySelector('[data-pane="list"]')?.classList.contains("list")).toBe(true);
 });
 
 it("drags the Sidebar's edge between its minimum and maximum, saves where it stops, and resets on a double-click", async () => {
@@ -2140,6 +2140,24 @@ it("brings the list back with the focus on the cursor's row when the open item i
   await vi.waitFor(() => {
     expect(document.activeElement).toBe(row);
   });
+});
+
+it("scrolls the Detail pane with ↑ and ↓ while it holds the focus beside the list (#602)", async () => {
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  const view = await screen.findByRole("region", { name: "Issue view" });
+  const scrollBy = vi.fn();
+  Object.defineProperty(view, "scrollBy", { value: scrollBy });
+  const title = within(view).getByRole("button", { name: "#112564 GIL drop during collection" });
+
+  await fireEvent.keyDown(title, { key: "ArrowDown" });
+  await fireEvent.keyDown(title, { key: "ArrowUp" });
+  const cursor = rowNamed("#112564 GIL drop during collection").getAttribute("aria-current");
+  await press("ArrowDown");
+
+  expect(scrollBy.mock.calls).toEqual([[{ top: 40 }], [{ top: -40 }]]);
+  expect(cursor, "the list's cursor stays while the Detail pane scrolls").toBe("true");
+  expect(rowNamed("#160662 gh-112564: Fix UAF for gc debug print").getAttribute("aria-current")).toBe("true");
 });
 
 it("scrolls the Detail pane with ↑ and ↓ while the list is hidden, and leaves the cursor alone", async () => {

@@ -62,7 +62,7 @@ const lined = (page: Page) =>
   page.evaluate((border) => {
     const panes = [...document.querySelectorAll<HTMLElement>("[data-pane]")];
     return panes
-      .filter((pane) => getComputedStyle(pane).borderTopColor === border)
+      .filter((pane) => getComputedStyle(pane, "::before").backgroundColor === border)
       .map((pane) => pane.dataset["pane"]);
   }, FOCUS_BORDER);
 
@@ -107,6 +107,8 @@ async function openApp(page: Page): Promise<void> {
 
 test("the focus line and the selection follow the focus between the panes", async ({ page, browserName }) => {
   await openApp(page);
+  // At launch the focus is on no control, and the list takes the keys.
+  await expect.poll(() => lined(page)).toEqual(["list"]);
 
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
@@ -141,6 +143,9 @@ test("the focus line and the selection follow the focus between the panes", asyn
     await page.getByRole("region", { name: "PR view" }).getByRole("tab", { name: "Files" }).click();
     await expect.poll(() => lined(page)).toEqual(["detail"]);
     await expect.poll(() => selection(page)).toBe(INACTIVE);
+    // ↑ ↓ go where the line is: they scroll the Detail pane, and the focus stays there.
+    await page.keyboard.press("ArrowDown");
+    await expect.poll(() => lined(page)).toEqual(["detail"]);
   }
 });
 

@@ -90,14 +90,6 @@ fn just_now(time: SystemTime) -> bool {
     SystemTime::now().duration_since(time).unwrap_or_default() < Duration::from_secs(60)
 }
 
-/// Waits until `done` says so, or a minute has gone.
-fn wait_until(mut done: impl FnMut() -> bool) {
-    let deadline = Instant::now() + PLENTY;
-    while !done() && Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(20));
-    }
-}
-
 #[test]
 fn a_mirror_that_never_had_upkeep_gets_gc_at_once_and_notes_when() {
     let place = Place::new("upkeep-never");
@@ -519,6 +511,44 @@ fn a_real_mirror_drops_the_refs_of_prs_gone_from_the_work_and_gets_maintenance_a
     assert_eq!(after_maintenance, "refs/tsugiki/pull/1/head\n");
     assert!(fsck.is_ok(), "{fsck:?}");
     assert_eq!(place.pull_refs(&hello), "refs/tsugiki/pull/1/head\n");
+}
+
+#[test]
+fn upkeep_leaves_the_reviewed_ref_of_a_pr_gone_from_the_work() {
+    let place = Place::new("upkeep-reviewed");
+    let hello = named("octo-org/hello");
+    place.remote(&hello);
+    let heads: Vec<PrHead> = [1, 2]
+        .map(|number| PrHead {
+            commit: CommitSha::parse(&place.pull_request(&hello, number)).unwrap(),
+            ..head(number)
+        })
+        .into();
+    let (mirrors, announced) = place.start_live_keeping();
+    mirrors.requests().clone_mirror(hello.clone(), download());
+    let _clone = one_clone(&announced);
+    mirrors.requests().fetch_heads(hello.clone(), heads.clone());
+    let review = reviewed(2, &heads[1].commit);
+    mirrors
+        .requests()
+        .keep_reviewed(hello.clone(), vec![review]);
+    wait_until(|| place.pull_refs(&hello).lines().count() == 3);
+    mirrors.stop_cleanly(PLENTY);
+
+    // A day later, PR 2 has left the work.
+    place.upkept(&hello, ago(HOUR * 25), SystemTime::now());
+    let (mirrors, _announced) = place.start_live_keeping();
+    mirrors
+        .requests()
+        .fetch_heads(hello.clone(), heads[..1].to_vec());
+    mirrors.requests().clone_mirror(hello.clone(), download());
+    wait_until(|| place.upkept_just_now(&hello, "maintained"));
+    mirrors.stop_cleanly(PLENTY);
+
+    assert_eq!(
+        place.pull_refs(&hello),
+        "refs/tsugiki/pull/1/head\nrefs/tsugiki/reviewed/2\n"
+    );
 }
 
 #[test]

@@ -36,7 +36,7 @@ use crate::github::activity::ItemActivity;
 use crate::github::issue_content::IssueContent;
 use crate::github::issues::IssueFacts;
 use crate::github::pull_request_content::PullRequestContent;
-use crate::github::pull_requests::PullRequestFacts;
+use crate::github::pull_requests::{PullRequestFacts, ReviewedCommit};
 use crate::login::Login;
 use crate::repository::RepositoryName;
 pub use activity::ActivityFacts;
@@ -380,6 +380,22 @@ impl Store {
             pull_request_content::save(connection, &repository, number, &content)
         })?;
         saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// The commit each of the user's Reviews in `repository` covered, for its mirror to keep. None before
+    /// Tsugiki knows who the user is.
+    pub fn reviewed_commits(
+        &self,
+        repository: &RepositoryName,
+    ) -> Result<Vec<ReviewedCommit>, Error> {
+        let repository = repository.clone();
+        let read = self.call(move |connection| match read_last_login(connection)? {
+            Some(viewer) => {
+                pull_request_content::reviewed_commits(connection, &repository, &viewer)
+            }
+            None => Ok(Vec::new()),
+        })?;
+        read.map_err(saying(CANT_READ))
     }
 
     /// Mark Seen on items `numbers`: clears their Marked unseen, and moves their Last seen on to `up_to`, if

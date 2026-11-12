@@ -14,7 +14,8 @@ use crate::github::pull_request_content::{
     DiffHunk, Opening, PullRequestContent, Review, Side, Subject, ThreadComment, ThreadId,
     ThreadLine,
 };
-use crate::github::pull_requests::ReviewState;
+use crate::github::pull_requests::{ReviewState, ReviewedCommit};
+use crate::login::Login;
 use crate::repository::RepositoryName;
 
 /// The Reviews, and a line for each thread one started (#156). A comment hidden on GitHub keeps its reason.
@@ -393,3 +394,32 @@ pub(super) fn read(
         pending,
     }))
 }
+
+/// The commit of `viewer`'s Review of each PR in `repository` whose Conversation Tsugiki has read: their
+/// latest submitted Review, in any state. The Conversation's read leaves out a Review that only replies to
+/// threads, and a PR whose latest Review GitHub no longer has the commit of has none.
+pub(super) fn reviewed_commits(
+    connection: &Connection,
+    repository: &RepositoryName,
+    viewer: &Login,
+) -> rusqlite::Result<Vec<ReviewedCommit>> {
+    let mut statement = connection.prepare(
+        "SELECT number, commit_sha FROM pr_reviews AS review
+         WHERE repository = :repository AND author = :viewer COLLATE NOCASE AND commit_sha IS NOT NULL
+           AND position = (SELECT MAX(position) FROM pr_reviews
+                           WHERE repository = review.repository AND number = review.number
+                             AND author = :viewer COLLATE NOCASE)
+         ORDER BY number",
+    )?;
+    let asked = named_params! { ":repository": repository, ":viewer": viewer };
+    let rows = statement.query_map(asked, |row| {
+        Ok(ReviewedCommit {
+            number: row.get("number")?,
+            commit: row.get("commit_sha")?,
+        })
+    })?;
+    rows.collect()
+}
+
+#[cfg(test)]
+mod tests;

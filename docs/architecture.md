@@ -38,7 +38,7 @@ flowchart LR
     session[Session thread<br>token, client, sync queue] -->|writes| store[Store thread<br>the only writer]
     store --> db[(tsugiki.db)]
     db --> reader[StoreReader thread<br>read-only]
-    session -->|PR heads to fetch| mirrors[Mirror worker]
+    session -->|PR heads to fetch, reviewed commits to keep| mirrors[Mirror worker]
     mirrors -->|git CLI| git[("repos/*/mirror.git")]
     session -->|status, changes| board[StatusBoard and<br>mirror Announce callbacks]
     mirrors -->|cloning, problems, each Mirror's state| board
@@ -58,7 +58,7 @@ flowchart LR
 | Session | The token, the GitHub client, the sync queue. Answers messages between sync steps. | `core/src/session.rs` |
 | Store | The one writing SQLite connection. Only the session sends it jobs. | `core/src/store/mod.rs` |
 | StoreReader | A read-only connection that the window's commands share. | `core/src/store/mod.rs` |
-| Mirror worker | Every write to the Mirrors: clones, fetches of PR heads, upkeep. | `core/src/mirror.rs` |
+| Mirror worker | Every write to the Mirrors: clones, fetches of PR heads, the commits the user's Reviews covered, upkeep. | `core/src/mirror.rs` |
 | Highlighter | The parsed trees of the open PR's files. | `core/src/diff/highlighter.rs` |
 | Settings owner | `settings.toml` and `machine.toml`. Readers get a `latest` copy. | `core/src/settings.rs` |
 | Log | `tsugiki.log` and the tokens to scrub from it. | `core/src/logfile.rs` |
@@ -119,7 +119,7 @@ The big ones, in the order data passes through them:
 | `store/` | Saves and reads the facts, a file for each kind: Issues, PRs, activity, Filters, sync state. [schema.md](schema.md) draws its tables. |
 | `links.rs`, `conventions.rs` | Which Issues a PR fixes and which **Origin PR** a Backport comes from, read through the Repository's Conventions ([ADR 0011](adr/0011-pr-links-from-github-signals-by-repository-conventions.md)). |
 | `workbench/` | The view models: the Issue list, the Issue view, the PR view and its Files tab. `attention.rs` holds Needs attention. |
-| `mirror.rs`, `mirror/` | Cloning, fetching PR heads, upkeep. |
+| `mirror.rs`, `mirror/` | Cloning, fetching PR heads, keeping the commits the user's Reviews covered, upkeep. |
 | `diff.rs`, `diff/` | A PR's diff from its Mirror, NEWS entries, find in the diff, and the Highlighter. |
 | `highlight.rs`, `highlight/` | tree-sitter highlighting, one table row per language ([docs/highlighting.md](highlighting.md)). |
 | `session.rs` | The session thread and the messages it takes. |

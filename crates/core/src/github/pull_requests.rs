@@ -238,6 +238,14 @@ pub struct PrHead {
     pub target_branch: String,
 }
 
+/// The commit the user's Review of a PR covered, which the Repository's mirror keeps under a ref of its own
+/// (#382), so a Stale review check finds it there.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReviewedCommit {
+    pub number: u32,
+    pub commit: CommitSha,
+}
+
 /// The facts only a PR off the default branch needs, for the link rules (ADR 0011).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OffDefault {

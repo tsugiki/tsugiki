@@ -11,7 +11,7 @@ use tsugiki_test_git::git;
 use super::*;
 use crate::error::ErrorKind;
 use crate::github::CommitSha;
-use crate::github::pull_requests::PrHead;
+use crate::github::pull_requests::{PrHead, ReviewedCommit};
 use crate::login::Login;
 use crate::status::Status;
 
@@ -617,8 +617,9 @@ impl Git for FakeGit {
                 Err(_none) => Ok("git version 2.43.0.windows.1".to_owned()),
             };
         }
-        // A look at a clone the user has goes to the real git, which reads it as the worker would.
-        let looks = [OsStr::new("rev-parse"), OsStr::new("config")];
+        // A look at a clone the user has, or for the reviewed commits a mirror has, goes to the real git,
+        // which reads it as the worker would.
+        let looks = ["rev-parse", "config", "rev-list"].map(OsStr::new);
         if args.get(2).is_some_and(|command| looks.contains(command)) {
             return live::read_git(args);
         }
@@ -739,6 +740,22 @@ fn older(number: u32) -> PrHead {
 
 fn refspec(number: u32) -> String {
     format!("+refs/pull/{number}/head*:refs/tsugiki/pull/{number}/head*")
+}
+
+/// The user's Review of PR `number` covered `commit`.
+fn reviewed(number: u32, commit: &CommitSha) -> ReviewedCommit {
+    ReviewedCommit {
+        number,
+        commit: commit.clone(),
+    }
+}
+
+/// Waits until `done` says so, or a minute has gone.
+fn wait_until(mut done: impl FnMut() -> bool) {
+    let deadline = Instant::now() + PLENTY;
+    while !done() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(20));
+    }
 }
 
 #[test]
@@ -1427,6 +1444,7 @@ not a commit          refs/tsugiki/pull/3/head
 }
 
 mod borrowing;
+mod reviewed;
 mod states;
 mod upkeep;
 

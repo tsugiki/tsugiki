@@ -22,12 +22,15 @@ pub(crate) fn failed_reads_board() -> (StatusBoard, Receiver<FailedRead>) {
     (board, seen)
 }
 
-/// A board that passes on the PR heads it is handed, for the mirrors.
-pub(crate) fn heads_board() -> (StatusBoard, Receiver<(RepositoryName, Vec<PrHead>)>) {
+/// What a board hands the mirrors of one Repository: PR heads, and the commits the user's Reviews covered.
+type Handed = (RepositoryName, Vec<PrHead>, Vec<ReviewedCommit>);
+
+/// A board that passes on the PR heads and reviewed commits it is handed, for the mirrors.
+pub(crate) fn heads_board() -> (StatusBoard, Receiver<Handed>) {
     let (passed, seen) = mpsc::channel();
     let board = StatusBoard::new(Box::new(|_| {})).with_heads(Box::new(
-        move |repository: &RepositoryName, heads: Vec<PrHead>| {
-            passed.send((repository.clone(), heads)).unwrap();
+        move |repository: &RepositoryName, heads: Vec<PrHead>, reviewed: Vec<ReviewedCommit>| {
+            passed.send((repository.clone(), heads, reviewed)).unwrap();
         },
     ));
     (board, seen)

@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, within } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { beforeEach, expect, it, vi } from "vitest";
 import { IssueViewState, type IssueView } from "$lib/state/issue-view.svelte";
+import type { TreeEntry } from "$lib/state/workbench.svelte";
 import IssueDetail from "./IssueDetail.svelte";
 
 const core = vi.hoisted(() => ({
@@ -35,6 +36,17 @@ const row = {
   your_review: "APPROVED" as const,
 };
 
+const opened: TreeEntry = {
+  kind: "pr",
+  number: 13,
+  ...row,
+  state: "OPEN",
+  your_review: null,
+  reasons: [],
+  backports: [],
+};
+const orphan: TreeEntry = { kind: "backport", number: 14, ...row, target_branch: "3.12", backport: "manual" };
+
 const view: IssueView = {
   number: 7,
   title: "It crashes",
@@ -43,6 +55,7 @@ const view: IssueView = {
   updated_at: "2026-11-04T10:00:00Z",
   author: "issue-author",
   assignees: [],
+  needs_attention: [],
   pull_requests: [
     {
       kind: "pr",
@@ -53,8 +66,8 @@ const view: IssueView = {
         { number: 12, ...row, state: "OPEN", target_branch: "3.13", backport: "manual" },
       ],
     },
-    { kind: "pr", number: 13, ...row, state: "OPEN", your_review: null, reasons: [], backports: [] },
-    { kind: "backport", number: 14, ...row, target_branch: "3.12", backport: "manual" },
+    opened,
+    orphan,
   ],
   merged: [],
   merged_count: 0,
@@ -103,7 +116,7 @@ beforeEach(() => {
 it("shows the title and author, the description and the recent comments", async () => {
   await shown(view);
 
-  expect(screen.getByRole("heading").textContent).toContain("#7 It crashes");
+  expect(screen.getByRole("heading", { level: 2 }).textContent).toContain("#7 It crashes");
   expect(screen.getByText("The description").tagName).toBe("P");
   expect(screen.getByText("some-reviewer · 2h ago")).toBeTruthy();
   expect(screen.getByText("deleted user · 1h ago")).toBeTruthy();
@@ -156,6 +169,53 @@ it("shows each Origin PR's state, CI and review state, and folds its Backports i
   expect(backports.textContent).toContain("3.13 Open");
 });
 
+it("counts the open PRs of all the PRs in the tree, Backports included", async () => {
+  await shown(view);
+
+  expect(screen.getByRole("heading", { level: 3 }).textContent).toBe("Origin PRs 2 open of 5 PRs");
+});
+
+it("counts one PR as one", async () => {
+  await shown({ ...view, pull_requests: [orphan] });
+
+  expect(screen.getByRole("heading", { level: 3 }).textContent).toBe("Origin PRs 0 open of 1 PR");
+});
+
+it("starts each PR's line with its branch and ends it with its author", async () => {
+  await shown({ ...view, pull_requests: [opened, { ...orphan, author: null }] });
+
+  const lines = within(screen.getByRole("list", { name: "PRs" }))
+    .getAllByRole("listitem")
+    .map((item) => item.firstElementChild?.textContent?.trim());
+  expect(lines).toEqual(["main #13 gh-7: Fix it some-author", "3.12 #14 gh-7: Fix it deleted user"]);
+});
+
+it("shows in bold each PR and Backport that Needs attention, and only those", async () => {
+  await shown({ ...view, needs_attention: [12, 13] });
+
+  const bold = (name: string) => screen.getByRole("button", { name }).classList.contains("attention");
+
+  expect(bold("#13 gh-7: Fix it")).toBe(true);
+  expect(bold("3.13 Open")).toBe(true);
+  expect(bold("#10 gh-7: Fix it")).toBe(false);
+  expect(bold("3.14 Merged")).toBe(false);
+});
+
+it("says under the tree what each icon and the bold mean", async () => {
+  await shown(view);
+
+  const legend = screen.getByText("Needs attention", { exact: false });
+  const icons = within(legend.parentElement as HTMLElement).getAllByRole("img", { hidden: true });
+
+  expect(legend.parentElement?.textContent).toBe("OpenDraftMergedClosed Bold: Needs attention");
+  expect(icons.map((icon) => icon.getAttribute("title"))).toEqual([
+    "Open PR",
+    "Draft PR",
+    "Merged PR",
+    "Closed PR",
+  ]);
+});
+
 /** The Issue with two Origin PRs that merged with their Backport, three PRs in all, folded away. */
 const withMerged: IssueView = {
   ...view,
@@ -171,6 +231,15 @@ const withMerged: IssueView = {
   ],
   merged_count: 3,
 };
+
+it("counts the merged PRs folded away in the heading, and gives an Issue with only those its heading", async () => {
+  await shown(withMerged);
+  expect(screen.getByRole("heading", { level: 3 }).textContent).toBe("Origin PRs 2 open of 8 PRs");
+  cleanup();
+
+  await shown({ ...withMerged, pull_requests: [] });
+  expect(screen.getByRole("heading", { level: 3 }).textContent).toBe("Origin PRs 0 open of 3 PRs");
+});
 
 it("folds the fully merged PRs into one line that unfolds and folds them again", async () => {
   await shown(withMerged);
@@ -207,17 +276,20 @@ it("leaves the line out when nothing has fully merged", async () => {
 it("marks the Issue, each PR in its tree and each Backport with the icon of its state", async () => {
   await shown({ ...view, state: "CLOSED" });
 
-  const heading = screen.getByRole("heading");
-  const icons = screen.getAllByRole("img").map((icon) => icon.getAttribute("title"));
+  const heading = screen.getByRole("heading", { level: 2 });
+  const tree = screen.getByRole("list", { name: "PRs" });
+  const icons = within(tree)
+    .getAllByRole("img")
+    .map((icon) => icon.getAttribute("title"));
 
   expect(heading.querySelector("[role=img]")?.getAttribute("title")).toBe("Closed issue");
-  expect(icons).toEqual(["Closed issue", "Merged PR", "Merged PR", "Open PR", "Open PR", "Merged PR"]);
+  expect(icons).toEqual(["Merged PR", "Merged PR", "Open PR", "Open PR", "Merged PR"]);
 });
 
 it("leaves the icon out for an Issue Tsugiki stored before it kept states", async () => {
   await shown({ ...view, state: null });
 
-  expect(within(screen.getByRole("heading")).queryByRole("img")).toBeNull();
+  expect(within(screen.getByRole("heading", { level: 2 })).queryByRole("img")).toBeNull();
 });
 
 it("opens the title on GitHub", async () => {

@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use time::OffsetDateTime;
 
 use super::*;
@@ -197,6 +199,41 @@ fn an_issue_nobody_has_to_act_on_still_has_a_view_with_what_was_last_read() {
         .unwrap();
 
     assert_eq!(view(&world, 1).unwrap().content, Some(content));
+    world.finish();
+}
+
+#[test]
+fn an_issue_view_names_the_prs_in_its_tree_that_need_attention() {
+    let world = ViewWorld::new("issue-view-attention");
+    let theirs = |number| PullRequestFacts {
+        author: Some(Login::new("some-author")),
+        ..fixing(number, 1)
+    };
+    let requested = |number| PullRequestFacts {
+        review_requests: vec![Login::new("octocat")],
+        ..theirs(number)
+    };
+    let requested_backport = PullRequestFacts {
+        review_requests: vec![Login::new("octocat")],
+        ..backport(8, "[3.14] gh-1: Fix it (GH-6)", vec![])
+    };
+    world.has(
+        vec![requested(5), theirs(6), requested(7), requested_backport],
+        vec![issue(1)],
+    );
+
+    assert_eq!(
+        view(&world, 1).unwrap().needs_attention,
+        BTreeSet::from([5, 7, 8]),
+        "a Backport Needs attention by itself, whatever its Origin PR"
+    );
+
+    world.has(vec![theirs(5)], vec![]);
+    assert_eq!(
+        view(&world, 1).unwrap().needs_attention,
+        BTreeSet::from([7, 8]),
+        "a PR stops Needing attention once the Review request goes"
+    );
     world.finish();
 }
 

@@ -59,7 +59,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     - The Issue view shows the title, an author line, the Origin PRs, the description, and recent comments,
       with a box to comment. The author line says who opened the Issue and how long ago, with the date and
       time in its tooltip, how many comments it has, and whom it is assigned to, if anyone. Each Origin PR's
-      Backports are folded into one line that gives their branches and states.
+      Backports are folded into one line that gives their branches and states. The Origin PRs heading counts
+      the open PRs of all of them, Backports and the folded merged PRs included. Each PR's line starts with
+      its branch and ends with its author, and a PR that Needs attention shows in bold. A legend under the
+      tree names the icons for open, draft, merged and closed, and the bold.
     - The PR view shows Conversation and Files as tabs, and opens on Conversation. `Ctrl+PageDown` and
       `Ctrl+PageUp` switch tabs, and so does `Enter` on the PR's row once the PR is open.
 

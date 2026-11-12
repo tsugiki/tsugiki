@@ -72,6 +72,16 @@ impl TreeEntry {
     }
 }
 
+impl IssueItem {
+    /// Each PR its tree holds, in the order the list shows them.
+    fn rows(&self) -> Vec<&WorkbenchRow> {
+        self.pull_requests
+            .iter()
+            .flat_map(TreeEntry::rows)
+            .collect()
+    }
+}
+
 impl PrTree {
     fn rows(&self) -> Vec<&WorkbenchRow> {
         let beneath = self.backports.iter().map(|backport| &backport.row);
@@ -101,11 +111,7 @@ impl WorkbenchItem {
 
     fn rows(&self) -> Vec<&WorkbenchRow> {
         match self {
-            Self::Issue(issue) => issue
-                .pull_requests
-                .iter()
-                .flat_map(TreeEntry::rows)
-                .collect(),
+            Self::Issue(issue) => issue.rows(),
             Self::StandalonePr(tree) => tree.rows(),
             Self::StandaloneBackport(backport) => vec![&backport.row],
         }

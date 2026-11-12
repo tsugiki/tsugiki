@@ -4,9 +4,9 @@
   import type { IssueView, IssueViewState } from "$lib/state/issue-view.svelte";
   import type { TreeEntry } from "$lib/state/workbench.svelte";
   import Conversation from "./Conversation.svelte";
-  import { issueIcon, prIcon } from "./octicons";
+  import { issueIcon, prIcon, type Octicon } from "./octicons";
   import StateIcon from "./StateIcon.svelte";
-  import { ago, backportWords, commentCount, headline, prStateWords } from "./workbench-row";
+  import { ago, backportWords, commentCount, headline, openOfAll, prStateWords } from "./workbench-row";
 
   let {
     repository,
@@ -38,6 +38,14 @@
   const openPr = (number: number) => () => {
     onopenpr(number);
   };
+
+  /** The legend under the tree: the words for each icon in it. */
+  const LEGEND: [string, Octicon][] = [
+    ["Open", prIcon({ state: "OPEN", is_draft: false })],
+    ["Draft", prIcon({ state: "OPEN", is_draft: true })],
+    ["Merged", prIcon({ state: "MERGED", is_draft: false })],
+    ["Closed", prIcon({ state: "CLOSED", is_draft: false })],
+  ];
 
   /** The start of the author line: the Issue's author and how long ago they opened it, with the date and time
    * for the tooltip. A read kept from before Tsugiki asked has neither time, until the next read. */
@@ -105,7 +113,12 @@
           <li>
             <span>
               <StateIcon icon={prIcon(entry)} />
-              <button class="link" onclick={openPr(entry.number)}>{headline(entry)}</button>
+              <code>{entry.target_branch}</code>
+              <button
+                class={["link", { attention: view.needs_attention.includes(entry.number) }]}
+                onclick={openPr(entry.number)}>{headline(entry)}</button
+              >
+              <small>{entry.author ?? "deleted user"}</small>
             </span>
             <small>{prStateWords(entry)}</small>
             {#if entry.kind === "pr" && entry.backports.length > 0}
@@ -114,7 +127,10 @@
                 {#each entry.backports as backport (backport.number)}
                   <span>
                     <StateIcon icon={prIcon(backport)} />
-                    <button class="link" onclick={openPr(backport.number)}>{backportWords(backport)}</button>
+                    <button
+                      class={["link", { attention: view.needs_attention.includes(backport.number) }]}
+                      onclick={openPr(backport.number)}>{backportWords(backport)}</button
+                    >
                   </span>
                 {/each}
               </small>
@@ -123,16 +139,27 @@
         {/each}
       </ul>
     {/snippet}
-    {#if view.pull_requests.length > 0}
-      {@render tree(view.pull_requests, "PRs")}
-    {/if}
-    {#if view.merged_count > 0}
-      <button class="link fold" aria-expanded={issue.mergedShown} onclick={() => issue.toggleMerged()}>
-        {mergedWords(issue.mergedShown, view.merged_count)}
-      </button>
-      {#if issue.mergedShown}
-        {@render tree(view.merged, "Merged PRs")}
+    {#if view.pull_requests.length > 0 || view.merged_count > 0}
+      <!-- The count takes in the merged PRs folded away too. -->
+      <h3>Origin PRs <small>{openOfAll([...view.pull_requests, ...view.merged])}</small></h3>
+      {#if view.pull_requests.length > 0}
+        {@render tree(view.pull_requests, "PRs")}
       {/if}
+      {#if view.merged_count > 0}
+        <button class="link fold" aria-expanded={issue.mergedShown} onclick={() => issue.toggleMerged()}>
+          {mergedWords(issue.mergedShown, view.merged_count)}
+        </button>
+        {#if issue.mergedShown}
+          {@render tree(view.merged, "Merged PRs")}
+        {/if}
+      {/if}
+      <p class="legend">
+        <!-- The words name each icon, so a screen reader skips the icons' own names. -->
+        {#each LEGEND as [words, icon] (words)}
+          <span><span aria-hidden="true"><StateIcon {icon} /></span><small>{words}</small></span>
+        {/each}
+        <small><b>Bold</b>: Needs attention</small>
+      </p>
     {/if}
 
     {#if view.content}
@@ -174,6 +201,37 @@
   .link:hover,
   .link:focus-visible {
     text-decoration: underline;
+  }
+
+  /* As an item that Needs attention stands out in the Issue list. */
+  .attention {
+    font-weight: 600;
+  }
+
+  h3 {
+    font-size: 13px;
+    margin: 12px 0 0;
+  }
+
+  /* The icons in the legend keep the colors of those in the tree, and only its words fade. */
+  h3 small,
+  .legend small {
+    font-size: 11px;
+    font-weight: normal;
+    opacity: 0.75;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 0 0 12px;
+  }
+
+  .legend span {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
   }
 
   ul {

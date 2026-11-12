@@ -57,6 +57,7 @@ const view = (bodyHtml: string): IssueView => ({
   updated_at: "2026-11-04T10:00:00Z",
   author: "issue-author",
   assignees: ["some-assignee"],
+  needs_attention: [10],
   pull_requests: [
     {
       kind: "pr",
@@ -101,7 +102,9 @@ test("an Issue opens in the Detail pane and stops looking unread", async ({ page
   await page.getByRole("button", { name: "#7 Issue 7" }).click();
 
   const pane = page.getByRole("region", { name: "Issue view" });
-  await expect(pane.getByRole("heading")).toHaveText("#7 Issue 7");
+  await expect(pane.getByRole("heading", { level: 2 })).toHaveText("#7 Issue 7");
+  await expect(pane.getByRole("heading", { name: /Origin PRs/ })).toHaveText("Origin PRs 0 open of 2 PRs");
+  await expect(pane.getByRole("button", { name: "#10 gh-7: Fix it" })).toHaveCSS("font-weight", "600");
   await expect(pane).toContainText(
     /issue-author opened this \d+d ago · 1 comment · assigned to some-assignee/,
   );
@@ -175,7 +178,9 @@ test("an Issue opened far down a long list shows beside it", async ({ page }) =>
 
   await page.getByRole("button", { name: "#139 Issue 139" }).click();
 
-  await expect(page.getByRole("region", { name: "Issue view" }).getByRole("heading")).toBeInViewport();
+  await expect(
+    page.getByRole("region", { name: "Issue view" }).getByRole("heading", { level: 2 }),
+  ).toBeInViewport();
 });
 
 /** A long Issue 7 with PR 10 in its tree, in a window too short to show it whole. */

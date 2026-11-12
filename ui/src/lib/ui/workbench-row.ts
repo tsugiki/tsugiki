@@ -1,15 +1,16 @@
 // The Workbench's words for what the core says about an Issue or a PR.
-import type {
-  Attention,
-  BackportKind,
-  CiState,
-  IssueItem,
-  PrState,
-  ReviewState,
-  TreeEntry,
-  WorkbenchRow,
-  WorkReason,
-  Why,
+import {
+  treeRows,
+  type Attention,
+  type BackportKind,
+  type CiState,
+  type IssueItem,
+  type PrState,
+  type ReviewState,
+  type TreeEntry,
+  type WorkbenchRow,
+  type WorkReason,
+  type Why,
 } from "$lib/state/workbench.svelte";
 
 const REASONS: Record<WorkReason, string> = {
@@ -95,17 +96,22 @@ export const commentCount = (count: number) => (count === 1 ? "1 comment" : `${S
 /** An Issue's or a PR's first line. */
 export const headline = (item: { number: number; title: string }) => `#${String(item.number)} ${item.title}`;
 
-/** The lines an entry of an Issue's tree takes: the PR and the Backports beneath it. */
-const rowsIn = (entry: TreeEntry) => (entry.kind === "pr" ? 1 + entry.backports.length : 1);
+const prCount = (count: number) => (count === 1 ? "1 PR" : `${String(count)} PRs`);
 
 /** An Issue's second line: who is involved, how many PRs its tree holds and when it last changed. */
 export function issueDetails(issue: IssueItem, now: Date): string {
-  const count = issue.pull_requests.reduce((total, entry) => total + rowsIn(entry), 0);
   return [
     ...(issue.people.length > 0 ? [issue.people.join(", ")] : []),
-    count === 1 ? "1 PR" : `${String(count)} PRs`,
+    prCount(treeRows(issue.pull_requests).length),
     ago(issue.updated_at, now),
   ].join(" · ");
+}
+
+/** The count beside an Issue's Origin PRs: its open PRs of all of them, Backports included. */
+export function openOfAll(entries: TreeEntry[]): string {
+  const rows = treeRows(entries);
+  const open = rows.filter((row) => row.state === "OPEN").length;
+  return `${String(open)} open of ${prCount(rows.length)}`;
 }
 
 /** A Standalone PR's second line, which has no Issue above it to say when it last changed. */

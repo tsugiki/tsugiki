@@ -121,6 +121,7 @@ test("the HUD times an Issue whose text comes from GitHub", async ({ page }) => 
     author: "issue-author",
     assignees: [],
     content: null,
+    needs_attention: [],
   };
   await mockCore(page, {
     ...core,

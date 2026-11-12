@@ -32,6 +32,8 @@ pub struct IssueView {
     pub assignees: Vec<Login>,
     /// Nothing, until Tsugiki has read this Issue from GitHub once.
     pub content: Option<IssueContent>,
+    /// The PRs and Backports in its tree that Need attention, each by itself (#597).
+    pub needs_attention: BTreeSet<u32>,
 }
 
 impl IssueView {
@@ -59,6 +61,12 @@ impl IssueView {
                 | WorkbenchItem::StandaloneBackport(_) => None,
             });
         Ok(found.map(|mut issue| {
+            let needs_attention = issue
+                .rows()
+                .into_iter()
+                .map(|row| row.number)
+                .filter(|&pr| causes.needs_attention(pr))
+                .collect();
             let stays = |pr: u32| matched.contains(&pr) || causes.needs_attention(pr);
             let (open, merged) = fold(std::mem::take(&mut issue.pull_requests), stays);
             let merged_count: usize = merged.iter().map(|entry| entry.rows().len()).sum();
@@ -72,6 +80,7 @@ impl IssueView {
                 author,
                 assignees,
                 content,
+                needs_attention,
             }
         }))
     }

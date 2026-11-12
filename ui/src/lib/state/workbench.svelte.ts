@@ -37,6 +37,10 @@ export type Stop = { number: number; kind: "issue" | "pull_request"; issue: numb
 /** Whether two stops are the same line. A PR that fixes two Issues has a line under each. */
 export const sameStop = (a: Stop | undefined, b: Stop) => a?.number === b.number && a.issue === b.issue;
 
+/** Each PR an Issue's tree holds, in the order the list shows them: each entry, then its Backports. */
+export const treeRows = (entries: TreeEntry[]): WorkbenchRow[] =>
+  entries.flatMap((entry) => (entry.kind === "pr" ? [entry, ...entry.backports] : [entry]));
+
 /** A line of the list: where the cursor stops, and the title it shows. */
 type Line = { stop: Stop; title: string };
 
@@ -44,8 +48,7 @@ type Line = { stop: Stop; title: string };
  * while `unfolded` says it does. */
 function linesOf(item: ListedItem, unfolded: (issue: number) => boolean): Line[] {
   if (item.kind === "issue") {
-    const tree = unfolded(item.number) ? item.pull_requests : [];
-    const rows = tree.flatMap((entry) => (entry.kind === "pr" ? [entry, ...entry.backports] : [entry]));
+    const rows = unfolded(item.number) ? treeRows(item.pull_requests) : [];
     return [
       { stop: { number: item.number, kind: "issue", issue: undefined }, title: item.title },
       ...rows.map((row) => ({

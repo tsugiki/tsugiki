@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import type {
   Filter,
@@ -8,6 +7,7 @@ import type {
   WorkbenchRow_Serialize as WorkbenchRow,
 } from "../src/lib/data/bindings.ts";
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
+import { serveUnderTauriCsp } from "./tauri-csp.ts";
 import { themes } from "./themes.ts";
 
 const repository = { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] } as const;
@@ -342,9 +342,7 @@ test("a refresh or a base address in a description leaves the window where it is
 });
 
 test("the content security policy stops what a description tries to run or load", async ({ page }) => {
-  const config = JSON.parse(readFileSync("../crates/app/tauri.conf.json", "utf8")) as {
-    app: { security: { csp: string } };
-  };
+  await serveUnderTauriCsp(page);
   await mockCore(
     page,
     answers(
@@ -357,13 +355,6 @@ test("the content security policy stops what a description tries to run or load"
     if (request.url().startsWith("https://")) asked.push(request.url());
   });
   await page.goto("/");
-  // Tauri sends this policy as a header. The test server has none, and a tag applies from here on.
-  await page.evaluate((policy) => {
-    const tag = document.createElement("meta");
-    tag.httpEquiv = "Content-Security-Policy";
-    tag.content = policy;
-    document.head.append(tag);
-  }, config.app.security.csp);
 
   await page.getByRole("button", { name: "#7 Issue 7" }).click();
   const remote = page.getByAltText("remote");

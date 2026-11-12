@@ -8,7 +8,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use tauri::test::{MockRuntime, mock_builder, mock_context, noop_assets};
 use tauri::{App, Listener, WebviewWindow};
 use tsugiki_core::github::CommitSha;
-use tsugiki_core::github::issue_content::{IssueComment, IssueContent};
+use tsugiki_core::github::issue_content::{Comment, IssueContent};
 use tsugiki_core::github::pull_request_content::{
     Anchor, DiffHunk, Opening, PullRequestContent, Resolution, Review, Side, Subject, Submission,
     ThreadComment, ThreadId, ThreadLine,
@@ -1724,7 +1724,8 @@ fn conversation_of_pr_1(head: &str) -> PullRequestContent {
             Anchor::Outdated
         },
         comments: vec![ThreadComment {
-            comment: IssueComment {
+            id: None,
+            comment: Comment {
                 author: Some(Login::new("some-reviewer")),
                 created_at: time::OffsetDateTime::UNIX_EPOCH,
                 body_html: "<p>Why?</p>".to_owned(),
@@ -1742,6 +1743,7 @@ fn conversation_of_pr_1(head: &str) -> PullRequestContent {
             opened_at: Some(time::OffsetDateTime::UNIX_EPOCH),
         },
         reviews: vec![Review {
+            id: None,
             author: Some(Login::new("some-reviewer")),
             state: ReviewState::Commented,
             commit: CommitSha::parse(head),

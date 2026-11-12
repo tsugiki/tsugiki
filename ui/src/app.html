@@ -5,9 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <title>Tsugiki</title>
-    <!-- The theme in force sets the tokens and the color-scheme on the root (#515). Until it does, or if
-         the core can't send it, the system's own colours stand in for the tokens that draw panes and
-         dialogs, and follow the side Windows is on. -->
+    <!-- The theme in force sets the tokens and the color-scheme on the root (#515). Until it does, if the
+         core can't send it, or for a token its file leaves out, the system's own colours stand in for the
+         tokens that draw panes, dialogs and the focus, and follow the side Windows is on. The list's
+         selection follows the palette's, `selected`. -->
     <style>
       :root {
         color-scheme: light dark;
@@ -21,6 +22,9 @@
         --backdrop: transparent;
         --shadow: transparent;
         --selected: Highlight;
+        --selection-active: var(--selected);
+        --selection-inactive: color-mix(in srgb, var(--selected) 35%, var(--bg));
+        --focus-border: Highlight;
         --accent: Highlight;
       }
 

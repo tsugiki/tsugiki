@@ -735,7 +735,8 @@
 </div>
 
 <style>
-  /* The panes take the window's height, and each scrolls by itself. */
+  /* The panes take the window's height, and each scrolls by itself. The wheel stops at a pane's end, even
+     when a short window lets the screen around the panes scroll too. */
   .home {
     display: flex;
     flex: 1;
@@ -746,6 +747,7 @@
     flex: 1;
     min-width: 280px;
     overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .list.sized {
@@ -757,6 +759,7 @@
     flex: 1;
     min-width: 320px;
     overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   h1 {

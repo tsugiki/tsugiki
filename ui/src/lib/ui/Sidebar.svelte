@@ -70,6 +70,7 @@
     padding: 6px;
     border-right: 1px solid var(--border);
     overflow-y: auto;
+    overscroll-behavior: contain;
     font-size: 13px;
     color: var(--fg-chrome);
     background: var(--bg-chrome);

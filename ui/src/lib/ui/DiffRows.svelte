@@ -394,6 +394,7 @@
     position: absolute;
     inset: 0;
     overflow: auto;
+    overscroll-behavior: contain;
     font-size: 12px;
   }
 

@@ -254,14 +254,16 @@ test("the wheel scrolls the pane under the pointer, and stops at the pane's end"
   await page.mouse.wheel(0, 300);
   await pane.hover();
   for (let turn = 0; turn < 3; turn += 1) await page.mouse.wheel(0, 2000);
-  await expect.poll(() => scrolled(pane)).toBe(await bottom(pane));
+  // A scroll offset can be a fraction of a pixel.
+  await expect.poll(async () => (await bottom(pane)) - (await scrolled(pane))).toBeLessThan(1);
   await list.hover();
   await page.mouse.wheel(0, 200);
   await expect.poll(() => scrolled(list)).toBeGreaterThan(0);
 
-  // Only the wheel over the list scrolled it, and the window has nothing to scroll, so no scrollbar of
-  // its own at the right edge.
+  // Only the wheel over the list scrolled it. Neither the window nor the screen around the panes scrolled,
+  // and the window has nothing to scroll, so no scrollbar of its own at the right edge.
   expect(await scrolled(list)).toBeLessThanOrEqual(200);
+  expect(await scrolled(page.locator("main"))).toBe(0);
   expect(await page.evaluate(() => document.documentElement.scrollHeight - innerHeight)).toBe(0);
 });
 

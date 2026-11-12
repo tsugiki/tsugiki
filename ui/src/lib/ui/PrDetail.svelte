@@ -135,11 +135,12 @@
 </section>
 
 <style>
-  /* Takes the window's height and scrolls by itself, as each pane does. */
+  /* Takes the window's height and scrolls by itself, as each pane does, and the wheel stops at its end. */
   .detail {
     flex: 1;
     min-width: 320px;
     overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   /* The diff scrolls by itself, so the pane doesn't. */

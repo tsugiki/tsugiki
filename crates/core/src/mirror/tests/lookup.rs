@@ -401,7 +401,7 @@ fn a_reset_that_fails_in_the_checkout_the_move_made_ends_the_move() {
 }
 
 #[test]
-fn a_move_runs_no_hooks_and_no_filter_that_asks_the_network() {
+fn a_move_runs_no_hooks_no_filter_that_asks_the_network_and_keeps_the_mirrors_line_endings() {
     let place = Place::new("lookup-quiet");
     let cpython = named("python/cpython");
     place.mirrored(&cpython);
@@ -419,6 +419,7 @@ fn a_move_runs_no_hooks_and_no_filter_that_asks_the_network() {
         .map(|pair| pair[1].as_str())
         .collect();
     let expected = [
+        "core.autocrlf=false",
         "filter.lfs.smudge=",
         "filter.lfs.process=",
         "filter.lfs.required=false",

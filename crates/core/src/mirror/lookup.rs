@@ -207,10 +207,13 @@ impl Worker {
             to, mirror, folder, ..
         } = &trip;
         // The mirror's own hooks folder holds none, and a filter such as git-lfs's smudge would ask the
-        // network for files, which a move doesn't need.
+        // network for files, which a move doesn't need. The user's `core.autocrlf` would give the servers
+        // line endings the mirror's diff doesn't have.
         let mut hooks = OsString::from("core.hooksPath=");
         hooks.push(mirror.join("hooks"));
         let quiet = [
+            "-c",
+            "core.autocrlf=false",
             "-c",
             "filter.lfs.smudge=",
             "-c",

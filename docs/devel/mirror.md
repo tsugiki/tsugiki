@@ -47,7 +47,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   under way. PRs opened in quick succession don't queue moves: the next move goes to the PR on screen. A
   lookup or a search asked during a move waits for it to end, and one asked where git is missing hears at
   once that there is no checkout. A move needs no network, so offline it goes to any base the mirror holds.
-  git's gc keeps the commit the checkout is on. A move runs no hooks and no filter such as git-lfs's. A move
+  git's gc keeps the commit the checkout is on. A move runs no hooks and no filter such as git-lfs's,
+  and leaves line endings as the mirror has them, whatever the user's `core.autocrlf`. A move
   that fails leaves no checkout and isn't tried again for the same PR until a lookup asks, when it makes
   the checkout afresh. Short of disk, a move resets a checkout that is there but doesn't make one. Until its
   mirror is there, a lookup hears at once that there is no checkout. It lives in the Repository's folder, as

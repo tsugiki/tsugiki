@@ -27,17 +27,21 @@ pub fn read_patch_ids(
         return Err(io::Error::other(words));
     }
     let range = [base.as_str(), commit.as_str()];
+    let diff = |options: &[&'static str]| {
+        let command = [
+            CONFIG.as_slice(),
+            &["diff"],
+            options,
+            &DIFF_OPTIONS,
+            &PINNED,
+        ];
+        [command.concat().as_slice(), &range].concat()
+    };
     // The list names each file exactly, where the patch quotes odd names, and the two list them in the same
     // order. A renamed file goes by its new name.
-    let names = [
-        ["diff", "--name-only", "-z"].as_slice(),
-        &DIFF_OPTIONS,
-        &range,
-    ]
-    .concat();
-    let names = git(mirror, &names)?;
+    let names = git(mirror, &diff(&["--name-only", "-z"]))?;
     let paths: Vec<&str> = names.split('\0').filter(|path| !path.is_empty()).collect();
-    let patch = [["diff", "--full-index"].as_slice(), &DIFF_OPTIONS, &range].concat();
+    let patch = diff(&["--full-index"]);
     let input = numbered(&git_bytes(mirror, &patch, Vec::new())?, paths.len())?;
     let verbatim = patch_ids(mirror, "--verbatim", input.clone())?;
     let loose = patch_ids(mirror, "--stable", input)?;
@@ -47,6 +51,34 @@ pub fn read_patch_ids(
     let ids = Ids { verbatim, loose };
     file_patches(&paths, generated, ids)
 }
+
+/// The user's git config that changes what `git diff` writes and has no option to override it, set back to
+/// git's defaults. A change to it would otherwise change every file's patch-id, and make each Review stale.
+const CONFIG: [&str; 14] = [
+    "-c",
+    "core.quotePath=true",
+    "-c",
+    "core.attributesFile=",
+    "-c",
+    "diff.noprefix=false",
+    "-c",
+    "diff.mnemonicPrefix=false",
+    "-c",
+    "diff.suppressBlankEmpty=false",
+    "-c",
+    "diff.interHunkContext=0",
+    "-c",
+    "diff.renameLimit=1000",
+];
+
+/// The options beside `DIFF_OPTIONS` that override the rest of the user's diff config, for the same reason.
+const PINNED: [&str; 5] = [
+    "--diff-algorithm=myers",
+    "--indent-heuristic",
+    "--src-prefix=a/",
+    "--dst-prefix=b/",
+    "--ignore-submodules=none",
+];
 
 /// The patch-ids `git patch-id` gave each numbered section, both ways.
 struct Ids {
@@ -89,13 +121,17 @@ fn file_patches(paths: &[&str], generated: Vec<bool>, mut ids: Ids) -> io::Resul
     Ok(files)
 }
 
-/// The patch cut into one section per file, each from its `diff --git` line, as git wrote it.
+/// The patch cut into one section per file, each from its `diff --git` line, as git wrote it. git writes a
+/// file that became a symlink or a submodule, or the other way, as a deletion and an addition under the same
+/// `diff --git` line, which the list names once, so those two make one section.
 fn sections(patch: &[u8]) -> Vec<&[u8]> {
     let mut starts = Vec::new();
     let mut at = 0;
+    let mut header: &[u8] = &[];
     for line in patch.split_inclusive(|byte| *byte == b'\n') {
-        if line.starts_with(b"diff --git ") {
+        if line.starts_with(b"diff --git ") && line != header {
             starts.push(at);
+            header = line;
         }
         at += line.len();
     }

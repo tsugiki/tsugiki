@@ -234,6 +234,88 @@ fn the_attributes_on_the_target_branch_say_which_files_are_generated() {
     );
 }
 
+/// Puts an entry of `mode` in the index at `path`, with `content` as its blob, or as the commit a gitlink
+/// names.
+fn put(place: &Place, mode: &str, content: &str, path: &str) {
+    let object = if mode == "160000" {
+        content.to_owned()
+    } else {
+        let blob = place.root.join("blob");
+        fs::write(&blob, content).unwrap();
+        let written = git(&place.work, &["hash-object", "-w", &blob.to_string_lossy()]);
+        written.trim().to_owned()
+    };
+    let entry = format!("{mode},{object},{path}");
+    let _ = git(
+        &place.work,
+        &["update-index", "--add", "--cacheinfo", &entry],
+    );
+}
+
+#[test]
+fn a_file_turned_into_a_symlink_or_a_submodule_a_rename_and_a_mode_change_each_get_a_patch_id() {
+    let place = Place::new("typechange");
+    let first = place.at("main");
+    place.write("Lib/abc.py", &lines(1..=20));
+    let _ = place.commit("Two");
+    place.switch(&["-c", "pr"]);
+    let _ = git(&place.work, &["mv", "Lib/os.py", "Lib/posix.py"]);
+    let _ = git(&place.work, &["update-index", "--chmod=+x", "Lib/ast.py"]);
+    put(&place, "120000", "Lib/ast.py", "README.rst");
+    let _ = git(&place.work, &["rm", "-q", "--cached", "Lib/abc.py"]);
+    put(&place, "160000", first.as_str(), "Lib/abc.py");
+    let _ = git(&place.work, &["commit", "-qm", "Odd changes"]);
+    let pr = place.at("HEAD");
+
+    let read = read_patch_ids(&place.mirror(), "main", &pr);
+    place.finish();
+
+    let paths: Vec<String> = read.unwrap().into_iter().map(|file| file.path).collect();
+    assert_eq!(
+        paths,
+        ["Lib/abc.py", "Lib/ast.py", "Lib/posix.py", "README.rst"]
+    );
+}
+
+#[test]
+fn the_users_diff_settings_leave_the_patch_ids_alone() {
+    let place = Place::new("settings");
+    place.switch(&["-c", "pr"]);
+    let changed = lines(1..=20)
+        .replace("x5 = 5", "x5 = 'five'")
+        .replace("x12 = 12", "x12 = 'twelve'");
+    place.write("Lib/ast.py", &changed);
+    place.write("Lib/\u{fc}nicode.py", "\nx = 1\n\ny = 2\n");
+    let pr = place.commit("The PR");
+    let plain = place.patches(&pr);
+
+    // git reads the mirror's own config as it reads the user's.
+    let mirror = place.mirror();
+    for setting in [
+        "diff.noprefix=true",
+        "diff.mnemonicPrefix=true",
+        "diff.srcPrefix=old/",
+        "diff.dstPrefix=new/",
+        "diff.algorithm=histogram",
+        "diff.indentHeuristic=false",
+        "diff.interHunkContext=10",
+        "diff.context=10",
+        "diff.suppressBlankEmpty=true",
+        "diff.renames=false",
+        "diff.relative=true",
+        "diff.external=false",
+        "diff.ignoreSubmodules=all",
+        "core.quotePath=false",
+    ] {
+        let (name, value) = setting.split_once('=').unwrap();
+        let _ = git(&mirror, &["config", name, value]);
+    }
+    let configured = place.patches(&pr);
+    place.finish();
+
+    assert_eq!(configured, plain);
+}
+
 #[test]
 fn a_commit_already_on_the_target_branch_gives_no_patch_ids_to_keep() {
     let place = Place::new("level");

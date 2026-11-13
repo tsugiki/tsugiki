@@ -16,10 +16,11 @@ max-fn-params-bools = 0 # No keyword arguments in Rust, so a bool at the call sa
 max-struct-bools = 1 # Two bools make four states, and a struct rarely has four valid ones.
 too-many-arguments-threshold = 4 # More usually means a missing struct, and methods count `self`.
 
-# Two files touch the outside world, so tests can replace all of it (ADR 0009): the network and gh in the
-# token crate (ADR 0019), git in the core. Only `store` holds the database, so its tables stay its own (#88).
+# Three files touch the outside world, so tests can replace all of it (ADR 0009): the network and gh in the
+# token crate (ADR 0019), git in the core, a language server in the LSP client (ADR 0020). Only `store` holds
+# the database, so its tables stay its own (#88).
 disallowed-types = [ # The network and gh stay in crates/token/src/live.rs, git in the core's github/live.rs.
-    { path = "std::process::Command", reason = "Run gh in crates/token/src/live.rs, git in crates/core/src/github/live.rs" },
+    { path = "std::process::Command", reason = "Run gh in crates/token/src/live.rs, git in crates/core/src/github/live.rs, a language server in crates/lsp/src/process.rs" },
     { path = "std::net::TcpStream", reason = "Reach the network in crates/token/src/live.rs" },
     { path = "std::net::UdpSocket", reason = "Reach the network in crates/token/src/live.rs" },
     { path = "ureq::Agent", reason = "Reach the network in crates/token/src/live.rs", allow-invalid = true },

@@ -1,0 +1,24 @@
+[package]
+name = "tsugiki-lsp"
+description = "A client that talks to a language server over its standard streams, for Tsugiki's Go to definition"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+# Our own LSP types on serde, not `lsp-types`: that crate took 5.9 s of a debug build on its own, for the
+# dozen types this crate reads (#677).
+[dependencies]
+log.workspace = true
+process-wrap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+url.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows.workspace = true
+
+[lints]
+workspace = true

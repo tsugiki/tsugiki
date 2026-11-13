@@ -4756,6 +4756,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tsugiki-lsp"
+version = "0.3.0"
+dependencies = [
+ "log",
+ "process-wrap",
+ "serde",
+ "serde_json",
+ "url",
+ "windows",
+]
+
+[[package]]
 name = "tsugiki-test-git"
 version = "0.3.0"
 

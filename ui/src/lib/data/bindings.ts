@@ -2374,10 +2374,7 @@ export type Workbench_Deserialize = {
 	count: number,
 	/**  The count of items that hold a PR carrying a Review request. */
 	review_requests: number,
-	/**
-	 *  The count of open PRs where the user's Review is a Stale review, a stale Origin PR and its Bot
-	 *  backports as one.
-	 */
+	/**  The count of PRs whose Stale review Needs attention, a stale Origin PR and its Bot backports as one. */
 	stale_reviews: number,
 	filters: FilterLine_Deserialize[],
 };
@@ -2395,10 +2392,7 @@ export type Workbench_Serialize = {
 	count: number,
 	/**  The count of items that hold a PR carrying a Review request. */
 	review_requests: number,
-	/**
-	 *  The count of open PRs where the user's Review is a Stale review, a stale Origin PR and its Bot
-	 *  backports as one.
-	 */
+	/**  The count of PRs whose Stale review Needs attention, a stale Origin PR and its Bot backports as one. */
 	stale_reviews: number,
 	filters: FilterLine_Serialize[],
 };

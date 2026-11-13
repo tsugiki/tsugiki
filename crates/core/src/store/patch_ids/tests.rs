@@ -208,6 +208,21 @@ fn patch_ids_against_another_branch_or_of_a_commit_no_check_compares_stay_out() 
     assert_eq!(read, BTreeMap::new());
 }
 
+#[test]
+fn a_save_of_unchecked_commits_or_last_checks_that_fails_says_so() {
+    let store = Store::stopped();
+    let last = LastCheck {
+        reviewed: sha('1'),
+        head: sha('2'),
+    };
+
+    let unchecked = store.save_unchecked(&cpython(), vec![]);
+    let checks = store.save_last_checks(&cpython(), vec![(1, last)]);
+
+    assert!(unchecked.is_err(), "{unchecked:?}");
+    assert!(checks.is_err(), "{checks:?}");
+}
+
 fn unchecked(commit: char, reason: CantCheck) -> UncheckedCommit {
     UncheckedCommit {
         of: of(&sha(commit), "main"),

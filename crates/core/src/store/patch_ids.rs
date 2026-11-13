@@ -247,14 +247,17 @@ fn read_last_checks(
     let mut statement = transaction.prepare(
         "SELECT number, reviewed_commit, head_commit FROM last_checks WHERE repository = :repository",
     )?;
-    let checks = statement.query_map(named_params! { ":repository": repository }, |row| {
-        let check = LastCheck {
-            reviewed: row.get("reviewed_commit")?,
-            head: row.get("head_commit")?,
-        };
-        Ok((row.get("number")?, check))
-    })?;
+    let asked = named_params! { ":repository": repository };
+    let checks = statement.query_map(asked, last_check_in)?;
     checks.collect()
+}
+
+fn last_check_in(row: &Row<'_>) -> rusqlite::Result<(u32, LastCheck)> {
+    let check = LastCheck {
+        reviewed: row.get("reviewed_commit")?,
+        head: row.get("head_commit")?,
+    };
+    Ok((row.get("number")?, check))
 }
 
 fn read_unchecked(
@@ -265,14 +268,17 @@ fn read_unchecked(
         "SELECT commit_sha, target_branch, reason, git_version, git_needed FROM unchecked_commits
          WHERE repository = :repository",
     )?;
-    let unchecked = statement.query_map(named_params! { ":repository": repository }, |row| {
-        let of = PatchesOf {
-            commit: row.get("commit_sha")?,
-            target_branch: row.get("target_branch")?,
-        };
-        Ok((of, reason_in(row)?))
-    })?;
+    let asked = named_params! { ":repository": repository };
+    let unchecked = statement.query_map(asked, unchecked_in)?;
     unchecked.collect()
+}
+
+fn unchecked_in(row: &Row<'_>) -> rusqlite::Result<(PatchesOf, CantCheck)> {
+    let of = PatchesOf {
+        commit: row.get("commit_sha")?,
+        target_branch: row.get("target_branch")?,
+    };
+    Ok((of, reason_in(row)?))
 }
 
 fn reason_in(row: &Row<'_>) -> rusqlite::Result<CantCheck> {

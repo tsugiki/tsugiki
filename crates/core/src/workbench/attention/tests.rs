@@ -13,13 +13,16 @@ use crate::github::issues::{IssueFacts, IssueState};
 use crate::github::pull_request_content::{PullRequestContent, Review};
 use crate::github::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
 use crate::login::Login;
-use crate::patch_ids::{CantCheck, CommitPatches, FilePatch, PatchId, PatchesOf, UncheckedCommit};
+use crate::patch_ids::{
+    CantCheck, ChangedFile, CommitPatches, FilePatch, PatchId, PatchesOf, UncheckedCommit,
+};
 use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
 use crate::store::{ChangeCheck, OpenReader, Store, StoreReader, SyncState, reader};
 use crate::workbench::{
-    ListedItem, Seen, SeenMark, SeenState, Workbench, WorkbenchItem, WorkbenchView,
+    ListedItem, Seen, SeenMark, SeenState, TreeEntry, Workbench, WorkbenchItem, WorkbenchView,
+    YourReview,
 };
 
 fn me() -> Login {
@@ -92,9 +95,14 @@ fn requested(number: u32) -> PullRequestFacts {
 
 /// A PR that fixes Issue `issue`, which the title says.
 fn fixing(number: u32, issue: u32) -> PullRequestFacts {
+    fixing_too(pull_request(number), issue)
+}
+
+/// `pull_request`, with a title that says it fixes Issue `issue`.
+fn fixing_too(pull_request: PullRequestFacts, issue: u32) -> PullRequestFacts {
     PullRequestFacts {
         title: format!("gh-{issue}: Fix it"),
-        ..pull_request(number)
+        ..pull_request
     }
 }
 
@@ -1122,5 +1130,72 @@ fn a_stale_review_of_a_merged_pr_waits_on_nobody() {
     world.reviewed_and_moved(merged, 'a', 'b');
 
     assert_eq!(world.workbench().count, 0);
+    world.finish();
+}
+
+impl World {
+    /// The review state of PR `number` in the tree of Issue 10, which PR 2's Review request keeps on the
+    /// Workbench.
+    fn review_in_issue(&self, number: u32) -> YourReview {
+        let workbench = self.workbench();
+        let WorkbenchItem::Issue(issue) = listed_at(&workbench, 10).item else {
+            panic!("Issue 10 isn't on the Workbench");
+        };
+        let mut rows = issue.pull_requests.iter().flat_map(TreeEntry::rows);
+        let row = rows.find(|row| row.number == number).unwrap();
+        row.your_review.clone()
+    }
+}
+
+#[test]
+fn a_merged_prs_stale_review_keeps_its_files_and_adds_nothing_to_needs_attention() {
+    let world = World::new("stale-merged-row");
+    world.has_issues(vec![issue(10)]);
+    let merged = PullRequestFacts {
+        state: PrState::Merged,
+        ..reviewed_by_me(1)
+    };
+    world.reviewed_and_moved(fixing_too(merged, 10), 'a', 'b');
+    world.has(vec![fixing_too(requested(2), 10)]);
+
+    assert_eq!(
+        world.review_in_issue(1),
+        YourReview::StaleReview {
+            files: vec![ChangedFile {
+                path: "Lib/ast.py".to_owned(),
+                whitespace_only: false,
+            }],
+        }
+    );
+    assert_eq!(world.why(10), [Why::ReviewRequested]);
+    world.finish();
+}
+
+#[test]
+fn a_closed_pr_whose_check_cant_run_shows_why_and_waits_on_nobody() {
+    let world = World::new("unchecked-closed");
+    world.has_issues(vec![issue(10)]);
+    let closed = PullRequestFacts {
+        state: PrState::Closed,
+        ..reviewed_by_me(1)
+    };
+    world.reviewed_and_moved_unread(fixing_too(closed, 10));
+    world.has(vec![fixing_too(requested(2), 10)]);
+    let refused = UncheckedCommit {
+        of: on_main(sha('1')),
+        reason: CantCheck::Refused,
+    };
+    world
+        .store
+        .save_unchecked(&cpython(), vec![refused])
+        .unwrap();
+
+    assert_eq!(
+        world.review_in_issue(1),
+        YourReview::CantCheck {
+            reason: CantCheck::Refused
+        }
+    );
+    assert_eq!(world.why(10), [Why::ReviewRequested]);
     world.finish();
 }

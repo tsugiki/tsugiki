@@ -2,7 +2,7 @@
 //! check (#364). git's `patch-id` reads many patches in one go, so each file's section goes in as a patch of
 //! its own, under a made-up commit line that numbers it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::io;
 use std::path::Path;
@@ -11,8 +11,9 @@ use super::{DIFF_OPTIONS, TargetIndex, git, merge_base};
 use crate::github::{CommitSha, live};
 use crate::patch_ids::{FilePatch, PatchId};
 
-/// Reads the patch-id of each file `commit` changes since its merge base with the branch `target`: one with
-/// every whitespace change counted, and one with whitespace ignored. Both have to be in `mirror`. The diff
+/// Reads the patch-id of each file `commit` changes since its merge base with the branch `target`, or with
+/// the branch before the merge commit that brought `commit` in: one with every whitespace change counted,
+/// and one with whitespace ignored. Both have to be in `mirror`. The diff
 /// names each file's blobs in full, so a binary file's patch-id follows its content, as git's abbreviations
 /// grow with the mirror.
 pub fn read_patch_ids(
@@ -20,8 +21,13 @@ pub fn read_patch_ids(
     target: &str,
     commit: &CommitSha,
 ) -> io::Result<Vec<FilePatch>> {
-    let base = merge_base(mirror, &format!("refs/heads/{target}"), commit)?;
-    // A PR merged before the sync said so has its head there, and its empty diff would be kept for good.
+    let branch = format!("refs/heads/{target}");
+    let mut base = merge_base(mirror, &branch, commit)?;
+    if base == *commit {
+        base = base_before_merge(mirror, &branch, commit)?;
+    }
+    // A commit pushed straight to the branch has no merge to look past, and its empty diff would be kept for
+    // good.
     if base == *commit {
         let words = format!("{} is already on {target}", commit.as_str());
         return Err(io::Error::other(words));
@@ -50,6 +56,24 @@ pub fn read_patch_ids(
     let generated = index.generated(&paths)?;
     let ids = Ids { verbatim, loose };
     file_patches(&paths, generated, ids)
+}
+
+/// The merge base of `commit` with `branch` as it stood before the merge commit that brought `commit` in:
+/// the first parent of the oldest commit on the branch's first-parent line that holds it. A PR merged with
+/// a merge commit (#385) has its head and the commits before it on the branch, so their merge base with it
+/// is themselves. Gives `commit` back where no merge brought it in.
+fn base_before_merge(mirror: &Path, branch: &str, commit: &CommitSha) -> io::Result<CommitSha> {
+    let range = format!("{}..{branch}", commit.as_str());
+    let commits = |args: &[&str]| -> io::Result<Vec<CommitSha>> {
+        let listed = git(mirror, &[["rev-list"].as_slice(), args, &[&range]].concat())?;
+        Ok(listed.lines().filter_map(CommitSha::parse).collect())
+    };
+    let holding: BTreeSet<CommitSha> = commits(&["--ancestry-path"])?.into_iter().collect();
+    let line = commits(&["--first-parent"])?;
+    match line.into_iter().rfind(|on_line| holding.contains(on_line)) {
+        Some(merge) => merge_base(mirror, &format!("{}^1", merge.as_str()), commit),
+        None => Ok(commit.clone()),
+    }
 }
 
 /// The user's git config that changes what `git diff` writes and has no option to override it, set back to

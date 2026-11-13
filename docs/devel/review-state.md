@@ -21,8 +21,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   cloned yet, or cloned again as git said it was broken; no git, or one older than the 2.39 that
   `git patch-id --verbatim` needs; a reviewed commit GitHub refused to send. When the reason goes away, the
   check runs and its verdict replaces the reason.
-- A merged or closed PR's check runs once on its final head and freezes with the PR. Its row keeps the
-  Stale review badge, but it never Needs attention.
+- A merged or closed PR's check runs once on its final head, while the user's work reaches the PR, and the
+  verdict freezes with the PR: once `tsugiki.db` holds both sides, later syncs and fetches read nothing of
+  it again. A PR the user's work no longer reaches by then isn't checked. Its row keeps the Stale review
+  badge, with the changed files in the hover, but it never Needs attention and adds to no count. While its
+  check waits or can't run, it shows what an open PR's would. A PR merged with a merge commit has its
+  commits on the Target branch, so each one's diff starts from the branch as it stood before that merge.
 - A **Bot backport** shares its Origin PR's review state. A **Manual backport** is reviewed on its own.
 - A **Review request** always counts as Needs attention, including on a Bot backport or a Draft PR. A Local
   mark does not clear it.

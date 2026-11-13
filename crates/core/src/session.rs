@@ -511,11 +511,10 @@ fn hand_over_heads(
     if let (Some(settings), Ok(facts)) = (syncs.settings(repository), store.work_facts(repository))
     {
         let reviewed = store.reviewed_commits(repository).unwrap_or_default();
-        let patches = Workbench::patches_to_read(&facts);
         // A head can move to a commit the store has read, which makes no new read to keep a check with. A
         // store that can't keep it says so at the next step that saves.
         let _kept = keep_last_checks(store, repository, &facts);
-        let heads = Workbench::reached_heads(facts, settings);
+        let (heads, patches) = Workbench::mirror_work(facts, settings);
         let work = MirrorWork {
             heads,
             reviewed,

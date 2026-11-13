@@ -244,6 +244,23 @@ it("shows a Stale review on the row of a PR that is no longer open, which has no
     "Merged",
     "CI passed",
   ]);
+  expect(merged[0]?.hover).toBe(
+    "Changed since your Review: 2 files\nLib/ast.py\nPython/ast.c (whitespace only)",
+  );
+});
+
+it("says why a closed PR's check can't run, on its row", () => {
+  const unchecked: WorkbenchRow = {
+    ...stale,
+    reasons: [],
+    state: "CLOSED",
+    your_review: { kind: "cant_check", reason: { kind: "cloning" } },
+  };
+  expect(detailWords(unchecked)[0]).toEqual({
+    words: "Stale review",
+    tone: "bad",
+    hover: "Tsugiki can't check your Review until the mirror is cloned",
+  });
 });
 
 it.each<[CantCheck, string]>([

@@ -321,12 +321,39 @@ fn a_commit_already_on_the_target_branch_gives_no_patch_ids_to_keep() {
     let place = Place::new("level");
     let main = place.at("main");
 
-    // A PR merged before the sync said so has its head on the Target branch, and an empty diff from there
+    // A commit on the Target branch that no merge commit brought in has an empty diff from there, which
     // would read as every file changed for good.
     let read = read_patch_ids(&place.mirror(), "main", &main);
     place.finish();
 
     assert!(read.is_err());
+}
+
+#[test]
+fn a_pr_merged_with_a_merge_commit_keeps_the_patch_ids_it_had_while_open() {
+    let place = Place::new("merge-commit");
+    let reviewed = reviewed_pr(&place);
+    main_moves_on(&place);
+    place.switch(&["pr"]);
+    let _ = git(&place.work, &["merge", "-q", "--no-edit", "main"]);
+    place.write(
+        "Lib/os.py",
+        &lines(1..=20).replace("x3 = 3", "x3 = 'three'"),
+    );
+    let head = place.commit("More");
+    let open = [place.patches(&reviewed), place.patches(&head)];
+    place.switch(&["main"]);
+    place.write("README.rst", "Read me again\n");
+    let _ = place.commit("Three");
+    let _ = git(&place.work, &["merge", "-q", "--no-ff", "--no-edit", "pr"]);
+    place.write("README.rst", "Read me last\n");
+    let _ = place.commit("Four");
+
+    // Both commits are on main now, and their merge base with it is themselves.
+    let merged = [place.patches(&reviewed), place.patches(&head)];
+    place.finish();
+
+    assert_eq!(merged, open);
 }
 
 #[test]

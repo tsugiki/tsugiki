@@ -8,7 +8,7 @@ use serde::Serialize;
 use specta::Type;
 
 use crate::github::CommitSha;
-use crate::github::pull_requests::{PrState, PullRequestFacts};
+use crate::github::pull_requests::{PrHead, PrState, PullRequestFacts};
 use crate::login::Login;
 use crate::patch_ids::{CantCheck, ChangedFile, PatchesOf, changed_files};
 use crate::store::{LastCheck, ReviewFacts, WorkFacts};
@@ -124,23 +124,41 @@ pub(super) fn checks_to_keep(facts: &WorkFacts) -> Vec<(u32, LastCheck)> {
     checked.collect()
 }
 
-/// The commits whose patch-ids a check still needs: the reviewed commit and the head of each open PR of
-/// someone else's whose head moved on from the user's Review, those the store holds left out. Each comes
-/// once.
-pub(super) fn patches_to_read(facts: &WorkFacts) -> Vec<PatchesOf> {
-    let reviews = &facts.reviews;
-    let open = facts
-        .pull_requests
-        .iter()
-        .filter(|pr| pr.state == PrState::Open && pr.author != facts.viewer);
-    let sides = open.filter_map(|pr| {
-        let (reviewed, head) = compared(pr, reviews)?;
-        Some([patches_of(pr, reviewed), patches_of(pr, head)])
+/// A commit whose patch-ids a check still needs, as the reviewed commit or the head of PR `number`.
+pub(super) struct Unread {
+    number: u32,
+    open: bool,
+    of: PatchesOf,
+}
+
+/// The commits whose patch-ids a check still needs: the reviewed commit and the head of each PR of someone
+/// else's whose head moved on from the user's Review, those the store holds left out.
+pub(super) fn unread_sides(facts: &WorkFacts) -> Vec<Unread> {
+    let others = (facts.pull_requests.iter()).filter(|pr| pr.author != facts.viewer);
+    let sides = others.filter_map(|pr| {
+        let (reviewed, head) = compared(pr, &facts.reviews)?;
+        let unread = |commit| Unread {
+            number: pr.number,
+            open: pr.state == PrState::Open,
+            of: patches_of(pr, commit),
+        };
+        Some([unread(reviewed), unread(head)])
     });
-    let unread = sides
-        .flatten()
-        .filter(|of| !reviews.patches.contains_key(of));
-    unread.collect::<BTreeSet<_>>().into_iter().collect()
+    let unread = sides.flatten();
+    unread
+        .filter(|side| !facts.reviews.patches.contains_key(&side.of))
+        .collect()
+}
+
+/// The commits of `unread` to read: each open PR's, and a merged or closed PR's while the mirror fetches
+/// its head for the user's work, in `heads`. Each comes once. A merged or closed PR's head stays put, so
+/// once the store holds both its sides, its verdict is frozen and nothing of it is read again (#385). One
+/// the user's work no longer reaches shows on no screen, and the mirror may lack its final head.
+pub(super) fn patches_to_read(unread: Vec<Unread>, heads: &[PrHead]) -> Vec<PatchesOf> {
+    let fetched: BTreeSet<u32> = heads.iter().map(|head| head.number).collect();
+    let wanted = (unread.into_iter()).filter(|side| side.open || fetched.contains(&side.number));
+    let wanted: BTreeSet<PatchesOf> = wanted.map(|side| side.of).collect();
+    wanted.into_iter().collect()
 }
 
 #[cfg(test)]

@@ -103,6 +103,9 @@ const content = (body_html: string, earlier_comments: number) => ({
 
 const NOW = new Date("2026-11-04T11:00:00Z");
 
+/** The commit the user's Review covered, and the head the check compared it with. */
+const REVIEWED = { reviewed: "1".repeat(40), head: "2".repeat(40) };
+
 const shown = async (answer: IssueView | null, onopenpr = vi.fn(), onmark = vi.fn()) => {
   core.issue.mockResolvedValue({ status: "ok", data: answer });
   const state = new IssueViewState("python/cpython", 7);
@@ -219,7 +222,10 @@ it("shows each Origin PR's state, CI and review state, and folds its Backports i
 
 it("shows a Stale review in the danger tone, with the files changed since the Review in its hover", async () => {
   const files = [{ path: "Lib/ast.py", whitespace_only: true }];
-  await shown({ ...view, pull_requests: [{ ...opened, your_review: { kind: "stale_review", files } }] });
+  await shown({
+    ...view,
+    pull_requests: [{ ...opened, your_review: { kind: "stale_review", ...REVIEWED, files } }],
+  });
 
   const stale = screen.getByText("Stale review");
   expect(stale.classList).toContain("bad");
@@ -228,7 +234,7 @@ it("shows a Stale review in the danger tone, with the files changed since the Re
 
 it("keeps the Stale review of a merged PR, whose check froze with it, with the changed files", async () => {
   const files = [{ path: "Lib/ast.py", whitespace_only: false }];
-  const review = { kind: "stale_review" as const, files };
+  const review = { kind: "stale_review" as const, ...REVIEWED, files };
   const merged: TreeEntry = { kind: "pr", number: 15, ...row, your_review: review, backports: [] };
   await shown({ ...view, pull_requests: [merged] });
 

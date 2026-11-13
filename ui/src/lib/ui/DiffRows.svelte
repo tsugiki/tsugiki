@@ -1,6 +1,7 @@
 <!-- The rows of a PR's diff, drawn only near what the tab shows, below its NEWS entries. Every row has the
      same height, so a row's place follows from where it shows, and the core sends the rows in chunks as they
-     come near (ADR 0001). A collapsed file shows only its header (#181, #581). A hunk's row offers to
+     come near (ADR 0001). A collapsed file shows only its header (#181, #581), which says whether the file
+     changed since the user's Stale review, or only in whitespace (#387). A hunk's row offers to
      show the lines its gap leaves out, and the row after a file's last hunk the lines after it (#182).
      Side by side, a line of context shows on both sides, and a change shows its removed rows on the left
      beside its added ones on the right (#183). A review thread takes as many rows' places under its line
@@ -358,6 +359,10 @@
                   ></button
                 ><span class="count">{counted(row.change)}</span>{#if files[file]?.generated}<span
                     class="count">Generated</span
+                  >{/if}{#if diff.sinceReview(file) === "changed"}<span class="since"
+                    >Changed since your Review</span
+                  >{:else if diff.sinceReview(file) === "whitespace_only"}<span class="since"
+                    >Whitespace only</span
                   >{/if}
               {/if}
             {:else if row?.kind === "hunk"}
@@ -478,6 +483,12 @@
   .count {
     font-weight: normal;
     color: var(--fg-muted);
+  }
+
+  /* A file changed since the user's Stale review, in the danger colour its badge has. */
+  .since {
+    font-weight: normal;
+    color: var(--danger);
   }
 
   /* A file's header opens and closes it, and looks like the text around it. */

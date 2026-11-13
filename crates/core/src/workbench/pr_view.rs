@@ -6,6 +6,7 @@ use serde::Serialize;
 use specta::Type;
 
 use super::attention::Causes;
+use super::review_state::SharedReviews;
 use super::{WorkbenchRow, candidates};
 use crate::error::Error;
 use crate::github::pull_request_content::PullRequestContent;
@@ -19,6 +20,9 @@ pub struct PrView {
     pub row: WorkbenchRow,
     /// Its description, comments and Reviews. Nothing, until Tsugiki has read this PR from GitHub once.
     pub content: Option<PullRequestContent>,
+    /// The Origin PR whose review state this Bot backport shares (ADR 0011), so its `your_review` names that
+    /// PR's reviewed commit and files.
+    pub shares_review_of: Option<u32>,
 }
 
 impl PrView {
@@ -31,6 +35,8 @@ impl PrView {
     ) -> Result<Option<Self>, Error> {
         let (facts, content) = reader.pull_request_facts(&repository.name, number)?;
         let causes = Causes::of(&facts, repository.conventions);
+        let shares_review_of =
+            SharedReviews::of(&facts.pull_requests, repository.conventions).origin_of(number);
         let row = candidates(facts, repository, &BTreeSet::new(), &causes)
             .iter()
             .find_map(|item| {
@@ -39,7 +45,11 @@ impl PrView {
                     .find(|row| row.number == number)
                     .cloned()
             });
-        Ok(row.map(|row| Self { row, content }))
+        Ok(row.map(|row| Self {
+            row,
+            content,
+            shares_review_of,
+        }))
     }
 }
 

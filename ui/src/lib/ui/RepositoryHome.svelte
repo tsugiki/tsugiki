@@ -340,6 +340,9 @@
   /** The chords this screen binds, each with the action the page runs once the chord's wait ends. */
   export function chordBindings(): ChordBindings {
     return {
+      "ctrl+k j": () => {
+        shownFiles()?.unfoldUnchanged();
+      },
       "ctrl+k o": () => {
         shownFiles()?.toggleMode();
       },
@@ -352,10 +355,19 @@
     return detail instanceof PrViewState && detail.tab === "files" ? detail.files : undefined;
   }
 
-  /** The palette's command that switches the Files tab on show to one file at a time, or back. */
-  function filesModeCommand(): PaletteAction[] {
+  /** The palette's commands for the Files tab on show: the one that switches it to one file at a time, or
+   * back, and while files unchanged since the user's Stale review are folded, the one that opens them
+   * (#387). */
+  function filesCommands(): PaletteAction[] {
     const files = shownFiles();
     if (files === undefined) return [];
+    const unfold = {
+      title: "View: Unfold Unchanged Files",
+      note: chordLabel("ctrl+k j", currentOs()),
+      run: () => {
+        files.unfoldUnchanged();
+      },
+    };
     return [
       {
         title: files.mode === "one" ? "View: All Files" : "View: One File at a Time",
@@ -364,6 +376,7 @@
           files.toggleMode();
         },
       },
+      ...(files.foldedUnchanged > 0 ? [unfold] : []),
     ];
   }
 
@@ -419,7 +432,7 @@
         ? [{ title: workbench.quietShown ? "Hide Quiet Items" : "Show Quiet Items", run: toggleQuiet }]
         : []),
       { title: "View: Stale Reviews", run: () => showView({ kind: "stale_reviews" }) },
-      ...filesModeCommand(),
+      ...filesCommands(),
     ];
   }
 

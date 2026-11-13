@@ -36,6 +36,7 @@ const view: PrView = {
   your_review: { kind: "unreviewed" },
   seen: { mark: { numbers: [11], up_to: null }, state: "seen" },
   content: null,
+  shares_review_of: null,
 };
 
 const done = { status: "ok" as const, data: null };
@@ -179,5 +180,50 @@ describe("PrViewState", () => {
 
     expect(state.tab).toBe("files");
     expect(reveal).toHaveBeenCalledExactlyOnceWith("T1");
+  });
+
+  it("opens the Files tab at the files changed since the Stale review the PR view read", async () => {
+    const stale: PrView = {
+      ...view,
+      your_review: {
+        kind: "stale_review",
+        reviewed: "1".repeat(40),
+        head: "abc",
+        files: [{ path: "Lib/os.py", whitespace_only: false }],
+      },
+    };
+    const file = (path: string, row: number) => ({
+      path,
+      old_path: null,
+      change: { kind: "lines" as const, added: 1, removed: 0 },
+      row,
+      columns: 4,
+      generated: false,
+      gaps: [],
+      rest: null,
+      pairs: [],
+    });
+    vi.mocked(commands.pullRequest).mockResolvedValue({ status: "ok", data: stale });
+    vi.mocked(commands.pullRequestFiles).mockResolvedValue({
+      status: "ok",
+      data: {
+        state: "ready",
+        head: "abc",
+        base: "base",
+        files: [file("Lib/ast.py", 0), file("Lib/os.py", 3)],
+        rows: 6,
+        news: [],
+        threads: { kind: "shown", threads: [] },
+      },
+    });
+    const state = new PrViewState("python/cpython", 11, undefined);
+    await state.load();
+
+    state.reviewChanges();
+
+    expect(state.tab).toBe("files");
+    await vi.waitFor(() => expect(state.files.jump).toEqual({ page: { kind: "file", file: 1 } }));
+    expect([state.files.sinceReview(0), state.files.sinceReview(1)]).toEqual(["unchanged", "changed"]);
+    state.stop();
   });
 });

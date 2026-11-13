@@ -1145,6 +1145,42 @@ it("opens a PR's Files tab one file at a time as the settings say, and switches 
   expect(pressed()).toBe("true");
 });
 
+it("unfolds the files unchanged since a Stale review with Ctrl+K J and the palette, on the Files tab", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const unfold = vi.spyOn(PrFilesState.prototype, "unfoldUnchanged").mockImplementation(() => {});
+  const folded = vi.spyOn(PrFilesState.prototype, "foldedUnchanged", "get").mockReturnValue(2);
+  core.pullRequestFiles.mockResolvedValue({
+    status: "ok",
+    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
+  });
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const { component, treeRow } = await listing();
+  await fireEvent.click(treeRow);
+  const tab = await screen.findByRole("tab", { name: "Files" });
+  const command = () =>
+    component.paletteCommands().find((found) => found.title === "View: Unfold Unchanged Files");
+  // The Conversation tab shows no files to unfold.
+  component.chordBindings()["ctrl+k j"]?.();
+  expect(command()).toBeUndefined();
+  await fireEvent.click(tab);
+  await screen.findByRole("region", { name: "Diff" });
+
+  expect(command()?.note).toBe("Ctrl+K J");
+  command()?.run();
+  component.chordBindings()["ctrl+k j"]?.();
+  expect(unfold).toHaveBeenCalledTimes(2);
+  // Once no unchanged file is folded, the palette has nothing to offer.
+  folded.mockReturnValue(0);
+  expect(command()).toBeUndefined();
+});
+
 it("opens the search in the diff with Ctrl+F on the Files tab, and gives its box focus again from it", async () => {
   const files = await onFiles();
   await press("f", { ctrlKey: true });

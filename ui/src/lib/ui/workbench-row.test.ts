@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import type { CantCheck, IssueItem, WorkbenchRow, Why } from "$lib/state/workbench.svelte";
+import type { CantCheck, IssueItem, WorkbenchRow, Why, YourReview } from "$lib/state/workbench.svelte";
 import {
   ago,
   backportWords,
@@ -9,9 +9,15 @@ import {
   peopleOf,
   preview,
   prStateWords,
+  staleReviewLine,
   summary,
   treeCount,
 } from "./workbench-row";
+
+/** The commit the user's Review covered. */
+const REVIEWED = "1".repeat(40);
+/** The head the check compared it with. */
+const HEAD = "2".repeat(40);
 
 const row: WorkbenchRow = {
   number: 160662,
@@ -125,7 +131,12 @@ it("shows the review state a Bot backport shares with its Origin PR, Reviewed to
   );
   const stale = detailWords({
     ...bot,
-    your_review: { kind: "stale_review", files: [{ path: "Lib/ast.py", whitespace_only: false }] },
+    your_review: {
+      kind: "stale_review",
+      reviewed: REVIEWED,
+      head: HEAD,
+      files: [{ path: "Lib/ast.py", whitespace_only: false }],
+    },
   });
   expect(stale[0]).toEqual({
     words: "Stale review",
@@ -227,6 +238,8 @@ const stale: WorkbenchRow = {
   reasons: ["reviewed"],
   your_review: {
     kind: "stale_review",
+    reviewed: REVIEWED,
+    head: HEAD,
     files: [
       { path: "Lib/ast.py", whitespace_only: false },
       { path: "Python/ast.c", whitespace_only: true },
@@ -245,7 +258,12 @@ it("says a Stale review in the danger tone, and its hover lists the files change
 it("counts one file changed since the Review as one", () => {
   const one: WorkbenchRow = {
     ...stale,
-    your_review: { kind: "stale_review", files: [{ path: "Lib/ast.py", whitespace_only: false }] },
+    your_review: {
+      kind: "stale_review",
+      reviewed: REVIEWED,
+      head: HEAD,
+      files: [{ path: "Lib/ast.py", whitespace_only: false }],
+    },
   };
   expect(prStateWords(one).at(-1)?.hover).toBe("Changed since your Review: 1 file\nLib/ast.py");
 });
@@ -282,7 +300,7 @@ it("says why a closed PR's check can't run, on its row", () => {
     ...stale,
     reasons: [],
     state: "CLOSED",
-    your_review: { kind: "cant_check", reason: { kind: "cloning" } },
+    your_review: { kind: "cant_check", reviewed: REVIEWED, reason: { kind: "cloning" } },
   };
   expect(detailWords(unchecked)[0]).toEqual({
     words: "Stale review",
@@ -304,9 +322,62 @@ it.each<[CantCheck, string]>([
   ],
   [{ kind: "refused" }, "Tsugiki can't check your Review: GitHub refused to send the commit it covered"],
 ])("says a Stale review whose check can't run, and its hover says why: %j", (reason, hover) => {
-  const unchecked: WorkbenchRow = { ...stale, your_review: { kind: "cant_check", reason } };
+  const unchecked: WorkbenchRow = {
+    ...stale,
+    your_review: { kind: "cant_check", reviewed: REVIEWED, reason },
+  };
   expect(prStateWords(unchecked).at(-1)).toEqual({ words: "Stale review", tone: "bad", hover });
   expect(details(unchecked)).toBe("Stale review · some-author · into main · Open · CI passed");
+});
+
+type ChangedFile = Extract<YourReview, { kind: "stale_review" }>["files"][number];
+
+it.each<[string, ChangedFile[], string]>([
+  ["one", [{ path: "Lib/ast.py", whitespace_only: false }], "1 file changed"],
+  [
+    "some, one only in whitespace",
+    [
+      { path: "Lib/ast.py", whitespace_only: false },
+      { path: "Lib/os.py", whitespace_only: true },
+      { path: "Lib/re.py", whitespace_only: false },
+    ],
+    "3 files changed, 1 only in whitespace",
+  ],
+  [
+    "one only in whitespace",
+    [{ path: "Lib/os.py", whitespace_only: true }],
+    "1 file changed, 1 only in whitespace",
+  ],
+])(
+  "says over a stale PR which commit the Review covered and how many files changed: %s",
+  (_, files, counts) => {
+    const review: YourReview = { kind: "stale_review", reviewed: "abc1234def5678", head: HEAD, files };
+
+    expect(staleReviewLine(review, null)).toBe(`Your Review at abc1234 is stale: ${counts}`);
+  },
+);
+
+it("names the Origin PR whose Review a Bot backport shares", () => {
+  const review: YourReview = {
+    kind: "stale_review",
+    reviewed: "abc1234def5678",
+    head: HEAD,
+    files: [{ path: "Lib/ast.py", whitespace_only: false }],
+  };
+
+  expect(staleReviewLine(review, 160662)).toBe("Your Review of #160662 at abc1234 is stale: 1 file changed");
+});
+
+it("says over a PR whose check can't run why, in place of the counts", () => {
+  const review: YourReview = { kind: "cant_check", reviewed: "abc1234def5678", reason: { kind: "no_git" } };
+
+  expect(staleReviewLine(review, null)).toBe(
+    "Your Review at abc1234 may be stale: Tsugiki can't check it without git",
+  );
+});
+
+it.each<YourReview>([{ kind: "unreviewed" }, { kind: "reviewed" }])("says nothing over a PR %j", (review) => {
+  expect(staleReviewLine(review, null)).toBeUndefined();
 });
 
 it.each([

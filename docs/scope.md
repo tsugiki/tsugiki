@@ -96,6 +96,10 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 - The whole PR as one list, unified or side by side, with hidden lines on demand, any file collapsible to its
   header, Generated files collapsed from the start, and the NEWS entries on top.
 - One file at a time, as an option beside the whole list.
+- On a **Stale review**, a line over both tabs that names the reviewed commit and counts the files changed
+  since, with Review changes, which opens Files at the first of them. Their headers say "changed since your
+  Review" or "whitespace only", and the files the Review left unchanged start collapsed, with one command to
+  open them all. The diff stays the whole PR.
 - Threads in place, **Outdated threads**, folded resolved and hidden comments, and each Review as one block
   in the Conversation tab.
 

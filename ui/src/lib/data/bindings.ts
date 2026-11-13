@@ -1585,12 +1585,22 @@ export type PrView = PrView_Serialize | PrView_Deserialize;
 export type PrView_Deserialize = {
 	/**  Its description, comments and Reviews. Nothing, until Tsugiki has read this PR from GitHub once. */
 	content?: PullRequestContent_Deserialize | null,
+	/**
+	 *  The Origin PR whose review state this Bot backport shares (ADR 0011), so its `your_review` names that
+	 *  PR's reviewed commit and files.
+	 */
+	shares_review_of?: number | null,
 } & WorkbenchRow_Deserialize;
 
 /**  A PR as the Detail pane shows it. */
 export type PrView_Serialize = {
 	/**  Its description, comments and Reviews. Nothing, until Tsugiki has read this PR from GitHub once. */
 	content: PullRequestContent_Serialize | null,
+	/**
+	 *  The Origin PR whose review state this Bot backport shares (ADR 0011), so its `your_review` names that
+	 *  PR's reviewed commit and files.
+	 */
+	shares_review_of: number | null,
 } & WorkbenchRow_Serialize;
 
 /**  A PR's description, its recent comments, and its Reviews. */
@@ -2401,10 +2411,16 @@ export type Workbench_Serialize = {
 export type YourReview = { kind: "unreviewed" } | 
 /**  The PR's diff is the same as when the user reviewed it, or no check has said otherwise yet. */
 { kind: "reviewed" } | 
-/**  The PR's diff changed since the user's Review, in `files`. */
-{ kind: "stale_review"; files: ChangedFile[] } | 
-/**  A Stale review, as the check can't run for `reason` (#384). It runs once the reason goes away. */
-{ kind: "cant_check"; reason: CantCheck };
+/**
+ *  The PR's diff changed since the user's Review of commit `reviewed`, in `files`, as the check of
+ *  commit `head` found. While a newer head waits for its check, `head` is the one the last check read.
+ */
+{ kind: "stale_review"; reviewed: string; head: string; files: ChangedFile[] } | 
+/**
+ *  A Stale review of commit `reviewed`, as the check can't run for `reason` (#384). It runs once the
+ *  reason goes away.
+ */
+{ kind: "cant_check"; reviewed: string; reason: CantCheck };
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

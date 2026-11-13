@@ -12,6 +12,7 @@ import {
   type NewsEntry,
   type PrFiles,
 } from "$lib/state/pr-files.svelte";
+import type { YourReview } from "$lib/state/workbench.svelte";
 import FilesTab from "./FilesTab.svelte";
 
 const core = vi.hoisted(() => ({
@@ -113,10 +114,12 @@ const NOW = new Date("2026-11-04T12:00:00Z");
 /** A HUD that times nothing, as these tests don't look at the jumps. */
 const untimed = { jumped: () => ({ rowsShown: () => undefined, spansShown: () => undefined }) };
 
-/** The Files tab of PR 11 once the core answered `answer`, in the view `choice` holds. */
-const shown = async (answer: PrFiles | null, choice = new DiffViewChoice()) => {
+/** The Files tab of PR 11 once the core answered `answer`, in the view `choice` holds, with the user's
+ * Review `review`. */
+const shown = async (answer: PrFiles | null, choice = new DiffViewChoice(), review?: YourReview) => {
   core.pullRequestFiles.mockResolvedValue(ok(answer));
   const files = new PrFilesState("python/cpython", 11, untimed, choice);
+  files.followReview(review);
   await files.load();
   render(FilesTab, { files, now: NOW, onlink });
   return files;
@@ -419,6 +422,43 @@ it("starts a Generated file collapsed to its header, and collapses or opens any 
     "▾ast.py+0 −0",
   ]);
   expect(first.getAttribute("aria-expanded")).toBe("false");
+});
+
+it("says in their headers which files changed since a Stale review, and starts the rest folded", async () => {
+  const file = (path: string, row: number, old_path: string | null = null): DiffFile => ({
+    path,
+    old_path,
+    change: { kind: "lines", added: 0, removed: 0 },
+    row,
+    columns: 8,
+    generated: false,
+    gaps: [],
+    rest: null,
+    pairs: [],
+  });
+  const files = [file("news.txt", 0, "notes.txt"), file("logo.png", 5), file("ast.py", 7)];
+  const review: YourReview = {
+    kind: "stale_review",
+    reviewed: "1".repeat(40),
+    head: "abc",
+    files: [
+      { path: "news.txt", whitespace_only: false },
+      { path: "ast.py", whitespace_only: true },
+    ],
+  };
+  await shown(ready(rows.length, { files }), new DiffViewChoice(), review);
+
+  await vi.waitFor(() => {
+    expect(lines()).toEqual([
+      "▾notes.txt → news.txt+1 −1Changed since your Review",
+      "@@ -1,2 +1,2 @@",
+      "11 Notes",
+      "2-old line",
+      "2+new line",
+      "▸logo.pngbinary",
+      "▾ast.py+0 −0Whitespace only",
+    ]);
+  });
 });
 
 it("renders the PR's NEWS entries above its rows, and follows their links in the browser", async () => {

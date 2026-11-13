@@ -145,6 +145,8 @@ fn a_moved_head_with_other_changes_is_a_stale_review_naming_the_files() {
     assert_eq!(
         state_of(reviewed_pr(), reviewed_at_1(reviewed, head)),
         YourReview::StaleReview {
+            reviewed: sha('1'),
+            head: sha('2'),
             files: vec![
                 ChangedFile {
                     path: "Lib/ast.py".to_owned(),
@@ -178,7 +180,10 @@ fn a_pending_check_keeps_the_last_verdict() {
 
     assert_eq!(
         state_of(reviewed_pr(), reviews),
+        // The last check read commit 3, while the head, commit 2, waits for its check.
         YourReview::StaleReview {
+            reviewed: sha('1'),
+            head: sha('3'),
             files: vec![ChangedFile {
                 path: "Lib/ast.py".to_owned(),
                 whitespace_only: true,
@@ -220,6 +225,7 @@ fn a_check_that_cant_run_on_either_side_is_a_stale_review_with_the_reason() {
             assert_eq!(
                 state_of(reviewed_pr(), reviews),
                 YourReview::CantCheck {
+                    reviewed: sha('1'),
                     reason: reason.clone()
                 },
                 "commit {side}"
@@ -242,6 +248,7 @@ fn a_check_that_cant_run_outranks_the_last_verdict() {
     assert_eq!(
         state_of(reviewed_pr(), reviews),
         YourReview::CantCheck {
+            reviewed: sha('1'),
             reason: CantCheck::Cloning
         }
     );
@@ -491,8 +498,12 @@ fn stale_at_2() -> ReviewFacts {
     reviewed_at_1(reviewed, head)
 }
 
+/// PR 1's Stale review at commit 1, whose `Lib/ast.py` changed. A Bot backport that shares it names PR 1's
+/// commit too.
 fn ast_changed() -> YourReview {
     YourReview::StaleReview {
+        reviewed: sha('1'),
+        head: sha('2'),
         files: vec![ChangedFile {
             path: "Lib/ast.py".to_owned(),
             whitespace_only: false,

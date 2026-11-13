@@ -1163,6 +1163,8 @@ fn a_merged_prs_stale_review_keeps_its_files_and_adds_nothing_to_needs_attention
     assert_eq!(
         world.review_in_issue(1),
         YourReview::StaleReview {
+            reviewed: sha('1'),
+            head: sha('2'),
             files: vec![ChangedFile {
                 path: "Lib/ast.py".to_owned(),
                 whitespace_only: false,
@@ -1195,6 +1197,7 @@ fn a_closed_pr_whose_check_cant_run_shows_why_and_waits_on_nobody() {
     assert_eq!(
         world.review_in_issue(1),
         YourReview::CantCheck {
+            reviewed: sha('1'),
             reason: CantCheck::Refused
         }
     );

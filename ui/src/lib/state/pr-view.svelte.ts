@@ -48,6 +48,12 @@ export class PrViewState extends DetailState<PrView> {
     this.files = new PrFilesState(repository, number, hud, choice, mode);
   }
 
+  /** Hands the Files tab the user's Review, which marks and collapses its files while it's a Stale review
+   * (#387). */
+  protected override heard(view: PrView | null) {
+    this.files.followReview(view?.your_review);
+  }
+
   get tab(): PrTab {
     return this.#tab;
   }
@@ -74,6 +80,13 @@ export class PrViewState extends DetailState<PrView> {
   openThread(id: string) {
     this.tab = "files";
     this.files.reveal(id);
+  }
+
+  /** Opens the Files tab at the first file changed since the user's Stale review, as the banner's Review
+   * changes button does (#387). */
+  reviewChanges() {
+    this.tab = "files";
+    this.files.showChanges();
   }
 
   /** Moves to the other tab. With two tabs, the next one and the one before are the same. */

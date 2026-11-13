@@ -142,13 +142,26 @@ const LAYERS: &[Layer] = &[
               through the Repository's Conventions.",
     },
     Layer {
+        module: "patch_ids",
+        uses: &["github"],
+        why: "Compares the per-file patch-ids of two commits for the Stale review check, which the store \
+              keeps by commit and the Mirror worker reads.",
+    },
+    Layer {
         module: "status",
-        uses: &["error", "github", "login", "repository"],
+        uses: &["error", "github", "login", "patch_ids", "repository"],
         why: "Announces app-wide status, which names the signed-in `Login` and the PR heads that wait.",
     },
     Layer {
         module: "store",
-        uses: &["error", "filters", "github", "login", "repository"],
+        uses: &[
+            "error",
+            "filters",
+            "github",
+            "login",
+            "patch_ids",
+            "repository",
+        ],
         why: "Saves the facts `github` parses in `github`'s own types, so no second copy of each type drifts \
               from the first.",
     },
@@ -171,22 +184,33 @@ const LAYERS: &[Layer] = &[
     },
     Layer {
         module: "diff",
-        uses: &["error", "github", "highlight", "repository", "web"],
-        why: "Reads a PR's diff from its mirror, highlights it, and links its files to GitHub.",
+        uses: &[
+            "error",
+            "github",
+            "highlight",
+            "patch_ids",
+            "repository",
+            "web",
+        ],
+        why: "Reads a PR's diff and each file's patch-id from its mirror, highlights the diff, and links its \
+              files to GitHub.",
     },
     Layer {
         module: "mirror",
         uses: &[
+            "diff",
             "error",
             "folders",
             "github",
             "latest",
+            "patch_ids",
             "repository",
             "status",
             "token",
         ],
         why: "Clones and fetches PR heads into this build's folders with the token, and says how on the \
-              status board. Its requests read a copy of the clones that wait for an answer.",
+              status board. It reads the patch-ids of the commits it keeps through `diff`. Its requests \
+              read a copy of the clones that wait for an answer.",
     },
     Layer {
         module: "settings",
@@ -216,6 +240,7 @@ const LAYERS: &[Layer] = &[
             "links",
             "login",
             "mirror",
+            "patch_ids",
             "repository",
             "repository_settings",
             "settings",
@@ -247,6 +272,7 @@ const LAYERS: &[Layer] = &[
             "error",
             "folders",
             "github",
+            "patch_ids",
             "repository",
             "repository_settings",
             "status",

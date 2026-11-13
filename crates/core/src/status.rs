@@ -7,6 +7,7 @@ use time::OffsetDateTime;
 use crate::error::Error;
 use crate::github::pull_requests::{PrHead, ReviewedCommit};
 use crate::login::Login;
+use crate::patch_ids::PatchesOf;
 use crate::repository::RepositoryName;
 
 /// The app's state, shown in the status bar.
@@ -137,7 +138,18 @@ pub struct OpenSync {
 
 type AnnounceActivity = Box<dyn FnMut(Option<&SyncActivity>) + Send>;
 
-type AnnounceHeads = Box<dyn FnMut(&RepositoryName, Vec<PrHead>, Vec<ReviewedCommit>) + Send>;
+/// What a sync hands the mirror of a Repository, each time it saves its facts.
+#[derive(Debug, PartialEq, Eq)]
+pub struct MirrorWork {
+    /// The heads of the PRs the user's work reaches, to fetch.
+    pub heads: Vec<PrHead>,
+    /// The commits the user's Reviews covered, to keep.
+    pub reviewed: Vec<ReviewedCommit>,
+    /// The commits whose patch-ids the Stale review check needs and the store lacks, to read.
+    pub patches: Vec<PatchesOf>,
+}
+
+type AnnounceHeads = Box<dyn FnMut(&RepositoryName, MirrorWork) + Send>;
 
 /// Holds the status and announces each change, so the app can pass it on as an event. It also announces when
 /// a Repository's stored facts change, so an open screen can ask again, and when a sync of the open
@@ -163,7 +175,7 @@ impl StatusBoard {
             announce_last_sync: Box::new(|_| {}),
             sync_activity: None,
             announce_sync_activity: Box::new(|_| {}),
-            announce_heads: Box::new(|_, _, _| {}),
+            announce_heads: Box::new(|_, _| {}),
         }
     }
 
@@ -195,21 +207,15 @@ impl StatusBoard {
         self
     }
 
-    /// Also hands `announce` the heads of the PRs the user's work reaches in a Repository, and the commits
-    /// the user's Reviews there covered, each time a sync saves its facts, for its mirror to fetch and keep.
+    /// Also hands `announce` the work for a Repository's mirror each time a sync saves its facts.
     #[must_use]
     pub fn with_heads(mut self, announce: AnnounceHeads) -> Self {
         self.announce_heads = announce;
         self
     }
 
-    pub(crate) fn reached_heads(
-        &mut self,
-        repository: &RepositoryName,
-        heads: Vec<PrHead>,
-        reviewed: Vec<ReviewedCommit>,
-    ) {
-        (self.announce_heads)(repository, heads, reviewed);
+    pub(crate) fn reached_heads(&mut self, repository: &RepositoryName, work: MirrorWork) {
+        (self.announce_heads)(repository, work);
     }
 
     pub(crate) fn sync_activity(&mut self, activity: Option<SyncActivity>) {

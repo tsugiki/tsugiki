@@ -1,6 +1,6 @@
 use super::*;
 use crate::github::pull_requests::{PrState, PullRequestFacts};
-use crate::store::{ActivityFacts, FilterProblem, WorkFacts};
+use crate::store::{ActivityFacts, FilterProblem, ReviewFacts, WorkFacts};
 use crate::workbench::testing::{backport, cpython, fixing, issue, me, mine, outline, stranger};
 use crate::workbench::{Workbench, WorkbenchView};
 
@@ -33,6 +33,7 @@ fn found_by(numbers: &[u32]) -> FilterResults {
 fn nobodys_work(filters: &[(&str, FilterResults)]) -> WorkFacts {
     WorkFacts {
         activity: ActivityFacts::default(),
+        reviews: ReviewFacts::default(),
         viewer: Some(me()),
         pull_requests: vec![
             PullRequestFacts {
@@ -114,6 +115,7 @@ fn a_lone_backport_a_filter_found_stands_by_itself() {
 fn a_matched_pr_comes_first_in_its_issues_tree() {
     let facts = WorkFacts {
         activity: ActivityFacts::default(),
+        reviews: ReviewFacts::default(),
         viewer: Some(me()),
         pull_requests: vec![fixing(10, 1), fixing(11, 1), fixing(12, 1)],
         issues: vec![issue(1)],
@@ -127,6 +129,7 @@ fn a_matched_pr_comes_first_in_its_issues_tree() {
 fn a_selected_filters_own_pr_comes_first_in_its_issues_tree() {
     let facts = WorkFacts {
         activity: ActivityFacts::default(),
+        reviews: ReviewFacts::default(),
         viewer: Some(me()),
         pull_requests: vec![fixing(10, 1), fixing(11, 1)],
         issues: vec![issue(1)],

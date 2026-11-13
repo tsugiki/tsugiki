@@ -12,7 +12,6 @@ import {
   type IssueState,
   type ListedItem_Serialize,
   type PrState,
-  type ReviewState,
   type SeenMark_Serialize,
   type Seen_Serialize,
   type TreeEntry_Serialize,
@@ -20,6 +19,7 @@ import {
   type WorkbenchView,
   type WorkReason,
   type Why,
+  type YourReview,
 } from "$lib/data/bindings";
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import { hud } from "./hud.svelte";
@@ -34,7 +34,7 @@ export type Seen = Seen_Serialize;
 export type SeenMark = SeenMark_Serialize;
 export type TreeEntry = TreeEntry_Serialize;
 export type WorkbenchRow = WorkbenchRow_Serialize;
-export type { BackportKind, CiState, IssueState, PrState, ReviewState, WorkbenchView, WorkReason, Why };
+export type { BackportKind, CiState, IssueState, PrState, WorkbenchView, WorkReason, Why, YourReview };
 
 /** A line the cursor stops on: an item of the list, or a PR or Backport in its tree, with the Issue above. */
 export type Stop = { number: number; kind: "issue" | "pull_request"; issue: number | undefined };

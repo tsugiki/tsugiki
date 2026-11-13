@@ -130,9 +130,10 @@ pub(crate) fn connect_core<R: Runtime>(
         latest_activity.set(&activity);
         log_if_unsent(SyncActivityChanged(activity).emit(&activity_handle));
     }))
-    .with_heads(Box::new(move |repository, heads, reviewed| {
-        fetching.fetch_heads(repository.clone(), heads);
-        fetching.keep_reviewed(repository.clone(), reviewed);
+    .with_heads(Box::new(move |repository, work| {
+        fetching.fetch_heads(repository.clone(), work.heads);
+        fetching.keep_reviewed(repository.clone(), work.reviewed);
+        fetching.read_patch_ids(repository.clone(), work.patches);
     }));
     let intervals = Intervals {
         status: refresh,
@@ -149,6 +150,11 @@ pub(crate) fn connect_core<R: Runtime>(
     };
     assert!(app.manage(diffs), "only this manages the diffs");
     let requests = session.requests();
+    // The mirrors start first, as the session's board hands them heads, so they learn here where the
+    // patch-ids they read go.
+    mirrors
+        .requests()
+        .hand_patches_to(requests.clone().patch_ids_keeper());
     let work = RepositoryWork {
         session: requests.clone(),
         mirrors: mirrors.requests(),

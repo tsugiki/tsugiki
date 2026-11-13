@@ -20,7 +20,7 @@ const reviewRow: WorkbenchRow = {
   ci: "SUCCESS",
   updated_at: "2026-11-04T10:00:00Z",
   reasons: ["review_request"],
-  your_review: null,
+  your_review: { kind: "unreviewed" },
   seen: { mark: { numbers: [160662], up_to: null }, state: "seen" },
 };
 
@@ -44,7 +44,7 @@ const review: ListedItem = {
           state: "MERGED",
           target_branch: "3.14",
           reasons: [],
-          your_review: null,
+          your_review: { kind: "unreviewed" },
           seen: { mark: { numbers: [160700], up_to: null }, state: "seen" },
           backport: "bot",
         },
@@ -69,7 +69,7 @@ const own: ListedItem = {
   ci: "FAILURE",
   updated_at: "2026-11-04T09:00:00Z",
   reasons: ["own_pr"],
-  your_review: null,
+  your_review: { kind: "unreviewed" },
   seen: { mark: { numbers: [157178], up_to: null }, state: "seen" },
   backports: [],
 };

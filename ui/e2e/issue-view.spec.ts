@@ -22,7 +22,7 @@ const row: Omit<WorkbenchRow, "number"> = {
   ci: "SUCCESS",
   updated_at: "2026-11-04T10:00:00Z",
   reasons: [],
-  your_review: "APPROVED",
+  your_review: { kind: "reviewed" },
   seen: { mark: { numbers: [], up_to: null }, state: "seen" },
 };
 
@@ -116,7 +116,7 @@ test("an Issue opens in the Detail pane and stops looking unread", async ({ page
   await expect(pane.getByRole("list", { name: "Labels" }).getByRole("listitem")).toHaveText(["type-bug"]);
   await expect(pane).toContainText("It crashes");
   await expect(pane).toContainText("Which build?");
-  await expect(pane).toContainText("Merged · CI passed · You approved");
+  await expect(pane).toContainText("Merged · CI passed · Reviewed");
   await expect(pane).toContainText("3.14 Merged");
 
   await changeAnswer(page, "workbench", listing(false));

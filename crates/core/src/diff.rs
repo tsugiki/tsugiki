@@ -19,6 +19,7 @@ use crate::repository::RepositoryName;
 
 pub use highlighter::{Chunk, FileLines, HeadLine, Highlighter};
 pub use news::{LinkTo, NewsBlock, NewsEntry, NewsLink, NewsPiece};
+pub use patch_ids::read_patch_ids;
 
 /// A file the diff changes, as the Files tab lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -476,7 +477,8 @@ pub fn read(
     // Both need the list of files, and each starts a git.
     let (generated, news) = std::thread::scope(|scope| {
         let news = scope.spawn(|| news(mirror, head, diff.files()));
-        let generated = made.and_then(|()| index.generated(diff.files()));
+        let paths: Vec<&str> = diff.files().iter().map(|file| file.path.as_str()).collect();
+        let generated = made.and_then(|()| index.generated(&paths));
         (generated, news.join().unwrap_or_default())
     });
     diff.mark_generated(generated, mirror);
@@ -527,11 +529,11 @@ impl<'a> TargetIndex<'a> {
         self.git(&["read-tree", &tree], Vec::new()).map(drop)
     }
 
-    /// Whether each of `files` is marked `linguist-generated`, set or `true`, as `make` left the index.
-    fn generated(&self, files: &[DiffFile]) -> std::io::Result<Vec<bool>> {
-        let input: Vec<u8> = files
+    /// Whether each of `paths` is marked `linguist-generated`, set or `true`, as `make` left the index.
+    fn generated(&self, paths: &[&str]) -> std::io::Result<Vec<bool>> {
+        let input: Vec<u8> = paths
             .iter()
-            .flat_map(|file| file.path.bytes().chain([0]))
+            .flat_map(|path| path.bytes().chain([0]))
             .collect();
         let args = [
             "check-attr",
@@ -550,9 +552,9 @@ impl<'a> TargetIndex<'a> {
             .iter()
             .map(|[path, _, value]| (*path, matches!(*value, "set" | "true")))
             .collect();
-        Ok(files
+        Ok(paths
             .iter()
-            .map(|file| marked.get(file.path.as_str()).copied().unwrap_or(false))
+            .map(|path| marked.get(path).copied().unwrap_or(false))
             .collect())
     }
 
@@ -610,6 +612,19 @@ fn news(mirror: &Path, head: &CommitSha, files: &[DiffFile]) -> Vec<NewsEntry> {
         .collect()
 }
 
+/// How Tsugiki's diffs are read. A user's git config can change how a diff looks, so these say each choice
+/// outright.
+const DIFF_OPTIONS: [&str; 7] = [
+    "--no-color",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--no-relative",
+    "--find-renames",
+    "--unified=3",
+    // `diff.submodule=log` prints a submodule without its `diff --git` line, which the list still has.
+    "--submodule=short",
+];
+
 /// The merge base `read` starts from, and what `git diff --numstat -z` and `git diff` print from it.
 fn run_diff(
     mirror: &Path,
@@ -629,24 +644,13 @@ fn run_diff(
     };
     let base = base_commit.as_str();
     let head = head.as_str();
-    // A user's git config can change how a diff looks, so these say each choice outright.
-    let options = [
-        "--no-color",
-        "--no-ext-diff",
-        "--no-textconv",
-        "--no-relative",
-        "--find-renames",
-        "--unified=3",
-        // `diff.submodule=log` prints a submodule without its `diff --git` line, which the list still has.
-        "--submodule=short",
-    ];
     let numstat = [
         ["diff", "--numstat", "-z"].as_slice(),
-        &options,
+        &DIFF_OPTIONS,
         &[base, head],
     ]
     .concat();
-    let patch = [["diff"].as_slice(), &options, &[base, head]].concat();
+    let patch = [["diff"].as_slice(), &DIFF_OPTIONS, &[base, head]].concat();
     // The two run side by side: a diff of 800 files takes each most of a second.
     let (numstat, patch) = std::thread::scope(|scope| {
         let numstat = scope.spawn(|| git(mirror, &numstat));
@@ -833,6 +837,7 @@ pub use find::{Found, MOST_MATCHES, Match};
 mod find;
 mod highlighter;
 mod news;
+mod patch_ids;
 
 #[cfg(test)]
 pub(crate) mod tests;

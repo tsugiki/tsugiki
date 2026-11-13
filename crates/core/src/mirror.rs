@@ -20,13 +20,16 @@ use crate::folders::Folders;
 use crate::github::pull_requests::{PrHead, ReviewedCommit};
 use crate::github::{CommitSha, GitHub, Transport, live};
 use crate::latest::{self, LatestReader, LatestWriter};
+use crate::patch_ids::{CommitPatches, PatchesOf};
 use crate::repository::RepositoryName;
 use crate::status::Status;
 use crate::token::{RunGh, read_token};
 
+mod patches;
 mod reviewed;
 mod source;
 mod upkeep;
+use patches::Patches;
 use reviewed::{KeepReviewed, Reviews};
 pub use source::{CloneRefusal, MirrorSource, MirrorSources};
 use source::{GITHUB_PREFIXES, lender};
@@ -183,6 +186,10 @@ pub type AnnounceStates = Box<dyn FnMut(&[RepositoryMirror]) + Send>;
 /// Files tab can say that the PR's commits wait for the network (#390).
 pub type AnnounceHeld = Box<dyn FnMut(bool) + Send>;
 
+/// Hands over the per-file patch-ids the worker read of commits in a Repository's mirror, for the session to
+/// keep (#383). The session starts after the worker, so `MirrorRequests::hand_patches_to` gives it.
+pub type AnnouncePatched = Box<dyn FnMut(&RepositoryName, Vec<CommitPatches>) + Send>;
+
 /// What the worker tells the app as it goes.
 pub struct Announce {
     pub cloning: AnnounceCloning,
@@ -298,6 +305,10 @@ enum Message {
     Heads(RepositoryName, Vec<PrHead>),
     /// The commits the user's Reviews in a Repository covered, as the store has them now.
     Reviewed(RepositoryName, Vec<ReviewedCommit>),
+    /// The commits in a Repository whose patch-ids the Stale review check needs and the store lacks.
+    Patches(RepositoryName, Vec<PatchesOf>),
+    /// Where to hand the patch-ids read from now on.
+    PatchesTo(AnnouncePatched),
     /// The head of a PR the user opened, which the mirror lacks.
     First(RepositoryName, PrHead),
     /// A PR the user opened, whose ref stays until the next launch.
@@ -385,6 +396,19 @@ impl MirrorRequests {
         self.send(Message::Reviewed(repository, reviewed));
     }
 
+    /// Reads the per-file patch-ids of each of `wanted` in `repository`'s mirror, once the mirror has the
+    /// commit, after the heads and reviewed commits waiting, and hands them to what `hand_patches_to` gave.
+    /// A commit read since launch isn't read again.
+    pub fn read_patch_ids(&self, repository: RepositoryName, wanted: Vec<PatchesOf>) {
+        self.send(Message::Patches(repository, wanted));
+    }
+
+    /// Hands the patch-ids the worker reads to `announce` from now on. Until then the worker reads none, so
+    /// none are lost.
+    pub fn hand_patches_to(&self, announce: AnnouncePatched) {
+        self.send(Message::PatchesTo(announce));
+    }
+
     /// Fetches the head of a PR the user opened, which `repository`'s mirror lacks, ahead of the heads
     /// waiting. The worker fetches it whatever it noted of it before, so a ref GitHub made late arrives.
     pub fn fetch_first(&self, repository: RepositoryName, head: PrHead) {
@@ -444,6 +468,8 @@ impl HeardRequests {
             Message::Clone(..)
             | Message::Heads(..)
             | Message::Reviewed(..)
+            | Message::Patches(..)
+            | Message::PatchesTo(_)
             | Message::Opened(..)
             | Message::Hold(_)
             | Message::CheckAgain
@@ -476,6 +502,7 @@ impl Mirrors {
             folders,
             remotes,
             announce,
+            patched: None,
             messages: messages.clone(),
             waiting: VecDeque::new(),
             failed: Vec::new(),
@@ -688,6 +715,8 @@ struct Heads {
     viewed: BTreeSet<u32>,
     /// The commits the user's Reviews covered.
     reviews: Reviews,
+    /// The commits whose patch-ids the Stale review check needs.
+    patches: Patches,
 }
 
 /// The outcome of a fetch that succeeded, for the heads it asked for.
@@ -768,6 +797,8 @@ struct Worker {
     folders: Result<Folders, Error>,
     remotes: Remotes,
     announce: Announce,
+    /// Where the patch-ids read go, once the session is there to keep them.
+    patched: Option<AnnouncePatched>,
     /// For the thread that reads each git's progress.
     messages: Sender<Message>,
     waiting: VecDeque<RepositoryName>,
@@ -846,6 +877,10 @@ impl Worker {
                     }
                     self.hand_over_reviewed(&repository, reviewed);
                 }
+                Ok(Message::Patches(repository, wanted)) => {
+                    self.hand_over_patches(&repository, wanted);
+                }
+                Ok(Message::PatchesTo(announce)) => self.patched = Some(announce),
                 Ok(Message::First(repository, head)) => {
                     self.heard_news();
                     if self.pace == Pace::Stalled {
@@ -977,7 +1012,18 @@ impl Worker {
                 handed: None,
                 viewed: BTreeSet::new(),
                 reviews: Reviews::default(),
+                patches: Patches::default(),
             })
+    }
+
+    /// Changes what the worker knows of `repository`'s heads with `change`. The Repository keeps its turn
+    /// for heads.
+    fn change_heads(&mut self, repository: &RepositoryName, change: impl FnOnce(&mut Heads)) {
+        let at = (self.heads.iter()).position(|known| known.repository.is_same(repository));
+        let at = at.unwrap_or(self.heads.len());
+        let mut known = self.take_heads(repository);
+        change(&mut known);
+        self.heads.insert(at, known);
     }
 
     fn heard_news(&mut self) {
@@ -1058,8 +1104,8 @@ impl Worker {
         }
     }
 
-    /// Starts a fetch of heads, or else the keeping of reviewed commits, or else a clone, unless GitHub can't
-    /// be reached.
+    /// Starts a fetch of heads, or else the keeping of reviewed commits, or else reads the patch-ids waiting
+    /// and starts a clone, unless GitHub can't be reached.
     fn start_fetch_or_clone(&mut self) {
         while self.job.is_none() && self.pace != Pace::Held {
             if let Some((repository, batch, mirror)) = self.next_batch() {
@@ -1068,6 +1114,10 @@ impl Worker {
             }
             if self.start_keeping_reviewed() {
                 continue;
+            }
+            // One read at a time, so a message waits for one read at most. `next_due` brings the loop back.
+            if self.read_waiting_patch() {
+                return;
             }
             if self.problem.is_some() {
                 return;
@@ -1272,7 +1322,14 @@ impl Worker {
             Some(MirrorProblem::NoGit | MirrorProblem::OldGit { .. })
         );
         let upkeep = (self.job.is_none() && !git_unusable).then(|| self.upkeep_due());
-        heads.chain(clones).chain(upkeep.flatten()).min()
+        // An idle worker reads the next patch-ids at once, after the messages that came meanwhile.
+        let reading = self.job.is_none() && !git_unusable && self.pace != Pace::Held;
+        let patches = (reading && self.patches_wait()).then(Instant::now);
+        heads
+            .chain(clones)
+            .chain(upkeep.flatten())
+            .chain(patches)
+            .min()
     }
 
     /// Puts each head that is due to be fetched once more with the waiting ones. A newer one handed over
@@ -1416,6 +1473,9 @@ impl Worker {
         let retry = Instant::now() + self.remotes.patience;
         let mut known = self.take_heads(&repository);
         let noted = known.note_fetched(batch.heads, landed.as_ref(), retry);
+        if !noted.arrived.is_empty() {
+            known.patches.read_missing_again();
+        }
         self.requeue(known);
         if !noted.arrived.is_empty() {
             (self.announce.fetched)(&repository, &noted.arrived);

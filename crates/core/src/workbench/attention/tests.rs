@@ -6,10 +6,14 @@ use std::path::PathBuf;
 use time::{Duration, OffsetDateTime};
 
 use super::{Attention, Why};
+use crate::github::CommitSha;
 use crate::github::activity::{Activity, ActivityKind, ItemActivity};
+use crate::github::issue_content::IssueContent;
 use crate::github::issues::{IssueFacts, IssueState};
+use crate::github::pull_request_content::{PullRequestContent, Review};
 use crate::github::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
 use crate::login::Login;
+use crate::patch_ids::{CommitPatches, FilePatch, PatchId, PatchesOf};
 use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
@@ -980,5 +984,116 @@ fn mark_seen_on_an_issue_marks_every_pr_in_its_tree_and_on_a_pr_only_that_pr() {
     world.mark_seen(world.seen(5));
     assert_eq!(world.why(5), []);
     assert_eq!(numbers(&world.workbench().quiet), [5]);
+    world.finish();
+}
+
+fn sha(digit: char) -> CommitSha {
+    CommitSha::parse(&digit.to_string().repeat(40)).unwrap()
+}
+
+/// `Lib/ast.py` changed in the way `digit` names.
+fn ast_changed(digit: char) -> Vec<FilePatch> {
+    let id = PatchId::parse(&digit.to_string().repeat(40)).unwrap();
+    vec![FilePatch {
+        path: "Lib/ast.py".to_owned(),
+        verbatim: id.clone(),
+        loose: id,
+        generated: false,
+    }]
+}
+
+impl World {
+    /// The user reviewed PR `number` at commit 1, which has moved on to commit 2 since, and the check read
+    /// the change at commit 1 as `reviewed` and at commit 2 as `head`.
+    fn reviewed_and_moved(&self, pull_request: PullRequestFacts, reviewed: char, head: char) {
+        let number = pull_request.number;
+        self.has(vec![PullRequestFacts {
+            head: Some(sha('2')),
+            ..pull_request
+        }]);
+        let content = PullRequestContent {
+            conversation: IssueContent {
+                body_html: String::new(),
+                comments: vec![],
+                earlier_comments: 0,
+                opened_at: None,
+            },
+            reviews: vec![Review {
+                id: None,
+                author: Some(me()),
+                state: ReviewState::Commented,
+                commit: Some(sha('1')),
+                submitted_at: hours_ago(50),
+                body_html: String::new(),
+                hidden: None,
+                threads: vec![],
+            }],
+            earlier_reviews: 0,
+            head: Some(sha('2')),
+            pending: vec![],
+        };
+        self.store
+            .save_pull_request_content(&cpython(), number, content)
+            .unwrap();
+        let patches =
+            [(sha('1'), reviewed), (sha('2'), head)].map(|(commit, digit)| CommitPatches {
+                of: PatchesOf {
+                    commit,
+                    target_branch: "main".to_owned(),
+                },
+                files: ast_changed(digit),
+            });
+        self.store
+            .save_patch_ids(&cpython(), patches.to_vec())
+            .unwrap();
+    }
+}
+
+#[test]
+fn a_stale_review_needs_attention_counts_and_stays_after_mark_seen() {
+    let world = World::new("stale");
+    world.reviewed_and_moved(reviewed_by_me(1), 'a', 'b');
+
+    assert_eq!(world.why(1), [Why::StaleReview]);
+    assert_eq!(world.since(1), hours_ago(100));
+    assert_eq!(world.workbench().count, 1);
+    world.mark_seen(world.seen(1));
+    assert_eq!(world.why(1), [Why::StaleReview]);
+    world.finish();
+}
+
+#[test]
+fn a_review_whose_diff_is_the_same_at_the_new_head_waits_on_nobody() {
+    let world = World::new("not-stale");
+    world.reviewed_and_moved(reviewed_by_me(1), 'a', 'a');
+
+    assert_eq!(world.why(1), []);
+    assert_eq!(world.workbench().count, 0);
+    world.finish();
+}
+
+#[test]
+fn a_stale_review_of_a_colleagues_draft_waits_for_a_review_request() {
+    let world = World::new("stale-draft");
+    let draft = PullRequestFacts {
+        is_draft: true,
+        ..reviewed_by_me(1)
+    };
+    world.reviewed_and_moved(draft, 'a', 'b');
+
+    assert_eq!(world.why(1), []);
+    world.finish();
+}
+
+#[test]
+fn a_stale_review_of_a_merged_pr_waits_on_nobody() {
+    let world = World::new("stale-merged");
+    let merged = PullRequestFacts {
+        state: PrState::Merged,
+        ..reviewed_by_me(1)
+    };
+    world.reviewed_and_moved(merged, 'a', 'b');
+
+    assert_eq!(world.workbench().count, 0);
     world.finish();
 }

@@ -177,7 +177,7 @@ _Avoid_: Blocked user, ignored user
 **Review**:
 A record that the user looked at a PR as of a specific commit. It is either a review the user submitted on
 GitHub (approve, request changes, or comment, line comments included) or a **Local mark**. Plain conversation
-comments do not count.
+comments do not count, and neither does a review that only replies to existing threads.
 _Avoid_: Approval, LGTM
 
 **Review checkout**:

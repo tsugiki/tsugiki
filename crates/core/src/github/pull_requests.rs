@@ -271,11 +271,15 @@ impl PullRequestFacts {
 
     /// True when `login` wrote this PR or has a Review on it. A review they haven't submitted isn't one yet.
     pub fn is_written_or_reviewed_by(&self, login: &Login) -> bool {
-        self.author.as_ref() == Some(login)
-            || self
-                .latest_reviews
-                .iter()
-                .any(|review| review.author == *login && review.state != ReviewState::Pending)
+        self.author.as_ref() == Some(login) || self.is_reviewed_by(login)
+    }
+
+    /// True when `login` has a Review on this PR, as GitHub lists the latest of each. A review they haven't
+    /// submitted isn't one yet.
+    pub fn is_reviewed_by(&self, login: &Login) -> bool {
+        self.latest_reviews
+            .iter()
+            .any(|review| review.author == *login && review.state != ReviewState::Pending)
     }
 
     /// True when a newer `updatedAt` says nothing a Filter or a tree reads has changed, as a merged PR stays

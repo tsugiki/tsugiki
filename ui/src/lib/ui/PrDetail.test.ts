@@ -49,7 +49,7 @@ const view: PrView = {
   ci: "SUCCESS",
   updated_at: "2026-11-04T10:00:00Z",
   reasons: [],
-  your_review: null,
+  your_review: { kind: "unreviewed" },
   seen: { mark: { numbers: [11], up_to: "2026-11-04T10:00:00Z" }, state: "new_activity" },
   content: {
     body_html: "<p>The description</p>",

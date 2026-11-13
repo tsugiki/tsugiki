@@ -2,7 +2,7 @@ use crate::github::pull_requests::{CiState, LatestReview, PrState, PullRequestFa
 use crate::login::Login;
 use crate::workbench::testing::{at, me, mine, reasons_for, someone, stranger, workbench};
 use crate::workbench::{
-    PrTree, Seen, SeenMark, SeenState, WorkReason, WorkbenchItem, WorkbenchRow,
+    PrTree, Seen, SeenMark, SeenState, WorkReason, WorkbenchItem, WorkbenchRow, YourReview,
 };
 
 fn review(author: Login, state: ReviewState) -> LatestReview {
@@ -132,7 +132,7 @@ fn a_row_carries_what_the_list_shows() {
                 ci: Some(CiState::Pending),
                 updated_at: at(3),
                 reasons: vec![WorkReason::OwnPr],
-                your_review: None,
+                your_review: YourReview::Unreviewed,
                 seen: Seen {
                     mark: SeenMark {
                         numbers: vec![3],

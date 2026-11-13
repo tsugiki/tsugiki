@@ -1,7 +1,7 @@
 use crate::conventions::Conventions;
 use crate::github::pull_requests::PullRequestFacts;
 use crate::repository_settings::RepositorySettings;
-use crate::store::{ActivityFacts, WorkFacts};
+use crate::store::{ActivityFacts, ReviewFacts, WorkFacts};
 use crate::workbench::testing::{
     backport, cpython, fixing, issue, me, mine, outline, own, stranger, workbench,
 };
@@ -30,6 +30,7 @@ fn a_number_the_sync_didnt_fetch_as_an_issue_doesnt_link() {
 fn changing_a_repositorys_conventions_regroups_the_same_facts() {
     let facts = || WorkFacts {
         activity: ActivityFacts::default(),
+        reviews: ReviewFacts::default(),
         viewer: Some(me()),
         filters: BTreeMap::new(),
         pull_requests: vec![fixing(10, 1)],
@@ -74,6 +75,7 @@ fn under_githubs_conventions_a_pr_on_a_branch_is_an_ordinary_pr() {
     };
     let facts = WorkFacts {
         activity: ActivityFacts::default(),
+        reviews: ReviewFacts::default(),
         viewer: Some(me()),
         pull_requests: vec![mine(10), own(backport(11, "[3.14] Fix it (GH-10)", vec![]))],
         issues: vec![],

@@ -203,7 +203,7 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
         closing_issues: vec![7],
         merge_commit: CommitSha::parse("0123abc"),
         base: None,
-        head: None,
+        head: CommitSha::parse("4567def"),
         off_default: Some(OffDefault {
             description: String::new(),
             cherry_picked_from: CommitSha::parse("0123abc").into_iter().collect(),
@@ -293,14 +293,38 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
         }],
         hunk: DiffHunk::parse("@@ -1,2 +1,2 @@\n x\n+y"),
     };
+    // The user's own Review, whose commit and the head the Stale review check compares.
+    let mine = Review {
+        id: None,
+        author: Some(viewer.clone()),
+        state: ReviewState::Commented,
+        commit: CommitSha::parse("0123abc"),
+        submitted_at: saved_at,
+        body_html: "<p>Looks good</p>".to_owned(),
+        hidden: None,
+        threads: vec![],
+    };
     let reviewed = PullRequestContent {
         conversation: content.clone(),
-        reviews: vec![review],
+        reviews: vec![review, mine],
         earlier_reviews: 0,
         head: CommitSha::parse("0123abc"),
         pending: vec![drafted],
     };
     pull_request_content::save(connection, &cpython, 1, &reviewed).unwrap();
+    let patched = ["0123abc", "4567def"].map(|commit| crate::patch_ids::CommitPatches {
+        of: crate::patch_ids::PatchesOf {
+            commit: CommitSha::parse(commit).unwrap(),
+            target_branch: "main".to_owned(),
+        },
+        files: vec![crate::patch_ids::FilePatch {
+            path: "Lib/ast.py".to_owned(),
+            verbatim: crate::patch_ids::PatchId::parse(&"a".repeat(40)).unwrap(),
+            loose: crate::patch_ids::PatchId::parse(&"b".repeat(40)).unwrap(),
+            generated: false,
+        }],
+    });
+    patch_ids::save(connection, &cpython, &patched).unwrap();
     let (seen, statements) = mpsc::channel();
     let trace = move |event: TraceEvent<'_>| {
         if let TraceEvent::Stmt(_, sql) = event {
@@ -353,8 +377,10 @@ fn the_plan_check_sees_each_table_a_view_reads() {
         "review_threads",
         "review_thread_comments",
         "marked_unseen",
+        "patched_commits",
+        "file_patch_ids",
     ];
-    assert_eq!(tables.map(reads), [true; 18]);
+    assert_eq!(tables.map(reads), [true; 20]);
 }
 
 #[test]

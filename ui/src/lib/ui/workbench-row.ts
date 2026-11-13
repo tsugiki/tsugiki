@@ -7,12 +7,12 @@ import {
   type IssueItem,
   type ListedItem,
   type PrState,
-  type ReviewState,
   type Seen,
   type TreeEntry,
   type WorkbenchRow,
   type WorkReason,
   type Why,
+  type YourReview,
 } from "$lib/state/workbench.svelte";
 
 const REASONS: Record<WorkReason, string> = {
@@ -40,19 +40,13 @@ const CI: Record<CiState, string> = {
   SUCCESS: "CI passed",
 };
 
-const YOUR_REVIEW: Record<ReviewState, string> = {
-  PENDING: "Your Review is a draft",
-  COMMENTED: "You commented",
-  APPROVED: "You approved",
-  CHANGES_REQUESTED: "You requested changes",
-  DISMISSED: "Your Review was dismissed",
-};
-
 /** The words an Alert would use for one reason an item Needs attention. */
 function saying(why: Why): string {
   switch (why.kind) {
     case "review_requested":
       return "Review requested from you";
+    case "stale_review":
+      return "Changed since your Review";
     case "ci_failed":
       return why.checks.length > 0 ? `CI failed: ${why.checks.join(", ")}` : "CI failed";
     case "ci_passed":
@@ -129,22 +123,57 @@ export function openOfAll(entries: TreeEntry[]): string {
   return `${String(open)} open of ${prCount(rows.length)}`;
 }
 
-/** A PR's second line, with only the facts this PR has. */
-export function details(row: WorkbenchRow & { backport?: BackportKind }): string {
-  const parts = [
-    ...row.reasons.map((reason) => REASONS[reason]),
-    ...(row.backport ? [BACKPORTS[row.backport]] : []),
-    row.author ?? "deleted user",
-    `into ${row.target_branch}`,
-    STATES[row.state],
-    ...(row.is_draft ? ["Draft"] : []),
-    ...(row.ci ? [CI[row.ci]] : []),
-  ];
-  return parts.join(" · ");
+/** How a word of a PR's state stands out: a Review request, CI that failed or passed, a Stale review, or not
+ * at all. */
+export type WordTone = "request" | "bad" | "good" | "plain";
+
+/** A word of a PR's state, and what its hover says, if it says more. */
+export type StateWord = { words: string; tone: WordTone; hover?: string };
+
+const fileCount = (count: number) => (count === 1 ? "1 file" : `${String(count)} files`);
+
+/** The word for where the user's Review stands. A Stale review's hover lists the files changed since the
+ * Review, and names the ones whose change is only whitespace. An Unreviewed PR has none. */
+function reviewWord(review: YourReview): StateWord[] {
+  switch (review.kind) {
+    case "unreviewed":
+      return [];
+    case "reviewed":
+      return [{ words: "Reviewed", tone: "plain" }];
+    case "stale_review": {
+      const files = review.files.map((file) =>
+        file.whitespace_only ? `${file.path} (whitespace only)` : file.path,
+      );
+      const hover = [`Changed since your Review: ${fileCount(files.length)}`, ...files].join("\n");
+      return [{ words: "Stale review", tone: "bad", hover }];
+    }
+  }
 }
 
-/** How a word of a PR's state stands out: a Review request, CI that failed or passed, or not at all. */
-export type WordTone = "request" | "bad" | "good" | "plain";
+/** The words of a PR's second line, with only the facts this PR has. A Stale review takes the place of the
+ * Reviewed reason. */
+export function detailWords(row: WorkbenchRow & { backport?: BackportKind }): StateWord[] {
+  const stale = row.your_review.kind === "stale_review";
+  const plain = (words: string) => ({ words, tone: "plain" as const });
+  return [
+    ...row.reasons
+      .filter((reason) => !(stale && reason === "reviewed"))
+      .map((reason) => plain(REASONS[reason])),
+    ...(stale ? reviewWord(row.your_review) : []),
+    ...(row.backport ? [plain(BACKPORTS[row.backport])] : []),
+    plain(row.author ?? "deleted user"),
+    plain(`into ${row.target_branch}`),
+    plain(STATES[row.state]),
+    ...(row.is_draft ? [plain("Draft")] : []),
+    ...(row.ci ? [plain(CI[row.ci])] : []),
+  ];
+}
+
+/** A PR's second line, as text. */
+export const details = (row: WorkbenchRow & { backport?: BackportKind }) =>
+  detailWords(row)
+    .map((word) => word.words)
+    .join(" · ");
 
 const CI_TONES: Record<CiState, WordTone> = {
   EXPECTED: "plain",
@@ -155,7 +184,7 @@ const CI_TONES: Record<CiState, WordTone> = {
 };
 
 /** A PR's state words in the Issue view and the PR view: its state, CI and where the user stands on it. */
-export function prStateWords(row: WorkbenchRow): { words: string; tone: WordTone }[] {
+export function prStateWords(row: WorkbenchRow): StateWord[] {
   return [
     { words: STATES[row.state], tone: "plain" as const },
     ...(row.is_draft ? [{ words: "Draft", tone: "plain" as const }] : []),
@@ -163,7 +192,7 @@ export function prStateWords(row: WorkbenchRow): { words: string; tone: WordTone
     ...(row.reasons.includes("review_request")
       ? [{ words: REASONS.review_request, tone: "request" as const }]
       : []),
-    ...(row.your_review ? [{ words: YOUR_REVIEW[row.your_review], tone: "plain" as const }] : []),
+    ...reviewWord(row.your_review),
   ];
 }
 

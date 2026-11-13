@@ -5,7 +5,8 @@ use specta::Type;
 use time::OffsetDateTime;
 
 use super::Seen;
-use crate::github::pull_requests::{CiState, PrState, PullRequestFacts, ReviewState};
+use super::review_state::YourReview;
+use crate::github::pull_requests::{CiState, PrState, PullRequestFacts};
 use crate::login::Login;
 
 /// The reason a PR is on the user's Workbench.
@@ -34,20 +35,20 @@ pub struct WorkbenchRow {
     pub updated_at: OffsetDateTime,
     /// Empty for a PR that another PR put on the Workbench, and for one no longer open.
     pub reasons: Vec<WorkReason>,
-    /// The user's latest submitted Review. A pending Review is a draft, so it isn't one yet.
-    pub your_review: Option<ReviewState>,
+    /// Where the user's Review stands: Unreviewed, Reviewed or Stale review.
+    pub your_review: YourReview,
     /// Its part in Mark Seen, which covers this PR alone.
     pub seen: Seen,
 }
 
-/// The PR's line of the list, whatever it has to do with `viewer`.
-pub(super) fn row(facts: PullRequestFacts, viewer: &Login, seen: Seen) -> WorkbenchRow {
+/// The PR's line of the list, whatever it has to do with `viewer`, with the review state `your_review`.
+pub(super) fn row(
+    facts: PullRequestFacts,
+    viewer: &Login,
+    your_review: YourReview,
+    seen: Seen,
+) -> WorkbenchRow {
     let reasons = reasons(&facts, viewer);
-    let your_review = facts
-        .latest_reviews
-        .iter()
-        .find(|review| review.author == *viewer && review.state != ReviewState::Pending)
-        .map(|review| review.state);
     WorkbenchRow {
         number: facts.number,
         title: facts.title,
@@ -69,11 +70,7 @@ pub(crate) fn reasons(facts: &PullRequestFacts, viewer: &Login) -> Vec<WorkReaso
         return Vec::new();
     }
     let own = facts.author.as_ref() == Some(viewer);
-    // A pending Review is a draft only its author can see, so it isn't one yet.
-    let reviewed = facts
-        .latest_reviews
-        .iter()
-        .any(|review| review.author == *viewer && review.state != ReviewState::Pending);
+    let reviewed = facts.is_reviewed_by(viewer);
     // GitHub takes a reviewer off the requested list when they submit, and leaves an assignee on theirs. An
     // author assigns themselves to say who's on it, which asks nothing of them.
     let assigned = facts.assignees.contains(viewer) && !reviewed && !own;

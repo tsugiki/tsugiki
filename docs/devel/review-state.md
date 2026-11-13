@@ -3,12 +3,23 @@
 Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.md](../../CONTEXT.md).
 
 - A PR's review state is **Unreviewed**, **Reviewed**, or **Stale review**.
-- A **Review** is either a review submitted on GitHub (line comments included) or a **Local mark**.
+- A **Review** is either a review submitted on GitHub (line comments included) or a **Local mark**. The
+  latest one counts, in any state, a dismissed one included, as staleness goes by commit. A review that only
+  replies to existing threads doesn't count.
 - A Review becomes stale only when the PR's diff outside **Generated files** changes. A merge from `main`, or
   a rebase that leaves the diff the same, does not count. Rebases are detected by comparing patch-ids file by
   file, each side diffed against its merge-base with the Target branch. Every whitespace change counts,
   trailing spaces included (`git patch-id --verbatim`): indentation matters in Python, and a false "stale"
   costs only a look. Files whose change is whitespace only are named as such.
+- Each open PR with the user's Review is checked in the background, once the Mirror worker has a head that
+  differs from the reviewed commit. The worker reads both commits' per-file patch-ids between its git jobs,
+  and `tsugiki.db` keeps them per commit and Target branch, so a second check of the same commits runs no
+  git. A head equal to the reviewed commit is Reviewed with no check.
+- While a check is pending, the PR keeps its last verdict, or Reviewed if it has none, so rows and counts
+  don't jump while git runs. A check that can't run (the mirror cloning or broken, no git, the reviewed commit
+  gone) gives a Stale review with the reason in the hover.
+- A merged or closed PR's check runs once on its final head and freezes with the PR. Its row keeps the
+  Stale review badge, but it never Needs attention.
 - A **Bot backport** shares its Origin PR's review state. A **Manual backport** is reviewed on its own.
 - A **Review request** always counts as Needs attention, including on a Bot backport or a Draft PR. A Local
   mark does not clear it.

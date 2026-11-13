@@ -8,13 +8,14 @@ use crate::github::replay::Replayer;
 use crate::github::testing::{Canned, Scripted, answered, reply_ok, signed_in_as, signed_in_gh};
 use crate::github::{CommitSha, Reply, Request, Transport, Unreachable};
 use crate::login::Login;
+use crate::patch_ids::{CommitPatches, FilePatch, PatchId, PatchesOf};
 use crate::repository::{RepositoryName, RepositorySize};
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
 use crate::status::testing::{
     announced, changes_board, failed_reads_board, heads_board, quiet_board, showing, watched_board,
 };
-use crate::status::{Change, FailedRead, ReadFailure};
+use crate::status::{Change, FailedRead, MirrorWork, ReadFailure};
 use crate::store::{ActivityFacts, ChangeCheck, SyncState};
 use crate::token::Token;
 use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
@@ -627,7 +628,7 @@ fn an_issue_github_doesnt_have_says_so() {
     );
     let access = replying(vec![signed_in(), gone]);
 
-    let failed = failed_reads_of_issue_7("gone-issue", access);
+    let failed = failed_reads_of_issue_7("gone-issue-read", access);
 
     assert_eq!(failed, [item_7_failed(ReadFailure::NotOnGitHub)]);
 }
@@ -1015,17 +1016,112 @@ fn a_sync_hands_the_mirror_the_heads_it_saved_of_the_prs_the_users_work_reaches_
         handed,
         (
             gcmon(),
-            vec![PrHead {
-                number: 7,
-                commit: moved,
-                target_branch: "main".to_owned(),
-            }],
-            vec![ReviewedCommit {
-                number: 8,
-                commit: reviewed,
-            }]
+            MirrorWork {
+                heads: vec![PrHead {
+                    number: 7,
+                    commit: moved,
+                    target_branch: "main".to_owned(),
+                }],
+                reviewed: vec![ReviewedCommit {
+                    number: 8,
+                    commit: reviewed.clone(),
+                }],
+                // Both sides of the Review the head moved on from, for the Stale review check.
+                patches: [reviewed, CommitSha::parse("4567def").unwrap()]
+                    .map(|commit| PatchesOf {
+                        commit,
+                        target_branch: "main".to_owned(),
+                    })
+                    .to_vec(),
+            }
         )
     );
+}
+
+/// Has a session keep the patch-ids the Mirror worker read of PR 8's head, which moved on from the user's
+/// Review, and gives the change the window heard and the patch-ids the store then holds.
+fn keeping_patches(
+    name: &str,
+    access: GitHubAccess,
+) -> (Change, BTreeMap<PatchesOf, Vec<FilePatch>>) {
+    let folders = temp_folders(name);
+    let store = Store::open(&folders.database()).unwrap();
+    store.remember_login(&Login::new("octocat")).unwrap();
+    let stored = vec![
+        stored_pr(7, "octocat", "89abcde"),
+        stored_pr(8, "some-author", "4567def"),
+    ];
+    store.save_pull_requests(&gcmon(), stored).unwrap();
+    let reviewed = CommitSha::parse("0123abc").unwrap();
+    store
+        .save_pull_request_content(&gcmon(), 8, reviewed_by("octocat", &reviewed))
+        .unwrap();
+    store.close();
+    let (board, changes) = changes_board();
+    let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
+    let head = CommitPatches {
+        of: PatchesOf {
+            commit: CommitSha::parse("4567def").unwrap(),
+            target_branch: "main".to_owned(),
+        },
+        files: vec![FilePatch {
+            path: "Lib/ast.py".to_owned(),
+            verbatim: PatchId::parse(&"a".repeat(40)).unwrap(),
+            loose: PatchId::parse(&"b".repeat(40)).unwrap(),
+            generated: false,
+        }],
+    };
+
+    let mut keep = session.requests().patch_ids_keeper();
+    keep(&gcmon(), vec![head]);
+    let change = changes.recv_timeout(PLENTY).unwrap();
+    let held = session
+        .reader()
+        .work_facts(&gcmon())
+        .unwrap()
+        .reviews
+        .patches;
+    session.stop(PLENTY);
+    fs::remove_dir_all(folders.data).unwrap();
+    (change, held)
+}
+
+#[test]
+fn the_session_keeps_the_patch_ids_the_mirror_read_and_tells_the_window_whose_they_are() {
+    let (change, held) = keeping_patches("keeps-patches", replying(vec![signed_in()]));
+
+    assert_eq!(
+        change,
+        Change {
+            repository: gcmon(),
+            items: vec![8],
+        }
+    );
+    assert_eq!(held.len(), 1);
+}
+
+#[test]
+fn a_session_with_no_token_keeps_patch_ids_too() {
+    let access = GitHubAccess {
+        transport: Box::new(Canned(Err(Unreachable::Offline))),
+        run_gh: without_gh,
+    };
+
+    let (change, held) = keeping_patches("keeps-patches-offline", access);
+
+    assert_eq!(change.items, [8]);
+    assert_eq!(held.len(), 1);
+}
+
+#[test]
+fn patch_ids_the_store_cant_keep_show_its_problem() {
+    let (board, seen) = watched_board();
+    let mut board = board;
+    let store = Store::stopped();
+
+    keep_patches(&mut board, &store, &gcmon(), vec![]);
+
+    assert!(matches!(showing(&seen), Status::Problem { .. }));
 }
 
 /// A PR's Conversation with one Review by `author`, of `commit`.
@@ -1213,12 +1309,10 @@ fn heard_board(
         shown += 1;
         on_status(shown);
     }))
-    .with_heads(Box::new(
-        move |_: &RepositoryName, handed: Vec<PrHead>, _| {
-            let numbers = handed.iter().map(|head| head.number).collect();
-            heads.send(Heard::Heads(numbers)).unwrap();
-        },
-    ))
+    .with_heads(Box::new(move |_: &RepositoryName, work: MirrorWork| {
+        let numbers = work.heads.iter().map(|head| head.number).collect();
+        heads.send(Heard::Heads(numbers)).unwrap();
+    }))
     .with_changes(Box::new(move |change: &Change| {
         changes.send(Heard::Changed(change.items.clone())).unwrap();
         changed += 1;

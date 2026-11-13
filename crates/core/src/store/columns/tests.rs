@@ -83,6 +83,17 @@ fn a_commit_sha_column_refuses_text_that_isnt_one() {
 }
 
 #[test]
+fn a_patch_id_column_refuses_text_that_isnt_one() {
+    let refused =
+        Connection::open_in_memory()
+            .unwrap()
+            .query_row("SELECT 'abc1234' AS value", [], |row| {
+                row.get::<_, crate::patch_ids::PatchId>("value")
+            });
+    assert!(refused.is_err());
+}
+
+#[test]
 fn a_filter_query_reads_back_as_itself_and_refuses_a_blank() {
     let query = FilterQuery::try_from("is:open".to_owned()).unwrap();
     assert_eq!(stored_texts(&[query]), ["is:open"]);

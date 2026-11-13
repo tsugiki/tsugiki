@@ -25,10 +25,13 @@ use crate::repository::RepositoryName;
 use crate::status::Status;
 use crate::token::{RunGh, read_token};
 
+mod lookup;
 mod patches;
 mod reviewed;
 mod source;
 mod upkeep;
+use lookup::{Lookup, Move};
+pub use lookup::{LookupAt, LookupCheckout};
 use patches::Patches;
 use reviewed::{KeepReviewed, Reviews};
 pub use source::{CloneRefusal, MirrorSource, MirrorSources};
@@ -317,6 +320,10 @@ enum Message {
     First(RepositoryName, PrHead),
     /// A PR the user opened, whose ref stays until the next launch.
     Opened(RepositoryName, u32),
+    /// Where the PR on screen wants a Repository's Lookup checkout.
+    LookUp(RepositoryName, LookupAt),
+    /// A reader asks where a Repository's Lookup checkout is, once it has stopped moving.
+    Checkout(RepositoryName, Sender<Option<LookupCheckout>>),
     /// Whether to hold back the next git, while GitHub can't be reached.
     Hold(bool),
     /// The user asks the worker to look at git and the disk again.
@@ -425,6 +432,21 @@ impl MirrorRequests {
         self.send(Message::Opened(repository, number));
     }
 
+    /// Moves `repository`'s **Lookup checkout** to `at`, the PR on screen, in the background. The checkout
+    /// is made on the first call.
+    pub fn look_up(&self, repository: RepositoryName, at: LookupAt) {
+        self.send(Message::LookUp(repository, at));
+    }
+
+    /// Where `repository`'s Lookup checkout is, once the moves under way and due have ended: so a lookup
+    /// asked during a move reads the new commit. None when no move has put it anywhere since launch, the
+    /// last one failed, or the worker has stopped.
+    pub fn lookup_checkout(&self, repository: RepositoryName) -> Option<LookupCheckout> {
+        let (reply, answer) = mpsc::channel();
+        self.send(Message::Checkout(repository, reply));
+        answer.recv().ok().flatten()
+    }
+
     /// Looks at git and the disk again, and tries each clone that waits for them or failed.
     pub fn check_again(&self) {
         self.send(Message::CheckAgain);
@@ -443,10 +465,15 @@ impl MirrorRequests {
     }
 }
 
-/// Requests that reach a test rather than a worker, which hears each head asked for first, and says which
-/// clones wait for an answer.
+/// Requests that reach a test rather than a worker, which hears each head asked for first and each move of
+/// a Lookup checkout, and says which clones wait for an answer.
 #[cfg(test)]
-pub(crate) struct HeardRequests(Receiver<Message>, LatestWriter<Vec<RepositoryName>>);
+pub(crate) struct HeardRequests {
+    messages: Receiver<Message>,
+    asked: LatestWriter<Vec<RepositoryName>>,
+    /// What the test hasn't asked for yet, of what it heard.
+    unasked: std::cell::RefCell<Vec<Message>>,
+}
 
 #[cfg(test)]
 impl HeardRequests {
@@ -458,31 +485,54 @@ impl HeardRequests {
             prefixes: Vec::new(),
             asking,
         };
-        (requests, Self(heard, asked))
+        let heard = Self {
+            messages: heard,
+            asked,
+            unasked: std::cell::RefCell::default(),
+        };
+        (requests, heard)
     }
 
     /// Has the clones of `repositories` wait for an answer, as the worker would.
     pub(crate) fn asking(&mut self, repositories: &[RepositoryName]) {
-        self.1.set(&repositories.to_vec());
+        self.asked.set(&repositories.to_vec());
     }
 
     /// The heads asked for first since the last call.
     pub(crate) fn firsts(&self) -> Vec<(RepositoryName, PrHead)> {
-        let heard = self.0.try_iter().filter_map(|message| match message {
-            Message::First(repository, head) => Some((repository, head)),
-            Message::Clone(..)
-            | Message::Heads(..)
-            | Message::Reviewed(..)
-            | Message::Patches(..)
-            | Message::PatchesTo(_)
-            | Message::Opened(..)
-            | Message::Hold(_)
-            | Message::CheckAgain
-            | Message::Progress(_)
-            | Message::Ended { .. }
-            | Message::Stop => None,
-        });
-        heard.collect()
+        self.take(|message| {
+            let Message::First(repository, head) = message else {
+                return Err(message);
+            };
+            Ok((repository, head))
+        })
+    }
+
+    /// The moves of Lookup checkouts asked for since the last call.
+    pub(crate) fn look_ups(&self) -> Vec<(RepositoryName, LookupAt)> {
+        self.take(|message| {
+            let Message::LookUp(repository, at) = message else {
+                return Err(message);
+            };
+            Ok((repository, at))
+        })
+    }
+
+    /// What `pick` takes of the messages heard, which keeps the others for the next call.
+    fn take<T>(&self, pick: impl Fn(Message) -> Result<T, Message>) -> Vec<T> {
+        let mut unasked = self.unasked.borrow_mut();
+        let heard = unasked
+            .drain(..)
+            .chain(self.messages.try_iter())
+            .collect::<Vec<_>>();
+        let mut taken = Vec::new();
+        for message in heard {
+            match pick(message) {
+                Ok(picked) => taken.push(picked),
+                Err(other) => unasked.push(other),
+            }
+        }
+        taken
     }
 }
 
@@ -658,6 +708,7 @@ enum Job {
     Fetch(Fetch),
     Reviewed(KeepReviewed),
     Upkeep(Upkeep),
+    Lookup(Move),
 }
 
 /// A clone under way.
@@ -723,6 +774,8 @@ struct Heads {
     reviews: Reviews,
     /// The commits whose patch-ids the Stale review check needs.
     patches: Patches,
+    /// The Repository's Lookup checkout.
+    lookup: Lookup,
 }
 
 /// The outcome of a fetch that succeeded, for the heads it asked for.
@@ -899,6 +952,10 @@ impl Worker {
                     self.put_first(&repository, head);
                 }
                 Ok(Message::Opened(repository, number)) => self.note_opened(&repository, number),
+                Ok(Message::LookUp(repository, at)) => self.look_up(&repository, at),
+                Ok(Message::Checkout(repository, reply)) => {
+                    self.lookup_checkout(&repository, reply)
+                }
                 Ok(Message::Hold(held)) => {
                     self.heard_news();
                     if held != (self.pace == Pace::Held) {
@@ -934,7 +991,8 @@ impl Worker {
             Some(
                 Job::Fetch(Fetch { mut git, .. })
                 | Job::Reviewed(KeepReviewed { mut git, .. })
-                | Job::Upkeep(Upkeep { mut git, .. }),
+                | Job::Upkeep(Upkeep { mut git, .. })
+                | Job::Lookup(Move { mut git, .. }),
             ) => {
                 let _succeeded = git.stop();
                 wait_for_helpers(incoming);
@@ -967,7 +1025,7 @@ impl Worker {
         }
         let cloning = match &self.job {
             Some(Job::Clone(clone)) => Some(&clone.cloning.repository),
-            Some(Job::Fetch(_) | Job::Reviewed(_) | Job::Upkeep(_)) | None => None,
+            Some(Job::Fetch(_) | Job::Reviewed(_) | Job::Upkeep(_) | Job::Lookup(_)) | None => None,
         };
         if cloning.is_some_and(|cloning| cloning.is_same(&repository)) {
             return;
@@ -1003,6 +1061,7 @@ impl Worker {
             Job::Fetch(fetch) => self.finish_fetch(fetch, last_words),
             Job::Reviewed(keeping) => self.finish_reviewed(keeping, last_words),
             Job::Upkeep(upkeep) => self.finish_upkeep(upkeep, last_words),
+            Job::Lookup(moving) => self.finish_lookup_move(moving, last_words),
         }
     }
 
@@ -1023,6 +1082,7 @@ impl Worker {
                 viewed: BTreeSet::new(),
                 reviews: Reviews::default(),
                 patches: Patches::default(),
+                lookup: Lookup::default(),
             })
     }
 
@@ -1040,7 +1100,7 @@ impl Worker {
         match &mut self.job {
             Some(Job::Fetch(fetch)) => fetch.news = true,
             Some(Job::Reviewed(keeping)) => keeping.news = true,
-            Some(Job::Clone(_) | Job::Upkeep(_)) | None => {}
+            Some(Job::Clone(_) | Job::Upkeep(_) | Job::Lookup(_)) | None => {}
         }
     }
 
@@ -1092,9 +1152,10 @@ impl Worker {
         self.heads.push_front(known);
     }
 
-    /// Starts the next git, unless one is under way. A fetch goes ahead of a clone, as it takes a moment
-    /// and a clone can take minutes, and both go ahead of a mirror's upkeep, which can wait. Nothing starts
-    /// without a usable git, and short of disk only fetches and upkeep do.
+    /// Starts the next git, unless one is under way. A Lookup checkout's move goes first, as a reader may
+    /// wait for it and it needs no network. A fetch goes ahead of a clone, as it takes a moment and a clone
+    /// can take minutes, and both go ahead of a mirror's upkeep, which can wait. Nothing starts without a
+    /// usable git, and short of disk only moves, fetches and upkeep do.
     fn start_next(&mut self) {
         // Before the checks, so a wait that is over leaves `next_due` even while nothing can start.
         self.retry_due();
@@ -1108,6 +1169,7 @@ impl Worker {
         ) {
             return;
         }
+        self.start_lookup_move();
         self.start_fetch_or_clone();
         if self.job.is_none() {
             self.start_upkeep();
@@ -1565,7 +1627,7 @@ impl Worker {
     fn state_of(&self, repository: &RepositoryName) -> MirrorState {
         let cloning = match &self.job {
             Some(Job::Clone(clone)) => Some(&clone.cloning),
-            Some(Job::Fetch(_) | Job::Reviewed(_) | Job::Upkeep(_)) | None => None,
+            Some(Job::Fetch(_) | Job::Reviewed(_) | Job::Upkeep(_) | Job::Lookup(_)) | None => None,
         };
         if let Some(cloning) = cloning.filter(|cloning| cloning.repository.is_same(repository)) {
             return MirrorState::Cloning {

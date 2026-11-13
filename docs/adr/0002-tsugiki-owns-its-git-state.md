@@ -25,15 +25,11 @@ means Tsugiki cannot disturb the user's branches, remotes or worktrees.
 
 ## Consequences
 
-- Symbol lookup in v1 runs `git grep` against the PR's head commit (and its base commit for removed lines),
-  behind a "definitions of X at commit C" interface. It looks for Python's `def`, `async def`, `class` and
-  module-level `NAME =`; C in CPython's style (a line starting with `NAME(` under its return type, one-line
-  definitions, `#define`, `struct`, `enum` and `typedef`); and reST directives in `Doc/` such as `..
-  function::` and `.. c:function::`. Hits are ranked by the same file, the same directory, the same language,
-  then the rest. For other languages, or with no hit, it falls back to a whole-word search, labelled as such.
-  It stops at 2 seconds or 50 hits. An LSP-backed implementation (clangd, pyright) can be added later behind
-  the same interface. It was deferred because CPython on Windows has no `compile_commands.json`, needs a
-  per-branch `pyconfig.h`, and clangd needs 1–2 GB of RAM plus a base-side index.
+- Symbol lookup asks a language server, which reads a **Lookup checkout** of the mirror: see
+  [ADR 0020](0020-go-to-definition-asks-a-language-server-which-reads-a-lookup-checkout.md). This ADR first
+  planned `git grep` with a regex for each language's definitions, and deferred language servers because
+  CPython on Windows has no `compile_commands.json`, needs a per-branch `pyconfig.h`, and clangd needs 1–2 GB
+  of RAM plus a base-side index. ADR 0020 says how each of those was met.
 - The **Review checkout** is made on the first Open in editor, as a detached worktree of the mirror in
   `repos\<owner>__<name>\checkout\`. Each Open in editor moves it to that PR's current head, with no branches.
   If it has changes, Tsugiki asks first: Discard and switch, Copy as patch (its `git diff` to the clipboard),

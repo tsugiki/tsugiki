@@ -210,7 +210,7 @@ fn write_upkept(repository: &RepositoryName, mirror: &Path, upkept: Upkept) {
 }
 
 /// Deletes the folder at `path`, which may not be there.
-fn remove_if_there(path: &Path) -> io::Result<()> {
+pub(super) fn remove_if_there(path: &Path) -> io::Result<()> {
     match fs::remove_dir_all(path) {
         Err(cause) if cause.kind() == io::ErrorKind::NotFound => Ok(()),
         other => other,
@@ -427,6 +427,7 @@ impl Worker {
             let _ = known.waiting.entry(number).or_insert(commit);
         }
         known.reviews.keep_again();
+        known.lookup.forget();
         self.heads.push_front(known);
         self.wait(repository.clone(), Turn::Next, None);
         true

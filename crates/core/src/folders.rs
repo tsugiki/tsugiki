@@ -28,6 +28,8 @@ impl Os {
 
 /// A **Mirror**'s folder, in its Repository's folder.
 const MIRROR: &str = "mirror.git";
+/// The **Lookup checkout**'s folder, in its Repository's folder.
+const LOOKUP: &str = "lookup";
 
 /// The root of the repo this program was built from, two folders up from this crate's, where `just dev` runs.
 /// None once the checkout has moved or gone, or on a machine that never had it.
@@ -84,6 +86,11 @@ impl Folders {
     /// Where a Repository's **Mirror** is, in its folder.
     pub fn mirror(&self, repository: &RepositoryName) -> PathBuf {
         self.repository(repository).join(MIRROR)
+    }
+
+    /// Where a Repository's **Lookup checkout** is, beside its Mirror.
+    pub fn lookup(&self, repository: &RepositoryName) -> PathBuf {
+        self.repository(repository).join(LOOKUP)
     }
 
     /// Where `settings.toml` is, unless `settings_path` in `machine.toml` says otherwise.

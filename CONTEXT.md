@@ -185,6 +185,12 @@ A single working tree that Tsugiki owns and switches to the head of whichever PR
 editor can be opened on it. It is never one of the user's own worktrees.
 _Avoid_: Sandbox, scratch worktree
 
+**Lookup checkout**:
+A second working tree of a **Repository**'s **Mirror**, which Tsugiki moves to the base of whichever PR is on
+screen, with the PR's added files, for the language servers and text search to read. Nobody opens it in an
+editor, so it moves without asking. It is not the **Review checkout**.
+_Avoid_: Base checkout, index checkout
+
 **Definition peek**:
 An inline view, opened from a symbol in a diff, of where that symbol is defined at the commit the line comes
 from. **Go to definition** opens the same place in full instead.

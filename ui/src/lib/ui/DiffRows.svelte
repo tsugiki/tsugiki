@@ -8,9 +8,11 @@
      as it is tall, and the tab measures it once drawn (#184). A thread on a line no hunk shows opens the
      lines around it, with buttons above and below for the lines still hidden, and the threads on files no
      longer in the diff come under a heading after the last file (#185). One file at a time, it shows the
-     page on show: the NEWS entries, one file, or those threads (#605). -->
+     page on show: the NEWS entries, one file, or those threads (#605). A click on a word of code puts the
+     caret on it and highlights it, and a double-click selects it, for Go to definition (#437). -->
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
+  import type { Column, Pick, PickedLine } from "$lib/state/pick";
   import {
     EXPAND,
     type DiffFile,
@@ -145,6 +147,47 @@
     };
   };
 
+  /** Picks the word at offset `offset` into `node` for a click on `target`, and returns the pick. It drops
+   * the pick when no word of a line of code is there, or the click landed outside that line's code. A
+   * line's code starts with its marker: a caret before it is on no word, and one after it is at the start
+   * of the line, as in an editor. */
+  const pickAt = (target: EventTarget | null, node: Node | null, offset: number): Pick | undefined => {
+    const element =
+      (node instanceof Element ? node : node?.parentElement)?.closest<HTMLElement>(
+        ".text:is([data-row], [data-line])",
+      ) ?? undefined;
+    // A click past the end of a line, or on a line's number, can leave the caret in some line's code.
+    if (node === null || element === undefined || !(target instanceof Node) || !element.contains(target)) {
+      diff.dropPick();
+      return undefined;
+    }
+    const data = element.dataset;
+    const at: PickedLine =
+      data["row"] === undefined
+        ? { kind: "line", file: Number(data["file"]), line: Number(data["line"]) }
+        : { kind: "row", row: Number(data["row"]) };
+    const column = data["column"] === "left" || data["column"] === "right" ? data["column"] : null;
+    const before = document.createRange();
+    before.setStart(element, 0);
+    before.setEnd(node, offset);
+    return diff.pickWord(at, column, before.toString().length - 1, false);
+  };
+
+  /** The pick the last single click made, which a double-click selects. */
+  let clicked: Pick | undefined;
+
+  /** Selects the word the user picked, once it is drawn picked. */
+  const selectPicked = (region: HTMLElement) => {
+    const picked = [...region.querySelectorAll(".picked")];
+    // From before the word's first piece to after its last: the end moves forward over the pieces, and
+    // then the start moves back over them.
+    const range = document.createRange();
+    for (const piece of picked) range.setEndAfter(piece);
+    for (const piece of picked.reverse()) range.setStartBefore(piece);
+    getSelection()?.removeAllRanges();
+    getSelection()?.addRange(range);
+  };
+
   const counted = (change: FileChange) =>
     change.kind === "binary" ? "binary" : `+${String(change.added)} −${String(change.removed)}`;
   const named = (file: { path: string; old_path: string | null }) =>
@@ -159,19 +202,36 @@
 <!-- A line of code after its marker, highlighted once its spans come, with the search's matches in it
      marked. Each piece sits on one line, as the row keeps its text's spaces. -->
 <!-- prettier-ignore -->
-{#snippet code(marker: string, text: string, spans: Span[], found: Match[])}<span class="text">{marker}{#each pieces(text, spans, found) as piece, at (at)}{#if piece.highlight || piece.found}<span class={[piece.highlight && `hl-${piece.highlight}`, piece.found]}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</span>{/snippet}
+{#snippet code(marker: string, text: string, spans: Span[], found: Match[], where: PickedLine, column: Column)}<span class="text" data-row={where.kind === "row" ? where.row : undefined} data-file={where.kind === "line" ? where.file : undefined} data-line={where.kind === "line" ? where.line : undefined} data-column={column ?? undefined}>{marker}{#each pieces(text, spans, found, diff.pickedIn(where, column)) as piece, at (at)}{#if piece.caret}<span class="caret"></span>{/if}{#if piece.highlight || piece.found || piece.picked}<span class={[piece.highlight && `hl-${piece.highlight}`, piece.found, piece.picked && "picked"]}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</span>{/snippet}
 
 <!-- One side of a row side by side: a line's number and its code. -->
 <!-- prettier-ignore -->
-{#snippet side(kind: string, number: number, marker: string, text: string, spans: Span[], found: Match[])}<span class={`side ${kind}`}><span class="number">{number}</span><span class="clip">{@render code(marker, text, spans, found)}</span></span>{/snippet}
+{#snippet side(kind: string, number: number, marker: string, text: string, spans: Span[], found: Match[], where: PickedLine, column: Column)}<span class={`side ${kind}`}><span class="number">{number}</span><span class="clip">{@render code(marker, text, spans, found, where, column)}</span></span>{/snippet}
 
 <!-- A side with nothing on it, as the right side of a removed row has, or one whose row hasn't come. -->
 {#snippet blank(kind: string)}<span class={`side ${kind}`}></span>{/snippet}
 
 <!-- A line of context side by side: its old number and its new, with its code and its matches on both
      sides. -->
-{#snippet both(kind: string, old: number, line: number, text: string, spans: Span[], found: Match[])}
-  {@render side(kind, old, " ", text, spans, found)}{@render side(kind, line, " ", text, spans, found)}
+{#snippet both(
+  kind: string,
+  old: number,
+  line: number,
+  text: string,
+  spans: Span[],
+  found: Match[],
+  where: PickedLine,
+)}
+  {@render side(kind, old, " ", text, spans, found, where, "left")}{@render side(
+    kind,
+    line,
+    " ",
+    text,
+    spans,
+    found,
+    where,
+    "right",
+  )}
 {/snippet}
 
 <!-- Side by side, one side of a change: row `index` of the diff, removed or added, the note that the line
@@ -181,9 +241,33 @@
   {#if index === null}
     {@render blank("")}
   {:else if row?.kind === "removed"}
-    {@render side("removed", row.old, "-", row.text, diff.spans(index) ?? [], diff.foundIn(index))}
+    {@render side(
+      "removed",
+      row.old,
+      "-",
+      row.text,
+      diff.spans(index) ?? [],
+      diff.foundIn(index),
+      {
+        kind: "row",
+        row: index,
+      },
+      "left",
+    )}
   {:else if row?.kind === "added"}
-    {@render side("added", row.new, "+", row.text, diff.spans(index) ?? [], diff.foundIn(index))}
+    {@render side(
+      "added",
+      row.new,
+      "+",
+      row.text,
+      diff.spans(index) ?? [],
+      diff.foundIn(index),
+      {
+        kind: "row",
+        row: index,
+      },
+      "right",
+    )}
   {:else if row?.kind === "note"}
     <span class="side note"
       ><span class="number"></span><span class="clip"><span class="text">{row.text}</span></span></span
@@ -242,8 +326,10 @@
 {/snippet}
 
 <!-- A region that scrolls takes focus, so the keys scroll it (axe's scrollable-region-focusable). The Detail
-     pane's ↑ and ↓ scroll it too while the Issue list is hidden, which `data-scrolls` marks it for. -->
-<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+     pane's ↑ and ↓ scroll it too while the Issue list is hidden, which `data-scrolls` marks it for. A click
+     picks a word in it, which the keys can't yet: a caret the keys move waits for after v1 (scope.md). -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
   class="scroller mono"
   role="region"
@@ -262,6 +348,29 @@
   onscroll={(event) => {
     scrollTop = event.currentTarget.scrollTop;
     scrollLeft = event.currentTarget.scrollLeft;
+  }}
+  onclick={(event) => {
+    // A double-click's second click leaves the word to the double-click.
+    if (event.detail > 1) return;
+    clicked = undefined;
+    // A button, a link or a field keeps the pick.
+    const target = event.target;
+    if (target instanceof Element && target.closest("button, a, input, textarea, select, summary")) return;
+    const selection = getSelection();
+    // A drag selects text to copy, and leaves the pick where it was.
+    if (selection === null || !selection.isCollapsed) return;
+    clicked = pickAt(target, selection.focusNode, selection.focusOffset);
+  }}
+  ondblclick={async (event) => {
+    const region = event.currentTarget;
+    // The browser's own word can run past an identifier, as through the dot of `self.name`, so the
+    // double-click selects the word its first click picked, if that click picked one.
+    const pick = clicked;
+    clicked = undefined;
+    if (pick === undefined || diff.picked !== pick) return;
+    diff.pickWord(pick.at, pick.column, pick.start, true);
+    await tick();
+    selectPicked(region);
   }}
 >
   <div bind:this={newsBox} bind:clientHeight={newsHeight}>
@@ -289,7 +398,11 @@
       {:else if at.kind === "line" && sideBySide}
         {@const line = diff.line(at.file, at.new)}
         <div class="row split" style:top={`${String(place * ROW)}px`}>
-          {@render both("context expanded", at.old, at.new, line.text, line.spans, [])}
+          {@render both("context expanded", at.old, at.new, line.text, line.spans, [], {
+            kind: "line",
+            file: at.file,
+            line: at.new,
+          })}
         </div>
       {:else if at.kind === "line"}
         {@const line = diff.line(at.file, at.new)}
@@ -299,6 +412,8 @@
             line.text,
             line.spans,
             [],
+            { kind: "line", file: at.file, line: at.new },
+            null,
           )}
         </div>
       {:else if at.kind === "pair"}
@@ -338,6 +453,7 @@
               row.text,
               diff.spans(index) ?? [],
               diff.foundIn(index),
+              { kind: "row", row: index },
             )}
           </div>
         {:else}
@@ -380,6 +496,8 @@
                 row.text,
                 diff.spans(index) ?? [],
                 diff.foundIn(index),
+                { kind: "row", row: index },
+                null,
               )}
             {:else if row?.kind === "added"}
               <span class="number"></span><span class="number">{row.new}</span>{@render code(
@@ -387,6 +505,8 @@
                 row.text,
                 diff.spans(index) ?? [],
                 diff.foundIn(index),
+                { kind: "row", row: index },
+                null,
               )}
             {:else if row?.kind === "removed"}
               <span class="number">{row.old}</span><span class="number"></span>{@render code(
@@ -394,6 +514,8 @@
                 row.text,
                 diff.spans(index) ?? [],
                 diff.foundIn(index),
+                { kind: "row", row: index },
+                null,
               )}
             {/if}
           </div>
@@ -592,6 +714,20 @@
   .text :global(.current) {
     background: var(--find-current);
     color: var(--find-current-fg);
+  }
+
+  /* The word the user picked, on a tint of the accent, with a caret that takes no room. */
+  .text :global(.picked) {
+    background: color-mix(in srgb, var(--accent) 25%, transparent);
+  }
+
+  .caret {
+    display: inline-block;
+    width: 0;
+    height: 14px;
+    margin-right: -1px;
+    border-left: 1px solid currentColor;
+    vertical-align: -3px;
   }
 
   /* The theme's syntax colours, in the rows and in the code of a thread. The classes come from the spans,

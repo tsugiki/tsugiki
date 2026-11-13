@@ -34,7 +34,7 @@ fn other_headers_and_the_name_s_case_dont_matter() {
 fn a_header_block_without_a_length_or_past_the_most_can_t_be_read_past() {
     for text in [
         "Content-Length: lots\r\nX-Other: 1\r\n\r\n{}",
-        "Content-Lenght: 2\r\n\r\n{}",
+        "X-Content-Length: 2\r\n\r\n{}",
         "Content-Length: 99999999999\r\n\r\n",
     ] {
         let error = read(&mut frames(text)).unwrap_err();

@@ -71,6 +71,7 @@ export function isChordStart(name: string): name is ChordStart {
 /** The chords from `docs/devel/keyboard.md`, named as `chordName` names them. Each has no action until its
  * stage: the screen that owns one binds it, as `RepositoryHome` binds `ctrl+k z` and the page `ctrl+k t`. */
 const OWNED_CHORDS = [
+  "ctrl+k j",
   "ctrl+k m",
   "ctrl+k o",
   "ctrl+k p",

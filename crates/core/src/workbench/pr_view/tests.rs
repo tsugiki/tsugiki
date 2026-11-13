@@ -9,7 +9,9 @@ use crate::github::pull_request_content::{
 };
 use crate::github::pull_requests::{PullRequestFacts, ReviewState};
 use crate::login::Login;
-use crate::workbench::testing::{ViewWorld, fixing, issue, stranger};
+use crate::workbench::testing::{
+    ViewWorld, backport, bots_backport, fixing, issue, someone, stranger,
+};
 
 fn view(world: &ViewWorld, number: u32) -> Option<PrView> {
     PrView::read(&world.reader, &world.settings(), number).unwrap()
@@ -35,6 +37,33 @@ fn a_pr_in_an_issues_tree_shows_its_row_before_tsugiki_has_read_its_conversation
     assert_eq!(view.row.number, 5);
     assert_eq!(view.row.title, "gh-1: Fix it");
     assert_eq!(view.content, None);
+    world.finish();
+}
+
+#[test]
+fn a_bot_backport_names_the_origin_pr_whose_review_state_it_shares() {
+    let world = ViewWorld::new("pr-view-shared-review");
+    let manual = backport(3, "[3.14] gh-1: Fix it (GH-1)", vec![Some(someone())]);
+    world.has(
+        vec![
+            stranger(),
+            bots_backport(2, "[3.14] gh-1: Fix it (GH-1)"),
+            manual,
+        ],
+        vec![issue(1)],
+    );
+
+    assert_eq!(view(&world, 2).unwrap().shares_review_of, Some(1));
+    assert_eq!(
+        view(&world, 3).unwrap().shares_review_of,
+        None,
+        "a Manual backport"
+    );
+    assert_eq!(
+        view(&world, 1).unwrap().shares_review_of,
+        None,
+        "the Origin PR"
+    );
     world.finish();
 }
 

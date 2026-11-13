@@ -118,6 +118,9 @@ export class DetailState<View extends { content: unknown }> {
     clearInterval(this.#reading);
   }
 
+  /** Hears each answer the core gives, once `view` holds it, for a view to pass on what it reads. */
+  protected heard?(view: View | null): void;
+
   #fetch = () => this.#say(this.#commands.fetch(this.#repository, this.number));
 
   async #say(asked: ReturnType<DetailCommands<View>["open"]>) {
@@ -141,6 +144,7 @@ export class DetailState<View extends { content: unknown }> {
     if (question !== this.#lastQuestion) return;
     if (answer.status === "ok") {
       this.view = answer.data;
+      this.heard?.(answer.data);
       this.error = undefined;
       // A view that has stopped or hidden is no longer on screen, though its last answer can still arrive.
       if (!this.#stopped && !this.#hidden)

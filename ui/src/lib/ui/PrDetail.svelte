@@ -9,7 +9,7 @@
   import { prIcon } from "./octicons";
   import StateIcon from "./StateIcon.svelte";
   import StateWords from "./StateWords.svelte";
-  import { ago, headline } from "./workbench-row";
+  import { ago, headline, staleReviewLine } from "./workbench-row";
 
   let {
     repository,
@@ -94,6 +94,7 @@
     <p>{`Tsugiki doesn't hold PR #${String(pr.number)}.`}</p>
   {:else if pr.view}
     {@const view = pr.view}
+    {@const stale = staleReviewLine(view.your_review, view.shares_review_of)}
     <h2>
       <StateIcon icon={prIcon(view)} />
       <button class="link" onclick={() => void onGitHub({ kind: "pull_request", number: view.number })}>
@@ -118,6 +119,20 @@
         </button>
       {/each}
     </div>
+    {#if stale !== undefined}
+      <p class="stale">
+        <span title={stale}>{stale}</span>
+        <!-- A Bot backport's verdict read its Origin PR's commits, so its own files carry no marks. -->
+        {#if view.your_review.kind === "stale_review" && view.shares_review_of === null}
+          <button
+            type="button"
+            onclick={() => {
+              pr.reviewChanges();
+            }}>Review changes</button
+          >
+        {/if}
+      </p>
+    {/if}
     <div role="tabpanel" id="pr-tab-panel" aria-labelledby={`pr-tab-${pr.tab}`}>
       {#if pr.tab === "conversation"}
         {#if view.content}
@@ -168,6 +183,7 @@
   h2,
   h2 + .by,
   .tabs,
+  .stale,
   .detail:not(.files) [role="tabpanel"] {
     padding-inline: 16px;
   }
@@ -227,5 +243,27 @@
 
   [role="tab"]:focus-visible {
     outline: 1px solid var(--focus-border);
+  }
+
+  /* One line under the tabs, on either tab, while the user's Review is a Stale review. */
+  .stale {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    margin: 0;
+    padding-block: 6px;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stale span {
+    overflow: hidden;
+    color: var(--danger);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .stale button {
+    flex: none;
   }
 </style>

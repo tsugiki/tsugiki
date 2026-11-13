@@ -19,6 +19,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 | Show only the Detail pane / show the panes | `Ctrl+K Z` |
 | Unified ↔ side-by-side | `Ctrl+Alt+U` |
 | All files ↔ one file at a time | `Ctrl+K O`, or the command palette |
+| Open the files unchanged since a Stale review | `Ctrl+K J`, or the command palette |
 | Next / previous tab in the PR view | `Ctrl+PageDown` / `Ctrl+PageUp` |
 | Next / previous file in the Files tab | `Alt+PageDown` / `Alt+PageUp` |
 | Send comment | `Ctrl+Enter` |
@@ -46,6 +47,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   chord, as `Ctrl+K Z` is for the panes, because a free `Ctrl+Alt` letter would clash with AltGr, which
   Windows sends as `Ctrl+Alt` to type characters such as Polish ó on `AltGr+O`. VS Code's own `Ctrl+K O`
   opens the active file in a new window, which Tsugiki has no use for.
+- `Ctrl+K J` opens the files of a Stale review's Files tab that the Review left unchanged, as VS Code's
+  `Ctrl+K Ctrl+J` unfolds all its regions.
 - The command palette's quick open finds Issues, PRs, and files in the current PR. `?` lists the keys
   available in the current view.
 - Keybindings can be remapped on the Settings Keyboard page: click a key and press the new one; chords such as

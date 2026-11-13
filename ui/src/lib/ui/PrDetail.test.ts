@@ -78,6 +78,7 @@ const view: PrView = {
     ],
     earlier_reviews: 0,
   },
+  shares_review_of: null,
 };
 
 const NOW = new Date("2026-11-04T11:00:00Z");
@@ -225,6 +226,77 @@ it("opens a thread's place in the Files tab", async () => {
   expect(state.tab).toBe("files");
   expect(reveal).toHaveBeenCalledExactlyOnceWith("T1");
 });
+
+/** A PR whose Review at commit abc1234 went stale in three files, one of them only in whitespace. */
+const stale: PrView = {
+  ...view,
+  your_review: {
+    kind: "stale_review",
+    reviewed: "abc1234def5678abc1234def5678abc1234def56",
+    head: "def5678abc1234def5678abc1234def5678abc12",
+    files: [
+      { path: "Lib/ast.py", whitespace_only: false },
+      { path: "Lib/os.py", whitespace_only: true },
+      { path: "Lib/re.py", whitespace_only: false },
+    ],
+  },
+};
+
+/** The line over the tabs that says the user's Review is stale, if it shows. */
+const staleLine = () => document.querySelector(".stale")?.textContent.replace(/\s+/g, " ").trim();
+
+it("says over both tabs that the user's Review is stale, at which commit and how many files changed", async () => {
+  await shown(stale, 10);
+  const onConversation = staleLine();
+
+  await fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+
+  expect(onConversation).toBe(
+    "Your Review at abc1234 is stale: 3 files changed, 1 only in whitespace Review changes",
+  );
+  expect(staleLine()).toBe(onConversation);
+});
+
+it("opens the Files tab at the first file changed since the Review on Review changes", async () => {
+  const state = await shown(stale, 10);
+  const showChanges = vi.spyOn(state.files, "showChanges");
+
+  await fireEvent.click(screen.getByRole("button", { name: "Review changes" }));
+
+  expect(state.tab).toBe("files");
+  expect(showChanges).toHaveBeenCalledOnce();
+});
+
+it("names the Origin PR whose stale Review a Bot backport shares", async () => {
+  await shown({ ...stale, shares_review_of: 160662 }, 10);
+
+  // Its verdict read the Origin PR's commits, so the Backport's own files have nothing to point at.
+  expect(staleLine()).toBe(
+    "Your Review of #160662 at abc1234 is stale: 3 files changed, 1 only in whitespace",
+  );
+  expect(screen.queryByRole("button", { name: "Review changes" })).toBeNull();
+});
+
+it("says why a Review's check can't run over both tabs, with nothing to review yet", async () => {
+  const reviewed = "abc1234def5678abc1234def5678abc1234def56";
+  await shown({ ...view, your_review: { kind: "cant_check", reviewed, reason: { kind: "cloning" } } }, 10);
+
+  expect(staleLine()).toBe(
+    "Your Review at abc1234 may be stale: Tsugiki can't check it until the mirror is cloned",
+  );
+  expect(screen.queryByRole("button", { name: "Review changes" })).toBeNull();
+});
+
+it.each<PrView["your_review"]>([{ kind: "unreviewed" }, { kind: "reviewed" }])(
+  "says nothing over the tabs of a PR %j",
+  async (review) => {
+    await shown({ ...view, your_review: review }, 10);
+
+    expect(staleLine()).toBeUndefined();
+    await fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+    expect(staleLine()).toBeUndefined();
+  },
+);
 
 it("leaves a click on the tab already open alone", async () => {
   const state = await shown(view, 10);

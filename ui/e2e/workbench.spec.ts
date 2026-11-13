@@ -132,7 +132,7 @@ test("the quiet section unfolds, folds, and unfolds again for Alt+← back to an
   page,
 }) => {
   const done = { status: "ok", data: null } as const;
-  const ownView = { ...reviewRow, ...own, content: null };
+  const ownView = { ...reviewRow, ...own, content: null, shares_review_of: null };
   await mockCore(page, {
     home: cpython,
     workbench: {

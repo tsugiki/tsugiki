@@ -23,12 +23,20 @@ pub enum YourReview {
     Unreviewed,
     /// The PR's diff is the same as when the user reviewed it, or no check has said otherwise yet.
     Reviewed,
-    /// The PR's diff changed since the user's Review, in `files`.
+    /// The PR's diff changed since the user's Review of commit `reviewed`, in `files`, as the check of
+    /// commit `head` found. While a newer head waits for its check, `head` is the one the last check read.
     StaleReview {
+        #[specta(type = String)]
+        reviewed: CommitSha,
+        #[specta(type = String)]
+        head: CommitSha,
         files: Vec<ChangedFile>,
     },
-    /// A Stale review, as the check can't run for `reason` (#384). It runs once the reason goes away.
+    /// A Stale review of commit `reviewed`, as the check can't run for `reason` (#384). It runs once the
+    /// reason goes away.
     CantCheck {
+        #[specta(type = String)]
+        reviewed: CommitSha,
         reason: CantCheck,
     },
 }
@@ -120,6 +128,7 @@ fn your_review(
         .filter(|of| !reviews.patches.contains_key(of));
     if let Some(reason) = unread.into_iter().find_map(|of| reviews.unchecked.get(of)) {
         return YourReview::CantCheck {
+            reviewed: reviewed.clone(),
             reason: reason.clone(),
         };
     }
@@ -131,12 +140,17 @@ fn your_review(
 
 /// What the patch-ids of `reviewed` and `head` say, once the store holds both.
 fn verdict(reviews: &ReviewFacts, reviewed: &PatchesOf, head: &PatchesOf) -> Option<YourReview> {
+    let commits = (reviewed.commit.clone(), head.commit.clone());
     let (reviewed, head) = (reviews.patches.get(reviewed)?, reviews.patches.get(head)?);
     let files = changed_files(reviewed, head);
     Some(if files.is_empty() {
         YourReview::Reviewed
     } else {
-        YourReview::StaleReview { files }
+        YourReview::StaleReview {
+            reviewed: commits.0,
+            head: commits.1,
+            files,
+        }
     })
 }
 

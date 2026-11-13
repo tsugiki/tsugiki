@@ -50,6 +50,7 @@ const pr: PrView = {
     reviews: [],
     earlier_reviews: 0,
   },
+  shares_review_of: null,
 };
 
 const done = { status: "ok", data: null } as const;

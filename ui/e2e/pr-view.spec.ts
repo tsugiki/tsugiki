@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import type {
   DiffThread_Serialize as DiffThread,
   Filter,
@@ -58,6 +58,7 @@ const view: PrView = {
     ],
     earlier_reviews: 0,
   },
+  shares_review_of: null,
 };
 
 const done = { status: "ok", data: null } as const;
@@ -406,32 +407,45 @@ test("Ctrl+F searches the diff, marks the match it moves to, and Escape gives th
   await expect(pane.getByRole("region", { name: "Diff" })).toBeFocused();
 });
 
+/** A new file at `path` whose header is row `row`, adding `added` lines, which together are taller than the
+ * window. */
+const diffFile = (path: string, row: number, added: number) => ({
+  path,
+  old_path: null,
+  change: { kind: "lines", added, removed: 0 } as const,
+  row,
+  columns: 20,
+  generated: false,
+  gaps: [],
+  rest: null,
+  pairs: [{ row: row + 2, removed: 0, added }],
+});
+
+/** The rows of that file, its first line saying `first`. */
+const fileRows = (path: string, added: number, first: string) => [
+  { kind: "file" as const, path, old_path: null, change: { kind: "lines" as const, added, removed: 0 } },
+  { kind: "hunk" as const, text: `@@ -0,0 +1,${String(added)} @@` },
+  ...Array.from({ length: added }, (_, at) => ({
+    kind: "added" as const,
+    new: at + 1,
+    text: at === 0 ? first : `line ${String(at + 1)}`,
+  })),
+];
+
+/** The distance in whole pixels between the top of the `diff` region and the header of the file at `path`:
+ * the NEWS entries above the rows can end part of the way into a pixel. */
+const headerBelowTop = (diff: Locator, path: string) =>
+  diff.evaluate((region, path) => {
+    const header = [...region.querySelectorAll(".row.file")].find((row) => row.textContent.includes(path));
+    return header === undefined
+      ? undefined
+      : Math.trunc(Math.abs(header.getBoundingClientRect().top - region.getBoundingClientRect().top));
+  }, path);
+
 test("a PR opens one file at a time as the settings say, walks its files, and switches to all of them in place", async ({
   page,
 }) => {
   const news = "Misc/NEWS.d/next/Library/2026-11-12.gh-issue-7.abc.rst";
-  /** A new file at `path` whose header is row `row`, adding `added` lines, each taller than the window. */
-  const diffFile = (path: string, row: number, added: number) => ({
-    path,
-    old_path: null,
-    change: { kind: "lines", added, removed: 0 } as const,
-    row,
-    columns: 20,
-    generated: false,
-    gaps: [],
-    rest: null,
-    pairs: [{ row: row + 2, removed: 0, added }],
-  });
-  /** The rows of that file, its first line saying `first`. */
-  const fileRows = (path: string, added: number, first: string) => [
-    { kind: "file" as const, path, old_path: null, change: { kind: "lines" as const, added, removed: 0 } },
-    { kind: "hunk" as const, text: `@@ -0,0 +1,${String(added)} @@` },
-    ...Array.from({ length: added }, (_, at) => ({
-      kind: "added" as const,
-      new: at + 1,
-      text: at === 0 ? first : `line ${String(at + 1)}`,
-    })),
-  ];
   await mockCore(page, {
     settings: {
       settings: {
@@ -509,15 +523,7 @@ test("a PR opens one file at a time as the settings say, walks its files, and sw
   await expect(bar).toContainText("2 of 2");
   await expect(diff).toContainText("Fixed the parser.");
 
-  /** The distance in whole pixels between the top of the diff's region and the header of the file at
-   * `path`: the NEWS entries above the rows can end part of the way into a pixel. */
-  const belowTop = (path: string) =>
-    diff.evaluate((region, path) => {
-      const header = [...region.querySelectorAll(".row.file")].find((row) => row.textContent.includes(path));
-      return header === undefined
-        ? undefined
-        : Math.trunc(Math.abs(header.getBoundingClientRect().top - region.getBoundingClientRect().top));
-    }, path);
+  const belowTop = (path: string) => headerBelowTop(diff, path);
   // All the files, with the file that showed at the top.
   await page.keyboard.press("ControlOrMeta+k");
   await page.keyboard.press("o");
@@ -535,4 +541,83 @@ test("a PR opens one file at a time as the settings say, walks its files, and sw
   await toggle.click();
   await expect(bar).toHaveCount(0);
   await expect.poll(() => belowTop("Lib/ast.py")).toBe(0);
+});
+
+test("a stale PR says what changed since the Review over both tabs, and Review changes scrolls to the first changed file", async ({
+  page,
+}) => {
+  const paths = ["Doc/whatsnew.rst", "Lib/ast.py", "Lib/os.py", "Lib/re.py"];
+  const sizes = [40, 98, 40, 40];
+  const starts = sizes.map((_, at) => sizes.slice(0, at).reduce((sum, size) => sum + size + 2, 0));
+  const stale: PrView = {
+    ...view,
+    your_review: {
+      kind: "stale_review",
+      reviewed: "abc1234def5678abc1234def5678abc1234def56",
+      head: "0123abcdef",
+      files: [
+        { path: "Lib/ast.py", whitespace_only: false },
+        { path: "Lib/os.py", whitespace_only: true },
+      ],
+    },
+  };
+  await mockCore(page, {
+    themes: { status: "ok", data: themes },
+    home: { screen: "repository", repository, others: [] as string[] },
+    workbench: {
+      status: "ok",
+      data: { items: [issue], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
+    },
+    openPullRequest: done,
+    fetchPullRequest: done,
+    pullRequest: { status: "ok", data: stale },
+    pullRequestFiles: {
+      status: "ok",
+      data: {
+        state: "ready",
+        head: "0123abcdef",
+        base: "fedcba3210",
+        files: paths.map((path, at) => diffFile(path, starts[at] ?? 0, sizes[at] ?? 0)),
+        rows: sizes.reduce((sum, size) => sum + size + 2, 0),
+        news: [],
+        threads: { kind: "shown", threads: [] },
+      },
+    },
+    pullRequestRows: {
+      status: "ok",
+      data: paths.flatMap((path, at) => fileRows(path, sizes[at] ?? 0, `first of ${path}`)),
+    },
+  });
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "#7 Issue 7" })).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  const pane = page.getByRole("region", { name: "PR view" });
+  await expect(pane).toContainText("The fix");
+
+  const line = pane.locator(".stale");
+  await expect(line).toHaveText(
+    "Your Review at abc1234 is stale: 2 files changed, 1 only in whitespace Review changes",
+  );
+  await page.keyboard.press("ControlOrMeta+PageDown");
+  const diff = pane.getByRole("region", { name: "Diff" });
+  await expect(line).toContainText("Your Review at abc1234 is stale");
+  // The file the Review left unchanged starts folded.
+  await expect(diff.locator(".row.file").first()).toHaveText("▸Doc/whatsnew.rst+40 −0");
+  await expect(diff.locator(".row.file").nth(1)).toHaveText("▾Lib/ast.py+98 −0Changed since your Review");
+  // Away from the first changed file, Review changes brings its header to the top.
+  await page.keyboard.press("Alt+PageDown");
+  await page.keyboard.press("Alt+PageDown");
+  await expect.poll(() => headerBelowTop(diff, "Lib/os.py")).toBe(0);
+  await expect(diff).toContainText("Whitespace only");
+  await line.getByRole("button", { name: "Review changes" }).click();
+  await expect.poll(() => headerBelowTop(diff, "Lib/ast.py")).toBe(0);
+
+  // Ctrl+K J opens the files the Review left unchanged.
+  await page.keyboard.press("ControlOrMeta+k");
+  await page.keyboard.press("j");
+  await page.keyboard.press("Alt+PageUp");
+  await expect(diff).toContainText("first of Doc/whatsnew.rst");
 });

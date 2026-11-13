@@ -39,6 +39,25 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   sends nothing to GitHub, so a reopened PR starts each file as before. A jump into a collapsed file
   (`F7`, `F8`, Find in diff, **Go to definition**) opens it, and the rows of a collapsed file aren't
   highlighted until it opens.
+- A PR whose user's Review is a **Stale review** still opens on the Conversation tab
+  ([#155](https://github.com/tsugiki/tsugiki/issues/155)). Both tabs show one line under the tab bar: "Your
+  Review at abc1234 is stale: 3 files changed, 1 only in whitespace", with the commit the Review covered,
+  and a Review changes button that opens Files at the first changed file
+  ([#387](https://github.com/tsugiki/tsugiki/issues/387)). In Files, a changed file's header says "Changed
+  since your Review" or "Whitespace only", and each file the Review left unchanged starts collapsed, as a
+  Generated file does. `Ctrl+K J` and "View: Unfold Unchanged Files" in the command palette open them all.
+  The diff stays the whole PR; the interdiff since the Review is for later.
+  - Files marks and collapses files only when the check read the head the diff shows. While a newer head
+    waits for its check, the PR keeps the last verdict, of an older head, which could call a file unchanged
+    that the newest push changed. Until the check catches up, Files collapses only Generated files, and
+    Review changes opens it at the top.
+  - A Stale review whose check can't run has no files to name, so the line gives the reason in place of
+    the counts ("Your Review at abc1234 may be stale: Tsugiki can't check it until the mirror is cloned"),
+    with no Review changes, and Files collapses only Generated files.
+  - A **Bot backport** shares its Origin PR's review state, so its line names the Origin PR, "Your Review
+    of #123 at abc1234 is stale", and counts the Origin PR's files. That check read the Origin PR's
+    commits, not the Backport's, so the line has no Review changes, and the Backport's Files marks
+    nothing and collapses only Generated files.
 - A PR whose commits the mirror doesn't hold yet says "Fetching the PR's commits…" until they arrive. When
   the PR has moved on since the mirror's copy, the older diff stays readable under "Showing abc1234 · fetching
   the newer def5678", with the threads held back and counted, since their lines belong to the newer commit.

@@ -12,7 +12,8 @@
 // why until the tab asks again, which hands the head to the mirror once more (#233, #213). Hearing that
 // doesn't make the tab ask, so a ref GitHub leaves where it is starts no loop of fetches. The tab shows all
 // the files one under the other, or one file at a time, as `[diff] files` opens every PR and the user
-// switches the PR on show (#605).
+// switches the PR on show (#605). While the user's Review is a Stale review, each file says whether it
+// changed since, and those it left unchanged start collapsed too (#387).
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import {
   commands,
@@ -37,6 +38,7 @@ import {
   type PrFiles_Serialize,
   type Span,
   type Unfetched,
+  type YourReview,
 } from "$lib/data/bindings";
 import {
   DiffLayout,
@@ -100,6 +102,10 @@ const END = 2 ** 32 - 1;
 /** How long a chunk's rows wait for their spans before they show plain. The spans repaint the chunk when
  * they come. */
 export const SPANS_WAIT = 50;
+
+/** How a file's change stands against the user's Stale review (#387): changed since, changed only in
+ * whitespace, or the same as when the user reviewed it. */
+export type SinceReview = "changed" | "whitespace_only" | "unchanged";
 
 /** The view the Files tab shows diffs in. A Repository's page keeps one for all its PRs, so the view stays
  * as the user moves from PR to PR. */
@@ -187,8 +193,17 @@ export class PrFilesState {
   #chunks = new SvelteMap<number, DiffRow[]>();
   /** The spans of each row, by chunk, which come after its rows. */
   #spans = new SvelteMap<number, Span[][]>();
-  /** The files the user collapsed or opened, against how each starts, by their place among the files. */
-  #flippedFiles = new SvelteSet<number>();
+  /** Whether the user collapsed or opened each file they toggled, by its place among the files, which wins
+   * over how the file starts. */
+  #chosen = new SvelteMap<number, boolean>();
+  /** What the check found changed since the user's Review, while the PR view says it's a Stale review the
+   * check could run on: the head it read, and the paths it named, each with whether only in whitespace. The
+   * map is made anew with each verdict, so it needn't be reactive itself. */
+  #since = $state.raw<{ head: string; files: ReadonlyMap<string, boolean> }>();
+  /** The verdict `#since` holds, as text, so a read of the PR view with the same verdict changes nothing. */
+  #sinceKey = "";
+  /** Whether the tab shows the first file changed since the user's Review once the diff comes. */
+  #showingChanges = false;
   /** The lines expanded gaps show, by `file:line` at the head, once the core sends them. A gap shows the
    * lines held, so a click that fails shows nothing, and two that overlap ask for the same lines. */
   #lines = new SvelteMap<string, HeadLine>();
@@ -258,6 +273,24 @@ export class PrFilesState {
     this.#jumps = jumps;
     this.#choice = choice;
     this.mode = mode;
+  }
+
+  /** Takes the user's Review of the PR as the PR view read it (#387). A new verdict can open files the
+   * last one collapsed, and the core gave the chunks the tab holds no spans for their rows, so it asks again
+   * for the spans of each. */
+  followReview(review: YourReview | undefined) {
+    const stale = review?.kind === "stale_review" ? review : undefined;
+    const key = stale === undefined ? "" : JSON.stringify([stale.head, stale.files]);
+    if (key === this.#sinceKey) return;
+    this.#sinceKey = key;
+    this.#since = stale && {
+      head: stale.head,
+      // eslint-disable-next-line svelte/prefer-svelte-reactivity
+      files: new Map(stale.files.map((file) => [file.path, file.whitespace_only])),
+    };
+    const view = this.view;
+    if (view?.state !== "ready") return;
+    for (const chunk of this.#asked) void this.#respan(view, chunk);
   }
 
   /** The Repository the PR is in. */
@@ -350,7 +383,7 @@ export class PrFilesState {
       this.#chunks.clear();
       this.#spans.clear();
       this.#asked.clear();
-      this.#flippedFiles.clear();
+      this.#chosen.clear();
       this.#lines.clear();
       this.#held.clear();
       this.#lengths.clear();
@@ -374,6 +407,7 @@ export class PrFilesState {
       void this.#fetchLines(file, Math.max(1, line - AROUND), line + AROUND + 1);
     }
     if (this.#revealing !== undefined && answer?.state === "ready") this.reveal(this.#revealing);
+    if (this.#showingChanges && answer?.state === "ready") this.showChanges();
     // The rows of a new diff hold other matches, and the tab stays where the user is.
     if (anew && this.query !== "") void this.#search(this.query, false);
     // Mirror states told of while the core answered can be newer than the answer.
@@ -453,6 +487,8 @@ export class PrFilesState {
    * there once the threads come. A thread the tab doesn't show stays where it is. */
   reveal(id: string) {
     const view = this.view;
+    // The latest move wins over one that waits for the diff.
+    this.#showingChanges = false;
     if (view?.state !== "ready" || view.threads.kind === "held_back") {
       this.#revealing = id;
       return;
@@ -665,27 +701,103 @@ export class PrFilesState {
   }
 
   /** Whether the file at `file` among the diff's files shows only its header: a Generated file starts so,
-   * the rest start open, and the user's toggle turns either over until the PR opens again. */
+   * and so does one unchanged since the user's Stale review (#387). The rest start open, and the user's
+   * toggle sets either until the PR opens again. */
   collapsed(file: number): boolean {
     const view = this.view;
     const shown = view?.state === "ready" ? view.files[file] : undefined;
-    return shown !== undefined && shown.generated !== this.#flippedFiles.has(file);
+    if (shown === undefined) return false;
+    return this.#chosen.get(file) ?? (shown.generated || this.sinceReview(file) === "unchanged");
   }
 
-  /** Collapses the file at `file` to its header, or opens it. The core gave the chunks the tab holds no
-   * spans for the file's rows while it was collapsed, so opening it asks again for the spans of those that
-   * hold its rows. The core keeps the trees of the other files, so that costs little. */
+  /** Collapses the file at `file` to its header, or opens it. */
   toggle(file: number) {
     const view = this.view;
-    const shown = view?.state === "ready" ? view.files[file] : undefined;
-    if (view?.state !== "ready" || shown === undefined) return;
+    if (view?.state !== "ready" || view.files[file] === undefined) return;
     const opening = this.collapsed(file);
-    if (!this.#flippedFiles.delete(file)) this.#flippedFiles.add(file);
-    if (!opening) return;
-    const end = view.files[file + 1]?.row ?? view.rows;
+    this.#chosen.set(file, !opening);
+    if (opening) this.#opened(view, [file]);
+  }
+
+  /** How the file at `file` among the diff's files changed since the user's Review, by its path or its path
+   * before a rename, while that Review is a Stale review whose check read the head the diff shows (#387).
+   * Nothing otherwise: a verdict on another head, as while a newer head waits for its check, could call a
+   * file unchanged that changed since. Nothing for a Generated file either, which the check leaves out. */
+  sinceReview(file: number): SinceReview | undefined {
+    const since = this.#since;
+    const view = this.view;
+    if (since === undefined || view?.state !== "ready" || since.head !== view.head) return undefined;
+    const shown = view.files[file];
+    if (shown === undefined || shown.generated) return undefined;
+    const changed = since.files;
+    const whitespace =
+      changed.get(shown.path) ?? (shown.old_path === null ? undefined : changed.get(shown.old_path));
+    if (whitespace === undefined) return "unchanged";
+    return whitespace ? "whitespace_only" : "changed";
+  }
+
+  /** The places of the files unchanged since the user's Stale review that show only their header. */
+  #foldedUnchanged(): number[] {
+    const view = this.view;
+    const files = view?.state === "ready" ? view.files : [];
+    return files.flatMap((_, file) =>
+      this.sinceReview(file) === "unchanged" && this.collapsed(file) ? [file] : [],
+    );
+  }
+
+  /** How many files unchanged since the user's Stale review show only their header. */
+  get foldedUnchanged(): number {
+    return this.#foldedUnchanged().length;
+  }
+
+  /** Opens every file unchanged since the user's Stale review that shows only its header. */
+  unfoldUnchanged() {
+    const view = this.view;
+    if (view?.state !== "ready") return;
+    const folded = this.#foldedUnchanged();
+    for (const file of folded) this.#chosen.set(file, false);
+    this.#opened(view, folded);
+  }
+
+  /** Asks again for the spans of the chunks the tab holds that hold rows of the files that opened, `files`
+   * by their places. The core gave those chunks no spans for a file's rows while it was collapsed.
+   * It keeps the trees of the other files, so that costs little. */
+  #opened(view: Ready, files: readonly number[]) {
+    // A lookup for this call alone, which nothing draws from.
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
+    const opened = new Set(files);
+    const ranges = view.files.flatMap((shown, file) =>
+      opened.has(file) ? [{ start: shown.row, end: view.files[file + 1]?.row ?? view.rows }] : [],
+    );
     for (const chunk of this.#asked) {
-      if (chunk * CHUNK < end && shown.row < (chunk + 1) * CHUNK) void this.#respan(view, chunk);
+      const holds = ({ start, end }: { start: number; end: number }) =>
+        chunk * CHUNK < end && start < (chunk + 1) * CHUNK;
+      if (ranges.some(holds)) void this.#respan(view, chunk);
     }
+  }
+
+  /** Shows the first file changed since the user's Stale review from its top, opened, or the first page if
+   * the diff has none of them. Before the diff comes, it does so once the diff comes. */
+  showChanges() {
+    const view = this.view;
+    // The latest move wins over one that waits for the diff.
+    this.#revealing = undefined;
+    if (view?.state !== "ready") {
+      this.#showingChanges = true;
+      return;
+    }
+    this.#showingChanges = false;
+    const file = view.files.findIndex((_, at) => {
+      const since = this.sinceReview(at);
+      return since === "changed" || since === "whitespace_only";
+    });
+    if (file === -1) {
+      const first = this.pages.first;
+      if (first !== undefined) this.#show(first);
+      return;
+    }
+    if (this.collapsed(file)) this.toggle(file);
+    this.#show({ kind: "file", file });
   }
 
   /** Asks for a chunk's spans again, and paints them if they come while it still belongs. */

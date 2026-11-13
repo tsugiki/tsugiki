@@ -133,9 +133,9 @@ export type StateWord = { words: string; tone: WordTone; hover?: string };
 
 const fileCount = (count: number) => (count === 1 ? "1 file" : `${String(count)} files`);
 
-/** Why the Stale review check can't run, for the hover of a Stale review it couldn't check. */
-function cantCheckWords(reason: CantCheck): string {
-  const cant = "Tsugiki can't check your Review";
+/** Why the Stale review check can't run, for the hover of a Stale review it couldn't check, `cant` naming
+ * the Review. */
+function cantCheckWords(reason: CantCheck, cant = "Tsugiki can't check your Review"): string {
   switch (reason.kind) {
     case "cloning":
       return `${cant} until the mirror is cloned`;
@@ -148,6 +148,22 @@ function cantCheckWords(reason: CantCheck): string {
     case "refused":
       return `${cant}: GitHub refused to send the commit it covered`;
   }
+}
+
+/** The PR view's line over both tabs while the user's Review is a Stale review (#387): the commit the Review
+ * covered, then how many files changed since and how many of those only in whitespace, or why the check
+ * can't run. A Bot backport's line names its Origin PR, `origin`, whose Review it shares. Nothing while the
+ * PR is Unreviewed or Reviewed. */
+export function staleReviewLine(review: YourReview, origin: number | null): string | undefined {
+  if (review.kind !== "stale_review" && review.kind !== "cant_check") return undefined;
+  const of = origin === null ? "" : ` of #${String(origin)}`;
+  const yours = `Your Review${of} at ${review.reviewed.slice(0, 7)}`;
+  if (review.kind === "cant_check") {
+    return `${yours} may be stale: ${cantCheckWords(review.reason, "Tsugiki can't check it")}`;
+  }
+  const whitespace = review.files.filter((file) => file.whitespace_only).length;
+  const only = whitespace === 0 ? "" : `, ${String(whitespace)} only in whitespace`;
+  return `${yours} is stale: ${fileCount(review.files.length)} changed${only}`;
 }
 
 /** The word for where the user's Review stands. A Stale review's hover lists the files changed since the

@@ -10,6 +10,7 @@ import {
   type DiffThread,
   type PrFiles,
 } from "./pr-files.svelte";
+import type { YourReview } from "./workbench.svelte";
 
 type Heard = (event: { payload: unknown }) => void;
 
@@ -649,6 +650,197 @@ it("collapses nothing on a toggle of a file the diff lacks", async () => {
   files.toggle(3);
 
   expect(files.collapsed(3)).toBe(false);
+});
+
+const REVIEWED = "1".repeat(40);
+
+/** A Stale review whose check of head `abc` named `paths` as changed, those after a `~` only in
+ * whitespace. */
+const staleReview = (...paths: string[]): YourReview => staleAt("abc", ...paths);
+
+/** The same, from a check of head `head`. */
+const staleAt = (head: string, ...paths: string[]): YourReview => ({
+  kind: "stale_review",
+  reviewed: REVIEWED,
+  head,
+  files: paths.map((path) => ({ path: path.replace(/^~/, ""), whitespace_only: path.startsWith("~") })),
+});
+
+/** Five files and a Generated one: `Lib/ast.py` changed since the Review, `Lib/os.py` only in
+ * whitespace, and `Lib/new.py`, renamed from `Lib/old.py`, changed under its old name. */
+const reviewedDiff = () => {
+  const renamed = { ...file("Lib/new.py", 40), old_path: "Lib/old.py" };
+  return ready("abc", 60, [
+    file("Doc/whatsnew.rst", 0),
+    file("Lib/ast.py", 10),
+    file("Python/generated_cases.c.h", 20, true),
+    file("Lib/os.py", 30),
+    renamed,
+    file("Lib/re.py", 50),
+  ]);
+};
+
+/** A Files tab for PR 11 that has loaded `answer`, whose PR view says the user's Review is `review`. */
+const reviewed = async (answer: PrFiles, review: YourReview | undefined) => {
+  core.pullRequestFiles.mockResolvedValue(ok(answer));
+  const files = new PrFilesState("python/cpython", 11, timer());
+  files.followReview(review);
+  await files.load();
+  return files;
+};
+
+const ALL = [0, 1, 2, 3, 4, 5];
+
+it("starts the files unchanged since a Stale review folded, and says how each changed one did", async () => {
+  const files = await reviewed(reviewedDiff(), staleReview("Lib/ast.py", "~Lib/os.py", "Lib/old.py"));
+
+  expect(ALL.map((at) => files.collapsed(at))).toEqual([true, false, true, false, false, true]);
+  expect(ALL.map((at) => files.sinceReview(at))).toEqual([
+    "unchanged",
+    "changed",
+    // The check leaves Generated files out, and so does the tab.
+    undefined,
+    "whitespace_only",
+    "changed",
+    "unchanged",
+  ]);
+});
+
+it.each<[string, YourReview | undefined]>([
+  ["Unreviewed", { kind: "unreviewed" }],
+  ["Reviewed", { kind: "reviewed" }],
+  ["a check that can't run", { kind: "cant_check", reviewed: REVIEWED, reason: { kind: "cloning" } }],
+  ["a PR view that hasn't come", undefined],
+  // While a newer head waits for its check, the last verdict read an older one, which may miss a change.
+  ["a check of another head", staleAt("older", "Lib/ast.py")],
+])("folds nothing but Generated files for %s", async (_, review) => {
+  const files = await reviewed(reviewedDiff(), review);
+
+  expect(ALL.map((at) => files.collapsed(at))).toEqual([false, false, true, false, false, false]);
+  expect(ALL.map((at) => files.sinceReview(at))).toEqual(ALL.map(() => undefined));
+  expect(files.foldedUnchanged).toBe(0);
+});
+
+it("unfolds every folded unchanged file at once, and leaves Generated files and changed ones the user folded", async () => {
+  const files = await reviewed(withGenerated("abc"), staleReview("Lib/ast.py"));
+  files.toggle(0);
+  files.need(0, 20);
+  await vi.waitFor(() => {
+    expect(core.pullRequestSpans).toHaveBeenCalledTimes(2);
+  });
+  const folded = files.foldedUnchanged;
+
+  files.unfoldUnchanged();
+
+  expect(folded).toBe(1);
+  expect(files.foldedUnchanged).toBe(0);
+  expect([0, 1, 2].map((at) => files.collapsed(at))).toEqual([true, true, false]);
+  // Opening Lib/os.py asks again for the spans of the chunk that holds its rows, and names the files still
+  // collapsed.
+  expect(core.pullRequestSpans.mock.calls.map(([chunk, collapsed]) => [chunk.start, collapsed])).toEqual([
+    [0, [0, 1, 2]],
+    [2 * CHUNK, [0, 1, 2]],
+    [2 * CHUNK, [0, 1]],
+  ]);
+});
+
+it("keeps what the user folded or opened when a newer check names other files", async () => {
+  const files = await reviewed(reviewedDiff(), staleReview("Lib/ast.py"));
+  files.toggle(5);
+  files.toggle(1);
+
+  files.followReview(staleReview("Lib/re.py", "Lib/os.py"));
+
+  expect(ALL.map((at) => files.collapsed(at))).toEqual([true, true, true, false, true, false]);
+});
+
+it("asks again for the spans of the chunks it holds when a new verdict opens files, and not for the same one", async () => {
+  const files = await reviewed(withGenerated("abc"), staleReview("Lib/ast.py"));
+  files.need(0, 20);
+  await vi.waitFor(() => {
+    expect(core.pullRequestSpans).toHaveBeenCalledTimes(2);
+  });
+
+  files.followReview(staleReview("Lib/ast.py"));
+  const same = core.pullRequestSpans.mock.calls.length;
+  files.followReview({ kind: "reviewed" });
+
+  expect(same).toBe(2);
+  expect(files.collapsed(2)).toBe(false);
+  expect(core.pullRequestSpans.mock.calls.map(([chunk, collapsed]) => [chunk.start, collapsed])).toEqual([
+    [0, [1, 2]],
+    [2 * CHUNK, [1, 2]],
+    [0, [1]],
+    [2 * CHUNK, [1]],
+  ]);
+});
+
+it("moves to whichever of a thread and the changes was asked for last before the diff came", async () => {
+  let answer: (answer: unknown) => void = () => {};
+  core.pullRequestFiles.mockReturnValue(
+    new Promise((resolve) => {
+      answer = resolve;
+    }),
+  );
+  const files = new PrFilesState("python/cpython", 11, timer());
+  files.followReview(staleReview("Lib/ast.py"));
+  const loading = files.load();
+  await settled();
+
+  files.showChanges();
+  files.reveal("T5");
+  answer(ok(threaded()));
+  await loading;
+
+  expect(files.jump).toEqual({ id: "T5" });
+  core.pullRequestFiles.mockResolvedValue(ok({ state: "fetching" }));
+  await files.ask();
+  files.reveal("T5");
+  files.showChanges();
+  core.pullRequestFiles.mockResolvedValue(ok(threaded()));
+  await files.ask();
+  expect(files.jump).toEqual({ page: { kind: "file", file: 0 } });
+});
+
+it("shows the first changed file, opened, and one asked for before the diff came once it does", async () => {
+  let answer: (answer: unknown) => void = () => {};
+  core.pullRequestFiles.mockReturnValue(
+    new Promise((resolve) => {
+      answer = resolve;
+    }),
+  );
+  const files = new PrFilesState("python/cpython", 11, timer());
+  files.followReview(staleReview("Lib/re.py", "~Lib/os.py"));
+  const loading = files.load();
+  await settled();
+
+  files.showChanges();
+  files.unfoldUnchanged();
+  const before = [files.jump, files.sinceReview(0), files.foldedUnchanged];
+  answer(ok(reviewedDiff()));
+  await loading;
+
+  expect(before).toEqual([undefined, undefined, 0]);
+  expect(files.jump).toEqual({ page: { kind: "file", file: 3 } });
+  expect(files.sinceReview(6)).toBeUndefined();
+  files.toggle(3);
+  files.showChanges();
+  expect(files.collapsed(3)).toBe(false);
+  core.pullRequestFiles.mockResolvedValue(ok(reviewedDiff()));
+  const moved = files.jump;
+  await files.ask();
+  expect(files.jump).toBe(moved);
+});
+
+it("shows the top of the diff when no file it holds changed since the Review", async () => {
+  const files = await reviewed(reviewedDiff(), staleReview("Lib/gone.py"));
+  const empty = await reviewed(ready("abc", 0, []), staleReview("Lib/gone.py"));
+
+  files.showChanges();
+  empty.showChanges();
+
+  expect(files.jump).toEqual({ page: { kind: "file", file: 0 } });
+  expect(empty.jump).toBeUndefined();
 });
 
 it("paints the answer to the latest ask for a chunk's spans, whichever comes last", async () => {

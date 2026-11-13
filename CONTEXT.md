@@ -218,7 +218,8 @@ The user has reviewed the PR, and the PR has not changed since then.
 **Stale review**:
 A **Review** taken before the PR's own diff changed in files other than **Generated files**, through new
 commits or a rewritten history. A merge from `main`, a rebase that leaves the diff the same, or a change only
-to Generated files does not make a review stale.
+to Generated files does not make a review stale. While Tsugiki can't check, as when the mirror isn't cloned
+yet, the Review counts as stale too.
 _Avoid_: Outdated, dismissed
 
 **Last seen**:

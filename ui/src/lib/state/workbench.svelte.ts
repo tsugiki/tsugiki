@@ -6,6 +6,7 @@ import {
   type Attention_Serialize,
   type BackportKind,
   type BackportRow_Serialize,
+  type CantCheck,
   type CiState,
   type FilterLine_Serialize,
   type IssueItem_Serialize,
@@ -34,7 +35,17 @@ export type Seen = Seen_Serialize;
 export type SeenMark = SeenMark_Serialize;
 export type TreeEntry = TreeEntry_Serialize;
 export type WorkbenchRow = WorkbenchRow_Serialize;
-export type { BackportKind, CiState, IssueState, PrState, WorkbenchView, WorkReason, Why, YourReview };
+export type {
+  BackportKind,
+  CantCheck,
+  CiState,
+  IssueState,
+  PrState,
+  WorkbenchView,
+  WorkReason,
+  Why,
+  YourReview,
+};
 
 /** A line the cursor stops on: an item of the list, or a PR or Backport in its tree, with the Issue above. */
 export type Stop = { number: number; kind: "issue" | "pull_request"; issue: number | undefined };

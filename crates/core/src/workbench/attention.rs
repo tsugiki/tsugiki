@@ -342,10 +342,7 @@ impl Rules<'_> {
             return causes;
         }
         // A merged or closed PR waits on nobody, whatever its last check found.
-        let stale = matches!(
-            self.reviews.get(&number),
-            Some(YourReview::StaleReview { .. })
-        );
+        let stale = self.reviews.get(&number).is_some_and(YourReview::is_stale);
         if stale && pull_request.state == PrState::Open {
             causes.push(Cause {
                 at: pull_request.updated_at,

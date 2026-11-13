@@ -129,6 +129,20 @@ erDiagram
         TEXT loose
         INTEGER generated
     }
+    unchecked_commits {
+        TEXT repository PK
+        TEXT commit_sha PK
+        TEXT target_branch PK
+        TEXT reason
+        TEXT git_version "nullable"
+        TEXT git_needed "nullable"
+    }
+    last_checks {
+        TEXT repository PK
+        INTEGER number PK
+        TEXT reviewed_commit
+        TEXT head_commit
+    }
     review_requests }o--|| pull_requests : "repository, number"
     latest_reviews }o--|| pull_requests : "repository, number"
     assignees }o--|| pull_requests : "repository, number"

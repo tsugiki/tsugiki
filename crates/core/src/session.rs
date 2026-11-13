@@ -13,11 +13,11 @@ use crate::folders::Folders;
 use crate::github::issue_content::IssueContent;
 use crate::github::pull_request_content::PullRequestContent;
 use crate::github::{CommitSha, GitHub, GitHubAccess};
-use crate::patch_ids::CommitPatches;
+use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
 use crate::repository_settings::{RepositoryCheck, RepositorySettings};
 use crate::status::{Change, FailedRead, LastSync, MirrorWork, ReadFailure, Status, StatusBoard};
-use crate::store::{self, OpenReader, ReaderToOpen, Store, StoreReader};
+use crate::store::{self, OpenReader, ReaderToOpen, Store, StoreReader, WorkFacts};
 use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
 use crate::workbench::{SeenMark, Workbench};
@@ -80,8 +80,8 @@ enum Message {
     Refresh,
     Mark(Marked),
     Fetch(Fetched),
-    /// The per-file patch-ids the Mirror worker read, for the store to keep.
-    Patched(RepositoryName, Vec<CommitPatches>),
+    /// The per-file patch-ids the Mirror worker read, or the commits it can't read, for the store to keep.
+    Patched(RepositoryName, PatchReads),
 }
 
 /// A mark the user made on an item: seen or unseen.
@@ -120,9 +120,9 @@ impl Item {
     }
 }
 
-/// Keeps the per-file patch-ids read of commits in a Repository, as `SessionRequests::patch_ids_keeper`
-/// gives it.
-pub type KeepPatchIds = Box<dyn FnMut(&RepositoryName, Vec<CommitPatches>) + Send>;
+/// Keeps the per-file patch-ids read of commits in a Repository, and the commits that can't be read, as
+/// `SessionRequests::patch_ids_keeper` gives it.
+pub type KeepPatchIds = Box<dyn FnMut(&RepositoryName, PatchReads) + Send>;
 
 /// Asks the session about Repositories, from any thread. A check waits for what the session is doing first,
 /// which at the start can be `gh` or a slow request, so don't call it from the thread that draws the window.
@@ -181,10 +181,10 @@ impl SessionRequests {
         );
     }
 
-    /// What keeps the per-file patch-ids the Mirror worker read of commits in a Repository, for
-    /// `MirrorRequests::hand_patches_to`. Each call returns at once, and the window then hears that the PRs
-    /// whose reviewed commit or head they are changed. It needs only the database, so a session that can't
-    /// reach GitHub keeps them too.
+    /// What keeps the per-file patch-ids the Mirror worker read of commits in a Repository, and the commits
+    /// it can't read, for `MirrorRequests::hand_patches_to`. Each call returns at once, and the window then
+    /// hears that the PRs whose reviewed commit or head they are changed. It needs only the database, so a
+    /// session that can't reach GitHub keeps them too.
     pub fn patch_ids_keeper(self) -> KeepPatchIds {
         Box::new(move |repository, patches| {
             let patched = Message::Patched(repository.clone(), patches);
@@ -309,8 +309,8 @@ enum Turn {
     Mark(Marked),
     /// An Issue or a PR on screen needs its conversation read from GitHub.
     Fetch(Fetched),
-    /// The Mirror worker read patch-ids for the store to keep.
-    Patched(RepositoryName, Vec<CommitPatches>),
+    /// The Mirror worker read patch-ids, or found commits it can't read, for the store to keep.
+    Patched(RepositoryName, PatchReads),
     SyncStep,
     Stop,
 }
@@ -394,6 +394,8 @@ impl Database {
     fn open(self) -> Result<(Store, OpenReader), Error> {
         let path = self.folders?.database();
         let store = Store::open(&path)?;
+        // They said how the mirrors stood in the last run, and the Mirror worker says again for this one.
+        store.forget_unchecked()?;
         let reader = self.to_open.open(&path)?;
         Ok((store, reader))
     }
@@ -496,10 +498,10 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
 
 /// Hands the mirrors the heads of the PRs the user's work reaches in `repository`, after a step saved its
 /// facts, the commit each of the user's Reviews there covered, and the commits whose patch-ids the Stale
-/// review check needs and the store lacks. The mirror fetches only the heads that moved, and the reviewed
-/// commits it doesn't keep yet. A store that can't answer just saved, and the next
-/// step that saves says if it is in trouble, and hands the heads. The heads go though the reviewed commits
-/// can't be read, and those wait for a step whose read works.
+/// review check needs and the store lacks. It keeps the last check of each PR whose sides are both read
+/// first. The mirror fetches only the heads that moved, and the reviewed commits it doesn't keep yet. A
+/// store that can't answer just saved, and the next step that saves says if it is in trouble, and hands the
+/// heads. The heads go though the reviewed commits can't be read, and those wait for a step whose read works.
 fn hand_over_heads(
     board: &mut StatusBoard,
     store: &Store,
@@ -510,6 +512,9 @@ fn hand_over_heads(
     {
         let reviewed = store.reviewed_commits(repository).unwrap_or_default();
         let patches = Workbench::patches_to_read(&facts);
+        // A head can move to a commit the store has read, which makes no new read to keep a check with. A
+        // store that can't keep it says so at the next step that saves.
+        let _kept = keep_last_checks(store, repository, &facts);
         let heads = Workbench::reached_heads(facts, settings);
         let work = MirrorWork {
             heads,
@@ -520,24 +525,43 @@ fn hand_over_heads(
     }
 }
 
-/// Keeps the patch-ids the Mirror worker read, and tells the window of the PRs whose reviewed commit or head
-/// they are, whose review state can change with them.
+/// Keeps what the Mirror worker handed over: the patch-ids it read, with the last check of each PR whose
+/// sides are both read now, or the commits it can't read. Then tells the window of the PRs whose reviewed
+/// commit or head they are, whose review state can change with them.
 fn keep_patches(
     board: &mut StatusBoard,
     store: &Store,
     repository: &RepositoryName,
-    patches: Vec<CommitPatches>,
+    reads: PatchReads,
 ) {
-    let read: BTreeSet<CommitSha> = patches.iter().map(|read| read.of.commit.clone()).collect();
-    let facts = store
-        .save_patch_ids(repository, patches)
-        .and_then(|()| store.work_facts(repository));
-    match facts {
+    let (commits, saved): (BTreeSet<CommitSha>, _) = match reads {
+        PatchReads::Read(patches) => {
+            let read = patches.iter().map(|read| read.of.commit.clone()).collect();
+            (read, store.save_patch_ids(repository, patches))
+        }
+        PatchReads::Unchecked(unchecked) => {
+            // A commit gone from the list counts as well as one new to it.
+            let now = unchecked.iter().map(|commit| commit.of.commit.clone());
+            let mut commits: BTreeSet<CommitSha> = now.collect();
+            let before = store.work_facts(repository);
+            let saved = before.and_then(|before| {
+                commits.extend(before.reviews.unchecked.into_keys().map(|of| of.commit));
+                store.save_unchecked(repository, unchecked)
+            });
+            (commits, saved)
+        }
+    };
+    let facts = saved.and_then(|()| store.work_facts(repository));
+    let kept = facts.and_then(|facts| {
+        keep_last_checks(store, repository, &facts)?;
+        Ok(facts)
+    });
+    match kept {
         Ok(facts) => {
             let reviewed = &facts.reviews.reviewed;
             let checked = facts.pull_requests.iter().filter(|pr| {
                 let sides = pr.head.iter().chain(reviewed.get(&pr.number));
-                sides.into_iter().any(|commit| read.contains(commit))
+                sides.into_iter().any(|commit| commits.contains(commit))
             });
             board.changed(&Change {
                 repository: repository.clone(),
@@ -546,6 +570,20 @@ fn keep_patches(
         }
         Err(problem) => board.set(Status::Problem { problem }),
     }
+}
+
+/// Keeps as its last check the two commits of each PR whose patch-ids `facts` hold of both, where the store
+/// kept others, so their verdict stands while a newer check waits.
+fn keep_last_checks(
+    store: &Store,
+    repository: &RepositoryName,
+    facts: &WorkFacts,
+) -> Result<(), Error> {
+    let checks = Workbench::checks_to_keep(facts);
+    if checks.is_empty() {
+        return Ok(());
+    }
+    store.save_last_checks(repository, checks)
 }
 
 /// Keeps what the user marked, and tells the window, whose lists go by it.

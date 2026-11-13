@@ -20,7 +20,7 @@ use crate::folders::Folders;
 use crate::github::pull_requests::{PrHead, ReviewedCommit};
 use crate::github::{CommitSha, GitHub, Transport, live};
 use crate::latest::{self, LatestReader, LatestWriter};
-use crate::patch_ids::{CommitPatches, PatchesOf};
+use crate::patch_ids::{PatchReads, PatchesOf};
 use crate::repository::RepositoryName;
 use crate::status::Status;
 use crate::token::{RunGh, read_token};
@@ -107,6 +107,9 @@ pub struct RepositoryMirror {
 /// options came in 2.30 (#166).
 const OLDEST_GIT: (u32, u32) = (2, 30);
 
+/// The oldest git the Stale review check works with: `git patch-id --verbatim` came in 2.39 (#384).
+const CHECK_GIT: (u32, u32) = (2, 39);
+
 /// The room a clone needs beyond the Repository's size on GitHub: git's index of the pack, and the temporary
 /// files it writes as it goes.
 const ROOM_TO_SPARE: u64 = 1 << 30;
@@ -186,9 +189,10 @@ pub type AnnounceStates = Box<dyn FnMut(&[RepositoryMirror]) + Send>;
 /// Files tab can say that the PR's commits wait for the network (#390).
 pub type AnnounceHeld = Box<dyn FnMut(bool) + Send>;
 
-/// Hands over the per-file patch-ids the worker read of commits in a Repository's mirror, for the session to
-/// keep (#383). The session starts after the worker, so `MirrorRequests::hand_patches_to` gives it.
-pub type AnnouncePatched = Box<dyn FnMut(&RepositoryName, Vec<CommitPatches>) + Send>;
+/// Hands over the per-file patch-ids the worker read of commits in a Repository's mirror (#383), and the
+/// commits whose patch-ids it can't read now and why (#384), for the session to keep. The session starts
+/// after the worker, so `MirrorRequests::hand_patches_to` gives it.
+pub type AnnouncePatched = Box<dyn FnMut(&RepositoryName, PatchReads) + Send>;
 
 /// What the worker tells the app as it goes.
 pub struct Announce {
@@ -398,7 +402,8 @@ impl MirrorRequests {
 
     /// Reads the per-file patch-ids of each of `wanted` in `repository`'s mirror, once the mirror has the
     /// commit, after the heads and reviewed commits waiting, and hands them to what `hand_patches_to` gave.
-    /// A commit read since launch isn't read again.
+    /// A commit read since launch isn't read again. The worker also hands over which of `wanted` it can't
+    /// read and why, each time that changes.
     pub fn read_patch_ids(&self, repository: RepositoryName, wanted: Vec<PatchesOf>) {
         self.send(Message::Patches(repository, wanted));
     }
@@ -512,6 +517,7 @@ impl Mirrors {
             job: None,
             git_checked: false,
             problem: None,
+            old_for_check: None,
             told: None,
             sources: MirrorSources::default(),
             asking: Vec::new(),
@@ -815,6 +821,9 @@ struct Worker {
     git_checked: bool,
     /// The reason no mirror can be made. Without a usable git no git starts; short of disk, only clones wait.
     problem: Option<MirrorProblem>,
+    /// What `git --version` says of a git that works with the mirrors but is older than the Stale review
+    /// check needs. The worker reads no patch-ids with it.
+    old_for_check: Option<String>,
     /// The problem the window last heard of. A Check again forgets `problem` but keeps this, so the window
     /// hears only of a change.
     told: Option<MirrorProblem>,
@@ -852,6 +861,7 @@ impl Worker {
         loop {
             self.start_next();
             self.tell_states();
+            self.tell_unchecked();
             let message = match self.next_due() {
                 Some(at) => {
                     match incoming.recv_timeout(at.saturating_duration_since(Instant::now())) {
@@ -1199,12 +1209,17 @@ impl Worker {
         ControlFlow::Continue(())
     }
 
-    /// Runs `git --version`, and notes git as missing or too old if it is.
+    /// Runs `git --version`, and notes git as missing or too old if it is, for the mirrors or for the Stale
+    /// review check.
     fn check_git(&mut self) {
         self.git_checked = true;
+        self.old_for_check = None;
         let problem = match self.git.read(&[OsStr::new("--version")]) {
             Ok(said) => match git_version(&said) {
-                Some(version) if version >= OLDEST_GIT => None,
+                Some(version) if version >= OLDEST_GIT => {
+                    self.old_for_check = (version < CHECK_GIT).then(|| said.trim().to_owned());
+                    None
+                }
                 Some(_) | None => Some(MirrorProblem::OldGit {
                     version: said.trim().to_owned(),
                 }),

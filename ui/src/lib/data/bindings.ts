@@ -263,6 +263,22 @@ export type BackportRow_Serialize = {
 export type Build = "release" | "development";
 
 /**
+ *  Why the Stale review check can't read a commit's patch-ids now (#384). Each goes away with its cause, and
+ *  the check then runs.
+ */
+export type CantCheck = 
+/**  The Repository's mirror isn't cloned yet. */
+{ kind: "cloning" } | 
+/**  git said the Repository's mirror was broken, and it isn't cloned again yet. */
+{ kind: "broken" } | 
+/**  git isn't on the `PATH`. */
+{ kind: "no_git" } | 
+/**  git is older than the `needed` version, as `git --version` says in `version`. */
+{ kind: "old_git"; version: string; needed: string } | 
+/**  GitHub refused to send the commit. */
+{ kind: "refused" };
+
+/**
  *  The last thing that happened before a long frame. A key isn't named, so the log holds nothing the
  *  user typed.
  */
@@ -2382,7 +2398,9 @@ export type YourReview = { kind: "unreviewed" } |
 /**  The PR's diff is the same as when the user reviewed it, or no check has said otherwise yet. */
 { kind: "reviewed" } | 
 /**  The PR's diff changed since the user's Review, in `files`. */
-{ kind: "stale_review"; files: ChangedFile[] };
+{ kind: "stale_review"; files: ChangedFile[] } | 
+/**  A Stale review, as the check can't run for `reason` (#384). It runs once the reason goes away. */
+{ kind: "cant_check"; reason: CantCheck };
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

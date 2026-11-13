@@ -137,7 +137,7 @@ fn the_facts_hold_the_reviewed_commit_and_the_patch_ids_of_both_sides_once_read(
         unread,
         ReviewFacts {
             reviewed: BTreeMap::from([(1, sha('1'))]),
-            patches: BTreeMap::new(),
+            ..ReviewFacts::default()
         }
     );
     assert_eq!(
@@ -148,6 +148,7 @@ fn the_facts_hold_the_reviewed_commit_and_the_patch_ids_of_both_sides_once_read(
                 (of(&sha('1'), "main"), reviewed),
                 (of(&sha('2'), "main"), head),
             ]),
+            ..ReviewFacts::default()
         }
     );
 }
@@ -199,6 +200,173 @@ fn patch_ids_against_another_branch_or_of_a_commit_no_check_compares_stay_out() 
     });
     store
         .save_patch_ids(&cpython(), elsewhere.to_vec())
+        .unwrap();
+
+    let read = store.work_facts(&cpython()).unwrap().reviews.patches;
+    finish(store, folder);
+
+    assert_eq!(read, BTreeMap::new());
+}
+
+#[test]
+fn a_save_of_unchecked_commits_or_last_checks_that_fails_says_so() {
+    let store = Store::stopped();
+    let last = LastCheck {
+        reviewed: sha('1'),
+        head: sha('2'),
+    };
+
+    let unchecked = store.save_unchecked(&cpython(), vec![]);
+    let checks = store.save_last_checks(&cpython(), vec![(1, last)]);
+
+    assert!(unchecked.is_err(), "{unchecked:?}");
+    assert!(checks.is_err(), "{checks:?}");
+}
+
+fn unchecked(commit: char, reason: CantCheck) -> UncheckedCommit {
+    UncheckedCommit {
+        of: of(&sha(commit), "main"),
+        reason,
+    }
+}
+
+#[test]
+fn the_commits_the_worker_cant_read_replace_those_it_couldnt_before() {
+    let (store, folder) = store("patch-ids-unchecked");
+    let old_git = CantCheck::OldGit {
+        version: "git version 2.38.1".to_owned(),
+        needed: "2.39".to_owned(),
+    };
+    let before = vec![
+        unchecked('1', CantCheck::Refused),
+        unchecked('2', CantCheck::Cloning),
+    ];
+    store.save_unchecked(&cpython(), before).unwrap();
+    let first = store.work_facts(&cpython()).unwrap().reviews.unchecked;
+    let now = vec![unchecked('2', old_git.clone())];
+    store.save_unchecked(&cpython(), now).unwrap();
+
+    let then = store.work_facts(&cpython()).unwrap().reviews.unchecked;
+    finish(store, folder);
+
+    assert_eq!(
+        first,
+        BTreeMap::from([
+            (of(&sha('1'), "main"), CantCheck::Refused),
+            (of(&sha('2'), "main"), CantCheck::Cloning),
+        ])
+    );
+    assert_eq!(then, BTreeMap::from([(of(&sha('2'), "main"), old_git)]));
+}
+
+#[test]
+fn each_reason_comes_back_as_it_was_kept() {
+    let (store, folder) = store("patch-ids-reasons");
+    let reasons = [
+        CantCheck::Broken,
+        CantCheck::NoGit,
+        CantCheck::OldGit {
+            version: "git version 2.29.2".to_owned(),
+            needed: "2.30".to_owned(),
+        },
+    ];
+    let mut read = vec![];
+    for reason in reasons.clone() {
+        store
+            .save_unchecked(&cpython(), vec![unchecked('2', reason)])
+            .unwrap();
+        let facts = store.work_facts(&cpython()).unwrap();
+        read.extend(facts.reviews.unchecked.into_values());
+    }
+    finish(store, folder);
+
+    assert_eq!(read, reasons);
+}
+
+#[test]
+fn a_new_run_forgets_why_the_worker_couldnt_read_patch_ids() {
+    let (store, folder) = store("patch-ids-forget");
+    store
+        .save_unchecked(&cpython(), vec![unchecked('2', CantCheck::Cloning)])
+        .unwrap();
+
+    store.forget_unchecked().unwrap();
+    let read = store.work_facts(&cpython()).unwrap().reviews.unchecked;
+    finish(store, folder);
+
+    assert_eq!(read, BTreeMap::new());
+}
+
+#[test]
+fn a_reason_the_store_doesnt_know_fails_the_read() {
+    let (store, folder) = store("patch-ids-unknown-reason");
+    store
+        .save_unchecked(&cpython(), vec![unchecked('2', CantCheck::NoGit)])
+        .unwrap();
+    // Only a file from a newer Tsugiki, or one changed by hand, says this, which our functions refuse.
+    let changed = store
+        .call(|connection| {
+            connection.execute(
+                "UPDATE unchecked_commits SET git_version = 'git version 2.0'",
+                [],
+            )
+        })
+        .unwrap();
+    assert_eq!(changed, Ok(1));
+
+    let read = store.work_facts(&cpython());
+    finish(store, folder);
+
+    assert!(read.is_err(), "{read:?}");
+}
+
+#[test]
+fn the_last_check_of_a_pr_brings_the_patch_ids_of_the_head_it_compared() {
+    let (store, folder) = store("patch-ids-last-check");
+    let earlier = CommitPatches {
+        of: of(&sha('3'), "main"),
+        files: vec![file("Lib/ast.py", '3')],
+    };
+    store.save_patch_ids(&cpython(), vec![earlier]).unwrap();
+    let first = LastCheck {
+        reviewed: sha('1'),
+        head: sha('4'),
+    };
+    let last = LastCheck {
+        reviewed: sha('1'),
+        head: sha('3'),
+    };
+    store
+        .save_last_checks(&cpython(), vec![(1, first)])
+        .unwrap();
+    store
+        .save_last_checks(&cpython(), vec![(1, last.clone())])
+        .unwrap();
+
+    let read = store.work_facts(&cpython()).unwrap().reviews;
+    finish(store, folder);
+
+    assert_eq!(read.last_checks, BTreeMap::from([(1, last)]));
+    assert_eq!(
+        read.patches,
+        BTreeMap::from([(of(&sha('3'), "main"), vec![file("Lib/ast.py", '3')])])
+    );
+}
+
+#[test]
+fn the_last_check_of_another_review_brings_no_patch_ids() {
+    let (store, folder) = store("patch-ids-last-other");
+    let earlier = CommitPatches {
+        of: of(&sha('3'), "main"),
+        files: vec![file("Lib/ast.py", '3')],
+    };
+    store.save_patch_ids(&cpython(), vec![earlier]).unwrap();
+    let other = LastCheck {
+        reviewed: sha('9'),
+        head: sha('3'),
+    };
+    store
+        .save_last_checks(&cpython(), vec![(1, other)])
         .unwrap();
 
     let read = store.work_facts(&cpython()).unwrap().reviews.patches;

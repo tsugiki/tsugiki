@@ -30,7 +30,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   that the Stale review check compares, once the mirror has both, and the session keeps them in `tsugiki.db`.
   It reads only the commits the database lacks, so a save that failed is read again at the next sync. The
   diff behind them sets the user's diff settings back to git's defaults, so a change to those leaves each
-  patch-id as it was.
+  patch-id as it was. The worker also tells the session which of those commits it can't read and why, each
+  time that changes, and reads none with a git older than 2.39.
 - While a Repository's mirror is still being cloned, the diff, the definitions and Open in editor say how far
   it has got. The Conversation tab works meanwhile.
 - Offline, Tsugiki starts no clone and no fetch, though upkeep, which needs no network, goes on. A clone or

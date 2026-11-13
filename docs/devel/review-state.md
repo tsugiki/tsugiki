@@ -15,9 +15,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   differs from the reviewed commit. The worker reads both commits' per-file patch-ids between its git jobs,
   and `tsugiki.db` keeps them per commit and Target branch, so a second check of the same commits runs no
   git. A head equal to the reviewed commit is Reviewed with no check.
-- While a check is pending, the PR keeps its last verdict, or Reviewed if it has none, so rows and counts
-  don't jump while git runs. A check that can't run (the mirror cloning or broken, no git, the reviewed commit
-  gone) gives a Stale review with the reason in the hover.
+- While a check is pending, the PR keeps the verdict of its last check of the same Review, or Reviewed if it
+  has none, so rows and counts don't jump while git runs. `tsugiki.db` keeps the two commits each PR's last
+  check compared. A check that can't run gives a Stale review with the reason in the hover: the mirror not
+  cloned yet, or cloned again as git said it was broken; no git, or one older than the 2.39 that
+  `git patch-id --verbatim` needs; a reviewed commit GitHub refused to send. When the reason goes away, the
+  check runs and its verdict replaces the reason.
 - A merged or closed PR's check runs once on its final head and freezes with the PR. Its row keeps the
   Stale review badge, but it never Needs attention.
 - A **Bot backport** shares its Origin PR's review state. A **Manual backport** is reviewed on its own.

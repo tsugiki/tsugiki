@@ -8,7 +8,7 @@ use crate::github::replay::Replayer;
 use crate::github::testing::{Canned, Scripted, answered, reply_ok, signed_in_as, signed_in_gh};
 use crate::github::{CommitSha, Reply, Request, Transport, Unreachable};
 use crate::login::Login;
-use crate::patch_ids::{CommitPatches, FilePatch, PatchId, PatchesOf};
+use crate::patch_ids::{CantCheck, CommitPatches, FilePatch, PatchId, PatchesOf, UncheckedCommit};
 use crate::repository::{RepositoryName, RepositorySize};
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
@@ -16,7 +16,7 @@ use crate::status::testing::{
     announced, changes_board, failed_reads_board, heads_board, quiet_board, showing, watched_board,
 };
 use crate::status::{Change, FailedRead, MirrorWork, ReadFailure};
-use crate::store::{ActivityFacts, ChangeCheck, SyncState};
+use crate::store::{ActivityFacts, ChangeCheck, LastCheck, ReviewFacts, SyncState};
 use crate::token::Token;
 use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
 use std::cell::RefCell;
@@ -1038,12 +1038,77 @@ fn a_sync_hands_the_mirror_the_heads_it_saved_of_the_prs_the_users_work_reaches_
     );
 }
 
-/// Has a session keep the patch-ids the Mirror worker read of PR 8's head, which moved on from the user's
-/// Review, and gives the change the window heard and the patch-ids the store then holds.
+#[test]
+fn a_sync_keeps_the_last_check_of_a_pr_whose_head_moved_to_a_commit_already_read() {
+    let (script, _asked) = Scripted::new(vec![
+        signed_in(),
+        work_search(&["a"]),
+        work_search(&[]),
+        work_search(&[]),
+        work_search(&[]),
+        work_fetch(),
+    ]);
+    let access = GitHubAccess {
+        transport: Box::new(script),
+        run_gh: signed_in_gh,
+    };
+    let folders = temp_folders("last-check-on-sync");
+    let store = Store::open(&folders.database()).unwrap();
+    store
+        .save_pull_requests(&gcmon(), vec![stored_pr(8, "some-author", "4567def")])
+        .unwrap();
+    let reviewed = CommitSha::parse("0123abc").unwrap();
+    store
+        .save_pull_request_content(&gcmon(), 8, reviewed_by("octocat", &reviewed))
+        .unwrap();
+    let both = vec![patches_of("0123abc", 'a'), patches_of("4567def", 'a')];
+    store.save_patch_ids(&gcmon(), both).unwrap();
+    store.close();
+    let (board, heads) = heads_board();
+    let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
+
+    session.requests().sync(plain_gcmon());
+    let handed = heads.recv_timeout(PLENTY).unwrap();
+    let held = session.reader().work_facts(&gcmon()).unwrap().reviews;
+    session.stop(PLENTY);
+    fs::remove_dir_all(folders.data).unwrap();
+
+    let last = LastCheck {
+        reviewed,
+        head: CommitSha::parse("4567def").unwrap(),
+    };
+    assert_eq!(handed.1.patches, []);
+    assert_eq!(held.last_checks, BTreeMap::from([(8, last)]));
+}
+
+/// `commit`'s patch-ids against main, with `Lib/ast.py` changed in the way `digit` names.
+fn patches_of(commit: &str, digit: char) -> CommitPatches {
+    CommitPatches {
+        of: on_main(commit),
+        files: vec![FilePatch {
+            path: "Lib/ast.py".to_owned(),
+            verbatim: PatchId::parse(&digit.to_string().repeat(40)).unwrap(),
+            loose: PatchId::parse(&"b".repeat(40)).unwrap(),
+            generated: false,
+        }],
+    }
+}
+
+fn on_main(commit: &str) -> PatchesOf {
+    PatchesOf {
+        commit: CommitSha::parse(commit).unwrap(),
+        target_branch: "main".to_owned(),
+    }
+}
+
+/// Has a session keep each of `handed` from the Mirror worker, where the user reviewed PR 8 at commit
+/// 0123abc and its head moved on to 4567def, and the last run left a reason it couldn't read commit
+/// fedcba9. Gives the change the window heard after each, and the review facts the store then holds.
 fn keeping_patches(
     name: &str,
     access: GitHubAccess,
-) -> (Change, BTreeMap<PatchesOf, Vec<FilePatch>>) {
+    handed: Vec<PatchReads>,
+) -> (Vec<Change>, ReviewFacts) {
     let folders = temp_folders(name);
     let store = Store::open(&folders.database()).unwrap();
     store.remember_login(&Login::new("octocat")).unwrap();
@@ -1056,48 +1121,41 @@ fn keeping_patches(
     store
         .save_pull_request_content(&gcmon(), 8, reviewed_by("octocat", &reviewed))
         .unwrap();
+    let left = UncheckedCommit {
+        of: on_main("fedcba9"),
+        reason: CantCheck::Cloning,
+    };
+    store.save_unchecked(&gcmon(), vec![left]).unwrap();
     store.close();
     let (board, changes) = changes_board();
     let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
-    let head = CommitPatches {
-        of: PatchesOf {
-            commit: CommitSha::parse("4567def").unwrap(),
-            target_branch: "main".to_owned(),
-        },
-        files: vec![FilePatch {
-            path: "Lib/ast.py".to_owned(),
-            verbatim: PatchId::parse(&"a".repeat(40)).unwrap(),
-            loose: PatchId::parse(&"b".repeat(40)).unwrap(),
-            generated: false,
-        }],
-    };
 
     let mut keep = session.requests().patch_ids_keeper();
-    keep(&gcmon(), vec![head]);
-    let change = changes.recv_timeout(PLENTY).unwrap();
-    let held = session
-        .reader()
-        .work_facts(&gcmon())
-        .unwrap()
-        .reviews
-        .patches;
+    let heard = handed.into_iter().map(|reads| {
+        keep(&gcmon(), reads);
+        changes.recv_timeout(PLENTY).unwrap()
+    });
+    let heard = heard.collect();
+    let held = session.reader().work_facts(&gcmon()).unwrap().reviews;
     session.stop(PLENTY);
     fs::remove_dir_all(folders.data).unwrap();
-    (change, held)
+    (heard, held)
 }
 
 #[test]
 fn the_session_keeps_the_patch_ids_the_mirror_read_and_tells_the_window_whose_they_are() {
-    let (change, held) = keeping_patches("keeps-patches", replying(vec![signed_in()]));
+    let head = PatchReads::Read(vec![patches_of("4567def", 'a')]);
+    let (heard, held) = keeping_patches("keeps-patches", replying(vec![signed_in()]), vec![head]);
 
     assert_eq!(
-        change,
-        Change {
+        heard,
+        [Change {
             repository: gcmon(),
             items: vec![8],
-        }
+        }]
     );
-    assert_eq!(held.len(), 1);
+    assert_eq!(held.patches.len(), 1);
+    assert_eq!(held.last_checks, BTreeMap::new());
 }
 
 #[test]
@@ -1106,22 +1164,73 @@ fn a_session_with_no_token_keeps_patch_ids_too() {
         transport: Box::new(Canned(Err(Unreachable::Offline))),
         run_gh: without_gh,
     };
+    let head = PatchReads::Read(vec![patches_of("4567def", 'a')]);
 
-    let (change, held) = keeping_patches("keeps-patches-offline", access);
+    let (heard, held) = keeping_patches("keeps-patches-offline", access, vec![head]);
 
-    assert_eq!(change.items, [8]);
-    assert_eq!(held.len(), 1);
+    assert_eq!(heard[0].items, [8]);
+    assert_eq!(held.patches.len(), 1);
+}
+
+#[test]
+fn a_new_session_forgets_why_the_last_run_couldnt_read_patch_ids() {
+    let head = PatchReads::Read(vec![patches_of("4567def", 'a')]);
+
+    let (_, held) = keeping_patches("forgets-unchecked", replying(vec![signed_in()]), vec![head]);
+
+    assert_eq!(held.unchecked, BTreeMap::new());
+}
+
+#[test]
+fn once_both_sides_are_read_the_session_keeps_them_as_the_prs_last_check() {
+    let both = vec![patches_of("0123abc", 'a'), patches_of("4567def", 'c')];
+
+    let (_, held) = keeping_patches(
+        "keeps-last-check",
+        replying(vec![signed_in()]),
+        vec![PatchReads::Read(both)],
+    );
+
+    let last = LastCheck {
+        reviewed: CommitSha::parse("0123abc").unwrap(),
+        head: CommitSha::parse("4567def").unwrap(),
+    };
+    assert_eq!(held.last_checks, BTreeMap::from([(8, last)]));
+}
+
+#[test]
+fn the_session_keeps_the_commits_the_mirror_cant_read_and_tells_the_window_of_each_change() {
+    let refused = UncheckedCommit {
+        of: on_main("0123abc"),
+        reason: CantCheck::Refused,
+    };
+    let handed = vec![
+        PatchReads::Unchecked(vec![refused.clone()]),
+        PatchReads::Unchecked(vec![]),
+        PatchReads::Unchecked(vec![refused]),
+    ];
+
+    let (heard, held) = keeping_patches("keeps-unchecked", replying(vec![signed_in()]), handed);
+
+    let items: Vec<Vec<u32>> = heard.into_iter().map(|change| change.items).collect();
+    assert_eq!(items, [[8], [8], [8]]);
+    assert_eq!(
+        held.unchecked,
+        BTreeMap::from([(on_main("0123abc"), CantCheck::Refused)])
+    );
 }
 
 #[test]
 fn patch_ids_the_store_cant_keep_show_its_problem() {
-    let (board, seen) = watched_board();
-    let mut board = board;
-    let store = Store::stopped();
+    for reads in [PatchReads::Read(vec![]), PatchReads::Unchecked(vec![])] {
+        let (board, seen) = watched_board();
+        let mut board = board;
+        let store = Store::stopped();
 
-    keep_patches(&mut board, &store, &gcmon(), vec![]);
+        keep_patches(&mut board, &store, &gcmon(), reads);
 
-    assert!(matches!(showing(&seen), Status::Problem { .. }));
+        assert!(matches!(showing(&seen), Status::Problem { .. }));
+    }
 }
 
 /// A PR's Conversation with one Review by `author`, of `commit`.

@@ -10,7 +10,7 @@ use super::Connection;
 use super::pull_request_content::reviewed_commits;
 use crate::github::CommitSha;
 use crate::github::pull_requests::PullRequestFacts;
-use crate::patch_ids::{CommitPatches, FilePatch, PatchesOf};
+use crate::patch_ids::{CantCheck, CommitPatches, FilePatch, PatchesOf, UncheckedCommit};
 use crate::repository::RepositoryName;
 
 /// A row for each commit whose patch-ids were read, which says so even of a commit with no files to diff,
@@ -37,14 +37,48 @@ pub(super) const SCHEMA: &str = "
     ) WITHOUT ROWID;
 ";
 
+/// Why the Mirror worker can't read a commit's patch-ids, as it last said in this run, and the two commits
+/// each PR's last finished check compared (#384). `git_version` and `git_needed` go with an `old_git`
+/// reason only.
+pub(super) const CHECKS: &str = "
+    CREATE TABLE unchecked_commits (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        commit_sha TEXT NOT NULL,
+        target_branch TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        git_version TEXT,
+        git_needed TEXT,
+        PRIMARY KEY (repository, commit_sha, target_branch)
+    ) WITHOUT ROWID;
+    CREATE TABLE last_checks (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        number INTEGER NOT NULL,
+        reviewed_commit TEXT NOT NULL,
+        head_commit TEXT NOT NULL,
+        PRIMARY KEY (repository, number)
+    ) WITHOUT ROWID;
+";
+
 /// What the review state of each PR is worked out from: the commit the user's Review covered, and the
 /// patch-ids the store holds of that commit and of the head.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ReviewFacts {
     /// The commit of the user's Review of each PR whose Conversation Tsugiki has read.
     pub reviewed: BTreeMap<u32, CommitSha>,
-    /// The per-file patch-ids of each reviewed commit and head a check compares, once they have been read.
+    /// The per-file patch-ids of each reviewed commit and head a check compares, once they have been read,
+    /// and of the head each PR's last check compared.
     pub patches: BTreeMap<PatchesOf, Vec<FilePatch>>,
+    /// Why the Mirror worker can't read the patch-ids of the commits a check compares, for those it can't.
+    pub unchecked: BTreeMap<PatchesOf, CantCheck>,
+    /// The commits each PR's last finished check compared, whose verdict stands while a newer check waits.
+    pub last_checks: BTreeMap<u32, LastCheck>,
+}
+
+/// The two commits a PR's check compared once the patch-ids of both were read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LastCheck {
+    pub reviewed: CommitSha,
+    pub head: CommitSha,
 }
 
 /// Keeps each of `patches`, in place of what was kept of the same commit before.
@@ -92,8 +126,82 @@ pub(super) fn save(
     transaction.commit()
 }
 
+/// Keeps `unchecked` as the commits of `repository` whose patch-ids the Mirror worker can't read, in place of
+/// those it kept before.
+pub(super) fn save_unchecked(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+    unchecked: &[UncheckedCommit],
+) -> rusqlite::Result<()> {
+    let transaction = connection.transaction()?;
+    let _ = transaction.execute(
+        "DELETE FROM unchecked_commits WHERE repository = :repository",
+        named_params! { ":repository": repository },
+    )?;
+    let mut statement = transaction.prepare(
+        "INSERT OR REPLACE INTO unchecked_commits
+             (repository, commit_sha, target_branch, reason, git_version, git_needed)
+         VALUES (:repository, :commit, :target, :reason, :version, :needed)",
+    )?;
+    for UncheckedCommit { of, reason } in unchecked {
+        let (reason, version, needed) = match reason {
+            CantCheck::Cloning => ("cloning", None, None),
+            CantCheck::Broken => ("broken", None, None),
+            CantCheck::NoGit => ("no_git", None, None),
+            CantCheck::OldGit { version, needed } => ("old_git", Some(version), Some(needed)),
+            CantCheck::Refused => ("refused", None, None),
+        };
+        let row = named_params! {
+            ":repository": repository,
+            ":commit": of.commit,
+            ":target": of.target_branch,
+            ":reason": reason,
+            ":version": version,
+            ":needed": needed,
+        };
+        let _ = statement.execute(row)?;
+    }
+    drop(statement);
+    transaction.commit()
+}
+
+/// Forgets why the Mirror worker couldn't read patch-ids, which says how the mirrors stood in a run that
+/// ended.
+pub(super) fn forget_unchecked(connection: &Connection) -> rusqlite::Result<()> {
+    connection
+        .execute("DELETE FROM unchecked_commits", [])
+        .map(drop)
+}
+
+/// Keeps each of `checks` as the last check of its PR, in place of the one kept before.
+pub(super) fn save_last_checks(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+    checks: &[(u32, LastCheck)],
+) -> rusqlite::Result<()> {
+    let transaction = connection.transaction()?;
+    let mut statement = transaction.prepare(
+        "INSERT INTO last_checks (repository, number, reviewed_commit, head_commit)
+         VALUES (:repository, :number, :reviewed, :head)
+         ON CONFLICT (repository, number) DO UPDATE SET
+             reviewed_commit = excluded.reviewed_commit, head_commit = excluded.head_commit",
+    )?;
+    for (number, check) in checks {
+        let row = named_params! {
+            ":repository": repository,
+            ":number": number,
+            ":reviewed": check.reviewed,
+            ":head": check.head,
+        };
+        let _ = statement.execute(row)?;
+    }
+    drop(statement);
+    transaction.commit()
+}
+
 /// The review facts of `pull_requests`: the reviewed commit of each, and, where the head moved on from it,
-/// the patch-ids held of both commits against its Target branch.
+/// the patch-ids held of both commits against its Target branch, why the worker can't read those it can't,
+/// and the PR's last check of the same Review with the patch-ids of the head it compared.
 pub(super) fn read_facts(
     transaction: &Transaction<'_>,
     repository: &RepositoryName,
@@ -103,6 +211,7 @@ pub(super) fn read_facts(
         .into_iter()
         .map(|reviewed| (reviewed.number, reviewed.commit))
         .collect();
+    let last_checks = read_last_checks(transaction, repository)?;
     // Only a head that moved on from the reviewed commit needs a check.
     let compared = pull_requests.iter().filter_map(|pr| {
         let reviewed = reviewed.get(&pr.number)?;
@@ -111,17 +220,83 @@ pub(super) fn read_facts(
             commit: commit.clone(),
             target_branch: pr.target_branch.clone(),
         };
-        Some([of(reviewed), of(head)])
+        let last = (last_checks.get(&pr.number)).filter(|last| last.reviewed == *reviewed);
+        let last = last.map(|last| of(&last.head));
+        Some([Some(of(reviewed)), Some(of(head)), last])
     });
     let mut patches = BTreeMap::new();
-    for of in compared.flatten().collect::<Vec<_>>() {
+    for of in compared.flatten().flatten().collect::<Vec<_>>() {
         if !patches.contains_key(&of)
             && let Some(files) = read(transaction, repository, &of)?
         {
             drop(patches.insert(of, files));
         }
     }
-    Ok(ReviewFacts { reviewed, patches })
+    Ok(ReviewFacts {
+        reviewed,
+        patches,
+        unchecked: read_unchecked(transaction, repository)?,
+        last_checks,
+    })
+}
+
+fn read_last_checks(
+    transaction: &Transaction<'_>,
+    repository: &RepositoryName,
+) -> rusqlite::Result<BTreeMap<u32, LastCheck>> {
+    let mut statement = transaction.prepare(
+        "SELECT number, reviewed_commit, head_commit FROM last_checks WHERE repository = :repository",
+    )?;
+    let asked = named_params! { ":repository": repository };
+    let checks = statement.query_map(asked, last_check_in)?;
+    checks.collect()
+}
+
+fn last_check_in(row: &Row<'_>) -> rusqlite::Result<(u32, LastCheck)> {
+    let check = LastCheck {
+        reviewed: row.get("reviewed_commit")?,
+        head: row.get("head_commit")?,
+    };
+    Ok((row.get("number")?, check))
+}
+
+fn read_unchecked(
+    transaction: &Transaction<'_>,
+    repository: &RepositoryName,
+) -> rusqlite::Result<BTreeMap<PatchesOf, CantCheck>> {
+    let mut statement = transaction.prepare(
+        "SELECT commit_sha, target_branch, reason, git_version, git_needed FROM unchecked_commits
+         WHERE repository = :repository",
+    )?;
+    let asked = named_params! { ":repository": repository };
+    let unchecked = statement.query_map(asked, unchecked_in)?;
+    unchecked.collect()
+}
+
+fn unchecked_in(row: &Row<'_>) -> rusqlite::Result<(PatchesOf, CantCheck)> {
+    let of = PatchesOf {
+        commit: row.get("commit_sha")?,
+        target_branch: row.get("target_branch")?,
+    };
+    Ok((of, reason_in(row)?))
+}
+
+fn reason_in(row: &Row<'_>) -> rusqlite::Result<CantCheck> {
+    let reason: String = row.get("reason")?;
+    let version: Option<String> = row.get("git_version")?;
+    let needed: Option<String> = row.get("git_needed")?;
+    match (reason.as_str(), version, needed) {
+        ("cloning", None, None) => Ok(CantCheck::Cloning),
+        ("broken", None, None) => Ok(CantCheck::Broken),
+        ("no_git", None, None) => Ok(CantCheck::NoGit),
+        ("old_git", Some(version), Some(needed)) => Ok(CantCheck::OldGit { version, needed }),
+        ("refused", None, None) => Ok(CantCheck::Refused),
+        _ => Err(rusqlite::Error::FromSqlConversionFailure(
+            row.as_ref().column_index("reason")?,
+            rusqlite::types::Type::Text,
+            format!("{reason} isn't a reason the check can't run").into(),
+        )),
+    }
 }
 
 /// The patch-ids held of `of`, if its were read.

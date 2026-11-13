@@ -1,5 +1,6 @@
 //! One run of Tsugiki: opens the database, then keeps the status following GitHub until the app ends.
 
+use std::collections::BTreeSet;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
@@ -11,10 +12,11 @@ use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
 use crate::github::issue_content::IssueContent;
 use crate::github::pull_request_content::PullRequestContent;
-use crate::github::{GitHub, GitHubAccess};
+use crate::github::{CommitSha, GitHub, GitHubAccess};
+use crate::patch_ids::CommitPatches;
 use crate::repository::RepositoryName;
 use crate::repository_settings::{RepositoryCheck, RepositorySettings};
-use crate::status::{Change, FailedRead, LastSync, ReadFailure, Status, StatusBoard};
+use crate::status::{Change, FailedRead, LastSync, MirrorWork, ReadFailure, Status, StatusBoard};
 use crate::store::{self, OpenReader, ReaderToOpen, Store, StoreReader};
 use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
@@ -78,6 +80,8 @@ enum Message {
     Refresh,
     Mark(Marked),
     Fetch(Fetched),
+    /// The per-file patch-ids the Mirror worker read, for the store to keep.
+    Patched(RepositoryName, Vec<CommitPatches>),
 }
 
 /// A mark the user made on an item: seen or unseen.
@@ -115,6 +119,10 @@ impl Item {
         }
     }
 }
+
+/// Keeps the per-file patch-ids read of commits in a Repository, as `SessionRequests::patch_ids_keeper`
+/// gives it.
+pub type KeepPatchIds = Box<dyn FnMut(&RepositoryName, Vec<CommitPatches>) + Send>;
 
 /// Asks the session about Repositories, from any thread. A check waits for what the session is doing first,
 /// which at the start can be `gh` or a slow request, so don't call it from the thread that draws the window.
@@ -171,6 +179,17 @@ impl SessionRequests {
             self.messages
                 .send(Message::Mark(Marked::Unseen { item, at })),
         );
+    }
+
+    /// What keeps the per-file patch-ids the Mirror worker read of commits in a Repository, for
+    /// `MirrorRequests::hand_patches_to`. Each call returns at once, and the window then hears that the PRs
+    /// whose reviewed commit or head they are changed. It needs only the database, so a session that can't
+    /// reach GitHub keeps them too.
+    pub fn patch_ids_keeper(self) -> KeepPatchIds {
+        Box::new(move |repository, patches| {
+            let patched = Message::Patched(repository.clone(), patches);
+            drop(self.messages.send(patched));
+        })
     }
 
     /// Asks GitHub what adding `name` would load. A session with no token or no database answers with an
@@ -290,6 +309,8 @@ enum Turn {
     Mark(Marked),
     /// An Issue or a PR on screen needs its conversation read from GitHub.
     Fetch(Fetched),
+    /// The Mirror worker read patch-ids for the store to keep.
+    Patched(RepositoryName, Vec<CommitPatches>),
     SyncStep,
     Stop,
 }
@@ -303,6 +324,9 @@ impl Refreshes {
             match message {
                 Message::Stop => return,
                 Message::Mark(marked) => mark(board, store, marked),
+                Message::Patched(repository, patches) => {
+                    keep_patches(board, store, &repository, patches);
+                }
                 Message::Fetch(fetched) => {
                     board.failed_read(&fetched.item().failed(ReadFailure::NoToken));
                 }
@@ -331,6 +355,9 @@ impl Refreshes {
                 Ok(Message::Refresh) => return Turn::RefreshNow,
                 Ok(Message::Mark(marked)) => return Turn::Mark(marked),
                 Ok(Message::Fetch(fetched)) => return Turn::Fetch(fetched),
+                Ok(Message::Patched(repository, patches)) => {
+                    return Turn::Patched(repository, patches);
+                }
                 Ok(Message::Check { name, reply }) => {
                     let today = github.clock().now().date();
                     #[expect(
@@ -432,6 +459,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             }
             Turn::Opened(repository) => show_last_sync(board, store, repository),
             Turn::Mark(marked) => mark(board, store, marked),
+            Turn::Patched(repository, patches) => keep_patches(board, store, &repository, patches),
             Turn::Fetch(fetched) => {
                 if let Fetched::Issue(item) = &fetched {
                     syncs.open_issue(&item.repository, item.number);
@@ -467,8 +495,9 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
 }
 
 /// Hands the mirrors the heads of the PRs the user's work reaches in `repository`, after a step saved its
-/// facts, and the commit each of the user's Reviews there covered. The mirror fetches only the heads that
-/// moved, and the reviewed commits it doesn't keep yet. A store that can't answer just saved, and the next
+/// facts, the commit each of the user's Reviews there covered, and the commits whose patch-ids the Stale
+/// review check needs and the store lacks. The mirror fetches only the heads that moved, and the reviewed
+/// commits it doesn't keep yet. A store that can't answer just saved, and the next
 /// step that saves says if it is in trouble, and hands the heads. The heads go though the reviewed commits
 /// can't be read, and those wait for a step whose read works.
 fn hand_over_heads(
@@ -480,8 +509,42 @@ fn hand_over_heads(
     if let (Some(settings), Ok(facts)) = (syncs.settings(repository), store.work_facts(repository))
     {
         let reviewed = store.reviewed_commits(repository).unwrap_or_default();
+        let patches = Workbench::patches_to_read(&facts);
         let heads = Workbench::reached_heads(facts, settings);
-        board.reached_heads(repository, heads, reviewed);
+        let work = MirrorWork {
+            heads,
+            reviewed,
+            patches,
+        };
+        board.reached_heads(repository, work);
+    }
+}
+
+/// Keeps the patch-ids the Mirror worker read, and tells the window of the PRs whose reviewed commit or head
+/// they are, whose review state can change with them.
+fn keep_patches(
+    board: &mut StatusBoard,
+    store: &Store,
+    repository: &RepositoryName,
+    patches: Vec<CommitPatches>,
+) {
+    let read: BTreeSet<CommitSha> = patches.iter().map(|read| read.of.commit.clone()).collect();
+    let facts = store
+        .save_patch_ids(repository, patches)
+        .and_then(|()| store.work_facts(repository));
+    match facts {
+        Ok(facts) => {
+            let reviewed = &facts.reviews.reviewed;
+            let checked = facts.pull_requests.iter().filter(|pr| {
+                let sides = pr.head.iter().chain(reviewed.get(&pr.number));
+                sides.into_iter().any(|commit| read.contains(commit))
+            });
+            board.changed(&Change {
+                repository: repository.clone(),
+                items: checked.map(|pr| pr.number).collect(),
+            });
+        }
+        Err(problem) => board.set(Status::Problem { problem }),
     }
 }
 

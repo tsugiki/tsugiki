@@ -71,7 +71,7 @@ const row = {
   ci: "SUCCESS",
   updated_at: "2026-11-04T10:00:00Z",
   reasons: ["review_request"],
-  your_review: null,
+  your_review: { kind: "unreviewed" },
   seen: {
     mark: { numbers: [160662], up_to: "2026-11-04T10:00:00Z" },
     state: "new_activity",
@@ -428,7 +428,7 @@ const backportRow = {
   title: "[3.14] gh-112564: Fix UAF for gc debug print (GH-160662)",
   target_branch: "3.14",
   reasons: [],
-  your_review: null,
+  your_review: { kind: "unreviewed" },
   backport: "bot",
 };
 
@@ -451,6 +451,38 @@ it("lists a Backport with no Origin PR directly under its Issue", async () => {
   await unfoldAll();
 
   expect(await screen.findByText("Bot backport · some-author · into 3.14 · Open · CI passed")).toBeTruthy();
+});
+
+const staleReview = {
+  kind: "stale_review",
+  files: [
+    { path: "Lib/ast.py", whitespace_only: false },
+    { path: "Python/ast.c", whitespace_only: true },
+  ],
+};
+const staleHover = "Changed since your Review: 2 files\nLib/ast.py\nPython/ast.c (whitespace only)";
+
+it("shows a Stale review on a PR's row in the Issue's tree, with the files changed in its hover", async () => {
+  const stale = { ...row, reasons: ["reviewed"], your_review: staleReview };
+  answering({ ...issue, pull_requests: [{ kind: "pr", ...stale, backports: [] }] });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
+  await unfoldAll();
+
+  const badge = await screen.findByText("Stale review");
+  expect(badge.title).toBe(staleHover);
+  expect(badge.closest(".facts")?.textContent).toBe(
+    "Stale review · some-author · into main · Open · CI passed",
+  );
+});
+
+it.each([
+  ["Standalone PR", { kind: "standalone_pr", ...row, backports: [] }],
+  ["Backport with no Issue", { kind: "standalone_backport", ...row, backport: "manual" }],
+])("shows a Stale review on a %s's row while nothing else about it waits", async (_, item) => {
+  answering({ ...item, your_review: staleReview, attention: null });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
+
+  expect((await screen.findByText("Stale review")).title).toBe(staleHover);
 });
 
 it("lists a Standalone PR's Backports beneath it", async () => {

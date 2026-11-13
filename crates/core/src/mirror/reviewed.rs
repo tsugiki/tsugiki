@@ -114,11 +114,7 @@ impl Worker {
     /// Changes what the worker knows of `repository`'s reviewed commits with `change`. The Repository keeps
     /// its turn for heads.
     fn change_reviews(&mut self, repository: &RepositoryName, change: impl FnOnce(&mut Reviews)) {
-        let at = (self.heads.iter()).position(|known| known.repository.is_same(repository));
-        let at = at.unwrap_or(self.heads.len());
-        let mut known = self.take_heads(repository);
-        change(&mut known.reviews);
-        self.heads.insert(at, known);
+        self.change_heads(repository, |known| change(&mut known.reviews));
     }
 
     /// Starts keeping the reviewed commits that wait in the first Repository whose mirror is there, while
@@ -290,7 +286,11 @@ impl Worker {
                 }
                 self.start_reviewed_fetch(repository, mirror, missing);
             }
-            Step::Fetch { missing } if succeeded => self.note_kept_reviewed(&repository, missing),
+            Step::Fetch { missing } if succeeded => {
+                self.note_kept_reviewed(&repository, missing);
+                // The Stale review check can read the commits it brought now.
+                self.change_heads(&repository, |known| known.patches.read_missing_again());
+            }
             Step::Fetch { mut missing } => {
                 let refusal = REFUSALS.iter().any(|words| last_words.contains(words));
                 let refused: Vec<(u32, CommitSha)> = (missing.iter())

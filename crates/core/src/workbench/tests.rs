@@ -2,7 +2,7 @@ use serde_json::Value;
 
 use super::*;
 use crate::github::pull_requests::{PrState, PullRequestFacts};
-use crate::store::ActivityFacts;
+use crate::store::{ActivityFacts, ReviewFacts};
 use crate::workbench::testing::{
     at, cpython, first_issue, fixing, issue, mine, outline, reasons_for, stranger, workbench,
 };
@@ -78,6 +78,7 @@ fn nothing_is_the_users_before_anyone_signs_in() {
     let found = Workbench::from_facts(
         WorkFacts {
             activity: ActivityFacts::default(),
+            reviews: ReviewFacts::default(),
             viewer: None,
             pull_requests: vec![mine(1)],
             issues: vec![issue(1)],

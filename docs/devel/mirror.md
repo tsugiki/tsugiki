@@ -26,6 +26,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   another commit. A reviewed commit the mirror lacks, from a Review older than the mirror or on a commit a
   force-push dropped before the mirror fetched it, is fetched by its SHA, once. A commit GitHub refuses to
   send is noted beside the mirror and not asked for again.
+- Between its git jobs the Mirror worker reads the per-file patch-ids of the reviewed commit and the head
+  that the Stale review check compares, once the mirror has both, and the session keeps them in `tsugiki.db`.
+  It reads only the commits the database lacks, and a commit once since launch.
 - While a Repository's mirror is still being cloned, the diff, the definitions and Open in editor say how far
   it has got. The Conversation tab works meanwhile.
 - Offline, Tsugiki starts no clone and no fetch, though upkeep, which needs no network, goes on. A clone or

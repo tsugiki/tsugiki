@@ -9,11 +9,13 @@ mod issues;
 mod links;
 pub mod pr_files;
 pub mod pr_view;
+mod review_state;
 mod rows;
 
 pub use attention::{Attention, Seen, SeenMark, SeenState, Why};
 pub use filters::FilterLine;
 pub use issues::IssueItem;
+pub use review_state::YourReview;
 pub(crate) use rows::reasons;
 pub use rows::{WorkReason, WorkbenchRow};
 
@@ -29,6 +31,7 @@ use crate::filters::FilterQuery;
 use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::PrHead;
 use crate::links::BackportKind;
+use crate::patch_ids::PatchesOf;
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
 use crate::store::{StoreReader, WorkFacts};
@@ -173,6 +176,12 @@ impl Workbench {
             .collect()
     }
 
+    /// The commits whose per-file patch-ids the Stale review check still needs, for the mirror to read: the
+    /// reviewed commit and the head of each open PR whose head moved on from the user's Review.
+    pub fn patches_to_read(facts: &WorkFacts) -> Vec<PatchesOf> {
+        review_state::patches_to_read(facts)
+    }
+
     /// The numbers of the Issues and PRs the user's work reaches: each on the whole Workbench, the quiet
     /// items and those in Issues' trees too.
     pub(crate) fn reached(facts: WorkFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
@@ -294,8 +303,8 @@ fn candidates(
         return Vec::new();
     };
     let linked = link(facts.pull_requests, &facts.issues, repository, |pr| {
-        let seen = causes.seen_of(vec![pr.number]);
-        row(pr, &viewer, seen)
+        let (seen, review) = (causes.seen_of(vec![pr.number]), causes.review_of(pr.number));
+        row(pr, &viewer, review, seen)
     });
     let mut issues: BTreeMap<u32, (IssueFacts, Vec<TreeEntry>)> = facts
         .issues

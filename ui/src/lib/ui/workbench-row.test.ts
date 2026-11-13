@@ -4,6 +4,7 @@ import {
   ago,
   backportWords,
   details,
+  detailWords,
   headline,
   peopleOf,
   preview,
@@ -22,7 +23,7 @@ const row: WorkbenchRow = {
   ci: "SUCCESS",
   updated_at: "2026-11-04T10:00:00Z",
   reasons: ["review_request"],
-  your_review: null,
+  your_review: { kind: "unreviewed" },
   seen: { mark: { numbers: [160662], up_to: null }, state: "seen" },
 };
 
@@ -156,6 +157,7 @@ it("says an Issue has no PR yet, and gives a PR's facts", () => {
 
 it.each<[Why, string]>([
   [{ kind: "review_requested" }, "Review requested from you"],
+  [{ kind: "stale_review" }, "Changed since your Review"],
   [{ kind: "ci_failed", checks: [] }, "CI failed"],
   [{ kind: "ci_failed", checks: ["Tests / Ubuntu", "Docs"] }, "CI failed: Tests / Ubuntu, Docs"],
   [{ kind: "ci_passed" }, "CI passed"],
@@ -184,12 +186,64 @@ it("says a PR's state, CI and where the user stands in the Issue view, each with
     { words: "Review request", tone: "request" },
   ]);
   const words = (changes: Partial<WorkbenchRow>) => prStateWords({ ...row, ...changes }).map((w) => w.words);
-  expect(words({ reasons: [], your_review: "CHANGES_REQUESTED" })).toEqual([
+  expect(words({ reasons: [], your_review: { kind: "reviewed" } })).toEqual([
     "Open",
     "CI passed",
-    "You requested changes",
+    "Reviewed",
   ]);
   expect(words({ reasons: [], is_draft: true, ci: null })).toEqual(["Open", "Draft"]);
+});
+
+const stale: WorkbenchRow = {
+  ...row,
+  reasons: ["reviewed"],
+  your_review: {
+    kind: "stale_review",
+    files: [
+      { path: "Lib/ast.py", whitespace_only: false },
+      { path: "Python/ast.c", whitespace_only: true },
+    ],
+  },
+};
+
+it("says a Stale review in the danger tone, and its hover lists the files changed since the Review", () => {
+  expect(prStateWords(stale).at(-1)).toEqual({
+    words: "Stale review",
+    tone: "bad",
+    hover: "Changed since your Review: 2 files\nLib/ast.py\nPython/ast.c (whitespace only)",
+  });
+});
+
+it("counts one file changed since the Review as one", () => {
+  const one: WorkbenchRow = {
+    ...stale,
+    your_review: { kind: "stale_review", files: [{ path: "Lib/ast.py", whitespace_only: false }] },
+  };
+  expect(prStateWords(one).at(-1)?.hover).toBe("Changed since your Review: 1 file\nLib/ast.py");
+});
+
+it("shows a Stale review on the Workbench row in place of the Reviewed reason", () => {
+  const words = detailWords(stale);
+  expect(words.map((word) => word.words)).toEqual([
+    "Stale review",
+    "some-author",
+    "into main",
+    "Open",
+    "CI passed",
+  ]);
+  expect(words[0]?.hover).toContain("Python/ast.c (whitespace only)");
+  expect(details(stale)).toBe("Stale review · some-author · into main · Open · CI passed");
+});
+
+it("shows a Stale review on the row of a PR that is no longer open, which has no reasons", () => {
+  const merged = detailWords({ ...stale, reasons: [], state: "MERGED" });
+  expect(merged.map((word) => word.words)).toEqual([
+    "Stale review",
+    "some-author",
+    "into main",
+    "Merged",
+    "CI passed",
+  ]);
 });
 
 it.each([

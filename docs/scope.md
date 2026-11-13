@@ -77,7 +77,12 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 ### Review state and activity ([review-state.md](devel/review-state.md))
 
 - Each PR is **Unreviewed**, **Reviewed** or **Stale review**. A **Review** is a review on GitHub or a
-  **Local mark**.
+  **Local mark**, and one that only replies to existing threads doesn't count.
+- Each open PR with the user's Review is checked in the background once the mirror has a head that differs
+  from the reviewed commit, so its row, Needs attention and the counts are right without opening it. A Stale
+  review's hover lists the files changed since the Review, and names those changed only in whitespace.
+- A merged or closed PR keeps the verdict of its final head, and never Needs attention.
+- A **Bot backport** shares its Origin PR's review state, and its Stale review is counted once.
 - **Last seen** and **New activity**.
 
 ### Alerts ([alerts.md](devel/alerts.md))

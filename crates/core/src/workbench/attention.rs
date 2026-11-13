@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use time::OffsetDateTime;
 
+use super::review_state::{YourReview, your_review};
 use super::rows::reasons;
 use super::{IssueItem, WorkReason, WorkbenchItem};
 use crate::activity::{NewActivity, News, WhatHappened, has_failed};
@@ -22,6 +23,8 @@ use crate::store::{ActivityFacts, WorkFacts};
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Why {
     ReviewRequested,
+    /// The PR's diff changed since the user's Review. The row names the files.
+    StaleReview,
     /// Empty `checks` means Tsugiki hasn't heard which ones failed, or GitHub names none.
     CiFailed {
         checks: Vec<String>,
@@ -115,6 +118,8 @@ pub(super) struct Causes {
     known_until: BTreeMap<u32, OffsetDateTime>,
     /// The Issues and PRs the user marked unseen.
     marked_unseen: BTreeSet<u32>,
+    /// Where the user's Review of each PR stands. A PR missing here is Unreviewed.
+    reviews: BTreeMap<u32, YourReview>,
 }
 
 impl Causes {
@@ -123,10 +128,14 @@ impl Causes {
         let Some(viewer) = facts.viewer.as_ref() else {
             return Self::default();
         };
+        let reviews: BTreeMap<u32, YourReview> = (facts.pull_requests.iter())
+            .map(|pr| (pr.number, your_review(pr, viewer, &facts.reviews)))
+            .collect();
         let rules = Rules {
             news: News::new(&facts.activity, &facts.pull_requests, viewer, conventions),
             facts: &facts.activity,
             viewer,
+            reviews: &reviews,
         };
         let on_pull_requests = facts.pull_requests.iter().map(|pr| {
             let news = rules.news.on_pull_request(pr);
@@ -154,7 +163,14 @@ impl Causes {
             with_news,
             known_until: known_until(facts),
             marked_unseen: facts.activity.marked_unseen.keys().copied().collect(),
+            reviews,
         }
+    }
+
+    /// Where the user's Review of PR `number` stands.
+    pub(super) fn review_of(&self, number: u32) -> YourReview {
+        let review = self.reviews.get(&number).cloned();
+        review.unwrap_or(YourReview::Unreviewed)
     }
 
     /// True when Issue or PR `number` itself Needs attention.
@@ -251,6 +267,7 @@ struct Rules<'a> {
     news: News<'a>,
     facts: &'a ActivityFacts,
     viewer: &'a Login,
+    reviews: &'a BTreeMap<u32, YourReview>,
 }
 
 impl Rules<'_> {
@@ -323,6 +340,17 @@ impl Rules<'_> {
         // A colleague's Draft PR needs attention only when it carries a Review request.
         if pull_request.is_draft && !own {
             return causes;
+        }
+        // A merged or closed PR waits on nobody, whatever its last check found.
+        let stale = matches!(
+            self.reviews.get(&number),
+            Some(YourReview::StaleReview { .. })
+        );
+        if stale && pull_request.state == PrState::Open {
+            causes.push(Cause {
+                at: pull_request.updated_at,
+                why: Why::StaleReview,
+            });
         }
         let involvement = if pull_request.is_written_or_reviewed_by(self.viewer) {
             Involvement::WroteOrReviewed

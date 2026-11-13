@@ -10,7 +10,7 @@ use crate::github::pull_requests::{OffDefault, PrState, PullRequestFacts};
 use crate::login::Login;
 use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
-use crate::store::{ActivityFacts, WorkFacts};
+use crate::store::{ActivityFacts, ReviewFacts, WorkFacts};
 
 pub(super) fn me() -> Login {
     Login::new("octocat")
@@ -89,12 +89,22 @@ pub(super) fn workbench(
     pull_requests: Vec<PullRequestFacts>,
     issues: Vec<IssueFacts>,
 ) -> Workbench {
+    reviewed_workbench(pull_requests, issues, ReviewFacts::default())
+}
+
+/// The Workbench of `pull_requests` and `issues`, with what `reviews` says of the user's Reviews.
+pub(super) fn reviewed_workbench(
+    pull_requests: Vec<PullRequestFacts>,
+    issues: Vec<IssueFacts>,
+    reviews: ReviewFacts,
+) -> Workbench {
     let facts = WorkFacts {
         viewer: Some(me()),
         pull_requests,
         issues,
         filters: BTreeMap::new(),
         activity: ActivityFacts::default(),
+        reviews,
     };
     Workbench::from_facts(facts, &cpython(), &WorkbenchView::Whole)
 }

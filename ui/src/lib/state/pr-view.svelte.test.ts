@@ -33,7 +33,7 @@ const view: PrView = {
   ci: null,
   updated_at: "2026-11-04T10:00:00Z",
   reasons: [],
-  your_review: null,
+  your_review: { kind: "unreviewed" },
   seen: { mark: { numbers: [11], up_to: null }, state: "seen" },
   content: null,
 };

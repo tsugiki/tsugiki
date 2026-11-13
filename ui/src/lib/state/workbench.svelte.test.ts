@@ -25,7 +25,7 @@ const item = (number: number): ListedItem => ({
   ci: "SUCCESS",
   updated_at: "2026-11-04T10:00:00Z",
   reasons: ["own_pr"],
-  your_review: null,
+  your_review: { kind: "unreviewed" },
   seen: seen(number),
   backports: [],
 });
@@ -41,7 +41,7 @@ const row: WorkbenchRow = {
   ci: null,
   updated_at: "2026-11-04T10:00:00Z",
   reasons: [],
-  your_review: null,
+  your_review: { kind: "unreviewed" },
   seen: seen(0),
 };
 

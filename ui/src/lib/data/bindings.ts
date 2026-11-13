@@ -280,6 +280,16 @@ export type Change = {
 /**  Sent when a Repository's stored facts change, so each screen showing them asks again (ADR 0008). */
 export type Changed = Change;
 
+/**  A file whose change differs from the one the user's Review covered. */
+export type ChangedFile = {
+	path: string,
+	/**
+	 *  The two changes differ only in whitespace. That still makes the Review stale, as indentation matters
+	 *  in Python.
+	 */
+	whitespace_only: boolean,
+};
+
 /**  A commit's CI, as GitHub rolls its checks up. */
 export type CiState = "EXPECTED" | "ERROR" | "FAILURE" | "PENDING" | "SUCCESS";
 
@@ -2247,6 +2257,8 @@ export type WebAddress = string;
 
 /**  One reason an item Needs attention. */
 export type Why = { kind: "review_requested" } | 
+/**  The PR's diff changed since the user's Review. The row names the files. */
+{ kind: "stale_review" } | 
 /**  Empty `checks` means Tsugiki hasn't heard which ones failed, or GitHub names none. */
 { kind: "ci_failed"; checks: string[] } | { kind: "ci_passed" } | { kind: "changes_requested"; by: Login } | { kind: "approved"; by: Login } | { kind: "reviewed"; by: Login } | { kind: "comment"; by: Login } | { kind: "commits"; by: Login } | { kind: "ready_for_review"; by: Login } | { kind: "mentioned" } | { kind: "backport_failed"; target: string } | 
 /**  The user marked the item unseen. */
@@ -2306,8 +2318,8 @@ export type WorkbenchRow_Deserialize = {
 	updated_at: string,
 	/**  Empty for a PR that another PR put on the Workbench, and for one no longer open. */
 	reasons: WorkReason[],
-	/**  The user's latest submitted Review. A pending Review is a draft, so it isn't one yet. */
-	your_review?: ReviewState | null,
+	/**  Where the user's Review stands: Unreviewed, Reviewed or Stale review. */
+	your_review: YourReview,
 	/**  Its part in Mark Seen, which covers this PR alone. */
 	seen: Seen_Deserialize,
 };
@@ -2324,8 +2336,8 @@ export type WorkbenchRow_Serialize = {
 	updated_at: string,
 	/**  Empty for a PR that another PR put on the Workbench, and for one no longer open. */
 	reasons: WorkReason[],
-	/**  The user's latest submitted Review. A pending Review is a draft, so it isn't one yet. */
-	your_review: ReviewState | null,
+	/**  Where the user's Review stands: Unreviewed, Reviewed or Stale review. */
+	your_review: YourReview,
 	/**  Its part in Mark Seen, which covers this PR alone. */
 	seen: Seen_Serialize,
 };
@@ -2364,6 +2376,13 @@ export type Workbench_Serialize = {
 	review_requests: number,
 	filters: FilterLine_Serialize[],
 };
+
+/**  Where the user's Review of a PR stands, which its row shows in place of GitHub's review state. */
+export type YourReview = { kind: "unreviewed" } | 
+/**  The PR's diff is the same as when the user reviewed it, or no check has said otherwise yet. */
+{ kind: "reviewed" } | 
+/**  The PR's diff changed since the user's Review, in `files`. */
+{ kind: "stale_review"; files: ChangedFile[] };
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

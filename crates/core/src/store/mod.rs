@@ -11,6 +11,7 @@ mod filters;
 mod issue_content;
 mod issues;
 mod migrate;
+mod patch_ids;
 mod pull_request_content;
 mod pull_requests;
 /// Draws the schema in `docs/schema.md` and keeps it current. Only its tests use it.
@@ -38,10 +39,12 @@ use crate::github::issues::IssueFacts;
 use crate::github::pull_request_content::PullRequestContent;
 use crate::github::pull_requests::{PullRequestFacts, ReviewedCommit};
 use crate::login::Login;
+use crate::patch_ids::CommitPatches;
 use crate::repository::RepositoryName;
 pub use activity::ActivityFacts;
 pub use filters::{FilterProblem, FilterResults, NarrowedResults};
 use migrate::{MIGRATIONS, Migration};
+pub use patch_ids::ReviewFacts;
 pub use sync_state::{ChangeCheck, FirstSyncPlace, SyncState};
 
 /// The database connection, which only `store` may hold. Code here names it through this alias, so
@@ -396,6 +399,18 @@ impl Store {
         read.map_err(saying(CANT_READ))
     }
 
+    /// Keeps the per-file patch-ids of each commit in `patches`, which the Stale review check compares.
+    pub fn save_patch_ids(
+        &self,
+        repository: &RepositoryName,
+        patches: Vec<CommitPatches>,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved =
+            self.call(move |connection| patch_ids::save(connection, &repository, &patches))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
     /// Mark Seen on items `numbers`: clears their Marked unseen, and moves their Last seen on to `up_to`, if
     /// it's given.
     pub fn mark_seen(
@@ -497,6 +512,7 @@ pub struct WorkFacts {
     /// Each search of this Repository, with its last results.
     pub filters: BTreeMap<FilterQuery, FilterResults>,
     pub activity: ActivityFacts,
+    pub reviews: ReviewFacts,
 }
 
 fn read_last_login(connection: &Connection) -> rusqlite::Result<Option<Login>> {
@@ -531,10 +547,12 @@ fn work_facts_in(
     repository: &RepositoryName,
 ) -> rusqlite::Result<WorkFacts> {
     let viewer = read_last_login(transaction)?;
+    let pull_requests = pull_requests::read_all(transaction, repository)?;
     Ok(WorkFacts {
         activity: activity::read_facts(transaction, repository, viewer.as_ref())?,
+        reviews: patch_ids::read_facts(transaction, repository, &pull_requests)?,
         viewer,
-        pull_requests: pull_requests::read_all(transaction, repository)?,
+        pull_requests,
         issues: issues::read_all(transaction, repository)?,
         filters: filters::read_all(transaction, repository)?,
     })

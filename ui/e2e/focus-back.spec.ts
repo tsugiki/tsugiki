@@ -18,7 +18,7 @@ const own: ListedItem = {
   ci: "FAILURE",
   updated_at: "2026-11-04T09:00:00Z",
   reasons: ["own_pr"],
-  your_review: null,
+  your_review: { kind: "unreviewed" },
   seen: { mark: { numbers: [157178], up_to: null }, state: "seen" },
   backports: [],
 };

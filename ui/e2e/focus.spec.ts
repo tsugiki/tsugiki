@@ -24,7 +24,7 @@ const row: WorkbenchRow = {
   ci: "SUCCESS",
   updated_at: "2026-11-04T10:00:00Z",
   reasons: [],
-  your_review: null,
+  your_review: { kind: "unreviewed" },
   seen: { mark: { numbers: [10], up_to: null }, state: "seen" },
 };
 

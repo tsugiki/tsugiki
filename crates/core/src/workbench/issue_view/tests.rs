@@ -9,10 +9,10 @@ use crate::github::issues::IssueFacts;
 use crate::github::labels::Label;
 use crate::github::pull_requests::{LatestReview, PullRequestFacts, ReviewState};
 use crate::store::FilterResults;
-use crate::workbench::WorkbenchRow;
 use crate::workbench::testing::{
     ViewWorld, backport, bots_backport, first_issue, fixing, issue, workbench,
 };
+use crate::workbench::{WorkbenchRow, YourReview};
 
 fn merged(facts: PullRequestFacts) -> PullRequestFacts {
     PullRequestFacts {
@@ -274,36 +274,54 @@ fn an_issue_view_names_the_prs_in_its_tree_that_need_attention() {
 }
 
 #[test]
-fn a_pr_row_says_how_the_user_last_reviewed_it() {
+fn a_pr_row_says_whether_the_user_has_reviewed_it() {
     let world = ViewWorld::new("issue-view-review");
     let review = |author: &str, state| LatestReview {
         author: Login::new(author),
         state,
+    };
+    // A colleague's PR, as the user's comments on their own PR are no Review of it.
+    let theirs = |number, issue| PullRequestFacts {
+        author: Some(Login::new("some-author")),
+        ..fixing(number, issue)
     };
     let reviewed = PullRequestFacts {
         latest_reviews: vec![
             review("some-reviewer", ReviewState::Commented),
             review("octocat", ReviewState::ChangesRequested),
         ],
-        ..fixing(5, 1)
+        ..theirs(5, 1)
     };
     let drafted = PullRequestFacts {
         latest_reviews: vec![review("octocat", ReviewState::Pending)],
-        ..fixing(6, 2)
+        ..theirs(6, 2)
     };
     let others_only = PullRequestFacts {
         latest_reviews: vec![review("some-reviewer", ReviewState::Approved)],
-        ..fixing(7, 3)
+        ..theirs(7, 3)
+    };
+    let own = PullRequestFacts {
+        latest_reviews: vec![review("octocat", ReviewState::Commented)],
+        ..fixing(8, 4)
     };
     world.has(
-        vec![reviewed, drafted, others_only],
-        vec![issue(1), issue(2), issue(3)],
+        vec![reviewed, drafted, others_only, own],
+        vec![issue(1), issue(2), issue(3), issue(4)],
     );
 
-    let your_review = |number| pr_row(&view(&world, number).unwrap()).your_review;
+    let your_review = |number| pr_row(&view(&world, number).unwrap()).your_review.clone();
 
-    assert_eq!(your_review(1), Some(ReviewState::ChangesRequested));
-    assert_eq!(your_review(2), None, "a pending Review is only a draft");
-    assert_eq!(your_review(3), None);
+    assert_eq!(your_review(1), YourReview::Reviewed);
+    assert_eq!(
+        your_review(2),
+        YourReview::Unreviewed,
+        "a pending Review is only a draft"
+    );
+    assert_eq!(your_review(3), YourReview::Unreviewed);
+    assert_eq!(
+        your_review(4),
+        YourReview::Unreviewed,
+        "the user's comments on their own PR"
+    );
     world.finish();
 }

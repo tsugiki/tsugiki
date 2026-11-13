@@ -36,7 +36,7 @@
   import StateIcon from "./StateIcon.svelte";
   import {
     ago,
-    details,
+    detailWords,
     headline,
     offersMarkSeen,
     peopleOf,
@@ -575,6 +575,9 @@
       goThrough(key === "alt+arrowleft" ? -1 : 1);
     }
   }
+
+  // Joins a PR's facts. Svelte drops the spaces at the ends of an element's text, so it comes from here.
+  const DOT = " · ";
 </script>
 
 <!-- An Issue's or a PR's number in the code font and its title, which name the button that opens it. One
@@ -615,8 +618,17 @@
     <span class="headline">
       {@render line({ number: row.number, kind: "pull_request", issue }, row, false, prIcon(row))}
     </span>
-    <small class="facts">{details(row)}</small>
+    <small class="facts">{@render facts(row)}</small>
   </div>
+{/snippet}
+
+<!-- A PR's facts, with a Stale review in the danger colour and the files changed since the Review in its
+     hover. -->
+{#snippet facts(row: WorkbenchRow)}
+  {#each detailWords(row) as { words, hover }, index (index)}{#if index > 0}{DOT}{/if}{#if hover}<span
+        class="stale"
+        title={hover}>{words}</span
+      >{:else}{words}{/if}{/each}
 {/snippet}
 
 {#snippet backports(rows: BackportRow[], issue: number | undefined)}
@@ -662,7 +674,11 @@
         {/if}
         <small class="age">{ago(item.updated_at, now)}</small>
       </span>
-      <small class="facts">{item.attention ? preview(item.attention) : summary(item)}</small>
+      <small class="facts"
+        >{#if item.attention}{preview(item.attention)}{:else if item.kind !== "issue"}{@render facts(
+            item,
+          )}{:else}{summary(item)}{/if}</small
+      >
     </div>
     {#if unfolded}
       <ul class="pull-requests">
@@ -974,10 +990,16 @@
     inset: 0;
   }
 
-  /* The state icon sits above the title's cover, so its tooltip names the state. */
-  .headline > :global(.octicon) {
+  /* The state icon sits above the title's cover, so its tooltip names the state, and a Stale review does too,
+     so its tooltip lists the files. */
+  .headline > :global(.octicon),
+  .stale {
     position: relative;
     z-index: 1;
+  }
+
+  .stale {
+    color: var(--danger);
   }
 
   /* The row's tint shows the pointer, and an underline across every title it passes would be noise. */

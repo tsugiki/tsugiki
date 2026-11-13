@@ -114,6 +114,21 @@ erDiagram
         TEXT submission
         INTEGER database_id "nullable"
     }
+    patched_commits {
+        TEXT repository PK
+        TEXT commit_sha PK
+        TEXT target_branch PK
+    }
+    file_patch_ids {
+        TEXT repository PK, FK
+        TEXT commit_sha PK, FK
+        TEXT target_branch PK, FK
+        INTEGER position PK
+        TEXT path
+        TEXT verbatim
+        TEXT loose
+        INTEGER generated
+    }
     review_requests }o--|| pull_requests : "repository, number"
     latest_reviews }o--|| pull_requests : "repository, number"
     assignees }o--|| pull_requests : "repository, number"
@@ -124,6 +139,7 @@ erDiagram
     pr_reviews }o--|| issue_content : "repository, number"
     review_threads }o--|| pr_reviews : "repository, number, review"
     review_thread_comments }o--|| review_threads : "repository, number, review, thread"
+    file_patch_ids }o--|| patched_commits : "repository, commit_sha, target_branch"
 ```
 
 ### Issues, their timelines and the viewer

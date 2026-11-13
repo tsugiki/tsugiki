@@ -16,6 +16,7 @@ use crate::github::pull_request_content::{
 use crate::github::pull_requests::{CiState, PrState, ReviewState};
 use crate::github::refresh::Etag;
 use crate::login::Login;
+use crate::patch_ids::PatchId;
 use crate::repository::RepositoryName;
 
 /// A time in a column, as seconds since the Unix epoch.
@@ -95,6 +96,20 @@ impl FromSql for CommitSha {
         let text = value.as_str()?;
         Self::parse(text)
             .ok_or_else(|| FromSqlError::Other(format!("{text} isn't a commit's SHA").into()))
+    }
+}
+
+impl ToSql for PatchId {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        self.as_str().to_sql()
+    }
+}
+
+impl FromSql for PatchId {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        let text = value.as_str()?;
+        Self::parse(text)
+            .ok_or_else(|| FromSqlError::Other(format!("{text} isn't a patch-id").into()))
     }
 }
 

@@ -33,7 +33,7 @@ const row = {
   ci: "SUCCESS" as const,
   updated_at: "2026-11-04T10:00:00Z",
   reasons: [],
-  your_review: "APPROVED" as const,
+  your_review: { kind: "reviewed" as const },
   seen: { mark: { numbers: [], up_to: null }, state: "seen" as const },
 };
 
@@ -42,7 +42,7 @@ const opened: TreeEntry = {
   number: 13,
   ...row,
   state: "OPEN",
-  your_review: null,
+  your_review: { kind: "unreviewed" },
   reasons: [],
   backports: [],
 };
@@ -210,11 +210,20 @@ it("shows each Origin PR's state, CI and review state, and folds its Backports i
   await shown(view);
 
   const words = [...document.querySelectorAll(".words")].map((line) => line.textContent);
-  expect(words.filter((line) => line === "Merged · CI passed · You approved")).toHaveLength(2);
+  expect(words.filter((line) => line === "Merged · CI passed · Reviewed")).toHaveLength(2);
   expect(words).toContain("Open · CI passed");
   const backports = screen.getByText(/Backports:/);
   expect(backports.textContent).toContain("3.14 Merged");
   expect(backports.textContent).toContain("3.13 Open");
+});
+
+it("shows a Stale review in the danger tone, with the files changed since the Review in its hover", async () => {
+  const files = [{ path: "Lib/ast.py", whitespace_only: true }];
+  await shown({ ...view, pull_requests: [{ ...opened, your_review: { kind: "stale_review", files } }] });
+
+  const stale = screen.getByText("Stale review");
+  expect(stale.classList).toContain("bad");
+  expect(stale.title).toBe("Changed since your Review: 1 file\nLib/ast.py (whitespace only)");
 });
 
 /** The heading over the tree. The Conversation's headings follow it. */
@@ -240,7 +249,7 @@ it("starts each PR's line with its branch and ends it with its author", async ()
     .map((item) => item.firstElementChild?.textContent?.trim());
   expect(lines).toEqual([
     "main #13 gh-7: Fix it some-author Open · CI passed",
-    "3.12 #14 gh-7: Fix it deleted user Merged · CI passed · You approved",
+    "3.12 #14 gh-7: Fix it deleted user Merged · CI passed · Reviewed",
   ]);
 });
 

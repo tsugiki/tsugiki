@@ -140,6 +140,8 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 - An interdiff showing only what changed since the user's last Review, built on `git range-diff`. It will be
   prototyped before it is built.
 - LSP-based navigation (clangd, pyright) as a second implementation of symbol lookup.
+- A keyboard caret in the diff, which the arrow keys move from word to word. In v1 a click picks the word
+  that Go to definition looks up.
 - Drafting comments offline, with an outbox that pushes them into the Pending review on reconnect.
 - Merging from Tsugiki in **Maintained repositories**, including Dependency updates in one go. Until then
   merging, labels and reviewers stay on GitHub.

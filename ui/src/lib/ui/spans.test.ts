@@ -45,3 +45,26 @@ it("cuts a row's text at the search's matches too, marking the one the tab is on
     { text: "yz'", highlight: "string", found: null },
   ]);
 });
+
+it("cuts a row's text at the word the user picked and at the caret, which may sit at the end", () => {
+  expect(
+    pieces("call(xyz)", [{ start: 0, end: 4, highlight: "function" }], [], { start: 5, end: 8, caret: 6 }),
+  ).toEqual([
+    { text: "call", highlight: "function", found: null },
+    { text: "(", highlight: null, found: null },
+    { text: "x", highlight: null, found: null, picked: true },
+    { text: "yz", highlight: null, found: null, picked: true, caret: true },
+    { text: ")", highlight: null, found: null },
+  ]);
+  expect(pieces("a xyz", [], [], { start: 2, end: 5, caret: 5 })).toEqual([
+    { text: "a ", highlight: null, found: null },
+    { text: "xyz", highlight: null, found: null, picked: true },
+    { text: "", highlight: null, found: null, caret: true },
+  ]);
+});
+
+it("draws no caret in a selected word", () => {
+  expect(pieces("xyz", [], [{ start: 0, end: 3, current: true }], { start: 0, end: 3, caret: null })).toEqual(
+    [{ text: "xyz", highlight: null, found: "current", picked: true }],
+  );
+});

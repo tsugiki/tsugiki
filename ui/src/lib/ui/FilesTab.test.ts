@@ -1285,3 +1285,156 @@ it("gives the threads on files no longer in the diff a last page of their own", 
   expect(bar().textContent.replace(/\s+/g, " ").trim()).toBe("‹› On files no longer in the diff");
   expect(threadBoxes()).toHaveLength(1);
 });
+
+/** Clicks `element` with the caret `offset` characters into its text, where Chromium leaves a collapsed
+ * selection after a click; jsdom lays nothing out to find the caret from. */
+const clickAt = async (element: Element, offset: number) => {
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  let left = offset;
+  let node = walker.nextNode() as Text | null;
+  while (node !== null && left > node.length) {
+    left -= node.length;
+    node = walker.nextNode() as Text | null;
+  }
+  getSelection()?.collapse(node ?? element, node === null ? 0 : left);
+  await fireEvent.click(element);
+};
+
+/** The code of the row `row` of the tab, on its `half` side by side. */
+const codeOf = (row: number, half = 0) =>
+  document.querySelectorAll(".row")[row]?.querySelectorAll(".text")[half] as Element;
+
+/** The button in the header of the diff's second file, which a click collapses below the rows these tests
+ * click. */
+const secondHeader = () => screen.getByRole("button", { name: "▾logo.png" });
+
+/** The picked word on each line of code that has one, as its pieces join up around the caret, and the text
+ * of the row it is on. */
+const picked = () =>
+  [...document.querySelectorAll(".text")]
+    .filter((code) => code.querySelector(".picked") !== null)
+    .map((code) => [
+      [...code.querySelectorAll(".picked")].map((piece) => piece.textContent).join(""),
+      code.closest(".row")?.textContent,
+    ]);
+
+it("puts the caret on the word a click lands on and highlights that word alone", async () => {
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[4]).toBe("2+new line");
+  });
+
+  // Six characters in, past the marker and inside "line".
+  await clickAt(codeOf(4), 6);
+
+  expect(picked()).toEqual([["line", "2+new line"]]);
+  expect(codeOf(4).querySelectorAll(".caret")).toHaveLength(1);
+  expect(lines()[4]).toBe("2+new line");
+  expect(files.picked).toMatchObject({ word: "line", side: "head", line: 2 });
+  await clickAt(codeOf(3), 2);
+  expect(picked()).toEqual([["old", "2-old line"]]);
+  expect(files.picked).toMatchObject({ word: "old", side: "base", line: 2 });
+});
+
+it("drops the pick on a click on no word, keeps it through a drag or a button, and never picks a hunk", async () => {
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[4]).toBe("2+new line");
+  });
+  await clickAt(codeOf(4), 2);
+
+  const range = document.createRange();
+  range.selectNodeContents(codeOf(3));
+  getSelection()?.removeAllRanges();
+  getSelection()?.addRange(range);
+  await fireEvent.click(codeOf(3));
+  expect(files.picked?.word).toBe("new");
+  await clickAt(secondHeader(), 0);
+  expect(files.picked?.word).toBe("new");
+
+  // Before the row's marker.
+  await clickAt(codeOf(4), 0);
+  expect([files.picked, picked()]).toEqual([undefined, []]);
+  await clickAt(codeOf(4), 2);
+  await clickAt(codeOf(1), 4);
+  expect(files.picked).toBeUndefined();
+  await clickAt(codeOf(4), 2);
+  await clickAt(document.querySelectorAll(".row")[4]?.querySelector(".number") as Element, 0);
+  expect(files.picked).toBeUndefined();
+
+  // Past the end of a line, or on a number the user can't select, the browser leaves the caret in code.
+  const row = document.querySelectorAll(".row")[4] as Element;
+  for (const target of [row, row.querySelector(".number") as Element]) {
+    await clickAt(codeOf(4), 9);
+    expect(files.picked?.word).toBe("line");
+    await fireEvent.click(target);
+    expect(files.picked).toBeUndefined();
+  }
+});
+
+it("selects nothing on a double-click whose first click picked no word", async () => {
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[4]).toBe("2+new line");
+  });
+  await clickAt(codeOf(4), 6);
+  getSelection()?.removeAllRanges();
+
+  await clickAt(secondHeader(), 0);
+  await fireEvent.dblClick(codeOf(4), { detail: 2 });
+  await tick();
+
+  expect(files.picked?.caret).toBe(5);
+  expect(getSelection()?.toString()).toBe("");
+  // Nor on one whose word went before the double-click came, as with a newer diff.
+  await clickAt(codeOf(4), 6);
+  files.dropPick();
+  await fireEvent.dblClick(codeOf(4), { detail: 2 });
+  await tick();
+  expect([files.picked, getSelection()?.toString()]).toEqual([undefined, ""]);
+});
+
+it("selects the word on a double-click, however far the browser's own word runs", async () => {
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[4]).toBe("2+new line");
+  });
+
+  await clickAt(codeOf(4), 6);
+  // The browser selects the whole line, as its word runs through the space.
+  getSelection()?.selectAllChildren(codeOf(4));
+  await fireEvent.click(codeOf(4), { detail: 2 });
+  await fireEvent.dblClick(codeOf(4), { detail: 2 });
+
+  await vi.waitFor(() => {
+    expect(getSelection()?.toString()).toBe("line");
+  });
+  expect(files.picked).toMatchObject({ word: "line", caret: null });
+  expect(picked()).toEqual([["line", "2+new line"]]);
+  expect(codeOf(4).querySelectorAll(".caret")).toHaveLength(0);
+});
+
+it("picks a word side by side on the half it was clicked on, and on the lines a gap left out", async () => {
+  setUpGapped();
+  const files = await shown(ready(gapped.length, { files: [gappedFile] }), sideBySide());
+  await vi.waitFor(() => {
+    expect(lines()[2]).toBe("50 a50 a");
+  });
+
+  // A line of context shows on both halves, and only the one clicked on takes the pick.
+  await clickAt(codeOf(2, 1), 1);
+  expect(files.picked).toMatchObject({ word: "a", side: "head", line: 50, column: "right" });
+  expect(codeOf(2, 0).querySelector(".picked")).toBeNull();
+  expect(codeOf(2, 1).querySelector(".picked")?.textContent).toBe("a");
+  await clickAt(codeOf(3, 0), 1);
+  expect(files.picked).toMatchObject({ word: "b", side: "base", line: 51 });
+
+  await fireEvent.click(screen.getAllByRole("button", { name: "Show 20 more lines" })[0] as HTMLElement);
+  await vi.waitFor(() => {
+    expect(lines()).toContain("109 def f109109 def f109");
+  });
+  const expanded = lines().indexOf("109 def f109109 def f109");
+  await clickAt(codeOf(expanded, 0), 6);
+  expect(files.picked).toMatchObject({ word: "f109", side: "head", line: 109, column: "left" });
+  expect(picked()).toEqual([["f109", "109 def f109109 def f109"]]);
+});

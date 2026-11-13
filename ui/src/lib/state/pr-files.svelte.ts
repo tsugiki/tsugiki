@@ -13,7 +13,8 @@
 // doesn't make the tab ask, so a ref GitHub leaves where it is starts no loop of fetches. The tab shows all
 // the files one under the other, or one file at a time, as `[diff] files` opens every PR and the user
 // switches the PR on show (#605). While the user's Review is a Stale review, each file says whether it
-// changed since, and those it left unchanged start collapsed too (#387).
+// changed since, and those it left unchanged start collapsed too (#387). A click or a double-click picks a
+// word on a line of code, for Go to definition (#437).
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import {
   commands,
@@ -50,6 +51,7 @@ import {
 } from "./diff-layout";
 import { FilePages, samePage, type FilesMode, type Page } from "./file-pages";
 import { hud, type Jump, type JumpTimer } from "./hud.svelte";
+import { wordAt, type Column, type Pick, type Picked, type PickedLine, type Side } from "./pick";
 
 export type PrFiles = PrFiles_Serialize;
 export type DiffFile = DiffFile_Serialize;
@@ -250,6 +252,8 @@ export class PrFilesState {
     return byRow;
   });
   #lastSearch = 0;
+  /** The word the user picked in the diff `view` shows. */
+  #pick = $state.raw<Pick>();
   /** The chunks asked for. Nothing draws from it, and the effect that asks shouldn't rerun on it. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   #asked = new Set<number>();
@@ -394,6 +398,8 @@ export class PrFilesState {
       this.#found = undefined;
       this.#at = undefined;
       this.#matchRow = undefined;
+      // So does the pick.
+      this.#pick = undefined;
     }
     // The threads the tab showed with the same diff, whose lines it has opened.
     const before = anew ? [] : this.threads;
@@ -804,6 +810,68 @@ export class PrFilesState {
   async #respan(diff: Ready, chunk: number) {
     const spans = await this.#fetchSpans(diff, chunk);
     if (spans !== undefined && this.#wanted(diff, chunk)) this.#spans.set(chunk, spans);
+  }
+
+  /** The word the user picked. A newer diff drops it, as its rows are other lines. */
+  get picked(): Pick | undefined {
+    return this.#pick;
+  }
+
+  /** Picks the word at offset `offset` of the line `at` shows in `column`, selected for a double-click, and
+   * returns the pick. With no word there, or no line the core has sent, it drops the pick. */
+  pickWord(at: PickedLine, column: Column, offset: number, selected: boolean): Pick | undefined {
+    const view = this.view;
+    const line = view?.state === "ready" ? this.#pickable(view, at) : undefined;
+    const word = line && wordAt(line.text, offset);
+    this.#pick =
+      line === undefined || word === undefined
+        ? undefined
+        : {
+            at,
+            column,
+            file: line.file,
+            side: line.side,
+            line: line.line,
+            word: line.text.slice(word.start, word.end),
+            start: word.start,
+            end: word.end,
+            caret: selected ? null : offset,
+          };
+    return this.#pick;
+  }
+
+  dropPick() {
+    this.#pick = undefined;
+  }
+
+  /** The pick's place in the line `at` shows in `column`, if the pick is on that line. A pick made unified
+   * shows on both halves of a line of context side by side. */
+  pickedIn(at: PickedLine, column: Column): Picked | undefined {
+    const pick = this.picked;
+    if (pick === undefined) return undefined;
+    const here =
+      at.kind === "row"
+        ? pick.at.kind === "row" && pick.at.row === at.row
+        : pick.at.kind === "line" && pick.at.file === at.file && pick.at.line === at.line;
+    if (!here || (pick.column !== null && column !== null && pick.column !== column)) return undefined;
+    return { start: pick.start, end: pick.end, caret: pick.caret };
+  }
+
+  /** The text of the line `at` shows, with where a lookup finds it, if it's a line of code the core sent. */
+  #pickable(
+    view: Ready,
+    at: PickedLine,
+  ): { text: string; file: number; side: Side; line: number } | undefined {
+    if (at.kind === "line") {
+      const held = this.#lines.get(`${String(at.file)}:${String(at.line)}`);
+      return held && { text: held.text, file: at.file, side: "head", line: at.line };
+    }
+    const row = this.row(at.row);
+    const file = fileOf(view.files, at.row);
+    if (row?.kind === "removed") return { text: row.text, file, side: "base", line: row.old };
+    if (row?.kind === "added" || row?.kind === "context")
+      return { text: row.text, file, side: "head", line: row.new };
+    return undefined;
   }
 
   /** Line `line` at the head of file `file`, which an expanded gap shows. The layout shows only lines the

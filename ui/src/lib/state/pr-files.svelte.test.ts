@@ -1941,3 +1941,104 @@ it("keeps the file on show when a newer diff comes, wherever that one lists it",
 
   expect(files.shown).toEqual({ kind: "file", file: 2 });
 });
+
+/** A file whose hunk has a line of context, a removed line and an added one, with rows 2 to 4. */
+const picking: DiffRow[] = [
+  { kind: "file", path: "a.py", old_path: null, change: { kind: "lines", added: 1, removed: 1 } },
+  { kind: "hunk", text: "@@ -7,2 +7,2 @@" },
+  { kind: "context", old: 7, new: 8, text: "def area(width):" },
+  { kind: "removed", old: 8, text: "    return width * 2" },
+  { kind: "added", new: 9, text: "    return width ** 2" },
+];
+
+/** The Files tab of `picking`'s diff at `head`, once its rows came. */
+const pickable = async (head = "abc") => {
+  core.pullRequestRows.mockResolvedValue(ok(picking));
+  const files = await loaded(ready(head, picking.length, [file("a.py", 0)]));
+  files.need(0, picking.length - 1);
+  await vi.waitFor(() => {
+    expect(files.row(4)).toBeDefined();
+  });
+  return files;
+};
+
+it("picks the word at a click, at the base for a removed line and at the head for the rest", async () => {
+  const files = await pickable();
+  const where = (row: number, offset: number) => {
+    const pick = files.pickWord({ kind: "row", row }, null, offset, false);
+    return pick && [pick.word, pick.side, pick.file, pick.line, pick.start, pick.end, pick.caret];
+  };
+
+  expect(where(2, 6)).toEqual(["area", "head", 0, 8, 4, 8, 6]);
+  expect(where(3, 13)).toEqual(["width", "base", 0, 8, 11, 16, 13]);
+  expect(where(4, 16)).toEqual(["width", "head", 0, 9, 11, 16, 16]);
+  expect(files.picked?.word).toBe("width");
+});
+
+it("drops the pick on a click on no word, on a row that isn't code, and on a row that hasn't come", async () => {
+  const files = await pickable();
+  const pick = (row: number, offset: number) => {
+    files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+    files.pickWord({ kind: "row", row }, null, offset, false);
+    return files.picked;
+  };
+
+  expect(pick(4, 2)).toBeUndefined();
+  expect(pick(1, 4)).toBeUndefined();
+  expect(pick(0, 1)).toBeUndefined();
+  expect(pick(9, 1)).toBeUndefined();
+});
+
+it("picks nothing before the diff comes", async () => {
+  const files = await loaded();
+
+  expect(files.pickWord({ kind: "row", row: 2 }, null, 6, false)).toBeUndefined();
+});
+
+it("selects the word on a double-click, with no caret drawn", async () => {
+  const files = await pickable();
+
+  files.pickWord({ kind: "row", row: 4 }, null, 12, true);
+
+  expect(files.picked).toMatchObject({ word: "width", start: 11, end: 16, caret: null });
+  expect(files.pickedIn({ kind: "row", row: 4 }, null)).toEqual({ start: 11, end: 16, caret: null });
+});
+
+it("shows the pick on its line alone, and on the half of a line of context it was made on", async () => {
+  const files = await pickable();
+
+  files.pickWord({ kind: "row", row: 2 }, "left", 5, false);
+
+  expect(files.pickedIn({ kind: "row", row: 2 }, "left")).toEqual({ start: 4, end: 8, caret: 5 });
+  expect(files.pickedIn({ kind: "row", row: 2 }, "right")).toBeUndefined();
+  expect(files.pickedIn({ kind: "row", row: 2 }, null)).toEqual({ start: 4, end: 8, caret: 5 });
+  expect(files.pickedIn({ kind: "row", row: 3 }, "left")).toBeUndefined();
+  expect(files.pickedIn({ kind: "line", file: 0, line: 2 }, null)).toBeUndefined();
+  files.pickWord({ kind: "row", row: 2 }, null, 5, false);
+  expect(files.pickedIn({ kind: "row", row: 2 }, "right")).toEqual({ start: 4, end: 8, caret: 5 });
+});
+
+it("picks a word on a line an expanded gap shows, at the head", async () => {
+  core.pullRequestLines.mockImplementation(({ start, end }) => Promise.resolve(ok(headLines(start, end))));
+  const files = await loaded(gapped());
+  files.expandAbove(small);
+  await vi.waitFor(() => {
+    expect(files.line(0, 3).text).toBe("line 3");
+  });
+
+  const pick = files.pickWord({ kind: "line", file: 0, line: 3 }, null, 2, false);
+
+  expect(pick).toMatchObject({ word: "line", side: "head", file: 0, line: 3 });
+  expect(files.pickedIn({ kind: "line", file: 0, line: 3 }, null)).toEqual({ start: 0, end: 4, caret: 2 });
+  expect(files.pickWord({ kind: "line", file: 0, line: 40 }, null, 2, false)).toBeUndefined();
+});
+
+it("lets go of the pick when a newer diff comes, as its rows are other lines", async () => {
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 4 }, null, 12, false);
+
+  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [file("a.py", 0)])));
+  await files.ask();
+
+  expect(files.picked).toBeUndefined();
+});

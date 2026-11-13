@@ -118,6 +118,34 @@ it("names a Backport's kind", () => {
   );
 });
 
+it("shows the review state a Bot backport shares with its Origin PR, Reviewed too", () => {
+  const bot = { ...row, reasons: [], backport: "bot" as const };
+  expect(details({ ...bot, your_review: { kind: "reviewed" } })).toBe(
+    "Reviewed · Bot backport · some-author · into main · Open · CI passed",
+  );
+  const stale = detailWords({
+    ...bot,
+    your_review: { kind: "stale_review", files: [{ path: "Lib/ast.py", whitespace_only: false }] },
+  });
+  expect(stale[0]).toEqual({
+    words: "Stale review",
+    tone: "bad",
+    hover: "Changed since your Review: 1 file\nLib/ast.py",
+  });
+  expect(details({ ...bot, reasons: ["reviewed"], your_review: { kind: "reviewed" } })).toBe(
+    "Reviewed · Bot backport · some-author · into main · Open · CI passed",
+  );
+  // The user's Review of the Backport itself doesn't make its row say Reviewed while the Origin PR is
+  // Unreviewed.
+  expect(details({ ...bot, reasons: ["reviewed"], your_review: { kind: "unreviewed" } })).toBe(
+    "Bot backport · some-author · into main · Open · CI passed",
+  );
+  // Once someone else pushes to it, it is a Manual backport with a review state of its own.
+  expect(details({ ...bot, backport: "manual", your_review: { kind: "unreviewed" } })).toBe(
+    "Manual backport · some-author · into main · Open · CI passed",
+  );
+});
+
 it("counts each Backport and each PR in an Issue's tree", () => {
   const tree: IssueItem = {
     ...issue,

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use time::OffsetDateTime;
 
-use super::review_state::{YourReview, your_review};
+use super::review_state::{SharedReviews, YourReview, your_reviews};
 use super::rows::reasons;
 use super::{IssueItem, WorkReason, WorkbenchItem};
 use crate::activity::{NewActivity, News, WhatHappened, has_failed};
@@ -128,14 +128,14 @@ impl Causes {
         let Some(viewer) = facts.viewer.as_ref() else {
             return Self::default();
         };
-        let reviews: BTreeMap<u32, YourReview> = (facts.pull_requests.iter())
-            .map(|pr| (pr.number, your_review(pr, viewer, &facts.reviews)))
-            .collect();
+        let shared = SharedReviews::of(&facts.pull_requests, conventions);
+        let reviews = your_reviews(facts, viewer, &shared);
         let rules = Rules {
             news: News::new(&facts.activity, &facts.pull_requests, viewer, conventions),
             facts: &facts.activity,
             viewer,
             reviews: &reviews,
+            shared: &shared,
         };
         let on_pull_requests = facts.pull_requests.iter().map(|pr| {
             let news = rules.news.on_pull_request(pr);
@@ -268,6 +268,7 @@ struct Rules<'a> {
     facts: &'a ActivityFacts,
     viewer: &'a Login,
     reviews: &'a BTreeMap<u32, YourReview>,
+    shared: &'a SharedReviews,
 }
 
 impl Rules<'_> {
@@ -341,9 +342,11 @@ impl Rules<'_> {
         if pull_request.is_draft && !own {
             return causes;
         }
-        // A merged or closed PR waits on nobody, whatever its last check found.
+        // A merged or closed PR waits on nobody, whatever its last check found. A Bot backport's Stale review
+        // is its Origin PR's, and counts only on the Origin PR, so not at all once that has merged.
         let stale = self.reviews.get(&number).is_some_and(YourReview::is_stale);
-        if stale && pull_request.state == PrState::Open {
+        let shared = self.shared.origin_of(number).is_some();
+        if stale && !shared && pull_request.state == PrState::Open {
             causes.push(Cause {
                 at: pull_request.updated_at,
                 why: Why::StaleReview,

@@ -475,6 +475,27 @@ it("shows a Stale review on a PR's row in the Issue's tree, with the files chang
   );
 });
 
+it("shows the Origin PR's review state on each Bot backport's row beneath it", async () => {
+  const backports = [
+    { ...backportRow, your_review: staleReview },
+    { ...backportRow, number: 160701, target_branch: "3.13", your_review: { kind: "reviewed" } },
+  ];
+  const origin = { kind: "pr", ...row, reasons: ["reviewed"], your_review: staleReview, backports };
+  answering({ ...issue, pull_requests: [origin] });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
+  await unfoldAll();
+
+  const facts = (number: number) => {
+    const button = screen.getByRole("button", { name: new RegExp(`^#${String(number)} `) });
+    return button.closest(".row")?.querySelector(".facts") as HTMLElement;
+  };
+  await screen.findByRole("button", { name: /^#160700 / });
+  expect(within(facts(160700)).getByText("Stale review").title).toBe(staleHover);
+  expect(facts(160701).textContent).toBe(
+    "Reviewed · Bot backport · some-author · into 3.13 · Open · CI passed",
+  );
+});
+
 it.each([
   ["Standalone PR", { kind: "standalone_pr", ...row, backports: [] }],
   ["Backport with no Issue", { kind: "standalone_backport", ...row, backport: "manual" }],

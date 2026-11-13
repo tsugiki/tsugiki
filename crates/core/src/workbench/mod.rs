@@ -40,6 +40,7 @@ use backports::{plant, standalone};
 use filters::FilterFacts;
 use issues::issue_item;
 use links::link;
+use review_state::SharedReviews;
 use rows::row;
 
 /// A Backport's line of the list.
@@ -159,13 +160,15 @@ impl Workbench {
     /// each PR on the whole Workbench, the quiet items' and those in Issues' trees too. A PR stored before
     /// Tsugiki read heads has none to give. It reads the commits whose per-file patch-ids the Stale review
     /// check still needs: the reviewed commit and the head of each PR whose head moved on from the user's
-    /// Review. A merged or closed PR's check reads only while its head is among those fetched. It runs once
-    /// on the final head, and its verdict freezes with the PR.
+    /// Review, apart from a Bot backport, which shares its Origin PR's review state. A merged or closed PR's
+    /// check reads only while its head is among those fetched. It runs once on the final head, and its
+    /// verdict freezes with the PR.
     pub fn mirror_work(
         facts: WorkFacts,
         repository: &RepositorySettings,
     ) -> (Vec<PrHead>, Vec<PatchesOf>) {
-        let unread = review_state::unread_sides(&facts);
+        let shared = SharedReviews::of(&facts.pull_requests, repository.conventions);
+        let unread = review_state::unread_sides(&facts, &shared);
         let heads = Self::reached_heads(facts, repository);
         let patches = review_state::patches_to_read(unread, &heads);
         (heads, patches)

@@ -172,15 +172,17 @@ function reviewWord(review: YourReview): StateWord[] {
 }
 
 /** The words of a PR's second line, with only the facts this PR has. A Stale review takes the place of the
- * Reviewed reason. */
+ * Reviewed reason. On a Bot backport's row its review state always does: beneath its Origin PR it shares that
+ * PR's, whatever the user's Review of the Backport says. */
 export function detailWords(row: WorkbenchRow & { backport?: BackportKind }): StateWord[] {
   const stale = row.your_review.kind === "stale_review" || row.your_review.kind === "cant_check";
+  const shown = stale || row.backport === "bot";
   const plain = (words: string) => ({ words, tone: "plain" as const });
   return [
     ...row.reasons
-      .filter((reason) => !(stale && reason === "reviewed"))
+      .filter((reason) => !(shown && reason === "reviewed"))
       .map((reason) => plain(REASONS[reason])),
-    ...(stale ? reviewWord(row.your_review) : []),
+    ...(shown ? reviewWord(row.your_review) : []),
     ...(row.backport ? [plain(BACKPORTS[row.backport])] : []),
     plain(row.author ?? "deleted user"),
     plain(`into ${row.target_branch}`),

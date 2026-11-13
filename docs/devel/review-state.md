@@ -27,7 +27,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   badge, with the changed files in the hover, but it never Needs attention and adds to no count. While its
   check waits or can't run, it shows what an open PR's would. A PR merged with a merge commit has its
   commits on the Target branch, so each one's diff starts from the branch as it stood before that merge.
-- A **Bot backport** shares its Origin PR's review state. A **Manual backport** is reviewed on its own.
+- A **Bot backport** shares its Origin PR's review state, so Tsugiki checks none of its own. A **Manual
+  backport** is reviewed on its own, and so is a Bot backport whose Origin PR Tsugiki lacks or is a Backport
+  too, which the list shows by itself.
 - A **Review request** always counts as Needs attention, including on a Bot backport or a Draft PR. A Local
   mark does not clear it.
 - A colleague's Draft PR only Needs attention when it has a Review request. When it becomes ready for review,

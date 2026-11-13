@@ -7,6 +7,55 @@ release's body, and fails without it
 
 ## WIP
 
+## Version 0.3.0 (2026-11-13)
+
+Tsugiki tells you when a PR you reviewed changed after your Review, and the PR view starts your second look
+at the files that changed. Offline, the Issue view and the Files tab say what they wait for.
+
+### Added
+
+- A PR whose diff changed since your Review shows "Stale review" on its row, in the Issue view and in the
+  PR view, before you open it. Its hover lists the files changed since the Review and names the ones that
+  changed only in whitespace. A merge from the Target branch, a rebase that leaves each file's diff as it
+  was, or a change only to Generated files keeps the PR Reviewed. An open PR with a Stale review Needs
+  attention.
+- Tsugiki compares the diffs in the Repository's mirror, with git 2.39 or newer. While a check runs, a PR
+  keeps its last review state. When one can't run, because the mirror is still cloning or broken, git is
+  missing or older than 2.39, or GitHub won't send the reviewed commit, the PR shows Stale review with the
+  reason in the hover.
+- A merged or closed PR keeps the review state it ended with, "Stale review" included, and never Needs
+  attention for it.
+- A Bot backport shows its Origin PR's review state, and a stale Origin PR counts once in Needs attention
+  however many Bot backports it has. A Bot backport that someone else pushed to gets a review state of its
+  own. A Review request on a Bot backport still Needs attention.
+- The Stale reviews view, under Review requests in the Sidebar, lists the open PRs whose Review is stale and
+  counts them. "View: Stale Reviews" in the command palette opens it.
+- The PR view of a stale PR says "Your Review at abc1234 is stale: 3 files changed, 1 only in whitespace"
+  over both tabs, and its Review changes button opens Files at the first changed file. There, a changed
+  file's header says "Changed since your Review" or "Whitespace only", and the files unchanged since your
+  Review fold to their headers. `Ctrl+K J`, or "View: Unfold Unchanged Files" in the palette, unfolds them
+  all.
+
+### Changed
+
+- Rows show Tsugiki's review state, Unreviewed, Reviewed or Stale review, in place of GitHub's. A Review
+  that only replies to existing threads doesn't count as your Review.
+- Refresh while offline asks GitHub at once, and the status bar drops Offline as soon as GitHub answers.
+  Before, Offline stayed for up to a minute.
+- Offline, the Issue view says why it shows nothing: "What this Issue says comes once GitHub answers." The
+  Files tab says "The PR's commits come once GitHub answers.", and the status bar and the Repository picker
+  say a mirror's clone starts once GitHub answers.
+
+### Fixed
+
+- In the built app, the window scrolled as one page and hid the status bar below its foot, since 0.2.3. The
+  Issue list and the Detail pane scroll by themselves again.
+
+### Database
+
+0.3.0 moves the database forward and leaves a copy of the old one beside it, as `tsugiki.db.v23.bak`. 0.2.4
+won't open the new file: to go back, put the copy in its place. Tsugiki doesn't sync the cache again.
+
 ## Version 0.2.4 (2026-11-13)
 
 You pick your Themes, and can write your own. An item stays in the Issue list until you mark it seen, and

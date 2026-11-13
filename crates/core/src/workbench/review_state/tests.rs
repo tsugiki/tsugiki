@@ -6,7 +6,7 @@ use crate::github::CommitSha;
 use crate::github::pull_requests::{LatestReview, PrState, PullRequestFacts, ReviewState};
 use crate::patch_ids::{CantCheck, ChangedFile, FilePatch, PatchId, PatchesOf};
 use crate::store::{ActivityFacts, LastCheck, ReviewFacts, WorkFacts};
-use crate::workbench::testing::{me, own, reviewed_workbench, stranger};
+use crate::workbench::testing::{cpython, issue, me, own, reviewed_workbench, stranger};
 use crate::workbench::{Workbench, WorkbenchItem, YourReview};
 
 fn sha(digit: char) -> CommitSha {
@@ -280,6 +280,11 @@ fn of(digit: char, target_branch: &str) -> PatchesOf {
     }
 }
 
+/// The commits the check asks the mirror to read for the user's work in `facts`.
+fn to_read(facts: WorkFacts) -> Vec<PatchesOf> {
+    Workbench::mirror_work(facts, &cpython()).1
+}
+
 #[test]
 fn a_check_reads_both_sides_of_each_open_pr_whose_head_moved_on_from_the_review() {
     let backport = PullRequestFacts {
@@ -293,9 +298,16 @@ fn a_check_reads_both_sides_of_each_open_pr_whose_head_moved_on_from_the_review(
         head: Some(sha('5')),
         ..reviewed_pr()
     };
+    // A merged or closed PR the user's work doesn't reach shows on no screen.
     let merged = PullRequestFacts {
         number: 6,
         state: PrState::Merged,
+        ..reviewed_pr()
+    };
+    let closed = PullRequestFacts {
+        number: 9,
+        state: PrState::Closed,
+        head: Some(sha('9')),
         ..reviewed_pr()
     };
     let unreviewed = PullRequestFacts {
@@ -308,13 +320,25 @@ fn a_check_reads_both_sides_of_each_open_pr_whose_head_moved_on_from_the_review(
         ..reviewed_pr()
     });
     let mut reviews = reviewed_at_1(None, None);
-    reviews
-        .reviewed
-        .extend([(3, sha('1')), (5, sha('5')), (6, sha('6')), (8, sha('7'))]);
-    let pull_requests = vec![reviewed_pr(), backport, at_head, merged, unreviewed, own_pr];
+    reviews.reviewed.extend([
+        (3, sha('1')),
+        (5, sha('5')),
+        (6, sha('6')),
+        (8, sha('7')),
+        (9, sha('1')),
+    ]);
+    let pull_requests = vec![
+        reviewed_pr(),
+        backport,
+        at_head,
+        merged,
+        unreviewed,
+        own_pr,
+        closed,
+    ];
 
     assert_eq!(
-        Workbench::patches_to_read(&facts(pull_requests, reviews)),
+        to_read(facts(pull_requests, reviews)),
         [
             of('1', "3.14"),
             of('1', "main"),
@@ -330,7 +354,7 @@ fn a_check_doesnt_read_again_what_the_store_holds() {
     let reviews = reviewed_at_1(read, None);
 
     assert_eq!(
-        Workbench::patches_to_read(&facts(vec![reviewed_pr()], reviews)),
+        to_read(facts(vec![reviewed_pr()], reviews)),
         [of('2', "main")]
     );
 }
@@ -373,4 +397,52 @@ fn a_review_tsugiki_read_from_the_conversation_counts_before_the_list_shows_it()
         state_of(unlisted, reviewed_at_1(None, None)),
         YourReview::Reviewed
     );
+}
+
+#[test]
+fn a_merged_prs_check_reads_its_final_head_once_while_the_users_work_reaches_it() {
+    let in_issue_10 = |pr| PullRequestFacts {
+        title: "gh-10: Fix it".to_owned(),
+        ..pr
+    };
+    let merged = |number| PullRequestFacts {
+        number,
+        state: PrState::Merged,
+        ..reviewed_pr()
+    };
+    let frozen = PullRequestFacts {
+        head: Some(sha('3')),
+        ..merged(5)
+    };
+    // PR 6's Review request keeps Issue 10, and the merged PRs in its tree, on the Workbench.
+    let asking = PullRequestFacts {
+        number: 6,
+        review_requests: vec![me()],
+        ..stranger()
+    };
+    let unreached = PullRequestFacts {
+        state: PrState::Closed,
+        head: Some(sha('4')),
+        ..merged(7)
+    };
+    let mut reviews = reviewed_at_1(Some(vec![file("Lib/ast.py", '1', 'a')]), None);
+    reviews.reviewed.extend([(5, sha('1')), (7, sha('1'))]);
+    drop(reviews.patches.insert(of('3', "main"), vec![]));
+    let pull_requests = vec![
+        in_issue_10(merged(1)),
+        in_issue_10(frozen),
+        in_issue_10(asking),
+        unreached,
+    ];
+    let facts = WorkFacts {
+        issues: vec![issue(10)],
+        ..facts(pull_requests, reviews)
+    };
+
+    let (heads, patches) = Workbench::mirror_work(facts, &cpython());
+
+    let fetched: Vec<u32> = heads.iter().map(|head| head.number).collect();
+    assert_eq!(fetched, [1, 5]);
+    // PR 5's check has read both sides, so its verdict is frozen, and nothing of it is read again.
+    assert_eq!(patches, [of('2', "main")]);
 }

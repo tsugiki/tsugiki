@@ -226,6 +226,17 @@ it("shows a Stale review in the danger tone, with the files changed since the Re
   expect(stale.title).toBe("Changed since your Review: 1 file\nLib/ast.py (whitespace only)");
 });
 
+it("keeps the Stale review of a merged PR, whose check froze with it, with the changed files", async () => {
+  const files = [{ path: "Lib/ast.py", whitespace_only: false }];
+  const review = { kind: "stale_review" as const, files };
+  const merged: TreeEntry = { kind: "pr", number: 15, ...row, your_review: review, backports: [] };
+  await shown({ ...view, pull_requests: [merged] });
+
+  const words = [...document.querySelectorAll(".words")].map((line) => line.textContent);
+  expect(words).toContain("Merged · CI passed · Stale review");
+  expect(screen.getByText("Stale review").title).toBe("Changed since your Review: 1 file\nLib/ast.py");
+});
+
 /** The heading over the tree. The Conversation's headings follow it. */
 const treeHeading = () => screen.getByRole("heading", { level: 3, name: /^Origin PRs/ }).textContent;
 

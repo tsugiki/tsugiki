@@ -155,9 +155,23 @@ pub struct Workbench {
 }
 
 impl Workbench {
-    /// The heads of the PRs the user's work reaches: each PR on the whole Workbench, the quiet items' and
-    /// those in Issues' trees too. A PR stored before Tsugiki read heads has none to give.
-    pub fn reached_heads(facts: WorkFacts, repository: &RepositorySettings) -> Vec<PrHead> {
+    /// What the mirror is to do for the user's work. It fetches the heads of the PRs that work reaches:
+    /// each PR on the whole Workbench, the quiet items' and those in Issues' trees too. A PR stored before
+    /// Tsugiki read heads has none to give. It reads the commits whose per-file patch-ids the Stale review
+    /// check still needs: the reviewed commit and the head of each PR whose head moved on from the user's
+    /// Review. A merged or closed PR's check reads only while its head is among those fetched. It runs once
+    /// on the final head, and its verdict freezes with the PR.
+    pub fn mirror_work(
+        facts: WorkFacts,
+        repository: &RepositorySettings,
+    ) -> (Vec<PrHead>, Vec<PatchesOf>) {
+        let unread = review_state::unread_sides(&facts);
+        let heads = Self::reached_heads(facts, repository);
+        let patches = review_state::patches_to_read(unread, &heads);
+        (heads, patches)
+    }
+
+    fn reached_heads(facts: WorkFacts, repository: &RepositorySettings) -> Vec<PrHead> {
         let mut heads: BTreeMap<u32, PrHead> = facts
             .pull_requests
             .iter()
@@ -174,12 +188,6 @@ impl Workbench {
             .into_iter()
             .filter_map(|number| heads.remove(&number))
             .collect()
-    }
-
-    /// The commits whose per-file patch-ids the Stale review check still needs, for the mirror to read: the
-    /// reviewed commit and the head of each open PR whose head moved on from the user's Review.
-    pub fn patches_to_read(facts: &WorkFacts) -> Vec<PatchesOf> {
-        review_state::patches_to_read(facts)
     }
 
     /// The two commits of each PR whose check has both sides read, for the store to keep as its last check,

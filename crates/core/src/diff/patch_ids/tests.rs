@@ -215,7 +215,7 @@ fn a_binary_files_patch_id_follows_its_content() {
 }
 
 #[test]
-fn the_target_branchs_attributes_say_which_files_are_generated() {
+fn the_attributes_on_the_target_branch_say_which_files_are_generated() {
     let place = Place::new("generated");
     let reviewed = reviewed_pr(&place);
     place.switch(&["main"]);

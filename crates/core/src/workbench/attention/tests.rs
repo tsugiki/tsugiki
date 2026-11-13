@@ -1087,10 +1087,12 @@ fn a_review_whose_check_cant_run_needs_attention_as_a_stale_review() {
 #[test]
 fn a_stale_review_needs_attention_counts_and_stays_after_mark_seen() {
     let world = World::new("stale");
-    world.reviewed_and_moved(reviewed_by_me(1), 'a', 'b');
+    let reviewed = reviewed_by_me(1);
+    let updated_at = reviewed.updated_at;
+    world.reviewed_and_moved(reviewed, 'a', 'b');
 
     assert_eq!(world.why(1), [Why::StaleReview]);
-    assert_eq!(world.since(1), hours_ago(100));
+    assert_eq!(world.since(1), updated_at);
     assert_eq!(world.workbench().count, 1);
     world.mark_seen(world.seen(1));
     assert_eq!(world.why(1), [Why::StaleReview]);

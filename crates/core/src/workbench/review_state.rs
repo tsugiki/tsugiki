@@ -1,14 +1,17 @@
 //! A PR's review state: Unreviewed, Reviewed or Stale review (#364). A Review is stale once the PR's diff
 //! outside Generated files changed since the commit it covered, which the per-file patch-ids of both commits
-//! say (`patch_ids`), or while the check can't run.
+//! say (`patch_ids`), or while the check can't run. A Bot backport shares its Origin PR's (ADR 0011).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 use specta::Type;
 
+use super::backports::origins;
+use crate::conventions::Conventions;
 use crate::github::CommitSha;
 use crate::github::pull_requests::{PrHead, PrState, PullRequestFacts};
+use crate::links::{BackportKind, BackportLink, MergeCommits, backport_of};
 use crate::login::Login;
 use crate::patch_ids::{CantCheck, ChangedFile, PatchesOf, changed_files};
 use crate::store::{LastCheck, ReviewFacts, WorkFacts};
@@ -41,12 +44,60 @@ impl YourReview {
     }
 }
 
+/// The Bot backports that share their Origin PR's review state, each with its Origin PR's number (ADR 0011):
+/// those that sit under their Origin PR in the list (`backports::origins`). A Bot backport whose Origin PR
+/// Tsugiki lacks, or whose Origin PR is a Backport too, sits on its own and keeps a review state of its own.
+/// So does a Manual backport.
+#[derive(Debug)]
+pub(super) struct SharedReviews(BTreeMap<u32, u32>);
+
+impl SharedReviews {
+    pub(super) fn of(pull_requests: &[PullRequestFacts], conventions: Conventions) -> Self {
+        let merges = MergeCommits::of(pull_requests);
+        let links: Vec<(u32, Option<BackportLink>)> = (pull_requests.iter())
+            .map(|pr| (pr.number, backport_of(pr, conventions, &merges)))
+            .collect();
+        let origins = origins(links.iter().map(|(number, link)| (*number, link.as_ref())));
+        let backports = (links.iter()).filter_map(|(number, link)| Some((number, link.as_ref()?)));
+        let shared = backports
+            .filter(|(_, link)| link.kind == BackportKind::Bot && origins.contains(&link.origin));
+        Self(
+            shared
+                .map(|(number, link)| (*number, link.origin))
+                .collect(),
+        )
+    }
+
+    /// The Origin PR whose review state PR `number` shares, if PR `number` is a Bot backport that does.
+    pub(super) fn origin_of(&self, number: u32) -> Option<u32> {
+        self.0.get(&number).copied()
+    }
+}
+
+/// The review state of each of `facts`' PRs for `viewer`. A Bot backport in `shared` takes its Origin PR's.
+pub(super) fn your_reviews(
+    facts: &WorkFacts,
+    viewer: &Login,
+    shared: &SharedReviews,
+) -> BTreeMap<u32, YourReview> {
+    let own: BTreeMap<u32, YourReview> = (facts.pull_requests.iter())
+        .map(|pr| (pr.number, your_review(pr, viewer, &facts.reviews)))
+        .collect();
+    let review_of = |(number, review): (&u32, &YourReview)| {
+        let origin = shared
+            .origin_of(*number)
+            .and_then(|origin| own.get(&origin));
+        (*number, origin.unwrap_or(review).clone())
+    };
+    own.iter().map(review_of).collect()
+}
+
 /// The review state of `pull_request` for `viewer`. The user's comments on their own PR, which GitHub keeps
 /// as Reviews, are no Review of it. A head equal to the reviewed commit is Reviewed with no check. Otherwise
 /// the patch-ids of both commits decide, once the store holds them. A side the Mirror worker can't read
 /// makes it a Stale review with the reason. While the check waits, the PR keeps the verdict of its last
 /// check of the same Review, and is Reviewed without one.
-pub(super) fn your_review(
+fn your_review(
     pull_request: &PullRequestFacts,
     viewer: &Login,
     reviews: &ReviewFacts,
@@ -132,9 +183,11 @@ pub(super) struct Unread {
 }
 
 /// The commits whose patch-ids a check still needs: the reviewed commit and the head of each PR of someone
-/// else's whose head moved on from the user's Review, those the store holds left out.
-pub(super) fn unread_sides(facts: &WorkFacts) -> Vec<Unread> {
-    let others = (facts.pull_requests.iter()).filter(|pr| pr.author != facts.viewer);
+/// else's whose head moved on from the user's Review, those the store holds left out. A Bot backport in
+/// `shared` needs no check, as its Origin PR's review state is its own.
+pub(super) fn unread_sides(facts: &WorkFacts, shared: &SharedReviews) -> Vec<Unread> {
+    let others = (facts.pull_requests.iter())
+        .filter(|pr| pr.author != facts.viewer && shared.origin_of(pr.number).is_none());
     let sides = others.filter_map(|pr| {
         let (reviewed, head) = compared(pr, &facts.reviews)?;
         let unread = |commit| Unread {

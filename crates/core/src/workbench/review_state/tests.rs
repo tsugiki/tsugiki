@@ -4,10 +4,15 @@ use std::collections::BTreeMap;
 
 use crate::github::CommitSha;
 use crate::github::pull_requests::{LatestReview, PrState, PullRequestFacts, ReviewState};
+use crate::login::Login;
 use crate::patch_ids::{CantCheck, ChangedFile, FilePatch, PatchId, PatchesOf};
 use crate::store::{ActivityFacts, LastCheck, ReviewFacts, WorkFacts};
-use crate::workbench::testing::{cpython, issue, me, own, reviewed_workbench, stranger};
-use crate::workbench::{Workbench, WorkbenchItem, YourReview};
+use crate::workbench::attention::Causes;
+use crate::workbench::testing::{
+    BOT, at, backport, bots_backport, cpython, issue, me, own, reviewed_workbench, someone,
+    stranger,
+};
+use crate::workbench::{Why, Workbench, WorkbenchItem, YourReview};
 
 fn sha(digit: char) -> CommitSha {
     CommitSha::parse(&digit.to_string().repeat(40)).unwrap()
@@ -445,4 +450,188 @@ fn a_merged_prs_check_reads_its_final_head_once_while_the_users_work_reaches_it(
     assert_eq!(fetched, [1, 5]);
     // PR 5's check has read both sides, so its verdict is frozen, and nothing of it is read again.
     assert_eq!(patches, [of('2', "main")]);
+}
+
+/// The bot's Backport `number` of PR 1, at commit 9 and last updated before PR 1.
+fn bot_backport_of_1(number: u32) -> PullRequestFacts {
+    PullRequestFacts {
+        head: Some(sha('9')),
+        updated_at: at(0),
+        ..bots_backport(number, "[3.14] gh-1: Fix it (GH-1)")
+    }
+}
+
+/// The Backports 2, 3 and 4 that the bot made of PR 1, beneath PR 1, which the user reviewed as `reviews`
+/// says.
+fn origin_and_bot_backports() -> Vec<PullRequestFacts> {
+    vec![
+        reviewed_pr(),
+        bot_backport_of_1(2),
+        bot_backport_of_1(3),
+        bot_backport_of_1(4),
+    ]
+}
+
+/// The review state on each row of the Workbench of `pull_requests`.
+fn states_of(
+    pull_requests: Vec<PullRequestFacts>,
+    reviews: ReviewFacts,
+) -> BTreeMap<u32, YourReview> {
+    let workbench = reviewed_workbench(pull_requests, vec![], reviews);
+    let listed = workbench.items.iter().chain(&workbench.quiet);
+    let rows = listed.flat_map(|listed| listed.item.rows().into_iter().cloned());
+    rows.map(|row| (row.number, row.your_review)).collect()
+}
+
+/// PR 1's change at commit 2, which differs from the one the user reviewed at commit 1.
+fn stale_at_2() -> ReviewFacts {
+    let reviewed = Some(vec![file("Lib/ast.py", '1', 'a')]);
+    let head = Some(vec![file("Lib/ast.py", '3', 'c')]);
+    reviewed_at_1(reviewed, head)
+}
+
+fn ast_changed() -> YourReview {
+    YourReview::StaleReview {
+        files: vec![ChangedFile {
+            path: "Lib/ast.py".to_owned(),
+            whitespace_only: false,
+        }],
+    }
+}
+
+#[test]
+fn a_bot_backport_shows_its_origin_prs_review_state() {
+    let same = || Some(vec![file("Lib/ast.py", '1', 'a')]);
+    let reviewed = states_of(origin_and_bot_backports(), reviewed_at_1(same(), same()));
+    let stale = states_of(origin_and_bot_backports(), stale_at_2());
+
+    for number in [2, 3, 4] {
+        assert_eq!(reviewed[&number], YourReview::Reviewed, "PR {number}");
+        assert_eq!(stale[&number], ast_changed(), "PR {number}");
+    }
+}
+
+#[test]
+fn a_bot_backport_shares_its_origin_prs_state_over_a_review_of_its_own() {
+    let unreviewed_origin = PullRequestFacts {
+        latest_reviews: vec![],
+        ..stranger()
+    };
+    let reviewed_backport = PullRequestFacts {
+        latest_reviews: reviewed_pr().latest_reviews,
+        ..bot_backport_of_1(2)
+    };
+
+    let states = states_of(
+        vec![unreviewed_origin, reviewed_backport],
+        ReviewFacts::default(),
+    );
+
+    assert_eq!(states[&2], YourReview::Unreviewed);
+}
+
+#[test]
+fn a_stale_origin_pr_with_three_bot_backports_needs_attention_once() {
+    let workbench = reviewed_workbench(origin_and_bot_backports(), vec![], stale_at_2());
+
+    assert_eq!(workbench.count, 1);
+    let attention = workbench.items[0].attention.clone().unwrap();
+    assert_eq!(attention.why, [Why::StaleReview]);
+    // The Backports were updated before PR 1, so a Stale review of theirs would start earlier.
+    assert_eq!(attention.since, at(1));
+    let facts = facts(origin_and_bot_backports(), stale_at_2());
+    let causes = Causes::of(&facts, cpython().conventions);
+    let waiting: Vec<u32> = (1..=4)
+        .filter(|&number| causes.needs_attention(number))
+        .collect();
+    assert_eq!(waiting, [1]);
+}
+
+#[test]
+fn a_bot_backport_with_a_commit_by_a_person_gets_its_own_review_state() {
+    let bot = Some(Login::new(BOT));
+    let manual = PullRequestFacts {
+        author: bot.clone(),
+        head: Some(sha('9')),
+        ..backport(2, "[3.14] gh-1: Fix it (GH-1)", vec![bot, Some(someone())])
+    };
+    let reviewed = PullRequestFacts {
+        latest_reviews: reviewed_pr().latest_reviews,
+        ..manual.clone()
+    };
+
+    let states = states_of(vec![reviewed_pr(), manual], stale_at_2());
+    let reviewed_states = states_of(vec![reviewed_pr(), reviewed], stale_at_2());
+
+    assert_eq!(states[&2], YourReview::Unreviewed);
+    assert_eq!(reviewed_states[&2], YourReview::Reviewed);
+}
+
+#[test]
+fn a_merged_stale_origin_prs_open_bot_backports_show_it_and_wait_on_nobody() {
+    let merged = PullRequestFacts {
+        state: PrState::Merged,
+        ..reviewed_pr()
+    };
+    // The user's approval of the Backport keeps it on the Workbench.
+    let approved = PullRequestFacts {
+        latest_reviews: reviewed_pr().latest_reviews,
+        ..bot_backport_of_1(2)
+    };
+    let pull_requests = vec![merged, approved];
+
+    let workbench = reviewed_workbench(pull_requests.clone(), vec![], stale_at_2());
+
+    assert_eq!(states_of(pull_requests, stale_at_2())[&2], ast_changed());
+    assert_eq!(workbench.count, 0);
+}
+
+#[test]
+fn a_bot_backport_whose_origin_pr_tsugiki_lacks_keeps_its_own_review_state() {
+    let alone = PullRequestFacts {
+        latest_reviews: reviewed_pr().latest_reviews,
+        ..bot_backport_of_1(2)
+    };
+
+    assert_eq!(
+        states_of(vec![alone], ReviewFacts::default())[&2],
+        YourReview::Reviewed
+    );
+}
+
+#[test]
+fn a_review_request_on_a_bot_backport_needs_attention_whatever_its_origin_prs_state() {
+    let asked = PullRequestFacts {
+        review_requests: vec![me()],
+        ..bot_backport_of_1(2)
+    };
+    let same = || Some(vec![file("Lib/ast.py", '1', 'a')]);
+
+    for reviews in [reviewed_at_1(same(), same()), stale_at_2()] {
+        let facts = facts(vec![reviewed_pr(), asked.clone()], reviews);
+        let causes = Causes::of(&facts, cpython().conventions);
+
+        assert!(causes.needs_attention(2));
+    }
+}
+
+#[test]
+fn a_check_leaves_out_a_bot_backport_that_shares_its_origin_prs_state() {
+    let manual = PullRequestFacts {
+        head: Some(sha('8')),
+        ..backport(3, "[3.14] gh-1: Fix it (GH-1)", vec![Some(someone())])
+    };
+    let mut reviews = reviewed_at_1(None, None);
+    reviews.reviewed.extend([(2, sha('7')), (3, sha('7'))]);
+    let pull_requests = vec![reviewed_pr(), bot_backport_of_1(2), manual];
+
+    assert_eq!(
+        to_read(facts(pull_requests, reviews)),
+        [
+            of('1', "main"),
+            of('2', "main"),
+            of('7', "3.14"),
+            of('8', "3.14")
+        ]
+    );
 }

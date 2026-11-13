@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::links::Linked;
 use super::{BackportRow, PrTree, TreeEntry, WorkbenchItem, WorkbenchRow};
-use crate::links::BackportKind;
+use crate::links::{BackportKind, BackportLink};
 
 /// A Backport beneath its Origin PR.
 struct Beneath {
@@ -50,14 +50,23 @@ impl Top {
     }
 }
 
-/// Puts each Backport beneath its Origin PR when Tsugiki has that PR and it isn't a Backport too, which keeps
-/// a tree two levels deep. The order of `linked` stays within each level.
+/// The PRs a Backport can sit under, of those each with its Backport link: the ones that aren't Backports
+/// too, which keeps a tree two levels deep. A Bot backport shares the review state of the one it sits under.
+pub(super) fn origins<'a>(
+    pull_requests: impl Iterator<Item = (u32, Option<&'a BackportLink>)>,
+) -> BTreeSet<u32> {
+    let origins = pull_requests.filter(|(_, backport)| backport.is_none());
+    origins.map(|(number, _)| number).collect()
+}
+
+/// Puts each Backport beneath its Origin PR when Tsugiki has that PR and it isn't a Backport too. The order
+/// of `linked` stays within each level.
 pub(super) fn plant(linked: Vec<Linked>) -> Vec<Top> {
-    let origins: BTreeSet<u32> = linked
-        .iter()
-        .filter(|pr| pr.backport.is_none())
-        .map(|pr| pr.row.number)
-        .collect();
+    let origins = origins(
+        linked
+            .iter()
+            .map(|pr| (pr.row.number, pr.backport.as_ref())),
+    );
     let mut beneath: BTreeMap<u32, Vec<Beneath>> = BTreeMap::new();
     let mut tops = Vec::new();
     for pr in linked {

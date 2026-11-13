@@ -628,7 +628,7 @@ fn an_issue_github_doesnt_have_says_so() {
     );
     let access = replying(vec![signed_in(), gone]);
 
-    let failed = failed_reads_of_issue_7("gone-issue", access);
+    let failed = failed_reads_of_issue_7("gone-issue-read", access);
 
     assert_eq!(failed, [item_7_failed(ReadFailure::NotOnGitHub)]);
 }

@@ -19,6 +19,8 @@ const EXCLUDED = [
   // coverage: the real git, which tests run, and the hand-off to the token crate's client, which they
   // replace.
   "crates/core/src/github/live\\.rs$",
+  // coverage: starting a real language server, which tests replace with a fake one over in-memory pipes.
+  "crates/lsp/src/process\\.rs$",
   // coverage: one call on a real webview, which `npm run smoke` shows working.
   "crates/webview-keys/src/lib\\.rs$",
 ];

@@ -6,8 +6,8 @@ types, not functions, so it stays true longer. Update it in the PR that moves a 
 
 ## The shape
 
-Tsugiki is a Tauri app with four crates and a webview
-([ADR 0007](adr/0007-core-library-and-thin-tauri-app.md)), and a fifth crate serves only the tests:
+Tsugiki is a Tauri app with five crates and a webview
+([ADR 0007](adr/0007-core-library-and-thin-tauri-app.md)), and a sixth crate serves only the tests:
 
 - `crates/core` (`tsugiki-core`) knows and decides everything: GitHub, the database, the **Mirrors**, the
   diff and every rule the screens show. It has no Tauri and no webview, and plain `cargo test` tests it.
@@ -15,6 +15,11 @@ Tsugiki is a Tauri app with four crates and a webview
   in text ([ADR 0019](adr/0019-the-token-and-the-only-code-that-sends-it-have-a-crate-of-their-own.md)).
   Nothing outside it can read the token's string. Its [README](../crates/token/README.md) says what it does
   for readers who don't read Rust.
+- `crates/lsp` (`tsugiki-lsp`) talks to a language server over its standard streams, for Go to definition
+  (ADR 0020). It knows nothing of PRs, Mirrors or the database: the core says which server to start, which
+  documents to open and what to ask. One thread owns each server, one writes to it, two more read its
+  output and its error output, and requests reach the owner as messages. Its
+  [README](../crates/lsp/README.md) says what it does and what it leaves to the core.
 - `crates/app` (`tsugiki-app`) is the Tauri app. It starts the core's threads, turns commands and events
   into calls on the core, and owns the window.
 - `crates/webview-keys` holds the one `unsafe` call that turns off WebView2's browser shortcuts

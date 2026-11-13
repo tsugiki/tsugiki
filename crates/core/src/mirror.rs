@@ -442,9 +442,17 @@ impl MirrorRequests {
     /// asked during a move reads the new commit. None when no move has put it anywhere since launch, the
     /// last one failed, or the worker has stopped.
     pub fn lookup_checkout(&self, repository: RepositoryName) -> Option<LookupCheckout> {
+        self.ask_lookup_checkout(repository).recv().ok().flatten()
+    }
+
+    /// The same, at once: the answer comes on what it returns, so the caller can say that it waits.
+    pub fn ask_lookup_checkout(
+        &self,
+        repository: RepositoryName,
+    ) -> Receiver<Option<LookupCheckout>> {
         let (reply, answer) = mpsc::channel();
         self.send(Message::Checkout(repository, reply));
-        answer.recv().ok().flatten()
+        answer
     }
 
     /// Looks at git and the disk again, and tries each clone that waits for them or failed.
@@ -515,6 +523,16 @@ impl HeardRequests {
                 return Err(message);
             };
             Ok((repository, at))
+        })
+    }
+
+    /// The questions of where a Lookup checkout is, asked since the last call, each with where to answer.
+    pub(crate) fn checkouts(&self) -> Vec<(RepositoryName, Sender<Option<LookupCheckout>>)> {
+        self.take(|message| {
+            let Message::Checkout(repository, reply) = message else {
+                return Err(message);
+            };
+            Ok((repository, reply))
         })
     }
 

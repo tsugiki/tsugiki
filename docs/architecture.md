@@ -69,6 +69,7 @@ flowchart LR
 | Highlighter | The parsed trees of the open PR's files. | `core/src/diff/highlighter.rs` |
 | Settings owner | `settings.toml` and `machine.toml`. Readers get a `latest` copy. | `core/src/settings.rs` |
 | Log | `tsugiki.log` and the tokens to scrub from it. | `core/src/logfile.rs` |
+| Text search | What the latest query found, which the window reads through `latest`. Each query runs on threads of its own, up to 4, that send it what they find, and a newer query cancels the one running. It asks the Mirror worker where the Lookup checkout is. The app doesn't start it yet (#686). | `core/src/search.rs` |
 | Release check | Nothing shared. Asks GitHub Releases for a newer Tsugiki at start-up and every 6 hours, without the token, unless the settings turn it off. | `core/src/releases.rs` |
 
 The session thread does one request to GitHub per step (`sync::Syncs`), so nothing it's asked waits for
@@ -131,6 +132,7 @@ The big ones, in the order data passes through them:
 | `mirror.rs`, `mirror/` | Cloning, fetching PR heads, keeping the commits the user's Reviews covered, reading patch-ids, upkeep, moving the Lookup checkout (`mirror/lookup.rs`). |
 | `diff.rs`, `diff/` | A PR's diff from its Mirror, its per-file patch-ids, NEWS entries, find in the diff, and the Highlighter. |
 | `highlight.rs`, `highlight/` | tree-sitter highlighting, one table row per language ([docs/highlighting.md](highlighting.md)). |
+| `search.rs`, `search/` | Text search over the open PR's code at its head, on ripgrep's crates, in the Lookup checkout and the Mirror (ADR 0020). |
 | `session.rs` | The session thread and the messages it takes. |
 | `status.rs` | App-wide status and the `StatusBoard` that announces it. |
 

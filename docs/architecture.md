@@ -45,7 +45,8 @@ flowchart LR
     db --> reader[StoreReader thread<br>read-only]
     session -->|PR heads to fetch, reviewed commits to keep, commits to read patch-ids of| mirrors[Mirror worker]
     mirrors -->|patch-ids read, commits it can't read, to keep| session
-    mirrors -->|git CLI| git[("repos/*/mirror.git")]
+    mirrors -->|git CLI| git[("repos/*/mirror.git<br>and lookup/")]
+    app -->|the PR on screen's base, where its Lookup checkout is| mirrors
     session -->|status, changes| board[StatusBoard and<br>mirror Announce callbacks]
     mirrors -->|cloning, problems, each Mirror's state, held back| board
     board -->|latest copies + events| app[Commands in crates/app]
@@ -64,7 +65,7 @@ flowchart LR
 | Session | The token, the GitHub client, the sync queue. Answers messages between sync steps. | `core/src/session.rs` |
 | Store | The one writing SQLite connection. Only the session sends it jobs. | `core/src/store/mod.rs` |
 | StoreReader | A read-only connection that the window's commands share. | `core/src/store/mod.rs` |
-| Mirror worker | Every write to the Mirrors: clones, fetches of PR heads, the commits the user's Reviews covered, upkeep. Between git jobs it reads the per-file patch-ids the Stale review check compares, and hands them to the session to save, with the commits it can't read and why. | `core/src/mirror.rs` |
+| Mirror worker | Every write to the Mirrors: clones, fetches of PR heads, the commits the user's Reviews covered, upkeep, and each Repository's Lookup checkout, which it moves to the PR on screen and tells readers where it is once it stops moving. Between git jobs it reads the per-file patch-ids the Stale review check compares, and hands them to the session to save, with the commits it can't read and why. | `core/src/mirror.rs` |
 | Highlighter | The parsed trees of the open PR's files. | `core/src/diff/highlighter.rs` |
 | Settings owner | `settings.toml` and `machine.toml`. Readers get a `latest` copy. | `core/src/settings.rs` |
 | Log | `tsugiki.log` and the tokens to scrub from it. | `core/src/logfile.rs` |
@@ -127,7 +128,7 @@ The big ones, in the order data passes through them:
 | `links.rs`, `conventions.rs` | Which Issues a PR fixes and which **Origin PR** a Backport comes from, read through the Repository's Conventions ([ADR 0011](adr/0011-pr-links-from-github-signals-by-repository-conventions.md)). |
 | `workbench/` | The view models: the Issue list, the Issue view, the PR view and its Files tab. `attention.rs` holds Needs attention, and `review_state.rs` each PR's review state. |
 | `patch_ids.rs` | Per-file patch-ids, and which files changed between the reviewed commit and the head, for the Stale review check. |
-| `mirror.rs`, `mirror/` | Cloning, fetching PR heads, keeping the commits the user's Reviews covered, reading patch-ids, upkeep. |
+| `mirror.rs`, `mirror/` | Cloning, fetching PR heads, keeping the commits the user's Reviews covered, reading patch-ids, upkeep, moving the Lookup checkout (`mirror/lookup.rs`). |
 | `diff.rs`, `diff/` | A PR's diff from its Mirror, its per-file patch-ids, NEWS entries, find in the diff, and the Highlighter. |
 | `highlight.rs`, `highlight/` | tree-sitter highlighting, one table row per language ([docs/highlighting.md](highlighting.md)). |
 | `session.rs` | The session thread and the messages it takes. |

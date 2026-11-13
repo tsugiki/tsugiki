@@ -273,6 +273,27 @@ fn a_moved_head_shows_the_diff_before_with_its_threads_held_back_until_the_newer
 }
 
 #[test]
+fn the_files_tab_moves_the_lookup_checkout_to_the_diffs_merge_base_and_head() {
+    let world = World::new("look-up");
+    let mirrored = Mirrored::new("pr-files-look-up");
+    let read = mirrored.read();
+    world.mirrors(&mirrored);
+    world.has_pr(Some(mirrored.head.clone()), "main");
+
+    let _read = world.files();
+    let _shown = world.files();
+
+    let at = LookupAt {
+        base: read.base,
+        head: mirrored.head.clone(),
+    };
+    let asked = (world.repository(), at);
+    assert_eq!(world.heard.look_ups(), [asked.clone(), asked]);
+    mirrored.finish();
+    world.finish();
+}
+
+#[test]
 fn a_moved_head_whose_older_diff_has_no_target_branch_waits_for_the_newer() {
     let world = World::new("moved-no-target");
     let mirrored = Mirrored::new("pr-files-moved-no-target");

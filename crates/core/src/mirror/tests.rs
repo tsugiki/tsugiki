@@ -1486,6 +1486,7 @@ not a commit          refs/tsugiki/pull/3/head
 }
 
 mod borrowing;
+mod lookup;
 mod patches;
 mod reviewed;
 mod states;

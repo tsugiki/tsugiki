@@ -20,7 +20,7 @@ pub use crate::github::pull_request_content::CodeRow;
 use crate::github::pull_request_content::PullRequestContent;
 use crate::github::pull_requests::{PrHead, PrState, PullRequestFacts};
 use crate::highlight::Span;
-use crate::mirror::MirrorRequests;
+use crate::mirror::{LookupAt, MirrorRequests};
 use crate::repository::RepositoryName;
 use crate::store::StoreReader;
 pub use threads::{DiffThread, Placement, ThreadCode};
@@ -109,7 +109,7 @@ impl PrFiles {
         let target = Against::Branch(&pr.target_branch, &start);
         // The diff on show is in the mirror, so asking git again would only cost a moment.
         if let Some(open) = sources.diffs.shown(&at, target) {
-            return Ok(Some(Self::ready(&open, content.as_ref(), None)));
+            return Ok(Some(Self::show(sources, &open, content.as_ref(), None)));
         }
         match diff::held(&mirror, &pr.target_branch, &head) {
             Held::NoHead => {
@@ -126,7 +126,12 @@ impl PrFiles {
                     ..at
                 };
                 let open = sources.diffs.get_or_read(&at, target, read)?;
-                Ok(Some(Self::ready(&open, content.as_ref(), Some(head))))
+                Ok(Some(Self::show(
+                    sources,
+                    &open,
+                    content.as_ref(),
+                    Some(head),
+                )))
             }
             Held::NoTarget => Err(Error::new(
                 ErrorKind::NotFound,
@@ -138,9 +143,25 @@ impl PrFiles {
             Held::Both => {
                 let read = || diff::read(&mirror, &pr.target_branch, &start, &head);
                 let open = sources.diffs.get_or_read(&at, target, read)?;
-                Ok(Some(Self::ready(&open, content.as_ref(), None)))
+                Ok(Some(Self::show(sources, &open, content.as_ref(), None)))
             }
         }
+    }
+
+    /// The diff `open`, ready to show, and the PR's Lookup checkout on its way to the diff's two ends. The
+    /// worker moves nothing when the checkout is there already.
+    fn show(
+        sources: &DiffSources<'_>,
+        open: &OpenDiff,
+        content: Option<&PullRequestContent>,
+        newer: Option<CommitSha>,
+    ) -> Self {
+        let at = LookupAt {
+            base: open.base.clone(),
+            head: open.pr.head.clone(),
+        };
+        sources.mirrors.look_up(open.pr.repository.clone(), at);
+        Self::ready(open, content, newer)
     }
 
     /// Hands PR `number`'s head to the mirrors' worker ahead of the heads waiting, if its mirror lacks it,

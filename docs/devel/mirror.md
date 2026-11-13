@@ -39,6 +39,20 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   tab and the Repository picker, and starts once Tsugiki is back online, as do the fetches held back.
 - Without git 2.30 or newer, or without room on the disk for the clone, the diff says what is missing, with a
   link to git's downloads or the space needed, and offers Check again. The rest of Tsugiki works without it.
+- Each Repository has a **Lookup checkout**, a detached worktree of the mirror in
+  `repos\<owner>__<name>\lookup\`, which the Mirror worker makes on the first PR whose Files tab shows and
+  moves to each PR's base (the merge-base) as its diff shows, without asking. The PR's added files are
+  written into it too, and the next move removes them; files the PR changes or deletes stay at their base
+  text. A move runs in the background and goes ahead of the worker's other git jobs, but waits for the one
+  under way. PRs opened in quick succession don't queue moves: the next move goes to the PR on screen. A
+  lookup or a search asked during a move waits for it to end, and one asked where git is missing hears at
+  once that there is no checkout. A move needs no network, so offline it goes to any base the mirror holds.
+  git's gc keeps the commit the checkout is on. A move runs no hooks and no filter such as git-lfs's. A move
+  that fails leaves no checkout and isn't tried again for the same PR until a lookup asks, when it makes
+  the checkout afresh. Short of disk, a move resets a checkout that is there but doesn't make one. Until its
+  mirror is there, a lookup hears at once that there is no checkout. It lives in the Repository's folder, as
+  does git's note of it in the mirror, so removing the Repository removes it
+  ([ADR 0020](../adr/0020-go-to-definition-asks-a-language-server-which-reads-a-lookup-checkout.md)).
 - "Open in editor" runs the editor command (`code -g` by default) on the **Review checkout**, moved to the
   PR's current head. If the user has edited files there, Tsugiki first offers Discard and switch, Copy as
   patch, or Cancel. Settings › Repositories shows the checkout's size, with Remove checkout.

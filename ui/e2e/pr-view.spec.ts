@@ -71,7 +71,7 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
     home: { screen: "repository", repository, others: [] as string[] },
     workbench: {
       status: "ok",
-      data: { items: [issue], quiet: [], count: 0, review_requests: 0, filters: [] },
+      data: { items: [issue], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
     },
     openIssue: done,
     fetchIssue: done,
@@ -235,7 +235,7 @@ const threaded = async (page: Page, at: DiffThread["at"], words: string) => {
     home: { screen: "repository", repository, others: [] as string[] },
     workbench: {
       status: "ok",
-      data: { items: [issue], quiet: [], count: 0, review_requests: 0, filters: [] },
+      data: { items: [issue], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
     },
     openIssue: done,
     fetchIssue: done,
@@ -446,7 +446,7 @@ test("a PR opens one file at a time as the settings say, walks its files, and sw
     home: { screen: "repository", repository, others: [] as string[] },
     workbench: {
       status: "ok",
-      data: { items: [issue], quiet: [], count: 0, review_requests: 0, filters: [] },
+      data: { items: [issue], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
     },
     openPullRequest: done,
     fetchPullRequest: done,

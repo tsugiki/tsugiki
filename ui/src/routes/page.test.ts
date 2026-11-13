@@ -101,6 +101,7 @@ const oneIssue = {
     quiet: [],
     count: 0,
     review_requests: 0,
+    stale_reviews: 0,
     filters: [],
   },
 } as const;
@@ -119,7 +120,7 @@ beforeEach(() => {
   core.themes.mockResolvedValue({ status: "ok", data: structuredClone(THEMES) });
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [] },
+    data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
   });
   core.settings.mockResolvedValue({
     settings: {

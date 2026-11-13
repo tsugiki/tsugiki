@@ -51,7 +51,14 @@ const onlyMine = { kind: "filter", query: mine.query } as const;
 
 const answer = (...numbers: number[]) => ({
   status: "ok" as const,
-  data: { items: numbers.map(item), quiet: [], count: numbers.length, review_requests: 0, filters: [mine] },
+  data: {
+    items: numbers.map(item),
+    quiet: [],
+    count: numbers.length,
+    review_requests: 0,
+    stale_reviews: 0,
+    filters: [mine],
+  },
 });
 
 const refused = { status: "error" as const, error: { kind: "internal" as const, message: "no database" } };
@@ -94,7 +101,14 @@ describe("WorkbenchState", () => {
     catchListener();
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
-      data: { items: [item(3)], quiet: [item(2), item(1)], count: 0, review_requests: 0, filters: [] },
+      data: {
+        items: [item(3)],
+        quiet: [item(2), item(1)],
+        count: 0,
+        review_requests: 0,
+        stale_reviews: 0,
+        filters: [],
+      },
     });
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -119,7 +133,14 @@ describe("WorkbenchState", () => {
     catchListener();
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
-      data: { items: [item(4), item(3)], quiet: [item(2)], count: 0, review_requests: 0, filters: [] },
+      data: {
+        items: [item(4), item(3)],
+        quiet: [item(2)],
+        count: 0,
+        review_requests: 0,
+        stale_reviews: 0,
+        filters: [],
+      },
     });
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -141,7 +162,14 @@ describe("WorkbenchState", () => {
     catchListener();
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
-      data: { items: [item(4), item(3)], quiet: [item(2)], count: 0, review_requests: 0, filters: [] },
+      data: {
+        items: [item(4), item(3)],
+        quiet: [item(2)],
+        count: 0,
+        review_requests: 0,
+        stale_reviews: 0,
+        filters: [],
+      },
     });
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -160,7 +188,14 @@ describe("WorkbenchState", () => {
     catchListener();
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
-      data: { items: [item(3)], quiet: [item(2)], count: 0, review_requests: 0, filters: [] },
+      data: {
+        items: [item(3)],
+        quiet: [item(2)],
+        count: 0,
+        review_requests: 0,
+        stale_reviews: 0,
+        filters: [],
+      },
     });
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -180,7 +215,14 @@ describe("WorkbenchState", () => {
     const { send } = catchListener();
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
-      data: { items: [item(3), item(2)], quiet: [], count: 0, review_requests: 0, filters: [] },
+      data: {
+        items: [item(3), item(2)],
+        quiet: [],
+        count: 0,
+        review_requests: 0,
+        stale_reviews: 0,
+        filters: [],
+      },
     });
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -188,7 +230,14 @@ describe("WorkbenchState", () => {
     state.moveCursor(1);
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
-      data: { items: [item(3)], quiet: [item(2)], count: 0, review_requests: 0, filters: [] },
+      data: {
+        items: [item(3)],
+        quiet: [item(2)],
+        count: 0,
+        review_requests: 0,
+        stale_reviews: 0,
+        filters: [],
+      },
     });
 
     send("python/cpython");
@@ -205,7 +254,14 @@ describe("WorkbenchState", () => {
     catchListener();
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
-      data: { items: [item(3)], quiet: [item(2)], count: 0, review_requests: 0, filters: [] },
+      data: {
+        items: [item(3)],
+        quiet: [item(2)],
+        count: 0,
+        review_requests: 0,
+        stale_reviews: 0,
+        filters: [],
+      },
     });
     const state = new WorkbenchState("python/cpython");
     const pr = (number: number, issue?: number) => ({ number, kind: "pull_request" as const, issue });
@@ -231,7 +287,14 @@ describe("WorkbenchState", () => {
     catchListener();
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
-      data: { items: [item(3)], quiet: [item(2)], count: 0, review_requests: 0, filters: [] },
+      data: {
+        items: [item(3)],
+        quiet: [item(2)],
+        count: 0,
+        review_requests: 0,
+        stale_reviews: 0,
+        filters: [],
+      },
     });
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -245,7 +308,7 @@ describe("WorkbenchState", () => {
     const mine = { name: "Mine", query: "is:open author:@me", count: 0, problem: null };
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
-      data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [mine] },
+      data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [mine] },
     });
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -253,6 +316,7 @@ describe("WorkbenchState", () => {
     const titles = [state.title];
     for (const view of [
       { kind: "review_requests" as const },
+      { kind: "stale_reviews" as const },
       { kind: "filter" as const, query: mine.query },
       { kind: "filter" as const, query: "label:gone" },
     ]) {
@@ -260,7 +324,7 @@ describe("WorkbenchState", () => {
       titles.push(state.title);
     }
 
-    expect(titles).toEqual(["Workbench", "Review requests", "Mine", "label:gone"]);
+    expect(titles).toEqual(["Workbench", "Review requests", "Stale reviews", "Mine", "label:gone"]);
     state.stop();
   });
 
@@ -290,7 +354,14 @@ describe("WorkbenchState", () => {
     };
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
-      data: { items: [tree, standalone, lone], quiet: [], count: 3, review_requests: 0, filters: [] },
+      data: {
+        items: [tree, standalone, lone],
+        quiet: [],
+        count: 3,
+        review_requests: 0,
+        stale_reviews: 0,
+        filters: [],
+      },
     });
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -333,7 +404,14 @@ describe("WorkbenchState", () => {
     });
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
-      data: { items: [tree(10), tree(20), item(30)], quiet: [], count: 3, review_requests: 0, filters: [] },
+      data: {
+        items: [tree(10), tree(20), item(30)],
+        quiet: [],
+        count: 3,
+        review_requests: 0,
+        stale_reviews: 0,
+        filters: [],
+      },
     });
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -361,7 +439,14 @@ describe("WorkbenchState", () => {
     const mine = { name: "Mine", query: "is:open author:@me", count: 0, problem: null };
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
-      data: { items: [issueWith(10, 11)], quiet: [], count: 0, review_requests: 0, filters: [mine] },
+      data: {
+        items: [issueWith(10, 11)],
+        quiet: [],
+        count: 0,
+        review_requests: 0,
+        stale_reviews: 0,
+        filters: [mine],
+      },
     });
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -383,7 +468,14 @@ describe("WorkbenchState", () => {
     catchListener();
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
-      data: { items: [], quiet: [issueWith(10, 11)], count: 0, review_requests: 0, filters: [] },
+      data: {
+        items: [],
+        quiet: [issueWith(10, 11)],
+        count: 0,
+        review_requests: 0,
+        stale_reviews: 0,
+        filters: [],
+      },
     });
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -407,6 +499,7 @@ describe("WorkbenchState", () => {
         quiet: [],
         count: 0,
         review_requests: 0,
+        stale_reviews: 0,
         filters: [],
       },
     });
@@ -432,7 +525,14 @@ describe("WorkbenchState", () => {
   it("keeps the folds of the items on show until the newly selected view's answer arrives", async () => {
     catchListener();
     const mine = { name: "Mine", query: "is:open author:@me", count: 0, problem: null };
-    const listed = { items: [issueWith(10, 11)], quiet: [], count: 0, review_requests: 0, filters: [mine] };
+    const listed = {
+      items: [issueWith(10, 11)],
+      quiet: [],
+      count: 0,
+      review_requests: 0,
+      stale_reviews: 0,
+      filters: [mine],
+    };
     vi.mocked(commands.workbench).mockResolvedValueOnce({ status: "ok", data: listed });
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -458,7 +558,14 @@ describe("WorkbenchState", () => {
     const mine = { name: "Mine", query: "is:open author:@me", count: 0, problem: null };
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
-      data: { items: [issueWith(10, 11)], quiet: [], count: 0, review_requests: 0, filters: [mine] },
+      data: {
+        items: [issueWith(10, 11)],
+        quiet: [],
+        count: 0,
+        review_requests: 0,
+        stale_reviews: 0,
+        filters: [mine],
+      },
     });
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -489,7 +596,14 @@ describe("WorkbenchState", () => {
     };
     vi.mocked(commands.workbench).mockResolvedValueOnce({
       status: "ok",
-      data: { items: [tree, item(6)], quiet: [], count: 2, review_requests: 0, filters: [] },
+      data: {
+        items: [tree, item(6)],
+        quiet: [],
+        count: 2,
+        review_requests: 0,
+        stale_reviews: 0,
+        filters: [],
+      },
     });
 
     send("python/cpython");
@@ -555,17 +669,18 @@ describe("WorkbenchState", () => {
     expect(state.error).toBeUndefined();
   });
 
-  it("holds the quiet section and the Review requests count", async () => {
+  it("holds the quiet section and the counts of the Built-in views", async () => {
     catchListener();
     vi.mocked(commands.workbench).mockResolvedValueOnce({
       status: "ok",
-      data: { items: [], quiet: [item(4)], count: 0, review_requests: 3, filters: [] },
+      data: { items: [], quiet: [item(4)], count: 0, review_requests: 3, stale_reviews: 2, filters: [] },
     });
     const state = new WorkbenchState("python/cpython");
     await state.load();
 
     expect(state.quiet.map((listed) => listed.number)).toEqual([4]);
     expect(state.reviewRequests).toBe(3);
+    expect(state.staleReviews).toBe(2);
   });
 
   it("asks for a Filter the user selects, and for the whole Workbench again", async () => {
@@ -756,6 +871,7 @@ describe("WorkbenchState", () => {
         quiet: [item(5)],
         count: 0,
         review_requests: 0,
+        stale_reviews: 0,
         filters: [],
       },
     });
@@ -794,7 +910,14 @@ describe("WorkbenchState", () => {
   const answering = (items: number[], quiet: number[] = []) => {
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
-      data: { items: items.map(item), quiet: quiet.map(item), count: 0, review_requests: 0, filters: [] },
+      data: {
+        items: items.map(item),
+        quiet: quiet.map(item),
+        count: 0,
+        review_requests: 0,
+        stale_reviews: 0,
+        filters: [],
+      },
     });
   };
 

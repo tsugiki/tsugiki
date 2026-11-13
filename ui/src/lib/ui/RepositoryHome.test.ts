@@ -140,7 +140,7 @@ beforeEach(() => {
   });
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [] },
+    data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
   });
 });
 
@@ -177,6 +177,7 @@ it("lists a Standalone PR with the time it changed", async () => {
       quiet: [],
       count: 1,
       review_requests: 0,
+      stale_reviews: 0,
       filters: [],
     },
   });
@@ -199,7 +200,7 @@ it("moves a time on while the window stays open", async () => {
   vi.setSystemTime("2026-11-04T13:00:00Z");
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [issue], quiet: [], count: 1, review_requests: 0, filters: [] },
+    data: { items: [issue], quiet: [], count: 1, review_requests: 0, stale_reviews: 0, filters: [] },
   });
   const { unmount } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
   await screen.findByText("3h ago");
@@ -219,6 +220,7 @@ it("says an Issue has no PR yet, with no count of none", async () => {
       quiet: [],
       count: 1,
       review_requests: 0,
+      stale_reviews: 0,
       filters: [],
     },
   });
@@ -238,7 +240,14 @@ it("lists an Issue folded, and its PRs under it once unfolded", async () => {
   const attention = { since: "2026-11-04T10:00:00Z", why: [{ kind: "review_requested" }] };
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [{ ...issue, attention }], quiet: [], count: 1, review_requests: 0, filters: [] },
+    data: {
+      items: [{ ...issue, attention }],
+      quiet: [],
+      count: 1,
+      review_requests: 0,
+      stale_reviews: 0,
+      filters: [],
+    },
   });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
   const fold = await screen.findByRole("button", { name: "PRs of #112564", expanded: false });
@@ -285,6 +294,7 @@ it("shows a Filter's Issues when the user selects it, with the Sidebar's counts"
       quiet: [],
       count: 7,
       review_requests: 0,
+      stale_reviews: 0,
       filters: [mine],
     },
   }));
@@ -306,7 +316,7 @@ it("marks what Needs attention the way unread mail is, and says why", async () =
   const unread = { kind: "standalone_pr", ...row, backports: [], attention };
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [unread], quiet: [], count: 1, review_requests: 0, filters: [] },
+    data: { items: [unread], quiet: [], count: 1, review_requests: 0, stale_reviews: 0, filters: [] },
   });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
 
@@ -325,7 +335,14 @@ it("folds the Issues with nothing waiting into a quiet section, and a click unfo
   const other = { ...issue, number: 8, title: "Another" };
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [standalone], quiet: [issue, other], count: 0, review_requests: 0, filters: [] },
+    data: {
+      items: [standalone],
+      quiet: [issue, other],
+      count: 0,
+      review_requests: 0,
+      stale_reviews: 0,
+      filters: [],
+    },
   });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
 
@@ -352,7 +369,7 @@ it("folds the Issues with nothing waiting into a quiet section, and a click unfo
 it("shows only the quiet line when nothing else is listed, and counts one item as one", async () => {
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [], quiet: [issue], count: 0, review_requests: 0, filters: [] },
+    data: { items: [], quiet: [issue], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
   });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
 
@@ -363,7 +380,7 @@ it("shows only the quiet line when nothing else is listed, and counts one item a
 it("says when nobody has asked for a review", async () => {
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [] },
+    data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
   });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
 
@@ -373,11 +390,25 @@ it("says when nobody has asked for a review", async () => {
   expect(await screen.findByText("Nobody has asked you for a review.")).toBeTruthy();
 });
 
+it("asks for Stale reviews when the user picks it, and says when no Review of theirs is stale", async () => {
+  core.workbench.mockResolvedValue({
+    status: "ok",
+    data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 2, filters: [] },
+  });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
+
+  await fireEvent.click(await screen.findByRole("button", { name: "Stale reviews 2" }));
+
+  expect(core.workbench).toHaveBeenLastCalledWith("python/cpython", { kind: "stale_reviews" });
+  expect(await screen.findByRole("heading", { name: "Stale reviews" })).toBeTruthy();
+  expect(await screen.findByText("No Review of yours is stale.")).toBeTruthy();
+});
+
 it("says how to check a Filter that holds nothing", async () => {
   const mine = { name: "Mine", query: "is:open author:@me", count: 0, problem: null };
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [mine] },
+    data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [mine] },
   });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
 
@@ -418,7 +449,7 @@ it("stops listening when it goes", async () => {
 const answering = (...items: unknown[]) => {
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items, quiet: [], count: items.length, review_requests: 0, filters: [] },
+    data: { items, quiet: [], count: items.length, review_requests: 0, stale_reviews: 0, filters: [] },
   });
 };
 
@@ -535,6 +566,7 @@ const listing = async (settings: { diffFiles?: FilesMode } = {}) => {
       quiet: [{ ...standalone, attention: null }],
       count: 0,
       review_requests: 0,
+      stale_reviews: 0,
       filters: [],
     },
   });
@@ -644,6 +676,7 @@ it("swaps the Detail pane for the next Issue", async () => {
       quiet: [],
       count: 0,
       review_requests: 0,
+      stale_reviews: 0,
       filters: [],
     },
   });
@@ -1277,7 +1310,14 @@ it("leaves the item on show as it is when a pick from the history's list lands o
 it("leaves the mouse's own buttons to a dialog on top, and still keeps the page where it is", async () => {
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [{ ...issue, attention: null }], quiet: [], count: 0, review_requests: 0, filters: [] },
+    data: {
+      items: [{ ...issue, attention: null }],
+      quiet: [],
+      count: 0,
+      review_requests: 0,
+      stale_reviews: 0,
+      filters: [],
+    },
   });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn(), keysActive: false });
   await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
@@ -1370,7 +1410,7 @@ const threeAlone = async () => {
   );
   const answer = (items: object[], quiet: object[]) => ({
     status: "ok",
-    data: { items, quiet, count: items.length, review_requests: 0, filters: [] },
+    data: { items, quiet, count: items.length, review_requests: 0, stale_reviews: 0, filters: [] },
   });
   core.workbench.mockResolvedValue(answer([first, next, last], []));
   const { component } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: () => {} });
@@ -1540,6 +1580,7 @@ it("gives the quiet line the focus when folding leaves no line above for the cur
       quiet: [{ ...standalone, attention: null }],
       count: 0,
       review_requests: 0,
+      stale_reviews: 0,
       filters: [],
     },
   });
@@ -1576,6 +1617,7 @@ it("shows another Repository as a launch does: its Workbench, an empty Detail pa
       quiet: [],
       count: 1,
       review_requests: 0,
+      stale_reviews: 0,
       filters: [mine],
     },
   });
@@ -1844,7 +1886,14 @@ it("leaves the arrows to a text box", async () => {
 it("leaves its keys alone while a dialog is on top", async () => {
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [{ ...issue, attention: null }], quiet: [], count: 0, review_requests: 0, filters: [] },
+    data: {
+      items: [{ ...issue, attention: null }],
+      quiet: [],
+      count: 0,
+      review_requests: 0,
+      stale_reviews: 0,
+      filters: [],
+    },
   });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn(), keysActive: false });
   await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
@@ -1902,7 +1951,14 @@ it("Ctrl+Shift+G opens the PR on show on GitHub", async () => {
 it("closes the Detail pane when the Repository changes", async () => {
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [{ ...issue, attention: null }], quiet: [], count: 0, review_requests: 0, filters: [] },
+    data: {
+      items: [{ ...issue, attention: null }],
+      quiet: [],
+      count: 0,
+      review_requests: 0,
+      stale_reviews: 0,
+      filters: [],
+    },
   });
   const { rerender } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
   await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
@@ -2236,6 +2292,7 @@ it("offers the palette a command that hides or shows the Issue list, named for w
       "Go Back",
       "Go Forward",
       "Sort by Last Update",
+      "View: Stale Reviews",
     ],
     [
       "Hide Sidebar",
@@ -2245,8 +2302,31 @@ it("offers the palette a command that hides or shows the Issue list, named for w
       "Go Back",
       "Go Forward",
       "Sort by Last Update",
+      "View: Stale Reviews",
     ],
   ]);
+});
+
+it("offers the palette Stale reviews, which shows the list with that view", async () => {
+  const { component } = render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onadd: vi.fn() });
+  await screen.findByRole("navigation", { name: "Sidebar" });
+  const run = (title: string) => {
+    component
+      .paletteCommands()
+      .find((command) => command.title === title)
+      ?.run();
+  };
+  run("Hide Issue List");
+  await vi.waitFor(() => {
+    expect(repositoryName()).toBeNull();
+  });
+
+  run("View: Stale Reviews");
+
+  expect(await screen.findByRole("heading", { name: "Stale reviews" })).toBeTruthy();
+  expect(repositoryName()).not.toBeNull();
+  expect(core.workbench).toHaveBeenLastCalledWith("python/cpython", { kind: "stale_reviews" });
+  expect(screen.getByRole("button", { name: /^Stale reviews/ }).getAttribute("aria-current")).toBe("true");
 });
 
 it("names the view over the list, and switches its order, which the list asks for once it's saved", async () => {
@@ -2465,6 +2545,7 @@ it("brings the list back with the focus on the cursor's row when the open item i
       quiet: [],
       count: 0,
       review_requests: 0,
+      stale_reviews: 0,
       filters: [],
     },
   });
@@ -2636,6 +2717,7 @@ it("marks each Issue and PR in the list with the icon of its state", async () =>
       quiet: [{ ...standalone, is_draft: true, attention: null }],
       count: 0,
       review_requests: 0,
+      stale_reviews: 0,
       filters: [],
     },
   });

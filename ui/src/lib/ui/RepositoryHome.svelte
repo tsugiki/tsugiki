@@ -24,6 +24,7 @@
     type Seen,
     type Stop,
     type WorkbenchRow,
+    type WorkbenchView,
   } from "$lib/state/workbench.svelte";
   import HistoryBar from "./HistoryBar.svelte";
   import IssueDetail from "./IssueDetail.svelte";
@@ -58,6 +59,7 @@
     filter:
       "Nothing in this Filter yet. If a sync has run, check its query in settings.toml: GitHub finds nothing for a search it can't read.",
     review_requests: "Nobody has asked you for a review.",
+    stale_reviews: "No Review of yours is stale.",
   };
 
   let {
@@ -416,8 +418,15 @@
       ...(workbench.quiet.length > 0
         ? [{ title: workbench.quietShown ? "Hide Quiet Items" : "Show Quiet Items", run: toggleQuiet }]
         : []),
+      { title: "View: Stale Reviews", run: () => showView({ kind: "stale_reviews" }) },
       ...filesModeCommand(),
     ];
+  }
+
+  /** Shows `view` in the list, as a click on its line in the Sidebar does. */
+  function showView(view: WorkbenchView) {
+    void workbench.select(view);
+    void panes.show("list");
   }
 
   /** The names the list's switch gives each order. */
@@ -748,12 +757,10 @@
       {onpick}
       count={workbench.count}
       reviewRequests={workbench.reviewRequests}
+      staleReviews={workbench.staleReviews}
       filters={workbench.filters}
       selected={workbench.selected}
-      onselect={(view) => {
-        void workbench.select(view);
-        void panes.show("list");
-      }}
+      onselect={showView}
     />
     <PaneEdge
       label="Sidebar width"

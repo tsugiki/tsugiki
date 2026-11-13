@@ -102,6 +102,7 @@ export class WorkbenchState {
   quiet = $state<ListedItem[]>([]);
   count = $state(0);
   reviewRequests = $state(0);
+  staleReviews = $state(0);
   filters = $state<FilterLine[]>([]);
   selected = $state<WorkbenchView>({ kind: "whole" });
   error = $state<string>();
@@ -168,6 +169,7 @@ export class WorkbenchState {
     const selected = this.selected;
     if (selected.kind === "whole") return "Workbench";
     if (selected.kind === "review_requests") return "Review requests";
+    if (selected.kind === "stale_reviews") return "Stale reviews";
     return this.filters.find((filter) => filter.query === selected.query)?.name ?? selected.query;
   }
 
@@ -385,6 +387,7 @@ export class WorkbenchState {
       this.#followCursor(question, answer.data.items);
       this.count = answer.data.count;
       this.reviewRequests = answer.data.review_requests;
+      this.staleReviews = answer.data.stale_reviews;
       this.filters = answer.data.filters;
       this.error = undefined;
     } else {

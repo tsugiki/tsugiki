@@ -3,16 +3,17 @@
 use std::collections::BTreeMap;
 
 use crate::github::CommitSha;
+use crate::github::issues::IssueFacts;
 use crate::github::pull_requests::{LatestReview, PrState, PullRequestFacts, ReviewState};
 use crate::login::Login;
 use crate::patch_ids::{CantCheck, ChangedFile, FilePatch, PatchId, PatchesOf};
 use crate::store::{ActivityFacts, LastCheck, ReviewFacts, WorkFacts};
 use crate::workbench::attention::Causes;
 use crate::workbench::testing::{
-    BOT, at, backport, bots_backport, cpython, issue, me, own, reviewed_workbench, someone,
-    stranger,
+    BOT, at, backport, bots_backport, cpython, issue, me, outline, own, reviewed_workbench,
+    someone, stranger,
 };
-use crate::workbench::{Why, Workbench, WorkbenchItem, YourReview};
+use crate::workbench::{Why, Workbench, WorkbenchItem, WorkbenchView, YourReview};
 
 fn sha(digit: char) -> CommitSha {
     CommitSha::parse(&digit.to_string().repeat(40)).unwrap()
@@ -612,6 +613,132 @@ fn a_review_request_on_a_bot_backport_needs_attention_whatever_its_origin_prs_st
         let causes = Causes::of(&facts, cpython().conventions);
 
         assert!(causes.needs_attention(2));
+    }
+}
+
+/// The Stale reviews view of `pull_requests` and `issues`, which the user reviewed as `reviews` says.
+fn stale_view(
+    pull_requests: Vec<PullRequestFacts>,
+    issues: Vec<IssueFacts>,
+    reviews: ReviewFacts,
+) -> Workbench {
+    let facts = WorkFacts {
+        issues,
+        ..facts(pull_requests, reviews)
+    };
+    Workbench::from_facts(facts, &cpython(), &WorkbenchView::StaleReviews)
+}
+
+/// PR `number` like PR 1, which the user reviewed at commit 1, at `head` and fixing Issue `issue`.
+fn reviewed_at(number: u32, head: char, issue: u32) -> PullRequestFacts {
+    PullRequestFacts {
+        number,
+        title: format!("gh-{issue}: Fix it"),
+        head: Some(sha(head)),
+        ..reviewed_pr()
+    }
+}
+
+#[test]
+fn the_stale_reviews_view_lists_the_open_prs_with_a_stale_review_in_their_issues() {
+    let ended = |number, state| PullRequestFacts {
+        state,
+        ..reviewed_at(number, '2', 20)
+    };
+    let unchecked = PullRequestFacts {
+        title: "Tidy up".to_owned(),
+        ..reviewed_at(6, '5', 0)
+    };
+    let draft = PullRequestFacts {
+        is_draft: true,
+        ..reviewed_at(8, '2', 30)
+    };
+    let unreviewed = PullRequestFacts {
+        number: 7,
+        title: "gh-20: Fix it".to_owned(),
+        ..stranger()
+    };
+    let pull_requests = vec![
+        reviewed_at(1, '2', 10),
+        reviewed_at(2, '1', 20),
+        ended(3, PrState::Merged),
+        ended(4, PrState::Closed),
+        unchecked,
+        unreviewed,
+        draft,
+    ];
+    let mut reviews = stale_at_2();
+    reviews
+        .reviewed
+        .extend([2, 3, 4, 6, 8].map(|number| (number, sha('1'))));
+    drop(
+        reviews
+            .unchecked
+            .insert(of('5', "main"), CantCheck::Cloning),
+    );
+    let issues = vec![issue(10), issue(20), issue(30)];
+
+    let view = stale_view(pull_requests.clone(), issues.clone(), reviews.clone());
+    let whole = Workbench::from_facts(
+        WorkFacts {
+            issues,
+            ..facts(pull_requests, reviews)
+        },
+        &cpython(),
+        &WorkbenchView::Whole,
+    );
+
+    // A colleague's Draft PR waits on nobody, as for Needs attention.
+    assert_eq!(
+        outline(&view),
+        [("issue", 10, vec![1]), ("standalone", 6, vec![])]
+    );
+    assert_eq!(view.stale_reviews, 2);
+    assert_eq!(whole.stale_reviews, 2);
+}
+
+#[test]
+fn a_stale_origin_pr_and_its_bot_backports_count_once_in_the_stale_reviews_view() {
+    let view = stale_view(origin_and_bot_backports(), vec![], stale_at_2());
+
+    assert_eq!(outline(&view), [("standalone", 1, vec![2, 3, 4])]);
+    assert_eq!(view.stale_reviews, 1);
+}
+
+#[test]
+fn a_merged_stale_origin_prs_open_bot_backports_stay_out_of_the_stale_reviews_view() {
+    let merged = PullRequestFacts {
+        state: PrState::Merged,
+        ..reviewed_pr()
+    };
+    let approved = PullRequestFacts {
+        latest_reviews: reviewed_pr().latest_reviews,
+        ..bot_backport_of_1(2)
+    };
+
+    let view = stale_view(vec![merged, approved], vec![], stale_at_2());
+
+    assert_eq!(outline(&view), []);
+    assert_eq!(view.stale_reviews, 0);
+}
+
+#[test]
+fn a_pr_leaves_the_stale_reviews_view_once_it_merges_or_turns_reviewed() {
+    let merged = PullRequestFacts {
+        state: PrState::Merged,
+        ..reviewed_pr()
+    };
+    let mut reviewed_again = stale_at_2();
+    drop(reviewed_again.reviewed.insert(1, sha('2')));
+
+    let stale = stale_view(vec![reviewed_pr()], vec![], stale_at_2());
+    let after_merge = stale_view(vec![merged], vec![], stale_at_2());
+    let after_review = stale_view(vec![reviewed_pr()], vec![], reviewed_again);
+
+    assert_eq!(stale.stale_reviews, 1);
+    for view in [after_merge, after_review] {
+        assert_eq!(outline(&view), []);
+        assert_eq!(view.stale_reviews, 0);
     }
 }
 

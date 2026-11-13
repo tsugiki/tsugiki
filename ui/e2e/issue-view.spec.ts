@@ -47,6 +47,7 @@ const listing = (waiting: boolean) => ({
     quiet: [],
     count: waiting ? 1 : 0,
     review_requests: 0,
+    stale_reviews: 0,
     filters: [],
   },
 });
@@ -176,6 +177,7 @@ test("an Issue opened far down a long list shows beside it", async ({ page }) =>
         quiet: [],
         count: 0,
         review_requests: 0,
+        stale_reviews: 0,
         filters: [],
       },
     },

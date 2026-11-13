@@ -6,6 +6,7 @@
     onpick,
     count,
     reviewRequests,
+    staleReviews,
     filters,
     selected,
     onselect,
@@ -16,6 +17,7 @@
     onpick: () => void;
     count: number;
     reviewRequests: number;
+    staleReviews: number;
     filters: FilterLine[];
     selected: WorkbenchView;
     onselect: (view: WorkbenchView) => void;
@@ -37,6 +39,13 @@
   >
     <span>Review requests</span>
     <span>{reviewRequests}</span>
+  </button>
+  <button
+    aria-current={shown(selected.kind === "stale_reviews")}
+    onclick={() => onselect({ kind: "stale_reviews" })}
+  >
+    <span>Stale reviews</span>
+    <span>{staleReviews}</span>
   </button>
   {#if filters.length > 0}
     <h2 class="small-heading">Filters</h2>

@@ -82,7 +82,7 @@ async function openApp(page: Page): Promise<void> {
     home: { screen: "repository", repository, others: [] as string[] },
     workbench: {
       status: "ok",
-      data: { items: [issue], quiet: [], count: 1, review_requests: 0, filters: [] },
+      data: { items: [issue], quiet: [], count: 1, review_requests: 0, stale_reviews: 0, filters: [] },
     },
     openIssue: done,
     fetchIssue: done,

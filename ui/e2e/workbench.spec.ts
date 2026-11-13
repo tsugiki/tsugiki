@@ -79,7 +79,7 @@ test("the Workbench lists what waits on the user", async ({ page }) => {
     home: cpython,
     workbench: {
       status: "ok",
-      data: { items: [review, own], quiet: [], count: 2, review_requests: 0, filters: [] },
+      data: { items: [review, own], quiet: [], count: 2, review_requests: 0, stale_reviews: 0, filters: [] },
     },
   });
   await page.goto("/");
@@ -106,7 +106,7 @@ test("an item that Needs attention shows an accent bar and title, and a long tit
     home: cpython,
     workbench: {
       status: "ok",
-      data: { items: [review, long], quiet: [], count: 2, review_requests: 0, filters: [] },
+      data: { items: [review, long], quiet: [], count: 2, review_requests: 0, stale_reviews: 0, filters: [] },
     },
   });
   await page.setViewportSize({ width: 900, height: 600 });
@@ -137,7 +137,7 @@ test("the quiet section unfolds, folds, and unfolds again for Alt+← back to an
     home: cpython,
     workbench: {
       status: "ok",
-      data: { items: [review], quiet: [own], count: 1, review_requests: 0, filters: [] },
+      data: { items: [review], quiet: [own], count: 1, review_requests: 0, stale_reviews: 0, filters: [] },
     },
     openIssue: done,
     fetchIssue: done,
@@ -185,14 +185,17 @@ test("the quiet section unfolds, folds, and unfolds again for Alt+← back to an
 test("the first sync's rows appear as the core saves them", async ({ page }) => {
   await mockCore(page, {
     home: cpython,
-    workbench: { status: "ok", data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [] } },
+    workbench: {
+      status: "ok",
+      data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
+    },
   });
   await page.goto("/");
   await expect(page.getByText(/Nothing here yet/)).toBeVisible();
 
   await changeAnswer(page, "workbench", {
     status: "ok",
-    data: { items: [own], quiet: [], count: 1, review_requests: 0, filters: [] },
+    data: { items: [own], quiet: [], count: 1, review_requests: 0, stale_reviews: 0, filters: [] },
   });
   await emitFromCore(page, "changed", { repository: "tsugiki/tsugiki", items: [1] });
   await emitFromCore(page, "changed", { repository: repository.name, items: [1] });
@@ -202,7 +205,14 @@ test("the first sync's rows appear as the core saves them", async ({ page }) => 
 });
 
 test("the Sidebar lists the Filters, and selecting one shows its Issues", async ({ page }) => {
-  const whole = { items: [review, own], quiet: [], count: 2, review_requests: 0, filters: [mine] };
+  const whole = {
+    items: [review, own],
+    quiet: [],
+    count: 2,
+    review_requests: 0,
+    stale_reviews: 0,
+    filters: [mine],
+  };
   await mockCore(page, { home: cpython, workbench: { status: "ok", data: whole } });
   await page.goto("/");
 
@@ -220,7 +230,7 @@ test("the Sidebar lists the Filters, and selecting one shows its Issues", async 
 
 test("a change keeps the selected Filter and the place the user had scrolled to", async ({ page }) => {
   const many = Array.from({ length: 80 }, (_, at) => ({ ...own, number: 1000 + at }));
-  const whole = { items: many, quiet: [], count: 80, review_requests: 0, filters: [mine] };
+  const whole = { items: many, quiet: [], count: 80, review_requests: 0, stale_reviews: 0, filters: [mine] };
   await page.setViewportSize({ width: 800, height: 400 });
   await mockCore(page, { home: cpython, workbench: { status: "ok", data: whole } });
   await page.goto("/");
@@ -247,7 +257,10 @@ test("a change keeps the selected Filter and the place the user had scrolled to"
 test("the status bar says when the Repository last synced, and a click asks again", async ({ page }) => {
   await mockCore(page, {
     home: cpython,
-    workbench: { status: "ok", data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [] } },
+    workbench: {
+      status: "ok",
+      data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
+    },
     status: { state: "online", login: "octocat" },
     lastSync: { repository: repository.name, at: null },
   });

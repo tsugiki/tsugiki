@@ -15,6 +15,7 @@ it("starts with the open Repository's name, and a click on it asks for the Repos
   render(Sidebar, {
     count: 12,
     reviewRequests: 4,
+    staleReviews: 2,
     filters: [],
     selected: whole,
     onselect: () => {},
@@ -33,6 +34,7 @@ it("lists the Workbench and each Filter with its count", () => {
     ...cpython,
     count: 12,
     reviewRequests: 4,
+    staleReviews: 2,
     filters: [mine, involved],
     selected: whole,
     onselect: () => {},
@@ -41,6 +43,7 @@ it("lists the Workbench and each Filter with its count", () => {
     "python/cpython",
     "Workbench 12",
     "Review requests 4",
+    "Stale reviews 2",
     "Mine 3",
     "Involved 9",
   ]);
@@ -52,6 +55,7 @@ it("heads the built-in views, and the Filters while there are any", () => {
     ...cpython,
     count: 12,
     reviewRequests: 4,
+    staleReviews: 2,
     filters: [mine],
     selected: whole,
     onselect: () => {},
@@ -63,6 +67,7 @@ it("heads the built-in views, and the Filters while there are any", () => {
     ...cpython,
     count: 12,
     reviewRequests: 4,
+    staleReviews: 2,
     filters: [],
     selected: whole,
     onselect: () => {},
@@ -75,6 +80,7 @@ it("marks the Workbench while nothing else is selected", () => {
     ...cpython,
     count: 12,
     reviewRequests: 4,
+    staleReviews: 2,
     filters: [mine],
     selected: whole,
     onselect: () => {},
@@ -88,6 +94,7 @@ it("marks the Filter selected", () => {
     ...cpython,
     count: 12,
     reviewRequests: 4,
+    staleReviews: 2,
     filters: [mine, involved],
     selected: { kind: "filter", query: mine.query },
     onselect: () => {},
@@ -102,13 +109,30 @@ it("marks Review requests selected", () => {
     ...cpython,
     count: 12,
     reviewRequests: 4,
+    staleReviews: 2,
     filters: [mine],
     selected: { kind: "review_requests" },
     onselect: () => {},
   });
   expect(button("Review requests 4").getAttribute("aria-current")).toBe("true");
+  expect(button("Stale reviews 2").getAttribute("aria-current")).toBeNull();
   expect(button("Workbench 12").getAttribute("aria-current")).toBeNull();
   expect(button("Mine 3").getAttribute("aria-current")).toBeNull();
+});
+
+it("marks Stale reviews selected", () => {
+  render(Sidebar, {
+    ...cpython,
+    count: 12,
+    reviewRequests: 4,
+    staleReviews: 2,
+    filters: [mine],
+    selected: { kind: "stale_reviews" },
+    onselect: () => {},
+  });
+  expect(button("Stale reviews 2").getAttribute("aria-current")).toBe("true");
+  expect(button("Review requests 4").getAttribute("aria-current")).toBeNull();
+  expect(button("Workbench 12").getAttribute("aria-current")).toBeNull();
 });
 
 it("says which line the user picks", async () => {
@@ -117,6 +141,7 @@ it("says which line the user picks", async () => {
     ...cpython,
     count: 12,
     reviewRequests: 4,
+    staleReviews: 2,
     filters: [mine],
     selected: whole,
     onselect,
@@ -125,6 +150,8 @@ it("says which line the user picks", async () => {
   expect(onselect).toHaveBeenLastCalledWith({ kind: "filter", query: mine.query });
   await fireEvent.click(button("Review requests 4"));
   expect(onselect).toHaveBeenLastCalledWith({ kind: "review_requests" });
+  await fireEvent.click(button("Stale reviews 2"));
+  expect(onselect).toHaveBeenLastCalledWith({ kind: "stale_reviews" });
   await fireEvent.click(button("Workbench 12"));
   expect(onselect).toHaveBeenLastCalledWith(whole);
 });
@@ -134,6 +161,7 @@ it("lists two Filters that share a search", () => {
     ...cpython,
     count: 12,
     reviewRequests: 4,
+    staleReviews: 2,
     filters: [mine, { ...mine, name: "Also mine" }],
     selected: whole,
     onselect: () => {},
@@ -148,6 +176,7 @@ it("says what stopped a Filter's last search", () => {
     ...cpython,
     count: 12,
     reviewRequests: 4,
+    staleReviews: 2,
     filters: [{ ...mine, problem }],
     selected: whole,
     onselect: () => {},

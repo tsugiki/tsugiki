@@ -10,7 +10,10 @@ const repository = { name: "python/cpython", conventions: "cpython", filters: []
 
 const core: CoreAnswers = {
   home: { screen: "repository", repository, others: [] as string[] },
-  workbench: { status: "ok", data: { items: [], quiet: [], count: 0, review_requests: 0, filters: [] } },
+  workbench: {
+    status: "ok",
+    data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
+  },
   timeRunning: 640,
   recordMeasurement: "Performance of Tsugiki 0.1.0 over 1.0 s: frame p95 16.7 ms",
 };
@@ -131,7 +134,7 @@ test("the HUD times an Issue whose text comes from GitHub", async ({ page }) => 
     ...core,
     workbench: {
       status: "ok",
-      data: { items: [listed], quiet: [], count: 0, review_requests: 0, filters: [] },
+      data: { items: [listed], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
     },
     openIssue: { status: "ok", data: null },
     issue: { status: "ok", data: unread },

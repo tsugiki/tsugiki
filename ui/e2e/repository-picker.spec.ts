@@ -4,7 +4,7 @@ import { changeAnswer, mockCore } from "./mock-core.ts";
 
 const cpython = { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] } as const;
 const peps = { name: "python/peps", conventions: "github", filters: [] as Filter[] } as const;
-const workbench = { items: [], quiet: [], count: 0, review_requests: 0, filters: [] };
+const workbench = { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] };
 
 test("Ctrl+R and Enter switch back to the Repository opened before", async ({ page }) => {
   await mockCore(page, {

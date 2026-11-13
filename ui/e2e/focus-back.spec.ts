@@ -28,7 +28,10 @@ async function openApp(page: Page): Promise<void> {
   await mockCore(page, {
     status: { state: "online", login: "octocat" },
     home: { screen: "repository", repository, others: [] },
-    workbench: { status: "ok", data: { items: [own], quiet: [], count: 1, review_requests: 0, filters: [] } },
+    workbench: {
+      status: "ok",
+      data: { items: [own], quiet: [], count: 1, review_requests: 0, stale_reviews: 0, filters: [] },
+    },
   });
   await page.goto("/");
   await expect(page.getByRole("button", { name: /#157178/ })).toBeVisible();

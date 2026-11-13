@@ -2359,7 +2359,7 @@ export type WorkbenchRow_Serialize = {
 };
 
 /**  The list the window asks for. */
-export type WorkbenchView = { kind: "whole" } | { kind: "filter"; query: FilterQuery } | { kind: "review_requests" };
+export type WorkbenchView = { kind: "whole" } | { kind: "filter"; query: FilterQuery } | { kind: "review_requests" } | { kind: "stale_reviews" };
 
 /**  A Repository's Workbench or one of its views, with what the Sidebar shows beside it. */
 export type Workbench_Deserialize = {
@@ -2374,6 +2374,11 @@ export type Workbench_Deserialize = {
 	count: number,
 	/**  The count of items that hold a PR carrying a Review request. */
 	review_requests: number,
+	/**
+	 *  The count of open PRs where the user's Review is a Stale review, a stale Origin PR and its Bot
+	 *  backports as one.
+	 */
+	stale_reviews: number,
 	filters: FilterLine_Deserialize[],
 };
 
@@ -2390,6 +2395,11 @@ export type Workbench_Serialize = {
 	count: number,
 	/**  The count of items that hold a PR carrying a Review request. */
 	review_requests: number,
+	/**
+	 *  The count of open PRs where the user's Review is a Stale review, a stale Origin PR and its Bot
+	 *  backports as one.
+	 */
+	stale_reviews: number,
 	filters: FilterLine_Serialize[],
 };
 

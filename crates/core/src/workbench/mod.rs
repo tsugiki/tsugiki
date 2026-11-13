@@ -138,6 +138,7 @@ pub enum WorkbenchView {
     Whole,
     Filter { query: FilterQuery },
     ReviewRequests,
+    StaleReviews,
 }
 
 /// A Repository's Workbench or one of its views, with what the Sidebar shows beside it.
@@ -152,6 +153,8 @@ pub struct Workbench {
     pub count: u32,
     /// The count of items that hold a PR carrying a Review request.
     pub review_requests: u32,
+    /// The count of PRs whose Stale review Needs attention, a stale Origin PR and its Bot backports as one.
+    pub stale_reviews: u32,
     pub filters: Vec<FilterLine>,
 }
 
@@ -248,6 +251,7 @@ impl Workbench {
             WorkbenchView::Whole => None,
             WorkbenchView::Filter { query } => Some(filters.numbers_of(query)),
             WorkbenchView::ReviewRequests => Some(&causes.review_requests),
+            WorkbenchView::StaleReviews => Some(&causes.stale_reviews),
         };
         let listed: Vec<ListedItem> =
             candidates(facts, repository, selected.unwrap_or(&matched), &causes)
@@ -269,6 +273,7 @@ impl Workbench {
                 .iter()
                 .filter(|listed| listed.item.is_reached_by(&causes.review_requests)),
         );
+        let stale_reviews = prs_of(&listed, &causes.stale_reviews);
         let shown = listed.iter().filter(|listed| match selected {
             Some(numbers) => listed.item.is_reached_by(numbers),
             None => on_workbench(listed),
@@ -279,9 +284,19 @@ impl Workbench {
             quiet,
             count,
             review_requests,
+            stale_reviews,
             filters: lines,
         }
     }
+}
+
+/// The count of the PRs in `numbers` that `listed` shows. A PR that fixes two Issues counts once.
+fn prs_of(listed: &[ListedItem], numbers: &BTreeSet<u32>) -> u32 {
+    let rows = listed.iter().flat_map(|listed| listed.item.rows());
+    let held: BTreeSet<u32> = (rows.map(|row| row.number))
+        .filter(|number| numbers.contains(number))
+        .collect();
+    u32::try_from(held.len()).unwrap_or(u32::MAX)
 }
 
 /// `shown` in the order of a list: what Needs attention, then the rest, and apart from them the quiet

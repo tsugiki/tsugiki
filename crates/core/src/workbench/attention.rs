@@ -111,6 +111,8 @@ pub(super) struct Causes {
     by_number: BTreeMap<u32, Vec<Cause>>,
     /// The PRs that carry a Review request.
     pub(super) review_requests: BTreeSet<u32>,
+    /// The PRs whose Stale review Needs attention, which the Stale reviews view holds.
+    pub(super) stale_reviews: BTreeSet<u32>,
     /// The Issues and PRs with New activity, whoever it waits on.
     with_news: BTreeSet<u32>,
     /// The newest moment the facts hold on each Issue and PR: GitHub's last update, CI reaching a result, or
@@ -130,12 +132,12 @@ impl Causes {
         };
         let shared = SharedReviews::of(&facts.pull_requests, conventions);
         let reviews = your_reviews(facts, viewer, &shared);
+        let stale_reviews = stale_reviews(facts, viewer, &reviews, &shared);
         let rules = Rules {
             news: News::new(&facts.activity, &facts.pull_requests, viewer, conventions),
             facts: &facts.activity,
             viewer,
-            reviews: &reviews,
-            shared: &shared,
+            stale_reviews: &stale_reviews,
         };
         let on_pull_requests = facts.pull_requests.iter().map(|pr| {
             let news = rules.news.on_pull_request(pr);
@@ -160,6 +162,7 @@ impl Causes {
         Self {
             by_number,
             review_requests: requested.map(|pr| pr.number).collect(),
+            stale_reviews,
             with_news,
             known_until: known_until(facts),
             marked_unseen: facts.activity.marked_unseen.keys().copied().collect(),
@@ -218,6 +221,25 @@ impl Causes {
     }
 }
 
+/// The PRs whose Stale review Needs attention: each open PR where `viewer`'s Review is a Stale review. A
+/// merged or closed PR waits on nobody, whatever its last check found, and nor does a colleague's Draft PR.
+/// A Bot backport's Stale review is its Origin PR's, and counts only on the Origin PR, so not at all once
+/// that has merged.
+fn stale_reviews(
+    facts: &WorkFacts,
+    viewer: &Login,
+    reviews: &BTreeMap<u32, YourReview>,
+    shared: &SharedReviews,
+) -> BTreeSet<u32> {
+    let waiting = facts.pull_requests.iter().filter(|pr| {
+        let colleagues_draft = pr.is_draft && pr.author.as_ref() != Some(viewer);
+        let borrowed = shared.origin_of(pr.number).is_some();
+        let stale = reviews.get(&pr.number).is_some_and(YourReview::is_stale);
+        pr.state == PrState::Open && !colleagues_draft && !borrowed && stale
+    });
+    waiting.map(|pr| pr.number).collect()
+}
+
 /// The newest moment `facts` hold on each Issue and PR, which Mark Seen moves Last seen to. It covers what
 /// isn't New activity yet, such as CI on a PR the user hasn't reviewed, so that stays seen once it would be.
 fn known_until(facts: &WorkFacts) -> BTreeMap<u32, OffsetDateTime> {
@@ -267,8 +289,7 @@ struct Rules<'a> {
     news: News<'a>,
     facts: &'a ActivityFacts,
     viewer: &'a Login,
-    reviews: &'a BTreeMap<u32, YourReview>,
-    shared: &'a SharedReviews,
+    stale_reviews: &'a BTreeSet<u32>,
 }
 
 impl Rules<'_> {
@@ -342,11 +363,7 @@ impl Rules<'_> {
         if pull_request.is_draft && !own {
             return causes;
         }
-        // A merged or closed PR waits on nobody, whatever its last check found. A Bot backport's Stale review
-        // is its Origin PR's, and counts only on the Origin PR, so not at all once that has merged.
-        let stale = self.reviews.get(&number).is_some_and(YourReview::is_stale);
-        let shared = self.shared.origin_of(number).is_some();
-        if stale && !shared && pull_request.state == PrState::Open {
+        if self.stale_reviews.contains(&number) {
             causes.push(Cause {
                 at: pull_request.updated_at,
                 why: Why::StaleReview,

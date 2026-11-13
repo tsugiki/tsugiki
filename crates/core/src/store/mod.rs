@@ -39,12 +39,12 @@ use crate::github::issues::IssueFacts;
 use crate::github::pull_request_content::PullRequestContent;
 use crate::github::pull_requests::{PullRequestFacts, ReviewedCommit};
 use crate::login::Login;
-use crate::patch_ids::CommitPatches;
+use crate::patch_ids::{CommitPatches, UncheckedCommit};
 use crate::repository::RepositoryName;
 pub use activity::ActivityFacts;
 pub use filters::{FilterProblem, FilterResults, NarrowedResults};
 use migrate::{MIGRATIONS, Migration};
-pub use patch_ids::ReviewFacts;
+pub use patch_ids::{LastCheck, ReviewFacts};
 pub use sync_state::{ChangeCheck, FirstSyncPlace, SyncState};
 
 /// The database connection, which only `store` may hold. Code here names it through this alias, so
@@ -408,6 +408,39 @@ impl Store {
         let repository = repository.clone();
         let saved =
             self.call(move |connection| patch_ids::save(connection, &repository, &patches))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Keeps `unchecked` as the commits of `repository` whose patch-ids the Mirror worker can't read now, in
+    /// place of those kept before.
+    pub fn save_unchecked(
+        &self,
+        repository: &RepositoryName,
+        unchecked: Vec<UncheckedCommit>,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| {
+            patch_ids::save_unchecked(connection, &repository, &unchecked)
+        })?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Forgets why the Mirror worker couldn't read patch-ids in a run that ended, as a new run starts.
+    pub fn forget_unchecked(&self) -> Result<(), Error> {
+        let forgot = self.call(|connection| patch_ids::forget_unchecked(connection))?;
+        forgot.map_err(saying(CANT_WRITE))
+    }
+
+    /// Keeps each of `checks` as its PR's last check, whose verdict stands while a newer check waits.
+    pub fn save_last_checks(
+        &self,
+        repository: &RepositoryName,
+        checks: Vec<(u32, LastCheck)>,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| {
+            patch_ids::save_last_checks(connection, &repository, &checks)
+        })?;
         saved.map_err(saying(CANT_WRITE))
     }
 

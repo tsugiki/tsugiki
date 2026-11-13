@@ -53,6 +53,39 @@ pub struct CommitPatches {
     pub files: Vec<FilePatch>,
 }
 
+/// Why the Stale review check can't read a commit's patch-ids now (#384). Each goes away with its cause, and
+/// the check then runs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CantCheck {
+    /// The Repository's mirror isn't cloned yet.
+    Cloning,
+    /// git said the Repository's mirror was broken, and it isn't cloned again yet.
+    Broken,
+    /// git isn't on the `PATH`.
+    NoGit,
+    /// git is older than the `needed` version, as `git --version` says in `version`.
+    OldGit { version: String, needed: String },
+    /// GitHub refused to send the commit.
+    Refused,
+}
+
+/// A commit whose patch-ids the check needs and can't read now, and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UncheckedCommit {
+    pub of: PatchesOf,
+    pub reason: CantCheck,
+}
+
+/// What the Mirror worker hands over of a Repository's patch-ids, for the session to keep.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PatchReads {
+    /// The per-file patch-ids read of these commits.
+    Read(Vec<CommitPatches>),
+    /// The commits whose patch-ids the worker can't read now, in place of those it handed over before.
+    Unchecked(Vec<UncheckedCommit>),
+}
+
 /// A file whose change differs from the one the user's Review covered.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct ChangedFile {

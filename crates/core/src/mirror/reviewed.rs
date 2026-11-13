@@ -47,6 +47,16 @@ pub(super) struct Reviews {
 }
 
 impl Reviews {
+    /// The commits GitHub refused to send, read from the file beside `mirror` the first time.
+    pub(super) fn refused(
+        &mut self,
+        repository: &RepositoryName,
+        mirror: &Path,
+    ) -> &BTreeSet<CommitSha> {
+        self.refused
+            .get_or_insert_with(|| read_refused(repository, mirror))
+    }
+
     /// Keeps each reviewed commit again, in a mirror cloned anew.
     pub(super) fn keep_again(&mut self) {
         let kept = mem::take(&mut self.kept);
@@ -136,8 +146,8 @@ impl Worker {
         let repository = known.repository.clone();
         let mirror = folders.mirror(&repository);
         let reviews = &mut known.reviews;
-        let refused = (reviews.refused).get_or_insert_with(|| read_refused(&repository, &mirror));
         let mut waiting = mem::take(&mut reviews.waiting);
+        let refused = reviews.refused(&repository, &mirror);
         waiting.retain(|_, commit| !refused.contains(commit));
         if waiting.is_empty() {
             return true;

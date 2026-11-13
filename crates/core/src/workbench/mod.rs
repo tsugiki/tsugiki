@@ -34,7 +34,7 @@ use crate::links::BackportKind;
 use crate::patch_ids::PatchesOf;
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
-use crate::store::{StoreReader, WorkFacts};
+use crate::store::{LastCheck, StoreReader, WorkFacts};
 use attention::Causes;
 use backports::{plant, standalone};
 use filters::FilterFacts;
@@ -180,6 +180,12 @@ impl Workbench {
     /// reviewed commit and the head of each open PR whose head moved on from the user's Review.
     pub fn patches_to_read(facts: &WorkFacts) -> Vec<PatchesOf> {
         review_state::patches_to_read(facts)
+    }
+
+    /// The two commits of each PR whose check has both sides read, for the store to keep as its last check,
+    /// those it keeps already left out. Their verdict stands while a newer check waits.
+    pub fn checks_to_keep(facts: &WorkFacts) -> Vec<(u32, LastCheck)> {
+        review_state::checks_to_keep(facts)
     }
 
     /// The numbers of the Issues and PRs the user's work reaches: each on the whole Workbench, the quiet

@@ -3,6 +3,7 @@ import {
   treeRows,
   type Attention,
   type BackportKind,
+  type CantCheck,
   type CiState,
   type IssueItem,
   type ListedItem,
@@ -132,8 +133,26 @@ export type StateWord = { words: string; tone: WordTone; hover?: string };
 
 const fileCount = (count: number) => (count === 1 ? "1 file" : `${String(count)} files`);
 
+/** Why the Stale review check can't run, for the hover of a Stale review it couldn't check. */
+function cantCheckWords(reason: CantCheck): string {
+  const cant = "Tsugiki can't check your Review";
+  switch (reason.kind) {
+    case "cloning":
+      return `${cant} until the mirror is cloned`;
+    case "broken":
+      return `${cant} until the mirror, which git said was broken, is cloned again`;
+    case "no_git":
+      return `${cant} without git`;
+    case "old_git":
+      return `${cant} with ${reason.version}: it needs git ${reason.needed} or newer`;
+    case "refused":
+      return `${cant}: GitHub refused to send the commit it covered`;
+  }
+}
+
 /** The word for where the user's Review stands. A Stale review's hover lists the files changed since the
- * Review, and names the ones whose change is only whitespace. An Unreviewed PR has none. */
+ * Review, and names the ones whose change is only whitespace, or says why the check can't run. An
+ * Unreviewed PR has none. */
 function reviewWord(review: YourReview): StateWord[] {
   switch (review.kind) {
     case "unreviewed":
@@ -147,13 +166,15 @@ function reviewWord(review: YourReview): StateWord[] {
       const hover = [`Changed since your Review: ${fileCount(files.length)}`, ...files].join("\n");
       return [{ words: "Stale review", tone: "bad", hover }];
     }
+    case "cant_check":
+      return [{ words: "Stale review", tone: "bad", hover: cantCheckWords(review.reason) }];
   }
 }
 
 /** The words of a PR's second line, with only the facts this PR has. A Stale review takes the place of the
  * Reviewed reason. */
 export function detailWords(row: WorkbenchRow & { backport?: BackportKind }): StateWord[] {
-  const stale = row.your_review.kind === "stale_review";
+  const stale = row.your_review.kind === "stale_review" || row.your_review.kind === "cant_check";
   const plain = (words: string) => ({ words, tone: "plain" as const });
   return [
     ...row.reasons

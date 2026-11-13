@@ -81,6 +81,8 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 - Each open PR with the user's Review is checked in the background once the mirror has a head that differs
   from the reviewed commit, so its row, Needs attention and the counts are right without opening it. A Stale
   review's hover lists the files changed since the Review, and names those changed only in whitespace.
+- While a check waits, the PR keeps its last verdict. A check that can't run, as when the mirror isn't cloned
+  or git is too old, is a Stale review whose hover says why.
 - A merged or closed PR keeps the verdict of its final head, and never Needs attention.
 - A **Bot backport** shares its Origin PR's review state, and its Stale review is counted once.
 - **Last seen** and **New activity**.

@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 
 use crate::github::CommitSha;
 use crate::github::pull_requests::{LatestReview, PrState, PullRequestFacts, ReviewState};
-use crate::patch_ids::{ChangedFile, FilePatch, PatchId, PatchesOf};
-use crate::store::{ActivityFacts, ReviewFacts, WorkFacts};
+use crate::patch_ids::{CantCheck, ChangedFile, FilePatch, PatchId, PatchesOf};
+use crate::store::{ActivityFacts, LastCheck, ReviewFacts, WorkFacts};
 use crate::workbench::testing::{me, own, reviewed_workbench, stranger};
 use crate::workbench::{Workbench, WorkbenchItem, YourReview};
 
@@ -48,6 +48,7 @@ fn reviewed_at_1(reviewed: Option<Vec<FilePatch>>, head: Option<Vec<FilePatch>>)
             .into_iter()
             .filter_map(|(of, files)| Some((of, files?)))
             .collect(),
+        ..ReviewFacts::default()
     }
 }
 
@@ -152,6 +153,103 @@ fn a_moved_head_with_other_changes_is_a_stale_review_naming_the_files() {
     );
 }
 
+/// `reviews`, where PR 1's last check compared commit `reviewed` with commit 3, whose change was `head`.
+fn last_checked(mut reviews: ReviewFacts, reviewed: char, head: Vec<FilePatch>) -> ReviewFacts {
+    drop(reviews.patches.insert(of('3', "main"), head));
+    let last = LastCheck {
+        reviewed: sha(reviewed),
+        head: sha('3'),
+    };
+    drop(reviews.last_checks.insert(1, last));
+    reviews
+}
+
+#[test]
+fn a_pending_check_keeps_the_last_verdict() {
+    let reviewed = Some(vec![file("Lib/ast.py", '1', 'a')]);
+    let last = vec![file("Lib/ast.py", '3', 'a')];
+    let reviews = last_checked(reviewed_at_1(reviewed, None), '1', last);
+
+    assert_eq!(
+        state_of(reviewed_pr(), reviews),
+        YourReview::StaleReview {
+            files: vec![ChangedFile {
+                path: "Lib/ast.py".to_owned(),
+                whitespace_only: true,
+            }],
+        }
+    );
+}
+
+#[test]
+fn a_pending_check_after_a_new_review_is_reviewed() {
+    let reviewed = Some(vec![file("Lib/ast.py", '1', 'a')]);
+    let last = vec![file("Lib/ast.py", '3', 'c')];
+    let reviews = last_checked(reviewed_at_1(reviewed, None), '9', last);
+
+    assert_eq!(state_of(reviewed_pr(), reviews), YourReview::Reviewed);
+}
+
+fn reasons() -> [CantCheck; 5] {
+    let version = "git version 2.38.1".to_owned();
+    [
+        CantCheck::Cloning,
+        CantCheck::Broken,
+        CantCheck::NoGit,
+        CantCheck::OldGit {
+            version,
+            needed: "2.39".to_owned(),
+        },
+        CantCheck::Refused,
+    ]
+}
+
+#[test]
+fn a_check_that_cant_run_on_either_side_is_a_stale_review_with_the_reason() {
+    for reason in reasons() {
+        for side in ['1', '2'] {
+            let mut reviews = reviewed_at_1(None, None);
+            drop(reviews.unchecked.insert(of(side, "main"), reason.clone()));
+
+            assert_eq!(
+                state_of(reviewed_pr(), reviews),
+                YourReview::CantCheck {
+                    reason: reason.clone()
+                },
+                "commit {side}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_check_that_cant_run_outranks_the_last_verdict() {
+    let reviewed = Some(vec![file("Lib/ast.py", '1', 'a')]);
+    let last = vec![file("Lib/ast.py", '1', 'a')];
+    let mut reviews = last_checked(reviewed_at_1(reviewed, None), '1', last);
+    drop(
+        reviews
+            .unchecked
+            .insert(of('2', "main"), CantCheck::Cloning),
+    );
+
+    assert_eq!(
+        state_of(reviewed_pr(), reviews),
+        YourReview::CantCheck {
+            reason: CantCheck::Cloning
+        }
+    );
+}
+
+#[test]
+fn once_both_sides_are_read_their_verdict_replaces_the_reason() {
+    let read = || Some(vec![file("Lib/ast.py", '1', 'a')]);
+    let mut reviews = reviewed_at_1(read(), read());
+    drop(reviews.unchecked.insert(of('1', "main"), CantCheck::NoGit));
+
+    assert_eq!(state_of(reviewed_pr(), reviews), YourReview::Reviewed);
+}
+
 #[test]
 fn the_users_comments_on_their_own_pr_arent_a_review_of_it() {
     let reviewed = Some(vec![file("Lib/ast.py", '1', 'a')]);
@@ -234,6 +332,33 @@ fn a_check_doesnt_read_again_what_the_store_holds() {
     assert_eq!(
         Workbench::patches_to_read(&facts(vec![reviewed_pr()], reviews)),
         [of('2', "main")]
+    );
+}
+
+#[test]
+fn a_check_keeps_the_commits_it_compared_once_both_sides_are_read() {
+    let read = || Some(vec![file("Lib/ast.py", '1', 'a')]);
+    let kept = PullRequestFacts {
+        number: 3,
+        ..reviewed_pr()
+    };
+    let pending = PullRequestFacts {
+        number: 5,
+        head: Some(sha('4')),
+        ..reviewed_pr()
+    };
+    let mut reviews = reviewed_at_1(read(), read());
+    reviews.reviewed.extend([(3, sha('1')), (5, sha('1'))]);
+    let last = LastCheck {
+        reviewed: sha('1'),
+        head: sha('2'),
+    };
+    drop(reviews.last_checks.insert(3, last.clone()));
+    let pull_requests = vec![reviewed_pr(), kept, pending];
+
+    assert_eq!(
+        Workbench::checks_to_keep(&facts(pull_requests, reviews)),
+        [(1, last)]
     );
 }
 

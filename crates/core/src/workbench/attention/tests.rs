@@ -13,7 +13,7 @@ use crate::github::issues::{IssueFacts, IssueState};
 use crate::github::pull_request_content::{PullRequestContent, Review};
 use crate::github::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
 use crate::login::Login;
-use crate::patch_ids::{CommitPatches, FilePatch, PatchId, PatchesOf};
+use crate::patch_ids::{CantCheck, CommitPatches, FilePatch, PatchId, PatchesOf, UncheckedCommit};
 use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
@@ -1006,6 +1006,20 @@ impl World {
     /// The user reviewed PR `number` at commit 1, which has moved on to commit 2 since, and the check read
     /// the change at commit 1 as `reviewed` and at commit 2 as `head`.
     fn reviewed_and_moved(&self, pull_request: PullRequestFacts, reviewed: char, head: char) {
+        self.reviewed_and_moved_unread(pull_request);
+        let patches =
+            [(sha('1'), reviewed), (sha('2'), head)].map(|(commit, digit)| CommitPatches {
+                of: on_main(commit),
+                files: ast_changed(digit),
+            });
+        self.store
+            .save_patch_ids(&cpython(), patches.to_vec())
+            .unwrap();
+    }
+
+    /// The user reviewed PR `number` at commit 1, which has moved on to commit 2 since, and the check has
+    /// read neither.
+    fn reviewed_and_moved_unread(&self, pull_request: PullRequestFacts) {
         let number = pull_request.number;
         self.has(vec![PullRequestFacts {
             head: Some(sha('2')),
@@ -1035,18 +1049,31 @@ impl World {
         self.store
             .save_pull_request_content(&cpython(), number, content)
             .unwrap();
-        let patches =
-            [(sha('1'), reviewed), (sha('2'), head)].map(|(commit, digit)| CommitPatches {
-                of: PatchesOf {
-                    commit,
-                    target_branch: "main".to_owned(),
-                },
-                files: ast_changed(digit),
-            });
-        self.store
-            .save_patch_ids(&cpython(), patches.to_vec())
-            .unwrap();
     }
+}
+
+fn on_main(commit: CommitSha) -> PatchesOf {
+    PatchesOf {
+        commit,
+        target_branch: "main".to_owned(),
+    }
+}
+
+#[test]
+fn a_review_whose_check_cant_run_needs_attention_as_a_stale_review() {
+    let world = World::new("stale-unchecked");
+    world.reviewed_and_moved_unread(reviewed_by_me(1));
+    let cloning = UncheckedCommit {
+        of: on_main(sha('2')),
+        reason: CantCheck::Cloning,
+    };
+    world
+        .store
+        .save_unchecked(&cpython(), vec![cloning])
+        .unwrap();
+
+    assert_eq!(world.why(1), [Why::StaleReview]);
+    world.finish();
 }
 
 #[test]

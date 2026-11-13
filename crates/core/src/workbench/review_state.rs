@@ -1,6 +1,6 @@
 //! A PR's review state: Unreviewed, Reviewed or Stale review (#364). A Review is stale once the PR's diff
 //! outside Generated files changed since the commit it covered, which the per-file patch-ids of both commits
-//! say (`patch_ids`).
+//! say (`patch_ids`), or while the check can't run.
 
 use std::collections::BTreeSet;
 
@@ -10,8 +10,8 @@ use specta::Type;
 use crate::github::CommitSha;
 use crate::github::pull_requests::{PrState, PullRequestFacts};
 use crate::login::Login;
-use crate::patch_ids::{ChangedFile, PatchesOf, changed_files};
-use crate::store::{ReviewFacts, WorkFacts};
+use crate::patch_ids::{CantCheck, ChangedFile, PatchesOf, changed_files};
+use crate::store::{LastCheck, ReviewFacts, WorkFacts};
 
 /// Where the user's Review of a PR stands, which its row shows in place of GitHub's review state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -24,11 +24,28 @@ pub enum YourReview {
     StaleReview {
         files: Vec<ChangedFile>,
     },
+    /// A Stale review, as the check can't run for `reason` (#384). It runs once the reason goes away.
+    CantCheck {
+        reason: CantCheck,
+    },
+}
+
+impl YourReview {
+    /// Whether the PR shows a Stale review: its diff changed since the user's Review, or the check can't
+    /// say it didn't.
+    pub fn is_stale(&self) -> bool {
+        match self {
+            Self::StaleReview { .. } | Self::CantCheck { .. } => true,
+            Self::Unreviewed | Self::Reviewed => false,
+        }
+    }
 }
 
 /// The review state of `pull_request` for `viewer`. The user's comments on their own PR, which GitHub keeps
 /// as Reviews, are no Review of it. A head equal to the reviewed commit is Reviewed with no check. Otherwise
-/// the patch-ids of both commits decide, once the store holds them, and until then the PR stays Reviewed.
+/// the patch-ids of both commits decide, once the store holds them. A side the Mirror worker can't read
+/// makes it a Stale review with the reason. While the check waits, the PR keeps the verdict of its last
+/// check of the same Review, and is Reviewed without one.
 pub(super) fn your_review(
     pull_request: &PullRequestFacts,
     viewer: &Login,
@@ -39,23 +56,72 @@ pub(super) fn your_review(
     if own || (reviewed.is_none() && !pull_request.is_reviewed_by(viewer)) {
         return YourReview::Unreviewed;
     }
-    let patches_of = |commit: &CommitSha| {
-        let of = PatchesOf {
-            commit: commit.clone(),
-            target_branch: pull_request.target_branch.clone(),
-        };
-        reviews.patches.get(&of)
+    let Some((reviewed, head)) = compared(pull_request, reviews) else {
+        return YourReview::Reviewed;
     };
-    let sides = reviewed.zip(pull_request.head.as_ref());
-    let compared = sides.filter(|(reviewed, head)| reviewed != head);
-    let files = compared.and_then(|(reviewed, head)| {
-        let (reviewed, head) = (patches_of(reviewed)?, patches_of(head)?);
-        Some(changed_files(reviewed, head))
-    });
-    match files {
-        Some(files) if !files.is_empty() => YourReview::StaleReview { files },
-        Some(_) | None => YourReview::Reviewed,
+    let of = |commit: &CommitSha| patches_of(pull_request, commit);
+    let (reviewed_of, head_of) = (of(reviewed), of(head));
+    if let Some(verdict) = verdict(reviews, &reviewed_of, &head_of) {
+        return verdict;
     }
+    let unread = [&reviewed_of, &head_of]
+        .into_iter()
+        .filter(|of| !reviews.patches.contains_key(of));
+    if let Some(reason) = unread.into_iter().find_map(|of| reviews.unchecked.get(of)) {
+        return YourReview::CantCheck {
+            reason: reason.clone(),
+        };
+    }
+    let last =
+        (reviews.last_checks.get(&pull_request.number)).filter(|last| last.reviewed == *reviewed);
+    last.and_then(|last| verdict(reviews, &reviewed_of, &of(&last.head)))
+        .unwrap_or(YourReview::Reviewed)
+}
+
+/// What the patch-ids of `reviewed` and `head` say, once the store holds both.
+fn verdict(reviews: &ReviewFacts, reviewed: &PatchesOf, head: &PatchesOf) -> Option<YourReview> {
+    let (reviewed, head) = (reviews.patches.get(reviewed)?, reviews.patches.get(head)?);
+    let files = changed_files(reviewed, head);
+    Some(if files.is_empty() {
+        YourReview::Reviewed
+    } else {
+        YourReview::StaleReview { files }
+    })
+}
+
+/// The reviewed commit and the head of `pull_request`, if its head moved on from the user's Review.
+fn compared<'a>(
+    pull_request: &'a PullRequestFacts,
+    reviews: &'a ReviewFacts,
+) -> Option<(&'a CommitSha, &'a CommitSha)> {
+    let reviewed = reviews.reviewed.get(&pull_request.number)?;
+    let head = (pull_request.head.as_ref()).filter(|head| *head != reviewed)?;
+    Some((reviewed, head))
+}
+
+/// `commit`'s patch-ids against `pull_request`'s Target branch.
+fn patches_of(pull_request: &PullRequestFacts, commit: &CommitSha) -> PatchesOf {
+    PatchesOf {
+        commit: commit.clone(),
+        target_branch: pull_request.target_branch.clone(),
+    }
+}
+
+/// The reviewed commit and the head of each PR whose patch-ids the store holds of both, as its last check,
+/// where the store's last check of it compared others.
+pub(super) fn checks_to_keep(facts: &WorkFacts) -> Vec<(u32, LastCheck)> {
+    let reviews = &facts.reviews;
+    let checked = facts.pull_requests.iter().filter_map(|pr| {
+        let (reviewed, head) = compared(pr, reviews)?;
+        let read = |commit| reviews.patches.contains_key(&patches_of(pr, commit));
+        let check = LastCheck {
+            reviewed: reviewed.clone(),
+            head: head.clone(),
+        };
+        let new = reviews.last_checks.get(&pr.number) != Some(&check);
+        (read(reviewed) && read(head) && new).then_some((pr.number, check))
+    });
+    checked.collect()
 }
 
 /// The commits whose patch-ids a check still needs: the reviewed commit and the head of each open PR of
@@ -68,13 +134,8 @@ pub(super) fn patches_to_read(facts: &WorkFacts) -> Vec<PatchesOf> {
         .iter()
         .filter(|pr| pr.state == PrState::Open && pr.author != facts.viewer);
     let sides = open.filter_map(|pr| {
-        let reviewed = reviews.reviewed.get(&pr.number)?;
-        let head = pr.head.as_ref().filter(|head| *head != reviewed)?;
-        let of = |commit: &CommitSha| PatchesOf {
-            commit: commit.clone(),
-            target_branch: pr.target_branch.clone(),
-        };
-        Some([of(reviewed), of(head)])
+        let (reviewed, head) = compared(pr, reviews)?;
+        Some([patches_of(pr, reviewed), patches_of(pr, head)])
     });
     let unread = sides
         .flatten()

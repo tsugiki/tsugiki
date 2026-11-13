@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import type { IssueItem, WorkbenchRow, Why } from "$lib/state/workbench.svelte";
+import type { CantCheck, IssueItem, WorkbenchRow, Why } from "$lib/state/workbench.svelte";
 import {
   ago,
   backportWords,
@@ -244,6 +244,24 @@ it("shows a Stale review on the row of a PR that is no longer open, which has no
     "Merged",
     "CI passed",
   ]);
+});
+
+it.each<[CantCheck, string]>([
+  [{ kind: "cloning" }, "Tsugiki can't check your Review until the mirror is cloned"],
+  [
+    { kind: "broken" },
+    "Tsugiki can't check your Review until the mirror, which git said was broken, is cloned again",
+  ],
+  [{ kind: "no_git" }, "Tsugiki can't check your Review without git"],
+  [
+    { kind: "old_git", version: "git version 2.38.1", needed: "2.39" },
+    "Tsugiki can't check your Review with git version 2.38.1: it needs git 2.39 or newer",
+  ],
+  [{ kind: "refused" }, "Tsugiki can't check your Review: GitHub refused to send the commit it covered"],
+])("says a Stale review whose check can't run, and its hover says why: %j", (reason, hover) => {
+  const unchecked: WorkbenchRow = { ...stale, your_review: { kind: "cant_check", reason } };
+  expect(prStateWords(unchecked).at(-1)).toEqual({ words: "Stale review", tone: "bad", hover });
+  expect(details(unchecked)).toBe("Stale review · some-author · into main · Open · CI passed");
 });
 
 it.each([

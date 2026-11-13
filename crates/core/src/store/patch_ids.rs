@@ -76,7 +76,7 @@ pub(super) fn save(
              VALUES (:repository, :commit, :target, :position, :path, :verbatim, :loose, :generated)",
         )?;
         for (position, file) in (0_u32..).zip(files) {
-            let _ = statement.execute(named_params! {
+            let row = named_params! {
                 ":repository": repository,
                 ":commit": of.commit,
                 ":target": of.target_branch,
@@ -85,7 +85,8 @@ pub(super) fn save(
                 ":verbatim": file.verbatim,
                 ":loose": file.loose,
                 ":generated": file.generated,
-            })?;
+            };
+            let _ = statement.execute(row)?;
         }
     }
     transaction.commit()

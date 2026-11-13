@@ -61,7 +61,7 @@ tsugiki-webview-keys = { path = "crates/webview-keys" }
 url = "2.5.8"
 ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
 webview2-com = "0.39.1" # The version Tauri's window hands its controller in.
-windows-core = "0.62.2" # The version webview2-com uses.
+windows-core = "0.100.0" # The version webview2-com uses.
 # The version process-wrap uses, named only for its process creation flags.
 windows = { version = "0.62.2", default-features = false, features = ["Win32_System_Threading"] }
 # The version process-wrap uses, named only for the signal that kills git's process group and its error.

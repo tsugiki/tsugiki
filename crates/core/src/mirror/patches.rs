@@ -1,7 +1,7 @@
 //! The per-file patch-ids the Stale review check compares (#383), read in each mirror once it has the
 //! commits. Reading them only reads the mirror, so it runs between the worker's git jobs, after the heads and
-//! reviewed commits waiting, and hands what it read to the session to keep. A commit read since launch isn't
-//! read again, and the session asks only for the commits the store lacks.
+//! reviewed commits waiting, and hands what it read to the session to keep. The session asks only for the
+//! commits the store lacks, so a commit the store keeps isn't read again, and one whose save failed is.
 
 use std::collections::BTreeSet;
 use std::mem;
@@ -19,9 +19,7 @@ pub(super) struct Patches {
     /// Their read failed, most often because the mirror lacks the commit or the Target branch yet. They are
     /// read again once a fetch brings heads or reviewed commits, or at the next hand-over.
     missing: BTreeSet<PatchesOf>,
-    /// Read since launch.
-    read: BTreeSet<PatchesOf>,
-    /// Read, and handed over together once nothing waits.
+    /// Read, and handed over together once nothing waits, or at the next hand-over.
     handing: Vec<CommitPatches>,
 }
 
@@ -33,18 +31,28 @@ impl Patches {
 }
 
 impl Worker {
-    /// Reads each of `wanted` that the worker hasn't read since launch, next time it reads.
+    /// Hands over what was read since the last hand-over, as `wanted` takes the place of what waits. Reads
+    /// each of `wanted` it hasn't just handed over, next time it reads.
     pub(super) fn hand_over_patches(
         &mut self,
         repository: &RepositoryName,
         wanted: Vec<PatchesOf>,
     ) {
+        let mut read = Vec::new();
         self.change_heads(repository, |known| {
             let patches = &mut known.patches;
             patches.missing.clear();
-            let unread = wanted.into_iter().filter(|of| !patches.read.contains(of));
+            read = mem::take(&mut patches.handing);
+            let unread = wanted
+                .into_iter()
+                .filter(|of| !read.iter().any(|done| done.of == *of));
             patches.waiting = unread.collect();
         });
+        if !read.is_empty()
+            && let Some(patched) = &mut self.patched
+        {
+            patched(repository, read);
+        }
     }
 
     /// Whether a commit waits to be read in a Repository whose mirror is there, with somewhere to hand its
@@ -79,7 +87,6 @@ impl Worker {
         let patches = &mut known.patches;
         match read_patch_ids(&mirror, &of.target_branch, &of.commit) {
             Ok(files) => {
-                let _ = patches.read.insert(of.clone());
                 patches.handing.push(CommitPatches { of, files });
             }
             Err(cause) => {

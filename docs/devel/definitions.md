@@ -301,6 +301,40 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   last 16 cancels that matched no lookup, as each closed peek sends one, and a lookup one of them names
   answers that it was cancelled and leaves the lookup running and the watch be.
 
+## When clangd can't answer
+
+clangd fails in ways that look like wrong answers, so Tsugiki names three of them (#684). Each is a
+`ServerProblem` that clangd's row in Settings › Advanced shows as its state. In the peek it takes the place of
+"No definition of X", with the link to the row; a lookup that finds something shows what it found. When two
+come, the row keeps the one that explains more, in this order.
+
+- **Built-in headers missing.** clangd looks for its own headers, such as `stddef.h`, in
+  `..\lib\clang\<N>\include\` beside its binary, past links. On Apply of clangd's path, once `--version` has
+  named clangd, Tsugiki reads `lib\clang` and looks for a `stddef.h` in a version folder of it, and it looks
+  again when clangd reports `'stddef.h' file not found`. Without one: "clangd's built-in headers are missing.
+  Unpack the whole archive, not just clangd.exe", which names `clangd` off Windows. The row keeps the
+  version `--version` printed.
+- **System headers missing.** The thread that reads clangd's events reads its diagnostics on the PR's open
+  files. A header clangd can't find stops its parse of the file, so it reports the first only:
+  `'stdlib.h' file not found` on the include, or, for a header a file the open one includes includes,
+  `In included file: 'stdlib.h' file not found`, with a note after a blank line that names that file as
+  `<path>:<line>:<column>:`. A header written in angle brackets, in the open file or in the file the note
+  names, that no file of the PR's head is at or ends in (one `git ls-tree` per clangd, once a header is
+  missing) says "clangd can't find system headers: stdlib.h", and on Windows adds ". Install the MSVC build
+  tools or the Windows SDK". A header in quotes, as a generated one is, and one of the Repository's, as
+  `<mpdecimal.h>` is for `Modules/_decimal/libmpdec/mpdecimal.h`, say nothing.
+- **The index never starts.** No `$/progress` on clangd's index token within 60 s of the first file opened:
+  "clangd isn't indexing. Definitions in other files will land on header declarations". A clangd without a
+  compile database never indexes, so outside CPython's layout this shows a minute after the first C file
+  opens, unless the Repository holds a `compile_commands.json`. A clangd started with no file open waits for
+  nothing.
+
+The problem stays until clangd starts again, as a start clears any problem, and clangd reports the missing
+header again once a file opens. An idle stop replaces it with Stopped (idle). A problem that comes from a
+clangd stopped since is dropped. The tests play each problem with a fake clangd: a folder without
+`lib\clang`, a fake that reports `'stdlib.h' file not found`, and one that doesn't report its index within a
+limit the test sets to 300 ms.
+
 ## Setting up a server
 
 - Settings › Advanced has a row for each server ([settings.md](settings.md)). On Apply, a server whose path
@@ -308,8 +342,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   with `--version`, for at most 10 s. A first line that doesn't name the server, as a word of its own,
   says "This isn't clangd: <first line>". A program that doesn't start says "clangd didn't start: <OS
   error>". The version is the first word of that line that starts with a digit, and one we didn't test
-  says "Tested with 23.1.0; you have 22.1.0" and is still used. A check that comes back after the path
-  changed again is dropped.
+  says "Tested with 23.1.0; you have 22.1.0" and is still used. For clangd, the check then looks for its
+  built-in headers (see "When clangd can't answer"). A check that comes back after the path changed again is
+  dropped.
 - A start runs no check: the version comes from the server's answer to `initialize`, and a start that
   fails says why on the row and in the peek.
 - A row's state is Not set up, Ready (set up, with none running), Running (for at least one Repository),

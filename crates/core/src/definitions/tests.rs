@@ -2314,14 +2314,14 @@ fn a_clangd_that_never_reports_its_index_says_it_isn_t_indexing() {
     let fixture = c_files("definitions-not-indexing");
     let program = clangd_folder("definitions-not-indexing-clangd", &[BUILT_INS]);
     let soon = Duration::from_millis(300);
-    let (mut owner, _fake) = clangd_finding_nothing(&fixture, program.clone(), soon);
-    let (mut indexing, indexing_fake) = clangd_finding_nothing(&fixture, program, soon);
+    let (mut indexing, indexing_fake) = clangd_finding_nothing(&fixture, program.clone(), soon);
+    begin(&indexing_fake, 1);
+    let (mut owner, _fake) = clangd_finding_nothing(&fixture, program, soon);
 
+    index_moved_on(&mut indexing, 1);
     let status = troubled_next(&mut owner);
     let answer = nothing_found(&mut owner, &fixture);
-    begin(&indexing_fake, 1);
-    index_moved_on(&mut indexing, 1);
-    thread::sleep(soon * 2);
+    thread::sleep(soon);
     let heard: Vec<Message> = indexing.incoming.try_iter().collect();
 
     let problem = ServerProblem::NotIndexing;

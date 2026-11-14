@@ -51,6 +51,7 @@ import {
   type ThreadAnchor,
 } from "./diff-layout";
 import { FilePages, samePage, type FilesMode, type Page } from "./file-pages";
+import { HitCode } from "./hit-code.svelte";
 import { hud, type Jump, type JumpTimer } from "./hud.svelte";
 import { PEEK_ID, peekPlaces, withPeek, type Peek } from "./peek";
 import { wordAt, type Column, type Pick, type Picked, type PickedLine, type Side } from "./pick";
@@ -885,7 +886,7 @@ export class PrFilesState {
     this.#lookups += 1;
     const lookup = this.#lookups;
     const commit = pick.side === "base" ? view.base : view.head;
-    const peek = { repository: this.#repository, at: pick.at, symbol: pick.word, side: pick.side, commit };
+    const peek = { at: pick.at, symbol: pick.word, side: pick.side, commit };
     this.#peek = { ...peek, lookup: { state: "looking" } };
     const lookedUp = {
       repository: this.#repository,
@@ -901,12 +902,16 @@ export class PrFilesState {
       error: { message: String(e) },
     }));
     if (lookup !== this.#lookups) return;
+    if (answer.status === "error") {
+      this.#peek = { ...peek, lookup: { state: "failed", problem: answer.error.message } };
+      return;
+    }
+    // The hit's code lives with the peek, so the diff drawing the peek again doesn't read it again.
+    const hit = answer.data.state === "found" ? answer.data.hits[0] : undefined;
     this.#peek = {
       ...peek,
-      lookup:
-        answer.status === "ok"
-          ? { state: "answered", answer: answer.data }
-          : { state: "failed", problem: answer.error.message },
+      lookup: { state: "answered", answer: answer.data },
+      ...(hit && { code: new HitCode(this.#repository, hit) }),
     };
   }
 

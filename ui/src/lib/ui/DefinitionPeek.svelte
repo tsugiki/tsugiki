@@ -3,14 +3,13 @@
      scrolled to its line (#439), or else a line that says what the lookup is doing, that it found nothing, or
      why it failed. A hit outside the Repository names its whole path on disk in place of a commit. -->
 <script lang="ts">
-  import { HitCode } from "$lib/state/hit-code.svelte";
   import { peekWords, type Peek } from "$lib/state/peek";
   import PeekCode from "./PeekCode.svelte";
 
   let { peek, onclose }: { peek: Peek; onclose: () => void } = $props();
 
   const words = $derived(peekWords(peek));
-  const code = $derived(words.hit && new HitCode(peek.repository, words.hit));
+  const code = $derived(peek.code);
 </script>
 
 <div class="header">

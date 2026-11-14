@@ -4,6 +4,7 @@
 
 import type { Answer, Hit } from "$lib/data/bindings";
 import type { LaidThread } from "./diff-layout";
+import type { HitCode } from "./hit-code.svelte";
 import type { PickedLine, Side } from "./pick";
 
 /** What a lookup found: nothing yet, ty's answer, or why it failed. */
@@ -53,15 +54,15 @@ export function peekWords(peek: Peek): PeekWords {
   };
 }
 
-/** The peek: the Repository and the line it opened under, the symbol it looks up, and the commit it looks
- * at, which is the PR's base for a removed line and its head for the rest. */
+/** The peek: the line it opened under, the symbol it looks up, and the commit it looks at, which is the
+ * PR's base for a removed line and its head for the rest. With a hit, it holds the hit's code. */
 export interface Peek {
-  repository: string;
   at: PickedLine;
   symbol: string;
   side: Side;
   commit: string;
   lookup: Lookup;
+  code?: HitCode;
 }
 
 /** The id that names the peek among the threads of the diff's layout. A thread's id is GitHub's, which
@@ -73,11 +74,13 @@ export const PEEK_ID = "definition peek";
 export const PEEK_ROWS = 18;
 
 /** The places `peek` takes in the diff's layout: [`PEEK_ROWS`] while it looks up or shows code, and its
- * header with a line under it when it only has words to say. */
+ * header with a line under it when it only has words to say, as when the hit's file can't be read. */
 export function peekPlaces(peek: Peek): number {
   const lookup = peek.lookup;
   const words =
-    lookup.state === "failed" || (lookup.state === "answered" && peekWords(peek).hit === undefined);
+    lookup.state === "failed" ||
+    (lookup.state === "answered" && peekWords(peek).hit === undefined) ||
+    peek.code?.problem !== undefined;
   return words ? 2 : PEEK_ROWS;
 }
 

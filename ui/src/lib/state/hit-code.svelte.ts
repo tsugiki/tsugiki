@@ -24,6 +24,9 @@ export class HitCode {
   problem = $state<string>();
   /** How many columns the widest line read takes, a tab as 8, so the peek scrolls far enough sideways. */
   widest = $state(0);
+  /** Where the user scrolled the code to, which the peek goes back to when the diff draws it again after
+   * it scrolled out of sight. Until then the peek scrolls to the hit. */
+  scrollTop: number | undefined;
   #chunks = new SvelteMap<number, readonly string[]>();
   /** The chunks asked for. Nothing draws from it, and the effect that asks shouldn't rerun on it. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
@@ -64,7 +67,9 @@ export class HitCode {
       error: { message: String(e) },
     }));
     if (read.status === "error") {
-      this.problem = read.error.message;
+      // A file that showed no line says why. One that did keeps its lines, and the next scroll asks again.
+      if (this.count === undefined) this.problem = read.error.message;
+      else this.#asked.delete(chunk);
       return;
     }
     this.count = read.data.count;

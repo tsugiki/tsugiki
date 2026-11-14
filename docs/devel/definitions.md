@@ -66,7 +66,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   scrolls inside it, so the diff's rows after it stay where they are.
 - The window asks the core for the file 200 lines at a time near the rows that show, so a big file such as
   CPython's `Objects/unicodeobject.c` opens without waiting for all of it. The core reads them on the
-  command's thread, never waiting for a lookup, and offline at any commit the Mirror holds.
+  command's thread, never waiting for a lookup, and offline at any commit the Mirror holds. It keeps the
+  last file it read, so the next chunk starts no git. A line ends at a lone `\r` too, as LSP counts lines.
+  A chunk that fails once lines show leaves them, and the next scroll asks again.
 - LSP counts a line's columns in UTF-16 code units, and so does the webview, so the picked word's column
   goes to ty as it is, and a hit's column comes back the same way.
 - With no hit the peek says "No definition of X", and with no ty set up "Set up ty to go to definitions in

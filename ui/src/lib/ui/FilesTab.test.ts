@@ -1536,6 +1536,26 @@ it("scrolls the peek's code inside it, and the diff's rows after it stay where t
   expect(rowAt("▾logo.pngbinary")?.style.top).toBe(`${String(23 * 20)}px`);
 });
 
+it("says why it can't read the hit's file, and shrinks the peek to that line", async () => {
+  const place = { kind: "outside" as const, path: "C:/gone/builtins.pyi" };
+  core.definitions.mockResolvedValue(ok({ state: "found", hits: [{ place, line: 7, column: 4, text: "" }] }));
+  const problem = "Tsugiki can't read C:/gone/builtins.pyi: not found";
+  core.definitionCode.mockResolvedValue({ status: "error", error: { kind: "not_found", message: problem } });
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[4]).toBe("2+new line");
+  });
+  await clickAt(codeOf(4), 2);
+
+  await files.peekDefinition();
+
+  await vi.waitFor(() => {
+    expect(peekBox()?.style.height).toBe(`${String(2 * 20)}px`);
+  });
+  expect(peekBox()?.querySelector("[role=alert]")?.textContent).toBe(problem);
+  expect(rowAt("▾logo.pngbinary")?.style.top).toBe(`${String(7 * 20)}px`);
+});
+
 it("names a hit outside the Repository by its whole path on disk, in place of a commit", async () => {
   const place = { kind: "outside" as const, path: "C:/ty/typeshed/stdlib/builtins.pyi" };
   core.definitions.mockResolvedValue(

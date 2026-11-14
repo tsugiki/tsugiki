@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use serde::Serialize;
 use specta::Type;
@@ -38,68 +38,103 @@ pub struct Code {
     pub lines: Vec<String>,
 }
 
-/// The paths outside the Repository that a server has named in a hit: the only files outside it that the
-/// window can read.
+/// The files the peek reads: the paths outside the Repository that a server has named in a hit, the only
+/// files outside it that the window can read, and the last file read, as the peek reads one file a chunk
+/// at a time.
 #[derive(Debug, Default)]
-pub(super) struct Named(Mutex<HashSet<PathBuf>>);
+pub(super) struct HitFiles {
+    named: Mutex<HashSet<PathBuf>>,
+    last: Mutex<Option<(HitFile, Arc<[String]>)>>,
+}
 
-impl Named {
-    pub(super) fn add(&self, path: PathBuf) {
-        let _new = self.lock().insert(path);
+impl HitFiles {
+    pub(super) fn name(&self, path: PathBuf) {
+        let _new = lock(&self.named).insert(path);
     }
 
-    fn has(&self, path: &Path) -> bool {
-        self.lock().contains(path)
-    }
-
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashSet<PathBuf>> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    /// Lines `lines` of `file`, counted from 1: one of the Repository whose Mirror is at `mirror`, or one
+    /// outside it that a server has named.
+    pub(super) fn read(
+        &self,
+        mirror: &Path,
+        file: &HitFile,
+        lines: Range<u32>,
+    ) -> Result<Code, Error> {
+        if let HitFile::Outside { path } = file
+            && !lock(&self.named).contains(path)
+        {
+            let unnamed = format!("No language server named {}.", path.display());
+            return Err(Error::new(ErrorKind::NotFound, &unnamed));
+        }
+        let last = lock(&self.last).clone();
+        let text = match last {
+            Some((read, text)) if read == *file => text,
+            _ => {
+                let text: Arc<[String]> = split(&text_of(mirror, file)?).into();
+                *lock(&self.last) = Some((file.clone(), Arc::clone(&text)));
+                text
+            }
+        };
+        Ok(some_lines(&text, lines))
     }
 }
 
-/// Lines `lines` of `file`, counted from 1: one of the Repository whose Mirror is at `mirror`, or one
-/// outside it that a server has named.
-pub(super) fn read(
-    named: &Named,
-    mirror: &Path,
-    file: &HitFile,
-    lines: Range<u32>,
-) -> Result<Code, Error> {
-    let text = match file {
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// The text of `file`, from the Mirror at `mirror` or from disk.
+fn text_of(mirror: &Path, file: &HitFile) -> Result<String, Error> {
+    match file {
         HitFile::Repository { path, commit } => {
+            if !mirror.is_dir() {
+                let none = "Tsugiki has no copy of this Repository yet.";
+                return Err(Error::new(ErrorKind::NotFound, none));
+            }
             let short = commit.as_str().get(..7).unwrap_or_default();
             let missing = format!("Tsugiki's copy of the Repository has no {path} at {short}.");
-            let name = format!("{}:{path}", commit.as_str());
-            let blob = (!path.contains('\n')).then(|| diff::blobs(mirror, &[&name]));
-            let text = blob.and_then(|blobs| blobs.into_iter().next().flatten());
-            text.ok_or_else(|| Error::new(ErrorKind::NotFound, &missing))?
+            let name = diff::object_name(commit, path);
+            let blob = name.and_then(|name| diff::blobs(mirror, &[&name]).into_iter().next());
+            blob.flatten()
+                .ok_or_else(|| Error::new(ErrorKind::NotFound, &missing))
         }
         HitFile::Outside { path } => {
-            let shown = path.display();
-            if !named.has(path) {
-                let unnamed = format!("No language server named {shown}.");
-                return Err(Error::new(ErrorKind::NotFound, &unnamed));
-            }
             let bytes = fs::read(path).map_err(|cause| {
-                let message = format!("Tsugiki can't read {shown}: {cause}");
+                let message = format!("Tsugiki can't read {}: {cause}", path.display());
                 Error::new(ErrorKind::NotFound, &message)
             })?;
-            String::from_utf8_lossy(&bytes).into_owned()
+            Ok(String::from_utf8_lossy(&bytes).into_owned())
         }
-    };
-    Ok(some_lines(&text, lines))
+    }
+}
+
+/// `text`'s lines, which end at a `\r\n`, a `\n` or a lone `\r`, as LSP counts them, so a hit's line
+/// number lands on its line.
+fn split(text: &str) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut rest = text;
+    while let Some(end) = rest.find(['\r', '\n']) {
+        let (line, after) = rest.split_at(end);
+        lines.push(line.to_owned());
+        rest = after
+            .strip_prefix("\r\n")
+            .or_else(|| after.get(1..))
+            .unwrap_or_default();
+    }
+    if !rest.is_empty() {
+        lines.push(rest.to_owned());
+    }
+    lines
 }
 
 /// Lines `lines` of `text`, counted from 1, with how many it has.
-fn some_lines(text: &str, lines: Range<u32>) -> Code {
+fn some_lines(text: &[String], lines: Range<u32>) -> Code {
     let first = lines.start.max(1);
     let end = lines.end.min(first.saturating_add(MOST_LINES));
     let skip = usize::try_from(first - 1).unwrap_or(usize::MAX);
     let take = usize::try_from(end.saturating_sub(first)).unwrap_or(0);
     Code {
-        count: u32::try_from(text.lines().count()).unwrap_or(u32::MAX),
-        lines: (text.lines().skip(skip).take(take))
-            .map(str::to_owned)
-            .collect(),
+        count: u32::try_from(text.len()).unwrap_or(u32::MAX),
+        lines: text.iter().skip(skip).take(take).cloned().collect(),
     }
 }

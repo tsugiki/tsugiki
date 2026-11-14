@@ -697,7 +697,7 @@ impl OpenDiff {
 }
 
 /// The name git knows `path` at `commit` by, unless the path has a line break: git reads a name a line.
-fn object_name(commit: &CommitSha, path: &str) -> Option<String> {
+pub(crate) fn object_name(commit: &CommitSha, path: &str) -> Option<String> {
     (!path.contains('\n')).then(|| format!("{}:{path}", commit.as_str()))
 }
 

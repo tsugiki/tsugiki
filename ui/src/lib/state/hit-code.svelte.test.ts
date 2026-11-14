@@ -86,6 +86,29 @@ it("reads a file outside the Repository by its path on disk", async () => {
   });
 });
 
+it("keeps the lines it has when a later chunk fails, and asks for that chunk again", async () => {
+  answerFrom(1000);
+  const code = new HitCode("python/cpython", atBase);
+  code.show(1, 18);
+  await vi.waitFor(() => {
+    expect(code.line(1)).toBe("line 1");
+  });
+  core.definitionCode.mockResolvedValueOnce({ status: "error", error: { message: "git failed" } });
+
+  code.show(401, 418);
+  await vi.waitFor(() => {
+    expect(core.definitionCode).toHaveBeenCalledTimes(2);
+  });
+  await Promise.resolve();
+  code.show(401, 418);
+
+  await vi.waitFor(() => {
+    expect(code.line(401)).toBe("line 401");
+  });
+  expect(code.problem).toBeUndefined();
+  expect(code.line(1)).toBe("line 1");
+});
+
 it("says why the file can't be read", async () => {
   core.definitionCode.mockResolvedValue({
     status: "error",

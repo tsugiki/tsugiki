@@ -26,7 +26,7 @@ use crate::error::{Error, ErrorKind};
 use crate::github::CommitSha;
 use crate::mirror::{LookupAt, LookupCheckout};
 use crate::repository::RepositoryName;
-use code::Named;
+use code::HitFiles;
 pub use code::{Code, HitFile};
 use ty::{Failure, Ty};
 
@@ -121,8 +121,8 @@ pub struct Sources {
 #[derive(Clone)]
 pub struct Definitions {
     messages: Sender<Message>,
-    /// The files outside the Repository that a server has named, which [`Definitions::code`] reads.
-    named: Arc<Named>,
+    /// The files [`Definitions::code`] reads.
+    files: Arc<HitFiles>,
 }
 
 impl Definitions {
@@ -130,16 +130,16 @@ impl Definitions {
     pub fn start(sources: Sources) -> Self {
         let (messages, incoming) = mpsc::channel();
         let owner = Owner::new(sources);
-        let named = Arc::clone(&owner.named);
+        let files = Arc::clone(&owner.files);
         let _owner = thread::spawn(move || owner.run(&incoming));
-        Self { messages, named }
+        Self { messages, files }
     }
 
     /// Lines `lines` of the file a hit is in, counted from 1, which the Definition peek shows: one of the
     /// Repository whose Mirror is at `mirror`, at the hit's commit, or one outside it that a server named in
     /// a hit. It reads on the caller's thread, so it never waits for a lookup.
     pub fn code(&self, mirror: &Path, file: &HitFile, lines: Range<u32>) -> Result<Code, Error> {
-        code::read(&self.named, mirror, file, lines)
+        self.files.read(mirror, file, lines)
     }
 
     /// Starts ty for the PR whose diff at `at` changes `files`, if one of them is in Python, and returns at
@@ -209,8 +209,8 @@ struct Owner {
     servers: HashMap<RepositoryName, Ty>,
     /// How long a lookup waits for ty's answer: [`PATIENCE`], and less in a test.
     patience: Duration,
-    /// The files outside the Repository that a hit has named.
-    named: Arc<Named>,
+    /// The files the peek reads, among them those outside the Repository that a hit has named.
+    files: Arc<HitFiles>,
 }
 
 impl Owner {
@@ -220,7 +220,7 @@ impl Owner {
             prs: HashMap::new(),
             servers: HashMap::new(),
             patience: PATIENCE,
-            named: Arc::default(),
+            files: Arc::default(),
         }
     }
 
@@ -295,7 +295,7 @@ impl Owner {
                 if let Answer::Found { hits } = &answer {
                     for hit in hits {
                         if let Place::Outside { path } = &hit.place {
-                            self.named.add(PathBuf::from(path));
+                            self.files.name(PathBuf::from(path));
                         }
                     }
                 }

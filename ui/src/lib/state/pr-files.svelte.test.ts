@@ -2100,8 +2100,7 @@ it("looks up the picked word at the head, and at the base for a removed line", a
     [lookupOf("head", "a.py", 8, 4)],
     [lookupOf("base", "a.py", 8, 11)],
   ]);
-  expect(files.peek).toEqual({
-    repository: "python/cpython",
+  expect(files.peek).toMatchObject({
     at: { kind: "row", row: 3 },
     symbol: "width",
     side: "base",

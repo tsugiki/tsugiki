@@ -23,12 +23,12 @@
   /** The numbers of the lines drawn. */
   const drawn = $derived(Array.from({ length: Math.max(0, last - first + 1) }, (_, i) => first + i));
 
-  // Scrolls to the hit when the peek shows a new one.
+  // Scrolls to a new hit, or back to where the user left this one's code when the diff draws the peek again.
   $effect(() => {
-    const target = line;
+    const [shown, target] = [code, line];
     untrack(() => {
       if (!scroller) return;
-      scroller.scrollTop = Math.max(0, (target - 1 - LEAD) * ROW);
+      scroller.scrollTop = shown.scrollTop ?? Math.max(0, (target - 1 - LEAD) * ROW);
       scrollTop = scroller.scrollTop;
     });
   });
@@ -49,7 +49,10 @@
     tabindex="0"
     bind:this={scroller}
     bind:clientHeight={height}
-    onscroll={(e) => (scrollTop = e.currentTarget.scrollTop)}
+    onscroll={(e) => {
+      scrollTop = e.currentTarget.scrollTop;
+      code.scrollTop = scrollTop;
+    }}
   >
     <!-- The rows are placed absolutely, so the spacer is as wide as the widest line read and the gutter. -->
     <div

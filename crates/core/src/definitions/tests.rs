@@ -216,7 +216,10 @@ fn a_builtin_is_found_outside_the_repository() {
             path: PathBuf::from(path),
         };
         let line = hit.line;
-        let code = code::read(&owner.named, Path::new(""), &file, line..line + 1).unwrap();
+        let code = owner
+            .files
+            .read(Path::new(""), &file, line..line + 1)
+            .unwrap();
         assert_eq!(code.lines, ["def print("]);
     }
 }

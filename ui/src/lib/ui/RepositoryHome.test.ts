@@ -1232,7 +1232,6 @@ it("opens the Definition peek with Alt+F12 on the Files tab, once for a held key
 it("closes the Definition peek with Escape before the search, and the search before the PR", async () => {
   const shown: { peek: Peek | undefined } = {
     peek: {
-      repository: "python/cpython",
       at: { kind: "row", row: 2 },
       symbol: "gc",
       side: "head",

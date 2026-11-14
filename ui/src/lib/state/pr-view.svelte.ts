@@ -8,6 +8,7 @@ import {
   type ThreadLine_Serialize,
 } from "$lib/data/bindings";
 import { DetailState } from "./detail-view.svelte";
+import type { FileView } from "./file-view";
 import { hud } from "./hud.svelte";
 import type { PanesState } from "./panes.svelte";
 import { DiffViewChoice, PrFilesState, type FilesMode } from "./pr-files.svelte";
@@ -32,8 +33,9 @@ export class PrViewState extends DetailState<PrView> {
   #filesLoaded = false;
 
   /** `panes` is the layout of the panes the Repository's page read, which holds the Definition peek's
-   * height, `choice` the view of the diff, which the page keeps from PR to PR, and `mode` whether the Files
-   * tab opens on all the files or one at a time, as the settings say. */
+   * height, `choice` the view of the diff, which the page keeps from PR to PR, `mode` whether the Files
+   * tab opens on all the files or one at a time, as the settings say, and `fileViewMoved` hears of each file
+   * view the user opens or closes over the Files tab, for the Detail pane's history (#456). */
   constructor(
     repository: string,
     number: number,
@@ -41,6 +43,7 @@ export class PrViewState extends DetailState<PrView> {
     panes: PanesState,
     choice: DiffViewChoice = new DiffViewChoice(),
     mode: FilesMode = "all",
+    fileViewMoved?: (view: FileView | undefined) => void,
   ) {
     super(repository, number, {
       open: (repository, number) => commands.openPullRequest(repository, number),
@@ -48,7 +51,7 @@ export class PrViewState extends DetailState<PrView> {
       read: (repository, number) => commands.pullRequest(repository, number),
     });
     this.issue = issue;
-    this.files = new PrFilesState(repository, number, panes, hud, choice, mode);
+    this.files = new PrFilesState(repository, number, panes, hud, choice, mode, fileViewMoved);
   }
 
   /** Hands the Files tab the user's Review, which marks and collapses its files while it's a Stale review

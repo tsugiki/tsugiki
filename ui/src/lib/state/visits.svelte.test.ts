@@ -31,6 +31,16 @@ it("keeps one place for a place visited again at once", () => {
   expect([visits.back(), visits.back()]).toEqual(["#1", undefined]);
 });
 
+it("gives each place back as it went in, so a place can be told apart by what it holds", () => {
+  const [one, other] = [{ at: 1 }, { at: 2 }];
+  const visits = new Visits<{ at: number }>((a, b) => a === b);
+  visits.visit(one);
+  visits.visit(other);
+
+  expect(visits.back()).toBe(one);
+  expect(visits.ahead(1)[0]).toBe(other);
+});
+
 it("has nowhere to go before the first visit", () => {
   const visits = visited();
 

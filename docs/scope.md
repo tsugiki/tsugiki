@@ -37,7 +37,10 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 
 - Three panes like a mail client: the **Sidebar**, the **Issue list** and the **Detail pane**. The panes can
   be resized, and the first two hidden.
-- Esc, showing only the Detail pane, and Reset Layout.
+- Esc, which closes what is on top, one thing at a time: a dialog, the palette or a Peek, a Definition peek
+  or the diff's search, the file view, which goes back to the diff, and last a PR, which goes back to its
+  Issue.
+- Showing only the Detail pane, and Reset Layout.
 - The status bar.
 
 ### Links ([links.md](devel/links.md))

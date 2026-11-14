@@ -93,13 +93,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       - The tabs are 12 px, with the open one underlined in the accent colour.
 
     Esc closes what is on top, wherever the focus is: a dialog, the palette or a Peek first, then the wait
-    for a chord's second key, a Definition peek or the diff's search, and last a PR, which goes back to the
-    Issue it was opened under. With nothing on top, Esc does nothing. A PR opened from a row of its own (a
-    Standalone PR, one of its Backports, a Dependency update) has nothing under it, so Esc leaves it on
-    show, as it leaves an Issue. A text box keeps Esc, unless it belongs to what Esc closes, like the search
-    box. Esc gives the focus to whatever lay under the thing it closed: going back from a PR moves the cursor
-    and the focus to the Issue's row, or to the Detail pane while the Issue list is hidden. Esc leaves the
-    panes as they are.
+    for a chord's second key, a Definition peek or the diff's search, then the file view, which goes back to
+    the PR's diff, and last a PR, which goes back to the Issue it was opened under. With nothing on top, Esc
+    does nothing. A PR opened from a row of its own (a Standalone PR, one of its Backports, a Dependency
+    update) has nothing under it, so Esc leaves it on show, as it leaves an Issue. A text box keeps Esc,
+    unless it belongs to what Esc closes, like the search box. Esc gives the focus to whatever lay under the
+    thing it closed: going back from the file view moves it to the diff, and going back from a PR moves the
+    cursor and the focus to the Issue's row, or to the Detail pane while the Issue list is hidden. Esc leaves
+    the panes as they are.
 
     The pane that holds the keyboard focus, the Issue list or the Detail pane, shows a 2 px line in the
     Theme's focus colour along its top edge, as VS Code does, so the user can tell where ↑ ↓ go. With the

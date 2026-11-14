@@ -219,6 +219,12 @@ const LAYERS: &[Layer] = &[
               the PR's diff changes open at its head, read from the Mirror through `diff`.",
     },
     Layer {
+        module: "search",
+        uses: &["error", "github", "latest", "mirror", "repository"],
+        why: "Searches the open PR's code as text, in the Lookup checkout `mirror` keeps and with the git \
+              `github` runs, and shares what it finds through `latest`.",
+    },
+    Layer {
         module: "settings",
         uses: &[
             "error",

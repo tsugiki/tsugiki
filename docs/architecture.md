@@ -73,6 +73,7 @@ flowchart LR
 | Settings owner | `settings.toml` and `machine.toml`. Readers get a `latest` copy. | `core/src/settings.rs` |
 | Language servers | A ty for each Repository whose PR on screen changes a Python file, with that PR's Python files open on it. Each lookup is a message, which waits for the Mirror worker's Lookup checkout and for ty, and never for the window. | `core/src/definitions.rs` |
 | Log | `tsugiki.log` and the tokens to scrub from it. | `core/src/logfile.rs` |
+| Text search | What the latest query found, which the window reads through `latest`. Each query runs on threads of its own, up to 4, that send it what they find, and a newer query cancels the one running. It asks the Mirror worker where the Lookup checkout is. The app doesn't start it yet (#686). | `core/src/search.rs` |
 | Release check | Nothing shared. Asks GitHub Releases for a newer Tsugiki at start-up and every 6 hours, without the token, unless the settings turn it off. | `core/src/releases.rs` |
 
 The session thread does one request to GitHub per step (`sync::Syncs`), so nothing it's asked waits for
@@ -136,6 +137,7 @@ The big ones, in the order data passes through them:
 | `diff.rs`, `diff/` | A PR's diff from its Mirror, its per-file patch-ids, NEWS entries, find in the diff, and the Highlighter. |
 | `definitions.rs`, `definitions/` | Where a name is defined, which it asks a language server through `tsugiki-lsp`, in the Lookup checkout ([ADR 0020](adr/0020-go-to-definition-asks-a-language-server-which-reads-a-lookup-checkout.md)). Each server has a module of its own: `definitions/ty.rs` for Python. |
 | `highlight.rs`, `highlight/` | tree-sitter highlighting, one table row per language ([docs/highlighting.md](highlighting.md)). |
+| `search.rs`, `search/` | Text search over the open PR's code at its head, on ripgrep's crates, in the Lookup checkout and the Mirror (ADR 0020). |
 | `session.rs` | The session thread and the messages it takes. |
 | `status.rs` | App-wide status and the `StatusBoard` that announces it. |
 

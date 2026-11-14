@@ -64,3 +64,35 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   Python". A lookup in a file of another language says Tsugiki can't go to definitions in it yet. A ty that
   can't start, or fails a lookup, says why in the peek, and the next lookup starts a new one.
 - ty reads the checkout and the Mirror, so a lookup works offline at any commit the Mirror holds.
+
+## Text search
+
+- The core searches the open PR's code at its head, on ripgrep's `grep-regex` and `grep-searcher`. It reads
+  the files the PR doesn't change and the ones it adds from the **Lookup checkout**, and the head's text of
+  each file it changes from the **Mirror**. The files it deletes aren't searched. Links and submodules hold
+  no text, so they aren't either. It needs nothing but the Mirror and the checkout, so it works offline at
+  any commit the Mirror holds.
+- A query is a literal that matches whatever the case, inside a longer word too, as in VS Code. Match case,
+  whole word and regex each change that, and a regex reads as Rust's regex crate reads it. A line ends at a
+  line feed, and `$` matches before a `\r\n` too. A regex that doesn't parse returns the regex crate's
+  error and nothing runs, and the query running goes on.
+- A file that holds a NUL byte is binary and skipped, as git and ripgrep skip one. A Generated file is
+  searched, and its results say it is one: the `.gitattributes` in the Lookup checkout mark it
+  `linguist-generated`. Those are the base's and any the PR adds, where the Files tab reads the Target
+  branch's, as an index of the base to read them from would take longer than the search. git is asked about
+  each batch of files that hold a match, so the first results don't wait on the whole tree.
+- Each result is a file's path with each line that holds a match: its number, its text and where each match
+  is in UTF-16 code units, as the webview counts. A line longer than 250 characters shows 250 of them,
+  starting 50 before its first match unless the line ends sooner, and says which ends it cut. A match that
+  doesn't fit isn't shown and doesn't count.
+- The results reach the window in batches as files finish, in order of paths: each batch holds the files
+  that finished while git said which of the last batch's are generated. A
+  search stops at 5,000 matches and says so. The files that make up those 5,000 are the ones read first,
+  which can differ from one run to the next. A new query cancels the one running: it starts no more git,
+  reads no more files, and what it found doesn't reach the window. Nothing holds the checkout still during a
+  search, as it moves only when another PR opens, and the window then asks a new query.
+- A query that arrives while the Lookup checkout moves waits for the move, and after 100 ms it says that it
+  waits. With no Lookup checkout, as when its last move failed, it says there is nothing to search.
+- It runs off the window's thread, on up to 4 threads: 3 read files from disk and one reads the PR's files
+  from the Mirror. On CPython's main branch a whole-tree search takes about 0.2 s once the files are in the
+  disk's cache.

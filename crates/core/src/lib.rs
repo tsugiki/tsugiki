@@ -24,6 +24,7 @@ pub mod patch_ids;
 pub mod releases;
 pub mod repository;
 pub mod repository_settings;
+pub mod search;
 pub mod session;
 pub mod settings;
 pub mod status;

@@ -33,8 +33,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - `Alt+F12` on the picked word opens the Definition peek under its line, and the rows after it move down.
   The core asks ty where the word is defined, through `tsugiki-lsp`, off the window's thread. Esc or ✕
   closes the peek and gives the focus back to the diff.
-- Until Settings can pick it (#683), ty's binary comes from `[language_servers.ty] path` in `machine.toml`.
-  A relative path starts at `machine.toml`'s folder. We test with ty 0.0.103, which `just test-servers`
+- ty's binary is the one picked in Settings › Advanced (see "Setting up a server"), which `machine.toml`
+  keeps as `[language_servers.ty] path`. A relative path, which a hand edit can write, starts at
+  `machine.toml`'s folder. We test with ty 0.0.103, which `just test-servers`
   fetches. The tests read its path from `TSUGIKI_TY`, which `just cargo-test` and `just rust-coverage` set.
 - Each Repository gets its own ty. It starts when a PR that changes a `.py` or `.pyi` file opens, once the
   Lookup checkout is at that PR, and never when Tsugiki starts. A lookup that comes first starts it too. A
@@ -128,7 +129,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   goes to ty as it is, and a hit's column comes back the same way.
 - With no hit the peek says "No definition of X", and with no ty set up "Set up ty to go to definitions in
   Python". A lookup in a file of another language says Tsugiki can't go to definitions in it yet. A ty that
-  can't start, or fails a lookup, says why in the peek, and the next lookup starts a new one.
+  can't start, or stops while it answers, says why in the peek, in the words of its row in Settings, and
+  the next lookup starts a new one. The line that says to set ty up, or what went wrong with it, ends with
+  Open Settings › Advanced, which opens the dialog at ty's row.
 - ty reads the checkout and the Mirror, so a lookup works offline at any commit the Mirror holds.
 
 ## Go to definition in Python
@@ -212,11 +215,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 
 - Go to definition and the Definition peek work in `.rs` files as they do in Python, through rust-analyzer.
   The PR's changed Rust files open on it and switch views as Python's do on ty.
-- Until Settings can pick it (#683), rust-analyzer's binary comes from `[language_servers.rust-analyzer]
-  path` in `machine.toml`. It has to be the one inside a Rust toolchain, which `rustup which rust-analyzer`
-  prints: rust-analyzer then reads the standard library from that toolchain's `rust-src`, and runs its cargo
-  and rustc. One outside a toolchain, such as rustup's proxy in `~/.cargo/bin`, doesn't start and the peek
-  says why, as the checkout's files could then pick the programs it runs.
+- rust-analyzer's binary is the one picked in Settings › Advanced, which `machine.toml` keeps as
+  `[language_servers.rust-analyzer] path`. It has to be the one inside a Rust toolchain, which
+  `rustup which rust-analyzer` prints: rust-analyzer then reads the standard library from that toolchain's
+  `rust-src`, and runs its cargo and rustc. One outside a toolchain, such as rustup's proxy in
+  `~/.cargo/bin`, doesn't start and the peek says why, as the checkout's files could then pick the programs
+  it runs.
 - We test with rust-analyzer 1.99.1 (58cf8f9c 2026-10-13), the rustup component of the Rust 1.99.1 that
   `rust-toolchain.toml` pins, which installs it with `rust-src`. The tests read its path from
   `TSUGIKI_RUST_ANALYZER`, which `just cargo-test` and `just rust-coverage` set from `rustup which`.
@@ -243,10 +247,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 
 - Go to definition and the Definition peek work in `.c` and `.h` files as they do in Python, through clangd.
   The PR's changed C files open on it and switch views as Python's do on ty.
-- Until Settings can pick it (#683), clangd's binary comes from `[language_servers.clangd] path` in
-  `machine.toml`. clangd reads its built-in headers from `lib/clang` beside its `bin` folder, so it stays in
-  the folder its release unpacks to. We test with clangd 23.1.0, which `just test-servers` fetches whole. The
-  tests read its path from `TSUGIKI_CLANGD`, which `just cargo-test` and `just rust-coverage` set.
+- clangd's binary is the one picked in Settings › Advanced, which `machine.toml` keeps as
+  `[language_servers.clangd] path`. clangd reads its built-in headers from `lib/clang` beside its `bin`
+  folder, so it stays in the folder its release unpacks to. We test with clangd 23.1.0, which
+  `just test-servers` fetches whole. The tests read its path from `TSUGIKI_CLANGD`, which `just cargo-test`
+  and `just rust-coverage` set.
 - Each Repository gets its own clangd, which starts as ty does: when a PR that changes a `.c` or `.h` file
   opens, or on a lookup that comes first. A PR at other commits gets a new one. It runs with
   `--background-index --background-index-priority=low -j=4`.
@@ -296,11 +301,36 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   last 16 cancels that matched no lookup, as each closed peek sends one, and a lookup one of them names
   answers that it was cancelled and leaves the lookup running and the watch be.
 
+## Setting up a server
+
+- Settings › Advanced has a row for each server ([settings.md](settings.md)). On Apply, a server whose path
+  changed stops, so the next lookup starts the new program, and a thread of its own runs the program once
+  with `--version`, for at most 10 s. A first line that doesn't name the server, as a word of its own,
+  says "This isn't clangd: <first line>". A program that doesn't start says "clangd didn't start: <OS
+  error>". The version is the first word of that line that starts with a digit, and one we didn't test
+  says "Tested with 23.1.0; you have 22.1.0" and is still used. A check that comes back after the path
+  changed again is dropped.
+- A start runs no check: the version comes from the server's answer to `initialize`, and a start that
+  fails says why on the row and in the peek.
+- A row's state is Not set up, Ready (set up, with none running), Running (for at least one Repository),
+  Stopped (idle) after the idle time stopped it, or the server's last problem, until it starts again. A
+  server that exits on its own says "clangd stopped (exit code N)", with the end of its error output under
+  it. The next lookup starts it again. One that exits while it answers a lookup answers with that problem.
+- The rows are the core's. The servers' thread writes them, the window asks for them as the page opens,
+  and an event brings each change. `ServerProblem` in `core/src/definitions/health.rs` names each problem,
+  and both the row and the peek's answer carry it, so a new kind needs its words in
+  `ui/src/lib/state/server-words.ts`.
+- Each server copies its error output, as it comes, to `servers\<name>\<name>.log` beside the Repository's
+  Lookup checkout, under `repos\<owner>__<name>\`. Each start keeps the last log as `<name>.old.log`. A log
+  that can't be written leaves the server running without one. Open log on a row opens the log of the open
+  Repository's server in the system's program for it.
+
 ## When a server stops
 
 - A server that no lookup has reached for 30 minutes stops: Tsugiki sends `shutdown`, then `exit` once the
-  server agrees. `[language_servers] idle_minutes` in `machine.toml` changes the time, and a value that
-  isn't a whole number above 0 counts as unset. A lookup that runs keeps its server, and its answer counts
+  server agrees. Settings › Advanced changes the time, which `machine.toml` keeps as `[language_servers]
+  idle_minutes`, and it applies at the next idle check, which Apply brings on. A value that isn't a whole
+  number above 0 counts as unset. A lookup that runs keeps its server, and its answer counts
   as a use. A lookup that watches clangd's index keeps clangd too. The next lookup starts the server again:
   clangd's index stays on disk, so it doesn't index from scratch. Opening the same PR again starts nothing.
 - Quitting Tsugiki stops every server the same way, and waits for them within the second it gives all its

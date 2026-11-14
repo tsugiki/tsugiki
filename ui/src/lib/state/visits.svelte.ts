@@ -2,7 +2,8 @@
  * the mouse's back and forward buttons go through (#186, #586). */
 export class Visits<T> {
   readonly #same: (one: T, other: T) => boolean;
-  #places = $state<T[]>([]);
+  /** Raw, so each place comes back as it went in, and `same` can compare places by what they hold. */
+  #places = $state.raw<T[]>([]);
   /** Where among the places the user is, or -1 before the first visit. */
   #at = $state(-1);
 

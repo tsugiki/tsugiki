@@ -44,6 +44,12 @@ updates:
       pre-commit:
         patterns: ["*"]
         update-types: [minor, patch]
+    ignore:
+      # crate-ci/typos also tags the other crates it publishes (varcon-core-v5.0.7, typos-dict-v*, ...), and
+      # Dependabot reads the highest of those tags as a typos release (#643). typos itself is at 1.x, and only
+      # varcon-core is numbered above it, so `>= 2` hides no real release. Revisit if typos reaches 2.0.
+      - dependency-name: "https://github.com/crate-ci/typos"
+        versions: [">= 2"]
 
   - package-ecosystem: github-actions
     directory: "/"

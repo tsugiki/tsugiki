@@ -122,6 +122,19 @@ impl Definitions {
             Self::Links(links) => links.is_empty(),
         }
     }
+
+    /// Each place as a location: a link's is the part of its target to show, such as a function's name.
+    pub fn into_locations(self) -> Vec<Location> {
+        match self {
+            Self::Locations(locations) => locations,
+            Self::Links(links) => (links.into_iter())
+                .map(|link| Location {
+                    uri: link.target_uri,
+                    range: link.target_selection_range,
+                })
+                .collect(),
+        }
+    }
 }
 
 /// Each shape LSP lets a server answer `textDocument/definition` with.

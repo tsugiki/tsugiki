@@ -1702,6 +1702,47 @@ fn mirror_with_pr_1(folders: &Folders, root: &Path) -> String {
     commit
 }
 
+#[test]
+fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds() {
+    let (folders, root) = temp_folders("wiring-offline-definitions");
+    let head = mirror_with_pr_1(&folders, &root);
+    someone_elses_pr_1(&folders, &head);
+    // The ty that `just cargo-test` and `just rust-coverage` fetch.
+    let ty = Path::new(&std::env::var_os("TSUGIKI_TY").unwrap_or_default()).to_owned();
+    assert!(ty.is_file(), "TSUGIKI_TY={ty:?}: see just fetch-ty");
+    let machine = format!("[language_servers.ty]\npath = '{}'\n", ty.display());
+    std::fs::write(folders.machine_file(), machine).unwrap();
+    let wired = Wired::start(Ok(folders), no_network());
+
+    let _held = wired.held.recv_timeout(PLENTY).unwrap();
+    let pr = json!({ "repository": CPYTHON, "number": 1 });
+    let files = wired.ask("pull_request_files", pr).unwrap();
+    let base = files["base"].as_str().unwrap_or_default().to_owned();
+    let look = |side: &str, path: &str| {
+        let lookup = json!({ "repository": CPYTHON, "base": base, "head": head, "path": path, "side": side, "line": 15, "column": 0 });
+        wired.ask("definitions", json!({ "lookup": lookup }))
+    };
+    let at_head = look("head", "Lib/spam.py");
+    let at_base = look("base", "Lib/spam.py");
+    let other = look("head", "Lib/spam.c");
+    let refused = wired.ask(
+        "definitions",
+        json!({ "lookup": { "repository": CPYTHON, "base": "main", "head": head, "path": "Lib/spam.py", "side": "head", "line": 1, "column": 0 } }),
+    );
+    drop(wired.stop());
+    std::fs::remove_dir_all(root).unwrap();
+
+    let hit = |side: &str, commit: &str, text: &str| {
+        let place =
+            json!({ "kind": "repository", "path": "Lib/spam.py", "side": side, "commit": commit });
+        json!({ "state": "found", "hits": [{ "place": place, "line": 15, "column": 0, "text": text }] })
+    };
+    assert_eq!(at_head, Ok(hit("head", &head, "x15 = 'fifteen'")));
+    assert_eq!(at_base, Ok(hit("base", &base, "x15 = 15")));
+    assert_eq!(other, Ok(json!({ "state": "no_server" })));
+    assert_eq!(refused.unwrap_err()["message"], "\"main\" isn't a commit.");
+}
+
 /// What PR #1 says as GitHub had it at `head`: a Review with a thread on line 15, which the diff shows, one
 /// on line 25, which it doesn't, and an Outdated one.
 fn conversation_of_pr_1(head: &str) -> PullRequestContent {

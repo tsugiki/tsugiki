@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 use tauri::State;
 use tauri::async_runtime::spawn_blocking;
+use tsugiki_core::definitions::Answer;
 use tsugiki_core::diff::{DiffRow, HeadLine};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::highlight::Span;
@@ -307,6 +308,18 @@ pub(crate) fn pull_request_find(
     work: State<'_, crate::DiffWork>,
 ) -> Result<tsugiki_core::diff::Found, Error> {
     crate::find_in_pull_request(search, &work)
+}
+
+/// Where the picked word is defined, which the Definition peek shows (#438). It waits on ty, which reads the
+/// Lookup checkout, and on ty's start if it hasn't started, and never on GitHub, so it works offline at any
+/// commit the mirror holds.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn definitions(
+    lookup: crate::DefinitionLookup,
+    work: State<'_, crate::DiffWork>,
+) -> Result<Answer, Error> {
+    crate::look_up_definition(lookup, &work)
 }
 
 /// The lines a gap of a PR's diff leaves out, read from the file at the PR's head in its mirror with their

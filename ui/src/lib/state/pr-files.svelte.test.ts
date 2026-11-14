@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { Answer, DefinitionLookup } from "$lib/data/bindings";
 import {
   CHUNK,
   DiffViewChoice,
@@ -10,6 +11,7 @@ import {
   type DiffThread,
   type PrFiles,
 } from "./pr-files.svelte";
+import { PEEK_ID, PEEK_PLACES } from "./peek";
 import type { YourReview } from "./workbench.svelte";
 
 type Heard = (event: { payload: unknown }) => void;
@@ -21,6 +23,7 @@ const core = vi.hoisted(() => {
     pullRequestSpans: vi.fn<(chunk: { start: number }, opened?: number[]) => Promise<unknown>>(),
     pullRequestLines: vi.fn<(lines: { file: number; start: number; end: number }) => Promise<unknown>>(),
     pullRequestFind: vi.fn<(search: { query: string }) => Promise<unknown>>(),
+    definitions: vi.fn<(lookup: DefinitionLookup) => Promise<unknown>>(),
     cloning: vi.fn(),
     mirrorStates: vi.fn(),
     mirrorsHeld: vi.fn(),
@@ -44,6 +47,7 @@ vi.mock("$lib/data/bindings", () => ({
     pullRequestSpans: core.pullRequestSpans,
     pullRequestLines: core.pullRequestLines,
     pullRequestFind: core.pullRequestFind,
+    definitions: core.definitions,
     cloning: core.cloning,
     mirrorStates: core.mirrorStates,
     mirrorsHeld: core.mirrorsHeld,
@@ -2041,4 +2045,196 @@ it("lets go of the pick when a newer diff comes, as its rows are other lines", a
   await files.ask();
 
   expect(files.picked).toBeUndefined();
+});
+
+/** An answer of a lookup with a hit in `path` at line `line` at the PR's base, or with none. */
+const answerWith = (path?: string, line = 1): Answer => ({
+  state: "found",
+  hits:
+    path === undefined
+      ? []
+      : [
+          {
+            place: { kind: "repository", path, side: "base", commit: "base" },
+            line,
+            column: 4,
+            text: "def area(width):",
+          },
+        ],
+});
+
+/** The lookup of the word at `column` of line `line` of `path` at `side`, in `picking`'s diff at `head`. */
+const lookupOf = (side: "base" | "head", path: string, line: number, column: number, head = "abc") => ({
+  repository: "python/cpython",
+  base: "base",
+  head,
+  path,
+  side,
+  line,
+  column,
+});
+
+/** A lookup that answers only when the test answers it. */
+const heldLookup = () => {
+  let answer: (answer: unknown) => void = () => {};
+  core.definitions.mockReturnValueOnce(
+    new Promise((resolve) => {
+      answer = resolve;
+    }),
+  );
+  return (answered: unknown) => {
+    answer(answered);
+  };
+};
+
+it("looks up the picked word at the head, and at the base for a removed line", async () => {
+  core.definitions.mockResolvedValue(ok(answerWith("Lib/shapes.py", 3)));
+  const files = await pickable("abc");
+
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.peekDefinition();
+  files.pickWord({ kind: "row", row: 3 }, null, 13, false);
+  await files.peekDefinition();
+
+  expect(core.definitions.mock.calls).toEqual([
+    [lookupOf("head", "a.py", 8, 4)],
+    [lookupOf("base", "a.py", 8, 11)],
+  ]);
+  expect(files.peek).toEqual({
+    at: { kind: "row", row: 3 },
+    symbol: "width",
+    side: "base",
+    commit: "base",
+    lookup: { state: "answered", answer: answerWith("Lib/shapes.py", 3) },
+  });
+});
+
+it("looks up a removed line of a renamed file at its old path", async () => {
+  core.definitions.mockResolvedValue(ok(answerWith()));
+  core.pullRequestRows.mockResolvedValue(ok(picking));
+  const files = await loaded(ready("abc", picking.length, [{ ...file("b.py", 0), old_path: "a.py" }]));
+  files.need(0, picking.length - 1);
+  await vi.waitFor(() => {
+    expect(files.row(4)).toBeDefined();
+  });
+
+  files.pickWord({ kind: "row", row: 3 }, null, 13, false);
+  await files.peekDefinition();
+  files.pickWord({ kind: "row", row: 4 }, null, 13, false);
+  await files.peekDefinition();
+
+  expect(core.definitions.mock.calls).toEqual([
+    [lookupOf("base", "a.py", 8, 11)],
+    [lookupOf("head", "b.py", 9, 11)],
+  ]);
+});
+
+it("looks up at the commit the diff shows while a newer head is fetched", async () => {
+  core.definitions.mockResolvedValue(ok(answerWith()));
+  core.pullRequestRows.mockResolvedValue(ok(picking));
+  const before = ready("older", picking.length, [file("a.py", 0)]);
+  const files = await loaded({ ...before, threads: { kind: "held_back", newer: "newer", count: 1 } });
+  files.need(0, picking.length - 1);
+  await vi.waitFor(() => {
+    expect(files.row(4)).toBeDefined();
+  });
+
+  files.pickWord({ kind: "row", row: 4 }, null, 12, false);
+  await files.peekDefinition();
+
+  expect(core.definitions).toHaveBeenCalledWith(lookupOf("head", "a.py", 9, 11, "older"));
+});
+
+it("opens the peek under the picked line while the lookup runs, and pushes the rows after it down", async () => {
+  const answer = heldLookup();
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+
+  const looking = files.peekDefinition();
+
+  expect(files.peek?.lookup).toEqual({ state: "looking" });
+  expect([2, 3, 4, 5].map((place) => files.layout.at(place))).toEqual([
+    { kind: "row", row: 2 },
+    { kind: "thread", id: PEEK_ID, into: 0 },
+    { kind: "thread", id: PEEK_ID, into: PEEK_PLACES - 1 },
+    { kind: "row", row: 3 },
+  ]);
+  answer(ok(answerWith()));
+  await looking;
+  expect(files.peek?.lookup).toEqual({ state: "answered", answer: answerWith() });
+});
+
+it("opens no peek with no word picked", async () => {
+  const files = await pickable();
+
+  await files.peekDefinition();
+
+  expect(files.peek).toBeUndefined();
+  expect(core.definitions).not.toHaveBeenCalled();
+});
+
+it("closes the peek and hands the diff its focus, and a lookup that answers later opens nothing", async () => {
+  const answer = heldLookup();
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  const looking = files.peekDefinition();
+
+  files.closePeek();
+  answer(ok(answerWith("Lib/shapes.py", 3)));
+  await looking;
+
+  expect(files.peek).toBeUndefined();
+  expect(files.diffWantsFocus).toBe(true);
+  expect(files.layout.at(3)).toEqual({ kind: "row", row: 3 });
+});
+
+it("shows the newest lookup when an older one answers after it", async () => {
+  const older = heldLookup();
+  core.definitions.mockResolvedValueOnce(ok(answerWith("Lib/b.py", 9)));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  const first = files.peekDefinition();
+  files.pickWord({ kind: "row", row: 4 }, null, 12, false);
+  await files.peekDefinition();
+
+  older(ok(answerWith("Lib/a.py", 1)));
+  await first;
+
+  expect(files.peek).toMatchObject({
+    symbol: "width",
+    lookup: { state: "answered", answer: answerWith("Lib/b.py", 9) },
+  });
+});
+
+it("says why a lookup failed", async () => {
+  const problem = "ty couldn't answer: the server ended before it answered";
+  core.definitions.mockResolvedValue({ status: "error", error: { kind: "internal", message: problem } });
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+
+  await files.peekDefinition();
+
+  expect(files.peek?.lookup).toEqual({ state: "failed", problem });
+});
+
+it("says why when the core can't be asked, and stops searching", async () => {
+  core.definitions.mockRejectedValue(new Error("The window lost the core."));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+
+  await files.peekDefinition();
+
+  expect(files.peek?.lookup).toEqual({ state: "failed", problem: "Error: The window lost the core." });
+});
+
+it("closes the peek when a newer diff comes, as its rows are other lines", async () => {
+  core.definitions.mockResolvedValue(ok(answerWith()));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.peekDefinition();
+
+  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [file("a.py", 0)])));
+  await files.ask();
+
+  expect(files.peek).toBeUndefined();
 });

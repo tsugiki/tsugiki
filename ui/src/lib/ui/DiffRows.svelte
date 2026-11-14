@@ -9,7 +9,8 @@
      lines around it, with buttons above and below for the lines still hidden, and the threads on files no
      longer in the diff come under a heading after the last file (#185). One file at a time, it shows the
      page on show: the NEWS entries, one file, or those threads (#605). A click on a word of code puts the
-     caret on it and highlights it, and a double-click selects it, for Go to definition (#437). -->
+     caret on it and highlights it, and a double-click selects it, for Go to definition (#437). The
+     Definition peek takes places under the picked word's line as a thread does (#438). -->
 <script lang="ts">
   import { tick, untrack } from "svelte";
   import type { Column, Pick, PickedLine } from "$lib/state/pick";
@@ -22,6 +23,7 @@
     type PrFilesState,
     type Span,
   } from "$lib/state/pr-files.svelte";
+  import DefinitionPeek from "./DefinitionPeek.svelte";
   import NewsEntries from "./NewsEntries.svelte";
   import ReviewThread from "./ReviewThread.svelte";
   import { pieces, type Match } from "./spans";
@@ -522,24 +524,42 @@
         {/if}
       {/if}
     {/each}
-    {#each diff.layout.threadsIn(first, last) as placed (placed.laid.thread.id)}
-      <div
-        class="thread sans"
-        role="group"
-        aria-label="Review thread"
-        style:top={`${String(placed.shown * ROW)}px`}
-        {@attach measure(placed.laid.thread.id, placed.thread)}
-      >
-        <ReviewThread
-          thread={placed.laid.thread}
-          folded={diff.folded(placed.thread)}
-          {now}
-          ontoggle={() => {
-            diff.toggleThread(placed.thread);
-          }}
-          {onlink}
-        />
-      </div>
+    {#each diff.layout.threadsIn(first, last) as placed (placed.laid.id)}
+      {@const block = placed.laid.block}
+      {#if block.kind === "peek"}
+        <div
+          class="thread peek sans"
+          role="group"
+          aria-label="Definition peek"
+          style:top={`${String(placed.shown * ROW)}px`}
+          style:height={`${String(placed.length * ROW)}px`}
+        >
+          <DefinitionPeek
+            peek={block.peek}
+            onclose={() => {
+              diff.closePeek();
+            }}
+          />
+        </div>
+      {:else}
+        <div
+          class="thread sans"
+          role="group"
+          aria-label="Review thread"
+          style:top={`${String(placed.shown * ROW)}px`}
+          {@attach measure(block.thread.id, block.index)}
+        >
+          <ReviewThread
+            thread={block.thread}
+            folded={diff.folded(block.index)}
+            {now}
+            ontoggle={() => {
+              diff.toggleThread(block.index);
+            }}
+            {onlink}
+          />
+        </div>
+      {/if}
     {/each}
   </div>
 </div>
@@ -567,6 +587,16 @@
     border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
     border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
     background: color-mix(in srgb, currentColor 4%, transparent);
+  }
+
+  /* The peek takes the places the layout gives it, and no more. Its lines are drawn inside it, so its
+     header and the line under it keep their whole 20 px each. */
+  .peek {
+    overflow: hidden;
+    border-width: 0;
+    box-shadow:
+      inset 0 1px color-mix(in srgb, currentColor 15%, transparent),
+      inset 0 -1px color-mix(in srgb, currentColor 15%, transparent);
   }
 
   .spacer {

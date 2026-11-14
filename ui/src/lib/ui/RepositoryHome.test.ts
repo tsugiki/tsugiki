@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { Peek } from "$lib/state/peek";
 import { PrFilesState, type FilesMode } from "$lib/state/pr-files.svelte";
 import type { ChordBindings } from "./keys";
 import RepositoryHome from "./RepositoryHome.svelte";
@@ -1212,6 +1213,49 @@ it("closes the search with Escape from anywhere, then leaves the PR with the foc
   await fireEvent.keyDown(diff, { key: "Escape" });
   expect(screen.queryByRole("region", { name: "PR view" })).toBeNull();
   expect(document.activeElement).toBe(screen.getByRole("button", { name: /^#112564 / }));
+});
+
+it("opens the Definition peek with Alt+F12 on the Files tab, once for a held key", async () => {
+  const peekDefinition = vi.spyOn(PrFilesState.prototype, "peekDefinition").mockResolvedValue();
+  const files = await onFiles();
+  await press("F12", { altKey: true });
+  expect(peekDefinition).not.toHaveBeenCalled();
+  await fireEvent.click(files);
+  await screen.findByRole("region", { name: "Diff" });
+
+  await press("F12", { altKey: true });
+  await press("F12", { altKey: true, repeat: true });
+
+  expect(peekDefinition).toHaveBeenCalledTimes(1);
+});
+
+it("closes the Definition peek with Escape before the search, and the search before the PR", async () => {
+  const shown: { peek: Peek | undefined } = {
+    peek: {
+      at: { kind: "row", row: 2 },
+      symbol: "gc",
+      side: "head",
+      commit: "abc",
+      lookup: { state: "looking" },
+    },
+  };
+  vi.spyOn(PrFilesState.prototype, "peek", "get").mockImplementation(() => shown.peek);
+  const closePeek = vi.spyOn(PrFilesState.prototype, "closePeek").mockImplementation(() => {
+    shown.peek = undefined;
+  });
+  const files = await onFiles();
+  await fireEvent.click(files);
+  const diff = await screen.findByRole("region", { name: "Diff" });
+  await press("f", { ctrlKey: true });
+  diff.focus();
+
+  await fireEvent.keyDown(diff, { key: "Escape" });
+  expect(closePeek).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole("search")).toBeTruthy();
+  await fireEvent.keyDown(diff, { key: "Escape" });
+  expect(screen.queryByRole("search")).toBeNull();
+  expect(screen.getByRole("region", { name: "PR view" })).toBeTruthy();
+  expect(closePeek).toHaveBeenCalledTimes(1);
 });
 
 it("leaves the focus where it is when the Files tab is drawn again with the search open", async () => {

@@ -703,7 +703,7 @@ fn object_name(commit: &CommitSha, path: &str) -> Option<String> {
 
 /// The files `names` names, read from `mirror` with one `git cat-file --batch`: the text of each, or
 /// nothing for one git has no blob for. If git fails, the list stops short.
-pub(super) fn blobs(mirror: &Path, names: &[&str]) -> Vec<Option<String>> {
+pub(crate) fn blobs(mirror: &Path, names: &[&str]) -> Vec<Option<String>> {
     if names.is_empty() {
         return Vec::new();
     }

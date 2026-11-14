@@ -213,6 +213,12 @@ const LAYERS: &[Layer] = &[
               read a copy of the clones that wait for an answer.",
     },
     Layer {
+        module: "definitions",
+        uses: &["diff", "error", "github", "mirror", "repository"],
+        why: "Asks ty where a name is defined, in the Lookup checkout the Mirror worker keeps, with the files \
+              the PR's diff changes open at its head, read from the Mirror through `diff`.",
+    },
+    Layer {
         module: "search",
         uses: &["error", "github", "latest", "mirror", "repository"],
         why: "Searches the open PR's code as text, in the Lookup checkout `mirror` keeps and with the git \

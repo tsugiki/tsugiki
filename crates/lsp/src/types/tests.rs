@@ -128,6 +128,26 @@ fn links_keep_both_ranges_and_where_the_name_was() {
 }
 
 #[test]
+fn a_link_is_the_location_of_its_name_and_a_location_stays_as_it_is() {
+    let link = json!({
+        "targetUri": "file:///b.c",
+        "targetRange": {"start": {"line": 2, "character": 0}, "end": {"line": 5, "character": 1}},
+        "targetSelectionRange": {"start": {"line": 2, "character": 4}, "end": {"line": 2, "character": 7}},
+    });
+    let named = Location {
+        uri: uri("file:///b.c"),
+        range: range(2, 4, 7),
+    };
+    assert_eq!(definitions(json!([link])).into_locations(), [named]);
+    let location = json!({"uri": "file:///a.py", "range": {"start": {"line": 1, "character": 4}, "end": {"line": 1, "character": 7}}});
+    let kept = Location {
+        uri: uri("file:///a.py"),
+        range: range(1, 4, 7),
+    };
+    assert_eq!(definitions(location).into_locations(), [kept]);
+}
+
+#[test]
 fn a_reply_of_another_shape_isn_t_a_definition() {
     assert!(serde_json::from_value::<Definitions>(json!(42)).is_err());
     assert!(serde_json::from_value::<Definitions>(json!([{"uri": "file:///a"}])).is_err());

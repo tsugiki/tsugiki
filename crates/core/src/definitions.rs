@@ -10,7 +10,9 @@
 //! One thread owns the servers, and each lookup is a message to it, so the window never waits on ty.
 
 use std::collections::HashMap;
+use std::ops::Range;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -24,8 +26,11 @@ use crate::error::{Error, ErrorKind};
 use crate::github::CommitSha;
 use crate::mirror::{LookupAt, LookupCheckout};
 use crate::repository::RepositoryName;
+use code::Named;
+pub use code::{Code, HitFile};
 use ty::{Failure, Ty};
 
+mod code;
 #[cfg(test)]
 mod testing;
 #[cfg(test)]
@@ -116,14 +121,25 @@ pub struct Sources {
 #[derive(Clone)]
 pub struct Definitions {
     messages: Sender<Message>,
+    /// The files outside the Repository that a server has named, which [`Definitions::code`] reads.
+    named: Arc<Named>,
 }
 
 impl Definitions {
     /// Starts the thread that owns the servers. It starts none until a PR asks for one.
     pub fn start(sources: Sources) -> Self {
         let (messages, incoming) = mpsc::channel();
-        let _owner = thread::spawn(move || Owner::new(sources).run(&incoming));
-        Self { messages }
+        let owner = Owner::new(sources);
+        let named = Arc::clone(&owner.named);
+        let _owner = thread::spawn(move || owner.run(&incoming));
+        Self { messages, named }
+    }
+
+    /// Lines `lines` of the file a hit is in, counted from 1, which the Definition peek shows: one of the
+    /// Repository whose Mirror is at `mirror`, at the hit's commit, or one outside it that a server named in
+    /// a hit. It reads on the caller's thread, so it never waits for a lookup.
+    pub fn code(&self, mirror: &Path, file: &HitFile, lines: Range<u32>) -> Result<Code, Error> {
+        code::read(&self.named, mirror, file, lines)
     }
 
     /// Starts ty for the PR whose diff at `at` changes `files`, if one of them is in Python, and returns at
@@ -193,6 +209,8 @@ struct Owner {
     servers: HashMap<RepositoryName, Ty>,
     /// How long a lookup waits for ty's answer: [`PATIENCE`], and less in a test.
     patience: Duration,
+    /// The files outside the Repository that a hit has named.
+    named: Arc<Named>,
 }
 
 impl Owner {
@@ -202,6 +220,7 @@ impl Owner {
             prs: HashMap::new(),
             servers: HashMap::new(),
             patience: PATIENCE,
+            named: Arc::default(),
         }
     }
 
@@ -272,7 +291,16 @@ impl Owner {
             return Ok(Answer::NotSetUp);
         };
         match ty.look_up(lookup, patience) {
-            Ok(answer) => Ok(answer),
+            Ok(answer) => {
+                if let Answer::Found { hits } = &answer {
+                    for hit in hits {
+                        if let Place::Outside { path } = &hit.place {
+                            self.named.add(PathBuf::from(path));
+                        }
+                    }
+                }
+                Ok(answer)
+            }
             Err(Failure::Slow(problem)) => Err(problem),
             Err(Failure::Broken(problem)) => {
                 // A ty that failed starts afresh on the next lookup.

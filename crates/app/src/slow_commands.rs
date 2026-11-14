@@ -322,6 +322,18 @@ pub(crate) fn definitions(
     crate::look_up_definition(lookup, &work)
 }
 
+/// Some lines of the file a hit is in, which the Definition peek shows (#439): a file of the Repository at
+/// the hit's commit, read from the mirror, or one outside it that a language server named. It never waits
+/// for a lookup, nor for GitHub.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn definition_code(
+    code: crate::DefinitionCode,
+    work: State<'_, crate::DiffWork>,
+) -> Result<tsugiki_core::definitions::Code, Error> {
+    crate::read_definition_code(code, &work)
+}
+
 /// The lines a gap of a PR's diff leaves out, read from the file at the PR's head in its mirror with their
 /// spans, which the Files tab shows when the user expands the gap. It asks GitHub for nothing. Those past
 /// the file's end don't come.

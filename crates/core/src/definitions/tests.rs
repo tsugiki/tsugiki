@@ -211,6 +211,13 @@ fn a_builtin_is_found_outside_the_repository() {
         };
         assert!(path.ends_with("builtins.pyi"), "{path}");
         assert_eq!(hit.text, "def print(");
+        // The peek can read the stub's code, as ty named it.
+        let file = HitFile::Outside {
+            path: PathBuf::from(path),
+        };
+        let line = hit.line;
+        let code = code::read(&owner.named, Path::new(""), &file, line..line + 1).unwrap();
+        assert_eq!(code.lines, ["def print("]);
     }
 }
 

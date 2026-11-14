@@ -52,7 +52,7 @@ import {
 } from "./diff-layout";
 import { FilePages, samePage, type FilesMode, type Page } from "./file-pages";
 import { hud, type Jump, type JumpTimer } from "./hud.svelte";
-import { PEEK_ID, PEEK_PLACES, withPeek, type Peek } from "./peek";
+import { PEEK_ID, peekPlaces, withPeek, type Peek } from "./peek";
 import { wordAt, type Column, type Pick, type Picked, type PickedLine, type Side } from "./pick";
 
 export type PrFiles = PrFiles_Serialize;
@@ -176,7 +176,12 @@ export class PrFilesState {
       this.#choice.view,
       peek === undefined
         ? threads
-        : withPeek(threads, { at: peek.at, places: PEEK_PLACES, id: PEEK_ID, block: { kind: "peek", peek } }),
+        : withPeek(threads, {
+            at: peek.at,
+            places: peekPlaces(peek),
+            id: PEEK_ID,
+            block: { kind: "peek", peek },
+          }),
       this.#diff(view) ?? "",
       this.shown,
     );
@@ -880,7 +885,7 @@ export class PrFilesState {
     this.#lookups += 1;
     const lookup = this.#lookups;
     const commit = pick.side === "base" ? view.base : view.head;
-    const peek = { at: pick.at, symbol: pick.word, side: pick.side, commit };
+    const peek = { repository: this.#repository, at: pick.at, symbol: pick.word, side: pick.side, commit };
     this.#peek = { ...peek, lookup: { state: "looking" } };
     const lookedUp = {
       repository: this.#repository,

@@ -19,7 +19,7 @@ pub use startup::run;
 use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
 use tsugiki_core::build::Build;
-use tsugiki_core::definitions::{Answer, Definitions, DiffEnd, Lookup};
+use tsugiki_core::definitions::{Answer, Code, Definitions, DiffEnd, HitFile, Lookup};
 use tsugiki_core::diff::{DiffOf, DiffRow, Diffs, Found, HeadLine, Highlighter, PrAt};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::folders::Folders;
@@ -686,6 +686,42 @@ fn look_up_definition(lookup: DefinitionLookup, work: &DiffWork) -> Result<Answe
     })
 }
 
+/// The file a hit is in, as the window names it to read its code (#439).
+#[derive(Debug, Clone, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum CodeFile {
+    /// A file of the Repository at a commit.
+    Repository { path: String, commit: String },
+    /// A file outside the Repository, by the path on disk a hit named.
+    Outside { path: String },
+}
+
+/// Some lines of a hit's file, which the Definition peek shows (#439): lines `start` to `end` of `file`,
+/// counted from 1, without `end`.
+#[derive(Debug, Clone, Deserialize, Type)]
+pub(crate) struct DefinitionCode {
+    repository: String,
+    file: CodeFile,
+    start: u32,
+    end: u32,
+}
+
+fn read_definition_code(code: DefinitionCode, work: &DiffWork) -> Result<Code, Error> {
+    let name = RepositoryName::parse(&code.repository)?;
+    let folders = work.folders.as_ref().map_err(Clone::clone)?;
+    let file = match code.file {
+        CodeFile::Repository { path, commit: sha } => HitFile::Repository {
+            path,
+            commit: commit(&sha)?,
+        },
+        CodeFile::Outside { path } => HitFile::Outside {
+            path: PathBuf::from(path),
+        },
+    };
+    let mirror = folders.mirror(&name);
+    work.definitions.code(&mirror, &file, code.start..code.end)
+}
+
 /// Opens the page of `item` on GitHub with `show`. It leaves Last seen alone: only Mark Seen moves it.
 fn open_github_page(
     repository: &str,
@@ -809,6 +845,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::pull_request_lines,
             slow_commands::pull_request_find,
             slow_commands::definitions,
+            slow_commands::definition_code,
             slow_commands::open_on_github,
             slow_commands::open_link
         ])

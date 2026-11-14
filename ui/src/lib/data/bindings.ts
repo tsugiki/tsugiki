@@ -173,6 +173,12 @@ export const commands = {
 	 *  commit the mirror holds.
 	 */
 	definitions: (lookup: DefinitionLookup) => typedError<Answer, Error_Serialize>(__TAURI_INVOKE("definitions", { lookup })),
+	/**
+	 *  Some lines of the file a hit is in, which the Definition peek shows (#439): a file of the Repository at
+	 *  the hit's commit, read from the mirror, or one outside it that a language server named. It never waits
+	 *  for a lookup, nor for GitHub.
+	 */
+	definitionCode: (code: DefinitionCode) => typedError<Code, Error_Serialize>(__TAURI_INVOKE("definition_code", { code })),
 	/**  Opens an Issue or a PR on GitHub in the system browser. */
 	openOnGithub: (repository: string, item: GitHubItem) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_on_github", { repository, item })),
 	/**
@@ -357,6 +363,21 @@ export type CloningChanged_Deserialize = Cloning | null;
 /**  Sent when a mirror's clone moves on, and when it ends, so the status bar can say. */
 export type CloningChanged_Serialize = Cloning | null;
 
+/**  Some lines of a hit's file. */
+export type Code = {
+	/**  How many lines the whole file has. */
+	count: number,
+	/**  The lines asked for that the file holds, without their line endings. */
+	lines: string[],
+};
+
+/**  The file a hit is in, as the window names it to read its code (#439). */
+export type CodeFile = 
+/**  A file of the Repository at a commit. */
+{ kind: "repository"; path: string; commit: string } | 
+/**  A file outside the Repository, by the path on disk a hit named. */
+{ kind: "outside"; path: string };
+
 /**
  *  A row of a stored hunk: its `@@` line, a line of the diff, or what git says in place of a line, such as
  *  a missing newline at the end.
@@ -396,6 +417,17 @@ export type Comment_Serialize = {
 
 /**  How a Repository's PRs name their Issues and Backports (ADR 0011). `links.rs` reads this. */
 export type Conventions = "cpython" | "github";
+
+/**
+ *  Some lines of a hit's file, which the Definition peek shows (#439): lines `start` to `end` of `file`,
+ *  counted from 1, without `end`.
+ */
+export type DefinitionCode = {
+	repository: string,
+	file: CodeFile,
+	start: number,
+	end: number,
+};
 
 /**
  *  A lookup of where the picked word is defined, as the window asks for it when the user opens the

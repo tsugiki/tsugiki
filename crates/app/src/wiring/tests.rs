@@ -1725,6 +1725,14 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     let at_head = look("head", "Lib/spam.py");
     let at_base = look("base", "Lib/spam.py");
     let other = look("head", "Lib/spam.c");
+    // The peek shows the hit's code from the mirror, at the hit's commit.
+    let code = |commit: &str| {
+        let file = json!({ "kind": "repository", "path": "Lib/spam.py", "commit": commit });
+        let code = json!({ "repository": CPYTHON, "file": file, "start": 14, "end": 17 });
+        wired.ask("definition_code", json!({ "code": code }))
+    };
+    let code_at_head = code(&head);
+    let code_at_base = code(&base);
     let refused = wired.ask(
         "definitions",
         json!({ "lookup": { "repository": CPYTHON, "base": "main", "head": head, "path": "Lib/spam.py", "side": "head", "line": 1, "column": 0 } }),
@@ -1740,6 +1748,9 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     assert_eq!(at_head, Ok(hit("head", &head, "x15 = 'fifteen'")));
     assert_eq!(at_base, Ok(hit("base", &base, "x15 = 15")));
     assert_eq!(other, Ok(json!({ "state": "no_server" })));
+    let lines = |line_15: &str| json!({ "count": 30, "lines": ["x14 = 14", line_15, "x16 = 16"] });
+    assert_eq!(code_at_head, Ok(lines("x15 = 'fifteen'")));
+    assert_eq!(code_at_base, Ok(lines("x15 = 15")));
     assert_eq!(refused.unwrap_err()["message"], "\"main\" isn't a commit.");
 }
 

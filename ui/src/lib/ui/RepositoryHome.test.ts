@@ -107,6 +107,7 @@ const issue = {
 const DEFAULT_LAYOUT = {
   sidebar: null,
   list: null,
+  peek: null,
   sidebar_hidden: false,
   list_hidden: false,
   detail_only_hid: null,
@@ -1829,8 +1830,14 @@ it("leaves ← and → to a pane's edge that has the focus, and to a hidden list
   await fireEvent.click(issueRow);
   const fold = screen.getByRole("button", { name: "PRs of #112564" });
   const edge = screen.getByRole("separator", { name: "Sidebar width" });
+  const heard = vi.fn();
+  window.addEventListener("keydown", heard);
 
   await fireEvent.keyDown(edge, { key: "ArrowLeft" });
+  await fireEvent.keyDown(edge, { key: "ArrowRight" });
+  window.removeEventListener("keydown", heard);
+  // The keys the edge takes go no further.
+  expect(heard).not.toHaveBeenCalled();
   const kept = fold.getAttribute("aria-expanded");
   await press("B", { ctrlKey: true, altKey: true });
   await press("ArrowLeft");

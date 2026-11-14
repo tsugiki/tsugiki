@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, within } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { chooseMirrorSource, mirrorCost, pickClone } from "$lib/state/mirror-source";
+import { PanesState } from "$lib/state/panes.svelte";
 import {
   CHUNK,
   DiffViewChoice,
@@ -28,6 +29,7 @@ const core = vi.hoisted(() => ({
   cloning: vi.fn(),
   mirrorStates: vi.fn(),
   mirrorsHeld: vi.fn(),
+  savePaneLayout: vi.fn(),
   listen: vi.fn(),
 }));
 
@@ -45,6 +47,7 @@ vi.mock("$lib/data/bindings", () => ({
     cloning: core.cloning,
     mirrorStates: core.mirrorStates,
     mirrorsHeld: core.mirrorsHeld,
+    savePaneLayout: core.savePaneLayout,
   },
   events: {
     headsFetched: { listen: core.listen },
@@ -143,7 +146,7 @@ const untimed = { jumped: () => ({ rowsShown: () => undefined, spansShown: () =>
  * Review `review`. */
 const shown = async (answer: PrFiles | null, choice = new DiffViewChoice(), review?: YourReview) => {
   core.pullRequestFiles.mockResolvedValue(ok(answer));
-  const files = new PrFilesState("python/cpython", 11, untimed, choice);
+  const files = new PrFilesState("python/cpython", 11, new PanesState(), untimed, choice);
   files.followReview(review);
   await files.load();
   render(FilesTab, { files, now: NOW, onlink });
@@ -318,7 +321,7 @@ it("shows nothing for a PR Tsugiki doesn't hold", async () => {
 
 it("says why it can't show the files", async () => {
   core.pullRequestFiles.mockResolvedValue({ status: "error", error: { message: "The mirror has no main" } });
-  const files = new PrFilesState("python/cpython", 11, untimed);
+  const files = new PrFilesState("python/cpython", 11, new PanesState(), untimed);
   await files.load();
   render(FilesTab, { files, now: NOW, onlink });
 
@@ -1192,7 +1195,14 @@ it("leaves a match it shows in place, and scrolls to one it doesn't", async () =
 /** The Files tab of PR 11 once the core answered `answer`, one file at a time. */
 const shownOne = async (answer: PrFiles) => {
   core.pullRequestFiles.mockResolvedValue(ok(answer));
-  const files = new PrFilesState("python/cpython", 11, untimed, new DiffViewChoice(), "one");
+  const files = new PrFilesState(
+    "python/cpython",
+    11,
+    new PanesState(),
+    untimed,
+    new DiffViewChoice(),
+    "one",
+  );
   await files.load();
   render(FilesTab, { files, now: NOW, onlink });
   return files;
@@ -1827,6 +1837,137 @@ it("scrolls the peek's code inside it, and the diff's rows after it stay where t
   // Only the chunks near what shows are read, not the whole file.
   expect(core.definitionCode.mock.calls.map(([asked]) => asked.start)).toEqual([801, 1401]);
   expect(rowAt("▾logo.pngbinary")?.style.top).toBe(`${String(23 * 20)}px`);
+});
+
+it("drags the peek's bottom edge, saves its height for the next peek, and gives 18 rows back on a double-click", async () => {
+  const place = { kind: "repository" as const, path: "Lib/news.py", side: "head" as const, commit: "abc" };
+  core.definitions.mockResolvedValue(
+    ok({ state: "found", hits: [{ place, line: 12, column: 4, text: "" }] }),
+  );
+  core.savePaneLayout.mockResolvedValue(ok(null));
+  fileOf(30);
+  // jsdom has no pointer capture.
+  HTMLElement.prototype.setPointerCapture = vi.fn();
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[4]).toBe("2+new line");
+  });
+  await clickAt(codeOf(4), 2);
+  await files.peekDefinition();
+  const edge = () => screen.getByRole("separator", { name: "Definition peek height" });
+  const saved = () => core.savePaneLayout.mock.calls.map(([layout]) => layout.peek);
+
+  await fireEvent.pointerDown(edge(), { button: 0, clientY: 300, pointerId: 1 });
+  await fireEvent.pointerMove(edge(), { clientY: 300 + 6 * 20 + 7 });
+  await fireEvent.pointerUp(edge());
+  // The click that ends the drag leaves the word picked, for the next peek.
+  await fireEvent.click(edge());
+  const dragged = [peekBox()?.style.height, edge().parentElement?.style.top, saved()];
+  files.closePeek();
+  await tick();
+  await files.peekDefinition();
+  const reopened = peekBox()?.style.height;
+  // Along the edge, ← and → move nothing.
+  await fireEvent.keyDown(edge(), { key: "ArrowLeft" });
+  await fireEvent.keyDown(edge(), { key: "ArrowUp" });
+  await fireEvent.keyUp(edge(), { key: "ArrowUp" });
+  const shorter = [peekBox()?.style.height, saved()];
+  await fireEvent.dblClick(edge());
+
+  expect(dragged).toEqual([`${String(24 * 20)}px`, `${String((5 + 24) * 20 - 4)}px`, [24]]);
+  expect(reopened).toBe(`${String(24 * 20)}px`);
+  expect(shorter).toEqual([`${String(23 * 20)}px`, [24, 23]]);
+  expect(peekBox()?.style.height).toBe(`${String(18 * 20)}px`);
+  await vi.waitFor(() => {
+    expect(saved()).toEqual([24, 23, null]);
+  });
+});
+
+it("saves the height of a drag that the peek's answer cuts short, as the peek drops its edge", async () => {
+  let answer: (found: unknown) => void = () => {};
+  core.definitions.mockReturnValue(
+    new Promise((resolve) => {
+      answer = resolve;
+    }),
+  );
+  core.savePaneLayout.mockResolvedValue(ok(null));
+  HTMLElement.prototype.setPointerCapture = vi.fn();
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[4]).toBe("2+new line");
+  });
+  await clickAt(codeOf(4), 2);
+  const looking = files.peekDefinition();
+  await tick();
+  const edge = screen.getByRole("separator", { name: "Definition peek height" });
+  await fireEvent.pointerDown(edge, { button: 0, clientY: 300, pointerId: 1 });
+  await fireEvent.pointerMove(edge, { clientY: 300 + 6 * 20 });
+
+  // An answer with no hit has only words to say, in 2 rows with no edge.
+  answer(ok({ state: "found", hits: [] }));
+  await looking;
+  await tick();
+
+  expect(screen.queryByRole("separator", { name: "Definition peek height" })).toBeNull();
+  await vi.waitFor(() => {
+    expect(core.savePaneLayout.mock.calls.map(([layout]) => layout.peek)).toEqual([24]);
+  });
+});
+
+it("scrolls a peek that opens on the last rows on screen into view, once, as it opens", async () => {
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(100);
+  fileOf(30);
+  const files = await shown(ready(rows.length));
+  let answer: (found: unknown) => void = () => {};
+  const lookUp = () => {
+    core.definitions.mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    return files.peekDefinition();
+  };
+  await vi.waitFor(() => {
+    expect(lines()[4]).toBe("2+new line");
+  });
+  await clickAt(codeOf(4), 2);
+  const diff = () => screen.getByRole("region", { name: "Diff" });
+  const scrolledBack = async () => {
+    const top = diff().scrollTop;
+    diff().scrollTop = 0;
+    await fireEvent.scroll(diff());
+    return top;
+  };
+
+  // Rows 0 to 4 show in 100 pixels. The peek under row 4 scrolls up as far as that row can go.
+  const looking = lookUp();
+  await tick();
+  const opened = await scrolledBack();
+  // Its answer, with only words to say, scrolls nothing.
+  answer(ok({ state: "found", hits: [] }));
+  await looking;
+  await tick();
+  const answered = diff().scrollTop;
+  // A new peek on the same line opens again, and one more there, already in view, scrolls nothing.
+  void lookUp();
+  await tick();
+  void lookUp();
+  await tick();
+  const again = await scrolledBack();
+  // The diff drawn again, as the Files tab shows again, leaves that peek where it is.
+  cleanup();
+  render(FilesTab, { files, now: NOW, onlink });
+  await tick();
+  const drawnAgain = diff().scrollTop;
+  // A peek on a collapsed file has no place to scroll to.
+  files.closePeek();
+  files.toggle(0);
+  await tick();
+  void lookUp();
+  await tick();
+
+  expect([opened, answered, again, drawnAgain, diff().scrollTop]).toEqual([4 * 20, 0, 4 * 20, 0, 0]);
+  expect(files.peek?.at).toEqual({ kind: "row", row: 4 });
 });
 
 it("says why it can't read the hit's file, and shrinks the peek to that line", async () => {

@@ -59,6 +59,7 @@ import { FilePages, samePage, type FilesMode, type Page } from "./file-pages";
 import { diffShows, inRepository, type FileView } from "./file-view";
 import { HitCode } from "./hit-code.svelte";
 import { hud, type Jump, type JumpTimer } from "./hud.svelte";
+import type { PanesState } from "./panes.svelte";
 import { PEEK_ID, peekPlaces, withPeek, type IndexNews, type Peek } from "./peek";
 import { wordAt, type Column, type Pick, type Picked, type PickedLine, type Side } from "./pick";
 
@@ -186,6 +187,8 @@ export class PrFilesState {
   unfetched = $state<Unfetched>();
   /** Whether the tab shows all the files or one at a time, which the user switches until the PR closes. */
   mode = $state<FilesMode>("all");
+  /** The panes' layout, which holds the Definition peek's height (#458). */
+  readonly panes: PanesState;
   /** The pages of the diff when it shows one file at a time: the NEWS entries, each file, and the threads
    * on files no longer in the diff. */
   pages = $derived.by(() => {
@@ -220,7 +223,7 @@ export class PrFilesState {
         ? threads
         : withPeek(threads, {
             at: peek.at,
-            places: peekPlaces(peek),
+            places: peekPlaces(peek, this.panes.peekRows),
             id: PEEK_ID,
             block: { kind: "peek", peek },
           }),
@@ -231,6 +234,9 @@ export class PrFilesState {
   /** The thread, the diff's row or the top of the page to scroll to, until the diff has scrolled there.
    * Each move is a new one, so a move back to the same place scrolls again. */
   jump = $state<{ id: string } | { row: number } | { page: Page }>();
+  /** Whether a peek opened that the diff hasn't yet scrolled into view, until the diff takes it (#458). Each
+   * open is a new one, even on the same line, and a diff drawn again later doesn't scroll to it again. */
+  peekOpened = $state(false);
   /** Whether the search in the diff shows, which Ctrl+F opens (#186). */
   searching = $state(false);
   /** The text the user searches the diff for. */
@@ -345,15 +351,19 @@ export class PrFilesState {
   #stopListening: (() => void)[] = [];
   #stopped = false;
 
+  /** `panes` is the layout of the panes the Repository's page read, which the peek's height is saved in, so
+   * a drag never saves the default widths over the user's. */
   constructor(
     repository: string,
     number: number,
+    panes: PanesState,
     jumps: JumpTimer = hud,
     choice: DiffViewChoice = new DiffViewChoice(),
     mode: FilesMode = "all",
   ) {
     this.#repository = repository;
     this.#number = number;
+    this.panes = panes;
     this.#jumps = jumps;
     this.#choice = choice;
     this.mode = mode;
@@ -946,6 +956,7 @@ export class PrFilesState {
   async peekDefinition() {
     const looked = await this.#lookUp((looking) => {
       this.#peek = looking;
+      this.peekOpened = true;
     });
     if (looked !== undefined) this.#peek = this.#withHeld(looked.peek, looked.lookup);
   }
@@ -983,6 +994,7 @@ export class PrFilesState {
     const now = this.#withHeld(peek, lookup);
     if (goal === undefined || hitsOf(now) !== hits) {
       this.#peek = now;
+      this.peekOpened = true;
       this.peekWantsFocus = (hitsOf(now)?.length ?? 0) > 1;
       return;
     }

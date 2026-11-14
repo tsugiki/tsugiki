@@ -113,9 +113,17 @@ it("keeps its rows while it lists several hits, even when the hit's file can't b
     return peek;
   };
 
-  expect(peekPlaces(showing([hitIn("Lib/a.py", 3)], 0))).toBe(PEEK_ROWS);
-  expect(peekPlaces(unreadable([hitIn("Lib/a.py", 3)]))).toBe(2);
-  expect(peekPlaces(unreadable([hitIn("Lib/a.py", 3), hitIn("Lib/b.py", 9)]))).toBe(PEEK_ROWS);
+  expect(peekPlaces(showing([hitIn("Lib/a.py", 3)], 0), PEEK_ROWS)).toBe(PEEK_ROWS);
+  expect(peekPlaces(unreadable([hitIn("Lib/a.py", 3)]), PEEK_ROWS)).toBe(2);
+  expect(peekPlaces(unreadable([hitIn("Lib/a.py", 3), hitIn("Lib/b.py", 9)]), PEEK_ROWS)).toBe(PEEK_ROWS);
+});
+
+it("takes the rows the user dragged it to, but not with only words to say", () => {
+  const unreadable = showing([hitIn("Lib/a.py", 3)], 0);
+  if (unreadable.code) unreadable.code.problem = "Tsugiki couldn't read Lib/a.py";
+
+  expect(peekPlaces(showing([hitIn("Lib/a.py", 3)], 0), 30)).toBe(30);
+  expect(peekPlaces(unreadable, 30)).toBe(2);
 });
 
 it("leaves the threads in their order", () => {
@@ -147,7 +155,7 @@ it("says under an answer that came while clangd indexes how far it has got, and 
   );
   expect(peekWords(answered([declaration])).indexing).toBeUndefined();
   // A peek with words only takes a row more for the line.
-  expect(peekPlaces(answered([], counted))).toBe(3);
-  expect(peekPlaces(answered([]))).toBe(2);
-  expect(peekPlaces(answered([declaration], counted))).toBe(PEEK_ROWS);
+  expect(peekPlaces(answered([], counted), PEEK_ROWS)).toBe(3);
+  expect(peekPlaces(answered([]), PEEK_ROWS)).toBe(2);
+  expect(peekPlaces(answered([declaration], counted), PEEK_ROWS)).toBe(PEEK_ROWS);
 });

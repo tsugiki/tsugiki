@@ -119,11 +119,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     The status bar stays, and the Issue list's rules for a hidden list apply. Bringing the panes back puts
     the focus where bringing back the list does; with the Sidebar alone, the focus stays in the Detail pane.
 
-    Pane sizes, the Sidebar's state, whether the Issue list shows and what `Ctrl+K Z` remembers belong to the
-    machine, like the window's position, and are not synced.
+    Pane sizes, the Definition peek's height ([definitions.md](definitions.md)), the Sidebar's state,
+    whether the Issue list shows and what `Ctrl+K Z` remembers belong to the machine, like the window's
+    position, and are not synced.
 
     "Reset Layout" in the command palette puts all of that back to the defaults at once, without asking: both
-    pane sizes, the Sidebar full and on show, the Issue list on show, and nothing remembered by `Ctrl+K Z`.
+    pane sizes, the peek's 18 rows, the Sidebar full and on show, the Issue list on show, and nothing
+    remembered by `Ctrl+K Z`.
     The status bar, the list's footer, zoom, the diff view, the performance HUD and the window stay as they
     are. It has no key until the user gives it one.
   - **Look** of the Sidebar and the Issue list, which the prototype settled. The colours come from the

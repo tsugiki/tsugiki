@@ -525,6 +525,7 @@ fn the_panes_layout_stays_on_this_machine_across_a_restart() {
     let layout = json!({
         "sidebar": 240,
         "list": null,
+        "peek": 24,
         "sidebar_hidden": true,
         "list_hidden": true,
         "detail_only_hid": "both",
@@ -544,6 +545,7 @@ fn the_panes_layout_stays_on_this_machine_across_a_restart() {
         json!({
             "sidebar": null,
             "list": null,
+            "peek": null,
             "sidebar_hidden": false,
             "list_hidden": false,
             "detail_only_hid": null,

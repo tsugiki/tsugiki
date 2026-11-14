@@ -1,4 +1,5 @@
 use std::sync::mpsc::Receiver;
+use std::thread;
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -288,6 +289,24 @@ fn a_definition_as_links() {
             target_selection_range: range(10, 12, 20),
         }])
     );
+}
+
+#[test]
+fn another_thread_cancels_a_request_one_waits_for() {
+    let (server, _events, mut fake) = initialized(json!({}));
+    let pending = somewhere(&server);
+    let asked = fake.expect("textDocument/definition");
+    let canceller = pending.canceller();
+    let waiting = thread::spawn(move || pending.wait());
+
+    canceller.cancel();
+
+    assert_eq!(
+        fake.expect("$/cancelRequest")["params"],
+        json!({"id": asked["id"]})
+    );
+    let error = waiting.join().unwrap().unwrap_err();
+    assert!(matches!(error, RequestError::Cancelled));
 }
 
 #[test]

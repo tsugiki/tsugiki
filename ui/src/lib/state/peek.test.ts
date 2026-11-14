@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { LaidThread, ThreadAnchor } from "./diff-layout";
-import { PEEK_ID, withPeek } from "./peek";
+import { PEEK_ID, peekWords, withPeek, type Peek } from "./peek";
 
 const laid = <At extends ThreadAnchor>(id: string, at: At) => ({ id, at, places: 3 });
 const ids = (threads: LaidThread[]) => threads.map((thread) => thread.id);
@@ -29,6 +29,37 @@ it("puts the peek under a line among the threads under lines of its own file", (
   expect(under(0, 4).indexOf(PEEK_ID)).toBe(1);
   expect(under(0, 7).indexOf(PEEK_ID)).toBe(5);
   expect(under(1, 2).indexOf(PEEK_ID)).toBe(3);
+});
+
+const looking = (lookup: Peek["lookup"]): Peek => ({
+  at: { kind: "row", row: 2 },
+  symbol: "eggs",
+  side: "head",
+  commit: "abcdef123",
+  lookup,
+});
+
+it("says what a lookup waits for, with the seconds once they pass one", () => {
+  const body = (lookup: Peek["lookup"], now = 10_000) => peekWords(looking(lookup), now).body;
+  const asking = { step: "asking", server: "ty" } as const;
+
+  expect(body({ state: "looking" })).toBe("Searching for the definition of eggs…");
+  expect(body({ state: "looking", waiting: { step: "starting", server: "ty" }, since: 9000 })).toBe(
+    "Starting ty…",
+  );
+  expect(body({ state: "looking", waiting: asking, since: 9500 })).toBe(
+    "Asking ty for the definition of eggs…",
+  );
+  expect(body({ state: "looking", waiting: asking, since: 6500 })).toBe(
+    "Asking ty for the definition of eggs… 3 s",
+  );
+  expect(body({ state: "looking", waiting: asking })).toBe("Asking ty for the definition of eggs…");
+});
+
+it("says a lookup was cancelled, in a peek with words only", () => {
+  const cancelled = looking({ state: "answered", answer: { state: "cancelled" } });
+
+  expect(peekWords(cancelled).body).toBe("The lookup was cancelled");
 });
 
 it("leaves the threads in their order", () => {

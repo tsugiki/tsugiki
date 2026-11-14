@@ -53,6 +53,13 @@ vi.mock("$lib/data/bindings", () => ({
   },
 }));
 
+// A lookup hears what it waits for on a channel, which these tests leave quiet.
+vi.mock("@tauri-apps/api/core", () => ({
+  Channel: class {
+    onmessage = () => {};
+  },
+}));
+
 vi.mock("$lib/state/mirror-source", () => ({
   pickClone: vi.fn(),
   chooseMirrorSource: vi.fn(),

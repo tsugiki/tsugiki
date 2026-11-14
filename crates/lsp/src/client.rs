@@ -407,6 +407,28 @@ impl<T> Pending<T> {
     /// Tells the server to stop working on the request. The request then fails with
     /// [`RequestError::Cancelled`], unless its answer came first.
     pub fn cancel(&self) {
+        self.canceller().cancel();
+    }
+
+    /// A handle that cancels the request, which another thread can keep while one waits for the answer.
+    pub fn canceller(&self) -> Canceller {
+        Canceller {
+            id: self.id,
+            inputs: self.inputs.clone(),
+        }
+    }
+}
+
+/// Cancels a request, as [`Pending::cancel`] does, from a thread that doesn't hold its [`Pending`].
+#[derive(Clone)]
+pub struct Canceller {
+    id: i64,
+    inputs: ToOwner,
+}
+
+impl Canceller {
+    /// Tells the server to stop working on the request, unless its answer came first.
+    pub fn cancel(&self) {
         self.inputs.send(Input::Cancel(self.id));
     }
 }

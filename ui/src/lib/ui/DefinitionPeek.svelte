@@ -1,14 +1,28 @@
 <!-- The Definition peek (#438), under the line of the word the user picked: a header with the symbol, the
      first hit's path and line, the commit it is at, how many hits there are and ✕. Under it, the hit's code
-     scrolled to its line (#439), or else a line that says what the lookup is doing, that it found nothing, or
-     why it failed. A hit outside the Repository names its whole path on disk in place of a commit. -->
+     scrolled to its line (#439), or else a line that says what the lookup waits for, with the seconds once
+     they pass one (#440), that it found nothing, or why it failed. A hit outside the Repository names its
+     whole path on disk in place of a commit. -->
 <script lang="ts">
   import { peekWords, type Peek } from "$lib/state/peek";
   import PeekCode from "./PeekCode.svelte";
 
   let { peek, onclose }: { peek: Peek; onclose: () => void } = $props();
 
-  const words = $derived(peekWords(peek));
+  /** The time the seconds of a lookup that waits count to. */
+  let now = $state(Date.now());
+  $effect(() => {
+    // Only a lookup that asks says its seconds.
+    if (peek.lookup.state !== "looking" || peek.lookup.waiting?.step !== "asking") return;
+    now = Date.now();
+    const clock = setInterval(() => {
+      now = Date.now();
+    }, 250);
+    return () => {
+      clearInterval(clock);
+    };
+  });
+  const words = $derived(peekWords(peek, now));
   const code = $derived(peek.code);
 </script>
 

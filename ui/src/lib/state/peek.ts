@@ -7,22 +7,25 @@ import type { LaidThread } from "./diff-layout";
 import type { HitCode } from "./hit-code.svelte";
 import type { PickedLine, Side } from "./pick";
 
-/** What a lookup found: nothing yet, ty's answer, or why it failed. While it looks, the core says what it
- * waits for (#440), and `since` is when it started to. */
+/** What a lookup found: nothing yet, the server's answer, or why it failed. While it looks, the core says
+ * what it waits for (#440), and `since` is when it started to. */
 export type Lookup =
   | { state: "looking"; waiting?: Waiting; since?: number }
   | { state: "answered"; answer: Answer }
   | { state: "failed"; problem: string };
 
-/** How the peek names each server. */
-const SERVER_NAMES: Record<ServerName, string> = { ty: "ty" };
+/** How the peek names each server, and the language it answers in. */
+const SERVERS: Record<ServerName, { name: string; language: string }> = {
+  ty: { name: "ty", language: "Python" },
+  "rust-analyzer": { name: "rust-analyzer", language: "Rust" },
+};
 
 /** What a lookup that waits says: the server starts, or works out the answer, with the seconds it has
  * waited at `now` once they pass one. */
 function waitingWords(symbol: string, lookup: { waiting?: Waiting; since?: number }, now: number): string {
   const waiting = lookup.waiting;
   if (waiting === undefined) return `Searching for the definition of ${symbol}…`;
-  const server = SERVER_NAMES[waiting.server];
+  const server = SERVERS[waiting.server].name;
   if (waiting.step === "starting") return `Starting ${server}…`;
   const seconds = Math.floor((now - (lookup.since ?? now)) / 1000);
   const waited = seconds >= 1 ? ` ${String(seconds)} s` : "";
@@ -53,8 +56,10 @@ export function peekWords(peek: Peek, now = Date.now()): PeekWords {
   if (lookup.state === "looking") return { commit: asked, body: waitingWords(peek.symbol, lookup, now) };
   if (lookup.state === "failed") return { commit: asked, body: lookup.problem };
   const answer = lookup.answer;
-  if (answer.state === "not_set_up")
-    return { commit: asked, body: "Set up ty to go to definitions in Python" };
+  if (answer.state === "not_set_up") {
+    const { name, language } = SERVERS[answer.server];
+    return { commit: asked, body: `Set up ${name} to go to definitions in ${language}` };
+  }
   if (answer.state === "no_server") {
     return { commit: asked, body: "Tsugiki can't go to definitions in this file's language yet" };
   }

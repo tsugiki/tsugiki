@@ -230,6 +230,15 @@ impl TryFrom<u8> for Severity {
     }
 }
 
+/// How rust-analyzer stands, from its `experimental/serverStatus`.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct Status {
+    /// Whether it has loaded the workspace and has no work left that could change an answer.
+    pub quiescent: bool,
+    /// What it says is wrong, if anything is, such as a workspace cargo couldn't read.
+    pub message: Option<String>,
+}
+
 /// A server's progress on a piece of work, such as clangd's index.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct Progress {

@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import type { ServerName } from "$lib/data/bindings";
 import type { LaidThread, ThreadAnchor } from "./diff-layout";
 import { PEEK_ID, peekWords, withPeek, type Peek } from "./peek";
 
@@ -54,6 +55,16 @@ it("says what a lookup waits for, with the seconds once they pass one", () => {
     "Asking ty for the definition of eggs… 3 s",
   );
   expect(body({ state: "looking", waiting: asking })).toBe("Asking ty for the definition of eggs…");
+  const rust = { step: "starting", server: "rust-analyzer" } as const;
+  expect(body({ state: "looking", waiting: rust })).toBe("Starting rust-analyzer…");
+});
+
+it("says how to set up the server for the file's language", () => {
+  const notSetUp = (server: ServerName) =>
+    peekWords(looking({ state: "answered", answer: { state: "not_set_up", server } })).body;
+
+  expect(notSetUp("ty")).toBe("Set up ty to go to definitions in Python");
+  expect(notSetUp("rust-analyzer")).toBe("Set up rust-analyzer to go to definitions in Rust");
 });
 
 it("says a lookup was cancelled, in a peek with words only", () => {

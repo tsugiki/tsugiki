@@ -18,13 +18,16 @@ use windows::Win32::System::Threading::CREATE_NO_WINDOW;
 
 use crate::client::{Event, Process, Server, Starting, Streams};
 
-/// A server's program, its arguments and the folder it starts in.
+/// A server's program, its arguments, the folder it starts in and the variables it gets.
 #[derive(Clone, Debug)]
 pub struct Launch {
     pub program: PathBuf,
     pub args: Vec<OsString>,
     /// The folder the server starts in.
     pub folder: PathBuf,
+    /// Variables the server gets on top of Tsugiki's own, which the processes it starts inherit. An empty
+    /// value overrides one Tsugiki has.
+    pub env: Vec<(OsString, OsString)>,
 }
 
 impl Server {
@@ -34,6 +37,7 @@ impl Server {
         let mut command = Command::new(&launch.program);
         let _ = command
             .args(&launch.args)
+            .envs(launch.env.iter().map(|(name, value)| (name, value)))
             .current_dir(&launch.folder)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

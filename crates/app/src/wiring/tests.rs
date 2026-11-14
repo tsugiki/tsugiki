@@ -1709,7 +1709,7 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     someone_elses_pr_1(&folders, &head);
     // The ty that `just cargo-test` and `just rust-coverage` fetch.
     let ty = Path::new(&std::env::var_os("TSUGIKI_TY").unwrap_or_default()).to_owned();
-    assert!(ty.is_file(), "TSUGIKI_TY={ty:?}: see just fetch-ty");
+    assert!(ty.is_file(), "TSUGIKI_TY={ty:?}: see just test-servers");
     let machine = format!("[language_servers.ty]\npath = '{}'\n", ty.display());
     std::fs::write(folders.machine_file(), machine).unwrap();
     let wired = Wired::start(Ok(folders), no_network());
@@ -1729,6 +1729,8 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     let at_head = look(1, "head", "Lib/spam.py");
     let at_base = look(2, "base", "Lib/spam.py");
     let other = look(3, "head", "Lib/spam.c");
+    // `machine.toml` names no rust-analyzer.
+    let rust = look(6, "head", "src/lib.rs");
     // The peek shows the hit's code from the mirror, at the hit's commit.
     let code = |commit: &str| {
         let file = json!({ "kind": "repository", "path": "Lib/spam.py", "commit": commit });
@@ -1764,7 +1766,9 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     };
     assert_eq!(at_head, Ok(hit("head", &head, "x15 = 'fifteen'")));
     assert_eq!(at_base, Ok(hit("base", &base, "x15 = 15")));
-    assert_eq!(other, Ok(json!({ "state": "no_server" })));
+    let no_server = json!({ "state": "no_server" });
+    let rust_analyzer = json!({ "state": "not_set_up", "server": "rust-analyzer" });
+    assert_eq!((other, rust), (Ok(no_server), Ok(rust_analyzer)));
     let lines = |line_15: &str| json!({ "count": 30, "lines": ["x14 = 14", line_15, "x16 = 16"] });
     assert_eq!(code_at_head, Ok(lines("x15 = 'fifteen'")));
     assert_eq!(code_at_base, Ok(lines("x15 = 15")));

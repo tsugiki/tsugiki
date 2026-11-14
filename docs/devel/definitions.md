@@ -34,8 +34,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   The core asks ty where the word is defined, through `tsugiki-lsp`, off the window's thread. Esc or ✕
   closes the peek and gives the focus back to the diff.
 - Until Settings can pick it (#683), ty's binary comes from `[language_servers.ty] path` in `machine.toml`.
-  A relative path starts at `machine.toml`'s folder. We test with ty 0.0.103, which `just fetch-ty` fetches.
-  The tests read its path from `TSUGIKI_TY`, which `just cargo-test` and `just rust-coverage` set.
+  A relative path starts at `machine.toml`'s folder. We test with ty 0.0.103, which `just test-servers`
+  fetches. The tests read its path from `TSUGIKI_TY`, which `just cargo-test` and `just rust-coverage` set.
 - Each Repository gets its own ty. It starts when a PR that changes a `.py` or `.pyi` file opens, once the
   Lookup checkout is at that PR, and never when Tsugiki starts. A lookup that comes first starts it too. A
   PR at other commits gets a new ty, as the checkout has moved, and Tsugiki stops each ty when it quits.
@@ -101,6 +101,33 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   several hits it goes to the first that lands, until #446 opens the peek with the list.
 - A development build gives `F12` to Go to definition too, and opens DevTools on `Ctrl+Shift+I` or from the
   palette.
+
+## Go to definition in Rust
+
+- Go to definition and the Definition peek work in `.rs` files as they do in Python, through rust-analyzer.
+  The PR's changed Rust files open on it and switch views as Python's do on ty.
+- Until Settings can pick it (#683), rust-analyzer's binary comes from `[language_servers.rust-analyzer]
+  path` in `machine.toml`. Pick the one inside a Rust toolchain, which `rustup which rust-analyzer` prints:
+  rust-analyzer then reads the standard library from that toolchain's `rust-src`. One outside a toolchain
+  finds no definition in the standard library.
+- We test with rust-analyzer 1.99.1 (58cf8f9c 2026-10-13), the rustup component of the Rust 1.99.1 that
+  `rust-toolchain.toml` pins, which installs it with `rust-src`. The tests read its path from
+  `TSUGIKI_RUST_ANALYZER`, which `just cargo-test` and `just rust-coverage` set from `rustup which`.
+- rust-analyzer starts on the first lookup in a `.rs` file, never when a PR opens. It finds nothing in a file
+  until it has loaded the workspace, so the core waits until rust-analyzer says it is quiescent, for at most
+  30 s, while the peek says "Starting rust-analyzer…". On Tsugiki's own repository that first lookup takes
+  about 9 s, and each lookup after it a few milliseconds.
+- A lookup never runs the Repository's code. rust-analyzer runs no build script, builds no proc macro, and
+  runs no `cargo check` or diagnostics. Cargo works offline, so it downloads nothing, and resolves the
+  dependencies its cache holds. A dependency it lacks leaves lookups in the workspace and the standard
+  library working.
+- What rust-analyzer starts runs with the toolchain rust-analyzer is in: `RUSTUP_TOOLCHAIN`, `CARGO` and
+  `RUSTC` name it, whatever toolchain the checkout's `rust-toolchain.toml` names, and `RUSTUP_AUTO_INSTALL=0`
+  stops rustup installing one. An empty `RUSTC_WRAPPER` beats a wrapper the checkout's `.cargo/config.toml`
+  names.
+- rust-analyzer 1.99.1 reads a `rust-analyzer.toml` at the checkout's root. It refuses `procMacro.enable`
+  there, and a `cargo.buildScripts.enable = true` there builds nothing, which a test checks. It also reads
+  the user's own `rust-analyzer.toml` in their config folder.
 
 ## Text search
 

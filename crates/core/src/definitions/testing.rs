@@ -1,5 +1,5 @@
 //! A Repository with a PR, a Lookup checkout at its base as the Mirror worker leaves one, built with the
-//! real git (ADR 0009), and the ty the tests start.
+//! real git (ADR 0009), and the servers the tests start.
 
 use std::path::{Path, PathBuf};
 use std::{env, fs};
@@ -11,11 +11,22 @@ use crate::mirror::{LookupAt, LookupCheckout};
 use crate::testing::temp_path;
 
 /// The ty that `TSUGIKI_TY` names, which `just cargo-test` and `just rust-coverage` set to the one
-/// `scripts/fetch-ty.ts` fetches.
+/// `scripts/test-servers.ts` fetches.
 pub(crate) fn ty() -> PathBuf {
     let ty = PathBuf::from(env::var_os("TSUGIKI_TY").unwrap_or_default());
-    assert!(ty.is_file(), "TSUGIKI_TY={ty:?}: see just fetch-ty");
+    assert!(ty.is_file(), "TSUGIKI_TY={ty:?}: see just test-servers");
     ty
+}
+
+/// The rust-analyzer that `TSUGIKI_RUST_ANALYZER` names, which `just cargo-test` and `just rust-coverage`
+/// set to the one in the toolchain `rust-toolchain.toml` pins.
+pub(crate) fn rust_analyzer() -> PathBuf {
+    let path = PathBuf::from(env::var_os("TSUGIKI_RUST_ANALYZER").unwrap_or_default());
+    assert!(
+        path.is_file(),
+        "TSUGIKI_RUST_ANALYZER={path:?}: see just test-servers"
+    );
+    path
 }
 
 /// A repository whose `main` is the PR's base, and whose PR's head changes, adds and deletes files.

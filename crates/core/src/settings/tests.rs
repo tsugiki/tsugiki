@@ -1543,6 +1543,22 @@ fn machine_toml_says_where_ty_is_from_its_own_folder() {
 }
 
 #[test]
+fn machine_toml_says_where_rust_analyzer_is_beside_ty() {
+    let (folders, root) = temp_folders("language-servers-rust");
+    let text = "[language_servers.ty]\npath = 'ty.exe'\n[language_servers.rust-analyzer]\npath = 'ra/rust-analyzer.exe'\n";
+    fs::write(folders.machine_file(), text).unwrap();
+
+    let servers = SettingsFiles::load(folders.clone()).view().language_servers;
+    fs::remove_dir_all(root).unwrap();
+
+    let expected = LanguageServers {
+        ty: Some(folders.data.join("ty.exe")),
+        rust_analyzer: Some(folders.data.join("ra/rust-analyzer.exe")),
+    };
+    assert_eq!(servers, expected);
+}
+
+#[test]
 fn machine_toml_says_where_each_mirror_gets_its_objects_and_skips_what_it_cant_read() {
     let (folders, root) = temp_folders("mirror-sources");
     let mine = r#"[mirrors]

@@ -41,9 +41,9 @@ export default defineConfig({
         // coverage: make a real branch and run cargo, or push a real tag, with their logic in releasing.ts.
         "../scripts/prepare-release.ts",
         "../scripts/tag-release.ts",
-        // coverage: downloads a real ty from GitHub and unpacks it, which no unit test can do; the Rust tests
-        // that start it run it.
-        "../scripts/fetch-ty.ts",
+        // coverage: downloads a real ty from GitHub and unpacks it, and asks rustup for rust-analyzer, which
+        // no unit test can do; the Rust tests that start them run it.
+        "../scripts/test-servers.ts",
         // coverage: lists a real milestone's tickets on GitHub, with its logic in pr.ts and tickets.ts.
         "../scripts/next.ts",
         // coverage: reads Claude Code's call from stdin, with its logic in shell-edits.ts.

@@ -1,15 +1,16 @@
 //! Where a name in the open PR's code is defined, which the Definition peek and Go to definition ask a
-//! language server (ADR 0020). ty answers in Python.
+//! language server (ADR 0020). ty answers in Python, and rust-analyzer in Rust.
 //!
-//! Each Repository gets its own ty, which starts when a PR that changes a Python file opens and reads that
-//! Repository's **Lookup checkout**: the PR's base on disk, with the files the PR adds. Each Python file the
-//! PR changes is open on ty with its text at the head. A lookup from a removed line first gives those files
+//! Each Repository gets its own server for each language, which reads that Repository's **Lookup
+//! checkout**: the PR's base on disk, with the files the PR adds. ty starts when a PR that changes a Python
+//! file opens, and rust-analyzer on the first lookup in Rust. Each file the PR changes in the server's
+//! language is open on it with its text at the head. A lookup from a removed line first gives those files
 //! their text at the base, and the next lookup from another line puts the head's back. A PR at other commits
-//! gets a new ty, as its checkout has moved.
+//! gets new servers, as its checkout has moved.
 //!
-//! One thread owns the servers, and each lookup is a message to it, so the window never waits on ty. The
-//! thread sends ty the request and goes on, and a thread of the lookup's own waits for ty's answer and hands
-//! it back as a message. A newer lookup, or a cancel, cancels the one running.
+//! One thread owns the servers, and each lookup is a message to it, so the window never waits on a server.
+//! The thread sends the server the request and goes on, and a thread of the lookup's own waits for the
+//! answer and hands it back as a message. A newer lookup, or a cancel, cancels the one running.
 
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
@@ -32,16 +33,18 @@ use crate::mirror::{LookupAt, LookupCheckout};
 use crate::repository::RepositoryName;
 use code::HitFiles;
 pub use code::{Code, HitFile};
-use ty::Ty;
+use server::LanguageServer;
 
 mod code;
+mod rust_analyzer;
+mod server;
 #[cfg(test)]
 mod testing;
 #[cfg(test)]
 mod tests;
 mod ty;
 
-/// The longest ty gets to start. A lookup has no time limit, as the user can cancel it.
+/// The longest a server gets to start. A lookup has no time limit, as the user can cancel it.
 const PATIENCE: Duration = Duration::from_secs(30);
 
 /// A lookup the window asks for: where the name at `column` of line `line` of `path` is defined, with the
@@ -57,7 +60,7 @@ pub struct Lookup {
     /// The line's number at `side`, from 1.
     pub line: u32,
     /// Where the name starts in the line, in UTF-16 code units. The window counts a line's text in them, as
-    /// LSP does, so the column goes to ty as it is.
+    /// LSP does, so the column goes to the server as it is.
     pub column: u32,
 }
 
@@ -73,8 +76,8 @@ pub enum Place {
         #[specta(type = String)]
         commit: CommitSha,
     },
-    /// A file outside the Repository, such as a stub of the standard library that ty keeps, by its path on
-    /// disk.
+    /// A file outside the Repository, such as a stub of the standard library that ty keeps or a file of
+    /// Rust's standard library, by its path on disk.
     Outside { path: String },
 }
 
@@ -86,7 +89,7 @@ pub struct Hit {
     pub line: u32,
     /// Where the definition's name starts in the line, in UTF-16 code units.
     pub column: u32,
-    /// The line's text, as ty read it.
+    /// The line's text, as the server read it.
     pub text: String,
 }
 
@@ -94,10 +97,10 @@ pub struct Hit {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum Answer {
-    /// The places ty named, in its order, which may be none.
+    /// The places the server named, in its order, which may be none.
     Found { hits: Vec<Hit> },
-    /// No ty is set up, so Tsugiki can't look up a name in Python.
-    NotSetUp,
+    /// The server for the file's language isn't set up.
+    NotSetUp { server: ServerName },
     /// Tsugiki has no server for the file's language yet.
     NoServer,
     /// A newer lookup, or the user, cancelled it before the server answered.
@@ -105,10 +108,34 @@ pub enum Answer {
 }
 
 /// A language server Tsugiki talks to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum ServerName {
+    /// ty, for Python.
     Ty,
+    /// rust-analyzer, for Rust.
+    RustAnalyzer,
+}
+
+impl ServerName {
+    /// The server that answers lookups in the file at `path`, by its extension.
+    fn of(path: &str) -> Option<Self> {
+        if path.ends_with(".py") || path.ends_with(".pyi") {
+            Some(Self::Ty)
+        } else if path.ends_with(".rs") {
+            Some(Self::RustAnalyzer)
+        } else {
+            None
+        }
+    }
+
+    /// The server's name, as Tsugiki's messages say it.
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Ty => "ty",
+            Self::RustAnalyzer => "rust-analyzer",
+        }
+    }
 }
 
 /// What a lookup waits for, which the Definition peek says while it waits.
@@ -135,8 +162,8 @@ pub type FindCheckout = Box<dyn Fn(&RepositoryName) -> Option<LookupCheckout> + 
 /// What the servers' thread asks the rest of Tsugiki.
 pub struct Sources {
     pub checkout: FindCheckout,
-    /// Where ty is, if the user has set it up.
-    pub ty: Box<dyn Fn() -> Option<PathBuf> + Send>,
+    /// Where each server is, if the user has set it up.
+    pub servers: Box<dyn Fn(ServerName) -> Option<PathBuf> + Send>,
 }
 
 /// The handle the rest of Tsugiki asks the servers' thread through. The thread stops once the last handle
@@ -177,18 +204,18 @@ impl Definitions {
         self.files.read(mirror, file, lines)
     }
 
-    /// Starts ty for the PR whose diff at `at` changes `files`, if one of them is in Python, and returns at
-    /// once. ty starts once the Lookup checkout is at `at`.
+    /// Notes the PR whose diff at `at` changes `files`, if a server reads one of them, and returns at once.
+    /// ty starts for a PR that changes a Python file, once the Lookup checkout is at `at`.
     pub fn opened(&self, repository: RepositoryName, at: LookupAt, files: &[DiffFile]) {
-        let changed = python_files(files);
+        let changed = served_files(files);
         if !changed.is_empty() {
             self.send(Message::Opened(repository, Pr { at, changed }));
         }
     }
 
-    /// Where `lookup`'s name is defined. It cancels the lookup running, if one is, and waits for ty, and for
-    /// ty to start if it hasn't, so the window asks it from a thread of its own. `waiting` hears what it
-    /// waits for as that changes, and a cancel that names `ticket` cancels it.
+    /// Where `lookup`'s name is defined. It cancels the lookup running, if one is, and waits for the server,
+    /// and for the server to start if it hasn't, so the window asks it from a thread of its own. `waiting`
+    /// hears what it waits for as that changes, and a cancel that names `ticket` cancels it.
     pub fn look_up(
         &self,
         lookup: Lookup,
@@ -212,8 +239,8 @@ impl Definitions {
         self.send(Message::Cancel(ticket));
     }
 
-    /// Asks each ty to stop, and waits up to `patience` for them to end. The thread then ends, and a later
-    /// lookup says so.
+    /// Asks each server to stop, and waits up to `patience` for them to end. The thread then ends, and a
+    /// later lookup says so.
     pub fn stop(&self, patience: Duration) {
         let (reply, stopped) = mpsc::channel();
         self.send(Message::Stop(patience, reply));
@@ -226,26 +253,22 @@ impl Definitions {
     }
 }
 
-/// The paths at the head of the Python files in `files`. A path with a line break can't be read with
-/// `git cat-file --batch`, which reads a name a line.
-fn python_files(files: &[DiffFile]) -> Vec<String> {
+/// The paths at the head of the files in `files` that a server reads. A path with a line break can't be read
+/// with `git cat-file --batch`, which reads a name a line.
+fn served_files(files: &[DiffFile]) -> Vec<String> {
     (files.iter())
         .map(|file| &file.path)
-        .filter(|path| is_python(path) && !path.contains('\n'))
+        .filter(|path| ServerName::of(path).is_some() && !path.contains('\n'))
         .cloned()
         .collect()
-}
-
-fn is_python(path: &str) -> bool {
-    path.ends_with(".py") || path.ends_with(".pyi")
 }
 
 enum Message {
     Opened(RepositoryName, Pr),
     LookUp(Lookup, Asker),
     Cancel(Ticket),
-    /// ty's answer to the lookup numbered so, as the places it names, which a thread of the lookup's own
-    /// hands back.
+    /// The server's answer to the lookup numbered so, as the places it names, which a thread of the lookup's
+    /// own hands back.
     Answered(u64, Result<Vec<Hit>, RequestError>),
     Stop(Duration, Sender<()>),
 }
@@ -266,47 +289,66 @@ impl Asker {
 
 /// What became of a lookup the servers' thread took.
 enum Sent {
-    /// It has its answer, and ty was asked nothing.
+    /// It has its answer, and no server was asked.
     Answered(Answer),
-    /// ty was asked, and its answer comes back with this number. The canceller cancels it.
+    /// A server was asked, and its answer comes back with this number. The canceller cancels it.
     Asked(u64, Canceller),
 }
 
-/// The lookup ty works on.
+/// A Repository's server for one language.
+type Key = (RepositoryName, ServerName);
+
+/// The servers that start when a PR that changes a file in their language opens. rust-analyzer waits for the
+/// first lookup in Rust, as it reads the whole workspace as it starts.
+const STARTED_BY_PR: [ServerName; 1] = [ServerName::Ty];
+
+/// The lookup a server works on.
 struct Running {
     /// The number its answer comes back with.
     id: u64,
     asker: Asker,
-    repository: RepositoryName,
+    /// The server it asked.
+    server: Key,
     canceller: Canceller,
 }
 
-/// A PR on screen: its diff's two ends, and the paths at the head of the Python files it changes.
+/// A PR on screen: its diff's two ends, and the paths at the head of the files it changes that a server
+/// reads.
 #[derive(Debug, Clone)]
 struct Pr {
     at: LookupAt,
     changed: Vec<String>,
 }
 
+impl Pr {
+    /// The files it changes in `server`'s language.
+    fn changed_for(&self, server: ServerName) -> Vec<String> {
+        (self.changed.iter())
+            .filter(|path| ServerName::of(path) == Some(server))
+            .cloned()
+            .collect()
+    }
+}
+
 /// The servers' thread.
 struct Owner {
     sources: Sources,
-    /// The last PR each Repository opened that changes a Python file.
+    /// The last PR each Repository opened that changes a file a server reads.
     prs: HashMap<RepositoryName, Pr>,
-    servers: HashMap<RepositoryName, Ty>,
+    servers: HashMap<Key, LanguageServer>,
     /// The files the peek reads, among them those outside the Repository that a hit has named.
     files: Arc<HitFiles>,
-    /// The lookup ty works on, if one is.
+    /// The lookup a server works on, if one does.
     running: Option<Running>,
     /// The ticket of a cancel that came before its lookup, which cancels that lookup if it comes next.
     cancelled: Option<Ticket>,
-    /// How many lookups ty has been asked.
+    /// How many lookups the servers have been asked.
     asked: u64,
-    /// The thread's own messages: those it takes, and the way the threads that wait for ty hand back its
-    /// answers. Holding a sender keeps the channel open, so the thread ends only on a stop.
+    /// The thread's own messages: those it takes, and the way the threads that wait for a server hand back
+    /// its answers. Holding a sender keeps the channel open, so the thread ends only on a stop.
     own: Sender<Message>,
     incoming: Receiver<Message>,
-    /// Messages taken early, to see whether a newer lookup came while ty started, and not handled yet.
+    /// Messages taken early, to see whether a newer lookup came while a server started, and not handled yet.
     queued: VecDeque<Message>,
 }
 
@@ -357,21 +399,22 @@ impl Owner {
         true
     }
 
-    /// Asks each ty to stop, then waits up to `patience` in all for them to end.
+    /// Asks each server to stop, then waits up to `patience` in all for them to end.
     fn stop(&mut self, patience: Duration) {
         let until = Instant::now() + patience;
-        let stopping: Vec<Ty> = self.servers.drain().map(|(_, ty)| ty).collect();
-        for ty in &stopping {
-            let _agreed = ty.shutdown();
+        let stopping: Vec<LanguageServer> =
+            self.servers.drain().map(|(_, server)| server).collect();
+        for server in &stopping {
+            let _agreed = server.shutdown();
         }
-        for ty in stopping {
-            ty.wait_for_exit(until);
+        for server in stopping {
+            server.wait_for_exit(until);
         }
     }
 
-    /// Starts ty for `pr`, unless `pr` is the Repository's PR already. The Files tab reads its PR again on
-    /// each change, and a ty that failed to start, or a checkout that failed to move, waits for a lookup to
-    /// try again.
+    /// Starts the servers that start with a PR for `pr`, in each language it changes a file in, unless `pr`
+    /// is the Repository's PR already. The Files tab reads its PR again on each change, and a server that
+    /// failed to start, or a checkout that failed to move, waits for a lookup to try again.
     fn opened(&mut self, repository: &RepositoryName, pr: Pr) {
         if self
             .prs
@@ -381,43 +424,54 @@ impl Owner {
             return;
         }
         let _old = self.prs.insert(repository.clone(), pr.clone());
-        let Some(program) = (self.sources.ty)() else {
+        for name in STARTED_BY_PR {
+            if !pr.changed_for(name).is_empty() {
+                self.start(&(repository.clone(), name), &pr);
+            }
+        }
+    }
+
+    /// Starts the server `key` names for `pr`, if the user has set it up.
+    fn start(&mut self, key: &Key, pr: &Pr) {
+        let (repository, name) = key;
+        let Some(program) = (self.sources.servers)(*name) else {
             return;
         };
-        let replaces = (self.servers.get(repository)).is_some_and(|ty| *ty.at() != pr.at);
+        let replaces = (self.servers.get(key)).is_some_and(|server| *server.at() != pr.at);
         let checkout = &self.sources.checkout;
-        let started = ready(
-            &mut self.servers,
-            checkout,
-            (repository, &pr),
-            (&program, &|_| {}),
-        );
-        match started.map(|_ty| ()) {
-            // The ty that the lookup running asked has stopped.
-            Ok(()) if replaces && self.asks(repository) => self.cancel_running(),
+        let started = ready(&mut self.servers, checkout, (key, pr), (&program, &|_| {}));
+        match started.map(|_server| ()) {
+            // The server that the lookup running asked has stopped.
+            Ok(()) if replaces && self.asks(key) => self.cancel_running(),
             Ok(()) => {}
             Err(problem) => log::warn!(
-                "Tsugiki couldn't start ty for {repository}: {}",
+                "Tsugiki couldn't start {} for {repository}: {}",
+                name.as_str(),
                 problem.message
             ),
         }
     }
 
-    /// Cancels the lookup running, if one is, and sends ty the request for `lookup`, unless a cancel for it
-    /// came first, or a newer lookup or its cancel came while ty started. Its answer comes back as
-    /// [`Message::Answered`].
+    /// Cancels the lookup running, if one is, and sends the server for the lookup's language the request for
+    /// `lookup`, unless a cancel for it came first, or a newer lookup or its cancel came while the server
+    /// started. Its answer comes back as [`Message::Answered`].
     fn look_up(&mut self, lookup: Lookup, asker: Asker) {
         self.cancel_running();
         if self.cancelled.take() == Some(asker.ticket) {
             asker.answer(Ok(Answer::Cancelled));
             return;
         }
-        match self.send(&lookup, &asker) {
+        let Some(name) = ServerName::of(&lookup.path) else {
+            asker.answer(Ok(Answer::NoServer));
+            return;
+        };
+        let key = (lookup.repository.clone(), name);
+        match self.send(&key, &lookup, &asker) {
             Ok(Sent::Asked(id, canceller)) => {
                 self.running = Some(Running {
                     id,
                     asker,
-                    repository: lookup.repository,
+                    server: key,
                     canceller,
                 });
             }
@@ -426,15 +480,13 @@ impl Owner {
         }
     }
 
-    /// Sends ty the request for `lookup`, starting ty if it has to, and tells `asker` what it waits for.
-    fn send(&mut self, lookup: &Lookup, asker: &Asker) -> Result<Sent, Error> {
-        if !is_python(&lookup.path) {
-            return Ok(Sent::Answered(Answer::NoServer));
-        }
-        let Some(program) = (self.sources.ty)() else {
-            return Ok(Sent::Answered(Answer::NotSetUp));
+    /// Sends the server `key` names the request for `lookup`, starting the server if it has to, and tells
+    /// `asker` what it waits for.
+    fn send(&mut self, key: &Key, lookup: &Lookup, asker: &Asker) -> Result<Sent, Error> {
+        let (repository, name) = key;
+        let Some(program) = (self.sources.servers)(*name) else {
+            return Ok(Sent::Answered(Answer::NotSetUp { server: *name }));
         };
-        let repository = &lookup.repository;
         let unknown = Pr {
             at: lookup.at.clone(),
             changed: Vec::new(),
@@ -443,14 +495,13 @@ impl Owner {
             .filter(|pr| pr.at == lookup.at)
             .cloned()
             .unwrap_or(unknown);
-        let server = ServerName::Ty;
-        let starts = !self.runs(repository, &pr.at);
+        let starts = !self.runs(key, &pr.at);
         let checkout = &self.sources.checkout;
         let waiting: &dyn Fn(Waiting) = &asker.waiting;
         let start = (program.as_path(), waiting);
-        let ty = ready(&mut self.servers, checkout, (repository, &pr), start)?;
+        let server = ready(&mut self.servers, checkout, (key, &pr), start)?;
         if starts {
-            // The user may have asked again, or cancelled, while ty started.
+            // The user may have asked again, or cancelled, while the server started.
             self.queued.extend(self.incoming.try_iter());
             let newer = |message: &Message| match message {
                 Message::LookUp(..) => true,
@@ -461,8 +512,8 @@ impl Owner {
                 return Ok(Sent::Answered(Answer::Cancelled));
             }
         }
-        (asker.waiting)(Waiting::Asking { server });
-        let (pending, hits) = ty.ask(lookup)?;
+        (asker.waiting)(Waiting::Asking { server: *name });
+        let (pending, hits) = server.ask(lookup)?;
         self.asked += 1;
         let id = self.asked;
         let canceller = pending.canceller();
@@ -475,7 +526,7 @@ impl Owner {
         Ok(Sent::Asked(id, canceller))
     }
 
-    /// Hands the asker of the lookup numbered `id` ty's answer, unless it was cancelled since.
+    /// Hands the asker of the lookup numbered `id` the server's answer, unless it was cancelled since.
     fn answered(&mut self, id: u64, hits: Result<Vec<Hit>, RequestError>) {
         let Some(running) = self.running.take_if(|running| running.id == id) else {
             return;
@@ -491,9 +542,10 @@ impl Owner {
                 Ok(Answer::Found { hits })
             }
             Err(cause) => {
-                // A ty that failed starts afresh on the next lookup.
-                let _failed = self.servers.remove(&running.repository);
-                Err(failed(&format!("ty couldn't answer: {cause}")))
+                // A server that failed starts afresh on the next lookup.
+                let _failed = self.servers.remove(&running.server);
+                let name = running.server.1.as_str();
+                Err(failed(&format!("{name} couldn't answer: {cause}")))
             }
         };
         running.asker.answer(answer);
@@ -508,7 +560,8 @@ impl Owner {
         }
     }
 
-    /// Cancels the lookup running, if one is: ty stops working on it, and its asker hears it was cancelled.
+    /// Cancels the lookup running, if one is: the server stops working on it, and its asker hears it was
+    /// cancelled.
     fn cancel_running(&mut self) {
         if let Some(running) = self.running.take() {
             running.canceller.cancel();
@@ -516,48 +569,47 @@ impl Owner {
         }
     }
 
-    /// Whether the lookup running asked `repository`'s ty.
-    fn asks(&self, repository: &RepositoryName) -> bool {
-        (self.running.as_ref()).is_some_and(|running| running.repository == *repository)
+    /// Whether the lookup running asked the server `key` names.
+    fn asks(&self, key: &Key) -> bool {
+        (self.running.as_ref()).is_some_and(|running| running.server == *key)
     }
 
-    /// Whether a ty reads `at`'s checkout for `repository`.
-    fn runs(&self, repository: &RepositoryName, at: &LookupAt) -> bool {
-        (self.servers.get(repository)).is_some_and(|ty| ty.at() == at)
+    /// Whether the server `key` names reads `at`'s checkout.
+    fn runs(&self, key: &Key, at: &LookupAt) -> bool {
+        (self.servers.get(key)).is_some_and(|server| server.at() == at)
     }
 }
 
-/// The ty in `servers` that reads `pr` for `repository`, started at `program` if none does, which `waiting`
-/// hears. A ty that reads another PR's checkout stops once the checkout is at `pr`, and goes on while it
-/// isn't.
+/// The server in `servers` that `key` names and that reads `pr`, started at `program` if none does, which
+/// `waiting` hears. A server that reads another PR's checkout stops once the checkout is at `pr`, and goes on
+/// while it isn't.
 fn ready<'a>(
-    servers: &'a mut HashMap<RepositoryName, Ty>,
+    servers: &'a mut HashMap<Key, LanguageServer>,
     checkout: &FindCheckout,
-    (repository, pr): (&RepositoryName, &Pr),
+    (key, pr): (&Key, &Pr),
     (program, waiting): (&Path, &dyn Fn(Waiting)),
-) -> Result<&'a mut Ty, Error> {
-    let entry = match servers.entry(repository.clone()) {
+) -> Result<&'a mut LanguageServer, Error> {
+    let (repository, name) = key;
+    let entry = match servers.entry(key.clone()) {
         Entry::Occupied(running) if *running.get().at() == pr.at => return Ok(running.into_mut()),
         entry @ (Entry::Occupied(_) | Entry::Vacant(_)) => entry,
     };
-    let elsewhere = Error::new(
-        ErrorKind::NotFound,
-        "Tsugiki has no copy of this PR's files for ty to read yet.",
+    let elsewhere = format!(
+        "Tsugiki has no copy of this PR's files for {} to read yet.",
+        name.as_str()
     );
     let checkout = checkout(repository)
         .filter(|checkout| checkout.at == pr.at)
-        .ok_or(elsewhere)?;
-    waiting(Waiting::Starting {
-        server: ServerName::Ty,
-    });
+        .ok_or_else(|| Error::new(ErrorKind::NotFound, &elsewhere))?;
+    waiting(Waiting::Starting { server: *name });
     if let Entry::Occupied(old) = &entry {
         let _stopping = old.get().shutdown();
     }
-    let ty = Ty::start(program, checkout, &pr.changed)?;
-    Ok(entry.insert_entry(ty).into_mut())
+    let server = LanguageServer::start(*name, program, checkout, &pr.changed_for(*name))?;
+    Ok(entry.insert_entry(server).into_mut())
 }
 
-/// `path` without its `.` and `..` parts, as ty names the files it read.
+/// `path` without its `.` and `..` parts, as a server names the files it read.
 fn plain(path: &Path) -> PathBuf {
     let mut plain = PathBuf::new();
     for part in path.components() {

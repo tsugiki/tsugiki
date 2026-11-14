@@ -33,7 +33,7 @@ both use clangd and rust-analyzer.
 |---|---|---|
 | Python | ty | `environment.root = ["Lib"]` and the Python version, over LSP |
 | C | clangd | A `compile_commands.json` with one entry for each core C file of the commit, all with the same flags, written to `repos\<owner>__<name>\servers\clangd\` beside the checkout, where clangd keeps its index too. Started with `--background-index --background-index-priority=low -j=4` |
-| Rust | rust-analyzer | Build scripts and proc macros off |
+| Rust | rust-analyzer | Build scripts, proc macros and `cargo check` off, cargo offline, and the toolchain rust-analyzer is in, whatever `rust-toolchain.toml` says |
 
 - **The user supplies each server.** They unpack it themselves and pick its binary in Settings, and Tsugiki
   saves the path in `machine.toml`. Tsugiki downloads nothing. The docs and Settings name the versions we

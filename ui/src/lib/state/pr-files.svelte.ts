@@ -60,7 +60,7 @@ import { diffShows, inRepository, type FileView } from "./file-view";
 import { HitCode } from "./hit-code.svelte";
 import { hud, type Jump, type JumpTimer } from "./hud.svelte";
 import type { PanesState } from "./panes.svelte";
-import { PEEK_ID, peekPlaces, withPeek, type IndexNews, type Peek } from "./peek";
+import { PEEK_ID, peekPlaces, withPeek, type Crumb, type IndexNews, type Peek } from "./peek";
 import { wordAt, type Column, type Pick, type Picked, type PickedLine, type Side } from "./pick";
 import { waitForSpans } from "./spans-wait";
 
@@ -131,12 +131,12 @@ const hitsOf = (peek: Peek | undefined): Hit[] | undefined => {
   return lookup?.state === "answered" && lookup.answer.state === "found" ? lookup.answer.hits : undefined;
 };
 
-/** The hit `peek` shows and its code, while it shows one. */
-function shownHit(peek: Peek | undefined): { hit: Hit; code: HitCode } | undefined {
+/** The hit `peek` shows and its code, with the hits it lists, while it shows one. */
+function shownHit(peek: Peek | undefined): { hit: Hit; code: HitCode; hits: Hit[] } | undefined {
   const code = peek?.code;
-  if (code === undefined) return undefined;
-  const hit = hitsOf(peek)?.[code.index];
-  return hit && { hit, code };
+  const hits = hitsOf(peek);
+  const hit = code && hits?.[code.index];
+  return code && hits && hit && { hit, code, hits };
 }
 
 /** Whether two hits are at the same place and line. */
@@ -148,6 +148,10 @@ type Landing = { row: number; side: DiffEnd };
 
 /** Where Go to definition goes: a line of the diff, or the file view of a file the PR doesn't change. */
 type Goal = { kind: "diff"; landing: Landing } | { kind: "file"; view: FileView };
+
+/** A lookup's question: the peek that shows its answer, before it has one, and the word's place as the core
+ * takes it: the file's path at the peek's side, the line and the word's column. */
+type Asked = { peek: Omit<Peek, "lookup">; path: string; line: number; column: number };
 
 /** How long Go to definition says it found nothing. */
 export const NOTICE_MS = 4000;
@@ -250,9 +254,11 @@ export class PrFilesState {
   /** Whether Go to definition looks a word up, or Open in the peek finds its hit's row, which Escape
    * stops. */
   going = $state(false);
-  /** Whether the peek's list should take the focus, as Go to definition opened it with several hits for the
-   * user to pick from (#446). */
-  peekWantsFocus = $state(false);
+  /** Where the peek should take the focus, once the diff draws it: "take" for its list, or the peek itself
+   * while it has none, as Go to definition opened it with several hits for the user to pick from (#446), or
+   * a lookup from inside the peek runs (#447). "keep" for its list once that lookup answers, if the peek
+   * still holds the focus: a focus the user moved elsewhere in the meantime stays where it is. */
+  peekFocus = $state<"take" | "keep">();
   /** A line over the diff while Go to definition looks a word up, or for a moment once it found nothing. */
   notice = $state<string>();
   /** Why the core couldn't search, which the search box says. */
@@ -999,7 +1005,7 @@ export class PrFilesState {
     if (goal === undefined || hitsOf(now) !== hits) {
       this.#peek = now;
       this.peekOpened = true;
-      this.peekWantsFocus = (hitsOf(now)?.length ?? 0) > 1;
+      this.peekFocus = (hitsOf(now)?.length ?? 0) > 1 ? "take" : undefined;
       return;
     }
     this.#go(goal, view, lookup);
@@ -1111,34 +1117,46 @@ export class PrFilesState {
     }
   }
 
-  /** Asks ty where the picked word is defined, with the PR's files at the line's commit, and gives the peek
-   * that shows its answer, the lookup's number and the diff it asked in. `starting` hears the peek while it
-   * looks, as the lookup starts. It gives nothing with no word picked, or once a newer lookup has started or
-   * the peek has closed. */
+  /** The lookup of the word picked in the diff `view`, at its line's commit, if a word is picked. */
+  #askedInDiff(view: Ready): Asked | undefined {
+    const pick = this.#pick;
+    const file = pick && view.files[pick.file];
+    if (pick === undefined || !file) return undefined;
+    const commit = pick.side === "base" ? view.base : view.head;
+    return {
+      peek: { at: pick.at, symbol: pick.word, side: pick.side, commit },
+      path: pick.side === "base" ? (file.old_path ?? file.path) : file.path,
+      line: pick.line,
+      column: pick.start,
+    };
+  }
+
+  /** Asks ty where a word is defined, the one `asking` names in the diff on show, which is the word picked
+   * in the diff unless it says another. It gives the peek that shows the answer, the lookup's number and the
+   * diff it asked in. `starting` hears the peek while it looks, as the lookup starts. It gives nothing with
+   * no word to ask about, or once a newer lookup has started or the peek has closed. */
   async #lookUp(
     starting: (looking: Peek) => void,
+    asking: (view: Ready) => Asked | undefined = (view) => this.#askedInDiff(view),
   ): Promise<{ peek: Peek; lookup: number; view: Ready } | undefined> {
-    const pick = this.#pick;
     const view = this.view;
-    const ready = view?.state === "ready" && view;
-    const file = ready && pick && ready.files[pick.file];
-    if (pick === undefined || view?.state !== "ready" || !file) return undefined;
+    const asked = view?.state === "ready" ? asking(view) : undefined;
+    if (view?.state !== "ready" || asked === undefined) return undefined;
     // A peek a newer lookup opens is for that lookup to focus.
-    this.peekWantsFocus = false;
+    this.peekFocus = undefined;
     this.#lookups = nextTicket();
     const lookup = this.#lookups;
-    const commit = pick.side === "base" ? view.base : view.head;
-    const peek = { at: pick.at, symbol: pick.word, side: pick.side, commit };
+    const peek = asked.peek;
     this.#stopGoing();
     starting({ ...peek, lookup: { state: "looking" } });
     const lookedUp = {
       repository: this.#repository,
       base: view.base,
       head: view.head,
-      path: pick.side === "base" ? (file.old_path ?? file.path) : file.path,
-      side: pick.side,
-      line: pick.line,
-      column: pick.start,
+      path: asked.path,
+      side: peek.side,
+      line: asked.line,
+      column: asked.column,
       ticket: lookup,
     };
     // The core says what the lookup waits for: ty to start, or to answer (#440). A step may come after the
@@ -1231,6 +1249,68 @@ export class PrFilesState {
     this.#peek = { ...peek, code: new HitCode(this.#repository, hit, index) };
   }
 
+  /** Looks up the word the user picked in the code of the hit the peek shows (#447), at that hit's commit,
+   * and shows its answer in the peek in place of the one it showed, which the breadcrumb then names. The
+   * peek stays under its line. The servers read only the Repository's files, so a word picked in a file
+   * outside it is said over the diff for a moment instead. */
+  async followPick() {
+    const peek = this.#peek;
+    const shown = shownHit(peek);
+    const pick = shown?.code.pick;
+    if (peek === undefined || shown === undefined || pick === undefined) return;
+    const hit = shown.hit;
+    if (!inRepository(hit)) {
+      this.#say("Tsugiki can't go to definitions from a file outside the Repository yet.", NOTICE_MS);
+      return;
+    }
+    const crumb: Crumb = {
+      at: peek.at,
+      symbol: peek.symbol,
+      side: peek.side,
+      commit: peek.commit,
+      lookup: { state: "answered", answer: { state: "found", hits: shown.hits } },
+      code: shown.code,
+    };
+    const place = hit.place;
+    const asked = {
+      peek: {
+        at: peek.at,
+        symbol: pick.word,
+        side: place.side,
+        commit: place.commit,
+        trail: [...(peek.trail ?? []), crumb],
+      },
+      path: place.path,
+      line: pick.line,
+      column: pick.start,
+    };
+    const looked = await this.#lookUp(
+      (looking) => {
+        this.#peek = looking;
+        // The code that had the focus goes while the peek looks, so the focus waits in the peek.
+        this.peekFocus = "take";
+      },
+      () => asked,
+    );
+    if (looked === undefined) return;
+    this.#peek = this.#withHeld(looked.peek, looked.lookup);
+    this.peekFocus = "keep";
+  }
+
+  /** Brings back the peek that crumb `index` of the breadcrumb names, counted from the first, as the user
+   * left it, and drops the crumbs after it (#447). A lookup that still runs is cancelled. */
+  backTo(index: number) {
+    const peek = this.#peek;
+    const trail = peek?.trail ?? [];
+    const crumb = trail[index];
+    if (crumb === undefined) return;
+    this.#unwatch(this.#lookups);
+    this.#lookups = nextTicket();
+    this.#stopGoing();
+    this.#peek = { ...crumb, trail: trail.slice(0, index) };
+    this.peekFocus = "take";
+  }
+
   /** Closes the Definition peek, and hands the diff its focus back. A Go to definition that still looks
    * the word up goes nowhere. */
   closePeek() {
@@ -1245,7 +1325,7 @@ export class PrFilesState {
     if (this.going || this.#peek !== undefined) void commands.cancelDefinitions(this.#lookups);
     this.#peek = undefined;
     this.#news = undefined;
-    this.peekWantsFocus = false;
+    this.peekFocus = undefined;
     this.#lookups = nextTicket();
     this.#stopGoing();
   }

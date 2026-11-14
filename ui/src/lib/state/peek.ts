@@ -100,7 +100,8 @@ export function peekWords(peek: Peek, now = Date.now()): PeekWords {
 }
 
 /** The peek: the line it opened under, the symbol it looks up, and the commit it looks at, which is the
- * PR's base for a removed line and its head for the rest. With hits, it holds the code of the one shown. */
+ * PR's base for a removed line and its head for the rest, or the commit of the hit whose code the symbol was
+ * picked in (#447). With hits, it holds the code of the one shown. */
 export interface Peek {
   at: PickedLine;
   symbol: string;
@@ -110,7 +111,19 @@ export interface Peek {
   code?: HitCode;
   /** The server that answered builds its index, so the answer may miss what the index doesn't hold yet. */
   indexing?: Indexing;
+  /** The peeks that `Alt+F12` on a word in the peek's code replaced, oldest first, which the breadcrumb in
+   * its header names (#447). Each opened under the same line. */
+  trail?: readonly Crumb[];
 }
+
+/** A peek the breadcrumb names, as the user left it: one that `Alt+F12` inside the peek replaced (#447). Only
+ * a peek that shows a hit's code has a word picked to follow, so each crumb has hits and the code of the one
+ * it showed. It has no line that says its server indexes: the core watches the index for the newest lookup
+ * alone, so nothing would update that line or take it away. */
+export type Crumb = Pick<Peek, "at" | "symbol" | "side" | "commit"> & {
+  lookup: { state: "answered"; answer: Extract<Answer, { state: "found" }> };
+  code: HitCode;
+};
 
 /** The id that names the peek among the threads of the diff's layout. A thread's id is GitHub's, which
  * never has a space. */

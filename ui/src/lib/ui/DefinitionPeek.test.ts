@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HitCode } from "$lib/state/hit-code.svelte";
-import type { Peek } from "$lib/state/peek";
+import type { Crumb, Peek } from "$lib/state/peek";
 import DefinitionPeek from "./DefinitionPeek.svelte";
 
 /** A hit of a lookup, as the core gives it. */
@@ -41,6 +41,9 @@ const peekWith = (lookup: Peek["lookup"]): Peek => ({
   lookup,
 });
 
+/** The handler that goes back to a crumb, for the tests that don't. */
+const following = { oncrumb: () => {} };
+
 it("counts the seconds a lookup waits for ty's answer, and stops once it answers", async () => {
   vi.useFakeTimers({ now: 10_000 });
   const asking = peekWith({ state: "looking", waiting: { step: "asking", server: "ty" }, since: 10_000 });
@@ -49,6 +52,7 @@ it("counts the seconds a lookup waits for ty's answer, and stops once it answers
     onclose: () => {},
     onhit: () => {},
     onopen: () => {},
+    ...following,
   });
   const body = () => screen.getByText(/eggs…|No definition/).textContent;
   expect(body()).toBe("Asking ty for the definition of eggs…");
@@ -66,7 +70,13 @@ it("counts no seconds while ty starts, as the words say none", () => {
   vi.useFakeTimers({ now: 10_000 });
   const starting = peekWith({ state: "looking", waiting: { step: "starting", server: "ty" }, since: 10_000 });
 
-  render(DefinitionPeek, { peek: starting, onclose: () => {}, onhit: () => {}, onopen: () => {} });
+  render(DefinitionPeek, {
+    peek: starting,
+    onclose: () => {},
+    onhit: () => {},
+    onopen: () => {},
+    ...following,
+  });
 
   expect(screen.getByText("Starting ty…")).toBeDefined();
   expect(vi.getTimerCount()).toBe(0);
@@ -83,6 +93,7 @@ it("shows a line under the header while clangd indexes, and takes it away once i
     onclose: () => {},
     onhit: () => {},
     onopen: () => {},
+    ...following,
   });
   const before = screen.queryByText(line);
   await shown.rerender({ peek: answered });
@@ -118,6 +129,7 @@ it("lists the hits on its right, each with its path, line and text, and marks th
     onclose: () => {},
     onhit: () => {},
     onopen: () => {},
+    ...following,
   });
 
   const list = screen.getByRole("listbox", { name: "Definitions" });
@@ -149,7 +161,7 @@ it("scrolls the list, and only the list, to keep the hit shown in sight", async 
   document.body.append(scroller);
   const shown = render(DefinitionPeek, {
     target: scroller,
-    props: { peek: showing(many, 5), onclose: () => {}, onhit: () => {}, onopen: () => {} },
+    props: { peek: showing(many, 5), onclose: () => {}, onhit: () => {}, onopen: () => {}, ...following },
   });
   const list = screen.getByRole("listbox");
 
@@ -165,7 +177,7 @@ it("scrolls the list, and only the list, to keep the hit shown in sight", async 
 
 it("lists a single hit too, beside the words that say its file can't be read", async () => {
   const peek = showing([hitIn("Lib/a.py", 3)], 0);
-  render(DefinitionPeek, { peek, onclose: () => {}, onhit: () => {}, onopen: () => {} });
+  render(DefinitionPeek, { peek, onclose: () => {}, onhit: () => {}, onopen: () => {}, ...following });
 
   expect(screen.getAllByRole("option").map((row) => row.textContent)).toEqual([
     "Lib/a.py:3 def area3(self):",
@@ -178,7 +190,13 @@ it("lists a single hit too, beside the words that say its file can't be read", a
 
 it("picks the hit a click lands on", async () => {
   const onhit = vi.fn();
-  render(DefinitionPeek, { peek: showing(hits, 0), onclose: () => {}, onhit, onopen: () => {} });
+  render(DefinitionPeek, {
+    peek: showing(hits, 0),
+    onclose: () => {},
+    onhit,
+    onopen: () => {},
+    ...following,
+  });
 
   await fireEvent.click(screen.getByText("def area12(self):", { selector: "[role=option] *" }));
 
@@ -189,7 +207,13 @@ it("moves through the hits with ↑ and ↓ while it has the focus, and keeps th
   const onhit = vi.fn();
   const diff = vi.fn<(e: KeyboardEvent) => void>();
   window.addEventListener("keydown", diff);
-  render(DefinitionPeek, { peek: showing(hits, 1), onclose: () => {}, onhit, onopen: () => {} });
+  render(DefinitionPeek, {
+    peek: showing(hits, 1),
+    onclose: () => {},
+    onhit,
+    onopen: () => {},
+    ...following,
+  });
 
   await fireEvent.keyDown(screen.getByRole("listbox"), { key: "ArrowDown" });
   await fireEvent.keyDown(screen.getByRole("region", { name: "Definition's code" }), { key: "ArrowUp" });
@@ -206,7 +230,7 @@ it("goes to the hit it shows on Open, and on Enter or F12 while it has the focus
   const onopen = vi.fn();
   const diff = vi.fn<(e: KeyboardEvent) => void>();
   window.addEventListener("keydown", diff);
-  const props = { onclose: () => {}, onhit: () => {}, onopen };
+  const props = { onclose: () => {}, onhit: () => {}, onopen, ...following };
   render(DefinitionPeek, { peek: showing(hits, 1), open: "ready", ...props });
 
   await fireEvent.click(screen.getByRole("button", { name: "Open" }));
@@ -222,7 +246,7 @@ it("goes to the hit it shows on Open, and on Enter or F12 while it has the focus
 });
 
 it("offers Open as the tab says, and waits while the tab finds the hit's row", async () => {
-  const props = { onclose: () => {}, onhit: () => {}, onopen: () => {} };
+  const props = { onclose: () => {}, onhit: () => {}, onopen: () => {}, ...following };
   const shown = render(DefinitionPeek, { peek: showing(hits, 0), ...props });
   const nowhere = screen.queryByRole("button", { name: "Open" });
   await shown.rerender({ open: "ready" });
@@ -234,4 +258,31 @@ it("offers Open as the tab says, and waits while the tab finds the hit's row", a
   expect(ready).toBe(false);
   expect(open.disabled).toBe(true);
   expect(open.title).toBe("Go to this definition (Enter, F12)");
+});
+
+it("names the peeks it followed from in a breadcrumb, and brings back the one a click on its crumb names", async () => {
+  const oncrumb = vi.fn();
+  const crumb = (symbol: string): Crumb => ({
+    ...peekWith({ state: "looking" }),
+    symbol,
+    lookup: { state: "answered", answer: { state: "found", hits } },
+    code: new HitCode("python/cpython", hitIn("Lib/a.py", 3), 0),
+  });
+  const peek = { ...peekWith({ state: "looking" }), trail: [crumb("PyObject_Call"), crumb("_Py_Make")] };
+  const props = { onclose: () => {}, onhit: () => {}, onopen: () => {}, oncrumb };
+  render(DefinitionPeek, { peek, ...props });
+
+  const header = document.querySelector(".header");
+  await fireEvent.click(screen.getByRole("button", { name: "PyObject_Call" }));
+
+  const crumbs = [...(header?.querySelector(".trail")?.children ?? [])].map((part) => part.textContent);
+  expect([...crumbs, header?.querySelector(".symbol")?.textContent]).toEqual([
+    "PyObject_Call",
+    "›",
+    "_Py_Make",
+    "›",
+    "eggs",
+  ]);
+  expect(screen.getByRole("button", { name: "_Py_Make" }).title).toBe("Back to the definition of _Py_Make");
+  expect(oncrumb).toHaveBeenCalledWith(0);
 });

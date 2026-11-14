@@ -116,7 +116,8 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 
 ### Go to definition ([definitions.md](devel/definitions.md))
 
-- **Go to definition** and **Definition peek**, which open a file outside the diff read-only.
+- **Go to definition** and **Definition peek**, which open a file outside the diff read-only. A word in the
+  peek's code opens its own peek in place, with a breadcrumb back.
 
 ### Mirror ([mirror.md](devel/mirror.md))
 
@@ -135,7 +136,8 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 - Every action from the keyboard, with default keys, and remapping.
 - The command palette, quick open, and the list of the current view's keys.
 - `Ctrl+K` chords, such as `Ctrl+K T` for the theme picker and `Ctrl+K R` to reload themes.
-- `Alt+F12`, which opens the Definition peek on the picked word, and Esc, which closes it.
+- `Alt+F12`, which opens the Definition peek on the picked word, in the diff or in the peek, and Esc, which
+  closes it.
 - Tsugiki's keys over the webview's browser shortcuts.
 
 ## Not in Tsugiki

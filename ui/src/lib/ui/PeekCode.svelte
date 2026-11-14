@@ -1,14 +1,16 @@
 <!-- The hit's code in the Definition peek (#439): its file with line numbers in the gutter, scrolled so the
      hit's line sits a few rows from the top, and marked. It scrolls inside the peek, and draws only the rows
      near what shows, asking the core for their lines as they come into view, highlighted as the diff's rows
-     are (#455). The file view shows its file the same way (#453), and `data-scrolls` lets the Detail pane's
-     ↑ and ↓ scroll it there. -->
+     are (#455). In the peek a click puts the caret on a word and a double-click selects it, as in the diff,
+     for `Alt+F12` to look it up (#447). The file view shows its file the same way (#453), and `data-scrolls`
+     lets the Detail pane's ↑ and ↓ scroll it there. -->
 <script lang="ts">
   import { untrack } from "svelte";
-  import type { HitCode } from "$lib/state/hit-code.svelte";
+  import type { CodePick, HitCode } from "$lib/state/hit-code.svelte";
+  import { wordPicker } from "./picking";
   import { pieces } from "./spans";
 
-  let { code, line }: { code: HitCode; line: number } = $props();
+  let { code, line, pickable = false }: { code: HitCode; line: number; pickable?: boolean } = $props();
 
   const ROW = 20;
   /** The rows over the hit's line. */
@@ -23,6 +25,8 @@
   const last = $derived(Math.min(count, Math.ceil((scrollTop + Math.max(height, ROW)) / ROW) + OVERSCAN));
   /** The numbers of the lines drawn. */
   const drawn = $derived(Array.from({ length: Math.max(0, last - first + 1) }, (_, i) => first + i));
+  /** The word picked in the code, which only the peek shows. */
+  const pick = $derived(pickable ? code.pick : undefined);
 
   /** Scrolls `region` to a new hit, or back to where the user left this one's code when the diff draws the
    * peek again. The region stays while the code shows, so it attaches this once and reruns it on each hit. */
@@ -37,11 +41,25 @@
   $effect(() => {
     code.show(first, last);
   });
+
+  /** Picks words in the code's lines, each of which names its number. */
+  const picker = wordPicker<CodePick>("[data-code-line]", {
+    pick: (text, caret) => code.pickWord(Number(text.dataset["codeLine"]), caret, false),
+    drop: () => {
+      code.pick = undefined;
+    },
+    current: () => code.pick,
+    select: (picked) => {
+      code.pickWord(picked.line, picked.start, true);
+    },
+  });
 </script>
 
 <!-- The region stays while the file can't be read and says why inside it, so a focus in it stays put and the
-     keys keep going where they went, never to the page under it. -->
-<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+     keys keep going where they went, never to the page under it. A click picks a word in it, which the keys
+     can't yet, as in the diff. -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
   class="code mono"
   role="region"
@@ -54,6 +72,8 @@
     scrollTop = e.currentTarget.scrollTop;
     code.scrollTop = scrollTop;
   }}
+  onclick={pickable ? picker.click : undefined}
+  ondblclick={pickable ? picker.doubleClick : undefined}
 >
   {#if code.problem !== undefined}
     <p class="problem sans" role="alert">{code.problem}</p>
@@ -67,7 +87,7 @@
       {#each drawn as at (at)}
         {@const text = code.line(at)}
         <!-- prettier-ignore -->
-        <div class={["line", at === line && "hit"]} style:top={`${String((at - 1) * ROW)}px`}><span class="number">{at}</span><span class="text">{#each pieces(text ?? "", code.spans(at) ?? []) as piece, index (index)}{#if piece.highlight}<span class={`hl-${piece.highlight}`}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</span></div>
+        <div class={["line", at === line && "hit"]} style:top={`${String((at - 1) * ROW)}px`}><span class="number">{at}</span><span class="text" data-code-line={at}>{#each pieces(text ?? "", code.spans(at) ?? [], [], pick?.line === at ? pick : undefined) as piece, index (index)}{#if piece.caret}<span class="caret"></span>{/if}{#if piece.highlight || piece.picked}<span class={[piece.highlight && `hl-${piece.highlight}`, piece.picked && "picked"]}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</span></div>
       {/each}
     </div>
   {/if}
@@ -117,5 +137,19 @@
     text-align: right;
     color: var(--fg-muted);
     user-select: none;
+  }
+
+  /* The word the user picked, as the diff draws it, with a caret that takes no room. */
+  .text :global(.picked) {
+    background: color-mix(in srgb, var(--accent) 25%, transparent);
+  }
+
+  .caret {
+    display: inline-block;
+    width: 0;
+    height: 14px;
+    margin-right: -1px;
+    border-left: 1px solid currentColor;
+    vertical-align: -3px;
   }
 </style>

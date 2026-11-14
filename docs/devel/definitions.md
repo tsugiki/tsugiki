@@ -91,6 +91,20 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   several hits the peek keeps its 18 rows when a hit's file can't be read, and says why beside the list. A
   single hit whose file can't be read leaves the peek its 2 rows, with the hit's path beside the words. The
   words show inside the code's pane, so a focus there stays in the peek.
+- A click on a word in the peek's code puts the caret on it, and a double-click selects it, as in the diff
+  (#447). `Alt+F12` on it, while the peek has the focus, replaces the peek's lookup with that word's, at the
+  commit of the hit the code shows: the side and commit its header names. The peek stays under its line,
+  and its header gets a breadcrumb of the symbols followed, such as `PyObject_Call › _PyObject_MakeTpCall`.
+  The peek holds the focus while the lookup runs, and the list takes it once the answer comes, unless the
+  user moved it out of the peek. A click in the peek leaves the diff's pick, so with no word picked in the
+  peek, `Alt+F12` looks up the word picked in the diff.
+- A click on an earlier crumb brings that peek back as the user left it, with the hit it showed, its scroll
+  and its picked word, and drops the crumbs after it. A lookup that still runs is cancelled. The core
+  watches a server's index for the newest lookup alone, so a peek a crumb brings back drops the line that
+  said its server indexed. Esc closes the peek, crumbs and all, and gives the focus back to the diff.
+- The servers read only the Repository's files, so `Alt+F12` on a word in a file outside it says "Tsugiki
+  can't go to definitions from a file outside the Repository yet." over the diff for 4 seconds, and the peek
+  stays as it is.
 - The window asks the core for the file 200 lines at a time near the rows that show, so a big file such as
   CPython's `Objects/unicodeobject.c` opens without waiting for all of it. The core reads them on the
   command's thread, never waiting for a lookup, and offline at any commit the Mirror holds. It keeps the

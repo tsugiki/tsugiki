@@ -14,7 +14,7 @@
      on macOS, goes to the word's definition, and the line Go to definition lands on is marked for a moment:
      side by side, only on the side of its hit (#444). -->
 <script lang="ts">
-  import { tick, untrack } from "svelte";
+  import { untrack } from "svelte";
   import type { Column, Pick, PickedLine } from "$lib/state/pick";
   import {
     EXPAND,
@@ -30,7 +30,8 @@
   import DefinitionPeek from "./DefinitionPeek.svelte";
   import NewsEntries from "./NewsEntries.svelte";
   import PaneEdge from "./PaneEdge.svelte";
-  import { currentOs } from "./keys";
+  import { currentOs, keyName } from "./keys";
+  import { wordPicker } from "./picking";
   import ReviewThread from "./ReviewThread.svelte";
   import { pieces, type Match } from "./spans";
 
@@ -183,46 +184,31 @@
     };
   };
 
-  /** Picks the word at offset `offset` into `node` for a click on `target`, and returns the pick. It drops
-   * the pick when no word of a line of code is there, or the click landed outside that line's code. A
-   * line's code starts with its marker: a caret before it is on no word, and one after it is at the start
-   * of the line, as in an editor. */
-  const pickAt = (target: EventTarget | null, node: Node | null, offset: number): Pick | undefined => {
-    const element =
-      (node instanceof Element ? node : node?.parentElement)?.closest<HTMLElement>(
-        ".text:is([data-row], [data-line])",
-      ) ?? undefined;
-    // A click past the end of a line, or on a line's number, can leave the caret in some line's code.
-    if (node === null || element === undefined || !(target instanceof Node) || !element.contains(target)) {
-      diff.dropPick();
-      return undefined;
-    }
-    const data = element.dataset;
-    const at: PickedLine =
-      data["row"] === undefined
-        ? { kind: "line", file: Number(data["file"]), line: Number(data["line"]) }
-        : { kind: "row", row: Number(data["row"]) };
-    const column = data["column"] === "left" || data["column"] === "right" ? data["column"] : null;
-    const before = document.createRange();
-    before.setStart(element, 0);
-    before.setEnd(node, offset);
-    return diff.pickWord(at, column, before.toString().length - 1, false);
-  };
-
-  /** The pick the last single click made, which a double-click selects. */
-  let clicked: Pick | undefined;
-
-  /** Selects the word the user picked, once it is drawn picked. */
-  const selectPicked = (region: HTMLElement) => {
-    const picked = [...region.querySelectorAll(".picked")];
-    // From before the word's first piece to after its last: the end moves forward over the pieces, and
-    // then the start moves back over them.
-    const range = document.createRange();
-    for (const piece of picked) range.setEndAfter(piece);
-    for (const piece of picked.reverse()) range.setStartBefore(piece);
-    getSelection()?.removeAllRanges();
-    getSelection()?.addRange(range);
-  };
+  /** Picks words in the lines of code. A line's code starts with its marker: a caret before it is on no
+   * word, and one after it is at the start of the line, as in an editor. A button, a link, a field, the
+   * peek's edge or the peek, whose code takes picks of its own (#447), keeps the pick. */
+  const picker = wordPicker<Pick>(
+    ".text:is([data-row], [data-line])",
+    {
+      pick: (line, caret) => {
+        const data = line.dataset;
+        const at: PickedLine =
+          data["row"] === undefined
+            ? { kind: "line", file: Number(data["file"]), line: Number(data["line"]) }
+            : { kind: "row", row: Number(data["row"]) };
+        const column = data["column"] === "left" || data["column"] === "right" ? data["column"] : null;
+        return diff.pickWord(at, column, caret - 1, false);
+      },
+      drop: () => {
+        diff.dropPick();
+      },
+      current: () => diff.picked,
+      select: (pick) => {
+        diff.pickWord(pick.at, pick.column, pick.start, true);
+      },
+    },
+    "button, a, input, textarea, select, summary, [role=separator], .peek",
+  );
 
   const counted = (change: FileChange) =>
     change.kind === "binary" ? "binary" : `+${String(change.added)} −${String(change.removed)}`;
@@ -386,30 +372,10 @@
     scrollLeft = event.currentTarget.scrollLeft;
   }}
   onclick={(event) => {
-    // A double-click's second click leaves the word to the double-click.
-    if (event.detail > 1) return;
-    clicked = undefined;
-    // A button, a link, a field or the peek's edge keeps the pick.
-    const target = event.target;
-    const keeps = "button, a, input, textarea, select, summary, [role=separator]";
-    if (target instanceof Element && target.closest(keeps)) return;
-    const selection = getSelection();
-    // A drag selects text to copy, and leaves the pick where it was.
-    if (selection === null || !selection.isCollapsed) return;
-    clicked = pickAt(target, selection.focusNode, selection.focusOffset);
-    if (clicked !== undefined && (os === "mac" ? event.metaKey : event.ctrlKey)) void diff.goToDefinition();
+    const pick = picker.click(event);
+    if (pick !== undefined && (os === "mac" ? event.metaKey : event.ctrlKey)) void diff.goToDefinition();
   }}
-  ondblclick={async (event) => {
-    const region = event.currentTarget;
-    // The browser's own word can run past an identifier, as through the dot of `self.name`, so the
-    // double-click selects the word its first click picked, if that click picked one.
-    const pick = clicked;
-    clicked = undefined;
-    if (pick === undefined || diff.picked !== pick) return;
-    diff.pickWord(pick.at, pick.column, pick.start, true);
-    await tick();
-    selectPicked(region);
-  }}
+  ondblclick={picker.doubleClick}
 >
   <div bind:this={newsBox} bind:clientHeight={newsHeight}>
     <NewsEntries
@@ -563,17 +529,34 @@
     {#each diff.layout.threadsIn(first, last) as placed (placed.laid.id)}
       {@const block = placed.laid.block}
       {#if block.kind === "peek"}
+        <!-- The peek holds the focus itself while it has no list, as while a lookup from inside it runs, and
+             takes it on a click on its header. While anything in it has the focus, `Alt+F12` looks up the
+             word picked in its code (#447), and the window's keys never hear it. With no word picked there,
+             it goes on to look up the diff's. -->
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
         <div
           class="thread peek sans"
           role="group"
           aria-label="Definition peek"
+          tabindex="-1"
           style:top={`${String(placed.shown * ROW)}px`}
           style:height={`${String(placed.length * ROW)}px`}
           {@attach (box) => {
             // Go to definition with several hits hands the list the focus, for the user to pick one (#446).
-            if (!diff.peekWantsFocus) return;
-            diff.peekWantsFocus = false;
-            box.querySelector<HTMLElement>("[role=listbox]")?.focus({ preventScroll: true });
+            // A lookup from inside the peek has the peek hold it while it looks, and the list keeps it once
+            // the lookup answers, unless the user moved it out of the peek (#447).
+            const focus = diff.peekFocus;
+            if (focus === undefined) return;
+            diff.peekFocus = undefined;
+            if (focus === "keep" && !box.contains(document.activeElement)) return;
+            (box.querySelector<HTMLElement>("[role=listbox]") ?? box).focus({ preventScroll: true });
+          }}
+          onkeydown={(e) => {
+            if (keyName(e, os) !== "alt+f12" || block.peek.code?.pick === undefined) return;
+            e.preventDefault();
+            e.stopPropagation();
+            // A held key would ask the server again and again.
+            if (!e.repeat) void diff.followPick();
           }}
         >
           <DefinitionPeek
@@ -587,6 +570,9 @@
             }}
             onopen={() => {
               void diff.openHit();
+            }}
+            oncrumb={(index) => {
+              diff.backTo(index);
             }}
           />
         </div>
@@ -704,6 +690,11 @@
     box-shadow:
       inset 0 1px color-mix(in srgb, currentColor 15%, transparent),
       inset 0 -1px color-mix(in srgb, currentColor 15%, transparent);
+  }
+
+  /* The peek holds the focus for its parts, as while a lookup from inside it runs, and draws no outline. */
+  .peek:focus {
+    outline: none;
   }
 
   /* The strip the peek's bottom edge takes: 4 px of the peek and 4 px of the row under it, above a review

@@ -3,6 +3,7 @@ import { tick } from "svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { chooseMirrorSource, mirrorCost, pickClone } from "$lib/state/mirror-source";
 import { PanesState } from "$lib/state/panes.svelte";
+import type { PeekLayout } from "$lib/state/peek";
 import {
   CHUNK,
   DiffViewChoice,
@@ -145,10 +146,24 @@ const NOW = new Date("2026-11-04T12:00:00Z");
 const untimed = { jumped: () => ({ rowsShown: () => undefined, spansShown: () => undefined }) };
 
 /** The Files tab of PR 11 once the core answered `answer`, in the view `choice` holds, with the user's
- * Review `review`. */
-const shown = async (answer: PrFiles | null, choice = new DiffViewChoice(), review?: YourReview) => {
+ * Review `review`, and each Definition peek where `peekLayout` says as it opens. */
+const shown = async (
+  answer: PrFiles | null,
+  choice = new DiffViewChoice(),
+  review?: YourReview,
+  peekLayout?: () => PeekLayout,
+) => {
   core.pullRequestFiles.mockResolvedValue(ok(answer));
-  const files = new PrFilesState("python/cpython", 11, new PanesState(), untimed, choice);
+  const files = new PrFilesState(
+    "python/cpython",
+    11,
+    new PanesState(),
+    untimed,
+    choice,
+    "all",
+    undefined,
+    peekLayout,
+  );
   files.followReview(review);
   await files.load();
   render(FilesTab, { files, now: NOW, onlink });
@@ -1679,8 +1694,9 @@ const topOf = (line: number) =>
   fileView().querySelector(`[data-code-line="${String(line)}"]`)?.parentElement?.style.top;
 
 /** Opens the file view of `Objects/unicodeobject.c` at the base, on its line 900, as Go to definition from
- * the diff does. Each of the file's 2000 lines reads `line N`, as does every other file's. */
-const intoFileView = async () => {
+ * the diff does. Each of the file's 2000 lines reads `line N`, as does every other file's. Each Definition
+ * peek opens where `peekLayout` says. */
+const intoFileView = async (peekLayout?: () => PeekLayout) => {
   core.definitions.mockResolvedValueOnce(
     ok({ state: "found", hits: [baseHit("Objects/unicodeobject.c", 900)] }),
   );
@@ -1689,7 +1705,7 @@ const intoFileView = async () => {
     for (let line = code.start; line < Math.min(code.end, 2001); line++) lines.push(`line ${String(line)}`);
     return Promise.resolve(ok({ count: 2000, lines }));
   });
-  const files = await shown(ready(rows.length));
+  const files = await shown(ready(rows.length), undefined, undefined, peekLayout);
   await vi.waitFor(() => {
     expect(lines()[2]).toBe("11 Notes");
   });
@@ -2470,4 +2486,178 @@ it("closes the Definition peek with its ✕, and gives the diff the focus", asyn
   expect(peekBox()).toBeNull();
   expect(document.activeElement).toBe(screen.getByRole("region", { name: "Diff" }));
   expect(rowAt("▾logo.pngbinary")?.style.top).toBe(`${String(5 * 20)}px`);
+});
+
+describe("the split Definition peek", () => {
+  /** A hit at line `line` of `path` at the PR's head, whose line reads `new = line`. */
+  const headHit = (path: string, line: number) => ({
+    place: { kind: "repository" as const, path, side: "head" as const, commit: "abc" },
+    line,
+    column: 4,
+    text: `new = ${String(line)}`,
+  });
+  /** The place below the code the split peek takes. */
+  const under = () => peekBox()?.parentElement;
+  const edge = () => screen.getByRole("separator", { name: "Definition peek height" });
+  const diff = () => screen.getByRole("region", { name: "Diff" });
+
+  /** The Files tab with each peek where `layout.now` says as it opens, the word `new` picked in row 4, and
+   * the Files tab and the peek 1000 pixels tall together. */
+  const splitTab = async (layout: { now: PeekLayout }) => {
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(1000);
+    core.definitions.mockResolvedValue(
+      ok({ state: "found", hits: [headHit("Lib/news.py", 12), headHit("Lib/old.py", 3)] }),
+    );
+    core.savePaneLayout.mockResolvedValue(ok(null));
+    fileOf(30);
+    const files = await shown(ready(rows.length), undefined, undefined, () => layout.now);
+    await vi.waitFor(() => {
+      expect(lines()[4]).toBe("2+new line");
+    });
+    await clickAt(codeOf(4), 2);
+    return files;
+  };
+
+  it("opens below the diff, with the hits on its left, and leaves the diff where it was", async () => {
+    const files = await splitTab({ now: "split" });
+    diff().scrollTop = 20;
+    await fireEvent.scroll(diff());
+
+    await files.peekDefinition();
+    await vi.waitFor(() => {
+      expect(peekCode()).toContain("*12line 12");
+    });
+
+    // Outside the diff's rows, which keep their places and their scroll.
+    expect(diff().contains(peekBox())).toBe(false);
+    expect(rowAt("▾logo.pngbinary")?.style.top).toBe(`${String(5 * 20)}px`);
+    expect([diff().scrollTop, files.peekOpened]).toEqual([20, false]);
+    // 42% of the 1000 pixels to start.
+    expect(under()?.style.height).toBe("420px");
+    const list = screen.getByRole("listbox", { name: "Definitions" });
+    const code = within(peekBox() as HTMLElement).getByRole("region", { name: "Definition's code" });
+    expect(list.compareDocumentPosition(code) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(peekText()[0]).toBe("new Lib/news.py:12 at abc · the PR's head 1 of 2 Open ✕");
+  });
+
+  it("scrolls the diff as little as it takes to keep the line it opened under in view", async () => {
+    const files = await splitTab({ now: "split" });
+    // The peek leaves the diff's rows 60 pixels.
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (this: HTMLElement) {
+      return this.getAttribute("aria-label") === "Diff" ? 60 : 1000;
+    });
+
+    await files.peekDefinition();
+    await tick();
+
+    // Row 4 ends 100 pixels down, so the rows scroll 40 to show it, and no further.
+    expect([diff().scrollTop, files.peekOpened]).toEqual([40, false]);
+    expect(rowAt("▾logo.pngbinary")?.style.top).toBe(`${String(5 * 20)}px`);
+  });
+
+  it("scrolls the file view's code as little as it takes to keep the line it opened under in view", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(100);
+    const { files, view } = await intoFileView(() => "split");
+    const code = within(view).getByRole("region", { name: "Definition's code" });
+    core.definitions.mockReturnValue(new Promise(() => {}));
+    const peekAt = async (line: number) => {
+      await clickAt(await viewLine(line), 2);
+      void files.peekDefinition();
+      await tick();
+      return code.scrollTop;
+    };
+
+    // Lines 897 to 901 show in 100 pixels. Line 898 stays in view, and line 905 scrolls up to the bottom.
+    const shown = await peekAt(898);
+    files.closePeek();
+    const low = await peekAt(905);
+
+    expect([shown, low, files.peekOpened]).toEqual([(900 - 1 - 3) * 20, 905 * 20 - 100, false]);
+  });
+
+  it("resizes by its top edge, no lower than 160 px, saves its height for the next peek, and resets", async () => {
+    // jsdom has no pointer capture.
+    HTMLElement.prototype.setPointerCapture = vi.fn();
+    const files = await splitTab({ now: "split" });
+    await files.peekDefinition();
+    const saved = () => core.savePaneLayout.mock.calls.map(([layout]) => layout.split_peek);
+
+    // Up makes it taller.
+    await fireEvent.pointerDown(edge(), { button: 0, clientY: 580, pointerId: 1 });
+    await fireEvent.pointerMove(edge(), { clientY: 480 });
+    await fireEvent.pointerUp(edge());
+    const dragged = [under()?.style.height, saved()];
+    files.closePeek();
+    await tick();
+    await files.peekDefinition();
+    const reopened = under()?.style.height;
+    await fireEvent.keyDown(edge(), { key: "ArrowDown" });
+    await fireEvent.keyUp(edge(), { key: "ArrowDown" });
+    const shorter = under()?.style.height;
+    await fireEvent.pointerDown(edge(), { button: 0, clientY: 500, pointerId: 1 });
+    await fireEvent.pointerMove(edge(), { clientY: 1000 });
+    await fireEvent.pointerUp(edge());
+    const least = under()?.style.height;
+    await fireEvent.dblClick(edge());
+
+    expect(dragged).toEqual(["520px", [520]]);
+    expect([reopened, shorter, least]).toEqual(["520px", "504px", "160px"]);
+    expect(under()?.style.height).toBe("420px");
+    await vi.waitFor(() => {
+      expect(saved()).toEqual([520, 504, 160, null]);
+    });
+  });
+
+  it("keeps its 2 rows and no edge with only words to say", async () => {
+    const files = await splitTab({ now: "split" });
+    core.definitions.mockResolvedValue(ok({ state: "found", hits: [] }));
+
+    await files.peekDefinition();
+    await tick();
+
+    expect(peekText()).toEqual(["new at abc · the PR's head ✕", "No definition of new"]);
+    expect(under()?.style.height).toBe("40px");
+    expect(screen.queryByRole("separator", { name: "Definition peek height" })).toBeNull();
+  });
+
+  it("takes a change to the setting at the next peek, and leaves the one on show where it is", async () => {
+    const layout: { now: PeekLayout } = { now: "split" };
+    const files = await splitTab(layout);
+    await files.peekDefinition();
+
+    layout.now = "inline";
+    await files.followPick();
+    await tick();
+    const followed = diff().contains(peekBox());
+    files.closePeek();
+    await tick();
+    await files.peekDefinition();
+    await tick();
+
+    expect(followed).toBe(false);
+    expect(diff().contains(peekBox())).toBe(true);
+    expect(peekBox()?.style.top).toBe(`${String(5 * 20)}px`);
+  });
+
+  it("opens below the file view's code there, which stays where it was, and Esc gives that code the focus", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(1000);
+    const { files, view } = await intoFileView(() => "split");
+    const code = within(view).getByRole("region", { name: "Definition's code" });
+    const before = code.scrollTop;
+    await clickAt(await viewLine(900), 2);
+    core.definitions.mockResolvedValueOnce(ok({ state: "found", hits: [baseHit("Objects/abstract.c", 30)] }));
+
+    await files.peekDefinition();
+    const peek = await vi.waitFor(() => within(view).getByRole("group", { name: "Definition peek" }));
+
+    expect(code.contains(peek)).toBe(false);
+    expect([topOf(901), code.scrollTop]).toEqual([`${String(900 * 20)}px`, before]);
+    expect(peek.parentElement?.style.height).toBe("420px");
+    // The diff under the file view shows no peek.
+    expect(diff().contains(peekBox())).toBe(false);
+    files.closePeek();
+    await tick();
+    expect(within(view).queryByRole("group", { name: "Definition peek" })).toBeNull();
+    expect(document.activeElement).toBe(code);
+  });
 });

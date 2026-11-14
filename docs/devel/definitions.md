@@ -83,6 +83,18 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   opens at it, and "Reset Layout" puts it back too. A peek with only words to say keeps its 2 rows and has
   no edge. A peek that opens below the rows on screen scrolls the diff as little as it takes to show it
   whole, but never so far that the line it opened under leaves the top. Only its opening scrolls the diff.
+- With `[diff] peek = "split"` in `settings.toml` ([settings.md](settings.md)), the peek opens below the
+  diff instead of under its line, and the diff stays where it was: its rows keep their places and give the
+  peek their room. The diff scrolls only when the peek would cover the line it opened under, and then as
+  little as it takes to keep that line in view. The split peek lists its hits in a column on the left of
+  its code. It takes 42% of the diff and the peek's room to start, and the user drags its top edge, a pixel
+  at a time, or moves it with ↑ and ↓ while it has the focus, from 160 px up to all but 160 px of that room
+  (#459). The edge is a strip of its own between the diff and the peek, clear of the diff's scrollbar. A
+  double-click on the edge puts the 42% back. Its height is saved with the pane sizes beside the inline
+  peek's rows, and "Reset Layout" puts it back too. A split peek with only words to say keeps its 2 rows and
+  has no edge, as inline. The file view follows the setting too. A change to the setting applies to the
+  next peek: one on show stays where it opened, and a word followed inside it keeps it there. No key or
+  palette command changes the setting yet.
 - The peek lists its hits on the right of the code, even a single one, each with its path, its line number
   and the line's text. It shows the first hit until the user picks another with a click, or with ↑ and ↓
   while the peek has the focus: the code shows the hit picked, and the header names it and counts it. The

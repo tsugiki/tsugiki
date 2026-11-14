@@ -4,23 +4,27 @@
      line sits a few rows from the top, and marked, with its lines read a chunk at a time as they show. It
      takes the focus as it opens, so the keys scroll it and not the diff under it. The user follows symbols
      in it as in the diff (#457): a click picks a word, `F12` and Ctrl+click go to its definition, and
-     `Alt+F12` opens the Definition peek under its line. The header says what Go to definition is doing, as
-     the line over the diff does. -->
+     `Alt+F12` opens the Definition peek under its line, or below the code when `[diff] peek` says split
+     (#459). The header says what Go to definition is doing, as the line over the diff does. -->
 <script lang="ts">
   import { fileViewWords, type FileView } from "$lib/state/file-view.svelte";
   import { peekPlaces, type Peek } from "$lib/state/peek";
   import type { PrFilesState } from "$lib/state/pr-files.svelte";
   import PeekBox from "./PeekBox.svelte";
   import PeekCode from "./PeekCode.svelte";
+  import SplitPeek from "./SplitPeek.svelte";
 
   let { view, files }: { view: FileView; files: PrFilesState } = $props();
 
   const words = $derived(fileViewWords(view, files.number));
-  /** The Definition peek, while it shows under a line of this view. */
-  const peek = $derived.by(() => {
-    const peek = files.peek;
-    return peek?.at.kind === "view" && peek.at.view === view ? { peek, line: peek.at.line } : undefined;
-  });
+  /** The Definition peek, while it shows under a line of this view, inside its code. */
+  const inline = $derived(files.peekOn(view, "inline"));
+  /** The Definition peek, while it shows split below this view's code (#459). */
+  const split = $derived(files.peekOn(view, "split"));
+  /** Hears that the code took the peek's opening. */
+  const revealed = () => {
+    files.peekOpened = false;
+  };
   /** Hands the focus to the code, so the keys scroll it. */
   const focusCode = (section: HTMLElement) => {
     section.querySelector<HTMLElement>("[data-scrolls]")?.focus({ preventScroll: true });
@@ -28,7 +32,7 @@
 </script>
 
 {#snippet box(top: number, shown: Peek, rows: number)}
-  <PeekBox diff={files} peek={shown} {top} {rows} gutter={48} />
+  <PeekBox diff={files} peek={shown} place={{ kind: "inline", top, rows, gutter: 48 }} />
 {/snippet}
 
 <section
@@ -57,23 +61,24 @@
       <span class="notice" role="status">{files.notice}</span>
     {/if}
   </div>
-  <div class="code">
-    <PeekCode
-      code={view.code}
-      mark={view.landing}
-      ongo={() => void files.goToDefinition()}
-      inset={peek && {
-        peek: peek.peek,
-        line: peek.line,
-        rows: peekPlaces(peek.peek, files.panes.peekRows),
-        reveal: files.peekOpened,
-        onreveal: () => {
-          files.peekOpened = false;
-        },
-        box,
-      }}
-    />
-  </div>
+  <SplitPeek {files} peek={split}>
+    <div class="code">
+      <PeekCode
+        code={view.code}
+        mark={view.landing}
+        ongo={() => void files.goToDefinition()}
+        inset={inline && {
+          peek: inline,
+          line: inline.at.line,
+          rows: peekPlaces(inline, files.panes.peekRows),
+          reveal: files.peekOpened,
+          onreveal: revealed,
+          box,
+        }}
+        sight={split && { line: split.at.line, reveal: files.peekOpened, onreveal: revealed }}
+      />
+    </div>
+  </SplitPeek>
 </section>
 
 <style>

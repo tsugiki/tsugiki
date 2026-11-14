@@ -1,16 +1,20 @@
 <!--
-  The edge between two panes, which sizes the pane before it (#187), or the edge under the Definition peek,
-  which sizes it in diff rows (#458). A drag or an arrow key moves it, between the size's own minimum and
-  maximum and the minimums of the panes after it, and a double-click asks for the default size back.
+  The edge between two panes, which sizes the pane before it (#187), the edge under the Definition peek,
+  which sizes it in diff rows (#458), or the edge atop the split one, which sizes it in pixels (#459). A drag
+  or an arrow key moves it, between the size's own minimum and maximum and the minimums of the panes after
+  it, and a double-click asks for the default size back.
 -->
 <script lang="ts" module>
   /** What an edge sizes. A pane's edge stands between panes side by side and sizes the pane on its left, in
    * CSS pixels, while the panes after it keep `nextLeast` between them. Its `value` is the pane's width, for
    * a screen reader, unless the pane takes half the room. A box's edge lies under a box, such as the
-   * Definition peek, and sizes it in steps `unit` pixels tall, of which it is `value` now. */
+   * Definition peek, and sizes it in steps `unit` pixels tall, of which it is `value` now. An edge above a
+   * box, such as the split Definition peek, sizes the box under it, `value` CSS pixels tall now, so a drag
+   * up makes it taller. */
   export type Sizes =
     | { kind: "pane"; value: number | undefined; nextLeast: number }
-    | { kind: "box"; value: number; unit: number };
+    | { kind: "box"; value: number; unit: number }
+    | { kind: "above"; value: number };
 </script>
 
 <script lang="ts">
@@ -46,6 +50,9 @@
   /** The CSS pixels in one step of the size. */
   const unit = $derived(sizes.kind === "box" ? sizes.unit : 1);
   const ceiling = $derived(most ?? Infinity);
+  /** The sign of the size's change as the edge moves down: an edge above its box gives it more room as it
+   * moves up. */
+  const grows = $derived(sizes.kind === "above" ? -1 : 1);
 
   let edge = $state<HTMLElement>();
   /** Where the pointer was as the drag started, and the sizes that bounded it then. */
@@ -58,7 +65,7 @@
    * the Detail pane beyond the list, gives it up too. The other edges keep their widths, so they don't
    * count. A box's edge has `value` say its size. */
   function measure() {
-    if (sizes.kind === "box") return { size: sizes.value, most: Math.max(least, ceiling) };
+    if (sizes.kind !== "pane") return { size: sizes.value, most: Math.max(least, ceiling) };
     const nextLeast = sizes.nextLeast;
     const here = edge as HTMLElement;
     const width = (here.previousElementSibling as Element).getBoundingClientRect().width;
@@ -98,7 +105,7 @@
   }
 
   function onpointermove(e: PointerEvent) {
-    if (drag) resize(drag.size + (along(e) - drag.at) / unit, drag.most);
+    if (drag) resize(drag.size + (grows * (along(e) - drag.at)) / unit, drag.most);
   }
 
   function onpointerup() {
@@ -111,7 +118,11 @@
    * peek or move the list's cursor too. */
   function onkeydown(e: KeyboardEvent) {
     const key = keyName(e, currentOs());
-    const [less, more] = vertical ? ["arrowleft", "arrowright"] : ["arrowup", "arrowdown"];
+    const [less, more] = vertical
+      ? ["arrowleft", "arrowright"]
+      : grows === 1
+        ? ["arrowup", "arrowdown"]
+        : ["arrowdown", "arrowup"];
     if (key !== less && key !== more) return;
     e.preventDefault();
     e.stopPropagation();

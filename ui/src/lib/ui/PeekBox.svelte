@@ -1,13 +1,20 @@
 <!-- The Definition peek's box under its line, in the diff (#438) or in the file view (#457), with the edge
      that drags its height astride its bottom line (#458). It stays as wide as what it sits in, however far
      across the code scrolls, from the `--across` and `--width` its parent sets, and leaves the line numbers'
-     `gutter` pixels on its left. The peek holds the focus itself while it has no list, as while a lookup from
-     inside it runs, and takes it on a click on its header. While anything in it has the focus, `Alt+F12`
-     looks up the word picked in its code (#447), and the window's keys never hear it. With no word picked
-     there, it goes on to look up the word picked in the code under it. -->
+     `gutter` pixels on its left. Split, it fills the place below the code that `SplitPeek` gives it, which
+     holds its edge, and lists its hits on the left (#459). The peek holds the focus itself while it has no
+     list, as while a lookup from inside it runs, and takes it on a click on its header. While anything in it
+     has the focus, `Alt+F12` looks up the word picked in its code (#447), and the window's keys never hear
+     it. With no word picked there, it goes on to look up the word picked in the code under it. -->
+<script lang="ts" module>
+  /** The box's place: under its line, `top` pixels from the top of the rows, in `rows` rows, past the
+   * line numbers' `gutter` pixels, or below the code, in the place `SplitPeek` gives it. */
+  export type PeekPlace = { kind: "inline"; top: number; rows: number; gutter: number } | { kind: "split" };
+</script>
+
 <script lang="ts">
   import { PEEK_LEAST, PEEK_MOST } from "$lib/state/panes.svelte";
-  import { peekSized, type Peek } from "$lib/state/peek";
+  import { peekSized, ROW, type Peek } from "$lib/state/peek";
   import type { PrFilesState } from "$lib/state/pr-files.svelte";
   import DefinitionPeek from "./DefinitionPeek.svelte";
   import { currentOs, keyName } from "./keys";
@@ -16,33 +23,25 @@
   let {
     diff,
     peek,
-    top,
-    rows,
-    gutter,
+    place,
   }: {
     diff: PrFilesState;
     peek: Peek;
-    /** The box's top, in pixels from the top of the rows. */
-    top: number;
-    /** The rows it takes. */
-    rows: number;
-    /** The pixels the line numbers take on the left. */
-    gutter: number;
+    place: PeekPlace;
   } = $props();
 
-  const ROW = 20;
   const os = currentOs();
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
-  class="peek sans"
+  class={["peek sans", place.kind]}
   role="group"
   aria-label="Definition peek"
   tabindex="-1"
-  style:top={`${String(top)}px`}
-  style:height={`${String(rows * ROW)}px`}
-  style:padding-left={`${String(gutter)}px`}
+  style:top={place.kind === "inline" ? `${String(place.top)}px` : undefined}
+  style:height={place.kind === "inline" ? `${String(place.rows * ROW)}px` : undefined}
+  style:padding-left={place.kind === "inline" ? `${String(place.gutter)}px` : undefined}
   {@attach (box) => {
     // Go to definition with several hits hands the list the focus, for the user to pick one (#446). A lookup
     // from inside the peek has the peek hold it while it looks, and the list keeps it once the lookup
@@ -63,6 +62,7 @@
 >
   <DefinitionPeek
     {peek}
+    split={place.kind === "split"}
     open={diff.openable}
     onclose={() => {
       diff.closePeek();
@@ -78,9 +78,9 @@
     }}
   />
 </div>
-{#if peekSized(peek)}
+{#if place.kind === "inline" && peekSized(peek)}
   <!-- Astride the peek's bottom line, outside the peek, whose `overflow: hidden` would clip it. -->
-  <div class="peek-edge" style:top={`${String(top + rows * ROW - 4)}px`}>
+  <div class="peek-edge" style:top={`${String(place.top + place.rows * ROW - 4)}px`}>
     <PaneEdge
       label="Definition peek height"
       sizes={{ kind: "box", value: diff.panes.peekRows, unit: ROW }}
@@ -97,15 +97,23 @@
   /* The peek takes the places the layout gives it, and no more. Its lines are drawn inside it, so its header
      and the line under it keep their whole 20 px each. It reads as prose, as a review thread does. */
   .peek {
-    position: absolute;
-    left: var(--across);
-    width: var(--width);
     box-sizing: border-box;
     overflow: hidden;
     background: color-mix(in srgb, currentColor 4%, transparent);
     box-shadow:
       inset 0 1px color-mix(in srgb, currentColor 15%, transparent),
       inset 0 -1px color-mix(in srgb, currentColor 15%, transparent);
+  }
+
+  .peek.inline {
+    position: absolute;
+    left: var(--across);
+    width: var(--width);
+  }
+
+  /* Below the code, it fills the place `SplitPeek` gives it. */
+  .peek.split {
+    height: 100%;
   }
 
   /* The peek holds the focus for its parts, as while a lookup from inside it runs, and draws no outline. */

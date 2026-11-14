@@ -36,6 +36,7 @@ afterEach(() => {
 
 const peekWith = (lookup: Peek["lookup"]): Peek => ({
   at: { kind: "row", row: 2 },
+  layout: "inline",
   symbol: "eggs",
   side: "head",
   commit: "abcdef123",

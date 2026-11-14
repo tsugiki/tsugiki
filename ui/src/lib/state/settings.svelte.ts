@@ -3,6 +3,7 @@
 import {
   commands,
   type DiffFiles,
+  type DiffPeek,
   type LanguageServerSettings_Serialize,
   type LoadedSettings_Serialize,
   type Settings_Serialize,
@@ -28,6 +29,8 @@ export class SettingsState {
   statusBarVisible = $derived(this.settings?.status_bar.visible ?? this.#unasked);
   /** Whether each PR's Files tab opens on all its files or one at a time (#605). */
   diffFiles: DiffFiles = $derived(this.settings?.diff.files ?? "all");
+  /** The place each Definition peek opens in: under its line, or split below the code (#459). */
+  diffPeek: DiffPeek = $derived(this.settings?.diff.peek ?? "inline");
   /** How many times settings were taken, so a load answered after a newer take leaves them be. */
   #takes = 0;
   /** Whether the Settings dialog previews changes on these settings, which a load mustn't replace. */

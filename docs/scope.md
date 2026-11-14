@@ -72,7 +72,7 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
   the **Theme** of each side.
 - A `themes` folder beside `settings.toml`, which holds the user's own **Themes**.
 - `[diff]` in `settings.toml`: `files`, whether each PR's Files tab opens on all its files or one at a
-  time.
+  time, and `peek`, whether the Definition peek opens under its line or split below the code.
 
 ### Themes ([themes.md](devel/themes.md))
 
@@ -124,6 +124,7 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 - A **Definition peek** under the line of the word the user picked, which pushes the rows after it down
   and names where ty says the word is defined in Python, at the PR's head or at its base for a removed
   line. The user supplies ty, and picks it in Settings › Advanced, which keeps its path in `machine.toml`.
+  Split, the peek opens below the diff instead, which stays where it was.
 
 ### Comments ([comments.md](devel/comments.md))
 

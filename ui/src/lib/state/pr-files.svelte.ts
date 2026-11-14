@@ -56,6 +56,7 @@ import {
   type ThreadAnchor,
 } from "./diff-layout";
 import { FilePages, samePage, type FilesMode, type Page } from "./file-pages";
+import { diffShows, inRepository, type FileView } from "./file-view";
 import { HitCode } from "./hit-code.svelte";
 import { hud, type Jump, type JumpTimer } from "./hud.svelte";
 import { PEEK_ID, peekPlaces, withPeek, type IndexNews, type Peek } from "./peek";
@@ -128,6 +129,9 @@ const sameHit = (one: Hit, other: Hit) =>
 
 /** Where Go to definition lands: the diff's row that shows the hit's line, and the side the hit is at. */
 type Landing = { row: number; side: DiffEnd };
+
+/** Where Go to definition goes: a line of the diff, or the file view of a file the PR doesn't change. */
+type Goal = { kind: "diff"; landing: Landing } | { kind: "file"; view: FileView };
 
 /** How long Go to definition says it found nothing. */
 export const NOTICE_MS = 4000;
@@ -303,6 +307,8 @@ export class PrFilesState {
   #pick = $state.raw<Pick>();
   /** The Definition peek, while it shows. */
   #peek = $state.raw<Peek>();
+  /** The file view over the tab, while it shows (#453). */
+  #fileView = $state.raw<FileView>();
   /** The ticket of the newest lookup, so only its answer shows. Closing the peek takes a new one, which no
    * lookup answers to. */
   #lookups = 0;
@@ -351,6 +357,11 @@ export class PrFilesState {
     const view = this.view;
     if (view?.state !== "ready") return;
     for (const chunk of this.#asked) void this.#respan(view, chunk);
+  }
+
+  /** The PR's number, which the file view's header names. */
+  get number(): number {
+    return this.#number;
   }
 
   /** The Repository the PR is in. */
@@ -923,8 +934,9 @@ export class PrFilesState {
 
   /** Goes to where the picked word is defined (#444), with the lookup `Alt+F12` runs: to the first of ty's
    * hits on a line a hunk shows, which the diff scrolls to and marks for a moment, on the line's old side
-   * for a hit at the base. With no hit it says so for a moment. A hit on no line of the diff, or an answer
-   * with no hit to go to, opens the peek, until the file view comes (#445, #453). */
+   * for a hit at the base. Without one, the first hit in a file the PR doesn't change opens the file view
+   * at the hit's commit (#453). With no hit it says so for a moment. A hit on a line of a changed file that
+   * no hunk shows, or an answer with no hit to go to, opens the peek, until #445. */
   async goToDefinition() {
     const looked = await this.#lookUp((looking) => {
       // A peek on another word would say nothing of this one.
@@ -942,25 +954,53 @@ export class PrFilesState {
       this.#unwatch(lookup);
       return;
     }
-    const landing = hits === undefined ? undefined : await this.#landing(hits, view);
+    const goal = hits === undefined ? undefined : await this.#goal(hits, view, peek.code);
     if (lookup !== this.#lookups) return;
     this.#say(undefined);
-    if (landing === undefined) {
+    if (goal === undefined) {
       this.#showPeek(peek, lookup);
       return;
     }
     this.#unwatch(lookup);
     this.#peek = undefined;
-    this.#moveTo(view.files, landing.row);
-    this.marked = landing;
+    if (goal.kind === "file") {
+      this.#fileView = goal.view;
+      return;
+    }
+    this.#moveTo(view.files, goal.landing.row);
+    this.marked = goal.landing;
+  }
+
+  /** The file view, while it shows over the tab (#453). */
+  get fileView(): FileView | undefined {
+    return this.#fileView;
+  }
+
+  /** Closes the file view, and hands the diff under it its focus back, scrolled where the user left it. */
+  closeFileView() {
+    this.#fileView = undefined;
+    this.diffWantsFocus = true;
+  }
+
+  /** Where Go to definition goes for `hits`: the first on a line a hunk of the diff `view` shows, or else
+   * the file view of the first in a file the diff shows no lines of. `first` is the first hit's code, which
+   * the lookup has made for the peek. */
+  async #goal(hits: Hit[], view: Ready, first: HitCode | undefined): Promise<Goal | undefined> {
+    const landing = await this.#landing(hits, view);
+    if (landing !== undefined) return { kind: "diff", landing };
+    const elsewhere = hits.filter(inRepository).find((hit) => !diffShows(view.files, hit.place));
+    if (elsewhere === undefined) return undefined;
+    const index = hits.indexOf(elsewhere);
+    const code = (index === 0 ? first : undefined) ?? new HitCode(this.#repository, elsewhere, index);
+    return { kind: "file", view: { place: elsewhere.place, line: elsewhere.line, code } };
   }
 
   /** The row of the first of `hits` on a line a hunk of the diff `view` shows, and the side its hit is at.
-   * A row the core can't find counts as none. */
+   * A row the core can't find counts as none, and a file the diff shows no lines of has none to ask for. */
   async #landing(hits: Hit[], view: Ready): Promise<Landing | undefined> {
-    for (const hit of hits) {
+    for (const hit of hits.filter(inRepository)) {
       const place = hit.place;
-      if (place.kind !== "repository") continue;
+      if (!diffShows(view.files, place)) continue;
       const line = {
         repository: this.#repository,
         number: this.#number,

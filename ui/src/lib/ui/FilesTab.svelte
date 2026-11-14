@@ -7,10 +7,12 @@
      the tab says the PR's commits or the mirror's clone come once GitHub answers (#390). Ctrl+F opens a
      search over the diff's rows (#186). The header's toggle switches between all the files and one at a
      time, and one at a time a bar says which file shows, "‹ 12 of 48 ›" and its path (#605). Beside the
-     toggle, Go to definition says it searches, or for a moment that it found nothing (#444). -->
+     toggle, Go to definition says it searches, or for a moment that it found nothing (#444). A definition in
+     a file the PR doesn't change opens the file view over the tab (#453). -->
 <script lang="ts">
   import type { Page, PrFilesState, Unfetched } from "$lib/state/pr-files.svelte";
   import DiffRows from "./DiffRows.svelte";
+  import FileView from "./FileView.svelte";
   import FindBar from "./FindBar.svelte";
   import { chordLabel, currentOs, keyLabel } from "./keys";
   import MirrorQuestion from "./MirrorQuestion.svelte";
@@ -65,82 +67,100 @@
   >
 {/snippet}
 
-{#if files.error}
-  <p role="alert">{`Tsugiki can't show this PR's files: ${files.error}`}</p>
-{/if}
-{#if files.view?.state === "asking"}
-  <MirrorQuestion repository={files.repository} />
-{:else if files.view?.state === "cloning"}
-  {#if files.mirror?.state === "offline"}
-    <p class="waiting" role="status">{`Cloning ${files.repository} starts once GitHub answers.`}</p>
-  {:else}
-    <p class="waiting">{cloningWords(files.cloning) ?? "Cloning the Repository's mirror…"}</p>
+<!-- The file view covers the tab, which takes no focus and no keys under it, and leaves the tree a screen
+     reader reads. -->
+<div class="covered" inert={files.fileView !== undefined}>
+  {#if files.error}
+    <p role="alert">{`Tsugiki can't show this PR's files: ${files.error}`}</p>
   {/if}
-{:else if files.view?.state === "fetching"}
-  {#if files.waitsForNetwork}
-    <p class="waiting" role="status">The PR's commits come once GitHub answers.</p>
-  {:else if files.unfetched !== undefined}
-    <p class="waiting" role="alert">
-      {unfetchedWords(
-        files.unfetched,
-        "the commit Tsugiki last synced",
-        "Tsugiki couldn't fetch the PR's commits",
-      )}
-      <button onclick={() => void files.ask()}>Try again</button>
-    </p>
-  {:else}
-    <p class="waiting">Fetching the PR's commits…</p>
-  {/if}
-{:else if files.view?.state === "ready"}
-  {#if files.heldBack !== undefined && files.waitsForNetwork}
-    <p class="waiting" role="status">
-      {`Showing ${short(files.view.head)} · the newer ${short(files.heldBack.newer)} comes once GitHub answers.`}
-      {#if files.heldBack.count > 0}{waiting(files.heldBack.count)}{/if}
-    </p>
-  {:else if files.heldBack !== undefined && files.unfetched !== undefined}
-    {@const [shown, newer] = [short(files.view.head), short(files.heldBack.newer)]}
-    <p class="waiting" role="alert">
-      {`Showing ${shown} · ${unfetchedWords(files.unfetched, newer, `Tsugiki couldn't fetch the newer ${newer}`)}`}
-      {#if files.heldBack.count > 0}{waiting(files.heldBack.count)}{/if}
-      <button onclick={() => void files.ask()}>Try again</button>
-    </p>
-  {:else if files.heldBack !== undefined}
-    <p class="waiting" role="status">
-      {`Showing ${short(files.view.head)} · fetching the newer ${short(files.heldBack.newer)}.`}
-      {#if files.heldBack.count > 0}{waiting(files.heldBack.count)}{/if}
-    </p>
-  {/if}
-  <div class="header">
-    {#if files.shown !== undefined}
-      {@const shown = files.shown}
-      {@const words = pageWords(shown)}
-      <nav class="bar" aria-label="File on show">
-        {@render stepper(shown, -1)}<span class="count">{words.count}</span>{@render stepper(shown, 1)}
-        <span class="path">{words.path}</span>
-      </nav>
+  {#if files.view?.state === "asking"}
+    <MirrorQuestion repository={files.repository} />
+  {:else if files.view?.state === "cloning"}
+    {#if files.mirror?.state === "offline"}
+      <p class="waiting" role="status">{`Cloning ${files.repository} starts once GitHub answers.`}</p>
+    {:else}
+      <p class="waiting">{cloningWords(files.cloning) ?? "Cloning the Repository's mirror…"}</p>
     {/if}
-    {#if files.notice !== undefined}
-      <span class="notice" role="status">{files.notice}</span>
+  {:else if files.view?.state === "fetching"}
+    {#if files.waitsForNetwork}
+      <p class="waiting" role="status">The PR's commits come once GitHub answers.</p>
+    {:else if files.unfetched !== undefined}
+      <p class="waiting" role="alert">
+        {unfetchedWords(
+          files.unfetched,
+          "the commit Tsugiki last synced",
+          "Tsugiki couldn't fetch the PR's commits",
+        )}
+        <button onclick={() => void files.ask()}>Try again</button>
+      </p>
+    {:else}
+      <p class="waiting">Fetching the PR's commits…</p>
     {/if}
-    <button
-      type="button"
-      class="mode"
-      aria-pressed={files.mode === "one"}
-      title={`One file at a time (${chordLabel("ctrl+k o", os)})`}
-      onclick={() => {
-        files.toggleMode();
-      }}>One file at a time</button
-    >
-  </div>
-  {#if files.searching}
-    <FindBar {files} />
+  {:else if files.view?.state === "ready"}
+    {#if files.heldBack !== undefined && files.waitsForNetwork}
+      <p class="waiting" role="status">
+        {`Showing ${short(files.view.head)} · the newer ${short(files.heldBack.newer)} comes once GitHub answers.`}
+        {#if files.heldBack.count > 0}{waiting(files.heldBack.count)}{/if}
+      </p>
+    {:else if files.heldBack !== undefined && files.unfetched !== undefined}
+      {@const [shown, newer] = [short(files.view.head), short(files.heldBack.newer)]}
+      <p class="waiting" role="alert">
+        {`Showing ${shown} · ${unfetchedWords(files.unfetched, newer, `Tsugiki couldn't fetch the newer ${newer}`)}`}
+        {#if files.heldBack.count > 0}{waiting(files.heldBack.count)}{/if}
+        <button onclick={() => void files.ask()}>Try again</button>
+      </p>
+    {:else if files.heldBack !== undefined}
+      <p class="waiting" role="status">
+        {`Showing ${short(files.view.head)} · fetching the newer ${short(files.heldBack.newer)}.`}
+        {#if files.heldBack.count > 0}{waiting(files.heldBack.count)}{/if}
+      </p>
+    {/if}
+    <div class="header">
+      {#if files.shown !== undefined}
+        {@const shown = files.shown}
+        {@const words = pageWords(shown)}
+        <nav class="bar" aria-label="File on show">
+          {@render stepper(shown, -1)}<span class="count">{words.count}</span>{@render stepper(shown, 1)}
+          <span class="path">{words.path}</span>
+        </nav>
+      {/if}
+      {#if files.notice !== undefined}
+        <span class="notice" role="status">{files.notice}</span>
+      {/if}
+      <button
+        type="button"
+        class="mode"
+        aria-pressed={files.mode === "one"}
+        title={`One file at a time (${chordLabel("ctrl+k o", os)})`}
+        onclick={() => {
+          files.toggleMode();
+        }}>One file at a time</button
+      >
+    </div>
+    {#if files.searching}
+      <FindBar {files} />
+    {/if}
+    <div class="diff">
+      <DiffRows diff={files} files={files.view.files} news={files.view.news} {now} {onlink} />
+    </div>
   {/if}
-  <div class="diff">
-    <DiffRows diff={files} files={files.view.files} news={files.view.news} {now} {onlink} />
-  </div>
+</div>
+{#if files.fileView}
+  <FileView
+    view={files.fileView}
+    number={files.number}
+    onback={() => {
+      files.closeFileView();
+    }}
+  />
 {/if}
 
 <style>
+  /* Lays its children out in the tab as if it weren't there. */
+  .covered {
+    display: contents;
+  }
+
   .waiting {
     font-size: 12px;
     color: var(--fg-muted);

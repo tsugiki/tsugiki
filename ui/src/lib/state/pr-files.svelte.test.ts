@@ -33,6 +33,21 @@ vi.mock("@tauri-apps/api/core", () => ({
   },
 }));
 
+/** Each hit's code the tab has made, in order, so a test can tell one made twice. */
+const codes = vi.hoisted((): unknown[] => []);
+vi.mock("./hit-code.svelte", async (original) => {
+  const real = await original<typeof import("./hit-code.svelte")>();
+  return {
+    ...real,
+    HitCode: class extends real.HitCode {
+      constructor(...args: ConstructorParameters<typeof real.HitCode>) {
+        super(...args);
+        codes.push(this);
+      }
+    },
+  };
+});
+
 const core = vi.hoisted(() => {
   const core = {
     pullRequestFiles: vi.fn(),
@@ -183,6 +198,7 @@ const heldSpans = () => {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  codes.length = 0;
   core.heard = {};
   core.stopped = [];
   core.cloning.mockResolvedValue(null);
@@ -1977,10 +1993,11 @@ const picking: DiffRow[] = [
   { kind: "added", new: 9, text: "    return width ** 2" },
 ];
 
-/** The Files tab of `picking`'s diff at `head`, once its rows came. */
-const pickable = async (head = "abc") => {
+/** The Files tab of `picking`'s diff at `head`, once its rows came. The diff also changes the files `more`
+ * names, past its rows. */
+const pickable = async (head = "abc", more: DiffFile[] = []) => {
   core.pullRequestRows.mockResolvedValue(ok(picking));
-  const files = await loaded(ready(head, picking.length, [file("a.py", 0)]));
+  const files = await loaded(ready(head, picking.length, [file("a.py", 0), ...more]));
   files.need(0, picking.length - 1);
   await vi.waitFor(() => {
     expect(files.row(4)).toBeDefined();
@@ -2521,7 +2538,8 @@ it("takes the line away and keeps the answer when the server stops before it bui
 });
 
 it("shows what came of the index while Go to definition found the row, once it opens the peek", async () => {
-  core.definitions.mockResolvedValue(hitsFound(hitAt("Include/spam.h", "base", 3)));
+  // A file the PR changes, on a line the diff doesn't show, opens the peek.
+  core.definitions.mockResolvedValue(hitsFound(hitAt("a.py", "base", 3)));
   let rowFound: (row: unknown) => void = () => {};
   core.pullRequestRow.mockReturnValueOnce(
     new Promise((resolve) => {
@@ -2666,13 +2684,16 @@ it("goes to the first hit the diff shows, past those outside it or whose row it 
     column: 0,
     text: "",
   };
-  const hits = ["gone.py", "error.py", "thrown.py", "a.py"].map((path) => hitAt(path, "head", 9));
+  const hits = ["unchanged.py", "gone.py", "error.py", "thrown.py", "a.py"].map((path) =>
+    hitAt(path, "head", 9),
+  );
   core.definitions.mockResolvedValue(hitsFound(outside, ...hits));
   core.pullRequestRow.mockResolvedValueOnce(ok(null));
   core.pullRequestRow.mockResolvedValueOnce({ status: "error", error: { kind: "internal", message: "no" } });
   core.pullRequestRow.mockRejectedValueOnce(new Error("The window lost the core."));
   core.pullRequestRow.mockResolvedValueOnce(ok(4));
-  const files = await pickable();
+  const changed = ["gone.py", "error.py", "thrown.py"].map((path) => file(path, picking.length));
+  const files = await pickable("abc", changed);
   files.pickWord({ kind: "row", row: 2 }, null, 6, false);
 
   await files.goToDefinition();
@@ -2684,10 +2705,12 @@ it("goes to the first hit the diff shows, past those outside it or whose row it 
     "a.py",
   ]);
   expect(files.marked).toEqual({ row: 4, side: "head" });
+  // A file the PR doesn't change has no row to ask for, and a hit the diff shows wins over one in it.
+  expect(files.fileView).toBeUndefined();
 });
 
 it("opens the peek on a hit on no line of the diff, or on an answer with no hit to go to", async () => {
-  core.definitions.mockResolvedValueOnce(hitsFound(hitAt("Lib/shapes.py", "base", 3)));
+  core.definitions.mockResolvedValueOnce(hitsFound(hitAt("a.py", "base", 3)));
   core.definitions.mockResolvedValueOnce({
     status: "error",
     error: { kind: "internal", message: "ty broke" },
@@ -2702,12 +2725,109 @@ it("opens the peek on a hit on no line of the diff, or on an answer with no hit 
 
   expect(nowhere).toMatchObject({
     symbol: "width",
-    lookup: { state: "answered", answer: { state: "found", hits: [hitAt("Lib/shapes.py", "base", 3)] } },
+    lookup: { state: "answered", answer: { state: "found", hits: [hitAt("a.py", "base", 3)] } },
   });
   expect(nowhere?.code).toBeDefined();
   expect(files.peek?.lookup).toEqual({ state: "failed", problem: "ty broke" });
   expect(files.marked).toBeUndefined();
   expect(files.notice).toBeUndefined();
+  expect(files.fileView).toBeUndefined();
+});
+
+it("opens the file view on a hit in a file the PR doesn't change, at the hit's commit", async () => {
+  core.definitions.mockResolvedValueOnce(ok({ state: "not_set_up" }));
+  core.definitions.mockResolvedValueOnce(hitsFound(hitAt("Lib/shapes.py", "base", 3)));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 3 }, null, 13, false);
+  await files.peekDefinition();
+
+  await files.goToDefinition();
+
+  expect(files.fileView).toMatchObject({
+    place: { kind: "repository", path: "Lib/shapes.py", side: "base", commit: "base" },
+    line: 3,
+  });
+  expect(core.pullRequestRow).not.toHaveBeenCalled();
+  expect(files.peek).toBeUndefined();
+  expect(files.marked).toBeUndefined();
+  expect(files.notice).toBeUndefined();
+  expect(files.going).toBe(false);
+  // No peek shows the answer, so the core stops watching the server's index for it (#680).
+  expect(core.cancelDefinitions.mock.calls).toEqual([[ticketOf(1)]]);
+});
+
+it("reads the first hit's code once, whether the peek or the file view shows it", async () => {
+  core.definitions.mockResolvedValue(hitsFound(hitAt("Lib/shapes.py", "base", 3)));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 3 }, null, 13, false);
+
+  await files.goToDefinition();
+
+  expect(codes).toHaveLength(1);
+  expect(files.fileView?.code).toBe(codes[0]);
+});
+
+it("reads the code of a later hit the file view shows, past a first hit outside the Repository", async () => {
+  const outside: Hit = {
+    place: { kind: "outside", path: "C:/ty/builtins.pyi" },
+    line: 1,
+    column: 0,
+    text: "",
+  };
+  core.definitions.mockResolvedValue(hitsFound(outside, hitAt("Lib/shapes.py", "base", 3)));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 3 }, null, 13, false);
+
+  await files.goToDefinition();
+
+  // The peek's code for the first hit, then the file view's for the second.
+  expect(codes).toHaveLength(2);
+  expect(files.fileView?.code).toBe(codes[1]);
+  expect(files.fileView?.place.path).toBe("Lib/shapes.py");
+});
+
+it("opens the file view on a hit in a file the PR only renames, as the diff shows none of its lines", async () => {
+  core.definitions.mockResolvedValueOnce(hitsFound(hitAt("Lib/shapes.py", "base", 3)));
+  core.definitions.mockResolvedValueOnce(hitsFound(hitAt("Lib/forms.py", "head", 3)));
+  const renamed: DiffFile = {
+    ...file("Lib/forms.py", picking.length),
+    old_path: "Lib/shapes.py",
+    change: { kind: "lines", added: 0, removed: 0 },
+  };
+  const files = await pickable("abc", [renamed]);
+  files.pickWord({ kind: "row", row: 3 }, null, 13, false);
+
+  await files.goToDefinition();
+  const atBase = files.fileView?.place;
+  files.closeFileView();
+  await files.goToDefinition();
+
+  expect(atBase).toEqual({ kind: "repository", path: "Lib/shapes.py", side: "base", commit: "base" });
+  expect(files.fileView?.place).toEqual({
+    kind: "repository",
+    path: "Lib/forms.py",
+    side: "head",
+    commit: "head",
+  });
+  expect(core.pullRequestRow).not.toHaveBeenCalled();
+});
+
+it("closes the file view and hands the diff its focus back, and keeps it while a newer diff comes", async () => {
+  core.definitions.mockResolvedValue(hitsFound(hitAt("Lib/shapes.py", "base", 3)));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 3 }, null, 13, false);
+  await files.goToDefinition();
+  const opened = files.fileView;
+
+  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [file("a.py", 0)])));
+  await files.ask();
+  const afterNewerDiff = files.fileView;
+  files.closeFileView();
+
+  // The view reads its file at its own commit, which a newer diff doesn't change.
+  expect(afterNewerDiff).toBe(opened);
+  expect(files.fileView).toBeUndefined();
+  expect(files.diffWantsFocus).toBe(true);
 });
 
 it("goes nowhere once a newer lookup started, or the peek closed, while it found the row", async () => {

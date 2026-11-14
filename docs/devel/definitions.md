@@ -105,9 +105,22 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   the base on its old side, which side by side marks only that half. The core finds the row in the diff on
   show, from the hit's path and line at its side, the old path for a renamed file at the base.
 - With no hit, the line over the diff says "No definition of X at abc1234." for 4 seconds.
-- Until the later tickets land, a hit on no line of the diff opens the peek on it: a line no hunk shows
-  (#445), or a file the PR doesn't change (#453). So does an answer with no hit to go to, which says why. With
-  several hits it goes to the first that lands, until #446 opens the peek with the list.
+- With no hit on a line a hunk shows, the first hit in a file the PR doesn't change opens the file view: that
+  file, read-only, over the Files tab, at the hit's commit. So does a file the PR only renames, or whose
+  mode alone changes, as the diff shows none of its lines. The window tells these files from the diff's
+  list of files, by the new path at the head and the old path at the base, and asks the core for no row in
+  them. The header says "← Back to PR #N's diff", the path, "at abc1234 · the PR's base of PR #N" (or head),
+  and Read-only. The hit's line sits 3 rows from the top, and the view marks it.
+- The file view shows the peek's code: the window asks the core for 200 lines at a time near the rows that
+  show, read from the **Mirror** at the hit's commit, so `Objects/unicodeobject.c` opens without waiting for
+  all of it, and it works offline at any commit the Mirror holds. The lines are plain text until #455.
+- The file view takes the focus, so the keys scroll it, and a file it can't read says why inside it, where
+  the focus stays. The diff stays drawn under it, inert, and its
+  keys wait: Back returns to the Files tab scrolled where it was, with the focus in the diff. The Issue
+  list's cursor stays on the PR's row. `Alt+←` and Esc come with #456.
+- Until #445 lands, a hit on a line of a changed file that no hunk shows opens the peek on it. So do a hit
+  outside the Repository and an answer with no hit to go to, which says why. With several hits it goes to
+  the first that lands, until #446 opens the peek with the list.
 - A development build gives `F12` to Go to definition too, and opens DevTools on `Ctrl+Shift+I` or from the
   palette.
 
@@ -189,11 +202,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   index. Without a compile database clangd never reports one, and the watch comes to nothing.
 - The window keeps what the core says of the index until a peek shows the answer, as it may hear it before
   the answer, or while Go to definition finds the hit's row. Closing the peek cancels the lookup, and so
-  does Go to definition when it shows no peek, as it lands on a row or finds nothing. A newer lookup ends
-  it too. The core then stops watching and asks clangd nothing more. A clangd whose index a lookup watches
-  isn't idle. If clangd stops first, crashed, for a removed Repository or a PR at other commits, the core
-  says so and the line goes, leaving the answer. The same goes for a lookup asked again that clangd fails,
-  and clangd keeps the index it built. A peek opened once the index is built shows no line.
+  does Go to definition when it shows no peek, as it lands on a row, opens the file view or finds nothing.
+  A newer lookup ends it too. The core then stops watching and asks clangd nothing more. A clangd whose
+  index a lookup watches isn't idle. If clangd stops first, crashed, for a removed Repository or a PR at
+  other commits, the core says so and the line goes, leaving the answer. The same goes for a lookup asked
+  again that clangd fails, and clangd keeps the index it built. A peek opened once the index is built shows
+  no line.
 - The window may cancel a lookup before the core takes it, as the two travel apart. The core keeps the
   last 16 cancels that matched no lookup, as each closed peek sends one, and a lookup one of them names
   answers that it was cancelled and leaves the lookup running and the watch be.

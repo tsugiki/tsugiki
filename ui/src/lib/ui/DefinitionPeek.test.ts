@@ -41,7 +41,12 @@ const peekWith = (lookup: Peek["lookup"]): Peek => ({
 it("counts the seconds a lookup waits for ty's answer, and stops once it answers", async () => {
   vi.useFakeTimers({ now: 10_000 });
   const asking = peekWith({ state: "looking", waiting: { step: "asking", server: "ty" }, since: 10_000 });
-  const shown = render(DefinitionPeek, { peek: asking, onclose: () => {}, onhit: () => {} });
+  const shown = render(DefinitionPeek, {
+    peek: asking,
+    onclose: () => {},
+    onhit: () => {},
+    onopen: () => {},
+  });
   const body = () => screen.getByText(/eggs…|No definition/).textContent;
   expect(body()).toBe("Asking ty for the definition of eggs…");
 
@@ -58,7 +63,7 @@ it("counts no seconds while ty starts, as the words say none", () => {
   vi.useFakeTimers({ now: 10_000 });
   const starting = peekWith({ state: "looking", waiting: { step: "starting", server: "ty" }, since: 10_000 });
 
-  render(DefinitionPeek, { peek: starting, onclose: () => {}, onhit: () => {} });
+  render(DefinitionPeek, { peek: starting, onclose: () => {}, onhit: () => {}, onopen: () => {} });
 
   expect(screen.getByText("Starting ty…")).toBeDefined();
   expect(vi.getTimerCount()).toBe(0);
@@ -70,7 +75,12 @@ it("shows a line under the header while clangd indexes, and takes it away once i
   const indexing = { ...answered, indexing: { state: "building", server: "clangd", files } } as const;
   const line = "clangd is indexing (120 of 452 files): this may be a declaration";
 
-  const shown = render(DefinitionPeek, { peek: indexing, onclose: () => {}, onhit: () => {} });
+  const shown = render(DefinitionPeek, {
+    peek: indexing,
+    onclose: () => {},
+    onhit: () => {},
+    onopen: () => {},
+  });
   const before = screen.queryByText(line);
   await shown.rerender({ peek: answered });
 
@@ -100,7 +110,12 @@ const showing = (hits: Hit[], index: number): Peek => {
 const hits = [hitIn("Lib/a.py", 3), hitIn("Lib/b.py", 9), hitIn("Lib/c.py", 12)];
 
 it("lists the hits on its right, each with its path, line and text, and marks the one it shows", async () => {
-  const shown = render(DefinitionPeek, { peek: showing(hits, 1), onclose: () => {}, onhit: () => {} });
+  const shown = render(DefinitionPeek, {
+    peek: showing(hits, 1),
+    onclose: () => {},
+    onhit: () => {},
+    onopen: () => {},
+  });
 
   const list = screen.getByRole("listbox", { name: "Definitions" });
   const rows = within(list).getAllByRole("option");
@@ -131,7 +146,7 @@ it("scrolls the list, and only the list, to keep the hit shown in sight", async 
   document.body.append(scroller);
   const shown = render(DefinitionPeek, {
     target: scroller,
-    props: { peek: showing(many, 5), onclose: () => {}, onhit: () => {} },
+    props: { peek: showing(many, 5), onclose: () => {}, onhit: () => {}, onopen: () => {} },
   });
   const list = screen.getByRole("listbox");
 
@@ -147,7 +162,7 @@ it("scrolls the list, and only the list, to keep the hit shown in sight", async 
 
 it("lists a single hit too, beside the words that say its file can't be read", async () => {
   const peek = showing([hitIn("Lib/a.py", 3)], 0);
-  render(DefinitionPeek, { peek, onclose: () => {}, onhit: () => {} });
+  render(DefinitionPeek, { peek, onclose: () => {}, onhit: () => {}, onopen: () => {} });
 
   expect(screen.getAllByRole("option").map((row) => row.textContent)).toEqual([
     "Lib/a.py:3 def area3(self):",
@@ -160,7 +175,7 @@ it("lists a single hit too, beside the words that say its file can't be read", a
 
 it("picks the hit a click lands on", async () => {
   const onhit = vi.fn();
-  render(DefinitionPeek, { peek: showing(hits, 0), onclose: () => {}, onhit });
+  render(DefinitionPeek, { peek: showing(hits, 0), onclose: () => {}, onhit, onopen: () => {} });
 
   await fireEvent.click(screen.getByText("def area12(self):", { selector: "[role=option] *" }));
 
@@ -171,7 +186,7 @@ it("moves through the hits with ↑ and ↓ while it has the focus, and keeps th
   const onhit = vi.fn();
   const diff = vi.fn<(e: KeyboardEvent) => void>();
   window.addEventListener("keydown", diff);
-  render(DefinitionPeek, { peek: showing(hits, 1), onclose: () => {}, onhit });
+  render(DefinitionPeek, { peek: showing(hits, 1), onclose: () => {}, onhit, onopen: () => {} });
 
   await fireEvent.keyDown(screen.getByRole("listbox"), { key: "ArrowDown" });
   await fireEvent.keyDown(screen.getByRole("region", { name: "Definition's code" }), { key: "ArrowUp" });
@@ -182,4 +197,38 @@ it("moves through the hits with ↑ and ↓ while it has the focus, and keeps th
   expect(onhit.mock.calls).toEqual([[2], [0]]);
   // Ctrl+↓ isn't the peek's, and the window's Escape closes the peek, so both go on to the window's keys.
   expect(diff.mock.calls.map(([e]) => e.key)).toEqual(["ArrowDown", "Escape"]);
+});
+
+it("goes to the hit it shows on Open, and on Enter or F12 while it has the focus, which the diff never hears", async () => {
+  const onopen = vi.fn();
+  const diff = vi.fn<(e: KeyboardEvent) => void>();
+  window.addEventListener("keydown", diff);
+  const props = { onclose: () => {}, onhit: () => {}, onopen };
+  render(DefinitionPeek, { peek: showing(hits, 1), open: "ready", ...props });
+
+  await fireEvent.click(screen.getByRole("button", { name: "Open" }));
+  await fireEvent.keyDown(screen.getByRole("listbox"), { key: "Enter" });
+  await fireEvent.keyDown(screen.getByRole("region", { name: "Definition's code" }), { key: "F12" });
+  // A held key would go again and again, and Alt+F12 is the diff's.
+  await fireEvent.keyDown(screen.getByRole("listbox"), { key: "F12", repeat: true });
+  await fireEvent.keyDown(screen.getByRole("listbox"), { key: "F12", altKey: true });
+  window.removeEventListener("keydown", diff);
+
+  expect(onopen).toHaveBeenCalledTimes(3);
+  expect(diff.mock.calls.map(([e]) => [e.key, e.altKey])).toEqual([["F12", true]]);
+});
+
+it("offers Open as the tab says, and waits while the tab finds the hit's row", async () => {
+  const props = { onclose: () => {}, onhit: () => {}, onopen: () => {} };
+  const shown = render(DefinitionPeek, { peek: showing(hits, 0), ...props });
+  const nowhere = screen.queryByRole("button", { name: "Open" });
+  await shown.rerender({ open: "ready" });
+  const open = screen.getByRole<HTMLButtonElement>("button", { name: "Open" });
+  const ready = open.disabled;
+  await shown.rerender({ open: "going" });
+
+  expect(nowhere).toBeNull();
+  expect(ready).toBe(false);
+  expect(open.disabled).toBe(true);
+  expect(open.title).toBe("Go to this definition (Enter, F12)");
 });

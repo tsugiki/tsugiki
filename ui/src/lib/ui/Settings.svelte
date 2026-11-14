@@ -89,7 +89,7 @@
                 aria-current={current({ repository })}
                 onclick={() => {
                   dialog.show({ repository });
-                }}>{short(repository)}</button
+                }}><span class="mono">{short(repository)}</span></button
               >
             {/each}
           {/if}
@@ -97,7 +97,7 @@
       </nav>
       <section aria-label={title}>
         {#if "repository" in dialog.shown}
-          <h3 class="repository">{dialog.shown.repository}</h3>
+          <h3 class="repository mono">{dialog.shown.repository}</h3>
           <p class="empty">Nothing to set here yet.</p>
         {:else if dialog.shown.page === "General"}
           <GeneralPage {dialog} />
@@ -207,7 +207,6 @@
   nav .repository {
     padding: 4px 10px 4px 22px;
     overflow: hidden;
-    font-family: var(--mono);
     font-size: 12px;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -222,7 +221,6 @@
   h3.repository {
     margin: 4px 0 8px;
     padding-bottom: 4px;
-    font-family: var(--mono);
     font-size: 13px;
     border-bottom: 1px solid var(--border);
   }

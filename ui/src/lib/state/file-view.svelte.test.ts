@@ -1,6 +1,6 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import type { DiffEnd } from "$lib/data/bindings";
-import { diffShows, fileViewWords, lineOf, samePlace, type HistoryPlace } from "./file-view";
+import { diffShows, fileViewWords, FileView, lineOf, samePlace, type HistoryPlace } from "./file-view.svelte";
 import type { HitCode } from "./hit-code.svelte";
 
 const place = (path: string, side: DiffEnd) => ({
@@ -50,7 +50,7 @@ it("shows no lines of a file the PR only renames, or whose mode alone changes", 
 
 it("names the commit and the side of the PR it is in the header", () => {
   const code = {} as HitCode;
-  const words = (side: DiffEnd) => fileViewWords({ place: place("Lib/eggs.py", side), line: 4, code }, 11);
+  const words = (side: DiffEnd) => fileViewWords(new FileView(place("Lib/eggs.py", side), 4, code), 11);
 
   expect(words("base")).toEqual({
     back: "← Back to PR #11's diff",
@@ -62,12 +62,33 @@ it("names the commit and the side of the PR it is in the header", () => {
 it("takes a file view in the history for one place, which belongs to its PR's line", () => {
   const code = {} as HitCode;
   const pr = { number: 11, kind: "pull_request" as const, issue: 7 };
-  const view = { place: place("Lib/eggs.py", "base"), line: 4, code };
+  const view = new FileView(place("Lib/eggs.py", "base"), 4, code);
   const file: HistoryPlace = { kind: "file", line: pr, view };
   const again: HistoryPlace = { kind: "file", line: { ...pr }, view };
-  const other: HistoryPlace = { kind: "file", line: pr, view: { ...view } };
+  const other: HistoryPlace = { kind: "file", line: pr, view: new FileView(view.place, 4, code) };
 
   expect([samePlace(file, again), samePlace(file, other)]).toEqual([true, false]);
   expect([samePlace(file, pr), samePlace(pr, file), samePlace(pr, { ...pr })]).toEqual([false, false, true]);
   expect([lineOf(file), lineOf(pr)]).toEqual([pr, pr]);
+});
+
+it("marks the line it opened on, then each line Go to definition lands on, with the caret on its word", () => {
+  const pickWord = vi.fn();
+  const code = { scrollTop: 400, pickWord } as unknown as HitCode;
+  const view = new FileView(place("Lib/eggs.py", "base"), 4, code);
+  const opened = view.landing;
+
+  view.land(30, 6);
+  const landed = view.landing;
+  view.land(30, 6);
+
+  expect(opened).toEqual({ line: 4 });
+  expect(landed).toEqual({ line: 30 });
+  // Each landing is a new one, so the view scrolls to the same line again.
+  expect(view.landing).not.toBe(landed);
+  expect(code.scrollTop).toBeUndefined();
+  expect(pickWord.mock.calls).toEqual([
+    [30, 6, false],
+    [30, 6, false],
+  ]);
 });

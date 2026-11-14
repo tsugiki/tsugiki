@@ -146,13 +146,10 @@
   {/if}
 </div>
 {#if files.fileView}
-  <FileView
-    view={files.fileView}
-    number={files.number}
-    onback={() => {
-      files.closeFileView();
-    }}
-  />
+  <!-- Each file view draws afresh, so one that Go to definition opens from another takes the focus. -->
+  {#key files.fileView}
+    <FileView view={files.fileView} {files} />
+  {/key}
 {/if}
 
 <style>

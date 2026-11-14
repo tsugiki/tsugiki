@@ -200,6 +200,12 @@ export function currentOs(platform: string = navigator.platform): Os {
   return platform.startsWith("Mac") ? "mac" : "other";
 }
 
+/** Whether click `e` asks for Go to definition: Ctrl+click, or Cmd+click on macOS, where Ctrl+click is the
+ * system's (#444). */
+export function goesToDefinition(e: MouseEvent, os: Os): boolean {
+  return os === "mac" ? e.metaKey : e.ctrlKey;
+}
+
 export function isTextBox(target: EventTarget | null): boolean {
   return (
     target instanceof HTMLInputElement ||

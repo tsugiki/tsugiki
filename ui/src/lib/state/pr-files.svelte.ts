@@ -57,8 +57,8 @@ import {
   type ThreadAnchor,
 } from "./diff-layout";
 import { FilePages, samePage, type FilesMode, type Page } from "./file-pages";
-import { diffShows, inRepository, type FileView } from "./file-view";
-import { HitCode } from "./hit-code.svelte";
+import { diffShows, FileView, inRepository, type RepositoryHit } from "./file-view.svelte";
+import { HitCode, type CodePick } from "./hit-code.svelte";
 import { hud, type Jump, type JumpTimer } from "./hud.svelte";
 import type { PanesState } from "./panes.svelte";
 import { PEEK_ID, peekPlaces, withPeek, type Crumb, type IndexNews, type Peek } from "./peek";
@@ -140,6 +140,9 @@ function shownHit(peek: Peek | undefined): { hit: Hit; code: HitCode; hits: Hit[
   return code && hits && hit && { hit, code, hits };
 }
 
+/** Whether `peek` shows under a line of the diff, and not of the file view (#457). */
+const inDiff = (peek: Peek): peek is Peek & { at: PickedLine } => peek.at.kind !== "view";
+
 /** Whether two hits are at the same place and line. */
 const sameHit = (one: Hit, other: Hit) =>
   one.line === other.line && JSON.stringify(one.place) === JSON.stringify(other.place);
@@ -148,12 +151,32 @@ const sameHit = (one: Hit, other: Hit) =>
  * no hunk shows it (#445), and the side the hit is at. */
 type Landing = { at: LineInDiff; side: DiffEnd };
 
-/** Where Go to definition goes: a line of the diff, or the file view of a file the PR doesn't change. */
-type Goal = { kind: "diff"; landing: Landing } | { kind: "file"; view: FileView };
+/** Where Go to definition goes: a line of the diff, the file view of a file the PR doesn't change, or
+ * another line of the file view it went from (#457). */
+type Goal =
+  | { kind: "diff"; landing: Landing }
+  | { kind: "file"; view: FileView }
+  | { kind: "line"; view: FileView; line: number; column: number };
 
 /** A lookup's question: the peek that shows its answer, before it has one, and the word's place as the core
  * takes it: the file's path at the peek's side, the line and the word's column. */
 type Asked = { peek: Omit<Peek, "lookup">; path: string; line: number; column: number };
+
+/** The lookup of the word `pick` picked in the code of a file at `place`, for a peek under `at` that names
+ * the peeks of `trail` before it: in the peek's code (#447), or in the file view's (#457). */
+function askedIn(
+  at: Peek["at"],
+  place: RepositoryHit["place"],
+  pick: CodePick,
+  trail?: readonly Crumb[],
+): Asked {
+  return {
+    peek: { at, symbol: pick.word, side: place.side, commit: place.commit, ...(trail && { trail }) },
+    path: place.path,
+    line: pick.line,
+    column: pick.start,
+  };
+}
 
 /** How long Go to definition says it found nothing. */
 export const NOTICE_MS = 4000;
@@ -194,6 +217,12 @@ export class PrFilesState {
   mode = $state<FilesMode>("all");
   /** The panes' layout, which holds the Definition peek's height (#458). */
   readonly panes: PanesState;
+  /** The peek while it shows in the diff. One in the file view takes no place in the diff under it, and
+   * its steps don't lay the diff out again (#457). */
+  #diffPeek = $derived.by(() => {
+    const peek = this.#peek;
+    return peek && inDiff(peek) ? peek : undefined;
+  });
   /** The pages of the diff when it shows one file at a time: the NEWS entries, each file, and the threads
    * on files no longer in the diff. */
   pages = $derived.by(() => {
@@ -217,7 +246,7 @@ export class PrFilesState {
       id: thread.id,
       block: { kind: "thread", thread, index },
     }));
-    const peek = this.#peek;
+    const peek = this.#diffPeek;
     return new DiffLayout(
       ready ? view.rows : 0,
       files,
@@ -251,6 +280,9 @@ export class PrFilesState {
   searchWantsFocus = $state(false);
   /** Whether the search has closed and handed the diff its focus back, until the diff takes it. */
   diffWantsFocus = $state(false);
+  /** Whether the file view's code should take the focus, until it does: the peek in it closed, or Go to
+   * definition from the peek landed on another line of it (#457). */
+  viewWantsFocus = $state(false);
   /** The line Go to definition landed on, at the side of the diff its hit is at, which the diff marks for
    * a moment (#444): a row, or a line a gap opened to show (#445). Each landing is a new one, so the mark
    * shows again on the same line. */
@@ -470,8 +502,11 @@ export class PrFilesState {
     }
   }
 
+  /** Stops hearing the core, as the PR leaves the Detail pane. A lookup still under way goes nowhere, so its
+   * answer opens or closes no file view the history would record for a PR not on show (#457). */
   stop() {
     this.#stopped = true;
+    this.#dropPeek();
     clearTimeout(this.#noticeTimer);
     for (const stop of this.#stopListening) stop();
     this.#stopListening = [];
@@ -976,7 +1011,8 @@ export class PrFilesState {
    * while the PR's newer head is fetched. The peek shows at once and says what the lookup waits for, and ty
    * answers in the core while the window goes on. A newer lookup cancels this one in the core, and closing
    * the peek cancels it too. A lookup that answers after a newer one started, or after the peek closed,
-   * changes nothing. */
+   * changes nothing. While the file view shows, the peek opens under the line of the word picked there, and
+   * asks at the view's commit (#457). */
   async peekDefinition() {
     const looked = await this.#lookUp((looking) => {
       this.#peek = looking;
@@ -991,7 +1027,9 @@ export class PrFilesState {
    * PR doesn't change opens the file view at the hit's commit (#453). Several hits open the peek with their
    * list, where the user picks the one to go to (#446). With no hit it says so for a moment. An answer with
    * no hit to go to, and a hit whose line the diff can't show, open the peek. It is `going` until it knows
-   * where to go, so Escape stops it while it finds the hit's row or opens the lines around it. */
+   * where to go, so Escape stops it while it finds the hit's row or opens the lines around it. While the
+   * file view shows, it looks up the word picked there, at the view's commit, and a hit in the same file
+   * lands on its line there (#457). */
   async goToDefinition() {
     const looked = await this.#lookUp((looking) => {
       // A peek on another word would say nothing of this one.
@@ -1012,7 +1050,7 @@ export class PrFilesState {
     }
     // It goes on while it finds the hit's row or opens the lines around it, so Escape still stops it.
     const only = hits?.length === 1 ? shownHit(peek) : undefined;
-    const goal = only && (await this.#goal(only.hit, view, only.code));
+    const goal = only && (await this.#goal(only.hit, view, only.code, peek));
     if (lookup !== this.#lookups || this.#diff(this.view) !== this.#diff(view)) return;
     this.#stopGoing();
     // The places the core names once the index is built, while it found the row, replace the hit, which
@@ -1047,7 +1085,7 @@ export class PrFilesState {
     if (this.going || shown === undefined || !inRepository(shown.hit) || view?.state !== "ready") return;
     const lookup = this.#lookups;
     this.going = true;
-    const goal = await this.#goal(shown.hit, view, shown.code);
+    const goal = await this.#goal(shown.hit, view, shown.code, this.#peek);
     // Escape, a newer lookup or a newer diff stopped it.
     if (lookup !== this.#lookups) return;
     this.going = false;
@@ -1061,7 +1099,8 @@ export class PrFilesState {
     if (goal.kind === "diff") this.diffWantsFocus = true;
   }
 
-  /** Goes to `goal`, which lookup `lookup` found in the diff `view`, and closes the peek. */
+  /** Goes to `goal`, which lookup `lookup` found in the diff `view`, and closes the peek. A line of the
+   * diff found from the file view closes the view, as Back does (#457). */
   #go(goal: Goal, view: Ready, lookup: number) {
     this.#unwatch(lookup);
     this.#peek = undefined;
@@ -1069,6 +1108,12 @@ export class PrFilesState {
       this.openFileView(goal.view);
       return;
     }
+    if (goal.kind === "line") {
+      goal.view.land(goal.line, goal.column);
+      this.viewWantsFocus = true;
+      return;
+    }
+    if (this.#fileView !== undefined) this.closeFileView();
     this.#land(goal.landing, view);
   }
 
@@ -1088,16 +1133,18 @@ export class PrFilesState {
   }
 
   /** Opens `view` over the tab, as Go to definition does into a file the diff shows no lines of, which the
-   * history records (#456). */
+   * history records (#456). The peek closes, as it shows on what the view covers or on another view. */
   openFileView(view: FileView) {
+    this.#dropPeek();
     this.#fileView = view;
     this.#fileViewMoved(view);
   }
 
   /** Closes the file view, as Back and Esc do, which the history records (#456), and hands the diff under
    * it its focus back, scrolled where the user left it. A diff still on its way takes no focus when it
-   * comes, as the user may have moved on by then. */
+   * comes, as the user may have moved on by then. A peek in the view closes with it (#457). */
   closeFileView() {
+    this.#dropPeek();
     this.#fileView = undefined;
     this.diffWantsFocus = this.view?.state === "ready";
     this.#fileViewMoved(undefined);
@@ -1105,20 +1152,27 @@ export class PrFilesState {
 
   /** Shows `view` over the tab, or the diff with none, as `Alt+←` and `Alt+→` go through the Detail
    * pane's history (#456), which records nothing. The view keeps where its code was scrolled, and the diff
-   * where it was. A view whose file couldn't be read reads it again. */
+   * where it was. A view whose file couldn't be read reads it again. A move to another view, or to the
+   * diff, closes the peek, which showed on the one left (#457). */
   showFileView(view: FileView | undefined) {
     view?.code.retry();
+    if (view !== this.#fileView) this.#dropPeek();
     this.#fileView = view;
   }
 
-  /** Where Go to definition goes for `hit`: its line in a file the diff `view` changes, which a hunk shows
-   * or a gap hides, or the file view of a file the diff shows no lines of, which shows `code`, the hit's
-   * code the peek made. A hidden line opens the lines around it first, as a thread there does (#445). A
+  /** Where Go to definition goes for `hit`, which the lookup `asked` found: another line of the file view
+   * it asked from, if the hit is in that view's file at its commit (#457), its line in a file the diff
+   * `view` changes, which a hunk shows or a gap hides, or the file view of a file the diff shows no lines
+   * of, which shows `code`, the hit's code the peek made. A hidden line opens the lines around it first, as
+   * a thread there does (#445), even from the file view, which covers them until the landing closes it. A
    * line the core can't find, one whose lines don't come, and a hit outside the Repository go nowhere. */
-  async #goal(hit: Hit, view: Ready, code: HitCode): Promise<Goal | undefined> {
+  async #goal(hit: Hit, view: Ready, code: HitCode, asked: Peek | undefined): Promise<Goal | undefined> {
     if (!inRepository(hit)) return undefined;
     const place = hit.place;
-    if (!diffShows(view.files, place)) return { kind: "file", view: { place, line: hit.line, code } };
+    const from = asked?.at.kind === "view" ? asked.at.view : undefined;
+    if (from?.place.path === place.path && from.place.commit === place.commit)
+      return { kind: "line", view: from, line: hit.line, column: hit.column };
+    if (!diffShows(view.files, place)) return { kind: "file", view: new FileView(place, hit.line, code) };
     const line = {
       repository: this.#repository,
       number: this.#number,
@@ -1160,13 +1214,30 @@ export class PrFilesState {
     };
   }
 
+  /** The lookup of the word picked in the file view, at the view's commit, if a word is picked there
+   * (#457). The core looks up at the commits of the diff on show, `diff`, so a view left at a commit the PR
+   * has moved on from says so for a moment instead: its lines and columns would name other text. */
+  #askedInView(view: FileView, diff: Ready): Asked | undefined {
+    const pick = view.code.pick;
+    if (pick === undefined) return undefined;
+    const place = view.place;
+    if (place.commit !== (place.side === "base" ? diff.base : diff.head)) {
+      const commit = place.commit.slice(0, 7);
+      this.#say(`The PR has moved on from ${commit}, so Tsugiki can't go to definitions from it.`, NOTICE_MS);
+      return undefined;
+    }
+    return askedIn({ kind: "view", view, line: pick.line }, place, pick);
+  }
+
   /** Asks ty where a word is defined, the one `asking` names in the diff on show, which is the word picked
-   * in the diff unless it says another. It gives the peek that shows the answer, the lookup's number and the
-   * diff it asked in. `starting` hears the peek while it looks, as the lookup starts. It gives nothing with
-   * no word to ask about, or once a newer lookup has started or the peek has closed. */
+   * in the file view while it shows (#457), and else the word picked in the diff, unless it says another.
+   * It gives the peek that shows the answer, the lookup's number and the diff it asked in. `starting` hears
+   * the peek while it looks, as the lookup starts. It gives nothing with no word to ask about, or once a
+   * newer lookup has started or the peek has closed. */
   async #lookUp(
     starting: (looking: Peek) => void,
-    asking: (view: Ready) => Asked | undefined = (view) => this.#askedInDiff(view),
+    asking: (view: Ready) => Asked | undefined = (view) =>
+      this.#fileView ? this.#askedInView(this.#fileView, view) : this.#askedInDiff(view),
   ): Promise<{ peek: Peek; lookup: number; view: Ready } | undefined> {
     const view = this.view;
     const asked = view?.state === "ready" ? asking(view) : undefined;
@@ -1300,19 +1371,7 @@ export class PrFilesState {
       lookup: { state: "answered", answer: { state: "found", hits: shown.hits } },
       code: shown.code,
     };
-    const place = hit.place;
-    const asked = {
-      peek: {
-        at: peek.at,
-        symbol: pick.word,
-        side: place.side,
-        commit: place.commit,
-        trail: [...(peek.trail ?? []), crumb],
-      },
-      path: place.path,
-      line: pick.line,
-      column: pick.start,
-    };
+    const asked = askedIn(peek.at, hit.place, pick, [...(peek.trail ?? []), crumb]);
     const looked = await this.#lookUp(
       (looking) => {
         this.#peek = looking;
@@ -1340,11 +1399,12 @@ export class PrFilesState {
     this.peekFocus = "take";
   }
 
-  /** Closes the Definition peek, and hands the diff its focus back. A Go to definition that still looks
-   * the word up goes nowhere. */
+  /** Closes the Definition peek, and hands the diff its focus back, or the file view's code while the view
+   * shows (#457). A Go to definition that still looks the word up goes nowhere. */
   closePeek() {
     this.#dropPeek();
-    this.diffWantsFocus = true;
+    if (this.#fileView === undefined) this.diffWantsFocus = true;
+    else this.viewWantsFocus = true;
   }
 
   /** Drops the Definition peek, and what Go to definition says. A lookup that still waits is cancelled, so

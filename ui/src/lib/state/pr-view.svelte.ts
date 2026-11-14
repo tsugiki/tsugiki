@@ -8,7 +8,7 @@ import {
   type ThreadLine_Serialize,
 } from "$lib/data/bindings";
 import { DetailState } from "./detail-view.svelte";
-import type { FileView } from "./file-view";
+import type { FileView } from "./file-view.svelte";
 import { hud } from "./hud.svelte";
 import type { PanesState } from "./panes.svelte";
 import { DiffViewChoice, PrFilesState, type FilesMode } from "./pr-files.svelte";

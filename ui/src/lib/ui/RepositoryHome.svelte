@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick } from "svelte";
   import { openOnGitHub, type GitHubItem } from "$lib/state/browser";
-  import { lineOf, samePlace, type FileView, type HistoryPlace } from "$lib/state/file-view";
+  import { lineOf, samePlace, type FileView, type HistoryPlace } from "$lib/state/file-view.svelte";
   import { hud } from "$lib/state/hud.svelte";
   import { IssueViewState } from "$lib/state/issue-view.svelte";
   import {
@@ -615,11 +615,12 @@
     ) {
       e.preventDefault();
       open(workbench.underCursor);
-    } else if (key === "escape" && (files?.peek || files?.going)) {
+    } else if (key === "escape" && (tab?.peek || tab?.going)) {
       // Escape closes the Definition peek first, or stops Go to definition, then the search, as in VS Code.
-      // The search box keeps its own Escape, which closes the search.
+      // The search box keeps its own Escape, which closes the search. The peek can be in the file view, which
+      // the next Escape closes (#457).
       e.preventDefault();
-      files.closePeek();
+      tab.closePeek();
     } else if (key === "escape" && files?.searching) {
       e.preventDefault();
       files.closeSearch();
@@ -643,13 +644,13 @@
     } else if ((key === "f7" || key === "shift+f7") && files) {
       e.preventDefault();
       files.nextChange(key === "f7" ? 1 : -1);
-    } else if (key === "alt+f12" && files) {
-      // A held key would ask ty again and again.
+    } else if (key === "alt+f12" && tab) {
+      // A held key would ask ty again and again. The file view looks up the word picked in it (#457).
       e.preventDefault();
-      if (!e.repeat) void files.peekDefinition();
-    } else if (key === "f12" && files) {
+      if (!e.repeat) void tab.peekDefinition();
+    } else if (key === "f12" && tab) {
       e.preventDefault();
-      if (!e.repeat) void files.goToDefinition();
+      if (!e.repeat) void tab.goToDefinition();
     } else if (key === "alt+arrowleft" || key === "alt+arrowright") {
       e.preventDefault();
       goThrough(key === "alt+arrowleft" ? -1 : 1);

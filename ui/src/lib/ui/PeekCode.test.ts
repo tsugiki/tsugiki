@@ -38,16 +38,16 @@ const hit = {
 
 it("scrolls to each new hit's line, and back to where the user left a hit's code", async () => {
   const far = new HitCode("python/cpython", { ...hit, line: 900 }, 0);
-  const shown = render(PeekCode, { code: far, line: 900 });
+  const shown = render(PeekCode, { code: far, mark: { line: 900 } });
   const region = screen.getByRole("region", { name: "Definition's code" });
   // The hit's line sits three rows from the top.
   expect(region.scrollTop).toBe((900 - 1 - 3) * 20);
 
-  await shown.rerender({ code: new HitCode("python/cpython", { ...hit, line: 40 }, 1), line: 40 });
+  await shown.rerender({ code: new HitCode("python/cpython", { ...hit, line: 40 }, 1), mark: { line: 40 } });
   expect(region.scrollTop).toBe((40 - 1 - 3) * 20);
 
   far.scrollTop = 500;
-  await shown.rerender({ code: far, line: 900 });
+  await shown.rerender({ code: far, mark: { line: 900 } });
   expect(region.scrollTop).toBe(500);
 });
 
@@ -58,7 +58,7 @@ it("paints each line's spans in the theme's syntax colours once they come", asyn
   const area = { start: 4, end: 8, highlight: "function" };
   core.definitionSpans.mockReturnValueOnce(ok([[], [], [keyword, area]]));
   const code = new HitCode("python/cpython", hit, 0);
-  render(PeekCode, { code, line: 3 });
+  render(PeekCode, { code, mark: hit });
 
   const hitLine = await vi.waitFor(() => {
     const line = document.querySelector(".hit .text");
@@ -106,8 +106,8 @@ const picked = () =>
     .map((code) => [...code.querySelectorAll(".picked")].map((piece) => piece.textContent).join(""));
 
 /** A peek's code of `hit`'s file, which reads `x = width` and `def area(self):`, with its keyword and its
- * function's name highlighted. */
-const pickableCode = (pickable = true) => {
+ * function's name highlighted. `ongo` hears a Ctrl+click on a word, as in the file view. */
+const pickableCode = (ongo?: () => void) => {
   const ok = <T>(data: T) => Promise.resolve({ status: "ok" as const, data });
   core.definitionCode.mockReturnValueOnce(ok({ count: 3, lines: ["x = width", "", "def area(self):"] }));
   const spans = [
@@ -116,7 +116,7 @@ const pickableCode = (pickable = true) => {
   ];
   core.definitionSpans.mockReturnValueOnce(ok([[], [], spans]));
   const code = new HitCode("python/cpython", hit, 0);
-  render(PeekCode, { code, line: 3, pickable });
+  render(PeekCode, { code, mark: hit, ...(ongo && { ongo }) });
   return code;
 };
 
@@ -201,21 +201,49 @@ it("selects nothing on a double-click whose word went before it came, or whose f
   expect([code.pick, getSelection()?.toString()]).toEqual([undefined, ""]);
 });
 
-it("picks no word in the file view, which has nothing to look it up with", async () => {
-  const code = pickableCode(false);
+it("goes to the definition of the word a Ctrl+click picks, and of none a plain click or a miss picks", async () => {
+  const ongo = vi.fn();
+  const code = pickableCode(ongo);
   const area = await codeOf(3);
-  code.pickWord(3, 6, false);
 
-  await clickAt(area, 1);
-  await fireEvent.dblClick(area, { detail: 2 });
+  await clickAt(area, 6);
+  // The caret lands before the `=` of `x = width`, on no word.
+  await clickAt(await codeOf(1), 2, { ctrlKey: true });
+  const onSpace = ongo.mock.calls.length;
+  await clickAt(area, 6, { ctrlKey: true });
+
+  expect(onSpace).toBe(0);
+  expect(ongo).toHaveBeenCalledOnce();
+  expect(code.pick?.word).toBe("area");
+});
+
+it("takes Cmd+click on macOS for Go to definition, where Ctrl+click is the system's", async () => {
+  const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+  const ongo = vi.fn();
+  pickableCode(ongo);
+  platform.mockRestore();
+  const area = await codeOf(3);
+
+  await clickAt(area, 6, { ctrlKey: true });
+  const afterCtrl = ongo.mock.calls.length;
+  await clickAt(area, 6, { metaKey: true });
+
+  expect(afterCtrl).toBe(0);
+  expect(ongo).toHaveBeenCalledOnce();
+});
+
+it("picks the word a Ctrl+click lands on in the peek, which goes nowhere from it", async () => {
+  const code = pickableCode();
+  const area = await codeOf(3);
+
+  await clickAt(area, 6, { ctrlKey: true });
 
   expect(code.pick?.word).toBe("area");
-  expect(picked()).toEqual([]);
 });
 
 it("keeps the focus on the code when its file turns out unreadable, so the keys stay with it", async () => {
   const code = new HitCode("python/cpython", hit, 0);
-  render(PeekCode, { code, line: 3 });
+  render(PeekCode, { code, mark: hit });
   const region = screen.getByRole("region", { name: "Definition's code" });
   region.focus();
 

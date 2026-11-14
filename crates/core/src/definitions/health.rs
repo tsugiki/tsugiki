@@ -107,15 +107,31 @@ pub struct ServerRow {
     pub tested: Vec<String>,
 }
 
-/// What the servers' thread knows of a server beyond whether it runs: its version, and what last happened
-/// to it.
+/// What the servers' thread knows of a server's program, whichever Repository runs it: its version, and
+/// what its `--version` check said.
 #[derive(Debug, Clone, Default)]
 pub(super) struct Health {
     pub(super) version: Option<String>,
-    pub(super) last: Last,
+    pub(super) check: Check,
+    /// What a look at the program's folder found it lacks, which each start looks for again: clangd's
+    /// built-in headers (#684).
+    pub(super) flaw: Option<ServerProblem>,
 }
 
-/// What last happened to a server that its status says.
+/// Where a server's `--version` check stands.
+#[derive(Debug, Clone, Default)]
+pub(super) enum Check {
+    /// Nothing against it: its path hasn't changed since Tsugiki started, the check passed, or a server
+    /// started from the program since.
+    #[default]
+    Clear,
+    /// Its path changed, and `--version` hasn't answered yet.
+    Waiting,
+    /// `--version` had this problem, and no server has started from the program since.
+    Failed(ServerProblem),
+}
+
+/// What last happened to a Repository's server that its status says.
 #[derive(Debug, Clone, Default)]
 pub(super) enum Last {
     /// Nothing to say: it started, or nothing has happened yet.
@@ -136,56 +152,60 @@ pub(super) enum Presence {
 }
 
 impl Health {
-    /// Notes that the server started, which clears a problem it had, with the version it named answering
-    /// `initialize`, if it did, and `flaw`, a problem its program has all the same, such as clangd's
-    /// built-in headers missing (#684).
+    /// A program whose path just changed, which `--version` checks now.
+    pub(super) fn checking() -> Self {
+        Self {
+            version: None,
+            check: Check::Waiting,
+            flaw: None,
+        }
+    }
+
+    /// Notes that a server started from the program, which clears what its check found, with the version it
+    /// named answering `initialize`, if it did, and `flaw`, what a look at its folder found it lacks now.
     pub(super) fn started(&mut self, version: Option<String>, flaw: Option<ServerProblem>) {
-        self.last = flaw.map_or(Last::Nothing, Last::Problem);
+        self.check = Check::Clear;
+        self.flaw = flaw;
         if version.is_some() {
             self.version = version;
         }
     }
 
-    /// Notes that the server reports its index, so it no longer has the problem of a server that doesn't,
-    /// however late the report came.
-    pub(super) fn indexed(&mut self) {
-        if let Last::Problem(ServerProblem::NotIndexing) = self.last {
-            self.last = Last::Nothing;
+    /// Notes what checking the program found, unless a server has started from it since: what a running
+    /// server says outranks a check that answered later.
+    pub(super) fn checked(&mut self, outcome: Result<Found, ServerProblem>) {
+        if !matches!(self.check, Check::Waiting) {
+            return;
+        }
+        match outcome {
+            Ok(found) => {
+                self.check = Check::Clear;
+                self.version = found.version;
+                self.flaw = found.flaw;
+            }
+            Err(problem) => self.check = Check::Failed(problem),
         }
     }
 
-    /// Notes `problem` of a server that runs, unless it has one that explains as much or more, and says
-    /// whether it did. A problem that kept it from answering is behind it, as it runs.
-    pub(super) fn troubled(&mut self, problem: ServerProblem) -> bool {
-        let weight = match &self.last {
-            Last::Problem(problem) => problem.weight(),
-            Last::Nothing | Last::Idle => 0,
-        };
-        let worse = problem.weight() > weight;
-        if worse {
-            self.last = Last::Problem(problem);
-        }
-        worse
+    /// The problem of a server of this program that runs, to which `last` happened, which may explain why
+    /// it found nothing, if it has one: what the program lacks, or what the server reported.
+    pub(super) fn misleads<'a>(&'a self, last: &'a Last) -> Option<&'a ServerProblem> {
+        self.flaw.as_ref().or_else(|| last.misleads())
     }
 
-    /// The problem of a server that runs, which may explain why it found nothing, if it has one.
-    pub(super) fn misleads(&self) -> Option<&ServerProblem> {
-        match &self.last {
-            Last::Problem(problem) if problem.weight() > 0 => Some(problem),
-            Last::Problem(_) | Last::Nothing | Last::Idle => None,
-        }
-    }
-
-    /// The row of server `server`, which is `presence`.
-    pub(super) fn row(&self, server: ServerName, presence: Presence) -> ServerRow {
-        let status = match (presence, &self.last) {
-            (Presence::NotSetUp, _) => ServerStatus::NotSetUp,
-            (_, Last::Problem(problem)) => ServerStatus::Problem {
+    /// The row of server `server`, which is `presence`, and to which `last` happened, in the Repository the
+    /// rows show.
+    pub(super) fn row(&self, server: ServerName, presence: Presence, last: &Last) -> ServerRow {
+        let status = match (presence, &self.check, &self.flaw, last) {
+            (Presence::NotSetUp, ..) => ServerStatus::NotSetUp,
+            (_, Check::Failed(problem), ..)
+            | (_, _, Some(problem), _)
+            | (.., Last::Problem(problem)) => ServerStatus::Problem {
                 problem: problem.clone(),
             },
-            (Presence::Running, _) => ServerStatus::Running,
-            (Presence::Stopped, Last::Idle) => ServerStatus::Idle,
-            (Presence::Stopped, Last::Nothing) => ServerStatus::Ready,
+            (Presence::Running, ..) => ServerStatus::Running,
+            (Presence::Stopped, .., Last::Idle) => ServerStatus::Idle,
+            (Presence::Stopped, .., Last::Nothing) => ServerStatus::Ready,
         };
         let tested = server.tested();
         let version = self.version.clone().map(|version| FoundVersion {
@@ -201,33 +221,60 @@ impl Health {
     }
 }
 
-/// What checking a server's program found when the user set its path.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct Checked {
-    /// The version `--version` printed, if it named the server and printed one.
-    pub(super) version: Option<String>,
-    /// What is wrong with the program, if something is. A clangd can have a version and a problem both.
-    pub(super) problem: Option<ServerProblem>,
-}
+impl Last {
+    /// Notes that the server reports its index, so it no longer has the problem of a server that doesn't,
+    /// however late the report came.
+    pub(super) fn indexed(&mut self) {
+        if let Self::Problem(ServerProblem::NotIndexing) = self {
+            *self = Self::Nothing;
+        }
+    }
 
-/// What checking the program at `program` for server `name` finds: its `--version` has to name the server,
-/// and clangd's built-in headers have to be beside it (#684). It waits for the program, so it runs off the
-/// servers' thread.
-pub(super) fn check(name: ServerName, program: &Path) -> Checked {
-    match read_check(name, tsugiki_lsp::version_of(program, CHECK_PATIENCE)) {
-        Ok(version) => Checked {
-            version,
-            problem: flaw(name, program),
-        },
-        Err(problem) => Checked {
-            version: None,
-            problem: Some(problem),
-        },
+    /// Notes `problem` of a server that runs, unless it has one that explains as much or more, and says
+    /// whether it did. A problem that kept it from answering is behind it, as it runs.
+    pub(super) fn troubled(&mut self, problem: ServerProblem) -> bool {
+        let weight = match self {
+            Self::Problem(problem) => problem.weight(),
+            Self::Nothing | Self::Idle => 0,
+        };
+        let worse = problem.weight() > weight;
+        if worse {
+            *self = Self::Problem(problem);
+        }
+        worse
+    }
+
+    /// The problem a server that runs reported, which may explain why it found nothing, if it has one.
+    fn misleads(&self) -> Option<&ServerProblem> {
+        match self {
+            Self::Problem(problem) if problem.weight() > 0 => Some(problem),
+            Self::Problem(_) | Self::Nothing | Self::Idle => None,
+        }
     }
 }
 
-/// The problem the program of server `name` at `program` has however it starts, which a look at its folder
-/// finds: clangd's built-in headers missing. It belongs to the program, so each start looks again.
+/// What checking found of a program whose `--version` named the server.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Found {
+    /// The version `--version` printed, if it printed one.
+    pub(super) version: Option<String>,
+    /// What a look at its folder found it lacks, if anything.
+    pub(super) flaw: Option<ServerProblem>,
+}
+
+/// What checking the program at `program` for server `name` finds, or what is wrong: its `--version` has to
+/// name the server, and clangd's built-in headers have to be beside it (#684). It waits for the program, so
+/// it runs off the servers' thread.
+pub(super) fn check(name: ServerName, program: &Path) -> Result<Found, ServerProblem> {
+    let version = read_check(name, tsugiki_lsp::version_of(program, CHECK_PATIENCE))?;
+    Ok(Found {
+        version,
+        flaw: flaw(name, program),
+    })
+}
+
+/// What a look at the folder of the program of server `name` at `program` finds it lacks: clangd's
+/// built-in headers.
 pub(super) fn flaw(name: ServerName, program: &Path) -> Option<ServerProblem> {
     (name == ServerName::Clangd && !super::clangd::has_built_ins(program))
         .then_some(ServerProblem::BuiltInHeadersMissing)

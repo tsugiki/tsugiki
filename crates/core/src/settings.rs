@@ -756,25 +756,33 @@ impl SettingsFiles {
 
     /// Saves what the Settings dialog's Apply changed over what the files say now, and reads the files
     /// again. A hand edit made while the dialog was open stays, unless the dialog changed the same table.
-    /// Each file is saved only if the changes touch it, so a problem in one doesn't hold up the other.
+    /// Each file is saved only if the changes touch it. `machine.toml` is read and edited before
+    /// `settings.toml` is written, so one that doesn't parse refuses the whole Apply with nothing saved,
+    /// and the dialog's Cancel still matches the files.
     pub fn apply(&mut self, changes: SettingsChanges) -> Result<(), Error> {
         self.reload();
+        let machine = self.folders.machine_file();
+        let servers = (changes.language_servers.as_ref())
+            .map(|servers| Self::language_servers_edit(&machine, servers))
+            .transpose()?;
         if let Some(settings) = changes.made_to(self.loaded.settings.clone()) {
             self.write(&settings)?;
         }
-        match &changes.language_servers {
-            Some(servers) => self.save_language_servers(servers),
-            None => Ok(()),
+        if let Some(edit) = servers {
+            edit.save()?;
+            self.reload();
         }
+        Ok(())
     }
 
-    /// Saves `[language_servers]` in `machine.toml` as Settings › Advanced left it, keeping everything else
-    /// in the file, and reads the files again. A server without a path loses its `path`, and an idle time
-    /// back at its default goes, unless the user commented on it. It refuses while `machine.toml` can't be
-    /// used.
-    fn save_language_servers(&mut self, servers: &LanguageServerSettings) -> Result<(), Error> {
-        let path = self.folders.machine_file();
-        let mut edit = TomlEdit::open_machine(&path)?;
+    /// `machine.toml` at `path` with `[language_servers]` as Settings › Advanced left it, ready to save,
+    /// keeping everything else in the file. A server without a path loses its `path`, and an idle time back
+    /// at its default goes, unless the user commented on it. It refuses while `machine.toml` can't be used.
+    fn language_servers_edit<'a>(
+        path: &'a Path,
+        servers: &LanguageServerSettings,
+    ) -> Result<TomlEdit<'a, Machine>, Error> {
+        let mut edit = TomlEdit::open_machine(path)?;
         edit_section(edit.document.as_table_mut(), LANGUAGE_SERVERS, |section| {
             let minutes = |count: NonZeroU32| toml_edit::value(i64::from(count.get()));
             let default = minutes(IDLE_MINUTES);
@@ -800,9 +808,7 @@ impl SettingsFiles {
                 });
             }
         });
-        edit.save()?;
-        self.reload();
-        Ok(())
+        Ok(edit)
     }
 
     /// What the window opens on: the Repository opened most recently that the settings still hold, or else
@@ -1489,10 +1495,11 @@ fn merge_section(
     edit_section(file, key, |section| merge(section, wanted, defaults));
 }
 
-/// Hands `change` the section `key` of `file`, made first if `file` has none, and drops the section again
-/// if `change` leaves it empty.
+/// Hands `change` the section `key` of `file`, made first if `file` has none or has a value there that
+/// isn't a table, such as a hand-written `ty = "C:/ty.exe"`, and drops the section again if `change`
+/// leaves it empty.
 fn edit_section(file: &mut dyn TableLike, key: &str, change: impl FnOnce(&mut dyn TableLike)) {
-    if file.get(key).is_none() {
+    if !file.get(key).is_some_and(Item::is_table_like) {
         drop(file.insert(key, Item::Table(Table::new())));
     }
     if let Some(section) = file.get_mut(key).and_then(Item::as_table_like_mut) {

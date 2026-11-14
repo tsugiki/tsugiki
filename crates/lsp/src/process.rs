@@ -93,9 +93,15 @@ impl Server {
 /// The shortest wait between two looks at whether a `--version` run has ended.
 const LOOK_EVERY: Duration = Duration::from_millis(10);
 
+/// How long the processes a `--version` run started, as a launcher or a `.cmd` file may, get to let go of
+/// its output once it has exited, before they are killed.
+const LET_GO_WITHIN: Duration = Duration::from_secs(1);
+
 /// Runs `program --version` with nothing to read and no window of its own on Windows, and gives what it
 /// printed: its output, or its error output if it printed nothing else. One still running after `patience`
-/// is killed, with the processes it started, and fails.
+/// is killed, with the processes it started, and fails. A process it started that still holds its output
+/// [`LET_GO_WITHIN`] after it exited is killed, and the run gives what was printed by then. One that
+/// survives that fails too.
 pub fn version_of(program: &Path, patience: Duration) -> io::Result<String> {
     let mut command = Command::new(program);
     let _ = command
@@ -119,6 +125,17 @@ pub fn version_of(program: &Path, patience: Duration) -> io::Result<String> {
         }
         thread::sleep(LOOK_EVERY);
     }
+    let readings = [&output, &errors];
+    if !read_by(&readings, Instant::now() + LET_GO_WITHIN) {
+        let _kill = child.start_kill();
+        if !read_by(&readings, Instant::now() + LET_GO_WITHIN) {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "a process it started held its output open after it exited",
+            ));
+        }
+    }
+    // Each reading has ended, so these don't wait.
     let text = |reading: Option<JoinHandle<String>>| {
         reading
             .and_then(|reading| reading.join().ok())
@@ -130,6 +147,19 @@ pub fn version_of(program: &Path, patience: Duration) -> io::Result<String> {
     } else {
         output
     })
+}
+
+/// Waits until each of `readings` has read all of its stream, or until `until`, and says whether they all
+/// have.
+fn read_by(readings: &[&Option<JoinHandle<String>>], until: Instant) -> bool {
+    loop {
+        let done =
+            (readings.iter()).all(|reading| reading.as_ref().is_none_or(JoinHandle::is_finished));
+        if done || Instant::now() >= until {
+            return done;
+        }
+        thread::sleep(LOOK_EVERY);
+    }
 }
 
 /// Reads all of `stream` on a thread of its own, so a program that fills one pipe while Tsugiki reads the

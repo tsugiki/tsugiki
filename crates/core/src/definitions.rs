@@ -41,7 +41,7 @@ use crate::repository::RepositoryName;
 pub use code::Code;
 use code::HitFiles;
 pub use health::{FoundVersion, ServerProblem, ServerRow, ServerStatus};
-use health::{Checked, Health, Last, Presence};
+use health::{Found, Health, Last, Presence};
 use server::{Hits, Indexing, LanguageServer, News, OnNews, Request, Stopping};
 
 mod clangd;
@@ -240,7 +240,8 @@ pub type FindCheckout = Box<dyn Fn(&RepositoryName) -> Option<LookupCheckout> + 
 /// What the servers' thread asks the rest of Tsugiki.
 pub struct Sources {
     pub checkout: FindCheckout,
-    /// Where each server is, if the user has set it up.
+    /// Where each server is, if the user has set it up. The servers' thread reads this as it starts, and
+    /// again on [`Definitions::reconfigured`], and starts servers from what it read last.
     pub servers: Box<dyn Fn(ServerName) -> Option<PathBuf> + Send>,
     /// The idle time: a server that no lookup reaches for this long stops.
     pub idle: Box<dyn Fn() -> Duration + Send>,
@@ -421,7 +422,7 @@ enum Message {
     /// The settings may have changed: a server's path, or the idle time.
     Reconfigured,
     /// What checking the program at the path found of the server, once its path was set.
-    Checked(ServerName, PathBuf, Checked),
+    Checked(ServerName, PathBuf, Result<Found, ServerProblem>),
     /// The Repository was removed: its servers stop, and the reply comes once they have ended.
     Remove(RepositoryName, Sender<()>),
     Stop(Duration, Sender<()>),
@@ -584,10 +585,16 @@ struct Owner {
     incoming: Receiver<Message>,
     /// Messages taken early, to see whether a newer lookup came while a server started, and not handled yet.
     queued: VecDeque<Message>,
-    /// Each server's path as the thread last knew it, which a change of settings compares with.
+    /// Each server's path as the thread last read it from the settings, which it starts the server from,
+    /// and which [`Message::Reconfigured`] reads again.
     known: HashMap<ServerName, Option<PathBuf>>,
-    /// Each server's version and what last happened to it.
+    /// Each server's version and what its `--version` check said, whichever Repository runs it.
     health: HashMap<ServerName, Health>,
+    /// What last happened to each Repository's server. A server with nothing here has nothing to say.
+    lasts: HashMap<Key, Last>,
+    /// The Repository whose servers the rows show: the last to open a PR that changes a file a server reads,
+    /// or to look a name up. That is the window's open Repository, from the time it does either.
+    shown: Option<RepositoryName>,
     /// The servers' rows as the thread last wrote them, and where it writes them.
     told: Vec<ServerRow>,
     rows: LatestWriter<Vec<ServerRow>>,
@@ -615,6 +622,8 @@ impl Owner {
             queued: VecDeque::new(),
             known,
             health: HashMap::new(),
+            lasts: HashMap::new(),
+            shown: None,
             told: Vec::new(),
             rows,
         };
@@ -634,22 +643,32 @@ impl Owner {
         }
     }
 
-    /// The row of server `name` in Settings › Advanced.
+    /// The row of server `name` in Settings › Advanced, as it stands in the Repository the rows show.
     fn row(&self, name: ServerName) -> ServerRow {
-        let presence = if (self.sources.servers)(name).is_none() {
+        let key = (self.shown.clone()).map(|repository| (repository, name));
+        let presence = if self.program(name).is_none() {
             Presence::NotSetUp
-        } else if self.servers.keys().any(|(_, running)| *running == name) {
+        } else if (key.as_ref()).is_some_and(|key| self.servers.contains_key(key)) {
             Presence::Running
         } else {
             Presence::Stopped
         };
+        let last = (key.and_then(|key| self.lasts.get(&key))).unwrap_or(&Last::Nothing);
         let health = self.health.get(&name).cloned().unwrap_or_default();
-        health.row(name, presence)
+        health.row(name, presence, last)
     }
 
-    /// What the thread knows of server `name`, to change.
-    fn health_of(&mut self, name: ServerName) -> &mut Health {
-        self.health.entry(name).or_default()
+    /// Where server `name` is, if the user has set it up, as the thread last read it from the settings.
+    fn program(&self, name: ServerName) -> Option<&PathBuf> {
+        self.known.get(&name).and_then(Option::as_ref)
+    }
+
+    /// Notes that the server `key` names started from `program`, naming `version`, if it did, and looks at
+    /// the program's folder for what it lacks (#684).
+    fn started(&mut self, key: &Key, program: &Path, version: Option<String>) {
+        let _cleared = self.lasts.remove(key);
+        let flaw = health::flaw(key.1, program);
+        self.health.entry(key.1).or_default().started(version, flaw);
     }
 
     /// Notes that the server `key` names has problem `problem`, and logs it.
@@ -657,7 +676,7 @@ impl Owner {
         let (repository, name) = key;
         let named = name.as_str();
         log::warn!("{named} for {repository} has a problem: {problem:?}");
-        self.health_of(*name).last = Last::Problem(problem);
+        let _old = self.lasts.insert(key.clone(), Last::Problem(problem));
     }
 
     fn run(mut self) {
@@ -738,14 +757,23 @@ impl Owner {
         }
         let (repository, name) = key;
         let logged = format!("{problem:?}");
-        if self.health_of(*name).troubled(problem) {
+        if self.lasts.entry(key.clone()).or_default().troubled(problem) {
             let named = name.as_str();
             log::warn!("{named} for {repository} runs with a problem: {logged}");
         }
     }
 
-    /// Stops each server whose path has changed since the thread last knew it, cancels a lookup that runs
-    /// on one, forgets what it knew of it, and checks the new path with `--version` on a thread of its own.
+    /// The problem of the server `key` names, which runs, that may explain why it found nothing, if it has
+    /// one: what its program lacks, or what it reported.
+    fn misleads(&self, key: &Key) -> Option<ServerProblem> {
+        let health = self.health.get(&key.1).cloned().unwrap_or_default();
+        let last = self.lasts.get(key).unwrap_or(&Last::Nothing);
+        health.misleads(last).cloned()
+    }
+
+    /// Reads each server's path from the settings again. Stops each server whose path has changed since,
+    /// cancels a lookup that runs on one, forgets what it knew of it, and checks the new path with
+    /// `--version` on a thread of its own, and its folder for what it lacks.
     fn reconfigured(&mut self) {
         for name in ServerName::ALL {
             let path = (self.sources.servers)(name);
@@ -758,8 +786,10 @@ impl Owner {
                 .cloned()
                 .collect();
             let _stopping = self.stop_servers(&theirs);
+            self.lasts.retain(|(_, server), _| *server != name);
             let _forgotten = self.health.remove(&name);
             if let Some(path) = path {
+                let _new = self.health.insert(name, Health::checking());
                 let own = self.own.clone();
                 let _checks = thread::spawn(move || {
                     let found = health::check(name, &path);
@@ -770,24 +800,23 @@ impl Owner {
         }
     }
 
-    /// Notes what checking the program at `path` found of server `name`, unless its path has changed since.
-    fn checked(&mut self, name: ServerName, path: &Path, found: Checked) {
-        if (self.known.get(&name)).is_none_or(|known| known.as_deref() != Some(path)) {
+    /// Notes what checking the program at `path` found of server `name`, unless its path has changed since,
+    /// or a server has started from it.
+    fn checked(&mut self, name: ServerName, path: &Path, outcome: Result<Found, ServerProblem>) {
+        if self.program(name).is_none_or(|known| known != path) {
             return;
         }
-        let health = self.health_of(name);
-        if found.version.is_some() {
-            health.version = found.version;
-        }
-        if let Some(problem) = found.problem {
-            health.last = Last::Problem(problem);
+        if let Some(health) = self.health.get_mut(&name) {
+            health.checked(outcome);
         }
     }
 
-    /// Stops `repository`'s servers and forgets its PR, cancels the lookup running on one of them, and waits
-    /// until the servers' own processes have ended.
+    /// Stops `repository`'s servers and forgets its PR and what happened to its servers, cancels the lookup
+    /// running on one of them, and waits until the servers' own processes have ended.
     fn remove(&mut self, repository: &RepositoryName) {
         let _pr = self.prs.remove(repository);
+        self.lasts.retain(|(owner, _), _| owner != repository);
+        let _hidden = (self.shown).take_if(|shown| shown == repository);
         let theirs: Vec<Key> = (self.servers.keys())
             .filter(|(owner, _)| owner == repository)
             .cloned()
@@ -819,12 +848,13 @@ impl Owner {
             .map(|(key, _)| key.clone())
             .collect();
         let minutes = idle.as_secs() / 60;
-        for (repository, name) in &stale {
+        for key in &stale {
+            let (repository, name) = key;
             let named = name.as_str();
             log::info!(
                 "Tsugiki stops {named} for {repository}, which no lookup has reached for {minutes} minutes"
             );
-            self.health_of(*name).last = Last::Idle;
+            let _old = self.lasts.insert(key.clone(), Last::Idle);
         }
         let _stopping = self.stop_servers(&stale);
     }
@@ -844,6 +874,7 @@ impl Owner {
     /// is the Repository's PR already. The Files tab reads its PR again on each change, and a server that
     /// failed to start, or a checkout that failed to move, waits for a lookup to try again.
     fn opened(&mut self, repository: &RepositoryName, pr: Pr) {
+        self.shown = Some(repository.clone());
         if self
             .prs
             .get(repository)
@@ -876,17 +907,14 @@ impl Owner {
     /// Starts the server `key` names for `pr`, if the user has set it up.
     fn start(&mut self, key: &Key, pr: &Pr) {
         let (repository, name) = key;
-        let Some(program) = (self.sources.servers)(*name) else {
+        let Some(program) = self.program(*name).cloned() else {
             return;
         };
         let replaces = (self.servers.get(key)).is_some_and(|server| *server.at() != pr.at);
         let checkout = (&self.sources.checkout, &self.own);
         let started = ready(&mut self.servers, checkout, (key, pr), (&program, &|_| {}));
         match started.map(|server| server.version()) {
-            Ok(version) => {
-                let flaw = health::flaw(*name, &program);
-                self.health_of(*name).started(version, flaw);
-            }
+            Ok(version) => self.started(key, &program, version),
             Err(NotReady::Problem(problem)) => self.trouble(key, problem),
             Err(NotReady::Failed(problem)) => {
                 let named = name.as_str();
@@ -928,6 +956,7 @@ impl Owner {
         }
         self.cancel_running();
         self.watching = None;
+        self.shown = Some(lookup.repository.clone());
         let Some(name) = ServerName::of(&lookup.path) else {
             asker.answer(Ok(Answer::NoServer));
             return;
@@ -955,7 +984,7 @@ impl Owner {
     /// `asker` what it waits for.
     fn send(&mut self, key: &Key, lookup: &Lookup, asker: &Asker) -> Result<Sent, Error> {
         let (repository, name) = key;
-        let Some(program) = (self.sources.servers)(*name) else {
+        let Some(program) = self.program(*name).cloned() else {
             return Ok(Sent::Answered(Answer::NotSetUp { server: *name }));
         };
         let unknown = Pr {
@@ -980,6 +1009,8 @@ impl Owner {
             Err(NotReady::Failed(failed)) => return Err(failed),
         };
         if starts {
+            // As `started` does, field by field, as `server` borrows `servers`.
+            let _cleared = self.lasts.remove(key);
             let flaw = health::flaw(*name, &program);
             (self.health.entry(*name).or_default()).started(server.version(), flaw);
             // The user may have asked again, or cancelled, while the server started.
@@ -1064,13 +1095,12 @@ impl Owner {
                 self.files.name(PathBuf::from(path));
             }
         }
+        // A clangd that runs with a problem says it in place of nothing found (#684).
+        let problem = self.misleads(&server).filter(|_| hits.is_empty());
         match asked {
             Asked::Again(listener) => {
-                // Nothing found again by a clangd with a problem leaves the answer, which says it.
-                let misled = (self.health.get(&server.1)).is_some_and(|health| {
-                    health.misleads().is_some() && hits.is_empty()
-                });
-                (listener.index)(if misled {
+                // Nothing found again leaves the answer, which says the problem.
+                (listener.index)(if problem.is_some() {
                     Index::Stopped
                 } else {
                     Index::Built { hits }
@@ -1081,14 +1111,10 @@ impl Owner {
                 request,
                 indexing,
             } => {
-                // A clangd that runs with a problem says it in place of nothing found (#684).
-                let problem = (self.health.get(&server.1))
-                    .and_then(Health::misleads)
-                    .filter(|_| hits.is_empty());
                 asker.answer(Ok(match problem {
                     Some(problem) => Answer::Problem {
                         server: server.1,
-                        problem: problem.clone(),
+                        problem,
                     },
                     None => Answer::Found { hits },
                 }));
@@ -1115,7 +1141,7 @@ impl Owner {
             self.trouble(key, ServerProblem::stopped(exit));
         }
         let (_, name) = key;
-        match self.health.get(name).map(|health| &health.last) {
+        match self.lasts.get(key) {
             Some(Last::Problem(problem @ ServerProblem::Stopped { .. })) => Ok(Answer::Problem {
                 server: *name,
                 problem: problem.clone(),
@@ -1151,8 +1177,10 @@ impl Owner {
     /// its index no longer has the problem of one that doesn't.
     fn indexing(&mut self, key: &Key) {
         // A clangd that reports its index after its time is indexing all the same.
-        if let Indexing::Building(_) | Indexing::Built = self.indexing_of(key) {
-            self.health_of(key.1).indexed();
+        if let Indexing::Building(_) | Indexing::Built = self.indexing_of(key)
+            && let Some(last) = self.lasts.get_mut(key)
+        {
+            last.indexed();
         }
         if !(self.watching.as_ref()).is_some_and(|watch| watch.server == *key) {
             return;

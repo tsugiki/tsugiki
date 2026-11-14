@@ -16,13 +16,19 @@ export class LanguageServerRows {
   /** An event has said, so an answer asked for before it is out of date. */
   #heard = false;
 
-  /** Listens for each change, then asks for the rows the core holds. Gives the way to stop listening. */
+  /** Listens for each change, then asks for the rows the core holds, once the listener is in place, so a
+   * change the core sends in between isn't lost. Gives the way to stop listening. */
   watch(): () => void {
-    const listening = events.languageServersChanged.listen(({ payload }) => {
-      this.rows = payload;
-      this.#heard = true;
-    });
-    void this.#ask();
+    const listening = events.languageServersChanged
+      .listen(({ payload }) => {
+        this.rows = payload;
+        this.#heard = true;
+      })
+      .catch((e: unknown) => {
+        this.problem = `Tsugiki can't hear how the language servers change: ${String(e)}`;
+        return () => {};
+      });
+    void listening.then(() => this.#ask());
     return () => {
       void listening.then((stop) => {
         stop();
@@ -43,6 +49,14 @@ export class LanguageServerRows {
       this.problem = `Tsugiki can't say how the language servers are: ${String(e)}`;
     }
   }
+}
+
+/** The path typed or pasted for a server's program, without the spaces around it or the one pair of quotes
+ * Explorer's "Copy as path" puts around it. Nothing for a blank path, which clears the server's. */
+export function typedPath(text: string): string | null {
+  const trimmed = text.trim();
+  const unquoted = /^"(.*)"$/su.exec(trimmed)?.[1] ?? trimmed;
+  return unquoted === "" ? null : unquoted;
 }
 
 /** What Browse… found: the program the user picked, nothing if they cancelled, or why the picker didn't

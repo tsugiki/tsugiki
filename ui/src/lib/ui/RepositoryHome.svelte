@@ -207,7 +207,7 @@
     const next =
       stop.kind === "issue"
         ? new IssueViewState(name, stop.number)
-        : new PrViewState(name, stop.number, stop.issue, diffView, diffFiles);
+        : new PrViewState(name, stop.number, stop.issue, diffView, diffFiles, panes);
     swap(next);
     void next.load();
   }

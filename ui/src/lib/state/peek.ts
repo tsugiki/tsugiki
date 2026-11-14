@@ -116,23 +116,29 @@ export interface Peek {
  * never has a space. */
 export const PEEK_ID = "definition peek";
 
-/** The rows the peek takes while it looks a name up or shows a hit's code: its header and the code under
- * it, which scrolls inside it (#439). */
+/** The rows the peek takes while it looks a name up or shows a hit's code, until the user drags its bottom
+ * edge (#458): its header and the code under it, which scrolls inside it (#439). */
 export const PEEK_ROWS = 18;
 
-/** The places `peek` takes in the diff's layout: [`PEEK_ROWS`] while it looks up or shows code, and its
- * header with a line under it when it only has words to say, as when its only hit's file can't be read.
- * With several hits it keeps its rows, so the list of them stays to pick another. The line that says the
- * server indexes takes one more place with the words. */
-export function peekPlaces(peek: Peek): number {
+/** Whether `peek` takes the rows the user sizes, as while it looks up or shows code. With only words to
+ * say, as when its only hit's file can't be read, it takes its header with a line under it. With several
+ * hits it keeps its rows, so the list of them stays to pick another. */
+export function peekSized(peek: Peek): boolean {
   const lookup = peek.lookup;
   const answer = lookup.state === "answered" ? lookup.answer : undefined;
   const hits = answer?.state === "found" ? answer.hits.length : 0;
-  const words =
+  return !(
     lookup.state === "failed" ||
     (lookup.state === "answered" && hits === 0) ||
-    (peek.code?.problem !== undefined && hits < 2);
-  if (!words) return PEEK_ROWS;
+    (peek.code?.problem !== undefined && hits < 2)
+  );
+}
+
+/** The places `peek` takes in the diff's layout: `rows` while `peekSized` says it takes the rows the user
+ * sizes, and else its header with a line under it. The line that says the server indexes takes one more
+ * place with the words. */
+export function peekPlaces(peek: Peek, rows = PEEK_ROWS): number {
+  if (peekSized(peek)) return rows;
   return peek.indexing === undefined ? 2 : 3;
 }
 

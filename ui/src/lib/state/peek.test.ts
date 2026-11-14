@@ -118,6 +118,14 @@ it("keeps its rows while it lists several hits, even when the hit's file can't b
   expect(peekPlaces(unreadable([hitIn("Lib/a.py", 3), hitIn("Lib/b.py", 9)]))).toBe(PEEK_ROWS);
 });
 
+it("takes the rows the user dragged it to, but not with only words to say", () => {
+  const unreadable = showing([hitIn("Lib/a.py", 3)], 0);
+  if (unreadable.code) unreadable.code.problem = "Tsugiki couldn't read Lib/a.py";
+
+  expect(peekPlaces(showing([hitIn("Lib/a.py", 3)], 0), 30)).toBe(30);
+  expect(peekPlaces(unreadable, 30)).toBe(2);
+});
+
 it("leaves the threads in their order", () => {
   const placed = withPeek(threads, laid(PEEK_ID, { kind: "row", row: 3 }));
 

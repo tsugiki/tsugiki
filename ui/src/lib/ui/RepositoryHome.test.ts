@@ -107,6 +107,7 @@ const issue = {
 const DEFAULT_LAYOUT = {
   sidebar: null,
   list: null,
+  peek: null,
   sidebar_hidden: false,
   list_hidden: false,
   detail_only_hid: null,

@@ -59,6 +59,7 @@ import { FilePages, samePage, type FilesMode, type Page } from "./file-pages";
 import { diffShows, inRepository, type FileView } from "./file-view";
 import { HitCode } from "./hit-code.svelte";
 import { hud, type Jump, type JumpTimer } from "./hud.svelte";
+import { PanesState } from "./panes.svelte";
 import { PEEK_ID, peekPlaces, withPeek, type IndexNews, type Peek } from "./peek";
 import { wordAt, type Column, type Pick, type Picked, type PickedLine, type Side } from "./pick";
 
@@ -172,6 +173,8 @@ export class PrFilesState {
   unfetched = $state<Unfetched>();
   /** Whether the tab shows all the files or one at a time, which the user switches until the PR closes. */
   mode = $state<FilesMode>("all");
+  /** The panes' layout, which holds the Definition peek's height (#458). */
+  readonly panes: PanesState;
   /** The pages of the diff when it shows one file at a time: the NEWS entries, each file, and the threads
    * on files no longer in the diff. */
   pages = $derived.by(() => {
@@ -206,7 +209,7 @@ export class PrFilesState {
         ? threads
         : withPeek(threads, {
             at: peek.at,
-            places: peekPlaces(peek),
+            places: peekPlaces(peek, this.panes.peekRows),
             id: PEEK_ID,
             block: { kind: "peek", peek },
           }),
@@ -333,12 +336,14 @@ export class PrFilesState {
     jumps: JumpTimer = hud,
     choice: DiffViewChoice = new DiffViewChoice(),
     mode: FilesMode = "all",
+    panes: PanesState = new PanesState(),
   ) {
     this.#repository = repository;
     this.#number = number;
     this.#jumps = jumps;
     this.#choice = choice;
     this.mode = mode;
+    this.panes = panes;
   }
 
   /** Takes the user's Review of the PR as the PR view read it (#387). A new verdict can open files the

@@ -1,12 +1,12 @@
 <!--
-  The edge between two panes, which sizes the pane before it (#187). A drag or an arrow key moves it, between
-  the pane's own minimum and maximum and the minimums of the panes after it, and a double-click asks for the
-  pane's default width back.
+  The edge between two panes, which sizes the pane before it (#187), or the edge under the Definition peek,
+  which sizes it in diff rows (#458). A drag or an arrow key moves it, between the size's own minimum and
+  maximum and the minimums of the panes after it, and a double-click asks for the default size back.
 -->
 <script lang="ts">
   import { currentOs, keyName } from "./keys";
 
-  /** How far each arrow key moves the edge, in CSS pixels. */
+  /** How far each arrow key moves the edge, in CSS pixels, or at least one `unit`. */
   const STEP = 16;
 
   let {
@@ -15,53 +15,69 @@
     least,
     most,
     nextLeast,
+    orientation = "vertical",
+    unit = 1,
     onresize,
     ondone,
     onreset,
   }: {
     label: string;
-    /** The width of the pane before the edge, for a screen reader, unless it takes half the room. */
+    /** The size the edge gives, for a screen reader, unless the pane takes half the room. */
     value: number | undefined;
     least: number;
-    /** The widest the pane before the edge may get, even with room to spare. */
+    /** The most the size may get, even with room to spare. */
     most?: number;
-    /** The least width the panes after the edge may take together. */
-    nextLeast: number;
-    /** Gives the pane before the edge width `width`, already kept between the minimums. */
-    onresize: (width: number) => void;
-    /** Says a drag or a held key moved the edge to where the user wants it, so the width can be saved. */
+    /** The least width the panes after the edge may take together. Without it, the edge sizes what
+     * `value` says, between `least` and `most`, as the peek's does. */
+    nextLeast?: number;
+    /** An edge between panes side by side is vertical and sizes the pane on its left, and one under a box
+     * is horizontal and sizes the box above it. */
+    orientation?: "vertical" | "horizontal";
+    /** The CSS pixels in one of the size's steps: 1 for a width, a row's height for rows. */
+    unit?: number;
+    /** Gives what the edge sizes the size `size`, already kept between the minimums. */
+    onresize: (size: number) => void;
+    /** Says a drag or a held key moved the edge to where the user wants it, so the size can be saved. */
     ondone: () => void;
     onreset: () => void;
   } = $props();
 
+  const vertical = $derived(orientation === "vertical");
+  const ceiling = $derived(most ?? Infinity);
+
   let edge = $state<HTMLElement>();
-  /** Where the pointer was as the drag started, and the widths that sized the panes then. */
-  let drag = $state<{ x: number; width: number; most: number }>();
-  /** Whether the drag, or the arrow key held down, moved the edge, and so has a width to save. */
+  /** Where the pointer was as the drag started, and the sizes that bounded it then. */
+  let drag = $state<{ at: number; size: number; most: number }>();
+  /** Whether the drag, or the arrow key held down, moved the edge, and so has a size to save. */
   let moved = false;
 
-  /** The width of the pane before the edge now, and the most it may take while the panes after keep their
-   * minimums. A pane after it with room to spare, such as the Detail pane beyond the list, gives it up too.
-   * The other edges keep their widths, so they don't count. */
+  /** The size the edge gives now, and the most it may take. Between panes, that's the width of the pane
+   * before the edge, while the panes after keep their minimums: a pane after it with room to spare, such as
+   * the Detail pane beyond the list, gives it up too. The other edges keep their widths, so they don't
+   * count. Without panes after it, `value` says the size. */
   function measure() {
+    if (nextLeast === undefined) return { size: value as number, most: Math.max(least, ceiling) };
     const here = edge as HTMLElement;
     const width = (here.previousElementSibling as Element).getBoundingClientRect().width;
     let after = 0;
     for (let next = here.nextElementSibling; next !== null; next = next.nextElementSibling) {
       if (next.getAttribute("role") !== "separator") after += next.getBoundingClientRect().width;
     }
-    return { width, most: Math.max(least, Math.min(most ?? Infinity, width + after - nextLeast)) };
+    return { size: width, most: Math.max(least, Math.min(ceiling, width + after - nextLeast)) };
   }
 
-  /** Moves the edge so the pane before it is `width` wide, within its limits. */
-  function resize(width: number, most: number) {
-    const next = Math.round(Math.min(most, Math.max(least, width)));
+  /** The pointer's place for event `e`, along the way the edge moves. */
+  const along = (e: PointerEvent) => (vertical ? e.clientX : e.clientY);
+
+  /** Moves the edge so it gives size `size`, within its limits. */
+  function resize(size: number, most: number) {
+    const next = Math.round(Math.min(most, Math.max(least, size)));
     if (next === value) return;
     moved = true;
     onresize(next);
   }
 
-  /** Saves the width, unless the edge stayed where it was. */
+  /** Saves the size, unless the edge stayed where it was. */
   function done() {
     if (moved) ondone();
     moved = false;
@@ -71,11 +87,11 @@
     if (e.button !== 0) return;
     e.preventDefault();
     (edge as HTMLElement).setPointerCapture(e.pointerId);
-    drag = { x: e.clientX, ...measure() };
+    drag = { at: along(e), ...measure() };
   }
 
   function onpointermove(e: PointerEvent) {
-    if (drag) resize(drag.width + e.clientX - drag.x, drag.most);
+    if (drag) resize(drag.size + (along(e) - drag.at) / unit, drag.most);
   }
 
   function onpointerup() {
@@ -83,14 +99,18 @@
     done();
   }
 
-  /** The bare arrows move the edge, and leave Alt+← and the like to the window. A held arrow saves once,
-   * as the user lets it go. */
+  /** The bare arrows across the edge move it, and leave Alt+← and the like to the window. A held arrow
+   * saves once, as the user lets it go. The keys go no further, so they don't scroll the diff around the
+   * peek or move the list's cursor too. */
   function onkeydown(e: KeyboardEvent) {
     const key = keyName(e, currentOs());
-    if (key !== "arrowleft" && key !== "arrowright") return;
+    const [less, more] = vertical ? ["arrowleft", "arrowright"] : ["arrowup", "arrowdown"];
+    if (key !== less && key !== more) return;
     e.preventDefault();
-    const { width, most } = measure();
-    resize(width + (key === "arrowright" ? STEP : -STEP), most);
+    e.stopPropagation();
+    const { size, most } = measure();
+    const step = Math.max(1, Math.round(STEP / unit));
+    resize(size + (key === more ? step : -step), most);
   }
 </script>
 
@@ -98,9 +118,9 @@
 <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
 <div
   bind:this={edge}
-  class={["edge", { dragging: drag !== undefined }]}
+  class={["edge", orientation, { dragging: drag !== undefined }]}
   role="separator"
-  aria-orientation="vertical"
+  aria-orientation={orientation}
   aria-label={label}
   aria-valuenow={value}
   aria-valuemin={least}
@@ -122,6 +142,14 @@
     cursor: col-resize;
     touch-action: none;
     background: linear-gradient(transparent, transparent) center / 1px 100% no-repeat;
+  }
+
+  /* Under a box, the edge fills the strip its parent places along the box's bottom. */
+  .edge.horizontal {
+    width: 100%;
+    height: 100%;
+    cursor: row-resize;
+    background-size: 100% 1px;
   }
 
   .edge:hover,

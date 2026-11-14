@@ -28,6 +28,7 @@ const core = vi.hoisted(() => ({
   cloning: vi.fn(),
   mirrorStates: vi.fn(),
   mirrorsHeld: vi.fn(),
+  savePaneLayout: vi.fn(),
   listen: vi.fn(),
 }));
 
@@ -45,6 +46,7 @@ vi.mock("$lib/data/bindings", () => ({
     cloning: core.cloning,
     mirrorStates: core.mirrorStates,
     mirrorsHeld: core.mirrorsHeld,
+    savePaneLayout: core.savePaneLayout,
   },
   events: {
     headsFetched: { listen: core.listen },
@@ -1761,6 +1763,82 @@ it("scrolls the peek's code inside it, and the diff's rows after it stay where t
   // Only the chunks near what shows are read, not the whole file.
   expect(core.definitionCode.mock.calls.map(([asked]) => asked.start)).toEqual([801, 1401]);
   expect(rowAt("▾logo.pngbinary")?.style.top).toBe(`${String(23 * 20)}px`);
+});
+
+it("drags the peek's bottom edge, saves its height for the next peek, and gives 18 rows back on a double-click", async () => {
+  const place = { kind: "repository" as const, path: "Lib/news.py", side: "head" as const, commit: "abc" };
+  core.definitions.mockResolvedValue(
+    ok({ state: "found", hits: [{ place, line: 12, column: 4, text: "" }] }),
+  );
+  core.savePaneLayout.mockResolvedValue(ok(null));
+  fileOf(30);
+  // jsdom has no pointer capture.
+  HTMLElement.prototype.setPointerCapture = vi.fn();
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[4]).toBe("2+new line");
+  });
+  await clickAt(codeOf(4), 2);
+  await files.peekDefinition();
+  const edge = () => screen.getByRole("separator", { name: "Definition peek height" });
+  const saved = () => core.savePaneLayout.mock.calls.map(([layout]) => layout.peek);
+
+  await fireEvent.pointerDown(edge(), { button: 0, clientY: 300, pointerId: 1 });
+  await fireEvent.pointerMove(edge(), { clientY: 300 + 6 * 20 + 7 });
+  await fireEvent.pointerUp(edge());
+  // The click that ends the drag leaves the word picked, for the next peek.
+  await fireEvent.click(edge());
+  const dragged = [peekBox()?.style.height, edge().parentElement?.style.top, saved()];
+  files.closePeek();
+  await tick();
+  await files.peekDefinition();
+  const reopened = peekBox()?.style.height;
+  // Along the edge, ← and → move nothing.
+  await fireEvent.keyDown(edge(), { key: "ArrowLeft" });
+  await fireEvent.keyDown(edge(), { key: "ArrowUp" });
+  await fireEvent.keyUp(edge(), { key: "ArrowUp" });
+  const shorter = [peekBox()?.style.height, saved()];
+  await fireEvent.dblClick(edge());
+
+  expect(dragged).toEqual([`${String(24 * 20)}px`, `${String((5 + 24) * 20 - 4)}px`, [24]]);
+  expect(reopened).toBe(`${String(24 * 20)}px`);
+  expect(shorter).toEqual([`${String(23 * 20)}px`, [24, 23]]);
+  expect(peekBox()?.style.height).toBe(`${String(18 * 20)}px`);
+  await vi.waitFor(() => {
+    expect(saved()).toEqual([24, 23, null]);
+  });
+});
+
+it("scrolls a peek that opens on the last rows on screen into view, once, as it opens", async () => {
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(100);
+  let answer: (found: unknown) => void = () => {};
+  core.definitions.mockReturnValue(
+    new Promise((resolve) => {
+      answer = resolve;
+    }),
+  );
+  fileOf(30);
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[4]).toBe("2+new line");
+  });
+  await clickAt(codeOf(4), 2);
+  const diff = screen.getByRole("region", { name: "Diff" });
+
+  const looking = files.peekDefinition();
+  await tick();
+  // Rows 0 to 4 show in 100 pixels. The peek under row 4 scrolls up as far as that row can go.
+  const opened = diff.scrollTop;
+  diff.scrollTop = 0;
+  await fireEvent.scroll(diff);
+  const place = { kind: "repository" as const, path: "Lib/news.py", side: "head" as const, commit: "abc" };
+  answer(ok({ state: "found", hits: [{ place, line: 12, column: 4, text: "" }] }));
+  await looking;
+  await vi.waitFor(() => {
+    expect(peekCode()).toContain("*12line 12");
+  });
+
+  expect([opened, diff.scrollTop]).toEqual([4 * 20, 0]);
 });
 
 it("says why it can't read the hit's file, and shrinks the peek to that line", async () => {

@@ -74,6 +74,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   comes from disk, and only one a server named in a hit can be read. The lines are plain text until #455.
   The peek takes 18 rows while it looks up or shows code, and 2 when it only has words to say. Its code
   scrolls inside it, so the diff's rows after it stay where they are.
+- The user drags the peek's bottom edge, a whole row at a time, between 5 rows and 60, or moves it with ↑
+  and ↓ while it has the focus (#458). A double-click on it puts the 18 rows back, as on the pane edges.
+  The height is saved with the pane sizes in `machine.toml` ([layout.md](layout.md)), so the next peek
+  opens at it, and "Reset Layout" puts it back too. A peek with only words to say keeps its 2 rows and has
+  no edge. A peek that opens below the rows on screen scrolls the diff as little as it takes to show it
+  whole, but never so far that the line it opened under leaves the top. Only its opening scrolls the diff.
 - The peek lists its hits on the right of the code, even a single one, each with its path, its line number
   and the line's text. It shows the first hit until the user picks another with a click, or with ↑ and ↓
   while the peek has the focus: the code shows the hit picked, and the header names it and counts it. The

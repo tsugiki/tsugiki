@@ -1554,6 +1554,24 @@ fn machine_toml_says_where_rust_analyzer_is_beside_ty() {
     let expected = LanguageServers {
         ty: Some(folders.data.join("ty.exe")),
         rust_analyzer: Some(folders.data.join("ra/rust-analyzer.exe")),
+        clangd: None,
+    };
+    assert_eq!(servers, expected);
+}
+
+#[test]
+fn machine_toml_says_where_clangd_is() {
+    let (folders, root) = temp_folders("language-servers-clangd");
+    let text = "[language_servers.clangd]\npath = 'clangd/bin/clangd.exe'\n";
+    fs::write(folders.machine_file(), text).unwrap();
+
+    let servers = SettingsFiles::load(folders.clone()).view().language_servers;
+    fs::remove_dir_all(root).unwrap();
+
+    let expected = LanguageServers {
+        ty: None,
+        rust_analyzer: None,
+        clangd: Some(folders.data.join("clangd/bin/clangd.exe")),
     };
     assert_eq!(servers, expected);
 }

@@ -1,12 +1,12 @@
 //! Where a name in the open PR's code is defined, which the Definition peek and Go to definition ask a
-//! language server (ADR 0020). ty answers in Python, and rust-analyzer in Rust.
+//! language server (ADR 0020). ty answers in Python, rust-analyzer in Rust, and clangd in C.
 //!
 //! Each Repository gets its own server for each language, which reads that Repository's **Lookup
-//! checkout**: the PR's base on disk, with the files the PR adds. ty starts when a PR that changes a Python
-//! file opens, and rust-analyzer on the first lookup in Rust. Each file the PR changes in the server's
-//! language is open on it with its text at the head. A lookup from a removed line first gives those files
-//! their text at the base, and the next lookup from another line puts the head's back. A PR at other commits
-//! gets new servers, as its checkout has moved.
+//! checkout**: the PR's base on disk, with the files the PR adds. ty and clangd start when a PR that changes
+//! a file in their language opens, and rust-analyzer on the first lookup in Rust. Each file the PR changes
+//! in the server's language is open on it with its text at the head. A lookup from a removed line first
+//! gives those files their text at the base, and the next lookup from another line puts the head's back. A
+//! PR at other commits gets new servers, as its checkout has moved.
 //!
 //! One thread owns the servers, and each lookup is a message to it, so the window never waits on a server.
 //! The thread sends the server the request and goes on, and a thread of the lookup's own waits for the
@@ -35,6 +35,7 @@ use code::HitFiles;
 pub use code::{Code, HitFile};
 use server::LanguageServer;
 
+mod clangd;
 mod code;
 mod rust_analyzer;
 mod server;
@@ -46,6 +47,10 @@ mod ty;
 
 /// The longest a server gets to start. A lookup has no time limit, as the user can cancel it.
 const PATIENCE: Duration = Duration::from_secs(30);
+
+/// The file that marks a Repository with CPython's layout, whose servers Tsugiki sets up for it, relative to
+/// the checkout.
+const CPYTHON_MARK: &str = "Include/patchlevel.h";
 
 /// A lookup the window asks for: where the name at `column` of line `line` of `path` is defined, with the
 /// PR's files at `side`.
@@ -115,6 +120,8 @@ pub enum ServerName {
     Ty,
     /// rust-analyzer, for Rust.
     RustAnalyzer,
+    /// clangd, for C.
+    Clangd,
 }
 
 impl ServerName {
@@ -124,6 +131,8 @@ impl ServerName {
             Some(Self::Ty)
         } else if path.ends_with(".rs") {
             Some(Self::RustAnalyzer)
+        } else if path.ends_with(".c") || path.ends_with(".h") {
+            Some(Self::Clangd)
         } else {
             None
         }
@@ -134,6 +143,7 @@ impl ServerName {
         match self {
             Self::Ty => "ty",
             Self::RustAnalyzer => "rust-analyzer",
+            Self::Clangd => "clangd",
         }
     }
 }
@@ -300,7 +310,7 @@ type Key = (RepositoryName, ServerName);
 
 /// The servers that start when a PR that changes a file in their language opens. rust-analyzer waits for the
 /// first lookup in Rust, as it reads the whole workspace as it starts.
-const STARTED_BY_PR: [ServerName; 1] = [ServerName::Ty];
+const STARTED_BY_PR: [ServerName; 2] = [ServerName::Ty, ServerName::Clangd];
 
 /// The lookup a server works on.
 struct Running {

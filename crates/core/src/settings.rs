@@ -316,6 +316,8 @@ pub struct LanguageServers {
     pub ty: Option<PathBuf>,
     /// rust-analyzer, which Go to definition asks in Rust.
     pub rust_analyzer: Option<PathBuf>,
+    /// clangd, which Go to definition asks in C.
+    pub clangd: Option<PathBuf>,
 }
 
 /// Where the token comes from. A personal access token joins this with the Account page (ADR 0004).
@@ -509,6 +511,8 @@ struct ServersFile {
     ty: Option<ServerFile>,
     #[serde(rename = "rust-analyzer", deserialize_with = "or_default")]
     rust_analyzer: Option<ServerFile>,
+    #[serde(deserialize_with = "or_default")]
+    clangd: Option<ServerFile>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -595,6 +599,7 @@ impl SettingsFiles {
                 LanguageServers {
                     ty: path(|servers| servers.ty.as_ref()),
                     rust_analyzer: path(|servers| servers.rust_analyzer.as_ref()),
+                    clangd: path(|servers| servers.clangd.as_ref()),
                 }
             },
         }

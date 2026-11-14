@@ -29,6 +29,17 @@ pub(crate) fn rust_analyzer() -> PathBuf {
     path
 }
 
+/// The clangd that `TSUGIKI_CLANGD` names, which `just cargo-test` and `just rust-coverage` set to the one
+/// `scripts/test-servers.ts` fetches.
+pub(crate) fn clangd() -> PathBuf {
+    let path = PathBuf::from(env::var_os("TSUGIKI_CLANGD").unwrap_or_default());
+    assert!(
+        path.is_file(),
+        "TSUGIKI_CLANGD={path:?}: see just test-servers"
+    );
+    path
+}
+
 /// A repository whose `main` is the PR's base, and whose PR's head changes, adds and deletes files.
 pub(crate) struct Fixture {
     /// The repository the PR is in, which stands in for its Mirror.

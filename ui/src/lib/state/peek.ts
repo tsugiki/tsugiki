@@ -18,6 +18,7 @@ export type Lookup =
 const SERVERS: Record<ServerName, { name: string; language: string }> = {
   ty: { name: "ty", language: "Python" },
   "rust-analyzer": { name: "rust-analyzer", language: "Rust" },
+  clangd: { name: "clangd", language: "C" },
 };
 
 /** What a lookup that waits says: the server starts, or works out the answer, with the seconds it has

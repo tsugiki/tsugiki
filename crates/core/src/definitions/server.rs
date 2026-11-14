@@ -1,6 +1,6 @@
-//! A language server that answers lookups in one language, ty or rust-analyzer. One reads a Lookup checkout,
-//! with the PR's changed files in its language open on it, and gives the open files the text of the side a
-//! lookup is from.
+//! A language server that answers lookups in one language: ty, rust-analyzer or clangd. One reads a Lookup
+//! checkout, with the PR's changed files in its language open on it, and gives the open files the text of
+//! the side a lookup is from.
 
 use std::ffi::OsString;
 use std::fs;
@@ -169,6 +169,7 @@ impl LanguageServer {
         let setup = match name {
             ServerName::Ty => super::ty::setup(&folder),
             ServerName::RustAnalyzer => super::rust_analyzer::setup(program)?,
+            ServerName::Clangd => super::clangd::setup(&folder)?,
         };
         let launch = Launch {
             program: program.to_owned(),

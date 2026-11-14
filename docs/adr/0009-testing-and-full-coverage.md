@@ -60,11 +60,11 @@ release. Coverage is held at 100%, and CI fails below it.
 ## Consequences
 
 - On every push to main and every PR that changes more than docs, on Windows: rustfmt, clippy with warnings
-  as errors, `cargo test`, the stale-bindings check, ESLint, Prettier, `svelte-check`, Vitest, Playwright on
-  Chromium and WebKit, and both coverage gates. CI skips them on a PR that changes only Markdown files or
-  `docs/`, and still reports `CI passed`. A PR that changes only `ui/` and docs skips the Rust checks on
-  every OS below, and Codecov keeps main's Rust figure for it. `ui/package.json` and the generated bindings
-  don't count as `ui/`, because Rust tests read them.
+  as errors, ESLint, Prettier, `svelte-check`, Vitest, Playwright on Chromium and WebKit, and both coverage
+  gates. Rust's gate runs every Rust test, the stale-bindings check among them. CI skips them on a PR that
+  changes only Markdown files or `docs/`, and still reports `CI passed`. A PR that changes only `ui/` and
+  docs skips the Rust checks on every OS below, and Codecov keeps main's Rust figure for it.
+  `ui/package.json` and the generated bindings don't count as `ui/`, because Rust tests read them.
 - On those same pushes and PRs, on macOS: what can differ there, which is clippy, Vitest, Playwright on
   WebKit, and both coverage gates. Rust's gate runs the tests, so `cargo test` has no job of its own there.
   The others read the source or generate the same output on any OS. These are steps of one job, which needs

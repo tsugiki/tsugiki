@@ -823,7 +823,7 @@ fn a_rust_analyzer_outside_a_toolchain_didnt_start_and_says_why() {
 fn not_ready(fixture: &Fixture, initialize: Initialize) -> Option<NotReady> {
     let owner = owner_of(sources(Some(fixture.checkout.clone()), None));
     let (_fake, client) = FakeClangd::starting(vec![json!(null)], initialize);
-    let mut setup = clangd::setup(&fixture.checkout.folder).unwrap();
+    let mut setup = clangd::setup(&fixture.checkout.folder, Path::new("clangd")).unwrap();
     setup.ready = Ready::Quiescent;
     let key = (repository(), ServerName::Clangd);
     let none: [String; 0] = [];

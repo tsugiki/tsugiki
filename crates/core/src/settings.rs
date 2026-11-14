@@ -236,11 +236,12 @@ fn given_or_default<T: Default>(
     }
 }
 
-/// The `[diff]` table: how the Files tab shows a PR's diff (#605). A `files` Tsugiki can't read takes its
-/// default, and `unread_problems` says why, as for `[appearance]`.
+/// The `[diff]` table: how the Files tab shows a PR's diff (#605) and where the Definition peek opens (#459).
+/// A value Tsugiki can't read takes its default, and `unread_problems` says why, as for `[appearance]`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Type)]
 pub struct DiffSettings {
     pub files: DiffFiles,
+    pub peek: DiffPeek,
 }
 
 /// Whether a PR opens on all its files, one under the other, or on one file at a time: `[diff] files`.
@@ -250,6 +251,16 @@ pub enum DiffFiles {
     #[default]
     All,
     One,
+}
+
+/// The Definition peek's place, `[diff] peek` (#459): under its line, among the rows of the code, or split
+/// below the code, which stays where it was.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DiffPeek {
+    #[default]
+    Inline,
+    Split,
 }
 
 impl<'de> Deserialize<'de> for DiffSettings {
@@ -263,6 +274,7 @@ impl<'de> Deserialize<'de> for DiffSettings {
 #[serde(default)]
 struct DiffRead {
     files: Option<Read<DiffFiles>>,
+    peek: Option<Read<DiffPeek>>,
 }
 
 impl DiffRead {
@@ -272,6 +284,10 @@ impl DiffRead {
         let settings = DiffSettings {
             files: given_or_default(self.files, "files", &mut unread, || {
                 r#"isn't "all" or "one", so each PR opens on all its files."#.to_owned()
+            }),
+            peek: given_or_default(self.peek, "peek", &mut unread, || {
+                r#"isn't "inline" or "split", so the Definition peek opens under its line."#
+                    .to_owned()
             }),
         };
         (settings, unread)
@@ -404,10 +420,11 @@ impl Default for Home {
 
 /// How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
 /// (#187), whether the Sidebar (#234) and the list (#242) show, which of them `Ctrl+K Z` hid (#246), to
-/// bring back on the next press, the list's order (#592), and how many rows tall they dragged the Definition
-/// peek (#458). All of it stays on this machine, like the window's place, and a value left out takes its
-/// default. So does a value Tsugiki can't read, such as a width that isn't a whole number of pixels: a pane
-/// is too small a thing to lose the rest of `machine.toml` over.
+/// bring back on the next press, the list's order (#592), how many rows tall they dragged the Definition peek
+/// (#458), and how many pixels tall they dragged the split one (#459). All of it stays on this machine, like
+/// the window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
+/// width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml`
+/// over.
 #[expect(
     clippy::struct_excessive_bools,
     reason = "Each pane hides by itself, so all four states are valid: both hidden leaves the Detail pane"
@@ -425,6 +442,11 @@ pub struct PaneLayout {
     #[serde(deserialize_with = "or_default")]
     #[specta(type = Option<u32>)]
     pub peek: Option<u32>,
+    /// The split Definition peek's height in CSS pixels, or nothing for 42% of the room it shares with the
+    /// code above it, the diff's or the file view's (#459).
+    #[serde(deserialize_with = "or_default")]
+    #[specta(type = Option<u32>)]
+    pub split_peek: Option<u32>,
     /// `Ctrl+B` hid the Sidebar. It keeps its width for when it shows again.
     #[serde(deserialize_with = "or_default")]
     #[specta(type = bool)]
@@ -816,6 +838,7 @@ impl SettingsFiles {
                 ("sidebar", panes.sidebar),
                 ("list", panes.list),
                 ("peek", panes.peek),
+                ("split_peek", panes.split_peek),
             ] {
                 // A reset takes the comment on its key too: kept, the key would hold the old size.
                 match size {

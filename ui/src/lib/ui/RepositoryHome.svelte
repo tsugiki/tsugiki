@@ -13,6 +13,7 @@
     SIDEBAR_MOST,
     SIDEBAR_WIDTH,
   } from "$lib/state/panes.svelte";
+  import type { PeekLayout } from "$lib/state/peek";
   import { DiffViewChoice, type FilesMode, type PrFilesState } from "$lib/state/pr-files.svelte";
   import { PrViewState } from "$lib/state/pr-view.svelte";
   import { Visits } from "$lib/state/visits.svelte";
@@ -70,6 +71,7 @@
     onsettings,
     keysActive = true,
     diffFiles = "all",
+    diffPeek = "inline",
   }: {
     name: string;
     onadd: () => void;
@@ -80,6 +82,8 @@
     keysActive?: boolean;
     /** Whether each PR's Files tab opens on all its files or one at a time, as `[diff] files` says. */
     diffFiles?: FilesMode;
+    /** The place each Definition peek opens in, as `[diff] peek` says at the time. */
+    diffPeek?: PeekLayout;
   } = $props();
 
   // A window can stay open between syncs, so "3h ago" moves on by itself.
@@ -239,7 +243,16 @@
     const next =
       stop.kind === "issue"
         ? new IssueViewState(name, stop.number)
-        : new PrViewState(name, stop.number, stop.issue, panes, diffView, diffFiles, fileViewMoved(stop));
+        : new PrViewState(
+            name,
+            stop.number,
+            stop.issue,
+            panes,
+            diffView,
+            diffFiles,
+            fileViewMoved(stop),
+            () => diffPeek,
+          );
     swap(next);
     void next.load();
     if (next instanceof PrViewState) showFileView(next, fileView);

@@ -452,7 +452,7 @@ test("a PR opens one file at a time as the settings say, walks its files, and sw
         status_bar: { visible: true },
         releases: { check: true },
         appearance,
-        diff: { files: "one" },
+        diff: { files: "one", peek: "inline" },
         repositories: [],
       },
       problems: [],

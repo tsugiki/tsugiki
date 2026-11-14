@@ -5,7 +5,7 @@ import { appearance } from "./themes.ts";
 const online = { state: "online", login: "octocat" } as const;
 const offline = { state: "offline" } as const;
 const releases = { check: true };
-const diff = { files: "all" } as const;
+const diff = { files: "all", peek: "inline" } as const;
 const defaults = {
   settings: { status_bar: { visible: true }, releases, appearance, diff, repositories: [] },
   problems: [],

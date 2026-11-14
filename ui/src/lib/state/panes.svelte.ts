@@ -1,7 +1,8 @@
 // How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list (#187), and
 // whether the Sidebar (#234) and the list (#242) show, which of them `Ctrl+K Z` hid (#246), the list's
-// order (#592), and how many rows tall they dragged the Definition peek (#458). The core keeps the layout in
-// `machine.toml`, so it stays on this machine and isn't synced.
+// order (#592), how many rows tall they dragged the Definition peek (#458), and how many pixels tall they
+// dragged the split one (#459). The core keeps the layout in `machine.toml`, so it stays on this machine and
+// isn't synced.
 import { commands, type ListOrder, type Panes } from "$lib/data/bindings";
 import { PEEK_ROWS } from "./peek";
 
@@ -19,6 +20,17 @@ export const DETAIL_LEAST = 320;
 /** The Definition peek's least and greatest heights, in diff rows with its header among them. */
 export const PEEK_LEAST = 5;
 export const PEEK_MOST = 60;
+/** The split Definition peek's least height in CSS pixels, which the code above it keeps too while it has
+ * the room. */
+export const SPLIT_PEEK_LEAST = 160;
+/** The share of the room the split Definition peek takes until the user drags its top edge. */
+export const SPLIT_PEEK_SHARE = 0.42;
+
+/** The most the split Definition peek may take of `room` pixels: all but its least height, so the code above
+ * it keeps that much too, and at least that height in a room too small for both. */
+export function splitPeekMost(room: number): number {
+  return Math.max(SPLIT_PEEK_LEAST, room - SPLIT_PEEK_LEAST);
+}
 
 export type Pane = "sidebar" | "list";
 
@@ -29,6 +41,8 @@ export class PanesState {
   list = $state<number | null>(null);
   /** The Definition peek's height in diff rows, or nothing for its default, `PEEK_ROWS`. */
   peek = $state<number | null>(null);
+  /** The split Definition peek's height in CSS pixels, or nothing for `SPLIT_PEEK_SHARE` of the room. */
+  splitPeek = $state<number | null>(null);
   /** Whether `Ctrl+B` hid the Sidebar and `Ctrl+Alt+B` the list, each nothing until the core or the user
    * says. */
   #hidden = $state<Record<Pane, boolean | null>>({ sidebar: null, list: null });
@@ -48,6 +62,13 @@ export class PanesState {
     return this.peek ?? PEEK_ROWS;
   }
 
+  /** The pixels the split Definition peek takes of `room`, the height of the code and the peek together:
+   * the height the user dragged it to, or else its share, kept within its limits as the room changes. */
+  splitPeekHeight(room: number): number {
+    const wanted = this.splitPeek ?? Math.round(room * SPLIT_PEEK_SHARE);
+    return Math.min(splitPeekMost(room), Math.max(SPLIT_PEEK_LEAST, wanted));
+  }
+
   /** Reads the layout the core saved, each size kept within its limits, as someone may have written
    * `machine.toml` by hand. Until the core answers, the panes take their defaults, and what the user changes
    * meanwhile stays as they left it. */
@@ -59,12 +80,13 @@ export class PanesState {
 
   async #read() {
     try {
-      const { sidebar, list, peek, sidebar_hidden, list_hidden, detail_only_hid, order } =
+      const { sidebar, list, peek, split_peek, sidebar_hidden, list_hidden, detail_only_hid, order } =
         await commands.paneLayout();
       this.#order ??= order;
       this.sidebar ??= sidebar === null ? null : Math.min(SIDEBAR_MOST, Math.max(SIDEBAR_LEAST, sidebar));
       this.list ??= list === null ? null : Math.max(LIST_LEAST, list);
       this.peek ??= peek === null ? null : Math.min(PEEK_MOST, Math.max(PEEK_LEAST, peek));
+      this.splitPeek ??= split_peek === null ? null : Math.max(SPLIT_PEEK_LEAST, split_peek);
       this.#hidden.sidebar ??= sidebar_hidden;
       this.#hidden.list ??= list_hidden;
       if (this.#detailOnlyHid === undefined) this.#detailOnlyHid = detail_only_hid;
@@ -135,18 +157,20 @@ export class PanesState {
     return this.save();
   }
 
-  /** Gives `pane` its default width, or the Definition peek its default height, again, and saves that. */
-  reset(pane: Pane | "peek"): Promise<void> {
+  /** Gives `pane` its default width, or the Definition peek, inline or split, its default height, again, and
+   * saves that. */
+  reset(pane: Pane | "peek" | "splitPeek"): Promise<void> {
     this[pane] = null;
     return this.save();
   }
 
-  /** "Reset Layout": gives both panes their default widths and the Definition peek its default height, shows
-   * both panes, forgets what `Ctrl+K Z` hid, and saves that. */
+  /** "Reset Layout": gives both panes their default widths and the Definition peek, inline and split, its
+   * default height, shows both panes, forgets what `Ctrl+K Z` hid, and saves that. */
   resetLayout(): Promise<void> {
     this.sidebar = null;
     this.list = null;
     this.peek = null;
+    this.splitPeek = null;
     this.#hidden.sidebar = false;
     this.#hidden.list = false;
     this.#detailOnlyHid = null;
@@ -165,6 +189,7 @@ export class PanesState {
       sidebar: this.sidebar,
       list: this.list,
       peek: this.peek,
+      split_peek: this.splitPeek,
       sidebar_hidden: this.hidden("sidebar"),
       list_hidden: this.hidden("list"),
       detail_only_hid: this.#detailOnlyHid ?? null,

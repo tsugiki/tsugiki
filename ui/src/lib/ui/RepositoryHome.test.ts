@@ -3,7 +3,7 @@ import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FileView } from "$lib/state/file-view.svelte";
 import type { HitCode } from "$lib/state/hit-code.svelte";
-import type { Peek } from "$lib/state/peek";
+import type { Peek, PeekLayout } from "$lib/state/peek";
 import { PrFilesState, type FilesMode } from "$lib/state/pr-files.svelte";
 import type { ChordBindings } from "./keys";
 import RepositoryHome from "./RepositoryHome.svelte";
@@ -21,6 +21,7 @@ const core = vi.hoisted(() => ({
   openOnGithub: vi.fn(),
   pullRequestFiles: vi.fn(),
   pullRequestFind: vi.fn(),
+  definitions: vi.fn(),
   // A PR that leaves the Detail pane cancels the lookup it may still run.
   cancelDefinitions: vi.fn(() => Promise.resolve()),
   cloning: vi.fn(),
@@ -58,6 +59,7 @@ vi.mock("$lib/data/bindings", () => ({
     openOnGithub: core.openOnGithub,
     pullRequestFiles: core.pullRequestFiles,
     pullRequestFind: core.pullRequestFind,
+    definitions: core.definitions,
     cancelDefinitions: core.cancelDefinitions,
     cloning: core.cloning,
     mirrorStates: core.mirrorStates,
@@ -74,6 +76,13 @@ vi.mock("$lib/data/bindings", () => ({
     cloningChanged: { listen: core.listen },
     mirrorStatesChanged: { listen: core.listen },
     mirrorsHeldChanged: { listen: core.listen },
+  },
+}));
+
+// A lookup hears what it waits for on a channel, which these tests leave quiet.
+vi.mock("$lib/data/channel", () => ({
+  Channel: class {
+    onmessage = () => {};
   },
 }));
 
@@ -112,6 +121,7 @@ const DEFAULT_LAYOUT = {
   sidebar: null,
   list: null,
   peek: null,
+  split_peek: null,
   sidebar_hidden: false,
   list_hidden: false,
   detail_only_hid: null,
@@ -590,7 +600,7 @@ const standalone = { kind: "standalone_pr", ...row, number: 5, title: "Alone", b
 
 /** A window on two items: the Issue, which it unfolds, and, in the quiet section it unfolds too, a
  * Standalone PR. */
-const listing = async (settings: { diffFiles?: FilesMode } = {}) => {
+const listing = async (settings: { diffFiles?: FilesMode; diffPeek?: PeekLayout } = {}) => {
   core.workbench.mockResolvedValue({
     status: "ok",
     data: {
@@ -1261,6 +1271,43 @@ it("opens the Definition peek with Alt+F12 on the Files tab, once for a held key
   expect(peekDefinition).toHaveBeenCalledTimes(1);
 });
 
+it("opens the Definition peek where [diff] peek says, below the file view's code when split", async () => {
+  // Each lookup waits, so the peek says it looks.
+  core.definitions.mockReturnValue(new Promise(() => {}));
+  const view = eggsView();
+  vi.spyOn(PrFilesState.prototype, "goToDefinition").mockImplementation(function (this: PrFilesState) {
+    this.openFileView(view);
+    return Promise.resolve();
+  });
+  core.pullRequestFiles.mockResolvedValue({
+    status: "ok",
+    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
+  });
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const { treeRow } = await listing({ diffPeek: "split" });
+  await fireEvent.click(treeRow);
+  await fireEvent.click(await screen.findByRole("tab", { name: "Files" }));
+  await screen.findByRole("region", { name: "Diff" });
+  await press("F12");
+  const fileView = await screen.findByRole("region", { name: "File view" });
+  const code = within(fileView).getByRole("region", { name: "Definition's code" });
+  view.code.pick = { line: 4, word: "x", start: 0, end: 1, caret: 0 };
+  const peek = () => within(fileView).getByRole("group", { name: "Definition peek" });
+
+  await press("F12", { altKey: true });
+
+  // Below the view's code, and not inside it.
+  expect(code.contains(peek())).toBe(false);
+  expect(peek().textContent).toContain("Searching for the definition of x…");
+});
+
 it("goes to the definition with F12 on the Files tab, once for a held key", async () => {
   const goToDefinition = vi.spyOn(PrFilesState.prototype, "goToDefinition").mockResolvedValue();
   const files = await onFiles();
@@ -1442,6 +1489,7 @@ it("closes the Definition peek in the file view with Escape, and the file view w
   const shown: { peek: Peek | undefined } = {
     peek: {
       at: { kind: "view", view, line: 4 },
+      layout: "inline",
       symbol: "x",
       side: "base",
       commit: "base",
@@ -1483,6 +1531,7 @@ it("closes the Definition peek with Escape before the search, and the search bef
   const shown: { peek: Peek | undefined } = {
     peek: {
       at: { kind: "row", row: 2 },
+      layout: "inline",
       symbol: "gc",
       side: "head",
       commit: "abc",

@@ -31,7 +31,7 @@ const SETTINGS = {
     status_bar: { visible: true },
     releases: { check: true },
     appearance: { theme: "system", light_theme: "VS Code Light Modern", dark_theme: "VS Code Dark Modern" },
-    diff: { files: "all" },
+    diff: { files: "all", peek: "inline" },
     repositories: [],
   },
   problems: [] as string[],

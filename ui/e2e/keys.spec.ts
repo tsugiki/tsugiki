@@ -8,7 +8,7 @@ const core: CoreAnswers = {
       status_bar: { visible: true },
       releases: { check: true },
       appearance,
-      diff: { files: "all" },
+      diff: { files: "all", peek: "inline" },
       repositories: [],
     },
     problems: [],

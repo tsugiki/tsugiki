@@ -14,6 +14,7 @@ describe("SettingsState", () => {
     expect(state.statusBarVisible).toBe(false);
     expect(state.problems).toEqual([]);
     expect(state.diffFiles).toBe("all");
+    expect(state.diffPeek).toBe("inline");
   });
 
   it("holds what the core read", async () => {
@@ -26,7 +27,7 @@ describe("SettingsState", () => {
           light_theme: "VS Code Light Modern",
           dark_theme: "VS Code Dark Modern",
         },
-        diff: { files: "one" },
+        diff: { files: "one", peek: "split" },
         repositories: [],
       },
       problems: ["settings.toml, line 3: expected a value"],
@@ -35,6 +36,7 @@ describe("SettingsState", () => {
     await state.load();
     expect(state.statusBarVisible).toBe(false);
     expect(state.diffFiles).toBe("one");
+    expect(state.diffPeek).toBe("split");
     expect(state.problems).toEqual(["settings.toml, line 3: expected a value"]);
   });
 
@@ -50,7 +52,7 @@ describe("SettingsState", () => {
           light_theme: "VS Code Light Modern",
           dark_theme: "VS Code Dark Modern",
         },
-        diff: { files: "one" },
+        diff: { files: "one", peek: "inline" },
         repositories: [],
       },
       problems: [],
@@ -75,7 +77,7 @@ describe("SettingsState", () => {
       status_bar: { visible },
       releases: { check: true },
       appearance: { theme: "system", light_theme: "VS Code Light Modern", dark_theme: "VS Code Dark Modern" },
-      diff: { files: "all" },
+      diff: { files: "all", peek: "inline" },
       repositories: [],
     },
     problems: [],

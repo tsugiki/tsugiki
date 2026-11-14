@@ -34,9 +34,6 @@ const TAIL_BYTES: usize = 8 * 1024;
 /// The longest the end of a server's output waits for its error output to close too. A process the server
 /// started can hold that pipe open after the server has gone.
 const ERRORS_PATIENCE: Duration = Duration::from_secs(1);
-/// The longest a server that agreed to stop gets to exit, once the caller has let go of it, before it is
-/// killed.
-const EXIT_PATIENCE: Duration = Duration::from_secs(2);
 
 /// A server's standard streams and its process. [`Server::start`] spawns one, and tests make one from
 /// in-memory pipes and a fake process.
@@ -201,6 +198,8 @@ enum Input {
     StoppedReading,
     /// The server's output closed, and its error output has closed too or had its chance to.
     OutputEnded,
+    /// The caller asked the server to stop, and gives it this long to agree, and as long again to exit.
+    Stop(Duration),
     /// The caller let go of the [`Server`].
     Dropped,
 }
@@ -269,8 +268,8 @@ impl Starting {
     }
 }
 
-/// A running language server. Dropping it kills the server's process: call [`Server::shutdown`] first to
-/// let the server end on its own.
+/// A running language server. Dropping it kills the server's process: [`Server::stop`] lets the server end
+/// on its own first.
 pub struct Server {
     inputs: ToOwner,
     next_id: AtomicI64,
@@ -346,15 +345,17 @@ impl Server {
         )
     }
 
-    /// Asks the server to stop, and sends `exit` when it agrees. An [`Event::Exited`] follows, even if the
-    /// caller drops the `Server` at once.
-    pub fn shutdown(&self) -> Pending<()> {
+    /// Asks the server to stop with `shutdown`, sends `exit` when it agrees, and returns at once. A server
+    /// that hasn't agreed within `patience`, or hasn't exited `patience` after `exit`, is killed. An
+    /// [`Event::Exited`] follows if it exits on its own, and the events end either way.
+    pub fn stop(self, patience: Duration) {
         let call = Call {
             method: Method::Shutdown,
             params: Value::Null,
             then: Some(Then::Exit),
         };
-        self.ask(call, identity)
+        let _agreed: Pending<()> = self.ask(call, identity);
+        self.inputs.send(Input::Stop(patience));
     }
 
     /// Sends a request whose answer parses as a `W`, and hands the caller `convert` of it.
@@ -534,11 +535,12 @@ impl Owner {
                 Input::Errors(bytes) => self.keep_tail(&bytes),
                 Input::StoppedReading => self.input_closed(),
                 Input::OutputEnded => self.output_ended(),
+                Input::Stop(patience) => {
+                    self.await_exit(patience, inputs);
+                    break;
+                }
                 Input::Dropped => break,
             }
-        }
-        if self.life == Life::Exiting {
-            self.await_exit(inputs);
         }
         // Dropping each answer unanswered tells whoever waits that the server has gone, before the kill.
         self.waiting.clear();
@@ -548,19 +550,36 @@ impl Owner {
         }
     }
 
-    /// Gives a server that agreed to stop up to [`EXIT_PATIENCE`] to end, keeping what it says on the way.
-    fn await_exit(&mut self, inputs: &Receiver<Input>) {
-        let deadline = Instant::now() + EXIT_PATIENCE;
+    /// Gives a server asked to stop `patience` to agree, and `patience` again after `exit` to end. On the way
+    /// it keeps what the server says and answers what it asks, and writes nothing else to it.
+    fn await_exit(&mut self, patience: Duration, inputs: &Receiver<Input>) {
+        if self.life == Life::Exited {
+            return;
+        }
+        let mut deadline = Instant::now() + patience;
+        let mut exiting = false;
         while let Ok(input) =
             inputs.recv_timeout(deadline.saturating_duration_since(Instant::now()))
         {
-            let ended = matches!(input, Input::OutputEnded);
-            if let Input::Errors(bytes) = input {
-                self.keep_tail(&bytes);
+            match input {
+                Input::Arrived(incoming) => self.arrived(incoming),
+                Input::Errors(bytes) => self.keep_tail(&bytes),
+                Input::StoppedReading => self.input_closed(),
+                Input::OutputEnded => {
+                    self.output_ended();
+                    return;
+                }
+                // The caller has let go of the server, and of its documents on the way out.
+                Input::Ask(_)
+                | Input::Cancel(_)
+                | Input::Notify { .. }
+                | Input::Configure { .. }
+                | Input::Stop(_)
+                | Input::Dropped => {}
             }
-            if ended {
-                self.output_ended();
-                return;
+            if !exiting && self.life == Life::Exiting {
+                exiting = true;
+                deadline = Instant::now() + patience;
             }
         }
     }

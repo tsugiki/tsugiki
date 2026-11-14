@@ -24,7 +24,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   version but still uses it. A server's problem shows in its row in Settings with its log, and in the peek in
   place of "No definition of X". Without a server for the file's language, the peek says how to set one up.
 - ty and clangd start when a PR that touches their language opens, and rust-analyzer on the first lookup in
-  Rust. Each stops after 30 minutes idle, which `machine.toml` can change.
+  Rust. Each stops after 30 minutes idle, which `machine.toml` can change (see "When a server stops").
 - Text search is a separate action, on ripgrep's crates, over the Lookup checkout and the PR's files, with
   match case, whole word and Rust's regex syntax. It waits while the checkout moves.
 
@@ -164,6 +164,25 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - Until clangd's index holds the file that defines a function, a lookup lands on its declaration in a
   header. clangd 23.1.0 indexed the 453 files of CPython's core at `ce4ac8c045` in 80 s, after which
   `PyErr_Format` in `Objects/typeobject.c` landed in `Python/errors.c`.
+
+## When a server stops
+
+- A server that no lookup has reached for 30 minutes stops: Tsugiki sends `shutdown`, then `exit` once the
+  server agrees. `[language_servers] idle_minutes` in `machine.toml` changes the time, and a value that
+  isn't a whole number above 0 counts as unset. A lookup that runs keeps its server, and its answer counts
+  as a use. The next lookup starts the server again: clangd's index stays on disk, so it doesn't index from
+  scratch. Opening the same PR again starts nothing.
+- Quitting Tsugiki stops every server the same way, and waits for them within the second it gives all its
+  threads to stop. A server that hasn't agreed 5 s after `shutdown`, or hasn't exited 5 s after `exit`, is
+  killed.
+- On Windows each server runs in a job object that kills the server and the processes it started when
+  Tsugiki's process ends, so a crash leaves no server behind. `crates/lsp/tests/crash.rs` kills a parent
+  process that stands in for Tsugiki. Off Windows a crash only closes the server's input, which waits for
+  the macOS checks before 1.0.
+- Removing a Repository stops its servers, cancels a lookup that waits on one, and waits until the servers'
+  own processes have ended: the core's `Definitions::remove`, which #543 calls. A process a server started,
+  such as rust-analyzer's `cargo`, may still be ending then, so a delete of the folder retries. Switching
+  to another Repository leaves them to the idle time.
 
 ## Text search
 

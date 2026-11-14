@@ -1,6 +1,6 @@
 use std::sync::mpsc::Receiver;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
@@ -344,45 +344,22 @@ fn a_cancelled_request_fails_and_the_server_s_late_answer_is_dropped() {
 }
 
 #[test]
-fn shutdown_sends_exit_once_the_server_agrees_and_the_exit_is_reported() {
+fn stop_sends_exit_once_the_server_agrees_and_the_exit_is_reported() {
     let (server, events, mut fake) = initialized(json!({}));
-    let pending = server.shutdown();
+    let document = server.open(uri("file:///w/a.py"), Language::Python, "x = 1\n");
+    let _opened = fake.expect("textDocument/didOpen");
+    server.stop(PATIENCE);
     let asked = fake.expect("shutdown");
     assert!(asked.get("params").is_none(), "{asked}");
+    // What comes while the server is on its way out is read, and nothing more is written to it.
+    drop(document);
+    fake.send(
+        &json!({"jsonrpc": "2.0", "id": 9, "method": "workspace/configuration",
+        "params": {"items": [{"section": "ty"}]}}),
+    );
+    assert_eq!(fake.next()["id"], 9);
     fake.reply(&asked, Value::Null);
     assert!(fake.expect("exit").get("params").is_none());
-    pending.wait().unwrap();
-
-    fake.exit(Some(0));
-    assert_eq!(
-        next_event(&events),
-        Event::Exited(Exit {
-            code: Some(0),
-            stderr_tail: String::new()
-        })
-    );
-    // Asked after the end, a request fails at once.
-    assert!(matches!(
-        somewhere(&server).wait(),
-        Err(RequestError::Exited)
-    ));
-    drop(server);
-    assert!(
-        fake.killed
-            .recv_timeout(Duration::from_millis(100))
-            .is_err()
-    );
-}
-
-#[test]
-fn a_server_dropped_as_it_exits_gets_to_exit_and_its_exit_is_reported() {
-    let (server, events, mut fake) = initialized(json!({}));
-    let pending = server.shutdown();
-    let asked = fake.expect("shutdown");
-    fake.reply(&asked, Value::Null);
-    let _exit = fake.expect("exit");
-    pending.wait().unwrap();
-    drop(server);
 
     fake.write_errors("bye\n");
     fake.exit(Some(0));
@@ -401,15 +378,56 @@ fn a_server_dropped_as_it_exits_gets_to_exit_and_its_exit_is_reported() {
 }
 
 #[test]
-fn a_server_that_agreed_to_stop_and_doesn_t_is_killed_once_dropped() {
+fn a_stopped_server_that_ignores_exit_is_killed_once_the_patience_has_passed_since_exit() {
     let (server, _events, mut fake) = initialized(json!({}));
-    let pending = server.shutdown();
+    let patience = Duration::from_millis(1200);
+    server.stop(patience);
     let asked = fake.expect("shutdown");
+    // The patience for the exit starts at `exit`, not at `shutdown`: counted from `shutdown`, the kill would
+    // come 800 ms after `exit`. The 800 ms left of the first patience leave room for a slow machine.
+    thread::sleep(Duration::from_millis(400));
     fake.reply(&asked, Value::Null);
     let _exit = fake.expect("exit");
-    pending.wait().unwrap();
-    drop(server);
+    let exited = Instant::now();
     fake.killed.recv_timeout(PATIENCE).unwrap();
+    let waited = exited.elapsed();
+    assert!(waited >= Duration::from_millis(1000), "{waited:?}");
+}
+
+#[test]
+fn a_stopped_server_that_doesn_t_agree_is_killed_once_the_patience_has_passed() {
+    let (server, _events, mut fake) = initialized(json!({}));
+    let asked = Instant::now();
+    server.stop(Duration::from_millis(100));
+    let _asked = fake.expect("shutdown");
+    fake.killed.recv_timeout(PATIENCE).unwrap();
+    assert!(asked.elapsed() >= Duration::from_millis(100));
+    fake.reap(None);
+    assert!(fake.ended(), "no exit before the kill");
+}
+
+#[test]
+fn a_stopped_server_that_stops_reading_is_killed_once_the_patience_has_passed() {
+    let (server, _events, mut fake) = initialized(json!({}));
+    fake.stop_reading();
+    server.stop(Duration::from_millis(100));
+    fake.killed.recv_timeout(PATIENCE).unwrap();
+}
+
+#[test]
+fn stopping_a_server_that_has_ended_kills_nothing() {
+    let (server, events, mut fake) = initialized(json!({}));
+    fake.exit(Some(3));
+    assert!(matches!(
+        next_event(&events),
+        Event::Exited(Exit { code: Some(3), .. })
+    ));
+    server.stop(PATIENCE);
+    assert!(
+        fake.killed
+            .recv_timeout(Duration::from_millis(100))
+            .is_err()
+    );
 }
 
 #[test]
@@ -449,8 +467,8 @@ fn the_exit_keeps_only_the_end_of_a_long_error_output() {
 #[test]
 fn a_message_cut_short_ends_the_server_s_output() {
     let (server, events, mut fake) = initialized(json!({}));
-    let pending = server.shutdown();
-    let _asked = fake.expect("shutdown");
+    let pending = somewhere(&server);
+    let _asked = fake.expect("textDocument/definition");
     fake.send_raw(b"Content-Length: 50\r\n\r\n{\"id\":");
     fake.exit(Some(1));
     assert!(matches!(pending.wait(), Err(RequestError::Exited)));
@@ -464,14 +482,12 @@ fn a_message_cut_short_ends_the_server_s_output() {
 fn a_server_that_stops_reading_fails_what_waits_and_what_comes_after() {
     let (server, _events, mut fake) = initialized(json!({}));
     fake.stop_reading();
-    assert!(matches!(
-        server.shutdown().wait(),
-        Err(RequestError::Exited)
-    ));
-    assert!(matches!(
-        somewhere(&server).wait(),
-        Err(RequestError::Exited)
-    ));
+    for _ in 0..2 {
+        assert!(matches!(
+            somewhere(&server).wait(),
+            Err(RequestError::Exited)
+        ));
+    }
 }
 
 #[test]

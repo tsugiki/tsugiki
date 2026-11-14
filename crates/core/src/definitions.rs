@@ -6,18 +6,18 @@
 //! a file in their language opens, and rust-analyzer on the first lookup in Rust. Each file the PR changes
 //! in the server's language is open on it with its text at the head. A lookup from a removed line first
 //! gives those files their text at the base, and the next lookup from another line puts the head's back. A
-//! PR at other commits gets new servers, as its checkout has moved.
+//! PR at other commits gets new servers, as its checkout has moved. A server that no lookup has reached for
+//! the idle time stops until the next lookup starts it again, and a removed Repository's servers stop.
 //!
 //! One thread owns the servers, and each lookup is a message to it, so the window never waits on a server.
 //! The thread sends the server the request and goes on, and a thread of the lookup's own waits for the
 //! answer and hands it back as a message. A newer lookup, or a cancel, cancels the one running.
 
-use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
 use std::ops::Range;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -33,7 +33,7 @@ use crate::mirror::{LookupAt, LookupCheckout};
 use crate::repository::RepositoryName;
 use code::HitFiles;
 pub use code::{Code, HitFile};
-use server::LanguageServer;
+use server::{LanguageServer, Stopping};
 
 mod clangd;
 mod code;
@@ -47,6 +47,15 @@ mod ty;
 
 /// The longest a server gets to start. A lookup has no time limit, as the user can cancel it.
 const PATIENCE: Duration = Duration::from_secs(30);
+
+/// The time a server asked to stop gets to agree, and again to exit after `exit`, before it is killed.
+const EXIT_PATIENCE: Duration = Duration::from_secs(5);
+
+/// The longest a server asked to stop takes to end: [`EXIT_PATIENCE`] to agree, as long again to exit, and a
+/// second for the kill.
+const ENDED_WITHIN: Duration = EXIT_PATIENCE
+    .saturating_mul(2)
+    .saturating_add(Duration::from_secs(1));
 
 /// The file that marks a Repository with CPython's layout, whose servers Tsugiki sets up for it, relative to
 /// the checkout.
@@ -174,6 +183,8 @@ pub struct Sources {
     pub checkout: FindCheckout,
     /// Where each server is, if the user has set it up.
     pub servers: Box<dyn Fn(ServerName) -> Option<PathBuf> + Send>,
+    /// The idle time: a server that no lookup reaches for this long stops.
+    pub idle: Box<dyn Fn() -> Duration + Send>,
 }
 
 /// The handle the rest of Tsugiki asks the servers' thread through. The thread stops once the last handle
@@ -249,8 +260,18 @@ impl Definitions {
         self.send(Message::Cancel(ticket));
     }
 
-    /// Asks each server to stop, and waits up to `patience` for them to end. The thread then ends, and a
-    /// later lookup says so.
+    /// Stops `repository`'s servers, cancels a lookup running on one, and waits until the servers' own
+    /// processes have ended. Each gets [`EXIT_PATIENCE`] to agree and as long to exit. A process a server
+    /// started may still be ending, so a delete of the Repository's folder retries.
+    pub fn remove(&self, repository: RepositoryName) {
+        let (reply, removed) = mpsc::channel();
+        self.send(Message::Remove(repository, reply));
+        // The thread may have stopped, and its servers with it.
+        let _stopped = removed.recv();
+    }
+
+    /// Asks each server to stop, and waits up to `patience` for them to end. On Windows one still running
+    /// when Tsugiki's process ends ends with it. The thread then ends, and a later lookup says so.
     pub fn stop(&self, patience: Duration) {
         let (reply, stopped) = mpsc::channel();
         self.send(Message::Stop(patience, reply));
@@ -280,6 +301,8 @@ enum Message {
     /// The server's answer to the lookup numbered so, as the places it names, which a thread of the lookup's
     /// own hands back.
     Answered(u64, Result<Vec<Hit>, RequestError>),
+    /// The Repository was removed: its servers stop, and the reply comes once they have ended.
+    Remove(RepositoryName, Sender<()>),
     Stop(Duration, Sender<()>),
 }
 
@@ -395,9 +418,23 @@ impl Owner {
         }
     }
 
-    /// The next message to handle, which waits for one.
+    /// The next message to handle, which waits for one. While it waits, each server that no lookup has
+    /// reached for the idle time stops.
     fn next(&mut self) -> Option<Message> {
-        (self.queued.pop_front()).or_else(|| self.incoming.recv().ok())
+        if let Some(message) = self.queued.pop_front() {
+            return Some(message);
+        }
+        loop {
+            let (now, idle) = (Instant::now(), (self.sources.idle)());
+            self.stop_idle(now, idle);
+            let Some(wait) = self.until_idle(now, idle) else {
+                return self.incoming.recv().ok();
+            };
+            match self.incoming.recv_timeout(wait) {
+                Err(RecvTimeoutError::Timeout) => {}
+                received @ (Ok(_) | Err(RecvTimeoutError::Disconnected)) => return received.ok(),
+            }
+        }
     }
 
     /// Handles `message`, and says whether the thread goes on.
@@ -407,9 +444,14 @@ impl Owner {
             Message::LookUp(lookup, asker) => self.look_up(lookup, asker),
             Message::Cancel(ticket) => self.cancel(ticket),
             Message::Answered(id, hits) => self.answered(id, hits),
+            Message::Remove(repository, reply) => {
+                self.remove(&repository);
+                let _unheard = reply.send(());
+            }
             Message::Stop(patience, reply) => {
                 self.cancel_running();
-                self.stop(patience);
+                let all: Vec<Key> = self.servers.keys().cloned().collect();
+                wait_all(self.stop_servers(&all), Instant::now() + patience);
                 let _unheard = reply.send(());
                 return false;
             }
@@ -417,17 +459,55 @@ impl Owner {
         true
     }
 
-    /// Asks each server to stop, then waits up to `patience` in all for them to end.
-    fn stop(&mut self, patience: Duration) {
-        let until = Instant::now() + patience;
-        let stopping: Vec<LanguageServer> =
-            self.servers.drain().map(|(_, server)| server).collect();
-        for server in &stopping {
-            let _agreed = server.shutdown();
+    /// Stops `repository`'s servers and forgets its PR, cancels the lookup running on one of them, and waits
+    /// until the servers' own processes have ended.
+    fn remove(&mut self, repository: &RepositoryName) {
+        let _pr = self.prs.remove(repository);
+        let theirs: Vec<Key> = (self.servers.keys())
+            .filter(|(owner, _)| owner == repository)
+            .cloned()
+            .collect();
+        wait_all(self.stop_servers(&theirs), Instant::now() + ENDED_WITHIN);
+    }
+
+    /// Asks the servers `keys` name to stop and forgets them, and cancels the lookup running on one of them.
+    fn stop_servers(&mut self, keys: &[Key]) -> Vec<Stopping> {
+        let asked = self
+            .running
+            .take_if(|running| keys.contains(&running.server));
+        asked.into_iter().for_each(Running::cancel);
+        (keys.iter())
+            .filter_map(|key| self.servers.remove(key))
+            .map(LanguageServer::stop)
+            .collect()
+    }
+
+    /// Stops each server that no lookup has reached for `idle` by `now`, but the one the lookup running
+    /// asked. The next lookup in its language starts it again.
+    fn stop_idle(&mut self, now: Instant, idle: Duration) {
+        let stale: Vec<Key> = (self.servers.iter())
+            .filter(|(key, server)| !self.asks(key) && now.duration_since(server.used()) >= idle)
+            .map(|(key, _)| key.clone())
+            .collect();
+        let minutes = idle.as_secs() / 60;
+        for (repository, name) in &stale {
+            let named = name.as_str();
+            log::info!(
+                "Tsugiki stops {named} for {repository}, which no lookup has reached for {minutes} minutes"
+            );
         }
-        for server in stopping {
-            server.wait_for_exit(until);
-        }
+        let _stopping = self.stop_servers(&stale);
+    }
+
+    /// The wait from `now` until the next server has gone `idle` without a lookup, if a server can.
+    fn until_idle(&self, now: Instant, idle: Duration) -> Option<Duration> {
+        (self.servers.iter())
+            .filter(|(key, _)| !self.asks(key))
+            .map(|(_, server)| {
+                (server.used().checked_add(idle))
+                    .map_or(Duration::MAX, |at| at.saturating_duration_since(now))
+            })
+            .min()
     }
 
     /// Starts the servers that start with a PR for `pr`, in each language it changes a file in, unless `pr`
@@ -460,13 +540,7 @@ impl Owner {
             })
             .map(|(key, _)| key.clone())
             .collect();
-        let asked = self
-            .running
-            .take_if(|running| stale.contains(&running.server));
-        asked.into_iter().for_each(Running::cancel);
-        for key in &stale {
-            let _stopping = self.servers.remove(key).map(|server| server.shutdown());
-        }
+        let _stopping = self.stop_servers(&stale);
     }
 
     /// Starts the server `key` names for `pr`, if the user has set it up.
@@ -478,15 +552,15 @@ impl Owner {
         let replaces = (self.servers.get(key)).is_some_and(|server| *server.at() != pr.at);
         let checkout = &self.sources.checkout;
         let started = ready(&mut self.servers, checkout, (key, pr), (&program, &|_| {}));
-        match started.map(|_server| ()) {
-            // The server that the lookup running asked has stopped.
-            Ok(()) if replaces && self.asks(key) => self.cancel_running(),
-            Ok(()) => {}
-            Err(problem) => {
-                let named = name.as_str();
-                let why = problem.message;
-                log::warn!("Tsugiki couldn't start {named} for {repository}: {why}");
-            }
+        if let Err(problem) = started {
+            let named = name.as_str();
+            let why = problem.message;
+            log::warn!("Tsugiki couldn't start {named} for {repository}: {why}");
+        }
+        // The old server stopped, unless the checkout wasn't at `pr` yet, whether or not the new one started.
+        let stopped = (self.servers.get(key)).is_none_or(|server| *server.at() == pr.at);
+        if replaces && stopped && self.asks(key) {
+            self.cancel_running();
         }
     }
 
@@ -544,7 +618,10 @@ impl Owner {
             let newer = |message: &Message| match message {
                 Message::LookUp(..) => true,
                 Message::Cancel(ticket) => *ticket == asker.ticket,
-                Message::Opened(..) | Message::Answered(..) | Message::Stop(..) => false,
+                Message::Opened(..)
+                | Message::Answered(..)
+                | Message::Remove(..)
+                | Message::Stop(..) => false,
             };
             if self.queued.iter().any(newer) {
                 return Ok(Sent::Answered(Answer::Cancelled));
@@ -571,6 +648,9 @@ impl Owner {
         };
         let answer = match hits {
             Ok(hits) => {
+                if let Some(server) = self.servers.get_mut(&running.server) {
+                    server.answered();
+                }
                 // The peek may read a file outside the Repository once a hit names it.
                 for hit in &hits {
                     if let Place::Outside { path } = &hit.place {
@@ -625,23 +705,34 @@ fn ready<'a>(
     (program, waiting): (&Path, &dyn Fn(Waiting)),
 ) -> Result<&'a mut LanguageServer, Error> {
     let (repository, name) = key;
-    let entry = match servers.entry(key.clone()) {
-        Entry::Occupied(running) if *running.get().at() == pr.at => return Ok(running.into_mut()),
-        entry @ (Entry::Occupied(_) | Entry::Vacant(_)) => entry,
+    let server = match servers.remove(key) {
+        Some(running) if *running.at() == pr.at => running,
+        old => {
+            let Some(checkout) = checkout(repository).filter(|checkout| checkout.at == pr.at)
+            else {
+                if let Some(old) = old {
+                    let _none = servers.insert(key.clone(), old);
+                }
+                let elsewhere = format!(
+                    "Tsugiki has no copy of this PR's files for {} to read yet.",
+                    name.as_str()
+                );
+                return Err(Error::new(ErrorKind::NotFound, &elsewhere));
+            };
+            waiting(Waiting::Starting { server: *name });
+            // Asked first, the old server can end while the new one starts.
+            let _stopping = old.map(LanguageServer::stop);
+            LanguageServer::start(*name, program, checkout, &pr.changed_for(*name))?
+        }
     };
-    let elsewhere = format!(
-        "Tsugiki has no copy of this PR's files for {} to read yet.",
-        name.as_str()
-    );
-    let checkout = checkout(repository)
-        .filter(|checkout| checkout.at == pr.at)
-        .ok_or_else(|| Error::new(ErrorKind::NotFound, &elsewhere))?;
-    waiting(Waiting::Starting { server: *name });
-    if let Entry::Occupied(old) = &entry {
-        let _stopping = old.get().shutdown();
+    Ok(servers.entry(key.clone()).insert_entry(server).into_mut())
+}
+
+/// Waits until each of the `stopping` servers has ended, or until `until`.
+fn wait_all(stopping: Vec<Stopping>, until: Instant) {
+    for server in stopping {
+        server.wait(until);
     }
-    let server = LanguageServer::start(*name, program, checkout, &pr.changed_for(*name))?;
-    Ok(entry.insert_entry(server).into_mut())
 }
 
 /// `path` without its `.` and `..` parts, as a server names the files it read.

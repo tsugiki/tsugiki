@@ -1555,6 +1555,7 @@ fn machine_toml_says_where_rust_analyzer_is_beside_ty() {
         ty: Some(folders.data.join("ty.exe")),
         rust_analyzer: Some(folders.data.join("ra/rust-analyzer.exe")),
         clangd: None,
+        ..LanguageServers::default()
     };
     assert_eq!(servers, expected);
 }
@@ -1572,8 +1573,33 @@ fn machine_toml_says_where_clangd_is() {
         ty: None,
         rust_analyzer: None,
         clangd: Some(folders.data.join("clangd/bin/clangd.exe")),
+        ..LanguageServers::default()
     };
     assert_eq!(servers, expected);
+}
+
+#[test]
+fn machine_toml_says_how_long_an_idle_server_runs_and_30_minutes_stands_for_what_it_cant_read() {
+    let idle = |text: &str| {
+        let (folders, root) = temp_folders("language-servers-idle");
+        fs::write(folders.machine_file(), text).unwrap();
+        let files = SettingsFiles::load(folders);
+        fs::remove_dir_all(root).unwrap();
+        assert_eq!(files.loaded().problems, Vec::<String>::new());
+        files.view().language_servers.idle.as_secs() / 60
+    };
+
+    assert_eq!(idle("[language_servers]\nidle_minutes = 5\n"), 5);
+    let with_a_server =
+        "[language_servers]\nidle_minutes = 90\n[language_servers.ty]\npath = 'ty.exe'\n";
+    assert_eq!(idle(with_a_server), 90);
+    assert_eq!(idle(""), 30);
+    for unread in ["0", "-1", "'ten'", "2.5"] {
+        assert_eq!(
+            idle(&format!("[language_servers]\nidle_minutes = {unread}\n")),
+            30
+        );
+    }
 }
 
 #[test]

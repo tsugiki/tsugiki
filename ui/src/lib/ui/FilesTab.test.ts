@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/svelte";
+import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { chooseMirrorSource, mirrorCost, pickClone } from "$lib/state/mirror-source";
@@ -1597,6 +1597,49 @@ it("opens the Definition peek under the picked line, names the hit, shows its co
   expect(peekBox()?.style.top).toBe(`${String(5 * 20)}px`);
   expect(peekBox()?.style.height).toBe(`${String(18 * 20)}px`);
   expect(rowAt("▾logo.pngbinary")?.style.top).toBe(`${String(23 * 20)}px`);
+});
+
+it("lists the hits beside the code, and shows the one a click or ↑ ↓ picks", async () => {
+  const hit = (path: string, line: number) => ({
+    place: { kind: "repository" as const, path, side: "head" as const, commit: "abc" },
+    line,
+    column: 4,
+    text: `new = ${String(line)}`,
+  });
+  core.definitions.mockResolvedValue(
+    ok({ state: "found", hits: [hit("Lib/news.py", 12), hit("Lib/old.py", 3), hit("Lib/odd.py", 5)] }),
+  );
+  fileOf(30);
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[4]).toBe("2+new line");
+  });
+  await clickAt(codeOf(4), 2);
+  await files.peekDefinition();
+  const list = await vi.waitFor(() => screen.getByRole("listbox", { name: "Definitions" }));
+  const options = within(list).getAllByRole("option");
+  expect(options.map((option) => option.textContent)).toEqual([
+    "Lib/news.py:12 new = 12",
+    "Lib/old.py:3 new = 3",
+    "Lib/odd.py:5 new = 5",
+  ]);
+
+  await fireEvent.click(options[2] as HTMLElement);
+  await vi.waitFor(() => {
+    expect(peekCode()).toContain("*5line 5");
+  });
+  expect(peekText()[0]).toBe("new Lib/odd.py:5 at abc · the PR's head 3 of 3 ✕");
+  expect(core.definitionCode).toHaveBeenLastCalledWith(
+    expect.objectContaining({ file: { kind: "repository", path: "Lib/odd.py", commit: "abc" } }),
+  );
+
+  await fireEvent.keyDown(list, { key: "ArrowUp" });
+  await vi.waitFor(() => {
+    expect(peekText()[0]).toBe("new Lib/old.py:3 at abc · the PR's head 2 of 3 ✕");
+  });
+  expect(options.map((option) => option.getAttribute("aria-selected"))).toEqual(["false", "true", "false"]);
+  // The list scrolls itself to the hit shown, and leaves the diff around the peek where it was.
+  expect(screen.getByRole("region", { name: "Diff" }).scrollTop).toBe(0);
 });
 
 it("scrolls the peek's code inside it, and the diff's rows after it stay where they are", async () => {

@@ -65,15 +65,24 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - Each hit names its commit: a file the PR changes, asked from a line at the head, is at the PR's head, and
   so is a file the PR adds or renames, whichever line asked. Any other file of the Repository is at the
   base. A hit outside the Repository, such as a stub of the
-  standard library that ty keeps, names its path on disk. The peek's header shows the symbol, the first
-  hit's path and line, "at abc1234 · the PR's head" or "the PR's base", "1 of N" and ✕. A hit outside the
-  Repository shows its whole path on disk in place of the commit.
+  standard library that ty keeps, names its path on disk. The peek's header shows the symbol, the path and
+  line of the hit it shows, "at abc1234 · the PR's head" or "the PR's base", "3 of N" for the third hit,
+  and ✕. A hit outside the Repository shows its whole path on disk in place of the commit.
 - Under the header the peek shows the hit's file, with line numbers in the gutter, scrolled so the hit's
   line sits 3 rows from the top, and marked. A file of the Repository comes from the **Mirror** at the hit's
   commit, so a hit in a file the PR changes, found at the head, shows the head's text. A file outside it
   comes from disk, and only one a server named in a hit can be read. The lines are plain text until #455.
   The peek takes 18 rows while it looks up or shows code, and 2 when it only has words to say. Its code
   scrolls inside it, so the diff's rows after it stay where they are.
+- The peek lists its hits on the right of the code, even a single one, each with its path, its line number
+  and the line's text. It shows the first hit until the user picks another with a click, or with ↑ and ↓
+  while the peek has the focus: the code shows the hit picked, and the header names it and counts it. The
+  list scrolls to keep that hit in sight, and ↑ and ↓ stop at either end. While the peek has the focus they
+  move through the hits and never scroll the diff, and Esc still closes the peek. Each pick reads the hit's
+  file from the core again, and so does picking the hit on show after its file couldn't be read. With
+  several hits the peek keeps its 18 rows when a hit's file can't be read, and says why beside the list. A
+  single hit whose file can't be read leaves the peek its 2 rows, with the hit's path beside the words. The
+  words show inside the code's pane, so a focus there stays in the peek.
 - The window asks the core for the file 200 lines at a time near the rows that show, so a big file such as
   CPython's `Objects/unicodeobject.c` opens without waiting for all of it. The core reads them on the
   command's thread, never waiting for a lookup, and offline at any commit the Mirror holds. It keeps the

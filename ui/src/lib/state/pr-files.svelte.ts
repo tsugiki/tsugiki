@@ -1023,9 +1023,21 @@ export class PrFilesState {
     const answered: Peek = {
       ...peek,
       lookup: { state: "answered", answer: answer.data },
-      ...(hit && { code: new HitCode(this.#repository, hit) }),
+      ...(hit && { code: new HitCode(this.#repository, hit, 0) }),
     };
     return { peek: answered, lookup, view };
+  }
+
+  /** Shows the peek's hit `index`, counted from 0, with its code (#441). An index past either end of the
+   * hits changes nothing, and so does the hit the peek shows, whose code keeps where the user scrolled it,
+   * unless its file couldn't be read: that reads it again. */
+  showHit(index: number) {
+    const peek = this.#peek;
+    const answer = peek?.lookup.state === "answered" ? peek.lookup.answer : undefined;
+    const hit = answer?.state === "found" ? answer.hits[index] : undefined;
+    const shown = peek?.code?.index === index && peek.code.problem === undefined;
+    if (peek === undefined || hit === undefined || shown) return;
+    this.#peek = { ...peek, code: new HitCode(this.#repository, hit, index) };
   }
 
   /** Closes the Definition peek, and hands the diff its focus back. A Go to definition that still looks

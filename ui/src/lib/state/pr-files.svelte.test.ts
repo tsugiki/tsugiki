@@ -2228,6 +2228,76 @@ it("closes the peek and hands the diff its focus, and a lookup that answers late
   expect(core.cancelDefinitions.mock.calls).toEqual([[ticketOf(0)]]);
 });
 
+it("shows the hit picked in the peek, and nothing past either end", async () => {
+  const hits = ["a", "b", "c"].map((name, at): Hit => ({
+    place: { kind: "repository", path: `Lib/${name}.py`, side: "base", commit: "base" },
+    line: 3 + at,
+    column: 4,
+    text: "def area(width):",
+  }));
+  core.definitions.mockResolvedValue(ok({ state: "found", hits }));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.peekDefinition();
+  const shown = () => files.peek?.code?.index;
+
+  expect(shown()).toBe(0);
+  files.showHit(2);
+  expect(shown()).toBe(2);
+  files.showHit(3);
+  files.showHit(-1);
+  expect(shown()).toBe(2);
+  expect(files.peek?.lookup).toEqual({ state: "answered", answer: { state: "found", hits } });
+});
+
+it("picks no hit while there is no peek, or no hit in it", async () => {
+  const answer = heldLookup();
+  core.definitions.mockResolvedValue(ok({ state: "not_set_up", server: "ty" }));
+  const files = await pickable();
+  files.showHit(0);
+  expect(files.peek).toBeUndefined();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  const looking = files.peekDefinition();
+  files.showHit(0);
+  expect(files.peek?.lookup).toEqual({ state: "looking" });
+  answer(ok(answerWith()));
+  await looking;
+  files.showHit(0);
+  expect(files.peek?.code).toBeUndefined();
+  await files.peekDefinition();
+
+  files.showHit(0);
+
+  expect(files.peek).toMatchObject({ lookup: { state: "answered", answer: { state: "not_set_up" } } });
+  expect(files.peek?.code).toBeUndefined();
+});
+
+it("keeps the hit's code when the hit shown is picked again, so its scroll stays", async () => {
+  core.definitions.mockResolvedValue(ok(answerWith("Lib/shapes.py", 3)));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.peekDefinition();
+  const code = files.peek?.code;
+
+  files.showHit(0);
+
+  expect(files.peek?.code).toBe(code);
+});
+
+it("reads a hit's file again when the hit shown is picked after its read failed", async () => {
+  core.definitions.mockResolvedValue(ok(answerWith("Lib/shapes.py", 3)));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.peekDefinition();
+  const failed = files.peek?.code;
+  if (failed) failed.problem = "Tsugiki couldn't read Lib/shapes.py";
+
+  files.showHit(0);
+
+  expect(files.peek?.code).not.toBe(failed);
+  expect(files.peek?.code).toMatchObject({ index: 0, problem: undefined });
+});
+
 it("gives each lookup a ticket of its own, so a cancel names the lookup it means", async () => {
   core.definitions.mockResolvedValue(ok(answerWith()));
   const files = await pickable();

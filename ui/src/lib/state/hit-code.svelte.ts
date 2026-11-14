@@ -31,10 +31,13 @@ export class HitCode {
   /** The chunks asked for. Nothing draws from it, and the effect that asks shouldn't rerun on it. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   #asked = new Set<number>();
+  /** This hit's place among the lookup's hits, counted from 0. The peek shows the hit whose code it holds. */
+  readonly index: number;
   readonly #repository: string;
   readonly #file: CodeFile;
 
-  constructor(repository: string, hit: Hit) {
+  constructor(repository: string, hit: Hit, index: number) {
+    this.index = index;
     this.#repository = repository;
     this.#file = codeFile(hit);
   }

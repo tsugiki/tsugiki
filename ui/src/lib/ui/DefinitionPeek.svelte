@@ -2,7 +2,9 @@
      path and line of the hit it shows, the commit it is at, which hit it is of how many, and ✕. Under it, the
      hit's code scrolled to its line (#439), with the hits listed on its right (#441), or else a line that
      says what the lookup waits for, with the seconds once they pass one (#440), that it found nothing, or why
-     it failed. A hit outside the Repository names its whole path on disk in place of a commit. -->
+     it failed. A hit outside the Repository names its whole path on disk in place of a commit. While the
+     server that answered builds its index, a line under the header says so (#680). -->
+
 <script lang="ts">
   import { peekWords, type Peek } from "$lib/state/peek";
   import { currentOs, keyName } from "./keys";
@@ -66,11 +68,15 @@
   {/if}
   <button type="button" class="close" aria-label="Close" title="Close (Escape)" onclick={onclose}>✕</button>
 </div>
+{#if words.indexing !== undefined}
+  <div class="body indexing">{words.indexing}</div>
+{/if}
 {#if code && found}
   <!-- The code and the list each take the focus, and ↑ and ↓ move through the hits from either. -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="panes"
+    class:under-indexing={words.indexing !== undefined}
     onkeydown={(e) => {
       moveByKey(e, found.shown);
     }}
@@ -147,6 +153,16 @@
   .panes {
     display: flex;
     height: calc(100% - 20px);
+  }
+
+  /* The line that says the server indexes takes a row of the code's and the list's. */
+  .panes.under-indexing {
+    height: calc(100% - 40px);
+  }
+
+  .indexing {
+    opacity: 0.7;
+    font-style: italic;
   }
 
   .code {

@@ -1,10 +1,12 @@
 //! Each test that looks a name up starts the real ty that CI fetches, on a Repository built with the real
 //! git, and nothing reaches the network.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 
-use super::testing::{Fixture, ty};
+use serde_json::json;
+
+use super::testing::{FakeClangd, Fixture, ty};
 use super::*;
 use crate::diff::FileChange;
 
@@ -138,10 +140,11 @@ fn hits(answer: Result<Answer, Error>) -> Vec<Hit> {
     }
 }
 
-/// Where a lookup's answer goes, and what it heard it waits for.
+/// A lookup's answer, what it heard it waits for, and what it heard of its server's index.
 struct Asked {
     answer: Receiver<Result<Answer, Error>>,
     waited: Receiver<Waiting>,
+    indexed: Receiver<Index>,
 }
 
 /// Asks the owner `lookup` with `ticket`, as the handle does, without waiting for the answer.
@@ -151,13 +154,27 @@ fn ask(owner: &mut Owner, lookup: &Lookup, ticket: Ticket) -> Asked {
     let waiting = Box::new(move |waiting| {
         let _unheard = heard.send(waiting);
     });
+    let (heard, indexed) = mpsc::channel();
+    let index = Box::new(move |index| {
+        let _unheard = heard.send(index);
+    });
     let asker = Asker {
         ticket,
         reply,
         waiting,
+        index,
     };
     let _goes_on = owner.handle(Message::LookUp(lookup.clone(), asker));
-    Asked { answer, waited }
+    Asked {
+        answer,
+        waited,
+        indexed,
+    }
+}
+
+/// A listener to a server's index that ignores it.
+fn unheard() -> OnIndex {
+    Box::new(|_| {})
 }
 
 /// The answer of `asked`, once the owner has handled the messages up to it.
@@ -628,6 +645,7 @@ fn a_lookup_asked_again_while_ty_starts_asks_ty_nothing() {
         ticket: Ticket(2),
         reply,
         waiting: Box::new(|_| {}),
+        index: Box::new(|_| {}),
     };
     owner
         .own
@@ -811,19 +829,16 @@ fn the_handle_starts_ty_for_a_python_pr_and_looks_up_on_its_thread() {
     definitions.opened(repository(), at.clone(), &files);
     definitions.opened(repository(), at, &[diff_file("c.c")]);
     let (heard, waited) = mpsc::channel();
-    let found = hits(definitions.look_up(
-        at_head.clone(),
-        Ticket(1),
-        Box::new(move |waiting| {
-            let _unheard = heard.send(waiting);
-        }),
-    ));
+    let hears = Box::new(move |waiting| {
+        let _unheard = heard.send(waiting);
+    });
+    let found = hits(definitions.look_up(at_head.clone(), Ticket(1), (hears, unheard())));
     // The lookup has answered, so nothing is cancelled.
     definitions.cancel(Ticket(1));
     definitions.stop(Duration::from_secs(10));
     // ty's process works in the checkout, so on Windows the folder goes only once it has ended.
     let removed = std::fs::remove_dir_all(fixture.checkout.folder.parent().unwrap());
-    let after = definitions.look_up(at_head, Ticket(2), Box::new(|_| {}));
+    let after = definitions.look_up(at_head, Ticket(2), (Box::new(|_| {}), unheard()));
 
     let only = "def only_head():";
     assert_eq!(found, [hit(&fixture, DiffEnd::Head, (SHOP, 5, 4), only)]);
@@ -848,7 +863,7 @@ fn a_pr_whose_ty_doesnt_start_is_logged_and_its_lookup_says_why() {
     let found = definitions.look_up(
         lookup(&fixture, DiffEnd::Head, 12, "eggs"),
         Ticket(1),
-        Box::new(|_| {}),
+        (Box::new(|_| {}), unheard()),
     );
 
     let message = found.unwrap_err().message;
@@ -873,7 +888,7 @@ fn the_thread_stops_once_the_last_handle_is_gone() {
 
     drop(definitions);
     let python = lookup(&fixture, DiffEnd::Head, 12, "eggs");
-    let answer = copy.look_up(python, Ticket(1), Box::new(|_| {}));
+    let answer = copy.look_up(python, Ticket(1), (Box::new(|_| {}), unheard()));
     let still = ended.try_recv();
     drop(copy);
     let after = ended.recv_timeout(Duration::from_secs(10));
@@ -1233,4 +1248,416 @@ fn after_its_index_clangd_finds_a_function_defined_in_another_file() {
             .is_dir()
     );
     assert!(!folder.join(".cache").exists());
+}
+
+/// Sources that give the checkout `checkout` holds, and a clangd at `program`, which the tests that insert a
+/// fake clangd start only when they replace it.
+fn clangd_sources(checkout: Arc<Mutex<LookupCheckout>>, program: PathBuf) -> Sources {
+    Sources {
+        checkout: Box::new(move |_| Some(checkout.lock().unwrap().clone())),
+        servers: Box::new(move |server| (server == ServerName::Clangd).then(|| program.clone())),
+        idle: idle_after(Duration::from_secs(3600)),
+    }
+}
+
+/// A location in `path` of the fixture's checkout, at `line` and `character` from 0, as a server names one.
+fn location(fixture: &Fixture, path: &str, (line, character): (u32, u32)) -> serde_json::Value {
+    let file = plain(&fixture.checkout.folder).join(path);
+    let start = json!({"line": line, "character": character});
+    let end = json!({"line": line, "character": character + 10});
+    json!([{"uri": Uri::from_path(&file).unwrap(), "range": {"start": start, "end": end}}])
+}
+
+/// The fake clangd's answers: the declaration of `spam_count` in `Include/spam.h` for the first lookup, as
+/// clangd names it until its index holds `Objects/other.c`, and the definition there for the rest.
+fn spam_count(fixture: &Fixture) -> Vec<serde_json::Value> {
+    vec![
+        location(fixture, "Include/spam.h", (2, 4)),
+        location(fixture, "Objects/other.c", (2, 4)),
+    ]
+}
+
+/// The servers' thread, run here, with the fixture's PR and a fake clangd on its checkout, which gives
+/// `answers` as [`FakeClangd::start`] says.
+fn with_fake_clangd(
+    fixture: &Fixture,
+    sources: Sources,
+    answers: Vec<serde_json::Value>,
+) -> (Owner, FakeClangd) {
+    let mut owner = Owner::new(sources);
+    let (fake, client) = FakeClangd::start(answers);
+    let key = (repository(), ServerName::Clangd);
+    let setup = clangd::setup(&fixture.checkout.folder).unwrap();
+    let changed = [EGGS_C.to_owned()];
+    let server = LanguageServer::initialize(
+        ServerName::Clangd,
+        (setup, client),
+        (fixture.checkout.clone(), &changed),
+        index_moved(&owner.own, &key),
+    )
+    .unwrap();
+    let _none = owner.servers.insert(key, server);
+    let pr = Pr {
+        at: fixture.checkout.at.clone(),
+        changed: changed.to_vec(),
+    };
+    let _none = owner.prs.insert(repository(), pr);
+    (owner, fake)
+}
+
+/// [`with_fake_clangd`] with sources that hold the fixture's checkout, and answers about `spam_count`.
+fn fake_clangd(fixture: &Fixture) -> (Owner, FakeClangd) {
+    fake_clangd_answering(fixture, spam_count(fixture))
+}
+
+/// [`with_fake_clangd`] with sources that hold the fixture's checkout.
+fn fake_clangd_answering(
+    fixture: &Fixture,
+    answers: Vec<serde_json::Value>,
+) -> (Owner, FakeClangd) {
+    let checkout = Arc::new(Mutex::new(fixture.checkout.clone()));
+    let sources = clangd_sources(checkout, PathBuf::from("clangd"));
+    with_fake_clangd(fixture, sources, answers)
+}
+
+/// The declaration the fake clangd names first.
+fn declaration(fixture: &Fixture) -> Vec<Hit> {
+    let declared = ("Include/spam.h", 3, 4);
+    vec![hit(
+        fixture,
+        DiffEnd::Base,
+        declared,
+        "int spam_count(int limit);",
+    )]
+}
+
+/// The definition the fake clangd names once asked again.
+fn definition(fixture: &Fixture) -> Vec<Hit> {
+    let defined = ("Objects/other.c", 3, 4);
+    vec![hit(
+        fixture,
+        DiffEnd::Base,
+        defined,
+        "int spam_count(int limit)",
+    )]
+}
+
+/// Handles the next `count` messages, each of which says the index has moved on.
+fn index_moved_on(owner: &mut Owner, count: usize) {
+    for _ in 0..count {
+        let message = owner.incoming.recv_timeout(PATIENCE).unwrap();
+        assert!(matches!(message, Message::Indexing(_)));
+        let _goes_on = owner.handle(message);
+    }
+}
+
+/// The next news `asked` hears of its server's index, once the owner has handled the messages up to it.
+fn heard_next(owner: &mut Owner, asked: &Asked) -> Index {
+    loop {
+        if let Ok(index) = asked.indexed.try_recv() {
+            return index;
+        }
+        let message = owner.next().unwrap();
+        let _goes_on = owner.handle(message);
+    }
+}
+
+/// clangd builds its index, and has indexed `done` of 452 files.
+fn building(done: u32) -> Index {
+    let files = IndexedFiles { done, total: 452 };
+    Index::Building {
+        server: ServerName::Clangd,
+        files: Some(files),
+    }
+}
+
+/// clangd builds its index, and hasn't counted the files yet.
+fn uncounted() -> Index {
+    Index::Building {
+        server: ServerName::Clangd,
+        files: None,
+    }
+}
+
+/// The fake reports that clangd begins its index, and has indexed `done` of 452 files.
+fn begin(fake: &FakeClangd, done: u32) {
+    fake.progress(json!({"kind": "begin", "title": "indexing", "percentage": 0}));
+    let message = format!("{done}/452");
+    fake.progress(json!({"kind": "report", "message": message, "percentage": done * 100 / 452}));
+}
+
+#[test]
+fn an_answer_while_clangd_indexes_hears_how_far_it_has_got_and_the_answer_once_the_index_is_built()
+{
+    let fixture = c_files("definitions-indexing");
+    let (mut owner, fake) = fake_clangd(&fixture);
+    let lookup = c_lookup(&fixture, DiffEnd::Head, 11, "spam_count");
+    begin(&fake, 120);
+    index_moved_on(&mut owner, 2);
+
+    let asked = ask(&mut owner, &lookup, Ticket(1));
+    let found = hits(answer_of(&mut owner, &asked));
+    let with_answer: Vec<Index> = asked.indexed.try_iter().collect();
+    // A count comes at most once a second.
+    thread::sleep(server::NEWS_EVERY);
+    fake.progress(json!({"kind": "report", "message": "200/452", "percentage": 44}));
+    index_moved_on(&mut owner, 1);
+    let reported: Vec<Index> = asked.indexed.try_iter().collect();
+    fake.progress(json!({"kind": "end"}));
+    index_moved_on(&mut owner, 1);
+    let built = heard_next(&mut owner, &asked);
+    let later = ask(&mut owner, &lookup, Ticket(2));
+    let found_later = hits(answer_of(&mut owner, &later));
+
+    assert_eq!(found, declaration(&fixture));
+    assert_eq!(with_answer, [building(120)]);
+    assert_eq!(reported, [building(200)]);
+    // The core asked clangd again, and the window hears what it names now.
+    let hits = definition(&fixture);
+    assert_eq!(built, Index::Built { hits: hits.clone() });
+    assert_eq!(found_later, hits);
+    assert_eq!(later.indexed.try_iter().count(), 0);
+    assert_eq!(fake.asked(), 3);
+}
+
+#[test]
+fn a_lookup_cancelled_after_it_answered_hears_nothing_more_and_isn_t_asked_again() {
+    let fixture = c_files("definitions-indexing-cancelled");
+    let (mut owner, fake) = fake_clangd(&fixture);
+    let lookup = c_lookup(&fixture, DiffEnd::Head, 11, "spam_count");
+    fake.progress(json!({"kind": "begin", "title": "indexing", "percentage": 0}));
+    index_moved_on(&mut owner, 1);
+
+    let asked = ask(&mut owner, &lookup, Ticket(1));
+    let _found = hits(answer_of(&mut owner, &asked));
+    let _goes_on = owner.handle(Message::Cancel(Ticket(1)));
+    fake.progress(json!({"kind": "report", "message": "300/452", "percentage": 66}));
+    fake.progress(json!({"kind": "end"}));
+    index_moved_on(&mut owner, 2);
+
+    assert_eq!(asked.indexed.try_iter().collect::<Vec<_>>(), [uncounted()]);
+    assert!(owner.running.is_none());
+    assert_eq!(fake.asked(), 1);
+}
+
+#[test]
+fn a_lookup_cancelled_while_clangd_is_asked_again_hears_that_the_index_brings_nothing_more() {
+    let fixture = c_files("definitions-indexing-cancelled-again");
+    let (mut owner, fake) = fake_clangd(&fixture);
+    let lookup = c_lookup(&fixture, DiffEnd::Head, 11, "spam_count");
+    fake.progress(json!({"kind": "begin", "title": "indexing", "percentage": 0}));
+    index_moved_on(&mut owner, 1);
+    let asked = ask(&mut owner, &lookup, Ticket(1));
+    let _found = hits(answer_of(&mut owner, &asked));
+    fake.progress(json!({"kind": "end"}));
+    index_moved_on(&mut owner, 1);
+    let asking_again = owner.running.is_some();
+
+    let _goes_on = owner.handle(Message::Cancel(Ticket(1)));
+
+    assert!(asking_again);
+    assert!(owner.running.is_none());
+    let heard: Vec<Index> = asked.indexed.try_iter().collect();
+    assert_eq!(heard, [uncounted(), Index::Stopped]);
+}
+
+#[test]
+fn an_index_built_after_clangd_was_asked_and_before_it_answered_asks_it_again_at_once() {
+    let fixture = c_files("definitions-indexing-built");
+    let (mut owner, fake) = fake_clangd(&fixture);
+    let lookup = c_lookup(&fixture, DiffEnd::Head, 11, "spam_count");
+    fake.progress(json!({"kind": "report", "message": "451/452", "percentage": 99}));
+    index_moved_on(&mut owner, 1);
+    let key = (repository(), ServerName::Clangd);
+
+    let asked = ask(&mut owner, &lookup, Ticket(1));
+    fake.progress(json!({"kind": "end"}));
+    let until = Instant::now() + PATIENCE;
+    while owner.indexing_of(&key) != Indexing::Built && Instant::now() < until {
+        thread::sleep(Duration::from_millis(10));
+    }
+    let found = hits(answer_of(&mut owner, &asked));
+    let built = heard_next(&mut owner, &asked);
+
+    assert_eq!(found, declaration(&fixture));
+    let hits = definition(&fixture);
+    assert_eq!(built, Index::Built { hits });
+}
+
+/// clangd reports its index once it has read its compile database, which may come after its first answer.
+#[test]
+fn an_answer_before_clangd_reports_its_index_hears_of_the_index_once_it_does() {
+    let fixture = c_files("definitions-indexing-unreported");
+    let (mut owner, fake) = fake_clangd(&fixture);
+    let lookup = c_lookup(&fixture, DiffEnd::Head, 11, "spam_count");
+
+    let asked = ask(&mut owner, &lookup, Ticket(1));
+    let found = hits(answer_of(&mut owner, &asked));
+    let with_answer = asked.indexed.try_iter().count();
+    begin(&fake, 120);
+    index_moved_on(&mut owner, 2);
+    let reported: Vec<Index> = asked.indexed.try_iter().collect();
+    fake.progress(json!({"kind": "end"}));
+    index_moved_on(&mut owner, 1);
+    let built = heard_next(&mut owner, &asked);
+
+    assert_eq!(found, declaration(&fixture));
+    assert_eq!(with_answer, 0);
+    // The owner reads the count once the fake has sent it, which may be before it reads the begin.
+    assert_eq!(reported.last(), Some(&building(120)));
+    let hits = definition(&fixture);
+    assert_eq!(built, Index::Built { hits });
+}
+
+#[test]
+fn a_removed_repository_or_a_crash_tells_the_lookup_that_clangd_stopped() {
+    let fixture = c_files("definitions-indexing-removed");
+    let (mut owner, fake) = fake_clangd(&fixture);
+    let lookup = c_lookup(&fixture, DiffEnd::Head, 11, "spam_count");
+    fake.progress(json!({"kind": "begin", "title": "indexing", "percentage": 0}));
+    index_moved_on(&mut owner, 1);
+    let asked = ask(&mut owner, &lookup, Ticket(1));
+    let _found = hits(answer_of(&mut owner, &asked));
+    let crashing = c_files("definitions-indexing-crash");
+    let (mut other, crashes) = fake_clangd(&crashing);
+    crashes.progress(json!({"kind": "begin", "title": "indexing", "percentage": 0}));
+    index_moved_on(&mut other, 1);
+    let lookup = c_lookup(&crashing, DiffEnd::Head, 11, "spam_count");
+    let crashed = ask(&mut other, &lookup, Ticket(1));
+    let _found = hits(answer_of(&mut other, &crashed));
+
+    owner.remove(&repository());
+    crashes.crash();
+    index_moved_on(&mut other, 1);
+
+    let heard: Vec<Index> = asked.indexed.try_iter().collect();
+    assert_eq!(heard, [uncounted(), Index::Stopped]);
+    let heard: Vec<Index> = crashed.indexed.try_iter().collect();
+    assert_eq!(heard, [uncounted(), Index::Stopped]);
+}
+
+#[test]
+fn a_pr_at_other_commits_tells_the_lookup_that_its_clangd_stopped() {
+    let fixture = c_files("definitions-indexing-moved");
+    let checkout = Arc::new(Mutex::new(fixture.checkout.clone()));
+    let sources = clangd_sources(Arc::clone(&checkout), super::testing::clangd());
+    let (mut owner, fake) = with_fake_clangd(&fixture, sources, spam_count(&fixture));
+    let lookup = c_lookup(&fixture, DiffEnd::Head, 11, "spam_count");
+    fake.progress(json!({"kind": "begin", "title": "indexing", "percentage": 0}));
+    index_moved_on(&mut owner, 1);
+    let asked = ask(&mut owner, &lookup, Ticket(1));
+    let _found = hits(answer_of(&mut owner, &asked));
+    let moved = Fixture::new(
+        "definitions-indexing-moved-on",
+        &[("a.c", "")],
+        &[("a.c", Some("int a;\n"))],
+    );
+    checkout.lock().unwrap().clone_from(&moved.checkout);
+
+    let pr = Pr {
+        at: moved.checkout.at.clone(),
+        changed: vec!["a.c".to_owned()],
+    };
+    owner.opened(&repository(), pr);
+
+    let heard: Vec<Index> = asked.indexed.try_iter().collect();
+    assert_eq!(heard, [uncounted(), Index::Stopped]);
+}
+
+#[test]
+fn a_count_clangd_reports_within_a_second_of_the_last_comes_once_the_second_has_passed() {
+    let fixture = c_files("definitions-indexing-held");
+    let (mut owner, fake) = fake_clangd(&fixture);
+    let lookup = c_lookup(&fixture, DiffEnd::Head, 11, "spam_count");
+    begin(&fake, 120);
+    index_moved_on(&mut owner, 2);
+    let asked = ask(&mut owner, &lookup, Ticket(1));
+    let _found = hits(answer_of(&mut owner, &asked));
+    let with_answer: Vec<Index> = asked.indexed.try_iter().collect();
+
+    let reported = Instant::now();
+    fake.progress(json!({"kind": "report", "message": "200/452", "percentage": 44}));
+    fake.progress(json!({"kind": "report", "message": "201/452", "percentage": 44}));
+    index_moved_on(&mut owner, 1);
+    let heard: Vec<Index> = asked.indexed.try_iter().collect();
+
+    assert_eq!(with_answer, [building(120)]);
+    // clangd says nothing more, and the last count still comes.
+    assert_eq!(heard, [building(201)]);
+    assert!(reported.elapsed() < server::NEWS_EVERY * 3);
+}
+
+#[test]
+fn a_clangd_whose_index_a_lookup_watches_isn_t_idle() {
+    let fixture = c_files("definitions-indexing-idle");
+    let (mut owner, fake) = fake_clangd(&fixture);
+    let lookup = c_lookup(&fixture, DiffEnd::Head, 11, "spam_count");
+    fake.progress(json!({"kind": "begin", "title": "indexing", "percentage": 0}));
+    index_moved_on(&mut owner, 1);
+    let asked = ask(&mut owner, &lookup, Ticket(1));
+    let _found = hits(answer_of(&mut owner, &asked));
+    let (idle, key) = (Duration::from_secs(1), (repository(), ServerName::Clangd));
+
+    owner.stop_idle(Instant::now() + idle * 10, idle);
+    let watched = owner.servers.contains_key(&key);
+    let until_idle = owner.until_idle(Instant::now(), idle);
+    let _goes_on = owner.handle(Message::Cancel(Ticket(1)));
+    owner.stop_idle(Instant::now() + idle * 10, idle);
+
+    assert!(watched);
+    assert_eq!(until_idle, None);
+    assert!(!owner.servers.contains_key(&key));
+    assert_eq!(asked.indexed.try_iter().collect::<Vec<_>>(), [uncounted()]);
+}
+
+#[test]
+fn a_lookup_clangd_fails_once_asked_again_hears_that_it_stopped_and_clangd_keeps_its_index() {
+    let fixture = c_files("definitions-indexing-failed");
+    let failure = json!({"error": {"code": -32603, "message": "clangd broke"}});
+    let answers = vec![location(&fixture, "Include/spam.h", (2, 4)), failure];
+    let (mut owner, fake) = fake_clangd_answering(&fixture, answers);
+    let lookup = c_lookup(&fixture, DiffEnd::Head, 11, "spam_count");
+    fake.progress(json!({"kind": "begin", "title": "indexing", "percentage": 0}));
+    index_moved_on(&mut owner, 1);
+    let asked = ask(&mut owner, &lookup, Ticket(1));
+    let found = hits(answer_of(&mut owner, &asked));
+    let with_answer = heard_next(&mut owner, &asked);
+
+    fake.progress(json!({"kind": "end"}));
+    index_moved_on(&mut owner, 1);
+    let again = heard_next(&mut owner, &asked);
+
+    assert_eq!(found, declaration(&fixture));
+    assert_eq!(with_answer, uncounted());
+    assert_eq!(again, Index::Stopped);
+    assert_eq!(fake.asked(), 2);
+    let key = (repository(), ServerName::Clangd);
+    assert_eq!(owner.indexing_of(&key), Indexing::Built);
+}
+
+#[test]
+fn an_early_cancel_outlasts_the_cancels_after_it_and_its_late_lookup_leaves_the_watch_be() {
+    let fixture = c_files("definitions-indexing-early");
+    let (mut owner, fake) = fake_clangd(&fixture);
+    let lookup = c_lookup(&fixture, DiffEnd::Head, 11, "spam_count");
+    fake.progress(json!({"kind": "begin", "title": "indexing", "percentage": 0}));
+    index_moved_on(&mut owner, 1);
+    // The window cancels lookup 5 before the core takes it, then closes the peek of an older one.
+    let _goes_on = owner.handle(Message::Cancel(Ticket(5)));
+    let _goes_on = owner.handle(Message::Cancel(Ticket(4)));
+    let asked = ask(&mut owner, &lookup, Ticket(1));
+    let _found = hits(answer_of(&mut owner, &asked));
+
+    let late = ask(&mut owner, &lookup, Ticket(5));
+    let late_answer = late.answer.try_recv().unwrap();
+    fake.progress(json!({"kind": "end"}));
+    index_moved_on(&mut owner, 1);
+    let heard: Vec<Index> = asked.indexed.try_iter().collect();
+    let built = heard_next(&mut owner, &asked);
+
+    assert!(matches!(late_answer, Ok(Answer::Cancelled)));
+    assert_eq!(heard, [uncounted()]);
+    let hits = definition(&fixture);
+    assert_eq!(built, Index::Built { hits });
+    assert_eq!(fake.asked(), 2);
 }

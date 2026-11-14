@@ -176,9 +176,10 @@ export const commands = {
 	 *  Where the picked word is defined, which the Definition peek shows (#438). It waits on ty, which reads the
 	 *  Lookup checkout, and on ty's start if it hasn't started, and never on GitHub, so it works offline at any
 	 *  commit the mirror holds. It cancels the lookup running, if one is. `waiting` hears what it waits for:
-	 *  ty to start, or to answer (#440).
+	 *  ty to start, or to answer (#440). `index` hears how far clangd has got with its index, if it answers
+	 *  while it builds it, and what clangd names once the core has asked it again with the index built (#680).
 	 */
-	definitions: (lookup: DefinitionLookup, waiting: Channel<Waiting>) => typedError<Answer, Error_Serialize>(__TAURI_INVOKE("definitions", { lookup, waiting })),
+	definitions: (lookup: DefinitionLookup, waiting: Channel<Waiting>, index: Channel<Index_Deserialize>) => typedError<Answer, Error_Serialize>(__TAURI_INVOKE("definitions", { lookup, waiting, index })),
 	/**
 	 *  Cancels the lookup with `ticket`, as when the user closes the Definition peek while it waits (#440). The
 	 *  lookup then answers that it was cancelled, even if the core takes the cancel before the lookup.
@@ -871,6 +872,55 @@ export type Home_Serialize =
  *  the rest in the settings' order.
  */
 others: RepositoryName[] };
+
+/**
+ *  The news of the index of the server that answered a lookup, which the Definition peek says under that
+ *  answer. Until clangd's index holds the file that defines a function, clangd names its declaration in a
+ *  header, so the core asks again once the index is built.
+ */
+export type Index = Index_Serialize | Index_Deserialize;
+
+/**
+ *  The news of the index of the server that answered a lookup, which the Definition peek says under that
+ *  answer. Until clangd's index holds the file that defines a function, clangd names its declaration in a
+ *  header, so the core asks again once the index is built.
+ */
+export type Index_Deserialize = 
+/**  The server builds its index: the answer may miss what the index doesn't hold yet. */
+{ state: "building"; server: ServerName; 
+/**  The files it has indexed, once it has said. */
+files?: IndexedFiles | null } | 
+/**
+ *  The server has built its index, and the core asked it again: these are the places it names now, in
+ *  place of the answer's.
+ */
+{ state: "built"; hits: Hit[] } | 
+/**  The server stopped, or failed the lookup asked again, before it found more. The answer stands. */
+{ state: "stopped" };
+
+/**
+ *  The news of the index of the server that answered a lookup, which the Definition peek says under that
+ *  answer. Until clangd's index holds the file that defines a function, clangd names its declaration in a
+ *  header, so the core asks again once the index is built.
+ */
+export type Index_Serialize = 
+/**  The server builds its index: the answer may miss what the index doesn't hold yet. */
+{ state: "building"; server: ServerName; 
+/**  The files it has indexed, once it has said. */
+files: IndexedFiles | null } | 
+/**
+ *  The server has built its index, and the core asked it again: these are the places it names now, in
+ *  place of the answer's.
+ */
+{ state: "built"; hits: Hit[] } | 
+/**  The server stopped, or failed the lookup asked again, before it found more. The answer stands. */
+{ state: "stopped" };
+
+/**  The files a server has indexed of those it has to. */
+export type IndexedFiles = {
+	done: number,
+	total: number,
+};
 
 /**  A key or a click. The key itself isn't named, so the log holds nothing the user typed. */
 export type Input = "key" | "click";

@@ -37,6 +37,7 @@ pub(super) fn setup(program: &Path) -> Result<Setup, Error> {
         settings: json!({"rust-analyzer": config}),
         language: Language::Rust,
         ready: Ready::Quiescent,
+        index: None,
     })
 }
 

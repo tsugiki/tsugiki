@@ -20,6 +20,7 @@ import { Channel } from "$lib/data/channel";
 import {
   commands,
   events,
+  type Answer,
   type Cloning,
   type CodeRow,
   type DiffEnd,
@@ -58,7 +59,7 @@ import { FilePages, samePage, type FilesMode, type Page } from "./file-pages";
 import { diffShows, inRepository, type FileView } from "./file-view";
 import { HitCode } from "./hit-code.svelte";
 import { hud, type Jump, type JumpTimer } from "./hud.svelte";
-import { PEEK_ID, peekPlaces, withPeek, type Peek } from "./peek";
+import { PEEK_ID, peekPlaces, withPeek, type IndexNews, type Peek } from "./peek";
 import { wordAt, type Column, type Pick, type Picked, type PickedLine, type Side } from "./pick";
 
 export type PrFiles = PrFiles_Serialize;
@@ -118,6 +119,13 @@ const END = 2 ** 32 - 1;
  * share one while the window is open, whichever PR they are in. */
 let lastTicket = 0;
 const nextTicket = () => (lastTicket += 1);
+
+/** The place `answer` names at `index`, counted from 0, if it found any there. */
+const hitAt = (answer: Answer, index: number) => (answer.state === "found" ? answer.hits[index] : undefined);
+
+/** Whether two hits are at the same place and line. */
+const sameHit = (one: Hit, other: Hit) =>
+  one.line === other.line && JSON.stringify(one.place) === JSON.stringify(other.place);
 
 /** Where Go to definition lands: the diff's row that shows the hit's line, and the side the hit is at. */
 type Landing = { row: number; side: DiffEnd };
@@ -304,6 +312,9 @@ export class PrFilesState {
   /** The ticket of the newest lookup, so only its answer shows. Closing the peek takes a new one, which no
    * lookup answers to. */
   #lookups = 0;
+  /** The core's latest news of the index of the server that answered the newest lookup, kept until a peek
+   * shows the answer (#680). */
+  #news: { lookup: number; news: IndexNews } | undefined;
   #noticeTimer: ReturnType<typeof setTimeout> | undefined;
   /** The chunks asked for. Nothing draws from it, and the effect that asks shouldn't rerun on it. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
@@ -918,7 +929,7 @@ export class PrFilesState {
     const looked = await this.#lookUp((looking) => {
       this.#peek = looking;
     });
-    if (looked !== undefined) this.#peek = looked.peek;
+    if (looked !== undefined) this.#showPeek(looked.peek, looked.lookup);
   }
 
   /** Goes to where the picked word is defined (#444), with the lookup `Alt+F12` runs: to the first of ty's
@@ -940,15 +951,17 @@ export class PrFilesState {
     const hits = answer?.state === "found" ? answer.hits : undefined;
     if (hits?.length === 0) {
       this.#say(`No definition of ${peek.symbol} at ${peek.commit.slice(0, 7)}.`, NOTICE_MS);
+      this.#unwatch(lookup);
       return;
     }
     const goal = hits === undefined ? undefined : await this.#goal(hits, view, peek.code);
     if (lookup !== this.#lookups) return;
     this.#say(undefined);
     if (goal === undefined) {
-      this.#peek = peek;
+      this.#showPeek(peek, lookup);
       return;
     }
+    this.#unwatch(lookup);
     this.#peek = undefined;
     if (goal.kind === "file") {
       this.#fileView = goal.view;
@@ -1049,8 +1062,13 @@ export class PrFilesState {
       if (lookup !== this.#lookups || this.#peek?.lookup.state !== "looking") return;
       this.#peek = { ...peek, lookup: { state: "looking", waiting: step, since: Date.now() } };
     };
+    // The core says how the index of a server that answers while it builds it goes (#680).
+    const index = new Channel<IndexNews>();
+    index.onmessage = (news) => {
+      this.#heard(lookup, news);
+    };
     // The core cancels the lookup running, if one is.
-    const answer = await commands.definitions(lookedUp, waiting).catch((e: unknown) => ({
+    const answer = await commands.definitions(lookedUp, waiting, index).catch((e: unknown) => ({
       status: "error" as const,
       error: { message: String(e) },
     }));
@@ -1059,13 +1077,62 @@ export class PrFilesState {
       return { peek: { ...peek, lookup: { state: "failed", problem: answer.error.message } }, lookup, view };
     }
     // The hit's code lives with the peek, so the diff drawing the peek again doesn't read it again.
-    const hit = answer.data.state === "found" ? answer.data.hits[0] : undefined;
+    const hit = hitAt(answer.data, 0);
     const answered: Peek = {
       ...peek,
       lookup: { state: "answered", answer: answer.data },
       ...(hit && { code: new HitCode(this.#repository, hit, 0) }),
     };
     return { peek: answered, lookup, view };
+  }
+
+  /** Hears `news` of the index of the server that answered lookup `lookup` (#680). The peek that shows the
+   * answer takes it, and else it waits for the peek: the window may hear it before the answer, or while Go to
+   * definition finds the hit's row. */
+  #heard(lookup: number, news: IndexNews) {
+    if (lookup !== this.#lookups) return;
+    const peek = this.#peek;
+    if (peek?.lookup.state === "answered") this.#peek = this.#withNews(peek, peek.lookup.answer, news);
+    else this.#news = { lookup, news };
+  }
+
+  /** Shows `peek`, the answer of lookup `lookup`, with what the core said of the server's index before it
+   * showed. */
+  #showPeek(peek: Peek, lookup: number) {
+    const held = this.#news;
+    this.#news = undefined;
+    this.#peek =
+      peek.lookup.state === "answered" && held?.lookup === lookup
+        ? this.#withNews(peek, peek.lookup.answer, held.news)
+        : peek;
+  }
+
+  /** Tells the core that no peek shows lookup `lookup`'s answer, so it stops watching the index of the
+   * server that answered, and asks it nothing more (#680). */
+  #unwatch(lookup: number) {
+    this.#news = undefined;
+    void commands.cancelDefinitions(lookup);
+  }
+
+  /** `peek`, which shows `answer`, with `news` of the index of the server that answered: how far it has
+   * got, which a line under the header says, or the places it names once it has built its index, or that it
+   * stopped. The places replace the hits, and the peek shows the first, unless the one it shows is at the
+   * same place and line in the new list: that keeps its code, so the peek reads nothing again and keeps its
+   * scroll. */
+  #withNews(peek: Peek, answer: Answer, news: IndexNews): Peek {
+    if (news.state === "building") return { ...peek, indexing: news };
+    const shown = { ...peek };
+    delete shown.indexing;
+    if (news.state === "stopped") return shown;
+    const index = peek.code?.index ?? 0;
+    const was = hitAt(answer, index);
+    const same = news.hits[index];
+    delete shown.code;
+    const kept = peek.code && was && same && sameHit(was, same) ? peek.code : undefined;
+    const hit = news.hits[0];
+    const code = kept ?? (hit && new HitCode(this.#repository, hit, 0));
+    const found: Answer = { state: "found", hits: news.hits };
+    return { ...shown, lookup: { state: "answered", answer: found }, ...(code && { code }) };
   }
 
   /** Shows the peek's hit `index`, counted from 0, with its code (#441). An index past either end of the
@@ -1088,10 +1155,12 @@ export class PrFilesState {
   }
 
   /** Drops the Definition peek, and what Go to definition says. A lookup that still waits is cancelled, so
-   * ty stops working on it. */
+   * ty stops working on it, and so is one that has answered: the core may watch clangd's index for it, and
+   * ask clangd again once the index is built (#680). */
   #dropPeek() {
-    if (this.going || this.#peek?.lookup.state === "looking") void commands.cancelDefinitions(this.#lookups);
+    if (this.going || this.#peek !== undefined) void commands.cancelDefinitions(this.#lookups);
     this.#peek = undefined;
+    this.#news = undefined;
     this.#lookups = nextTicket();
     this.#stopGoing();
   }

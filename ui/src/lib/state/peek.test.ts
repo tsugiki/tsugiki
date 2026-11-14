@@ -123,3 +123,31 @@ it("leaves the threads in their order", () => {
 
   expect(ids(placed).filter((id) => id !== PEEK_ID)).toEqual(ids(threads));
 });
+
+const declaration = {
+  place: { kind: "repository", path: "Include/spam.h", side: "base", commit: "base123" },
+  line: 3,
+  column: 4,
+  text: "int spam_count(int limit);",
+} as const;
+
+it("says under an answer that came while clangd indexes how far it has got, and nothing once it is built", () => {
+  const answered = (hits: Hit[], indexing?: Peek["indexing"]): Peek => ({
+    ...looking({ state: "answered", answer: { state: "found", hits } }),
+    ...(indexing && { indexing }),
+  });
+  const counted = { state: "building", server: "clangd", files: { done: 120, total: 452 } } as const;
+  const uncounted = { state: "building", server: "clangd", files: null } as const;
+
+  expect(peekWords(answered([declaration], counted)).indexing).toBe(
+    "clangd is indexing (120 of 452 files): this may be a declaration",
+  );
+  expect(peekWords(answered([declaration], uncounted)).indexing).toBe(
+    "clangd is indexing: this may be a declaration",
+  );
+  expect(peekWords(answered([declaration])).indexing).toBeUndefined();
+  // A peek with words only takes a row more for the line.
+  expect(peekPlaces(answered([], counted))).toBe(3);
+  expect(peekPlaces(answered([]))).toBe(2);
+  expect(peekPlaces(answered([declaration], counted))).toBe(PEEK_ROWS);
+});

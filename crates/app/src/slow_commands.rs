@@ -15,7 +15,7 @@ use std::sync::Arc;
 use tauri::State;
 use tauri::async_runtime::spawn_blocking;
 use tauri::ipc::Channel;
-use tsugiki_core::definitions::{Answer, Waiting};
+use tsugiki_core::definitions::{Answer, Index, Waiting};
 use tsugiki_core::diff::{DiffRow, HeadLine};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::highlight::Span;
@@ -325,19 +325,25 @@ pub(crate) fn pull_request_row(
 /// Where the picked word is defined, which the Definition peek shows (#438). It waits on ty, which reads the
 /// Lookup checkout, and on ty's start if it hasn't started, and never on GitHub, so it works offline at any
 /// commit the mirror holds. It cancels the lookup running, if one is. `waiting` hears what it waits for:
-/// ty to start, or to answer (#440).
+/// ty to start, or to answer (#440). `index` hears how far clangd has got with its index, if it answers
+/// while it builds it, and what clangd names once the core has asked it again with the index built (#680).
 #[tauri::command(async)]
 #[specta::specta]
 pub(crate) fn definitions(
     lookup: crate::DefinitionLookup,
     waiting: Channel<Waiting>,
+    index: Channel<Index>,
     work: State<'_, crate::DiffWork>,
 ) -> Result<Answer, Error> {
     let heard = Box::new(move |step| {
         // The window may have stopped listening.
         let _unheard = waiting.send(step);
     });
-    crate::look_up_definition(lookup, &work, heard)
+    let indexed = Box::new(move |news| {
+        // The window may have stopped listening.
+        let _unheard = index.send(news);
+    });
+    crate::look_up_definition(lookup, &work, (heard, indexed))
 }
 
 /// Some lines of the file a hit is in, which the Definition peek shows (#439): a file of the Repository at

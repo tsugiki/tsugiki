@@ -64,6 +64,21 @@ it("counts no seconds while ty starts, as the words say none", () => {
   expect(vi.getTimerCount()).toBe(0);
 });
 
+it("shows a line under the header while clangd indexes, and takes it away once it has built its index", async () => {
+  const answered = peekWith({ state: "answered", answer: { state: "found", hits: [] } });
+  const files = { done: 120, total: 452 };
+  const indexing = { ...answered, indexing: { state: "building", server: "clangd", files } } as const;
+  const line = "clangd is indexing (120 of 452 files): this may be a declaration";
+
+  const shown = render(DefinitionPeek, { peek: indexing, onclose: () => {}, onhit: () => {} });
+  const before = screen.queryByText(line);
+  await shown.rerender({ peek: answered });
+
+  expect(before).not.toBeNull();
+  expect(screen.queryByText(line)).toBeNull();
+  expect(screen.getByText("No definition of eggs")).toBeDefined();
+});
+
 /** A hit in `path` at line `line` of the PR's head. */
 const hitIn = (path: string, line: number): Hit => ({
   place: { kind: "repository", path, side: "head", commit: "fedcba987" },

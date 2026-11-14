@@ -17,8 +17,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   Go to definition opens that file read-only at the same commit in the Detail pane, and `Alt+←` returns to
   the diff.
 - The peek shows the server's answer, or "No definition of X". While clangd builds its index, a definition
-  in another file lands on its declaration in a header: the peek shows it with a progress line, and asks
-  again once the index is done if it is still open.
+  in another file lands on its declaration in a header: the peek shows it with a progress line, and the
+  core asks again once the index is done if the peek is still open.
 - The user supplies each server, picks its binary in Settings, and Tsugiki keeps the path in `machine.toml`.
   Tsugiki checks a server when its path is set, names the versions we tested, and warns about another
   version but still uses it. A server's problem shows in its row in Settings with its log, and in the peek in
@@ -186,14 +186,39 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - Until clangd's index holds the file that defines a function, a lookup lands on its declaration in a
   header. clangd 23.1.0 indexed the 453 files of CPython's core at `ce4ac8c045` in 80 s, after which
   `PyErr_Format` in `Objects/typeobject.c` landed in `Python/errors.c`.
+- clangd reports its index through `$/progress` on its `backgroundIndexProgress` token, each report counting
+  the files as `120/452`. A thread of each clangd's own reads them into a `latest::channel`, and wakes the
+  servers' thread when that is news: a new state, the first count, or a new count once a second has passed.
+  So CPython's 452 reports wake it about once a second, and the peek redraws as often. A count it held back
+  goes out once the second has passed, though clangd says nothing more.
+- An answer that comes while clangd indexes shows a line under the peek's header: "clangd is indexing (120
+  of 452 files): this may be a declaration", or without the counts before the first report. The core says
+  how far clangd has got on a channel of the lookup's own. Once the index is built, the core asks clangd
+  again and sends the places it names on that channel, and the peek shows them in place of the old hit,
+  without the line. A hit at the same line keeps its code and scroll. A lookup asked while clangd indexed,
+  whose answer comes once the index is built, is asked again at once.
+- clangd reports an index only once it has read its compile database, as the first file opens, so its first
+  answer may come before. The core then watches without a line, and the line shows if clangd starts to
+  index. Without a compile database clangd never reports one, and the watch comes to nothing.
+- The window keeps what the core says of the index until a peek shows the answer, as it may hear it before
+  the answer, or while Go to definition finds the hit's row. Closing the peek cancels the lookup, and so
+  does Go to definition when it shows no peek, as it lands on a row, opens the file view or finds nothing.
+  A newer lookup ends it too. The core then stops watching and asks clangd nothing more. A clangd whose
+  index a lookup watches isn't idle. If clangd stops first, crashed, for a removed Repository or a PR at
+  other commits, the core says so and the line goes, leaving the answer. The same goes for a lookup asked
+  again that clangd fails, and clangd keeps the index it built. A peek opened once the index is built shows
+  no line.
+- The window may cancel a lookup before the core takes it, as the two travel apart. The core keeps the
+  last 16 cancels that matched no lookup, as each closed peek sends one, and a lookup one of them names
+  answers that it was cancelled and leaves the lookup running and the watch be.
 
 ## When a server stops
 
 - A server that no lookup has reached for 30 minutes stops: Tsugiki sends `shutdown`, then `exit` once the
   server agrees. `[language_servers] idle_minutes` in `machine.toml` changes the time, and a value that
   isn't a whole number above 0 counts as unset. A lookup that runs keeps its server, and its answer counts
-  as a use. The next lookup starts the server again: clangd's index stays on disk, so it doesn't index from
-  scratch. Opening the same PR again starts nothing.
+  as a use. A lookup that watches clangd's index keeps clangd too. The next lookup starts the server again:
+  clangd's index stays on disk, so it doesn't index from scratch. Opening the same PR again starts nothing.
 - Quitting Tsugiki stops every server the same way, and waits for them within the second it gives all its
   threads to stop. A server that hasn't agreed 5 s after `shutdown`, or hasn't exited 5 s after `exit`, is
   killed.

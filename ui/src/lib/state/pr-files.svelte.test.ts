@@ -12,7 +12,7 @@ import {
   type DiffThread,
   type PrFiles,
 } from "./pr-files.svelte";
-import { PEEK_ID, PEEK_ROWS } from "./peek";
+import { PEEK_ID, PEEK_ROWS, type IndexNews } from "./peek";
 import type { YourReview } from "./workbench.svelte";
 
 type Heard = (event: { payload: unknown }) => void;
@@ -20,6 +20,11 @@ type Heard = (event: { payload: unknown }) => void;
 /** The channel a lookup hears what it waits for on, which a test speaks into as the core would. */
 interface FakeChannel {
   onmessage: (message: Waiting) => void;
+}
+
+/** The channel a lookup hears how the index of the server that answered goes on (#680). */
+interface IndexChannel {
+  onmessage: (message: IndexNews) => void;
 }
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -50,7 +55,8 @@ const core = vi.hoisted(() => {
     pullRequestSpans: vi.fn<(chunk: { start: number }, opened?: number[]) => Promise<unknown>>(),
     pullRequestLines: vi.fn<(lines: { file: number; start: number; end: number }) => Promise<unknown>>(),
     pullRequestFind: vi.fn<(search: { query: string }) => Promise<unknown>>(),
-    definitions: vi.fn<(lookup: DefinitionLookup, waiting: FakeChannel) => Promise<unknown>>(),
+    definitions:
+      vi.fn<(lookup: DefinitionLookup, waiting: FakeChannel, index: IndexChannel) => Promise<unknown>>(),
     cancelDefinitions: vi.fn(() => Promise.resolve()),
     pullRequestRow: vi.fn<(line: DiffLine) => Promise<unknown>>(),
     cloning: vi.fn(),
@@ -2356,17 +2362,6 @@ it("keeps the answer when a step of its lookup comes after it", async () => {
   expect(files.peek?.lookup).toEqual({ state: "answered", answer: answerWith() });
 });
 
-it("cancels nothing when it closes a peek whose lookup has answered", async () => {
-  core.definitions.mockResolvedValue(ok(answerWith()));
-  const files = await pickable();
-  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
-  await files.peekDefinition();
-
-  files.closePeek();
-
-  expect(core.cancelDefinitions).not.toHaveBeenCalled();
-});
-
 it("says what the lookup waits for as the core says it, and when it started to", async () => {
   const answer = heldLookup();
   const files = await pickable();
@@ -2446,6 +2441,145 @@ it("says why when the core can't be asked, and stops searching", async () => {
   expect(files.peek?.lookup).toEqual({ state: "failed", problem: "Error: The window lost the core." });
 });
 
+/** clangd builds its index, and has indexed `done` of 452 files. */
+const building = (done: number): IndexNews => ({
+  state: "building",
+  server: "clangd",
+  files: { done, total: 452 },
+});
+
+/** The channel on which the core tells the `index`th lookup of its server's index. */
+const indexOf = (index: number) => core.definitions.mock.calls[index]?.[2];
+
+it("shows how far clangd has got under its answer, and the places it names once the index is built", async () => {
+  const answer = heldLookup();
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  const looking = files.peekDefinition();
+
+  // The window may hear of the index before the answer.
+  indexOf(0)?.onmessage(building(120));
+  answer(ok(answerWith("Include/spam.h", 3)));
+  await looking;
+  const first = files.peek?.indexing;
+  indexOf(0)?.onmessage(building(200));
+  const later = files.peek;
+  const defined = answerWith("Objects/other.c", 3);
+  indexOf(0)?.onmessage({ state: "built", hits: defined.state === "found" ? defined.hits : [] });
+
+  expect(first).toEqual(building(120));
+  expect(later?.indexing).toEqual(building(200));
+  expect(later?.lookup).toEqual({ state: "answered", answer: answerWith("Include/spam.h", 3) });
+  // The core asked clangd again, so the window asks nothing, and the line goes with the old answer.
+  expect(files.peek?.lookup).toEqual({ state: "answered", answer: defined });
+  expect(files.peek?.indexing).toBeUndefined();
+  expect(files.peek?.code).not.toBe(later?.code);
+  expect(core.definitions).toHaveBeenCalledTimes(1);
+});
+
+it("keeps the hit's code when the answer once the index is built names the same line", async () => {
+  core.definitions.mockResolvedValue(hitsFound(hitAt("Include/spam.h", "base", 3)));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.peekDefinition();
+  indexOf(0)?.onmessage(building(120));
+  const code = files.peek?.code;
+
+  indexOf(0)?.onmessage({ state: "built", hits: [hitAt("Include/spam.h", "base", 3)] });
+
+  expect(files.peek?.indexing).toBeUndefined();
+  expect(files.peek?.code).toBe(code);
+});
+
+it("keeps the hit the user picked once the index is built, if the new places name it at the same place", async () => {
+  const picked = hitAt("Include/b.h", "base", 7);
+  core.definitions.mockResolvedValue(hitsFound(hitAt("Include/a.h", "base", 3), picked));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.peekDefinition();
+  files.showHit(1);
+  const code = files.peek?.code;
+
+  indexOf(0)?.onmessage({ state: "built", hits: [hitAt("Objects/a.c", "base", 3), picked] });
+  const kept = files.peek?.code;
+  indexOf(0)?.onmessage({ state: "built", hits: [hitAt("Objects/b.c", "base", 9)] });
+
+  expect(kept).toBe(code);
+  expect(kept?.index).toBe(1);
+  // Places that don't name it show the first.
+  expect(files.peek?.code?.index).toBe(0);
+  expect(files.peek?.code).not.toBe(code);
+});
+
+it("shows the code of a hit the index finds where the answer before it found none", async () => {
+  core.definitions.mockResolvedValue(hitsFound());
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.peekDefinition();
+  const before = files.peek?.code;
+
+  indexOf(0)?.onmessage({ state: "built", hits: [hitAt("Objects/other.c", "base", 3)] });
+
+  expect(before).toBeUndefined();
+  expect(files.peek?.code?.index).toBe(0);
+});
+
+it("takes the line away and keeps the answer when the server stops before it builds its index", async () => {
+  core.definitions.mockResolvedValue(ok(answerWith("Include/spam.h", 3)));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.peekDefinition();
+  indexOf(0)?.onmessage(building(120));
+
+  indexOf(0)?.onmessage({ state: "stopped" });
+
+  expect(files.peek?.indexing).toBeUndefined();
+  expect(files.peek?.lookup).toEqual({ state: "answered", answer: answerWith("Include/spam.h", 3) });
+});
+
+it("shows what came of the index while Go to definition found the row, once it opens the peek", async () => {
+  // A file the PR changes, on a line the diff doesn't show, opens the peek.
+  core.definitions.mockResolvedValue(hitsFound(hitAt("a.py", "base", 3)));
+  let rowFound: (row: unknown) => void = () => {};
+  core.pullRequestRow.mockReturnValueOnce(
+    new Promise((resolve) => {
+      rowFound = resolve;
+    }),
+  );
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 3 }, null, 13, false);
+  const going = files.goToDefinition();
+  await vi.waitFor(() => {
+    expect(core.pullRequestRow).toHaveBeenCalled();
+  });
+
+  indexOf(0)?.onmessage(building(451));
+  indexOf(0)?.onmessage({ state: "built", hits: [hitAt("Objects/other.c", "base", 3)] });
+  rowFound(ok(null));
+  await going;
+
+  expect(files.peek?.lookup).toEqual({
+    state: "answered",
+    answer: { state: "found", hits: [hitAt("Objects/other.c", "base", 3)] },
+  });
+  expect(files.peek?.indexing).toBeUndefined();
+});
+
+it("cancels a lookup when its peek closes, and what the core says of the index then changes nothing", async () => {
+  core.definitions.mockResolvedValue(ok(answerWith("Include/spam.h", 3)));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.peekDefinition();
+  indexOf(0)?.onmessage(building(120));
+
+  files.closePeek();
+  indexOf(0)?.onmessage({ state: "built", hits: [hitAt("Objects/other.c", "base", 3)] });
+
+  expect(files.peek).toBeUndefined();
+  // The core stops watching the index for it, and asks clangd nothing more.
+  expect(core.cancelDefinitions.mock.calls).toEqual([[ticketOf(0)]]);
+});
+
 /** ty's hit at line `line` of `path` in the Repository, at `side`. */
 const hitAt = (path: string, side: "base" | "head", line: number): Hit => ({
   place: { kind: "repository", path, side, commit: side },
@@ -2479,6 +2613,8 @@ it("goes to a hit on a line the diff shows, and marks the line on the hit's side
   expect(files.marked).toEqual({ row: 4, side: "head" });
   expect(files.peek).toBeUndefined();
   expect(files.notice).toBeUndefined();
+  // No peek shows the answer, so the core stops watching the server's index for it (#680).
+  expect(core.cancelDefinitions.mock.calls).toEqual([[ticketOf(0)]]);
 });
 
 it("lands a hit at the base on the line's old side, and closes the peek", async () => {
@@ -2514,6 +2650,7 @@ it("says it searches while it looks, and for a moment that it found no definitio
   expect(files.notice).toBeUndefined();
   expect(files.peek).toBeUndefined();
   expect(core.pullRequestRow).not.toHaveBeenCalled();
+  expect(core.cancelDefinitions.mock.calls).toEqual([[ticketOf(0)]]);
 });
 
 it("closes a peek on another word as it searches, and stops when the peek's Escape closes", async () => {
@@ -2615,6 +2752,8 @@ it("opens the file view on a hit in a file the PR doesn't change, at the hit's c
   expect(files.marked).toBeUndefined();
   expect(files.notice).toBeUndefined();
   expect(files.going).toBe(false);
+  // No peek shows the answer, so the core stops watching the server's index for it (#680).
+  expect(core.cancelDefinitions.mock.calls).toEqual([[ticketOf(1)]]);
 });
 
 it("reads the first hit's code once, whether the peek or the file view shows it", async () => {

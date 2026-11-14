@@ -10,9 +10,11 @@ or `npm run`, and CI calls the same npm scripts.
 | --------------------- | --------------------------------------- | ------------------------------------------------------------------------------------ |
 | `ship.ts`             | `just ship`                             | Pushes the branch and opens the PR; `--check` and `--release` run `just check` first |
 | `merged.ts`           | `just merged`                           | After GitHub merges a PR: switches to main, pulls, deletes the local branch          |
+| `worktree.ts`         | `just worktree`, `just worktree-remove` | Makes a worktree ready to build a ticket, and deletes it with its builds             |
+| `worktrees.ts`        | `worktree.ts`                           | Its branch names, ticket titles and refusals                                         |
 | `next.ts`             | `just next`                             | Lists the open tickets of the release being built, each under its blockers           |
 | `tickets.ts`          | `next.ts`                               | The order and indent of those tickets: blockers first, then ready-for-agent          |
-| `pr.ts`               | `ship.ts`, `next.ts`                    | Their arguments, branch rules, failure summary and milestone order                   |
+| `pr.ts`               | `ship.ts`, `next.ts`, `merged.ts`       | Their arguments, branch rules, failure summary, milestone order and merged check     |
 | `doc-width.ts`        | `just doc-width`                        | Fails on a line of Markdown, a comment or a docstring past 110 columns               |
 | `doc-lines.ts`        | `doc-width.ts`, `prose-check.ts`        | Picks out the lines of a file that hold prose                                        |
 | `prose-check.ts`      | `just prose-check`                      | Lists prose to reread against /stop-slop; never fails                                |

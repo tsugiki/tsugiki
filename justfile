@@ -24,6 +24,16 @@ install:
 merged branch="":
     node scripts/merged.ts {{quote(branch)}}
 
+# It names the branch `<ticket>-<slug>`, from the ticket's title unless you name the slug, runs npm ci and
+# copies target/tools. It refuses while CARGO_TARGET_DIR is set.
+# Make .temp/wt-<ticket> on a new branch off origin/main, ready to build the ticket
+worktree ticket slug="":
+    node scripts/worktree.ts add {{quote(ticket)}} {{quote(slug)}}
+
+# Delete .temp/wt-<ticket> with its builds, and its branch once the PR merged
+worktree-remove ticket:
+    node scripts/worktree.ts remove {{quote(ticket)}}
+
 # `just ship body.md` takes the PR's body from a file
 # Push the branch and open its PR; `just ship --check` runs `just check` first, and `--release` ships a
 # release/ branch: ask first

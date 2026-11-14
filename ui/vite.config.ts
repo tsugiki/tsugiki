@@ -36,6 +36,8 @@ export default defineConfig({
         "../scripts/rust-gates.ts",
         // coverage: asks GitHub about a real PR and deletes a real branch, which no unit test can do.
         "../scripts/merged.ts",
+        // coverage: makes and deletes a real worktree and runs npm ci, with its logic in worktrees.ts.
+        "../scripts/worktree.ts",
         // coverage: runs `just check`, pushes and opens a real PR, with its logic in pr.ts.
         "../scripts/ship.ts",
         // coverage: make a real branch and run cargo, or push a real tag, with their logic in releasing.ts.

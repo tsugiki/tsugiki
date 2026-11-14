@@ -1,5 +1,5 @@
-// The decisions behind `just ship` and `just next`, kept apart from the git and GitHub calls in ship.ts and
-// next.ts so that tests can reach them.
+// The decisions behind `just ship`, `just next` and whether a branch's PR merged, kept apart from the git and
+// GitHub calls in ship.ts, next.ts, merged.ts and worktree.ts so that tests can reach them.
 
 /** The options `just ship` was given. */
 export interface ShipArgs {
@@ -31,6 +31,33 @@ export function branchRefusal(branch: string, release: boolean): string | undefi
   }
   if (!isRelease && release) {
     return `\`--release\` ships only a release/ branch, and this is ${branch}.`;
+  }
+  return undefined;
+}
+
+/** A branch's PR, as `gh pr view --json number,state,headRefName,headRefOid` gives it. */
+export interface Pr {
+  number: number;
+  state: string;
+  headRefName: string;
+  headRefOid: string;
+}
+
+/**
+ * Why `branch`, whose last commit is `tip`, doesn't count as merged by `pr`, or `undefined` when it does:
+ * when the PR is that branch's, has merged, and holds `tip`. PRs merge by squashing, so git alone can't tell.
+ * `isAncestor(commit, of)` asks git whether `of` holds `commit`, and runs only when the rest holds.
+ */
+export function unmergedReason(
+  branch: string,
+  tip: string,
+  pr: Pr,
+  isAncestor: (commit: string, of: string) => boolean,
+): string | undefined {
+  if (pr.headRefName !== branch) return `gh found #${String(pr.number)}, whose branch is ${pr.headRefName}.`;
+  if (pr.state !== "MERGED") return `#${String(pr.number)} is ${pr.state.toLowerCase()}, not merged.`;
+  if (tip !== pr.headRefOid && !isAncestor(tip, pr.headRefOid)) {
+    return `${branch} is at ${tip.slice(0, 7)}, which #${String(pr.number)} doesn't hold.`;
   }
   return undefined;
 }

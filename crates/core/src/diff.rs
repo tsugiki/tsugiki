@@ -147,6 +147,14 @@ impl Diff {
         count(self.rows.len())
     }
 
+    /// The rows of `file`, one of the diff's files: those after its header, up to the next file's header.
+    pub fn rows_of(&self, file: &DiffFile) -> Range<u32> {
+        let end = (self.files.iter())
+            .find(|next| next.row > file.row)
+            .map_or(self.row_count(), |next| next.row);
+        file.row.saturating_add(1)..end
+    }
+
     /// The rows in `range`, cut to the diff's end.
     pub fn rows(&self, range: Range<u32>) -> &[DiffRow] {
         let at = |row: u32| usize::try_from(row).unwrap_or(usize::MAX);

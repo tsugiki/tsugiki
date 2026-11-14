@@ -2429,6 +2429,28 @@ it("says it searches while it looks, and for a moment that it found no definitio
   expect(core.pullRequestRow).not.toHaveBeenCalled();
 });
 
+it("closes a peek on another word as it searches, and stops when the peek's Escape closes", async () => {
+  core.definitions.mockResolvedValueOnce(ok({ state: "not_set_up" }));
+  const answer = heldLookup();
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 3 }, null, 13, false);
+  await files.peekDefinition();
+
+  const going = files.goToDefinition();
+  const peekWhileGoing = files.peek;
+  const goingWhileSearching = files.going;
+  files.closePeek();
+  answer(hitsFound(hitAt("a.py", "head", 9)));
+  await going;
+
+  expect(peekWhileGoing).toBeUndefined();
+  expect(goingWhileSearching).toBe(true);
+  expect(files.going).toBe(false);
+  expect(files.notice).toBeUndefined();
+  expect(core.pullRequestRow).not.toHaveBeenCalled();
+  expect(files.peek).toBeUndefined();
+});
+
 it("goes to the first hit the diff shows, past those outside it or whose row it can't find", async () => {
   const outside: Hit = {
     place: { kind: "outside", path: "C:/ty/builtins.pyi" },

@@ -571,11 +571,15 @@
       {/if}
     {/each}
     {#if markedPlace !== undefined}
-      <!-- A new landing draws the mark afresh, so it fades again. -->
+      <!-- A new landing draws the mark afresh, so it fades again. Once faded it goes, so a page the user
+           comes back to doesn't mark the line again. -->
       {#key diff.marked}
         <div
           class={["mark", sideBySide && diff.marked?.side]}
           style:top={`${String(markedPlace * ROW)}px`}
+          onanimationend={() => {
+            diff.marked = undefined;
+          }}
         ></div>
       {/key}
     {/if}

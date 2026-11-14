@@ -108,10 +108,7 @@ fn placement(diff: &Diff, thread: &ThreadLine) -> (Order, Placement) {
         let path = thread.path.clone();
         return (order, Placement::Gone { path, code: code() });
     };
-    let end = files
-        .iter()
-        .find(|next| next.row > file.row)
-        .map_or(diff.row_count(), |next| next.row);
+    let rows = diff.rows_of(file);
     let outdated = || {
         let at = Placement::Outdated {
             file: index,
@@ -133,11 +130,11 @@ fn placement(diff: &Diff, thread: &ThreadLine) -> (Order, Placement) {
         } if thread.anchor == Anchor::Current => (side, line),
         Subject::Line { .. } => return outdated(),
     };
-    if let Some(row) = row_of(diff, file.row.saturating_add(1)..end, side, line) {
+    if let Some(row) = row_of(diff, rows.clone(), side, line) {
         return ((row, 2, 0, String::new()), Placement::Row { row });
     }
     // A line in no row, no gap and not after the last hunk has nowhere to show, so it counts as Outdated.
-    let Some((row, rank, head_line)) = outside(file, end, side, line) else {
+    let Some((row, rank, head_line)) = outside(file, rows.end, side, line) else {
         return outdated();
     };
     let at = Placement::Outside {

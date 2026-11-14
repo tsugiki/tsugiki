@@ -1457,6 +1457,10 @@ it("goes to the definition on a Ctrl+click, and marks the whole line it lands on
   expect(mark()?.style.top).toBe(rowAt("2+new line")?.style.top);
   expect(mark()?.className).toMatch(/^mark\b/);
   expect(mark()?.classList).not.toContain("head");
+  // Once faded the mark goes, so the line isn't marked again when it shows again.
+  await fireEvent.animationEnd(mark() as HTMLElement);
+  expect(mark()).toBeNull();
+  expect(files.marked).toBeUndefined();
 });
 
 it("goes to the definition on a Cmd+click on macOS, where Ctrl+click is the system's", async () => {

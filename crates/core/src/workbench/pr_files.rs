@@ -260,14 +260,11 @@ impl PrFiles {
             }),
             DiffEnd::Head => (Side::Right, |file| &file.path),
         };
-        let Some(file) = files.iter().find(|file| named(file) == line.path) else {
-            return Ok(None);
-        };
-        let end = (files.iter())
-            .find(|next| next.row > file.row)
-            .map_or(diff.row_count(), |next| next.row);
-        let rows = file.row.saturating_add(1)..end;
-        Ok(threads::row_of(diff, rows, side, line.line))
+        // A PR can rename a file and add another by its old name, which has no line at the base.
+        let row = (files.iter())
+            .filter(|file| named(file) == line.path)
+            .find_map(|file| threads::row_of(diff, diff.rows_of(file), side, line.line));
+        Ok(row)
     }
 
     /// Where the code of the rows of the diff `of` holds `query`, whatever the case: in every row, those the

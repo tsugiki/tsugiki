@@ -90,7 +90,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 
 - `F12` on the picked word, or `Ctrl+click` on a word (`Cmd+click` on macOS), runs the lookup `Alt+F12`
   runs, at the same commit. While it looks, the line over the diff says "Searching for the definition of
-  X…".
+  X…", a peek on another word closes, and Esc stops it.
 - It goes to the first of ty's hits on a line a hunk shows: the diff scrolls there, opening the file if it
   is collapsed, and marks the line for a moment. A hit at the head lands on the line's new side, and one at
   the base on its old side, which side by side marks only that half. The core finds the row in the diff on

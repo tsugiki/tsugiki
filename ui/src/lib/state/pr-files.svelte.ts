@@ -118,6 +118,9 @@ const END = 2 ** 32 - 1;
 let lastTicket = 0;
 const nextTicket = () => (lastTicket += 1);
 
+/** Where Go to definition lands: the diff's row that shows the hit's line, and the side the hit is at. */
+type Landing = { row: number; side: DiffEnd };
+
 /** How long Go to definition says it found nothing. */
 export const NOTICE_MS = 4000;
 
@@ -212,7 +215,9 @@ export class PrFilesState {
   diffWantsFocus = $state(false);
   /** The line Go to definition landed on, at the side of the diff its hit is at, which the diff marks for
    * a moment (#444). Each landing is a new one, so the mark shows again on the same line. */
-  marked = $state.raw<{ row: number; side: DiffEnd }>();
+  marked = $state.raw<Landing>();
+  /** Whether Go to definition looks a word up, which Escape stops. */
+  going = $state(false);
   /** A line over the diff while Go to definition looks a word up, or for a moment once it found nothing. */
   notice = $state<string>();
   /** Why the core couldn't search, which the search box says. */
@@ -403,6 +408,7 @@ export class PrFilesState {
 
   stop() {
     this.#stopped = true;
+    clearTimeout(this.#noticeTimer);
     for (const stop of this.#stopListening) stop();
     this.#stopListening = [];
   }
@@ -441,7 +447,6 @@ export class PrFilesState {
       // So do the pick, the peek under its line and the line Go to definition marked.
       this.#pick = undefined;
       this.#dropPeek();
-      this.#say(undefined);
       this.marked = undefined;
     }
     // The threads the tab showed with the same diff, whose lines it has opened.
@@ -911,9 +916,13 @@ export class PrFilesState {
    * with no hit to go to, opens the peek, until the file view comes (#445, #453). */
   async goToDefinition() {
     const looked = await this.#lookUp((looking) => {
+      // A peek on another word would say nothing of this one.
+      this.#peek = undefined;
+      this.going = true;
       this.#say(`Searching for the definition of ${looking.symbol}…`);
     });
     if (looked === undefined) return;
+    this.going = false;
     const { peek, lookup, view } = looked;
     const answer = peek.lookup.state === "answered" ? peek.lookup.answer : undefined;
     const hits = answer?.state === "found" ? answer.hits : undefined;
@@ -935,7 +944,7 @@ export class PrFilesState {
 
   /** The row of the first of `hits` on a line a hunk of the diff `view` shows, and the side its hit is at.
    * A row the core can't find counts as none. */
-  async #landing(hits: Hit[], view: Ready): Promise<{ row: number; side: DiffEnd } | undefined> {
+  async #landing(hits: Hit[], view: Ready): Promise<Landing | undefined> {
     for (const hit of hits) {
       const place = hit.place;
       if (place.kind !== "repository") continue;
@@ -981,7 +990,7 @@ export class PrFilesState {
     const lookup = this.#lookups;
     const commit = pick.side === "base" ? view.base : view.head;
     const peek = { at: pick.at, symbol: pick.word, side: pick.side, commit };
-    this.#say(undefined);
+    this.#stopGoing();
     starting({ ...peek, lookup: { state: "looking" } });
     const lookedUp = {
       repository: this.#repository,
@@ -1023,15 +1032,22 @@ export class PrFilesState {
    * the word up goes nowhere. */
   closePeek() {
     this.#dropPeek();
-    this.#say(undefined);
     this.diffWantsFocus = true;
   }
 
-  /** Drops the Definition peek. A lookup that still waits is cancelled, so ty stops working on it. */
+  /** Drops the Definition peek, and what Go to definition says. A lookup that still waits is cancelled, so
+   * ty stops working on it. */
   #dropPeek() {
-    if (this.#peek?.lookup.state === "looking") void commands.cancelDefinitions(this.#lookups);
+    if (this.going || this.#peek?.lookup.state === "looking") void commands.cancelDefinitions(this.#lookups);
     this.#peek = undefined;
     this.#lookups = nextTicket();
+    this.#stopGoing();
+  }
+
+  /** Takes away what Go to definition says, as a lookup it waits for goes nowhere. */
+  #stopGoing() {
+    this.going = false;
+    this.#say(undefined);
   }
 
   /** The pick's place in the line `at` shows in `column`, if the pick is on that line. A pick made unified

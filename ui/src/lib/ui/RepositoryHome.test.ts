@@ -1272,6 +1272,19 @@ it("closes the Definition peek with Escape before the search, and the search bef
   expect(closePeek).toHaveBeenCalledTimes(1);
 });
 
+it("stops Go to definition with Escape while it searches, before the PR closes", async () => {
+  vi.spyOn(PrFilesState.prototype, "going", "get").mockReturnValue(true);
+  const closePeek = vi.spyOn(PrFilesState.prototype, "closePeek").mockImplementation(() => {});
+  const files = await onFiles();
+  await fireEvent.click(files);
+  const diff = await screen.findByRole("region", { name: "Diff" });
+
+  await fireEvent.keyDown(diff, { key: "Escape" });
+
+  expect(closePeek).toHaveBeenCalledOnce();
+  expect(screen.getByRole("region", { name: "PR view" })).toBeTruthy();
+});
+
 it("leaves the focus where it is when the Files tab is drawn again with the search open", async () => {
   const files = await onFiles();
   await fireEvent.click(files);

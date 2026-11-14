@@ -572,9 +572,9 @@
     ) {
       e.preventDefault();
       open(workbench.underCursor);
-    } else if (key === "escape" && files?.peek) {
-      // Escape closes the Definition peek first, then the search, as in VS Code. The search box keeps its own
-      // Escape, which closes the search.
+    } else if (key === "escape" && (files?.peek || files?.going)) {
+      // Escape closes the Definition peek first, or stops Go to definition, then the search, as in VS Code.
+      // The search box keeps its own Escape, which closes the search.
       e.preventDefault();
       files.closePeek();
     } else if (key === "escape" && files?.searching) {

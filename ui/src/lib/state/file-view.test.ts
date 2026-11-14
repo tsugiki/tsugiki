@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { DiffEnd } from "$lib/data/bindings";
-import { diffShows, fileViewWords } from "./file-view";
+import { diffShows, fileViewWords, lineOf, samePlace, type HistoryPlace } from "./file-view";
 import type { HitCode } from "./hit-code.svelte";
 
 const place = (path: string, side: DiffEnd) => ({
@@ -57,4 +57,17 @@ it("names the commit and the side of the PR it is in the header", () => {
     commit: "at abcdef1 · the PR's base of PR #11",
   });
   expect(words("head").commit).toBe("at abcdef1 · the PR's head of PR #11");
+});
+
+it("takes a file view in the history for one place, which belongs to its PR's line", () => {
+  const code = {} as HitCode;
+  const pr = { number: 11, kind: "pull_request" as const, issue: 7 };
+  const view = { place: place("Lib/eggs.py", "base"), line: 4, code };
+  const file: HistoryPlace = { kind: "file", line: pr, view };
+  const again: HistoryPlace = { kind: "file", line: { ...pr }, view };
+  const other: HistoryPlace = { kind: "file", line: pr, view: { ...view } };
+
+  expect([samePlace(file, again), samePlace(file, other)]).toEqual([true, false]);
+  expect([samePlace(file, pr), samePlace(pr, file), samePlace(pr, { ...pr })]).toEqual([false, false, true]);
+  expect([lineOf(file), lineOf(pr)]).toEqual([pr, pr]);
 });

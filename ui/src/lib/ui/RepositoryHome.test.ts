@@ -1255,8 +1255,8 @@ it("goes to the definition with F12 on the Files tab, once for a held key", asyn
   expect(goToDefinition).toHaveBeenCalledTimes(1);
 });
 
-/** A PR's Files tab with the file view over it, whose code holds 10 lines it asks the core for none of. */
-const onFileView = async () => {
+/** A file view of `Lib/eggs.py` at the PR's base, whose code holds 10 lines it asks the core for none of. */
+const eggsView = () => {
   const place = { kind: "repository" as const, path: "Lib/eggs.py", side: "base" as const, commit: "base" };
   const code = {
     count: 10,
@@ -1265,11 +1265,98 @@ const onFileView = async () => {
     line: () => "x = 1",
     spans: () => undefined,
   } as unknown as HitCode;
-  vi.spyOn(PrFilesState.prototype, "fileView", "get").mockReturnValue({ place, line: 4, code });
+  return { place, line: 4, code };
+};
+
+/** A PR's Files tab with the file view over it. */
+const onFileView = async () => {
+  vi.spyOn(PrFilesState.prototype, "fileView", "get").mockReturnValue(eggsView());
   const files = await onFiles();
   await fireEvent.click(files);
   return screen.findByRole("region", { name: "File view" });
 };
+
+/** A PR's Files tab, from the tree of Issue #112564, where F12 opens the file view as Go to definition does
+ * into a file the PR doesn't change. Returns the diff, the view, and the Files tab's state once it opens. */
+const goIntoFileView = async () => {
+  const view = eggsView();
+  const opened: { files?: PrFilesState } = {};
+  vi.spyOn(PrFilesState.prototype, "goToDefinition").mockImplementation(function (this: PrFilesState) {
+    opened.files = this;
+    this.showFileView(view);
+    return Promise.resolve();
+  });
+  await fireEvent.click(await onFiles());
+  const diff = await screen.findByRole("region", { name: "Diff" });
+  await press("F12");
+  await screen.findByRole("region", { name: "File view" });
+  return { diff, view, opened };
+};
+
+/** The tooltip of the history's arrow back, or forward for `way` 1. */
+const arrowTitle = (way: -1 | 1 = -1) =>
+  within(screen.getByRole("navigation", { name: "History" }))
+    .getByRole("button", { name: way < 0 ? "Back" : "Forward" })
+    .getAttribute("title");
+
+it("goes back to the diff with Alt+← from the file view, and forward to the file view, each as it was", async () => {
+  const { diff, view, opened } = await goIntoFileView();
+  const row = document.querySelector('[data-item="112564#160662"]');
+  expect(arrowTitle()).toMatch(/^Back to #160662 /);
+
+  await press("ArrowLeft", { altKey: true });
+
+  expect(screen.queryByRole("region", { name: "File view" })).toBeNull();
+  // The same diff, never drawn again, so it keeps where the user scrolled it.
+  expect(screen.getByRole("region", { name: "Diff" })).toBe(diff);
+  expect(row?.getAttribute("aria-current")).toBe("true");
+  expect(arrowTitle(1)).toMatch(/^Forward to Lib\/eggs\.py · #160662 /);
+
+  await press("ArrowRight", { altKey: true });
+
+  expect(await screen.findByRole("region", { name: "File view" })).toBeTruthy();
+  expect(opened.files?.fileView).toBe(view);
+  expect(row?.getAttribute("aria-current")).toBe("true");
+  // Coming back to the file view is no new visit, which would push a second one.
+  expect([arrowTitle(), arrowTitle(1)]).toEqual([
+    expect.stringMatching(/^Back to #160662 /),
+    "Forward (Alt+→): nothing there",
+  ]);
+});
+
+it("goes back to the diff on Esc in the file view, and on to the Issue on the next Esc", async () => {
+  const { diff } = await goIntoFileView();
+  diff.blur();
+
+  await press("Escape");
+
+  expect(screen.queryByRole("region", { name: "File view" })).toBeNull();
+  expect(screen.getByRole("region", { name: "PR view" })).toBeTruthy();
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(diff);
+  });
+  // Esc is a step of its own, so Alt+← goes back to the file view it left.
+  expect(arrowTitle()).toMatch(/^Back to Lib\/eggs\.py · #160662 /);
+
+  await press("Escape");
+
+  expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
+  expect(core.openIssue).toHaveBeenCalledExactlyOnceWith("python/cpython", 112564);
+});
+
+it("shows the file view again over its PR's Files tab when Alt+← comes back to it from another item", async () => {
+  await goIntoFileView();
+  const treeRow = document.querySelector('[data-item="112564#160662"]');
+  await fireEvent.click(screen.getByRole("button", { name: "#112564 GIL drop during collection" }));
+  await screen.findByRole("region", { name: "Issue view" });
+  expect(arrowTitle()).toMatch(/^Back to Lib\/eggs\.py · #160662 /);
+
+  await press("ArrowLeft", { altKey: true });
+
+  expect(await screen.findByRole("region", { name: "File view" })).toBeTruthy();
+  expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("true");
+  expect(treeRow?.getAttribute("aria-current")).toBe("true");
+});
 
 it("leaves the diff's keys alone while the file view covers it, and the cursor on the PR's row", async () => {
   const goToDefinition = vi.spyOn(PrFilesState.prototype, "goToDefinition").mockResolvedValue();

@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import { openOnGitHub, type GitHubItem } from "$lib/state/browser";
+  import { lineOf, samePlace, type HistoryPlace } from "$lib/state/file-view";
   import { hud } from "$lib/state/hud.svelte";
   import { IssueViewState } from "$lib/state/issue-view.svelte";
   import {
@@ -91,11 +92,11 @@
 
   // Another Repository has its own Workbench, so a new name starts a new state and stops the last one.
   const workbench = $derived(new WorkbenchState(name));
-  /** The Issues and PRs the Detail pane has shown, which Alt+← and Alt+→ go back and forward through. Each
-   * Repository has its own. */
+  /** The Issues, PRs and file views the Detail pane has shown, which Alt+← and Alt+→ go back and forward
+   * through. Each Repository has its own. */
   const visits = $derived.by(() => {
     void name;
-    return new Visits<Stop>(sameStop);
+    return new Visits<HistoryPlace>(samePlace);
   });
   $effect(() => {
     // By the time this cleans up, `workbench` is already the next Repository's.
@@ -149,13 +150,36 @@
     const title = titles.get(number) ?? workbench.titleOf(number);
     return title === undefined ? `#${String(number)}` : headline({ number, title });
   };
+  /** A place's name in the history's lists: its item's headline, after the path for a file view. */
+  const placeName = (place: HistoryPlace) =>
+    place.kind === "file"
+      ? `${place.view.place.path} · ${headlineOf(place.line.number)}`
+      : headlineOf(place.number);
   /** How many items back the history's lists go, newest first. */
   const RECENT = 12;
 
-  /** Goes `steps` items through the history, back for a negative number, as Alt+← and Alt+→ do. */
+  // A file view is a place of its own in the history (#456). One that opens is a visit, and one that Back or
+  // Esc closes hands the place back to its PR's line. Going through the history has moved to the place it
+  // shows by then, so neither adds a visit there.
+  $effect(() => {
+    const pr = detail instanceof PrViewState ? detail : undefined;
+    const view = pr?.files.fileView;
+    if (pr === undefined) return;
+    untrack(() => {
+      if (view) visits.visit({ kind: "file", line: pr.line, view });
+      else if (visits.here?.kind === "file") visits.visit(pr.line);
+    });
+  });
+
+  /** Goes `steps` places through the history, back for a negative number, as Alt+← and Alt+→ do. A PR's
+   * line shows its diff, and a file view shows over its PR's Files tab, each where it was scrolled. */
   function goThrough(steps: number) {
     const place = visits.go(steps);
-    if (place) open(place, "through");
+    if (place === undefined) return;
+    open(lineOf(place), "through");
+    if (!(detail instanceof PrViewState)) return;
+    if (place.kind === "file") detail.tab = "files";
+    detail.files.showFileView(place.kind === "file" ? place.view : undefined);
   }
 
   /** The mouse's back and forward buttons go through the history, unless a dialog takes the keys. WebView2
@@ -353,8 +377,13 @@
   /** The Files tab of the PR on show, while it shows its diff. The file view covers the diff, so the diff's
    * keys and commands wait until Back (#453). */
   function shownFiles(): PrFilesState | undefined {
-    const files = detail instanceof PrViewState && detail.tab === "files" ? detail.files : undefined;
+    const files = filesTab();
     return files?.fileView === undefined ? files : undefined;
+  }
+
+  /** The Files tab of the PR on show, while that tab shows, with or without the file view over it. */
+  function filesTab(): PrFilesState | undefined {
+    return detail instanceof PrViewState && detail.tab === "files" ? detail.files : undefined;
   }
 
   /** The palette's commands for the Files tab on show: the one that switches it to one file at a time, or
@@ -533,6 +562,7 @@
     if (!keysActive) return;
     const key = keyName(e, currentOs());
     const files = shownFiles();
+    const tab = filesTab();
     if (key === "ctrl+b") {
       // A held key would flicker the Sidebar and save the file each time.
       if (!e.repeat) void toggleSidebarByKey();
@@ -584,6 +614,10 @@
     } else if (key === "escape" && files?.searching) {
       e.preventDefault();
       files.closeSearch();
+    } else if (key === "escape" && tab?.fileView) {
+      // The file view goes back to the diff under it, and the next Escape goes on to the Issue (#456).
+      e.preventDefault();
+      tab.closeFileView();
     } else if (key === "escape" && detail instanceof PrViewState && detail.issue !== undefined) {
       // A PR opened from a row of its own has nothing under it, so it stays on show.
       e.preventDefault();
@@ -761,8 +795,8 @@
 <!-- The bar atop the Detail pane, over item `shown`. -->
 {#snippet history(shown: number)}
   <HistoryBar
-    back={visits.behind(RECENT).map((stop) => headlineOf(stop.number))}
-    forward={visits.ahead(RECENT).map((stop) => headlineOf(stop.number))}
+    back={visits.behind(RECENT).map(placeName)}
+    forward={visits.ahead(RECENT).map(placeName)}
     current={headlineOf(shown)}
     ongo={goThrough}
   />

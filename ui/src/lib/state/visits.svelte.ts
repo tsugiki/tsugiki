@@ -2,7 +2,8 @@
  * the mouse's back and forward buttons go through (#186, #586). */
 export class Visits<T> {
   readonly #same: (one: T, other: T) => boolean;
-  #places = $state<T[]>([]);
+  /** Raw, so each place comes back as it went in, and `same` can compare places by what they hold. */
+  #places = $state.raw<T[]>([]);
   /** Where among the places the user is, or -1 before the first visit. */
   #at = $state(-1);
 
@@ -17,6 +18,11 @@ export class Visits<T> {
     if (here !== undefined && this.#same(here, place)) return;
     this.#places = [...this.#places.slice(0, this.#at + 1), place];
     this.#at += 1;
+  }
+
+  /** The place the user is at, if they have visited one. */
+  get here(): T | undefined {
+    return this.#places[this.#at];
   }
 
   /** The place before, if there is one, which the user is now at. */

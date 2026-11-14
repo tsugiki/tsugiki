@@ -1056,6 +1056,13 @@ export class PrFilesState {
     this.diffWantsFocus = true;
   }
 
+  /** Shows `view` over the tab, or the diff with none, as `Alt+←` and `Alt+→` go through the Detail
+   * pane's history (#456). The view keeps where its code was scrolled, and the diff where it was. The
+   * history hands the focus to the cursor's row, so the diff doesn't ask for it. */
+  showFileView(view: FileView | undefined) {
+    this.#fileView = view;
+  }
+
   /** Where Go to definition goes for `hit`: its line, if a hunk of the diff `view` shows it, or the file
    * view of a file the diff shows no lines of, which shows `code`, the hit's code the peek made. A row the
    * core can't find, and a hit outside the Repository, go nowhere. */

@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, within } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { chooseMirrorSource, mirrorCost, pickClone } from "$lib/state/mirror-source";
+import { PanesState } from "$lib/state/panes.svelte";
 import {
   CHUNK,
   DiffViewChoice,
@@ -145,7 +146,7 @@ const untimed = { jumped: () => ({ rowsShown: () => undefined, spansShown: () =>
  * Review `review`. */
 const shown = async (answer: PrFiles | null, choice = new DiffViewChoice(), review?: YourReview) => {
   core.pullRequestFiles.mockResolvedValue(ok(answer));
-  const files = new PrFilesState("python/cpython", 11, untimed, choice);
+  const files = new PrFilesState("python/cpython", 11, new PanesState(), untimed, choice);
   files.followReview(review);
   await files.load();
   render(FilesTab, { files, now: NOW, onlink });
@@ -320,7 +321,7 @@ it("shows nothing for a PR Tsugiki doesn't hold", async () => {
 
 it("says why it can't show the files", async () => {
   core.pullRequestFiles.mockResolvedValue({ status: "error", error: { message: "The mirror has no main" } });
-  const files = new PrFilesState("python/cpython", 11, untimed);
+  const files = new PrFilesState("python/cpython", 11, new PanesState(), untimed);
   await files.load();
   render(FilesTab, { files, now: NOW, onlink });
 
@@ -1194,7 +1195,14 @@ it("leaves a match it shows in place, and scrolls to one it doesn't", async () =
 /** The Files tab of PR 11 once the core answered `answer`, one file at a time. */
 const shownOne = async (answer: PrFiles) => {
   core.pullRequestFiles.mockResolvedValue(ok(answer));
-  const files = new PrFilesState("python/cpython", 11, untimed, new DiffViewChoice(), "one");
+  const files = new PrFilesState(
+    "python/cpython",
+    11,
+    new PanesState(),
+    untimed,
+    new DiffViewChoice(),
+    "one",
+  );
   await files.load();
   render(FilesTab, { files, now: NOW, onlink });
   return files;
@@ -1809,36 +1817,91 @@ it("drags the peek's bottom edge, saves its height for the next peek, and gives 
   });
 });
 
-it("scrolls a peek that opens on the last rows on screen into view, once, as it opens", async () => {
-  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(100);
+it("saves the height of a drag that the peek's answer cuts short, as the peek drops its edge", async () => {
   let answer: (found: unknown) => void = () => {};
   core.definitions.mockReturnValue(
     new Promise((resolve) => {
       answer = resolve;
     }),
   );
-  fileOf(30);
+  core.savePaneLayout.mockResolvedValue(ok(null));
+  HTMLElement.prototype.setPointerCapture = vi.fn();
   const files = await shown(ready(rows.length));
   await vi.waitFor(() => {
     expect(lines()[4]).toBe("2+new line");
   });
   await clickAt(codeOf(4), 2);
-  const diff = screen.getByRole("region", { name: "Diff" });
-
   const looking = files.peekDefinition();
   await tick();
-  // Rows 0 to 4 show in 100 pixels. The peek under row 4 scrolls up as far as that row can go.
-  const opened = diff.scrollTop;
-  diff.scrollTop = 0;
-  await fireEvent.scroll(diff);
-  const place = { kind: "repository" as const, path: "Lib/news.py", side: "head" as const, commit: "abc" };
-  answer(ok({ state: "found", hits: [{ place, line: 12, column: 4, text: "" }] }));
-  await looking;
-  await vi.waitFor(() => {
-    expect(peekCode()).toContain("*12line 12");
-  });
+  const edge = screen.getByRole("separator", { name: "Definition peek height" });
+  await fireEvent.pointerDown(edge, { button: 0, clientY: 300, pointerId: 1 });
+  await fireEvent.pointerMove(edge, { clientY: 300 + 6 * 20 });
 
-  expect([opened, diff.scrollTop]).toEqual([4 * 20, 0]);
+  // An answer with no hit has only words to say, in 2 rows with no edge.
+  answer(ok({ state: "found", hits: [] }));
+  await looking;
+  await tick();
+
+  expect(screen.queryByRole("separator", { name: "Definition peek height" })).toBeNull();
+  await vi.waitFor(() => {
+    expect(core.savePaneLayout.mock.calls.map(([layout]) => layout.peek)).toEqual([24]);
+  });
+});
+
+it("scrolls a peek that opens on the last rows on screen into view, once, as it opens", async () => {
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(100);
+  fileOf(30);
+  const files = await shown(ready(rows.length));
+  let answer: (found: unknown) => void = () => {};
+  const lookUp = () => {
+    core.definitions.mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    return files.peekDefinition();
+  };
+  await vi.waitFor(() => {
+    expect(lines()[4]).toBe("2+new line");
+  });
+  await clickAt(codeOf(4), 2);
+  const diff = () => screen.getByRole("region", { name: "Diff" });
+  const scrolledBack = async () => {
+    const top = diff().scrollTop;
+    diff().scrollTop = 0;
+    await fireEvent.scroll(diff());
+    return top;
+  };
+
+  // Rows 0 to 4 show in 100 pixels. The peek under row 4 scrolls up as far as that row can go.
+  const looking = lookUp();
+  await tick();
+  const opened = await scrolledBack();
+  // Its answer, with only words to say, scrolls nothing.
+  answer(ok({ state: "found", hits: [] }));
+  await looking;
+  await tick();
+  const answered = diff().scrollTop;
+  // A new peek on the same line opens again, and one more there, already in view, scrolls nothing.
+  void lookUp();
+  await tick();
+  void lookUp();
+  await tick();
+  const again = await scrolledBack();
+  // The diff drawn again, as the Files tab shows again, leaves that peek where it is.
+  cleanup();
+  render(FilesTab, { files, now: NOW, onlink });
+  await tick();
+  const drawnAgain = diff().scrollTop;
+  // A peek on a collapsed file has no place to scroll to.
+  files.closePeek();
+  files.toggle(0);
+  await tick();
+  void lookUp();
+  await tick();
+
+  expect([opened, answered, again, drawnAgain, diff().scrollTop]).toEqual([4 * 20, 0, 4 * 20, 0, 0]);
+  expect(files.peek?.at).toEqual({ kind: "row", row: 4 });
 });
 
 it("says why it can't read the hit's file, and shrinks the peek to that line", async () => {

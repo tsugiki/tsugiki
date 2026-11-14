@@ -92,16 +92,14 @@
   let drawn: PrFilesState["layout"] | undefined;
   /** Whether the NEWS entries showed above the rows last drawn. */
   let drawnNews = false;
-  /** The line the peek showed under in the rows last drawn, so a peek scrolls into view once, as it
-   * opens. */
-  let drawnPeek: string | undefined;
   /** Scrolls to the thread, the change or the match the user moved to, with a few rows of code above it.
    * Otherwise, keeps the place at the top in view as the layout changes, as the view switches or a thread
-   * above it grows: the same row, line, button or thread, as far into it as it was. Then a peek that opens
+   * above it grows: the same row, line, button or thread, as far into it as it was. Then a peek that opened
    * below the rows on screen scrolls into view (#458). */
   $effect(() => {
     const layout = diff.layout;
     const jump = diff.jump;
+    const opened = diff.peekOpened;
     const before = drawn;
     const newsBefore = drawnNews;
     drawn = layout;
@@ -113,10 +111,10 @@
       const news = (newsBox as HTMLElement).offsetHeight;
       if (target !== undefined)
         region.scrollTop = target === "top" ? 0 : news + target.place * ROW + target.into;
-      const peek = diff.peek;
-      const opened = peek && JSON.stringify(peek.at);
-      if (opened !== undefined && opened !== drawnPeek) reveal(layout, region, news);
-      drawnPeek = opened;
+      if (opened) {
+        diff.peekOpened = false;
+        reveal(layout, region, news);
+      }
       // The rows to draw follow at once, as the scroll event comes after the next frame.
       scrollTop = region.scrollTop;
     });
@@ -127,10 +125,12 @@
    * or on another page has no place to show, and a tab not laid out yet has no rows on screen to bring it
    * into. */
   function reveal(layout: PrFilesState["layout"], region: HTMLElement, news: number) {
-    const peeks = layout.threadsIn(0, layout.count).filter((thread) => thread.laid.id === PEEK_ID);
+    const place = layout.threadAt(PEEK_ID);
+    if (place === undefined || height === 0) return;
+    const peeks = layout.threadsIn(place, place).filter((thread) => thread.laid.id === PEEK_ID);
     for (const { shown, length } of peeks) {
       const wanted = Math.min((shown + length) * ROW - height, (shown - 1) * ROW);
-      if (height > 0 && wanted > region.scrollTop - news) region.scrollTop = news + wanted;
+      if (wanted > region.scrollTop - news) region.scrollTop = news + wanted;
     }
   }
 
@@ -585,9 +585,7 @@
           <div class="peek-edge" style:top={`${String((placed.shown + placed.length) * ROW - 4)}px`}>
             <PaneEdge
               label="Definition peek height"
-              orientation="horizontal"
-              unit={ROW}
-              value={diff.panes.peekRows}
+              sizes={{ kind: "box", value: diff.panes.peekRows, unit: ROW }}
               least={PEEK_LEAST}
               most={PEEK_MOST}
               onresize={(rows) => (diff.panes.peek = rows)}
@@ -698,16 +696,20 @@
       inset 0 -1px color-mix(in srgb, currentColor 15%, transparent);
   }
 
-  /* The strip the peek's bottom edge takes: 4 px of the peek and 4 px of the row under it. */
+  /* The strip the peek's bottom edge takes: 4 px of the peek and 4 px of the row under it, above a review
+     thread there too. */
   .peek-edge {
     position: absolute;
+    z-index: 1;
     left: var(--across);
     width: var(--width);
     height: 8px;
   }
 
+  /* Its own stacking context, so the peek's edge rises only above the rows and threads. */
   .spacer {
     position: relative;
+    isolation: isolate;
   }
 
   .row {

@@ -207,7 +207,7 @@
     const next =
       stop.kind === "issue"
         ? new IssueViewState(name, stop.number)
-        : new PrViewState(name, stop.number, stop.issue, diffView, diffFiles, panes);
+        : new PrViewState(name, stop.number, stop.issue, panes, diffView, diffFiles);
     swap(next);
     void next.load();
   }
@@ -792,10 +792,13 @@
     />
     <PaneEdge
       label="Sidebar width"
-      value={panes.sidebar ?? SIDEBAR_WIDTH}
+      sizes={{
+        kind: "pane",
+        value: panes.sidebar ?? SIDEBAR_WIDTH,
+        nextLeast: panes.hidden("list") ? DETAIL_LEAST : LIST_LEAST + (detail ? DETAIL_LEAST : 0),
+      }}
       least={SIDEBAR_LEAST}
       most={SIDEBAR_MOST}
-      nextLeast={panes.hidden("list") ? DETAIL_LEAST : LIST_LEAST + (detail ? DETAIL_LEAST : 0)}
       onresize={(width) => (panes.sidebar = width)}
       ondone={() => void panes.save()}
       onreset={() => void panes.reset("sidebar")}
@@ -851,9 +854,8 @@
     {#if detail}
       <PaneEdge
         label="Workbench width"
-        value={panes.list ?? undefined}
+        sizes={{ kind: "pane", value: panes.list ?? undefined, nextLeast: DETAIL_LEAST }}
         least={LIST_LEAST}
-        nextLeast={DETAIL_LEAST}
         onresize={(width) => (panes.list = width)}
         ondone={() => void panes.save()}
         onreset={() => void panes.reset("list")}

@@ -3,38 +3,37 @@
   which sizes it in diff rows (#458). A drag or an arrow key moves it, between the size's own minimum and
   maximum and the minimums of the panes after it, and a double-click asks for the default size back.
 -->
+<script lang="ts" module>
+  /** What an edge sizes. A pane's edge stands between panes side by side and sizes the pane on its left, in
+   * CSS pixels, while the panes after it keep `nextLeast` between them. Its `value` is the pane's width, for
+   * a screen reader, unless the pane takes half the room. A box's edge lies under a box, such as the
+   * Definition peek, and sizes it in steps `unit` pixels tall, of which it is `value` now. */
+  export type Sizes =
+    | { kind: "pane"; value: number | undefined; nextLeast: number }
+    | { kind: "box"; value: number; unit: number };
+</script>
+
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { currentOs, keyName } from "./keys";
 
-  /** How far each arrow key moves the edge, in CSS pixels, or at least one `unit`. */
+  /** How far each arrow key moves the edge, in CSS pixels, or at least one step of a box's. */
   const STEP = 16;
 
   let {
     label,
-    value,
+    sizes,
     least,
     most,
-    nextLeast,
-    orientation = "vertical",
-    unit = 1,
     onresize,
     ondone,
     onreset,
   }: {
     label: string;
-    /** The size the edge gives, for a screen reader, unless the pane takes half the room. */
-    value: number | undefined;
+    sizes: Sizes;
     least: number;
     /** The most the size may get, even with room to spare. */
     most?: number;
-    /** The least width the panes after the edge may take together. Without it, the edge sizes what
-     * `value` says, between `least` and `most`, as the peek's does. */
-    nextLeast?: number;
-    /** An edge between panes side by side is vertical and sizes the pane on its left, and one under a box
-     * is horizontal and sizes the box above it. */
-    orientation?: "vertical" | "horizontal";
-    /** The CSS pixels in one of the size's steps: 1 for a width, a row's height for rows. */
-    unit?: number;
     /** Gives what the edge sizes the size `size`, already kept between the minimums. */
     onresize: (size: number) => void;
     /** Says a drag or a held key moved the edge to where the user wants it, so the size can be saved. */
@@ -42,7 +41,10 @@
     onreset: () => void;
   } = $props();
 
-  const vertical = $derived(orientation === "vertical");
+  const vertical = $derived(sizes.kind === "pane");
+  const orientation = $derived(vertical ? "vertical" : "horizontal");
+  /** The CSS pixels in one step of the size. */
+  const unit = $derived(sizes.kind === "box" ? sizes.unit : 1);
   const ceiling = $derived(most ?? Infinity);
 
   let edge = $state<HTMLElement>();
@@ -54,9 +56,10 @@
   /** The size the edge gives now, and the most it may take. Between panes, that's the width of the pane
    * before the edge, while the panes after keep their minimums: a pane after it with room to spare, such as
    * the Detail pane beyond the list, gives it up too. The other edges keep their widths, so they don't
-   * count. Without panes after it, `value` says the size. */
+   * count. A box's edge has `value` say its size. */
   function measure() {
-    if (nextLeast === undefined) return { size: value as number, most: Math.max(least, ceiling) };
+    if (sizes.kind === "box") return { size: sizes.value, most: Math.max(least, ceiling) };
+    const nextLeast = sizes.nextLeast;
     const here = edge as HTMLElement;
     const width = (here.previousElementSibling as Element).getBoundingClientRect().width;
     let after = 0;
@@ -72,7 +75,7 @@
   /** Moves the edge so it gives size `size`, within its limits. */
   function resize(size: number, most: number) {
     const next = Math.round(Math.min(most, Math.max(least, size)));
-    if (next === value) return;
+    if (next === sizes.value) return;
     moved = true;
     onresize(next);
   }
@@ -82,6 +85,10 @@
     if (moved) ondone();
     moved = false;
   }
+
+  // An edge that goes mid-drag or while an arrow is held, as the peek's does once its answer has only words
+  // to say, hears no pointerup or keyup, so it saves where it got to as it goes.
+  onDestroy(done);
 
   function onpointerdown(e: PointerEvent) {
     if (e.button !== 0) return;
@@ -122,7 +129,7 @@
   role="separator"
   aria-orientation={orientation}
   aria-label={label}
-  aria-valuenow={value}
+  aria-valuenow={sizes.value}
   aria-valuemin={least}
   aria-valuemax={most}
   tabindex="0"

@@ -137,7 +137,7 @@ export function peekSized(peek: Peek): boolean {
 /** The places `peek` takes in the diff's layout: `rows` while `peekSized` says it takes the rows the user
  * sizes, and else its header with a line under it. The line that says the server indexes takes one more
  * place with the words. */
-export function peekPlaces(peek: Peek, rows = PEEK_ROWS): number {
+export function peekPlaces(peek: Peek, rows: number): number {
   if (peekSized(peek)) return rows;
   return peek.indexing === undefined ? 2 : 3;
 }

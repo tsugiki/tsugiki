@@ -12,6 +12,7 @@ import {
   type DiffThread,
   type PrFiles,
 } from "./pr-files.svelte";
+import { PanesState } from "./panes.svelte";
 import { PEEK_ID, PEEK_ROWS, type IndexNews } from "./peek";
 import type { YourReview } from "./workbench.svelte";
 
@@ -162,7 +163,7 @@ const timer = () => {
 /** A Files tab for PR 11 that has loaded, with the core answering `answer`. */
 const loaded = async (answer: PrFiles | null = { state: "fetching" }, jumps = timer()) => {
   core.pullRequestFiles.mockResolvedValue(ok(answer));
-  const files = new PrFilesState("python/cpython", 11, jumps);
+  const files = new PrFilesState("python/cpython", 11, new PanesState(), jumps);
   await files.load();
   return files;
 };
@@ -419,7 +420,7 @@ it("asks again when the clone comes to wait for an answer while the core answers
     }),
   );
   core.pullRequestFiles.mockResolvedValue(ok({ state: "asking" }));
-  const files = new PrFilesState("python/cpython", 11);
+  const files = new PrFilesState("python/cpython", 11, new PanesState());
   const loading = files.load();
   await vi.waitFor(() => {
     expect(core.pullRequestFiles).toHaveBeenCalledOnce();
@@ -469,7 +470,7 @@ it("keeps mirror states and a hold it heard of while asking over the older answe
     core.heard.mirrorsHeldChanged?.({ payload: true });
     return Promise.resolve(false);
   });
-  const files = new PrFilesState("python/cpython", 11);
+  const files = new PrFilesState("python/cpython", 11, new PanesState());
 
   await files.load();
 
@@ -515,7 +516,7 @@ it("keeps a clone it heard of while asking over the older answer", async () => {
     core.heard.cloningChanged?.({ payload: cloning });
     return Promise.resolve(null);
   });
-  const files = new PrFilesState("python/cpython", 11);
+  const files = new PrFilesState("python/cpython", 11, new PanesState());
 
   await files.load();
 
@@ -535,7 +536,7 @@ it("stops listening, even when it stops before it started", async () => {
   ]);
 
   core.stopped = [];
-  const early = new PrFilesState("python/cpython", 11);
+  const early = new PrFilesState("python/cpython", 11, new PanesState());
   const loading = early.load();
   early.stop();
   await loading;
@@ -547,7 +548,7 @@ it("stops listening, even when it stops before it started", async () => {
 it("says why it can't listen", async () => {
   core.pullRequestFiles.mockResolvedValue(ok(null));
   core.cloning.mockRejectedValue(new Error("no core"));
-  const files = new PrFilesState("python/cpython", 11);
+  const files = new PrFilesState("python/cpython", 11, new PanesState());
 
   await files.load();
 
@@ -556,7 +557,7 @@ it("says why it can't listen", async () => {
 
 it("says why the core couldn't answer, and forgets it once the core answers", async () => {
   core.pullRequestFiles.mockResolvedValue({ status: "error", error: { message: "The mirror has no main" } });
-  const files = new PrFilesState("python/cpython", 11);
+  const files = new PrFilesState("python/cpython", 11, new PanesState());
   await files.load();
   expect(files.error).toBe("The mirror has no main");
   expect(files.view).toBeUndefined();
@@ -725,7 +726,7 @@ const reviewedDiff = () => {
 /** A Files tab for PR 11 that has loaded `answer`, whose PR view says the user's Review is `review`. */
 const reviewed = async (answer: PrFiles, review: YourReview | undefined) => {
   core.pullRequestFiles.mockResolvedValue(ok(answer));
-  const files = new PrFilesState("python/cpython", 11, timer());
+  const files = new PrFilesState("python/cpython", 11, new PanesState(), timer());
   files.followReview(review);
   await files.load();
   return files;
@@ -824,7 +825,7 @@ it("moves to whichever of a thread and the changes was asked for last before the
       answer = resolve;
     }),
   );
-  const files = new PrFilesState("python/cpython", 11, timer());
+  const files = new PrFilesState("python/cpython", 11, new PanesState(), timer());
   files.followReview(staleReview("Lib/ast.py"));
   const loading = files.load();
   await settled();
@@ -851,7 +852,7 @@ it("shows the first changed file, opened, and one asked for before the diff came
       answer = resolve;
     }),
   );
-  const files = new PrFilesState("python/cpython", 11, timer());
+  const files = new PrFilesState("python/cpython", 11, new PanesState(), timer());
   files.followReview(staleReview("Lib/re.py", "~Lib/os.py"));
   const loading = files.load();
   await settled();
@@ -1275,8 +1276,8 @@ it("lays the diff out in the view the window chose, which one choice holds for e
   const choice = new DiffViewChoice();
   const changed = { ...file("a.py", 0), pairs: [{ row: 2, removed: 2, added: 1 }] };
   core.pullRequestFiles.mockResolvedValue(ok(ready("abc", 6, [changed])));
-  const one = new PrFilesState("python/cpython", 11, timer(), choice);
-  const other = new PrFilesState("python/cpython", 12, timer(), choice);
+  const one = new PrFilesState("python/cpython", 11, new PanesState(), timer(), choice);
+  const other = new PrFilesState("python/cpython", 12, new PanesState(), timer(), choice);
   await Promise.all([one.load(), other.load()]);
   const unified = one.layout.count;
 
@@ -1388,7 +1389,7 @@ it("reveals a thread open, even a resolved one, and one asked for before the dif
       answer = resolve;
     }),
   );
-  const files = new PrFilesState("python/cpython", 11, timer());
+  const files = new PrFilesState("python/cpython", 11, new PanesState(), timer());
   const loading = files.load();
   await settled();
 
@@ -1780,7 +1781,14 @@ it("closes the search, forgetting its text and its matches", async () => {
 /** A Files tab for PR 11 that shows one file at a time, as `[diff] files = "one"` opens it. */
 const oneAtATime = async (answer: PrFiles) => {
   core.pullRequestFiles.mockResolvedValue(ok(answer));
-  const files = new PrFilesState("python/cpython", 11, timer(), new DiffViewChoice(), "one");
+  const files = new PrFilesState(
+    "python/cpython",
+    11,
+    new PanesState(),
+    timer(),
+    new DiffViewChoice(),
+    "one",
+  );
   await files.load();
   return files;
 };

@@ -59,7 +59,7 @@ import { FilePages, samePage, type FilesMode, type Page } from "./file-pages";
 import { diffShows, inRepository, type FileView } from "./file-view";
 import { HitCode } from "./hit-code.svelte";
 import { hud, type Jump, type JumpTimer } from "./hud.svelte";
-import { PanesState } from "./panes.svelte";
+import type { PanesState } from "./panes.svelte";
 import { PEEK_ID, peekPlaces, withPeek, type IndexNews, type Peek } from "./peek";
 import { wordAt, type Column, type Pick, type Picked, type PickedLine, type Side } from "./pick";
 
@@ -220,6 +220,9 @@ export class PrFilesState {
   /** The thread, the diff's row or the top of the page to scroll to, until the diff has scrolled there.
    * Each move is a new one, so a move back to the same place scrolls again. */
   jump = $state<{ id: string } | { row: number } | { page: Page }>();
+  /** Whether a peek opened that the diff hasn't yet scrolled into view, until the diff takes it (#458). Each
+   * open is a new one, even on the same line, and a diff drawn again later doesn't scroll to it again. */
+  peekOpened = $state(false);
   /** Whether the search in the diff shows, which Ctrl+F opens (#186). */
   searching = $state(false);
   /** The text the user searches the diff for. */
@@ -330,20 +333,22 @@ export class PrFilesState {
   #stopListening: (() => void)[] = [];
   #stopped = false;
 
+  /** `panes` is the layout of the panes the Repository's page read, which the peek's height is saved in, so
+   * a drag never saves the default widths over the user's. */
   constructor(
     repository: string,
     number: number,
+    panes: PanesState,
     jumps: JumpTimer = hud,
     choice: DiffViewChoice = new DiffViewChoice(),
     mode: FilesMode = "all",
-    panes: PanesState = new PanesState(),
   ) {
     this.#repository = repository;
     this.#number = number;
+    this.panes = panes;
     this.#jumps = jumps;
     this.#choice = choice;
     this.mode = mode;
-    this.panes = panes;
   }
 
   /** Takes the user's Review of the PR as the PR view read it (#387). A new verdict can open files the
@@ -933,6 +938,7 @@ export class PrFilesState {
   async peekDefinition() {
     const looked = await this.#lookUp((looking) => {
       this.#peek = looking;
+      this.peekOpened = true;
     });
     if (looked !== undefined) this.#showPeek(looked.peek, looked.lookup);
   }
@@ -1102,10 +1108,11 @@ export class PrFilesState {
   }
 
   /** Shows `peek`, the answer of lookup `lookup`, with what the core said of the server's index before it
-   * showed. */
+   * showed. A peek that wasn't showing, as Go to definition's, opens with it. */
   #showPeek(peek: Peek, lookup: number) {
     const held = this.#news;
     this.#news = undefined;
+    if (this.#peek === undefined) this.peekOpened = true;
     this.#peek =
       peek.lookup.state === "answered" && held?.lookup === lookup
         ? this.#withNews(peek, peek.lookup.answer, held.news)

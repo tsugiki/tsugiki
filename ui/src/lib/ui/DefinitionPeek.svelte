@@ -1,22 +1,23 @@
 <!-- The Definition peek (#438), under the line of the word the user picked: a header with the symbol, the
      path and line of the hit it shows, the commit it is at, which hit it is of how many, Open, which goes to
      that hit (#446), and ✕. Under it, the hit's code scrolled to its line (#439), with the hits listed on
-     its right (#441), or else a line that says what the lookup waits for, with the seconds once they pass
-     one (#440), that it found nothing, or why it failed. A line that says to set a server up, or what went
-     wrong with one, ends with a link to its row in Settings › Advanced (#683). A hit outside the Repository
-     names its whole path on disk in place of a commit, and has no Open. While the server that answered
-     builds its index, a line under the header says so (#680). A click picks a word in the code, which
-     `Alt+F12` looks up in place of what the peek showed (#447). A breadcrumb before the symbol then names
-     that, and a click on a crumb brings it back. -->
+     its right (#441), or on its left when the peek shows split below the code (#459), or else a line that
+     says what the lookup waits for, with the seconds once they pass one (#440), that it found nothing, or
+     why it failed. A line that says to set a server up, or what went wrong with one, ends with a link to its
+     row in Settings › Advanced (#683). A hit outside the Repository names its whole path on disk in place of
+     a commit, and has no Open. While the server that answered builds its index, a line under the header says
+     so (#680). A click picks a word in the code, which `Alt+F12` looks up in place of what the peek showed
+     (#447). A breadcrumb before the symbol then names that, and a click on a crumb brings it back. -->
 
 <script lang="ts">
-  import { peekWords, type Peek } from "$lib/state/peek";
+  import { peekWords, type Peek, type PeekWords } from "$lib/state/peek";
   import { settingsAsk } from "$lib/state/settings-ask.svelte";
   import { currentOs, keyName } from "./keys";
   import PeekCode from "./PeekCode.svelte";
 
   let {
     peek,
+    split = false,
     open,
     onclose,
     onhit,
@@ -24,6 +25,8 @@
     oncrumb,
   }: {
     peek: Peek;
+    /** Whether the peek shows below the code, with its hits in a column on the left of theirs (#459). */
+    split?: boolean;
     /** What Open does for the hit shown, which the tab decides: go, or wait while it finds the hit's row.
      * Nothing offers no Open, as for a hit with nowhere to go. */
     open?: "ready" | "going" | undefined;
@@ -53,6 +56,9 @@
   /** Names the list's rows, so the list can say which one the peek shows. */
   const id = $props.id();
   const rowId = (index: number) => `${id}-hit-${String(index)}`;
+
+  /** The hits a peek lists, and the one it shows. */
+  type Found = NonNullable<PeekWords["found"]>;
 
   /** The height of each row of the list: two lines of 18 px, and 2 px above and below. */
   const HIT_ROW = 40;
@@ -121,46 +127,53 @@
 {#if words.indexing !== undefined}
   <div class="body indexing">{words.indexing}</div>
 {/if}
+<!-- The list of hits, beside a file that can't be read too: the focus may be on it, and in 2 rows its first
+     line shows. -->
+{#snippet hits(found: Found)}
+  <ol
+    class="hits"
+    role="listbox"
+    aria-label="Definitions"
+    aria-activedescendant={rowId(found.shown)}
+    tabindex="0"
+    {@attach (list) => {
+      keepInSight(list, found.shown);
+    }}
+  >
+    {#each found.hits as hit, index (index)}
+      <!-- ↑ and ↓ move through the list from the peek's own keys, so a click is the mouse's way. -->
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <li
+        id={rowId(index)}
+        role="option"
+        aria-selected={index === found.shown}
+        onclick={() => {
+          onhit(index);
+        }}
+      >
+        <span class="where">{hit.place.path}<span class="muted">{`:${String(hit.line)}`}</span></span>
+        <code class="text">{hit.text.trim()}</code>
+      </li>
+    {/each}
+  </ol>
+{/snippet}
+
 {#if code && found}
   <!-- The code and the list each take the focus, and ↑ and ↓ move through the hits from either. -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="panes"
     class:under-indexing={words.indexing !== undefined}
+    class:split
     onkeydown={(e) => {
       moveByKey(e, found.shown);
     }}
   >
+    {#if split}{@render hits(found)}{/if}
     <div class="code">
       <PeekCode {code} mark={found.hit} />
     </div>
-    <!-- Beside a file that can't be read too: the focus may be on it, and in 2 rows its first line shows. -->
-    <ol
-      class="hits"
-      role="listbox"
-      aria-label="Definitions"
-      aria-activedescendant={rowId(found.shown)}
-      tabindex="0"
-      {@attach (list) => {
-        keepInSight(list, found.shown);
-      }}
-    >
-      {#each found.hits as hit, index (index)}
-        <!-- ↑ and ↓ move through the list from the peek's own keys, so a click is the mouse's way. -->
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <li
-          id={rowId(index)}
-          role="option"
-          aria-selected={index === found.shown}
-          onclick={() => {
-            onhit(index);
-          }}
-        >
-          <span class="where">{hit.place.path}<span class="muted">{`:${String(hit.line)}`}</span></span>
-          <code class="text">{hit.text.trim()}</code>
-        </li>
-      {/each}
-    </ol>
+    {#if !split}{@render hits(found)}{/if}
   </div>
 {:else}
   <div class="body">
@@ -299,6 +312,12 @@
     overflow: auto;
     list-style: none;
     border-left: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  }
+
+  /* Split below the code, the list comes first, on the left (#459). */
+  .split .hits {
+    border-right: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+    border-left: none;
   }
 
   .hits:focus-visible {

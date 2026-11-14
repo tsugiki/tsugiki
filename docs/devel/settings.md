@@ -40,6 +40,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   the button reads OK again. A `machine.toml` that doesn't parse refuses the Apply before either file is
   saved. The Definition peek's link to a server's row opens the dialog on Advanced with the focus on that
   row's path.
+- `[diff] peek` in `settings.toml` says where the Definition peek opens: `"inline"`, the default, under the
+  line of the word looked up, or `"split"`, below the diff or the file view's code, which stays where it
+  was ([definitions.md](definitions.md)). A change applies to the next peek. A value Tsugiki can't read
+  opens the peek inline and shows in the status bar, as a bad `[diff] files` does. Only a hand edit sets it
+  for now: General gets the choice later (#370).
 - Settings are kept in two TOML files, which Tsugiki reads when it starts and when the Settings dialog opens,
   so a hand edit takes effect at the next of those ([ADR
   0014](../adr/0014-settings-in-toml-files-user-state-in-the-database-and-a-portable-mode.md)).

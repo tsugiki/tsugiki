@@ -17,6 +17,7 @@ describe("SettingsState", () => {
     expect(state.statusBarVisible).toBe(false);
     expect(state.problems).toEqual([]);
     expect(state.diffFiles).toBe("all");
+    expect(state.diffPeek).toBe("inline");
   });
 
   it("holds what the core read", async () => {
@@ -29,7 +30,7 @@ describe("SettingsState", () => {
           light_theme: "VS Code Light Modern",
           dark_theme: "VS Code Dark Modern",
         },
-        diff: { files: "one" },
+        diff: { files: "one", peek: "split" },
         repositories: [],
       },
       language_servers: { ...NO_SERVERS, ty: "tools/ty.exe" },
@@ -40,6 +41,7 @@ describe("SettingsState", () => {
     expect(state.statusBarVisible).toBe(false);
     expect(state.diffFiles).toBe("one");
     expect(state.languageServers?.ty).toBe("tools/ty.exe");
+    expect(state.diffPeek).toBe("split");
     expect(state.problems).toEqual(["settings.toml, line 3: expected a value"]);
   });
 
@@ -55,7 +57,7 @@ describe("SettingsState", () => {
           light_theme: "VS Code Light Modern",
           dark_theme: "VS Code Dark Modern",
         },
-        diff: { files: "one" },
+        diff: { files: "one", peek: "inline" },
         repositories: [],
       },
       language_servers: NO_SERVERS,
@@ -81,7 +83,7 @@ describe("SettingsState", () => {
       status_bar: { visible },
       releases: { check: true },
       appearance: { theme: "system", light_theme: "VS Code Light Modern", dark_theme: "VS Code Dark Modern" },
-      diff: { files: "all" },
+      diff: { files: "all", peek: "inline" },
       repositories: [],
     },
     language_servers: NO_SERVERS,

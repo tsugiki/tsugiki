@@ -32,7 +32,7 @@ const SETTINGS = {
     status_bar: { visible: true },
     releases: { check: true },
     appearance: { theme: "system", light_theme: "VS Code Light Modern", dark_theme: "VS Code Dark Modern" },
-    diff: { files: "all" },
+    diff: { files: "all", peek: "inline" },
     repositories: [],
   },
   language_servers: { ty: null, "rust-analyzer": null, clangd: null, idle_minutes: 30 },

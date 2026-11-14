@@ -498,6 +498,12 @@ export class DiffLayout<T extends LaidThread = LaidThread> {
     }
   }
 
+  /** The place that shows `at`, a row of the diff or a line a gap or the end of a file left out, if one
+   * does. */
+  placeOf(at: Exclude<ThreadAnchor, { kind: "end" }>): number | undefined {
+    return at.kind === "row" ? this.placeOfRow(at.row) : this.placeOfLine(at.file, at.line);
+  }
+
   /** The place that shows line `line` at the head of file `file`, which a gap or the end of the file left
    * out, if one does. */
   placeOfLine(file: number, line: number): number | undefined {

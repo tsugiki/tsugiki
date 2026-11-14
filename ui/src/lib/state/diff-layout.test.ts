@@ -356,6 +356,23 @@ describe("DiffLayout", () => {
     expect(layout.at(6)).toEqual({ kind: "hidden", file: 0, old: 10, new: 12, lines: 8 });
   });
 
+  it("finds the place of a row, and of a line a gap left out, as a picked word names them", () => {
+    const layout = new DiffLayout(
+      8,
+      [gapped(null)],
+      () => false,
+      holding([{ from: 20, length: 7 }]),
+      "unified",
+    );
+
+    expect([
+      layout.placeOf({ kind: "row", row: 7 }),
+      layout.placeOf({ kind: "line", file: 0, line: 23 }),
+      layout.placeOf({ kind: "line", file: 0, line: 40 }),
+    ]).toEqual([layout.placeOfRow(7), layout.placeOfLine(0, 23), undefined]);
+    expect(places(layout, layout.placeOf({ kind: "line", file: 0, line: 23 }) ?? -1).at(0)).toBe("21/23");
+  });
+
   it("puts a thread under a line that doesn't show under the buttons that show it", () => {
     const layout = new DiffLayout(
       8,

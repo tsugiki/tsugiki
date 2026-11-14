@@ -57,11 +57,19 @@ import {
   type ThreadAnchor,
 } from "./diff-layout";
 import { FilePages, samePage, type FilesMode, type Page } from "./file-pages";
-import { diffShows, FileView, inRepository, type RepositoryHit } from "./file-view.svelte";
+import { diffShows, FileView, inRepository, type RepositoryHit, type ViewLine } from "./file-view.svelte";
 import { HitCode, type CodePick } from "./hit-code.svelte";
 import { hud, type Jump, type JumpTimer } from "./hud.svelte";
 import type { PanesState } from "./panes.svelte";
-import { PEEK_ID, peekPlaces, withPeek, type Crumb, type IndexNews, type Peek } from "./peek";
+import {
+  PEEK_ID,
+  peekPlaces,
+  withPeek,
+  type Crumb,
+  type IndexNews,
+  type Peek,
+  type PeekLayout,
+} from "./peek";
 import { wordAt, type Column, type Pick, type Picked, type PickedLine, type Side } from "./pick";
 import { waitForSpans } from "./spans-wait";
 
@@ -140,9 +148,6 @@ function shownHit(peek: Peek | undefined): { hit: Hit; code: HitCode; hits: Hit[
   return code && hits && hit && { hit, code, hits };
 }
 
-/** Whether `peek` shows under a line of the diff, and not of the file view (#457). */
-const inDiff = (peek: Peek): peek is Peek & { at: PickedLine } => peek.at.kind !== "view";
-
 /** Whether two hits are at the same place and line. */
 const sameHit = (one: Hit, other: Hit) =>
   one.line === other.line && JSON.stringify(one.place) === JSON.stringify(other.place);
@@ -160,7 +165,7 @@ type Goal =
 
 /** A lookup's question: the peek that shows its answer, before it has one, and the word's place as the core
  * takes it: the file's path at the peek's side, the line and the word's column. */
-type Asked = { peek: Omit<Peek, "lookup">; path: string; line: number; column: number };
+type Asked = { peek: Omit<Peek, "lookup" | "layout">; path: string; line: number; column: number };
 
 /** The lookup of the word `pick` picked in the code of a file at `place`, for a peek under `at` that names
  * the peeks of `trail` before it: in the peek's code (#447), or in the file view's (#457). */
@@ -217,12 +222,10 @@ export class PrFilesState {
   mode = $state<FilesMode>("all");
   /** The panes' layout, which holds the Definition peek's height (#458). */
   readonly panes: PanesState;
-  /** The peek while it shows in the diff. One in the file view takes no place in the diff under it, and
-   * its steps don't lay the diff out again (#457). */
-  #diffPeek = $derived.by(() => {
-    const peek = this.#peek;
-    return peek && inDiff(peek) ? peek : undefined;
-  });
+  /** The peek while it shows under a line of the diff. One in the file view takes no place in the diff under
+   * it, and its steps don't lay the diff out again (#457). Nor does a split one, which shows below the diff
+   * (#459). */
+  #diffPeek = $derived.by(() => this.peekOn(undefined, "inline"));
   /** The pages of the diff when it shows one file at a time: the NEWS entries, each file, and the threads
    * on files no longer in the diff. */
   pages = $derived.by(() => {
@@ -270,7 +273,8 @@ export class PrFilesState {
    * to the same place scrolls again. */
   jump = $state<{ id: string } | { row: number } | { file: number; line: number } | { page: Page }>();
   /** Whether a peek opened that the diff hasn't yet scrolled into view, until the diff takes it (#458). Each
-   * open is a new one, even on the same line, and a diff drawn again later doesn't scroll to it again. */
+   * open is a new one, even on the same line, and a diff drawn again later doesn't scroll to it again. A
+   * split peek takes the code's room below it, so the code keeps the line it opened under in view (#459). */
   peekOpened = $state(false);
   /** Whether the search in the diff shows, which Ctrl+F opens (#186). */
   searching = $state(false);
@@ -372,6 +376,8 @@ export class PrFilesState {
   #pick = $state.raw<Pick>();
   /** The Definition peek, while it shows. */
   #peek = $state.raw<Peek>();
+  /** The place `[diff] peek` names now, which each new peek asks for (#459). */
+  readonly #peekSetting: () => PeekLayout;
   /** The file view over the tab, while it shows (#453). */
   #fileView = $state.raw<FileView>();
   /** Tells the Detail pane's history that the user opened a file view, or closed it (#456). */
@@ -396,7 +402,8 @@ export class PrFilesState {
 
   /** `panes` is the layout of the panes the Repository's page read, which the peek's height is saved in, so
    * a drag never saves the default widths over the user's. `fileViewMoved` hears of each file view the user
-   * opens or closes, for the Detail pane's history. */
+   * opens or closes, for the Detail pane's history. `peekLayout` says what `[diff] peek` says at the time a
+   * peek opens (#459). */
   constructor(
     repository: string,
     number: number,
@@ -405,6 +412,7 @@ export class PrFilesState {
     choice: DiffViewChoice = new DiffViewChoice(),
     mode: FilesMode = "all",
     fileViewMoved: (view: FileView | undefined) => void = () => {},
+    peekLayout: () => PeekLayout = () => "inline",
   ) {
     this.#repository = repository;
     this.#number = number;
@@ -413,6 +421,7 @@ export class PrFilesState {
     this.#choice = choice;
     this.mode = mode;
     this.#fileViewMoved = fileViewMoved;
+    this.#peekSetting = peekLayout;
   }
 
   /** Takes the user's Review of the PR as the PR view read it (#387). A new verdict can open files the
@@ -1006,6 +1015,16 @@ export class PrFilesState {
     return this.#peek;
   }
 
+  /** The peek while it shows on `view`, under one of its lines or split below its code as `layout` says, or
+   * on the diff for no view (#459). */
+  peekOn(view: FileView, layout: PeekLayout): (Peek & { at: ViewLine }) | undefined;
+  peekOn(view: undefined, layout: PeekLayout): (Peek & { at: PickedLine }) | undefined;
+  peekOn(view: FileView | undefined, layout: PeekLayout): Peek | undefined {
+    const peek = this.#peek;
+    if (peek?.layout !== layout) return undefined;
+    return (peek.at.kind === "view" ? peek.at.view : undefined) === view ? peek : undefined;
+  }
+
   /** Opens the Definition peek under the picked word's line, and asks ty where the word is defined, with the
    * PR's files at the line's commit: the diff's base for a removed line, and its head for the rest, even
    * while the PR's newer head is fetched. The peek shows at once and says what the lookup waits for, and ty
@@ -1233,9 +1252,11 @@ export class PrFilesState {
    * in the file view while it shows (#457), and else the word picked in the diff, unless it says another.
    * It gives the peek that shows the answer, the lookup's number and the diff it asked in. `starting` hears
    * the peek while it looks, as the lookup starts. It gives nothing with no word to ask about, or once a
-   * newer lookup has started or the peek has closed. */
+   * newer lookup has started or the peek has closed. The peek shows where `layout` says, which for a new
+   * peek is what `[diff] peek` says as the lookup starts (#459). */
   async #lookUp(
     starting: (looking: Peek) => void,
+    layout: PeekLayout = this.#peekSetting(),
     asking: (view: Ready) => Asked | undefined = (view) =>
       this.#fileView ? this.#askedInView(this.#fileView, view) : this.#askedInDiff(view),
   ): Promise<{ peek: Peek; lookup: number; view: Ready } | undefined> {
@@ -1246,7 +1267,7 @@ export class PrFilesState {
     this.peekFocus = undefined;
     this.#lookups = nextTicket();
     const lookup = this.#lookups;
-    const peek = asked.peek;
+    const peek = { ...asked.peek, layout };
     this.#stopGoing();
     starting({ ...peek, lookup: { state: "looking" } });
     const lookedUp = {
@@ -1365,6 +1386,7 @@ export class PrFilesState {
     }
     const crumb: Crumb = {
       at: peek.at,
+      layout: peek.layout,
       symbol: peek.symbol,
       side: peek.side,
       commit: peek.commit,
@@ -1378,6 +1400,8 @@ export class PrFilesState {
         // The code that had the focus goes while the peek looks, so the focus waits in the peek.
         this.peekFocus = "take";
       },
+      // The peek stays where it opened.
+      peek.layout,
       () => asked,
     );
     if (looked === undefined) return;

@@ -17,6 +17,7 @@ fn hidden() -> Settings {
         },
         diff: DiffSettings {
             files: DiffFiles::All,
+            peek: DiffPeek::Inline,
         },
         repositories: Vec::new(),
     }
@@ -325,6 +326,7 @@ fn diff_files_is_saved_only_when_it_isnt_all() {
     let one = Settings {
         diff: DiffSettings {
             files: DiffFiles::One,
+            ..DiffSettings::default()
         },
         ..Settings::default()
     };
@@ -337,6 +339,68 @@ fn diff_files_is_saved_only_when_it_isnt_all() {
         saved_over(
             "diff-save-default",
             "[diff]\nfiles = \"one\"\n",
+            &Settings::default()
+        ),
+        ""
+    );
+}
+
+#[test]
+fn diff_peek_reads_inline_and_split_and_opens_inline_when_left_out() {
+    let inline = loaded_from("peek-inline", "[diff]\npeek = \"inline\"\n");
+    let split = loaded_from("peek-split", "[diff]\npeek = \"split\"\n");
+    let left_out = loaded_from("peek-left-out", "[diff]\nfiles = \"one\"\n");
+
+    assert_eq!(inline.settings.diff.peek, DiffPeek::Inline);
+    assert_eq!(split.settings.diff.peek, DiffPeek::Split);
+    assert_eq!(left_out.settings.diff.peek, DiffPeek::Inline);
+    assert_eq!(Settings::default().diff.peek, DiffPeek::Inline);
+    for loaded in [inline, split, left_out] {
+        assert_eq!(loaded.problems, Vec::<String>::new());
+    }
+}
+
+#[test]
+fn a_diff_peek_tsugiki_cant_read_opens_inline_and_is_reported() {
+    let text = "[status_bar]\nvisible = false\n\n[diff]\npeek = \"below\"\n";
+    let loaded = loaded_from("peek-bad", text);
+
+    assert_eq!(
+        loaded.settings,
+        hidden(),
+        "the rest of the file still counts"
+    );
+    let problems: Vec<&str> = loaded
+        .problems
+        .iter()
+        .map(|problem| problem.split_once("settings.toml").unwrap().1)
+        .collect();
+    assert_eq!(
+        problems,
+        [
+            r#", line 5: peek isn't "inline" or "split", so the Definition peek opens under its line."#
+        ]
+    );
+}
+
+#[test]
+fn diff_peek_is_saved_only_when_it_isnt_inline() {
+    let split = Settings {
+        diff: DiffSettings {
+            peek: DiffPeek::Split,
+            ..DiffSettings::default()
+        },
+        ..Settings::default()
+    };
+
+    assert_eq!(
+        saved_over("peek-save", "", &split),
+        "[diff]\npeek = \"split\"\n"
+    );
+    assert_eq!(
+        saved_over(
+            "peek-save-default",
+            "[diff]\npeek = \"split\"\n",
             &Settings::default()
         ),
         ""
@@ -1357,6 +1421,7 @@ const WIDE: PaneLayout = PaneLayout {
     sidebar: Some(240),
     list: Some(500),
     peek: None,
+    split_peek: None,
     sidebar_hidden: false,
     list_hidden: false,
     detail_only_hid: None,
@@ -1380,6 +1445,30 @@ fn the_peeks_height_stays_on_this_machine_until_it_goes_back_to_its_default() {
     fs::remove_dir_all(root).unwrap();
 
     assert_eq!(saved, "[panes]\nsidebar = 240\nlist = 500\npeek = 24\n");
+    assert_eq!(read_again, taller);
+    assert_eq!(back, "[panes]\nsidebar = 240\nlist = 500\n");
+}
+
+#[test]
+fn the_split_peeks_height_stays_on_this_machine_until_it_goes_back_to_its_default() {
+    let (folders, root) = temp_folders("panes-split-peek");
+    let mut files = SettingsFiles::load(folders.clone());
+    let taller = PaneLayout {
+        split_peek: Some(320),
+        ..WIDE
+    };
+
+    files.save_panes(taller).unwrap();
+    let saved = fs::read_to_string(folders.machine_file()).unwrap();
+    let read_again = SettingsFiles::load(folders.clone()).view().panes;
+    files.save_panes(WIDE).unwrap();
+    let back = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(
+        saved,
+        "[panes]\nsidebar = 240\nlist = 500\nsplit_peek = 320\n"
+    );
     assert_eq!(read_again, taller);
     assert_eq!(back, "[panes]\nsidebar = 240\nlist = 500\n");
 }
@@ -1589,6 +1678,7 @@ order = \"by_mood\"
         sidebar: None,
         list: Some(500),
         peek: None,
+        split_peek: None,
         sidebar_hidden: false,
         list_hidden: false,
         detail_only_hid: None,

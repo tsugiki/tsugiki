@@ -1677,7 +1677,7 @@ it("opens the Definition peek under the picked line, names the hit, shows its co
     expect(peekCode()).toContain("*12line 12");
   });
 
-  expect(peekText()[0]).toBe("new Lib/news.py:12 at abc · the PR's head 1 of 2 ✕");
+  expect(peekText()[0]).toBe("new Lib/news.py:12 at abc · the PR's head 1 of 2 Open ✕");
   expect(peekCode().slice(0, 3)).toEqual(["1line 1", "2line 2", "3line 3"]);
   expect(core.definitionCode).toHaveBeenCalledWith({
     repository: "python/cpython",
@@ -1719,18 +1719,50 @@ it("lists the hits beside the code, and shows the one a click or ↑ ↓ picks",
   await vi.waitFor(() => {
     expect(peekCode()).toContain("*5line 5");
   });
-  expect(peekText()[0]).toBe("new Lib/odd.py:5 at abc · the PR's head 3 of 3 ✕");
+  expect(peekText()[0]).toBe("new Lib/odd.py:5 at abc · the PR's head 3 of 3 Open ✕");
   expect(core.definitionCode).toHaveBeenLastCalledWith(
     expect.objectContaining({ file: { kind: "repository", path: "Lib/odd.py", commit: "abc" } }),
   );
 
   await fireEvent.keyDown(list, { key: "ArrowUp" });
   await vi.waitFor(() => {
-    expect(peekText()[0]).toBe("new Lib/old.py:3 at abc · the PR's head 2 of 3 ✕");
+    expect(peekText()[0]).toBe("new Lib/old.py:3 at abc · the PR's head 2 of 3 Open ✕");
   });
   expect(options.map((option) => option.getAttribute("aria-selected"))).toEqual(["false", "true", "false"]);
   // The list scrolls itself to the hit shown, and leaves the diff around the peek where it was.
   expect(screen.getByRole("region", { name: "Diff" }).scrollTop).toBe(0);
+});
+
+it("opens the peek on Go to definition with several hits, and Open goes to the hit picked", async () => {
+  const hit = (path: string, line: number) => ({
+    place: { kind: "repository" as const, path, side: "head" as const, commit: "head" },
+    line,
+    column: 0,
+    text: `new = ${String(line)}`,
+  });
+  core.definitions.mockResolvedValue(
+    ok({ state: "found", hits: [hit("Lib/odd.py", 5), hit("news.txt", 2)] }),
+  );
+  core.pullRequestRow.mockResolvedValue(ok(4));
+  fileOf(30);
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[2]).toBe("11 Notes");
+  });
+  await clickAt(codeOf(2), 2);
+
+  await files.goToDefinition();
+  const list = await vi.waitFor(() => screen.getByRole("listbox", { name: "Definitions" }));
+  expect(core.pullRequestRow).not.toHaveBeenCalled();
+  await fireEvent.click(within(list).getAllByRole("option")[1] as HTMLElement);
+  await fireEvent.click(screen.getByRole("button", { name: "Open" }));
+  await vi.waitFor(() => {
+    expect(mark()).not.toBeNull();
+  });
+
+  expect(peekBox()).toBeNull();
+  expect(mark()?.style.top).toBe(rowAt("2+new line")?.style.top);
+  expect(document.activeElement).toBe(screen.getByRole("region", { name: "Diff" }));
 });
 
 it("scrolls the peek's code inside it, and the diff's rows after it stay where they are", async () => {

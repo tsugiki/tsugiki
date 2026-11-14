@@ -551,6 +551,9 @@
             onhit={(index) => {
               diff.showHit(index);
             }}
+            onopen={() => {
+              void diff.openHit();
+            }}
           />
         </div>
       {:else}

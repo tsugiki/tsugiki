@@ -1,8 +1,8 @@
 // `just ship` pushes the branch and opens the PR, or says which PR the push updated. The branch's first
 // commit gives the PR its title and, without `just ship body.md`, its body.
-// `just ship --check` ends a PR's work: it runs `just check` first, which writes to .temp/check.log, and
-// prints only its outcome and, on a failure, the failed recipe and the log's tail, so an agent reads a few
-// lines of a long run. Plain `just ship` pushes a fix for a gate you reran yourself.
+// `just ship --check` runs `just check` first, which writes to .temp/check.log, and prints only its outcome
+// and, on a failure, the failed recipe and the log's tail, so an agent reads a few lines of a long run.
+// Ship a PR without it and let CI run the gates, unless it's a release PR or changes the gates (AGENTS.md).
 // `just ship --release` is the only way it pushes a `release/` branch, since that push rehearses the release
 // on CI: ask the user first. It refuses unless the branch names Cargo.toml's version and `just release-check`
 // passes. `just ship --release --check` opens the release PR, and `just ship --release` pushes a fix to it.

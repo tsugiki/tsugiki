@@ -24,13 +24,15 @@ every test CI runs, once each, one at a time on a few cores, because someone is 
 it runs. The Rust tests and the bindings check run inside `just coverage`, and `just cargo-test` and
 `just stale-bindings` run them without coverage. `just` lists the rest.
 
-Run `just check` once per PR, at the end, after `/code-review` and its fixes. Before that, run single test
-files, `just typecheck`, `just doc-width` and the tests of each crate the change touches. If a gate fails, fix
-it and rerun only that gate. Run `just check` again only if the fix changes behaviour outside that gate.
+While you work, run single test files, `just typecheck`, `just doc-width` and the tests of each crate the
+change touches. Then run `/code-review`, fix what it finds, and push with `just ship`, which pushes and opens
+the PR. Leave `just check` and `just coverage` to CI: it runs the gates `just check` runs, on the same
+scope, and macOS as well, and you wait for its result before the merge. If CI fails, fix the gate that
+failed, rerun only that gate, and push again.
 
-`just ship --check` does that last step: it runs `just check`, pushes and opens the PR, and prints only the
-outcome, with the failed recipe and the log's tail on a failure. Plain `just ship` skips the check and pushes
-a fix for a gate you reran yourself. `just next` lists the open tickets of the release being built.
+`just ship --check` runs `just check` before the push and stops on a failure, with the failed recipe and the
+log's tail. Use it for a release PR (`docs/releasing.md`) and for a PR that changes the gates themselves: the
+`justfile`, `scripts/` or `.github/workflows/`. `just next` lists the open tickets of the release being built.
 
 A hook in `.claude/settings.json` refuses a shell command that rewrites code or docs in place, such as
 `sed -i` or a redirect into `crates/`. Edit those files with the Edit or Write tool.

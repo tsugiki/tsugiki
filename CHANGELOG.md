@@ -7,6 +7,50 @@ release's body, and fails without it
 
 ## WIP
 
+## Version 0.3.1 (2026-11-15)
+
+Go to definition and the Definition peek come to the Files tab, for Python, C and Rust, through a language
+server: install ty, clangd or rust-analyzer, and pick its program in Settings. Settings opens as a dialog.
+
+### Added
+
+- A click on a word in the Files tab picks it, with the caret on it and the word highlighted, and a
+  double-click selects it.
+- `F12` or `Ctrl+click` (`Cmd+click` on macOS) goes to the definition of a word. A hit on a line the diff
+  shows scrolls there and marks the line. A hit on a line no hunk shows opens the lines around it first,
+  as around a thread. A file the PR doesn't change opens read-only over the Files tab, at the hit's commit,
+  and `Alt+←` or Esc goes back to the diff. Several hits open the Definition peek with the list.
+- `Alt+F12` opens the Definition peek under the line, with the hit's file highlighted and its line marked.
+  The hits sit on the right: a click, `↑` or `↓` shows another, and Enter, `F12` or Open goes there. Its
+  bottom edge drags its height, which Tsugiki keeps. A word picked inside the peek can be followed with
+  `Alt+F12`, and the header keeps a breadcrumb back.
+- `[diff] peek = "split"` in `settings.toml` opens the peek below the diff, which then doesn't move, with
+  the hits on its left.
+- The read-only file view takes the same clicks and keys. `F12` there follows a word as in the diff, and a
+  second file view is one more step in the `Alt+←` history. `Alt+F12` opens the peek under its line.
+- While a lookup waits, the bar over the diff or the peek says for what, "Starting ty…" or "Asking ty for
+  the definition of X…", with the seconds past one. `F12`, `Alt+F12` or Esc cancels it.
+- To go to definitions, unpack ty, clangd or rust-analyzer, and pick its program on Settings › Advanced.
+  Tsugiki downloads none. Apply runs it with `--version` and shows the version, or what's wrong: "This isn't
+  clangd", a program that doesn't start, or a version we didn't test, which is still used. Each server's
+  row shows whether it's ready, running or stopped, the last problem with the exit code and the end of its
+  output, and opens its log. The peek's "Set up ty to go to definitions in Python" links to the row.
+- A server reads a second checkout of each Repository's mirror, in `repos\<owner>__<name>\lookup\`, kept at
+  the merge base of the PR on screen, so a lookup works offline at any commit the mirror holds.
+- Pick the rust-analyzer inside a toolchain, which `rustup which rust-analyzer` prints. Tsugiki starts it
+  so that it runs no build script, proc macro or `cargo check`, and downloads nothing.
+- In CPython, ty gets the `Lib` folder and the Python version, and clangd gets a compile database.
+- While clangd indexes, the peek warns "clangd is indexing (120 of 452 files): this may be a declaration",
+  and asks again once clangd has built its index. When clangd can't answer, the row and the peek say why: its
+  built-in headers are missing, it can't find system headers, or it isn't indexing.
+- A server that no lookup has reached for 30 minutes stops, and the next lookup starts it again. Settings ›
+  Advanced sets the time. Quitting Tsugiki stops every server.
+- Settings opens as a dialog, from `Ctrl+,`, ⚙ beside the Repository's name or Open Settings in the
+  command palette. General holds Show the status bar and Check for new versions, and Account says who is
+  signed in and where the token comes from. A change shows at once, Apply keeps it, and Cancel or Esc puts
+  it back. Each setting says where Tsugiki stores it, and the dialog reads the files again as it opens, so
+  a hand edit shows.
+
 ## Version 0.3.0 (2026-11-13)
 
 Tsugiki tells you when a PR you reviewed changed after your Review, and the PR view starts your second look

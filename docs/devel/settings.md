@@ -31,11 +31,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   time ([definitions.md](definitions.md)). A row has the path of the server's program with Browse…, which
   opens the system's file picker, the versions we tested and the version found, the server's state, and
   Open log. The state is Not set up, Ready, Running, Stopped (idle), or the server's last problem, for the
-  open Repository, with the end of its error output when it stopped on its own. Spaces around a path, and
-  the quotes Explorer's "Copy as path" puts around it, go as it is typed. Open log opens the log the
-  server writes for the open Repository, and is off with no Repository open. The paths live in
-  `machine.toml` as `[language_servers.<name>] path`, and the idle time as `[language_servers]
-  idle_minutes`, a whole number of minutes above 0 that takes effect at the servers' next idle check.
+  open Repository, with the end of its error output when it stopped on its own. clangd has three problems
+  of its own, such as missing system headers ([definitions.md](definitions.md), "When clangd can't
+  answer"). Spaces around a path, and the quotes Explorer's "Copy as path" puts around it, go as it is
+  typed. Open log opens the log the server writes for the open Repository, and is off with no Repository
+  open. The paths live in `machine.toml` as `[language_servers.<name>] path`, and the idle time as
+  `[language_servers] idle_minutes`, a whole number of minutes above 0 that takes effect at the servers'
+  next idle check.
   Apply saves a changed path, checks it, and keeps the dialog open so its row can say what the check found;
   the button reads OK again. A `machine.toml` that doesn't parse refuses the Apply before either file is
   saved. The Definition peek's link to a server's row opens the dialog on Advanced with the focus on that

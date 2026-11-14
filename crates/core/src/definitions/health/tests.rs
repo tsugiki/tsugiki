@@ -57,6 +57,7 @@ fn a_version_we_didn_t_test_says_so_and_a_problem_outranks_whether_the_server_ru
     let health = |version: &str| Health {
         version: Some(version.to_owned()),
         check: Check::Clear,
+        flaw: None,
     };
     let untested = health("0.0.110").row(ServerName::Ty, Presence::Running, &Last::Nothing);
     let stopped = ServerProblem::Stopped {
@@ -101,9 +102,12 @@ fn a_failed_check_shows_until_a_server_starts_and_a_check_that_answers_after_a_s
     let mut failed = Health::checking();
     failed.checked(Err(wrong.clone()));
     let mut passed = Health::checking();
-    passed.checked(Ok(Some("0.0.103".to_owned())));
+    passed.checked(Ok(Found {
+        version: Some("0.0.103".to_owned()),
+        flaw: None,
+    }));
     let mut superseded = Health::checking();
-    superseded.started(Some("0.0.104".to_owned()));
+    superseded.started(Some("0.0.104".to_owned()), None);
     superseded.checked(Err(wrong.clone()));
 
     assert_eq!(status(&Health::checking()), (ServerStatus::Ready, None));
@@ -111,7 +115,7 @@ fn a_failed_check_shows_until_a_server_starts_and_a_check_that_answers_after_a_s
         status(&failed),
         (ServerStatus::Problem { problem: wrong }, None)
     );
-    failed.started(None);
+    failed.started(None, None);
     assert_eq!(status(&failed), (ServerStatus::Ready, None));
     assert_eq!(
         status(&passed),
@@ -134,7 +138,11 @@ fn a_launcher_that_leaves_a_process_holding_its_output_gives_its_version_all_the
     let took = started.elapsed();
     std::fs::remove_dir_all(&folder).unwrap();
 
-    assert_eq!(checked, Ok(Some("0.0.1".to_owned())));
+    let found = Found {
+        version: Some("0.0.1".to_owned()),
+        flaw: None,
+    };
+    assert_eq!(checked, Ok(found));
     assert!(took < CHECK_PATIENCE, "{took:?}");
 }
 
@@ -160,8 +168,84 @@ fn launcher_in(folder: &Path) -> std::path::PathBuf {
 }
 
 #[test]
+fn a_problem_of_a_server_that_runs_gives_way_only_to_one_that_explains_more() {
+    let program = Health::default();
+    let mut last = Last::Problem(ServerProblem::DidNotStart {
+        cause: "gone".to_owned(),
+    });
+    let missing = |header: &str| ServerProblem::SystemHeadersMissing {
+        header: header.to_owned(),
+    };
+
+    let kept_from_answering = program.misleads(&last).cloned();
+    let after_a_failed_start = last.troubled(ServerProblem::NotIndexing);
+    let headers = last.troubled(missing("stdlib.h"));
+    let less = last.troubled(ServerProblem::NotIndexing);
+    let as_much = last.troubled(missing("windows.h"));
+    let built_ins = last.troubled(ServerProblem::BuiltInHeadersMissing);
+
+    assert_eq!(kept_from_answering, None);
+    assert!(after_a_failed_start && headers && built_ins);
+    assert!(!less && !as_much);
+    assert_eq!(
+        program.misleads(&last),
+        Some(&ServerProblem::BuiltInHeadersMissing)
+    );
+    let mut idle = Last::Idle;
+    assert_eq!(program.misleads(&idle), None);
+    assert!(idle.troubled(ServerProblem::NotIndexing));
+}
+
+#[test]
+fn what_a_program_lacks_shows_and_explains_until_a_start_finds_it_no_longer_does() {
+    let mut lacking = Health::checking();
+    lacking.checked(Ok(Found {
+        version: Some("23.1.0".to_owned()),
+        flaw: Some(ServerProblem::BuiltInHeadersMissing),
+    }));
+    let status = |health: &Health| {
+        let row = health.row(ServerName::Clangd, Presence::Running, &Last::Nothing);
+        row.status
+    };
+    let mut not_indexing = Last::Problem(ServerProblem::NotIndexing);
+
+    let shown = status(&lacking);
+    let explains = lacking.misleads(&not_indexing).cloned();
+    not_indexing.indexed();
+    lacking.started(None, None);
+
+    let problem = ServerProblem::BuiltInHeadersMissing;
+    assert_eq!(
+        shown,
+        ServerStatus::Problem {
+            problem: problem.clone()
+        }
+    );
+    assert_eq!(explains, Some(problem));
+    assert!(matches!(not_indexing, Last::Nothing));
+    assert_eq!(status(&lacking), ServerStatus::Running);
+}
+
+#[test]
+fn a_clangd_whose_version_names_it_is_checked_for_its_built_in_headers_too() {
+    let clangd = super::super::testing::clangd();
+
+    let checked = check(ServerName::Clangd, &clangd);
+
+    let found = Found {
+        version: Some("23.1.0".to_owned()),
+        flaw: None,
+    };
+    assert_eq!(checked, Ok(found));
+}
+
+#[test]
 fn version_names_the_server_on_a_real_program() {
     let ty = super::super::testing::ty();
 
-    assert_eq!(check(ServerName::Ty, &ty), Ok(Some("0.0.103".to_owned())));
+    let found = Found {
+        version: Some("0.0.103".to_owned()),
+        flaw: None,
+    };
+    assert_eq!(check(ServerName::Ty, &ty), Ok(found));
 }

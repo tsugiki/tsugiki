@@ -38,6 +38,7 @@ pub(super) fn setup(program: &Path) -> Result<Setup, Error> {
         language: Language::Rust,
         ready: Ready::Quiescent,
         index: None,
+        troubles: None,
     })
 }
 

@@ -40,8 +40,8 @@ use crate::mirror::{LookupAt, LookupCheckout};
 use crate::repository::RepositoryName;
 pub use code::Code;
 use code::HitFiles;
+use health::{Found, Health, Last, Presence};
 pub use health::{FoundVersion, ServerProblem, ServerRow, ServerStatus};
-use health::{Health, Last, Presence};
 use server::{Hits, Indexing, LanguageServer, News, OnNews, Request, Stopping};
 
 mod clangd;
@@ -125,8 +125,9 @@ pub enum Answer {
     Found { hits: Vec<Hit> },
     /// The server for the file's language isn't set up.
     NotSetUp { server: ServerName },
-    /// The server for the file's language has a problem, which its row in Settings › Advanced says too.
-    /// The next lookup tries it again.
+    /// The server for the file's language has a problem, which its row in Settings › Advanced says too:
+    /// one that kept it from answering, which the next lookup tries again, or one of a clangd that runs,
+    /// which found nothing and whose problem may say why (#684).
     Problem {
         server: ServerName,
         problem: ServerProblem,
@@ -210,7 +211,8 @@ pub enum Index {
     /// The server has built its index, and the core asked it again: these are the places it names now, in
     /// place of the answer's.
     Built { hits: Vec<Hit> },
-    /// The server stopped, or failed the lookup asked again, before it found more. The answer stands.
+    /// The server stopped, or failed the lookup asked again, before it found more, or found nothing again
+    /// while it has a problem that says why (#684). The answer stands.
     Stopped,
 }
 
@@ -415,10 +417,12 @@ enum Message {
     Indexing(Key),
     /// A server the key names exited, perhaps on its own, perhaps one stopped since.
     Exited(Key, Exit),
+    /// What a server the key names reports, or doesn't, says it has this problem while it runs (#684).
+    Troubled(Key, ServerProblem),
     /// The settings may have changed: a server's path, or the idle time.
     Reconfigured,
-    /// What `--version` of the program at the path said of the server, once its path was set.
-    Checked(ServerName, PathBuf, Result<Option<String>, ServerProblem>),
+    /// What checking the program at the path found of the server, once its path was set.
+    Checked(ServerName, PathBuf, Result<Found, ServerProblem>),
     /// The Repository was removed: its servers stop, and the reply comes once they have ended.
     Remove(RepositoryName, Sender<()>),
     Stop(Duration, Sender<()>),
@@ -659,10 +663,12 @@ impl Owner {
         self.known.get(&name).and_then(Option::as_ref)
     }
 
-    /// Notes that the server `key` names started, naming `version`, if it did.
-    fn started(&mut self, key: &Key, version: Option<String>) {
+    /// Notes that the server `key` names started from `program`, naming `version`, if it did, and looks at
+    /// the program's folder for what it lacks (#684).
+    fn started(&mut self, key: &Key, program: &Path, version: Option<String>) {
         let _cleared = self.lasts.remove(key);
-        self.health.entry(key.1).or_default().started(version);
+        let flaw = health::flaw(key.1, program);
+        self.health.entry(key.1).or_default().started(version, flaw);
     }
 
     /// Notes that the server `key` names has problem `problem`, and logs it.
@@ -710,6 +716,7 @@ impl Owner {
             Message::Answered(id, hits) => self.answered(id, hits),
             Message::Indexing(key) => self.indexing(&key),
             Message::Exited(key, exit) => self.exited(&key, exit),
+            Message::Troubled(key, problem) => self.troubled(&key, problem),
             Message::Reconfigured => self.reconfigured(),
             Message::Checked(name, path, outcome) => self.checked(name, &path, outcome),
             Message::Remove(repository, reply) => {
@@ -742,9 +749,31 @@ impl Owner {
         self.trouble(key, ServerProblem::stopped(exit));
     }
 
+    /// Notes `problem` of the server `key` names, which runs, unless it has stopped since or has a problem
+    /// that explains as much, and logs it.
+    fn troubled(&mut self, key: &Key, problem: ServerProblem) {
+        if !self.servers.contains_key(key) {
+            return;
+        }
+        let (repository, name) = key;
+        let logged = format!("{problem:?}");
+        if self.lasts.entry(key.clone()).or_default().troubled(problem) {
+            let named = name.as_str();
+            log::warn!("{named} for {repository} runs with a problem: {logged}");
+        }
+    }
+
+    /// The problem of the server `key` names, which runs, that may explain why it found nothing, if it has
+    /// one: what its program lacks, or what it reported.
+    fn misleads(&self, key: &Key) -> Option<ServerProblem> {
+        let health = self.health.get(&key.1).cloned().unwrap_or_default();
+        let last = self.lasts.get(key).unwrap_or(&Last::Nothing);
+        health.misleads(last).cloned()
+    }
+
     /// Reads each server's path from the settings again. Stops each server whose path has changed since,
     /// cancels a lookup that runs on one, forgets what it knew of it, and checks the new path with
-    /// `--version` on a thread of its own.
+    /// `--version` on a thread of its own, and its folder for what it lacks.
     fn reconfigured(&mut self) {
         for name in ServerName::ALL {
             let path = (self.sources.servers)(name);
@@ -763,22 +792,17 @@ impl Owner {
                 let _new = self.health.insert(name, Health::checking());
                 let own = self.own.clone();
                 let _checks = thread::spawn(move || {
-                    let outcome = health::check(name, &path);
+                    let found = health::check(name, &path);
                     // The thread ends once it has stopped.
-                    let _unheard = own.send(Message::Checked(name, path, outcome));
+                    let _unheard = own.send(Message::Checked(name, path, found));
                 });
             }
         }
     }
 
-    /// Notes what `--version` of the program at `path` said of server `name`, unless its path has changed
-    /// since, or a server has started from it.
-    fn checked(
-        &mut self,
-        name: ServerName,
-        path: &Path,
-        outcome: Result<Option<String>, ServerProblem>,
-    ) {
+    /// Notes what checking the program at `path` found of server `name`, unless its path has changed since,
+    /// or a server has started from it.
+    fn checked(&mut self, name: ServerName, path: &Path, outcome: Result<Found, ServerProblem>) {
         if self.program(name).is_none_or(|known| known != path) {
             return;
         }
@@ -890,7 +914,7 @@ impl Owner {
         let checkout = (&self.sources.checkout, &self.own);
         let started = ready(&mut self.servers, checkout, (key, pr), (&program, &|_| {}));
         match started.map(|server| server.version()) {
-            Ok(version) => self.started(key, version),
+            Ok(version) => self.started(key, &program, version),
             Err(NotReady::Problem(problem)) => self.trouble(key, problem),
             Err(NotReady::Failed(problem)) => {
                 let named = name.as_str();
@@ -987,7 +1011,8 @@ impl Owner {
         if starts {
             // As `started` does, field by field, as `server` borrows `servers`.
             let _cleared = self.lasts.remove(key);
-            (self.health.entry(*name).or_default()).started(server.version());
+            let flaw = health::flaw(*name, &program);
+            (self.health.entry(*name).or_default()).started(server.version(), flaw);
             // The user may have asked again, or cancelled, while the server started.
             self.queued.extend(self.incoming.try_iter());
             let newer = |message: &Message| match message {
@@ -997,6 +1022,7 @@ impl Owner {
                 | Message::Answered(..)
                 | Message::Indexing(..)
                 | Message::Exited(..)
+                | Message::Troubled(..)
                 | Message::Reconfigured
                 | Message::Checked(..)
                 | Message::Remove(..)
@@ -1069,14 +1095,29 @@ impl Owner {
                 self.files.name(PathBuf::from(path));
             }
         }
+        // A clangd that runs with a problem says it in place of nothing found (#684).
+        let problem = self.misleads(&server).filter(|_| hits.is_empty());
         match asked {
-            Asked::Again(listener) => (listener.index)(Index::Built { hits }),
+            Asked::Again(listener) => {
+                // Nothing found again leaves the answer, which says the problem.
+                (listener.index)(if problem.is_some() {
+                    Index::Stopped
+                } else {
+                    Index::Built { hits }
+                });
+            }
             Asked::First {
                 asker,
                 request,
                 indexing,
             } => {
-                asker.answer(Ok(Answer::Found { hits }));
+                asker.answer(Ok(match problem {
+                    Some(problem) => Answer::Problem {
+                        server: server.1,
+                        problem,
+                    },
+                    None => Answer::Found { hits },
+                }));
                 let listener = Listener {
                     ticket: asker.ticket,
                     index: asker.index,
@@ -1132,8 +1173,15 @@ impl Owner {
     }
 
     /// Tells the lookup that watches the index of the server `key` names how far it has got. Once the index
-    /// is built, it asks the lookup again, and once the server has ended, it says so.
+    /// is built, it asks the lookup again, and once the server has ended, it says so. A server that reports
+    /// its index no longer has the problem of one that doesn't.
     fn indexing(&mut self, key: &Key) {
+        // A clangd that reports its index after its time is indexing all the same.
+        if let Indexing::Building(_) | Indexing::Built = self.indexing_of(key)
+            && let Some(last) = self.lasts.get_mut(key)
+        {
+            last.indexed();
+        }
         if !(self.watching.as_ref()).is_some_and(|watch| watch.server == *key) {
             return;
         }
@@ -1255,13 +1303,15 @@ fn ready<'a>(
     Ok(servers.entry(key.clone()).insert_entry(server).into_mut())
 }
 
-/// Tells the thread at `own` the news of the server `key` names: its index has moved on, or it exited.
+/// Tells the thread at `own` the news of the server `key` names: its index has moved on, it exited, or it
+/// runs with a problem.
 fn news(own: &Sender<Message>, key: &Key) -> OnNews {
     let (own, key) = (own.clone(), key.clone());
-    Box::new(move |news| {
+    Arc::new(move |news| {
         let message = match news {
             News::Indexing => Message::Indexing(key.clone()),
             News::Exited(exit) => Message::Exited(key.clone(), exit),
+            News::Troubled(problem) => Message::Troubled(key.clone(), problem),
         };
         // The thread ends once it has stopped.
         let _unheard = own.send(message);

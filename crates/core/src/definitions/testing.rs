@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::{env, fs, thread};
 
 use serde_json::{Value, json};
-use tsugiki_lsp::{Event, Process, Server, Starting, Streams};
+use tsugiki_lsp::{Event, Process, Server, Starting, Streams, Uri};
 use tsugiki_test_git::git;
 
 use crate::github::CommitSha;
@@ -204,6 +204,25 @@ impl FakeClangd {
         let params = json!({"token": "backgroundIndexProgress", "value": value});
         let progress = json!({"jsonrpc": "2.0", "method": "$/progress", "params": params});
         self.says.send(Some(progress)).unwrap();
+    }
+
+    /// Reports an error with `message` on line `line`, from 0, of the open file at `file`, as clangd reports
+    /// a header it can't find.
+    pub(crate) fn diagnose(&self, file: &Path, (line, message): (u32, &str)) {
+        let start = json!({"line": line, "character": 9});
+        let end = json!({"line": line, "character": 19});
+        let diagnostic = json!({
+            "range": {"start": start, "end": end},
+            "severity": 1,
+            "code": "pp_file_not_found",
+            "source": "clang",
+            "message": message,
+        });
+        let uri = Uri::from_path(file).unwrap();
+        let params = json!({"uri": uri, "version": 1, "diagnostics": [diagnostic]});
+        let method = "textDocument/publishDiagnostics";
+        let diagnostics = json!({"jsonrpc": "2.0", "method": method, "params": params});
+        self.says.send(Some(diagnostics)).unwrap();
     }
 
     /// Writes `stderr` to the fake's error output and ends it, then ends its output and its process with

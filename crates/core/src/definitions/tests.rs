@@ -822,7 +822,7 @@ fn a_rust_analyzer_outside_a_toolchain_didnt_start_and_says_why() {
 fn not_ready(fixture: &Fixture, initialize: Initialize) -> Option<NotReady> {
     let owner = owner_of(sources(Some(fixture.checkout.clone()), None));
     let (_fake, client) = FakeClangd::starting(vec![json!(null)], initialize);
-    let mut setup = clangd::setup(&fixture.checkout.folder).unwrap();
+    let mut setup = clangd::setup(&fixture.checkout.folder, Path::new("clangd")).unwrap();
     setup.ready = Ready::Quiescent;
     let key = (repository(), ServerName::Clangd);
     let none: [String; 0] = [];
@@ -1420,10 +1420,30 @@ fn with_fake_clangd(
     sources: Sources,
     answers: Vec<serde_json::Value>,
 ) -> (Owner, FakeClangd) {
+    let answering = (answers, Duration::from_secs(3600));
+    fake_clangd_within(fixture, sources, answering, &|_| {})
+}
+
+/// [`with_fake_clangd`], where clangd gets `index_within` from the first file opened to report its index,
+/// and `before` has the fake say what it says before it answers `initialize`. Its program is the one
+/// `sources` give, beside which its built-in headers are looked for.
+fn fake_clangd_within(
+    fixture: &Fixture,
+    sources: Sources,
+    (answers, index_within): (Vec<serde_json::Value>, Duration),
+    before: &dyn Fn(&FakeClangd),
+) -> (Owner, FakeClangd) {
     let mut owner = owner_of(sources);
     let (fake, client) = FakeClangd::start(answers);
+    // What the fake says now comes before its answer to `initialize`.
+    before(&fake);
     let key = (repository(), ServerName::Clangd);
-    let setup = clangd::setup(&fixture.checkout.folder).unwrap();
+    let program = (owner.sources.servers)(ServerName::Clangd).unwrap();
+    let mut setup = clangd::setup(&fixture.checkout.folder, &program).unwrap();
+    setup.troubles = Some(clangd::Troubles {
+        program,
+        index_within,
+    });
     let changed = [EGGS_C.to_owned()];
     let server = LanguageServer::initialize(
         (setup, client),
@@ -1437,6 +1457,8 @@ fn with_fake_clangd(
         changed: changed.to_vec(),
     };
     let _none = owner.prs.insert(repository(), pr);
+    // The rows show the Repository whose PR is open, as the window opened it.
+    owner.shown = Some(repository());
     (owner, fake)
 }
 
@@ -2022,10 +2044,17 @@ fn a_check_answered_after_the_path_changed_again_is_dropped() {
     let late = Message::Checked(
         ServerName::Ty,
         PathBuf::from("old-ty.exe"),
-        Ok(Some("0.0.1".to_owned())),
+        Ok(Found {
+            version: Some("0.0.1".to_owned()),
+            flaw: None,
+        }),
     );
     let _goes_on = owner.handle(late);
-    let silent = Message::Checked(ServerName::Ty, PathBuf::new(), Ok(None));
+    let nothing = Found {
+        version: None,
+        flaw: None,
+    };
+    let silent = Message::Checked(ServerName::Ty, PathBuf::new(), Ok(nothing));
     *ty.lock().unwrap() = Some(PathBuf::new());
     let _goes_on = owner.handle(Message::Reconfigured);
     let _goes_on = owner.handle(silent);
@@ -2169,4 +2198,362 @@ fn each_start_writes_the_server_s_log_beside_the_checkout_and_keeps_the_last_one
     assert!(log.ends_with("servers/ty/ty.log"));
     assert_eq!(old, "the first start\n");
     assert!(log.is_file());
+}
+
+/// A folder unpacked from clangd's archive, as far as `files` go, and the path of its `bin\clangd.exe`,
+/// which is empty: a fake clangd runs nothing.
+fn clangd_folder(name: &str, files: &[&str]) -> PathBuf {
+    let root = crate::testing::temp_path(name);
+    for path in ["bin/clangd.exe"].iter().chain(files) {
+        let file = root.join(path);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, "").unwrap();
+    }
+    root.join("bin").join("clangd.exe")
+}
+
+/// The headers clangd has beside it.
+const BUILT_INS: &str = "lib/clang/23/include/stddef.h";
+
+/// A Repository with CPython's layout whose PR changes `Objects/eggs.c` to `head`. It holds
+/// `Include/spam.h`, and `Include/wrap.h`, which includes `corecrt_spam.h` in angle brackets.
+fn c_including(name: &str, head: &str) -> Fixture {
+    Fixture::new(
+        name,
+        &[
+            ("Include/patchlevel.h", PATCHLEVEL),
+            ("Include/spam.h", "int spam_count(int limit);\n"),
+            ("Include/wrap.h", "#include <corecrt_spam.h>\n"),
+            (EGGS_C, EGGS_C_AT_BASE),
+        ],
+        &[(EGGS_C, Some(head))],
+    )
+}
+
+/// A fake clangd at `program` on the fixture's PR, which finds nothing, with `index_within` to report its
+/// index.
+fn clangd_finding_nothing(
+    fixture: &Fixture,
+    program: PathBuf,
+    index_within: Duration,
+) -> (Owner, FakeClangd) {
+    clangd_finding_nothing_after(fixture, program, index_within, &|_| {})
+}
+
+/// [`clangd_finding_nothing`], whose fake says what `before` has it say before it answers `initialize`.
+fn clangd_finding_nothing_after(
+    fixture: &Fixture,
+    program: PathBuf,
+    index_within: Duration,
+    before: &dyn Fn(&FakeClangd),
+) -> (Owner, FakeClangd) {
+    let checkout = Arc::new(Mutex::new(fixture.checkout.clone()));
+    let sources = clangd_sources(checkout, program);
+    fake_clangd_within(fixture, sources, (vec![json!([])], index_within), before)
+}
+
+/// Handles the owner's messages up to the first that says clangd runs with a problem, and gives clangd's
+/// status then.
+fn troubled_next(owner: &mut Owner) -> ServerStatus {
+    loop {
+        let message = owner.incoming.recv_timeout(PATIENCE).unwrap();
+        let troubled = matches!(message, Message::Troubled(..));
+        let _goes_on = owner.handle(message);
+        if troubled {
+            return clangd_status(owner);
+        }
+    }
+}
+
+/// What a lookup in `Objects/eggs.c` answers, which finds nothing.
+fn nothing_found(owner: &mut Owner, fixture: &Fixture) -> Result<Answer, Error> {
+    let lookup = Lookup {
+        repository: repository(),
+        at: fixture.checkout.at.clone(),
+        path: EGGS_C.to_owned(),
+        side: DiffEnd::Head,
+        line: 1,
+        column: 0,
+    };
+    look(owner, &lookup)
+}
+
+/// The path of `Objects/eggs.c` as clangd names it.
+fn eggs_c(fixture: &Fixture) -> PathBuf {
+    plain(&fixture.checkout.folder).join(EGGS_C)
+}
+
+/// What a clangd that runs with `problem` says in place of nothing found.
+fn clangd_problem(problem: ServerProblem) -> Result<Answer, Error> {
+    Ok(Answer::Problem {
+        server: ServerName::Clangd,
+        problem,
+    })
+}
+
+#[test]
+fn a_clangd_without_its_built_in_headers_says_so_once_it_can_t_find_stddef_h() {
+    let fixture = c_including("definitions-built-ins", "#include <stddef.h>\n");
+    let lone = clangd_folder("definitions-built-ins-lone", &[]);
+    let whole = clangd_folder("definitions-built-ins-whole", &[BUILT_INS]);
+    let (mut owner, fake) = clangd_finding_nothing(&fixture, lone, PATIENCE);
+    let (mut other, other_fake) = clangd_finding_nothing(&fixture, whole, PATIENCE);
+    let not_found = (0, "'stddef.h' file not found");
+
+    fake.diagnose(&eggs_c(&fixture), not_found);
+    let status = troubled_next(&mut owner);
+    let answer = nothing_found(&mut owner, &fixture);
+    other_fake.diagnose(&eggs_c(&fixture), not_found);
+    let other_status = troubled_next(&mut other);
+
+    let problem = ServerProblem::BuiltInHeadersMissing;
+    assert_eq!(
+        status,
+        ServerStatus::Problem {
+            problem: problem.clone()
+        }
+    );
+    assert_eq!(answer, clangd_problem(problem));
+    // With its built-in headers there, `stddef.h` is a header of the system's.
+    let header = "stddef.h".to_owned();
+    let problem = ServerProblem::SystemHeadersMissing { header };
+    assert_eq!(other_status, ServerStatus::Problem { problem });
+}
+
+/// Sources whose clangd is wherever `clangd` says at the moment.
+fn clangd_settable(fixture: &Fixture, clangd: &Arc<Mutex<Option<PathBuf>>>) -> Sources {
+    let (checkout, clangd) = (fixture.checkout.clone(), Arc::clone(clangd));
+    Sources {
+        checkout: Box::new(move |_| Some(checkout.clone())),
+        servers: Box::new(move |server| {
+            (server == ServerName::Clangd)
+                .then(|| clangd.lock().unwrap().clone())
+                .flatten()
+        }),
+        idle: idle_after(Duration::from_secs(3600)),
+        changed: Box::new(|_| {}),
+    }
+}
+
+/// Sets clangd's path to `path`, as Apply does, and gives clangd's row once its check has answered.
+fn set_clangd(owner: &mut Owner, clangd: &Mutex<Option<PathBuf>>, path: PathBuf) -> ServerRow {
+    *clangd.lock().unwrap() = Some(path);
+    let _goes_on = owner.handle(Message::Reconfigured);
+    loop {
+        let message = owner.incoming.recv_timeout(PATIENCE).unwrap();
+        let checked = matches!(message, Message::Checked(..));
+        let _goes_on = owner.handle(message);
+        if checked {
+            return owner.row(ServerName::Clangd);
+        }
+    }
+}
+
+#[test]
+fn apply_of_a_clangd_unpacked_without_its_built_in_headers_says_so_and_shows_its_version() {
+    let fixture = c_including("definitions-built-ins-apply", "int eggs;\n");
+    // The real clangd, linked into a folder that has nothing else.
+    let lone = clangd_folder("definitions-built-ins-apply-lone", &[]);
+    std::fs::remove_file(&lone).unwrap();
+    let clangd = super::testing::clangd();
+    if std::fs::hard_link(&clangd, &lone).is_err() {
+        let _copied = std::fs::copy(&clangd, &lone).unwrap();
+    }
+    let path = Arc::new(Mutex::new(None));
+    let mut owner = owner_of(clangd_settable(&fixture, &path));
+
+    let unpacked_alone = set_clangd(&mut owner, &path, lone);
+    // A start doesn't clear what the program lacks, though clangd may find another `stddef.h`.
+    let pr = Pr {
+        at: fixture.checkout.at.clone(),
+        changed: vec![EGGS_C.to_owned()],
+    };
+    let _goes_on = owner.handle(Message::Opened(repository(), pr.clone()));
+    let started_alone = owner.row(ServerName::Clangd).status;
+    let whole = set_clangd(&mut owner, &path, clangd);
+    // The PR opens again, as the window opens it anew.
+    let _forgotten = owner.prs.remove(&repository());
+    let _goes_on = owner.handle(Message::Opened(repository(), pr));
+    let started_whole = owner.row(ServerName::Clangd).status;
+    owner.cancel_running();
+    let all: Vec<Key> = owner.servers.keys().cloned().collect();
+    wait_all(owner.stop_servers(&all), Instant::now() + PATIENCE);
+
+    let problem = ServerProblem::BuiltInHeadersMissing;
+    let missing = ServerStatus::Problem { problem };
+    assert_eq!(unpacked_alone.status, missing);
+    assert_eq!(started_alone, missing);
+    let version = Some(FoundVersion {
+        version: "23.1.0".to_owned(),
+        tested: true,
+    });
+    assert_eq!(unpacked_alone.version, version);
+    assert_eq!(whole.status, ServerStatus::Ready);
+    assert_eq!(started_whole, ServerStatus::Running);
+}
+
+const INCLUDES: &str = "\
+#include <spam.h>
+#include \"generated.h\"
+#include \"wrap.h\"
+#include <stdlib.h>
+";
+
+#[test]
+fn a_system_header_clangd_can_t_find_says_so_and_one_of_the_repository_s_says_nothing() {
+    let fixture = c_including("definitions-system-headers", INCLUDES);
+    let program = clangd_folder("definitions-system-headers-clangd", &[BUILT_INS]);
+    let (mut owner, fake) = clangd_finding_nothing(&fixture, program, PATIENCE);
+    let file = eggs_c(&fixture);
+
+    // The Repository holds `Include/spam.h`, and a header in quotes is the Repository's.
+    fake.diagnose(&file, (0, "'spam.h' file not found"));
+    fake.diagnose(&file, (1, "'generated.h' file not found"));
+    // A header an included file includes, without the note that says where.
+    fake.diagnose(
+        &file,
+        (2, "In included file: 'corecrt_spam.h' file not found"),
+    );
+    fake.diagnose(&file, (3, "'stdlib.h' file not found"));
+    let status = troubled_next(&mut owner);
+    let answer = nothing_found(&mut owner, &fixture);
+    // A header the system's headers include, once clangd can't find the system's, explains no more.
+    let wrap = plain(&fixture.checkout.folder)
+        .join("Include")
+        .join("wrap.h");
+    let nested = format!(
+        "In included file: 'corecrt_spam.h' file not found\n\n{}:1:10:\nnote: error occurred here",
+        wrap.display()
+    );
+    fake.diagnose(&file, (2, &nested));
+    let still = troubled_next(&mut owner);
+
+    let header = "stdlib.h".to_owned();
+    let problem = ServerProblem::SystemHeadersMissing { header };
+    let said = ServerStatus::Problem {
+        problem: problem.clone(),
+    };
+    assert_eq!(status, said);
+    assert_eq!(answer, clangd_problem(problem));
+    assert_eq!(still, said);
+}
+
+#[test]
+fn a_clangd_that_never_reports_its_index_says_it_isn_t_indexing() {
+    let fixture = c_files("definitions-not-indexing");
+    let program = clangd_folder("definitions-not-indexing-clangd", &[BUILT_INS]);
+    let soon = Duration::from_millis(300);
+    // This fake reports its index before it answers `initialize`, so the report comes first however slow
+    // the machine.
+    let indexes_at_once: &dyn Fn(&FakeClangd) = &|fake| begin(fake, 1);
+    let (mut indexing, _indexing_fake) =
+        clangd_finding_nothing_after(&fixture, program.clone(), soon, indexes_at_once);
+    let (mut owner, _fake) = clangd_finding_nothing(&fixture, program, soon);
+
+    index_moved_on(&mut indexing, 1);
+    let status = troubled_next(&mut owner);
+    let answer = nothing_found(&mut owner, &fixture);
+    thread::sleep(soon);
+    let heard: Vec<Message> = indexing.incoming.try_iter().collect();
+
+    let problem = ServerProblem::NotIndexing;
+    assert_eq!(
+        status,
+        ServerStatus::Problem {
+            problem: problem.clone()
+        }
+    );
+    assert_eq!(answer, clangd_problem(problem));
+    assert!(
+        !heard
+            .iter()
+            .any(|message| matches!(message, Message::Troubled(..)))
+    );
+}
+
+#[test]
+fn a_clangd_that_reports_its_index_after_its_time_is_indexing_after_all() {
+    let fixture = c_files("definitions-indexing-late");
+    let program = clangd_folder("definitions-indexing-late-clangd", &[BUILT_INS]);
+    let soon = Duration::from_millis(300);
+    let (mut owner, fake) = clangd_finding_nothing(&fixture, program, soon);
+
+    let late = troubled_next(&mut owner);
+    begin(&fake, 1);
+    index_moved_on(&mut owner, 1);
+    let status = clangd_status(&owner);
+    let answer = nothing_found(&mut owner, &fixture);
+
+    let problem = ServerProblem::NotIndexing;
+    assert_eq!(late, ServerStatus::Problem { problem });
+    assert_eq!(status, ServerStatus::Running);
+    assert_eq!(answer, Ok(Answer::Found { hits: Vec::new() }));
+}
+
+#[test]
+fn nothing_found_again_once_the_index_is_built_leaves_the_problem_that_says_why() {
+    let fixture = c_including("definitions-problem-again", "#include <stdlib.h>\n");
+    let program = clangd_folder("definitions-problem-again-clangd", &[BUILT_INS]);
+    let (mut owner, fake) = clangd_finding_nothing(&fixture, program, PATIENCE);
+    let lookup = Lookup {
+        repository: repository(),
+        at: fixture.checkout.at.clone(),
+        path: EGGS_C.to_owned(),
+        side: DiffEnd::Head,
+        line: 1,
+        column: 0,
+    };
+
+    fake.diagnose(&eggs_c(&fixture), (0, "'stdlib.h' file not found"));
+    let _troubled = troubled_next(&mut owner);
+    let asked = ask(&mut owner, &lookup, Ticket(1));
+    let answer = answer_of(&mut owner, &asked);
+    begin(&fake, 1);
+    fake.progress(json!({"kind": "end"}));
+    let mut news = heard_next(&mut owner, &asked);
+    while let Index::Building { .. } = news {
+        news = heard_next(&mut owner, &asked);
+    }
+
+    let header = "stdlib.h".to_owned();
+    let problem = ServerProblem::SystemHeadersMissing { header };
+    assert_eq!(answer, clangd_problem(problem));
+    assert_eq!(news, Index::Stopped);
+    assert_eq!(fake.asked(), 2);
+}
+
+#[test]
+fn what_one_repository_s_clangd_reports_leaves_another_s_be() {
+    let fixture = c_including("definitions-troubled-elsewhere", "#include <stdlib.h>\n");
+    let program = clangd_folder("definitions-troubled-elsewhere-clangd", &[BUILT_INS]);
+    let (mut owner, fake) = clangd_finding_nothing(&fixture, program, PATIENCE);
+    let other = (
+        RepositoryName::parse("tsugiki/tsugiki").unwrap(),
+        ServerName::Clangd,
+    );
+    let _none = (owner.lasts).insert(other.clone(), Last::Problem(ServerProblem::NotIndexing));
+
+    let answer = nothing_found(&mut owner, &fixture);
+    fake.diagnose(&eggs_c(&fixture), (0, "'stdlib.h' file not found"));
+    let _troubled = troubled_next(&mut owner);
+
+    assert_eq!(answer, Ok(Answer::Found { hits: Vec::new() }));
+    assert!(matches!(
+        owner.lasts.get(&other),
+        Some(Last::Problem(ServerProblem::NotIndexing))
+    ));
+}
+
+#[test]
+fn a_problem_of_a_clangd_stopped_since_is_dropped() {
+    let fixture = c_files("definitions-troubled-late");
+    let mut owner = owner_of(clangd_sources(
+        Arc::new(Mutex::new(fixture.checkout.clone())),
+        PathBuf::from("clangd"),
+    ));
+
+    let key = (repository(), ServerName::Clangd);
+    let _goes_on = owner.handle(Message::Troubled(key, ServerProblem::NotIndexing));
+
+    assert_eq!(clangd_status(&owner), ServerStatus::Ready);
 }

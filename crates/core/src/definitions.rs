@@ -291,15 +291,13 @@ impl Owner {
             return Ok(Answer::NotSetUp);
         };
         match ty.look_up(lookup, patience) {
-            Ok(answer) => {
-                if let Answer::Found { hits } = &answer {
-                    for hit in hits {
-                        if let Place::Outside { path } = &hit.place {
-                            self.files.name(PathBuf::from(path));
-                        }
+            Ok(hits) => {
+                for hit in &hits {
+                    if let Place::Outside { path } = &hit.place {
+                        self.files.name(PathBuf::from(path));
                     }
                 }
-                Ok(answer)
+                Ok(Answer::Found { hits })
             }
             Err(Failure::Slow(problem)) => Err(problem),
             Err(Failure::Broken(problem)) => {

@@ -117,3 +117,20 @@ fn a_file_outside_the_repository_is_read_from_disk_once_a_server_named_it() {
     assert_eq!(unnamed, Err(Error::new(ErrorKind::NotFound, &message)));
     assert_eq!(read, Ok(code(3, &["def print("])));
 }
+
+#[test]
+fn a_named_file_that_has_gone_from_disk_says_so() {
+    let path = temp_path("definitions-code-gone").join("builtins.pyi");
+    let files = HitFiles::default();
+    files.name(path.clone());
+
+    let read = files.read(
+        Path::new(""),
+        &HitFile::Outside { path: path.clone() },
+        1..2,
+    );
+
+    let message = read.unwrap_err().message;
+    let start = format!("Tsugiki can't read {}: ", path.display());
+    assert!(message.starts_with(&start), "{message}");
+}

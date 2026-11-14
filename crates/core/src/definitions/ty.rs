@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 use tsugiki_lsp::{Document, Event, Init, Language, Launch, Location, Pending, Position, Server};
 
-use super::{Answer, DiffEnd, Hit, Lookup, PATIENCE, Place, failed, plain, slashed, uri};
+use super::{DiffEnd, Hit, Lookup, PATIENCE, Place, failed, plain, slashed, uri};
 use crate::diff;
 use crate::error::Error;
 use crate::mirror::{LookupAt, LookupCheckout};
@@ -138,12 +138,13 @@ impl Ty {
         self.server.shutdown()
     }
 
-    /// Asks ty, and waits up to `patience` for its answer. A lookup ty hasn't answered by then is cancelled.
+    /// Asks ty, and waits up to `patience` for the places it names. A lookup ty hasn't answered by then is
+    /// cancelled.
     pub(super) fn look_up(
         &mut self,
         lookup: &Lookup,
         patience: Duration,
-    ) -> Result<Answer, Failure> {
+    ) -> Result<Vec<Hit>, Failure> {
         let _unread = self.events.try_iter().count();
         self.show(lookup.side);
         let at = Position {
@@ -162,7 +163,7 @@ impl Ty {
         let hits = (definitions.into_locations().iter())
             .map(|location| self.hit(lookup.side, location))
             .collect();
-        Ok(Answer::Found { hits })
+        Ok(hits)
     }
 
     /// Waits until ty's process has ended, or until `until`.

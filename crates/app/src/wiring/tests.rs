@@ -1733,6 +1733,10 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     };
     let code_at_head = code(&head);
     let code_at_base = code(&base);
+    // A file outside the Repository can be read only once a server named it in a hit.
+    let outside = json!({ "kind": "outside", "path": "C:/elsewhere/secret.txt" });
+    let unnamed = json!({ "repository": CPYTHON, "file": outside, "start": 1, "end": 2 });
+    let unnamed = wired.ask("definition_code", json!({ "code": unnamed }));
     let refused = wired.ask(
         "definitions",
         json!({ "lookup": { "repository": CPYTHON, "base": "main", "head": head, "path": "Lib/spam.py", "side": "head", "line": 1, "column": 0 } }),
@@ -1751,6 +1755,8 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     let lines = |line_15: &str| json!({ "count": 30, "lines": ["x14 = 14", line_15, "x16 = 16"] });
     assert_eq!(code_at_head, Ok(lines("x15 = 'fifteen'")));
     assert_eq!(code_at_base, Ok(lines("x15 = 15")));
+    let unnamed = unnamed.unwrap_err()["message"].clone();
+    assert_eq!(unnamed, "No language server named C:/elsewhere/secret.txt.");
     assert_eq!(refused.unwrap_err()["message"], "\"main\" isn't a commit.");
 }
 

@@ -5,7 +5,7 @@
   import { untrack } from "svelte";
   import type { About } from "$lib/state/about.svelte";
   import type { SettingsState } from "$lib/state/settings.svelte";
-  import { SETTINGS_PAGES, SettingsDialog, type Shown } from "$lib/state/settings-dialog.svelte";
+  import { SETTINGS_PAGES, SettingsDialog, type SettingsPage } from "$lib/state/settings-dialog.svelte";
   import type { Status } from "$lib/state/status.svelte";
   import AccountPage from "./AccountPage.svelte";
   import GeneralPage from "./GeneralPage.svelte";
@@ -15,6 +15,7 @@
     settings,
     status,
     about,
+    onreread,
     onclose,
   }: {
     /** The settings in force, which the dialog previews its changes on. */
@@ -23,17 +24,25 @@
     status: Status | undefined;
     /** What the core says about itself, which says where this build's source is. */
     about: About | undefined;
+    /** Runs once the dialog has read the files again, so the rest of the window takes what they say now,
+     * such as a theme edited by hand. */
+    onreread: () => void;
     onclose: () => void;
   } = $props();
 
   const dialog = new SettingsDialog(untrack(() => settings));
-  void dialog.open();
+  void dialog.open().then((reread) => {
+    if (reread) onreread();
+  });
 
   /** The name of what the right side shows, for its region. */
   const title = $derived("repository" in dialog.shown ? dialog.shown.repository : dialog.shown.page);
-  /** Whether the left column's entry for `shown` is the one open, for its `aria-current`. */
-  const current = (shown: Shown) =>
-    JSON.stringify(shown) === JSON.stringify(dialog.shown) ? "page" : undefined;
+  /** Whether the right side shows `page`, for its entry's `aria-current`. */
+  const pageShown = (page: SettingsPage) =>
+    "page" in dialog.shown && dialog.shown.page === page ? "page" : undefined;
+  /** Whether the right side shows `repository`'s page, for its entry's `aria-current`. */
+  const repositoryShown = (repository: string) =>
+    "repository" in dialog.shown && dialog.shown.repository === repository ? "page" : undefined;
   /** A Repository's name without its owner, which its title gives in full. */
   const short = (repository: string) => repository.slice(repository.indexOf("/") + 1);
 
@@ -75,20 +84,21 @@
       <nav aria-label="Settings pages">
         {#each SETTINGS_PAGES as page (page)}
           <button
-            aria-current={current({ page })}
+            aria-current={pageShown(page)}
             onclick={() => {
-              dialog.show({ page });
+              dialog.shown = { page };
             }}>{page}</button
           >
           {#if page === "Repositories"}
-            {#each dialog.repositories as repository (repository)}
+            <!-- By place: a name written twice in settings.toml lists twice. -->
+            {#each dialog.repositories as repository, at (at)}
               <button
                 class="repository"
                 aria-label={repository}
                 title={repository}
-                aria-current={current({ repository })}
+                aria-current={repositoryShown(repository)}
                 onclick={() => {
-                  dialog.show({ repository });
+                  dialog.shown = { repository };
                 }}><span class="mono">{short(repository)}</span></button
               >
             {/each}

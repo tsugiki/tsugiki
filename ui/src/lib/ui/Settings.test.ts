@@ -39,10 +39,12 @@ const refused = (message: string) => ({ status: "error", error: { kind: "interna
 /** The settings in force: the defaults, as the core read them at start. */
 let state: SettingsState;
 /** The dialog's props, with the status online and this release's About. */
+const onreread = vi.fn();
 const props = (onclose = () => {}): ComponentProps<typeof Settings> => ({
   settings: state,
   status: online,
   about,
+  onreread,
   onclose,
 });
 const dialog = () => screen.getByRole("dialog", { name: "Settings" });
@@ -65,7 +67,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   core.tokenSource.mockResolvedValue("gh");
   core.rereadSettings.mockResolvedValue(ok(loaded(settingsWith())));
-  core.applySettings.mockImplementation(async (settings: Values) => ok(loaded(settings)));
+  core.applySettings.mockImplementation(async (changes: Partial<Values>) =>
+    ok(loaded({ ...settingsWith(), ...changes })),
+  );
   state = new SettingsState();
   state.take(loaded(settingsWith()));
 });
@@ -87,6 +91,19 @@ describe("the Settings dialog", () => {
     expect(entries[3]?.getAttribute("title")).toBe("some-maintainer/gcmon");
     expect(entries[0]?.getAttribute("aria-current")).toBe("page");
     expect(screen.getByRole("region", { name: "General" })).toBeTruthy();
+  });
+
+  it("lists a Repository written twice in settings.toml twice", () => {
+    state.take(
+      loaded(
+        settingsWith((settings) => {
+          const cpython = () => ({ name: "python/cpython", conventions: "cpython" as const, filters: [] });
+          settings.repositories = [cpython(), cpython()];
+        }),
+      ),
+    );
+    render(Settings, props());
+    expect(within(nav()).getAllByRole("button", { name: "python/cpython" })).toHaveLength(2);
   });
 
   it("shows the page picked in its left column", async () => {
@@ -152,19 +169,28 @@ describe("the Settings dialog", () => {
     expect(releasesBox()).toHaveProperty("checked", false);
     expect(statusBarBox()).toHaveProperty("checked", true);
     expect(core.rereadSettings).toHaveBeenCalledOnce();
+    // The rest of the window, such as the theme, takes what the files say now too.
+    expect(onreread).toHaveBeenCalledOnce();
     expect(state.settings?.releases.check).toBe(false);
     expect(state.problems).toEqual(["settings.toml, line 9: expected a value"]);
     // What the files said as it opened is what Cancel would put back, so nothing has changed yet.
     expect(button("OK")).toBeTruthy();
   });
 
-  it("says why it couldn't read the files again, and shows the settings in force", async () => {
+  it("says why it couldn't read the files again, keeps its controls off, and closes on OK", async () => {
     core.rereadSettings.mockResolvedValue(refused("Tsugiki stopped saving its settings."));
-    await opened();
-    expect(screen.getByRole("alert").textContent).toBe(
+    const onclose = vi.fn();
+    render(Settings, props(onclose));
+    expect((await screen.findByRole("alert")).textContent).toBe(
       "Tsugiki can't read the settings files again: Tsugiki stopped saving its settings.",
     );
-    expect(statusBarBox()).toHaveProperty("checked", true);
+    expect(statusBarBox().hasAttribute("disabled")).toBe(true);
+    expect(onreread).not.toHaveBeenCalled();
+
+    await fireEvent.click(button("OK"));
+    expect(onclose).toHaveBeenCalledOnce();
+    expect(core.applySettings).not.toHaveBeenCalled();
+    expect(state.settings).toEqual(settingsWith());
   });
 
   it("closes on OK with nothing changed, and saves nothing", async () => {
@@ -224,14 +250,19 @@ describe("Settings › General", () => {
     await vi.waitFor(() => {
       expect(onclose).toHaveBeenCalledOnce();
     });
-    expect(core.applySettings).toHaveBeenCalledWith(
-      settingsWith((settings) => {
-        settings.status_bar.visible = false;
-        settings.releases.check = false;
-      }),
-    );
+    expect(core.applySettings).toHaveBeenCalledWith({
+      status_bar: { visible: false },
+      releases: { check: false },
+    });
     expect(state.statusBarVisible).toBe(false);
     expect(state.settings?.releases.check).toBe(false);
+  });
+
+  it("sends Apply only the tables it changed, so a hand edit to the others stays", async () => {
+    await opened();
+    await fireEvent.click(releasesBox());
+    await fireEvent.click(button("Apply"));
+    expect(core.applySettings).toHaveBeenCalledWith({ releases: { check: false } });
   });
 
   for (const [way, cancel] of [

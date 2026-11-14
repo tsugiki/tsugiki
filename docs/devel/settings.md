@@ -11,13 +11,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   edge or corner, and can be maximized; its size and place are kept per machine. The Account page is in
   [token.md](token.md). This was chosen out of three variants prototyped on branch `prototype/app-shell`: a
   searchable list like VS Code's, this dialog, and editing the config files as text.
-- The dialog opens on General, until it reopens on the page showing when it last closed. As it opens it
-  reads both files again, so a hand edit made since start-up shows in it and takes effect on the window.
-  Each change shows on the window at once: clearing Show the status bar hides the status bar behind the
-  dialog. Apply saves the changes and closes; with nothing changed the button reads OK and closes without
-  saving. Cancel, Esc, ✕ or a press outside the dialog puts every change back. While Apply saves, Cancel and
-  Esc wait for it, and a save the core refuses keeps the dialog open with the reason under the pages, where
-  Cancel still puts the changes back. The controls wait until the files have been read again.
+- The dialog opens on General. As it opens it reads both files again, so a hand edit made since start-up
+  shows in it and takes effect on the window, the theme included. The controls wait until then; if the files
+  can't be read, they stay off and the dialog says why. Each change shows on the window at once: clearing
+  Show the status bar hides the status bar behind the dialog. Apply saves the tables the dialog changed over
+  what the file says then, so a hand edit to another table made while the dialog was open stays, and closes;
+  with nothing changed the button reads OK and closes without saving. Cancel, Esc, ✕ or a press outside the
+  dialog puts every change back. While Apply saves, Cancel and Esc wait for it, and a save the core refuses
+  keeps the dialog open with the reason under the pages, where Cancel still puts the changes back.
 - Each setting carries a label for where it is stored: settings file, this machine, database or keychain,
   with the file's name or "on this machine only" in its tooltip.
 - General groups its settings; each group is a heading with its rows under it. Status bar has Show the

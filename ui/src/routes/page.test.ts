@@ -140,9 +140,9 @@ beforeEach(() => {
   });
   core.settings.mockResolvedValue(structuredClone(SETTINGS));
   core.rereadSettings.mockResolvedValue({ status: "ok", data: structuredClone(SETTINGS) });
-  core.applySettings.mockImplementation(async (settings: unknown) => ({
+  core.applySettings.mockImplementation(async (changes: object) => ({
     status: "ok",
-    data: { settings, problems: [] },
+    data: { settings: { ...structuredClone(SETTINGS.settings), ...changes }, problems: [] },
   }));
 });
 
@@ -1114,7 +1114,7 @@ describe("the Settings dialog", () => {
     });
     expect(screen.queryByRole("button", { name: "Not synced yet" })).toBeNull();
     expect(core.applySettings).toHaveBeenCalledOnce();
-    expect(core.applySettings.mock.calls[0]?.[0]).toMatchObject({ status_bar: { visible: false } });
+    expect(core.applySettings).toHaveBeenCalledWith({ status_bar: { visible: false } });
   });
 
   it("shows a hand edit made since start-up as it opens, and the window takes it", async () => {
@@ -1123,6 +1123,7 @@ describe("the Settings dialog", () => {
     core.rereadSettings.mockResolvedValue({ status: "ok", data: hidden });
     const row = await onRow();
     await screen.findByRole("button", { name: "Not synced yet" });
+    const themeReads = core.themes.mock.calls.length;
 
     await ctrlComma(row);
     await vi.waitFor(() => {
@@ -1130,6 +1131,8 @@ describe("the Settings dialog", () => {
     });
     expect(screen.queryByRole("button", { name: "Not synced yet" })).toBeNull();
     expect(screen.getByRole("button", { name: "OK" })).toBeTruthy();
+    // The theme, which the window holds apart from the settings, takes a hand edit to it too.
+    expect(core.themes).toHaveBeenCalledTimes(themeReads + 1);
   });
 
   it("opens from ⚙ in the Sidebar, and gives the focus back to it", async () => {

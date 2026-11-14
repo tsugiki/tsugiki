@@ -282,6 +282,7 @@
 {#if settingsOpen}
   <Settings
     {settings}
+    onreread={() => void theme.load()}
     status={status.status}
     about={about.about}
     onclose={() => {

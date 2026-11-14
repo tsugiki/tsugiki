@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands } from "$lib/data/bindings";
-import { SettingsState } from "./settings.svelte";
+import { type LoadedSettings, SettingsState } from "./settings.svelte";
 
 vi.mock("$lib/data/bindings", () => ({ commands: { settings: vi.fn() } }));
 
@@ -67,5 +67,43 @@ describe("SettingsState", () => {
     await state.load();
     expect(state.statusBarVisible).toBe(true);
     expect(state.problems).toEqual(["Tsugiki can't read its settings: Error: the core has gone"]);
+  });
+
+  /** What the core read, with the status bar `visible` or not. */
+  const read = (visible: boolean): LoadedSettings => ({
+    settings: {
+      status_bar: { visible },
+      releases: { check: true },
+      appearance: { theme: "system", light_theme: "VS Code Light Modern", dark_theme: "VS Code Dark Modern" },
+      diff: { files: "all" },
+      repositories: [],
+    },
+    problems: [],
+  });
+
+  it("leaves settings taken after a load asked, such as the Settings dialog's", async () => {
+    const answer = Promise.withResolvers<LoadedSettings>();
+    vi.mocked(commands.settings).mockReturnValue(answer.promise);
+    const state = new SettingsState();
+    const loading = state.load();
+    state.take(read(false));
+    answer.resolve(read(true));
+    await loading;
+    expect(state.statusBarVisible).toBe(false);
+  });
+
+  it("leaves the Settings dialog's changes while they show, and loads again once it closes", async () => {
+    vi.mocked(commands.settings).mockResolvedValue(read(true));
+    const state = new SettingsState();
+    state.take(read(true));
+    state.preview(true);
+    // The dialog's change, which isn't a take.
+    state.settings = read(false).settings;
+    await state.load();
+    expect(state.statusBarVisible).toBe(false);
+
+    state.preview(false);
+    await state.load();
+    expect(state.statusBarVisible).toBe(true);
   });
 });

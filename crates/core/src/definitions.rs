@@ -312,6 +312,14 @@ struct Running {
     canceller: Canceller,
 }
 
+impl Running {
+    /// Cancels the lookup: the server stops working on it, and its asker hears it was cancelled.
+    fn cancel(self) {
+        self.canceller.cancel();
+        self.asker.answer(Ok(Answer::Cancelled));
+    }
+}
+
 /// A PR on screen: its diff's two ends, and the paths at the head of the files it changes that a server
 /// reads.
 #[derive(Debug, Clone)]
@@ -442,13 +450,12 @@ impl Owner {
             })
             .map(|(key, _)| key.clone())
             .collect();
-        for key in stale {
-            if self.asks(&key) {
-                self.cancel_running();
-            }
-            if let Some(server) = self.servers.remove(&key) {
-                let _stopping = server.shutdown();
-            }
+        let asked = self
+            .running
+            .take_if(|running| stale.contains(&running.server));
+        asked.into_iter().for_each(Running::cancel);
+        for key in &stale {
+            let _stopping = self.servers.remove(key).map(|server| server.shutdown());
         }
     }
 
@@ -465,11 +472,11 @@ impl Owner {
             // The server that the lookup running asked has stopped.
             Ok(()) if replaces && self.asks(key) => self.cancel_running(),
             Ok(()) => {}
-            Err(problem) => log::warn!(
-                "Tsugiki couldn't start {} for {repository}: {}",
-                name.as_str(),
-                problem.message
-            ),
+            Err(problem) => {
+                let named = name.as_str();
+                let why = problem.message;
+                log::warn!("Tsugiki couldn't start {named} for {repository}: {why}");
+            }
         }
     }
 
@@ -584,10 +591,7 @@ impl Owner {
     /// Cancels the lookup running, if one is: the server stops working on it, and its asker hears it was
     /// cancelled.
     fn cancel_running(&mut self) {
-        if let Some(running) = self.running.take() {
-            running.canceller.cancel();
-            running.asker.answer(Ok(Answer::Cancelled));
-        }
+        self.running.take().into_iter().for_each(Running::cancel);
     }
 
     /// Whether the lookup running asked the server `key` names.

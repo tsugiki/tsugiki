@@ -447,12 +447,13 @@ fn the_files_tab_reading_its_pr_again_starts_nothing_again() {
     let fixture = cpython("definitions-again");
     let asked = Arc::new(AtomicU32::new(0));
     let counted = Arc::clone(&asked);
+    // Each start looks for the checkout first.
     let mut owner = owner_of(Sources {
-        checkout: Box::new(|_| None),
-        servers: Box::new(move |_| {
+        checkout: Box::new(move |_| {
             let _before = counted.fetch_add(1, Ordering::Relaxed);
-            Some(PathBuf::from("no-ty.exe"))
+            None
         }),
+        servers: Box::new(move |_| Some(PathBuf::from("no-ty.exe"))),
         idle: idle_after(Duration::from_secs(3600)),
         changed: Box::new(|_| {}),
     });
@@ -460,13 +461,11 @@ fn the_files_tab_reading_its_pr_again_starts_nothing_again() {
         at: fixture.checkout.at.clone(),
         changed: changed(),
     };
-    // The thread read each server's path as it started, for what it knows of them.
-    let before = asked.load(Ordering::Relaxed);
 
     owner.opened(&repository(), pr.clone());
     owner.opened(&repository(), pr);
 
-    assert_eq!(asked.load(Ordering::Relaxed) - before, 1);
+    assert_eq!(asked.load(Ordering::Relaxed), 1);
 }
 
 #[test]
@@ -2032,6 +2031,75 @@ fn a_check_answered_after_the_path_changed_again_is_dropped() {
     let _goes_on = owner.handle(silent);
 
     assert_eq!(ty_row(&owner.told).version, None);
+}
+
+#[test]
+fn a_path_changed_in_the_settings_counts_once_the_thread_hears_of_the_change() {
+    let fixture = cpython("definitions-unheard");
+    let ty = Arc::new(Mutex::new(None));
+    let idle = Arc::new(Mutex::new(Duration::from_secs(3600)));
+    let (rows, _heard) = mpsc::channel();
+    let mut owner = owner_of(settable(&fixture, (&ty, &idle), rows));
+
+    *ty.lock().unwrap() = Some(fixture.checkout.folder.join("no-ty.exe"));
+    let unheard = look(
+        &mut owner,
+        &lookup(&fixture, DiffEnd::Head, 12, "only_head"),
+    );
+    let row = ty_row(&owner.told);
+    let _goes_on = owner.handle(Message::Reconfigured);
+    let heard = ty_row(&owner.told);
+
+    assert!(
+        matches!(
+            unheard,
+            Ok(Answer::NotSetUp {
+                server: ServerName::Ty
+            })
+        ),
+        "{unheard:?}"
+    );
+    assert_eq!(row.status, ServerStatus::NotSetUp);
+    assert_eq!(heard.status, ServerStatus::Ready);
+}
+
+#[test]
+fn the_rows_show_the_servers_of_the_repository_last_opened_or_looked_up_in() {
+    let fixture = cpython("definitions-rows-shown");
+    let other = RepositoryName::parse("tsugiki/tsugiki").unwrap();
+    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty())));
+    let pr = Pr {
+        at: fixture.checkout.at.clone(),
+        changed: changed(),
+    };
+    let crashed = ServerProblem::Stopped {
+        code: Some(3),
+        stderr_tail: "ty broke\n".to_owned(),
+    };
+    // python/cpython's ty ended on its own, and nothing has started it again.
+    owner.trouble(&ty_of(repository()), crashed.clone());
+    let idle = Duration::from_secs(1);
+    let readme = Lookup {
+        path: "README.rst".to_owned(),
+        ..lookup(&fixture, DiffEnd::Head, 12, "only_head")
+    };
+
+    let _goes_on = owner.handle(Message::Opened(other.clone(), pr));
+    let running = ty_row(&owner.told);
+    owner.stop_idle(Instant::now() + idle * 10, idle);
+    owner.publish();
+    let stopped = ty_row(&owner.told);
+    let no_server = look(&mut owner, &readme);
+    let back = ty_row(&owner.told);
+    owner.remove(&repository());
+    owner.publish();
+    let removed = ty_row(&owner.told);
+
+    assert_eq!(running.status, ServerStatus::Running);
+    assert_eq!(stopped.status, ServerStatus::Idle);
+    assert!(matches!(no_server, Ok(Answer::NoServer)), "{no_server:?}");
+    assert_eq!(back.status, ServerStatus::Problem { problem: crashed });
+    assert_eq!(removed.status, ServerStatus::Ready);
 }
 
 #[test]

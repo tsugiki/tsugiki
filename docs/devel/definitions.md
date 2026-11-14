@@ -309,13 +309,20 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   says "This isn't clangd: <first line>". A program that doesn't start says "clangd didn't start: <OS
   error>". The version is the first word of that line that starts with a digit, and one we didn't test
   says "Tested with 23.1.0; you have 22.1.0" and is still used. A check that comes back after the path
-  changed again is dropped.
+  changed again is dropped, and so is one that comes back after a server started from the new path: the
+  server's own answer outranks it.
+- The servers' thread reads the paths as Tsugiki starts, and again when the Settings dialog opens or
+  applies. Until then it starts servers from the paths it read last, so a hand edit to `machine.toml`
+  takes effect at the next of those, as other settings do.
 - A start runs no check: the version comes from the server's answer to `initialize`, and a start that
   fails says why on the row and in the peek.
-- A row's state is Not set up, Ready (set up, with none running), Running (for at least one Repository),
-  Stopped (idle) after the idle time stopped it, or the server's last problem, until it starts again. A
-  server that exits on its own says "clangd stopped (exit code N)", with the end of its error output under
-  it. The next lookup starts it again. One that exits while it answers a lookup answers with that problem.
+- A row shows the server as it stands for the Repository that last opened a PR with a file the server
+  reads, or last looked a name up: the window's open Repository, once it has done either. Its state is Not
+  set up, Ready (set up, and not running for that Repository), Running, Stopped (idle) after the idle time
+  stopped it, or its last problem there, until it starts again. A failed `--version` check shows for every
+  Repository until a server starts from that program. A server that exits on its own says "clangd stopped
+  (exit code N)", with the end of its error output under it. The next lookup starts it again. One that
+  exits while it answers a lookup answers with that problem.
 - The rows are the core's. The servers' thread writes them, the window asks for them as the page opens,
   and an event brings each change. `ServerProblem` in `core/src/definitions/health.rs` names each problem,
   and both the row and the peek's answer carry it, so a new kind needs its words in

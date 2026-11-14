@@ -54,17 +54,16 @@ fn version_has_to_name_the_server_on_its_first_line() {
 
 #[test]
 fn a_version_we_didn_t_test_says_so_and_a_problem_outranks_whether_the_server_runs() {
-    let health = |version: &str, last: Last| Health {
+    let health = |version: &str| Health {
         version: Some(version.to_owned()),
-        last,
+        check: Check::Clear,
     };
-    let untested = health("0.0.110", Last::Nothing).row(ServerName::Ty, Presence::Running);
+    let untested = health("0.0.110").row(ServerName::Ty, Presence::Running, &Last::Nothing);
     let stopped = ServerProblem::Stopped {
         code: Some(1),
         stderr_tail: String::new(),
     };
-    let troubled = health("23.1.0", Last::Problem(stopped.clone()));
-    let idle = health("1.99.1", Last::Idle);
+    let troubled = Last::Problem(stopped.clone());
 
     let found = FoundVersion {
         version: "0.0.110".to_owned(),
@@ -73,24 +72,55 @@ fn a_version_we_didn_t_test_says_so_and_a_problem_outranks_whether_the_server_ru
     assert_eq!(untested.version, Some(found));
     assert_eq!(untested.status, ServerStatus::Running);
     assert_eq!(untested.tested, ["0.0.103"]);
+    let clangd = health("23.1.0");
     assert_eq!(
-        troubled.row(ServerName::Clangd, Presence::Running).status,
+        clangd
+            .row(ServerName::Clangd, Presence::Running, &troubled)
+            .status,
         ServerStatus::Problem { problem: stopped }
     );
-    let not_set_up = troubled.row(ServerName::Clangd, Presence::NotSetUp);
+    let not_set_up = clangd.row(ServerName::Clangd, Presence::NotSetUp, &troubled);
     assert_eq!(not_set_up.status, ServerStatus::NotSetUp);
-    let row = idle.row(ServerName::RustAnalyzer, Presence::Stopped);
+    let row = health("1.99.1").row(ServerName::RustAnalyzer, Presence::Stopped, &Last::Idle);
     assert_eq!(row.status, ServerStatus::Idle);
     assert_eq!(row.version.map(|found| found.tested), Some(true));
-    let mut started = idle;
-    started.started(None);
+    let ready = health("1.99.1").row(ServerName::RustAnalyzer, Presence::Stopped, &Last::Nothing);
+    assert_eq!(ready.status, ServerStatus::Ready);
+}
+
+#[test]
+fn a_failed_check_shows_until_a_server_starts_and_a_check_that_answers_after_a_start_counts_for_nothing()
+ {
+    let wrong = ServerProblem::NotThisServer {
+        first_line: "pretty 1.0".to_owned(),
+    };
+    let status = |health: &Health| {
+        let row = health.row(ServerName::Ty, Presence::Stopped, &Last::Nothing);
+        (row.status, row.version.map(|found| found.version))
+    };
+    let mut failed = Health::checking();
+    failed.checked(Err(wrong.clone()));
+    let mut passed = Health::checking();
+    passed.checked(Ok(Some("0.0.103".to_owned())));
+    let mut superseded = Health::checking();
+    superseded.started(Some("0.0.104".to_owned()));
+    superseded.checked(Err(wrong.clone()));
+
+    assert_eq!(status(&Health::checking()), (ServerStatus::Ready, None));
     assert_eq!(
-        started
-            .row(ServerName::RustAnalyzer, Presence::Stopped)
-            .status,
-        ServerStatus::Ready
+        status(&failed),
+        (ServerStatus::Problem { problem: wrong }, None)
     );
-    assert_eq!(started.version.as_deref(), Some("1.99.1"));
+    failed.started(None);
+    assert_eq!(status(&failed), (ServerStatus::Ready, None));
+    assert_eq!(
+        status(&passed),
+        (ServerStatus::Ready, Some("0.0.103".to_owned()))
+    );
+    assert_eq!(
+        status(&superseded),
+        (ServerStatus::Ready, Some("0.0.104".to_owned()))
+    );
 }
 
 #[test]

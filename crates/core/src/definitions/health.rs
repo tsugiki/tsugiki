@@ -83,15 +83,28 @@ pub struct ServerRow {
     pub tested: Vec<String>,
 }
 
-/// What the servers' thread knows of a server beyond whether it runs: its version, and what last happened
-/// to it.
+/// What the servers' thread knows of a server's program, whichever Repository runs it: its version, and
+/// what its `--version` check said.
 #[derive(Debug, Clone, Default)]
 pub(super) struct Health {
     pub(super) version: Option<String>,
-    pub(super) last: Last,
+    pub(super) check: Check,
 }
 
-/// What last happened to a server that its status says.
+/// Where a server's `--version` check stands.
+#[derive(Debug, Clone, Default)]
+pub(super) enum Check {
+    /// Nothing against it: its path hasn't changed since Tsugiki started, the check passed, or a server
+    /// started from the program since.
+    #[default]
+    Clear,
+    /// Its path changed, and `--version` hasn't answered yet.
+    Waiting,
+    /// `--version` had this problem, and no server has started from the program since.
+    Failed(ServerProblem),
+}
+
+/// What last happened to a Repository's server that its status says.
 #[derive(Debug, Clone, Default)]
 pub(super) enum Last {
     /// Nothing to say: it started, or nothing has happened yet.
@@ -112,25 +125,51 @@ pub(super) enum Presence {
 }
 
 impl Health {
-    /// Notes that the server started, which clears a problem it had, with the version it named answering
-    /// `initialize`, if it did.
+    /// A program whose path just changed, which `--version` checks now.
+    pub(super) fn checking() -> Self {
+        Self {
+            version: None,
+            check: Check::Waiting,
+        }
+    }
+
+    /// Notes that a server started from the program, which clears what its check found, with the version it
+    /// named answering `initialize`, if it did.
     pub(super) fn started(&mut self, version: Option<String>) {
-        self.last = Last::Nothing;
+        self.check = Check::Clear;
         if version.is_some() {
             self.version = version;
         }
     }
 
-    /// The row of server `server`, which is `presence`.
-    pub(super) fn row(&self, server: ServerName, presence: Presence) -> ServerRow {
-        let status = match (presence, &self.last) {
-            (Presence::NotSetUp, _) => ServerStatus::NotSetUp,
-            (_, Last::Problem(problem)) => ServerStatus::Problem {
-                problem: problem.clone(),
-            },
-            (Presence::Running, _) => ServerStatus::Running,
-            (Presence::Stopped, Last::Idle) => ServerStatus::Idle,
-            (Presence::Stopped, Last::Nothing) => ServerStatus::Ready,
+    /// Notes what `--version` said of the program, unless a server has started from it since: what a
+    /// running server says outranks a check that answered later.
+    pub(super) fn checked(&mut self, outcome: Result<Option<String>, ServerProblem>) {
+        if !matches!(self.check, Check::Waiting) {
+            return;
+        }
+        match outcome {
+            Ok(version) => {
+                self.check = Check::Clear;
+                self.version = version;
+            }
+            Err(problem) => self.check = Check::Failed(problem),
+        }
+    }
+
+    /// The row of server `server`, which is `presence`, and to which `last` happened, in the Repository the
+    /// rows show.
+    pub(super) fn row(&self, server: ServerName, presence: Presence, last: &Last) -> ServerRow {
+        let status = match (presence, &self.check, last) {
+            (Presence::NotSetUp, ..) => ServerStatus::NotSetUp,
+            (_, Check::Failed(problem), _) | (_, _, Last::Problem(problem)) => {
+                ServerStatus::Problem {
+                    problem: problem.clone(),
+                }
+            }
+            (Presence::Running, ..) => ServerStatus::Running,
+            (Presence::Stopped, _, Last::Idle) => ServerStatus::Idle,
+            (Presence::Stopped, _, Last::Nothing) => ServerStatus::Ready,
         };
         let tested = server.tested();
         let version = self.version.clone().map(|version| FoundVersion {

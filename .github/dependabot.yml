@@ -19,6 +19,19 @@ updates:
         patterns: ["*"]
         exclude-patterns: ["tauri*"]
         update-types: [minor, patch]
+    # Three crates follow the version another crate uses, so a bump of one alone doesn't build (#637): Cargo
+    # links two copies, and their types don't mix. Dependabot counts 0.62 to 0.100 as a major bump, so the
+    # rules skip those and let the compatible releases through.
+    ignore:
+      # webview2-com follows Tauri's, and windows-core follows webview2-com's. The Tauri PR that moves
+      # webview2-com fails in crates/webview-keys, and that PR moves both.
+      - dependency-name: webview2-com
+        update-types: ["version-update:semver-major"]
+      - dependency-name: windows-core
+        update-types: ["version-update:semver-major"]
+      # windows follows process-wrap's. A process-wrap PR that moves it fails to build, and moves it too.
+      - dependency-name: windows
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: "/"

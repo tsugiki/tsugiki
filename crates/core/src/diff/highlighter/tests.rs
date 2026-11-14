@@ -584,6 +584,13 @@ fn at_commit(path: &str, commit: &CommitSha) -> HitFile {
     }
 }
 
+fn lines(file: &HitFile, lines: Range<u32>) -> HitLines {
+    HitLines {
+        file: file.clone(),
+        lines,
+    }
+}
+
 /// `text`, as a file's text whose reads `reads` counts.
 fn counted<'a>(reads: &'a Cell<u32>, text: &str) -> impl FnOnce() -> Result<String, Error> + 'a {
     let text = text.to_owned();
@@ -593,13 +600,19 @@ fn counted<'a>(reads: &'a Cell<u32>, text: &str) -> impl FnOnce() -> Result<Stri
     }
 }
 
+fn pass() -> Result<Vec<Vec<Span>>, Error> {
+    Ok(vec![vec![Span {
+        start: 0,
+        end: 4,
+        highlight: crate::highlight::Highlight::Keyword,
+    }]])
+}
+
 #[test]
-fn a_file_the_pr_changes_parsed_whole_looks_as_its_rows_do_in_the_diff() {
+fn a_file_the_pr_changes_takes_its_tree_from_the_diff_so_it_looks_the_same_and_isn_t_read() {
     let repo = changes("whole");
     let highlighter = Highlighter::start();
     let from = repo.source(7);
-    let name = object_name(&repo.head, "Lib/ast.py").unwrap();
-    let head = blobs(&repo.mirror, &[&name]).remove(0).unwrap();
     let reads = Cell::new(0);
 
     let chunk = Chunk {
@@ -607,13 +620,37 @@ fn a_file_the_pr_changes_parsed_whole_looks_as_its_rows_do_in_the_diff() {
         collapsed: &[],
     };
     let rows = highlighter.spans(&from.diff, &repo.mirror, chunk);
-    let file = at_commit("Lib/ast.py", &repo.head);
-    let whole = highlighter.whole_spans(&file, 4..7, counted(&reads, &head));
+    let head = at_commit("Lib/ast.py", &repo.head);
+    let at_head = highlighter.whole_spans(&repo.mirror, &lines(&head, 4..7), counted(&reads, ""));
+    let base = at_commit("Lib/ast.py", &from.diff.base);
+    let at_base = highlighter.whole_spans(&repo.mirror, &lines(&base, 5..6), counted(&reads, ""));
 
     // The file's header and the `@@` line come before line 2, and line 5 shows removed, then added.
     let diff_lines: Vec<Vec<Span>> = [4, 6, 7].iter().map(|&row| rows[row].clone()).collect();
-    assert_eq!(whole.unwrap(), diff_lines);
-    assert_eq!(reads.get(), 1);
+    assert_eq!(at_head.unwrap(), diff_lines);
+    assert_eq!(at_base.unwrap(), [rows[5].clone()]);
+    assert_eq!(reads.get(), 0);
+    repo.finish();
+}
+
+#[test]
+fn a_file_the_kept_diff_has_no_tree_for_is_parsed_whole() {
+    let repo = changes("whole-gone");
+    let highlighter = Highlighter::start();
+    let from = repo.source(7);
+    let reads = Cell::new(0);
+    let chunk = Chunk {
+        rows: 0..100,
+        collapsed: &[],
+    };
+    drop(highlighter.spans(&from.diff, &repo.mirror, chunk));
+
+    // The PR deletes it, so git has no such file at the head.
+    let gone = at_commit("Lib/gone.py", &repo.head);
+    let spans =
+        highlighter.whole_spans(&repo.mirror, &lines(&gone, 1..2), counted(&reads, "pass\n"));
+
+    assert_eq!((spans, reads.get()), (pass(), 1));
     repo.finish();
 }
 
@@ -627,36 +664,97 @@ fn a_file_tsugiki_doesn_t_highlight_isn_t_read_and_has_no_spans() {
         path: PathBuf::from(".."),
     };
 
-    let spans = highlighter.whole_spans(&readme, 1..3, counted(&reads, "Hi"));
-    let none = highlighter.whole_spans(&nameless, 1..3, counted(&reads, "Hi"));
+    let nowhere = Path::new("");
+    let spans = highlighter.whole_spans(nowhere, &lines(&readme, 1..3), counted(&reads, "Hi"));
+    let none = highlighter.whole_spans(nowhere, &lines(&nameless, 1..3), counted(&reads, "Hi"));
 
     assert_eq!((spans, none), (Ok(Vec::new()), Ok(Vec::new())));
     assert_eq!(reads.get(), 0);
 }
 
 #[test]
-fn the_thread_keeps_the_last_four_files_parsed_whole() {
+fn the_thread_keeps_the_four_files_parsed_whole_that_were_used_last() {
     let highlighter = Highlighter::start();
     let reads = Cell::new(0);
     let commit = CommitSha::parse(&"a".repeat(40)).unwrap();
     let files: Vec<HitFile> = (0..=WHOLES)
         .map(|n| at_commit(&format!("m{n}.py"), &commit))
         .collect();
-    let spans = |file: &HitFile| highlighter.whole_spans(file, 1..2, counted(&reads, "pass\n"));
+    let spans = |file: &HitFile| {
+        let wanted = lines(file, 1..2);
+        highlighter.whole_spans(Path::new(""), &wanted, counted(&reads, "pass\n"))
+    };
 
-    let first: Vec<_> = files.iter().map(spans).collect();
-    let kept = files.iter().skip(1).map(spans).collect::<Vec<_>>();
+    let first: Vec<_> = files.iter().take(WHOLES).map(spans).collect();
+    // The first is used again, so the second is the one used longest ago when the fifth comes.
+    let used = spans(&files[0]);
+    let fifth = spans(&files[WHOLES]);
     let reads_kept = reads.get();
-    let dropped = spans(&files[0]);
+    let kept = spans(&files[0]);
+    let reads_dropped = reads.get();
+    let dropped = spans(&files[1]);
 
-    let pass = Ok(vec![vec![Span {
-        start: 0,
-        end: 4,
-        highlight: crate::highlight::Highlight::Keyword,
-    }]]);
-    assert!(first.iter().chain(&kept).all(|spans| *spans == pass));
-    assert_eq!(reads_kept, 5);
-    assert_eq!((dropped, reads.get()), (pass, 6));
+    assert!(
+        first
+            .iter()
+            .chain([&used, &fifth, &kept])
+            .all(|spans| *spans == pass())
+    );
+    assert_eq!((reads_kept, reads_dropped), (5, 5));
+    assert_eq!((dropped, reads.get()), (pass(), 6));
+}
+
+/// What the worker answers an ask for `file` parsed whole from `text`.
+fn ask_whole(worker: &mut Worker, file: &HitFile, text: &str) -> Arc<Parsed> {
+    let (reply, answer) = mpsc::channel();
+    worker.handle(Job::Whole {
+        file: file.clone(),
+        language: Language::of("a.py").unwrap(),
+        text: text.to_owned(),
+        reply,
+    });
+    answer.recv().unwrap().unwrap()
+}
+
+#[test]
+fn the_files_parsed_whole_keep_within_their_own_cap_but_the_newest_stays() {
+    let (mut worker, shelf) = worker(CAP);
+    let one = Parsed::parse(Language::of("a.py").unwrap(), "pass\n".to_owned()).unwrap();
+    worker.store.wholes_cap = one.cost() * 3 / 2;
+    let commit = CommitSha::parse(&"a".repeat(40)).unwrap();
+    let (a, b) = (at_commit("a.py", &commit), at_commit("b.py", &commit));
+
+    drop(ask_whole(&mut worker, &a, "pass\n"));
+    drop(ask_whole(&mut worker, &b, "pass\n"));
+    let kept = (
+        shelf.whole(&a, None).is_some(),
+        shelf.whole(&b, None).is_some(),
+    );
+    worker.store.wholes_cap = 0;
+    drop(ask_whole(&mut worker, &a, "pass\n"));
+
+    assert_eq!(kept, (false, true));
+    assert!(shelf.whole(&a, None).is_some());
+}
+
+#[test]
+fn a_file_on_disk_keeps_the_tree_of_the_text_it_has_now() {
+    let (mut worker, shelf) = worker(CAP);
+    let file = HitFile::Outside {
+        path: PathBuf::from("builtins.pyi"),
+    };
+
+    let before = ask_whole(&mut worker, &file, "pass\n");
+    let same = ask_whole(&mut worker, &file, "pass\n");
+    let changed = ask_whole(&mut worker, &file, "x = 1\n");
+
+    assert!(Arc::ptr_eq(&before, &same));
+    assert_eq!(changed.source(), "x = 1\n");
+    assert!(shelf.whole(&file, Some("pass\n")).is_none());
+    assert!(Arc::ptr_eq(
+        &changed,
+        &shelf.whole(&file, Some("x = 1\n")).unwrap()
+    ));
 }
 
 #[test]
@@ -664,21 +762,12 @@ fn two_asks_for_a_file_the_shelf_lacks_parse_it_once() {
     let (mut worker, shelf) = worker(CAP);
     let commit = CommitSha::parse(&"a".repeat(40)).unwrap();
     let file = at_commit("a.py", &commit);
-    let mut ask = || {
-        let (reply, answer) = mpsc::channel();
-        worker.handle(Job::Whole {
-            file: file.clone(),
-            language: Language::of("a.py").unwrap(),
-            text: "pass\n".to_owned(),
-            reply,
-        });
-        answer.recv().unwrap().unwrap()
-    };
 
-    let (first, second) = (ask(), ask());
+    let first = ask_whole(&mut worker, &file, "pass\n");
+    let second = ask_whole(&mut worker, &file, "pass\n");
 
     assert!(Arc::ptr_eq(&first, &second));
-    assert!(Arc::ptr_eq(&first, &shelf.whole(&file).unwrap()));
+    assert!(Arc::ptr_eq(&first, &shelf.whole(&file, None).unwrap()));
 }
 
 #[test]
@@ -710,8 +799,10 @@ fn a_file_whose_text_can_t_be_read_says_why_and_one_with_a_stopped_thread_shows_
     };
     let reads = Cell::new(0);
 
-    let failed = Highlighter::start().whole_spans(&file, 1..2, || Err(unread.clone()));
-    let plain = stopped.whole_spans(&file, 1..2, counted(&reads, "pass\n"));
+    let wanted = lines(&file, 1..2);
+    let nowhere = Path::new("");
+    let failed = Highlighter::start().whole_spans(nowhere, &wanted, || Err(unread.clone()));
+    let plain = stopped.whole_spans(nowhere, &wanted, counted(&reads, "pass\n"));
 
     assert_eq!(failed, Err(unread));
     assert_eq!(plain, Ok(Vec::new()));

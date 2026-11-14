@@ -118,44 +118,4 @@
     color: var(--fg-muted);
     user-select: none;
   }
-
-  /* The theme's syntax colours, as the diff paints them. The classes come from the spans, which Svelte
-     can't see, so they're global within the code. The file view sits outside the diff's scroller. */
-  .code :global(.hl-keyword) {
-    color: var(--hl-keyword);
-  }
-
-  .code :global(.hl-string) {
-    color: var(--hl-string);
-  }
-
-  .code :global(.hl-comment) {
-    color: var(--hl-comment);
-  }
-
-  .code :global(.hl-constant) {
-    color: var(--hl-constant);
-  }
-
-  .code :global(.hl-function),
-  .code :global(.hl-type) {
-    color: var(--hl-entity);
-  }
-
-  .code :global(.hl-tag) {
-    color: var(--hl-tag);
-  }
-
-  .code :global(.hl-heading) {
-    color: var(--hl-constant);
-    font-weight: 600;
-  }
-
-  .code :global(.hl-strong) {
-    font-weight: 600;
-  }
-
-  .code :global(.hl-emphasis) {
-    font-style: italic;
-  }
 </style>

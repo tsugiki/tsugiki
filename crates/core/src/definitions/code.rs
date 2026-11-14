@@ -6,12 +6,14 @@ use std::collections::HashSet;
 use std::fs;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use serde::Serialize;
 use specta::Type;
 
-use crate::diff::{self, Highlighter, HitFile};
+use crate::diff::{self, Highlighter, HitFile, HitLines};
 use crate::error::{Error, ErrorKind};
 use crate::highlight::Span;
 
@@ -21,12 +23,8 @@ mod tests;
 /// The most lines one read hands the window.
 const MOST_LINES: u32 = 2000;
 
-/// Lines of a hit's file, counted from 1, as the window asks for their spans (#455).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HitLines {
-    pub file: HitFile,
-    pub lines: Range<u32>,
-}
+/// A read of a file's lines, which every caller that asks for the same file while it runs waits for.
+type Read = Arc<OnceLock<Result<Arc<[String]>, Error>>>;
 
 /// Some lines of a hit's file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -39,11 +37,14 @@ pub struct Code {
 
 /// The files the peek reads: the paths outside the Repository that a server has named in a hit, the only
 /// files outside it that the window can read, and the last file read, as the peek reads one file a chunk
-/// at a time.
+/// at a time. The window asks for a chunk's lines and its spans together, and the two share one read.
 #[derive(Debug, Default)]
 pub(super) struct HitFiles {
     named: Mutex<HashSet<PathBuf>>,
-    last: Mutex<Option<(HitFile, Arc<[String]>)>>,
+    last: Mutex<Option<(HitFile, Read)>>,
+    /// How many times a file was read, for the tests.
+    #[cfg(test)]
+    reads: AtomicUsize,
 }
 
 impl HitFiles {
@@ -51,20 +52,16 @@ impl HitFiles {
         let _new = lock(&self.named).insert(path);
     }
 
-    /// Lines `lines` of `file`, counted from 1: one of the Repository whose Mirror is at `mirror`, or one
-    /// outside it that a server has named.
-    pub(super) fn read(
-        &self,
-        mirror: &Path,
-        file: &HitFile,
-        lines: Range<u32>,
-    ) -> Result<Code, Error> {
-        Ok(some_lines(&self.lines_of(mirror, file)?, lines))
+    /// The lines `wanted` names: of a file of the Repository whose Mirror is at `mirror`, or of one outside
+    /// it that a server has named.
+    pub(super) fn read(&self, mirror: &Path, wanted: &HitLines) -> Result<Code, Error> {
+        let HitLines { file, lines } = wanted;
+        self.check_named(file)?;
+        Ok(some_lines(&self.lines_of(mirror, file)?, lines.clone()))
     }
 
-    /// The spans of lines `lines` of `file`, counted from 1, which `highlighter` reads from the file parsed
-    /// whole, as the diff's rows read theirs. It reads the file as `read` does, and only when `highlighter`
-    /// doesn't keep its tree.
+    /// The spans of the lines `wanted` names, which `highlighter` reads from the file's whole tree, as the
+    /// diff's rows read theirs. It reads the file as `read` does, and only when `highlighter` needs it.
     pub(super) fn spans(
         &self,
         highlighter: &Highlighter,
@@ -76,7 +73,11 @@ impl HitFiles {
         // Joined with line feeds, a lone `\r` ends a line for tree-sitter too, so the spans of each line
         // land on the line `read` gives.
         let text = || Ok(self.lines_of(mirror, file)?.join("\n"));
-        highlighter.whole_spans(file, at_most(lines.clone()), text)
+        let wanted = HitLines {
+            file: file.clone(),
+            lines: at_most(lines.clone()),
+        };
+        highlighter.whole_spans(mirror, &wanted, text)
     }
 
     /// Fails for a file outside the Repository that no server has named.
@@ -90,18 +91,37 @@ impl HitFiles {
         Ok(())
     }
 
-    /// `file`'s lines, from the last file read if it's the same one.
+    /// `file`'s lines, from the last file read if it's the same one, or from the read of it under way. A
+    /// read that fails is forgotten, so the next chunk reads again.
     fn lines_of(&self, mirror: &Path, file: &HitFile) -> Result<Arc<[String]>, Error> {
-        self.check_named(file)?;
-        let last = lock(&self.last).clone();
-        Ok(match last {
-            Some((read, text)) if read == *file => text,
-            _ => {
-                let text: Arc<[String]> = split(&text_of(mirror, file)?).into();
-                *lock(&self.last) = Some((file.clone(), Arc::clone(&text)));
-                text
+        let read = {
+            let mut last = lock(&self.last);
+            match &*last {
+                Some((kept, read)) if kept == file => Arc::clone(read),
+                _ => {
+                    let read = Read::default();
+                    *last = Some((file.clone(), Arc::clone(&read)));
+                    read
+                }
             }
-        })
+        };
+        let lines = read
+            .get_or_init(|| {
+                #[cfg(test)]
+                let _before = self.reads.fetch_add(1, Ordering::Relaxed);
+                text_of(mirror, file).map(|text| split(&text).into())
+            })
+            .clone();
+        if lines.is_err() {
+            let mut last = lock(&self.last);
+            if last
+                .as_ref()
+                .is_some_and(|(_, kept)| Arc::ptr_eq(kept, &read))
+            {
+                *last = None;
+            }
+        }
+        lines
     }
 }
 

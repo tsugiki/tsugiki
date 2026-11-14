@@ -375,6 +375,11 @@ impl Parsed {
         Some(parsed)
     }
 
+    /// The text it parsed.
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
     /// About how many bytes of memory this takes: the file, where its lines start, and its trees.
     pub fn cost(&self) -> usize {
         let nodes: usize = self

@@ -90,11 +90,15 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   last file it read, so the next chunk starts no git. A line ends at a lone `\r` too, as LSP counts lines.
   A chunk that fails once lines show leaves them, and the next scroll asks again.
 - Highlighting a hit's file: the window asks the core for each chunk's spans beside its lines, as the
-  Files tab asks for a chunk's rows and spans. The Highlighter parses the file whole, read from the Mirror
-  at the hit's commit, or from disk outside the Repository, with the languages and colours the diff has, and
-  reads each chunk's spans from that tree. It keeps the last 4 files it parsed this way, beside the diff's
-  trees, so the next chunk and a hit picked again parse nothing. The lines wait up to 50 ms for their
-  spans, then show plain until the parse is done, and the spans paint them when they come. So a file as big
+  Files tab asks for a chunk's rows and spans, and the two share one read of the file. A file the PR
+  changes, at the PR's head or its merge base, takes its tree from the diff's Highlighter, so it looks as
+  it does in the diff and isn't parsed twice. The Highlighter parses any other file whole, read from the
+  Mirror at the hit's commit, or from disk outside the Repository, with the languages and colours the diff
+  has, and reads each chunk's spans from that tree. It keeps the 4 files used last, in at most 50 MB beside
+  the diff's trees, so the next chunk and a hit picked again parse nothing. A file on disk keeps the tree of
+  the text its lines show, and one that changed is parsed again once its lines are read again. The lines
+  wait up to 50 ms for their spans, then show plain until the parse is done, and the spans paint them when
+  they come. So a file as big
   as `Objects/unicodeobject.c` doesn't hold up its lines. Its 15,489 lines at `69ac138c06` took the core,
   in an optimized build, 47 to 69 ms to read a chunk's lines, 110 to 135 ms more to parse the file for its
   first spans, and under a millisecond for each chunk's spans after that. A file Tsugiki doesn't

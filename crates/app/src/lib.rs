@@ -781,8 +781,8 @@ impl DefinitionCode {
 }
 
 fn read_definition_code(code: DefinitionCode, work: &DiffWork) -> Result<Code, Error> {
-    let (mirror, HitLines { file, lines }) = code.parse(work)?;
-    work.definitions.code(&mirror, &file, lines)
+    let (mirror, wanted) = code.parse(work)?;
+    work.definitions.code(&mirror, &wanted)
 }
 
 /// The spans of the lines `code` names, as the diff's rows have theirs (#455).

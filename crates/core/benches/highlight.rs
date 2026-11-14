@@ -2,7 +2,9 @@
 //! should take about a millisecond, and a parse well under the 100 ms a jump into a file has. The same goes
 //! for a file the Definition peek shows whole (#455).
 
-use tsugiki_core::diff::{Highlighter, HitFile};
+use std::path::Path;
+
+use tsugiki_core::diff::{Highlighter, HitFile, HitLines};
 use tsugiki_core::github::CommitSha;
 use tsugiki_core::highlight::{Language, Parsed};
 
@@ -63,15 +65,19 @@ fn whole_file_chunk(bencher: divan::Bencher<'_, '_>) {
         commit,
     };
     let start = FUNCTIONS * 10;
-    let lines = start..start + CODE_CHUNK;
-    let first = highlighter.whole_spans(&file, lines.clone(), || Ok(c_file()));
+    let wanted = HitLines {
+        file,
+        lines: start..start + CODE_CHUNK,
+    };
+    let nowhere = Path::new("");
+    let first = highlighter.whole_spans(nowhere, &wanted, || Ok(c_file()));
     let painted = first
         .expect("the C parses")
         .iter()
         .filter(|line| !line.is_empty())
         .count();
     assert!(painted > 100);
-    bencher.bench(|| highlighter.whole_spans(&file, lines.clone(), || Ok(String::new())));
+    bencher.bench(|| highlighter.whole_spans(nowhere, &wanted, || Ok(String::new())));
 }
 
 /// Macros in the header below: four times as many as `Modules/clinic/posixmodule.c.h`, CPython's file with

@@ -287,10 +287,10 @@ fn a_builtin_is_found_outside_the_repository() {
         let file = HitFile::Outside {
             path: PathBuf::from(path),
         };
-        let line = hit.line;
+        let lines = hit.line..hit.line + 1;
         let code = owner
             .files
-            .read(Path::new(""), &file, line..line + 1)
+            .read(Path::new(""), &HitLines { file, lines })
             .unwrap();
         assert_eq!(code.lines, ["def print("]);
     }

@@ -19,7 +19,6 @@
 //! answer.
 
 use std::collections::{HashMap, VecDeque};
-use std::ops::Range;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -30,15 +29,15 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use tsugiki_lsp::{Canceller, Pending, RequestError, Uri};
 
-pub use crate::diff::{DiffEnd, HitFile};
+pub use crate::diff::{DiffEnd, HitFile, HitLines};
 use crate::diff::{DiffFile, Highlighter};
 use crate::error::{Error, ErrorKind};
 use crate::github::CommitSha;
 use crate::highlight::Span;
 use crate::mirror::{LookupAt, LookupCheckout};
 use crate::repository::RepositoryName;
+pub use code::Code;
 use code::HitFiles;
-pub use code::{Code, HitLines};
 use server::{Hits, IndexMoved, Indexing, LanguageServer, Request, Stopping};
 
 mod clangd;
@@ -253,15 +252,15 @@ impl Definitions {
         Self { messages, files }
     }
 
-    /// Lines `lines` of the file a hit is in, counted from 1, which the Definition peek shows: one of the
-    /// Repository whose Mirror is at `mirror`, at the hit's commit, or one outside it that a server named in
-    /// a hit. It reads on the caller's thread, so it never waits for a lookup.
-    pub fn code(&self, mirror: &Path, file: &HitFile, lines: Range<u32>) -> Result<Code, Error> {
-        self.files.read(mirror, file, lines)
+    /// The lines of the file a hit is in that `wanted` names, which the Definition peek shows: of a file of
+    /// the Repository whose Mirror is at `mirror`, at the hit's commit, or of one outside it that a server
+    /// named in a hit. It reads on the caller's thread, so it never waits for a lookup.
+    pub fn code(&self, mirror: &Path, wanted: &HitLines) -> Result<Code, Error> {
+        self.files.read(mirror, wanted)
     }
 
-    /// The spans of the lines [`Definitions::code`] reads, which `highlighter` reads from the file parsed
-    /// whole (#455). It waits for the parse of a file `highlighter` doesn't keep, but never for a lookup.
+    /// The spans of the lines [`Definitions::code`] reads, which `highlighter` reads from the file's whole
+    /// tree (#455). It waits for the parse of a file `highlighter` doesn't keep, but never for a lookup.
     pub fn spans(
         &self,
         highlighter: &Highlighter,

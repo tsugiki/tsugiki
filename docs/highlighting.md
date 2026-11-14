@@ -10,16 +10,17 @@ Tsugiki parses each version of a file whole, once. For each chunk of rows the di
 language's highlights query over those rows' lines only, so a chunk costs about a millisecond whatever the
 file's length ([ADR 0001](adr/0001-standalone-tauri-gui-with-in-app-review.md)).
 
-The Definition peek and the file view show a file whole, apart from any diff: one of the Repository at a
-commit, read from its **Mirror**, or one outside it on disk. The Highlighter parses it whole the same way,
-with the same languages and colours, keeps the last 4 such files, and reads each chunk's spans from that
-tree ([devel/definitions.md](devel/definitions.md)).
+The Definition peek and the file view show a file whole: one of the Repository at a commit, read from its
+**Mirror**, or one outside it on disk. A file the PR changes, at the PR's head or its merge base, takes its
+tree from the diff. The Highlighter parses any other the same way, with the same languages and colours,
+keeps the 4 such files used last, and reads each chunk's spans from that tree
+([devel/definitions.md](devel/definitions.md)).
 
 A highlights query names nodes with captures such as `@keyword` or `@function.builtin`. `Paint::shared` in
 `crates/core/src/highlight.rs` maps each capture to one of a few highlights, by the longest leading part of
 its name that has a rule: `@function.builtin` paints as `@function` does. It leaves the rest, such as
-`@variable` and `@punctuation`, plain. `DiffRows.svelte` paints each highlight with a token of the **Theme**
-in force, from its `[syntax]` table ([devel/themes.md](devel/themes.md)).
+`@variable` and `@punctuation`, plain. `window.css` paints each highlight with a token of the **Theme** in
+force, from its `[syntax]` table ([devel/themes.md](devel/themes.md)).
 
 | Highlight | Painted with | Captures, among others |
 |---|---|---|

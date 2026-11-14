@@ -112,6 +112,9 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
 - **Muted text.** Ages, counts and hints take `fg_muted`, and don't fade with opacity.
 - **Small headings.** A section's heading in the Sidebar, and the Issue list's quiet line, take the
   `small-heading` class: 11 px, `fg_muted`, upper case and 0.04 em apart.
+- **Highlighted code.** Each highlight the core sends in a span takes its `hl-` class, which paints it with
+  its `[syntax]` token wherever code shows: in the diff, a thread's code, the Definition peek and the file
+  view ([highlighting.md](../highlighting.md)).
 
 The rules sit in `:where()`, which weighs nothing, so a component's own rule for a control wins over them.
 

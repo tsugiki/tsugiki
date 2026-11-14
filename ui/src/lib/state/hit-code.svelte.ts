@@ -6,13 +6,10 @@
 
 import { SvelteMap } from "svelte/reactivity";
 import { commands, type CodeFile, type DefinitionCode, type Hit, type Span } from "$lib/data/bindings";
+import { waitForSpans } from "./spans-wait";
 
 /** How many lines the window asks the core for at a time. */
 export const CODE_CHUNK = 200;
-
-/** How long a chunk's lines wait for their spans before they show plain, as `SPANS_WAIT` has the diff's
- * rows wait. */
-export const CODE_SPANS_WAIT = 50;
 
 /** The file `hit` is in, as the core reads it. */
 export function codeFile(hit: Hit): CodeFile {
@@ -77,12 +74,12 @@ export class HitCode {
   }
 
   /** Asks for a chunk's lines and spans together. The lines show once the spans come, or once they have
-   * waited `CODE_SPANS_WAIT` since the ask, whichever is first. */
+   * waited `SPANS_WAIT` since the ask, whichever is first. */
   async #read(chunk: number) {
     const start = chunk * CODE_CHUNK + 1;
     const code = { repository: this.#repository, file: this.#file, start, end: start + CODE_CHUNK };
     const spans = readSpans(code);
-    const waited = new Promise<undefined>((resolve) => setTimeout(resolve, CODE_SPANS_WAIT));
+    const waited = waitForSpans(spans);
     const read = await commands.definitionCode(code).catch((e: unknown) => ({
       status: "error" as const,
       error: { message: String(e) },
@@ -93,7 +90,7 @@ export class HitCode {
       else this.#asked.delete(chunk);
       return;
     }
-    const early = await Promise.race([spans, waited]);
+    const early = await waited();
     if (early !== undefined) this.#spans.set(chunk, early);
     this.count = read.data.count;
     const widest = Math.max(

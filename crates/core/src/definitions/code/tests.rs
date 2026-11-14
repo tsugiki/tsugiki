@@ -1,4 +1,6 @@
 use std::fs;
+use std::sync::Barrier;
+use std::thread;
 
 use super::*;
 use crate::definitions::testing::Fixture;
@@ -21,6 +23,13 @@ fn at(commit: &CommitSha) -> HitFile {
     }
 }
 
+fn of(file: &HitFile, lines: Range<u32>) -> HitLines {
+    HitLines {
+        file: file.clone(),
+        lines,
+    }
+}
+
 fn code(count: u32, lines: &[&str]) -> Code {
     Code {
         count,
@@ -35,9 +44,9 @@ fn a_file_of_the_repository_is_read_at_the_hit_s_commit_without_line_endings() {
     let at_base = at(&fixture.checkout.at.base);
     let at_head = at(&fixture.checkout.at.head);
 
-    let base = files.read(&fixture.mirror, &at_base, 1..10);
-    let head = files.read(&fixture.mirror, &at_head, 2..4);
-    let base_again = files.read(&fixture.mirror, &at_base, 3..4);
+    let base = files.read(&fixture.mirror, &of(&at_base, 1..10));
+    let head = files.read(&fixture.mirror, &of(&at_head, 2..4));
+    let base_again = files.read(&fixture.mirror, &of(&at_base, 3..4));
 
     assert_eq!(base, Ok(code(3, &["one", "two", "three"])));
     assert_eq!(head, Ok(code(4, &["TWO", "three"])));
@@ -50,13 +59,37 @@ fn the_next_chunk_of_the_same_file_reads_it_once() {
     let files = HitFiles::default();
     let at_head = at(&fixture.checkout.at.head);
 
-    let first = files.read(&fixture.mirror, &at_head, 1..3);
+    let first = files.read(&fixture.mirror, &of(&at_head, 1..3));
     // Without its Mirror, the file comes from what the first read kept.
     fs::remove_dir_all(fixture.mirror.parent().unwrap()).unwrap();
-    let next = files.read(&fixture.mirror, &at_head, 3..5);
+    let next = files.read(&fixture.mirror, &of(&at_head, 3..5));
 
     assert_eq!(first, Ok(code(4, &["one", "TWO"])));
     assert_eq!(next, Ok(code(4, &["three", "four"])));
+    assert_eq!(files.reads.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn a_first_chunk_s_lines_and_spans_asked_together_share_one_read() {
+    let fixture = fixture("definitions-code-together");
+    let files = HitFiles::default();
+    let highlighter = Highlighter::start();
+    let wanted = of(&at(&fixture.checkout.at.head), 1..201);
+    let both = Barrier::new(2);
+
+    let (lines, spans) = thread::scope(|scope| {
+        let lines = scope.spawn(|| {
+            let _ready = both.wait();
+            files.read(&fixture.mirror, &wanted)
+        });
+        let _ready = both.wait();
+        let spans = files.spans(&highlighter, &fixture.mirror, &wanted);
+        (lines.join().unwrap(), spans)
+    });
+
+    assert_eq!(lines.map(|code| code.count), Ok(4));
+    assert_eq!(spans.map(|spans| spans.len()), Ok(200));
+    assert_eq!(files.reads.load(Ordering::Relaxed), 1);
 }
 
 #[test]
@@ -82,7 +115,7 @@ fn lines_past_the_end_don_t_come_and_a_read_hands_at_most_two_thousand() {
 }
 
 #[test]
-fn a_file_the_commit_doesn_t_hold_says_so_and_so_does_a_missing_mirror() {
+fn a_file_the_commit_doesn_t_hold_says_so_each_time_it_s_asked_and_so_does_a_missing_mirror() {
     let fixture = fixture("definitions-code-missing");
     let commit = fixture.checkout.at.base.clone();
     let missing = HitFile::Repository {
@@ -91,12 +124,16 @@ fn a_file_the_commit_doesn_t_hold_says_so_and_so_does_a_missing_mirror() {
     };
     let files = HitFiles::default();
 
-    let read = files.read(&fixture.mirror, &missing, 1..10);
-    let no_mirror = files.read(&fixture.mirror.join("none"), &at(&commit), 1..10);
+    let read = files.read(&fixture.mirror, &of(&missing, 1..10));
+    // A read that failed is forgotten, so the next chunk asks git again.
+    let again = files.read(&fixture.mirror, &of(&missing, 10..20));
+    let reads = files.reads.load(Ordering::Relaxed);
+    let no_mirror = files.read(&fixture.mirror.join("none"), &of(&at(&commit), 1..10));
 
     let short = commit.as_str().get(..7).unwrap();
     let message = format!("Tsugiki's copy of the Repository has no b.py at {short}.");
     assert_eq!(read, Err(Error::new(ErrorKind::NotFound, &message)));
+    assert_eq!((again, reads), (read, 2));
     let none = "Tsugiki has no copy of this Repository yet.";
     assert_eq!(no_mirror, Err(Error::new(ErrorKind::NotFound, none)));
 }
@@ -110,9 +147,9 @@ fn a_file_outside_the_repository_is_read_from_disk_once_a_server_named_it() {
     let files = HitFiles::default();
     let file = HitFile::Outside { path: path.clone() };
 
-    let unnamed = files.read(&folder, &file, 1..2);
+    let unnamed = files.read(&folder, &of(&file, 1..2));
     files.name(path.clone());
-    let read = files.read(&folder, &file, 1..2);
+    let read = files.read(&folder, &of(&file, 1..2));
     fs::remove_dir_all(&folder).unwrap();
 
     let message = format!("No language server named {}.", path.display());
@@ -126,22 +163,12 @@ fn a_named_file_that_has_gone_from_disk_says_so() {
     let files = HitFiles::default();
     files.name(path.clone());
 
-    let read = files.read(
-        Path::new(""),
-        &HitFile::Outside { path: path.clone() },
-        1..2,
-    );
+    let file = HitFile::Outside { path: path.clone() };
+    let read = files.read(Path::new(""), &of(&file, 1..2));
 
     let message = read.unwrap_err().message;
     let start = format!("Tsugiki can't read {}: ", path.display());
     assert!(message.starts_with(&start), "{message}");
-}
-
-fn of(file: &HitFile, lines: Range<u32>) -> HitLines {
-    HitLines {
-        file: file.clone(),
-        lines,
-    }
 }
 
 fn span(start: u32, end: u32, highlight: Highlight) -> Span {
@@ -162,7 +189,7 @@ fn a_file_at_a_commit_read_from_the_mirror_is_highlighted_line_by_line_as_lsp_co
     let at_base = at(&fixture.checkout.at.base);
 
     let spans = files.spans(&highlighter, &fixture.mirror, &of(&at_base, 2..10));
-    let lines = files.read(&fixture.mirror, &at_base, 2..10);
+    let lines = files.read(&fixture.mirror, &of(&at_base, 2..10));
 
     let def = vec![
         span(0, 3, Highlight::Keyword),
@@ -195,7 +222,7 @@ fn the_highlighter_keeps_a_file_s_tree_so_its_next_chunk_isn_t_read_again() {
 
     let first = files.spans(&highlighter, &fixture.mirror, &of(&at(base), 1..2));
     // Another file is the last read now, and without the Mirror neither can be read again.
-    drop(files.read(&fixture.mirror, &b, 1..2));
+    drop(files.read(&fixture.mirror, &of(&b, 1..2)));
     fs::remove_dir_all(fixture.mirror.parent().unwrap()).unwrap();
     let next = files.spans(&highlighter, &fixture.mirror, &of(&at(base), 2..3));
 
@@ -229,6 +256,42 @@ fn a_file_outside_the_repository_is_highlighted_once_a_server_named_it() {
         span(4, 9, Highlight::Function),
     ];
     assert_eq!(spans, Ok(vec![def]));
+}
+
+#[test]
+fn a_file_outside_the_repository_that_changes_on_disk_is_highlighted_as_its_lines_read_now() {
+    let folder = temp_path("definitions-code-outside-changed");
+    fs::create_dir_all(&folder).unwrap();
+    let (path, other) = (folder.join("builtins.pyi"), folder.join("other.pyi"));
+    fs::write(&path, "def print(): ...\n").unwrap();
+    fs::write(&other, "x = 1\n").unwrap();
+    let files = HitFiles::default();
+    files.name(path.clone());
+    files.name(other.clone());
+    let highlighter = Highlighter::start();
+    let file = of(&HitFile::Outside { path: path.clone() }, 1..2);
+
+    let before = files.spans(&highlighter, &folder, &file);
+    fs::write(&path, "x = 'print'\n").unwrap();
+    // Until another file is read, the lines and the spans stay those read before.
+    let kept = files.spans(&highlighter, &folder, &file);
+    drop(files.read(&folder, &of(&HitFile::Outside { path: other }, 1..2)));
+    let lines = files.read(&folder, &file);
+    let after = files.spans(&highlighter, &folder, &file);
+    fs::remove_dir_all(&folder).unwrap();
+
+    let def = vec![
+        span(0, 3, Highlight::Keyword),
+        span(4, 9, Highlight::Function),
+    ];
+    assert_eq!(kept, before);
+    assert_eq!(before, Ok(vec![def]));
+    assert_eq!(lines, Ok(code(1, &["x = 'print'"])));
+    let assigned = vec![
+        span(2, 3, Highlight::Keyword),
+        span(4, 11, Highlight::String),
+    ];
+    assert_eq!(after, Ok(vec![assigned]));
 }
 
 #[test]

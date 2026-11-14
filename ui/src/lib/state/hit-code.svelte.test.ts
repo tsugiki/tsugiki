@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { DefinitionCode, Hit } from "$lib/data/bindings";
-import { CODE_CHUNK, CODE_SPANS_WAIT, HitCode } from "./hit-code.svelte";
+import { CODE_CHUNK, HitCode } from "./hit-code.svelte";
+import { SPANS_WAIT } from "./spans-wait";
 
 const core = vi.hoisted(() => ({
   definitionCode: vi.fn<(code: DefinitionCode) => Promise<unknown>>(),
@@ -70,7 +71,7 @@ it("shows the lines plain while the core parses the file, and paints them when t
   const code = new HitCode("python/cpython", atBase, 0);
 
   code.show(1, 18);
-  await vi.advanceTimersByTimeAsync(CODE_SPANS_WAIT);
+  await vi.advanceTimersByTimeAsync(SPANS_WAIT);
   const plain = [code.line(1), code.spans(1)];
   parsed(ok([[keyword]]));
   await vi.advanceTimersByTimeAsync(0);

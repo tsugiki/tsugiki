@@ -548,6 +548,9 @@
             onclose={() => {
               diff.closePeek();
             }}
+            onhit={(index) => {
+              diff.showHit(index);
+            }}
           />
         </div>
       {:else}

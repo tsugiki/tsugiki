@@ -56,7 +56,7 @@ import {
   type ThreadAnchor,
 } from "./diff-layout";
 import { FilePages, samePage, type FilesMode, type Page } from "./file-pages";
-import { diffShows, inRepository, type FileView, type RepositoryHit } from "./file-view";
+import { diffShows, FileView, inRepository, type RepositoryHit } from "./file-view.svelte";
 import { HitCode, type CodePick } from "./hit-code.svelte";
 import { hud, type Jump, type JumpTimer } from "./hud.svelte";
 import type { PanesState } from "./panes.svelte";
@@ -154,7 +154,7 @@ type Landing = { row: number; side: DiffEnd };
 type Goal =
   | { kind: "diff"; landing: Landing }
   | { kind: "file"; view: FileView }
-  | { kind: "line"; view: FileView; line: number };
+  | { kind: "line"; view: FileView; line: number; column: number };
 
 /** A lookup's question: the peek that shows its answer, before it has one, and the word's place as the core
  * takes it: the file's path at the peek's side, the line and the word's column. */
@@ -1091,7 +1091,7 @@ export class PrFilesState {
       return;
     }
     if (goal.kind === "line") {
-      goal.view.code.land(goal.line);
+      goal.view.land(goal.line, goal.column);
       this.viewWantsFocus = true;
       return;
     }
@@ -1142,8 +1142,8 @@ export class PrFilesState {
     const place = hit.place;
     const from = asked?.at.kind === "view" ? asked.at.view : undefined;
     if (from?.place.path === place.path && from.place.commit === place.commit)
-      return { kind: "line", view: from, line: hit.line };
-    if (!diffShows(view.files, place)) return { kind: "file", view: { place, line: hit.line, code } };
+      return { kind: "line", view: from, line: hit.line, column: hit.column };
+    if (!diffShows(view.files, place)) return { kind: "file", view: new FileView(place, hit.line, code) };
     const line = {
       repository: this.#repository,
       number: this.#number,

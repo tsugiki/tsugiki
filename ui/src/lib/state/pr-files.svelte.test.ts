@@ -2848,7 +2848,7 @@ it("opens the file view on the hit the peek shows, with the code the peek read f
   expect(files.fileView?.code).toBe(codes[1]);
   expect(files.fileView).toMatchObject({
     place: { kind: "repository", path: "Lib/shapes.py", side: "base", commit: "base" },
-    line: 3,
+    landing: { line: 3 },
   });
   expect(files.peek).toBeUndefined();
   expect(core.pullRequestRow).not.toHaveBeenCalled();
@@ -3181,7 +3181,7 @@ it("opens the file view on a hit in a file the PR doesn't change, at the hit's c
 
   expect(files.fileView).toMatchObject({
     place: { kind: "repository", path: "Lib/shapes.py", side: "base", commit: "base" },
-    line: 3,
+    landing: { line: 3 },
   });
   expect(core.pullRequestRow).not.toHaveBeenCalled();
   expect(files.peek).toBeUndefined();
@@ -3348,18 +3348,20 @@ const inFileView = async () => {
 
 it("looks up the word picked in the file view at its commit, and lands on a hit in its own file there", async () => {
   const { files, view } = await inFileView();
-  const before = view.code.landing;
+  const before = view.landing;
   view.code.scrollTop = 200;
   core.definitions.mockResolvedValueOnce(hitsFound(hitAt("Lib/shapes.py", "base", 40)));
 
   await files.goToDefinition();
 
-  expect(before).toBeUndefined();
+  expect(before).toEqual({ line: 3 });
   expect(core.definitions.mock.calls[1]?.[0]).toEqual(lookupOf("base", "Lib/shapes.py", 5, 4));
   expect(files.fileView).toBe(view);
-  expect(view.code.landing).toEqual({ line: 40 });
-  // The view scrolls to the line from wherever the user left it, and its code takes the focus.
+  expect(view.landing).toEqual({ line: 40 });
+  // The view scrolls to the line from wherever the user left it, and its code takes the focus. The pick
+  // leaves line 5 for line 40, which no chunk has read here, so it takes none.
   expect(view.code.scrollTop).toBeUndefined();
+  expect(view.code.pick).toBeUndefined();
   expect(files.viewWantsFocus).toBe(true);
   expect(files.peek).toBeUndefined();
   expect(core.pullRequestRow).not.toHaveBeenCalled();
@@ -3373,7 +3375,10 @@ it("opens another file view on a hit in another file the PR doesn't change", asy
   await files.goToDefinition();
 
   expect(files.fileView).not.toBe(view);
-  expect(files.fileView).toMatchObject({ place: { path: "Lib/sizes.py", commit: "base" }, line: 12 });
+  expect(files.fileView).toMatchObject({
+    place: { path: "Lib/sizes.py", commit: "base" },
+    landing: { line: 12 },
+  });
   expect(files.fileView?.code).toBe(codes.at(-1));
 });
 
@@ -3422,7 +3427,9 @@ it("goes from the peek in the file view to a hit as Go to definition from the vi
   await files.goToDefinition();
   const listed = [files.peek?.at, files.peekFocus];
   await files.openHit();
-  const inView = [files.fileView, view.code.landing, files.peek];
+  const inView = [files.fileView, view.landing, files.peek];
+  // The landing moved the caret to line 40, which no chunk has read here, so the test picks a word again.
+  view.code.pick = { line: 5, word: "area", start: 4, end: 8, caret: 4 };
   await files.goToDefinition();
   files.showHit(1);
   await files.openHit();

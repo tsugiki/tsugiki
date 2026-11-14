@@ -16,16 +16,14 @@
 
   let {
     code,
-    line,
-    landing,
+    mark,
     inset,
     ongo,
   }: {
     code: HitCode;
-    /** The line it marks, counted from 1. */
-    line: number;
-    /** A new one scrolls the code to `line` again, even the line it already marks. */
-    landing?: object;
+    /** The line it marks and scrolls to, counted from 1: the hit's, or the file view's landing. A new one
+     * scrolls to its line again, even the line marked before. */
+    mark: { line: number };
     /** The Definition peek `peek` under line `line`, in `rows` rows, which `box` draws from its top in
      * pixels, in those rows. A new `reveal` scrolls the code as little as it takes to show it, and
      * `onreveal` hears it was taken. */
@@ -57,7 +55,7 @@
   let height = $state(0);
   let width = $state(0);
   /** Until the file's length is known, the hit's line and a screen past it. */
-  const count = $derived(code.count ?? line + 2 * OVERSCAN);
+  const count = $derived(code.count ?? mark.line + 2 * OVERSCAN);
   /** The line the inset shows under, and the rows it takes. */
   const under = $derived(inset?.line ?? Infinity);
   const extra = $derived(inset?.rows ?? 0);
@@ -72,13 +70,11 @@
   /** The numbers of the lines drawn. */
   const drawn = $derived(Array.from({ length: Math.max(0, last - first + 1) }, (_, i) => first + i));
 
-  /** Scrolls `region` to a new hit, or back to where the user left this one's code when the diff draws the
-   * peek again. The region stays while the code shows, so it attaches this once and reruns it on each hit,
-   * and on each landing. */
+  /** Scrolls `region` to a new hit or landing, or back to where the user left this one's code when the diff
+   * draws the peek again. The region stays while the code shows, so it attaches this once and reruns it on
+   * each mark. */
   function scrollToHit(region: HTMLElement) {
-    const [shown, target] = [code, line];
-    // A new landing scrolls to the line again, though it is the one marked.
-    void landing;
+    const [shown, target] = [code, mark.line];
     untrack(() => {
       region.scrollTop = shown.scrollTop ?? Math.max(0, topOf(target) - LEAD * ROW);
       scrollTop = region.scrollTop;
@@ -87,6 +83,35 @@
 
   $effect(() => {
     code.show(first, last);
+  });
+
+  /** The inset's line and rows as last laid out. */
+  let laid = { under: Infinity, extra: 0 };
+  /** The pixels of the inset laid out as `at` that lie above `y`. */
+  const insetAbove = (at: typeof laid, y: number) =>
+    Math.min(Math.max(y - at.under * ROW, 0), at.extra * ROW);
+
+  // Holds the line at the top where it is as the inset opens, closes or changes its rows above it, as the
+  // diff holds its place when a thread above it grows. A top inside the inset stays there as the inset
+  // changes its rows, as far as its new end, and goes to the line after it as it closes.
+  $effect(() => {
+    const now = { under, extra };
+    untrack(() => {
+      const scroller = region as HTMLElement;
+      const [was, at] = [laid, scroller.scrollTop];
+      laid = now;
+      const inside = at > was.under * ROW && at < (was.under + was.extra) * ROW;
+      const content = at - insetAbove(was, at);
+      const top =
+        inside && now.under === was.under
+          ? Math.min(at, (now.under + now.extra) * ROW)
+          : content < now.under * ROW
+            ? content
+            : content + now.extra * ROW;
+      if (top === at) return;
+      scroller.scrollTop = top;
+      scrollTop = top;
+    });
   });
 
   // Scrolls as little as it takes to show the whole inset, but never so far that its line leaves the top,
@@ -150,18 +175,21 @@
   {#if code.problem !== undefined}
     <p class="problem sans" role="alert">{code.problem}</p>
   {:else}
-    <!-- The rows are placed absolutely, so the spacer is as wide as the widest line read and the gutter. -->
+    <!-- The rows are placed absolutely, so the spacer is as wide as the widest line read and the gutter. An
+         inset stays as wide as the code, however far across it scrolls, from `--across` and `--width`, which
+         code without one leaves unset. -->
+
     <div
       class="spacer"
       style:height={`${String((count + extra) * ROW)}px`}
       style:min-width={`calc(${String(code.widest)}ch + 56px)`}
-      style:--across={`${String(scrollLeft)}px`}
-      style:--width={`${String(width)}px`}
+      style:--across={inset && `${String(scrollLeft)}px`}
+      style:--width={inset && `${String(width)}px`}
     >
       {#each drawn as at (at)}
         {@const text = code.line(at)}
         <!-- prettier-ignore -->
-        <div class={["line", at === line && "hit"]} style:top={`${String(topOf(at))}px`}><span class="number">{at}</span><span class="text" data-code-line={at}>{#each pieces(text ?? "", code.spans(at) ?? [], [], code.pick?.line === at ? code.pick : undefined) as piece, index (index)}{#if piece.caret}<span class="caret"></span>{/if}{#if piece.highlight || piece.picked}<span class={[piece.highlight && `hl-${piece.highlight}`, piece.picked && "picked"]}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</span></div>
+        <div class={["line", at === mark.line && "hit"]} style:top={`${String(topOf(at))}px`}><span class="number">{at}</span><span class="text" data-code-line={at}>{#each pieces(text ?? "", code.spans(at) ?? [], [], code.pick?.line === at ? code.pick : undefined) as piece, index (index)}{#if piece.caret}<span class="caret"></span>{/if}{#if piece.highlight || piece.picked}<span class={[piece.highlight && `hl-${piece.highlight}`, piece.picked && "picked"]}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</span></div>
       {/each}
       {#if inset !== undefined}
         <div class="inset" data-inset={id}>{@render inset.box(under * ROW, inset.peek, extra)}</div>

@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { FileView } from "$lib/state/file-view.svelte";
 import type { HitCode } from "$lib/state/hit-code.svelte";
 import type { Peek } from "$lib/state/peek";
 import { PrFilesState, type FilesMode } from "$lib/state/pr-files.svelte";
@@ -1274,9 +1275,9 @@ it("goes to the definition with F12 on the Files tab, once for a held key", asyn
   expect(goToDefinition).toHaveBeenCalledTimes(1);
 });
 
-/** A file view of `Lib/eggs.py` at the PR's base, whose code holds 10 lines it asks the core for none of. */
-const eggsView = () => {
-  const place = { kind: "repository" as const, path: "Lib/eggs.py", side: "base" as const, commit: "base" };
+/** A file view of `path` at the PR's base, whose code holds 10 lines it asks the core for none of. */
+const eggsView = (path = "Lib/eggs.py") => {
+  const place = { kind: "repository" as const, path, side: "base" as const, commit: "base" };
   const code = {
     count: 10,
     widest: 0,
@@ -1285,7 +1286,7 @@ const eggsView = () => {
     spans: () => undefined,
     retry: () => {},
   } as unknown as HitCode;
-  return { place, line: 4, code };
+  return new FileView(place, 4, code);
 };
 
 /** A PR's Files tab with the file view over it. */
@@ -1418,7 +1419,7 @@ it("leaves the diff's keys alone while the file view covers it, and the cursor o
 
 it("adds a history entry for a file view F12 opens from another, and Alt+← comes back to the first", async () => {
   const { diff, view, opened } = await goIntoFileView();
-  const other = { ...eggsView(), place: { ...view.place, path: "Lib/spam.py" } };
+  const other = eggsView("Lib/spam.py");
   vi.mocked(PrFilesState.prototype.goToDefinition).mockImplementation(function (this: PrFilesState) {
     this.openFileView(other);
     return Promise.resolve();

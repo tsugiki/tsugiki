@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick } from "svelte";
   import { openOnGitHub, type GitHubItem } from "$lib/state/browser";
-  import { lineOf, samePlace, type FileView, type HistoryPlace } from "$lib/state/file-view";
+  import { lineOf, samePlace, type FileView, type HistoryPlace } from "$lib/state/file-view.svelte";
   import { hud } from "$lib/state/hud.svelte";
   import { IssueViewState } from "$lib/state/issue-view.svelte";
   import {

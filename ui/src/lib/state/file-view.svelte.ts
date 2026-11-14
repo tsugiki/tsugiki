@@ -19,13 +19,29 @@ export function inRepository(hit: Hit): hit is RepositoryHit {
   return hit.place.kind === "repository";
 }
 
-/** The file a hit is in, at the hit's commit, and its lines. */
-export interface FileView {
-  place: InRepository;
-  /** The hit's line, counted from 1, which the view marks until Go to definition lands on another line of
-   * it (#457). */
-  line: number;
-  code: HitCode;
+/** The file a hit is in, at the hit's commit, its lines, and the line the view marks. */
+export class FileView {
+  readonly place: InRepository;
+  readonly code: HitCode;
+  /** The line the view marks, counted from 1: the hit's line it opened on, then the line Go to definition
+   * last landed on in it (#457). Each landing is a new one, so the view scrolls to it again on the same
+   * line. */
+  landing = $state.raw<{ line: number }>({ line: 1 });
+
+  constructor(place: InRepository, line: number, code: HitCode) {
+    this.place = place;
+    this.code = code;
+    this.landing = { line };
+  }
+
+  /** Lands Go to definition on line `line` at column `column`, in UTF-16 code units: the view marks the line
+   * and scrolls to it from wherever the user left it, and the caret moves to the word there, so the next
+   * `F12` looks up from it. A line not read yet takes no pick. */
+  land(line: number, column: number) {
+    this.code.scrollTop = undefined;
+    this.code.pickWord(line, column, false);
+    this.landing = { line };
+  }
 }
 
 /** A line of the file a file view shows, counted from 1, which a Definition peek opens under (#457). */

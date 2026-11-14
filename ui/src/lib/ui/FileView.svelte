@@ -7,7 +7,7 @@
      `Alt+F12` opens the Definition peek under its line. The header says what Go to definition is doing, as
      the line over the diff does. -->
 <script lang="ts">
-  import { fileViewWords, type FileView } from "$lib/state/file-view";
+  import { fileViewWords, type FileView } from "$lib/state/file-view.svelte";
   import { peekPlaces, type Peek } from "$lib/state/peek";
   import type { PrFilesState } from "$lib/state/pr-files.svelte";
   import PeekBox from "./PeekBox.svelte";
@@ -16,8 +16,6 @@
   let { view, files }: { view: FileView; files: PrFilesState } = $props();
 
   const words = $derived(fileViewWords(view, files.number));
-  /** The line the view marks: where Go to definition last landed in it, or the hit's line it opened on. */
-  const landed = $derived(view.code.landing ?? view);
   /** The Definition peek, while it shows under a line of this view. */
   const peek = $derived.by(() => {
     const peek = files.peek;
@@ -62,8 +60,7 @@
   <div class="code">
     <PeekCode
       code={view.code}
-      line={landed.line}
-      landing={landed}
+      mark={view.landing}
       ongo={() => void files.goToDefinition()}
       inset={peek && {
         peek: peek.peek,

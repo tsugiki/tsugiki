@@ -1729,6 +1729,10 @@ it("scrolls to a definition in the file view's own file and marks it, each time 
   // The line sits three rows from the top, though it is the one marked.
   expect([landed, code.scrollTop]).toEqual([(120 - 1 - 3) * 20, (120 - 1 - 3) * 20]);
   expect(view.querySelectorAll(".hit")).toHaveLength(1);
+  // The caret moves to the word the hit names, as its line has come by now, so the next F12 asks from it.
+  expect(files.fileView?.code.pick).toMatchObject({ line: 120, word: "line", caret: 4 });
+  await tick();
+  expect(view.querySelector('[data-code-line="5"] .picked')).toBeNull();
   expect(files.fileView).toBe(first);
   expect(fileView()).toBe(view);
 });
@@ -1791,6 +1795,54 @@ it("scrolls a peek that opens on the file view's last lines on screen into view 
   const high = await peekAt(897);
 
   expect([low, high]).toEqual([900 * 20, (900 - 1 - 3) * 20]);
+});
+
+it("holds the file view's top line in place as a peek above it opens, shrinks, resizes and closes", async () => {
+  const { files, view } = await intoFileView();
+  const code = within(view).getByRole("region", { name: "Definition's code" });
+  // Line 897 is at the top, and the peek opens under line 880, out of sight above it.
+  await clickAt(await viewLine(880), 2);
+  let answer: (found: unknown) => void = () => {};
+  core.definitions.mockReturnValueOnce(
+    new Promise((resolve) => {
+      answer = resolve;
+    }),
+  );
+  const top = 896 * 20;
+
+  const looking = files.peekDefinition();
+  await tick();
+  const opened = code.scrollTop;
+  answer(ok({ state: "found", hits: [] }));
+  await looking;
+  await tick();
+  const shrunk = code.scrollTop;
+  files.closePeek();
+  await tick();
+  const closed = code.scrollTop;
+
+  expect([opened, shrunk, closed]).toEqual([top + 18 * 20, top + 2 * 20, top]);
+});
+
+it("keeps a top inside the file view's peek inside it as the peek's rows change", async () => {
+  const { files, view } = await intoFileView();
+  const code = within(view).getByRole("region", { name: "Definition's code" });
+  await clickAt(await viewLine(880), 2);
+  core.definitions.mockReturnValue(new Promise(() => {}));
+  void files.peekDefinition();
+  await tick();
+  // The peek takes rows 880 to 897, from 17600 pixels down. The top goes 15 rows into it.
+  code.scrollTop = (880 + 15) * 20;
+  await fireEvent.scroll(code);
+
+  files.panes.peek = 20;
+  await tick();
+  const grown = code.scrollTop;
+  files.panes.peek = 5;
+  await tick();
+
+  // A top past the peek's new end goes to the end, where the line after the peek starts.
+  expect([grown, code.scrollTop]).toEqual([(880 + 15) * 20, (880 + 5) * 20]);
 });
 
 it("picks a word side by side on the half it was clicked on, and on the lines a gap left out", async () => {

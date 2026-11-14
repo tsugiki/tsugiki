@@ -175,7 +175,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   The core looks up at the commits of the diff on show, so a view at a commit the PR has moved on from
   says so there for 4 seconds instead, as its lines would name other text.
   - A single hit in the same file scrolls the view there and marks that line in place of the one marked
-    before. That makes no new place in the history, and each landing scrolls, even to the line marked.
+    before. That makes no new place in the history, and each landing scrolls, even to the line marked. The
+    caret moves to the word the hit names, so the next `F12` asks from it, or goes, if that line hasn't
+    come yet.
   - A single hit in another file the PR doesn't change opens a new file view, one more place in the
     history, so `Alt+←` comes back to the view it was found from.
   - A single hit in a file the PR changes closes the file view, as Back does, and lands on its line in the
@@ -184,7 +186,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     `F12` there go to the hit the peek shows, as a single hit goes.
 - `Alt+F12` in the file view opens the Definition peek under the picked word's line, and the lines after it
   move down. It sizes, scrolls into sight and follows a word picked in its code as the diff's peek does, and
-  with no word picked there, `Alt+F12` looks up the file view's. Esc closes the peek and gives the focus
+  with no word picked there, `Alt+F12` looks up the file view's. A peek above the top line that opens,
+  changes its rows or closes leaves that line where it is. Esc closes the peek and gives the focus
   back to the file view's code, and the next Esc goes back to the diff. One peek shows at a time, on what is
   on top: opening a file view closes the diff's peek, and Back, `Alt+←`, `Alt+→` and Go to definition into
   another view close the view's.

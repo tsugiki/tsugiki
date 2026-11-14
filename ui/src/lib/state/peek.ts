@@ -4,7 +4,7 @@
 
 import type { Answer, Hit, Index_Deserialize, ServerName, Waiting } from "$lib/data/bindings";
 import type { LaidThread } from "./diff-layout";
-import type { ViewLine } from "./file-view";
+import type { ViewLine } from "./file-view.svelte";
 import type { HitCode } from "./hit-code.svelte";
 import type { PickedLine, Side } from "./pick";
 

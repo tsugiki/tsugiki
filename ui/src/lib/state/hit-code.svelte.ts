@@ -39,10 +39,6 @@ export class HitCode {
    * keeps the code, so a peek it brings back shows the word that was followed. Picking another hit makes new
    * code, with no pick. */
   pick = $state.raw<CodePick>();
-  /** The line the file view that shows this code marks, once Go to definition landed on a line of it
-   * (#457). Each landing is a new one, so the view scrolls to it again on the same line. Until the first,
-   * the view marks the hit's line it opened on. */
-  landing = $state.raw<{ line: number }>();
   #chunks = new SvelteMap<number, readonly string[]>();
   /** The spans of each chunk's lines, which may come after its lines. */
   #spans = new SvelteMap<number, Span[][]>();
@@ -85,13 +81,6 @@ export class HitCode {
       caret: selected ? null : offset,
     };
     return this.pick;
-  }
-
-  /** Lands Go to definition on line `line`, counted from 1, which the file view then marks and scrolls to
-   * from wherever the user left it (#457). */
-  land(line: number) {
-    this.scrollTop = undefined;
-    this.landing = { line };
   }
 
   /** Asks for the chunks that hold lines `first` to `last`, counted from 1, unless asked before. */

@@ -2066,7 +2066,9 @@ export type ServerName =
 /**  ty, for Python. */
 "ty" | 
 /**  rust-analyzer, for Rust. */
-"rust-analyzer";
+"rust-analyzer" | 
+/**  clangd, for C. */
+"clangd";
 
 /**  What `settings.toml` holds. A value the file leaves out takes its default. */
 export type Settings = Settings_Serialize | Settings_Deserialize;

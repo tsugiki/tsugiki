@@ -154,6 +154,7 @@ pub(crate) fn connect_core<R: Runtime>(
             match server {
                 ServerName::Ty => servers.ty,
                 ServerName::RustAnalyzer => servers.rust_analyzer,
+                ServerName::Clangd => servers.clangd,
             }
         }),
     });

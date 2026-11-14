@@ -28,7 +28,7 @@ pub(super) fn setup(folder: &Path) -> Setup {
 /// in `Lib` and the version `Include/patchlevel.h` names, as CPython has no `pyproject.toml` that says so.
 /// Elsewhere none, and ty uses its own defaults and the Repository's files.
 fn settings(folder: &Path) -> Value {
-    let Ok(header) = fs::read_to_string(folder.join("Include/patchlevel.h")) else {
+    let Ok(header) = fs::read_to_string(folder.join(super::CPYTHON_MARK)) else {
         return json!({});
     };
     let environment = match python_version(&header) {

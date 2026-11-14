@@ -30,6 +30,14 @@ impl Os {
 const MIRROR: &str = "mirror.git";
 /// The **Lookup checkout**'s folder, in its Repository's folder.
 const LOOKUP: &str = "lookup";
+/// The folder of the files Tsugiki and the language servers keep for a Repository, in its folder.
+const SERVERS: &str = "servers";
+
+/// The folder of the files the language servers keep for the Repository whose **Lookup checkout** is at
+/// `lookup`: `servers` beside it.
+pub fn servers_beside(lookup: &Path) -> PathBuf {
+    lookup.with_file_name(SERVERS)
+}
 
 /// The root of the repo this program was built from, two folders up from this crate's, where `just dev` runs.
 /// None once the checkout has moved or gone, or on a machine that never had it.

@@ -65,6 +65,7 @@ it("says how to set up the server for the file's language", () => {
 
   expect(notSetUp("ty")).toBe("Set up ty to go to definitions in Python");
   expect(notSetUp("rust-analyzer")).toBe("Set up rust-analyzer to go to definitions in Rust");
+  expect(notSetUp("clangd")).toBe("Set up clangd to go to definitions in C");
 });
 
 it("says a lookup was cancelled, in a peek with words only", () => {

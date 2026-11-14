@@ -133,6 +133,38 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   there, and a `cargo.buildScripts.enable = true` there builds nothing, which a test checks. It also reads
   the user's own `rust-analyzer.toml` in their config folder.
 
+## Go to definition in C
+
+- Go to definition and the Definition peek work in `.c` and `.h` files as they do in Python, through clangd.
+  The PR's changed C files open on it and switch views as Python's do on ty.
+- Until Settings can pick it (#683), clangd's binary comes from `[language_servers.clangd] path` in
+  `machine.toml`. clangd reads its built-in headers from `lib/clang` beside its `bin` folder, so it stays in
+  the folder its release unpacks to. We test with clangd 23.1.0, which `just test-servers` fetches whole. The
+  tests read its path from `TSUGIKI_CLANGD`, which `just cargo-test` and `just rust-coverage` set.
+- Each Repository gets its own clangd, which starts as ty does: when a PR that changes a `.c` or `.h` file
+  opens, or on a lookup that comes first. A PR at other commits gets a new one. It runs with
+  `--background-index --background-index-priority=low -j=4`.
+- In a Repository with CPython's layout, recognised by `Include/patchlevel.h`, Tsugiki writes clangd a
+  `compile_commands.json` into `repos\<owner>__<name>\servers\clangd\`, beside the Lookup checkout, and
+  starts clangd with `--compile-commands-dir` set to it. It has one entry for each C file under `Objects/`,
+  `Python/`, `Parser/`, `Modules/` and `PC/` in the checkout, which holds the PR's added files too, and
+  leaves out the vendored `libmpdec`, `expat` and `_hacl`, `Objects/mimalloc`, which builds only as part of
+  `Objects/obmalloc.c`, and `Python/bytecodes.c`, the source of the generated interpreter cases. Each entry
+  gets the flags CPython's Windows build gives `pythoncore`: `-xc -std=c11
+  --target=x86_64-pc-windows-msvc`, `Include`, `Include/internal`, `Include/internal/mimalloc` and `PC` as
+  include folders, and `WIN32 _WIN32 _WIN64 _M_X64 Py_BUILD_CORE Py_BUILD_CORE_BUILTIN Py_ENABLE_SHARED`.
+  Each start writes it again, so each move does too. clangd keeps its index in `.cache\clangd\index\` in the
+  same folder, outside the checkout.
+- Elsewhere clangd uses its own defaults, and finds a `compile_commands.json` the Repository holds. Without
+  one it indexes nothing, so it finds definitions only in the file and the headers it includes.
+- Nothing is configured or built: clangd reads the flags Tsugiki wrote, and runs no compiler to ask for its
+  include folders unless `--query-driver` allows it, which Tsugiki never passes.
+- Only the flags for Windows are known. macOS and Linux need the `pyconfig.h` that `configure` generates, so
+  they wait for the macOS checks before 1.0.
+- Until clangd's index holds the file that defines a function, a lookup lands on its declaration in a
+  header. clangd 23.1.0 indexed the 453 files of CPython's core at `ce4ac8c045` in 80 s, after which
+  `PyErr_Format` in `Objects/typeobject.c` landed in `Python/errors.c`.
+
 ## Text search
 
 - The core searches the open PR's code at its head, on ripgrep's `grep-regex` and `grep-searcher`. It reads

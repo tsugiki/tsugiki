@@ -292,6 +292,10 @@ fn without_a_server_a_lookup_says_to_set_it_up_and_another_language_has_no_serve
         path: "Include/patchlevel.h".to_owned(),
         ..python.clone()
     };
+    let text = Lookup {
+        path: "README.rst".to_owned(),
+        ..python.clone()
+    };
 
     let pr = Pr {
         at: fixture.checkout.at.clone(),
@@ -311,9 +315,13 @@ fn without_a_server_a_lookup_says_to_set_it_up_and_another_language_has_no_serve
     let rust_analyzer = Answer::NotSetUp {
         server: ServerName::RustAnalyzer,
     };
+    let clangd = Answer::NotSetUp {
+        server: ServerName::Clangd,
+    };
     assert_eq!(look(&mut owner, &python), Ok(ty));
     assert_eq!(look(&mut owner, &rust), Ok(rust_analyzer));
-    assert_eq!(look(&mut owner, &header), Ok(Answer::NoServer));
+    assert_eq!(look(&mut owner, &header), Ok(clangd));
+    assert_eq!(look(&mut owner, &text), Ok(Answer::NoServer));
 }
 
 #[test]
@@ -658,7 +666,7 @@ fn a_plain_path_drops_its_dot_and_dot_dot_parts() {
 }
 
 #[test]
-fn the_files_a_server_reads_are_python_and_rust_files() {
+fn the_files_a_server_reads_are_python_rust_and_c_files() {
     let files = [
         "a.py",
         "b.pyi",
@@ -667,10 +675,16 @@ fn the_files_a_server_reads_are_python_and_rust_files() {
         "odd\nname.py",
         "e.rs",
         "f.rsx",
+        "g.h",
+        "h.c.h",
+        "i.cpp",
     ]
     .map(diff_file);
 
-    assert_eq!(served_files(&files), ["a.py", "b.pyi", "e.rs"]);
+    assert_eq!(
+        served_files(&files),
+        ["a.py", "b.pyi", "c.c", "e.rs", "g.h", "h.c.h"]
+    );
 }
 
 #[test]
@@ -939,4 +953,168 @@ fn a_pr_at_other_commits_stops_its_rust_analyzer_and_cancels_the_lookup_on_it() 
     assert_eq!(started, 1);
     assert!(owner.servers.is_empty());
     assert_eq!(asked.answer.try_recv(), Ok(Ok(Answer::Cancelled)));
+}
+
+const EGGS_C: &str = "Objects/eggs.c";
+
+const EGGS_C_AT_BASE: &str = "\
+#include \"spam.h\"
+
+static int old_helper(void)
+{
+    return 1;
+}
+
+static int eggs_twice(int count)
+{
+    int total = count * 2;
+    return total + old_helper() + spam_count(SPAM_LIMIT);
+}
+
+int eggs(void)
+{
+    return eggs_twice(3);
+}
+";
+
+const EGGS_C_AT_HEAD: &str = "\
+#include \"spam.h\"
+
+static int only_head(void)
+{
+    return 2;
+}
+
+static int eggs_twice(int count)
+{
+    int total = count * 2;
+    return total + only_head() + spam_count(SPAM_LIMIT);
+}
+
+int eggs(void)
+{
+    return eggs_twice(3);
+}
+";
+
+/// A Repository with CPython's layout, whose `Objects/other.c` defines what `Include/spam.h` declares. The PR
+/// changes `Objects/eggs.c`.
+fn c_files(name: &str) -> Fixture {
+    Fixture::new(
+        name,
+        &[
+            ("Include/patchlevel.h", PATCHLEVEL),
+            (
+                "Include/spam.h",
+                "#define SPAM_LIMIT 10\n\nint spam_count(int limit);\n",
+            ),
+            (
+                "Objects/other.c",
+                "#include \"spam.h\"\n\nint spam_count(int limit)\n{\n    return limit + 1;\n}\n",
+            ),
+            (EGGS_C, EGGS_C_AT_BASE),
+        ],
+        &[(EGGS_C, Some(EGGS_C_AT_HEAD))],
+    )
+}
+
+/// The servers' thread, run here, with clangd set up and the fixture's PR opened.
+fn c_opened(fixture: &Fixture) -> Owner {
+    let checkout = fixture.checkout.clone();
+    let program = super::testing::clangd();
+    let mut owner = Owner::new(Sources {
+        checkout: Box::new(move |_| Some(checkout.clone())),
+        servers: Box::new(move |server| (server == ServerName::Clangd).then(|| program.clone())),
+    });
+    let pr = Pr {
+        at: fixture.checkout.at.clone(),
+        changed: vec![EGGS_C.to_owned()],
+    };
+    owner.opened(&repository(), pr);
+    owner
+}
+
+/// A lookup of `word` on line `line` of `Objects/eggs.c` at `side`.
+fn c_lookup(fixture: &Fixture, side: DiffEnd, line: u32, word: &str) -> Lookup {
+    let text = match side {
+        DiffEnd::Base => EGGS_C_AT_BASE,
+        DiffEnd::Head => EGGS_C_AT_HEAD,
+    };
+    let found = (text.lines())
+        .nth(usize::try_from(line - 1).unwrap())
+        .unwrap();
+    let byte = found.find(word).unwrap();
+    Lookup {
+        repository: repository(),
+        at: fixture.checkout.at.clone(),
+        path: EGGS_C.to_owned(),
+        side,
+        line,
+        column: tsugiki_lsp::utf16::column_of(found, byte),
+    }
+}
+
+#[test]
+fn clangd_finds_a_local_a_parameter_a_macro_a_static_function_and_a_name_at_either_side() {
+    let fixture = c_files("definitions-c");
+    let mut owner = c_opened(&fixture);
+    // clangd starts with the PR.
+    let started_with_pr = owner.servers.len();
+
+    let mut found =
+        |side, line, word| hits(look(&mut owner, &c_lookup(&fixture, side, line, word)));
+    let local = found(DiffEnd::Head, 11, "total");
+    let parameter = found(DiffEnd::Head, 10, "count");
+    let r#macro = found(DiffEnd::Head, 11, "SPAM_LIMIT");
+    let function = found(DiffEnd::Head, 16, "eggs_twice");
+    let head = found(DiffEnd::Head, 11, "only_head");
+    let base = found(DiffEnd::Base, 11, "old_helper");
+
+    let at = |side, place, text| vec![hit(&fixture, side, place, text)];
+    assert_eq!(started_with_pr, 1);
+    let total = "    int total = count * 2;";
+    assert_eq!(local, at(DiffEnd::Head, (EGGS_C, 10, 8), total));
+    let eggs_twice = "static int eggs_twice(int count)";
+    assert_eq!(parameter, at(DiffEnd::Head, (EGGS_C, 8, 26), eggs_twice));
+    let limit = "#define SPAM_LIMIT 10";
+    assert_eq!(r#macro, at(DiffEnd::Base, ("Include/spam.h", 1, 8), limit));
+    assert_eq!(function, at(DiffEnd::Head, (EGGS_C, 8, 11), eggs_twice));
+    let only_head = "static int only_head(void)";
+    assert_eq!(head, at(DiffEnd::Head, (EGGS_C, 3, 11), only_head));
+    let old_helper = "static int old_helper(void)";
+    assert_eq!(base, at(DiffEnd::Base, (EGGS_C, 3, 11), old_helper));
+}
+
+/// Until its index has `Objects/other.c`, clangd names the declaration in `Include/spam.h`.
+#[test]
+fn after_its_index_clangd_finds_a_function_defined_in_another_file() {
+    let fixture = c_files("definitions-c-index");
+    let mut owner = c_opened(&fixture);
+    let lookup = c_lookup(&fixture, DiffEnd::Head, 11, "spam_count");
+    let defined = hit(
+        &fixture,
+        DiffEnd::Base,
+        ("Objects/other.c", 3, 4),
+        "int spam_count(int limit)",
+    );
+
+    let until = Instant::now() + PATIENCE;
+    let mut found = hits(look(&mut owner, &lookup));
+    while found != [defined.clone()] && Instant::now() < until {
+        thread::sleep(Duration::from_millis(100));
+        found = hits(look(&mut owner, &lookup));
+    }
+
+    assert_eq!(found, [defined]);
+    // clangd keeps its index beside its compile database, outside the checkout.
+    let folder = &fixture.checkout.folder;
+    let database = crate::folders::servers_beside(folder).join("clangd");
+    assert!(
+        database
+            .join(".cache")
+            .join("clangd")
+            .join("index")
+            .is_dir()
+    );
+    assert!(!folder.join(".cache").exists());
 }

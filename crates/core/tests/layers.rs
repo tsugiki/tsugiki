@@ -214,9 +214,10 @@ const LAYERS: &[Layer] = &[
     },
     Layer {
         module: "definitions",
-        uses: &["diff", "error", "github", "mirror", "repository"],
-        why: "Asks ty where a name is defined, in the Lookup checkout the Mirror worker keeps, with the files \
-              the PR's diff changes open at its head, read from the Mirror through `diff`.",
+        uses: &["diff", "error", "folders", "github", "mirror", "repository"],
+        why: "Asks a language server where a name is defined, in the Lookup checkout the Mirror worker keeps, \
+              with the files the PR's diff changes open at its head, read from the Mirror through `diff`. \
+              clangd's compile database goes in the servers' folder `folders` names beside the checkout.",
     },
     Layer {
         module: "search",

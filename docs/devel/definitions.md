@@ -335,10 +335,10 @@ explains more, in this order.
   a minute after the first C file opens, unless the Repository holds a `compile_commands.json`. A clangd
   started with no file open waits for nothing.
 
-What a look at the program's folder finds belongs to the program, for every Repository, until a start finds
-it no longer lacks it or the path changes. What a running clangd reports, missing built-in headers among
-it, belongs to that Repository's clangd: a start clears it, and clangd reports the missing header again once
-a file opens. An idle stop replaces it with Stopped (idle). A problem that comes from a clangd stopped since
+Built-in headers missing from the program's folder belong to the program and show for every Repository,
+until a start finds them or the path changes. A problem a running clangd reports, missing built-in headers
+included, belongs to that Repository's clangd: a start clears it, and clangd reports the missing header
+again once a file opens. An idle stop replaces it with Stopped (idle). A problem that comes from a clangd stopped since
 is dropped. The tests play each problem with a fake clangd: a folder without `lib\clang`, a fake that
 reports `'stdlib.h' file not found`, and one that doesn't report its index within a limit the test sets to
 300 ms.

@@ -2064,6 +2064,29 @@ fn a_path_changed_in_the_settings_counts_once_the_thread_hears_of_the_change() {
 }
 
 #[test]
+fn a_new_path_forgets_the_problem_the_old_program_had() {
+    let fixture = cpython("definitions-new-path");
+    let ty = Arc::new(Mutex::new(Some(fixture.checkout.folder.join("no-ty.exe"))));
+    let idle = Arc::new(Mutex::new(Duration::from_secs(3600)));
+    let (rows, _heard) = mpsc::channel();
+    let mut owner = owner_of(settable(&fixture, (&ty, &idle), rows));
+
+    let failed = look(
+        &mut owner,
+        &lookup(&fixture, DiffEnd::Head, 12, "only_head"),
+    );
+    let troubled = ty_row(&owner.told);
+    *ty.lock().unwrap() = Some(fixture.checkout.folder.join("other-ty.exe"));
+    let _goes_on = owner.handle(Message::Reconfigured);
+    let renewed = ty_row(&owner.told);
+
+    assert!(matches!(failed, Ok(Answer::Problem { .. })), "{failed:?}");
+    assert!(matches!(troubled.status, ServerStatus::Problem { .. }));
+    // Its `--version` check hasn't answered yet.
+    assert_eq!(renewed.status, ServerStatus::Ready);
+}
+
+#[test]
 fn the_rows_show_the_servers_of_the_repository_last_opened_or_looked_up_in() {
     let fixture = cpython("definitions-rows-shown");
     let other = RepositoryName::parse("tsugiki/tsugiki").unwrap();

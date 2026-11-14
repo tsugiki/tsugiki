@@ -23,6 +23,7 @@ const core = vi.hoisted(() => ({
   pullRequestFind: vi.fn(),
   definitions: vi.fn(),
   definitionCode: vi.fn<(code: { start: number; end: number }) => Promise<unknown>>(),
+  pullRequestRow: vi.fn(),
   cloning: vi.fn(),
   mirrorStates: vi.fn(),
   mirrorsHeld: vi.fn(),
@@ -38,6 +39,7 @@ vi.mock("$lib/data/bindings", () => ({
     pullRequestFind: core.pullRequestFind,
     definitions: core.definitions,
     definitionCode: core.definitionCode,
+    pullRequestRow: core.pullRequestRow,
     cloning: core.cloning,
     mirrorStates: core.mirrorStates,
     mirrorsHeld: core.mirrorsHeld,
@@ -1299,7 +1301,7 @@ it("gives the threads on files no longer in the diff a last page of their own", 
 
 /** Clicks `element` with the caret `offset` characters into its text, where Chromium leaves a collapsed
  * selection after a click; jsdom lays nothing out to find the caret from. */
-const clickAt = async (element: Element, offset: number) => {
+const clickAt = async (element: Element, offset: number, keys: MouseEventInit = {}) => {
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
   let left = offset;
   let node = walker.nextNode() as Text | null;
@@ -1308,7 +1310,7 @@ const clickAt = async (element: Element, offset: number) => {
     node = walker.nextNode() as Text | null;
   }
   getSelection()?.collapse(node ?? element, node === null ? 0 : left);
-  await fireEvent.click(element);
+  await fireEvent.click(element, keys);
 };
 
 /** The code of the row `row` of the tab, on its `half` side by side. */
@@ -1423,6 +1425,90 @@ it("selects the word on a double-click, however far the browser's own word runs"
   expect(files.picked).toMatchObject({ word: "line", caret: null });
   expect(picked()).toEqual([["line", "2+new line"]]);
   expect(codeOf(4).querySelectorAll(".caret")).toHaveLength(0);
+});
+
+/** ty's one hit, at line `line` of news.txt at `side`. */
+const oneHit = (side: "base" | "head", line: number) =>
+  ok({
+    state: "found",
+    hits: [
+      { place: { kind: "repository", path: "news.txt", side, commit: side }, line, column: 0, text: "" },
+    ],
+  });
+const mark = () => document.querySelector<HTMLElement>(".mark");
+
+it("goes to the definition on a Ctrl+click, and marks the whole line it lands on", async () => {
+  core.definitions.mockResolvedValue(oneHit("head", 2));
+  core.pullRequestRow.mockResolvedValue(ok(4));
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[2]).toBe("11 Notes");
+  });
+
+  // A plain click only picks the word.
+  await clickAt(codeOf(2), 2);
+  expect(core.definitions).not.toHaveBeenCalled();
+  await clickAt(codeOf(2), 2, { ctrlKey: true });
+  await vi.waitFor(() => {
+    expect(mark()).not.toBeNull();
+  });
+
+  expect(files.picked).toMatchObject({ word: "Notes", line: 1 });
+  expect(mark()?.style.top).toBe(rowAt("2+new line")?.style.top);
+  expect(mark()?.className).toMatch(/^mark\b/);
+  expect(mark()?.classList).not.toContain("head");
+  // Once faded the mark goes, so the line isn't marked again when it shows again.
+  await fireEvent.animationEnd(mark() as HTMLElement);
+  expect(mark()).toBeNull();
+  expect(files.marked).toBeUndefined();
+});
+
+it("goes to the definition on a Cmd+click on macOS, where Ctrl+click is the system's", async () => {
+  const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+  core.definitions.mockResolvedValue(oneHit("head", 2));
+  core.pullRequestRow.mockResolvedValue(ok(4));
+  await shown(ready(rows.length));
+  // The tab read the platform as it was drawn.
+  platform.mockRestore();
+  await vi.waitFor(() => {
+    expect(lines()[2]).toBe("11 Notes");
+  });
+
+  await clickAt(codeOf(2), 2, { ctrlKey: true });
+  const afterCtrl = core.definitions.mock.calls.length;
+  await clickAt(codeOf(2), 2, { metaKey: true });
+
+  expect(afterCtrl).toBe(0);
+  expect(core.definitions).toHaveBeenCalledOnce();
+});
+
+it("marks only the half of the hit's side side by side", async () => {
+  core.definitions.mockResolvedValueOnce(oneHit("base", 2));
+  core.pullRequestRow.mockResolvedValueOnce(ok(3));
+  const files = await shown(ready(rows.length), sideBySide());
+  await vi.waitFor(() => {
+    expect(lines()[2]).toBe("1 Notes1 Notes");
+  });
+  await clickAt(codeOf(2, 1), 2);
+
+  await files.goToDefinition();
+  await tick();
+
+  expect(mark()?.classList).toContain("base");
+});
+
+it("says Go to definition found nothing beside the toggle", async () => {
+  core.definitions.mockResolvedValue(ok({ state: "found", hits: [] }));
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[2]).toBe("11 Notes");
+  });
+  await clickAt(codeOf(2), 2);
+
+  await files.goToDefinition();
+  await tick();
+
+  expect(screen.getByText("No definition of Notes at abc.").getAttribute("role")).toBe("status");
 });
 
 it("picks a word side by side on the half it was clicked on, and on the lines a gap left out", async () => {

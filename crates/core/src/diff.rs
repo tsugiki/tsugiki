@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::error::{Error, ErrorKind};
@@ -145,6 +145,14 @@ impl Diff {
     /// How many rows the diff has, file headers included.
     pub fn row_count(&self) -> u32 {
         count(self.rows.len())
+    }
+
+    /// The rows of `file`, one of the diff's files: those after its header, up to the next file's header.
+    pub fn rows_of(&self, file: &DiffFile) -> Range<u32> {
+        let end = (self.files.iter())
+            .find(|next| next.row > file.row)
+            .map_or(self.row_count(), |next| next.row);
+        file.row.saturating_add(1)..end
     }
 
     /// The rows in `range`, cut to the diff's end.
@@ -713,6 +721,14 @@ impl PrAt {
             && self.number == other.number
             && self.head == other.head
     }
+}
+
+/// The commit a line of the diff is at: the PR's base for a removed line, its head for the rest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DiffEnd {
+    Base,
+    Head,
 }
 
 /// A PR's diff as the window holds it: from the merge base it was told to the PR's head. Each chunk names

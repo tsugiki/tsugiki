@@ -86,6 +86,22 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   can't start, or fails a lookup, says why in the peek, and the next lookup starts a new one.
 - ty reads the checkout and the Mirror, so a lookup works offline at any commit the Mirror holds.
 
+## Go to definition in Python
+
+- `F12` on the picked word, or `Ctrl+click` on a word (`Cmd+click` on macOS), runs the lookup `Alt+F12`
+  runs, at the same commit. While it looks, the line over the diff says "Searching for the definition of
+  X…", a peek on another word closes, and Esc stops it.
+- It goes to the first of ty's hits on a line a hunk shows: the diff scrolls there, opening the file if it
+  is collapsed, and marks the line for a moment. A hit at the head lands on the line's new side, and one at
+  the base on its old side, which side by side marks only that half. The core finds the row in the diff on
+  show, from the hit's path and line at its side, the old path for a renamed file at the base.
+- With no hit, the line over the diff says "No definition of X at abc1234." for 4 seconds.
+- Until the later tickets land, a hit on no line of the diff opens the peek on it: a line no hunk shows
+  (#445), or a file the PR doesn't change (#453). So does an answer with no hit to go to, which says why. With
+  several hits it goes to the first that lands, until #446 opens the peek with the list.
+- A development build gives `F12` to Go to definition too, and opens DevTools on `Ctrl+Shift+I` or from the
+  palette.
+
 ## Text search
 
 - The core searches the open PR's code at its head, on ripgrep's `grep-regex` and `grep-searcher`. It reads

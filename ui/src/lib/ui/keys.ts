@@ -210,32 +210,14 @@ export function isTextBox(target: EventTarget | null): boolean {
 
 /**
  * The handler for the window's capture phase. In a text box a plain key and Ctrl+Alt+B type, and any other
- * key with a modifier is still Tsugiki's. A key in `forBrowser` goes through, and has no action.
+ * key with a modifier is still Tsugiki's. Every build owns F12, which is Go to definition: a development
+ * build opens DevTools on WebView2's own Ctrl+Shift+I, which Tsugiki leaves alone (ADR 0013).
  */
-export function keyGuard(
-  bindings: Bindings,
-  os: Os,
-  forBrowser: ReadonlySet<OwnedKey> = new Set(),
-): (e: KeyboardEvent) => void {
+export function keyGuard(bindings: Bindings, os: Os): (e: KeyboardEvent) => void {
   return (e) => {
     const name = keyName(e, os);
-    if (
-      name === null ||
-      !isOwned(name) ||
-      forBrowser.has(name) ||
-      (typesInTextBox(name) && isTextBox(e.target))
-    ) {
-      return;
-    }
+    if (name === null || !isOwned(name) || (typesInTextBox(name) && isTextBox(e.target))) return;
     e.preventDefault();
     bindings[name]?.();
   };
-}
-
-/**
- * What a build leaves to the browser. `preventDefault` holds back the engine's shortcuts as well as the
- * page's, so owning F12 would stop a development build opening DevTools (ADR 0013).
- */
-export function keysForBrowser(isDevelopment: boolean): ReadonlySet<OwnedKey> {
-  return new Set<OwnedKey>(isDevelopment ? ["f12"] : []);
 }

@@ -1229,6 +1229,20 @@ it("opens the Definition peek with Alt+F12 on the Files tab, once for a held key
   expect(peekDefinition).toHaveBeenCalledTimes(1);
 });
 
+it("goes to the definition with F12 on the Files tab, once for a held key", async () => {
+  const goToDefinition = vi.spyOn(PrFilesState.prototype, "goToDefinition").mockResolvedValue();
+  const files = await onFiles();
+  await press("F12");
+  expect(goToDefinition).not.toHaveBeenCalled();
+  await fireEvent.click(files);
+  await screen.findByRole("region", { name: "Diff" });
+
+  await press("F12");
+  await press("F12", { repeat: true });
+
+  expect(goToDefinition).toHaveBeenCalledTimes(1);
+});
+
 it("closes the Definition peek with Escape before the search, and the search before the PR", async () => {
   const shown: { peek: Peek | undefined } = {
     peek: {
@@ -1256,6 +1270,19 @@ it("closes the Definition peek with Escape before the search, and the search bef
   expect(screen.queryByRole("search")).toBeNull();
   expect(screen.getByRole("region", { name: "PR view" })).toBeTruthy();
   expect(closePeek).toHaveBeenCalledTimes(1);
+});
+
+it("stops Go to definition with Escape while it searches, before the PR closes", async () => {
+  const closePeek = vi.spyOn(PrFilesState.prototype, "closePeek").mockImplementation(() => {});
+  const files = await onFiles();
+  await fireEvent.click(files);
+  const diff = await screen.findByRole("region", { name: "Diff" });
+  vi.spyOn(PrFilesState.prototype, "going", "get").mockReturnValue(true);
+
+  await fireEvent.keyDown(diff, { key: "Escape" });
+
+  expect(closePeek).toHaveBeenCalledOnce();
+  expect(screen.getByRole("region", { name: "PR view" })).toBeTruthy();
 });
 
 it("leaves the focus where it is when the Files tab is drawn again with the search open", async () => {
@@ -1933,7 +1960,7 @@ it("takes a held Enter as one press", async () => {
   expect(repeat.defaultPrevented).toBe(true);
 });
 
-it("leaves the browser its other keys, and F12 for a development build", async () => {
+it("leaves F12 to the window's guard away from the Files tab, where it has nothing to go to", async () => {
   await listing();
   const f12 = new KeyboardEvent("keydown", { key: "F12", bubbles: true, cancelable: true });
 

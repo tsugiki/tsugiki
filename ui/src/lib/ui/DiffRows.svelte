@@ -10,7 +10,9 @@
      longer in the diff come under a heading after the last file (#185). One file at a time, it shows the
      page on show: the NEWS entries, one file, or those threads (#605). A click on a word of code puts the
      caret on it and highlights it, and a double-click selects it, for Go to definition (#437). The
-     Definition peek takes places under the picked word's line as a thread does (#438). -->
+     Definition peek takes places under the picked word's line as a thread does (#438). Ctrl+click, Cmd+click
+     on macOS, goes to the word's definition, and the line Go to definition lands on is marked for a moment:
+     side by side, only on the side of its hit (#444). -->
 <script lang="ts">
   import { tick, untrack } from "svelte";
   import type { Column, Pick, PickedLine } from "$lib/state/pick";
@@ -25,6 +27,7 @@
   } from "$lib/state/pr-files.svelte";
   import DefinitionPeek from "./DefinitionPeek.svelte";
   import NewsEntries from "./NewsEntries.svelte";
+  import { currentOs } from "./keys";
   import ReviewThread from "./ReviewThread.svelte";
   import { pieces, type Match } from "./spans";
 
@@ -44,6 +47,7 @@
 
   /** A row's height in pixels. */
   const ROW = 20;
+  const os = currentOs();
   /** Rows drawn above and below the visible ones, so a quick scroll doesn't show blanks. */
   const OVERSCAN = 40;
   /** Rows of code that show above a thread, a change or a match the tab moves to. */
@@ -65,6 +69,10 @@
   /** Room for the longest line, so the scroll width doesn't change as rows come and go. */
   const columns = $derived(files.reduce((widest, file) => Math.max(widest, file.columns), diff.columns));
   const sideBySide = $derived(diff.shownAs === "side-by-side");
+  /** Where the line Go to definition landed on shows. */
+  const markedPlace = $derived(
+    diff.marked === undefined ? undefined : diff.layout.placeOfRow(diff.marked.row),
+  );
   /** The NEWS entries, which show above all the files, or on a page of their own one file at a time. */
   const newsShown = $derived(diff.shown === undefined || diff.shown.kind === "news" ? news : []);
 
@@ -362,6 +370,7 @@
     // A drag selects text to copy, and leaves the pick where it was.
     if (selection === null || !selection.isCollapsed) return;
     clicked = pickAt(target, selection.focusNode, selection.focusOffset);
+    if (clicked !== undefined && (os === "mac" ? event.metaKey : event.ctrlKey)) void diff.goToDefinition();
   }}
   ondblclick={async (event) => {
     const region = event.currentTarget;
@@ -561,6 +570,19 @@
         </div>
       {/if}
     {/each}
+    {#if markedPlace !== undefined}
+      <!-- A new landing draws the mark afresh, so it fades again. Once faded it goes, so a page the user
+           comes back to doesn't mark the line again. -->
+      {#key diff.marked}
+        <div
+          class={["mark", sideBySide && diff.marked?.side]}
+          style:top={`${String(markedPlace * ROW)}px`}
+          onanimationend={() => {
+            diff.marked = undefined;
+          }}
+        ></div>
+      {/key}
+    {/if}
   </div>
 </div>
 
@@ -587,6 +609,37 @@
     border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
     border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
     background: color-mix(in srgb, currentColor 4%, transparent);
+  }
+
+  /* The line Go to definition landed on, which fades out. Side by side, only the half of its hit's side. */
+  .mark {
+    position: absolute;
+    right: 0;
+    left: 0;
+    height: 20px;
+    pointer-events: none;
+    background: color-mix(in srgb, var(--find-current) 50%, transparent);
+    animation: fade 1.6s ease-out forwards;
+  }
+
+  .mark.base,
+  .mark.head {
+    right: auto;
+    width: calc(var(--width) / 2);
+  }
+
+  .mark.base {
+    left: var(--across);
+  }
+
+  .mark.head {
+    left: calc(var(--across) + var(--width) / 2);
+  }
+
+  @keyframes fade {
+    to {
+      opacity: 0;
+    }
   }
 
   /* The peek takes the places the layout gives it, and no more. Its lines are drawn inside it, so its

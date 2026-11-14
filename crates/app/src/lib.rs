@@ -45,7 +45,7 @@ use tsugiki_core::theme::ThemeMode;
 use tsugiki_core::version::Version;
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
-use tsugiki_core::workbench::pr_files::{DiffSources, PrFiles};
+use tsugiki_core::workbench::pr_files::{DiffSources, FileLine, PrFiles};
 use tsugiki_core::workbench::pr_view::PrView;
 use tsugiki_core::workbench::{SeenMark, Workbench, WorkbenchView};
 
@@ -589,6 +589,36 @@ impl GapLines {
     }
 }
 
+/// A line of a file of a PR's diff, as the window asks where it shows when Go to definition lands on it
+/// (#444).
+#[derive(Debug, Clone, Deserialize, Type)]
+pub(crate) struct DiffLine {
+    repository: String,
+    number: u32,
+    /// The commit the diff ends at, as the Files tab was told.
+    head: String,
+    /// The merge base the diff starts from, as the Files tab was told.
+    base: String,
+    /// The file's path at `side`: a renamed file's old path at the base.
+    path: String,
+    side: DiffEnd,
+    /// The line's number at `side`, from 1.
+    line: u32,
+}
+
+impl DiffLine {
+    /// The diff between the commits it names, and the line.
+    fn parse(self) -> Result<(DiffOf, FileLine), Error> {
+        let of = diff_of(&self.repository, self.number, &self.head, &self.base)?;
+        let line = FileLine {
+            path: self.path,
+            side: self.side,
+            line: self.line,
+        };
+        Ok((of, line))
+    }
+}
+
 /// The diff of PR `number` from `base` to `head`, as the window names it.
 fn diff_of(repository: &str, number: u32, head: &str, base: &str) -> Result<DiffOf, Error> {
     let pr = PrAt {
@@ -629,6 +659,11 @@ fn read_pull_request_files(
         work.definitions.opened(name, at, files);
     }
     Ok(read)
+}
+
+fn read_pull_request_row(line: DiffLine, work: &DiffWork) -> Result<Option<u32>, Error> {
+    let (of, line) = line.parse()?;
+    PrFiles::row(&work.sources()?, &of, &line)
 }
 
 fn read_pull_request_rows(chunk: DiffChunk, work: &DiffWork) -> Result<Vec<DiffRow>, Error> {
@@ -863,6 +898,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::pull_request_spans,
             slow_commands::pull_request_lines,
             slow_commands::pull_request_find,
+            slow_commands::pull_request_row,
             slow_commands::definitions,
             cancel_definitions,
             slow_commands::definition_code,

@@ -71,7 +71,8 @@ pub enum LineInDiff {
     Row { row: u32 },
     /// No hunk shows it: it is line `head_line` at the head of file `file`, by its place among the diff's
     /// files, in a gap or after the file's last hunk, which the window opens around it, as around a thread
-    /// on a line no hunk shows (#445).
+    /// on a line no hunk shows (#445). The diff doesn't know where a file ends at the head, so a line past
+    /// its end comes out here too, and the window, which reads the lines, finds it missing.
     Hidden { file: u32, head_line: u32 },
 }
 

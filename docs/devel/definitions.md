@@ -153,7 +153,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   then scrolls there and marks the line as above. The core finds the line's number at the head, which a
   hit at the base maps to through the gap or the end of the file that hides it. The lines come from
   the **Mirror** at the PR's head, as expanding a gap does, so this works offline at any commit the Mirror
-  holds. A newer lookup while they come leaves the diff where it is, with the lines open.
+  holds. The line over the diff says it searches until they come, and Esc stops it then too. If they don't
+  come, as the read failed or the file ends before the line, it opens the peek on the hit instead, and
+  Open there says "No line of the diff shows path:line." for 4 seconds.
 - With no hit, the line over the diff says "No definition of X at abc1234." for 4 seconds.
 - A single hit in a file the PR doesn't change opens the file view: that
   file, read-only, over the Files tab, at the hit's commit. So does a file the PR only renames, or whose

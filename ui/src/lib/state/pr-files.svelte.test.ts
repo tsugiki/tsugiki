@@ -2762,7 +2762,7 @@ it("opens the lines around a hit on a line no hunk shows, then goes there and ma
   expect(files.peek).toBeUndefined();
 });
 
-it("stays where it is when a newer lookup or diff comes while the lines around a hit come", async () => {
+it("goes on while the lines around a hit come, and Escape or a newer diff then stops it", async () => {
   core.definitions.mockResolvedValue(hitsFound(hitAt("a.py", "head", 9)));
   core.pullRequestRow.mockResolvedValueOnce(gapHides(30));
   core.pullRequestRow.mockResolvedValueOnce(gapHides(50));
@@ -2780,10 +2780,11 @@ it("stays where it is when a newer lookup or diff comes while the lines around a
   await vi.waitFor(() => {
     expect(answers).toHaveLength(1);
   });
+  const whileLinesCome = [files.going, files.notice];
   files.closePeek();
   answers[0]?.(ok(headLines(27, 34)));
   await stopped;
-  const afterStop = [files.jump, files.marked];
+  const afterStop = [files.jump, files.marked, files.going, files.notice, files.peek];
   files.pickWord({ kind: "row", row: 2 }, null, 6, false);
   const outrun = files.goToDefinition();
   await vi.waitFor(() => {
@@ -2794,9 +2795,73 @@ it("stays where it is when a newer lookup or diff comes while the lines around a
   answers[1]?.(ok(headLines(47, 54)));
   await outrun;
 
-  expect(afterStop).toEqual([undefined, undefined]);
+  expect(whileLinesCome).toEqual([true, "Searching for the definition of area…"]);
+  expect(afterStop).toEqual([undefined, undefined, false, undefined, undefined]);
   expect(files.jump).toBeUndefined();
   expect(files.marked).toBeUndefined();
+  expect(files.peek).toBeUndefined();
+});
+
+it("opens the peek on a hit whose lines don't come: the read failed, or the file ends before it", async () => {
+  core.definitions.mockResolvedValue(hitsFound(hitAt("a.py", "head", 9)));
+  core.pullRequestRow.mockResolvedValueOnce(gapHides(30));
+  core.pullRequestRow.mockResolvedValueOnce(gapHides(LENGTH + 10));
+  core.pullRequestLines.mockResolvedValueOnce({
+    status: "error",
+    error: { kind: "internal", message: "no" },
+  });
+  core.pullRequestLines.mockImplementation(({ start, end }) => Promise.resolve(ok(headLines(start, end))));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+
+  await files.goToDefinition();
+  const failed = [files.peek?.lookup.state, files.error];
+  files.closePeek();
+  await files.goToDefinition();
+
+  expect(failed).toEqual(["answered", "no"]);
+  expect(files.peek?.lookup).toEqual({
+    state: "answered",
+    answer: { state: "found", hits: [hitAt("a.py", "head", 9)] },
+  });
+  expect(files.jump).toBeUndefined();
+  expect(files.marked).toBeUndefined();
+  expect(files.going).toBe(false);
+});
+
+it("says no line shows a hit whose lines don't come when Open goes to it", async () => {
+  const hits = [hitAt("a.py", "head", 9), hitAt("a.py", "head", 8)];
+  core.definitions.mockResolvedValue(hitsFound(...hits));
+  core.pullRequestRow.mockResolvedValue(gapHides(LENGTH + 10));
+  core.pullRequestLines.mockImplementation(({ start, end }) => Promise.resolve(ok(headLines(start, end))));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.goToDefinition();
+
+  await files.openHit();
+
+  expect(files.notice).toBe("No line of the diff shows a.py:9.");
+  expect(files.peek?.code?.index).toBe(0);
+  expect(files.jump).toBeUndefined();
+  expect(files.marked).toBeUndefined();
+});
+
+it("turns to the file of a hit on a line no hunk shows while the tab shows one file at a time", async () => {
+  core.definitions.mockResolvedValue(hitsFound(hitAt("b.py", "head", 5)));
+  core.pullRequestRow.mockResolvedValue(ok<LineInDiff>({ kind: "hidden", file: 1, head_line: 5 }));
+  core.pullRequestLines.mockImplementation(({ start, end }) => Promise.resolve(ok(headLines(start, end))));
+  const files = await pickable("abc", [file("b.py", picking.length)]);
+  files.mode = "one";
+  const before = files.shown;
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+
+  await files.goToDefinition();
+
+  expect(before).toEqual({ kind: "file", file: 0 });
+  expect(files.shown).toEqual({ kind: "file", file: 1 });
+  expect(files.line(1, 5)).toEqual({ text: "line 5", spans: [] });
+  expect(files.jump).toEqual({ file: 1, line: 5 });
+  expect(files.marked).toEqual({ at: { kind: "hidden", file: 1, head_line: 5 }, side: "head" });
 });
 
 it("says it searches while it looks, and for a moment that it found no definition", async () => {

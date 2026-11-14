@@ -990,7 +990,8 @@ export class PrFilesState {
    * side for a hit at the base, after it opens the lines around one no hunk shows (#445). One in a file the
    * PR doesn't change opens the file view at the hit's commit (#453). Several hits open the peek with their
    * list, where the user picks the one to go to (#446). With no hit it says so for a moment. An answer with
-   * no hit to go to opens the peek. */
+   * no hit to go to, and a hit whose line the diff can't show, open the peek. It is `going` until it knows
+   * where to go, so Escape stops it while it finds the hit's row or opens the lines around it. */
   async goToDefinition() {
     const looked = await this.#lookUp((looking) => {
       // A peek on another word would say nothing of this one.
@@ -999,20 +1000,21 @@ export class PrFilesState {
       this.#say(`Searching for the definition of ${looking.symbol}…`);
     });
     if (looked === undefined) return;
-    this.going = false;
     const { lookup, view } = looked;
     // What the core said of the server's index before the answer may name other places (#680).
     const peek = this.#withHeld(looked.peek, lookup);
     const hits = hitsOf(peek);
     if (hits?.length === 0) {
+      this.going = false;
       this.#say(`No definition of ${peek.symbol} at ${peek.commit.slice(0, 7)}.`, NOTICE_MS);
       this.#unwatch(lookup);
       return;
     }
+    // It goes on while it finds the hit's row or opens the lines around it, so Escape still stops it.
     const only = hits?.length === 1 ? shownHit(peek) : undefined;
     const goal = only && (await this.#goal(only.hit, view, only.code));
     if (lookup !== this.#lookups || this.#diff(this.view) !== this.#diff(view)) return;
-    this.#say(undefined);
+    this.#stopGoing();
     // The places the core names once the index is built, while it found the row, replace the hit, which
     // the peek then shows rather than go to the old one.
     const now = this.#withHeld(peek, lookup);
@@ -1022,7 +1024,7 @@ export class PrFilesState {
       this.peekFocus = (hitsOf(now)?.length ?? 0) > 1 ? "take" : undefined;
       return;
     }
-    await this.#go(goal, view, lookup);
+    this.#go(goal, view, lookup);
   }
 
   /** What Open in the peek's header does for the hit the peek shows (#446): go, or wait while it finds the
@@ -1035,8 +1037,9 @@ export class PrFilesState {
 
   /** Goes to the hit the peek shows, as Go to definition goes to a single hit, and closes the peek (#446).
    * A landing in the diff hands the diff the focus the peek had. While the core finds the hit's row it is
-   * `going`, and another Open waits for it. A line the core can't find is said over the diff for a moment,
-   * and the peek stays. A peek that shows another hit by then, or a newer diff, leaves it be, and a hit
+   * `going`, and another Open waits for it, as it does while the lines around a line no hunk shows come. A
+   * line the core can't find, or whose lines don't come, is said over the diff for a moment, and the peek
+   * stays. A peek that shows another hit by then, or a newer diff, leaves it be, and a hit
    * outside the Repository goes nowhere. */
   async openHit() {
     const view = this.view;
@@ -1054,33 +1057,28 @@ export class PrFilesState {
       this.#say(`No line of the diff shows ${place.path}:${String(line)}.`, NOTICE_MS);
       return;
     }
+    this.#go(goal, view, lookup);
     if (goal.kind === "diff") this.diffWantsFocus = true;
-    await this.#go(goal, view, lookup);
   }
 
   /** Goes to `goal`, which lookup `lookup` found in the diff `view`, and closes the peek. */
-  async #go(goal: Goal, view: Ready, lookup: number) {
+  #go(goal: Goal, view: Ready, lookup: number) {
     this.#unwatch(lookup);
     this.#peek = undefined;
     if (goal.kind === "file") {
       this.openFileView(goal.view);
       return;
     }
-    await this.#land(goal.landing, view, lookup);
+    this.#land(goal.landing, view);
   }
 
   /** Shows `landing`, a line of a file the diff `view` changes, as Go to definition does: scrolls there,
-   * opening the file if it is collapsed, and marks the line for a moment. A line no hunk shows first opens
-   * the lines around it, as a thread there does (#445), and a lookup newer than `lookup`, or a newer diff,
-   * that comes meanwhile leaves the tab where it is. */
-  async #land(landing: Landing, view: Ready, lookup: number) {
+   * opening the file if it is collapsed, and marks the line for a moment. A line no hunk shows is one whose
+   * lines around it `#goal` opened (#445). */
+  #land(landing: Landing, view: Ready) {
     const at = landing.at;
     if (at.kind === "row") this.#moveTo(view.files, at.row);
-    else {
-      await this.#openAround(at.file, at.head_line);
-      if (lookup !== this.#lookups || this.#diff(this.view) !== this.#diff(view)) return;
-      this.#moveToLine(at.file, at.head_line);
-    }
+    else this.#moveToLine(at.file, at.head_line);
     this.marked = landing;
   }
 
@@ -1114,8 +1112,9 @@ export class PrFilesState {
   }
 
   /** Where Go to definition goes for `hit`: its line in a file the diff `view` changes, which a hunk shows
-   * or a gap hides (#445), or the file view of a file the diff shows no lines of, which shows `code`, the
-   * hit's code the peek made. A line the core can't find, and a hit outside the Repository, go nowhere. */
+   * or a gap hides, or the file view of a file the diff shows no lines of, which shows `code`, the hit's
+   * code the peek made. A hidden line opens the lines around it first, as a thread there does (#445). A
+   * line the core can't find, one whose lines don't come, and a hit outside the Repository go nowhere. */
   async #goal(hit: Hit, view: Ready, code: HitCode): Promise<Goal | undefined> {
     if (!inRepository(hit)) return undefined;
     const place = hit.place;
@@ -1131,7 +1130,9 @@ export class PrFilesState {
     };
     const row = await commands.pullRequestRow(line).catch(() => undefined);
     if (row?.status !== "ok" || row.data === null) return undefined;
-    return { kind: "diff", landing: { at: row.data, side: place.side } };
+    const at = row.data;
+    if (at.kind === "hidden" && !(await this.#openAround(at.file, at.head_line))) return undefined;
+    return { kind: "diff", landing: { at, side: place.side } };
   }
 
   /** Shows `words` over the diff, for `forMs` if it is given, or takes the words away. */
@@ -1444,9 +1445,11 @@ export class PrFilesState {
 
   /** Shows line `line` at the head of file `file`, which no hunk shows, with `AROUND` lines either side, as
    * for a thread there (#185) or a definition Go to definition lands on (#445). The buttons around them show
-   * the rest. */
-  async #openAround(file: number, line: number) {
+   * the rest. Gives whether the line is held then: not once the read failed, the file ends before it, or a
+   * newer diff came meanwhile. */
+  async #openAround(file: number, line: number): Promise<boolean> {
     await this.#fetchLines(file, Math.max(1, line - AROUND), line + AROUND + 1);
+    return this.#lines.has(`${String(file)}:${String(line)}`);
   }
 
   /** Asks the core for lines `start` up to `end` of file `file` at the head, and keeps those that come

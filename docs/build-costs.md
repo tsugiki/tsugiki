@@ -106,7 +106,10 @@ On 2026-11-08, after a change to `tsugiki-core`, with `CARGO_BUILD_JOBS=4` and `
 `cargo-test` spent 8.5 seconds compiling and most of the rest running `tsugiki-core`'s 1,041 tests, and
 `rust-coverage` ran the same tests again. The workspace has no doctests, so `cargo llvm-cov` runs every test
 `cargo test` does, `bindings_are_up_to_date` among them. Since #252, `check` leaves out `cargo-test` and
-`stale-bindings`. CI still runs both as jobs of their own, so a failed job's title names the gate.
+`stale-bindings`. CI ran both as jobs of their own until 2026-11-14, so a failed job's title named the gate.
+On main's last run with them, `cargo-test` took 4.2 minutes and `stale-bindings` 2.4 beside the 4.5 of
+`rust-coverage`, two more Windows runners for no new test. `rust-coverage`'s log says whether a test failed
+or coverage fell short.
 
 `cargo llvm-cov` also cleans the workspace's build before each run, and recompiling took about 30 seconds.
 Locally, `scripts/rust-coverage.ts` runs `cargo llvm-cov clean --profraw-only`, which deletes the last

@@ -35,6 +35,7 @@ it("puts the peek under a line among the threads under lines of its own file", (
 
 const looking = (lookup: Peek["lookup"]): Peek => ({
   at: { kind: "row", row: 2 },
+  layout: "inline",
   symbol: "eggs",
   side: "head",
   commit: "abcdef123",

@@ -5,11 +5,12 @@
      for `Alt+F12` to look it up (#447). The file view shows its file the same way (#453), and `data-scrolls`
      lets the Detail pane's ↑ and ↓ scroll it there. The file view picks words too, goes to a word's
      definition on Ctrl+click, Cmd+click on macOS, and opens the Definition peek under one of its lines as an
-     inset, which pushes the lines after it down (#457). -->
+     inset, which pushes the lines after it down (#457), or split below it, which keeps the line it opened
+     under in view (#459). -->
 <script lang="ts">
   import { untrack, type Snippet } from "svelte";
   import type { CodePick, HitCode } from "$lib/state/hit-code.svelte";
-  import type { Peek } from "$lib/state/peek";
+  import { ROW, type Peek } from "$lib/state/peek";
   import { currentOs, goesToDefinition } from "./keys";
   import { wordPicker } from "./picking";
   import { pieces } from "./spans";
@@ -18,6 +19,7 @@
     code,
     mark,
     inset,
+    sight,
     ongo,
   }: {
     code: HitCode;
@@ -37,11 +39,14 @@
           box: Snippet<[number, Peek, number]>;
         }
       | undefined;
+    /** The line a split Definition peek below the code opened under (#459), which takes the code's room. A
+     * new `reveal` scrolls the code as little as it takes to keep that line in view, and `onreveal` hears it
+     * was taken. */
+    sight?: { line: number; reveal: boolean; onreveal: () => void } | undefined;
     /** Goes to the definition of the word a Ctrl+click picked. */
     ongo?: () => void;
   } = $props();
 
-  const ROW = 20;
   /** The rows over the hit's line. */
   const LEAD = 3;
   /** The rows drawn past each end of what shows. */
@@ -124,6 +129,19 @@
       const scroller = region as HTMLElement;
       if (height === 0) return;
       const wanted = Math.min((under + extra) * ROW - height, (under - 1) * ROW);
+      if (wanted > scroller.scrollTop) scroller.scrollTop = wanted;
+      scrollTop = scroller.scrollTop;
+    });
+  });
+
+  // Keeps the line a split peek opened under in view, once on each opening, as the code measures now that
+  // the peek below it shows (#459).
+  $effect(() => {
+    if (!sight?.reveal) return;
+    untrack(() => {
+      sight.onreveal();
+      const scroller = region as HTMLElement;
+      const wanted = topOf(sight.line) + ROW - scroller.clientHeight;
       if (wanted > scroller.scrollTop) scroller.scrollTop = wanted;
       scrollTop = scroller.scrollTop;
     });

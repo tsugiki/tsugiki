@@ -21,6 +21,7 @@ const core = vi.hoisted(() => ({
   openOnGithub: vi.fn(),
   pullRequestFiles: vi.fn(),
   pullRequestFind: vi.fn(),
+  definitions: vi.fn(),
   // A PR that leaves the Detail pane cancels the lookup it may still run.
   cancelDefinitions: vi.fn(() => Promise.resolve()),
   cloning: vi.fn(),
@@ -58,6 +59,7 @@ vi.mock("$lib/data/bindings", () => ({
     openOnGithub: core.openOnGithub,
     pullRequestFiles: core.pullRequestFiles,
     pullRequestFind: core.pullRequestFind,
+    definitions: core.definitions,
     cancelDefinitions: core.cancelDefinitions,
     cloning: core.cloning,
     mirrorStates: core.mirrorStates,
@@ -74,6 +76,13 @@ vi.mock("$lib/data/bindings", () => ({
     cloningChanged: { listen: core.listen },
     mirrorStatesChanged: { listen: core.listen },
     mirrorsHeldChanged: { listen: core.listen },
+  },
+}));
+
+// A lookup hears what it waits for on a channel, which these tests leave quiet.
+vi.mock("$lib/data/channel", () => ({
+  Channel: class {
+    onmessage = () => {};
   },
 }));
 
@@ -603,7 +612,7 @@ const listing = async (settings: { diffFiles?: FilesMode; diffPeek?: PeekLayout 
       filters: [],
     },
   });
-  const { component, rerender } = render(RepositoryHome, {
+  const { component } = render(RepositoryHome, {
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
@@ -615,7 +624,6 @@ const listing = async (settings: { diffFiles?: FilesMode; diffPeek?: PeekLayout 
   await fireEvent.click(screen.getByRole("button", { name: "Show 1 quiet item" }));
   return {
     component,
-    rerender,
     issueRow,
     treeRow: screen.getByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" }),
     prRow: screen.getByRole("button", { name: "#5 Alone" }),
@@ -1263,10 +1271,12 @@ it("opens the Definition peek with Alt+F12 on the Files tab, once for a held key
   expect(peekDefinition).toHaveBeenCalledTimes(1);
 });
 
-it("hands the Files tab what [diff] peek says at the time each Definition peek opens", async () => {
-  const opened: { files?: PrFilesState } = {};
-  vi.spyOn(PrFilesState.prototype, "peekDefinition").mockImplementation(function (this: PrFilesState) {
-    opened.files = this;
+it("opens the Definition peek where [diff] peek says, below the file view's code when split", async () => {
+  // Each lookup waits, so the peek says it looks.
+  core.definitions.mockReturnValue(new Promise(() => {}));
+  const view = eggsView();
+  vi.spyOn(PrFilesState.prototype, "goToDefinition").mockImplementation(function (this: PrFilesState) {
+    this.openFileView(view);
     return Promise.resolve();
   });
   core.pullRequestFiles.mockResolvedValue({
@@ -1281,16 +1291,21 @@ it("hands the Files tab what [diff] peek says at the time each Definition peek o
       disconnect() {}
     },
   );
-  const { treeRow, rerender } = await listing({ diffPeek: "split" });
+  const { treeRow } = await listing({ diffPeek: "split" });
   await fireEvent.click(treeRow);
   await fireEvent.click(await screen.findByRole("tab", { name: "Files" }));
   await screen.findByRole("region", { name: "Diff" });
+  await press("F12");
+  const fileView = await screen.findByRole("region", { name: "File view" });
+  const code = within(fileView).getByRole("region", { name: "Definition's code" });
+  view.code.pick = { line: 4, word: "x", start: 0, end: 1, caret: 0 };
+  const peek = () => within(fileView).getByRole("group", { name: "Definition peek" });
 
   await press("F12", { altKey: true });
-  const split = opened.files?.peekSetting();
-  await rerender({ diffPeek: "inline" });
 
-  expect([split, opened.files?.peekSetting()]).toEqual(["split", "inline"]);
+  // Below the view's code, and not inside it.
+  expect(code.contains(peek())).toBe(false);
+  expect(peek().textContent).toContain("Searching for the definition of x…");
 });
 
 it("goes to the definition with F12 on the Files tab, once for a held key", async () => {
@@ -1474,6 +1489,7 @@ it("closes the Definition peek in the file view with Escape, and the file view w
   const shown: { peek: Peek | undefined } = {
     peek: {
       at: { kind: "view", view, line: 4 },
+      layout: "inline",
       symbol: "x",
       side: "base",
       commit: "base",
@@ -1515,6 +1531,7 @@ it("closes the Definition peek with Escape before the search, and the search bef
   const shown: { peek: Peek | undefined } = {
     peek: {
       at: { kind: "row", row: 2 },
+      layout: "inline",
       symbol: "gc",
       side: "head",
       commit: "abc",

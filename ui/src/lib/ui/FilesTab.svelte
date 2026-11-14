@@ -142,7 +142,7 @@
     {#if files.searching}
       <FindBar {files} />
     {/if}
-    <SplitPeek {files} peek={files.splitPeekOn(undefined)}>
+    <SplitPeek {files} peek={files.peekOn(undefined, "split")}>
       <div class="diff">
         <DiffRows diff={files} files={files.view.files} news={files.view.news} {now} {onlink} />
       </div>

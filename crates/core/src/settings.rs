@@ -442,7 +442,8 @@ pub struct PaneLayout {
     #[serde(deserialize_with = "or_default")]
     #[specta(type = Option<u32>)]
     pub peek: Option<u32>,
-    /// The split Definition peek's height in CSS pixels, or nothing for 42% of the Files tab (#459).
+    /// The split Definition peek's height in CSS pixels, or nothing for 42% of the room it shares with the
+    /// code above it, the diff's or the file view's (#459).
     #[serde(deserialize_with = "or_default")]
     #[specta(type = Option<u32>)]
     pub split_peek: Option<u32>,

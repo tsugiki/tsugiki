@@ -4,10 +4,9 @@
      its right (#441), or on its left when the peek shows split below the code (#459), or else a line that
      says what the lookup waits for, with the seconds once they pass one (#440), that it found nothing, or
      why it failed. A hit outside the Repository names its whole path on disk in place of a commit, and has
-     no Open. While the server that answered builds its index, a line
-     under the header says so (#680). A click picks a word in the code, which `Alt+F12` looks up in place of
-     what the peek showed (#447). A breadcrumb before the symbol then names that, and a click on a crumb
-     brings it back. -->
+     no Open. While the server that answered builds its index, a line under the header says so (#680). A
+     click picks a word in the code, which `Alt+F12` looks up in place of what the peek showed (#447). A
+     breadcrumb before the symbol then names that, and a click on a crumb brings it back. -->
 
 <script lang="ts">
   import { peekWords, type Peek, type PeekWords } from "$lib/state/peek";

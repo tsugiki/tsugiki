@@ -14,7 +14,7 @@
 
 <script lang="ts">
   import { PEEK_LEAST, PEEK_MOST } from "$lib/state/panes.svelte";
-  import { peekSized, type Peek } from "$lib/state/peek";
+  import { peekSized, ROW, type Peek } from "$lib/state/peek";
   import type { PrFilesState } from "$lib/state/pr-files.svelte";
   import DefinitionPeek from "./DefinitionPeek.svelte";
   import { currentOs, keyName } from "./keys";
@@ -30,7 +30,6 @@
     place: PeekPlace;
   } = $props();
 
-  const ROW = 20;
   const os = currentOs();
 </script>
 

@@ -18,12 +18,13 @@
 
   const words = $derived(fileViewWords(view, files.number));
   /** The Definition peek, while it shows under a line of this view, inside its code. */
-  const peek = $derived.by(() => {
-    const peek = files.peek;
-    return peek?.at.kind === "view" && peek.at.view === view && files.peekLayout === "inline"
-      ? { peek, line: peek.at.line }
-      : undefined;
-  });
+  const inline = $derived(files.peekOn(view, "inline"));
+  /** The Definition peek, while it shows split below this view's code (#459). */
+  const split = $derived(files.peekOn(view, "split"));
+  /** Hears that the code took the peek's opening. */
+  const revealed = () => {
+    files.peekOpened = false;
+  };
   /** Hands the focus to the code, so the keys scroll it. */
   const focusCode = (section: HTMLElement) => {
     section.querySelector<HTMLElement>("[data-scrolls]")?.focus({ preventScroll: true });
@@ -60,22 +61,21 @@
       <span class="notice" role="status">{files.notice}</span>
     {/if}
   </div>
-  <SplitPeek {files} peek={files.splitPeekOn(view)}>
+  <SplitPeek {files} peek={split}>
     <div class="code">
       <PeekCode
         code={view.code}
         mark={view.landing}
         ongo={() => void files.goToDefinition()}
-        inset={peek && {
-          peek: peek.peek,
-          line: peek.line,
-          rows: peekPlaces(peek.peek, files.panes.peekRows),
+        inset={inline && {
+          peek: inline,
+          line: inline.at.line,
+          rows: peekPlaces(inline, files.panes.peekRows),
           reveal: files.peekOpened,
-          onreveal: () => {
-            files.peekOpened = false;
-          },
+          onreveal: revealed,
           box,
         }}
+        sight={split && { line: split.at.line, reveal: files.peekOpened, onreveal: revealed }}
       />
     </div>
   </SplitPeek>

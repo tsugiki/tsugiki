@@ -2537,6 +2537,41 @@ describe("the split Definition peek", () => {
     expect(peekText()[0]).toBe("new Lib/news.py:12 at abc · the PR's head 1 of 2 Open ✕");
   });
 
+  it("scrolls the diff as little as it takes to keep the line it opened under in view", async () => {
+    const files = await splitTab({ now: "split" });
+    // The peek leaves the diff's rows 60 pixels.
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (this: HTMLElement) {
+      return this.getAttribute("aria-label") === "Diff" ? 60 : 1000;
+    });
+
+    await files.peekDefinition();
+    await tick();
+
+    // Row 4 ends 100 pixels down, so the rows scroll 40 to show it, and no further.
+    expect([diff().scrollTop, files.peekOpened]).toEqual([40, false]);
+    expect(rowAt("▾logo.pngbinary")?.style.top).toBe(`${String(5 * 20)}px`);
+  });
+
+  it("scrolls the file view's code as little as it takes to keep the line it opened under in view", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(100);
+    const { files, view } = await intoFileView(() => "split");
+    const code = within(view).getByRole("region", { name: "Definition's code" });
+    core.definitions.mockReturnValue(new Promise(() => {}));
+    const peekAt = async (line: number) => {
+      await clickAt(await viewLine(line), 2);
+      void files.peekDefinition();
+      await tick();
+      return code.scrollTop;
+    };
+
+    // Lines 897 to 901 show in 100 pixels. Line 898 stays in view, and line 905 scrolls up to the bottom.
+    const shown = await peekAt(898);
+    files.closePeek();
+    const low = await peekAt(905);
+
+    expect([shown, low, files.peekOpened]).toEqual([(900 - 1 - 3) * 20, 905 * 20 - 100, false]);
+  });
+
   it("resizes by its top edge, no lower than 160 px, saves its height for the next peek, and resets", async () => {
     // jsdom has no pointer capture.
     HTMLElement.prototype.setPointerCapture = vi.fn();

@@ -1636,7 +1636,10 @@ export type PaneLayout_Deserialize = {
 	list?: number | null,
 	/**  The Definition peek's height in diff rows, its header among them, or nothing for its 18. */
 	peek?: number | null,
-	/**  The split Definition peek's height in CSS pixels, or nothing for 42% of the Files tab (#459). */
+	/**
+	 *  The split Definition peek's height in CSS pixels, or nothing for 42% of the room it shares with the
+	 *  code above it, the diff's or the file view's (#459).
+	 */
 	split_peek?: number | null,
 	/**  `Ctrl+B` hid the Sidebar. It keeps its width for when it shows again. */
 	sidebar_hidden?: boolean,
@@ -1666,7 +1669,10 @@ export type PaneLayout_Serialize = {
 	list: number | null,
 	/**  The Definition peek's height in diff rows, its header among them, or nothing for its 18. */
 	peek: number | null,
-	/**  The split Definition peek's height in CSS pixels, or nothing for 42% of the Files tab (#459). */
+	/**
+	 *  The split Definition peek's height in CSS pixels, or nothing for 42% of the room it shares with the
+	 *  code above it, the diff's or the file view's (#459).
+	 */
 	split_peek: number | null,
 	/**  `Ctrl+B` hid the Sidebar. It keeps its width for when it shows again. */
 	sidebar_hidden: boolean,

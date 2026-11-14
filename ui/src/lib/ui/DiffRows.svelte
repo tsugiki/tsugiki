@@ -26,7 +26,7 @@
     type PrFilesState,
     type Span,
   } from "$lib/state/pr-files.svelte";
-  import { PEEK_ID } from "$lib/state/peek";
+  import { PEEK_ID, ROW } from "$lib/state/peek";
   import NewsEntries from "./NewsEntries.svelte";
   import { currentOs, goesToDefinition } from "./keys";
   import PeekBox from "./PeekBox.svelte";
@@ -48,8 +48,6 @@
     onlink: (address: string) => void;
   } = $props();
 
-  /** A row's height in pixels. */
-  const ROW = 20;
   const os = currentOs();
   /** Rows drawn above and below the visible ones, so a quick scroll doesn't show blanks. */
   const OVERSCAN = 40;
@@ -99,7 +97,7 @@
   /** Scrolls to the thread, the change or the match the user moved to, with a few rows of code above it.
    * Otherwise, keeps the place at the top in view as the layout changes, as the view switches or a thread
    * above it grows: the same row, line, button or thread, as far into it as it was. Then a peek that opened
-   * below the rows on screen scrolls into view (#458). */
+   * below the rows on screen scrolls into view (#458), and a split one keeps its line in view (#459). */
   $effect(() => {
     const layout = diff.layout;
     const jump = diff.jump;
@@ -128,8 +126,17 @@
   /** Scrolls `region` as little as it takes to show the whole peek in `layout`, below NEWS entries `news`
    * pixels tall, but never so far that the line it opened under leaves the top. A peek in a file collapsed
    * or on another page has no place to show, and a tab not laid out yet has no rows on screen to bring it
-   * into. */
+   * into. A split peek below the rows takes their room, so they scroll as little as it takes to keep the
+   * line it opened under in view, as the region measures now that the peek shows (#459). */
   function reveal(layout: PrFilesState["layout"], region: HTMLElement, news: number) {
+    const split = diff.peekOn(undefined, "split");
+    if (split !== undefined) {
+      const line = layout.placeOf(split.at);
+      const room = region.clientHeight;
+      if (line !== undefined && (line + 1) * ROW - room > region.scrollTop - news)
+        region.scrollTop = news + (line + 1) * ROW - room;
+      return;
+    }
     const place = layout.threadAt(PEEK_ID);
     if (place === undefined || height === 0) return;
     const peeks = layout.threadsIn(place, place).filter((thread) => thread.laid.id === PEEK_ID);

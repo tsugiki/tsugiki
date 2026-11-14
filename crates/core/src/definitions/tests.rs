@@ -1696,8 +1696,48 @@ fn clangd_status(owner: &Owner) -> ServerStatus {
 
 #[test]
 fn a_clangd_that_exits_while_it_answers_says_how_and_the_next_lookup_starts_it_again() {
-    let fixture = c_files("definitions-exits-answering");
-    // The fake answers nothing: it crashes once it is asked. Its path names no program.
+    exits_while_it_answers("definitions-exits-answering", is_answered);
+}
+
+#[test]
+fn a_clangd_whose_exit_the_thread_hears_before_the_failed_answer_says_how_all_the_same() {
+    exits_while_it_answers("definitions-exits-heard-first", is_exited);
+}
+
+fn is_answered(message: &Message) -> bool {
+    matches!(message, Message::Answered(..))
+}
+
+fn is_exited(message: &Message) -> bool {
+    matches!(message, Message::Exited(..))
+}
+
+/// Handles the owner's messages until the one `first` matches, holding back the one of the lookup's
+/// answer and its server's exit that `first` doesn't match, which it handles after. The two come from two
+/// threads, so this puts them in the order a test asks.
+fn handle_first(owner: &mut Owner, first: fn(&Message) -> bool) {
+    let mut held = Vec::new();
+    loop {
+        let message = owner.next().unwrap();
+        if first(&message) {
+            let _goes_on = owner.handle(message);
+            break;
+        }
+        if is_answered(&message) || is_exited(&message) {
+            held.push(message);
+        } else {
+            let _goes_on = owner.handle(message);
+        }
+    }
+    for message in held {
+        let _goes_on = owner.handle(message);
+    }
+}
+
+/// A fake clangd that crashes while it answers a lookup, with the thread hearing first what `first`
+/// matches: the failed answer or the exit. Its path names no program, so the next lookup fails to start it.
+fn exits_while_it_answers(name: &str, first: fn(&Message) -> bool) {
+    let fixture = c_files(name);
     let checkout = Arc::new(Mutex::new(fixture.checkout.clone()));
     let missing = fixture.checkout.folder.join("no-clangd.exe");
     let sources = clangd_sources(checkout, missing);
@@ -1706,6 +1746,7 @@ fn a_clangd_that_exits_while_it_answers_says_how_and_the_next_lookup_starts_it_a
 
     let asked = ask(&mut owner, &lookup, Ticket(1));
     fake.crash(139, "Segmentation fault\n");
+    handle_first(&mut owner, first);
     let answer = answer_of(&mut owner, &asked);
     let again = look(&mut owner, &lookup);
 

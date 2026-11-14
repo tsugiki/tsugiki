@@ -1792,20 +1792,54 @@ fn a_server_cleared_in_settings_loses_its_path_and_the_default_idle_time_goes() 
 }
 
 #[test]
-fn apply_over_a_machine_toml_that_stopped_parsing_refuses_and_leaves_it_alone() {
+fn apply_over_a_machine_toml_that_stopped_parsing_refuses_and_saves_neither_file() {
     let (folders, root) = temp_folders("language-servers-broken");
     let mut files = SettingsFiles::load(folders.clone());
     fs::write(folders.machine_file(), "[language_servers\n").unwrap();
 
     let applied = files.apply(SettingsChanges {
+        status_bar: Some(StatusBarSettings { visible: false }),
         language_servers: Some(LanguageServerSettings::default()),
+        ..SettingsChanges::default()
+    });
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    let settings_saved = folders.settings_file().exists();
+    fs::remove_dir_all(root).unwrap();
+
+    assert!(applied.is_err());
+    assert_eq!(machine, "[language_servers\n");
+    assert!(!settings_saved);
+}
+
+#[test]
+fn apply_writes_a_server_s_path_over_a_hand_written_path_that_isn_t_a_table() {
+    let (folders, root) = temp_folders("language-servers-not-a-table");
+    fs::write(
+        folders.machine_file(),
+        "[language_servers]\nty = \"C:/ty.exe\"\n",
+    )
+    .unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+
+    let applied = files.apply(SettingsChanges {
+        language_servers: Some(LanguageServerSettings {
+            ty: Some(PathBuf::from("C:/ty.exe")),
+            ..LanguageServerSettings::default()
+        }),
         ..SettingsChanges::default()
     });
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
     fs::remove_dir_all(root).unwrap();
 
-    assert!(applied.is_err());
-    assert_eq!(machine, "[language_servers\n");
+    applied.unwrap();
+    assert_eq!(
+        machine,
+        "[language_servers]\n\n[language_servers.ty]\npath = \"C:/ty.exe\"\n"
+    );
+    assert_eq!(
+        files.view().language_servers.ty,
+        Some(PathBuf::from("C:/ty.exe"))
+    );
 }
 
 #[test]

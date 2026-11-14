@@ -19,6 +19,24 @@ it("says what went wrong with a server in the words of each kind of problem", ()
   );
 });
 
+it("says why clangd can't answer, with what to do about it on Windows", () => {
+  const builtIns = { kind: "built_in_headers_missing" } as const;
+  expect(problemWords("clangd", builtIns, "Win32")).toBe(
+    "clangd's built-in headers are missing. Unpack the whole archive, not just clangd.exe",
+  );
+  expect(problemWords("clangd", builtIns, "MacIntel")).toBe(
+    "clangd's built-in headers are missing. Unpack the whole archive, not just clangd",
+  );
+  const system = { kind: "system_headers_missing", header: "stdlib.h" } as const;
+  expect(problemWords("clangd", system, "Win32")).toBe(
+    "clangd can't find system headers: stdlib.h. Install the MSVC build tools or the Windows SDK",
+  );
+  expect(problemWords("clangd", system, "MacIntel")).toBe("clangd can't find system headers: stdlib.h");
+  expect(problemWords("clangd", { kind: "not_indexing" })).toBe(
+    "clangd isn't indexing. Definitions in other files will land on header declarations",
+  );
+});
+
 it("names each state of a server, and a problem in its words", () => {
   const states = (["not_set_up", "ready", "running", "idle"] as const).map((state) =>
     statusWords("ty", { state }),

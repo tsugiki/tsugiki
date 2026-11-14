@@ -17,6 +17,7 @@ use tsugiki_lsp::{
     Progress, RequestError, Server, Starting, Status, Uri,
 };
 
+use super::clangd::{Headers, Troubles};
 use super::health::version_in;
 use super::{
     DiffEnd, EXIT_NEWS, EXIT_PATIENCE, Hit, IndexedFiles, Lookup, NotReady, PATIENCE, Place,
@@ -45,6 +46,8 @@ pub(super) struct Setup {
     /// Reads how far the server's index has got from a `$/progress`, for a server whose answers may miss
     /// what its index doesn't hold yet, as clangd's do.
     pub(super) index: Option<fn(&Progress) -> Option<Indexing>>,
+    /// What Tsugiki watches the server's events for, to say why it can't answer, which only clangd has.
+    pub(super) troubles: Option<Troubles>,
 }
 
 /// A server's progress with its index, as its `$/progress` says.
@@ -82,6 +85,8 @@ pub(super) enum News {
     Indexing,
     /// It exited, as its process ended so.
     Exited(Exit),
+    /// What it reports, or doesn't, says it runs with this problem (#684).
+    Troubled(ServerProblem),
 }
 
 /// The listener to a server's news: the servers' thread.
@@ -263,7 +268,7 @@ impl LanguageServer {
             ServerName::RustAnalyzer => {
                 super::rust_analyzer::setup(program).map_err(didnt_start)?
             }
-            ServerName::Clangd => super::clangd::setup(&folder).map_err(didnt_start)?,
+            ServerName::Clangd => super::clangd::setup(&folder, program).map_err(didnt_start)?,
         };
         let log = (new_log(&server_log(&folder, name)))
             .map(|file| -> Box<dyn Write + Send> { Box::new(file) });
@@ -330,7 +335,22 @@ impl LanguageServer {
             return Err(NotReady::Problem(ServerProblem::stopped(exit)));
         }
         let (writer, indexing) = latest::channel(Indexing::Built);
-        let events = watch(events, setup.index, writer, news);
+        let watched = Watched {
+            index: setup.index,
+            index_due: (setup.troubles.as_ref())
+                .filter(|_| !open.is_empty())
+                .and_then(|troubles| Instant::now().checked_add(troubles.index_within)),
+            headers: setup.troubles.map(|troubles| {
+                let texts = (open.iter())
+                    .map(|open| {
+                        let texts = [Some(&open.head), open.base.as_ref()].into_iter().flatten();
+                        (open.document.uri().clone(), texts.cloned().collect())
+                    })
+                    .collect();
+                Headers::new(troubles.program, (folder.clone(), at.head.clone()), texts)
+            }),
+        };
+        let events = watch(events, watched, writer, news);
         Ok(Self {
             server,
             events,
@@ -440,67 +460,138 @@ fn located(folder: &Path) -> Result<(PathBuf, Uri), Error> {
     Ok((root.to_path().unwrap_or(folder), root))
 }
 
+/// What a server's events are read for, besides its exit.
+struct Watched {
+    /// How far its index has got, from a `$/progress`, for a server whose index Tsugiki reads.
+    index: Option<fn(&Progress) -> Option<Indexing>>,
+    /// The moment by which clangd has to have reported its index, once a file is open on it (#684).
+    index_due: Option<Instant>,
+    /// What clangd's diagnostics say of the headers it can't find (#684).
+    headers: Option<Headers>,
+}
+
 /// Reads the server's `events` on a thread of their own as they come, and hands each on through the
 /// receiver it gives. For a server whose index Tsugiki reads, it writes how far the index has got into
-/// `indexing` as `read` finds it, starting from [`Indexing::Unreported`], and tells `news` when that is
-/// news. A count it held back as too soon it tells once [`NEWS_EVERY`] has passed, though the server says
-/// nothing more. When the server exits, it writes [`Indexing::Ended`] first, then tells `news` how. Once
-/// the server has exited, or its events end, it writes [`Indexing::Ended`] and tells `news` that.
+/// `indexing`, starting from [`Indexing::Unreported`], and tells `news` when that is news. A count it held
+/// back as too soon it tells once [`NEWS_EVERY`] has passed, though the server says nothing more. It tells
+/// `news` of a problem clangd's events show, or the lack of them. When the server exits, it writes
+/// [`Indexing::Ended`] first, then tells `news` how. Once the server has exited, or its events end, it
+/// writes [`Indexing::Ended`] and tells `news` that.
 fn watch(
     events: Receiver<Event>,
-    read: Option<fn(&Progress) -> Option<Indexing>>,
+    watched: Watched,
     mut indexing: LatestWriter<Indexing>,
     news: OnNews,
 ) -> Receiver<Event> {
     let (passes, passed) = mpsc::channel();
-    let first = if read.is_some() {
+    let first = if watched.index.is_some() {
         Indexing::Unreported
     } else {
         Indexing::Built
     };
     indexing.set(&first);
+    let mut watcher = Watcher {
+        watched,
+        indexing,
+        news,
+        told: (first, Instant::now()),
+        latest: first,
+    };
     let _reads = thread::spawn(move || {
-        let mut told = (first, Instant::now());
-        let mut latest = first;
         loop {
-            // A wait too long for a deadline waits for the next event.
-            let wait = if latest == told.0 {
-                Duration::MAX
-            } else {
-                NEWS_EVERY.saturating_sub(told.1.elapsed())
-            };
-            let event = events.recv_timeout(wait);
-            if let Err(RecvTimeoutError::Timeout) = event {
-                told = (latest, Instant::now());
-                news(News::Indexing);
-                continue;
-            }
-            let Ok(event) = event else { break };
-            if let Event::Progress(progress) = &event
-                && let Some(now) = read.and_then(|read| read(progress))
-            {
-                indexing.set(&now);
-                latest = now;
-                if now.news_since(told.0, told.1.elapsed()) {
-                    told = (now, Instant::now());
-                    news(News::Indexing);
+            let event = match events.recv_timeout(watcher.wait()) {
+                Ok(event) => event,
+                Err(RecvTimeoutError::Timeout) => {
+                    watcher.due();
+                    continue;
                 }
-            }
+                Err(RecvTimeoutError::Disconnected) => break,
+            };
+            watcher.read(&event);
             let exited = matches!(event, Event::Exited(_));
-            if let Event::Exited(exit) = &event {
-                // First, so the servers' thread finds this server has ended when it hears.
-                indexing.set(&Indexing::Ended);
-                news(News::Exited(exit.clone()));
-            }
             // The server is gone once nothing reads its events.
             if passes.send(event).is_err() || exited {
                 break;
             }
         }
-        indexing.set(&Indexing::Ended);
-        news(News::Indexing);
+        watcher.ended();
     });
     passed
+}
+
+/// The reader of a server's events, on their thread.
+struct Watcher {
+    watched: Watched,
+    indexing: LatestWriter<Indexing>,
+    news: OnNews,
+    /// The progress with its index last told, and when.
+    told: (Indexing, Instant),
+    /// Its progress with its index, as it last reported it.
+    latest: Indexing,
+}
+
+impl Watcher {
+    /// The wait until the next thing due: a count held back as too soon, or the moment clangd has to have
+    /// reported its index by. A wait too long for a deadline waits for the next event.
+    fn wait(&self) -> Duration {
+        let news = (self.latest != self.told.0)
+            .then(|| self.told.1.checked_add(NEWS_EVERY))
+            .flatten();
+        let due = news.into_iter().chain(self.watched.index_due).min();
+        due.map_or(Duration::MAX, |due| {
+            due.saturating_duration_since(Instant::now())
+        })
+    }
+
+    /// Tells what is due by now: that clangd isn't indexing, if it hasn't reported its index yet, and a
+    /// count held back as too soon.
+    fn due(&mut self) {
+        let now = Instant::now();
+        if (self.watched.index_due).is_some_and(|due| due <= now) {
+            self.watched.index_due = None;
+            if self.latest == Indexing::Unreported {
+                (self.news)(News::Troubled(ServerProblem::NotIndexing));
+            }
+        }
+        if self.latest != self.told.0 && self.told.1.elapsed() >= NEWS_EVERY {
+            self.told = (self.latest, now);
+            (self.news)(News::Indexing);
+        }
+    }
+
+    /// Reads `event`: how far the server's index has got, a header clangd can't find, or how it exited.
+    fn read(&mut self, event: &Event) {
+        match event {
+            Event::Progress(progress) => {
+                if let Some(now) = self.watched.index.and_then(|read| read(progress)) {
+                    self.indexing.set(&now);
+                    self.latest = now;
+                    if now.news_since(self.told.0, self.told.1.elapsed()) {
+                        self.told = (now, Instant::now());
+                        (self.news)(News::Indexing);
+                    }
+                }
+            }
+            Event::Diagnostics(diagnostics) => {
+                let headers = self.watched.headers.as_mut();
+                if let Some(problem) = headers.and_then(|headers| headers.problem(diagnostics)) {
+                    (self.news)(News::Troubled(problem));
+                }
+            }
+            Event::Exited(exit) => {
+                // First, so the servers' thread finds this server has ended when it hears.
+                self.indexing.set(&Indexing::Ended);
+                (self.news)(News::Exited(exit.clone()));
+            }
+            Event::Status(_) => {}
+        }
+    }
+
+    /// Notes that the server has ended, and tells that.
+    fn ended(mut self) {
+        self.indexing.set(&Indexing::Ended);
+        (self.news)(News::Indexing);
+    }
 }
 
 /// Waits until the server says it is quiescent, or has ended, for at most [`PATIENCE`]. A server that is

@@ -38,7 +38,7 @@ fn in_a_cpython_checkout_clangd_reads_a_database_of_its_core_c_files() {
         ],
     );
 
-    let setup = setup(&folder).unwrap();
+    let setup = setup(&folder, Path::new("clangd")).unwrap();
     let database = root.join("servers").join("clangd");
     let text = fs::read_to_string(database.join("compile_commands.json"));
     let _removed = fs::remove_dir_all(&root);
@@ -74,7 +74,7 @@ fn elsewhere_clangd_uses_its_own_defaults() {
     let folder = root.join("lookup");
     touch(&folder, &["src/spam.c", "Objects/eggs.c"]);
 
-    let setup = setup(&folder).unwrap();
+    let setup = setup(&folder, Path::new("clangd")).unwrap();
     let written = root.join("servers").exists();
     let _removed = fs::remove_dir_all(&root);
 
@@ -97,7 +97,7 @@ fn a_database_it_can_t_write_stops_clangd_starting() {
     touch(&folder, &["Include/patchlevel.h"]);
     fs::write(root.join("servers"), "").unwrap();
 
-    let refused = setup(&folder).map(|_setup| ());
+    let refused = setup(&folder, Path::new("clangd")).map(|_setup| ());
     let _removed = fs::remove_dir_all(&root);
 
     let Err(error) = refused else {
@@ -159,4 +159,92 @@ fn clangd_s_index_counts_its_files_until_it_ends_and_other_progress_says_nothing
     assert_eq!(uncounted, Some(Indexing::Building(None)));
     assert_eq!(ended, Some(Indexing::Built));
     assert_eq!(other, None);
+}
+
+#[test]
+fn built_in_headers_are_a_stddef_h_in_the_folder_above_clangd_s_own() {
+    let root = temp_path("clangd-built-ins");
+    touch(
+        &root,
+        &[
+            "whole/bin/clangd.exe",
+            "whole/lib/clang/23/include/stddef.h",
+            "lone/bin/clangd.exe",
+            "empty/bin/clangd.exe",
+            "empty/lib/clang/23/include/stdint.h",
+        ],
+    );
+
+    let found = ["whole", "lone", "empty"]
+        .map(|folder| has_built_ins(&root.join(folder).join("bin").join("clangd.exe")));
+    let bare = has_built_ins(Path::new("clangd"));
+    let _removed = fs::remove_dir_all(&root);
+
+    assert_eq!(found, [true, false, false]);
+    assert!(!bare);
+}
+
+#[test]
+fn a_missing_header_is_read_from_clangd_s_message_with_the_file_its_note_names() {
+    let direct = Missing::read("'stdlib.h' file not found").unwrap();
+    let nested = "In included file: 'corecrt.h' file not found\n\nC:\\SDK\\stdlib.h:12:10:\nnote: error occurred here";
+    let nested = Missing::read(nested).unwrap();
+    let unnoted = Missing::read("In included file: 'corecrt.h' file not found").unwrap();
+
+    assert_eq!(direct.header, "stdlib.h");
+    assert!(matches!(direct.includer, Includer::Diagnosed));
+    assert_eq!(nested.header, "corecrt.h");
+    assert!(matches!(nested.includer, Includer::File("C:\\SDK\\stdlib.h")));
+    assert!(matches!(unnoted.includer, Includer::File("")));
+    assert!(Missing::read("use of undeclared identifier 'spam'").is_none());
+    assert!(Missing::read("In included file: unknown type name 'spam'").is_none());
+}
+
+#[test]
+fn an_include_in_angle_brackets_names_its_header_between_them() {
+    let text = "int a;\n  #  include   < stdlib.h >\n#include \"spam.h\"\n#define X <eggs.h>\n";
+
+    assert!(includes_bracketed(text, "stdlib.h"));
+    assert!(!includes_bracketed(text, "spam.h"));
+    assert!(!includes_bracketed(text, "eggs.h"));
+    assert!(!includes_bracketed("#include <stdlib.h", "stdlib.h"));
+}
+
+#[test]
+fn a_header_clangd_can_t_find_in_a_file_that_isn_t_open_or_a_folder_git_can_t_read_counts_as_the_system_s()
+{
+    // A URI keeps no `..`, as the server names files.
+    let root = super::super::plain(&temp_path("clangd-headers-no-git"));
+    touch(&root, &["bin/clangd.exe", "lookup/eggs.c"]);
+    let file = root.join("lookup").join("eggs.c");
+    let uri = Uri::from_path(&file).unwrap();
+    let head = CommitSha::parse("0123456789abcdef0123456789abcdef01234567").unwrap();
+    let open = vec![(uri.clone(), vec![Arc::from("#include <stdlib.h>\n")])];
+    let mut headers = Headers::new(
+        root.join("bin").join("clangd.exe"),
+        (root.join("lookup"), head),
+        open,
+    );
+    let diagnosed = |uri: &Uri| -> Diagnostics {
+        serde_json::from_value(json!({
+            "uri": uri,
+            "diagnostics": [{
+                "range": {"start": {"line": 0, "character": 9}, "end": {"line": 0, "character": 19}},
+                "message": "'stdlib.h' file not found",
+            }],
+        }))
+        .unwrap()
+    };
+
+    let open_file = headers.problem(&diagnosed(&uri));
+    let other = Uri::from_path(&root.join("lookup").join("other.c")).unwrap();
+    let other_file = headers.problem(&diagnosed(&other));
+    let _removed = fs::remove_dir_all(&root);
+
+    let header = "stdlib.h".to_owned();
+    assert_eq!(
+        open_file,
+        Some(ServerProblem::SystemHeadersMissing { header })
+    );
+    assert_eq!(other_file, None);
 }

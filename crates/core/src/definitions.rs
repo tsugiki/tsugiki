@@ -41,7 +41,7 @@ use crate::repository::RepositoryName;
 pub use code::Code;
 use code::HitFiles;
 pub use health::{FoundVersion, ServerProblem, ServerRow, ServerStatus};
-use health::{Health, Last, Presence};
+use health::{Checked, Health, Last, Presence};
 use server::{Hits, Indexing, LanguageServer, News, OnNews, Request, Stopping};
 
 mod clangd;
@@ -125,8 +125,9 @@ pub enum Answer {
     Found { hits: Vec<Hit> },
     /// The server for the file's language isn't set up.
     NotSetUp { server: ServerName },
-    /// The server for the file's language has a problem, which its row in Settings › Advanced says too.
-    /// The next lookup tries it again.
+    /// The server for the file's language has a problem, which its row in Settings › Advanced says too:
+    /// one that kept it from answering, which the next lookup tries again, or one of a clangd that runs,
+    /// which found nothing and whose problem may say why (#684).
     Problem {
         server: ServerName,
         problem: ServerProblem,
@@ -414,10 +415,12 @@ enum Message {
     Indexing(Key),
     /// A server the key names exited, perhaps on its own, perhaps one stopped since.
     Exited(Key, Exit),
+    /// What a server the key names reports, or doesn't, says it has this problem while it runs (#684).
+    Troubled(Key, ServerProblem),
     /// The settings may have changed: a server's path, or the idle time.
     Reconfigured,
-    /// What `--version` of the program at the path said of the server, once its path was set.
-    Checked(ServerName, PathBuf, Result<Option<String>, ServerProblem>),
+    /// What checking the program at the path found of the server, once its path was set.
+    Checked(ServerName, PathBuf, Checked),
     /// The Repository was removed: its servers stop, and the reply comes once they have ended.
     Remove(RepositoryName, Sender<()>),
     Stop(Duration, Sender<()>),
@@ -693,6 +696,7 @@ impl Owner {
             Message::Answered(id, hits) => self.answered(id, hits),
             Message::Indexing(key) => self.indexing(&key),
             Message::Exited(key, exit) => self.exited(&key, exit),
+            Message::Troubled(key, problem) => self.troubled(&key, problem),
             Message::Reconfigured => self.reconfigured(),
             Message::Checked(name, path, outcome) => self.checked(name, &path, outcome),
             Message::Remove(repository, reply) => {
@@ -725,6 +729,20 @@ impl Owner {
         self.trouble(key, ServerProblem::stopped(exit));
     }
 
+    /// Notes `problem` of the server `key` names, which runs, unless it has stopped since or has a problem
+    /// that explains as much, and logs it.
+    fn troubled(&mut self, key: &Key, problem: ServerProblem) {
+        if !self.servers.contains_key(key) {
+            return;
+        }
+        let (repository, name) = key;
+        let logged = format!("{problem:?}");
+        if self.health_of(*name).troubled(problem) {
+            let named = name.as_str();
+            log::warn!("{named} for {repository} runs with a problem: {logged}");
+        }
+    }
+
     /// Stops each server whose path has changed since the thread last knew it, cancels a lookup that runs
     /// on one, forgets what it knew of it, and checks the new path with `--version` on a thread of its own.
     fn reconfigured(&mut self) {
@@ -743,30 +761,25 @@ impl Owner {
             if let Some(path) = path {
                 let own = self.own.clone();
                 let _checks = thread::spawn(move || {
-                    let outcome = health::check(name, &path);
+                    let found = health::check(name, &path);
                     // The thread ends once it has stopped.
-                    let _unheard = own.send(Message::Checked(name, path, outcome));
+                    let _unheard = own.send(Message::Checked(name, path, found));
                 });
             }
         }
     }
 
-    /// Notes what `--version` of the program at `path` said of server `name`, unless its path has changed
-    /// since.
-    fn checked(
-        &mut self,
-        name: ServerName,
-        path: &Path,
-        outcome: Result<Option<String>, ServerProblem>,
-    ) {
+    /// Notes what checking the program at `path` found of server `name`, unless its path has changed since.
+    fn checked(&mut self, name: ServerName, path: &Path, found: Checked) {
         if (self.known.get(&name)).is_none_or(|known| known.as_deref() != Some(path)) {
             return;
         }
         let health = self.health_of(name);
-        match outcome {
-            Ok(Some(version)) => health.version = Some(version),
-            Ok(None) => {}
-            Err(problem) => health.last = Last::Problem(problem),
+        if found.version.is_some() {
+            health.version = found.version;
+        }
+        if let Some(problem) = found.problem {
+            health.last = Last::Problem(problem);
         }
     }
 
@@ -973,6 +986,7 @@ impl Owner {
                 | Message::Answered(..)
                 | Message::Indexing(..)
                 | Message::Exited(..)
+                | Message::Troubled(..)
                 | Message::Reconfigured
                 | Message::Checked(..)
                 | Message::Remove(..)
@@ -1052,7 +1066,17 @@ impl Owner {
                 request,
                 indexing,
             } => {
-                asker.answer(Ok(Answer::Found { hits }));
+                // A clangd that runs with a problem says it in place of nothing found (#684).
+                let problem = (self.health.get(&server.1))
+                    .and_then(Health::misleads)
+                    .filter(|_| hits.is_empty());
+                asker.answer(Ok(match problem {
+                    Some(problem) => Answer::Problem {
+                        server: server.1,
+                        problem: problem.clone(),
+                    },
+                    None => Answer::Found { hits },
+                }));
                 let listener = Listener {
                     ticket: asker.ticket,
                     index: asker.index,
@@ -1231,13 +1255,15 @@ fn ready<'a>(
     Ok(servers.entry(key.clone()).insert_entry(server).into_mut())
 }
 
-/// Tells the thread at `own` the news of the server `key` names: its index has moved on, or it exited.
+/// Tells the thread at `own` the news of the server `key` names: its index has moved on, it exited, or it
+/// runs with a problem.
 fn news(own: &Sender<Message>, key: &Key) -> OnNews {
     let (own, key) = (own.clone(), key.clone());
     Box::new(move |news| {
         let message = match news {
             News::Indexing => Message::Indexing(key.clone()),
             News::Exited(exit) => Message::Exited(key.clone(), exit),
+            News::Troubled(problem) => Message::Troubled(key.clone(), problem),
         };
         // The thread ends once it has stopped.
         let _unheard = own.send(message);

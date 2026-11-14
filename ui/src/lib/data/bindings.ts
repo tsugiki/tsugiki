@@ -280,8 +280,9 @@ export type Answer_Deserialize =
 /**  The server for the file's language isn't set up. */
 { state: "not_set_up"; server: ServerName } | 
 /**
- *  The server for the file's language has a problem, which its row in Settings › Advanced says too.
- *  The next lookup tries it again.
+ *  The server for the file's language has a problem, which its row in Settings › Advanced says too:
+ *  one that kept it from answering, which the next lookup tries again, or one of a clangd that runs,
+ *  which found nothing and whose problem may say why (#684).
  */
 { state: "problem"; server: ServerName; problem: ServerProblem_Deserialize } | 
 /**  Tsugiki has no server for the file's language yet. */
@@ -296,8 +297,9 @@ export type Answer_Serialize =
 /**  The server for the file's language isn't set up. */
 { state: "not_set_up"; server: ServerName } | 
 /**
- *  The server for the file's language has a problem, which its row in Settings › Advanced says too.
- *  The next lookup tries it again.
+ *  The server for the file's language has a problem, which its row in Settings › Advanced says too:
+ *  one that kept it from answering, which the next lookup tries again, or one of a clangd that runs,
+ *  which found nothing and whose problem may say why (#684).
  */
 { state: "problem"; server: ServerName; problem: ServerProblem_Serialize } | 
 /**  Tsugiki has no server for the file's language yet. */
@@ -2262,15 +2264,17 @@ export type ServerName =
 
 /**
  *  What is wrong with a language server, which its row in Settings › Advanced and the Definition peek say
- *  in words of the window's. The servers' thread owns it, and more kinds can join it, such as what clangd
- *  reports while it runs (#684).
+ *  in words of the window's. The servers' thread owns it. The first three keep the server from answering.
+ *  With the last three, clangd runs and answers, but may find nothing, or a declaration in place of a
+ *  definition (#684).
  */
 export type ServerProblem = ServerProblem_Serialize | ServerProblem_Deserialize;
 
 /**
  *  What is wrong with a language server, which its row in Settings › Advanced and the Definition peek say
- *  in words of the window's. The servers' thread owns it, and more kinds can join it, such as what clangd
- *  reports while it runs (#684).
+ *  in words of the window's. The servers' thread owns it. The first three keep the server from answering.
+ *  With the last three, clangd runs and answers, but may find nothing, or a declaration in place of a
+ *  definition (#684).
  */
 export type ServerProblem_Deserialize = 
 /**  The program's `--version` doesn't name the server: the first line it printed, which may be empty. */
@@ -2278,12 +2282,28 @@ export type ServerProblem_Deserialize =
 /**  The program didn't start, or didn't answer `initialize`: why, as the OS or the server said. */
 { kind: "did_not_start"; cause: string } | 
 /**  The server exited on its own: its exit code, if it had one, and the end of its error output. */
-{ kind: "stopped"; code?: number | null; stderr_tail: string };
+{ kind: "stopped"; code?: number | null; stderr_tail: string } | 
+/**
+ *  clangd's own headers, such as `stddef.h`, aren't in `lib\clang\<N>\include` beside its folder, as
+ *  when only `clangd.exe` was unpacked from its archive.
+ */
+{ kind: "built_in_headers_missing" } | 
+/**
+ *  clangd can't find `header`, which a file includes in angle brackets and the Repository doesn't hold:
+ *  a header of the system's, such as `stdlib.h`, which on Windows comes with the MSVC build tools.
+ */
+{ kind: "system_headers_missing"; header: string } | 
+/**
+ *  clangd hasn't reported its index within a minute of the first file opened, so it finds a function
+ *  defined in another file at its declaration in a header.
+ */
+{ kind: "not_indexing" };
 
 /**
  *  What is wrong with a language server, which its row in Settings › Advanced and the Definition peek say
- *  in words of the window's. The servers' thread owns it, and more kinds can join it, such as what clangd
- *  reports while it runs (#684).
+ *  in words of the window's. The servers' thread owns it. The first three keep the server from answering.
+ *  With the last three, clangd runs and answers, but may find nothing, or a declaration in place of a
+ *  definition (#684).
  */
 export type ServerProblem_Serialize = 
 /**  The program's `--version` doesn't name the server: the first line it printed, which may be empty. */
@@ -2291,7 +2311,22 @@ export type ServerProblem_Serialize =
 /**  The program didn't start, or didn't answer `initialize`: why, as the OS or the server said. */
 { kind: "did_not_start"; cause: string } | 
 /**  The server exited on its own: its exit code, if it had one, and the end of its error output. */
-{ kind: "stopped"; code: number | null; stderr_tail: string };
+{ kind: "stopped"; code: number | null; stderr_tail: string } | 
+/**
+ *  clangd's own headers, such as `stddef.h`, aren't in `lib\clang\<N>\include` beside its folder, as
+ *  when only `clangd.exe` was unpacked from its archive.
+ */
+{ kind: "built_in_headers_missing" } | 
+/**
+ *  clangd can't find `header`, which a file includes in angle brackets and the Repository doesn't hold:
+ *  a header of the system's, such as `stdlib.h`, which on Windows comes with the MSVC build tools.
+ */
+{ kind: "system_headers_missing"; header: string } | 
+/**
+ *  clangd hasn't reported its index within a minute of the first file opened, so it finds a function
+ *  defined in another file at its declaration in a header.
+ */
+{ kind: "not_indexing" };
 
 /**  One server's row in Settings › Advanced. */
 export type ServerRow = ServerRow_Serialize | ServerRow_Deserialize;

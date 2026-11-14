@@ -2,7 +2,9 @@
 //! and the versions we tested, and the problem it last had, which the Definition peek says too.
 //!
 //! Tsugiki checks a server when the user sets its path: it runs the program once with `--version`, which
-//! has to name the server. A start runs no check, and the server names its version answering `initialize`.
+//! has to name the server, and clangd's built-in headers have to be beside it. A start runs no check, and
+//! the server names its version answering `initialize`. While clangd runs, what it reports may give it a
+//! problem as well (#684).
 
 use std::io;
 use std::path::Path;
@@ -22,8 +24,9 @@ mod tests;
 const CHECK_PATIENCE: Duration = Duration::from_secs(10);
 
 /// What is wrong with a language server, which its row in Settings › Advanced and the Definition peek say
-/// in words of the window's. The servers' thread owns it, and more kinds can join it, such as what clangd
-/// reports while it runs (#684).
+/// in words of the window's. The servers' thread owns it. The first three keep the server from answering.
+/// With the last three, clangd runs and answers, but may find nothing, or a declaration in place of a
+/// definition (#684).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ServerProblem {
@@ -36,6 +39,15 @@ pub enum ServerProblem {
         code: Option<i32>,
         stderr_tail: String,
     },
+    /// clangd's own headers, such as `stddef.h`, aren't in `lib\clang\<N>\include` beside its folder, as
+    /// when only `clangd.exe` was unpacked from its archive.
+    BuiltInHeadersMissing,
+    /// clangd can't find `header`, which a file includes in angle brackets and the Repository doesn't hold:
+    /// a header of the system's, such as `stdlib.h`, which on Windows comes with the MSVC build tools.
+    SystemHeadersMissing { header: String },
+    /// clangd hasn't reported its index within a minute of the first file opened, so it finds a function
+    /// defined in another file at its declaration in a header.
+    NotIndexing,
 }
 
 impl ServerProblem {
@@ -44,6 +56,18 @@ impl ServerProblem {
         Self::Stopped {
             code: exit.code,
             stderr_tail: exit.stderr_tail,
+        }
+    }
+
+    /// How much the problem of a server that runs explains of what it fails to find, from 1 up, or 0 for a
+    /// problem that keeps it from answering. Missing built-in headers make the system's go missing too, and
+    /// either leaves the index little to hold.
+    pub(super) fn weight(&self) -> u8 {
+        match self {
+            Self::NotThisServer { .. } | Self::DidNotStart { .. } | Self::Stopped { .. } => 0,
+            Self::NotIndexing => 1,
+            Self::SystemHeadersMissing { .. } => 2,
+            Self::BuiltInHeadersMissing => 3,
         }
     }
 }
@@ -121,6 +145,28 @@ impl Health {
         }
     }
 
+    /// Notes `problem` of a server that runs, unless it has one that explains as much or more, and says
+    /// whether it did. A problem that kept it from answering is behind it, as it runs.
+    pub(super) fn troubled(&mut self, problem: ServerProblem) -> bool {
+        let weight = match &self.last {
+            Last::Problem(problem) => problem.weight(),
+            Last::Nothing | Last::Idle => 0,
+        };
+        let worse = problem.weight() > weight;
+        if worse {
+            self.last = Last::Problem(problem);
+        }
+        worse
+    }
+
+    /// The problem of a server that runs, which may explain why it found nothing, if it has one.
+    pub(super) fn misleads(&self) -> Option<&ServerProblem> {
+        match &self.last {
+            Last::Problem(problem) if problem.weight() > 0 => Some(problem),
+            Last::Problem(_) | Last::Nothing | Last::Idle => None,
+        }
+    }
+
     /// The row of server `server`, which is `presence`.
     pub(super) fn row(&self, server: ServerName, presence: Presence) -> ServerRow {
         let status = match (presence, &self.last) {
@@ -146,10 +192,30 @@ impl Health {
     }
 }
 
-/// What `--version` of the program at `program` says of server `name`: the version, if it printed one, or
-/// what is wrong. It waits for the program, so it runs off the servers' thread.
-pub(super) fn check(name: ServerName, program: &Path) -> Result<Option<String>, ServerProblem> {
-    read_check(name, tsugiki_lsp::version_of(program, CHECK_PATIENCE))
+/// What checking a server's program found when the user set its path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Checked {
+    /// The version `--version` printed, if it named the server and printed one.
+    pub(super) version: Option<String>,
+    /// What is wrong with the program, if something is. A clangd can have a version and a problem both.
+    pub(super) problem: Option<ServerProblem>,
+}
+
+/// What checking the program at `program` for server `name` finds: its `--version` has to name the server,
+/// and clangd's built-in headers have to be beside it (#684). It waits for the program, so it runs off the
+/// servers' thread.
+pub(super) fn check(name: ServerName, program: &Path) -> Checked {
+    match read_check(name, tsugiki_lsp::version_of(program, CHECK_PATIENCE)) {
+        Ok(version) => Checked {
+            version,
+            problem: (name == ServerName::Clangd && !super::clangd::has_built_ins(program))
+                .then_some(ServerProblem::BuiltInHeadersMissing),
+        },
+        Err(problem) => Checked {
+            version: None,
+            problem: Some(problem),
+        },
+    }
 }
 
 /// What `printed`, the text a program printed for `--version` or why it didn't run, says of server `name`.

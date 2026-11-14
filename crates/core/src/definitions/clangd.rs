@@ -4,18 +4,24 @@
 //! checkout, in `repos\<owner>__<name>\servers\clangd\`, where clangd keeps its index too. Each core C file
 //! of the checkout gets the same flags, the ones CPython's Windows build gives `pythoncore`, so nothing is
 //! configured or built. Elsewhere clangd uses its own defaults.
+//!
+//! clangd fails in ways that look like wrong answers, so Tsugiki names each (#684): its built-in headers
+//! missing, the system's headers missing, and an index that never starts.
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
 
 use serde_json::{Value, json};
-use tsugiki_lsp::{Language, Progress, ProgressToken, WorkDone};
+use tsugiki_lsp::{Diagnostics, Language, Progress, ProgressToken, Uri, WorkDone};
 
 use super::server::{Indexing, Ready, Setup};
-use super::{CPYTHON_MARK, IndexedFiles, failed};
+use super::{CPYTHON_MARK, IndexedFiles, ServerProblem, failed};
 use crate::error::Error;
 use crate::folders::servers_beside;
+use crate::github::{CommitSha, live};
 
 #[cfg(test)]
 mod tests;
@@ -56,9 +62,21 @@ const FLAGS: [&str; 15] = [
     "-c",
 ];
 
+/// The longest clangd gets from the first file opened to report its index, before Tsugiki says it isn't
+/// indexing. It reports the index once it has read its compile database, which it does at once.
+const INDEX_PATIENCE: Duration = Duration::from_secs(60);
+
+/// What Tsugiki watches clangd's events for, to say why it can't answer (#684).
+pub(super) struct Troubles {
+    /// The clangd that runs, beside which its built-in headers are.
+    pub(super) program: PathBuf,
+    /// The longest from the first file opened to the first report of its index.
+    pub(super) index_within: Duration,
+}
+
 /// clangd's setup for the checkout at `folder`, whose compile database it writes first in a Repository with
-/// CPython's layout.
-pub(super) fn setup(folder: &Path) -> Result<Setup, Error> {
+/// CPython's layout, with clangd at `program`.
+pub(super) fn setup(folder: &Path, program: &Path) -> Result<Setup, Error> {
     let mut args: Vec<OsString> = [
         "--background-index",
         "--background-index-priority=low",
@@ -81,6 +99,139 @@ pub(super) fn setup(folder: &Path) -> Result<Setup, Error> {
         language: Language::C,
         ready: Ready::Initialized,
         index: Some(indexing),
+        troubles: Some(Troubles {
+            program: program.to_owned(),
+            index_within: INDEX_PATIENCE,
+        }),
+    })
+}
+
+/// Whether the clangd at `program` has its built-in headers where it looks for them, past links: a
+/// `lib\clang\<N>\include\stddef.h` in the folder above its own. It reads a folder and looks at one file.
+pub(super) fn has_built_ins(program: &Path) -> bool {
+    let program = fs::canonicalize(program).unwrap_or_else(|_| program.to_owned());
+    let clang = (program.ancestors().nth(2)).map(|root| root.join("lib").join("clang"));
+    let versions = clang.and_then(|clang| fs::read_dir(clang).ok());
+    (versions.into_iter().flatten().flatten())
+        .any(|version| version.path().join("include").join("stddef.h").is_file())
+}
+
+/// What clangd's diagnostics on the open files say of the headers it can't find (#684). A header it can't
+/// find stops its parse of the file, so it reports the first one only.
+pub(super) struct Headers {
+    program: PathBuf,
+    /// The checkout's folder, and the commit whose files are the Repository's: the PR's head.
+    folder: PathBuf,
+    head: CommitSha,
+    /// Each open file's URI, and its texts at the head and at the base, which say how it includes a header.
+    open: Vec<(Uri, Vec<Arc<str>>)>,
+    /// The paths of the Repository's files, read from git once a header is missing.
+    own: Option<Vec<String>>,
+}
+
+impl Headers {
+    /// The reader of the diagnostics of clangd at `program`, on the checkout at `folder` of a PR whose head
+    /// is `head`, with the files `open` open.
+    pub(super) fn new(
+        program: PathBuf,
+        (folder, head): (PathBuf, CommitSha),
+        open: Vec<(Uri, Vec<Arc<str>>)>,
+    ) -> Self {
+        Self {
+            program,
+            folder,
+            head,
+            open,
+            own: None,
+        }
+    }
+
+    /// The problem `diagnostics` say clangd has, if they say it can't find a header: its built-in headers
+    /// are missing, when it can't find `stddef.h` and they aren't beside it, or the system's are, when the
+    /// header is included in angle brackets and isn't the Repository's.
+    pub(super) fn problem(&mut self, diagnostics: &Diagnostics) -> Option<ServerProblem> {
+        let missing = (diagnostics.diagnostics.iter())
+            .find_map(|diagnostic| Missing::read(&diagnostic.message))?;
+        if missing.header == "stddef.h" && !has_built_ins(&self.program) {
+            return Some(ServerProblem::BuiltInHeadersMissing);
+        }
+        let bracketed = match missing.includer {
+            Includer::Diagnosed => (self.open.iter())
+                .filter(|(uri, _)| *uri == diagnostics.uri)
+                .flat_map(|(_, texts)| texts)
+                .any(|text| includes_bracketed(text, missing.header)),
+            Includer::File(path) => {
+                includes_bracketed(&fs::read_to_string(path).unwrap_or_default(), missing.header)
+            }
+        };
+        (bracketed && !self.holds(missing.header)).then(|| ServerProblem::SystemHeadersMissing {
+            header: missing.header.to_owned(),
+        })
+    }
+
+    /// Whether the Repository holds a file at `header`, or at a path that ends in it, as
+    /// `Modules/_decimal/libmpdec/mpdecimal.h` ends in `mpdecimal.h`.
+    fn holds(&mut self, header: &str) -> bool {
+        let (folder, head) = (&self.folder, &self.head);
+        let own = self.own.get_or_insert_with(|| {
+            let args = ["-C", "", "ls-tree", "-r", "-z", "--name-only", "--full-tree", ""];
+            let mut args = args.map(OsStr::new);
+            args[1] = folder.as_os_str();
+            args[7] = OsStr::new(head.as_str());
+            let listed = live::read_git(&args).unwrap_or_default();
+            listed.split('\0').map(str::to_owned).collect()
+        });
+        let nested = format!("/{header}");
+        (own.iter()).any(|path| path == header || path.ends_with(&nested))
+    }
+}
+
+/// A header a diagnostic of clangd's says it can't find, and the file that includes it.
+struct Missing<'a> {
+    header: &'a str,
+    includer: Includer<'a>,
+}
+
+/// The file that includes a header clangd can't find.
+enum Includer<'a> {
+    /// The open file the diagnostic is on.
+    Diagnosed,
+    /// A file the open file includes, at this path, as the diagnostic's note names it, or nowhere if it
+    /// names none.
+    File(&'a str),
+}
+
+impl<'a> Missing<'a> {
+    /// The missing header `message` names: `'stdlib.h' file not found` on the open file's include, or
+    /// `In included file: 'stdlib.h' file not found` on the include of a file that includes it, which a
+    /// note after a blank line names as `<path>:<line>:<column>:`.
+    fn read(message: &'a str) -> Option<Self> {
+        let mut parts = message.split("\n\n");
+        let said = parts.next().unwrap_or_default();
+        let (said, nested) = match said.strip_prefix("In included file: ") {
+            Some(said) => (said, true),
+            None => (said, false),
+        };
+        let header = said.strip_prefix('\'')?.strip_suffix("' file not found")?;
+        let includer = if nested {
+            let note = parts.next().and_then(|note| note.lines().next());
+            let path = note.and_then(|note| note.rsplitn(4, ':').nth(3));
+            Includer::File(path.unwrap_or_default())
+        } else {
+            Includer::Diagnosed
+        };
+        Some(Self { header, includer })
+    }
+}
+
+/// Whether `text` includes `header` in angle brackets, as `#include <stdlib.h>` does.
+fn includes_bracketed(text: &str, header: &str) -> bool {
+    text.lines().any(|line| {
+        let directive = line.trim_start().strip_prefix('#').map(str::trim_start);
+        let named = (directive.and_then(|directive| directive.strip_prefix("include")))
+            .and_then(|rest| rest.trim_start().strip_prefix('<'))
+            .and_then(|rest| rest.split_once('>'));
+        named.is_some_and(|(name, _)| name.trim() == header)
     })
 }
 

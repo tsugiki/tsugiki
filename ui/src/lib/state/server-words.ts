@@ -17,10 +17,24 @@ export const SERVERS: Readonly<Record<ServerName, { name: string; language: stri
 /** The servers in the order their rows show in Settings › Advanced. */
 export const SERVER_ORDER: readonly ServerName[] = ["ty", "clangd", "rust-analyzer"];
 
-/** The line that says what went wrong with `server`. */
-export function problemWords(server: ServerName, problem: ServerProblem): string {
+/** The line that says what went wrong with `server`, on the OS `platform` names. clangd's program is
+ * `clangd.exe` on Windows, where the MSVC build tools or the Windows SDK hold the system's headers. */
+export function problemWords(
+  server: ServerName,
+  problem: ServerProblem,
+  platform: string = navigator.platform,
+): string {
   const name = SERVERS[server].name;
+  const windows = platform.startsWith("Win");
   switch (problem.kind) {
+    case "built_in_headers_missing":
+      return `${name}'s built-in headers are missing. Unpack the whole archive, not just ${windows ? `${name}.exe` : name}`;
+    case "system_headers_missing": {
+      const words = `${name} can't find system headers: ${problem.header}`;
+      return windows ? `${words}. Install the MSVC build tools or the Windows SDK` : words;
+    }
+    case "not_indexing":
+      return `${name} isn't indexing. Definitions in other files will land on header declarations`;
     case "not_this_server":
       return `This isn't ${name}: ${problem.first_line === "" ? "it printed nothing" : problem.first_line}`;
     case "did_not_start":

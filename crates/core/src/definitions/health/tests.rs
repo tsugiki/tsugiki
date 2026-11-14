@@ -94,8 +94,58 @@ fn a_version_we_didn_t_test_says_so_and_a_problem_outranks_whether_the_server_ru
 }
 
 #[test]
+fn a_problem_of_a_server_that_runs_gives_way_only_to_one_that_explains_more() {
+    let mut health = Health {
+        version: None,
+        last: Last::Problem(ServerProblem::DidNotStart {
+            cause: "gone".to_owned(),
+        }),
+    };
+    let missing = |header: &str| ServerProblem::SystemHeadersMissing {
+        header: header.to_owned(),
+    };
+
+    let kept_from_answering = health.misleads().cloned();
+    let after_a_failed_start = health.troubled(ServerProblem::NotIndexing);
+    let headers = health.troubled(missing("stdlib.h"));
+    let less = health.troubled(ServerProblem::NotIndexing);
+    let as_much = health.troubled(missing("windows.h"));
+    let built_ins = health.troubled(ServerProblem::BuiltInHeadersMissing);
+
+    assert_eq!(kept_from_answering, None);
+    assert!(after_a_failed_start && headers && built_ins);
+    assert!(!less && !as_much);
+    assert_eq!(
+        health.misleads(),
+        Some(&ServerProblem::BuiltInHeadersMissing)
+    );
+    let mut idle = Health {
+        version: None,
+        last: Last::Idle,
+    };
+    assert_eq!(idle.misleads(), None);
+    assert!(idle.troubled(ServerProblem::NotIndexing));
+}
+
+#[test]
+fn a_clangd_whose_version_names_it_is_checked_for_its_built_in_headers_too() {
+    let clangd = super::super::testing::clangd();
+
+    let checked = check(ServerName::Clangd, &clangd);
+
+    assert_eq!(checked.version.as_deref(), Some("23.1.0"));
+    assert_eq!(checked.problem, None);
+}
+
+#[test]
 fn version_names_the_server_on_a_real_program() {
     let ty = super::super::testing::ty();
 
-    assert_eq!(check(ServerName::Ty, &ty), Ok(Some("0.0.103".to_owned())));
+    assert_eq!(
+        check(ServerName::Ty, &ty),
+        Checked {
+            version: Some("0.0.103".to_owned()),
+            problem: None
+        }
+    );
 }

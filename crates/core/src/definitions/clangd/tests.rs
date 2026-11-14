@@ -1,5 +1,6 @@
 use std::fs;
 
+use super::super::testing::Fixture;
 use super::*;
 use crate::testing::temp_path;
 
@@ -211,40 +212,101 @@ fn an_include_in_angle_brackets_names_its_header_between_them() {
 }
 
 #[test]
-fn a_header_clangd_can_t_find_in_a_file_that_isn_t_open_or_a_folder_git_can_t_read_counts_as_the_system_s()
-{
+fn a_header_in_angle_brackets_says_nothing_while_git_can_t_list_the_repository_s_files() {
     // A URI keeps no `..`, as the server names files.
     let root = super::super::plain(&temp_path("clangd-headers-no-git"));
     touch(&root, &["bin/clangd.exe", "lookup/eggs.c"]);
-    let file = root.join("lookup").join("eggs.c");
-    let uri = Uri::from_path(&file).unwrap();
+    let uri = Uri::from_path(&root.join("lookup").join("eggs.c")).unwrap();
+    // No such commit: git fails each time it is asked.
     let head = CommitSha::parse("0123456789abcdef0123456789abcdef01234567").unwrap();
-    let open = vec![(uri.clone(), vec![Arc::from("#include <stdlib.h>\n")])];
+    let text = Arc::from("#include <stdlib.h>\n#include <stddef.h>\n");
     let mut headers = Headers::new(
         root.join("bin").join("clangd.exe"),
         (root.join("lookup"), head),
-        open,
+        vec![(uri.clone(), vec![text])],
     );
-    let diagnosed = |uri: &Uri| -> Diagnostics {
-        serde_json::from_value(json!({
-            "uri": uri,
-            "diagnostics": [{
-                "range": {"start": {"line": 0, "character": 9}, "end": {"line": 0, "character": 19}},
-                "message": "'stdlib.h' file not found",
-            }],
-        }))
-        .unwrap()
-    };
 
-    let open_file = headers.problem(&diagnosed(&uri));
-    let other = Uri::from_path(&root.join("lookup").join("other.c")).unwrap();
-    let other_file = headers.problem(&diagnosed(&other));
+    let stdlib = headers.problem(&diagnosed(&uri, "'stdlib.h' file not found"));
+    let again = headers.problem(&diagnosed(&uri, "'stdlib.h' file not found"));
+    let stddef = headers.problem(&diagnosed(&uri, "'stddef.h' file not found"));
     let _removed = fs::remove_dir_all(&root);
 
-    let header = "stdlib.h".to_owned();
-    assert_eq!(
-        open_file,
-        Some(ServerProblem::SystemHeadersMissing { header })
+    assert_eq!((stdlib, again), (None, None));
+    assert_eq!(stddef, Some(ServerProblem::BuiltInHeadersMissing));
+}
+
+/// What clangd reports with `message` on line 0 of the file at `uri`.
+fn diagnosed(uri: &Uri, message: &str) -> Diagnostics {
+    serde_json::from_value(json!({
+        "uri": uri,
+        "diagnostics": [{
+            "range": {"start": {"line": 0, "character": 9}, "end": {"line": 0, "character": 19}},
+            "message": message,
+        }],
+    }))
+    .unwrap()
+}
+
+#[test]
+fn any_system_header_missing_beside_a_clangd_without_its_built_in_headers_is_theirs() {
+    let fixture = Fixture::new(
+        "clangd-headers-built-ins",
+        &[("Include/spam.h", ""), ("Objects/eggs.c", "")],
+        &[("Objects/eggs.c", Some(""))],
     );
-    assert_eq!(other_file, None);
+    let folder = super::super::plain(&fixture.checkout.folder);
+    let uri = Uri::from_path(&folder.join("Objects").join("eggs.c")).unwrap();
+    let other = Uri::from_path(&folder.join("Objects").join("other.c")).unwrap();
+    let text: Arc<str> = Arc::from("#include <stdint.h>\n#include \"gen.h\"\n#include <spam.h>\n");
+    let root = temp_path("clangd-headers-built-ins-programs");
+    touch(
+        &root,
+        &[
+            "lone/bin/clangd.exe",
+            "whole/bin/clangd.exe",
+            "whole/lib/clang/23/include/stddef.h",
+        ],
+    );
+    let headers = |folder: &str| {
+        let program = root.join(folder).join("bin").join("clangd.exe");
+        let at = (fixture.checkout.folder.clone(), fixture.checkout.at.head.clone());
+        Headers::new(program, at, vec![(uri.clone(), vec![Arc::clone(&text)])])
+    };
+    let (mut lone, mut whole) = (headers("lone"), headers("whole"));
+
+    let stdint = lone.problem(&diagnosed(&uri, "'stdint.h' file not found"));
+    let quoted = lone.problem(&diagnosed(&uri, "'gen.h' file not found"));
+    let own = lone.problem(&diagnosed(&uri, "'spam.h' file not found"));
+    let system = whole.problem(&diagnosed(&uri, "'stdint.h' file not found"));
+    let not_open = whole.problem(&diagnosed(&other, "'stdint.h' file not found"));
+    let _removed = fs::remove_dir_all(&root);
+
+    assert_eq!(stdint, Some(ServerProblem::BuiltInHeadersMissing));
+    assert_eq!((quoted, own, not_open), (None, None, None));
+    let header = "stdint.h".to_owned();
+    assert_eq!(system, Some(ServerProblem::SystemHeadersMissing { header }));
+}
+
+#[test]
+fn a_bare_name_is_found_in_the_first_folder_of_path_that_holds_it() {
+    let root = temp_path("clangd-on-path");
+    let name = if cfg!(windows) {
+        "clangd.exe"
+    } else {
+        "clangd"
+    };
+    touch(&root, &[&format!("second/{name}"), &format!("third/{name}")]);
+    let folders = ["first", "second", "third"].map(|folder| root.join(folder));
+    let path = env::join_paths(folders).unwrap();
+
+    let bare = on_path(Path::new("clangd"), Some(path.clone()));
+    let unknown = on_path(Path::new("ty"), Some(path.clone()));
+    let given = on_path(&root.join("first").join("clangd"), Some(path));
+    let without_path = on_path(Path::new("clangd"), None);
+    let _removed = fs::remove_dir_all(&root);
+
+    assert_eq!(bare, root.join("second").join(name));
+    assert_eq!(unknown, Path::new("ty"));
+    assert_eq!(given, root.join("first").join("clangd"));
+    assert_eq!(without_path, Path::new("clangd"));
 }

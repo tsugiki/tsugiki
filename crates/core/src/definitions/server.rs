@@ -7,13 +7,13 @@ use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use tsugiki_lsp::{
-    Definitions, Document, Event, Exit, Init, Language, Launch, Location, Pending, Position,
+    Definitions, Diagnostics, Document, Event, Exit, Init, Language, Launch, Location, Pending, Position,
     Progress, RequestError, Server, Starting, Status, Uri,
 };
 
@@ -89,8 +89,9 @@ pub(super) enum News {
     Troubled(ServerProblem),
 }
 
-/// The listener to a server's news: the servers' thread.
-pub(super) type OnNews = Box<dyn Fn(News) + Send>;
+/// The listener to a server's news: the servers' thread. The thread that reads clangd's diagnostics tells
+/// it too.
+pub(super) type OnNews = Arc<dyn Fn(News) + Send + Sync>;
 
 /// When a server can answer a lookup.
 pub(super) enum Ready {
@@ -490,8 +491,11 @@ fn watch(
         Indexing::Built
     };
     indexing.set(&first);
+    let headers = (watched.headers).map(|headers| read_headers(headers, Arc::clone(&news)));
     let mut watcher = Watcher {
-        watched,
+        index: watched.index,
+        index_due: watched.index_due,
+        headers,
         indexing,
         news,
         told: (first, Instant::now()),
@@ -508,6 +512,8 @@ fn watch(
                 Err(RecvTimeoutError::Disconnected) => break,
             };
             watcher.read(&event);
+            // Once a deadline has passed, events already queued would come first for as long as they last.
+            watcher.due();
             let exited = matches!(event, Event::Exited(_));
             // The server is gone once nothing reads its events.
             if passes.send(event).is_err() || exited {
@@ -519,9 +525,28 @@ fn watch(
     passed
 }
 
+/// Reads the diagnostics it is sent with `headers` on a thread of their own, which reads the disk and git,
+/// and tells `news` of each problem they show, until nothing sends any more.
+fn read_headers(mut headers: Headers, news: OnNews) -> Sender<Diagnostics> {
+    let (sends, diagnosed) = mpsc::channel::<Diagnostics>();
+    let _reads = thread::spawn(move || {
+        for diagnostics in diagnosed {
+            if let Some(problem) = headers.problem(&diagnostics) {
+                news(News::Troubled(problem));
+            }
+        }
+    });
+    sends
+}
+
 /// The reader of a server's events, on their thread.
 struct Watcher {
-    watched: Watched,
+    /// How far its index has got, from a `$/progress`, for a server whose index Tsugiki reads.
+    index: Option<fn(&Progress) -> Option<Indexing>>,
+    /// The moment by which clangd has to have reported its index, until it has passed.
+    index_due: Option<Instant>,
+    /// Where clangd's diagnostics go to be read for the headers it can't find.
+    headers: Option<Sender<Diagnostics>>,
     indexing: LatestWriter<Indexing>,
     news: OnNews,
     /// The progress with its index last told, and when.
@@ -537,7 +562,7 @@ impl Watcher {
         let news = (self.latest != self.told.0)
             .then(|| self.told.1.checked_add(NEWS_EVERY))
             .flatten();
-        let due = news.into_iter().chain(self.watched.index_due).min();
+        let due = news.into_iter().chain(self.index_due).min();
         due.map_or(Duration::MAX, |due| {
             due.saturating_duration_since(Instant::now())
         })
@@ -547,8 +572,8 @@ impl Watcher {
     /// count held back as too soon.
     fn due(&mut self) {
         let now = Instant::now();
-        if (self.watched.index_due).is_some_and(|due| due <= now) {
-            self.watched.index_due = None;
+        if (self.index_due).is_some_and(|due| due <= now) {
+            self.index_due = None;
             if self.latest == Indexing::Unreported {
                 (self.news)(News::Troubled(ServerProblem::NotIndexing));
             }
@@ -562,7 +587,7 @@ impl Watcher {
     /// Reads `event`: how far the server's index has got, a header clangd can't find, or how it exited.
     fn read(&mut self, event: &Event) {
         if let Event::Progress(progress) = event
-            && let Some(now) = self.watched.index.and_then(|read| read(progress))
+            && let Some(now) = self.index.and_then(|read| read(progress))
         {
             self.indexing.set(&now);
             self.latest = now;
@@ -572,10 +597,10 @@ impl Watcher {
             }
         }
         if let Event::Diagnostics(diagnostics) = event
-            && let Some(headers) = self.watched.headers.as_mut()
-            && let Some(problem) = headers.problem(diagnostics)
+            && let Some(headers) = &self.headers
         {
-            (self.news)(News::Troubled(problem));
+            // The thread that reads them ends only once this one has.
+            let _sent = headers.send(diagnostics.clone());
         }
         if let Event::Exited(exit) = event {
             // First, so the servers' thread finds this server has ended when it hears.

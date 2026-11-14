@@ -305,35 +305,41 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 
 clangd fails in ways that look like wrong answers, so Tsugiki names three of them (#684). Each is a
 `ServerProblem` that clangd's row in Settings › Advanced shows as its state. In the peek it takes the place of
-"No definition of X", with the link to the row; a lookup that finds something shows what it found. When two
-come, the row keeps the one that explains more, in this order.
+"No definition of X", with the link to the row; a lookup that finds something shows what it found. Once the
+index is built, nothing found again leaves the problem in place. When two come, the row keeps the one that
+explains more, in this order.
 
-- **Built-in headers missing.** clangd looks for its own headers, such as `stddef.h`, in
-  `..\lib\clang\<N>\include\` beside its binary, past links. On Apply of clangd's path, once `--version` has
-  named clangd, Tsugiki reads `lib\clang` and looks for a `stddef.h` in a version folder of it, and it looks
-  again when clangd reports `'stddef.h' file not found`. Without one: "clangd's built-in headers are missing.
-  Unpack the whole archive, not just clangd.exe", which names `clangd` off Windows. The row keeps the
-  version `--version` printed.
-- **System headers missing.** The thread that reads clangd's events reads its diagnostics on the PR's open
-  files. A header clangd can't find stops its parse of the file, so it reports the first only:
-  `'stdlib.h' file not found` on the include, or, for a header a file the open one includes includes,
-  `In included file: 'stdlib.h' file not found`, with a note after a blank line that names that file as
-  `<path>:<line>:<column>:`. A header written in angle brackets, in the open file or in the file the note
-  names, that no file of the PR's head is at or ends in (one `git ls-tree` per clangd, once a header is
-  missing) says "clangd can't find system headers: stdlib.h", and on Windows adds ". Install the MSVC build
-  tools or the Windows SDK". A header in quotes, as a generated one is, and one of the Repository's, as
-  `<mpdecimal.h>` is for `Modules/_decimal/libmpdec/mpdecimal.h`, say nothing.
+- **Built-in headers missing.** clangd looks for its own headers, such as `stddef.h` and `stdint.h`, in
+  `..\lib\clang\<N>\include\` beside its binary, past links, and a bare name is found through `PATH`.
+  Tsugiki reads `lib\clang` and looks for a `stddef.h` in a version folder of it: on Apply of clangd's path,
+  once `--version` has named clangd, on each start, and when clangd can't find a header of the system's (see
+  the next item). Without one: "clangd's built-in headers are missing. Unpack the whole archive, not just
+  clangd.exe", which names `clangd` off Windows. The problem belongs to the program, so a start keeps it, and
+  the row keeps the version `--version` printed. With MSVC's headers, clangd finds the UCRT's `stddef.h` and
+  may never report one missing.
+- **System headers missing.** The thread that reads clangd's events hands its diagnostics on the PR's open
+  files to a thread of their own, which reads the disk and git. A header clangd can't find stops its parse
+  of the file, so it reports the first only: `'stdlib.h' file not found` on the include, or, for a header a
+  file the open one includes includes, `In included file: 'stdlib.h' file not found`, with a note after a
+  blank line that names that file as `<path>:<line>:<column>:`. A header of the system's is `stddef.h`, or
+  one written in angle brackets, in the open file or in the file the note names, that no file of the PR's
+  head is at or ends in. One `git ls-tree` per clangd lists those files, once a header is missing; while git
+  fails, a header in angle brackets says nothing, and the next one asks git again. A header in quotes, as a
+  generated one is, and one of the Repository's, as `<mpdecimal.h>` is for
+  `Modules/_decimal/libmpdec/mpdecimal.h`, say nothing. With the built-in headers there, a header of the
+  system's says "clangd can't find system headers: stdlib.h", and on Windows adds ". Install the MSVC build
+  tools or the Windows SDK".
 - **The index never starts.** No `$/progress` on clangd's index token within 60 s of the first file opened:
-  "clangd isn't indexing. Definitions in other files will land on header declarations". A clangd without a
-  compile database never indexes, so outside CPython's layout this shows a minute after the first C file
-  opens, unless the Repository holds a `compile_commands.json`. A clangd started with no file open waits for
-  nothing.
+  "clangd isn't indexing. Definitions in other files will land on header declarations". A report that comes
+  later clears it. A clangd without a compile database never indexes, so outside CPython's layout this shows
+  a minute after the first C file opens, unless the Repository holds a `compile_commands.json`. A clangd
+  started with no file open waits for nothing.
 
-The problem stays until clangd starts again, as a start clears any problem, and clangd reports the missing
-header again once a file opens. An idle stop replaces it with Stopped (idle). A problem that comes from a
-clangd stopped since is dropped. The tests play each problem with a fake clangd: a folder without
-`lib\clang`, a fake that reports `'stdlib.h' file not found`, and one that doesn't report its index within a
-limit the test sets to 300 ms.
+Past what the first item says, a start clears the problem, and clangd reports the missing header again once
+a file opens. An idle stop replaces it with Stopped (idle). A problem that comes from a clangd stopped since
+is dropped. The tests play each problem with a fake clangd: a folder without `lib\clang`, a fake that
+reports `'stdlib.h' file not found`, and one that doesn't report its index within a limit the test sets to
+300 ms.
 
 ## Setting up a server
 

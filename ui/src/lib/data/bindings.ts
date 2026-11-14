@@ -969,7 +969,10 @@ files?: IndexedFiles | null } |
  *  place of the answer's.
  */
 { state: "built"; hits: Hit[] } | 
-/**  The server stopped, or failed the lookup asked again, before it found more. The answer stands. */
+/**
+ *  The server stopped, or failed the lookup asked again, before it found more, or found nothing again
+ *  while it has a problem that says why (#684). The answer stands.
+ */
 { state: "stopped" };
 
 /**
@@ -987,7 +990,10 @@ files: IndexedFiles | null } |
  *  place of the answer's.
  */
 { state: "built"; hits: Hit[] } | 
-/**  The server stopped, or failed the lookup asked again, before it found more. The answer stands. */
+/**
+ *  The server stopped, or failed the lookup asked again, before it found more, or found nothing again
+ *  while it has a problem that says why (#684). The answer stands.
+ */
 { state: "stopped" };
 
 /**  The files a server has indexed of those it has to. */

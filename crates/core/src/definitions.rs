@@ -211,7 +211,8 @@ pub enum Index {
     /// The server has built its index, and the core asked it again: these are the places it names now, in
     /// place of the answer's.
     Built { hits: Vec<Hit> },
-    /// The server stopped, or failed the lookup asked again, before it found more. The answer stands.
+    /// The server stopped, or failed the lookup asked again, before it found more, or found nothing again
+    /// while it has a problem that says why (#684). The answer stands.
     Stopped,
 }
 
@@ -882,7 +883,10 @@ impl Owner {
         let checkout = (&self.sources.checkout, &self.own);
         let started = ready(&mut self.servers, checkout, (key, pr), (&program, &|_| {}));
         match started.map(|server| server.version()) {
-            Ok(version) => self.health_of(*name).started(version),
+            Ok(version) => {
+                let flaw = health::flaw(*name, &program);
+                self.health_of(*name).started(version, flaw);
+            }
             Err(NotReady::Problem(problem)) => self.trouble(key, problem),
             Err(NotReady::Failed(problem)) => {
                 let named = name.as_str();
@@ -976,7 +980,8 @@ impl Owner {
             Err(NotReady::Failed(failed)) => return Err(failed),
         };
         if starts {
-            (self.health.entry(*name).or_default()).started(server.version());
+            let flaw = health::flaw(*name, &program);
+            (self.health.entry(*name).or_default()).started(server.version(), flaw);
             // The user may have asked again, or cancelled, while the server started.
             self.queued.extend(self.incoming.try_iter());
             let newer = |message: &Message| match message {
@@ -1060,7 +1065,17 @@ impl Owner {
             }
         }
         match asked {
-            Asked::Again(listener) => (listener.index)(Index::Built { hits }),
+            Asked::Again(listener) => {
+                // Nothing found again by a clangd with a problem leaves the answer, which says it.
+                let misled = (self.health.get(&server.1)).is_some_and(|health| {
+                    health.misleads().is_some() && hits.is_empty()
+                });
+                (listener.index)(if misled {
+                    Index::Stopped
+                } else {
+                    Index::Built { hits }
+                });
+            }
             Asked::First {
                 asker,
                 request,
@@ -1132,8 +1147,13 @@ impl Owner {
     }
 
     /// Tells the lookup that watches the index of the server `key` names how far it has got. Once the index
-    /// is built, it asks the lookup again, and once the server has ended, it says so.
+    /// is built, it asks the lookup again, and once the server has ended, it says so. A server that reports
+    /// its index no longer has the problem of one that doesn't.
     fn indexing(&mut self, key: &Key) {
+        // A clangd that reports its index after its time is indexing all the same.
+        if let Indexing::Building(_) | Indexing::Built = self.indexing_of(key) {
+            self.health_of(key.1).indexed();
+        }
         if !(self.watching.as_ref()).is_some_and(|watch| watch.server == *key) {
             return;
         }
@@ -1259,7 +1279,7 @@ fn ready<'a>(
 /// runs with a problem.
 fn news(own: &Sender<Message>, key: &Key) -> OnNews {
     let (own, key) = (own.clone(), key.clone());
-    Box::new(move |news| {
+    Arc::new(move |news| {
         let message = match news {
             News::Indexing => Message::Indexing(key.clone()),
             News::Exited(exit) => Message::Exited(key.clone(), exit),

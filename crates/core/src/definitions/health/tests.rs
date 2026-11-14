@@ -83,7 +83,7 @@ fn a_version_we_didn_t_test_says_so_and_a_problem_outranks_whether_the_server_ru
     assert_eq!(row.status, ServerStatus::Idle);
     assert_eq!(row.version.map(|found| found.tested), Some(true));
     let mut started = idle;
-    started.started(None);
+    started.started(None, None);
     assert_eq!(
         started
             .row(ServerName::RustAnalyzer, Presence::Stopped)

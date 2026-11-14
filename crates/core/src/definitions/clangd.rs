@@ -8,8 +8,9 @@
 //! clangd fails in ways that look like wrong answers, so Tsugiki names each (#684): its built-in headers
 //! missing, the system's headers missing, and an index that never starts.
 
+use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
-use std::fs;
+use std::{env, fs};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -107,17 +108,33 @@ pub(super) fn setup(folder: &Path, program: &Path) -> Result<Setup, Error> {
 }
 
 /// Whether the clangd at `program` has its built-in headers where it looks for them, past links: a
-/// `lib\clang\<N>\include\stddef.h` in the folder above its own. It reads a folder and looks at one file.
+/// `lib\clang\<N>\include\stddef.h` in the folder above its own. A bare name is found through `PATH`, as
+/// its start finds it. It reads a folder and looks at a file in each of its folders.
 pub(super) fn has_built_ins(program: &Path) -> bool {
-    let program = fs::canonicalize(program).unwrap_or_else(|_| program.to_owned());
+    let program = on_path(program, env::var_os("PATH"));
+    let program = fs::canonicalize(&program).unwrap_or(program);
     let clang = (program.ancestors().nth(2)).map(|root| root.join("lib").join("clang"));
     let versions = clang.and_then(|clang| fs::read_dir(clang).ok());
     (versions.into_iter().flatten().flatten())
         .any(|version| version.path().join("include").join("stddef.h").is_file())
 }
 
+/// Where the program at `program` is: a bare name in the first folder of `path` that holds it, with `.exe`
+/// first on Windows, as the system starts it. Another path, or a name no folder holds, stays as it is.
+fn on_path(program: &Path, path: Option<OsString>) -> PathBuf {
+    let bare = program.components().count() == 1;
+    let exe = cfg!(windows).then(|| program.with_extension("exe"));
+    let names: Vec<PathBuf> = exe.into_iter().chain([program.to_owned()]).collect();
+    let folders = path.filter(|_| bare).unwrap_or_default();
+    (env::split_paths(&folders))
+        .flat_map(|folder| names.iter().map(move |name| folder.join(name)))
+        .find(|candidate| candidate.is_file())
+        .unwrap_or_else(|| program.to_owned())
+}
+
 /// What clangd's diagnostics on the open files say of the headers it can't find (#684). A header it can't
-/// find stops its parse of the file, so it reports the first one only.
+/// find stops its parse of the file, so it reports the first one only. It reads the disk and git, so a
+/// thread of its own reads the diagnostics, and it keeps what it read for the next ones.
 pub(super) struct Headers {
     program: PathBuf,
     /// The checkout's folder, and the commit whose files are the Repository's: the PR's head.
@@ -125,7 +142,11 @@ pub(super) struct Headers {
     head: CommitSha,
     /// Each open file's URI, and its texts at the head and at the base, which say how it includes a header.
     open: Vec<(Uri, Vec<Arc<str>>)>,
-    /// The paths of the Repository's files, read from git once a header is missing.
+    /// Whether clangd's built-in headers are beside it, once a header is missing.
+    built_ins: Option<bool>,
+    /// The text of each file a note has named, which says how it includes a header.
+    included: HashMap<String, String>,
+    /// The paths of the Repository's files, once git has listed them.
     own: Option<Vec<String>>,
 }
 
@@ -142,47 +163,70 @@ impl Headers {
             folder,
             head,
             open,
+            built_ins: None,
+            included: HashMap::new(),
             own: None,
         }
     }
 
-    /// The problem `diagnostics` say clangd has, if they say it can't find a header: its built-in headers
-    /// are missing, when it can't find `stddef.h` and they aren't beside it, or the system's are, when the
-    /// header is included in angle brackets and isn't the Repository's.
+    /// The problem `diagnostics` say clangd has, if they say it can't find a header of the system's: one
+    /// included in angle brackets that isn't the Repository's, or `stddef.h`. That is its built-in headers
+    /// missing, when they aren't beside it, and else the system's. When git can't list the Repository's
+    /// files, a header in angle brackets says nothing.
     pub(super) fn problem(&mut self, diagnostics: &Diagnostics) -> Option<ServerProblem> {
         let missing = (diagnostics.diagnostics.iter())
             .find_map(|diagnostic| Missing::read(&diagnostic.message))?;
-        if missing.header == "stddef.h" && !has_built_ins(&self.program) {
-            return Some(ServerProblem::BuiltInHeadersMissing);
-        }
-        let bracketed = match missing.includer {
-            Includer::Diagnosed => (self.open.iter())
-                .filter(|(uri, _)| *uri == diagnostics.uri)
-                .flat_map(|(_, texts)| texts)
-                .any(|text| includes_bracketed(text, missing.header)),
-            Includer::File(path) => {
-                includes_bracketed(&fs::read_to_string(path).unwrap_or_default(), missing.header)
+        let bracketed = self.bracketed(&missing, &diagnostics.uri);
+        let system = missing.header == "stddef.h"
+            || (bracketed && self.holds(missing.header) == Some(false));
+        let built_ins = *(self.built_ins).get_or_insert_with(|| has_built_ins(&self.program));
+        system.then(|| {
+            if built_ins {
+                ServerProblem::SystemHeadersMissing {
+                    header: missing.header.to_owned(),
+                }
+            } else {
+                ServerProblem::BuiltInHeadersMissing
             }
-        };
-        (bracketed && !self.holds(missing.header)).then(|| ServerProblem::SystemHeadersMissing {
-            header: missing.header.to_owned(),
         })
     }
 
+    /// Whether the file that includes the `missing` header includes it in angle brackets: the open file at
+    /// `uri`, at either side, or the file a note names.
+    fn bracketed(&mut self, missing: &Missing<'_>, uri: &Uri) -> bool {
+        match missing.includer {
+            Includer::Diagnosed => (self.open.iter())
+                .filter(|(open, _)| open == uri)
+                .flat_map(|(_, texts)| texts)
+                .any(|text| includes_bracketed(text, missing.header)),
+            Includer::File(path) => {
+                let text = (self.included.entry(path.to_owned()))
+                    .or_insert_with(|| fs::read_to_string(path).unwrap_or_default());
+                includes_bracketed(text, missing.header)
+            }
+        }
+    }
+
     /// Whether the Repository holds a file at `header`, or at a path that ends in it, as
-    /// `Modules/_decimal/libmpdec/mpdecimal.h` ends in `mpdecimal.h`.
-    fn holds(&mut self, header: &str) -> bool {
-        let (folder, head) = (&self.folder, &self.head);
-        let own = self.own.get_or_insert_with(|| {
-            let args = ["-C", "", "ls-tree", "-r", "-z", "--name-only", "--full-tree", ""];
-            let mut args = args.map(OsStr::new);
-            args[1] = folder.as_os_str();
-            args[7] = OsStr::new(head.as_str());
-            let listed = live::read_git(&args).unwrap_or_default();
-            listed.split('\0').map(str::to_owned).collect()
-        });
+    /// `Modules/_decimal/libmpdec/mpdecimal.h` ends in `mpdecimal.h`, or nothing if git can't list its
+    /// files. A list git failed to give is asked again the next time.
+    fn holds(&mut self, header: &str) -> Option<bool> {
+        if self.own.is_none() {
+            self.own = self.listed();
+        }
         let nested = format!("/{header}");
-        (own.iter()).any(|path| path == header || path.ends_with(&nested))
+        let own = self.own.as_ref()?;
+        Some((own.iter()).any(|path| path == header || path.ends_with(&nested)))
+    }
+
+    /// The paths of the files at the PR's head, as git lists them, if it can.
+    fn listed(&self) -> Option<Vec<String>> {
+        let args = ["-C", "", "ls-tree", "-r", "-z", "--name-only", "--full-tree", ""];
+        let mut args = args.map(OsStr::new);
+        args[1] = self.folder.as_os_str();
+        args[7] = OsStr::new(self.head.as_str());
+        let listed = live::read_git(&args).ok()?;
+        Some(listed.split('\0').map(str::to_owned).collect())
     }
 }
 

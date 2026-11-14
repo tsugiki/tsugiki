@@ -137,11 +137,20 @@ pub(super) enum Presence {
 
 impl Health {
     /// Notes that the server started, which clears a problem it had, with the version it named answering
-    /// `initialize`, if it did.
-    pub(super) fn started(&mut self, version: Option<String>) {
-        self.last = Last::Nothing;
+    /// `initialize`, if it did, and `flaw`, a problem its program has all the same, such as clangd's
+    /// built-in headers missing (#684).
+    pub(super) fn started(&mut self, version: Option<String>, flaw: Option<ServerProblem>) {
+        self.last = flaw.map_or(Last::Nothing, Last::Problem);
         if version.is_some() {
             self.version = version;
+        }
+    }
+
+    /// Notes that the server reports its index, so it no longer has the problem of a server that doesn't,
+    /// however late the report came.
+    pub(super) fn indexed(&mut self) {
+        if let Last::Problem(ServerProblem::NotIndexing) = self.last {
+            self.last = Last::Nothing;
         }
     }
 
@@ -208,14 +217,20 @@ pub(super) fn check(name: ServerName, program: &Path) -> Checked {
     match read_check(name, tsugiki_lsp::version_of(program, CHECK_PATIENCE)) {
         Ok(version) => Checked {
             version,
-            problem: (name == ServerName::Clangd && !super::clangd::has_built_ins(program))
-                .then_some(ServerProblem::BuiltInHeadersMissing),
+            problem: flaw(name, program),
         },
         Err(problem) => Checked {
             version: None,
             problem: Some(problem),
         },
     }
+}
+
+/// The problem the program of server `name` at `program` has however it starts, which a look at its folder
+/// finds: clangd's built-in headers missing. It belongs to the program, so each start looks again.
+pub(super) fn flaw(name: ServerName, program: &Path) -> Option<ServerProblem> {
+    (name == ServerName::Clangd && !super::clangd::has_built_ins(program))
+        .then_some(ServerProblem::BuiltInHeadersMissing)
 }
 
 /// What `printed`, the text a program printed for `--version` or why it didn't run, says of server `name`.

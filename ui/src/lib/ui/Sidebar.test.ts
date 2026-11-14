@@ -49,6 +49,26 @@ it("has ⚙ beside the Repository's name, and a click on it asks for the Setting
   expect(onsettings).toHaveBeenCalledOnce();
 });
 
+it("names ⚙'s key in its tooltip as the OS calls it", () => {
+  const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+  const props = {
+    count: 0,
+    reviewRequests: 0,
+    staleReviews: 0,
+    filters: [],
+    selected: whole,
+    onselect: () => {},
+  };
+  const { unmount } = render(Sidebar, { ...props, ...cpython });
+  expect(button("Settings").title).toBe("Settings (Cmd+,)");
+  unmount();
+
+  platform.mockReturnValue("Win32");
+  render(Sidebar, { ...props, ...cpython });
+  expect(button("Settings").title).toBe("Settings (Ctrl+,)");
+  platform.mockRestore();
+});
+
 it("lists the Workbench and each Filter with its count", () => {
   render(Sidebar, {
     ...cpython,

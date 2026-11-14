@@ -110,7 +110,7 @@ const oneIssue = {
 beforeEach(() => {
   // The tests share one document, so each starts with no title of its own.
   document.title = "";
-  core.about.mockResolvedValue({ name: "Tsugiki", version: "1.2.3", build: "release" });
+  core.about.mockResolvedValue({ name: "Tsugiki", version: "1.2.3", build: "release", source_ref: "v1.2.3" });
   core.openDevtools.mockResolvedValue({ status: "ok", data: null });
   core.home.mockResolvedValue(onboarding);
   core.mirrorProblem.mockResolvedValue(null);
@@ -502,7 +502,12 @@ describe("Open DevTools", () => {
 
   it("is in a development build's palette, and asks the core to open DevTools", async () => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
-    core.about.mockResolvedValue({ name: "Tsugiki", version: "1.2.3", build: "development" });
+    core.about.mockResolvedValue({
+      name: "Tsugiki",
+      version: "1.2.3",
+      build: "development",
+      source_ref: "main",
+    });
     render(Page);
     expect(await screen.findByText("Tsugiki 1.2.3")).toBeTruthy();
     expect(await paletteTitles()).toContain("Open DevTools");
@@ -1130,5 +1135,22 @@ describe("the Settings dialog", () => {
     await ctrlShiftP();
     await ctrlComma(screen.getByRole("combobox", { name: "Command" }));
     expect(settings()).toBeNull();
+  });
+
+  it("keeps a button behind it from opening another dialog, so one Esc closes only it", async () => {
+    core.home.mockResolvedValue(onboarding);
+    core.mirrorQuestion.mockResolvedValue("python/cpython");
+    render(Page);
+    const add = await screen.findByRole("button", { name: "Add repository" });
+    const question = await screen.findByRole("button", {
+      name: "python/cpython's mirror waits for your answer",
+    });
+    await ctrlComma();
+
+    await fireEvent.click(add);
+    await fireEvent.click(question);
+    expect(screen.queryByRole("dialog", { name: "Add repository" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Mirror of python/cpython" })).toBeNull();
+    expect(settings()).toBeTruthy();
   });
 });

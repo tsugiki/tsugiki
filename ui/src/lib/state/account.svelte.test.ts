@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { commands } from "$lib/data/bindings";
-import { AccountState, signedIn } from "./account.svelte";
+import { AccountState, signedIn, tokenReadme } from "./account.svelte";
 
 vi.mock("$lib/data/bindings", () => ({ commands: { tokenSource: vi.fn() } }));
 
@@ -24,9 +24,28 @@ describe("signedIn", () => {
     expect(signedIn(undefined)).toEqual({ note: "Not known yet: GitHub hasn't answered." });
     expect(signedIn({ state: "connecting" })).toEqual({ note: "Not known yet: GitHub hasn't answered." });
     expect(signedIn({ state: "offline" })).toEqual({ note: "Not known: GitHub can't be reached." });
+  });
+
+  it("says what a problem is only when it is the token's", () => {
     expect(
       signedIn({ state: "problem", problem: { kind: "unauthorized", message: "Run gh auth login." } }),
     ).toEqual({ note: "Run gh auth login." });
+    expect(
+      signedIn({
+        state: "problem",
+        problem: { kind: "internal", message: "Tsugiki can't read its database." },
+      }),
+    ).toEqual({ note: "Not known: GitHub hasn't said who is signed in." });
+  });
+});
+
+describe("tokenReadme", () => {
+  it("links the token crate's README in this build's source, or on main until the core says", () => {
+    const about = { name: "Tsugiki", version: "0.3.1", build: "release", source_ref: "v0.3.1" } as const;
+    expect(tokenReadme(about)).toBe("https://github.com/tsugiki/tsugiki/blob/v0.3.1/crates/token/README.md");
+    expect(tokenReadme(undefined)).toBe(
+      "https://github.com/tsugiki/tsugiki/blob/main/crates/token/README.md",
+    );
   });
 });
 

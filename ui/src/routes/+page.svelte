@@ -46,36 +46,32 @@
   hud.watchBrowser(globalThis.PerformanceObserver);
 
   let addOpen = $state(false);
-  const openAdd = () => {
-    addOpen = true;
-  };
   let paletteOpen = $state(false);
   let pickerOpen = $state(false);
   let themePickerOpen = $state(false);
   let settingsOpen = $state(false);
   /** The Repository whose mirror's question the dialog asks, while it's open. */
   let questionFor = $state<string>();
+  /** Whether a dialog, the palette or a picker is open. Each closes on Esc, so one on top of another would
+   * lose what the user typed below, and none opens over another: a control behind one, which a press or Tab
+   * can still reach, does nothing. A command run from the palette runs once it has closed. */
+  const dialogOpen = $derived(
+    addOpen || paletteOpen || pickerOpen || themePickerOpen || settingsOpen || questionFor !== undefined,
+  );
+  const openAdd = () => {
+    if (!dialogOpen) addOpen = true;
+  };
   /** Opens the Repository picker, which only a Repository's screen has. */
   const openPicker = () => {
-    // Each dialog closes on Esc, so one on top of another would lose what the user typed below.
-    if (
-      home.current?.screen === "repository" &&
-      !addOpen &&
-      !paletteOpen &&
-      !themePickerOpen &&
-      !settingsOpen &&
-      questionFor === undefined
-    )
-      pickerOpen = true;
+    if (home.current?.screen === "repository" && !dialogOpen) pickerOpen = true;
   };
-  /** Opens the Settings dialog on its Account page, from `Ctrl+,`, ⚙ or the palette, which has closed by
-   * then. */
+  /** Opens the Settings dialog on its Account page, from `Ctrl+,`, ⚙ or the palette. */
   const openSettings = () => {
-    if (!addOpen && !paletteOpen && !pickerOpen && !themePickerOpen && questionFor === undefined)
-      settingsOpen = true;
+    if (!dialogOpen) settingsOpen = true;
   };
-  /** Opens the theme picker, from `Ctrl+K T` or the palette, which has closed by then. It reads the themes
-   * folder again, so a file saved since shows up as the list fills in. */
+  /** Opens the theme picker, from `Ctrl+K T` or the palette. Neither reaches it with a dialog open: a chord
+   * starts only with none, and the palette has closed by then. It reads the themes folder again, so a file
+   * saved since shows up as the list fills in. */
   const openThemePicker = () => {
     themePickerOpen = true;
     void theme.load();
@@ -86,16 +82,13 @@
     void theme.load();
   };
   /** Whether the list's keys and the chords work: a dialog, the palette or a picker on top keeps them. */
-  const keysActive = $derived(
-    !addOpen && !paletteOpen && !pickerOpen && !themePickerOpen && !settingsOpen && questionFor === undefined,
-  );
+  const keysActive = $derived(!dialogOpen);
   const os = currentOs();
   const chord = new ChordWait(os);
   const guard = keyGuard(
     {
       "ctrl+shift+p": () => {
-        paletteOpen =
-          !addOpen && !pickerOpen && !themePickerOpen && !settingsOpen && questionFor === undefined;
+        if (!dialogOpen) paletteOpen = true;
       },
       "ctrl+r": openPicker,
       "ctrl+,": openSettings,
@@ -231,7 +224,7 @@
   onrefresh={() => void status.refresh()}
   oncheckagain={() => void status.checkMirrorsAgain()}
   onquestion={(repository) => {
-    questionFor = repository;
+    if (!dialogOpen) questionFor = repository;
   }}
 />
 {#if questionFor !== undefined}
@@ -289,6 +282,7 @@
 {#if settingsOpen}
   <Settings
     status={status.status}
+    about={about.about}
     onclose={() => {
       settingsOpen = false;
     }}

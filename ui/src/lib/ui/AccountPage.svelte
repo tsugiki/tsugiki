@@ -1,29 +1,30 @@
 <!-- Settings › Account (docs/devel/token.md): who is signed in, where the token comes from, and what
      Tsugiki does with it, as ADR 0005 has it. -->
 <script lang="ts">
-  import { AccountState, signedIn, type TokenSource } from "$lib/state/account.svelte";
+  import type { About } from "$lib/state/about.svelte";
+  import { AccountState, signedIn, tokenReadme } from "$lib/state/account.svelte";
   import { openLink } from "$lib/state/browser";
   import type { Status } from "$lib/state/status.svelte";
+  import { TOKEN_SOURCE_WORDS } from "./token-words";
 
-  let { status }: { status: Status | undefined } = $props();
-
-  /** The token crate's README, which says what it does for readers who don't read Rust. */
-  const TOKEN_README = "https://github.com/tsugiki/tsugiki/blob/main/crates/token/README.md";
-  const WHERE_FROM: Record<TokenSource, string> = {
-    gh: "Tsugiki asks the GitHub CLI for its token each time it starts, with gh auth token.",
-  };
+  let { status, about }: { status: Status | undefined; about: About | undefined } = $props();
 
   const account = new AccountState();
   void account.load();
   const who = $derived(signedIn(status));
+  const readme = $derived(tokenReadme(about));
 
   /** The problem that kept the browser from opening the README, until the next try. */
   let linkProblem = $state<string>();
-  /** Opens the README in the system browser. Enter on the link arrives as a click, and a middle click as an
-   * auxclick, which would otherwise ask the webview for a window. */
+  /** Opens the README in the system browser. Enter on the link arrives as a click. */
   async function followReadme(e: MouseEvent) {
     e.preventDefault();
-    linkProblem = await openLink(TOKEN_README);
+    linkProblem = await openLink(readme);
+  }
+  /** A middle click opens it too, and would otherwise ask the webview for a window. The right button and
+   * the mouse's back and forward buttons leave it alone. */
+  function followReadmeByWheel(e: MouseEvent) {
+    if (e.button === 1) void followReadme(e);
   }
 </script>
 
@@ -41,7 +42,7 @@
   <dd>
     {#if account.source !== undefined}
       <b>{account.source}</b>
-      <small>{WHERE_FROM[account.source]}</small>
+      <small>{TOKEN_SOURCE_WORDS[account.source]}</small>
     {:else if account.error !== undefined}
       <small>{`Tsugiki can't say: ${account.error}`}</small>
     {/if}
@@ -59,7 +60,7 @@
 </ul>
 <p>
   The code that holds and sends the token is a crate of its own, small enough to check, and its
-  <a href={TOKEN_README} onclick={followReadme} onauxclick={followReadme}>README</a> says what it does in plain
+  <a href={readme} onclick={followReadme} onauxclick={followReadmeByWheel}>README</a> says what it does in plain
   words.
 </p>
 {#if linkProblem !== undefined}

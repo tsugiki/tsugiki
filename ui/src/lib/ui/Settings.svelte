@@ -2,16 +2,20 @@
      `prototype/app-shell`: the pages in a column on the left, and the open one on the right. It lists only
      Account for now: #520 adds the other pages, switching between them, and Apply and Cancel. -->
 <script lang="ts">
+  import type { About } from "$lib/state/about.svelte";
   import type { Status } from "$lib/state/status.svelte";
   import AccountPage from "./AccountPage.svelte";
-  import { closeOnPress, takeFocus } from "./focus";
+  import { closeOnPress, keepFocusIn, takeFocus } from "./focus";
 
   let {
     status,
+    about,
     onclose,
   }: {
     /** The app-wide status, which says who is signed in. */
     status: Status | undefined;
+    /** What the core says about itself, which says where this build's source is. */
+    about: About | undefined;
     onclose: () => void;
   } = $props();
 
@@ -32,6 +36,7 @@
     aria-label="Settings"
     tabindex="-1"
     {@attach takeFocus}
+    onkeydown={keepFocusIn}
     onmousedown={(e) => {
       e.stopPropagation();
     }}
@@ -45,7 +50,7 @@
         <button aria-current="page">Account</button>
       </nav>
       <section aria-label="Account">
-        <AccountPage {status} />
+        <AccountPage {status} {about} />
       </section>
     </div>
   </div>

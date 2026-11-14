@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { FilterLine, WorkbenchView } from "$lib/state/workbench.svelte";
+  import { currentOs, keyLabel } from "./keys";
 
   let {
     repository,
@@ -36,7 +37,7 @@
       class="settings"
       aria-haspopup="dialog"
       aria-label="Settings"
-      title="Settings (Ctrl+,)"
+      title={`Settings (${keyLabel("ctrl+,", currentOs())})`}
       onclick={onsettings}>⚙</button
     >
   </div>

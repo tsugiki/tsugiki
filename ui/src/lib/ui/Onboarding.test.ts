@@ -23,3 +23,15 @@ it("has ⚙ Settings, which asks for the Settings dialog", async () => {
   await fireEvent.click(settings);
   expect(onsettings).toHaveBeenCalledOnce();
 });
+
+it("names ⚙ Settings' key in its tooltip as the OS calls it", () => {
+  const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+  const { unmount } = render(Onboarding, { token: "gh", onadd: () => {}, onsettings: () => {} });
+  expect(screen.getByRole("button", { name: "Settings" }).title).toBe("Settings (Cmd+,)");
+  unmount();
+
+  platform.mockReturnValue("Win32");
+  render(Onboarding, { token: "gh", onadd: () => {}, onsettings: () => {} });
+  expect(screen.getByRole("button", { name: "Settings" }).title).toBe("Settings (Ctrl+,)");
+  platform.mockRestore();
+});

@@ -62,8 +62,15 @@ fn about_names_the_app_its_version_and_its_build() {
             name: "Tsugiki".to_owned(),
             version: format!("{} (3a6dc89)", env!("CARGO_PKG_VERSION")),
             build: build::Build::Release,
+            source_ref: format!("v{}", env!("CARGO_PKG_VERSION")),
         }
     );
+}
+
+#[test]
+fn a_development_build_links_its_source_on_main() {
+    let about = about(&version::Version::new(None), build::Build::Development);
+    assert_eq!(about.source_ref, "main");
 }
 
 #[test]

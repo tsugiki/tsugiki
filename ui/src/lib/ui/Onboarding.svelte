@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { TokenSource } from "$lib/state/home.svelte";
+  import { currentOs, keyLabel } from "./keys";
+  import { TOKEN_SOURCE_WORDS } from "./token-words";
 
   let {
     token,
@@ -11,10 +13,6 @@
     /** Opens the Settings dialog. */
     onsettings: () => void;
   } = $props();
-
-  const WHERE_FROM: Record<TokenSource, string> = {
-    gh: "Your token comes from the GitHub CLI (gh auth token).",
-  };
 </script>
 
 <section>
@@ -22,10 +20,10 @@
     class="settings"
     aria-haspopup="dialog"
     aria-label="Settings"
-    title="Settings (Ctrl+,)"
+    title={`Settings (${keyLabel("ctrl+,", currentOs())})`}
     onclick={onsettings}>⚙ Settings</button
   >
-  <p>{WHERE_FROM[token]}</p>
+  <p>{TOKEN_SOURCE_WORDS[token]}</p>
   <p>Add a Repository to start.</p>
   <button onclick={onadd}>Add repository</button>
 </section>

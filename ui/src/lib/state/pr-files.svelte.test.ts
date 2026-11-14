@@ -3047,6 +3047,7 @@ it("looks up a word picked in the peek's code at the hit's commit, and names the
   // The peek it opened first, which has no crumbs of its own.
   const followed = {
     at: { kind: "row", row: 2 },
+    layout: "inline",
     symbol: "width",
     side: "base",
     commit: "base",

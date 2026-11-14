@@ -89,6 +89,8 @@ export const commands = {
 	themes: () => typedError<Themes, Error_Serialize>(__TAURI_INVOKE("themes")),
 	/**  What the window opens on. */
 	home: () => __TAURI_INVOKE<Home_Serialize>("home"),
+	/**  Where the token comes from, for the Settings dialog's Account page (#429). */
+	tokenSource: () => __TAURI_INVOKE<TokenSource>("token_source"),
 	/**
 	 *  How the user laid out the panes on this machine: the Sidebar's and the Workbench list's widths (#187), and
 	 *  whether the Sidebar (#234) and the list (#242) show.
@@ -229,6 +231,11 @@ export type About = {
 	name: string,
 	version: string,
 	build: Build,
+	/**
+	 *  Where this build's source is on GitHub, for a link to it: a release's tag, such as `v0.3.1`, or
+	 *  `main` for a development build.
+	 */
+	source_ref: string,
 };
 
 /**  Whether the code under a thread has changed since it began. */

@@ -34,7 +34,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 | Reset the layout | the command palette |
 | Archive / Mute the selected item | `E` / `M` |
 | Mark seen / unseen, the row under the cursor or the Detail pane's item, by focus | `Q` / `Shift+Q` |
-| Settings | `Ctrl+,` |
+| Settings | `Ctrl+,`, or the command palette |
 | Zoom in / out / reset | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
 | Show or hide the performance HUD | `Ctrl+Shift+H` |
 | Open DevTools, in a development build only | `Ctrl+Shift+I`, or the command palette |

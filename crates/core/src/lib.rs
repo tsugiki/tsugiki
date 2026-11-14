@@ -45,12 +45,19 @@ pub struct About {
     pub name: String,
     pub version: String,
     pub build: build::Build,
+    /// Where this build's source is on GitHub, for a link to it: a release's tag, such as `v0.3.1`, or
+    /// `main` for a development build.
+    pub source_ref: String,
 }
 
 pub fn about(version: &version::Version, build: build::Build) -> About {
     About {
         name: "Tsugiki".to_owned(),
         version: version.to_string(),
+        source_ref: match build {
+            build::Build::Release => concat!("v", env!("CARGO_PKG_VERSION")).to_owned(),
+            build::Build::Development => "main".to_owned(),
+        },
         build,
     }
 }

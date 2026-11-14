@@ -38,7 +38,7 @@ use tsugiki_core::releases::NewVersion;
 use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
 use tsugiki_core::repository_settings::{MirrorCost, NameCheck, RepositorySettings};
 use tsugiki_core::session::SessionRequests;
-use tsugiki_core::settings::{Home, LoadedSettings, PaneLayout, SettingsOwner};
+use tsugiki_core::settings::{Home, LoadedSettings, PaneLayout, SettingsOwner, TokenSource};
 use tsugiki_core::status::{Change, FailedRead, LastSync, Status, SyncActivity};
 use tsugiki_core::store::StoreReader;
 use tsugiki_core::theme::ThemeMode;
@@ -317,6 +317,13 @@ struct StartMode(ThemeMode);
 #[specta::specta]
 fn home(owner: State<'_, SettingsOwner>) -> Home {
     owner.view().home
+}
+
+/// Where the token comes from, for the Settings dialog's Account page (#429).
+#[tauri::command]
+#[specta::specta]
+fn token_source() -> TokenSource {
+    TokenSource::IN_USE
 }
 
 /// How the user laid out the panes on this machine: the Sidebar's and the Workbench list's widths (#187), and
@@ -895,6 +902,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             settings,
             slow_commands::themes,
             home,
+            token_source,
             pane_layout,
             time_running,
             record_measurement,

@@ -2,7 +2,9 @@ import { expect, test } from "@playwright/test";
 import { mockCore } from "./mock-core.ts";
 
 test("the window shows what the core says about itself", async ({ page }) => {
-  await mockCore(page, { about: { name: "Tsugiki", version: "1.2.3", build: "release" } });
+  await mockCore(page, {
+    about: { name: "Tsugiki", version: "1.2.3", build: "release", source_ref: "v1.2.3" },
+  });
   await page.goto("/");
   await expect(page.getByText("Tsugiki 1.2.3")).toBeVisible();
 });

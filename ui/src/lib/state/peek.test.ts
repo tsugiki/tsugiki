@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import type { Hit, ServerName } from "$lib/data/bindings";
 import type { LaidThread, ThreadAnchor } from "./diff-layout";
+import { HitCode } from "./hit-code.svelte";
 import { PEEK_ID, PEEK_ROWS, peekPlaces, peekWords, withPeek, type Peek } from "./peek";
 
 const laid = <At extends ThreadAnchor>(id: string, at: At) => ({ id, at, places: 3 });
@@ -72,6 +73,49 @@ it("says a lookup was cancelled, in a peek with words only", () => {
   const cancelled = looking({ state: "answered", answer: { state: "cancelled" } });
 
   expect(peekWords(cancelled).body).toBe("The lookup was cancelled");
+});
+
+/** A hit in `path` at line `line` at the PR's head. */
+const hitIn = (path: string, line: number): Hit => ({
+  place: { kind: "repository", path, side: "head", commit: "fedcba987" },
+  line,
+  column: 4,
+  text: `def area${String(line)}():`,
+});
+
+/** A peek with `hits` that shows the code of the one at `index`. */
+const showing = (hits: Hit[], index: number): Peek => {
+  const hit = hits[index];
+  if (hit === undefined) throw new Error("no such hit");
+  return {
+    ...looking({ state: "answered", answer: { state: "found", hits } }),
+    code: new HitCode("python/cpython", hit, index),
+  };
+};
+
+it("names the hit the peek shows in its header, and counts it among the hits", () => {
+  const hits = [hitIn("Lib/a.py", 3), hitIn("Lib/b.py", 9), hitIn("Lib/c.py", 12)];
+
+  expect(peekWords(showing(hits, 0))).toMatchObject({ where: "Lib/a.py:3", count: "1 of 3" });
+  expect(peekWords(showing(hits, 2))).toMatchObject({
+    found: { hits, shown: 2, hit: hits[2] },
+    where: "Lib/c.py:12",
+    commit: "at fedcba9 · the PR's head",
+    count: "3 of 3",
+    body: "def area12():",
+  });
+});
+
+it("keeps its rows while it lists several hits, even when the hit's file can't be read", () => {
+  const unreadable = (hits: Hit[]) => {
+    const peek = showing(hits, 0);
+    if (peek.code) peek.code.problem = "Tsugiki couldn't read Lib/a.py";
+    return peek;
+  };
+
+  expect(peekPlaces(showing([hitIn("Lib/a.py", 3)], 0))).toBe(PEEK_ROWS);
+  expect(peekPlaces(unreadable([hitIn("Lib/a.py", 3)]))).toBe(2);
+  expect(peekPlaces(unreadable([hitIn("Lib/a.py", 3), hitIn("Lib/b.py", 9)]))).toBe(PEEK_ROWS);
 });
 
 it("leaves the threads in their order", () => {

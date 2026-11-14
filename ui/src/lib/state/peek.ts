@@ -42,14 +42,15 @@ function waitingWords(symbol: string, lookup: { waiting?: Waiting; since?: numbe
 
 /** What the peek's header and the line under it say. */
 export interface PeekWords {
-  /** The first hit, which the peek shows. */
-  hit?: Hit;
+  /** While there are hits: the lookup's `hits`, which the peek lists on its right, and the `hit` it shows,
+   * which is `hits[shown]`. It shows the first until the user picks another (#441). */
+  found?: { hits: readonly Hit[]; shown: number; hit: Hit };
   /** Where the hit is: its path and line. */
   where?: string;
   /** The commit it is at, as "at abc1234 · the PR's head", or the lookup's while it has no hit. A hit
    * outside the Repository has none, and its path is the whole path on disk. */
   commit?: string;
-  /** "1 of N" while there are hits. */
+  /** "3 of N" while there are hits, for the third. */
   count?: string;
   /** The line under the header: the hit's text, or what the lookup is doing or found. */
   body: string;
@@ -84,21 +85,22 @@ export function peekWords(peek: Peek, now = Date.now()): PeekWords {
   // The window drops the answer of each lookup it cancels, so this shows only for one it didn't.
   if (answer.state === "cancelled") return { commit: asked, body: "The lookup was cancelled" };
   const indexing = peek.indexing && { indexing: indexingWords(peek.indexing) };
-  const hit = answer.hits[0];
+  const shown = peek.code?.index ?? 0;
+  const hit = answer.hits[shown];
   if (hit === undefined) return { commit: asked, body: `No definition of ${peek.symbol}`, ...indexing };
   const place = hit.place;
   return {
-    hit,
+    found: { hits: answer.hits, shown, hit },
     where: `${place.path}:${String(hit.line)}`,
     ...(place.kind === "repository" && { commit: at(place.commit, place.side) }),
-    count: `1 of ${String(answer.hits.length)}`,
+    count: `${String(shown + 1)} of ${String(answer.hits.length)}`,
     body: hit.text,
     ...indexing,
   };
 }
 
 /** The peek: the line it opened under, the symbol it looks up, and the commit it looks at, which is the
- * PR's base for a removed line and its head for the rest. With a hit, it holds the hit's code. */
+ * PR's base for a removed line and its head for the rest. With hits, it holds the code of the one shown. */
 export interface Peek {
   at: PickedLine;
   symbol: string;
@@ -119,16 +121,19 @@ export const PEEK_ID = "definition peek";
 export const PEEK_ROWS = 18;
 
 /** The places `peek` takes in the diff's layout: [`PEEK_ROWS`] while it looks up or shows code, and its
- * header with a line under it when it only has words to say, as when the hit's file can't be read. The line
- * that says the server indexes takes one more then. */
+ * header with a line under it when it only has words to say, as when its only hit's file can't be read.
+ * With several hits it keeps its rows, so the list of them stays to pick another. The line that says the
+ * server indexes takes one more place with the words. */
 export function peekPlaces(peek: Peek): number {
   const lookup = peek.lookup;
+  const answer = lookup.state === "answered" ? lookup.answer : undefined;
+  const hits = answer?.state === "found" ? answer.hits.length : 0;
   const words =
     lookup.state === "failed" ||
-    (lookup.state === "answered" && peekWords(peek).hit === undefined) ||
-    peek.code?.problem !== undefined;
+    (lookup.state === "answered" && hits === 0) ||
+    (peek.code?.problem !== undefined && hits < 2);
   if (!words) return PEEK_ROWS;
-  return peekWords(peek).indexing === undefined ? 2 : 3;
+  return peek.indexing === undefined ? 2 : 3;
 }
 
 /** `threads`, in the order they show, with `peek` among them right under its line, above any thread there.

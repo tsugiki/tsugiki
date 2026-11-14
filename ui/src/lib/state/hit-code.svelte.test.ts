@@ -33,7 +33,7 @@ beforeEach(() => {
 
 it("reads the chunks that hold the lines that show, at the hit's commit, once each", async () => {
   answerFrom(1000);
-  const code = new HitCode("python/cpython", atBase);
+  const code = new HitCode("python/cpython", atBase, 0);
 
   code.show(447, 464);
   code.show(447, 464);
@@ -52,7 +52,7 @@ it("reads the chunks that hold the lines that show, at the hit's commit, once ea
 
 it("reads a chunk across a boundary as two, and none past the file's end", async () => {
   answerFrom(250);
-  const code = new HitCode("python/cpython", atBase);
+  const code = new HitCode("python/cpython", atBase, 0);
 
   code.show(190, 210);
   await vi.waitFor(() => {
@@ -71,7 +71,7 @@ it("reads a file outside the Repository by its path on disk", async () => {
     column: 4,
     text: "",
   };
-  const code = new HitCode("python/cpython", outside);
+  const code = new HitCode("python/cpython", outside, 0);
 
   code.show(1, 18);
   await vi.waitFor(() => {
@@ -88,7 +88,7 @@ it("reads a file outside the Repository by its path on disk", async () => {
 
 it("says why when the window loses the core", async () => {
   core.definitionCode.mockRejectedValue(new Error("The window lost the core."));
-  const code = new HitCode("python/cpython", atBase);
+  const code = new HitCode("python/cpython", atBase, 0);
 
   code.show(1, 18);
 
@@ -99,7 +99,7 @@ it("says why when the window loses the core", async () => {
 
 it("keeps the lines it has when a later chunk fails, and asks for that chunk again", async () => {
   answerFrom(1000);
-  const code = new HitCode("python/cpython", atBase);
+  const code = new HitCode("python/cpython", atBase, 0);
   code.show(1, 18);
   await vi.waitFor(() => {
     expect(code.line(1)).toBe("line 1");
@@ -125,7 +125,7 @@ it("says why the file can't be read", async () => {
     status: "error",
     error: { message: "No language server named x." },
   });
-  const code = new HitCode("python/cpython", atBase);
+  const code = new HitCode("python/cpython", atBase, 0);
 
   code.show(1, 18);
 

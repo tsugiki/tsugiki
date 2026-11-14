@@ -119,8 +119,8 @@ const END = 2 ** 32 - 1;
 let lastTicket = 0;
 const nextTicket = () => (lastTicket += 1);
 
-/** The first place `answer` names, if it found any. */
-const firstHit = (answer: Answer) => (answer.state === "found" ? answer.hits[0] : undefined);
+/** The place `answer` names at `index`, counted from 0, if it found any there. */
+const hitAt = (answer: Answer, index: number) => (answer.state === "found" ? answer.hits[index] : undefined);
 
 /** Whether two hits are at the same place and line. */
 const sameHit = (one: Hit, other: Hit) =>
@@ -1037,11 +1037,11 @@ export class PrFilesState {
       return { peek: { ...peek, lookup: { state: "failed", problem: answer.error.message } }, lookup, view };
     }
     // The hit's code lives with the peek, so the diff drawing the peek again doesn't read it again.
-    const hit = firstHit(answer.data);
+    const hit = hitAt(answer.data, 0);
     const answered: Peek = {
       ...peek,
       lookup: { state: "answered", answer: answer.data },
-      ...(hit && { code: new HitCode(this.#repository, hit) }),
+      ...(hit && { code: new HitCode(this.#repository, hit, 0) }),
     };
     return { peek: answered, lookup, view };
   }
@@ -1076,20 +1076,35 @@ export class PrFilesState {
 
   /** `peek`, which shows `answer`, with `news` of the index of the server that answered: how far it has
    * got, which a line under the header says, or the places it names once it has built its index, or that it
-   * stopped. A hit at the same place and line keeps its code, so the peek reads nothing again and keeps its
+   * stopped. The places replace the hits, and the peek shows the first, unless the one it shows is at the
+   * same place and line in the new list: that keeps its code, so the peek reads nothing again and keeps its
    * scroll. */
   #withNews(peek: Peek, answer: Answer, news: IndexNews): Peek {
     if (news.state === "building") return { ...peek, indexing: news };
     const shown = { ...peek };
     delete shown.indexing;
     if (news.state === "stopped") return shown;
-    const was = firstHit(answer);
-    const hit = news.hits[0];
+    const index = peek.code?.index ?? 0;
+    const was = hitAt(answer, index);
+    const same = news.hits[index];
     delete shown.code;
-    const kept = peek.code && was && hit && sameHit(was, hit) ? peek.code : undefined;
-    const code = kept ?? (hit && new HitCode(this.#repository, hit));
+    const kept = peek.code && was && same && sameHit(was, same) ? peek.code : undefined;
+    const hit = news.hits[0];
+    const code = kept ?? (hit && new HitCode(this.#repository, hit, 0));
     const found: Answer = { state: "found", hits: news.hits };
     return { ...shown, lookup: { state: "answered", answer: found }, ...(code && { code }) };
+  }
+
+  /** Shows the peek's hit `index`, counted from 0, with its code (#441). An index past either end of the
+   * hits changes nothing, and so does the hit the peek shows, whose code keeps where the user scrolled it,
+   * unless its file couldn't be read: that reads it again. */
+  showHit(index: number) {
+    const peek = this.#peek;
+    const answer = peek?.lookup.state === "answered" ? peek.lookup.answer : undefined;
+    const hit = answer?.state === "found" ? answer.hits[index] : undefined;
+    const shown = peek?.code?.index === index && peek.code.problem === undefined;
+    if (peek === undefined || hit === undefined || shown) return;
+    this.#peek = { ...peek, code: new HitCode(this.#repository, hit, index) };
   }
 
   /** Closes the Definition peek, and hands the diff its focus back. A Go to definition that still looks

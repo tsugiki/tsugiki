@@ -1775,7 +1775,7 @@ it("gives the list the focus when Go to definition opens the peek on several hit
   const list = await vi.waitFor(() => screen.getByRole("listbox", { name: "Definitions" }));
   await tick();
   expect(document.activeElement).toBe(list);
-  expect(files.peekWantsFocus).toBe(false);
+  expect(files.peekFocus).toBeUndefined();
   await fireEvent.keyDown(list, { key: "ArrowDown" });
   await fireEvent.keyDown(list, { key: "Enter" });
   await vi.waitFor(() => {
@@ -1787,14 +1787,18 @@ it("gives the list the focus when Go to definition opens the peek on several hit
   expect(document.activeElement).toBe(screen.getByRole("region", { name: "Diff" }));
 });
 
-it("looks up a word picked in the peek's code on Alt+F12, and a click on the crumb brings the peek back", async () => {
-  const hit = (path: string, line: number) => ({
-    place: { kind: "repository" as const, path, side: "head" as const, commit: "abc" },
-    line,
-    column: 4,
-    text: `line ${String(line)}`,
-  });
-  core.definitions.mockResolvedValueOnce(ok({ state: "found", hits: [hit("Lib/news.py", 12)] }));
+/** ty's hit at line `line` of `path` at the PR's head, whose text reads `line N`, as `fileOf` reads it. */
+const lineHit = (path: string, line: number) => ({
+  place: { kind: "repository" as const, path, side: "head" as const, commit: "abc" },
+  line,
+  column: 4,
+  text: `line ${String(line)}`,
+});
+
+/** The tab with the peek open on `new`, whose one hit is line 12 of Lib/news.py, and that line's code in the
+ * peek. The next lookup answers only when the test calls `answer`. */
+const peekOnTwelve = async () => {
+  core.definitions.mockResolvedValueOnce(ok({ state: "found", hits: [lineHit("Lib/news.py", 12)] }));
   fileOf(30);
   const files = await shown(ready(rows.length));
   await vi.waitFor(() => {
@@ -1803,16 +1807,27 @@ it("looks up a word picked in the peek's code on Alt+F12, and a click on the cru
   await clickAt(codeOf(4), 2);
   await files.peekDefinition();
   const twelve = await vi.waitFor(() => {
-    const code = peekBox()?.querySelector('[data-code-line="12"] .text');
+    const code = peekBox()?.querySelector('[data-code-line="12"]');
     expect(code?.textContent).toBe("line 12");
     return code as Element;
   });
-  let answer: (answer: unknown) => void = () => {};
+  let answered: (answer: unknown) => void = () => {};
   core.definitions.mockReturnValueOnce(
     new Promise((resolve) => {
-      answer = resolve;
+      answered = resolve;
     }),
   );
+  const answer = (with_: unknown) => {
+    answered(with_);
+  };
+  return { files, twelve, answer };
+};
+
+/** The peek's header once the lookup of `line` from line 12 found line 4 of Lib/lines.py. */
+const FOLLOWED = "new › line Lib/lines.py:4 at abc · the PR's head 1 of 1 Open ✕";
+
+it("looks up a word picked in the peek's code on Alt+F12, and a click on the crumb brings the peek back", async () => {
+  const { files, twelve, answer } = await peekOnTwelve();
 
   await clickAt(twelve, 2);
   const region = screen.getByRole("region", { name: "Definition's code" });
@@ -1820,9 +1835,9 @@ it("looks up a word picked in the peek's code on Alt+F12, and a click on the cru
   await fireEvent.keyDown(region, { key: "F12", altKey: true });
   await tick();
   const looking = [peekText(), document.activeElement === peekBox()];
-  answer(ok({ state: "found", hits: [hit("Lib/lines.py", 4)] }));
+  answer(ok({ state: "found", hits: [lineHit("Lib/lines.py", 4)] }));
   const list = await vi.waitFor(() => {
-    expect(peekText()[0]).toBe("new › line Lib/lines.py:4 at abc · the PR's head 1 of 1 Open ✕");
+    expect(peekText()[0]).toBe(FOLLOWED);
     return screen.getByRole("listbox", { name: "Definitions" });
   });
   await tick();
@@ -1843,45 +1858,55 @@ it("looks up a word picked in the peek's code on Alt+F12, and a click on the cru
 });
 
 it("leaves the focus where the user moved it while a lookup from inside the peek ran", async () => {
-  const hit = (path: string, line: number) => ({
-    place: { kind: "repository" as const, path, side: "head" as const, commit: "abc" },
-    line,
-    column: 4,
-    text: `line ${String(line)}`,
-  });
-  core.definitions.mockResolvedValueOnce(ok({ state: "found", hits: [hit("Lib/news.py", 12)] }));
-  fileOf(30);
-  const files = await shown(ready(rows.length));
-  await vi.waitFor(() => {
-    expect(lines()[4]).toBe("2+new line");
-  });
-  await clickAt(codeOf(4), 2);
-  await files.peekDefinition();
-  const twelve = await vi.waitFor(() => {
-    const code = peekBox()?.querySelector('[data-code-line="12"] .text');
-    expect(code?.textContent).toBe("line 12");
-    return code as Element;
-  });
-  let answer: (answer: unknown) => void = () => {};
-  core.definitions.mockReturnValueOnce(
-    new Promise((resolve) => {
-      answer = resolve;
-    }),
-  );
+  const { files, twelve, answer } = await peekOnTwelve();
   await clickAt(twelve, 2);
 
   await fireEvent.keyDown(screen.getByRole("listbox", { name: "Definitions" }), { key: "F12", altKey: true });
   await tick();
   const diff = screen.getByRole("region", { name: "Diff" });
   diff.focus();
-  answer(ok({ state: "found", hits: [hit("Lib/lines.py", 4)] }));
+  answer(ok({ state: "found", hits: [lineHit("Lib/lines.py", 4)] }));
   await vi.waitFor(() => {
-    expect(peekText()[0]).toBe("new › line Lib/lines.py:4 at abc · the PR's head 1 of 1 Open ✕");
+    expect(peekText()[0]).toBe(FOLLOWED);
   });
   await tick();
 
   expect(document.activeElement).toBe(diff);
-  expect(files.peekKeepsFocus).toBe(false);
+  expect(files.peekFocus).toBeUndefined();
+});
+
+it("follows the peek's word on Alt+F12 from its header too, once, and leaves Alt+F12 with none to the window", async () => {
+  const { files, twelve } = await peekOnTwelve();
+  const heard = vi.fn<(e: KeyboardEvent) => void>();
+  window.addEventListener("keydown", heard);
+  const box = peekBox() as HTMLElement;
+
+  // With no word picked in the peek, the window looks up the diff's.
+  await fireEvent.keyDown(box.querySelector(".header") as HTMLElement, { key: "F12", altKey: true });
+  await clickAt(twelve, 2);
+  // A click on the header leaves the focus on the peek itself.
+  box.focus();
+  // A held key would ask the server again and again.
+  await fireEvent.keyDown(box, { key: "F12", altKey: true, repeat: true });
+  await fireEvent.keyDown(box, { key: "F12", altKey: true });
+  window.removeEventListener("keydown", heard);
+
+  expect(heard).toHaveBeenCalledOnce();
+  expect(core.definitions).toHaveBeenCalledTimes(2);
+  expect(files.peek?.symbol).toBe("line");
+});
+
+it("selects only the diff's word on a double-click in the diff while a word is picked in the peek", async () => {
+  const { files, twelve } = await peekOnTwelve();
+  await clickAt(twelve, 2);
+
+  await clickAt(codeOf(4), 3);
+  await fireEvent.dblClick(codeOf(4), { detail: 2 });
+
+  await vi.waitFor(() => {
+    expect(getSelection()?.toString()).toBe("new");
+  });
+  expect(files.peek?.code?.pick?.word).toBe("line");
 });
 
 it("opens the peek on Go to definition with several hits, and Open goes to the hit picked", async () => {

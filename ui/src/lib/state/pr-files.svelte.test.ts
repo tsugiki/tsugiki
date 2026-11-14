@@ -2639,7 +2639,7 @@ it("shows the places the index names while Go to definition finds the row, rathe
   await going;
 
   expect(hitsIn(files.peek)?.map((hit) => hit.place.path)).toEqual(["Objects/a.c", "a.py"]);
-  expect(files.peekWantsFocus).toBe(true);
+  expect(files.peekFocus).toBe("take");
   expect(files.marked).toBeUndefined();
   expect(files.jump).toBeUndefined();
   expect(core.cancelDefinitions).not.toHaveBeenCalled();
@@ -2804,7 +2804,7 @@ it("opens the peek with the list on several hits, and goes to none of them", asy
   expect(files.peek?.code?.index).toBe(0);
   expect(files.openable).toBe("ready");
   // The list takes the focus, so ↑ ↓ pick a hit and Enter or F12 go to it.
-  expect(files.peekWantsFocus).toBe(true);
+  expect(files.peekFocus).toBe("take");
   expect(core.pullRequestRow).not.toHaveBeenCalled();
   expect(files.marked).toBeUndefined();
   expect(files.fileView).toBeUndefined();
@@ -2883,7 +2883,7 @@ it("opens the peek on a single hit outside the Repository, which has nowhere els
 
   expect(hitsIn(files.peek)).toEqual([outsideHit]);
   // A single hit has no list to pick from.
-  expect(files.peekWantsFocus).toBe(false);
+  expect(files.peekFocus).toBeUndefined();
   expect(core.pullRequestRow).not.toHaveBeenCalled();
   expect(files.fileView).toBeUndefined();
 });
@@ -2909,8 +2909,8 @@ it("looks up a word picked in the peek's code at the hit's commit, and names the
   const answer = heldLookup();
 
   const looking = files.followPick();
-  const whileLooking = [files.peek, files.peekWantsFocus];
-  files.peekWantsFocus = false;
+  const whileLooking = [files.peek, files.peekFocus];
+  files.peekFocus = undefined;
   answer(hitsFound(hitAt("Lib/sizes.py", "base", 12)));
   await looking;
 
@@ -2923,7 +2923,7 @@ it("looks up a word picked in the peek's code at the hit's commit, and names the
     commit: "base",
     trail: [first],
   };
-  expect(whileLooking).toEqual([{ ...followed, lookup: { state: "looking" } }, true]);
+  expect(whileLooking).toEqual([{ ...followed, lookup: { state: "looking" } }, "take"]);
   expect(files.peek).toMatchObject({
     ...followed,
     lookup: { state: "answered", answer: { state: "found", hits: [hitAt("Lib/sizes.py", "base", 12)] } },
@@ -2931,7 +2931,7 @@ it("looks up a word picked in the peek's code at the hit's commit, and names the
   expect(files.peek?.trail?.[0]?.code).toBe(first?.code);
   expect(files.peek?.code?.index).toBe(0);
   // The list takes the focus the peek held while it looked, if the peek still holds it.
-  expect([files.peekWantsFocus, files.peekKeepsFocus]).toEqual([false, true]);
+  expect(files.peekFocus).toBe("keep");
   // The peek stays under its line.
   expect(files.layout.at(3)).toEqual({ kind: "thread", id: PEEK_ID, into: 0 });
 });
@@ -2964,7 +2964,7 @@ it("brings back an earlier peek as the user left it on a click on its crumb, and
   expect(files.peek?.code?.pick?.word).toBe("width");
   // Nothing would take the line that said clangd indexed away, as the core no longer watches it.
   expect([first?.indexing?.state, files.peek?.indexing]).toEqual(["building", undefined]);
-  expect(files.peekWantsFocus).toBe(true);
+  expect(files.peekFocus).toBe("take");
   // The core stops watching the index for the peek each crumb replaced.
   expect(core.cancelDefinitions.mock.calls).toEqual([[ticketOf(2)], [expect.any(Number)]]);
 });

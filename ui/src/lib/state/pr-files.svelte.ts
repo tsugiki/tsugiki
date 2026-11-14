@@ -60,7 +60,7 @@ import { diffShows, inRepository, type FileView } from "./file-view";
 import { HitCode } from "./hit-code.svelte";
 import { hud, type Jump, type JumpTimer } from "./hud.svelte";
 import type { PanesState } from "./panes.svelte";
-import { PEEK_ID, peekPlaces, withPeek, type IndexNews, type Peek } from "./peek";
+import { PEEK_ID, peekPlaces, withPeek, type Crumb, type IndexNews, type Peek } from "./peek";
 import { wordAt, type Column, type Pick, type Picked, type PickedLine, type Side } from "./pick";
 import { waitForSpans } from "./spans-wait";
 
@@ -131,12 +131,12 @@ const hitsOf = (peek: Peek | undefined): Hit[] | undefined => {
   return lookup?.state === "answered" && lookup.answer.state === "found" ? lookup.answer.hits : undefined;
 };
 
-/** The hit `peek` shows and its code, while it shows one. */
-function shownHit(peek: Peek | undefined): { hit: Hit; code: HitCode } | undefined {
+/** The hit `peek` shows and its code, with the hits it lists, while it shows one. */
+function shownHit(peek: Peek | undefined): { hit: Hit; code: HitCode; hits: Hit[] } | undefined {
   const code = peek?.code;
-  if (code === undefined) return undefined;
-  const hit = hitsOf(peek)?.[code.index];
-  return hit && { hit, code };
+  const hits = hitsOf(peek);
+  const hit = code && hits?.[code.index];
+  return code && hits && hit && { hit, code, hits };
 }
 
 /** Whether two hits are at the same place and line. */
@@ -254,12 +254,11 @@ export class PrFilesState {
   /** Whether Go to definition looks a word up, or Open in the peek finds its hit's row, which Escape
    * stops. */
   going = $state(false);
-  /** Whether the peek's list should take the focus, as Go to definition opened it with several hits for the
-   * user to pick from (#446). */
-  peekWantsFocus = $state(false);
-  /** Whether the peek's list should take the focus the peek held while a lookup from inside it ran, once it
-   * answers (#447). A focus the user moved elsewhere in the meantime stays where it is. */
-  peekKeepsFocus = $state(false);
+  /** Where the peek should take the focus, once the diff draws it: "take" for its list, or the peek itself
+   * while it has none, as Go to definition opened it with several hits for the user to pick from (#446), or
+   * a lookup from inside the peek runs (#447). "keep" for its list once that lookup answers, if the peek
+   * still holds the focus: a focus the user moved elsewhere in the meantime stays where it is. */
+  peekFocus = $state<"take" | "keep">();
   /** A line over the diff while Go to definition looks a word up, or for a moment once it found nothing. */
   notice = $state<string>();
   /** Why the core couldn't search, which the search box says. */
@@ -1001,7 +1000,7 @@ export class PrFilesState {
     if (goal === undefined || hitsOf(now) !== hits) {
       this.#peek = now;
       this.peekOpened = true;
-      this.peekWantsFocus = (hitsOf(now)?.length ?? 0) > 1;
+      this.peekFocus = (hitsOf(now)?.length ?? 0) > 1 ? "take" : undefined;
       return;
     }
     this.#go(goal, view, lookup);
@@ -1121,7 +1120,7 @@ export class PrFilesState {
     const asked = view?.state === "ready" ? asking(view) : undefined;
     if (view?.state !== "ready" || asked === undefined) return undefined;
     // A peek a newer lookup opens is for that lookup to focus.
-    this.peekWantsFocus = false;
+    this.peekFocus = undefined;
     this.#lookups = nextTicket();
     const lookup = this.#lookups;
     const peek = asked.peek;
@@ -1241,7 +1240,14 @@ export class PrFilesState {
       this.#say("Tsugiki can't go to definitions from a file outside the Repository yet.", NOTICE_MS);
       return;
     }
-    const { trail = [], ...crumb } = peek;
+    const crumb: Crumb = {
+      at: peek.at,
+      symbol: peek.symbol,
+      side: peek.side,
+      commit: peek.commit,
+      lookup: { state: "answered", answer: { state: "found", hits: shown.hits } },
+      code: shown.code,
+    };
     const place = hit.place;
     const asked = {
       peek: {
@@ -1249,7 +1255,7 @@ export class PrFilesState {
         symbol: pick.word,
         side: place.side,
         commit: place.commit,
-        trail: [...trail, crumb],
+        trail: [...(peek.trail ?? []), crumb],
       },
       path: place.path,
       line: pick.line,
@@ -1259,19 +1265,17 @@ export class PrFilesState {
       (looking) => {
         this.#peek = looking;
         // The code that had the focus goes while the peek looks, so the focus waits in the peek.
-        this.peekWantsFocus = true;
+        this.peekFocus = "take";
       },
       () => asked,
     );
     if (looked === undefined) return;
     this.#peek = this.#withHeld(looked.peek, looked.lookup);
-    this.peekKeepsFocus = true;
+    this.peekFocus = "keep";
   }
 
   /** Brings back the peek that crumb `index` of the breadcrumb names, counted from the first, as the user
-   * left it, and drops the crumbs after it (#447). A lookup that still runs is cancelled. The core watches
-   * the index of a server for the newest lookup alone, so a peek that comes back drops the line that said
-   * its server indexed, which nothing would update or take away. */
+   * left it, and drops the crumbs after it (#447). A lookup that still runs is cancelled. */
   backTo(index: number) {
     const peek = this.#peek;
     const trail = peek?.trail ?? [];
@@ -1280,10 +1284,8 @@ export class PrFilesState {
     this.#unwatch(this.#lookups);
     this.#lookups = nextTicket();
     this.#stopGoing();
-    const back: Peek = { ...crumb, trail: trail.slice(0, index) };
-    delete back.indexing;
-    this.#peek = back;
-    this.peekWantsFocus = true;
+    this.#peek = { ...crumb, trail: trail.slice(0, index) };
+    this.peekFocus = "take";
   }
 
   /** Closes the Definition peek, and hands the diff its focus back. A Go to definition that still looks
@@ -1300,8 +1302,7 @@ export class PrFilesState {
     if (this.going || this.#peek !== undefined) void commands.cancelDefinitions(this.#lookups);
     this.#peek = undefined;
     this.#news = undefined;
-    this.peekWantsFocus = false;
-    this.peekKeepsFocus = false;
+    this.peekFocus = undefined;
     this.#lookups = nextTicket();
     this.#stopGoing();
   }

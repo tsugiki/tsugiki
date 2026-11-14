@@ -116,8 +116,14 @@ export interface Peek {
   trail?: readonly Crumb[];
 }
 
-/** A peek the breadcrumb names, as the user left it: one that `Alt+F12` inside the peek replaced (#447). */
-export type Crumb = Omit<Peek, "trail">;
+/** A peek the breadcrumb names, as the user left it: one that `Alt+F12` inside the peek replaced (#447). Only
+ * a peek that shows a hit's code has a word picked to follow, so each crumb has hits and the code of the one
+ * it showed. It has no line that says its server indexes: the core watches the index for the newest lookup
+ * alone, so nothing would update that line or take it away. */
+export type Crumb = Pick<Peek, "at" | "symbol" | "side" | "commit"> & {
+  lookup: { state: "answered"; answer: Extract<Answer, { state: "found" }> };
+  code: HitCode;
+};
 
 /** The id that names the peek among the threads of the diff's layout. A thread's id is GitHub's, which
  * never has a space. */

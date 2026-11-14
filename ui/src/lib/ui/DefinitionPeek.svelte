@@ -4,9 +4,9 @@
      its right (#441), or else a line that says what the lookup waits for, with the seconds once they pass
      one (#440), that it found nothing, or why it failed. A hit outside the Repository names its whole path
      on disk in place of a commit, and has no Open. While the server that answered builds its index, a line
-     under the header says so (#680). A click picks a word in the code, and `Alt+F12` on it looks it up in
-     place of what the peek showed, which a breadcrumb before the symbol then names, and a click on a crumb
-     brings that back (#447). -->
+     under the header says so (#680). A click picks a word in the code, which `Alt+F12` looks up in place of
+     what the peek showed (#447). A breadcrumb before the symbol then names that, and a click on a crumb
+     brings it back. -->
 
 <script lang="ts">
   import { peekWords, type Peek } from "$lib/state/peek";
@@ -19,7 +19,6 @@
     onclose,
     onhit,
     onopen,
-    onfollow,
     oncrumb,
   }: {
     peek: Peek;
@@ -29,8 +28,6 @@
     onclose: () => void;
     onhit: (index: number) => void;
     onopen: () => void;
-    /** Looks up the word picked in the code, in place of what the peek shows. */
-    onfollow: () => void;
     /** Brings back the peek that crumb `index` of the breadcrumb names, counted from the first. */
     oncrumb: (index: number) => void;
   } = $props();
@@ -66,20 +63,14 @@
     else list.scrollTop = Math.max(list.scrollTop, top + HIT_ROW - list.clientHeight);
   }
 
-  /** While the peek shows hit `shown` and has the focus, ↑ and ↓ move through its hits, Enter and `F12` go
-   * to the hit shown (#446), and `Alt+F12` looks up the word picked in its code (#447). The diff's keys never
-   * hear them, but for an `Alt+F12` with no word picked here, which looks up the diff's. */
+  /** While the peek shows hit `shown` and has the focus, ↑ and ↓ move through its hits, and Enter and `F12`
+   * go to the hit shown (#446). The diff's keys never hear them. */
   function moveByKey(e: KeyboardEvent, shown: number) {
     const key = keyName(e, currentOs());
-    const follows = key === "alt+f12" && code?.pick !== undefined;
-    if (key !== "arrowdown" && key !== "arrowup" && key !== "enter" && key !== "f12" && !follows) return;
+    if (key !== "arrowdown" && key !== "arrowup" && key !== "enter" && key !== "f12") return;
     e.preventDefault();
     e.stopPropagation();
-    // A held key would go again and again, and ask the server again and again.
-    if (follows) {
-      if (!e.repeat) onfollow();
-      return;
-    }
+    // A held key would go again and again.
     if (key === "enter" || key === "f12") {
       if (!e.repeat) onopen();
       return;

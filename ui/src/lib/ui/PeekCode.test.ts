@@ -94,7 +94,7 @@ const clickAt = async (element: Element, offset: number, init: MouseEventInit = 
 /** The code of the file's line `line`, once it has come. */
 const codeOf = async (line: number) =>
   vi.waitFor(() => {
-    const code = document.querySelector(`[data-code-line="${String(line)}"] .text`);
+    const code = document.querySelector(`[data-code-line="${String(line)}"]`);
     expect(code?.textContent).not.toBe("");
     return code as Element;
   });
@@ -136,7 +136,7 @@ it("puts the caret on the word a click lands on, highlighted or not, and drops i
   ];
   await clickAt(await codeOf(1), 6);
   const plain = [picked(), code.pick];
-  await clickAt(document.querySelector('[data-code-line="1"] .number') as Element, 0);
+  await clickAt(document.querySelector('[data-code-line="1"]')?.previousElementSibling as Element, 0);
 
   expect(highlighted).toEqual([["area"], true, 1, "def area(self):"]);
   expect(plain).toEqual([["width"], { line: 1, word: "width", start: 4, end: 9, caret: 6 }]);

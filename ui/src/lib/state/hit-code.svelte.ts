@@ -34,8 +34,9 @@ export class HitCode {
   /** Where the user scrolled the code to, which the peek goes back to when the diff draws it again after
    * it scrolled out of sight. Until then the peek scrolls to the hit. */
   scrollTop: number | undefined;
-  /** The word the user picked in the code, which `Alt+F12` looks up from inside the peek (#447). It goes
-   * with the code, so the peek shows it again when it goes back to this hit. */
+  /** The word the user picked in the code, which `Alt+F12` looks up from inside the peek (#447). A crumb
+   * keeps the code, so a peek it brings back shows the word that was followed. Picking another hit makes new
+   * code, with no pick. */
   pick = $state.raw<CodePick>();
   #chunks = new SvelteMap<number, readonly string[]>();
   /** The spans of each chunk's lines, which may come after its lines. */

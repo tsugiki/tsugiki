@@ -5,9 +5,9 @@
      for `Alt+F12` to look it up (#447). The file view shows its file the same way (#453), and `data-scrolls`
      lets the Detail pane's ↑ and ↓ scroll it there. -->
 <script lang="ts">
-  import { tick, untrack } from "svelte";
+  import { untrack } from "svelte";
   import type { CodePick, HitCode } from "$lib/state/hit-code.svelte";
-  import { caretIn, selectPicked } from "./picking";
+  import { wordPicker } from "./picking";
   import { pieces } from "./spans";
 
   let { code, line, pickable = false }: { code: HitCode; line: number; pickable?: boolean } = $props();
@@ -42,42 +42,17 @@
     code.show(first, last);
   });
 
-  /** The pick the last single click made, which a double-click selects. */
-  let clicked: CodePick | undefined;
-
-  /** Picks the word under the caret a click left, or drops the pick when the caret isn't in a line's code,
-   * as on a click on a line's number. A drag selects text to copy, and leaves the pick where it was. */
-  function pickByClick(e: MouseEvent) {
-    // A double-click's second click leaves the word to the double-click.
-    if (!pickable || e.detail > 1) return;
-    clicked = undefined;
-    const selection = getSelection();
-    if (selection === null || !selection.isCollapsed) return;
-    const node = selection.focusNode;
-    const text = (node instanceof Element ? node : node?.parentElement)?.closest(".text");
-    const at = text?.closest<HTMLElement>("[data-code-line]");
-    if (!node || !text || !at || !(e.target instanceof Node) || !text.contains(e.target)) {
+  /** Picks words in the code's lines, each of which names its number. */
+  const picker = wordPicker<CodePick>("[data-code-line]", {
+    pick: (text, caret) => code.pickWord(Number(text.dataset["codeLine"]), caret, false),
+    drop: () => {
       code.pick = undefined;
-      return;
-    }
-    clicked = code.pickWord(
-      Number(at.dataset["codeLine"]),
-      caretIn(text, node, selection.focusOffset),
-      false,
-    );
-  }
-
-  /** Selects the word the double-click's first click picked, if it picked one. The browser's own word can
-   * run past an identifier, as through the dot of `self.name`. */
-  async function selectByDoubleClick(e: MouseEvent & { currentTarget: HTMLElement }) {
-    const region = e.currentTarget;
-    const picked = clicked;
-    clicked = undefined;
-    if (picked === undefined || code.pick !== picked) return;
-    code.pickWord(picked.line, picked.start, true);
-    await tick();
-    selectPicked(region);
-  }
+    },
+    current: () => code.pick,
+    select: (picked) => {
+      code.pickWord(picked.line, picked.start, true);
+    },
+  });
 </script>
 
 <!-- The region stays while the file can't be read and says why inside it, so a focus in it stays put and the
@@ -97,8 +72,8 @@
     scrollTop = e.currentTarget.scrollTop;
     code.scrollTop = scrollTop;
   }}
-  onclick={pickByClick}
-  ondblclick={selectByDoubleClick}
+  onclick={pickable ? picker.click : undefined}
+  ondblclick={pickable ? picker.doubleClick : undefined}
 >
   {#if code.problem !== undefined}
     <p class="problem sans" role="alert">{code.problem}</p>
@@ -112,7 +87,7 @@
       {#each drawn as at (at)}
         {@const text = code.line(at)}
         <!-- prettier-ignore -->
-        <div class={["line", at === line && "hit"]} style:top={`${String((at - 1) * ROW)}px`} data-code-line={at}><span class="number">{at}</span><span class="text">{#each pieces(text ?? "", code.spans(at) ?? [], [], pick?.line === at ? pick : undefined) as piece, index (index)}{#if piece.caret}<span class="caret"></span>{/if}{#if piece.highlight || piece.picked}<span class={[piece.highlight && `hl-${piece.highlight}`, piece.picked && "picked"]}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</span></div>
+        <div class={["line", at === line && "hit"]} style:top={`${String((at - 1) * ROW)}px`}><span class="number">{at}</span><span class="text" data-code-line={at}>{#each pieces(text ?? "", code.spans(at) ?? [], [], pick?.line === at ? pick : undefined) as piece, index (index)}{#if piece.caret}<span class="caret"></span>{/if}{#if piece.highlight || piece.picked}<span class={[piece.highlight && `hl-${piece.highlight}`, piece.picked && "picked"]}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</span></div>
       {/each}
     </div>
   {/if}

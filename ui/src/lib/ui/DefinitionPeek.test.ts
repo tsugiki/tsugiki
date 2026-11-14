@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HitCode } from "$lib/state/hit-code.svelte";
-import type { Peek } from "$lib/state/peek";
+import type { Crumb, Peek } from "$lib/state/peek";
 import DefinitionPeek from "./DefinitionPeek.svelte";
 
 /** A hit of a lookup, as the core gives it. */
@@ -41,8 +41,8 @@ const peekWith = (lookup: Peek["lookup"]): Peek => ({
   lookup,
 });
 
-/** Handlers that follow a word and go back to a crumb, for the tests that do neither. */
-const following = { onfollow: () => {}, oncrumb: () => {} };
+/** The handler that goes back to a crumb, for the tests that don't. */
+const following = { oncrumb: () => {} };
 
 it("counts the seconds a lookup waits for ty's answer, and stops once it answers", async () => {
   vi.useFakeTimers({ now: 10_000 });
@@ -236,7 +236,7 @@ it("goes to the hit it shows on Open, and on Enter or F12 while it has the focus
   await fireEvent.click(screen.getByRole("button", { name: "Open" }));
   await fireEvent.keyDown(screen.getByRole("listbox"), { key: "Enter" });
   await fireEvent.keyDown(screen.getByRole("region", { name: "Definition's code" }), { key: "F12" });
-  // A held key would go again and again, and Alt+F12 with no word picked in the peek is the diff's.
+  // A held key would go again and again, and Alt+F12 is the diff's.
   await fireEvent.keyDown(screen.getByRole("listbox"), { key: "F12", repeat: true });
   await fireEvent.keyDown(screen.getByRole("listbox"), { key: "F12", altKey: true });
   window.removeEventListener("keydown", diff);
@@ -260,31 +260,16 @@ it("offers Open as the tab says, and waits while the tab finds the hit's row", a
   expect(open.title).toBe("Go to this definition (Enter, F12)");
 });
 
-it("looks up the word picked in its code on Alt+F12, which the diff never hears", async () => {
-  const onfollow = vi.fn();
-  const diff = vi.fn<(e: KeyboardEvent) => void>();
-  window.addEventListener("keydown", diff);
-  const peek = showing(hits, 1);
-  const props = { onclose: () => {}, onhit: () => {}, onopen: () => {}, oncrumb: () => {}, onfollow };
-  render(DefinitionPeek, { peek, ...props });
-  if (peek.code) peek.code.pick = { line: 9, word: "area9", start: 8, end: 13, caret: 10 };
-
-  const code = screen.getByRole("region", { name: "Definition's code" });
-  await fireEvent.keyDown(code, { key: "F12", altKey: true });
-  // A held key would ask the server again and again.
-  await fireEvent.keyDown(code, { key: "F12", altKey: true, repeat: true });
-  await fireEvent.keyDown(screen.getByRole("listbox"), { key: "F12", altKey: true });
-  window.removeEventListener("keydown", diff);
-
-  expect(onfollow).toHaveBeenCalledTimes(2);
-  expect(diff).not.toHaveBeenCalled();
-});
-
 it("names the peeks it followed from in a breadcrumb, and brings back the one a click on its crumb names", async () => {
   const oncrumb = vi.fn();
-  const crumb = (symbol: string) => ({ ...showing(hits, 0), symbol });
+  const crumb = (symbol: string): Crumb => ({
+    ...peekWith({ state: "looking" }),
+    symbol,
+    lookup: { state: "answered", answer: { state: "found", hits } },
+    code: new HitCode("python/cpython", hitIn("Lib/a.py", 3), 0),
+  });
   const peek = { ...peekWith({ state: "looking" }), trail: [crumb("PyObject_Call"), crumb("_Py_Make")] };
-  const props = { onclose: () => {}, onhit: () => {}, onopen: () => {}, onfollow: () => {}, oncrumb };
+  const props = { onclose: () => {}, onhit: () => {}, onopen: () => {}, oncrumb };
   render(DefinitionPeek, { peek, ...props });
 
   const header = document.querySelector(".header");

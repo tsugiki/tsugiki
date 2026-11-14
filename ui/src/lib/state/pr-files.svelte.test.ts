@@ -2449,6 +2449,8 @@ it("closes a peek on another word as it searches, and stops when the peek's Esca
   expect(files.notice).toBeUndefined();
   expect(core.pullRequestRow).not.toHaveBeenCalled();
   expect(files.peek).toBeUndefined();
+  // The search was still running, so the core cancels it, and only it.
+  expect(core.cancelDefinitions.mock.calls).toEqual([[ticketOf(1)]]);
 });
 
 it("goes to the first hit the diff shows, past those outside it or whose row it can't find", async () => {

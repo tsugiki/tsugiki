@@ -20,7 +20,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
 use tsugiki_lsp::{Canceller, RequestError, Uri};
 

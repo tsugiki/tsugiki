@@ -1273,11 +1273,11 @@ it("closes the Definition peek with Escape before the search, and the search bef
 });
 
 it("stops Go to definition with Escape while it searches, before the PR closes", async () => {
-  vi.spyOn(PrFilesState.prototype, "going", "get").mockReturnValue(true);
   const closePeek = vi.spyOn(PrFilesState.prototype, "closePeek").mockImplementation(() => {});
   const files = await onFiles();
   await fireEvent.click(files);
   const diff = await screen.findByRole("region", { name: "Diff" });
+  vi.spyOn(PrFilesState.prototype, "going", "get").mockReturnValue(true);
 
   await fireEvent.keyDown(diff, { key: "Escape" });
 

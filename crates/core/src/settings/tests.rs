@@ -1906,14 +1906,14 @@ fn apply_writes_a_server_s_path_over_a_hand_written_path_that_isn_t_a_table() {
     let (folders, root) = temp_folders("language-servers-not-a-table");
     fs::write(
         folders.machine_file(),
-        "[language_servers]\nty = \"C:/ty.exe\"\n",
+        "[language_servers]\nty = \"tools/ty.exe\"\n",
     )
     .unwrap();
     let mut files = SettingsFiles::load(folders.clone());
 
     let applied = files.apply(SettingsChanges {
         language_servers: Some(LanguageServerSettings {
-            ty: Some(PathBuf::from("C:/ty.exe")),
+            ty: Some(PathBuf::from("tools/ty.exe")),
             ..LanguageServerSettings::default()
         }),
         ..SettingsChanges::default()
@@ -1924,11 +1924,12 @@ fn apply_writes_a_server_s_path_over_a_hand_written_path_that_isn_t_a_table() {
     applied.unwrap();
     assert_eq!(
         machine,
-        "[language_servers]\n\n[language_servers.ty]\npath = \"C:/ty.exe\"\n"
+        "[language_servers]\n\n[language_servers.ty]\npath = \"tools/ty.exe\"\n"
     );
+    // A relative path starts at the data folder, on each OS.
     assert_eq!(
         files.view().language_servers.ty,
-        Some(PathBuf::from("C:/ty.exe"))
+        Some(folders.data.join("tools/ty.exe"))
     );
 }
 

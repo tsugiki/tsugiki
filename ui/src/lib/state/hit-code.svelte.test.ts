@@ -86,6 +86,17 @@ it("reads a file outside the Repository by its path on disk", async () => {
   });
 });
 
+it("says why when the window loses the core", async () => {
+  core.definitionCode.mockRejectedValue(new Error("The window lost the core."));
+  const code = new HitCode("python/cpython", atBase);
+
+  code.show(1, 18);
+
+  await vi.waitFor(() => {
+    expect(code.problem).toBe("Error: The window lost the core.");
+  });
+});
+
 it("keeps the lines it has when a later chunk fails, and asks for that chunk again", async () => {
   answerFrom(1000);
   const code = new HitCode("python/cpython", atBase);

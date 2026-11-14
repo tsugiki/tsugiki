@@ -1,7 +1,9 @@
 // How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list (#187), and
-// whether the Sidebar (#234) and the list (#242) show, which of them `Ctrl+K Z` hid (#246), and the list's
-// order (#592). The core keeps the layout in `machine.toml`, so it stays on this machine and isn't synced.
+// whether the Sidebar (#234) and the list (#242) show, which of them `Ctrl+K Z` hid (#246), the list's
+// order (#592), and how many rows tall they dragged the Definition peek (#458). The core keeps the layout in
+// `machine.toml`, so it stays on this machine and isn't synced.
 import { commands, type ListOrder, type Panes } from "$lib/data/bindings";
+import { PEEK_ROWS } from "./peek";
 
 export type { ListOrder };
 
@@ -14,6 +16,9 @@ export const SIDEBAR_MOST = 480;
 export const LIST_LEAST = 280;
 /** The Detail pane's least width. */
 export const DETAIL_LEAST = 320;
+/** The Definition peek's least and greatest heights, in diff rows with its header among them. */
+export const PEEK_LEAST = 5;
+export const PEEK_MOST = 60;
 
 export type Pane = "sidebar" | "list";
 
@@ -22,6 +27,8 @@ export class PanesState {
    * Detail pane for the list. */
   sidebar = $state<number | null>(null);
   list = $state<number | null>(null);
+  /** The Definition peek's height in diff rows, or nothing for its default, `PEEK_ROWS`. */
+  peek = $state<number | null>(null);
   /** Whether `Ctrl+B` hid the Sidebar and `Ctrl+Alt+B` the list, each nothing until the core or the user
    * says. */
   #hidden = $state<Record<Pane, boolean | null>>({ sidebar: null, list: null });
@@ -36,7 +43,12 @@ export class PanesState {
    * in the order it changed, and a save never sends a default the file holds something else for. */
   #saving: Promise<void> = Promise.resolve();
 
-  /** Reads the layout the core saved, each width kept within its pane's limits, as someone may have written
+  /** The rows the Definition peek takes while it looks up or shows code. */
+  get peekRows(): number {
+    return this.peek ?? PEEK_ROWS;
+  }
+
+  /** Reads the layout the core saved, each size kept within its limits, as someone may have written
    * `machine.toml` by hand. Until the core answers, the panes take their defaults, and what the user changes
    * meanwhile stays as they left it. */
   load(): Promise<void> {
@@ -47,11 +59,12 @@ export class PanesState {
 
   async #read() {
     try {
-      const { sidebar, list, sidebar_hidden, list_hidden, detail_only_hid, order } =
+      const { sidebar, list, peek, sidebar_hidden, list_hidden, detail_only_hid, order } =
         await commands.paneLayout();
       this.#order ??= order;
       this.sidebar ??= sidebar === null ? null : Math.min(SIDEBAR_MOST, Math.max(SIDEBAR_LEAST, sidebar));
       this.list ??= list === null ? null : Math.max(LIST_LEAST, list);
+      this.peek ??= peek === null ? null : Math.min(PEEK_MOST, Math.max(PEEK_LEAST, peek));
       this.#hidden.sidebar ??= sidebar_hidden;
       this.#hidden.list ??= list_hidden;
       if (this.#detailOnlyHid === undefined) this.#detailOnlyHid = detail_only_hid;
@@ -122,17 +135,18 @@ export class PanesState {
     return this.save();
   }
 
-  /** Gives `pane` its default width again, and saves that. */
-  reset(pane: Pane): Promise<void> {
+  /** Gives `pane` its default width, or the Definition peek its default height, again, and saves that. */
+  reset(pane: Pane | "peek"): Promise<void> {
     this[pane] = null;
     return this.save();
   }
 
-  /** "Reset Layout": gives both panes their default widths and shows both, forgets what `Ctrl+K Z` hid, and
-   * saves that. */
+  /** "Reset Layout": gives both panes their default widths and the Definition peek its default height, shows
+   * both panes, forgets what `Ctrl+K Z` hid, and saves that. */
   resetLayout(): Promise<void> {
     this.sidebar = null;
     this.list = null;
+    this.peek = null;
     this.#hidden.sidebar = false;
     this.#hidden.list = false;
     this.#detailOnlyHid = null;
@@ -150,6 +164,7 @@ export class PanesState {
     const layout = {
       sidebar: this.sidebar,
       list: this.list,
+      peek: this.peek,
       sidebar_hidden: this.hidden("sidebar"),
       list_hidden: this.hidden("list"),
       detail_only_hid: this.#detailOnlyHid ?? null,

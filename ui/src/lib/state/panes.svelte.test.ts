@@ -8,6 +8,7 @@ const core = vi.mocked(commands);
 const DEFAULTS = {
   sidebar: null,
   list: null,
+  peek: null,
   sidebar_hidden: false,
   list_hidden: false,
   detail_only_hid: null,
@@ -35,20 +36,34 @@ it("takes the defaults until the core says how the user laid out the panes", asy
   ]);
 });
 
-it("keeps widths written by hand within each pane's limits", async () => {
+it("keeps sizes written by hand within each one's limits", async () => {
   const panes = new PanesState();
-  core.paneLayout.mockResolvedValueOnce({ ...DEFAULTS, sidebar: 100_000, list: 3 });
+  core.paneLayout.mockResolvedValueOnce({ ...DEFAULTS, sidebar: 100_000, list: 3, peek: 1000 });
   await panes.load();
-  const wide = [panes.sidebar, panes.list];
+  const wide = [panes.sidebar, panes.list, panes.peek];
   const again = new PanesState();
-  core.paneLayout.mockResolvedValueOnce({ ...DEFAULTS, sidebar: 3 });
+  core.paneLayout.mockResolvedValueOnce({ ...DEFAULTS, sidebar: 3, peek: 1 });
 
   await again.load();
 
-  expect([wide, [again.sidebar, again.list]]).toEqual([
-    [480, 280],
-    [140, null],
+  expect([wide, [again.sidebar, again.list, again.peek]]).toEqual([
+    [480, 280, 60],
+    [140, null, 5],
   ]);
+});
+
+it("keeps the Definition peek's height with the panes, and gives its 18 rows back on a reset", async () => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULTS, peek: 24 });
+  core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
+  const panes = new PanesState();
+  const before = panes.peekRows;
+  await panes.load();
+  const read = panes.peekRows;
+
+  await panes.reset("peek");
+
+  expect([before, read, panes.peek, panes.peekRows]).toEqual([18, 24, null, 18]);
+  expect(core.savePaneLayout).toHaveBeenCalledExactlyOnceWith(DEFAULTS);
 });
 
 it("keeps what the user changed before the core answered", async () => {
@@ -124,7 +139,7 @@ it("hides each pane and shows it again, saving each time with its width", async 
   await panes.toggle("list");
 
   expect([hidden, panes.hidden("sidebar"), panes.hidden("list")]).toEqual([[true, true], false, false]);
-  const widths = { sidebar: 240, list: 500, detail_only_hid: null, order: "attention" };
+  const widths = { sidebar: 240, list: 500, peek: null, detail_only_hid: null, order: "attention" };
   expect(core.savePaneLayout.mock.calls).toEqual([
     [{ ...widths, sidebar_hidden: true, list_hidden: false }],
     [{ ...widths, sidebar_hidden: true, list_hidden: true }],
@@ -211,6 +226,7 @@ it("puts the whole layout back to the defaults with one save, forgetting what Ct
   core.paneLayout.mockResolvedValue({
     sidebar: 240,
     list: 500,
+    peek: 30,
     sidebar_hidden: true,
     list_hidden: true,
     detail_only_hid: "list",
@@ -222,7 +238,8 @@ it("puts the whole layout back to the defaults with one save, forgetting what Ct
 
   await panes.resetLayout();
 
-  expect([panes.sidebar, panes.list, panes.hidden("sidebar"), panes.hidden("list")]).toEqual([
+  expect([panes.sidebar, panes.list, panes.peek, panes.hidden("sidebar"), panes.hidden("list")]).toEqual([
+    null,
     null,
     null,
     false,

@@ -376,10 +376,10 @@ impl Default for Home {
 
 /// How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
 /// (#187), whether the Sidebar (#234) and the list (#242) show, which of them `Ctrl+K Z` hid (#246), to
-/// bring back on the next press, and the list's order (#592). All of it stays on this machine, like the
-/// window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
-/// width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml`
-/// over.
+/// bring back on the next press, the list's order (#592), and how many rows tall they dragged the Definition
+/// peek (#458). All of it stays on this machine, like the window's place, and a value left out takes its
+/// default. So does a value Tsugiki can't read, such as a width that isn't a whole number of pixels: a pane
+/// is too small a thing to lose the rest of `machine.toml` over.
 #[expect(
     clippy::struct_excessive_bools,
     reason = "Each pane hides by itself, so all four states are valid: both hidden leaves the Detail pane"
@@ -393,6 +393,10 @@ pub struct PaneLayout {
     #[serde(deserialize_with = "or_default")]
     #[specta(type = Option<u32>)]
     pub list: Option<u32>,
+    /// The Definition peek's height in diff rows, its header among them, or nothing for its 18.
+    #[serde(deserialize_with = "or_default")]
+    #[specta(type = Option<u32>)]
+    pub peek: Option<u32>,
     /// `Ctrl+B` hid the Sidebar. It keeps its width for when it shows again.
     #[serde(deserialize_with = "or_default")]
     #[specta(type = bool)]
@@ -772,11 +776,15 @@ impl SettingsFiles {
         let path = self.folders.machine_file();
         let mut edit = TomlEdit::open_machine(&path)?;
         edit_section(edit.document.as_table_mut(), PANES, |section| {
-            for (key, width) in [("sidebar", panes.sidebar), ("list", panes.list)] {
-                // A reset takes the comment on its key too: kept, the key would hold the old width.
-                match width {
-                    Some(width) => {
-                        merge_value(section, key, &toml_edit::value(i64::from(width)), None)
+            for (key, size) in [
+                ("sidebar", panes.sidebar),
+                ("list", panes.list),
+                ("peek", panes.peek),
+            ] {
+                // A reset takes the comment on its key too: kept, the key would hold the old size.
+                match size {
+                    Some(size) => {
+                        merge_value(section, key, &toml_edit::value(i64::from(size)), None)
                     }
                     None => drop(section.remove(key)),
                 }

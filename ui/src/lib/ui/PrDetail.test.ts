@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { PanesState } from "$lib/state/panes.svelte";
 import { PrViewState, type PrView } from "$lib/state/pr-view.svelte";
 import PrDetail from "./PrDetail.svelte";
 
@@ -94,7 +95,7 @@ const shown = async (
   onmark = vi.fn(),
 ) => {
   core.pullRequest.mockResolvedValue({ status: "ok", data: answer });
-  const state = new PrViewState("python/cpython", 11, issue);
+  const state = new PrViewState("python/cpython", 11, issue, new PanesState());
   onShow = state;
   await state.load();
   render(PrDetail, { repository: "python/cpython", pr: state, now: NOW, onback, onmark });
@@ -390,7 +391,7 @@ it("says why it can't show the PR", async () => {
     status: "error",
     error: { kind: "internal", message: "no database" },
   });
-  const state = new PrViewState("python/cpython", 11, 10);
+  const state = new PrViewState("python/cpython", 11, 10, new PanesState());
   await state.load();
   render(PrDetail, { repository: "python/cpython", pr: state, now: NOW, onback: vi.fn(), onmark: vi.fn() });
   state.stop();

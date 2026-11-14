@@ -1271,11 +1271,33 @@ fn an_owner_whose_thread_has_gone_says_so() {
 const WIDE: PaneLayout = PaneLayout {
     sidebar: Some(240),
     list: Some(500),
+    peek: None,
     sidebar_hidden: false,
     list_hidden: false,
     detail_only_hid: None,
     order: ListOrder::Attention,
 };
+
+#[test]
+fn the_peeks_height_stays_on_this_machine_until_it_goes_back_to_its_default() {
+    let (folders, root) = temp_folders("panes-peek");
+    let mut files = SettingsFiles::load(folders.clone());
+    let taller = PaneLayout {
+        peek: Some(24),
+        ..WIDE
+    };
+
+    files.save_panes(taller).unwrap();
+    let saved = fs::read_to_string(folders.machine_file()).unwrap();
+    let read_again = SettingsFiles::load(folders.clone()).view().panes;
+    files.save_panes(WIDE).unwrap();
+    let back = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(saved, "[panes]\nsidebar = 240\nlist = 500\npeek = 24\n");
+    assert_eq!(read_again, taller);
+    assert_eq!(back, "[panes]\nsidebar = 240\nlist = 500\n");
+}
 
 #[test]
 fn machine_toml_names_each_order_and_pane_as_serde_reads_them() {
@@ -1467,6 +1489,7 @@ fn a_pane_value_it_cant_read_takes_the_default_and_keeps_the_rest_of_machine_tom
 [panes]
 sidebar = -1
 list = 500
+peek = 2.5
 sidebar_hidden = \"yes\"
 list_hidden = 1
 detail_only_hid = \"everything\"
@@ -1480,6 +1503,7 @@ order = \"by_mood\"
     let list = PaneLayout {
         sidebar: None,
         list: Some(500),
+        peek: None,
         sidebar_hidden: false,
         list_hidden: false,
         detail_only_hid: None,

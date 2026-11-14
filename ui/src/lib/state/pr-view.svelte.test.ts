@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { commands, events, type FailedRead } from "$lib/data/bindings";
+import { PanesState } from "./panes.svelte";
 import { PrViewState, type PrView } from "./pr-view.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
@@ -56,7 +57,7 @@ describe("PrViewState", () => {
   });
 
   it("opens the PR with the core, holds what it answers, and remembers the Issue it came from", async () => {
-    const state = new PrViewState("python/cpython", 11, 10);
+    const state = new PrViewState("python/cpython", 11, 10, new PanesState());
 
     await state.load();
 
@@ -69,7 +70,7 @@ describe("PrViewState", () => {
 
   it("shows the Conversation while opening the PR still waits for git", async () => {
     vi.mocked(commands.openPullRequest).mockReturnValue(new Promise(() => {}));
-    const state = new PrViewState("python/cpython", 11, undefined);
+    const state = new PrViewState("python/cpython", 11, undefined, new PanesState());
 
     void state.load();
 
@@ -78,7 +79,7 @@ describe("PrViewState", () => {
   });
 
   it("leaves the diff unread while the PR is on its Conversation", async () => {
-    const state = new PrViewState("python/cpython", 11, undefined);
+    const state = new PrViewState("python/cpython", 11, undefined, new PanesState());
 
     await state.load();
 
@@ -88,7 +89,7 @@ describe("PrViewState", () => {
   });
 
   it("reads the diff the first time the Files tab shows, and keeps it after", async () => {
-    const state = new PrViewState("python/cpython", 11, undefined);
+    const state = new PrViewState("python/cpython", 11, undefined, new PanesState());
     await state.load();
 
     state.switchTab();
@@ -101,7 +102,7 @@ describe("PrViewState", () => {
   });
 
   it("reads the diff of a PR opened on a thread", async () => {
-    const state = new PrViewState("python/cpython", 11, undefined);
+    const state = new PrViewState("python/cpython", 11, undefined, new PanesState());
 
     state.openThread("T1");
     await state.load();
@@ -113,7 +114,7 @@ describe("PrViewState", () => {
 
   it("reads the PR from GitHub once a minute while it's on screen", async () => {
     vi.useFakeTimers();
-    const state = new PrViewState("python/cpython", 11, undefined);
+    const state = new PrViewState("python/cpython", 11, undefined, new PanesState());
     await state.load();
 
     await vi.advanceTimersByTimeAsync(60_000);
@@ -131,7 +132,7 @@ describe("PrViewState", () => {
       };
       return () => {};
     });
-    const state = new PrViewState("python/cpython", 11, undefined);
+    const state = new PrViewState("python/cpython", 11, undefined, new PanesState());
     await state.load();
     expect(state.failedRead).toBeUndefined();
 
@@ -148,7 +149,7 @@ describe("PrViewState", () => {
     const stop = vi.fn();
     vi.mocked(events.changed.listen).mockResolvedValueOnce(stop);
     vi.mocked(events.readFailed.listen).mockRejectedValueOnce(new Error("no events"));
-    const state = new PrViewState("python/cpython", 11, undefined);
+    const state = new PrViewState("python/cpython", 11, undefined, new PanesState());
 
     await state.load();
 
@@ -158,7 +159,7 @@ describe("PrViewState", () => {
   });
 
   it("opens on the Conversation and switches between its two tabs", () => {
-    const state = new PrViewState("python/cpython", 11, undefined);
+    const state = new PrViewState("python/cpython", 11, undefined, new PanesState());
     expect(state.tab).toBe("conversation");
 
     state.switchTab();
@@ -168,12 +169,14 @@ describe("PrViewState", () => {
   });
 
   it("opens its Files tab on all the files, or one at a time when the settings say so", () => {
-    expect(new PrViewState("python/cpython", 11, undefined).files.mode).toBe("all");
-    expect(new PrViewState("python/cpython", 11, undefined, undefined, "one").files.mode).toBe("one");
+    expect(new PrViewState("python/cpython", 11, undefined, new PanesState()).files.mode).toBe("all");
+    expect(
+      new PrViewState("python/cpython", 11, undefined, new PanesState(), undefined, "one").files.mode,
+    ).toBe("one");
   });
 
   it("opens a thread on the Files tab", () => {
-    const state = new PrViewState("python/cpython", 11, undefined);
+    const state = new PrViewState("python/cpython", 11, undefined, new PanesState());
     const reveal = vi.spyOn(state.files, "reveal");
 
     state.openThread("T1");
@@ -216,7 +219,7 @@ describe("PrViewState", () => {
         threads: { kind: "shown", threads: [] },
       },
     });
-    const state = new PrViewState("python/cpython", 11, undefined);
+    const state = new PrViewState("python/cpython", 11, undefined, new PanesState());
     await state.load();
 
     state.reviewChanges();

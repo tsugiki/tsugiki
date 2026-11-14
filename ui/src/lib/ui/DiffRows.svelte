@@ -25,8 +25,11 @@
     type PrFilesState,
     type Span,
   } from "$lib/state/pr-files.svelte";
+  import { PEEK_LEAST, PEEK_MOST } from "$lib/state/panes.svelte";
+  import { PEEK_ID, peekSized } from "$lib/state/peek";
   import DefinitionPeek from "./DefinitionPeek.svelte";
   import NewsEntries from "./NewsEntries.svelte";
+  import PaneEdge from "./PaneEdge.svelte";
   import { currentOs } from "./keys";
   import ReviewThread from "./ReviewThread.svelte";
   import { pieces, type Match } from "./spans";
@@ -91,22 +94,45 @@
   let drawnNews = false;
   /** Scrolls to the thread, the change or the match the user moved to, with a few rows of code above it.
    * Otherwise, keeps the place at the top in view as the layout changes, as the view switches or a thread
-   * above it grows: the same row, line, button or thread, as far into it as it was. */
+   * above it grows: the same row, line, button or thread, as far into it as it was. Then a peek that opened
+   * below the rows on screen scrolls into view (#458). */
   $effect(() => {
     const layout = diff.layout;
     const jump = diff.jump;
+    const opened = diff.peekOpened;
     const before = drawn;
     const newsBefore = drawnNews;
     drawn = layout;
     drawnNews = untrack(() => newsShown.length > 0);
     untrack(() => {
       const target = scrolledTo(layout, before, jump, newsBefore !== drawnNews);
-      if (target === undefined || scroller === undefined || newsBox === undefined) return;
-      scroller.scrollTop = target === "top" ? 0 : newsBox.offsetHeight + target.place * ROW + target.into;
+      // An effect runs once the tab is drawn, so both are bound.
+      const region = scroller as HTMLElement;
+      const news = (newsBox as HTMLElement).offsetHeight;
+      if (target !== undefined)
+        region.scrollTop = target === "top" ? 0 : news + target.place * ROW + target.into;
+      if (opened) {
+        diff.peekOpened = false;
+        reveal(layout, region, news);
+      }
       // The rows to draw follow at once, as the scroll event comes after the next frame.
-      scrollTop = scroller.scrollTop;
+      scrollTop = region.scrollTop;
     });
   });
+
+  /** Scrolls `region` as little as it takes to show the whole peek in `layout`, below NEWS entries `news`
+   * pixels tall, but never so far that the line it opened under leaves the top. A peek in a file collapsed
+   * or on another page has no place to show, and a tab not laid out yet has no rows on screen to bring it
+   * into. */
+  function reveal(layout: PrFilesState["layout"], region: HTMLElement, news: number) {
+    const place = layout.threadAt(PEEK_ID);
+    if (place === undefined || height === 0) return;
+    const peeks = layout.threadsIn(place, place).filter((thread) => thread.laid.id === PEEK_ID);
+    for (const { shown, length } of peeks) {
+      const wanted = Math.min((shown + length) * ROW - height, (shown - 1) * ROW);
+      if (wanted > region.scrollTop - news) region.scrollTop = news + wanted;
+    }
+  }
 
   /** The place the tab scrolls to as `layout` replaces `before` or the user moves to a thread, a change, a
    * match or a page, and how many pixels into it, if it scrolls, or the top for the NEWS entries, which
@@ -363,9 +389,10 @@
     // A double-click's second click leaves the word to the double-click.
     if (event.detail > 1) return;
     clicked = undefined;
-    // A button, a link or a field keeps the pick.
+    // A button, a link, a field or the peek's edge keeps the pick.
     const target = event.target;
-    if (target instanceof Element && target.closest("button, a, input, textarea, select, summary")) return;
+    const keeps = "button, a, input, textarea, select, summary, [role=separator]";
+    if (target instanceof Element && target.closest(keeps)) return;
     const selection = getSelection();
     // A drag selects text to copy, and leaves the pick where it was.
     if (selection === null || !selection.isCollapsed) return;
@@ -563,6 +590,20 @@
             }}
           />
         </div>
+        {#if peekSized(block.peek)}
+          <!-- Astride the peek's bottom line, outside the peek, whose `overflow: hidden` would clip it. -->
+          <div class="peek-edge" style:top={`${String((placed.shown + placed.length) * ROW - 4)}px`}>
+            <PaneEdge
+              label="Definition peek height"
+              sizes={{ kind: "box", value: diff.panes.peekRows, unit: ROW }}
+              least={PEEK_LEAST}
+              most={PEEK_MOST}
+              onresize={(rows) => (diff.panes.peek = rows)}
+              ondone={() => void diff.panes.save()}
+              onreset={() => void diff.panes.reset("peek")}
+            />
+          </div>
+        {/if}
       {:else}
         <div
           class="thread sans"
@@ -665,8 +706,20 @@
       inset 0 -1px color-mix(in srgb, currentColor 15%, transparent);
   }
 
+  /* The strip the peek's bottom edge takes: 4 px of the peek and 4 px of the row under it, above a review
+     thread there too. */
+  .peek-edge {
+    position: absolute;
+    z-index: 1;
+    left: var(--across);
+    width: var(--width);
+    height: 8px;
+  }
+
+  /* Its own stacking context, so the peek's edge rises only above the rows and threads. */
   .spacer {
     position: relative;
+    isolation: isolate;
   }
 
   .row {

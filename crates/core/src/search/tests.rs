@@ -131,7 +131,7 @@ fn a_second_query_cancels_the_first() {
     first_reply.send(Some(fixture.checkout.clone())).unwrap();
     thread::sleep(Duration::from_millis(200));
     let SearchState::Results(results) = search.state() else {
-        panic!("{:?}", search.state());
+        panic!("the second query's results are gone");
     };
     assert_eq!(results.id, second);
     assert_eq!(results.files.len(), 1);

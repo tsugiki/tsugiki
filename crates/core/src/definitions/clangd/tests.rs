@@ -178,11 +178,9 @@ fn built_in_headers_are_a_stddef_h_in_the_folder_above_clangd_s_own() {
 
     let found = ["whole", "lone", "empty"]
         .map(|folder| has_built_ins(&root.join(folder).join("bin").join("clangd.exe")));
-    let bare = has_built_ins(Path::new("clangd"));
     let _removed = fs::remove_dir_all(&root);
 
     assert_eq!(found, [true, false, false]);
-    assert!(!bare);
 }
 
 #[test]

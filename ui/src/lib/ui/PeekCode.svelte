@@ -14,7 +14,6 @@
   const LEAD = 3;
   /** The rows drawn past each end of what shows. */
   const OVERSCAN = 20;
-  let scroller = $state<HTMLElement>();
   let scrollTop = $state(0);
   let height = $state(0);
   /** Until the file's length is known, the hit's line and a screen past it. */
@@ -24,38 +23,40 @@
   /** The numbers of the lines drawn. */
   const drawn = $derived(Array.from({ length: Math.max(0, last - first + 1) }, (_, i) => first + i));
 
-  // Scrolls to a new hit, or back to where the user left this one's code when the diff draws the peek again.
-  $effect(() => {
+  /** Scrolls `region` to a new hit, or back to where the user left this one's code when the diff draws the
+   * peek again. The region stays while the code shows, so it attaches this once and reruns it on each hit. */
+  function scrollToHit(region: HTMLElement) {
     const [shown, target] = [code, line];
     untrack(() => {
-      if (!scroller) return;
-      scroller.scrollTop = shown.scrollTop ?? Math.max(0, (target - 1 - LEAD) * ROW);
-      scrollTop = scroller.scrollTop;
+      region.scrollTop = shown.scrollTop ?? Math.max(0, (target - 1 - LEAD) * ROW);
+      scrollTop = region.scrollTop;
     });
-  });
+  }
 
   $effect(() => {
     code.show(first, last);
   });
 </script>
 
-{#if code.problem !== undefined}
-  <p class="problem" role="alert">{code.problem}</p>
-{:else}
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <div
-    class="code mono"
-    role="region"
-    aria-label="Definition's code"
-    tabindex="0"
-    data-scrolls
-    bind:this={scroller}
-    bind:clientHeight={height}
-    onscroll={(e) => {
-      scrollTop = e.currentTarget.scrollTop;
-      code.scrollTop = scrollTop;
-    }}
-  >
+<!-- The region stays while the file can't be read and says why inside it, so a focus in it stays put and the
+     keys keep going where they went, never to the page under it. -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<div
+  class="code mono"
+  role="region"
+  aria-label="Definition's code"
+  tabindex="0"
+  data-scrolls
+  {@attach scrollToHit}
+  bind:clientHeight={height}
+  onscroll={(e) => {
+    scrollTop = e.currentTarget.scrollTop;
+    code.scrollTop = scrollTop;
+  }}
+>
+  {#if code.problem !== undefined}
+    <p class="problem sans" role="alert">{code.problem}</p>
+  {:else}
     <!-- The rows are placed absolutely, so the spacer is as wide as the widest line read and the gutter. -->
     <div
       class="spacer"
@@ -68,8 +69,8 @@
         <div class={["line", at === line && "hit"]} style:top={`${String((at - 1) * ROW)}px`}><span class="number">{at}</span><span class="text">{text ?? ""}</span></div>
       {/each}
     </div>
-  </div>
-{/if}
+  {/if}
+</div>
 
 <style>
   .problem {

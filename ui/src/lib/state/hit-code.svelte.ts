@@ -1,12 +1,18 @@
 // The code the Definition peek shows (#439): the hit's file at the hit's commit, or from disk for a file
 // outside the Repository. The core reads it a chunk of lines at a time near the rows that show, so a big file
-// such as CPython's `Objects/unicodeobject.c` opens without the window waiting for all of it.
+// such as CPython's `Objects/unicodeobject.c` opens without the window waiting for all of it. Each chunk's
+// spans come apart from its lines, as the diff's do (#455): the lines wait a moment for them, then show plain
+// until the core has parsed the file, and the spans paint them when they come.
 
 import { SvelteMap } from "svelte/reactivity";
-import { commands, type CodeFile, type Hit } from "$lib/data/bindings";
+import { commands, type CodeFile, type DefinitionCode, type Hit, type Span } from "$lib/data/bindings";
 
 /** How many lines the window asks the core for at a time. */
 export const CODE_CHUNK = 200;
+
+/** How long a chunk's lines wait for their spans before they show plain, as `SPANS_WAIT` has the diff's
+ * rows wait. */
+export const CODE_SPANS_WAIT = 50;
 
 /** The file `hit` is in, as the core reads it. */
 export function codeFile(hit: Hit): CodeFile {
@@ -28,6 +34,8 @@ export class HitCode {
    * it scrolled out of sight. Until then the peek scrolls to the hit. */
   scrollTop: number | undefined;
   #chunks = new SvelteMap<number, readonly string[]>();
+  /** The spans of each chunk's lines, which may come after its lines. */
+  #spans = new SvelteMap<number, Span[][]>();
   /** The chunks asked for. Nothing draws from it, and the effect that asks shouldn't rerun on it. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   #asked = new Set<number>();
@@ -48,6 +56,12 @@ export class HitCode {
     return this.#chunks.get(Math.floor(index / CODE_CHUNK))?.[index % CODE_CHUNK];
   }
 
+  /** Line `line`'s spans, counted from 1, once they have come. Until then the line shows plain. */
+  spans(line: number): Span[] | undefined {
+    const index = line - 1;
+    return this.#spans.get(Math.floor(index / CODE_CHUNK))?.[index % CODE_CHUNK];
+  }
+
   /** Asks for the chunks that hold lines `first` to `last`, counted from 1, unless asked before. */
   show(first: number, last: number) {
     const end = this.count === undefined ? last : Math.min(last, this.count);
@@ -62,9 +76,13 @@ export class HitCode {
     }
   }
 
+  /** Asks for a chunk's lines and spans together. The lines show once the spans come, or once they have
+   * waited `CODE_SPANS_WAIT` since the ask, whichever is first. */
   async #read(chunk: number) {
     const start = chunk * CODE_CHUNK + 1;
     const code = { repository: this.#repository, file: this.#file, start, end: start + CODE_CHUNK };
+    const spans = readSpans(code);
+    const waited = new Promise<undefined>((resolve) => setTimeout(resolve, CODE_SPANS_WAIT));
     const read = await commands.definitionCode(code).catch((e: unknown) => ({
       status: "error" as const,
       error: { message: String(e) },
@@ -75,6 +93,8 @@ export class HitCode {
       else this.#asked.delete(chunk);
       return;
     }
+    const early = await Promise.race([spans, waited]);
+    if (early !== undefined) this.#spans.set(chunk, early);
     this.count = read.data.count;
     const widest = Math.max(
       0,
@@ -82,5 +102,15 @@ export class HitCode {
     );
     this.widest = Math.max(this.widest, widest);
     this.#chunks.set(chunk, read.data.lines);
+    if (early !== undefined) return;
+    const late = await spans;
+    if (late !== undefined) this.#spans.set(chunk, late);
   }
+}
+
+/** The spans of the lines `code` names, or nothing if they don't come: the lines then stay plain, and say
+ * why if they fail too. */
+async function readSpans(code: DefinitionCode): Promise<Span[][] | undefined> {
+  const answer = await commands.definitionSpans(code).catch(() => undefined);
+  return answer?.status === "ok" ? answer.data : undefined;
 }

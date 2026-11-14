@@ -1,12 +1,15 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { DefinitionCode, Hit } from "$lib/data/bindings";
-import { CODE_CHUNK, HitCode } from "./hit-code.svelte";
+import { CODE_CHUNK, CODE_SPANS_WAIT, HitCode } from "./hit-code.svelte";
 
 const core = vi.hoisted(() => ({
   definitionCode: vi.fn<(code: DefinitionCode) => Promise<unknown>>(),
+  definitionSpans: vi.fn<(code: DefinitionCode) => Promise<unknown>>(),
 }));
 
-vi.mock("$lib/data/bindings", () => ({ commands: { definitionCode: core.definitionCode } }));
+vi.mock("$lib/data/bindings", () => ({
+  commands: { definitionCode: core.definitionCode, definitionSpans: core.definitionSpans },
+}));
 
 const ok = <T>(data: T) => ({ status: "ok" as const, data });
 
@@ -29,6 +32,69 @@ const atBase: Hit = {
 
 beforeEach(() => {
   core.definitionCode.mockReset();
+  core.definitionSpans.mockReset();
+  core.definitionSpans.mockResolvedValue(ok([]));
+});
+
+const keyword = { start: 0, end: 4, highlight: "keyword" as const };
+
+/** Spans for each line `code` asks for: its first word a keyword. */
+const keywords = (code: DefinitionCode) => ok(Array.from({ length: code.end - code.start }, () => [keyword]));
+
+it("shows the lines with their spans when the spans come in time", async () => {
+  answerFrom(1000);
+  core.definitionSpans.mockImplementation((code) => Promise.resolve(keywords(code)));
+  const code = new HitCode("python/cpython", atBase, 0);
+
+  code.show(447, 464);
+  await vi.waitFor(() => {
+    expect(code.line(450)).toBe("line 450");
+  });
+
+  expect(code.spans(450)).toEqual([keyword]);
+  expect(code.spans(601)).toBeUndefined();
+  const file = { kind: "repository", path: "Objects/unicodeobject.c", commit: "abc" };
+  expect(core.definitionSpans).toHaveBeenCalledWith({
+    repository: "python/cpython",
+    file,
+    start: 2 * CODE_CHUNK + 1,
+    end: 3 * CODE_CHUNK + 1,
+  });
+});
+
+it("shows the lines plain while the core parses the file, and paints them when the spans come", async () => {
+  vi.useFakeTimers();
+  answerFrom(1000);
+  let parsed: (spans: unknown) => void = () => {};
+  core.definitionSpans.mockReturnValue(new Promise((resolve) => (parsed = resolve)));
+  const code = new HitCode("python/cpython", atBase, 0);
+
+  code.show(1, 18);
+  await vi.advanceTimersByTimeAsync(CODE_SPANS_WAIT);
+  const plain = [code.line(1), code.spans(1)];
+  parsed(ok([[keyword]]));
+  await vi.advanceTimersByTimeAsync(0);
+  vi.useRealTimers();
+
+  expect(plain).toEqual(["line 1", undefined]);
+  expect(code.spans(1)).toEqual([keyword]);
+});
+
+it("leaves the lines plain when their spans fail", async () => {
+  answerFrom(10);
+  core.definitionSpans.mockResolvedValue({ status: "error", error: { message: "git failed" } });
+  const failing = new HitCode("python/cpython", atBase, 0);
+  core.definitionSpans.mockRejectedValueOnce(new Error("The window lost the core."));
+  const lost = new HitCode("python/cpython", atBase, 1);
+
+  lost.show(1, 18);
+  failing.show(1, 18);
+  await vi.waitFor(() => {
+    expect([lost.line(1), failing.line(1)]).toEqual(["line 1", "line 1"]);
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  expect([lost.spans(1), failing.spans(1)]).toEqual([undefined, undefined]);
 });
 
 it("reads the chunks that hold the lines that show, at the hit's commit, once each", async () => {

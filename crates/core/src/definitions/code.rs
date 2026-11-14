@@ -1,5 +1,6 @@
-//! The code of a hit's file, which the Definition peek shows a few rows of at a time (#439). A file of the
-//! Repository comes from its Mirror at the hit's commit, and one outside it from disk, if a server named it.
+//! The code of a hit's file, which the Definition peek shows a few rows of at a time (#439), and its spans
+//! (#455). A file of the Repository comes from its Mirror at the hit's commit, and one outside it from disk,
+//! if a server named it.
 
 use std::collections::HashSet;
 use std::fs;
@@ -10,9 +11,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 use serde::Serialize;
 use specta::Type;
 
-use crate::diff;
+use crate::diff::{self, Highlighter, HitFile};
 use crate::error::{Error, ErrorKind};
-use crate::github::CommitSha;
+use crate::highlight::Span;
 
 #[cfg(test)]
 mod tests;
@@ -20,13 +21,11 @@ mod tests;
 /// The most lines one read hands the window.
 const MOST_LINES: u32 = 2000;
 
-/// A file a hit is in, as the window names it to read its code.
+/// Lines of a hit's file, counted from 1, as the window asks for their spans (#455).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum HitFile {
-    /// A file of the Repository at a commit, read from its Mirror.
-    Repository { path: String, commit: CommitSha },
-    /// A file outside the Repository, read from disk.
-    Outside { path: PathBuf },
+pub struct HitLines {
+    pub file: HitFile,
+    pub lines: Range<u32>,
 }
 
 /// Some lines of a hit's file.
@@ -60,22 +59,49 @@ impl HitFiles {
         file: &HitFile,
         lines: Range<u32>,
     ) -> Result<Code, Error> {
+        Ok(some_lines(&self.lines_of(mirror, file)?, lines))
+    }
+
+    /// The spans of lines `lines` of `file`, counted from 1, which `highlighter` reads from the file parsed
+    /// whole, as the diff's rows read theirs. It reads the file as `read` does, and only when `highlighter`
+    /// doesn't keep its tree.
+    pub(super) fn spans(
+        &self,
+        highlighter: &Highlighter,
+        mirror: &Path,
+        wanted: &HitLines,
+    ) -> Result<Vec<Vec<Span>>, Error> {
+        let HitLines { file, lines } = wanted;
+        self.check_named(file)?;
+        // Joined with line feeds, a lone `\r` ends a line for tree-sitter too, so the spans of each line
+        // land on the line `read` gives.
+        let text = || Ok(self.lines_of(mirror, file)?.join("\n"));
+        highlighter.whole_spans(file, at_most(lines.clone()), text)
+    }
+
+    /// Fails for a file outside the Repository that no server has named.
+    fn check_named(&self, file: &HitFile) -> Result<(), Error> {
         if let HitFile::Outside { path } = file
             && !lock(&self.named).contains(path)
         {
             let unnamed = format!("No language server named {}.", path.display());
             return Err(Error::new(ErrorKind::NotFound, &unnamed));
         }
+        Ok(())
+    }
+
+    /// `file`'s lines, from the last file read if it's the same one.
+    fn lines_of(&self, mirror: &Path, file: &HitFile) -> Result<Arc<[String]>, Error> {
+        self.check_named(file)?;
         let last = lock(&self.last).clone();
-        let text = match last {
+        Ok(match last {
             Some((read, text)) if read == *file => text,
             _ => {
                 let text: Arc<[String]> = split(&text_of(mirror, file)?).into();
                 *lock(&self.last) = Some((file.clone(), Arc::clone(&text)));
                 text
             }
-        };
-        Ok(some_lines(&text, lines))
+        })
     }
 }
 
@@ -129,12 +155,17 @@ fn split(text: &str) -> Vec<String> {
 
 /// Lines `lines` of `text`, counted from 1, with how many it has.
 fn some_lines(text: &[String], lines: Range<u32>) -> Code {
-    let first = lines.start.max(1);
-    let end = lines.end.min(first.saturating_add(MOST_LINES));
+    let Range { start: first, end } = at_most(lines);
     let skip = usize::try_from(first - 1).unwrap_or(usize::MAX);
     let take = usize::try_from(end.saturating_sub(first)).unwrap_or(0);
     Code {
         count: u32::try_from(text.len()).unwrap_or(u32::MAX),
         lines: text.iter().skip(skip).take(take).cloned().collect(),
     }
+}
+
+/// The lines of `lines` one read hands the window: from line 1 at the earliest, and `MOST_LINES` at most.
+fn at_most(lines: Range<u32>) -> Range<u32> {
+    let first = lines.start.max(1);
+    first..lines.end.min(first.saturating_add(MOST_LINES))
 }

@@ -4,8 +4,13 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HitCode } from "$lib/state/hit-code.svelte";
 import PeekCode from "./PeekCode.svelte";
 
+const core = vi.hoisted(() => ({
+  definitionCode: vi.fn(() => new Promise(() => {})),
+  definitionSpans: vi.fn(() => new Promise(() => {})),
+}));
+
 vi.mock("$lib/data/bindings", () => ({
-  commands: { definitionCode: () => new Promise(() => {}) },
+  commands: { definitionCode: core.definitionCode, definitionSpans: core.definitionSpans },
 }));
 
 beforeEach(() => {
@@ -44,6 +49,32 @@ it("scrolls to each new hit's line, and back to where the user left a hit's code
   far.scrollTop = 500;
   await shown.rerender({ code: far, line: 900 });
   expect(region.scrollTop).toBe(500);
+});
+
+it("paints each line's spans in the theme's syntax colours once they come", async () => {
+  const ok = <T>(data: T) => Promise.resolve({ status: "ok" as const, data });
+  core.definitionCode.mockReturnValueOnce(ok({ count: 3, lines: ["x = 1", "", "def area(self):"] }));
+  const keyword = { start: 0, end: 3, highlight: "keyword" };
+  const area = { start: 4, end: 8, highlight: "function" };
+  core.definitionSpans.mockReturnValueOnce(ok([[], [], [keyword, area]]));
+  const code = new HitCode("python/cpython", hit, 0);
+  render(PeekCode, { code, line: 3 });
+
+  const hitLine = await vi.waitFor(() => {
+    const line = document.querySelector(".hit .text");
+    expect(line?.querySelector(".hl-function")).not.toBeNull();
+    return line;
+  });
+
+  const painted = [...(hitLine?.querySelectorAll("span") ?? [])].map((span) => [
+    span.classList[0],
+    span.textContent,
+  ]);
+  expect(painted).toEqual([
+    ["hl-keyword", "def"],
+    ["hl-function", "area"],
+  ]);
+  expect(hitLine?.textContent).toBe("def area(self):");
 });
 
 it("keeps the focus on the code when its file turns out unreadable, so the keys stay with it", async () => {

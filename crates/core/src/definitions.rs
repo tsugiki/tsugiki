@@ -30,14 +30,15 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use tsugiki_lsp::{Canceller, Pending, RequestError, Uri};
 
-pub use crate::diff::DiffEnd;
-use crate::diff::DiffFile;
+pub use crate::diff::{DiffEnd, HitFile};
+use crate::diff::{DiffFile, Highlighter};
 use crate::error::{Error, ErrorKind};
 use crate::github::CommitSha;
+use crate::highlight::Span;
 use crate::mirror::{LookupAt, LookupCheckout};
 use crate::repository::RepositoryName;
 use code::HitFiles;
-pub use code::{Code, HitFile};
+pub use code::{Code, HitLines};
 use server::{Hits, IndexMoved, Indexing, LanguageServer, Request, Stopping};
 
 mod clangd;
@@ -257,6 +258,17 @@ impl Definitions {
     /// a hit. It reads on the caller's thread, so it never waits for a lookup.
     pub fn code(&self, mirror: &Path, file: &HitFile, lines: Range<u32>) -> Result<Code, Error> {
         self.files.read(mirror, file, lines)
+    }
+
+    /// The spans of the lines [`Definitions::code`] reads, which `highlighter` reads from the file parsed
+    /// whole (#455). It waits for the parse of a file `highlighter` doesn't keep, but never for a lookup.
+    pub fn spans(
+        &self,
+        highlighter: &Highlighter,
+        mirror: &Path,
+        wanted: &HitLines,
+    ) -> Result<Vec<Vec<Span>>, Error> {
+        self.files.spans(highlighter, mirror, wanted)
     }
 
     /// Notes the PR whose diff at `at` changes `files`, if a server reads one of them, and returns at once.

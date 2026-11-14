@@ -1,11 +1,12 @@
 <!-- The hit's code in the Definition peek (#439): its file with line numbers in the gutter, scrolled so the
      hit's line sits a few rows from the top, and marked. It scrolls inside the peek, and draws only the rows
-     near what shows, asking the core for their lines as they come into view. The lines are plain text until
-     #455 highlights files outside the diff. The file view shows its file the same way (#453), and
-     `data-scrolls` lets the Detail pane's ↑ and ↓ scroll it there. -->
+     near what shows, asking the core for their lines as they come into view, highlighted as the diff's rows
+     are (#455). The file view shows its file the same way (#453), and `data-scrolls` lets the Detail pane's
+     ↑ and ↓ scroll it there. -->
 <script lang="ts">
   import { untrack } from "svelte";
   import type { HitCode } from "$lib/state/hit-code.svelte";
+  import { pieces } from "./spans";
 
   let { code, line }: { code: HitCode; line: number } = $props();
 
@@ -66,7 +67,7 @@
       {#each drawn as at (at)}
         {@const text = code.line(at)}
         <!-- prettier-ignore -->
-        <div class={["line", at === line && "hit"]} style:top={`${String((at - 1) * ROW)}px`}><span class="number">{at}</span><span class="text">{text ?? ""}</span></div>
+        <div class={["line", at === line && "hit"]} style:top={`${String((at - 1) * ROW)}px`}><span class="number">{at}</span><span class="text">{#each pieces(text ?? "", code.spans(at) ?? []) as piece, index (index)}{#if piece.highlight}<span class={`hl-${piece.highlight}`}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</span></div>
       {/each}
     </div>
   {/if}
@@ -116,5 +117,45 @@
     text-align: right;
     color: var(--fg-muted);
     user-select: none;
+  }
+
+  /* The theme's syntax colours, as the diff paints them. The classes come from the spans, which Svelte
+     can't see, so they're global within the code. The file view sits outside the diff's scroller. */
+  .code :global(.hl-keyword) {
+    color: var(--hl-keyword);
+  }
+
+  .code :global(.hl-string) {
+    color: var(--hl-string);
+  }
+
+  .code :global(.hl-comment) {
+    color: var(--hl-comment);
+  }
+
+  .code :global(.hl-constant) {
+    color: var(--hl-constant);
+  }
+
+  .code :global(.hl-function),
+  .code :global(.hl-type) {
+    color: var(--hl-entity);
+  }
+
+  .code :global(.hl-tag) {
+    color: var(--hl-tag);
+  }
+
+  .code :global(.hl-heading) {
+    color: var(--hl-constant);
+    font-weight: 600;
+  }
+
+  .code :global(.hl-strong) {
+    font-weight: 600;
+  }
+
+  .code :global(.hl-emphasis) {
+    font-style: italic;
   }
 </style>

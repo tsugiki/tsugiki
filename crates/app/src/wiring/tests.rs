@@ -1840,6 +1840,7 @@ fn offline_go_to_definition_into_an_unchanged_file_reads_it_from_the_mirror_at_t
     let row = wired.ask("pull_request_row", json!({ "line": line }));
     let file = json!({ "kind": "repository", "path": "eggs.py", "commit": base });
     let code = json!({ "repository": CPYTHON, "file": file, "start": 1, "end": 201 });
+    let spans = wired.ask("definition_spans", json!({ "code": code }));
     let code = wired.ask("definition_code", json!({ "code": code }));
     drop(wired.stop());
     std::fs::remove_dir_all(root).unwrap();
@@ -1850,6 +1851,19 @@ fn offline_go_to_definition_into_an_unchanged_file_reads_it_from_the_mirror_at_t
     assert_eq!(row, Ok(Value::Null));
     let lines = ["x = 1", "", "", "def ham():", "    return 2"];
     assert_eq!(code, Ok(json!({ "count": 5, "lines": lines })));
+    // The file view paints the lines as the diff paints its rows.
+    let span = |start: u32, end: u32, highlight: &str| json!({ "start": start, "end": end, "highlight": highlight });
+    let spans = spans.unwrap();
+    assert_eq!(spans.as_array().map(Vec::len), Some(200));
+    assert_eq!(
+        spans[0],
+        json!([span(2, 3, "keyword"), span(4, 5, "constant")])
+    );
+    let def_ham = json!([span(0, 3, "keyword"), span(4, 7, "function")]);
+    assert_eq!(
+        (&spans[3], &spans[4][0]),
+        (&def_ham, &span(4, 10, "keyword"))
+    );
 }
 
 /// What PR #1 says as GitHub had it at `head`: a Review with a thread on line 15, which the diff shows, one

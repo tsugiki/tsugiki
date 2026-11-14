@@ -24,6 +24,7 @@ const core = vi.hoisted(() => ({
   definitions: vi.fn(),
   cancelDefinitions: vi.fn(() => Promise.resolve()),
   definitionCode: vi.fn<(code: { start: number; end: number }) => Promise<unknown>>(),
+  definitionSpans: vi.fn<(code: { start: number; end: number }) => Promise<unknown>>(),
   pullRequestRow: vi.fn(),
   cloning: vi.fn(),
   mirrorStates: vi.fn(),
@@ -41,6 +42,7 @@ vi.mock("$lib/data/bindings", () => ({
     definitions: core.definitions,
     cancelDefinitions: core.cancelDefinitions,
     definitionCode: core.definitionCode,
+    definitionSpans: core.definitionSpans,
     pullRequestRow: core.pullRequestRow,
     cloning: core.cloning,
     mirrorStates: core.mirrorStates,
@@ -169,6 +171,7 @@ beforeEach(() => {
   core.mirrorsHeld.mockResolvedValue(false);
   core.pullRequestRows.mockResolvedValue(ok(rows));
   core.pullRequestSpans.mockReturnValue(new Promise(() => {}));
+  core.definitionSpans.mockResolvedValue(ok([]));
 });
 
 it("waits for the mirror's clone, and says how far it got", async () => {
@@ -1534,6 +1537,12 @@ it("opens a file the PR doesn't change read-only at the hit's commit, and Back r
     for (let line = code.start; line < Math.min(code.end, 2001); line++) lines.push(`line ${String(line)}`);
     return Promise.resolve(ok({ count: 2000, lines }));
   });
+  // Each line's word `line` is a keyword, as the core highlights the file parsed whole.
+  core.definitionSpans.mockImplementation((code) =>
+    Promise.resolve(
+      ok(Array.from({ length: code.end - code.start }, () => [{ start: 0, end: 4, highlight: "keyword" }])),
+    ),
+  );
   const files = await shown(ready(rows.length));
   await vi.waitFor(() => {
     expect(lines()[2]).toBe("11 Notes");
@@ -1548,6 +1557,7 @@ it("opens a file the PR doesn't change read-only at the hit's commit, and Back r
   await vi.waitFor(() => {
     expect(view.querySelector(".hit")?.textContent).toBe("900line 900");
   });
+  expect(view.querySelector(".hit .hl-keyword")?.textContent).toBe("line");
 
   expect(view.querySelector(".header")?.textContent.replace(/\s+/g, " ").trim()).toBe(
     "← Back to PR #11's diff Objects/unicodeobject.c at fedcba9 · the PR's base of PR #11 Read-only",

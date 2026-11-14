@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::fs;
 
 use tsugiki_test_git::git;
@@ -573,4 +574,145 @@ fn a_diff_with_no_file_tsugiki_highlights_asks_git_for_nothing() {
     assert!(matches!(read.as_slice(), [((0, Side::Head), Read::Plain)]));
     assert!(blobs(Path::new("no-mirror"), &[]).is_empty());
     repo.finish();
+}
+
+/// A file at `commit`, by its path.
+fn at_commit(path: &str, commit: &CommitSha) -> HitFile {
+    HitFile::Repository {
+        path: path.to_owned(),
+        commit: commit.clone(),
+    }
+}
+
+/// `text`, as a file's text whose reads `reads` counts.
+fn counted<'a>(reads: &'a Cell<u32>, text: &str) -> impl FnOnce() -> Result<String, Error> + 'a {
+    let text = text.to_owned();
+    move || {
+        reads.set(reads.get() + 1);
+        Ok(text)
+    }
+}
+
+#[test]
+fn a_file_the_pr_changes_parsed_whole_looks_as_its_rows_do_in_the_diff() {
+    let repo = changes("whole");
+    let highlighter = Highlighter::start();
+    let from = repo.source(7);
+    let name = object_name(&repo.head, "Lib/ast.py").unwrap();
+    let head = blobs(&repo.mirror, &[&name]).remove(0).unwrap();
+    let reads = Cell::new(0);
+
+    let chunk = Chunk {
+        rows: 0..100,
+        collapsed: &[],
+    };
+    let rows = highlighter.spans(&from.diff, &repo.mirror, chunk);
+    let file = at_commit("Lib/ast.py", &repo.head);
+    let whole = highlighter.whole_spans(&file, 4..7, counted(&reads, &head));
+
+    // The file's header and the `@@` line come before line 2, and line 5 shows removed, then added.
+    let diff_lines: Vec<Vec<Span>> = [4, 6, 7].iter().map(|&row| rows[row].clone()).collect();
+    assert_eq!(whole.unwrap(), diff_lines);
+    assert_eq!(reads.get(), 1);
+    repo.finish();
+}
+
+#[test]
+fn a_file_tsugiki_doesn_t_highlight_isn_t_read_and_has_no_spans() {
+    let highlighter = Highlighter::start();
+    let reads = Cell::new(0);
+    let commit = CommitSha::parse(&"a".repeat(40)).unwrap();
+    let readme = at_commit("README", &commit);
+    let nameless = HitFile::Outside {
+        path: PathBuf::from(".."),
+    };
+
+    let spans = highlighter.whole_spans(&readme, 1..3, counted(&reads, "Hi"));
+    let none = highlighter.whole_spans(&nameless, 1..3, counted(&reads, "Hi"));
+
+    assert_eq!((spans, none), (Ok(Vec::new()), Ok(Vec::new())));
+    assert_eq!(reads.get(), 0);
+}
+
+#[test]
+fn the_thread_keeps_the_last_four_files_parsed_whole() {
+    let highlighter = Highlighter::start();
+    let reads = Cell::new(0);
+    let commit = CommitSha::parse(&"a".repeat(40)).unwrap();
+    let files: Vec<HitFile> = (0..=WHOLES)
+        .map(|n| at_commit(&format!("m{n}.py"), &commit))
+        .collect();
+    let spans = |file: &HitFile| highlighter.whole_spans(file, 1..2, counted(&reads, "pass\n"));
+
+    let first: Vec<_> = files.iter().map(spans).collect();
+    let kept = files.iter().skip(1).map(spans).collect::<Vec<_>>();
+    let reads_kept = reads.get();
+    let dropped = spans(&files[0]);
+
+    let pass = Ok(vec![vec![Span {
+        start: 0,
+        end: 4,
+        highlight: crate::highlight::Highlight::Keyword,
+    }]]);
+    assert!(first.iter().chain(&kept).all(|spans| *spans == pass));
+    assert_eq!(reads_kept, 5);
+    assert_eq!((dropped, reads.get()), (pass, 6));
+}
+
+#[test]
+fn two_asks_for_a_file_the_shelf_lacks_parse_it_once() {
+    let (mut worker, shelf) = worker(CAP);
+    let commit = CommitSha::parse(&"a".repeat(40)).unwrap();
+    let file = at_commit("a.py", &commit);
+    let mut ask = || {
+        let (reply, answer) = mpsc::channel();
+        worker.handle(Job::Whole {
+            file: file.clone(),
+            language: Language::of("a.py").unwrap(),
+            text: "pass\n".to_owned(),
+            reply,
+        });
+        answer.recv().unwrap().unwrap()
+    };
+
+    let (first, second) = (ask(), ask());
+
+    assert!(Arc::ptr_eq(&first, &second));
+    assert!(Arc::ptr_eq(&first, &shelf.whole(&file).unwrap()));
+}
+
+#[test]
+fn an_ask_for_a_whole_file_stops_the_parse_ahead() {
+    let repo = changes("whole-held");
+    let diff = repo.source(7).diff;
+    let (reply, _answer) = mpsc::channel();
+    let whole = Job::Whole {
+        file: at_commit("a.py", &repo.head),
+        language: Language::of("a.py").unwrap(),
+        text: String::new(),
+        reply,
+    };
+
+    assert!(held_up(&VecDeque::from([whole]), &diff, AST_HEAD));
+    repo.finish();
+}
+
+#[test]
+fn a_file_whose_text_can_t_be_read_says_why_and_one_with_a_stopped_thread_shows_plain() {
+    let commit = CommitSha::parse(&"a".repeat(40)).unwrap();
+    let file = at_commit("a.py", &commit);
+    let unread = Error::new(crate::error::ErrorKind::NotFound, "gone");
+    let (jobs, incoming) = mpsc::channel();
+    drop(incoming);
+    let stopped = Highlighter {
+        jobs,
+        shelf: shelf().1,
+    };
+    let reads = Cell::new(0);
+
+    let failed = Highlighter::start().whole_spans(&file, 1..2, || Err(unread.clone()));
+    let plain = stopped.whole_spans(&file, 1..2, counted(&reads, "pass\n"));
+
+    assert_eq!(failed, Err(unread));
+    assert_eq!(plain, Ok(Vec::new()));
 }

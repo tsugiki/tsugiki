@@ -10,6 +10,11 @@ Tsugiki parses each version of a file whole, once. For each chunk of rows the di
 language's highlights query over those rows' lines only, so a chunk costs about a millisecond whatever the
 file's length ([ADR 0001](adr/0001-standalone-tauri-gui-with-in-app-review.md)).
 
+The Definition peek and the file view show a file whole, apart from any diff: one of the Repository at a
+commit, read from its **Mirror**, or one outside it on disk. The Highlighter parses it whole the same way,
+with the same languages and colours, keeps the last 4 such files, and reads each chunk's spans from that
+tree ([devel/definitions.md](devel/definitions.md)).
+
 A highlights query names nodes with captures such as `@keyword` or `@function.builtin`. `Paint::shared` in
 `crates/core/src/highlight.rs` maps each capture to one of a few highlights, by the longest leading part of
 its name that has a rule: `@function.builtin` paints as `@function` does. It leaves the rest, such as

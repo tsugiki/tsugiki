@@ -191,6 +191,12 @@ export const commands = {
 	 *  for a lookup, nor for GitHub.
 	 */
 	definitionCode: (code: DefinitionCode) => typedError<Code, Error_Serialize>(__TAURI_INVOKE("definition_code", { code })),
+	/**
+	 *  The spans that highlight the lines `definition_code` reads, from the file parsed whole, which the
+	 *  Definition peek and the file view paint once they come (#455). A file the highlighter doesn't keep waits
+	 *  for its parse, so the window shows the lines first. It never waits for a lookup, nor for GitHub.
+	 */
+	definitionSpans: (code: DefinitionCode) => typedError<Span[][], Error_Serialize>(__TAURI_INVOKE("definition_spans", { code })),
 	/**  Opens an Issue or a PR on GitHub in the system browser. */
 	openOnGithub: (repository: string, item: GitHubItem) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_on_github", { repository, item })),
 	/**

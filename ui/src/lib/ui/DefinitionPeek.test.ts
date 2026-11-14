@@ -9,7 +9,10 @@ import DefinitionPeek from "./DefinitionPeek.svelte";
 type Hit = ConstructorParameters<typeof HitCode>[1];
 
 vi.mock("$lib/data/bindings", () => ({
-  commands: { definitionCode: () => new Promise(() => {}) },
+  commands: {
+    definitionCode: () => new Promise(() => {}),
+    definitionSpans: () => new Promise(() => {}),
+  },
 }));
 
 beforeEach(() => {

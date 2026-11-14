@@ -2,6 +2,8 @@ use std::fs;
 
 use super::*;
 use crate::definitions::testing::Fixture;
+use crate::github::CommitSha;
+use crate::highlight::Highlight;
 use crate::testing::temp_path;
 
 fn fixture(name: &str) -> Fixture {
@@ -133,4 +135,115 @@ fn a_named_file_that_has_gone_from_disk_says_so() {
     let message = read.unwrap_err().message;
     let start = format!("Tsugiki can't read {}: ", path.display());
     assert!(message.starts_with(&start), "{message}");
+}
+
+fn of(file: &HitFile, lines: Range<u32>) -> HitLines {
+    HitLines {
+        file: file.clone(),
+        lines,
+    }
+}
+
+fn span(start: u32, end: u32, highlight: Highlight) -> Span {
+    Span {
+        start,
+        end,
+        highlight,
+    }
+}
+
+#[test]
+fn a_file_at_a_commit_read_from_the_mirror_is_highlighted_line_by_line_as_lsp_counts_lines() {
+    // A lone `\r` ends the first line, as it does for the lines `read` gives.
+    let python = "x = 1\rdef f():\r\n    return 'two'\n";
+    let fixture = Fixture::new("definitions-code-spans", &[("a.py", python)], &[]);
+    let files = HitFiles::default();
+    let highlighter = Highlighter::start();
+    let at_base = at(&fixture.checkout.at.base);
+
+    let spans = files.spans(&highlighter, &fixture.mirror, &of(&at_base, 2..10));
+    let lines = files.read(&fixture.mirror, &at_base, 2..10);
+
+    let def = vec![
+        span(0, 3, Highlight::Keyword),
+        span(4, 5, Highlight::Function),
+    ];
+    let return_two = vec![
+        span(4, 10, Highlight::Keyword),
+        span(11, 16, Highlight::String),
+    ];
+    // The lines past the end have none.
+    let past = vec![Vec::new(); 6];
+    assert_eq!(spans, Ok([vec![def, return_two], past].concat()));
+    assert_eq!(lines, Ok(code(3, &["def f():", "    return 'two'"])));
+}
+
+#[test]
+fn the_highlighter_keeps_a_file_s_tree_so_its_next_chunk_isn_t_read_again() {
+    let fixture = Fixture::new(
+        "definitions-code-kept",
+        &[("a.py", "def f():\n    pass\n"), ("b.py", "x = 1\n")],
+        &[],
+    );
+    let files = HitFiles::default();
+    let highlighter = Highlighter::start();
+    let base = &fixture.checkout.at.base;
+    let b = HitFile::Repository {
+        path: "b.py".to_owned(),
+        commit: base.clone(),
+    };
+
+    let first = files.spans(&highlighter, &fixture.mirror, &of(&at(base), 1..2));
+    // Another file is the last read now, and without the Mirror neither can be read again.
+    drop(files.read(&fixture.mirror, &b, 1..2));
+    fs::remove_dir_all(fixture.mirror.parent().unwrap()).unwrap();
+    let next = files.spans(&highlighter, &fixture.mirror, &of(&at(base), 2..3));
+
+    let def = vec![
+        span(0, 3, Highlight::Keyword),
+        span(4, 5, Highlight::Function),
+    ];
+    assert_eq!(first, Ok(vec![def]));
+    assert_eq!(next, Ok(vec![vec![span(4, 8, Highlight::Keyword)]]));
+}
+
+#[test]
+fn a_file_outside_the_repository_is_highlighted_once_a_server_named_it() {
+    let folder = temp_path("definitions-code-outside-spans");
+    fs::create_dir_all(&folder).unwrap();
+    let path = folder.join("builtins.pyi");
+    fs::write(&path, "def print(): ...\n").unwrap();
+    let files = HitFiles::default();
+    let highlighter = Highlighter::start();
+    let file = HitFile::Outside { path: path.clone() };
+
+    let unnamed = files.spans(&highlighter, &folder, &of(&file, 1..2));
+    files.name(path.clone());
+    let spans = files.spans(&highlighter, &folder, &of(&file, 1..2));
+    fs::remove_dir_all(&folder).unwrap();
+
+    let message = format!("No language server named {}.", path.display());
+    assert_eq!(unnamed, Err(Error::new(ErrorKind::NotFound, &message)));
+    let def = vec![
+        span(0, 3, Highlight::Keyword),
+        span(4, 9, Highlight::Function),
+    ];
+    assert_eq!(spans, Ok(vec![def]));
+}
+
+#[test]
+fn a_file_that_can_t_be_read_has_no_spans_and_says_why() {
+    let fixture = fixture("definitions-code-spans-missing");
+    let commit = fixture.checkout.at.base.clone();
+    let missing = HitFile::Repository {
+        path: "b.py".to_owned(),
+        commit: commit.clone(),
+    };
+
+    let highlighter = Highlighter::start();
+    let spans = HitFiles::default().spans(&highlighter, &fixture.mirror, &of(&missing, 1..2));
+
+    let short = commit.as_str().get(..7).unwrap();
+    let message = format!("Tsugiki's copy of the Repository has no b.py at {short}.");
+    assert_eq!(spans, Err(Error::new(ErrorKind::NotFound, &message)));
 }

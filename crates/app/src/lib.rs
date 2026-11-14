@@ -20,7 +20,7 @@ use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
 use tsugiki_core::build::Build;
 use tsugiki_core::definitions::{
-    Answer, Code, Definitions, DiffEnd, HitFile, Lookup, OnIndex, OnWaiting, Ticket,
+    Answer, Code, Definitions, DiffEnd, HitFile, HitLines, Lookup, OnIndex, OnWaiting, Ticket,
 };
 use tsugiki_core::diff::{DiffOf, DiffRow, Diffs, Found, HeadLine, Highlighter, PrAt};
 use tsugiki_core::error::{Error, ErrorKind};
@@ -761,20 +761,34 @@ pub(crate) struct DefinitionCode {
     end: u32,
 }
 
+impl DefinitionCode {
+    /// The Mirror of its Repository, and its file's lines.
+    fn parse(self, work: &DiffWork) -> Result<(PathBuf, HitLines), Error> {
+        let name = RepositoryName::parse(&self.repository)?;
+        let folders = work.folders.as_ref().map_err(Clone::clone)?;
+        let file = match self.file {
+            CodeFile::Repository { path, commit: sha } => HitFile::Repository {
+                path,
+                commit: commit(&sha)?,
+            },
+            CodeFile::Outside { path } => HitFile::Outside {
+                path: PathBuf::from(path),
+            },
+        };
+        let lines = self.start..self.end;
+        Ok((folders.mirror(&name), HitLines { file, lines }))
+    }
+}
+
 fn read_definition_code(code: DefinitionCode, work: &DiffWork) -> Result<Code, Error> {
-    let name = RepositoryName::parse(&code.repository)?;
-    let folders = work.folders.as_ref().map_err(Clone::clone)?;
-    let file = match code.file {
-        CodeFile::Repository { path, commit: sha } => HitFile::Repository {
-            path,
-            commit: commit(&sha)?,
-        },
-        CodeFile::Outside { path } => HitFile::Outside {
-            path: PathBuf::from(path),
-        },
-    };
-    let mirror = folders.mirror(&name);
-    work.definitions.code(&mirror, &file, code.start..code.end)
+    let (mirror, HitLines { file, lines }) = code.parse(work)?;
+    work.definitions.code(&mirror, &file, lines)
+}
+
+/// The spans of the lines `code` names, as the diff's rows have theirs (#455).
+fn read_definition_spans(code: DefinitionCode, work: &DiffWork) -> Result<Vec<Vec<Span>>, Error> {
+    let (mirror, wanted) = code.parse(work)?;
+    work.definitions.spans(&work.highlighter, &mirror, &wanted)
 }
 
 /// Opens the page of `item` on GitHub with `show`. It leaves Last seen alone: only Mark Seen moves it.
@@ -903,6 +917,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::definitions,
             cancel_definitions,
             slow_commands::definition_code,
+            slow_commands::definition_spans,
             slow_commands::open_on_github,
             slow_commands::open_link
         ])

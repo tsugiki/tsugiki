@@ -119,12 +119,21 @@ pub(super) fn has_built_ins(program: &Path) -> bool {
         .any(|version| version.path().join("include").join("stddef.h").is_file())
 }
 
+/// What the system adds to a bare program's name as it looks for it on `PATH`, in order. A constant, so that
+/// no line of `on_path` runs on one system only, and coverage holds on each.
+const SUFFIXES: &[&str] = if cfg!(windows) { &[".exe", ""] } else { &[""] };
+
 /// Where the program at `program` is: a bare name in the first folder of `path` that holds it, with `.exe`
 /// first on Windows, as the system starts it. Another path, or a name no folder holds, stays as it is.
 fn on_path(program: &Path, path: Option<OsString>) -> PathBuf {
     let bare = program.components().count() == 1;
-    let exe = cfg!(windows).then(|| program.with_extension("exe"));
-    let names: Vec<PathBuf> = exe.into_iter().chain([program.to_owned()]).collect();
+    let names: Vec<PathBuf> = (SUFFIXES.iter())
+        .map(|suffix| {
+            let mut name = program.as_os_str().to_owned();
+            name.push(suffix);
+            PathBuf::from(name)
+        })
+        .collect();
     let folders = path.filter(|_| bare).unwrap_or_default();
     (env::split_paths(&folders))
         .flat_map(|folder| names.iter().map(move |name| folder.join(name)))

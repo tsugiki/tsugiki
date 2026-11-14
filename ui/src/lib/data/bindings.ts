@@ -167,6 +167,12 @@ export const commands = {
 	 *  the window holds only those it shows. It asks GitHub for nothing.
 	 */
 	pullRequestFind: (search: DiffSearch) => typedError<Found, Error_Serialize>(__TAURI_INVOKE("pull_request_find", { search })),
+	/**
+	 *  Where the picked word is defined, which the Definition peek shows (#438). It waits on ty, which reads the
+	 *  Lookup checkout, and on ty's start if it hasn't started, and never on GitHub, so it works offline at any
+	 *  commit the mirror holds.
+	 */
+	definitions: (lookup: DefinitionLookup) => typedError<Answer, Error_Serialize>(__TAURI_INVOKE("definitions", { lookup })),
 	/**  Opens an Issue or a PR on GitHub in the system browser. */
 	openOnGithub: (repository: string, item: GitHubItem) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_on_github", { repository, item })),
 	/**
@@ -203,6 +209,15 @@ export type About = {
 
 /**  Whether the code under a thread has changed since it began. */
 export type Anchor = "current" | "outdated";
+
+/**  What a lookup found. */
+export type Answer = 
+/**  The places ty named, in its order, which may be none. */
+{ state: "found"; hits: Hit[] } | 
+/**  No ty is set up, so Tsugiki can't look up a name in Python. */
+{ state: "not_set_up" } | 
+/**  Tsugiki has no server for the file's language yet. */
+{ state: "no_server" };
 
 /**
  *  The `[appearance]` table: whether the window follows the system to its light or dark side, and the theme
@@ -382,6 +397,25 @@ export type Comment_Serialize = {
 /**  How a Repository's PRs name their Issues and Backports (ADR 0011). `links.rs` reads this. */
 export type Conventions = "cpython" | "github";
 
+/**
+ *  A lookup of where the picked word is defined, as the window asks for it when the user opens the
+ *  Definition peek (#438): the word at `column` of line `line` of `path`, with the PR's files at `side`.
+ */
+export type DefinitionLookup = {
+	repository: string,
+	/**  The merge base the diff on show starts from. */
+	base: string,
+	/**  The commit the diff on show ends at. */
+	head: string,
+	/**  The file's path at `side`: a renamed file's old path at the base. */
+	path: string,
+	side: DiffEnd,
+	/**  The line's number at `side`, from 1. */
+	line: number,
+	/**  Where the word starts in the line, in UTF-16 code units. */
+	column: number,
+};
+
 /**  Rows of a PR's diff, as the window asks for them. */
 export type DiffChunk = {
 	repository: string,
@@ -393,6 +427,9 @@ export type DiffChunk = {
 	start: number,
 	end: number,
 };
+
+/**  The commit a line of the diff is at: the PR's base for a removed line, its head for the rest. */
+export type DiffEnd = "base" | "head";
 
 /**  A file the diff changes, as the Files tab lists it. */
 export type DiffFile = DiffFile_Serialize | DiffFile_Deserialize;
@@ -729,6 +766,17 @@ export type Highlight = "keyword" | "string" | "comment" | "constant" | "functio
 "tag" | 
 /**  A heading in Markdown or reST. */
 "heading" | "strong" | "emphasis";
+
+/**  A place where the name is defined. */
+export type Hit = {
+	place: Place,
+	/**  Its line, from 1. */
+	line: number,
+	/**  Where the definition's name starts in the line, in UTF-16 code units. */
+	column: number,
+	/**  The line's text, as ty read it. */
+	text: string,
+};
 
 /**  What the window opens on. */
 export type Home = Home_Serialize | Home_Deserialize;
@@ -1466,6 +1514,19 @@ export type PaneLayout_Serialize = {
 
 /**  The Sidebar, the Workbench list, or both. */
 export type Panes = "sidebar" | "list" | "both";
+
+/**  Where a hit is. */
+export type Place = 
+/**
+ *  A file of the Repository, at the PR's head for a file the PR changes when the lookup was at the head,
+ *  and at its base for the rest.
+ */
+{ kind: "repository"; path: string; side: DiffEnd; commit: string } | 
+/**
+ *  A file outside the Repository, such as a stub of the standard library that ty keeps, by its path on
+ *  disk.
+ */
+{ kind: "outside"; path: string };
 
 /**  Where Files shows a thread. A file is named by its place among the diff's files. */
 export type Placement = Placement_Serialize | Placement_Deserialize;

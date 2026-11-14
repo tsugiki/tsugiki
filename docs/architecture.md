@@ -55,6 +55,9 @@ flowchart LR
     git --> app
     highlighter --> app
     settings[Settings owner<br>settings.toml, machine.toml] --> app
+    app -->|the PR on screen, lookups| definitions[Language servers thread<br>a ty per Repository]
+    definitions -->|where the Lookup checkout is| mirrors
+    definitions <-->|LSP over its standard streams| ty[ty]
     gh -->|latest release, no token| releases[Release check]
     releases -->|a newer version| app
     app <-->|commands, events| ui[Webview]
@@ -68,6 +71,7 @@ flowchart LR
 | Mirror worker | Every write to the Mirrors: clones, fetches of PR heads, the commits the user's Reviews covered, upkeep, and each Repository's Lookup checkout, which it moves to the PR on screen and tells readers where it is once it stops moving. Between git jobs it reads the per-file patch-ids the Stale review check compares, and hands them to the session to save, with the commits it can't read and why. | `core/src/mirror.rs` |
 | Highlighter | The parsed trees of the open PR's files. | `core/src/diff/highlighter.rs` |
 | Settings owner | `settings.toml` and `machine.toml`. Readers get a `latest` copy. | `core/src/settings.rs` |
+| Language servers | A ty for each Repository whose PR on screen changes a Python file, with that PR's Python files open on it. Each lookup is a message, which waits for the Mirror worker's Lookup checkout and for ty, and never for the window. | `core/src/definitions.rs` |
 | Log | `tsugiki.log` and the tokens to scrub from it. | `core/src/logfile.rs` |
 | Release check | Nothing shared. Asks GitHub Releases for a newer Tsugiki at start-up and every 6 hours, without the token, unless the settings turn it off. | `core/src/releases.rs` |
 
@@ -130,6 +134,7 @@ The big ones, in the order data passes through them:
 | `patch_ids.rs` | Per-file patch-ids, and which files changed between the reviewed commit and the head, for the Stale review check. |
 | `mirror.rs`, `mirror/` | Cloning, fetching PR heads, keeping the commits the user's Reviews covered, reading patch-ids, upkeep, moving the Lookup checkout (`mirror/lookup.rs`). |
 | `diff.rs`, `diff/` | A PR's diff from its Mirror, its per-file patch-ids, NEWS entries, find in the diff, and the Highlighter. |
+| `definitions.rs`, `definitions/` | Where a name is defined, which it asks ty through `tsugiki-lsp`, in the Lookup checkout ([ADR 0020](adr/0020-go-to-definition-asks-a-language-server-which-reads-a-lookup-checkout.md)). |
 | `highlight.rs`, `highlight/` | tree-sitter highlighting, one table row per language ([docs/highlighting.md](highlighting.md)). |
 | `session.rs` | The session thread and the messages it takes. |
 | `status.rs` | App-wide status and the `StatusBoard` that announces it. |

@@ -13,7 +13,7 @@ const MAX_OWNER_LENGTH: usize = 39;
 const MAX_NAME_LENGTH: usize = 100;
 
 /// A Repository's `owner/name`, in the only form that reaches GitHub. It reaches the UI as a plain string.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
 #[serde(try_from = "String", into = "String")]
 #[specta(type = String)]
 pub struct RepositoryName {

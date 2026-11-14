@@ -21,6 +21,7 @@ const core = vi.hoisted(() => ({
   pullRequestSpans: vi.fn(),
   pullRequestLines: vi.fn<(lines: { file: number; start: number; end: number }) => Promise<unknown>>(),
   pullRequestFind: vi.fn(),
+  definitions: vi.fn(),
   cloning: vi.fn(),
   mirrorStates: vi.fn(),
   mirrorsHeld: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock("$lib/data/bindings", () => ({
     pullRequestSpans: core.pullRequestSpans,
     pullRequestLines: core.pullRequestLines,
     pullRequestFind: core.pullRequestFind,
+    definitions: core.definitions,
     cloning: core.cloning,
     mirrorStates: core.mirrorStates,
     mirrorsHeld: core.mirrorsHeld,
@@ -1437,4 +1439,126 @@ it("picks a word side by side on the half it was clicked on, and on the lines a 
   await clickAt(codeOf(expanded, 0), 6);
   expect(files.picked).toMatchObject({ word: "f109", side: "head", line: 109, column: "left" });
   expect(picked()).toEqual([["f109", "109 def f109109 def f109"]]);
+});
+
+const peekBox = () => screen.queryByRole("group", { name: "Definition peek" });
+/** The words of the peek's header, and of the line under it. */
+const peekText = () =>
+  [".header", ".body"].map((part) => peekBox()?.querySelector(part)?.textContent.replace(/\s+/g, " ").trim());
+const rowAt = (text: string) =>
+  [...document.querySelectorAll<HTMLElement>(".row")].find((row) => row.textContent === text);
+
+it("opens the Definition peek under the picked line, names the hit, and pushes the rows after it down", async () => {
+  const hit = (path: string, line: number, text: string) => ({
+    place: { kind: "repository" as const, path, side: "head" as const, commit: "abc" },
+    line,
+    column: 4,
+    text,
+  });
+  core.definitions.mockResolvedValue(
+    ok({
+      state: "found",
+      hits: [hit("Lib/news.py", 12, "def new(text):"), hit("Lib/old.py", 3, "new = make()")],
+    }),
+  );
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[4]).toBe("2+new line");
+  });
+  await clickAt(codeOf(4), 2);
+
+  const looking = files.peekDefinition();
+  await tick();
+  expect(peekText()).toEqual(["new at abc · the PR's head ✕", "Searching for the definition of new…"]);
+  await looking;
+  await tick();
+
+  expect(peekText()).toEqual(["new Lib/news.py:12 at abc · the PR's head 1 of 2 ✕", "def new(text):"]);
+  expect(peekBox()?.style.top).toBe(`${String(5 * 20)}px`);
+  expect(rowAt("▾logo.pngbinary")?.style.top).toBe(`${String(7 * 20)}px`);
+});
+
+it("names a hit outside the Repository by its path on disk", async () => {
+  const place = { kind: "outside" as const, path: "C:/ty/typeshed/stdlib/builtins.pyi" };
+  core.definitions.mockResolvedValue(
+    ok({ state: "found", hits: [{ place, line: 7, column: 4, text: "def print(" }] }),
+  );
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[4]).toBe("2+new line");
+  });
+  await clickAt(codeOf(4), 2);
+
+  await files.peekDefinition();
+  await tick();
+
+  expect(peekText()).toEqual([
+    "new C:/ty/typeshed/stdlib/builtins.pyi:7 outside the Repository 1 of 1 ✕",
+    "def print(",
+  ]);
+});
+
+it("says how to set ty up, and when no server knows the file's language", async () => {
+  core.definitions.mockResolvedValueOnce(ok({ state: "not_set_up" }));
+  core.definitions.mockResolvedValueOnce(ok({ state: "no_server" }));
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[4]).toBe("2+new line");
+  });
+  await clickAt(codeOf(4), 2);
+
+  await files.peekDefinition();
+  await tick();
+  const notSetUp = peekText();
+  await files.peekDefinition();
+  await tick();
+
+  expect(notSetUp).toEqual(["new at abc · the PR's head ✕", "Set up ty to go to definitions in Python"]);
+  expect(peekText()).toEqual([
+    "new at abc · the PR's head ✕",
+    "Tsugiki can't go to definitions in this file's language yet",
+  ]);
+});
+
+it("says when a lookup found no definition, at the base for a removed line, or why it failed", async () => {
+  core.definitions.mockResolvedValueOnce(ok({ state: "found", hits: [] }));
+  core.definitions.mockResolvedValueOnce({
+    status: "error",
+    error: { kind: "internal", message: "ty couldn't answer: the server ended before it answered" },
+  });
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[4]).toBe("2+new line");
+  });
+
+  await clickAt(codeOf(3), 2);
+  await files.peekDefinition();
+  await tick();
+  expect(peekText()).toEqual(["old at base · the PR's base ✕", "No definition of old"]);
+  await clickAt(codeOf(4), 2);
+  await files.peekDefinition();
+  await tick();
+  expect(peekText()).toEqual([
+    "new at abc · the PR's head ✕",
+    "ty couldn't answer: the server ended before it answered",
+  ]);
+});
+
+it("closes the Definition peek with its ✕, and gives the diff the focus", async () => {
+  core.definitions.mockResolvedValue(ok({ state: "found", hits: [] }));
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[4]).toBe("2+new line");
+  });
+  await clickAt(codeOf(4), 2);
+  await files.peekDefinition();
+  await tick();
+  const close = peekBox()?.querySelector("button") as HTMLButtonElement;
+  close.focus();
+
+  await fireEvent.click(close);
+
+  expect(peekBox()).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("region", { name: "Diff" }));
+  expect(rowAt("▾logo.pngbinary")?.style.top).toBe(`${String(5 * 20)}px`);
 });

@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_specta::Event;
+use tsugiki_core::definitions::{self, Definitions};
 use tsugiki_core::diff::{Diffs, Highlighter};
 use tsugiki_core::error::Error;
 use tsugiki_core::folders::Folders;
@@ -47,17 +48,21 @@ pub(crate) struct Outside {
 pub(crate) struct Core {
     pub(crate) session: Session,
     mirrors: Mirrors,
+    definitions: Definitions,
     _releases: Option<ReleaseCheck>,
 }
 
 impl Core {
-    /// Stops both threads at once, and gives them `patience` between them to finish.
+    /// Stops the session, the mirrors and the language servers, and gives them `patience` between them to
+    /// finish.
     pub(crate) fn stop(&self, patience: Duration) {
         let deadline = Instant::now() + patience;
         self.mirrors.begin_stopping();
         self.session.stop(patience);
         self.mirrors
             .wait_for_end(deadline.saturating_duration_since(Instant::now()));
+        self.definitions
+            .stop(deadline.saturating_duration_since(Instant::now()));
     }
 }
 
@@ -141,12 +146,18 @@ pub(crate) fn connect_core<R: Runtime>(
     };
     let diff_folders = folders.clone();
     let session = Session::start(board, folders, outside.github, intervals);
+    let (checkouts, view) = (mirrors.requests(), settings.reader());
+    let definitions = Definitions::start(definitions::Sources {
+        checkout: Box::new(move |repository| checkouts.lookup_checkout(repository.clone())),
+        ty: Box::new(move || view.get().language_servers.ty),
+    });
     let diffs = DiffWork {
         folders: diff_folders,
         reader: session.reader(),
         diffs: Diffs::default(),
         mirrors: mirrors.requests(),
         highlighter: Highlighter::start(),
+        definitions: definitions.clone(),
     };
     assert!(app.manage(diffs), "only this manages the diffs");
     let requests = session.requests();
@@ -179,6 +190,7 @@ pub(crate) fn connect_core<R: Runtime>(
     Core {
         session,
         mirrors,
+        definitions,
         _releases: releases,
     }
 }

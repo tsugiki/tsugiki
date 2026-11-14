@@ -19,6 +19,7 @@ pub use startup::run;
 use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
 use tsugiki_core::build::Build;
+use tsugiki_core::definitions::{Answer, Definitions, DiffEnd, Lookup};
 use tsugiki_core::diff::{DiffOf, DiffRow, Diffs, Found, HeadLine, Highlighter, PrAt};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::folders::Folders;
@@ -27,7 +28,7 @@ use tsugiki_core::highlight::Span;
 use tsugiki_core::latest::LatestReader;
 use tsugiki_core::measurement::Measurement;
 use tsugiki_core::mirror::{
-    CloneRefusal, Cloning, MirrorProblem, MirrorRequests, MirrorSource, MirrorSources,
+    CloneRefusal, Cloning, LookupAt, MirrorProblem, MirrorRequests, MirrorSource, MirrorSources,
     RepositoryMirror, Unfetched,
 };
 use tsugiki_core::misses::Miss;
@@ -486,13 +487,16 @@ fn read_pull_request(
 }
 
 /// What the Files tab reads besides the database: where the mirrors are, the diff on show, the mirrors'
-/// worker, which fetches a head a mirror lacks, and the highlighter, which parses the files.
+/// worker, which fetches a head a mirror lacks, the highlighter, which parses the files, and the language
+/// servers.
 pub(crate) struct DiffWork {
     pub(crate) folders: Result<Folders, Error>,
     pub(crate) reader: StoreReader,
     pub(crate) diffs: Diffs,
     pub(crate) mirrors: MirrorRequests,
     pub(crate) highlighter: Highlighter,
+    /// The language servers' thread, which the Definition peek asks.
+    pub(crate) definitions: Definitions,
 }
 
 impl DiffWork {
@@ -610,7 +614,19 @@ fn read_pull_request_files(
     work: &DiffWork,
 ) -> Result<Option<PrFiles>, Error> {
     let name = RepositoryName::parse(repository)?;
-    PrFiles::read(&work.sources()?, &name, number)
+    let read = PrFiles::read(&work.sources()?, &name, number)?;
+    // The diff on show is the PR on screen, whose Python files ty opens.
+    if let Some(PrFiles::Ready {
+        head, base, files, ..
+    }) = &read
+    {
+        let at = LookupAt {
+            base: base.clone(),
+            head: head.clone(),
+        };
+        work.definitions.opened(name, at, files);
+    }
+    Ok(read)
 }
 
 fn read_pull_request_rows(chunk: DiffChunk, work: &DiffWork) -> Result<Vec<DiffRow>, Error> {
@@ -635,6 +651,39 @@ fn read_pull_request_spans(
 fn read_pull_request_lines(lines: GapLines, work: &DiffWork) -> Result<Vec<HeadLine>, Error> {
     let (of, file, lines) = lines.parse()?;
     PrFiles::lines(&work.sources()?, &of, file, lines)
+}
+
+/// A lookup of where the picked word is defined, as the window asks for it when the user opens the
+/// Definition peek (#438): the word at `column` of line `line` of `path`, with the PR's files at `side`.
+#[derive(Debug, Clone, Deserialize, Type)]
+pub(crate) struct DefinitionLookup {
+    repository: String,
+    /// The merge base the diff on show starts from.
+    base: String,
+    /// The commit the diff on show ends at.
+    head: String,
+    /// The file's path at `side`: a renamed file's old path at the base.
+    path: String,
+    side: DiffEnd,
+    /// The line's number at `side`, from 1.
+    line: u32,
+    /// Where the word starts in the line, in UTF-16 code units.
+    column: u32,
+}
+
+fn look_up_definition(lookup: DefinitionLookup, work: &DiffWork) -> Result<Answer, Error> {
+    let at = LookupAt {
+        base: commit(&lookup.base)?,
+        head: commit(&lookup.head)?,
+    };
+    work.definitions.look_up(Lookup {
+        repository: RepositoryName::parse(&lookup.repository)?,
+        at,
+        path: lookup.path,
+        side: lookup.side,
+        line: lookup.line,
+        column: lookup.column,
+    })
 }
 
 /// Opens the page of `item` on GitHub with `show`. It leaves Last seen alone: only Mark Seen moves it.
@@ -759,6 +808,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::pull_request_spans,
             slow_commands::pull_request_lines,
             slow_commands::pull_request_find,
+            slow_commands::definitions,
             slow_commands::open_on_github,
             slow_commands::open_link
         ])

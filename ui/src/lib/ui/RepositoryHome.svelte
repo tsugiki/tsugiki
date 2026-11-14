@@ -572,8 +572,12 @@
     ) {
       e.preventDefault();
       open(workbench.underCursor);
+    } else if (key === "escape" && files?.peek) {
+      // Escape closes the Definition peek first, then the search, as in VS Code. The search box keeps its own
+      // Escape, which closes the search.
+      e.preventDefault();
+      files.closePeek();
     } else if (key === "escape" && files?.searching) {
-      // Escape closes the search first, wherever the focus is, as in VS Code.
       e.preventDefault();
       files.closeSearch();
     } else if (key === "escape" && detail instanceof PrViewState && detail.issue !== undefined) {
@@ -592,6 +596,10 @@
     } else if ((key === "f7" || key === "shift+f7") && files) {
       e.preventDefault();
       files.nextChange(key === "f7" ? 1 : -1);
+    } else if (key === "alt+f12" && files) {
+      // A held key would ask ty again and again.
+      e.preventDefault();
+      if (!e.repeat) void files.peekDefinition();
     } else if (key === "alt+arrowleft" || key === "alt+arrowright") {
       e.preventDefault();
       goThrough(key === "alt+arrowleft" ? -1 : 1);

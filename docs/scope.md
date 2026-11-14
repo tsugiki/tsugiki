@@ -102,6 +102,9 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
   open them all. The diff stays the whole PR.
 - Threads in place, **Outdated threads**, folded resolved and hidden comments, and each Review as one block
   in the Conversation tab.
+- A **Definition peek** under the line of the word the user picked, which pushes the rows after it down
+  and names where ty says the word is defined in Python, at the PR's head or at its base for a removed
+  line. The user supplies ty, and its path is in `machine.toml` until Settings can pick it.
 
 ### Comments ([comments.md](devel/comments.md))
 
@@ -129,6 +132,7 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 - Every action from the keyboard, with default keys, and remapping.
 - The command palette, quick open, and the list of the current view's keys.
 - `Ctrl+K` chords, such as `Ctrl+K T` for the theme picker and `Ctrl+K R` to reload themes.
+- `Alt+F12`, which opens the Definition peek on the picked word, and Esc, which closes it.
 - Tsugiki's keys over the webview's browser shortcuts.
 
 ## Not in Tsugiki

@@ -305,6 +305,15 @@ pub struct SettingsView {
     pub mirror_sources: MirrorSources,
     /// The folder of the user's theme files, beside the settings file in use (#519).
     pub themes_folder: PathBuf,
+    pub language_servers: LanguageServers,
+}
+
+/// Where the language servers the user supplies are on this machine (ADR 0020), each from its
+/// `[language_servers.NAME] path` in `machine.toml`. A relative path starts at `machine.toml`'s folder.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LanguageServers {
+    /// ty, which Go to definition asks in Python.
+    pub ty: Option<PathBuf>,
 }
 
 /// Where the token comes from. A personal access token joins this with the Account page (ADR 0004).
@@ -485,6 +494,22 @@ struct MachineFile {
     panes: PaneLayout,
     #[serde(deserialize_with = "sources_or_skip")]
     mirrors: MirrorSources,
+    #[serde(deserialize_with = "or_default")]
+    language_servers: ServersFile,
+}
+
+/// `machine.toml`'s `[language_servers]`: a table for each server, which holds its `path`. A server whose
+/// table Tsugiki can't read counts as not set up.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+struct ServersFile {
+    #[serde(deserialize_with = "or_default")]
+    ty: Option<ServerFile>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ServerFile {
+    path: PathBuf,
 }
 
 /// What `machine.toml` holds, as far as this file needs it.
@@ -499,6 +524,8 @@ struct Machine {
     recent: Vec<RepositoryName>,
     panes: PaneLayout,
     mirrors: MirrorSources,
+    /// Each language server's path as the file gives it, which may be relative.
+    servers: ServersFile,
 }
 
 impl From<MachineFile> for Machine {
@@ -510,6 +537,7 @@ impl From<MachineFile> for Machine {
                 .unwrap_or_else(|| file.last_repository.into_iter().collect()),
             panes: file.panes,
             mirrors: file.mirrors,
+            servers: file.language_servers,
         }
     }
 }
@@ -554,6 +582,11 @@ impl SettingsFiles {
                 &self.folders,
                 self.machine.as_ref().unwrap_or(&Machine::default()),
             )),
+            language_servers: LanguageServers {
+                ty: (self.machine.as_ref())
+                    .and_then(|machine| machine.servers.ty.as_ref())
+                    .map(|ty| self.folders.data.join(&ty.path)),
+            },
         }
     }
 
@@ -894,6 +927,11 @@ impl SettingsOwner {
     /// What the settings said after the last change saved. This never waits on a file.
     pub fn view(&self) -> SettingsView {
         self.view.get()
+    }
+
+    /// A copy of what the settings say, for a thread that reads them later.
+    pub fn reader(&self) -> LatestReader<SettingsView> {
+        self.view.clone()
     }
 
     /// Adds `name` to the settings, and answers with what they say now.

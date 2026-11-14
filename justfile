@@ -99,9 +99,13 @@ test: vitest cargo-test stale-bindings
 vitest:
     npm run vitest -- --maxWorkers=2
 
-# Run the Rust tests
+# Run the Rust tests, after fetching the ty they start
 cargo-test:
     npm run cargo-test
+
+# Fetch the ty that the Rust tests start into target/tools, unless it is there
+fetch-ty:
+    npm run fetch-ty
 
 # Check that the generated bindings match the Rust code
 stale-bindings:

@@ -45,12 +45,14 @@ import {
   DiffLayout,
   type DiffView,
   type HiddenLines,
+  type LaidThread,
   type Lines,
   type Shown,
   type ThreadAnchor,
 } from "./diff-layout";
 import { FilePages, samePage, type FilesMode, type Page } from "./file-pages";
 import { hud, type Jump, type JumpTimer } from "./hud.svelte";
+import { PEEK_ID, PEEK_PLACES, withPeek, type Peek } from "./peek";
 import { wordAt, type Column, type Pick, type Picked, type PickedLine, type Side } from "./pick";
 
 export type PrFiles = PrFiles_Serialize;
@@ -60,6 +62,11 @@ export type NewsEntry = NewsEntry_Serialize;
 export type DiffThread = DiffThread_Serialize;
 /** A diff the tab shows, from its merge base to its head. */
 type Ready = Extract<PrFiles, { state: "ready" }>;
+/** What takes places under a line of the diff, as the layout lays it: a review thread, with its place among
+ * the threads, or the Definition peek. */
+export type LaidBlock = LaidThread & {
+  block: { kind: "thread"; thread: DiffThread; index: number } | { kind: "peek"; peek: Peek };
+};
 export type {
   Cloning,
   CodeRow,
@@ -154,18 +161,22 @@ export class PrFilesState {
     const view = this.view;
     const ready = view?.state === "ready";
     const files = ready ? view.files : [];
+    const threads: LaidBlock[] = this.threads.map((thread, index) => ({
+      at: anchor(thread, files),
+      places: this.#places(thread, index),
+      id: thread.id,
+      block: { kind: "thread", thread, index },
+    }));
+    const peek = this.#peek;
     return new DiffLayout(
       ready ? view.rows : 0,
       files,
       (file) => this.collapsed(file),
       { gap: (file) => this.#held.get(file) ?? [], rest: (file, rest) => this.#after(file, rest) },
       this.#choice.view,
-      this.threads.map((thread, at) => ({
-        at: anchor(thread, files),
-        places: this.#places(thread, at),
-        id: thread.id,
-        thread,
-      })),
+      peek === undefined
+        ? threads
+        : withPeek(threads, { at: peek.at, places: PEEK_PLACES, id: PEEK_ID, block: { kind: "peek", peek } }),
       this.#diff(view) ?? "",
       this.shown,
     );
@@ -254,6 +265,10 @@ export class PrFilesState {
   #lastSearch = 0;
   /** The word the user picked in the diff `view` shows. */
   #pick = $state.raw<Pick>();
+  /** The Definition peek, while it shows. */
+  #peek = $state.raw<Peek>();
+  /** How many lookups have started, so only the newest one's answer shows. */
+  #lookups = 0;
   /** The chunks asked for. Nothing draws from it, and the effect that asks shouldn't rerun on it. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   #asked = new Set<number>();
@@ -398,8 +413,10 @@ export class PrFilesState {
       this.#found = undefined;
       this.#at = undefined;
       this.#matchRow = undefined;
-      // So does the pick.
+      // So do the pick and the peek under its line.
       this.#pick = undefined;
+      this.#peek = undefined;
+      this.#lookups += 1;
     }
     // The threads the tab showed with the same diff, whose lines it has opened.
     const before = anew ? [] : this.threads;
@@ -842,6 +859,57 @@ export class PrFilesState {
 
   dropPick() {
     this.#pick = undefined;
+  }
+
+  /** The Definition peek, while it shows. */
+  get peek(): Peek | undefined {
+    return this.#peek;
+  }
+
+  /** Opens the Definition peek under the picked word's line, and asks ty where the word is defined, with the
+   * PR's files at the line's commit: the diff's base for a removed line, and its head for the rest, even
+   * while the PR's newer head is fetched. The peek shows at once, and ty answers in the core while the
+   * window goes on. A lookup that answers after a newer one started, or after the peek closed, changes
+   * nothing. */
+  async peekDefinition() {
+    const pick = this.#pick;
+    const view = this.view;
+    const ready = view?.state === "ready" && view;
+    const file = ready && pick && ready.files[pick.file];
+    if (pick === undefined || view?.state !== "ready" || !file) return;
+    this.#lookups += 1;
+    const lookup = this.#lookups;
+    const commit = pick.side === "base" ? view.base : view.head;
+    const peek = { at: pick.at, symbol: pick.word, side: pick.side, commit };
+    this.#peek = { ...peek, lookup: { state: "looking" } };
+    const lookedUp = {
+      repository: this.#repository,
+      base: view.base,
+      head: view.head,
+      path: pick.side === "base" ? (file.old_path ?? file.path) : file.path,
+      side: pick.side,
+      line: pick.line,
+      column: pick.start,
+    };
+    const answer = await commands.definitions(lookedUp).catch((e: unknown) => ({
+      status: "error" as const,
+      error: { message: String(e) },
+    }));
+    if (lookup !== this.#lookups) return;
+    this.#peek = {
+      ...peek,
+      lookup:
+        answer.status === "ok"
+          ? { state: "answered", answer: answer.data }
+          : { state: "failed", problem: answer.error.message },
+    };
+  }
+
+  /** Closes the Definition peek, and hands the diff its focus back. */
+  closePeek() {
+    this.#peek = undefined;
+    this.#lookups += 1;
+    this.diffWantsFocus = true;
   }
 
   /** The pick's place in the line `at` shows in `column`, if the pick is on that line. A pick made unified

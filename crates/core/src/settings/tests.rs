@@ -1521,6 +1521,28 @@ fn the_owner_saves_the_panes_layout_and_shows_it_in_the_view() {
 }
 
 #[test]
+fn machine_toml_says_where_ty_is_from_its_own_folder() {
+    let ty = |text: &str| {
+        let (folders, root) = temp_folders("language-servers");
+        fs::write(folders.machine_file(), text).unwrap();
+        let files = SettingsFiles::load(folders.clone());
+        fs::remove_dir_all(root).unwrap();
+        assert_eq!(files.loaded().problems, Vec::<String>::new());
+        let ty = files.view().language_servers.ty;
+        ty.map(|path| path.strip_prefix(&folders.data).unwrap().to_path_buf())
+    };
+
+    assert_eq!(
+        ty("[language_servers.ty]\npath = 'tools/ty.exe'\n"),
+        Some(PathBuf::from("tools/ty.exe"))
+    );
+    assert_eq!(ty("[panes]\nsidebar = 240\n"), None);
+    assert_eq!(ty("[language_servers.ty]\nwhere = 'ty.exe'\n"), None);
+    assert_eq!(ty("[language_servers]\nty = 3\n"), None);
+    assert_eq!(ty("language_servers = 'ty'\n"), None);
+}
+
+#[test]
 fn machine_toml_says_where_each_mirror_gets_its_objects_and_skips_what_it_cant_read() {
     let (folders, root) = temp_folders("mirror-sources");
     let mine = r#"[mirrors]

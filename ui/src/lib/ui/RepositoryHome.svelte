@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick } from "svelte";
   import { openOnGitHub, type GitHubItem } from "$lib/state/browser";
+  import { lineOf, samePlace, type FileView, type HistoryPlace } from "$lib/state/file-view";
   import { hud } from "$lib/state/hud.svelte";
   import { IssueViewState } from "$lib/state/issue-view.svelte";
   import {
@@ -91,11 +92,11 @@
 
   // Another Repository has its own Workbench, so a new name starts a new state and stops the last one.
   const workbench = $derived(new WorkbenchState(name));
-  /** The Issues and PRs the Detail pane has shown, which Alt+← and Alt+→ go back and forward through. Each
-   * Repository has its own. */
+  /** The Issues, PRs and file views the Detail pane has shown, which Alt+← and Alt+→ go back and forward
+   * through. Each Repository has its own. */
   const visits = $derived.by(() => {
     void name;
-    return new Visits<Stop>(sameStop);
+    return new Visits<HistoryPlace>(samePlace);
   });
   $effect(() => {
     // By the time this cleans up, `workbench` is already the next Repository's.
@@ -149,13 +150,34 @@
     const title = titles.get(number) ?? workbench.titleOf(number);
     return title === undefined ? `#${String(number)}` : headline({ number, title });
   };
+  /** A place's name in the history's lists: its item's headline, after the path for a file view. */
+  const placeName = (place: HistoryPlace) =>
+    place.kind === "file"
+      ? `${place.view.place.path} · ${headlineOf(place.line.number)}`
+      : headlineOf(place.number);
   /** How many items back the history's lists go, newest first. */
   const RECENT = 12;
 
-  /** Goes `steps` items through the history, back for a negative number, as Alt+← and Alt+→ do. */
+  /** Goes `steps` places through the history, back for a negative number, as Alt+← and Alt+→ do. */
   function goThrough(steps: number) {
     const place = visits.go(steps);
     if (place) open(place, "through");
+  }
+
+  /** What hears of each file view the user opens over PR `line`'s Files tab, or closes with Back or Esc,
+   * and records it in this Repository's history (#456): an opened view is a place of its own, and closing
+   * it goes back to the PR's line. */
+  function fileViewMoved(line: Stop) {
+    const history = visits;
+    return (view: FileView | undefined) => {
+      history.visit(view ? { kind: "file", line, view } : line);
+    };
+  }
+
+  /** Shows `view` over `pr`'s Files tab, or that PR with none, where it was scrolled. */
+  function showFileView(pr: PrViewState, view: FileView | undefined) {
+    if (view) pr.tab = "files";
+    pr.files.showFileView(view);
   }
 
   /** The mouse's back and forward buttons go through the history, unless a dialog takes the keys. WebView2
@@ -173,13 +195,20 @@
    * visits to it, shows its view as it was and counts as no new opening. Both move the focus with the
    * cursor, so the row the user left doesn't look selected too, and Enter doesn't open it again. A pick
    * from the history's list can land on the item on show, which then only takes the cursor.
+   *
+   * The history can go through to a file view too (#456): it shows its PR, on the Files tab, with the view
+   * over it, which takes the focus, and the cursor goes to the PR's row. Any other place shows its PR with no
+   * file view, and so does a click on the row of the PR on show, which the history records as the PR's line.
    */
-  function open(stop: Stop, how: "open" | "back" | "through" = "open") {
-    if (how !== "through") visits.visit(stop);
+  function open(place: HistoryPlace, how: "open" | "back" | "through" = "open") {
+    const stop = lineOf(place);
+    const fileView = place.kind === "file" ? place.view : undefined;
+    if (how !== "through") visits.visit(place);
     workbench.moveTo(stop);
-    if (how !== "open") focusCursor();
+    if (how !== "open" && fileView === undefined) focusCursor();
     if (stop.kind === "pull_request" && detail instanceof PrViewState && sameStop(detail.line, stop)) {
       if (how !== "through") detail.switchTab();
+      showFileView(detail, fileView);
       return;
     }
     if (stop.kind === "issue" && kept?.number === stop.number) {
@@ -207,9 +236,10 @@
     const next =
       stop.kind === "issue"
         ? new IssueViewState(name, stop.number)
-        : new PrViewState(name, stop.number, stop.issue, panes, diffView, diffFiles);
+        : new PrViewState(name, stop.number, stop.issue, panes, diffView, diffFiles, fileViewMoved(stop));
     swap(next);
     void next.load();
+    if (next instanceof PrViewState) showFileView(next, fileView);
   }
 
   /** Puts `next` in the Detail pane. The Issue view a PR in its tree came from stays, hidden, while that PR
@@ -353,8 +383,13 @@
   /** The Files tab of the PR on show, while it shows its diff. The file view covers the diff, so the diff's
    * keys and commands wait until Back (#453). */
   function shownFiles(): PrFilesState | undefined {
-    const files = detail instanceof PrViewState && detail.tab === "files" ? detail.files : undefined;
+    const files = filesTab();
     return files?.fileView === undefined ? files : undefined;
+  }
+
+  /** The Files tab of the PR on show, while that tab shows, with or without the file view over it. */
+  function filesTab(): PrFilesState | undefined {
+    return detail instanceof PrViewState && detail.tab === "files" ? detail.files : undefined;
   }
 
   /** The palette's commands for the Files tab on show: the one that switches it to one file at a time, or
@@ -533,6 +568,7 @@
     if (!keysActive) return;
     const key = keyName(e, currentOs());
     const files = shownFiles();
+    const tab = filesTab();
     if (key === "ctrl+b") {
       // A held key would flicker the Sidebar and save the file each time.
       if (!e.repeat) void toggleSidebarByKey();
@@ -584,6 +620,10 @@
     } else if (key === "escape" && files?.searching) {
       e.preventDefault();
       files.closeSearch();
+    } else if (key === "escape" && tab?.fileView) {
+      // The file view goes back to the diff under it, and the next Escape goes on to the Issue (#456).
+      e.preventDefault();
+      tab.closeFileView();
     } else if (key === "escape" && detail instanceof PrViewState && detail.issue !== undefined) {
       // A PR opened from a row of its own has nothing under it, so it stays on show.
       e.preventDefault();
@@ -761,8 +801,8 @@
 <!-- The bar atop the Detail pane, over item `shown`. -->
 {#snippet history(shown: number)}
   <HistoryBar
-    back={visits.behind(RECENT).map((stop) => headlineOf(stop.number))}
-    forward={visits.ahead(RECENT).map((stop) => headlineOf(stop.number))}
+    back={visits.behind(RECENT).map(placeName)}
+    forward={visits.ahead(RECENT).map(placeName)}
     current={headlineOf(shown)}
     ongo={goThrough}
   />

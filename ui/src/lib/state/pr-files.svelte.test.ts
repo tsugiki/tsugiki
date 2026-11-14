@@ -3096,6 +3096,37 @@ it("closes the file view and hands the diff its focus back, and keeps it while a
   expect(files.diffWantsFocus).toBe(true);
 });
 
+it("tells the history of each file view the user opens or closes, and nothing the history shows", async () => {
+  core.definitions.mockResolvedValue(hitsFound(hitAt("Lib/shapes.py", "base", 3)));
+  const moved = vi.fn();
+  core.pullRequestRows.mockResolvedValue(ok(picking));
+  core.pullRequestFiles.mockResolvedValue(ok(ready("abc", picking.length, [file("a.py", 0)])));
+  const files = new PrFilesState("python/cpython", 11, new PanesState(), timer(), undefined, "all", moved);
+  await files.load();
+  files.need(0, picking.length - 1);
+  await vi.waitFor(() => {
+    expect(files.row(4)).toBeDefined();
+  });
+  files.pickWord({ kind: "row", row: 3 }, null, 13, false);
+  await files.goToDefinition();
+  const opened = files.fileView;
+
+  files.closeFileView();
+  files.showFileView(opened);
+  files.showFileView(undefined);
+
+  expect(opened).toBeDefined();
+  expect(moved.mock.calls).toEqual([[opened], [undefined]]);
+});
+
+it("hands no focus to a diff still on its way when the file view closes over it", async () => {
+  const files = await loaded();
+
+  files.closeFileView();
+
+  expect(files.diffWantsFocus).toBe(false);
+});
+
 it("goes nowhere once a newer lookup started, or the peek closed, while it found the row", async () => {
   core.definitions.mockResolvedValue(hitsFound(hitAt("a.py", "head", 9)));
   let row: (row: unknown) => void = () => {};

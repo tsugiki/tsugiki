@@ -332,6 +332,8 @@ export class PrFilesState {
   #peek = $state.raw<Peek>();
   /** The file view over the tab, while it shows (#453). */
   #fileView = $state.raw<FileView>();
+  /** Tells the Detail pane's history that the user opened a file view, or closed it (#456). */
+  readonly #fileViewMoved: (view: FileView | undefined) => void;
   /** The ticket of the newest lookup, so only its answer shows. Closing the peek takes a new one, which no
    * lookup answers to. */
   #lookups = 0;
@@ -351,7 +353,8 @@ export class PrFilesState {
   #stopped = false;
 
   /** `panes` is the layout of the panes the Repository's page read, which the peek's height is saved in, so
-   * a drag never saves the default widths over the user's. */
+   * a drag never saves the default widths over the user's. `fileViewMoved` hears of each file view the user
+   * opens or closes, for the Detail pane's history. */
   constructor(
     repository: string,
     number: number,
@@ -359,6 +362,7 @@ export class PrFilesState {
     jumps: JumpTimer = hud,
     choice: DiffViewChoice = new DiffViewChoice(),
     mode: FilesMode = "all",
+    fileViewMoved: (view: FileView | undefined) => void = () => {},
   ) {
     this.#repository = repository;
     this.#number = number;
@@ -366,6 +370,7 @@ export class PrFilesState {
     this.#jumps = jumps;
     this.#choice = choice;
     this.mode = mode;
+    this.#fileViewMoved = fileViewMoved;
   }
 
   /** Takes the user's Review of the PR as the PR view read it (#387). A new verdict can open files the
@@ -1038,7 +1043,7 @@ export class PrFilesState {
     this.#unwatch(lookup);
     this.#peek = undefined;
     if (goal.kind === "file") {
-      this.#fileView = goal.view;
+      this.openFileView(goal.view);
       return;
     }
     this.#moveTo(view.files, goal.landing.row);
@@ -1050,10 +1055,28 @@ export class PrFilesState {
     return this.#fileView;
   }
 
-  /** Closes the file view, and hands the diff under it its focus back, scrolled where the user left it. */
+  /** Opens `view` over the tab, as Go to definition does into a file the diff shows no lines of, which the
+   * history records (#456). */
+  openFileView(view: FileView) {
+    this.#fileView = view;
+    this.#fileViewMoved(view);
+  }
+
+  /** Closes the file view, as Back and Esc do, which the history records (#456), and hands the diff under
+   * it its focus back, scrolled where the user left it. A diff still on its way takes no focus when it
+   * comes, as the user may have moved on by then. */
   closeFileView() {
     this.#fileView = undefined;
-    this.diffWantsFocus = true;
+    this.diffWantsFocus = this.view?.state === "ready";
+    this.#fileViewMoved(undefined);
+  }
+
+  /** Shows `view` over the tab, or the diff with none, as `Alt+←` and `Alt+→` go through the Detail
+   * pane's history (#456), which records nothing. The view keeps where its code was scrolled, and the diff
+   * where it was. A view whose file couldn't be read reads it again. */
+  showFileView(view: FileView | undefined) {
+    view?.code.retry();
+    this.#fileView = view;
   }
 
   /** Where Go to definition goes for `hit`: its line, if a hunk of the diff `view` shows it, or the file

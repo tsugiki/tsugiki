@@ -200,3 +200,24 @@ it("says why the file can't be read", async () => {
     expect(code.problem).toBe("No language server named x.");
   });
 });
+
+it("reads a file it couldn't read again after a retry, and leaves one it read alone", async () => {
+  core.definitionCode.mockResolvedValueOnce({ status: "error", error: { message: "git failed" } });
+  const code = new HitCode("python/cpython", atBase, 0);
+  code.show(1, 18);
+  await vi.waitFor(() => {
+    expect(code.problem).toBe("git failed");
+  });
+  answerFrom(1000);
+
+  code.retry();
+  code.show(1, 18);
+
+  expect(code.problem).toBeUndefined();
+  await vi.waitFor(() => {
+    expect(code.line(1)).toBe("line 1");
+  });
+  code.retry();
+  code.show(1, 18);
+  expect(core.definitionCode).toHaveBeenCalledTimes(2);
+});

@@ -147,8 +147,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   are.
 - The file view takes the focus, so the keys scroll it, and a file it can't read says why inside it, where
   the focus stays. The diff stays drawn under it, inert, and its
-  keys wait: Back returns to the Files tab scrolled where it was, with the focus in the diff. The Issue
-  list's cursor stays on the PR's row. `Alt+←` and Esc come with #456.
+  keys wait: Back returns to the Files tab scrolled where it was, with the focus in the diff, and so does
+  Esc. The Issue list's cursor stays on the PR's row.
+- Each file view is a place of its own in the Detail pane's history, which belongs to its PR, so the cursor
+  stays on the PR's row. `Alt+←` returns to the Files tab scrolled where it was, with the focus on the PR's
+  row, and `Alt+→` comes back to the file view scrolled where it was, which takes the focus and tries again
+  to read a file it couldn't read before. Back and Esc are a step of their own, as Esc from a PR to its
+  Issue is, so `Alt+←` from the diff goes back to the file view they closed. A click on the PR's row is a
+  step too: it switches tabs, as it does from the diff, and the file view stays behind in the history.
 - Until #445 lands, a single hit on a line of a changed file that no hunk shows opens the peek on it. So do
   a hit outside the Repository and an answer with no hit to go to, which says why. On a hit outside the
   Repository the peek offers no Open, and Enter and `F12` leave it as it is. On a hit in the Repository

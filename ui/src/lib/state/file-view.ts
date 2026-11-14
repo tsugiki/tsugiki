@@ -5,6 +5,7 @@
 
 import type { FileChange, Hit, Place } from "$lib/data/bindings";
 import type { HitCode } from "./hit-code.svelte";
+import { sameStop, type Stop } from "./workbench.svelte";
 
 /** A place in a file of the Repository, at a commit. */
 type InRepository = Extract<Place, { kind: "repository" }>;
@@ -24,6 +25,19 @@ export interface FileView {
   line: number;
   code: HitCode;
 }
+
+/** A place in the Detail pane's history (#456): an Issue or a PR on its line of the list, or a file view,
+ * which belongs to the line of the PR it shows over. */
+export type HistoryPlace = Stop | { kind: "file"; line: Stop; view: FileView };
+
+/** Whether two places are one: the same line of the list, or the same file view. */
+export function samePlace(one: HistoryPlace, other: HistoryPlace): boolean {
+  if (one.kind !== "file" && other.kind !== "file") return sameStop(one, other);
+  return one.kind === "file" && other.kind === "file" && one.view === other.view;
+}
+
+/** The line of the list `place` belongs to, which takes the cursor while it shows. */
+export const lineOf = (place: HistoryPlace): Stop => (place.kind === "file" ? place.line : place);
 
 /** Whether the diff of `files` shows lines of the file `place` names: at the base a renamed file goes by
  * its old path, and at the head by its new one. A file the PR only renames, or whose mode alone changes,

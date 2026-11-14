@@ -73,6 +73,14 @@ export class HitCode {
     }
   }
 
+  /** Forgets why the file couldn't be read, so the next `show` asks again, as when the history brings a
+   * file view back (#456). A file that has shown lines, or still waits for its first, keeps what it has. */
+  retry() {
+    if (this.problem === undefined) return;
+    this.problem = undefined;
+    this.#asked.clear();
+  }
+
   /** Asks for a chunk's lines and spans together. The lines show once the spans come, or once they have
    * waited `SPANS_WAIT` since the ask, whichever is first. */
   async #read(chunk: number) {

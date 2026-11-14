@@ -172,6 +172,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - The user follows symbols in the file view as in the diff (#457). A click puts the caret on a word and a
   double-click selects it, and only the picked word is highlighted. `F12` and `Ctrl+click` (`Cmd+click` on
   macOS) look it up at the view's commit and side, and the line over the diff shows in the view's header.
+  The core looks up at the commits of the diff on show, so a view at a commit the PR has moved on from
+  says so there for 4 seconds instead, as its lines would name other text.
   - A single hit in the same file scrolls the view there and marks that line in place of the one marked
     before. That makes no new place in the history, and each landing scrolls, even to the line marked.
   - A single hit in another file the PR doesn't change opens a new file view, one more place in the

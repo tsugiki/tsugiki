@@ -27,7 +27,7 @@
   } from "$lib/state/pr-files.svelte";
   import { PEEK_ID } from "$lib/state/peek";
   import NewsEntries from "./NewsEntries.svelte";
-  import { currentOs } from "./keys";
+  import { currentOs, goesToDefinition } from "./keys";
   import PeekBox from "./PeekBox.svelte";
   import { wordPicker } from "./picking";
   import ReviewThread from "./ReviewThread.svelte";
@@ -372,7 +372,7 @@
   }}
   onclick={(event) => {
     const pick = picker.click(event);
-    if (pick !== undefined && (os === "mac" ? event.metaKey : event.ctrlKey)) void diff.goToDefinition();
+    if (pick !== undefined && goesToDefinition(event, os)) void diff.goToDefinition();
   }}
   ondblclick={picker.doubleClick}
 >

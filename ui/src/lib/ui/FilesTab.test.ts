@@ -1622,9 +1622,9 @@ it("keeps the focus in the file view when its file can't be read, and says why t
   expect(document.activeElement).toBe(within(view).getByRole("region", { name: "Definition's code" }));
 });
 
-/** A hit at line `line` of `path`, at the base the file view of `intoFileView` is at. */
+/** A hit at line `line` of `path`, at the diff's base, where the file view of `intoFileView` is too. */
 const baseHit = (path: string, line: number) => ({
-  place: { kind: "repository", path, side: "base", commit: "fedcba987654" },
+  place: { kind: "repository", path, side: "base", commit: "base" },
   line,
   column: 4,
   text: "",
@@ -1741,7 +1741,7 @@ it("says in the file view's header what Go to definition does there, and that it
   await files.goToDefinition();
   await tick();
 
-  expect(within(view).getByRole("status").textContent).toBe("No definition of line at fedcba9.");
+  expect(within(view).getByRole("status").textContent).toBe("No definition of line at base.");
 });
 
 it("opens the peek under the file view's line, pushing the lines after it down, and closes it before the view", async () => {

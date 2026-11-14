@@ -16,7 +16,8 @@
   let { view, files }: { view: FileView; files: PrFilesState } = $props();
 
   const words = $derived(fileViewWords(view, files.number));
-  const landed = $derived(files.landedIn(view));
+  /** The line the view marks: where Go to definition last landed in it, or the hit's line it opened on. */
+  const landed = $derived(view.code.landing ?? view);
   /** The Definition peek, while it shows under a line of this view. */
   const peek = $derived.by(() => {
     const peek = files.peek;
@@ -28,8 +29,8 @@
   };
 </script>
 
-{#snippet box(top: number, shown: Peek)}
-  <PeekBox diff={files} peek={shown} {top} rows={peekPlaces(shown, files.panes.peekRows)} gutter={48} />
+{#snippet box(top: number, shown: Peek, rows: number)}
+  <PeekBox diff={files} peek={shown} {top} {rows} gutter={48} />
 {/snippet}
 
 <section

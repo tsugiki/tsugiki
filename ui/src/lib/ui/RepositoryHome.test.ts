@@ -20,6 +20,8 @@ const core = vi.hoisted(() => ({
   openOnGithub: vi.fn(),
   pullRequestFiles: vi.fn(),
   pullRequestFind: vi.fn(),
+  // A PR that leaves the Detail pane cancels the lookup it may still run.
+  cancelDefinitions: vi.fn(() => Promise.resolve()),
   cloning: vi.fn(),
   mirrorStates: vi.fn(),
   mirrorsHeld: vi.fn(),
@@ -55,6 +57,7 @@ vi.mock("$lib/data/bindings", () => ({
     openOnGithub: core.openOnGithub,
     pullRequestFiles: core.pullRequestFiles,
     pullRequestFind: core.pullRequestFind,
+    cancelDefinitions: core.cancelDefinitions,
     cloning: core.cloning,
     mirrorStates: core.mirrorStates,
     mirrorsHeld: core.mirrorsHeld,

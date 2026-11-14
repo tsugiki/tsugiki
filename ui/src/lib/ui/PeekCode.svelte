@@ -10,7 +10,7 @@
   import { untrack, type Snippet } from "svelte";
   import type { CodePick, HitCode } from "$lib/state/hit-code.svelte";
   import type { Peek } from "$lib/state/peek";
-  import { currentOs } from "./keys";
+  import { currentOs, goesToDefinition } from "./keys";
   import { wordPicker } from "./picking";
   import { pieces } from "./spans";
 
@@ -27,8 +27,8 @@
     /** A new one scrolls the code to `line` again, even the line it already marks. */
     landing?: object;
     /** The Definition peek `peek` under line `line`, in `rows` rows, which `box` draws from its top in
-     * pixels. A new `reveal` scrolls the code as little as it takes to show it, and `onreveal` hears it was
-     * taken. */
+     * pixels, in those rows. A new `reveal` scrolls the code as little as it takes to show it, and
+     * `onreveal` hears it was taken. */
     inset?:
       | {
           peek: Peek;
@@ -36,7 +36,7 @@
           rows: number;
           reveal: boolean;
           onreveal: () => void;
-          box: Snippet<[number, Peek]>;
+          box: Snippet<[number, Peek, number]>;
         }
       | undefined;
     /** Goes to the definition of the word a Ctrl+click picked. */
@@ -143,7 +143,7 @@
   }}
   onclick={(e) => {
     const picked = picker.click(e);
-    if (picked !== undefined && (os === "mac" ? e.metaKey : e.ctrlKey)) ongo?.();
+    if (picked !== undefined && goesToDefinition(e, os)) ongo?.();
   }}
   ondblclick={picker.doubleClick}
 >
@@ -164,7 +164,7 @@
         <div class={["line", at === line && "hit"]} style:top={`${String(topOf(at))}px`}><span class="number">{at}</span><span class="text" data-code-line={at}>{#each pieces(text ?? "", code.spans(at) ?? [], [], code.pick?.line === at ? code.pick : undefined) as piece, index (index)}{#if piece.caret}<span class="caret"></span>{/if}{#if piece.highlight || piece.picked}<span class={[piece.highlight && `hl-${piece.highlight}`, piece.picked && "picked"]}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</span></div>
       {/each}
       {#if inset !== undefined}
-        <div class="inset" data-inset={id}>{@render inset.box(under * ROW, inset.peek)}</div>
+        <div class="inset" data-inset={id}>{@render inset.box(under * ROW, inset.peek, extra)}</div>
       {/if}
     </div>
   {/if}

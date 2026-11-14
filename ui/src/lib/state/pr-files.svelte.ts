@@ -139,6 +139,9 @@ function shownHit(peek: Peek | undefined): { hit: Hit; code: HitCode; hits: Hit[
   return code && hits && hit && { hit, code, hits };
 }
 
+/** Whether `peek` shows under a line of the diff, and not of the file view (#457). */
+const inDiff = (peek: Peek): peek is Peek & { at: PickedLine } => peek.at.kind !== "view";
+
 /** Whether two hits are at the same place and line. */
 const sameHit = (one: Hit, other: Hit) =>
   one.line === other.line && JSON.stringify(one.place) === JSON.stringify(other.place);
@@ -212,6 +215,12 @@ export class PrFilesState {
   mode = $state<FilesMode>("all");
   /** The panes' layout, which holds the Definition peek's height (#458). */
   readonly panes: PanesState;
+  /** The peek while it shows in the diff. One in the file view takes no place in the diff under it, and
+   * its steps don't lay the diff out again (#457). */
+  #diffPeek = $derived.by(() => {
+    const peek = this.#peek;
+    return peek && inDiff(peek) ? peek : undefined;
+  });
   /** The pages of the diff when it shows one file at a time: the NEWS entries, each file, and the threads
    * on files no longer in the diff. */
   pages = $derived.by(() => {
@@ -235,19 +244,17 @@ export class PrFilesState {
       id: thread.id,
       block: { kind: "thread", thread, index },
     }));
-    const peek = this.#peek;
-    // A peek in the file view takes no place in the diff under it (#457).
-    const at = peek?.at.kind === "view" ? undefined : peek?.at;
+    const peek = this.#diffPeek;
     return new DiffLayout(
       ready ? view.rows : 0,
       files,
       (file) => this.collapsed(file),
       { gap: (file) => this.#held.get(file) ?? [], rest: (file, rest) => this.#after(file, rest) },
       this.#choice.view,
-      peek === undefined || at === undefined
+      peek === undefined
         ? threads
         : withPeek(threads, {
-            at,
+            at: peek.at,
             places: peekPlaces(peek, this.panes.peekRows),
             id: PEEK_ID,
             block: { kind: "peek", peek },
@@ -363,9 +370,6 @@ export class PrFilesState {
   #peek = $state.raw<Peek>();
   /** The file view over the tab, while it shows (#453). */
   #fileView = $state.raw<FileView>();
-  /** The line each file view marks once Go to definition landed on another line of it than its own (#457).
-   * Each landing is a new one, so the view scrolls to it again on the same line. */
-  #landings = new SvelteMap<FileView, { line: number }>();
   /** Tells the Detail pane's history that the user opened a file view, or closed it (#456). */
   readonly #fileViewMoved: (view: FileView | undefined) => void;
   /** The ticket of the newest lookup, so only its answer shows. Closing the peek takes a new one, which no
@@ -494,8 +498,11 @@ export class PrFilesState {
     }
   }
 
+  /** Stops hearing the core, as the PR leaves the Detail pane. A lookup still under way goes nowhere, so its
+   * answer opens or closes no file view the history would record for a PR not on show (#457). */
   stop() {
     this.#stopped = true;
+    this.#dropPeek();
     clearTimeout(this.#noticeTimer);
     for (const stop of this.#stopListening) stop();
     this.#stopListening = [];
@@ -1084,9 +1091,7 @@ export class PrFilesState {
       return;
     }
     if (goal.kind === "line") {
-      // The view scrolls to the line from wherever the user scrolled it.
-      goal.view.code.scrollTop = undefined;
-      this.#landings.set(goal.view, { line: goal.line });
+      goal.view.code.land(goal.line);
       this.viewWantsFocus = true;
       return;
     }
@@ -1098,12 +1103,6 @@ export class PrFilesState {
   /** The file view, while it shows over the tab (#453). */
   get fileView(): FileView | undefined {
     return this.#fileView;
-  }
-
-  /** The line file view `view` marks, which is a new one on each landing of Go to definition in it (#457).
-   * Until the first, it is the hit's line the view opened on. */
-  landedIn(view: FileView): { line: number } {
-    return this.#landings.get(view) ?? view;
   }
 
   /** Opens `view` over the tab, as Go to definition does into a file the diff shows no lines of, which the
@@ -1185,10 +1184,18 @@ export class PrFilesState {
   }
 
   /** The lookup of the word picked in the file view, at the view's commit, if a word is picked there
-   * (#457). */
-  #askedInView(view: FileView): Asked | undefined {
+   * (#457). The core looks up at the commits of the diff on show, `diff`, so a view left at a commit the PR
+   * has moved on from says so for a moment instead: its lines and columns would name other text. */
+  #askedInView(view: FileView, diff: Ready): Asked | undefined {
     const pick = view.code.pick;
-    return pick && askedIn({ kind: "view", view, line: pick.line }, view.place, pick);
+    if (pick === undefined) return undefined;
+    const place = view.place;
+    if (place.commit !== (place.side === "base" ? diff.base : diff.head)) {
+      const commit = place.commit.slice(0, 7);
+      this.#say(`The PR has moved on from ${commit}, so Tsugiki can't go to definitions from it.`, NOTICE_MS);
+      return undefined;
+    }
+    return askedIn({ kind: "view", view, line: pick.line }, place, pick);
   }
 
   /** Asks ty where a word is defined, the one `asking` names in the diff on show, which is the word picked
@@ -1199,7 +1206,7 @@ export class PrFilesState {
   async #lookUp(
     starting: (looking: Peek) => void,
     asking: (view: Ready) => Asked | undefined = (view) =>
-      this.#fileView ? this.#askedInView(this.#fileView) : this.#askedInDiff(view),
+      this.#fileView ? this.#askedInView(this.#fileView, view) : this.#askedInDiff(view),
   ): Promise<{ peek: Peek; lookup: number; view: Ready } | undefined> {
     const view = this.view;
     const asked = view?.state === "ready" ? asking(view) : undefined;

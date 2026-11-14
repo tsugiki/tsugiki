@@ -32,14 +32,17 @@ export class HitCode {
   /** How many columns the widest line read takes, a tab as 8, so the peek scrolls far enough sideways. */
   widest = $state(0);
   /** Where the user scrolled the code to, which the peek goes back to when the diff draws it again after
-   * it scrolled out of sight. Until then the peek scrolls to the hit, and so does the file view once Go to
-   * definition lands on a line of it (#457). */
+   * it scrolled out of sight. Until then the peek scrolls to the hit. */
   scrollTop: number | undefined;
   /** The word the user picked in the code, which `Alt+F12` looks up from inside the peek (#447), and `F12`
    * and `Alt+F12` from the file view, which shows this code once Go to definition opens it (#457). A crumb
    * keeps the code, so a peek it brings back shows the word that was followed. Picking another hit makes new
    * code, with no pick. */
   pick = $state.raw<CodePick>();
+  /** The line the file view that shows this code marks, once Go to definition landed on a line of it
+   * (#457). Each landing is a new one, so the view scrolls to it again on the same line. Until the first,
+   * the view marks the hit's line it opened on. */
+  landing = $state.raw<{ line: number }>();
   #chunks = new SvelteMap<number, readonly string[]>();
   /** The spans of each chunk's lines, which may come after its lines. */
   #spans = new SvelteMap<number, Span[][]>();
@@ -82,6 +85,13 @@ export class HitCode {
       caret: selected ? null : offset,
     };
     return this.pick;
+  }
+
+  /** Lands Go to definition on line `line`, counted from 1, which the file view then marks and scrolls to
+   * from wherever the user left it (#457). */
+  land(line: number) {
+    this.scrollTop = undefined;
+    this.landing = { line };
   }
 
   /** Asks for the chunks that hold lines `first` to `last`, counted from 1, unless asked before. */

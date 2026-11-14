@@ -3348,16 +3348,16 @@ const inFileView = async () => {
 
 it("looks up the word picked in the file view at its commit, and lands on a hit in its own file there", async () => {
   const { files, view } = await inFileView();
-  const before = files.landedIn(view);
+  const before = view.code.landing;
   view.code.scrollTop = 200;
   core.definitions.mockResolvedValueOnce(hitsFound(hitAt("Lib/shapes.py", "base", 40)));
 
   await files.goToDefinition();
 
-  expect(before).toBe(view);
+  expect(before).toBeUndefined();
   expect(core.definitions.mock.calls[1]?.[0]).toEqual(lookupOf("base", "Lib/shapes.py", 5, 4));
   expect(files.fileView).toBe(view);
-  expect(files.landedIn(view)).toEqual({ line: 40 });
+  expect(view.code.landing).toEqual({ line: 40 });
   // The view scrolls to the line from wherever the user left it, and its code takes the focus.
   expect(view.code.scrollTop).toBeUndefined();
   expect(files.viewWantsFocus).toBe(true);
@@ -3422,7 +3422,7 @@ it("goes from the peek in the file view to a hit as Go to definition from the vi
   await files.goToDefinition();
   const listed = [files.peek?.at, files.peekFocus];
   await files.openHit();
-  const inView = [files.fileView, files.landedIn(view), files.peek];
+  const inView = [files.fileView, view.code.landing, files.peek];
   await files.goToDefinition();
   files.showHit(1);
   await files.openHit();
@@ -3466,4 +3466,70 @@ it("asks nothing from the file view with no word picked there, though the diff h
 
   expect(core.definitions).toHaveBeenCalledOnce();
   expect(files.peek).toBeUndefined();
+});
+
+it("says it can't look up from a file view at a commit the PR has moved on from, and asks nothing", async () => {
+  const { files, view } = await inFileView();
+  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [file("a.py", 0)], "rebased")));
+  await files.ask();
+  vi.useFakeTimers();
+
+  await files.goToDefinition();
+  const said = files.notice;
+  vi.advanceTimersByTime(NOTICE_MS);
+
+  expect(files.fileView).toBe(view);
+  expect(said).toBe("The PR has moved on from base, so Tsugiki can't go to definitions from it.");
+  expect(files.notice).toBeUndefined();
+  expect(core.definitions).toHaveBeenCalledOnce();
+});
+
+it("looks up from a file view at the PR's head at the head", async () => {
+  core.definitions.mockResolvedValueOnce(hitsFound(hitAt("Lib/forms.py", "head", 3)));
+  const renamed: DiffFile = {
+    ...file("Lib/forms.py", picking.length),
+    old_path: "Lib/shapes.py",
+    change: { kind: "lines", added: 0, removed: 0 },
+  };
+  const files = await pickable("head", [renamed]);
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.goToDefinition();
+  const view = files.fileView;
+  if (view === undefined) throw new Error("no file view opened");
+  view.code.pick = { line: 5, word: "area", start: 4, end: 8, caret: 4 };
+  core.definitions.mockResolvedValueOnce(ok({ state: "not_set_up" }));
+
+  await files.peekDefinition();
+
+  expect(core.definitions.mock.calls[1]?.[0]).toEqual(lookupOf("head", "Lib/forms.py", 5, 4, "head"));
+  expect(files.peek).toMatchObject({ at: { kind: "view", view, line: 5 }, side: "head", commit: "head" });
+});
+
+it("lets a lookup from the file view go nowhere once the PR leaves the Detail pane", async () => {
+  const moved = vi.fn();
+  core.definitions.mockResolvedValueOnce(hitsFound(hitAt("Lib/shapes.py", "base", 3)));
+  core.pullRequestRows.mockResolvedValue(ok(picking));
+  core.pullRequestFiles.mockResolvedValue(ok(ready("abc", picking.length, [file("a.py", 0)])));
+  const files = new PrFilesState("python/cpython", 11, new PanesState(), timer(), undefined, "all", moved);
+  await files.load();
+  files.need(0, picking.length - 1);
+  await vi.waitFor(() => {
+    expect(files.row(4)).toBeDefined();
+  });
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.goToDefinition();
+  const view = files.fileView;
+  if (view === undefined) throw new Error("no file view opened");
+  view.code.pick = { line: 5, word: "area", start: 4, end: 8, caret: 4 };
+  const answer = heldLookup();
+
+  const going = files.goToDefinition();
+  files.stop();
+  answer(hitsFound(hitAt("a.py", "head", 9)));
+  await going;
+
+  expect(moved.mock.calls).toEqual([[view]]);
+  expect(files.fileView).toBe(view);
+  expect(core.pullRequestRow).not.toHaveBeenCalled();
+  expect(core.cancelDefinitions.mock.calls).toEqual([[ticketOf(0)], [ticketOf(1)]]);
 });

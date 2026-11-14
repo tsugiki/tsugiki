@@ -63,6 +63,18 @@ pub struct FileLine {
     pub line: u32,
 }
 
+/// A line of one of the diff's files as the diff on show has it, which Go to definition goes to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LineInDiff {
+    /// Row `row` of the diff shows it (#444).
+    Row { row: u32 },
+    /// No hunk shows it: it is line `head_line` at the head of file `file`, by its place among the diff's
+    /// files, in a gap or after the file's last hunk, which the window opens around it, as around a thread
+    /// on a line no hunk shows (#445).
+    Hidden { file: u32, head_line: u32 },
+}
+
 /// The review threads the Files tab shows with a diff.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -245,12 +257,14 @@ impl PrFiles {
         Ok(Self::open(sources, of)?.diff.rows(range).to_vec())
     }
 
-    /// The row of the diff `of` that shows `line`, if a hunk shows it: where Go to definition lands (#444).
+    /// The row of the diff `of` that shows `line`, or else its line at the head, which a gap or the end of
+    /// its file hides. Go to definition lands there (#444, #445). A file the diff has no such line in has
+    /// neither.
     pub fn row(
         sources: &DiffSources<'_>,
         of: &DiffOf,
         line: &FileLine,
-    ) -> Result<Option<u32>, Error> {
+    ) -> Result<Option<LineInDiff>, Error> {
         let open = Self::open(sources, of)?;
         let diff = &open.diff;
         let files = diff.files();
@@ -261,10 +275,20 @@ impl PrFiles {
             DiffEnd::Head => (Side::Right, |file| &file.path),
         };
         // A PR can rename a file and add another by its old name, which has no line at the base.
-        let row = (files.iter())
-            .filter(|file| named(file) == line.path)
-            .find_map(|file| threads::row_of(diff, diff.rows_of(file), side, line.line));
-        Ok(row)
+        let found = ((0_u32..).zip(files))
+            .filter(|(_, file)| named(file) == line.path)
+            .find_map(|(index, file)| {
+                let rows = diff.rows_of(file);
+                if let Some(row) = threads::row_of(diff, rows.clone(), side, line.line) {
+                    return Some(LineInDiff::Row { row });
+                }
+                let (_, _, head_line) = threads::outside(file, rows.end, side, line.line)?;
+                Some(LineInDiff::Hidden {
+                    file: index,
+                    head_line,
+                })
+            });
+        Ok(found)
     }
 
     /// Where the code of the rows of the diff `of` holds `query`, whatever the case: in every row, those the

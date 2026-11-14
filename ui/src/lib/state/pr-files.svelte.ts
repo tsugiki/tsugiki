@@ -33,6 +33,7 @@ import {
   type HeadLine,
   type Highlight,
   type Hit,
+  type LineInDiff,
   type LinkTo,
   type MirrorState_Serialize as MirrorState,
   type RepositoryMirror_Serialize as RepositoryMirror,
@@ -143,8 +144,9 @@ function shownHit(peek: Peek | undefined): { hit: Hit; code: HitCode; hits: Hit[
 const sameHit = (one: Hit, other: Hit) =>
   one.line === other.line && JSON.stringify(one.place) === JSON.stringify(other.place);
 
-/** Where Go to definition lands: the diff's row that shows the hit's line, and the side the hit is at. */
-type Landing = { row: number; side: DiffEnd };
+/** Where Go to definition lands: the diff's row that shows the hit's line, or its line at the head where
+ * no hunk shows it (#445), and the side the hit is at. */
+type Landing = { at: LineInDiff; side: DiffEnd };
 
 /** Where Go to definition goes: a line of the diff, or the file view of a file the PR doesn't change. */
 type Goal = { kind: "diff"; landing: Landing } | { kind: "file"; view: FileView };
@@ -234,9 +236,10 @@ export class PrFilesState {
       this.shown,
     );
   });
-  /** The thread, the diff's row or the top of the page to scroll to, until the diff has scrolled there.
-   * Each move is a new one, so a move back to the same place scrolls again. */
-  jump = $state<{ id: string } | { row: number } | { page: Page }>();
+  /** The thread, the diff's row, a line at the head of a file that a gap or the file's end left out, or the
+   * top of the page to scroll to, until the diff has scrolled there. Each move is a new one, so a move back
+   * to the same place scrolls again. */
+  jump = $state<{ id: string } | { row: number } | { file: number; line: number } | { page: Page }>();
   /** Whether a peek opened that the diff hasn't yet scrolled into view, until the diff takes it (#458). Each
    * open is a new one, even on the same line, and a diff drawn again later doesn't scroll to it again. */
   peekOpened = $state(false);
@@ -249,7 +252,8 @@ export class PrFilesState {
   /** Whether the search has closed and handed the diff its focus back, until the diff takes it. */
   diffWantsFocus = $state(false);
   /** The line Go to definition landed on, at the side of the diff its hit is at, which the diff marks for
-   * a moment (#444). Each landing is a new one, so the mark shows again on the same line. */
+   * a moment (#444): a row, or a line a gap opened to show (#445). Each landing is a new one, so the mark
+   * shows again on the same line. */
   marked = $state.raw<Landing>();
   /** Whether Go to definition looks a word up, or Open in the peek finds its hit's row, which Escape
    * stops. */
@@ -517,8 +521,7 @@ export class PrFilesState {
     // A thread on a line no hunk shows opens the lines around it, once.
     for (const thread of this.threads) {
       if (thread.at.kind !== "outside" || before.some((shown) => shown.id === thread.id)) continue;
-      const { file, head_line: line } = thread.at;
-      void this.#fetchLines(file, Math.max(1, line - AROUND), line + AROUND + 1);
+      void this.#openAround(thread.at.file, thread.at.head_line);
     }
     if (this.#revealing !== undefined && answer?.state === "ready") this.reveal(this.#revealing);
     if (this.#showingChanges && answer?.state === "ready") this.showChanges();
@@ -802,10 +805,21 @@ export class PrFilesState {
 
   /** Scrolls to the diff's row `row`, and opens the file among `files` it is in if that is collapsed. */
   #moveTo(files: DiffFile[], row: number) {
-    const file = fileOf(files, row);
+    this.#openFile(fileOf(files, row));
+    this.jump = { row };
+  }
+
+  /** Scrolls to line `line` at the head of file `file`, which a gap or the file's end shows, and opens the
+   * file if it is collapsed. */
+  #moveToLine(file: number, line: number) {
+    this.#openFile(file);
+    this.jump = { file, line };
+  }
+
+  /** Opens file `file` if it is collapsed, and turns to its page. */
+  #openFile(file: number) {
     if (this.collapsed(file)) this.toggle(file);
     this.#turnTo({ kind: "file", file });
-    this.jump = { row };
   }
 
   /** Makes `page` the one shown one file at a time. The same page as before leaves the layout as it is,
@@ -972,11 +986,11 @@ export class PrFilesState {
   }
 
   /** Goes to where the picked word is defined (#444), with the lookup `Alt+F12` runs. A single hit on a
-   * line a hunk shows is where the diff scrolls to and marks for a moment, on the line's old side for a hit
-   * at the base, and one in a file the PR doesn't change opens the file view at the hit's commit (#453).
-   * Several hits open the peek with their list, where the user picks the one to go to (#446). With no hit
-   * it says so for a moment. A hit on a line of a changed file that no hunk shows, or an answer with no hit
-   * to go to, opens the peek, until #445. */
+   * line of a file the PR changes is where the diff scrolls to and marks for a moment, on the line's old
+   * side for a hit at the base, after it opens the lines around one no hunk shows (#445). One in a file the
+   * PR doesn't change opens the file view at the hit's commit (#453). Several hits open the peek with their
+   * list, where the user picks the one to go to (#446). With no hit it says so for a moment. An answer with
+   * no hit to go to opens the peek. */
   async goToDefinition() {
     const looked = await this.#lookUp((looking) => {
       // A peek on another word would say nothing of this one.
@@ -1008,7 +1022,7 @@ export class PrFilesState {
       this.peekFocus = (hitsOf(now)?.length ?? 0) > 1 ? "take" : undefined;
       return;
     }
-    this.#go(goal, view, lookup);
+    await this.#go(goal, view, lookup);
   }
 
   /** What Open in the peek's header does for the hit the peek shows (#446): go, or wait while it finds the
@@ -1021,9 +1035,9 @@ export class PrFilesState {
 
   /** Goes to the hit the peek shows, as Go to definition goes to a single hit, and closes the peek (#446).
    * A landing in the diff hands the diff the focus the peek had. While the core finds the hit's row it is
-   * `going`, and another Open waits for it. A row the core can't find, as on a line of a changed file that
-   * no hunk shows until #445, is said over the diff for a moment, and the peek stays. A peek that shows
-   * another hit by then, or a newer diff, leaves it be, and a hit outside the Repository goes nowhere. */
+   * `going`, and another Open waits for it. A line the core can't find is said over the diff for a moment,
+   * and the peek stays. A peek that shows another hit by then, or a newer diff, leaves it be, and a hit
+   * outside the Repository goes nowhere. */
   async openHit() {
     const view = this.view;
     const shown = shownHit(this.#peek);
@@ -1040,20 +1054,34 @@ export class PrFilesState {
       this.#say(`No line of the diff shows ${place.path}:${String(line)}.`, NOTICE_MS);
       return;
     }
-    this.#go(goal, view, lookup);
     if (goal.kind === "diff") this.diffWantsFocus = true;
+    await this.#go(goal, view, lookup);
   }
 
   /** Goes to `goal`, which lookup `lookup` found in the diff `view`, and closes the peek. */
-  #go(goal: Goal, view: Ready, lookup: number) {
+  async #go(goal: Goal, view: Ready, lookup: number) {
     this.#unwatch(lookup);
     this.#peek = undefined;
     if (goal.kind === "file") {
       this.openFileView(goal.view);
       return;
     }
-    this.#moveTo(view.files, goal.landing.row);
-    this.marked = goal.landing;
+    await this.#land(goal.landing, view, lookup);
+  }
+
+  /** Shows `landing`, a line of a file the diff `view` changes, as Go to definition does: scrolls there,
+   * opening the file if it is collapsed, and marks the line for a moment. A line no hunk shows first opens
+   * the lines around it, as a thread there does (#445), and a lookup newer than `lookup`, or a newer diff,
+   * that comes meanwhile leaves the tab where it is. */
+  async #land(landing: Landing, view: Ready, lookup: number) {
+    const at = landing.at;
+    if (at.kind === "row") this.#moveTo(view.files, at.row);
+    else {
+      await this.#openAround(at.file, at.head_line);
+      if (lookup !== this.#lookups || this.#diff(this.view) !== this.#diff(view)) return;
+      this.#moveToLine(at.file, at.head_line);
+    }
+    this.marked = landing;
   }
 
   /** The file view, while it shows over the tab (#453). */
@@ -1085,9 +1113,9 @@ export class PrFilesState {
     this.#fileView = view;
   }
 
-  /** Where Go to definition goes for `hit`: its line, if a hunk of the diff `view` shows it, or the file
-   * view of a file the diff shows no lines of, which shows `code`, the hit's code the peek made. A row the
-   * core can't find, and a hit outside the Repository, go nowhere. */
+  /** Where Go to definition goes for `hit`: its line in a file the diff `view` changes, which a hunk shows
+   * or a gap hides (#445), or the file view of a file the diff shows no lines of, which shows `code`, the
+   * hit's code the peek made. A line the core can't find, and a hit outside the Repository, go nowhere. */
   async #goal(hit: Hit, view: Ready, code: HitCode): Promise<Goal | undefined> {
     if (!inRepository(hit)) return undefined;
     const place = hit.place;
@@ -1103,7 +1131,7 @@ export class PrFilesState {
     };
     const row = await commands.pullRequestRow(line).catch(() => undefined);
     if (row?.status !== "ok" || row.data === null) return undefined;
-    return { kind: "diff", landing: { row: row.data, side: place.side } };
+    return { kind: "diff", landing: { at: row.data, side: place.side } };
   }
 
   /** Shows `words` over the diff, for `forMs` if it is given, or takes the words away. */
@@ -1412,6 +1440,13 @@ export class PrFilesState {
   /** Shows the whole of file `file`: every gap, and the lines after its last hunk. */
   async expandFile(file: number) {
     await this.#fetchLines(file, 1, END);
+  }
+
+  /** Shows line `line` at the head of file `file`, which no hunk shows, with `AROUND` lines either side, as
+   * for a thread there (#185) or a definition Go to definition lands on (#445). The buttons around them show
+   * the rest. */
+  async #openAround(file: number, line: number) {
+    await this.#fetchLines(file, Math.max(1, line - AROUND), line + AROUND + 1);
   }
 
   /** Asks the core for lines `start` up to `end` of file `file` at the head, and keeps those that come

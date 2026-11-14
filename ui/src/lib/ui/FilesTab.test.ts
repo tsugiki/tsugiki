@@ -692,6 +692,39 @@ it("opens the lines around a thread on a line no hunk shows, with buttons for th
   ]);
 });
 
+it("goes to a definition on a line no hunk shows: opens the lines around it, scrolls there and marks it", async () => {
+  setUpGapped();
+  const place = { kind: "repository", path: "a.py", side: "head", commit: "abc" };
+  const hit = { place, line: 80, column: 4, text: "def f80" };
+  core.definitions.mockResolvedValue(ok({ state: "found", hits: [hit] }));
+  core.pullRequestRow.mockResolvedValue(ok({ kind: "hidden", file: 0, head_line: 80 }));
+  const files = await shown(ready(gapped.length, { files: [gappedFile] }));
+  await vi.waitFor(() => {
+    expect(lines()[2]).toBe("5050 a");
+  });
+  await clickAt(codeOf(2), 1);
+
+  await files.goToDefinition();
+  await vi.waitFor(() => {
+    expect(mark()).not.toBeNull();
+  });
+
+  // Lines 77 to 83 show, under the buttons for 53 to 76, and the line sits 3 rows from the top.
+  const diff = screen.getByRole("region", { name: "Diff" });
+  expect(mark()?.style.top).toBe(rowAt("8080 def f80")?.style.top);
+  expect(mark()?.style.top).toBe(`${String(10 * 20)}px`);
+  expect(diff.scrollTop).toBe((10 - 3) * 20);
+  expect(lines()[lines().indexOf("7777 def f77") - 1]).toBe("↑↓Whole file");
+  await fireEvent.click(screen.getAllByRole("button", { name: "Show 20 lines below" })[0] as HTMLElement);
+  await vi.waitFor(() => {
+    expect(lines()).toContain("5353 def f53");
+  });
+  expect(core.pullRequestLines.mock.calls.map(([lines]) => [lines.start, lines.end])).toEqual([
+    [77, 84],
+    [53, 73],
+  ]);
+});
+
 it("shows the diff before a moved head under a line that says so, with its threads counted", async () => {
   await shown(ready(rows.length, { waiting: 2 }));
 
@@ -1465,7 +1498,7 @@ const mark = () => document.querySelector<HTMLElement>(".mark");
 
 it("goes to the definition on a Ctrl+click, and marks the whole line it lands on", async () => {
   core.definitions.mockResolvedValue(oneHit("head", 2));
-  core.pullRequestRow.mockResolvedValue(ok(4));
+  core.pullRequestRow.mockResolvedValue(ok({ kind: "row", row: 4 }));
   const files = await shown(ready(rows.length));
   await vi.waitFor(() => {
     expect(lines()[2]).toBe("11 Notes");
@@ -1492,7 +1525,7 @@ it("goes to the definition on a Ctrl+click, and marks the whole line it lands on
 it("goes to the definition on a Cmd+click on macOS, where Ctrl+click is the system's", async () => {
   const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
   core.definitions.mockResolvedValue(oneHit("head", 2));
-  core.pullRequestRow.mockResolvedValue(ok(4));
+  core.pullRequestRow.mockResolvedValue(ok({ kind: "row", row: 4 }));
   await shown(ready(rows.length));
   // The tab read the platform as it was drawn.
   platform.mockRestore();
@@ -1510,7 +1543,7 @@ it("goes to the definition on a Cmd+click on macOS, where Ctrl+click is the syst
 
 it("marks only the half of the hit's side side by side", async () => {
   core.definitions.mockResolvedValueOnce(oneHit("base", 2));
-  core.pullRequestRow.mockResolvedValueOnce(ok(3));
+  core.pullRequestRow.mockResolvedValueOnce(ok({ kind: "row", row: 3 }));
   const files = await shown(ready(rows.length), sideBySide());
   await vi.waitFor(() => {
     expect(lines()[2]).toBe("1 Notes1 Notes");
@@ -1763,7 +1796,7 @@ it("gives the list the focus when Go to definition opens the peek on several hit
   core.definitions.mockResolvedValue(
     ok({ state: "found", hits: [hit("Lib/odd.py", 5), hit("news.txt", 2)] }),
   );
-  core.pullRequestRow.mockResolvedValue(ok(4));
+  core.pullRequestRow.mockResolvedValue(ok({ kind: "row", row: 4 }));
   fileOf(30);
   const files = await shown(ready(rows.length));
   await vi.waitFor(() => {
@@ -1919,7 +1952,7 @@ it("opens the peek on Go to definition with several hits, and Open goes to the h
   core.definitions.mockResolvedValue(
     ok({ state: "found", hits: [hit("Lib/odd.py", 5), hit("news.txt", 2)] }),
   );
-  core.pullRequestRow.mockResolvedValue(ok(4));
+  core.pullRequestRow.mockResolvedValue(ok({ kind: "row", row: 4 }));
   fileOf(30);
   const files = await shown(ready(rows.length));
   await vi.waitFor(() => {

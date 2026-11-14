@@ -74,7 +74,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   it opens by itself to show that line with 3 lines either side, marked as outside the diff, and the thread
   sits under it like any other, placed by its file, line and side. It can be replied to and resolved like any
   thread, and `F8` reaches it in order. If its line no longer exists at the head, it is an **Outdated
-  thread**.
+  thread**. Go to definition opens a hidden line the same way ([definitions.md](definitions.md)).
 - **Outdated threads** are grouped at the top of their file together with the code they were written against:
   the last 4 lines of the hunk GitHub stored with the thread, ending at the commented line, and the whole hunk
   on "show more". During a re-review, the user's own unresolved Outdated threads are listed first.

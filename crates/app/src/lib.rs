@@ -235,14 +235,9 @@ fn settings_in_force(
     settings.map(|view| view.loaded)
 }
 
-/// Opens with `open` the log that language server `server` writes for `repository`, which lives beside its
-/// Lookup checkout.
-fn open_server_log(
-    repository: &str,
-    server: ServerName,
-    work: &DiffWork,
-    open: impl FnOnce(&Path) -> Result<(), Error>,
-) -> Result<(), Error> {
+/// The log that language server `server` writes for `repository`, which lives beside its Lookup checkout,
+/// once the server has written one.
+fn server_log_of(repository: &str, server: ServerName, work: &DiffWork) -> Result<PathBuf, Error> {
     let name = RepositoryName::parse(repository)?;
     let folders = work.folders.as_ref().map_err(Clone::clone)?;
     let log = server_log(&folders.lookup(&name), server);
@@ -250,7 +245,7 @@ fn open_server_log(
         let message = format!("{} has written no log for {name} yet.", server.as_str());
         return Err(Error::new(ErrorKind::NotFound, &message));
     }
-    open(&log)
+    Ok(log)
 }
 
 /// Looks at git and the disk again, and tries the clones that waited for them, and returns at once.

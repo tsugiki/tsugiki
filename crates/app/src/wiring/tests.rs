@@ -1864,13 +1864,7 @@ fn open_logs(
     Result<Value, Value>,
     Result<Value, Value>,
 ) {
-    let mut opened = None;
-    let work = wired.webview.state::<DiffWork>();
-    let log = crate::open_server_log(CPYTHON, ServerName::Ty, &work, |log| {
-        opened = Some(log.to_owned());
-        Ok(())
-    });
-    let opened = log.map(|()| opened.unwrap_or_default());
+    let opened = crate::server_log_of(CPYTHON, ServerName::Ty, &wired.webview.state::<DiffWork>());
     let no_log = json!({ "repository": CPYTHON, "server": "clangd" });
     let not_a_name = json!({ "repository": "not a name", "server": "ty" });
     (

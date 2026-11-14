@@ -1,0 +1,128 @@
+---
+name: wave
+description: >-
+  Build a milestone's tickets in waves, one background agent per ticket. Use when the user asks to plan the
+  waves of a milestone, or to implement or run wave N.
+---
+
+A **wave** is a set of tickets, three so far, that background agents build at the same time, each in a
+worktree of its own. A **lane** is a run of tickets that edit the same files, so they go one after another;
+a wave takes at most one ticket from each lane. The tickets of one wave are **siblings**.
+
+The milestone's description holds what belongs to that release: a `## Lanes` table, a `## Waves` list and a
+`## Wave log`. This skill holds the procedure. The session that runs the wave is the only one that edits the
+milestone's description.
+
+- To plan the waves of a milestone, follow [plan.md](plan.md).
+- To implement wave N, follow the steps below.
+
+## Implement wave N
+
+A wave runs for hours and outlives a `/clear`, so keep its record in the milestone's `## Wave log`, not in
+the session: write each time and conflict into the wave's entry as it happens. A session that picks up a
+wave halfway reads the entry and goes on from there.
+
+Read and write the description with `gh api repos/tsugiki/tsugiki/milestones/<number> --jq .description`
+and `gh api -X PATCH repos/tsugiki/tsugiki/milestones/<number> -F description=@<file>`, from a file in
+`.temp/scratchpad/`.
+
+### 1. Check the wave
+
+Take wave N's tickets from `## Waves`. For each, check that it's open and list its open blockers with
+`just tree <n>`, or, where that recipe doesn't exist yet, with:
+
+```
+gh api repos/tsugiki/tsugiki/issues/<n>/dependencies/blocked_by --jq '.[] | select(.state == "open") | .number'
+```
+
+A ticket blocked by a ticket outside the wave can't start. Offer the user a ready ticket from a later wave
+for its **slot**, one that shares no lane with the other siblings. A ticket blocked by a sibling starts on a
+branch off the sibling's, as [builder.md](builder.md) says; tell the user, since it takes about as long as
+the two in a row.
+
+Done when the user has agreed to the wave's tickets, each open and with no open blocker outside the wave.
+
+### 2. Make the worktrees
+
+For each ticket, from the main checkout:
+
+```
+git fetch origin
+git worktree add .temp/wt-<n> -b <n>-<slug> origin/main
+(cd .temp/wt-<n> && npm ci)
+mkdir -p .temp/wt-<n>/target && cp -r target/tools .temp/wt-<n>/target/
+```
+
+`<slug>` is a few words of the ticket's title, in the form our branches take. Each worktree builds into its
+own `target/`, which is Cargo's default there: leave `CARGO_TARGET_DIR` unset. A shared target builds one
+worktree's crate against another worktree's source. The copy of `target/tools` saves each worktree a
+download of ty and clangd; skip it if the main checkout has none.
+
+Add the wave's entry to `## Wave log`, from the form in step 7, with the agents' start time.
+
+Done when each ticket has a worktree with `node_modules` installed, and the log has the wave's entry.
+
+### 3. Start the agents
+
+Start one background agent per ticket with the prompt in [builder.md](builder.md), its placeholders filled.
+Start them in one message so they run at the same time.
+
+### 4. Review each build
+
+Once an agent reports its build, write its build time into the log, and run `/code-review` on its branch's
+diff over `origin/main` in its worktree. Send the findings to that agent with SendMessage. It fixes each or
+declines it with a reason; judge the reasons, and send back any you don't accept.
+
+Then tell it to run its pre-push gates. Let one agent run them at a time: each runs the full vitest and
+`rust-coverage`, which AGENTS.md leaves to CI outside a wave. In a wave a CI round trip costs more, and in
+0.3.1 two of three first pushes failed coverage without them.
+
+Done when the agent reports the review fixed and its gates passed.
+
+### 5. Ship
+
+From the worktree, run `just ship`. It takes the PR's title and body from the branch's first commit. Report
+the PR and, once it finishes, CI's result to the user, and write the result into the log. If CI fails, send
+the failed gate's log to the agent; it fixes the gate and reruns only that gate, and you push again. A force
+push needs the user's say each time.
+
+The user merges each PR. Stop at the report.
+
+If a PR changes what `just smoke` covers (AGENTS.md names the files), ask the user before running it, and
+run it only while no agent is building.
+
+### 6. After each merge
+
+Once the user says a PR merged, tell each sibling still open to merge `origin/main` and rerun its tests, as
+[builder.md](builder.md) says. Write into the log which files conflicted, how hard each was, and each break
+the tests found with no conflict.
+
+### 7. Close the wave
+
+The wave's entry in `## Wave log` takes this form:
+
+```
+### Wave N: #a, #b, #c (YYYY-MM-DD)
+
+<A ticket that took another's slot, and why.>
+
+H h MM min from the agents' start to the last merge (#PRs). The agents took about A (#a), B (#b) and
+C (#c) minutes to build. <Review rounds and how many findings; findings an agent declined.>
+
+CI: <which PRs passed on the first push; each failure and its cause.>
+
+Merge conflicts, merged in the order #x, #y, #z:
+
+- #y after #x: <files>, easy | moderate | hard. <Breaks with no conflict.>
+
+Follow-ups: <tickets filed from the reviews, and their milestone.>
+```
+
+After the last merge:
+
+1. Fill in the wall-clock time and the follow-ups, and cut the parts of the form the wave had nothing for.
+2. Update `## Waves` if a slot changed hands, and move a ticket the wave couldn't start to a later wave.
+3. If the wave taught something that holds for the next one, add it to this skill in a PR.
+4. Remove each worktree with `git worktree remove .temp/wt-<n>` and delete its local branch.
+
+Done when the entry has every part of the form filled or cut, and no worktree of the wave is left.

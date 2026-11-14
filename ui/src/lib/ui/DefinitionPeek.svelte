@@ -1,17 +1,31 @@
 <!-- The Definition peek (#438), under the line of the word the user picked: a header with the symbol, the
-     path and line of the hit it shows, the commit it is at, which hit it is of how many, and ✕. Under it, the
-     hit's code scrolled to its line (#439), with the hits listed on its right (#441), or else a line that
-     says what the lookup waits for, with the seconds once they pass one (#440), that it found nothing, or why
-     it failed. A hit outside the Repository names its whole path on disk in place of a commit. While the
-     server that answered builds its index, a line under the header says so (#680). -->
+     path and line of the hit it shows, the commit it is at, which hit it is of how many, Open, which goes to
+     that hit (#446), and ✕. Under it, the hit's code scrolled to its line (#439), with the hits listed on
+     its right (#441), or else a line that says what the lookup waits for, with the seconds once they pass
+     one (#440), that it found nothing, or why it failed. A hit outside the Repository names its whole path
+     on disk in place of a commit, and has no Open. While the server that answered builds its index, a line
+     under the header says so (#680). -->
 
 <script lang="ts">
   import { peekWords, type Peek } from "$lib/state/peek";
   import { currentOs, keyName } from "./keys";
   import PeekCode from "./PeekCode.svelte";
 
-  let { peek, onclose, onhit }: { peek: Peek; onclose: () => void; onhit: (index: number) => void } =
-    $props();
+  let {
+    peek,
+    open,
+    onclose,
+    onhit,
+    onopen,
+  }: {
+    peek: Peek;
+    /** What Open does for the hit shown, which the tab decides: go, or wait while it finds the hit's row.
+     * Nothing offers no Open, as for a hit with nowhere to go. */
+    open?: "ready" | "going" | undefined;
+    onclose: () => void;
+    onhit: (index: number) => void;
+    onopen: () => void;
+  } = $props();
 
   /** The time the seconds of a lookup that waits count to. */
   let now = $state(Date.now());
@@ -44,13 +58,18 @@
     else list.scrollTop = Math.max(list.scrollTop, top + HIT_ROW - list.clientHeight);
   }
 
-  /** While the peek shows hit `shown` and has the focus, ↑ and ↓ move through its hits, and the diff's keys
-   * never hear them. */
+  /** While the peek shows hit `shown` and has the focus, ↑ and ↓ move through its hits, and Enter and `F12`
+   * go to the hit shown (#446). The diff's keys never hear them. */
   function moveByKey(e: KeyboardEvent, shown: number) {
     const key = keyName(e, currentOs());
-    if (key !== "arrowdown" && key !== "arrowup") return;
+    if (key !== "arrowdown" && key !== "arrowup" && key !== "enter" && key !== "f12") return;
     e.preventDefault();
     e.stopPropagation();
+    // A held key would go again and again.
+    if (key === "enter" || key === "f12") {
+      if (!e.repeat) onopen();
+      return;
+    }
     onhit(shown + (key === "arrowdown" ? 1 : -1));
   }
 </script>
@@ -65,6 +84,15 @@
   {/if}
   {#if words.count !== undefined}
     <span class="muted">{words.count}</span>
+  {/if}
+  {#if open !== undefined}
+    <button
+      type="button"
+      class="open"
+      title="Go to this definition (Enter, F12)"
+      disabled={open === "going"}
+      onclick={onopen}>Open</button
+    >
   {/if}
   <button type="button" class="close" aria-label="Close" title="Close (Escape)" onclick={onclose}>✕</button>
 </div>
@@ -140,6 +168,7 @@
     opacity: 0.7;
   }
 
+  .open,
   .close {
     margin-left: auto;
     padding: 0 4px;
@@ -147,6 +176,16 @@
     background: none;
     color: inherit;
     cursor: pointer;
+  }
+
+  .open + .close {
+    margin-left: 0;
+  }
+
+  /* While the tab finds the hit's row. */
+  .open:disabled {
+    opacity: 0.5;
+    cursor: progress;
   }
 
   /* The rows under the header: the code, which scrolls inside them, and the list of hits on its right. */

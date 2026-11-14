@@ -481,16 +481,8 @@ export class DiffLayout<T extends LaidThread = LaidThread> {
         return this.placeOfRow(shown.row);
       case "pair":
         return this.placeOfRow(shown.removed ?? shown.added);
-      case "line": {
-        const run = this.#runs.find(
-          (run) =>
-            run.kind === "line" &&
-            run.file === shown.file &&
-            run.new <= shown.new &&
-            shown.new < run.new + run.length,
-        );
-        return run?.kind === "line" ? run.shown + shown.new - run.new : undefined;
-      }
+      case "line":
+        return this.placeOfLine(shown.file, shown.new);
       case "hidden":
         return this.#runs.find(
           (run) => run.kind === "hidden" && run.file === shown.file && run.new === shown.new,
@@ -504,6 +496,15 @@ export class DiffLayout<T extends LaidThread = LaidThread> {
         return run === undefined ? undefined : run.shown + Math.min(shown.into, run.length - 1);
       }
     }
+  }
+
+  /** The place that shows line `line` at the head of file `file`, which a gap or the end of the file left
+   * out, if one does. */
+  placeOfLine(file: number, line: number): number | undefined {
+    const run = this.#runs.find(
+      (run) => run.kind === "line" && run.file === file && run.new <= line && line < run.new + run.length,
+    );
+    return run?.kind === "line" ? run.shown + line - run.new : undefined;
   }
 
   /** The place that shows the diff's row `row`, if one does. */

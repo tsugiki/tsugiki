@@ -311,14 +311,15 @@ pub(crate) fn pull_request_find(
     crate::find_in_pull_request(search, &work)
 }
 
-/// The row of a PR's diff that shows a line of one of its files, if a hunk shows it, which Go to definition
-/// scrolls to (#444). It reads the diff on show, or reads it again from the mirror.
+/// The row of a PR's diff that shows a line of one of its files (#444), or else the line at the head, which
+/// a gap or the end of the file hides and the window opens (#445). Go to definition scrolls there. It reads
+/// the diff on show, or reads it again from the mirror.
 #[tauri::command(async)]
 #[specta::specta]
 pub(crate) fn pull_request_row(
     line: crate::DiffLine,
     work: State<'_, crate::DiffWork>,
-) -> Result<Option<u32>, Error> {
+) -> Result<Option<tsugiki_core::workbench::pr_files::LineInDiff>, Error> {
     crate::read_pull_request_row(line, &work)
 }
 

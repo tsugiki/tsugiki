@@ -314,6 +314,8 @@ pub struct SettingsView {
 pub struct LanguageServers {
     /// ty, which Go to definition asks in Python.
     pub ty: Option<PathBuf>,
+    /// rust-analyzer, which Go to definition asks in Rust.
+    pub rust_analyzer: Option<PathBuf>,
 }
 
 /// Where the token comes from. A personal access token joins this with the Account page (ADR 0004).
@@ -505,6 +507,8 @@ struct MachineFile {
 struct ServersFile {
     #[serde(deserialize_with = "or_default")]
     ty: Option<ServerFile>,
+    #[serde(rename = "rust-analyzer", deserialize_with = "or_default")]
+    rust_analyzer: Option<ServerFile>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -582,10 +586,16 @@ impl SettingsFiles {
                 &self.folders,
                 self.machine.as_ref().unwrap_or(&Machine::default()),
             )),
-            language_servers: LanguageServers {
-                ty: (self.machine.as_ref())
-                    .and_then(|machine| machine.servers.ty.as_ref())
-                    .map(|ty| self.folders.data.join(&ty.path)),
+            language_servers: {
+                let path = |server: fn(&ServersFile) -> Option<&ServerFile>| {
+                    (self.machine.as_ref())
+                        .and_then(|machine| server(&machine.servers))
+                        .map(|file| self.folders.data.join(&file.path))
+                };
+                LanguageServers {
+                    ty: path(|servers| servers.ty.as_ref()),
+                    rust_analyzer: path(|servers| servers.rust_analyzer.as_ref()),
+                }
             },
         }
     }

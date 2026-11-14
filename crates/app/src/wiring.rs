@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_specta::Event;
-use tsugiki_core::definitions::{self, Definitions};
+use tsugiki_core::definitions::{self, Definitions, ServerName};
 use tsugiki_core::diff::{Diffs, Highlighter};
 use tsugiki_core::error::Error;
 use tsugiki_core::folders::Folders;
@@ -149,7 +149,13 @@ pub(crate) fn connect_core<R: Runtime>(
     let (checkouts, view) = (mirrors.requests(), settings.reader());
     let definitions = Definitions::start(definitions::Sources {
         checkout: Box::new(move |repository| checkouts.lookup_checkout(repository.clone())),
-        ty: Box::new(move || view.get().language_servers.ty),
+        servers: Box::new(move |server| {
+            let servers = view.get().language_servers;
+            match server {
+                ServerName::Ty => servers.ty,
+                ServerName::RustAnalyzer => servers.rust_analyzer,
+            }
+        }),
     });
     let diffs = DiffWork {
         folders: diff_folders,

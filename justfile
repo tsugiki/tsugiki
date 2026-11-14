@@ -103,10 +103,10 @@ vitest:
 cargo-test:
     npm run cargo-test
 
-# Fetch the ty that the Rust tests start into target/tools, unless it is there, and print the path for
-# TSUGIKI_TY
-fetch-ty:
-    npm run fetch-ty
+# Fetch the ty that the Rust tests start into target/tools, unless it is there, and print the paths for
+# TSUGIKI_TY and TSUGIKI_RUST_ANALYZER
+test-servers:
+    npm run test-servers
 
 # Check that the generated bindings match the Rust code
 stale-bindings:

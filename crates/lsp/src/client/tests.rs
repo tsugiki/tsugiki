@@ -8,7 +8,7 @@ use crate::client::{Event, Exit, Init, Pending, RequestError, Server};
 use crate::testing::{Fake, PATIENCE, connect, initialize, initialized, uri};
 use crate::types::{
     Definitions, Diagnostics, Language, Location, LocationLink, Position, Progress, ProgressToken,
-    Range, ServerInfo, WorkDone,
+    Range, ServerInfo, Status, WorkDone,
 };
 
 fn next_event(events: &Receiver<Event>) -> Event {
@@ -71,6 +71,7 @@ fn initialize_says_what_the_client_can_do_then_sends_initialized() {
         root: uri("file:///work/lookup"),
         options: json!({"logLevel": "info"}),
         settings: json!({}),
+        experimental: json!({}),
     };
     let initializing = initialize(starting, init, PATIENCE);
     let asked = fake.expect("initialize");
@@ -90,7 +91,11 @@ fn initialize_says_what_the_client_can_do_then_sends_initialized() {
         capabilities["textDocument"]["definition"]["linkSupport"],
         true
     );
-    assert_eq!(capabilities["window"]["workDoneProgress"], true);
+    let (progress, experimental) = (
+        &capabilities["window"]["workDoneProgress"],
+        &capabilities["experimental"],
+    );
+    assert_eq!((progress, experimental), (&json!(true), &json!({})));
 
     fake.reply(
         &asked,
@@ -114,6 +119,7 @@ fn a_failed_initialize_sends_no_initialized_and_kills_the_server() {
         root: uri("file:///w"),
         options: json!(null),
         settings: json!({}),
+        experimental: json!({}),
     };
     let initializing = initialize(starting, init, PATIENCE);
     let asked = fake.expect("initialize");
@@ -141,6 +147,7 @@ fn a_server_that_doesn_t_answer_initialize_in_time_is_killed() {
         root: uri("file:///w"),
         options: json!(null),
         settings: json!({}),
+        experimental: json!({}),
     };
     let initializing = initialize(starting, init, Duration::from_millis(50));
     let _asked = fake.expect("initialize");
@@ -498,7 +505,7 @@ fn an_answer_that_doesn_t_parse_fails_its_request_alone() {
 }
 
 #[test]
-fn progress_and_diagnostics_become_events_and_other_notifications_don_t() {
+fn progress_diagnostics_and_status_become_events_and_other_notifications_don_t() {
     let (_server, events, mut fake) = initialized(json!({}));
     fake.send(&json!({"jsonrpc": "2.0", "method": "window/logMessage", "params": {"type": 3, "message": "hi"}}));
     fake.send(&json!({"jsonrpc": "2.0", "method": "$/progress", "params": {"token": 1, "value": {"kind": "nonsense"}}}));
@@ -507,6 +514,12 @@ fn progress_and_diagnostics_become_events_and_other_notifications_don_t() {
         "jsonrpc": "2.0",
         "method": "textDocument/publishDiagnostics",
         "params": {"uri": "file:///w/a.c", "diagnostics": []},
+    }));
+    fake.send(&json!({"jsonrpc": "2.0", "method": "experimental/serverStatus", "params": {"health": "ok"}}));
+    fake.send(&json!({
+        "jsonrpc": "2.0",
+        "method": "experimental/serverStatus",
+        "params": {"health": "warning", "quiescent": true, "message": "no Cargo.toml"},
     }));
     assert_eq!(
         next_event(&events),
@@ -521,6 +534,14 @@ fn progress_and_diagnostics_become_events_and_other_notifications_don_t() {
             uri: uri("file:///w/a.c"),
             version: None,
             diagnostics: Vec::new()
+        })
+    );
+    // A status without `quiescent` doesn't parse.
+    assert_eq!(
+        next_event(&events),
+        Event::Status(Status {
+            quiescent: true,
+            message: Some("no Cargo.toml".into())
         })
     );
 }

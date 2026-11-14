@@ -1,9 +1,11 @@
-// Fetches the ty we test Go to definition with into target/tools, checks its archive's checksum, and
-// unpacks it there, unless it is there already. Tsugiki itself downloads nothing: the user supplies each
-// language server (ADR 0020).
+// Finds the language servers we test Go to definition with. It fetches ty into target/tools, checks its
+// archive's checksum, and unpacks it there, unless it is there already. rust-analyzer comes with the
+// toolchain that `rust-toolchain.toml` pins, which rustup installs with its components. Tsugiki itself
+// downloads nothing: the user supplies each language server (ADR 0020).
 //
-// The Rust tests that start ty read its path from `TSUGIKI_TY`. Given a command, this runs it with that set,
-// as `npm run cargo-test` and `npm run rust-coverage` do. Alone, it prints the path to set it to.
+// The Rust tests that start a server read its path from `TSUGIKI_TY` or `TSUGIKI_RUST_ANALYZER`. Given a
+// command, this runs it with both set, as `npm run cargo-test` and `npm run rust-coverage` do. Alone, it
+// prints the paths to set them to.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -80,13 +82,21 @@ async function main(): Promise<void> {
   console.log(`ty ${VERSION} is in ${FOLDER}.`);
 }
 
+/** The rust-analyzer in the toolchain `rust-toolchain.toml` pins, which rustup installs as it starts. */
+function rustAnalyzer(): string {
+  const which = spawnSync("rustup", ["which", "rust-analyzer"], { encoding: "utf8" });
+  if (which.status !== 0) throw new Error(`rustup has no rust-analyzer: ${which.stderr}`);
+  return which.stdout.trim();
+}
+
 await main();
-const ty = join(FOLDER, program);
+const servers = { TSUGIKI_TY: join(FOLDER, program), TSUGIKI_RUST_ANALYZER: rustAnalyzer() };
 const [command, ...args] = process.argv.slice(2);
 if (command === undefined) {
-  console.log(`Set TSUGIKI_TY=${ty} to run the Rust tests with cargo alone.`);
+  const set = Object.entries(servers).map(([name, path]) => `${name}=${path}`);
+  console.log(`Set ${set.join(" and ")} to run the Rust tests with cargo alone.`);
 } else {
-  const run = spawnSync(command, args, { stdio: "inherit", env: { ...process.env, TSUGIKI_TY: ty } });
+  const run = spawnSync(command, args, { stdio: "inherit", env: { ...process.env, ...servers } });
   if (run.error !== undefined) throw run.error;
   process.exit(run.status ?? 1);
 }

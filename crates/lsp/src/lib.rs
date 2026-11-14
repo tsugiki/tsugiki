@@ -22,5 +22,5 @@ pub use client::{
 pub use process::Launch;
 pub use types::{
     Definitions, Diagnostic, Diagnostics, Language, Location, LocationLink, Position, Progress,
-    ProgressToken, Range, ServerInfo, Severity, Uri, WorkDone,
+    ProgressToken, Range, ServerInfo, Severity, Status, Uri, WorkDone,
 };

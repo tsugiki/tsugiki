@@ -23,7 +23,7 @@ use crate::rpc::{
 };
 use crate::types::{
     ConfigurationParams, Definitions, Diagnostics, InitializeResult, Language, Position, Progress,
-    ServerInfo, Uri,
+    ServerInfo, Status, Uri,
 };
 
 #[cfg(test)]
@@ -68,6 +68,9 @@ pub struct Init {
     /// The settings the client answers `workspace/configuration` from: an object whose keys are sections, as
     /// `{"ty": {"environment": {...}}}`.
     pub settings: Value,
+    /// What else the client can do that only this server knows of, in `capabilities.experimental`, as
+    /// rust-analyzer's `serverStatusNotification`.
+    pub experimental: Value,
 }
 
 /// A message a server sends the caller without being asked.
@@ -75,6 +78,8 @@ pub struct Init {
 pub enum Event {
     Progress(Progress),
     Diagnostics(Diagnostics),
+    /// rust-analyzer's `experimental/serverStatus`, sent to a client that says it takes it.
+    Status(Status),
     /// The server's process ended, whether asked to or not. Nothing more comes from it.
     Exited(Exit),
 }
@@ -227,6 +232,7 @@ impl Starting {
             root,
             options,
             settings,
+            experimental,
         } = init;
         let params = json!({
             "processId": std::process::id(),
@@ -242,6 +248,7 @@ impl Starting {
                     "publishDiagnostics": {"versionSupport": true},
                 },
                 "window": {"workDoneProgress": true},
+                "experimental": experimental,
             },
             "initializationOptions": options,
         });
@@ -682,6 +689,9 @@ impl Owner {
             "$/progress" => serde_json::from_value::<Progress>(params).map(Event::Progress),
             "textDocument/publishDiagnostics" => {
                 serde_json::from_value::<Diagnostics>(params).map(Event::Diagnostics)
+            }
+            "experimental/serverStatus" => {
+                serde_json::from_value::<Status>(params).map(Event::Status)
             }
             _ => return,
         };

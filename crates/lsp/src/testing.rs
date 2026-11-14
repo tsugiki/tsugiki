@@ -83,6 +83,7 @@ pub(crate) fn initialized(settings: Value) -> (Server, Receiver<Event>, Fake) {
         root: uri("file:///work/lookup"),
         options: json!({}),
         settings,
+        experimental: json!({}),
     };
     let initializing = initialize(starting, init, PATIENCE);
     let asked = fake.expect("initialize");

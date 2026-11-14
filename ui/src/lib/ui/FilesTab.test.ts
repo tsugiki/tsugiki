@@ -1676,7 +1676,7 @@ it("names a hit outside the Repository by its whole path on disk, in place of a 
 });
 
 it("says how to set ty up, and when no server knows the file's language", async () => {
-  core.definitions.mockResolvedValueOnce(ok({ state: "not_set_up" }));
+  core.definitions.mockResolvedValueOnce(ok({ state: "not_set_up", server: "ty" }));
   core.definitions.mockResolvedValueOnce(ok({ state: "no_server" }));
   const files = await shown(ready(rows.length));
   await vi.waitFor(() => {

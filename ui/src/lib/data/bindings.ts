@@ -229,10 +229,10 @@ export type Anchor = "current" | "outdated";
 
 /**  What a lookup found. */
 export type Answer = 
-/**  The places ty named, in its order, which may be none. */
+/**  The places the server named, in its order, which may be none. */
 { state: "found"; hits: Hit[] } | 
-/**  No ty is set up, so Tsugiki can't look up a name in Python. */
-{ state: "not_set_up" } | 
+/**  The server for the file's language isn't set up. */
+{ state: "not_set_up"; server: ServerName } | 
 /**  Tsugiki has no server for the file's language yet. */
 { state: "no_server" } | 
 /**  A newer lookup, or the user, cancelled it before the server answered. */
@@ -839,7 +839,7 @@ export type Hit = {
 	line: number,
 	/**  Where the definition's name starts in the line, in UTF-16 code units. */
 	column: number,
-	/**  The line's text, as ty read it. */
+	/**  The line's text, as the server read it. */
 	text: string,
 };
 
@@ -1588,8 +1588,8 @@ export type Place =
  */
 { kind: "repository"; path: string; side: DiffEnd; commit: string } | 
 /**
- *  A file outside the Repository, such as a stub of the standard library that ty keeps, by its path on
- *  disk.
+ *  A file outside the Repository, such as a stub of the standard library that ty keeps or a file of
+ *  Rust's standard library, by its path on disk.
  */
 { kind: "outside"; path: string };
 
@@ -2062,7 +2062,11 @@ export type Seen_Serialize = {
 };
 
 /**  A language server Tsugiki talks to. */
-export type ServerName = "ty";
+export type ServerName = 
+/**  ty, for Python. */
+"ty" | 
+/**  rust-analyzer, for Rust. */
+"rust-analyzer";
 
 /**  What `settings.toml` holds. A value the file leaves out takes its default. */
 export type Settings = Settings_Serialize | Settings_Deserialize;

@@ -19,7 +19,10 @@ this is the client they ask through.
   `didClose`. It counts each document's versions.
 - Asks `textDocument/definition`, and returns the locations or links the server answers with.
 - Hands the caller `$/progress` and `textDocument/publishDiagnostics` as events. When the server exits, or
-  crashes, the caller gets an event with its exit code and the end of its error output.
+  crashes, the caller gets an event with its exit code and the end of its error output. It copies the
+  error output as it comes to a log the caller gives, if it gives one, and stops copying if a write fails.
+- `version_of` runs a program once with `--version`, with no console window, and gives what it printed, or
+  why it didn't start. It kills a program still running after the time the caller gives.
 - Converts LSP's columns, which count UTF-16 code units, to and from bytes in a line of text.
 
 ## What it doesn't know

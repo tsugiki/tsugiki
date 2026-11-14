@@ -527,7 +527,7 @@ fn the_owner_saves_what_apply_keeps_and_a_restart_reads_it() {
 
     let answer = owner.apply(SettingsChanges {
         status_bar: Some(StatusBarSettings { visible: false }),
-        releases: None,
+        ..SettingsChanges::default()
     });
     let after = fs::read_to_string(folders.settings_file()).unwrap();
     let restarted = SettingsFiles::load(folders);
@@ -552,7 +552,7 @@ fn apply_keeps_a_hand_edit_made_while_the_dialog_was_open_to_what_it_didnt_chang
 
     let applied = files.apply(SettingsChanges {
         status_bar: Some(StatusBarSettings { visible: true }),
-        releases: None,
+        ..SettingsChanges::default()
     });
     let after = fs::read_to_string(folders.settings_file()).unwrap();
     fs::remove_dir_all(root).unwrap();
@@ -575,8 +575,8 @@ fn apply_over_a_settings_file_that_stopped_parsing_refuses_and_leaves_it_alone()
     fs::write(folders.settings_file(), "[status_bar\n").unwrap();
 
     let applied = files.apply(SettingsChanges {
-        status_bar: None,
         releases: Some(ReleaseSettings { check: false }),
+        ..SettingsChanges::default()
     });
     let after = fs::read_to_string(folders.settings_file()).unwrap();
     fs::remove_dir_all(root).unwrap();
@@ -1799,6 +1799,138 @@ fn machine_toml_says_how_long_an_idle_server_runs_and_30_minutes_stands_for_what
             30
         );
     }
+}
+
+fn minutes(count: u32) -> NonZeroU32 {
+    NonZeroU32::new(count).unwrap()
+}
+
+#[test]
+fn settings_advanced_shows_each_server_s_path_as_machine_toml_writes_it() {
+    let (folders, root) = temp_folders("language-servers-loaded");
+    let text = "[language_servers]\nidle_minutes = 5\n[language_servers.clangd]\npath = 'clangd/bin/clangd.exe'\n";
+    fs::write(folders.machine_file(), text).unwrap();
+
+    let loaded = SettingsFiles::load(folders)
+        .loaded()
+        .language_servers
+        .clone();
+    fs::remove_dir_all(root).unwrap();
+
+    let expected = LanguageServerSettings {
+        clangd: Some(PathBuf::from("clangd/bin/clangd.exe")),
+        idle_minutes: minutes(5),
+        ..LanguageServerSettings::default()
+    };
+    assert_eq!(loaded, expected);
+}
+
+#[test]
+fn apply_saves_each_server_s_path_and_the_idle_time_in_machine_toml_and_leaves_settings_toml_alone()
+{
+    let (folders, root) = temp_folders("language-servers-apply");
+    let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+    let servers = LanguageServerSettings {
+        ty: Some(PathBuf::from("tools/ty.exe")),
+        rust_analyzer: Some(PathBuf::from("ra/rust-analyzer.exe")),
+        idle_minutes: minutes(10),
+        ..LanguageServerSettings::default()
+    };
+
+    let answer = owner.apply(SettingsChanges {
+        language_servers: Some(servers.clone()),
+        ..SettingsChanges::default()
+    });
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    let settings_saved = folders.settings_file().exists();
+    let restarted = SettingsFiles::load(folders.clone()).view().language_servers;
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(answer.unwrap().loaded.language_servers, servers);
+    assert_eq!(
+        machine,
+        "[language_servers]\nidle_minutes = 10\n\n[language_servers.ty]\npath = \"tools/ty.exe\"\n\n[language_servers.rust-analyzer]\npath = \"ra/rust-analyzer.exe\"\n"
+    );
+    assert!(!settings_saved);
+    assert_eq!(restarted.ty, Some(folders.data.join("tools/ty.exe")));
+    assert_eq!(restarted.idle, Duration::from_secs(600));
+}
+
+#[test]
+fn a_server_cleared_in_settings_loses_its_path_and_the_default_idle_time_goes() {
+    let (folders, root) = temp_folders("language-servers-clear");
+    let text = "# Mine.\npanes.sidebar = 200\n\n[language_servers]\nidle_minutes = 10\n\n[language_servers.ty]\npath = 'ty.exe'\n\n[language_servers.clangd]\n# Where I unpacked it.\npath = 'clangd.exe'\n";
+    fs::write(folders.machine_file(), text).unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+
+    let applied = files.apply(SettingsChanges {
+        language_servers: Some(LanguageServerSettings {
+            clangd: Some(PathBuf::from("clangd.exe")),
+            ..LanguageServerSettings::default()
+        }),
+        ..SettingsChanges::default()
+    });
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    applied.unwrap();
+    assert_eq!(
+        machine,
+        "# Mine.\npanes.sidebar = 200\n\n[language_servers]\n\n[language_servers.clangd]\n# Where I unpacked it.\npath = 'clangd.exe'\n"
+    );
+    assert_eq!(files.view().language_servers.ty, None);
+}
+
+#[test]
+fn apply_over_a_machine_toml_that_stopped_parsing_refuses_and_saves_neither_file() {
+    let (folders, root) = temp_folders("language-servers-broken");
+    let mut files = SettingsFiles::load(folders.clone());
+    fs::write(folders.machine_file(), "[language_servers\n").unwrap();
+
+    let applied = files.apply(SettingsChanges {
+        status_bar: Some(StatusBarSettings { visible: false }),
+        language_servers: Some(LanguageServerSettings::default()),
+        ..SettingsChanges::default()
+    });
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    let settings_saved = folders.settings_file().exists();
+    fs::remove_dir_all(root).unwrap();
+
+    assert!(applied.is_err());
+    assert_eq!(machine, "[language_servers\n");
+    assert!(!settings_saved);
+}
+
+#[test]
+fn apply_writes_a_server_s_path_over_a_hand_written_path_that_isn_t_a_table() {
+    let (folders, root) = temp_folders("language-servers-not-a-table");
+    fs::write(
+        folders.machine_file(),
+        "[language_servers]\nty = \"tools/ty.exe\"\n",
+    )
+    .unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+
+    let applied = files.apply(SettingsChanges {
+        language_servers: Some(LanguageServerSettings {
+            ty: Some(PathBuf::from("tools/ty.exe")),
+            ..LanguageServerSettings::default()
+        }),
+        ..SettingsChanges::default()
+    });
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    applied.unwrap();
+    assert_eq!(
+        machine,
+        "[language_servers]\n\n[language_servers.ty]\npath = \"tools/ty.exe\"\n"
+    );
+    // A relative path starts at the data folder, on each OS.
+    assert_eq!(
+        files.view().language_servers.ty,
+        Some(folders.data.join("tools/ty.exe"))
+    );
 }
 
 #[test]

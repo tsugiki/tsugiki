@@ -19,7 +19,7 @@ pub use client::{
     Canceller, Document, Event, Exit, Init, Pending, Process, RequestError, Server, Starting,
     Streams,
 };
-pub use process::Launch;
+pub use process::{Launch, version_of};
 pub use types::{
     Definitions, Diagnostic, Diagnostics, Language, Location, LocationLink, Position, Progress,
     ProgressToken, Range, ServerInfo, Severity, Status, Uri, WorkDone,

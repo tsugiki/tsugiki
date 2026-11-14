@@ -4,12 +4,15 @@ import {
   commands,
   type DiffFiles,
   type DiffPeek,
+  type LanguageServerSettings_Serialize,
   type LoadedSettings_Serialize,
   type Settings_Serialize,
 } from "$lib/data/bindings";
 
 /** What `settings.toml` holds, as the core read it. */
 export type Settings = Settings_Serialize;
+/** Where each language server is, and the idle time, as `machine.toml` holds them (#683). */
+export type LanguageServerSettings = LanguageServerSettings_Serialize;
 /** The settings, with what was wrong with the files the core read them from. */
 export type LoadedSettings = LoadedSettings_Serialize;
 
@@ -17,6 +20,8 @@ export class SettingsState {
   /** The settings the core read, or those the Settings dialog previews while it's open. Unset until the core
    * answers. */
   settings = $state<Settings>();
+  /** The language servers' settings the core read, or those the Settings dialog edits while it's open. */
+  languageServers = $state<LanguageServerSettings>();
   problems = $state<string[]>([]);
   /** Whether the core couldn't be asked at all. */
   #unasked = $state(false);
@@ -45,9 +50,10 @@ export class SettingsState {
   }
 
   /** Holds what the core read, and what was wrong with the files it read them from. */
-  take({ settings, problems }: LoadedSettings) {
+  take({ settings, language_servers, problems }: LoadedSettings) {
     this.#takes += 1;
     this.settings = settings;
+    this.languageServers = language_servers;
     this.problems = problems;
   }
 

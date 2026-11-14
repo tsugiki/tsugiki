@@ -2,7 +2,7 @@
 // opens, previews each change on the window at once, and Apply saves them or Cancel puts them back (#520).
 import { commands, type SettingsChanges_Deserialize } from "$lib/data/bindings";
 import { ask } from "./answer";
-import type { Settings, SettingsState } from "./settings.svelte";
+import type { LanguageServerSettings, LoadedSettings, Settings, SettingsState } from "./settings.svelte";
 
 /** The pages of the dialog's left column, in its order. */
 export const SETTINGS_PAGES = ["General", "Account", "Repositories", "Sync", "Keyboard", "Advanced"] as const;
@@ -15,20 +15,28 @@ export type StoredIn = "settings" | "machine" | "database" | "keychain";
 /** The tables of `settings.toml` the dialog edits. */
 type Edited = "status_bar" | "releases";
 
+/** What the files said as the dialog opened, or as its last Apply saved them. */
+interface Saved {
+  settings: Settings;
+  servers: LanguageServerSettings;
+}
+
 export class SettingsDialog {
   readonly #settings: SettingsState;
   shown = $state<Shown>({ page: "General" });
-  /** The settings once the dialog read the files, which Cancel puts back. Unset until then, and for good if
+  /** What the files said once the dialog read them, which Cancel puts back. Unset until then, and for good if
    * it couldn't read them. */
-  #before = $state.raw<Settings>();
+  #before = $state.raw<Saved>();
   /** Why the dialog couldn't read the files again or save to them, until the next try. */
   problem = $state<string>();
   /** Whether Apply's save is on its way, which Cancel can't take back. */
   applying = $state(false);
 
-  /** The dialog previews on `settings`, so a load mustn't replace them until it closes. */
-  constructor(settings: SettingsState) {
+  /** The dialog previews on `settings`, so a load mustn't replace them until it closes. It opens on
+   * `shown`. */
+  constructor(settings: SettingsState, shown: Shown = { page: "General" }) {
     this.#settings = settings;
+    this.shown = shown;
     settings.preview(true);
   }
 
@@ -37,15 +45,22 @@ export class SettingsDialog {
     return this.#before === undefined ? undefined : this.#settings.settings;
   }
 
+  /** The language servers' settings the dialog shows and changes, once it has read the files. */
+  get servers(): LanguageServerSettings | undefined {
+    return this.#before === undefined ? undefined : this.#settings.languageServers;
+  }
+
   /** Each table the dialog edits that differs from what the files said as it opened, which Apply saves. */
   get changes(): SettingsChanges_Deserialize {
-    const { current } = this;
+    const { current, servers } = this;
     const before = this.#before;
-    if (current === undefined || before === undefined) return {};
-    const differs = (table: Edited) => JSON.stringify(current[table]) !== JSON.stringify(before[table]);
+    if (current === undefined || servers === undefined || before === undefined) return {};
+    const same = (now: unknown, then: unknown) => JSON.stringify(now) === JSON.stringify(then);
+    const differs = (table: Edited) => !same(current[table], before.settings[table]);
     return {
       ...(differs("status_bar") && { status_bar: current.status_bar }),
       ...(differs("releases") && { releases: current.releases }),
+      ...(!same(servers, before.servers) && { language_servers: servers }),
     };
   }
 
@@ -67,8 +82,7 @@ export class SettingsDialog {
       this.problem = `Tsugiki can't read the settings files again: ${answer.error.message}`;
       return false;
     }
-    this.#settings.take(answer.data);
-    this.#before = $state.snapshot(this.#settings.settings);
+    this.#take(answer.data);
     return true;
   }
 
@@ -77,16 +91,25 @@ export class SettingsDialog {
     if (this.current !== undefined) edit(this.current);
   }
 
+  /** Changes the language servers' settings, which take effect on Apply. */
+  changeServers(edit: (servers: LanguageServerSettings) => void) {
+    if (this.servers !== undefined) edit(this.servers);
+  }
+
   /** Puts back what the files said as the dialog opened, and says whether it may close: not while Apply
    * saves. */
   cancel(): boolean {
     if (this.applying) return false;
-    if (this.#before !== undefined) this.#settings.settings = structuredClone(this.#before);
+    if (this.#before !== undefined) {
+      this.#settings.settings = structuredClone(this.#before.settings);
+      this.#settings.languageServers = structuredClone(this.#before.servers);
+    }
     return this.#close();
   }
 
   /** Saves what changed, and says whether the dialog may close: with nothing changed it closes at once, as
-   * OK, and a save the core refused keeps it open with why. */
+   * OK, and a save the core refused keeps it open with why. A save that changed a language server keeps it
+   * open too, so its row in Settings › Advanced can say what the core's check of it finds (#683). */
   async apply(): Promise<boolean> {
     if (this.applying) return false;
     const changes = $state.snapshot(this.changes);
@@ -98,8 +121,22 @@ export class SettingsDialog {
       this.problem = `Tsugiki can't save the settings: ${answer.error.message}`;
       return false;
     }
-    this.#settings.take(answer.data);
-    return this.#close();
+    if (changes.language_servers === undefined) {
+      this.#settings.take(answer.data);
+      return this.#close();
+    }
+    this.problem = undefined;
+    this.#take(answer.data);
+    return false;
+  }
+
+  /** Holds what the files say now, `loaded`, which Cancel puts back and the changes are measured from. */
+  #take(loaded: LoadedSettings) {
+    this.#before = {
+      settings: structuredClone(loaded.settings),
+      servers: structuredClone(loaded.language_servers),
+    };
+    this.#settings.take(loaded);
   }
 
   #close(): true {

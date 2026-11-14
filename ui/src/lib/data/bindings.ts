@@ -53,6 +53,11 @@ export const commands = {
 	 *  waits on the user, so it waits on a thread meant for blocking.
 	 */
 	pickFolder: () => typedError<string | null, Error_Serialize>(__TAURI_INVOKE("pick_folder")),
+	/**
+	 *  Opens the system's file picker for a language server's program, as Browse… on its row in Settings ›
+	 *  Advanced does, and gives the file the user picked, or nothing if they cancelled.
+	 */
+	pickProgram: () => typedError<string | null, Error_Serialize>(__TAURI_INVOKE("pick_program")),
 	/**  Refreshes the open Repository now, and returns at once. */
 	refresh: () => __TAURI_INVOKE<void>("refresh"),
 	/**
@@ -136,9 +141,10 @@ export const commands = {
 	 */
 	rereadSettings: () => typedError<LoadedSettings_Serialize, Error_Serialize>(__TAURI_INVOKE("reread_settings")),
 	/**
-	 *  Saves the tables the Settings dialog's Apply changed to `settings.toml`, over what the file says now and
-	 *  keeping the rest of it, and answers with the settings in force after. The window previews them already.
-	 *  This waits on small files.
+	 *  Saves the tables the Settings dialog's Apply changed to `settings.toml`, and the language servers to
+	 *  `machine.toml`, over what the files say now and keeping the rest of them, and answers with the settings in
+	 *  force after. The window previews them already. A server whose path changed is checked after, and its row
+	 *  in Settings › Advanced says what the check found. This waits on small files.
 	 */
 	applySettings: (changes: SettingsChanges_Deserialize) => typedError<LoadedSettings_Serialize, Error_Serialize>(__TAURI_INVOKE("apply_settings", { changes })),
 	/**
@@ -193,12 +199,22 @@ export const commands = {
 	 *  ty to start, or to answer (#440). `index` hears how far clangd has got with its index, if it answers
 	 *  while it builds it, and what clangd names once the core has asked it again with the index built (#680).
 	 */
-	definitions: (lookup: DefinitionLookup, waiting: Channel<Waiting>, index: Channel<Index_Deserialize>) => typedError<Answer, Error_Serialize>(__TAURI_INVOKE("definitions", { lookup, waiting, index })),
+	definitions: (lookup: DefinitionLookup, waiting: Channel<Waiting>, index: Channel<Index_Deserialize>) => typedError<Answer_Serialize, Error_Serialize>(__TAURI_INVOKE("definitions", { lookup, waiting, index })),
 	/**
 	 *  Cancels the lookup with `ticket`, as when the user closes the Definition peek while it waits (#440). The
 	 *  lookup then answers that it was cancelled, even if the core takes the cancel before the lookup.
 	 */
 	cancelDefinitions: (ticket: Ticket) => __TAURI_INVOKE<void>("cancel_definitions", { ticket }),
+	/**
+	 *  Each language server's row in Settings › Advanced, as the servers' thread last wrote them. The
+	 *  `language-servers-changed` event brings each change after. This never waits.
+	 */
+	languageServers: () => __TAURI_INVOKE<ServerRow_Serialize[]>("language_servers"),
+	/**
+	 *  Opens the log language server `server` writes for `repository` in the system's program for it, as Open
+	 *  log on the server's row in Settings › Advanced does.
+	 */
+	openServerLog: (repository: string, server: ServerName) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_server_log", { repository, server })),
 	/**
 	 *  Some lines of the file a hit is in, which the Definition peek shows (#439): a file of the Repository at
 	 *  the hit's commit, read from the mirror, or one outside it that a language server named. It never waits
@@ -226,6 +242,7 @@ export const events = {
 	cloningChanged: makeEvent<CloningChanged_Serialize, CloningChanged_Deserialize>("cloning-changed"),
 	headsFetchFailed: makeEvent<HeadsFetchFailed, HeadsFetchFailed>("heads-fetch-failed"),
 	headsFetched: makeEvent<HeadsFetched, HeadsFetched>("heads-fetched"),
+	languageServersChanged: makeEvent<LanguageServersChanged_Serialize, LanguageServersChanged_Deserialize>("language-servers-changed"),
 	lastSyncChanged: makeEvent<LastSyncChanged_Serialize, LastSyncChanged_Deserialize>("last-sync-changed"),
 	mirrorProblemChanged: makeEvent<MirrorProblemChanged_Serialize, MirrorProblemChanged_Deserialize>("mirror-problem-changed"),
 	mirrorQuestionChanged: makeEvent<MirrorQuestionChanged_Serialize, MirrorQuestionChanged_Deserialize>("mirror-question-changed"),
@@ -254,11 +271,35 @@ export type About = {
 export type Anchor = "current" | "outdated";
 
 /**  What a lookup found. */
-export type Answer = 
+export type Answer = Answer_Serialize | Answer_Deserialize;
+
+/**  What a lookup found. */
+export type Answer_Deserialize = 
 /**  The places the server named, in its order, which may be none. */
 { state: "found"; hits: Hit[] } | 
 /**  The server for the file's language isn't set up. */
 { state: "not_set_up"; server: ServerName } | 
+/**
+ *  The server for the file's language has a problem, which its row in Settings › Advanced says too.
+ *  The next lookup tries it again.
+ */
+{ state: "problem"; server: ServerName; problem: ServerProblem_Deserialize } | 
+/**  Tsugiki has no server for the file's language yet. */
+{ state: "no_server" } | 
+/**  A newer lookup, or the user, cancelled it before the server answered. */
+{ state: "cancelled" };
+
+/**  What a lookup found. */
+export type Answer_Serialize = 
+/**  The places the server named, in its order, which may be none. */
+{ state: "found"; hits: Hit[] } | 
+/**  The server for the file's language isn't set up. */
+{ state: "not_set_up"; server: ServerName } | 
+/**
+ *  The server for the file's language has a problem, which its row in Settings › Advanced says too.
+ *  The next lookup tries it again.
+ */
+{ state: "problem"; server: ServerName; problem: ServerProblem_Serialize } | 
 /**  Tsugiki has no server for the file's language yet. */
 { state: "no_server" } | 
 /**  A newer lookup, or the user, cancelled it before the server answered. */
@@ -789,6 +830,12 @@ export type Found = {
 	more: boolean,
 };
 
+/**  A version of a server Tsugiki found, and whether it is one we tested. Another is used all the same. */
+export type FoundVersion = {
+	version: string,
+	tested: boolean,
+};
+
 export type Frames = {
 	count: number,
 	p95_ms: number | null,
@@ -1122,6 +1169,54 @@ export type Jumps = {
 /**  The name of a label, as GitHub spells it. It reaches the UI as a plain string. */
 export type Label = string;
 
+/**
+ *  `[language_servers]` in `machine.toml` as Settings › Advanced shows and changes it (#683): each server's
+ *  path as the file gives it, which may be relative to `machine.toml`'s folder, and the idle time.
+ */
+export type LanguageServerSettings = LanguageServerSettings_Serialize | LanguageServerSettings_Deserialize;
+
+/**
+ *  `[language_servers]` in `machine.toml` as Settings › Advanced shows and changes it (#683): each server's
+ *  path as the file gives it, which may be relative to `machine.toml`'s folder, and the idle time.
+ */
+export type LanguageServerSettings_Deserialize = {
+	ty?: string | null,
+	"rust-analyzer"?: string | null,
+	clangd?: string | null,
+	/**  The minutes a server that no lookup reaches runs before it stops. */
+	idle_minutes: number,
+};
+
+/**
+ *  `[language_servers]` in `machine.toml` as Settings › Advanced shows and changes it (#683): each server's
+ *  path as the file gives it, which may be relative to `machine.toml`'s folder, and the idle time.
+ */
+export type LanguageServerSettings_Serialize = {
+	ty: string | null,
+	"rust-analyzer": string | null,
+	clangd: string | null,
+	/**  The minutes a server that no lookup reaches runs before it stops. */
+	idle_minutes: number,
+};
+
+/**
+ *  Sent when a language server's row in Settings › Advanced changes: a check of a new path ends, a server
+ *  starts or stops, or one has a problem.
+ */
+export type LanguageServersChanged = LanguageServersChanged_Serialize | LanguageServersChanged_Deserialize;
+
+/**
+ *  Sent when a language server's row in Settings › Advanced changes: a check of a new path ends, a server
+ *  starts or stops, or one has a problem.
+ */
+export type LanguageServersChanged_Deserialize = ServerRow_Deserialize[];
+
+/**
+ *  Sent when a language server's row in Settings › Advanced changes: a check of a new path ends, a server
+ *  starts or stops, or one has a problem.
+ */
+export type LanguageServersChanged_Serialize = ServerRow_Serialize[];
+
 /**  When the open Repository last finished a sync. */
 export type LastSync = LastSync_Serialize | LastSync_Deserialize;
 
@@ -1221,12 +1316,16 @@ export type LoadedSettings = LoadedSettings_Serialize | LoadedSettings_Deseriali
 /**  The settings in force, and what is wrong with the files they came from, in words for the status bar. */
 export type LoadedSettings_Deserialize = {
 	settings: Settings_Deserialize,
+	/**  `[language_servers]` from `machine.toml`, which Settings › Advanced shows (#683). */
+	language_servers: LanguageServerSettings_Deserialize,
 	problems: string[],
 };
 
 /**  The settings in force, and what is wrong with the files they came from, in words for the status bar. */
 export type LoadedSettings_Serialize = {
 	settings: Settings_Serialize,
+	/**  `[language_servers]` from `machine.toml`, which Settings › Advanced shows (#683). */
+	language_servers: LanguageServerSettings_Serialize,
 	problems: string[],
 };
 
@@ -2181,6 +2280,97 @@ export type ServerName =
 /**  clangd, for C. */
 "clangd";
 
+/**
+ *  What is wrong with a language server, which its row in Settings › Advanced and the Definition peek say
+ *  in words of the window's. The servers' thread owns it, and more kinds can join it, such as what clangd
+ *  reports while it runs (#684).
+ */
+export type ServerProblem = ServerProblem_Serialize | ServerProblem_Deserialize;
+
+/**
+ *  What is wrong with a language server, which its row in Settings › Advanced and the Definition peek say
+ *  in words of the window's. The servers' thread owns it, and more kinds can join it, such as what clangd
+ *  reports while it runs (#684).
+ */
+export type ServerProblem_Deserialize = 
+/**  The program's `--version` doesn't name the server: the first line it printed, which may be empty. */
+{ kind: "not_this_server"; first_line: string } | 
+/**  The program didn't start, or didn't answer `initialize`: why, as the OS or the server said. */
+{ kind: "did_not_start"; cause: string } | 
+/**  The server exited on its own: its exit code, if it had one, and the end of its error output. */
+{ kind: "stopped"; code?: number | null; stderr_tail: string };
+
+/**
+ *  What is wrong with a language server, which its row in Settings › Advanced and the Definition peek say
+ *  in words of the window's. The servers' thread owns it, and more kinds can join it, such as what clangd
+ *  reports while it runs (#684).
+ */
+export type ServerProblem_Serialize = 
+/**  The program's `--version` doesn't name the server: the first line it printed, which may be empty. */
+{ kind: "not_this_server"; first_line: string } | 
+/**  The program didn't start, or didn't answer `initialize`: why, as the OS or the server said. */
+{ kind: "did_not_start"; cause: string } | 
+/**  The server exited on its own: its exit code, if it had one, and the end of its error output. */
+{ kind: "stopped"; code: number | null; stderr_tail: string };
+
+/**  One server's row in Settings › Advanced. */
+export type ServerRow = ServerRow_Serialize | ServerRow_Deserialize;
+
+/**  One server's row in Settings › Advanced. */
+export type ServerRow_Deserialize = {
+	server: ServerName,
+	status: ServerStatus_Deserialize,
+	/**
+	 *  The version `--version` printed when the user set its path, or the one the server named answering
+	 *  `initialize`, if either did.
+	 */
+	version?: FoundVersion | null,
+	/**  The versions we tested, which the docs name too. */
+	tested: string[],
+};
+
+/**  One server's row in Settings › Advanced. */
+export type ServerRow_Serialize = {
+	server: ServerName,
+	status: ServerStatus_Serialize,
+	/**
+	 *  The version `--version` printed when the user set its path, or the one the server named answering
+	 *  `initialize`, if either did.
+	 */
+	version: FoundVersion | null,
+	/**  The versions we tested, which the docs name too. */
+	tested: string[],
+};
+
+/**  Where a language server is at, as its row in Settings › Advanced says. */
+export type ServerStatus = ServerStatus_Serialize | ServerStatus_Deserialize;
+
+/**  Where a language server is at, as its row in Settings › Advanced says. */
+export type ServerStatus_Deserialize = 
+/**  `machine.toml` gives it no path. */
+{ state: "not_set_up" } | 
+/**  It has a path, and runs for no Repository yet. */
+{ state: "ready" } | 
+/**  It runs for a Repository. */
+{ state: "running" } | 
+/**  It stopped as no lookup reached it for the idle time, and the next lookup starts it again. */
+{ state: "idle" } | 
+/**  The last thing that happened to it went wrong. The next lookup tries it again. */
+{ state: "problem"; problem: ServerProblem_Deserialize };
+
+/**  Where a language server is at, as its row in Settings › Advanced says. */
+export type ServerStatus_Serialize = 
+/**  `machine.toml` gives it no path. */
+{ state: "not_set_up" } | 
+/**  It has a path, and runs for no Repository yet. */
+{ state: "ready" } | 
+/**  It runs for a Repository. */
+{ state: "running" } | 
+/**  It stopped as no lookup reached it for the idle time, and the next lookup starts it again. */
+{ state: "idle" } | 
+/**  The last thing that happened to it went wrong. The next lookup tries it again. */
+{ state: "problem"; problem: ServerProblem_Serialize };
+
 /**  What `settings.toml` holds. A value the file leaves out takes its default. */
 export type Settings = Settings_Serialize | Settings_Deserialize;
 
@@ -2197,6 +2387,8 @@ export type SettingsChanges = SettingsChanges_Serialize | SettingsChanges_Deseri
 export type SettingsChanges_Deserialize = {
 	status_bar?: StatusBarSettings_Deserialize | null,
 	releases?: ReleaseSettings_Deserialize | null,
+	/**  `[language_servers]` in `machine.toml`, which Settings › Advanced edits (#683). */
+	language_servers?: LanguageServerSettings_Deserialize | null,
 };
 
 /**
@@ -2206,6 +2398,8 @@ export type SettingsChanges_Deserialize = {
 export type SettingsChanges_Serialize = {
 	status_bar: StatusBarSettings_Serialize | null,
 	releases: ReleaseSettings_Serialize | null,
+	/**  `[language_servers]` in `machine.toml`, which Settings › Advanced edits (#683). */
+	language_servers: LanguageServerSettings_Serialize | null,
 };
 
 /**  What `settings.toml` holds. A value the file leaves out takes its default. */

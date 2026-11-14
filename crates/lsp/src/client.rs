@@ -44,6 +44,8 @@ pub struct Streams {
     pub output: Box<dyn Read + Send>,
     /// The server's error output, which is its log.
     pub errors: Box<dyn Read + Send>,
+    /// Where the client copies the server's error output as it comes, such as a log file, if anywhere.
+    pub log: Option<Box<dyn Write + Send>>,
     pub process: Box<dyn Process>,
 }
 
@@ -285,11 +287,12 @@ impl Server {
             input,
             output,
             errors,
+            log,
             process,
         } = streams;
         let (errors_open, errors_closed) = mpsc::channel::<()>();
         let reads = inputs.clone();
-        let _errors = thread::spawn(move || read_errors(errors, &reads, errors_open));
+        let _errors = thread::spawn(move || read_errors((errors, log), &reads, errors_open));
         let reads = inputs.clone();
         let _output = thread::spawn(move || read_output(output, &errors_closed, &reads));
         let (writes, bodies) = mpsc::channel();
@@ -786,11 +789,22 @@ fn read_output(output: Box<dyn Read + Send>, errors_closed: &Receiver<()>, input
     inputs.send(Input::OutputEnded);
 }
 
-/// Hands the owner the server's error output as it comes, and drops `open` when it ends.
-fn read_errors(mut errors: Box<dyn Read + Send>, inputs: &ToOwner, open: Sender<()>) {
+/// Hands the owner the server's error output as it comes, copies it to the log if there is one, and drops
+/// `open` when it ends. A log that fails to take a piece takes nothing more.
+fn read_errors(
+    (mut errors, mut copy): (Box<dyn Read + Send>, Option<Box<dyn Write + Send>>),
+    inputs: &ToOwner,
+    open: Sender<()>,
+) {
     let mut buffer = [0; 4096];
     while let Ok(read @ 1..) = errors.read(&mut buffer) {
         let piece = buffer.get(..read).unwrap_or_default().to_vec();
+        if let Some(file) = &mut copy
+            && let Err(cause) = file.write_all(&piece).and_then(|()| file.flush())
+        {
+            log::warn!("Tsugiki can't write a language server's log: {cause}");
+            copy = None;
+        }
         inputs.send(Input::Errors(piece));
     }
     drop(open);

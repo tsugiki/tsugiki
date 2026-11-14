@@ -44,6 +44,14 @@ impl Process for FakeProcess {
 
 /// A client talking to a fake server that hasn't been initialized.
 pub(crate) fn connect() -> (Starting, Receiver<Event>, Fake) {
+    connect_logged(None)
+}
+
+/// A client talking to a fake server that hasn't been initialized, which copies the server's error output
+/// to `log`.
+pub(crate) fn connect_logged(
+    log: Option<Box<dyn Write + Send>>,
+) -> (Starting, Receiver<Event>, Fake) {
     let (client_reads, server_writes) = pipe().unwrap();
     let (server_reads, client_writes) = pipe().unwrap();
     let (errors_read, errors_written) = pipe().unwrap();
@@ -53,6 +61,7 @@ pub(crate) fn connect() -> (Starting, Receiver<Event>, Fake) {
         input: Box::new(client_writes),
         output: Box::new(client_reads),
         errors: Box::new(errors_read),
+        log,
         process: Box::new(FakeProcess {
             exit: exit_code,
             killed: killing,

@@ -4,9 +4,9 @@
 
 use std::io::{BufRead, BufReader, PipeReader, PipeWriter, Write, pipe};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::{env, fs, thread};
 
 use serde_json::{Value, json};
@@ -133,16 +133,40 @@ pub(crate) struct FakeClangd {
     says: Sender<Option<Value>>,
     /// The lookups the client has asked it.
     asked: Arc<AtomicUsize>,
+    /// Its error output, until it ends.
+    errors: Arc<Mutex<Option<PipeWriter>>>,
+    /// The exit code its process ends with.
+    code: Arc<AtomicI32>,
+}
+
+/// What a [`FakeClangd`] does with `initialize`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Initialize {
+    Answer,
+    /// Fails it with an error.
+    Refuse,
+    /// Answers it, then ends with exit code 0 once the client says it is initialized.
+    AnswerThenLeave,
 }
 
 impl FakeClangd {
     /// A fake clangd that answers the client's first `textDocument/definition` with the first of `answers`,
     /// the next with the next, and the rest with the last, and the client that talks to it, which has yet
-    /// to initialize it. An answer with an `error` field fails its request with that error.
+    /// to initialize it. An answer with an `error` field fails its request with that error, and one with a
+    /// `silent` field never comes.
     pub(crate) fn start(answers: Vec<Value>) -> (Self, (Starting, Receiver<Event>)) {
+        Self::starting(answers, Initialize::Answer)
+    }
+
+    /// [`FakeClangd::start`], with a fake that does what `initialize` says with the client's `initialize`.
+    pub(crate) fn starting(
+        answers: Vec<Value>,
+        initialize: Initialize,
+    ) -> (Self, (Starting, Receiver<Event>)) {
         let (client_reads, server_writes) = pipe().unwrap();
         let (server_reads, client_writes) = pipe().unwrap();
         let (errors_read, errors_written) = pipe().unwrap();
+        let errors = Arc::new(Mutex::new(Some(errors_written)));
         let (says, said) = mpsc::channel();
         let (ended, end) = mpsc::channel::<()>();
         let crashed = ended.clone();
@@ -151,20 +175,28 @@ impl FakeClangd {
             let _gone = crashed.send(());
         });
         let (replies, asked) = (says.clone(), Arc::new(AtomicUsize::new(0)));
-        let counts = Arc::clone(&asked);
+        let (counts, closes) = (Arc::clone(&asked), Arc::clone(&errors));
         let _reads = thread::spawn(move || {
-            serve(server_reads, &replies, (&answers, &counts));
+            serve(server_reads, &replies, (&answers, &counts), initialize);
             // The process ends, and its error output with it, once it stops reading.
             let _gone = ended.send(());
-            drop(errors_written);
+            drop(closes.lock().unwrap().take());
         });
+        let code = Arc::new(AtomicI32::new(0));
         let client = Server::over(Streams {
             input: Box::new(client_writes),
             output: Box::new(client_reads),
             errors: Box::new(errors_read),
-            process: Box::new(FakeProcess(end)),
+            log: None,
+            process: Box::new(FakeProcess(end, Arc::clone(&code))),
         });
-        (Self { says, asked }, client)
+        let fake = Self {
+            says,
+            asked,
+            errors,
+            code,
+        };
+        (fake, client)
     }
 
     /// Reports clangd's background index's progress as `value`, the value of a `$/progress`.
@@ -174,8 +206,13 @@ impl FakeClangd {
         self.says.send(Some(progress)).unwrap();
     }
 
-    /// Ends the fake's output and its process, as a crash does.
-    pub(crate) fn crash(&self) {
+    /// Writes `stderr` to the fake's error output and ends it, then ends its output and its process with
+    /// exit code `code`, as a crash does.
+    pub(crate) fn crash(&self, code: i32, stderr: &str) {
+        if let Some(mut errors) = self.errors.lock().unwrap().take() {
+            errors.write_all(stderr.as_bytes()).unwrap();
+        }
+        self.code.store(code, Ordering::SeqCst);
         self.says.send(None).unwrap();
     }
 
@@ -185,13 +222,14 @@ impl FakeClangd {
     }
 }
 
-/// The process a [`FakeClangd`] stands in for, which ends once the fake stops reading or crashes.
-struct FakeProcess(Receiver<()>);
+/// The process a [`FakeClangd`] stands in for, which ends once the fake stops reading or crashes, with the
+/// exit code it holds.
+struct FakeProcess(Receiver<()>, Arc<AtomicI32>);
 
 impl Process for FakeProcess {
     fn wait(&mut self) -> Option<i32> {
         let _ended = self.0.recv();
-        Some(0)
+        Some(self.1.load(Ordering::SeqCst))
     }
 
     fn kill(&mut self) {}
@@ -199,11 +237,12 @@ impl Process for FakeProcess {
 
 /// Answers each request the client writes to `input` until it sends `exit` or closes the input: each
 /// `textDocument/definition` with the next of `answers`, or the last, counting them in `asked`, and the rest
-/// with an empty result.
+/// with an empty result. It does what `initialize` says with `initialize`.
 fn serve(
     input: PipeReader,
     replies: &Sender<Option<Value>>,
     (answers, asked): (&[Value], &AtomicUsize),
+    initialize: Initialize,
 ) {
     let mut input = BufReader::new(input);
     while let Some(message) = read_message(&mut input) {
@@ -212,6 +251,13 @@ fn serve(
         };
         let result = match method {
             "exit" => return,
+            "initialized" if initialize == Initialize::AnswerThenLeave => {
+                let _gone = replies.send(None);
+                return;
+            }
+            "initialize" if initialize == Initialize::Refuse => {
+                json!({"error": {"code": -32603, "message": "the workspace can't be read"}})
+            }
             "initialize" => json!({"capabilities": {}}),
             "textDocument/definition" => {
                 let count = asked.fetch_add(1, Ordering::SeqCst);
@@ -219,8 +265,9 @@ fn serve(
             }
             _ => Value::Null,
         };
-        // A notification gets no answer, and an answer with an `error` fails its request.
-        if let Some(id) = id {
+        // A notification gets no answer, nor does a request whose answer is `silent`, and an answer with
+        // an `error` fails its request.
+        if let Some(id) = id.filter(|_| result.get("silent").is_none()) {
             let reply = match result.get("error") {
                 Some(error) => json!({"jsonrpc": "2.0", "id": id, "error": error}),
                 None => json!({"jsonrpc": "2.0", "id": id, "result": result}),

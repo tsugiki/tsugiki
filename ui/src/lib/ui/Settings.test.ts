@@ -2,12 +2,44 @@ import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import type { ComponentProps } from "svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { openLink } from "$lib/state/browser";
-import { type LoadedSettings, SettingsState, type Settings as Values } from "$lib/state/settings.svelte";
+import type { ServerRow } from "$lib/state/language-servers.svelte";
+import {
+  type LanguageServerSettings,
+  type LoadedSettings,
+  SettingsState,
+  type Settings as Values,
+} from "$lib/state/settings.svelte";
 import Settings from "./Settings.svelte";
 
-const core = vi.hoisted(() => ({ tokenSource: vi.fn(), rereadSettings: vi.fn(), applySettings: vi.fn() }));
+const core = vi.hoisted(() => ({
+  tokenSource: vi.fn(),
+  rereadSettings: vi.fn(),
+  applySettings: vi.fn(),
+  languageServers: vi.fn(),
+  pickProgram: vi.fn(),
+  openServerLog: vi.fn(),
+}));
+/** The listener for the servers' rows, so a test can send it what the core would, and its stop. */
+const rowsHeard = vi.hoisted(() => ({
+  send: (payload: unknown) => {
+    void payload;
+  },
+  stop: vi.fn(),
+}));
 
-vi.mock("$lib/data/bindings", () => ({ commands: core }));
+vi.mock("$lib/data/bindings", () => ({
+  commands: core,
+  events: {
+    languageServersChanged: {
+      listen: async (listener: (event: { payload: unknown }) => void) => {
+        rowsHeard.send = (payload) => {
+          listener({ payload });
+        };
+        return rowsHeard.stop;
+      },
+    },
+  },
+}));
 vi.mock("$lib/state/browser", () => ({ openLink: vi.fn() }));
 
 const README = "https://github.com/tsugiki/tsugiki/blob/v0.3.1/crates/token/README.md";
@@ -29,10 +61,42 @@ const settingsWith = (change: (settings: Values) => void = () => {}): Values => 
   change(settings);
   return settings;
 };
-const loaded = (settings: Values, problems: string[] = []): LoadedSettings => ({
+/** What `machine.toml` says of the language servers when it says nothing. */
+const NO_SERVERS: LanguageServerSettings = {
+  ty: null,
+  "rust-analyzer": null,
+  clangd: null,
+  idle_minutes: 30,
+};
+const loaded = (
+  settings: Values,
+  problems: string[] = [],
+  language_servers: LanguageServerSettings = NO_SERVERS,
+): LoadedSettings => ({
   settings,
+  language_servers,
   problems,
 });
+/** The servers' rows as the core holds them unless a test says otherwise: ty ready with the version we
+ * tested, clangd stopped on its own, and rust-analyzer not set up. */
+const ROWS: ServerRow[] = [
+  {
+    server: "ty",
+    status: { state: "ready" },
+    version: { version: "0.0.103", tested: true },
+    tested: ["0.0.103"],
+  },
+  {
+    server: "clangd",
+    status: {
+      state: "problem",
+      problem: { kind: "stopped", code: 139, stderr_tail: "I[12:00:01] Indexing\nclangd: out of memory\n" },
+    },
+    version: { version: "23.1.0", tested: true },
+    tested: ["23.1.0"],
+  },
+  { server: "rust-analyzer", status: { state: "not_set_up" }, version: null, tested: ["1.99.1"] },
+];
 const ok = <T>(data: T) => ({ status: "ok", data }) as const;
 const refused = (message: string) => ({ status: "error", error: { kind: "internal", message } }) as const;
 
@@ -67,9 +131,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   core.tokenSource.mockResolvedValue("gh");
   core.rereadSettings.mockResolvedValue(ok(loaded(settingsWith())));
-  core.applySettings.mockImplementation(async (changes: Partial<Values>) =>
-    ok(loaded({ ...settingsWith(), ...changes })),
+  core.applySettings.mockImplementation(
+    async ({
+      language_servers,
+      ...changes
+    }: Partial<Values> & { language_servers?: LanguageServerSettings }) =>
+      ok(loaded({ ...settingsWith(), ...changes }, [], language_servers)),
   );
+  core.languageServers.mockResolvedValue(ROWS);
   state = new SettingsState();
   state.take(loaded(settingsWith()));
 });
@@ -108,7 +177,7 @@ describe("the Settings dialog", () => {
 
   it("shows the page picked in its left column", async () => {
     render(Settings, props());
-    for (const page of ["Repositories", "Sync", "Keyboard", "Advanced"]) {
+    for (const page of ["Repositories", "Sync", "Keyboard"]) {
       await go(page);
       expect(within(nav()).getByRole("button", { name: page }).getAttribute("aria-current")).toBe("page");
       expect(
@@ -346,6 +415,205 @@ describe("Settings › General", () => {
     expect(within(row).getByText("Takes effect at the next start")).toBeTruthy();
     const statusRow = statusBarBox().closest(".row") as HTMLElement;
     expect(within(statusRow).queryByText("Takes effect at the next start")).toBeNull();
+  });
+});
+
+describe("Settings › Advanced", () => {
+  const page = () => screen.getByRole("region", { name: "Advanced" });
+  const row = (name: string) => within(page()).getByRole("group", { name });
+  const path = (name: string) => within(row(name)).getByRole("textbox") as HTMLInputElement;
+  const idle = () => within(page()).getByRole("spinbutton") as HTMLInputElement;
+  /** The words of each paragraph of `name`'s row. */
+  const said = (name: string) => Array.from(row(name).querySelectorAll("p")).map((line) => line.textContent);
+  /** The dialog on Settings › Advanced, once it has read the files, with `given` props. */
+  const onAdvanced = async (given: Partial<ComponentProps<typeof Settings>> = {}) => {
+    const rendered = render(Settings, { ...props(), ...given });
+    await go("Advanced");
+    await vi.waitFor(() => {
+      expect(path("ty").hasAttribute("disabled")).toBe(false);
+    });
+    return rendered;
+  };
+
+  beforeEach(() => {
+    core.rereadSettings.mockResolvedValue(
+      ok(loaded(settingsWith(), [], { ...NO_SERVERS, ty: "tools/ty.exe", clangd: "C:/llvm/bin/clangd.exe" })),
+    );
+  });
+
+  it("shows each server's path, the version found, the versions tested, its state and its last problem", async () => {
+    await onAdvanced();
+    expect(screen.getByRole("heading", { name: "Language servers" })).toBeTruthy();
+    const names = within(page())
+      .getAllByRole("group")
+      .map((group) => group.getAttribute("aria-label"));
+    expect(names).toEqual(["ty", "clangd", "rust-analyzer"]);
+    expect([path("ty").value, path("clangd").value, path("rust-analyzer").value]).toEqual([
+      "tools/ty.exe",
+      "C:/llvm/bin/clangd.exe",
+      "",
+    ]);
+    expect(said("ty")).toEqual(["Version 0.0.103, the one we tested", "Ready"]);
+    expect(said("clangd")).toEqual(["Version 23.1.0, the one we tested", "clangd stopped (exit code 139)"]);
+    expect(within(row("clangd")).getByLabelText("What clangd wrote last").textContent).toBe(
+      "I[12:00:01] Indexing\nclangd: out of memory",
+    );
+    expect(said("rust-analyzer")).toEqual(["Tested with 1.99.1", "Not set up"]);
+    expect(idle().value).toBe("30");
+    // Each is kept in machine.toml.
+    const stored = Array.from(page().querySelectorAll<HTMLElement>(".stored")).map((label) => label.title);
+    expect(stored).toEqual(Array(4).fill("Saved in machine.toml, on this machine only"));
+  });
+
+  it("shows a row as the core says it changed, over the rows it asked for", async () => {
+    await onAdvanced();
+    rowsHeard.send([
+      { ...ROWS[0], status: { state: "running" }, version: { version: "0.0.110", tested: false } },
+      { ...ROWS[1], status: { state: "idle" } },
+    ]);
+    await vi.waitFor(() => {
+      expect(said("ty")).toEqual(["Tested with 0.0.103; you have 0.0.110", "Running"]);
+    });
+    expect(said("clangd")).toEqual(["Version 23.1.0, the one we tested", "Stopped (idle)"]);
+    expect(said("rust-analyzer")).toEqual([]);
+  });
+
+  it("saves a path typed or cleared on Apply, and stays open to show what the check finds", async () => {
+    const onclose = vi.fn();
+    await onAdvanced({ onclose });
+    // As Explorer's "Copy as path" gives it.
+    await fireEvent.change(path("rust-analyzer"), { target: { value: ' "C:/rust/bin/rust-analyzer.exe" ' } });
+    await fireEvent.change(path("clangd"), { target: { value: "  " } });
+    await fireEvent.click(button("Apply"));
+
+    await vi.waitFor(() => {
+      expect(button("OK")).toBeTruthy();
+    });
+    const servers = { ty: "tools/ty.exe", "rust-analyzer": "C:/rust/bin/rust-analyzer.exe", clangd: null };
+    expect(core.applySettings).toHaveBeenCalledWith({ language_servers: { ...servers, idle_minutes: 30 } });
+    expect(onclose).not.toHaveBeenCalled();
+    expect(path("rust-analyzer").value).toBe("C:/rust/bin/rust-analyzer.exe");
+    expect(path("clangd").value).toBe("");
+
+    rowsHeard.send([
+      { ...ROWS[2], status: { state: "ready" }, version: { version: "1.99.1", tested: true } },
+    ]);
+    await vi.waitFor(() => {
+      expect(said("rust-analyzer")).toEqual(["Version 1.99.1, the one we tested", "Ready"]);
+    });
+    // Cancel now puts back what the Apply saved.
+    await fireEvent.change(path("ty"), { target: { value: "elsewhere/ty.exe" } });
+    await fireEvent.click(button("Cancel"));
+    expect(onclose).toHaveBeenCalledOnce();
+    expect(state.languageServers).toEqual({ ...servers, idle_minutes: 30 });
+  });
+
+  it("puts a changed path back on Cancel", async () => {
+    await onAdvanced();
+    await fireEvent.change(path("ty"), { target: { value: "elsewhere/ty.exe" } });
+    expect(button("Apply")).toBeTruthy();
+    await fireEvent.click(button("Cancel"));
+    expect(state.languageServers?.ty).toBe("tools/ty.exe");
+  });
+
+  it("takes a whole number of minutes above 0 for the idle time, and shows the one in force for the rest", async () => {
+    await onAdvanced();
+    for (const typed of ["0", "2.5", ""]) {
+      await fireEvent.change(idle(), { target: { value: typed } });
+      expect(idle().value).toBe("30");
+    }
+    expect(button("OK")).toBeTruthy();
+
+    await fireEvent.change(idle(), { target: { value: "10" } });
+    await fireEvent.click(button("Apply"));
+    expect(core.applySettings).toHaveBeenCalledWith({
+      language_servers: {
+        ...NO_SERVERS,
+        ty: "tools/ty.exe",
+        clangd: "C:/llvm/bin/clangd.exe",
+        idle_minutes: 10,
+      },
+    });
+  });
+
+  it("fills in the path Browse… picked, and leaves it be when the user cancels the picker", async () => {
+    core.pickProgram.mockResolvedValueOnce(ok("D:/tools/rust-analyzer.exe")).mockResolvedValueOnce(ok(null));
+    await onAdvanced();
+    await fireEvent.click(within(row("rust-analyzer")).getByRole("button", { name: "Browse…" }));
+    await vi.waitFor(() => {
+      expect(path("rust-analyzer").value).toBe("D:/tools/rust-analyzer.exe");
+    });
+    await fireEvent.click(within(row("rust-analyzer")).getByRole("button", { name: "Browse…" }));
+    await vi.waitFor(() => {
+      expect(core.pickProgram).toHaveBeenCalledTimes(2);
+    });
+    expect(path("rust-analyzer").value).toBe("D:/tools/rust-analyzer.exe");
+  });
+
+  it("says why Browse… couldn't open the picker", async () => {
+    core.pickProgram.mockResolvedValue(refused("no dialog"));
+    await onAdvanced();
+    await fireEvent.click(within(row("ty")).getByRole("button", { name: "Browse…" }));
+    expect((await within(row("ty")).findByRole("alert")).textContent).toBe(
+      "Tsugiki can't open the file picker: no dialog",
+    );
+  });
+
+  it("opens the log of the open Repository's server, and says why it couldn't", async () => {
+    core.openServerLog.mockResolvedValueOnce(ok(null)).mockResolvedValueOnce(refused("no log yet"));
+    await onAdvanced({ repository: "python/cpython" });
+    const openLog = within(row("clangd")).getByRole("button", { name: "Open log" });
+    expect(openLog.title).toBe("The log clangd writes for python/cpython");
+    await fireEvent.click(openLog);
+    await vi.waitFor(() => {
+      expect(core.openServerLog).toHaveBeenCalledWith("python/cpython", "clangd");
+    });
+    expect(within(row("clangd")).queryByRole("alert")).toBeNull();
+
+    await fireEvent.click(openLog);
+    expect((await within(row("clangd")).findByRole("alert")).textContent).toBe(
+      "Tsugiki can't open clangd's log: no log yet",
+    );
+  });
+
+  it("offers no Open log without an open Repository", async () => {
+    await onAdvanced();
+    const openLog = within(row("ty")).getByRole("button", { name: "Open log" });
+    expect(openLog.hasAttribute("disabled")).toBe(true);
+    expect(openLog.title).toBe("Open a Repository to open the log its server writes");
+  });
+
+  it("opens on Advanced at a server's row, whose path takes the focus once the files are read", async () => {
+    render(Settings, { ...props(), at: "clangd" });
+    expect(within(nav()).getByRole("button", { name: "Advanced" }).getAttribute("aria-current")).toBe("page");
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(path("clangd"));
+    });
+    expect(row("clangd").classList.contains("asked")).toBe(true);
+    expect(row("ty").classList.contains("asked")).toBe(false);
+  });
+
+  it("says why it can't say how the servers are, and stops listening when it goes", async () => {
+    core.languageServers.mockRejectedValue(new Error("no IPC outside Tauri"));
+    const { unmount } = await onAdvanced();
+    expect((await within(page()).findByRole("alert")).textContent).toBe(
+      "Tsugiki can't say how the language servers are: Error: no IPC outside Tauri",
+    );
+    expect(said("ty")).toEqual([]);
+    unmount();
+    await vi.waitFor(() => {
+      expect(rowsHeard.stop).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("keeps its controls off until it has read the files", async () => {
+    core.rereadSettings.mockReturnValue(new Promise(() => {}));
+    render(Settings, props());
+    await go("Advanced");
+    expect(path("ty").hasAttribute("disabled")).toBe(true);
+    expect(idle().hasAttribute("disabled")).toBe(true);
+    await fireEvent.change(path("ty"), { target: { value: "ty.exe" } });
+    expect(state.languageServers).toEqual(NO_SERVERS);
   });
 });
 

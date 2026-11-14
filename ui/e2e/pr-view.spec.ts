@@ -6,7 +6,7 @@ import type {
   PrView_Serialize as PrView,
   WorkbenchRow_Serialize as WorkbenchRow,
 } from "../src/lib/data/bindings.ts";
-import { changeAnswer, mockCore } from "./mock-core.ts";
+import { changeAnswer, mockCore, noServers } from "./mock-core.ts";
 import { appearance, themes } from "./themes.ts";
 
 const repository = { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] } as const;
@@ -455,6 +455,7 @@ test("a PR opens one file at a time as the settings say, walks its files, and sw
         diff: { files: "one", peek: "inline" },
         repositories: [],
       },
+      language_servers: noServers,
       problems: [],
     },
     home: { screen: "repository", repository, others: [] as string[] },

@@ -60,8 +60,9 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
   - Sync: how often the Workbench and the open Issue or PR refresh, the GitHub API sizes, and the points
     used this hour.
   - Keyboard: every action's key, which the user can record anew, clear or reset.
-  - Advanced: the editor command, the settings file, the data folder and the log, and Export and Import
-    database.
+  - Advanced: each language server's program, version, state and log, and the time an unused server waits
+    before it stops; the editor command, the settings file, the data folder and the log, and Export and
+    Import database.
 - Each change in the dialog shows at once. Apply keeps the changes, and Cancel, Esc or ✕ puts them all back;
   with nothing changed the button reads OK. The few actions Cancel can't undo, such as Remove repository,
   confirm and act at once. Each setting says where it is stored, and the rare setting that waits for a
@@ -122,8 +123,8 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
   in the Conversation tab.
 - A **Definition peek** under the line of the word the user picked, which pushes the rows after it down
   and names where ty says the word is defined in Python, at the PR's head or at its base for a removed
-  line. The user supplies ty, and its path is in `machine.toml` until Settings can pick it. Split, the peek
-  opens below the diff instead, which stays where it was.
+  line. The user supplies ty, and picks it in Settings › Advanced, which keeps its path in `machine.toml`.
+  Split, the peek opens below the diff instead, which stays where it was.
 
 ### Comments ([comments.md](devel/comments.md))
 

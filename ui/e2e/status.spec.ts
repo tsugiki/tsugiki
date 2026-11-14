@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { emitFromCore, mockCore } from "./mock-core.ts";
+import { emitFromCore, mockCore, noServers } from "./mock-core.ts";
 import { appearance } from "./themes.ts";
 
 const online = { state: "online", login: "octocat" } as const;
@@ -8,10 +8,12 @@ const releases = { check: true };
 const diff = { files: "all", peek: "inline" } as const;
 const defaults = {
   settings: { status_bar: { visible: true }, releases, appearance, diff, repositories: [] },
+  language_servers: noServers,
   problems: [],
 };
 const hidden = {
   settings: { status_bar: { visible: false }, releases, appearance, diff, repositories: [] },
+  language_servers: noServers,
   problems: [],
 };
 

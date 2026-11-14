@@ -19,10 +19,10 @@ use tsugiki_core::status::{Change, Status, StatusBoard};
 
 use crate::first_frame;
 use crate::{
-    Changed, CloningChanged, DiffWork, FailedHeads, FolderPicker, HeadsFetchFailed, HeadsFetched,
-    LastSyncChanged, MirrorProblemChanged, MirrorQuestionChanged, MirrorStatesChanged, MirrorsHeld,
-    MirrorsHeldChanged, NewVersionFound, PickFolder, ReadFailed, RepositoryWork, StartMode,
-    StatusChanged, SyncActivityChanged,
+    Changed, CloningChanged, DiffWork, FailedHeads, HeadsFetchFailed, HeadsFetched,
+    LanguageServersChanged, LastSyncChanged, MirrorProblemChanged, MirrorQuestionChanged,
+    MirrorStatesChanged, MirrorsHeld, MirrorsHeldChanged, NewVersionFound, PickPath, Picker,
+    ReadFailed, RepositoryWork, StartMode, StatusChanged, SyncActivityChanged,
 };
 
 /// How often the open Repository refreshes: a refresh costs a few points, and this is about 60 points an
@@ -34,12 +34,12 @@ const REPOSITORY_REFRESH: Duration = Duration::from_secs(180);
 const RELEASE_CHECK: Duration = Duration::from_secs(6 * 60 * 60);
 
 /// The world outside the window that Tsugiki reaches: GitHub's API and `gh`, GitHub Releases without a
-/// token, where mirrors are cloned from, and the system's folder picker.
+/// token, where mirrors are cloned from, and the system's picker of folders and programs.
 pub(crate) struct Outside {
     pub(crate) github: GitHubAccess,
     pub(crate) releases: AskPublic,
     pub(crate) remotes: Remotes,
-    pub(crate) pick_folder: PickFolder,
+    pub(crate) pick: PickPath,
 }
 
 /// The threads that work for the window: the session, the mirrors' one writer, and the check for a new
@@ -87,8 +87,8 @@ pub(crate) fn connect_core<R: Runtime>(
         "only this manages the sync activity"
     );
     assert!(
-        app.manage(FolderPicker(outside.pick_folder)),
-        "only this manages the folder picker"
+        app.manage(Picker(outside.pick)),
+        "only this manages the picker"
     );
     // Two small files, read before the page loads so `settings` and `home` can always answer. A
     // `settings_path` on a slow drive would delay the page. Without folders the defaults apply, and the
@@ -147,6 +147,7 @@ pub(crate) fn connect_core<R: Runtime>(
     let diff_folders = folders.clone();
     let session = Session::start(board, folders, outside.github, intervals);
     let (checkouts, view, idle_view) = (mirrors.requests(), settings.reader(), settings.reader());
+    let rows_handle = app.clone();
     let definitions = Definitions::start(definitions::Sources {
         checkout: Box::new(move |repository| checkouts.lookup_checkout(repository.clone())),
         servers: Box::new(move |server| {
@@ -158,6 +159,11 @@ pub(crate) fn connect_core<R: Runtime>(
             }
         }),
         idle: Box::new(move || idle_view.get().language_servers.idle),
+        // A window that starts listening too late asks `language_servers`, which reads what the thread
+        // wrote before this.
+        changed: Box::new(move |rows| {
+            log_if_unsent(LanguageServersChanged(rows.to_vec()).emit(&rows_handle));
+        }),
     });
     let diffs = DiffWork {
         folders: diff_folders,

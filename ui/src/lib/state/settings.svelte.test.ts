@@ -4,6 +4,9 @@ import { type LoadedSettings, SettingsState } from "./settings.svelte";
 
 vi.mock("$lib/data/bindings", () => ({ commands: { settings: vi.fn() } }));
 
+/** What `machine.toml` says of the language servers when it says nothing. */
+const NO_SERVERS = { ty: null, "rust-analyzer": null, clangd: null, idle_minutes: 30 };
+
 describe("SettingsState", () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -30,12 +33,14 @@ describe("SettingsState", () => {
         diff: { files: "one", peek: "split" },
         repositories: [],
       },
+      language_servers: { ...NO_SERVERS, ty: "tools/ty.exe" },
       problems: ["settings.toml, line 3: expected a value"],
     });
     const state = new SettingsState();
     await state.load();
     expect(state.statusBarVisible).toBe(false);
     expect(state.diffFiles).toBe("one");
+    expect(state.languageServers?.ty).toBe("tools/ty.exe");
     expect(state.diffPeek).toBe("split");
     expect(state.problems).toEqual(["settings.toml, line 3: expected a value"]);
   });
@@ -55,6 +60,7 @@ describe("SettingsState", () => {
         diff: { files: "one", peek: "inline" },
         repositories: [],
       },
+      language_servers: NO_SERVERS,
       problems: [],
     });
     await state.load();
@@ -80,6 +86,7 @@ describe("SettingsState", () => {
       diff: { files: "all", peek: "inline" },
       repositories: [],
     },
+    language_servers: NO_SERVERS,
     problems: [],
   });
 

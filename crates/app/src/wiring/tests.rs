@@ -2,7 +2,7 @@ use super::*;
 use crate::specta_builder;
 use crate::tests::{cpython, no_folders, temp_folders};
 use serde_json::{Value, json};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use tauri::test::{MockRuntime, mock_builder, mock_context, noop_assets};
@@ -109,6 +109,7 @@ struct Wired {
     heads: Receiver<Value>,
     failed_heads: Receiver<Value>,
     new_versions: Receiver<Value>,
+    servers: Receiver<Value>,
     _app: App<MockRuntime>,
 }
 
@@ -123,21 +124,21 @@ impl Wired {
         github: GitHubAccess,
         remotes: Remotes,
     ) -> Self {
-        Self::start_picking(folders, github, remotes, Arc::new(|| None))
+        Self::start_picking(folders, github, remotes, Arc::new(|_| None))
     }
 
-    /// The app whose folder picker gives what `pick_folder` gives.
+    /// The app whose picker gives what `pick` gives.
     fn start_picking(
         folders: Result<Folders, Error>,
         github: GitHubAccess,
         remotes: Remotes,
-        pick_folder: PickFolder,
+        pick: PickPath,
     ) -> Self {
         let outside = Outside {
             github,
             releases: Box::new(|_| releases_offline()),
             remotes,
-            pick_folder,
+            pick,
         };
         Self::start_outside(folders, outside)
     }
@@ -162,6 +163,7 @@ impl Wired {
         let heads = hear(&app, "heads-fetched");
         let failed_heads = hear(&app, "heads-fetch-failed");
         let new_versions = hear(&app, "new-version-found");
+        let servers = hear(&app, "language-servers-changed");
         // The window opens before the core connects, as `startup.rs` opens it.
         let webview = tauri::WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::default())
             .build()
@@ -183,6 +185,7 @@ impl Wired {
             heads,
             failed_heads,
             new_versions,
+            servers,
             _app: app,
         }
     }
@@ -344,7 +347,7 @@ fn a_newer_version_reaches_the_window_as_an_event_and_through_its_command() {
         github: no_network(),
         releases: Box::new(|_| latest_release("v999.0.0")),
         remotes: Remotes::under("no-remotes/".to_owned()),
-        pick_folder: Arc::new(|| None),
+        pick: Arc::new(|_| None),
     };
     let wired = Wired::start_outside(Ok(folders), outside);
 
@@ -384,7 +387,7 @@ fn assert_releases_hear_nothing(name: &str, settings: &str) {
             latest_release("v999.0.0")
         }),
         remotes: Remotes::under("no-remotes/".to_owned()),
-        pick_folder: Arc::new(|| None),
+        pick: Arc::new(|_| None),
     };
     let wired = Wired::start_outside(Ok(folders), outside);
 
@@ -1358,7 +1361,7 @@ fn a_repository_from_before_asks_where_its_mirror_gets_objects_and_borrows_on_th
         Ok(folders.clone()),
         recordings(),
         remotes,
-        Arc::new(move || Some(picked.clone())),
+        Arc::new(move |what| (what == crate::Pick::Folder).then(|| picked.clone())),
     );
 
     let question = wired.questions.recv_timeout(PLENTY).unwrap();
@@ -1837,6 +1840,114 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
         (at_row(5), at_row(6), Ok(hidden_line))
     );
     assert_eq!(refused.unwrap_err()["message"], "\"main\" isn't a commit.");
+}
+
+/// The first row the window hears for `server` that `wanted` accepts.
+fn server_row(wired: &Wired, server: &str, wanted: impl Fn(&Value) -> bool) -> Value {
+    loop {
+        let rows = wired.servers.recv_timeout(PLENTY).unwrap();
+        let row = rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["server"] == server);
+        if let Some(row) = row.filter(|row| wanted(row)) {
+            return row.clone();
+        }
+    }
+}
+
+/// What Open log opens for ty in cpython, without a program to show it; and the answers to Open log for
+/// clangd, which wrote none, and for a name that isn't a Repository's.
+fn open_logs(
+    wired: &Wired,
+) -> (
+    Result<PathBuf, Error>,
+    Result<Value, Value>,
+    Result<Value, Value>,
+) {
+    let opened = crate::server_log_of(CPYTHON, ServerName::Ty, &wired.webview.state::<DiffWork>());
+    let no_log = json!({ "repository": CPYTHON, "server": "clangd" });
+    let not_a_name = json!({ "repository": "not a name", "server": "ty" });
+    (
+        opened,
+        wired.ask("open_server_log", no_log),
+        wired.ask("open_server_log", not_a_name),
+    )
+}
+
+/// Settings › Advanced sets ty's path, which Apply keeps in `machine.toml` and checks, and the lookup that
+/// asked for it before finds the definition after. Open log opens the log ty wrote for the Repository (#683).
+#[test]
+fn a_server_set_up_in_settings_shows_its_version_answers_lookups_and_opens_its_log() {
+    let (folders, root) = temp_folders("wiring-server-settings");
+    let head = mirror_with_pr_1(&folders, &root);
+    someone_elses_pr_1(&folders, &head);
+    let ty = Path::new(&std::env::var_os("TSUGIKI_TY").unwrap_or_default()).to_owned();
+    assert!(ty.is_file(), "TSUGIKI_TY={ty:?}: see just test-servers");
+    let program = ty.clone();
+    let pick = Arc::new(move |what| (what == crate::Pick::Program).then(|| program.clone()));
+    let remotes = Remotes::under("no-remotes/".to_owned());
+    let wired = Wired::start_picking(Ok(folders.clone()), no_network(), remotes, pick);
+
+    let _held = wired.held.recv_timeout(PLENTY).unwrap();
+    let pr = json!({ "repository": CPYTHON, "number": 1 });
+    let files = wired.ask("pull_request_files", pr).unwrap();
+    let base = files["base"].as_str().unwrap_or_default().to_owned();
+    let look = |ticket: u32| {
+        let lookup = json!({ "repository": CPYTHON, "base": base, "head": head, "path": "Lib/spam.py", "side": "head", "line": 15, "column": 0, "ticket": ticket });
+        wired.ask(
+            "definitions",
+            json!({ "lookup": lookup, "waiting": "__CHANNEL__:7", "index": "__CHANNEL__:9" }),
+        )
+    };
+    let rows = wired.ask("language_servers", json!({})).unwrap();
+    let before = look(1);
+    let picked = wired.ask("pick_program", json!({})).unwrap();
+    let servers =
+        json!({ "ty": picked, "rust-analyzer": null, "clangd": null, "idle_minutes": 30 });
+    let applied = wired.ask(
+        "apply_settings",
+        json!({ "changes": { "language_servers": servers } }),
+    );
+    let checked = server_row(&wired, "ty", |row| row["version"] != Value::Null);
+    let after = look(2);
+    let running = server_row(&wired, "ty", |row| row["status"]["state"] == "running");
+    let (opened, no_log, not_a_name) = open_logs(&wired);
+    let reread = wired.ask("reread_settings", json!({})).unwrap();
+    drop(wired.stop());
+    let machine = std::fs::read_to_string(folders.machine_file()).unwrap();
+    let cpython = RepositoryName::parse(CPYTHON).unwrap();
+    let ty_log = folders.repository(&cpython).join("servers/ty/ty.log");
+    let wrote = std::fs::metadata(&ty_log).map(|log| log.is_file());
+    std::fs::remove_dir_all(root).unwrap();
+
+    let clangd = json!({ "server": "clangd", "status": { "state": "not_set_up" }, "version": null, "tested": ["23.1.0"] });
+    assert_eq!(
+        (rows.as_array().map(Vec::len), &rows[1]),
+        (Some(3), &clangd)
+    );
+    assert_eq!(before, Ok(json!({ "state": "not_set_up", "server": "ty" })));
+    let ty = json!(ty);
+    let kept = [
+        &picked,
+        &applied.unwrap()["language_servers"]["ty"],
+        &reread["language_servers"]["ty"],
+    ];
+    assert_eq!(kept, [&ty, &ty, &ty]);
+    let ready = json!({ "server": "ty", "status": { "state": "ready" }, "version": { "version": "0.0.103", "tested": true }, "tested": ["0.0.103"] });
+    assert_eq!(checked, ready);
+    assert_eq!(
+        (&after.unwrap()["state"], &running["status"]["state"]),
+        (&json!("found"), &json!("running"))
+    );
+    assert_eq!((opened, wrote.ok()), (Ok(ty_log), Some(true)));
+    let no_log = no_log.unwrap_err()["message"].clone();
+    assert_eq!(no_log, "clangd has written no log for python/cpython yet.");
+    assert!(
+        not_a_name.is_err() && machine.contains("[language_servers.ty]"),
+        "{machine}"
+    );
 }
 
 /// A mirror of cpython in `folders` whose PR #1, on the branch `pr`, calls `ham` in `spam.py`, which

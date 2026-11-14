@@ -1,5 +1,6 @@
-//! Starts a language server's process. This thin layer is the one part of the crate tests don't run, so it
-//! is left out of the coverage gate: the tests talk to a fake server over in-memory pipes instead.
+//! Starts a language server's process, or runs it once with `--version`. This thin layer is the one part of
+//! the crate tests don't run, so it is left out of the coverage gate: the tests talk to a fake server over
+//! in-memory pipes instead, and the core's tests run `--version` on real programs.
 
 #![expect(
     clippy::disallowed_types,
@@ -7,14 +8,16 @@
 )]
 
 use std::ffi::OsString;
-use std::io;
+use std::io::{self, Read, Write};
 #[cfg(windows)]
 use std::os::windows::io::AsRawHandle;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 #[cfg(windows)]
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 #[cfg(windows)]
 use process_wrap::std::CommandWrapper;
@@ -39,9 +42,13 @@ pub struct Launch {
 }
 
 impl Server {
-    /// Starts the server `launch` names, with no window of its own on Windows. The processes it starts in
-    /// turn end with it, and on Windows the server and those processes end with Tsugiki's process.
-    pub fn start(launch: &Launch) -> io::Result<(Starting, Receiver<Event>)> {
+    /// Starts the server `launch` names, with no window of its own on Windows, and copies its error output
+    /// to `log` if there is one. The processes it starts in turn end with it, and on Windows the server and
+    /// those processes end with Tsugiki's process.
+    pub fn start(
+        launch: &Launch,
+        log: Option<Box<dyn Write + Send>>,
+    ) -> io::Result<(Starting, Receiver<Event>)> {
         let mut command = Command::new(&launch.program);
         let _ = command
             .args(&launch.args)
@@ -50,19 +57,13 @@ impl Server {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut command = CommandWrap::from(command);
+        let mut command = windowless(CommandWrap::from(command));
         #[cfg(windows)]
         let job = EndsWithTsugiki::create();
-        #[cfg(windows)]
-        let _ = command
-            .wrap(process_wrap::std::CreationFlags(CREATE_NO_WINDOW))
-            .wrap(process_wrap::std::JobObject);
         #[cfg(windows)]
         if let Some(job) = &job {
             let _ = command.wrap(EndsWithTsugiki(Arc::clone(&job.0)));
         }
-        #[cfg(not(windows))]
-        let _ = command.wrap(process_wrap::std::ProcessGroup::leader());
         let mut child = command.spawn()?;
         let input = child.stdin().take();
         let output = child.stdout().take();
@@ -83,9 +84,104 @@ impl Server {
             input: Box::new(input),
             output: Box::new(output),
             errors: Box::new(errors),
+            log,
             process: Box::new(process),
         }))
     }
+}
+
+/// The shortest wait between two looks at whether a `--version` run has ended.
+const LOOK_EVERY: Duration = Duration::from_millis(10);
+
+/// How long the processes a `--version` run started, as a launcher or a `.cmd` file may, get to let go of
+/// its output once it has exited, before they are killed.
+const LET_GO_WITHIN: Duration = Duration::from_secs(1);
+
+/// Runs `program --version` with nothing to read and no window of its own on Windows, and gives what it
+/// printed: its output, or its error output if it printed nothing else. One still running after `patience`
+/// is killed, with the processes it started, and fails. A process it started that still holds its output
+/// [`LET_GO_WITHIN`] after it exited is killed, and the run gives what was printed by then. One that
+/// survives that fails too.
+pub fn version_of(program: &Path, patience: Duration) -> io::Result<String> {
+    let mut command = Command::new(program);
+    let _ = command
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = windowless(CommandWrap::from(command)).spawn()?;
+    let output = child.stdout().take().map(read_all);
+    let errors = child.stderr().take().map(read_all);
+    let until = Instant::now() + patience;
+    while child.try_wait()?.is_none() {
+        if Instant::now() >= until {
+            let _kill = child.start_kill();
+            let _code = child.wait();
+            let seconds = patience.as_secs();
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("it was still running after {seconds} s"),
+            ));
+        }
+        thread::sleep(LOOK_EVERY);
+    }
+    let readings = [&output, &errors];
+    if !read_by(&readings, Instant::now() + LET_GO_WITHIN) {
+        let _kill = child.start_kill();
+        if !read_by(&readings, Instant::now() + LET_GO_WITHIN) {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "a process it started held its output open after it exited",
+            ));
+        }
+    }
+    // Each reading has ended, so these don't wait.
+    let text = |reading: Option<JoinHandle<String>>| {
+        reading
+            .and_then(|reading| reading.join().ok())
+            .unwrap_or_default()
+    };
+    let output = text(output);
+    Ok(if output.trim().is_empty() {
+        text(errors)
+    } else {
+        output
+    })
+}
+
+/// Waits until each of `readings` has read all of its stream, or until `until`, and says whether they all
+/// have.
+fn read_by(readings: &[&Option<JoinHandle<String>>], until: Instant) -> bool {
+    loop {
+        let done =
+            (readings.iter()).all(|reading| reading.as_ref().is_none_or(JoinHandle::is_finished));
+        if done || Instant::now() >= until {
+            return done;
+        }
+        thread::sleep(LOOK_EVERY);
+    }
+}
+
+/// Reads all of `stream` on a thread of its own, so a program that fills one pipe while Tsugiki reads the
+/// other can't stop.
+fn read_all(mut stream: impl Read + Send + 'static) -> JoinHandle<String> {
+    thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _read = stream.read_to_end(&mut bytes);
+        String::from_utf8_lossy(&bytes).into_owned()
+    })
+}
+
+/// `command` with no console window of its own on Windows, in a job object, or in a process group of its
+/// own elsewhere, so the processes it starts end with it.
+fn windowless(mut command: CommandWrap) -> CommandWrap {
+    #[cfg(windows)]
+    let _ = command
+        .wrap(process_wrap::std::CreationFlags(CREATE_NO_WINDOW))
+        .wrap(process_wrap::std::JobObject);
+    #[cfg(not(windows))]
+    let _ = command.wrap(process_wrap::std::ProcessGroup::leader());
+    command
 }
 
 /// A server's process, with the processes it started.

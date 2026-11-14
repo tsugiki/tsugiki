@@ -7,6 +7,7 @@ import type { LaidThread } from "./diff-layout";
 import type { ViewLine } from "./file-view.svelte";
 import type { HitCode } from "./hit-code.svelte";
 import type { PickedLine, Side } from "./pick";
+import { problemWords, SERVERS } from "./server-words";
 
 /** What a lookup found: nothing yet, the server's answer, or why it failed. While it looks, the core says
  * what it waits for (#440), and `since` is when it started to. */
@@ -25,13 +26,6 @@ export type IndexNews = Index_Deserialize;
 
 /** A server that builds its index, and how many files it has indexed, once it has said. */
 export type Indexing = Extract<IndexNews, { state: "building" }>;
-
-/** How the peek names each server, and the language it answers in. */
-const SERVERS: Record<ServerName, { name: string; language: string }> = {
-  ty: { name: "ty", language: "Python" },
-  "rust-analyzer": { name: "rust-analyzer", language: "Rust" },
-  clangd: { name: "clangd", language: "C" },
-};
 
 /** What a lookup that waits says: the server starts, or works out the answer, with the seconds it has
  * waited at `now` once they pass one. */
@@ -59,6 +53,9 @@ export interface PeekWords {
   count?: string;
   /** The line under the header: the hit's text, or what the lookup is doing or found. */
   body: string;
+  /** The server whose row in Settings › Advanced a link after the line opens: one not set up, or one
+   * whose problem the line says (#683). */
+  settings?: ServerName;
   /** A line between the header and the rest, while the server that answered builds its index (#680). */
   indexing?: string;
 }
@@ -82,7 +79,11 @@ export function peekWords(peek: Peek, now = Date.now()): PeekWords {
   const answer = lookup.answer;
   if (answer.state === "not_set_up") {
     const { name, language } = SERVERS[answer.server];
-    return { commit: asked, body: `Set up ${name} to go to definitions in ${language}` };
+    const body = `Set up ${name} to go to definitions in ${language}`;
+    return { commit: asked, body, settings: answer.server };
+  }
+  if (answer.state === "problem") {
+    return { commit: asked, body: problemWords(answer.server, answer.problem), settings: answer.server };
   }
   if (answer.state === "no_server") {
     return { commit: asked, body: "Tsugiki can't go to definitions in this file's language yet" };

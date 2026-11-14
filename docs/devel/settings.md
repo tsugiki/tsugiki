@@ -11,21 +11,35 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   edge or corner, and can be maximized; its size and place are kept per machine. The Account page is in
   [token.md](token.md). This was chosen out of three variants prototyped on branch `prototype/app-shell`: a
   searchable list like VS Code's, this dialog, and editing the config files as text.
-- The dialog opens on General. As it opens it reads both files again, so a hand edit made since start-up
-  shows in it and takes effect on the window, the theme included. The controls wait until then; if the files
-  can't be read, they stay off and the dialog says why. Each change shows on the window at once: clearing
-  Show the status bar hides the status bar behind the dialog. Apply saves the tables the dialog changed over
-  what the file says then, so a hand edit to another table made while the dialog was open stays, and closes;
-  with nothing changed the button reads OK and closes without saving. Cancel, Esc, ✕ or a press outside the
-  dialog puts every change back. While Apply saves, Cancel and Esc wait for it, and a save the core refuses
-  keeps the dialog open with the reason under the pages, where Cancel still puts the changes back.
+- The dialog opens on General, or on Advanced from the Definition peek. As it opens it reads both files
+  again, so a hand edit made since start-up shows in it and takes effect on the window, the theme included.
+  The controls wait until then; if the files can't be read, they stay off and the dialog says why. Each
+  change shows on the window at once: clearing Show the status bar hides the status bar behind the dialog.
+  Apply saves the tables the dialog changed over what the file says then, so a hand edit to another table
+  made while the dialog was open stays, and closes; with nothing changed the button reads OK and closes
+  without saving. Cancel, Esc, ✕ or a press outside the dialog puts every change back. While Apply saves,
+  Cancel and Esc wait for it, and a save the core refuses keeps the dialog open with the reason under the
+  pages, where Cancel still puts the changes back.
 - Each setting carries a label for where it is stored: settings file, this machine, database or keychain,
   with the file's name or "on this machine only" in its tooltip.
 - General groups its settings; each group is a heading with its rows under it. Status bar has Show the
   status bar, and says that problems and being offline still show when it's off. Updates has Check for new
   versions (`[releases] check`), the one setting that still needs a restart, so it says "Takes effect at the
-  next start" under its row. Both live in `settings.toml`. Repositories, each Repository's page, Sync,
-  Keyboard and Advanced say "Nothing to set here yet." for now.
+  next start" under its row. Both live in `settings.toml`. Repositories, each Repository's page, Sync and
+  Keyboard say "Nothing to set here yet." for now.
+- Advanced has a Language servers group with a row each for ty, clangd and rust-analyzer, then the idle
+  time ([definitions.md](definitions.md)). A row has the path of the server's program with Browse…, which
+  opens the system's file picker, the versions we tested and the version found, the server's state, and
+  Open log. The state is Not set up, Ready, Running, Stopped (idle), or the server's last problem, for the
+  open Repository, with the end of its error output when it stopped on its own. Spaces around a path, and
+  the quotes Explorer's "Copy as path" puts around it, go as it is typed. Open log opens the log the
+  server writes for the open Repository, and is off with no Repository open. The paths live in
+  `machine.toml` as `[language_servers.<name>] path`, and the idle time as `[language_servers]
+  idle_minutes`, a whole number of minutes above 0 that takes effect at the servers' next idle check.
+  Apply saves a changed path, checks it, and keeps the dialog open so its row can say what the check found;
+  the button reads OK again. A `machine.toml` that doesn't parse refuses the Apply before either file is
+  saved. The Definition peek's link to a server's row opens the dialog on Advanced with the focus on that
+  row's path.
 - `[diff] peek` in `settings.toml` says where the Definition peek opens: `"inline"`, the default, under the
   line of the word looked up, or `"split"`, below the diff or the file view's code, which stays where it
   was ([definitions.md](definitions.md)). A change applies to the next peek. A value Tsugiki can't read

@@ -15,7 +15,9 @@ use tsugiki_lsp::{
     Status,
 };
 
-use super::{DiffEnd, Hit, Lookup, PATIENCE, Place, ServerName, failed, plain, slashed, uri};
+use super::{
+    DiffEnd, EXIT_PATIENCE, Hit, Lookup, PATIENCE, Place, ServerName, failed, plain, slashed, uri,
+};
 use crate::diff;
 use crate::error::Error;
 use crate::mirror::{LookupAt, LookupCheckout};
@@ -64,6 +66,24 @@ pub(super) struct LanguageServer {
     open: Vec<Open>,
     /// Which side's text the open files have.
     showing: DiffEnd,
+    /// The moment the server started, or a lookup last asked it or got its answer.
+    used: Instant,
+}
+
+/// A server asked to stop, whose end the caller may wait for.
+pub(super) struct Stopping(Receiver<Event>);
+
+impl Stopping {
+    /// Waits until the server's process has ended, or until `until`. The events end once the client has
+    /// killed it.
+    pub(super) fn wait(self, until: Instant) {
+        while let Ok(event) = (self.0).recv_timeout(until.saturating_duration_since(Instant::now()))
+        {
+            if matches!(event, Event::Exited(_)) {
+                return;
+            }
+        }
+    }
 }
 
 /// A file the PR changes, open on the server, with its text at the head and at the base. A file the PR adds
@@ -223,6 +243,7 @@ impl LanguageServer {
             at,
             open,
             showing: DiffEnd::Head,
+            used: Instant::now(),
         })
     }
 
@@ -231,15 +252,27 @@ impl LanguageServer {
         &self.at
     }
 
-    /// Asks the server to stop. Its process ends once it agrees, which [`LanguageServer::wait_for_exit`]
-    /// waits for, and dropping the server then lets it end on its own.
-    pub(super) fn shutdown(&self) -> Pending<()> {
-        self.server.shutdown()
+    /// The moment the server started, or a lookup last asked it or got its answer.
+    pub(super) fn used(&self) -> Instant {
+        self.used
+    }
+
+    /// Notes that a lookup got the server's answer now.
+    pub(super) fn answered(&mut self) {
+        self.used = Instant::now();
+    }
+
+    /// Asks the server to stop with `shutdown` and `exit`, and returns at once. One that hasn't agreed within
+    /// [`EXIT_PATIENCE`], or hasn't exited [`EXIT_PATIENCE`] after `exit`, is killed.
+    pub(super) fn stop(self) -> Stopping {
+        self.server.stop(EXIT_PATIENCE);
+        Stopping(self.events)
     }
 
     /// Sends the server the request for `lookup`, with the open files at the lookup's side, and returns at
     /// once with what turns its answer into hits.
     pub(super) fn ask(&mut self, lookup: &Lookup) -> Result<(Pending<Definitions>, Hits), Error> {
+        self.used = Instant::now();
         let _unread = self.events.try_iter().count();
         let document = uri(&self.folder.join(&lookup.path))?;
         self.show(lookup.side);
@@ -260,17 +293,6 @@ impl LanguageServer {
             open,
         };
         Ok((pending, hits))
-    }
-
-    /// Waits until the server's process has ended, or until `until`.
-    pub(super) fn wait_for_exit(&self, until: Instant) {
-        while let Ok(event) =
-            (self.events).recv_timeout(until.saturating_duration_since(Instant::now()))
-        {
-            if matches!(event, Event::Exited(_)) {
-                return;
-            }
-        }
     }
 
     /// Gives the open files their text at `side`, if they don't have it.

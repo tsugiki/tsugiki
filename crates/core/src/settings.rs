@@ -7,9 +7,11 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::io;
+use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
+use std::time::Duration;
 
 use serde::de::{DeserializeOwned, IgnoredAny};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -310,7 +312,7 @@ pub struct SettingsView {
 
 /// Where the language servers the user supplies are on this machine (ADR 0020), each from its
 /// `[language_servers.NAME] path` in `machine.toml`. A relative path starts at `machine.toml`'s folder.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LanguageServers {
     /// ty, which Go to definition asks in Python.
     pub ty: Option<PathBuf>,
@@ -318,6 +320,27 @@ pub struct LanguageServers {
     pub rust_analyzer: Option<PathBuf>,
     /// clangd, which Go to definition asks in C.
     pub clangd: Option<PathBuf>,
+    /// The idle time, from `[language_servers] idle_minutes`: a server that no lookup reaches for this long
+    /// stops.
+    pub idle: Duration,
+}
+
+/// The idle time, in minutes, unless `machine.toml` says otherwise.
+const IDLE_MINUTES: NonZeroU32 = NonZeroU32::new(30).unwrap();
+
+impl Default for LanguageServers {
+    fn default() -> Self {
+        Self {
+            ty: None,
+            rust_analyzer: None,
+            clangd: None,
+            idle: minutes(IDLE_MINUTES),
+        }
+    }
+}
+
+fn minutes(count: NonZeroU32) -> Duration {
+    Duration::from_secs(u64::from(count.get()) * 60)
 }
 
 /// Where the token comes from. A personal access token joins this with the Account page (ADR 0004).
@@ -502,11 +525,14 @@ struct MachineFile {
     language_servers: ServersFile,
 }
 
-/// `machine.toml`'s `[language_servers]`: a table for each server, which holds its `path`. A server whose
-/// table Tsugiki can't read counts as not set up.
+/// `machine.toml`'s `[language_servers]`: a table for each server, which holds its `path`, and how long an
+/// idle server runs. A server whose table Tsugiki can't read counts as not set up, and an `idle_minutes`
+/// that isn't a whole number above 0 counts as unset.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 struct ServersFile {
+    #[serde(deserialize_with = "or_default")]
+    idle_minutes: Option<NonZeroU32>,
     #[serde(deserialize_with = "or_default")]
     ty: Option<ServerFile>,
     #[serde(rename = "rust-analyzer", deserialize_with = "or_default")]
@@ -600,6 +626,11 @@ impl SettingsFiles {
                     ty: path(|servers| servers.ty.as_ref()),
                     rust_analyzer: path(|servers| servers.rust_analyzer.as_ref()),
                     clangd: path(|servers| servers.clangd.as_ref()),
+                    idle: minutes(
+                        (self.machine.as_ref())
+                            .and_then(|machine| machine.servers.idle_minutes)
+                            .unwrap_or(IDLE_MINUTES),
+                    ),
                 }
             },
         }

@@ -146,7 +146,7 @@ pub(crate) fn connect_core<R: Runtime>(
     };
     let diff_folders = folders.clone();
     let session = Session::start(board, folders, outside.github, intervals);
-    let (checkouts, view) = (mirrors.requests(), settings.reader());
+    let (checkouts, view, idle_view) = (mirrors.requests(), settings.reader(), settings.reader());
     let definitions = Definitions::start(definitions::Sources {
         checkout: Box::new(move |repository| checkouts.lookup_checkout(repository.clone())),
         servers: Box::new(move |server| {
@@ -157,6 +157,7 @@ pub(crate) fn connect_core<R: Runtime>(
                 ServerName::Clangd => servers.clangd,
             }
         }),
+        idle: Box::new(move || idle_view.get().language_servers.idle),
     });
     let diffs = DiffWork {
         folders: diff_folders,

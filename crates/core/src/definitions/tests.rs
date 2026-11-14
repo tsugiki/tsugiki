@@ -89,7 +89,13 @@ fn sources(checkout: Option<LookupCheckout>, ty: Option<PathBuf>) -> Sources {
     Sources {
         checkout: Box::new(move |_| checkout.clone()),
         servers: Box::new(move |server| (server == ServerName::Ty).then(|| ty.clone()).flatten()),
+        idle: idle_after(Duration::from_secs(3600)),
     }
+}
+
+/// An idle time of `idle`, which the tests that don't stop an idle server set past their end.
+fn idle_after(idle: Duration) -> Box<dyn Fn() -> Duration + Send> {
+    Box::new(move || idle)
 }
 
 /// The servers' thread, run here, with the fixture's PR opened.
@@ -420,6 +426,7 @@ fn the_files_tab_reading_its_pr_again_starts_nothing_again() {
             let _before = counted.fetch_add(1, Ordering::Relaxed);
             Some(PathBuf::from("no-ty.exe"))
         }),
+        idle: idle_after(Duration::from_secs(3600)),
     });
     let pr = Pr {
         at: fixture.checkout.at.clone(),
@@ -430,6 +437,110 @@ fn the_files_tab_reading_its_pr_again_starts_nothing_again() {
     owner.opened(&repository(), pr);
 
     assert_eq!(asked.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn a_ty_no_lookup_reaches_for_the_idle_time_stops_and_the_next_lookup_starts_it_again() {
+    let fixture = cpython("definitions-idle");
+    let idle = Duration::from_secs(1);
+    let mut owner = Owner::new(Sources {
+        idle: idle_after(idle),
+        ..sources(Some(fixture.checkout.clone()), Some(ty()))
+    });
+    let pr = Pr {
+        at: fixture.checkout.at.clone(),
+        changed: changed(),
+    };
+    owner.opened(&repository(), pr);
+    let at_head = lookup(&fixture, DiffEnd::Head, 12, "only_head");
+
+    let asked = ask(&mut owner, &at_head, Ticket(1));
+    // A lookup keeps the server it asked, however long the server takes.
+    owner.stop_idle(Instant::now() + idle * 10, idle);
+    let first = hits(answer_of(&mut owner, &asked));
+    // The answer counts as a use.
+    owner.stop_idle(Instant::now() + idle / 2, idle);
+    let kept = owner.servers.contains_key(&ty_of(repository()));
+    // The thread waits for its next message only until ty has been idle that long, and then stops it.
+    let own = owner.own.clone();
+    let _later = thread::spawn(move || {
+        thread::sleep(idle * 2);
+        let _unheard = own.send(Message::Cancel(Ticket(9)));
+    });
+    let message = owner.next().unwrap();
+    let stopped = owner.servers.is_empty();
+    let again = ask(&mut owner, &at_head, Ticket(2));
+    let second = hits(answer_of(&mut owner, &again));
+
+    assert!(kept);
+    assert!(matches!(message, Message::Cancel(Ticket(9))));
+    assert!(stopped);
+    assert_eq!(second, first);
+    let starting = Waiting::Starting {
+        server: ServerName::Ty,
+    };
+    assert_eq!(again.waited.try_iter().next(), Some(starting));
+}
+
+#[test]
+fn removing_a_repository_stops_its_servers_cancels_the_lookup_on_one_and_leaves_the_others() {
+    let fixture = cpython("definitions-remove");
+    let second = another("definitions-remove-other");
+    let other = RepositoryName::parse("tsugiki/tsugiki").unwrap();
+    let (checkout, elsewhere, theirs) = (
+        fixture.checkout.clone(),
+        second.checkout.clone(),
+        other.clone(),
+    );
+    let mut owner = Owner::new(Sources {
+        checkout: Box::new(move |repository| {
+            Some(if *repository == theirs {
+                elsewhere.clone()
+            } else {
+                checkout.clone()
+            })
+        }),
+        ..sources(None, Some(ty()))
+    });
+    let pr = |fixture: &Fixture, changed: Vec<String>| Pr {
+        at: fixture.checkout.at.clone(),
+        changed,
+    };
+    owner.opened(&repository(), pr(&fixture, changed()));
+    owner.opened(&other, pr(&second, vec!["a.py".to_owned()]));
+    let asked = ask(
+        &mut owner,
+        &lookup(&fixture, DiffEnd::Head, 12, "only_head"),
+        Ticket(1),
+    );
+
+    let (reply, removed) = mpsc::channel();
+    let goes_on = owner.handle(Message::Remove(repository(), reply));
+    // ty's process works in the checkout, so on Windows the folder goes only once it has ended.
+    let deleted = std::fs::remove_dir_all(fixture.checkout.folder.parent().unwrap());
+
+    assert!(goes_on);
+    removed.try_recv().unwrap();
+    assert!(matches!(asked.answer.try_recv(), Ok(Ok(Answer::Cancelled))));
+    deleted.unwrap();
+    let left: Vec<&Key> = owner.servers.keys().collect();
+    assert_eq!(left, [&ty_of(other)]);
+    assert!(!owner.prs.contains_key(&repository()));
+}
+
+#[test]
+fn the_handle_removes_a_repository_once_its_ty_has_ended() {
+    let fixture = cpython("definitions-handle-remove");
+    let definitions = Definitions::start(sources(Some(fixture.checkout.clone()), Some(ty())));
+    let at = fixture.checkout.at.clone();
+
+    definitions.opened(repository(), at, &[diff_file(SHOP)]);
+    definitions.remove(repository());
+    let deleted = std::fs::remove_dir_all(fixture.checkout.folder.parent().unwrap());
+    definitions.stop(Duration::from_secs(10));
+    definitions.remove(repository());
+
+    deleted.unwrap();
 }
 
 #[test]
@@ -571,14 +682,16 @@ fn a_cancel_for_an_older_lookup_while_ty_starts_leaves_the_new_one_be() {
 }
 
 #[test]
-fn a_ty_that_stopped_fails_its_lookup_and_the_next_one_starts_it_again() {
+fn a_ty_that_ends_before_it_answers_fails_its_lookup_and_the_next_one_starts_it_again() {
     let fixture = cpython("definitions-stopped");
     let mut owner = opened(&fixture);
     let at_head = lookup(&fixture, DiffEnd::Head, 12, "only_head");
-    let running = owner.servers.get(&ty_of(repository())).unwrap();
-    running.shutdown().wait().unwrap();
 
-    let failed = look(&mut owner, &at_head);
+    let asked = ask(&mut owner, &at_head, Ticket(1));
+    let id = owner.running.as_ref().unwrap().id;
+    // What the client hands back when ty ends before it answers. ty's own answer then goes nowhere.
+    let _goes_on = owner.handle(Message::Answered(id, Err(RequestError::Exited)));
+    let failed = answer_of(&mut owner, &asked);
     let again = hits(look(&mut owner, &at_head));
 
     let message = failed.unwrap_err().message;
@@ -754,6 +867,7 @@ fn the_thread_stops_once_the_last_handle_is_gone() {
             let _alive = &alive;
             None
         }),
+        idle: idle_after(Duration::from_secs(3600)),
     });
     let copy = definitions.clone();
 
@@ -872,6 +986,7 @@ fn rust_opened(fixture: &Fixture) -> Owner {
         servers: Box::new(move |server| {
             (server == ServerName::RustAnalyzer).then(|| program.clone())
         }),
+        idle: idle_after(Duration::from_secs(3600)),
     });
     let pr = Pr {
         at: fixture.checkout.at.clone(),
@@ -1025,6 +1140,7 @@ fn c_opened(fixture: &Fixture) -> Owner {
     let mut owner = Owner::new(Sources {
         checkout: Box::new(move |_| Some(checkout.clone())),
         servers: Box::new(move |server| (server == ServerName::Clangd).then(|| program.clone())),
+        idle: idle_after(Duration::from_secs(3600)),
     });
     let pr = Pr {
         at: fixture.checkout.at.clone(),

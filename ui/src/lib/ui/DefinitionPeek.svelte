@@ -130,7 +130,7 @@
     }}
   >
     <div class="code">
-      <PeekCode {code} line={found.hit.line} pickable />
+      <PeekCode {code} line={found.hit.line} />
     </div>
     <!-- Beside a file that can't be read too: the focus may be on it, and in 2 rows its first line shows. -->
     <ol

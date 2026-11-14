@@ -106,8 +106,8 @@ const picked = () =>
     .map((code) => [...code.querySelectorAll(".picked")].map((piece) => piece.textContent).join(""));
 
 /** A peek's code of `hit`'s file, which reads `x = width` and `def area(self):`, with its keyword and its
- * function's name highlighted. */
-const pickableCode = (pickable = true) => {
+ * function's name highlighted. `ongo` hears a Ctrl+click on a word, as in the file view. */
+const pickableCode = (ongo?: () => void) => {
   const ok = <T>(data: T) => Promise.resolve({ status: "ok" as const, data });
   core.definitionCode.mockReturnValueOnce(ok({ count: 3, lines: ["x = width", "", "def area(self):"] }));
   const spans = [
@@ -116,7 +116,7 @@ const pickableCode = (pickable = true) => {
   ];
   core.definitionSpans.mockReturnValueOnce(ok([[], [], spans]));
   const code = new HitCode("python/cpython", hit, 0);
-  render(PeekCode, { code, line: 3, pickable });
+  render(PeekCode, { code, line: 3, ...(ongo && { ongo }) });
   return code;
 };
 
@@ -201,16 +201,44 @@ it("selects nothing on a double-click whose word went before it came, or whose f
   expect([code.pick, getSelection()?.toString()]).toEqual([undefined, ""]);
 });
 
-it("picks no word in the file view, which has nothing to look it up with", async () => {
-  const code = pickableCode(false);
+it("goes to the definition of the word a Ctrl+click picks, and of none a plain click or a miss picks", async () => {
+  const ongo = vi.fn();
+  const code = pickableCode(ongo);
   const area = await codeOf(3);
-  code.pickWord(3, 6, false);
 
-  await clickAt(area, 1);
-  await fireEvent.dblClick(area, { detail: 2 });
+  await clickAt(area, 6);
+  // The caret lands before the `=` of `x = width`, on no word.
+  await clickAt(await codeOf(1), 2, { ctrlKey: true });
+  const onSpace = ongo.mock.calls.length;
+  await clickAt(area, 6, { ctrlKey: true });
+
+  expect(onSpace).toBe(0);
+  expect(ongo).toHaveBeenCalledOnce();
+  expect(code.pick?.word).toBe("area");
+});
+
+it("takes Cmd+click on macOS for Go to definition, where Ctrl+click is the system's", async () => {
+  const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+  const ongo = vi.fn();
+  pickableCode(ongo);
+  platform.mockRestore();
+  const area = await codeOf(3);
+
+  await clickAt(area, 6, { ctrlKey: true });
+  const afterCtrl = ongo.mock.calls.length;
+  await clickAt(area, 6, { metaKey: true });
+
+  expect(afterCtrl).toBe(0);
+  expect(ongo).toHaveBeenCalledOnce();
+});
+
+it("picks the word a Ctrl+click lands on in the peek, which goes nowhere from it", async () => {
+  const code = pickableCode();
+  const area = await codeOf(3);
+
+  await clickAt(area, 6, { ctrlKey: true });
 
   expect(code.pick?.word).toBe("area");
-  expect(picked()).toEqual([]);
 });
 
 it("keeps the focus on the code when its file turns out unreadable, so the keys stay with it", async () => {

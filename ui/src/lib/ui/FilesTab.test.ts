@@ -1622,6 +1622,177 @@ it("keeps the focus in the file view when its file can't be read, and says why t
   expect(document.activeElement).toBe(within(view).getByRole("region", { name: "Definition's code" }));
 });
 
+/** A hit at line `line` of `path`, at the base the file view of `intoFileView` is at. */
+const baseHit = (path: string, line: number) => ({
+  place: { kind: "repository", path, side: "base", commit: "fedcba987654" },
+  line,
+  column: 4,
+  text: "",
+});
+
+/** The file view on show. */
+const fileView = () => screen.getByRole("region", { name: "File view" });
+
+/** The code of line `line` of the file view's file, once it has come, and not of a peek in the view. */
+const viewLine = (line: number) =>
+  vi.waitFor(() => {
+    const code = fileView().querySelector(`[data-code-line="${String(line)}"]`);
+    expect(code?.textContent).toBe(`line ${String(line)}`);
+    return code as Element;
+  });
+
+/** The top of line `line` in the file view's code. */
+const topOf = (line: number) =>
+  fileView().querySelector(`[data-code-line="${String(line)}"]`)?.parentElement?.style.top;
+
+/** Opens the file view of `Objects/unicodeobject.c` at the base, on its line 900, as Go to definition from
+ * the diff does. Each of the file's 2000 lines reads `line N`, as does every other file's. */
+const intoFileView = async () => {
+  core.definitions.mockResolvedValueOnce(
+    ok({ state: "found", hits: [baseHit("Objects/unicodeobject.c", 900)] }),
+  );
+  core.definitionCode.mockImplementation((code) => {
+    const lines = [];
+    for (let line = code.start; line < Math.min(code.end, 2001); line++) lines.push(`line ${String(line)}`);
+    return Promise.resolve(ok({ count: 2000, lines }));
+  });
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[2]).toBe("11 Notes");
+  });
+  await clickAt(codeOf(2), 2);
+  await files.goToDefinition();
+  await viewLine(900);
+  return { files, view: fileView() };
+};
+
+it("picks a word in the file view, and Ctrl+click goes to its definition at the view's commit, in a new view", async () => {
+  const { files, view } = await intoFileView();
+  const first = files.fileView;
+
+  await clickAt(await viewLine(901), 2);
+  // The pieces of the word picked join up around the caret.
+  const pickedThere = [...view.querySelectorAll(".picked")].map((piece) => piece.textContent).join("");
+  core.definitions.mockResolvedValueOnce(ok({ state: "found", hits: [baseHit("Objects/abstract.c", 30)] }));
+  await clickAt(await viewLine(901), 2, { ctrlKey: true });
+  await vi.waitFor(() => {
+    expect(fileView().querySelector(".path")?.textContent).toBe("Objects/abstract.c");
+  });
+
+  expect(pickedThere).toBe("line");
+  expect(core.definitions.mock.calls[1]?.[0]).toMatchObject({
+    path: "Objects/unicodeobject.c",
+    side: "base",
+    line: 901,
+    column: 0,
+  });
+  expect(files.fileView).not.toBe(first);
+  // The new view draws afresh, and its code takes the focus.
+  expect(fileView()).not.toBe(view);
+  expect(document.activeElement).toBe(within(fileView()).getByRole("region", { name: "Definition's code" }));
+});
+
+it("goes to the diff from the file view on a hit in a file the PR changes, and marks the line there", async () => {
+  const { files } = await intoFileView();
+  await clickAt(await viewLine(900), 2);
+  core.definitions.mockResolvedValueOnce(oneHit("head", 2));
+  core.pullRequestRow.mockResolvedValue(ok(4));
+
+  await files.goToDefinition();
+  await vi.waitFor(() => {
+    expect(mark()).not.toBeNull();
+  });
+
+  expect(screen.queryByRole("region", { name: "File view" })).toBeNull();
+  expect(mark()?.style.top).toBe(rowAt("2+new line")?.style.top);
+  expect(document.activeElement).toBe(screen.getByRole("region", { name: "Diff" }));
+});
+
+it("scrolls to a definition in the file view's own file and marks it, each time Go to definition lands there", async () => {
+  const { files, view } = await intoFileView();
+  const first = files.fileView;
+  const code = within(view).getByRole("region", { name: "Definition's code" });
+  await clickAt(await viewLine(901), 2);
+  core.definitions.mockResolvedValue(ok({ state: "found", hits: [baseHit("Objects/unicodeobject.c", 120)] }));
+
+  await files.goToDefinition();
+  await vi.waitFor(() => {
+    expect(view.querySelector(".hit")?.textContent).toBe("120line 120");
+  });
+  const landed = code.scrollTop;
+  code.scrollTop = 0;
+  await fireEvent.scroll(code);
+  await clickAt(await viewLine(5), 2);
+  await files.goToDefinition();
+  await tick();
+
+  // The line sits three rows from the top, though it is the one marked.
+  expect([landed, code.scrollTop]).toEqual([(120 - 1 - 3) * 20, (120 - 1 - 3) * 20]);
+  expect(view.querySelectorAll(".hit")).toHaveLength(1);
+  expect(files.fileView).toBe(first);
+  expect(fileView()).toBe(view);
+});
+
+it("says in the file view's header what Go to definition does there, and that it found nothing", async () => {
+  const { files, view } = await intoFileView();
+  await clickAt(await viewLine(900), 2);
+  core.definitions.mockResolvedValueOnce(ok({ state: "found", hits: [] }));
+
+  await files.goToDefinition();
+  await tick();
+
+  expect(within(view).getByRole("status").textContent).toBe("No definition of line at fedcba9.");
+});
+
+it("opens the peek under the file view's line, pushing the lines after it down, and closes it before the view", async () => {
+  const { files, view } = await intoFileView();
+  await clickAt(await viewLine(900), 2);
+  core.definitions.mockResolvedValueOnce(ok({ state: "found", hits: [baseHit("Objects/abstract.c", 30)] }));
+
+  await files.peekDefinition();
+  const peek = await vi.waitFor(() => within(view).getByRole("group", { name: "Definition peek" }));
+  const opened = [topOf(900), peek.style.top, topOf(901), files.peekOpened];
+  // A click in the peek's code picks a word there, and leaves the word picked in the view.
+  const inPeek = await vi.waitFor(() => {
+    const code = peek.querySelector('[data-code-line="30"]');
+    expect(code?.textContent).toBe("line 30");
+    return code as Element;
+  });
+  await clickAt(inPeek, 2);
+  const picks = [files.peek?.code?.pick?.line, files.fileView?.code.pick?.line];
+  files.closePeek();
+  await tick();
+
+  expect(opened).toEqual([`${String(899 * 20)}px`, `${String(900 * 20)}px`, `${String(918 * 20)}px`, false]);
+  expect(picks).toEqual([30, 900]);
+  expect(within(view).queryByRole("group", { name: "Definition peek" })).toBeNull();
+  expect(topOf(901)).toBe(`${String(900 * 20)}px`);
+  expect(document.activeElement).toBe(within(view).getByRole("region", { name: "Definition's code" }));
+});
+
+it("scrolls a peek that opens on the file view's last lines on screen into view as it opens", async () => {
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(100);
+  const { files, view } = await intoFileView();
+  const code = within(view).getByRole("region", { name: "Definition's code" });
+  core.definitions.mockReturnValue(new Promise(() => {}));
+  const peekAt = async (line: number) => {
+    await clickAt(await viewLine(line), 2);
+    void files.peekDefinition();
+    await tick();
+    return code.scrollTop;
+  };
+
+  // Lines 897 to 901 show in 100 pixels. The peek under line 901 scrolls up as far as that line can go.
+  const low = await peekAt(901);
+  files.closePeek();
+  code.scrollTop = (900 - 1 - 3) * 20;
+  await fireEvent.scroll(code);
+  // One under line 897, at the top already, scrolls nothing.
+  const high = await peekAt(897);
+
+  expect([low, high]).toEqual([900 * 20, (900 - 1 - 3) * 20]);
+});
+
 it("picks a word side by side on the half it was clicked on, and on the lines a gap left out", async () => {
   setUpGapped();
   const files = await shown(ready(gapped.length, { files: [gappedFile] }), sideBySide());

@@ -2,31 +2,79 @@
      found in it, over the PR's Files tab. The header says where the file is from, and Back returns to the
      diff under it, scrolled where the user left it. The code is the Definition peek's, scrolled so the hit's
      line sits a few rows from the top, and marked, with its lines read a chunk at a time as they show. It
-     takes the focus as it opens, so the keys scroll it and not the diff under it. -->
+     takes the focus as it opens, so the keys scroll it and not the diff under it. The user follows symbols
+     in it as in the diff (#457): a click picks a word, `F12` and Ctrl+click go to its definition, and
+     `Alt+F12` opens the Definition peek under its line. The header says what Go to definition is doing, as
+     the line over the diff does. -->
 <script lang="ts">
   import { fileViewWords, type FileView } from "$lib/state/file-view";
+  import { peekPlaces, type Peek } from "$lib/state/peek";
+  import type { PrFilesState } from "$lib/state/pr-files.svelte";
+  import PeekBox from "./PeekBox.svelte";
   import PeekCode from "./PeekCode.svelte";
 
-  let { view, number, onback }: { view: FileView; number: number; onback: () => void } = $props();
+  let { view, files }: { view: FileView; files: PrFilesState } = $props();
 
-  const words = $derived(fileViewWords(view, number));
+  const words = $derived(fileViewWords(view, files.number));
+  const landed = $derived(files.landedIn(view));
+  /** The Definition peek, while it shows under a line of this view. */
+  const peek = $derived.by(() => {
+    const peek = files.peek;
+    return peek?.at.kind === "view" && peek.at.view === view ? { peek, line: peek.at.line } : undefined;
+  });
+  /** Hands the focus to the code, so the keys scroll it. */
+  const focusCode = (section: HTMLElement) => {
+    section.querySelector<HTMLElement>("[data-scrolls]")?.focus({ preventScroll: true });
+  };
 </script>
+
+{#snippet box(top: number, shown: Peek)}
+  <PeekBox diff={files} peek={shown} {top} rows={peekPlaces(shown, files.panes.peekRows)} gutter={48} />
+{/snippet}
 
 <section
   class="file-view"
   aria-label="File view"
+  {@attach focusCode}
   {@attach (section) => {
-    section.querySelector<HTMLElement>("[data-scrolls]")?.focus({ preventScroll: true });
+    // The peek closed, or Go to definition from it landed on another line of this file.
+    if (!files.viewWantsFocus) return;
+    files.viewWantsFocus = false;
+    focusCode(section);
   }}
 >
   <div class="header">
-    <button type="button" class="back" onclick={onback}>{words.back}</button>
+    <button
+      type="button"
+      class="back"
+      onclick={() => {
+        files.closeFileView();
+      }}>{words.back}</button
+    >
     <span class="path">{view.place.path}</span>
     <span class="muted">{words.commit}</span>
     <span class="badge">Read-only</span>
+    {#if files.notice !== undefined}
+      <span class="notice" role="status">{files.notice}</span>
+    {/if}
   </div>
   <div class="code">
-    <PeekCode code={view.code} line={view.line} />
+    <PeekCode
+      code={view.code}
+      line={landed.line}
+      landing={landed}
+      ongo={() => void files.goToDefinition()}
+      inset={peek && {
+        peek: peek.peek,
+        line: peek.line,
+        rows: peekPlaces(peek.peek, files.panes.peekRows),
+        reveal: files.peekOpened,
+        onreveal: () => {
+          files.peekOpened = false;
+        },
+        box,
+      }}
+    />
   </div>
 </section>
 
@@ -74,6 +122,13 @@
     padding: 0 6px;
     border-radius: 8px;
     background: color-mix(in srgb, currentColor 12%, transparent);
+  }
+
+  /* What Go to definition is doing, or that it found nothing, as over the diff. */
+  .notice {
+    overflow: hidden;
+    color: var(--fg-muted);
+    text-overflow: ellipsis;
   }
 
   .code {

@@ -32,9 +32,11 @@ export class HitCode {
   /** How many columns the widest line read takes, a tab as 8, so the peek scrolls far enough sideways. */
   widest = $state(0);
   /** Where the user scrolled the code to, which the peek goes back to when the diff draws it again after
-   * it scrolled out of sight. Until then the peek scrolls to the hit. */
+   * it scrolled out of sight. Until then the peek scrolls to the hit, and so does the file view once Go to
+   * definition lands on a line of it (#457). */
   scrollTop: number | undefined;
-  /** The word the user picked in the code, which `Alt+F12` looks up from inside the peek (#447). A crumb
+  /** The word the user picked in the code, which `Alt+F12` looks up from inside the peek (#447), and `F12`
+   * and `Alt+F12` from the file view, which shows this code once Go to definition opens it (#457). A crumb
    * keeps the code, so a peek it brings back shows the word that was followed. Picking another hit makes new
    * code, with no pick. */
   pick = $state.raw<CodePick>();

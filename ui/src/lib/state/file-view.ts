@@ -1,7 +1,8 @@
 // The file view (#453): Go to definition into a file the PR doesn't change opens that file read-only over the
 // Files tab, at the hit's commit, with the hit's line marked. Its lines come a chunk at a time, as the
-// Definition peek's code does, so a big file opens without the window waiting for all of it. They are plain
-// text until #455.
+// Definition peek's code does, so a big file opens without the window waiting for all of it. The user follows
+// symbols inside it as in the diff (#457): Go to definition from it lands in it, in another file view or in
+// the diff, and the Definition peek opens under one of its lines.
 
 import type { FileChange, Hit, Place } from "$lib/data/bindings";
 import type { HitCode } from "./hit-code.svelte";
@@ -21,10 +22,14 @@ export function inRepository(hit: Hit): hit is RepositoryHit {
 /** The file a hit is in, at the hit's commit, and its lines. */
 export interface FileView {
   place: InRepository;
-  /** The hit's line, counted from 1, which the view marks. */
+  /** The hit's line, counted from 1, which the view marks until Go to definition lands on another line of
+   * it (#457). */
   line: number;
   code: HitCode;
 }
+
+/** A line of the file a file view shows, counted from 1, which a Definition peek opens under (#457). */
+export type ViewLine = { kind: "view"; view: FileView; line: number };
 
 /** A place in the Detail pane's history (#456): an Issue or a PR on its line of the list, or a file view,
  * which belongs to the line of the PR it shows over. */

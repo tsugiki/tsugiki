@@ -4,6 +4,7 @@
 
 import type { Answer, Hit, Index_Deserialize, ServerName, Waiting } from "$lib/data/bindings";
 import type { LaidThread } from "./diff-layout";
+import type { ViewLine } from "./file-view";
 import type { HitCode } from "./hit-code.svelte";
 import type { PickedLine, Side } from "./pick";
 
@@ -101,9 +102,10 @@ export function peekWords(peek: Peek, now = Date.now()): PeekWords {
 
 /** The peek: the line it opened under, the symbol it looks up, and the commit it looks at, which is the
  * PR's base for a removed line and its head for the rest, or the commit of the hit whose code the symbol was
- * picked in (#447). With hits, it holds the code of the one shown. */
+ * picked in (#447). The line is the diff's, or one of the file view's, at that view's commit (#457). With
+ * hits, it holds the code of the one shown. */
 export interface Peek {
-  at: PickedLine;
+  at: PickedLine | ViewLine;
   symbol: string;
   side: Side;
   commit: string;

@@ -3332,3 +3332,138 @@ it("closes the peek when a newer diff comes, as its rows are other lines", async
 
   expect(files.peek).toBeUndefined();
 });
+
+/** The Files tab of `picking`'s diff with the file view of `Lib/shapes.py` at the base over it, as Go to
+ * definition opens it on line 3, and the word `area` picked on line 5 of its code. */
+const inFileView = async () => {
+  core.definitions.mockResolvedValueOnce(hitsFound(hitAt("Lib/shapes.py", "base", 3)));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.goToDefinition();
+  const view = files.fileView;
+  if (view === undefined) throw new Error("no file view opened");
+  view.code.pick = { line: 5, word: "area", start: 4, end: 8, caret: 4 };
+  return { files, view };
+};
+
+it("looks up the word picked in the file view at its commit, and lands on a hit in its own file there", async () => {
+  const { files, view } = await inFileView();
+  const before = files.landedIn(view);
+  view.code.scrollTop = 200;
+  core.definitions.mockResolvedValueOnce(hitsFound(hitAt("Lib/shapes.py", "base", 40)));
+
+  await files.goToDefinition();
+
+  expect(before).toBe(view);
+  expect(core.definitions.mock.calls[1]?.[0]).toEqual(lookupOf("base", "Lib/shapes.py", 5, 4));
+  expect(files.fileView).toBe(view);
+  expect(files.landedIn(view)).toEqual({ line: 40 });
+  // The view scrolls to the line from wherever the user left it, and its code takes the focus.
+  expect(view.code.scrollTop).toBeUndefined();
+  expect(files.viewWantsFocus).toBe(true);
+  expect(files.peek).toBeUndefined();
+  expect(core.pullRequestRow).not.toHaveBeenCalled();
+  expect(core.cancelDefinitions.mock.calls).toEqual([[ticketOf(0)], [ticketOf(1)]]);
+});
+
+it("opens another file view on a hit in another file the PR doesn't change", async () => {
+  const { files, view } = await inFileView();
+  core.definitions.mockResolvedValueOnce(hitsFound(hitAt("Lib/sizes.py", "base", 12)));
+
+  await files.goToDefinition();
+
+  expect(files.fileView).not.toBe(view);
+  expect(files.fileView).toMatchObject({ place: { path: "Lib/sizes.py", commit: "base" }, line: 12 });
+  expect(files.fileView?.code).toBe(codes.at(-1));
+});
+
+it("goes to the diff from the file view on a hit in a file the PR changes, closing the view", async () => {
+  const { files } = await inFileView();
+  core.definitions.mockResolvedValueOnce(hitsFound(hitAt("a.py", "head", 9)));
+  core.pullRequestRow.mockResolvedValue(ok(4));
+
+  await files.goToDefinition();
+
+  expect(core.pullRequestRow.mock.calls).toEqual([[lineOf("a.py", "head", 9)]]);
+  expect(files.fileView).toBeUndefined();
+  expect(files.jump).toEqual({ row: 4 });
+  expect(files.marked).toEqual({ row: 4, side: "head" });
+  expect(files.diffWantsFocus).toBe(true);
+});
+
+it("opens the peek under the file view's line, which the diff lays out no place for, and closes it into the view", async () => {
+  const { files, view } = await inFileView();
+  core.definitions.mockResolvedValueOnce(hitsFound(hitAt("Lib/sizes.py", "base", 12)));
+
+  await files.peekDefinition();
+  const opened = [files.peek, files.peekOpened, files.layout.threadAt(PEEK_ID)];
+  files.closePeek();
+
+  expect(opened).toEqual([
+    expect.objectContaining({
+      at: { kind: "view", view, line: 5 },
+      symbol: "area",
+      side: "base",
+      commit: "base",
+    }),
+    true,
+    undefined,
+  ]);
+  expect(files.peek).toBeUndefined();
+  expect(files.fileView).toBe(view);
+  expect([files.viewWantsFocus, files.diffWantsFocus]).toEqual([true, false]);
+});
+
+it("goes from the peek in the file view to a hit as Go to definition from the view goes", async () => {
+  const { files, view } = await inFileView();
+  core.definitions.mockResolvedValue(hitsFound(hitAt("Lib/shapes.py", "base", 40), hitAt("a.py", "head", 9)));
+  core.pullRequestRow.mockResolvedValue(ok(4));
+
+  await files.goToDefinition();
+  const listed = [files.peek?.at, files.peekFocus];
+  await files.openHit();
+  const inView = [files.fileView, files.landedIn(view), files.peek];
+  await files.goToDefinition();
+  files.showHit(1);
+  await files.openHit();
+
+  expect(listed).toEqual([{ kind: "view", view, line: 5 }, "take"]);
+  expect(inView).toEqual([view, { line: 40 }, undefined]);
+  expect(files.fileView).toBeUndefined();
+  expect(files.marked).toEqual({ row: 4, side: "head" });
+  expect(files.diffWantsFocus).toBe(true);
+});
+
+it("closes the peek in the file view as the view closes or the history shows another, and keeps it for the same", async () => {
+  const { files, view } = await inFileView();
+  core.definitions.mockResolvedValue(ok({ state: "not_set_up" }));
+  await files.peekDefinition();
+
+  files.showFileView(view);
+  const kept = files.peek?.at.kind;
+  files.showFileView(undefined);
+  const leftForTheDiff = files.peek;
+  files.showFileView(view);
+  await files.peekDefinition();
+  files.closeFileView();
+
+  expect([kept, leftForTheDiff, files.peek, files.fileView]).toEqual([
+    "view",
+    undefined,
+    undefined,
+    undefined,
+  ]);
+  // Each peek that closed had its lookup cancelled, as the core may watch a server's index for it.
+  expect(core.cancelDefinitions.mock.calls).toEqual([[ticketOf(0)], [ticketOf(1)], [ticketOf(2)]]);
+});
+
+it("asks nothing from the file view with no word picked there, though the diff has one", async () => {
+  const { files, view } = await inFileView();
+  view.code.pick = undefined;
+
+  await files.peekDefinition();
+  await files.goToDefinition();
+
+  expect(core.definitions).toHaveBeenCalledOnce();
+  expect(files.peek).toBeUndefined();
+});

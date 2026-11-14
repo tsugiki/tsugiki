@@ -169,6 +169,25 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   to read a file it couldn't read before. Back and Esc are a step of their own, as Esc from a PR to its
   Issue is, so `Alt+←` from the diff goes back to the file view they closed. A click on the PR's row is a
   step too: it switches tabs, as it does from the diff, and the file view stays behind in the history.
+- The user follows symbols in the file view as in the diff (#457). A click puts the caret on a word and a
+  double-click selects it, and only the picked word is highlighted. `F12` and `Ctrl+click` (`Cmd+click` on
+  macOS) look it up at the view's commit and side, and the line over the diff shows in the view's header.
+  - A single hit in the same file scrolls the view there and marks that line in place of the one marked
+    before. That makes no new place in the history, and each landing scrolls, even to the line marked.
+  - A single hit in another file the PR doesn't change opens a new file view, one more place in the
+    history, so `Alt+←` comes back to the view it was found from.
+  - A single hit in a file the PR changes closes the file view, as Back does, and lands on its line in the
+    diff, as `F12` there does.
+  - Several hits open the peek with their list under the picked line of the file view. Open, Enter and
+    `F12` there go to the hit the peek shows, as a single hit goes.
+- `Alt+F12` in the file view opens the Definition peek under the picked word's line, and the lines after it
+  move down. It sizes, scrolls into sight and follows a word picked in its code as the diff's peek does, and
+  with no word picked there, `Alt+F12` looks up the file view's. Esc closes the peek and gives the focus
+  back to the file view's code, and the next Esc goes back to the diff. One peek shows at a time, on what is
+  on top: opening a file view closes the diff's peek, and Back, `Alt+←`, `Alt+→` and Go to definition into
+  another view close the view's.
+- The lookups read the Lookup checkout and the **Mirror**, so the file view follows symbols offline at any
+  commit the Mirror holds.
 - Until #445 lands, a single hit on a line of a changed file that no hunk shows opens the peek on it. So do
   a hit outside the Repository and an answer with no hit to go to, which says why. On a hit outside the
   Repository the peek offers no Open, and Enter and `F12` leave it as it is. On a hit in the Repository

@@ -1403,17 +1403,76 @@ it("shows the file view again over its PR's Files tab when Alt+← comes back to
 });
 
 it("leaves the diff's keys alone while the file view covers it, and the cursor on the PR's row", async () => {
-  const goToDefinition = vi.spyOn(PrFilesState.prototype, "goToDefinition").mockResolvedValue();
   const nextChange = vi.spyOn(PrFilesState.prototype, "nextChange");
   await onFileView();
   const row = document.querySelector('[data-item="112564#160662"]');
 
-  await press("F12");
   await press("F7");
 
-  expect(goToDefinition).not.toHaveBeenCalled();
   expect(nextChange).not.toHaveBeenCalled();
   expect(row?.getAttribute("aria-current")).toBe("true");
+});
+
+it("adds a history entry for a file view F12 opens from another, and Alt+← comes back to the first", async () => {
+  const { diff, view, opened } = await goIntoFileView();
+  const other = { ...eggsView(), place: { ...view.place, path: "Lib/spam.py" } };
+  vi.mocked(PrFilesState.prototype.goToDefinition).mockImplementation(function (this: PrFilesState) {
+    this.openFileView(other);
+    return Promise.resolve();
+  });
+
+  await press("F12");
+  const second = [opened.files?.fileView, arrowTitle()];
+  await press("ArrowLeft", { altKey: true });
+  const backToFirst = [opened.files?.fileView, arrowTitle(1)];
+  await press("ArrowLeft", { altKey: true });
+
+  expect(second).toEqual([other, expect.stringMatching(/^Back to Lib\/eggs\.py · #160662 /)]);
+  expect(backToFirst).toEqual([view, expect.stringMatching(/^Forward to Lib\/spam\.py · #160662 /)]);
+  expect(screen.queryByRole("region", { name: "File view" })).toBeNull();
+  expect(screen.getByRole("region", { name: "Diff" })).toBe(diff);
+});
+
+it("closes the Definition peek in the file view with Escape, and the file view with the next", async () => {
+  const view = eggsView();
+  const shown: { peek: Peek | undefined } = {
+    peek: {
+      at: { kind: "view", view, line: 4 },
+      symbol: "x",
+      side: "base",
+      commit: "base",
+      lookup: { state: "looking" },
+    },
+  };
+  vi.spyOn(PrFilesState.prototype, "fileView", "get").mockReturnValue(view);
+  vi.spyOn(PrFilesState.prototype, "peek", "get").mockImplementation(() => shown.peek);
+  const closePeek = vi.spyOn(PrFilesState.prototype, "closePeek").mockImplementation(() => {
+    shown.peek = undefined;
+  });
+  const closeFileView = vi.spyOn(PrFilesState.prototype, "closeFileView").mockImplementation(() => {});
+  await fireEvent.click(await onFiles());
+  await screen.findByRole("region", { name: "File view" });
+
+  await press("Escape");
+  const first = [closePeek.mock.calls.length, closeFileView.mock.calls.length];
+  await press("Escape");
+
+  expect(first).toEqual([1, 0]);
+  expect([closePeek.mock.calls.length, closeFileView.mock.calls.length]).toEqual([1, 1]);
+});
+
+it("goes to the definition with F12 and opens the peek with Alt+F12 from the file view, once for a held key", async () => {
+  const goToDefinition = vi.spyOn(PrFilesState.prototype, "goToDefinition").mockResolvedValue();
+  const peekDefinition = vi.spyOn(PrFilesState.prototype, "peekDefinition").mockResolvedValue();
+  await onFileView();
+
+  await press("F12");
+  await press("F12", { repeat: true });
+  await press("F12", { altKey: true });
+  await press("F12", { altKey: true, repeat: true });
+
+  expect(goToDefinition).toHaveBeenCalledTimes(1);
+  expect(peekDefinition).toHaveBeenCalledTimes(1);
 });
 
 it("closes the Definition peek with Escape before the search, and the search before the PR", async () => {

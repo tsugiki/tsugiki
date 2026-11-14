@@ -25,12 +25,10 @@
     type PrFilesState,
     type Span,
   } from "$lib/state/pr-files.svelte";
-  import { PEEK_LEAST, PEEK_MOST } from "$lib/state/panes.svelte";
-  import { PEEK_ID, peekSized } from "$lib/state/peek";
-  import DefinitionPeek from "./DefinitionPeek.svelte";
+  import { PEEK_ID } from "$lib/state/peek";
   import NewsEntries from "./NewsEntries.svelte";
-  import PaneEdge from "./PaneEdge.svelte";
-  import { currentOs, keyName } from "./keys";
+  import { currentOs } from "./keys";
+  import PeekBox from "./PeekBox.svelte";
   import { wordPicker } from "./picking";
   import ReviewThread from "./ReviewThread.svelte";
   import { pieces, type Match } from "./spans";
@@ -112,7 +110,8 @@
       const news = (newsBox as HTMLElement).offsetHeight;
       if (target !== undefined)
         region.scrollTop = target === "top" ? 0 : news + target.place * ROW + target.into;
-      if (opened) {
+      // A peek in the file view over the diff is the file view's to show (#457).
+      if (opened && diff.peek?.at.kind !== "view") {
         diff.peekOpened = false;
         reveal(layout, region, news);
       }
@@ -529,67 +528,7 @@
     {#each diff.layout.threadsIn(first, last) as placed (placed.laid.id)}
       {@const block = placed.laid.block}
       {#if block.kind === "peek"}
-        <!-- The peek holds the focus itself while it has no list, as while a lookup from inside it runs, and
-             takes it on a click on its header. While anything in it has the focus, `Alt+F12` looks up the
-             word picked in its code (#447), and the window's keys never hear it. With no word picked there,
-             it goes on to look up the diff's. -->
-        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-        <div
-          class="thread peek sans"
-          role="group"
-          aria-label="Definition peek"
-          tabindex="-1"
-          style:top={`${String(placed.shown * ROW)}px`}
-          style:height={`${String(placed.length * ROW)}px`}
-          {@attach (box) => {
-            // Go to definition with several hits hands the list the focus, for the user to pick one (#446).
-            // A lookup from inside the peek has the peek hold it while it looks, and the list keeps it once
-            // the lookup answers, unless the user moved it out of the peek (#447).
-            const focus = diff.peekFocus;
-            if (focus === undefined) return;
-            diff.peekFocus = undefined;
-            if (focus === "keep" && !box.contains(document.activeElement)) return;
-            (box.querySelector<HTMLElement>("[role=listbox]") ?? box).focus({ preventScroll: true });
-          }}
-          onkeydown={(e) => {
-            if (keyName(e, os) !== "alt+f12" || block.peek.code?.pick === undefined) return;
-            e.preventDefault();
-            e.stopPropagation();
-            // A held key would ask the server again and again.
-            if (!e.repeat) void diff.followPick();
-          }}
-        >
-          <DefinitionPeek
-            peek={block.peek}
-            open={diff.openable}
-            onclose={() => {
-              diff.closePeek();
-            }}
-            onhit={(index) => {
-              diff.showHit(index);
-            }}
-            onopen={() => {
-              void diff.openHit();
-            }}
-            oncrumb={(index) => {
-              diff.backTo(index);
-            }}
-          />
-        </div>
-        {#if peekSized(block.peek)}
-          <!-- Astride the peek's bottom line, outside the peek, whose `overflow: hidden` would clip it. -->
-          <div class="peek-edge" style:top={`${String((placed.shown + placed.length) * ROW - 4)}px`}>
-            <PaneEdge
-              label="Definition peek height"
-              sizes={{ kind: "box", value: diff.panes.peekRows, unit: ROW }}
-              least={PEEK_LEAST}
-              most={PEEK_MOST}
-              onresize={(rows) => (diff.panes.peek = rows)}
-              ondone={() => void diff.panes.save()}
-              onreset={() => void diff.panes.reset("peek")}
-            />
-          </div>
-        {/if}
+        <PeekBox {diff} peek={block.peek} top={placed.shown * ROW} rows={placed.length} gutter={96} />
       {:else}
         <div
           class="thread sans"
@@ -680,31 +619,6 @@
     to {
       opacity: 0;
     }
-  }
-
-  /* The peek takes the places the layout gives it, and no more. Its lines are drawn inside it, so its
-     header and the line under it keep their whole 20 px each. */
-  .peek {
-    overflow: hidden;
-    border-width: 0;
-    box-shadow:
-      inset 0 1px color-mix(in srgb, currentColor 15%, transparent),
-      inset 0 -1px color-mix(in srgb, currentColor 15%, transparent);
-  }
-
-  /* The peek holds the focus for its parts, as while a lookup from inside it runs, and draws no outline. */
-  .peek:focus {
-    outline: none;
-  }
-
-  /* The strip the peek's bottom edge takes: 4 px of the peek and 4 px of the row under it, above a review
-     thread there too. */
-  .peek-edge {
-    position: absolute;
-    z-index: 1;
-    left: var(--across);
-    width: var(--width);
-    height: 8px;
   }
 
   /* Its own stacking context, so the peek's edge rises only above the rows and threads. */

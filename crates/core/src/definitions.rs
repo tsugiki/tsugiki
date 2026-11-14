@@ -424,9 +424,30 @@ impl Owner {
             return;
         }
         let _old = self.prs.insert(repository.clone(), pr.clone());
+        self.stop_stale(repository, &pr.at);
         for name in STARTED_BY_PR {
             if !pr.changed_for(name).is_empty() {
                 self.start(&(repository.clone(), name), &pr);
+            }
+        }
+    }
+
+    /// Stops `repository`'s servers that wait for a lookup to start and read other commits than `at`, as the
+    /// checkout moves away from what they read, and cancels the lookup running on one. The next lookup in
+    /// their language starts one at `at`.
+    fn stop_stale(&mut self, repository: &RepositoryName, at: &LookupAt) {
+        let stale: Vec<Key> = (self.servers.iter())
+            .filter(|((owner, name), server)| {
+                owner == repository && !STARTED_BY_PR.contains(name) && server.at() != at
+            })
+            .map(|(key, _)| key.clone())
+            .collect();
+        for key in stale {
+            if self.asks(&key) {
+                self.cancel_running();
+            }
+            if let Some(server) = self.servers.remove(&key) {
+                let _stopping = server.shutdown();
             }
         }
     }

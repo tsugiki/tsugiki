@@ -921,3 +921,22 @@ fn rust_analyzer_finds_a_local_a_method_a_function_elsewhere_or_at_the_head_and_
     assert!(!folder.join("shout/expanded").exists());
     assert!(!folder.join("target").exists());
 }
+
+#[test]
+fn a_pr_at_other_commits_stops_its_rust_analyzer_and_cancels_the_lookup_on_it() {
+    let fixture = crate_with_a_build_script("definitions-rust-moved");
+    let moved = another("definitions-rust-moved-on");
+    let mut owner = rust_opened(&fixture);
+    let asked = ask(&mut owner, &rust_lookup(&fixture, 10, "left"), Ticket(1));
+    let started = owner.servers.len();
+
+    let pr = Pr {
+        at: moved.checkout.at.clone(),
+        changed: Vec::new(),
+    };
+    owner.opened(&repository(), pr);
+
+    assert_eq!(started, 1);
+    assert!(owner.servers.is_empty());
+    assert_eq!(asked.answer.try_recv(), Ok(Ok(Answer::Cancelled)));
+}

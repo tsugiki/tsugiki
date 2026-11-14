@@ -168,7 +168,7 @@ impl LanguageServer {
         let folder = root.to_path().unwrap_or(folder);
         let setup = match name {
             ServerName::Ty => super::ty::setup(&folder),
-            ServerName::RustAnalyzer => super::rust_analyzer::setup(program),
+            ServerName::RustAnalyzer => super::rust_analyzer::setup(program)?,
         };
         let launch = Launch {
             program: program.to_owned(),

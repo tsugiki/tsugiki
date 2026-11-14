@@ -107,16 +107,20 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - Go to definition and the Definition peek work in `.rs` files as they do in Python, through rust-analyzer.
   The PR's changed Rust files open on it and switch views as Python's do on ty.
 - Until Settings can pick it (#683), rust-analyzer's binary comes from `[language_servers.rust-analyzer]
-  path` in `machine.toml`. Pick the one inside a Rust toolchain, which `rustup which rust-analyzer` prints:
-  rust-analyzer then reads the standard library from that toolchain's `rust-src`. One outside a toolchain
-  finds no definition in the standard library.
+  path` in `machine.toml`. It has to be the one inside a Rust toolchain, which `rustup which rust-analyzer`
+  prints: rust-analyzer then reads the standard library from that toolchain's `rust-src`, and runs its cargo
+  and rustc. One outside a toolchain, such as rustup's proxy in `~/.cargo/bin`, doesn't start and the peek
+  says why, as the checkout's files could then pick the programs it runs.
 - We test with rust-analyzer 1.99.1 (58cf8f9c 2026-10-13), the rustup component of the Rust 1.99.1 that
   `rust-toolchain.toml` pins, which installs it with `rust-src`. The tests read its path from
   `TSUGIKI_RUST_ANALYZER`, which `just cargo-test` and `just rust-coverage` set from `rustup which`.
 - rust-analyzer starts on the first lookup in a `.rs` file, never when a PR opens. It finds nothing in a file
   until it has loaded the workspace, so the core waits until rust-analyzer says it is quiescent, for at most
   30 s, while the peek says "Starting rust-analyzer…". On Tsugiki's own repository that first lookup takes
-  about 9 s, and each lookup after it a few milliseconds.
+  about 9 s, and each lookup after it a few milliseconds. The servers' thread waits too, so a cancel or a
+  lookup in Python waits behind that start, as it does behind ty's.
+- A PR at other commits stops its Repository's rust-analyzer and cancels a lookup that waits on it, as the
+  checkout moves. The next lookup in Rust starts a new one.
 - A lookup never runs the Repository's code. rust-analyzer runs no build script, builds no proc macro, and
   runs no `cargo check` or diagnostics. Cargo works offline, so it downloads nothing, and resolves the
   dependencies its cache holds. A dependency it lacks leaves lookups in the workspace and the standard

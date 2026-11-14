@@ -2410,12 +2410,17 @@ fn a_system_header_clangd_can_t_find_says_so_and_one_of_the_repository_s_says_no
     fake.diagnose(&file, (0, "'spam.h' file not found"));
     fake.diagnose(&file, (1, "'generated.h' file not found"));
     // A header an included file includes, without the note that says where.
-    fake.diagnose(&file, (2, "In included file: 'corecrt_spam.h' file not found"));
+    fake.diagnose(
+        &file,
+        (2, "In included file: 'corecrt_spam.h' file not found"),
+    );
     fake.diagnose(&file, (3, "'stdlib.h' file not found"));
     let status = troubled_next(&mut owner);
     let answer = nothing_found(&mut owner, &fixture);
     // A header the system's headers include, once clangd can't find the system's, explains no more.
-    let wrap = plain(&fixture.checkout.folder).join("Include").join("wrap.h");
+    let wrap = plain(&fixture.checkout.folder)
+        .join("Include")
+        .join("wrap.h");
     let nested = format!(
         "In included file: 'corecrt_spam.h' file not found\n\n{}:1:10:\nnote: error occurred here",
         wrap.display()
@@ -2459,7 +2464,11 @@ fn a_clangd_that_never_reports_its_index_says_it_isn_t_indexing() {
         }
     );
     assert_eq!(answer, clangd_problem(problem));
-    assert!(!heard.iter().any(|message| matches!(message, Message::Troubled(..))));
+    assert!(
+        !heard
+            .iter()
+            .any(|message| matches!(message, Message::Troubled(..)))
+    );
 }
 
 #[test]

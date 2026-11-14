@@ -193,7 +193,10 @@ fn a_missing_header_is_read_from_clangd_s_message_with_the_file_its_note_names()
     assert_eq!(direct.header, "stdlib.h");
     assert!(matches!(direct.includer, Includer::Diagnosed));
     assert_eq!(nested.header, "corecrt.h");
-    assert!(matches!(nested.includer, Includer::File("C:\\SDK\\stdlib.h")));
+    assert!(matches!(
+        nested.includer,
+        Includer::File("C:\\SDK\\stdlib.h")
+    ));
     assert!(matches!(unnoted.includer, Includer::File("")));
     assert!(Missing::read("use of undeclared identifier 'spam'").is_none());
     assert!(Missing::read("In included file: unknown type name 'spam'").is_none());
@@ -267,7 +270,10 @@ fn any_system_header_missing_beside_a_clangd_without_its_built_in_headers_is_the
     );
     let headers = |folder: &str| {
         let program = root.join(folder).join("bin").join("clangd.exe");
-        let at = (fixture.checkout.folder.clone(), fixture.checkout.at.head.clone());
+        let at = (
+            fixture.checkout.folder.clone(),
+            fixture.checkout.at.head.clone(),
+        );
         Headers::new(program, at, vec![(uri.clone(), vec![Arc::clone(&text)])])
     };
     let (mut lone, mut whole) = (headers("lone"), headers("whole"));
@@ -293,7 +299,10 @@ fn a_bare_name_is_found_in_the_first_folder_of_path_that_holds_it() {
     } else {
         "clangd"
     };
-    touch(&root, &[&format!("second/{name}"), &format!("third/{name}")]);
+    touch(
+        &root,
+        &[&format!("second/{name}"), &format!("third/{name}")],
+    );
     let folders = ["first", "second", "third"].map(|folder| root.join(folder));
     let path = env::join_paths(folders).unwrap();
 

@@ -40,8 +40,8 @@ use crate::mirror::{LookupAt, LookupCheckout};
 use crate::repository::RepositoryName;
 pub use code::Code;
 use code::HitFiles;
-pub use health::{FoundVersion, ServerProblem, ServerRow, ServerStatus};
 use health::{Found, Health, Last, Presence};
+pub use health::{FoundVersion, ServerProblem, ServerRow, ServerStatus};
 use server::{Hits, Indexing, LanguageServer, News, OnNews, Request, Stopping};
 
 mod clangd;

@@ -10,10 +10,10 @@
 
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
-use std::{env, fs};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
+use std::{env, fs};
 
 use serde_json::{Value, json};
 use tsugiki_lsp::{Diagnostics, Language, Progress, ProgressToken, Uri, WorkDone};
@@ -221,7 +221,16 @@ impl Headers {
 
     /// The paths of the files at the PR's head, as git lists them, if it can.
     fn listed(&self) -> Option<Vec<String>> {
-        let args = ["-C", "", "ls-tree", "-r", "-z", "--name-only", "--full-tree", ""];
+        let args = [
+            "-C",
+            "",
+            "ls-tree",
+            "-r",
+            "-z",
+            "--name-only",
+            "--full-tree",
+            "",
+        ];
         let mut args = args.map(OsStr::new);
         args[1] = self.folder.as_os_str();
         args[7] = OsStr::new(self.head.as_str());

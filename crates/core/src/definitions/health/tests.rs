@@ -215,7 +215,12 @@ fn what_a_program_lacks_shows_and_explains_until_a_start_finds_it_no_longer_does
     lacking.started(None, None);
 
     let problem = ServerProblem::BuiltInHeadersMissing;
-    assert_eq!(shown, ServerStatus::Problem { problem: problem.clone() });
+    assert_eq!(
+        shown,
+        ServerStatus::Problem {
+            problem: problem.clone()
+        }
+    );
     assert_eq!(explains, Some(problem));
     assert!(matches!(not_indexing, Last::Nothing));
     assert_eq!(status(&lacking), ServerStatus::Running);

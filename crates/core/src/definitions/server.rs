@@ -13,8 +13,8 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use tsugiki_lsp::{
-    Definitions, Diagnostics, Document, Event, Exit, Init, Language, Launch, Location, Pending, Position,
-    Progress, RequestError, Server, Starting, Status, Uri,
+    Definitions, Diagnostics, Document, Event, Exit, Init, Language, Launch, Location, Pending,
+    Position, Progress, RequestError, Server, Starting, Status, Uri,
 };
 
 use super::clangd::{Headers, Troubles};

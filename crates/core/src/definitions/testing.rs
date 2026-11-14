@@ -139,12 +139,30 @@ pub(crate) struct FakeClangd {
     code: Arc<AtomicI32>,
 }
 
+/// What a [`FakeClangd`] does with `initialize`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Initialize {
+    Answer,
+    /// Fails it with an error.
+    Refuse,
+    /// Answers it, then ends with exit code 0 once the client says it is initialized.
+    AnswerThenLeave,
+}
+
 impl FakeClangd {
     /// A fake clangd that answers the client's first `textDocument/definition` with the first of `answers`,
     /// the next with the next, and the rest with the last, and the client that talks to it, which has yet
     /// to initialize it. An answer with an `error` field fails its request with that error, and one with a
     /// `silent` field never comes.
     pub(crate) fn start(answers: Vec<Value>) -> (Self, (Starting, Receiver<Event>)) {
+        Self::starting(answers, Initialize::Answer)
+    }
+
+    /// [`FakeClangd::start`], with a fake that does what `initialize` says with the client's `initialize`.
+    pub(crate) fn starting(
+        answers: Vec<Value>,
+        initialize: Initialize,
+    ) -> (Self, (Starting, Receiver<Event>)) {
         let (client_reads, server_writes) = pipe().unwrap();
         let (server_reads, client_writes) = pipe().unwrap();
         let (errors_read, errors_written) = pipe().unwrap();
@@ -159,7 +177,7 @@ impl FakeClangd {
         let (replies, asked) = (says.clone(), Arc::new(AtomicUsize::new(0)));
         let (counts, closes) = (Arc::clone(&asked), Arc::clone(&errors));
         let _reads = thread::spawn(move || {
-            serve(server_reads, &replies, (&answers, &counts));
+            serve(server_reads, &replies, (&answers, &counts), initialize);
             // The process ends, and its error output with it, once it stops reading.
             let _gone = ended.send(());
             drop(closes.lock().unwrap().take());
@@ -238,11 +256,12 @@ impl Process for FakeProcess {
 
 /// Answers each request the client writes to `input` until it sends `exit` or closes the input: each
 /// `textDocument/definition` with the next of `answers`, or the last, counting them in `asked`, and the rest
-/// with an empty result.
+/// with an empty result. It does what `initialize` says with `initialize`.
 fn serve(
     input: PipeReader,
     replies: &Sender<Option<Value>>,
     (answers, asked): (&[Value], &AtomicUsize),
+    initialize: Initialize,
 ) {
     let mut input = BufReader::new(input);
     while let Some(message) = read_message(&mut input) {
@@ -251,6 +270,13 @@ fn serve(
         };
         let result = match method {
             "exit" => return,
+            "initialized" if initialize == Initialize::AnswerThenLeave => {
+                let _gone = replies.send(None);
+                return;
+            }
+            "initialize" if initialize == Initialize::Refuse => {
+                json!({"error": {"code": -32603, "message": "the workspace can't be read"}})
+            }
             "initialize" => json!({"capabilities": {}}),
             "textDocument/definition" => {
                 let count = asked.fetch_add(1, Ordering::SeqCst);

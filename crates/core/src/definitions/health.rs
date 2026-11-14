@@ -243,7 +243,8 @@ fn read_check(
 
 /// The version in `text`, a line a server printed or the version it named answering `initialize`: its first
 /// word that starts with a digit, without what follows its last letter or digit. That is `0.0.103` in
-/// `ty 0.0.103 (f9672a390 2026-11-13)`, and `23.1.0` in `clangd version 23.1.0 (https://...)`.
+/// `ty 0.0.103 (f9672a390 2026-11-13)`, and `23.1.0` in clangd's `clangd version 23.1.0`, which the address
+/// of the commit it was built from follows.
 pub(super) fn version_in(text: &str) -> Option<String> {
     let word =
         (text.split_whitespace()).find(|word| word.starts_with(|c: char| c.is_ascii_digit()))?;

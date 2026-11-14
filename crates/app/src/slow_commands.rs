@@ -301,7 +301,7 @@ pub(crate) fn open_server_log(
     server: ServerName,
     work: State<'_, crate::DiffWork>,
 ) -> Result<(), Error> {
-    crate::open_server_log(repository, server, &work, open_file)
+    open_file(&crate::server_log_of(repository, server, &work)?)
 }
 
 /// Starting a program can take a moment, so this runs on the commands that can wait. No test calls it: it

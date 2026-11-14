@@ -29,14 +29,14 @@ Rust.
   `%LOCALAPPDATA%\Tsugiki`, `~/Library/Application Support/Tsugiki`), not Tauri's reverse-domain folder names.
 - The executable is `tsg` ([ADR 0006](0006-named-tsugiki.md)). It is a single instance: a second `tsg` passes
   its arguments to the running app.
-- `rust-toolchain.toml` pins an exact stable Rust with rustfmt and clippy, and `.node-version` pins Node 24
+- `rust-toolchain.toml` pins an exact stable Rust with rustfmt and clippy, and `.node-version` pins Node 26
   LTS. Upgrades are deliberate.
 - A private root `package.json` makes `ui/` an npm workspace and holds the Tauri CLI and the scripts (`dev`,
   `build`, `check`, `lint`, `fmt`). A root `justfile` calls those scripts for local use, and CI calls them
   directly. The frontend uses ESLint (eslint-plugin-svelte, typescript-eslint), Prettier
   (prettier-plugin-svelte) and `svelte-check`.
 - All frontend code, config and scripts are TypeScript: `.svelte` files use `<script lang="ts">`, and the
-  configs are `vite.config.ts` and `eslint.config.ts`. Scripts are `.ts` files run directly by Node 24, which
+  configs are `vite.config.ts` and `eslint.config.ts`. Scripts are `.ts` files run directly by Node, which
   strips types, so they use only erasable syntax (no `enum` or `namespace`). A config whose tool can't load
   TypeScript stays `.js` with JSDoc types, so it is still type-checked.
 - The prototypes stay on their own branches. Nothing is copied from them without a decision.

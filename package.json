@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "workspaces": ["ui"],
-  "engines": { "node": ">=24" },
+  "engines": { "node": ">=26" },
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
@@ -40,6 +40,6 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.12.4",
-    "@types/node": "24.19.2"
+    "@types/node": "26.6.6"
   }
 }

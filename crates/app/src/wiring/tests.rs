@@ -1720,10 +1720,11 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     let base = files["base"].as_str().unwrap_or_default().to_owned();
     let look = |ticket: u32, side: &str, path: &str| {
         let lookup = json!({ "repository": CPYTHON, "base": base, "head": head, "path": path, "side": side, "line": 15, "column": 0, "ticket": ticket });
-        // The window hears what the lookup waits for on a channel of its own.
+        // The window hears what the lookup waits for on a channel of its own, and how a server's index goes
+        // on another.
         wired.ask(
             "definitions",
-            json!({ "lookup": lookup, "waiting": "__CHANNEL__:7" }),
+            json!({ "lookup": lookup, "waiting": "__CHANNEL__:7", "index": "__CHANNEL__:9" }),
         )
     };
     let at_head = look(1, "head", "Lib/spam.py");
@@ -1755,7 +1756,7 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     let (removed, added, unshown) = (row("base", 15), row("head", 15), row("head", 1));
     let refused = wired.ask(
         "definitions",
-        json!({ "lookup": { "repository": CPYTHON, "base": "main", "head": head, "path": "Lib/spam.py", "side": "head", "line": 1, "column": 0, "ticket": 5 }, "waiting": "__CHANNEL__:8" }),
+        json!({ "lookup": { "repository": CPYTHON, "base": "main", "head": head, "path": "Lib/spam.py", "side": "head", "line": 1, "column": 0, "ticket": 5 }, "waiting": "__CHANNEL__:8", "index": "__CHANNEL__:10" }),
     );
     drop(wired.stop());
     std::fs::remove_dir_all(root).unwrap();

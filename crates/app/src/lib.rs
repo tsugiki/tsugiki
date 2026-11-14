@@ -20,7 +20,7 @@ use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
 use tsugiki_core::build::Build;
 use tsugiki_core::definitions::{
-    Answer, Code, Definitions, DiffEnd, HitFile, Lookup, OnWaiting, Ticket,
+    Answer, Code, Definitions, DiffEnd, HitFile, Lookup, OnIndex, OnWaiting, Ticket,
 };
 use tsugiki_core::diff::{DiffOf, DiffRow, Diffs, Found, HeadLine, Highlighter, PrAt};
 use tsugiki_core::error::{Error, ErrorKind};
@@ -718,11 +718,12 @@ fn cancel_definitions(ticket: Ticket, work: State<'_, DiffWork>) {
     work.definitions.cancel(ticket);
 }
 
-/// Where `lookup`'s word is defined. `waiting` hears what the lookup waits for, as the peek says (#440).
+/// Where `lookup`'s word is defined. `hearing` holds the listeners to what the lookup waits for, as the
+/// peek says (#440), and to how the index of a server that answers while it builds it goes (#680).
 fn look_up_definition(
     lookup: DefinitionLookup,
     work: &DiffWork,
-    waiting: OnWaiting,
+    hearing: (OnWaiting, OnIndex),
 ) -> Result<Answer, Error> {
     let at = LookupAt {
         base: commit(&lookup.base)?,
@@ -737,7 +738,7 @@ fn look_up_definition(
         line: lookup.line,
         column: lookup.column,
     };
-    work.definitions.look_up(lookup, ticket, waiting)
+    work.definitions.look_up(lookup, ticket, hearing)
 }
 
 /// The file a hit is in, as the window names it to read its code (#439).

@@ -134,3 +134,29 @@ fn a_checkout_whose_path_isn_t_unicode_gets_no_database() {
     assert_eq!(refused, Err(failed(&message)));
     assert!(!Path::new("never").exists());
 }
+
+/// A `$/progress` on `token` with `value`, as the client reads one.
+fn progress(token: &str, value: Value) -> Progress {
+    serde_json::from_value(json!({"token": token, "value": value})).unwrap()
+}
+
+#[test]
+fn clangd_s_index_counts_its_files_until_it_ends_and_other_progress_says_nothing() {
+    let index = |value| indexing(&progress("backgroundIndexProgress", value));
+
+    let begun = index(json!({"kind": "begin", "title": "indexing", "percentage": 0}));
+    let counted = index(json!({"kind": "report", "message": "120/452", "percentage": 26}));
+    let uncounted = index(json!({"kind": "report", "message": "most of them"}));
+    let ended = index(json!({"kind": "end"}));
+    let other = indexing(&progress("other", json!({"kind": "end"})));
+
+    let files = IndexedFiles {
+        done: 120,
+        total: 452,
+    };
+    assert_eq!(begun, Some(Indexing::Building(None)));
+    assert_eq!(counted, Some(Indexing::Building(Some(files))));
+    assert_eq!(uncounted, Some(Indexing::Building(None)));
+    assert_eq!(ended, Some(Indexing::Built));
+    assert_eq!(other, None);
+}

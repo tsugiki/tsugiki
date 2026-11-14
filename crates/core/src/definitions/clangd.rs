@@ -10,10 +10,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
-use tsugiki_lsp::Language;
+use tsugiki_lsp::{Language, Progress, ProgressToken, WorkDone};
 
-use super::server::{Ready, Setup};
-use super::{CPYTHON_MARK, failed};
+use super::server::{Indexing, Ready, Setup};
+use super::{CPYTHON_MARK, IndexedFiles, failed};
 use crate::error::Error;
 use crate::folders::servers_beside;
 
@@ -33,6 +33,9 @@ const SKIPPED: [&str; 5] = [
     "Objects/mimalloc",
     "Python/bytecodes.c",
 ];
+
+/// The token clangd reports its background index's progress on.
+const INDEX_TOKEN: &str = "backgroundIndexProgress";
 
 /// The flags each file gets, after the compiler's name.
 const FLAGS: [&str; 15] = [
@@ -77,6 +80,31 @@ pub(super) fn setup(folder: &Path) -> Result<Setup, Error> {
         settings: json!({}),
         language: Language::C,
         ready: Ready::Initialized,
+        index: Some(indexing),
+    })
+}
+
+/// The progress of clangd's background index, from a `$/progress` on its token, or `None` for other
+/// progress. Each report's message counts the files as `done/total`, from the moment the index last had
+/// nothing to do.
+pub(super) fn indexing(progress: &Progress) -> Option<Indexing> {
+    if !matches!(&progress.token, ProgressToken::Text(token) if token == INDEX_TOKEN) {
+        return None;
+    }
+    Some(match &progress.value {
+        WorkDone::Begin { message, .. } | WorkDone::Report { message, .. } => {
+            Indexing::Building(message.as_deref().and_then(files))
+        }
+        WorkDone::End { .. } => Indexing::Built,
+    })
+}
+
+/// The files a report's `done/total` counts, if it reads so.
+fn files(message: &str) -> Option<IndexedFiles> {
+    let (done, total) = message.split_once('/')?;
+    Some(IndexedFiles {
+        done: done.trim().parse().ok()?,
+        total: total.trim().parse().ok()?,
     })
 }
 

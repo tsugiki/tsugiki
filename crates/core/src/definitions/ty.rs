@@ -21,6 +21,7 @@ pub(super) fn setup(folder: &Path) -> Setup {
         settings: settings(folder),
         language: Language::Python,
         ready: Ready::Initialized,
+        index: None,
     }
 }
 

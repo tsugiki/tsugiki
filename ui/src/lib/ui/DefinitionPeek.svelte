@@ -2,7 +2,8 @@
      first hit's path and line, the commit it is at, how many hits there are and ✕. Under it, the hit's code
      scrolled to its line (#439), or else a line that says what the lookup waits for, with the seconds once
      they pass one (#440), that it found nothing, or why it failed. A hit outside the Repository names its
-     whole path on disk in place of a commit. -->
+     whole path on disk in place of a commit. While the server that answered builds its index, a line under
+     the header says so (#680). -->
 <script lang="ts">
   import { peekWords, type Peek } from "$lib/state/peek";
   import PeekCode from "./PeekCode.svelte";
@@ -39,8 +40,11 @@
   {/if}
   <button type="button" class="close" aria-label="Close" title="Close (Escape)" onclick={onclose}>✕</button>
 </div>
+{#if words.indexing !== undefined}
+  <div class="body indexing">{words.indexing}</div>
+{/if}
 {#if code && words.hit}
-  <div class="code">
+  <div class="code" class:under-indexing={words.indexing !== undefined}>
     <PeekCode {code} line={words.hit.line} />
   </div>
 {:else}
@@ -83,5 +87,15 @@
   /* The rows under the header, which the code scrolls inside. */
   .code {
     height: calc(100% - 20px);
+  }
+
+  /* The line that says the server indexes takes a row of the code's. */
+  .code.under-indexing {
+    height: calc(100% - 40px);
+  }
+
+  .indexing {
+    opacity: 0.7;
+    font-style: italic;
   }
 </style>

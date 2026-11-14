@@ -6,21 +6,27 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::mpsc::Receiver;
-use std::time::Instant;
+use std::sync::mpsc::{self, Receiver};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use tsugiki_lsp::{
-    Definitions, Document, Event, Init, Language, Launch, Location, Pending, Position, Server,
-    Status,
+    Definitions, Document, Event, Init, Language, Launch, Location, Pending, Position, Progress,
+    Server, Starting, Status, Uri,
 };
 
 use super::{
-    DiffEnd, EXIT_PATIENCE, Hit, Lookup, PATIENCE, Place, ServerName, failed, plain, slashed, uri,
+    DiffEnd, EXIT_PATIENCE, Hit, IndexedFiles, Lookup, PATIENCE, Place, ServerName, failed, plain,
+    slashed, uri,
 };
 use crate::diff;
 use crate::error::Error;
+use crate::latest::{self, LatestReader, LatestWriter};
 use crate::mirror::{LookupAt, LookupCheckout};
+
+#[cfg(test)]
+mod tests;
 
 /// How Tsugiki starts one kind of server, and what it tells it.
 pub(super) struct Setup {
@@ -34,7 +40,42 @@ pub(super) struct Setup {
     /// The language of the files it opens.
     pub(super) language: Language,
     pub(super) ready: Ready,
+    /// Reads how far the server's index has got from a `$/progress`, for a server whose answers may miss
+    /// what its index doesn't hold yet, as clangd's do.
+    pub(super) index: Option<fn(&Progress) -> Option<Indexing>>,
 }
+
+/// A server's progress with its index, as its `$/progress` says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Indexing {
+    /// It hasn't reported its index yet. clangd reports one once it has read its compile database, which it
+    /// does when the first file opens, and never without one.
+    Unreported,
+    /// It builds its index, and has indexed so many files of so many, once it has said.
+    Building(Option<IndexedFiles>),
+    /// It has built its index, or keeps none Tsugiki reads.
+    Built,
+    /// Its events have ended, as the server has.
+    Ended,
+}
+
+impl Indexing {
+    /// Whether a server that was so far along at `told` has news worth waking the servers' thread for at
+    /// `self`, `since` then: a new state, or the first count, or a new count once [`NEWS_EVERY`] has passed.
+    /// clangd reports each file it indexes, 452 of them in CPython's core.
+    pub(super) fn news_since(self, told: Self, since: Duration) -> bool {
+        match (told, self) {
+            (Self::Building(Some(_)), Self::Building(Some(_))) => since >= NEWS_EVERY,
+            _ => told != self,
+        }
+    }
+}
+
+/// The shortest time between two counts of a server's indexed files that wake the servers' thread.
+pub(super) const NEWS_EVERY: Duration = Duration::from_secs(1);
+
+/// The listener to a server's index moving on: the servers' thread, which then reads how far.
+pub(super) type IndexMoved = Box<dyn Fn() + Send>;
 
 /// When a server can answer a lookup.
 pub(super) enum Ready {
@@ -59,7 +100,8 @@ impl Ready {
 /// it.
 pub(super) struct LanguageServer {
     server: Server,
-    /// What the server says unasked, which nothing reads yet. It is emptied on each lookup.
+    /// The events the server sends unasked, past the thread that reads how far its index has got. A stop
+    /// waits on them, and they are emptied on each lookup.
     events: Receiver<Event>,
     folder: PathBuf,
     at: LookupAt,
@@ -68,6 +110,8 @@ pub(super) struct LanguageServer {
     showing: DiffEnd,
     /// The moment the server started, or a lookup last asked it or got its answer.
     used: Instant,
+    /// Its progress with its index, which a thread that reads its events writes.
+    indexing: LatestReader<Indexing>,
 }
 
 /// A server asked to stop, whose end the caller may wait for.
@@ -174,18 +218,14 @@ impl Hits {
 
 impl LanguageServer {
     /// Starts server `name` at `program` on `checkout`, and opens each of the files at `changed` the head
-    /// holds with its text there.
+    /// holds with its text there. `moved` hears each time its index moves on.
     pub(super) fn start(
         name: ServerName,
         program: &Path,
-        checkout: LookupCheckout,
-        changed: &[String],
+        (checkout, changed): (LookupCheckout, &[String]),
+        moved: IndexMoved,
     ) -> Result<Self, Error> {
-        let LookupCheckout { folder, at } = checkout;
-        // The path the server's answers name the checkout by.
-        let folder = plain(&folder);
-        let root = uri(&folder)?;
-        let folder = root.to_path().unwrap_or(folder);
+        let (folder, _root) = located(&checkout.folder)?;
         let setup = match name {
             ServerName::Ty => super::ty::setup(&folder),
             ServerName::RustAnalyzer => super::rust_analyzer::setup(program)?,
@@ -193,17 +233,31 @@ impl LanguageServer {
         };
         let launch = Launch {
             program: program.to_owned(),
-            args: setup.args,
-            folder: folder.clone(),
-            env: setup.env,
+            args: setup.args.clone(),
+            folder,
+            env: setup.env.clone(),
         };
-        let named = name.as_str();
-        let (starting, events) = Server::start(&launch).map_err(|cause| {
-            let program = program.display();
+        let started = Server::start(&launch).map_err(|cause| {
+            let (named, program) = (name.as_str(), program.display());
             failed(&format!(
                 "Tsugiki couldn't start {named} at {program}: {cause}"
             ))
         })?;
+        Self::initialize(name, (setup, started), (checkout, changed), moved)
+    }
+
+    /// Initializes server `name` with `setup`, through the client that talks to it and its events, on
+    /// `checkout`, and opens each of the files at `changed` the head holds with its text there.
+    /// [`LanguageServer::start`] spawns the server, and tests talk to a fake one over in-memory pipes.
+    pub(super) fn initialize(
+        name: ServerName,
+        (setup, (starting, events)): (Setup, (Starting, Receiver<Event>)),
+        (checkout, changed): (LookupCheckout, &[String]),
+        moved: IndexMoved,
+    ) -> Result<Self, Error> {
+        let LookupCheckout { folder, at } = checkout;
+        let (folder, root) = located(&folder)?;
+        let named = name.as_str();
         let init = Init {
             root,
             options: setup.options,
@@ -236,6 +290,11 @@ impl LanguageServer {
         if let Ready::Quiescent = setup.ready {
             quiescent(&events);
         }
+        let (writer, indexing) = latest::channel(Indexing::Built);
+        let events = match setup.index {
+            Some(read) => watch_index(events, read, writer, moved),
+            None => events,
+        };
         Ok(Self {
             server,
             events,
@@ -244,7 +303,13 @@ impl LanguageServer {
             open,
             showing: DiffEnd::Head,
             used: Instant::now(),
+            indexing,
         })
+    }
+
+    /// The server's progress with its index.
+    pub(super) fn indexing(&self) -> Indexing {
+        self.indexing.get()
     }
 
     /// The PR whose checkout this server reads.
@@ -308,6 +373,50 @@ impl LanguageServer {
         }
         self.showing = side;
     }
+}
+
+/// The path the server's answers name the checkout at `folder` by, without its `.` and `..` parts, and its
+/// URI.
+fn located(folder: &Path) -> Result<(PathBuf, Uri), Error> {
+    let folder = plain(folder);
+    let root = uri(&folder)?;
+    Ok((root.to_path().unwrap_or(folder), root))
+}
+
+/// Reads the server's `events` on a thread of their own as they come, writes how far its index has got
+/// into `indexing` as `read` finds it, starting from [`Indexing::Unreported`], and tells `moved` when that
+/// is news. It hands each event on, through the receiver it gives. Once the server has exited, or its
+/// events end, it writes [`Indexing::Ended`] and tells `moved`.
+fn watch_index(
+    events: Receiver<Event>,
+    read: fn(&Progress) -> Option<Indexing>,
+    mut indexing: LatestWriter<Indexing>,
+    moved: IndexMoved,
+) -> Receiver<Event> {
+    let (passes, passed) = mpsc::channel();
+    indexing.set(&Indexing::Unreported);
+    let _reads = thread::spawn(move || {
+        let mut told = (Indexing::Unreported, Instant::now());
+        for event in events {
+            if let Event::Progress(progress) = &event
+                && let Some(now) = read(progress)
+            {
+                indexing.set(&now);
+                if now.news_since(told.0, told.1.elapsed()) {
+                    told = (now, Instant::now());
+                    moved();
+                }
+            }
+            let exited = matches!(event, Event::Exited(_));
+            // The server is gone once nothing reads its events.
+            if passes.send(event).is_err() || exited {
+                break;
+            }
+        }
+        indexing.set(&Indexing::Ended);
+        moved();
+    });
+    passed
 }
 
 /// Waits until the server says it is quiescent, or has ended, for at most [`PATIENCE`]. A server that is

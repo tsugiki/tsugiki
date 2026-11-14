@@ -2,7 +2,7 @@
 // the line's commit. It takes places in the diff's layout as a review thread does, so the rows after it
 // move down.
 
-import type { Answer, Hit, ServerName, Waiting } from "$lib/data/bindings";
+import type { Answer, Hit, Index_Deserialize, ServerName, Waiting } from "$lib/data/bindings";
 import type { LaidThread } from "./diff-layout";
 import type { HitCode } from "./hit-code.svelte";
 import type { PickedLine, Side } from "./pick";
@@ -13,6 +13,13 @@ export type Lookup =
   | { state: "looking"; waiting?: Waiting; since?: number }
   | { state: "answered"; answer: Answer }
   | { state: "failed"; problem: string };
+
+/** The news of the index of the server that answered, which the core says on a channel of the lookup's own
+ * (#680). The bindings name the type for the window's side of the channel. */
+export type IndexNews = Index_Deserialize;
+
+/** A server that builds its index, and how many files it has indexed, once it has said. */
+export type Indexing = Extract<IndexNews, { state: "building" }>;
 
 /** How the peek names each server, and the language it answers in. */
 const SERVERS: Record<ServerName, { name: string; language: string }> = {
@@ -46,6 +53,16 @@ export interface PeekWords {
   count?: string;
   /** The line under the header: the hit's text, or what the lookup is doing or found. */
   body: string;
+  /** A line between the header and the rest, while the server that answered builds its index (#680). */
+  indexing?: string;
+}
+
+/** The line the peek shows while the server that answered builds its index: the answer may be a
+ * declaration. */
+function indexingWords(indexing: Indexing): string {
+  const files = indexing.files;
+  const counted = files ? ` (${String(files.done)} of ${String(files.total)} files)` : "";
+  return `${SERVERS[indexing.server].name} is indexing${counted}: this may be a declaration`;
 }
 
 /** The words `peek` shows at `now`, which counts a lookup's seconds. */
@@ -66,8 +83,9 @@ export function peekWords(peek: Peek, now = Date.now()): PeekWords {
   }
   // The window drops the answer of each lookup it cancels, so this shows only for one it didn't.
   if (answer.state === "cancelled") return { commit: asked, body: "The lookup was cancelled" };
+  const indexing = peek.indexing && { indexing: indexingWords(peek.indexing) };
   const hit = answer.hits[0];
-  if (hit === undefined) return { commit: asked, body: `No definition of ${peek.symbol}` };
+  if (hit === undefined) return { commit: asked, body: `No definition of ${peek.symbol}`, ...indexing };
   const place = hit.place;
   return {
     hit,
@@ -75,6 +93,7 @@ export function peekWords(peek: Peek, now = Date.now()): PeekWords {
     ...(place.kind === "repository" && { commit: at(place.commit, place.side) }),
     count: `1 of ${String(answer.hits.length)}`,
     body: hit.text,
+    ...indexing,
   };
 }
 
@@ -87,6 +106,8 @@ export interface Peek {
   commit: string;
   lookup: Lookup;
   code?: HitCode;
+  /** The server that answered builds its index, so the answer may miss what the index doesn't hold yet. */
+  indexing?: Indexing;
 }
 
 /** The id that names the peek among the threads of the diff's layout. A thread's id is GitHub's, which
@@ -98,14 +119,16 @@ export const PEEK_ID = "definition peek";
 export const PEEK_ROWS = 18;
 
 /** The places `peek` takes in the diff's layout: [`PEEK_ROWS`] while it looks up or shows code, and its
- * header with a line under it when it only has words to say, as when the hit's file can't be read. */
+ * header with a line under it when it only has words to say, as when the hit's file can't be read. The line
+ * that says the server indexes takes one more then. */
 export function peekPlaces(peek: Peek): number {
   const lookup = peek.lookup;
   const words =
     lookup.state === "failed" ||
     (lookup.state === "answered" && peekWords(peek).hit === undefined) ||
     peek.code?.problem !== undefined;
-  return words ? 2 : PEEK_ROWS;
+  if (!words) return PEEK_ROWS;
+  return peekWords(peek).indexing === undefined ? 2 : 3;
 }
 
 /** `threads`, in the order they show, with `peek` among them right under its line, above any thread there.

@@ -175,16 +175,16 @@ export const commands = {
 	 */
 	definitions: (lookup: DefinitionLookup, waiting: Channel<Waiting>) => typedError<Answer, Error_Serialize>(__TAURI_INVOKE("definitions", { lookup, waiting })),
 	/**
+	 *  Cancels the lookup with `ticket`, as when the user closes the Definition peek while it waits (#440). The
+	 *  lookup then answers that it was cancelled, even if the core takes the cancel before the lookup.
+	 */
+	cancelDefinitions: (ticket: Ticket) => __TAURI_INVOKE<void>("cancel_definitions", { ticket }),
+	/**
 	 *  Some lines of the file a hit is in, which the Definition peek shows (#439): a file of the Repository at
 	 *  the hit's commit, read from the mirror, or one outside it that a language server named. It never waits
 	 *  for a lookup, nor for GitHub.
 	 */
 	definitionCode: (code: DefinitionCode) => typedError<Code, Error_Serialize>(__TAURI_INVOKE("definition_code", { code })),
-	/**
-	 *  Cancels the lookup running, if one is, as when the user closes the Definition peek while it waits
-	 *  (#440). The lookup then answers that it was cancelled.
-	 */
-	cancelDefinitions: () => __TAURI_INVOKE<void>("cancel_definitions"),
 	/**  Opens an Issue or a PR on GitHub in the system browser. */
 	openOnGithub: (repository: string, item: GitHubItem) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_on_github", { repository, item })),
 	/**
@@ -454,6 +454,8 @@ export type DefinitionLookup = {
 	line: number,
 	/**  Where the word starts in the line, in UTF-16 code units. */
 	column: number,
+	/**  The window's number for the lookup, which its cancel names. */
+	ticket: Ticket,
 };
 
 /**  Rows of a PR's diff, as the window asks for them. */
@@ -2336,6 +2338,12 @@ export type ThreadLine_Serialize = {
 	resolution: Resolution,
 	anchor: Anchor,
 };
+
+/**
+ *  The number the window gives a lookup, which a cancel names. The window may cancel a lookup before the
+ *  core has taken it, or after it has answered, so a cancel names the lookup it means.
+ */
+export type Ticket = number;
 
 /**  Where the token comes from. A personal access token joins this with the Account page (ADR 0004). */
 export type TokenSource = "gh";

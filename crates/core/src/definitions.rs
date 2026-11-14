@@ -128,6 +128,11 @@ pub enum Waiting {
     Asking { server: ServerName },
 }
 
+/// The number the window gives a lookup, which a cancel names. The window may cancel a lookup before the
+/// core has taken it, or after it has answered, so a cancel names the lookup it means.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Type)]
+pub struct Ticket(pub u32);
+
 /// Who hears what a lookup waits for, as that changes.
 pub type OnWaiting = Box<dyn Fn(Waiting) + Send>;
 
@@ -141,12 +146,24 @@ pub struct Sources {
     pub ty: Box<dyn Fn() -> Option<PathBuf> + Send>,
 }
 
-/// The handle the rest of Tsugiki asks the servers' thread through.
+/// The handle the rest of Tsugiki asks the servers' thread through. The thread stops once the last handle
+/// is gone.
 #[derive(Clone)]
 pub struct Definitions {
-    messages: Sender<Message>,
+    messages: Arc<Messages>,
     /// The files [`Definitions::code`] reads.
     files: Arc<HitFiles>,
+}
+
+/// The way to the servers' thread, which stops it once the last handle drops it.
+struct Messages(Sender<Message>);
+
+impl Drop for Messages {
+    fn drop(&mut self) {
+        let (reply, _unheard) = mpsc::channel();
+        // The thread may have stopped already.
+        let _unheard = self.0.send(Message::Stop(PATIENCE, reply));
+    }
 }
 
 impl Definitions {
@@ -154,7 +171,7 @@ impl Definitions {
     /// [`Definitions::stop`].
     pub fn start(sources: Sources) -> Self {
         let owner = Owner::new(sources);
-        let messages = owner.own.clone();
+        let messages = Arc::new(Messages(owner.own.clone()));
         let files = Arc::clone(&owner.files);
         let _owner = thread::spawn(move || owner.run());
         Self { messages, files }
@@ -178,18 +195,28 @@ impl Definitions {
 
     /// Where `lookup`'s name is defined. It cancels the lookup running, if one is, and waits for ty, and for
     /// ty to start if it hasn't, so the window asks it from a thread of its own. `waiting` hears what it
-    /// waits for as that changes.
-    pub fn look_up(&self, lookup: Lookup, waiting: OnWaiting) -> Result<Answer, Error> {
+    /// waits for as that changes, and a cancel that names `ticket` cancels it.
+    pub fn look_up(
+        &self,
+        lookup: Lookup,
+        ticket: Ticket,
+        waiting: OnWaiting,
+    ) -> Result<Answer, Error> {
         let (reply, answer) = mpsc::channel();
-        let asker = Asker { reply, waiting };
+        let asker = Asker {
+            ticket,
+            reply,
+            waiting,
+        };
         self.send(Message::LookUp(lookup, asker));
         let gone = Error::new(ErrorKind::Internal, "Tsugiki's lookups have stopped.");
         answer.recv().unwrap_or(Err(gone))
     }
 
-    /// Cancels the lookup running, if one is, whose answer is then [`Answer::Cancelled`].
-    pub fn cancel(&self) {
-        self.send(Message::Cancel);
+    /// Cancels the lookup with `ticket`, whose answer is then [`Answer::Cancelled`]: the one running, or the
+    /// next one the thread takes. A cancel for a lookup that has answered does nothing.
+    pub fn cancel(&self, ticket: Ticket) {
+        self.send(Message::Cancel(ticket));
     }
 
     /// Asks each ty to stop, and waits up to `patience` for them to end. The thread then ends, and a later
@@ -202,7 +229,7 @@ impl Definitions {
 
     fn send(&self, message: Message) {
         // The thread ends once it has stopped, and the next lookup says so.
-        let _unheard = self.messages.send(message);
+        let _unheard = self.messages.0.send(message);
     }
 }
 
@@ -223,15 +250,16 @@ fn is_python(path: &str) -> bool {
 enum Message {
     Opened(RepositoryName, Pr),
     LookUp(Lookup, Asker),
-    Cancel,
+    Cancel(Ticket),
     /// ty's answer to the lookup numbered so, as the places it names, which a thread of the lookup's own
     /// hands back.
     Answered(u64, Result<Vec<Hit>, RequestError>),
     Stop(Duration, Sender<()>),
 }
 
-/// Who asked a lookup: where its answer goes, and who hears what it waits for.
+/// Who asked a lookup: the lookup's ticket, where its answer goes, and who hears what it waits for.
 struct Asker {
+    ticket: Ticket,
     reply: Sender<Result<Answer, Error>>,
     waiting: OnWaiting,
 }
@@ -277,6 +305,8 @@ struct Owner {
     files: Arc<HitFiles>,
     /// The lookup ty works on, if one is.
     running: Option<Running>,
+    /// The ticket of a cancel that came before its lookup, which cancels that lookup if it comes next.
+    cancelled: Option<Ticket>,
     /// How many lookups ty has been asked.
     asked: u64,
     /// The thread's own messages: those it takes, and the way the threads that wait for ty hand back its
@@ -296,6 +326,7 @@ impl Owner {
             servers: HashMap::new(),
             files: Arc::default(),
             running: None,
+            cancelled: None,
             asked: 0,
             own,
             incoming,
@@ -321,10 +352,10 @@ impl Owner {
         match message {
             Message::Opened(repository, pr) => self.opened(&repository, pr),
             Message::LookUp(lookup, asker) => self.look_up(lookup, asker),
-            Message::Cancel => self.cancel(),
+            Message::Cancel(ticket) => self.cancel(ticket),
             Message::Answered(id, hits) => self.answered(id, hits),
             Message::Stop(patience, reply) => {
-                self.cancel();
+                self.cancel_running();
                 self.stop(patience);
                 let _unheard = reply.send(());
                 return false;
@@ -360,19 +391,34 @@ impl Owner {
         let Some(program) = (self.sources.ty)() else {
             return;
         };
+        let replaces = (self.servers.get(repository)).is_some_and(|ty| *ty.at() != pr.at);
         let checkout = &self.sources.checkout;
-        if let Err(problem) = ready(&mut self.servers, checkout, (repository, &pr), &program) {
-            log::warn!(
+        let started = ready(
+            &mut self.servers,
+            checkout,
+            (repository, &pr),
+            (&program, &|_| {}),
+        );
+        match started.map(|_ty| ()) {
+            // The ty that the lookup running asked has stopped.
+            Ok(()) if replaces && self.asks(repository) => self.cancel_running(),
+            Ok(()) => {}
+            Err(problem) => log::warn!(
                 "Tsugiki couldn't start ty for {repository}: {}",
                 problem.message
-            );
+            ),
         }
     }
 
-    /// Cancels the lookup running, if one is, and sends ty the request for `lookup`, unless a newer lookup
-    /// or a cancel came while ty started. Its answer comes back as [`Message::Answered`].
+    /// Cancels the lookup running, if one is, and sends ty the request for `lookup`, unless a cancel for it
+    /// came first, or a newer lookup or its cancel came while ty started. Its answer comes back as
+    /// [`Message::Answered`].
     fn look_up(&mut self, lookup: Lookup, asker: Asker) {
-        self.cancel();
+        self.cancel_running();
+        if self.cancelled.take() == Some(asker.ticket) {
+            asker.answer(Ok(Answer::Cancelled));
+            return;
+        }
         match self.send(&lookup, &asker) {
             Ok(Sent::Asked(id, canceller)) => {
                 self.running = Some(Running {
@@ -406,16 +452,18 @@ impl Owner {
             .unwrap_or(unknown);
         let server = ServerName::Ty;
         let starts = !self.runs(repository, &pr.at);
-        if starts {
-            (asker.waiting)(Waiting::Starting { server });
-        }
         let checkout = &self.sources.checkout;
-        let ty = ready(&mut self.servers, checkout, (repository, &pr), &program)?;
+        let waiting: &dyn Fn(Waiting) = &asker.waiting;
+        let start = (program.as_path(), waiting);
+        let ty = ready(&mut self.servers, checkout, (repository, &pr), start)?;
         if starts {
             // The user may have asked again, or cancelled, while ty started.
             self.queued.extend(self.incoming.try_iter());
-            let newer =
-                |message: &Message| matches!(message, Message::LookUp(..) | Message::Cancel);
+            let newer = |message: &Message| match message {
+                Message::LookUp(..) => true,
+                Message::Cancel(ticket) => *ticket == asker.ticket,
+                Message::Opened(..) | Message::Answered(..) | Message::Stop(..) => false,
+            };
             if self.queued.iter().any(newer) {
                 return Ok(Sent::Answered(Answer::Cancelled));
             }
@@ -458,12 +506,26 @@ impl Owner {
         running.asker.answer(answer);
     }
 
+    /// Cancels the lookup with `ticket`: the one running, or else the next one if it is that.
+    fn cancel(&mut self, ticket: Ticket) {
+        if (self.running.as_ref()).is_some_and(|running| running.asker.ticket == ticket) {
+            self.cancel_running();
+        } else {
+            self.cancelled = Some(ticket);
+        }
+    }
+
     /// Cancels the lookup running, if one is: ty stops working on it, and its asker hears it was cancelled.
-    fn cancel(&mut self) {
+    fn cancel_running(&mut self) {
         if let Some(running) = self.running.take() {
             running.canceller.cancel();
             running.asker.answer(Ok(Answer::Cancelled));
         }
+    }
+
+    /// Whether the lookup running asked `repository`'s ty.
+    fn asks(&self, repository: &RepositoryName) -> bool {
+        (self.running.as_ref()).is_some_and(|running| running.repository == *repository)
     }
 
     /// Whether a ty reads `at`'s checkout for `repository`.
@@ -472,13 +534,14 @@ impl Owner {
     }
 }
 
-/// The ty in `servers` that reads `pr` for `repository`, started at `program` if none does. A ty that reads
-/// another PR's checkout stops once the checkout is at `pr`, and goes on while it isn't.
+/// The ty in `servers` that reads `pr` for `repository`, started at `program` if none does, which `waiting`
+/// hears. A ty that reads another PR's checkout stops once the checkout is at `pr`, and goes on while it
+/// isn't.
 fn ready<'a>(
     servers: &'a mut HashMap<RepositoryName, Ty>,
     checkout: &FindCheckout,
     (repository, pr): (&RepositoryName, &Pr),
-    program: &Path,
+    (program, waiting): (&Path, &dyn Fn(Waiting)),
 ) -> Result<&'a mut Ty, Error> {
     let entry = match servers.entry(repository.clone()) {
         Entry::Occupied(running) if *running.get().at() == pr.at => return Ok(running.into_mut()),
@@ -491,6 +554,9 @@ fn ready<'a>(
     let checkout = checkout(repository)
         .filter(|checkout| checkout.at == pr.at)
         .ok_or(elsewhere)?;
+    waiting(Waiting::Starting {
+        server: ServerName::Ty,
+    });
     if let Entry::Occupied(old) = &entry {
         let _stopping = old.get().shutdown();
     }

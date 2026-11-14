@@ -31,3 +31,13 @@ it("counts the seconds a lookup waits for ty's answer, and stops once it answers
   expect(body()).toBe("No definition of eggs");
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it("counts no seconds while ty starts, as the words say none", () => {
+  vi.useFakeTimers({ now: 10_000 });
+  const starting = peekWith({ state: "looking", waiting: { step: "starting", server: "ty" }, since: 10_000 });
+
+  render(DefinitionPeek, { peek: starting, onclose: () => {} });
+
+  expect(screen.getByText("Starting ty…")).toBeDefined();
+  expect(vi.getTimerCount()).toBe(0);
+});

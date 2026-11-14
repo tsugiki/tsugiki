@@ -133,14 +133,19 @@ struct Asked {
     waited: Receiver<Waiting>,
 }
 
-/// Asks the owner `lookup`, as the handle does, without waiting for the answer.
-fn ask(owner: &mut Owner, lookup: &Lookup) -> Asked {
+/// Asks the owner `lookup` with `ticket`, as the handle does, without waiting for the answer.
+fn ask(owner: &mut Owner, lookup: &Lookup, ticket: Ticket) -> Asked {
     let (reply, answer) = mpsc::channel();
     let (heard, waited) = mpsc::channel();
     let waiting = Box::new(move |waiting| {
         let _unheard = heard.send(waiting);
     });
-    let _goes_on = owner.handle(Message::LookUp(lookup.clone(), Asker { reply, waiting }));
+    let asker = Asker {
+        ticket,
+        reply,
+        waiting,
+    };
+    let _goes_on = owner.handle(Message::LookUp(lookup.clone(), asker));
     Asked { answer, waited }
 }
 
@@ -157,7 +162,7 @@ fn answer_of(owner: &mut Owner, asked: &Asked) -> Result<Answer, Error> {
 
 /// Where `lookup`'s name is defined, as the owner answers it.
 fn look(owner: &mut Owner, lookup: &Lookup) -> Result<Answer, Error> {
-    let asked = ask(owner, lookup);
+    let asked = ask(owner, lookup, Ticket(0));
     answer_of(owner, &asked)
 }
 
@@ -315,6 +320,11 @@ fn a_pr_at_other_commits_gets_a_new_ty() {
     let other = another("definitions-moved-other");
     let mut owner = opened(&fixture);
     let first = owner.servers.get(&repository()).map(|ty| ty.at().clone());
+    let asked = ask(
+        &mut owner,
+        &lookup(&fixture, DiffEnd::Head, 12, "eggs"),
+        Ticket(1),
+    );
     let source_of_other = other.checkout.clone();
     owner.sources.checkout = Box::new(move |_| Some(source_of_other.clone()));
 
@@ -327,6 +337,9 @@ fn a_pr_at_other_commits_gets_a_new_ty() {
     let now = owner.servers.get(&repository()).map(|ty| ty.at().clone());
     assert_eq!(first, Some(fixture.checkout.at.clone()));
     assert_eq!(now, Some(other.checkout.at.clone()));
+    // The lookup the old ty worked on is cancelled, so its failure can't stop the new ty.
+    assert_eq!(asked.answer.try_recv(), Ok(Ok(Answer::Cancelled)));
+    assert!(owner.running.is_none());
 }
 
 #[test]
@@ -335,11 +348,18 @@ fn a_lookup_while_the_checkout_is_elsewhere_fails_and_starts_nothing() {
     let other = another("definitions-elsewhere-other");
     let mut owner = Owner::new(sources(Some(other.checkout.clone()), Some(ty())));
 
-    let answer = look(&mut owner, &lookup(&fixture, DiffEnd::Head, 12, "eggs"));
+    let asked = ask(
+        &mut owner,
+        &lookup(&fixture, DiffEnd::Head, 12, "eggs"),
+        Ticket(1),
+    );
+    let answer = answer_of(&mut owner, &asked);
 
     let message = "Tsugiki has no copy of this PR's files for ty to read yet.";
     assert_eq!(answer, Err(Error::new(ErrorKind::NotFound, message)));
     assert!(owner.servers.is_empty());
+    // ty didn't start, so the peek never said it did.
+    assert_eq!(asked.waited.try_iter().count(), 0);
 }
 
 #[test]
@@ -385,7 +405,7 @@ fn a_new_lookup_cancels_the_one_running_whose_late_answer_goes_nowhere() {
     let first = lookup(&fixture, DiffEnd::Head, 12, "eggs");
     let second = lookup(&fixture, DiffEnd::Head, 12, "only_head");
 
-    let asked = ask(&mut owner, &first);
+    let asked = ask(&mut owner, &first, Ticket(1));
     let found = hits(look(&mut owner, &second));
 
     assert_eq!(
@@ -403,15 +423,32 @@ fn a_cancel_cancels_the_lookup_running_and_ty_goes_on() {
     let mut owner = opened(&fixture);
     let at_head = lookup(&fixture, DiffEnd::Head, 12, "only_head");
 
-    let asked = ask(&mut owner, &at_head);
-    let _goes_on = owner.handle(Message::Cancel);
+    let asked = ask(&mut owner, &at_head, Ticket(2));
+    // A late cancel for an older lookup leaves this one be.
+    let _goes_on = owner.handle(Message::Cancel(Ticket(1)));
+    let _goes_on = owner.handle(Message::Cancel(Ticket(2)));
     let cancelled = answer_of(&mut owner, &asked);
-    // A cancel with no lookup running does nothing.
-    let _goes_on = owner.handle(Message::Cancel);
+    // A cancel for a lookup that has answered does nothing.
+    let _goes_on = owner.handle(Message::Cancel(Ticket(2)));
     let again = hits(look(&mut owner, &at_head));
 
     assert_eq!(cancelled, Ok(Answer::Cancelled));
     assert_eq!(again.len(), 1);
+}
+
+#[test]
+fn a_cancel_the_core_takes_before_its_lookup_cancels_it_and_ty_is_asked_nothing() {
+    let fixture = cpython("definitions-cancel-early");
+    let mut owner = opened(&fixture);
+    let at_head = lookup(&fixture, DiffEnd::Head, 12, "only_head");
+
+    let _goes_on = owner.handle(Message::Cancel(Ticket(1)));
+    let asked = ask(&mut owner, &at_head, Ticket(1));
+
+    assert_eq!(asked.answer.try_recv(), Ok(Ok(Answer::Cancelled)));
+    assert_eq!(asked.waited.try_iter().count(), 0);
+    assert!(owner.running.is_none());
+    assert_eq!(owner.asked, 0);
 }
 
 #[test]
@@ -420,9 +457,9 @@ fn a_lookup_says_ty_starts_then_that_it_asks_and_a_running_ty_is_only_asked() {
     let mut owner = Owner::new(sources(Some(fixture.checkout.clone()), Some(ty())));
     let at_head = lookup(&fixture, DiffEnd::Head, 12, "eggs");
 
-    let first = ask(&mut owner, &at_head);
+    let first = ask(&mut owner, &at_head, Ticket(1));
     let _found = hits(answer_of(&mut owner, &first));
-    let second = ask(&mut owner, &at_head);
+    let second = ask(&mut owner, &at_head, Ticket(2));
     let _found = hits(answer_of(&mut owner, &second));
 
     let server = ServerName::Ty;
@@ -436,14 +473,39 @@ fn a_lookup_says_ty_starts_then_that_it_asks_and_a_running_ty_is_only_asked() {
 }
 
 #[test]
-fn a_lookup_asked_again_or_cancelled_while_ty_starts_asks_ty_nothing() {
+fn a_lookup_asked_again_while_ty_starts_asks_ty_nothing() {
+    let fixture = cpython("definitions-again-starting");
+    let mut owner = Owner::new(sources(Some(fixture.checkout.clone()), Some(ty())));
+    let at_head = lookup(&fixture, DiffEnd::Head, 12, "eggs");
+    // The newer lookup waits in the thread's messages while ty starts.
+    let (reply, _answer) = mpsc::channel();
+    let newer = Asker {
+        ticket: Ticket(2),
+        reply,
+        waiting: Box::new(|_| {}),
+    };
+    owner
+        .own
+        .send(Message::LookUp(at_head.clone(), newer))
+        .unwrap();
+
+    let asked = ask(&mut owner, &at_head, Ticket(1));
+
+    assert_eq!(asked.answer.try_recv(), Ok(Ok(Answer::Cancelled)));
+    assert!(owner.running.is_none());
+    assert_eq!(owner.asked, 0);
+}
+
+#[test]
+fn a_lookup_cancelled_while_ty_starts_asks_ty_nothing() {
     let fixture = cpython("definitions-cancel-starting");
     let mut owner = Owner::new(sources(Some(fixture.checkout.clone()), Some(ty())));
     let at_head = lookup(&fixture, DiffEnd::Head, 12, "eggs");
-    // The cancel waits in the thread's messages while ty starts.
-    owner.own.send(Message::Cancel).unwrap();
+    // The cancels wait in the thread's messages while ty starts: one for an older lookup, and one for this.
+    owner.own.send(Message::Cancel(Ticket(1))).unwrap();
+    owner.own.send(Message::Cancel(Ticket(2))).unwrap();
 
-    let asked = ask(&mut owner, &at_head);
+    let asked = ask(&mut owner, &at_head, Ticket(2));
 
     assert_eq!(asked.answer.try_recv(), Ok(Ok(Answer::Cancelled)));
     let server = ServerName::Ty;
@@ -452,7 +514,26 @@ fn a_lookup_asked_again_or_cancelled_while_ty_starts_asks_ty_nothing() {
         [Waiting::Starting { server }]
     );
     assert!(owner.running.is_none());
-    assert_eq!(owner.queued.len(), 1);
+    assert_eq!(owner.queued.len(), 2);
+}
+
+#[test]
+fn a_cancel_for_an_older_lookup_while_ty_starts_leaves_the_new_one_be() {
+    let fixture = cpython("definitions-cancel-older");
+    let mut owner = Owner::new(sources(Some(fixture.checkout.clone()), Some(ty())));
+    let at_base = lookup(&fixture, DiffEnd::Base, 10, "eggs");
+    // Nor does a PR that opens meanwhile.
+    let pr = Pr {
+        at: fixture.checkout.at.clone(),
+        changed: changed(),
+    };
+    owner.own.send(Message::Opened(repository(), pr)).unwrap();
+    owner.own.send(Message::Cancel(Ticket(1))).unwrap();
+
+    let asked = ask(&mut owner, &at_base, Ticket(2));
+    let found = hits(answer_of(&mut owner, &asked));
+
+    assert_eq!(found.len(), 1);
 }
 
 #[test]
@@ -570,16 +651,17 @@ fn the_handle_starts_ty_for_a_python_pr_and_looks_up_on_its_thread() {
     let (heard, waited) = mpsc::channel();
     let found = hits(definitions.look_up(
         at_head.clone(),
+        Ticket(1),
         Box::new(move |waiting| {
             let _unheard = heard.send(waiting);
         }),
     ));
-    // Nothing runs, so nothing is cancelled.
-    definitions.cancel();
+    // The lookup has answered, so nothing is cancelled.
+    definitions.cancel(Ticket(1));
     definitions.stop(Duration::from_secs(10));
     // ty's process works in the checkout, so on Windows the folder goes only once it has ended.
     let removed = std::fs::remove_dir_all(fixture.checkout.folder.parent().unwrap());
-    let after = definitions.look_up(at_head, Box::new(|_| {}));
+    let after = definitions.look_up(at_head, Ticket(2), Box::new(|_| {}));
 
     let only = "def only_head():";
     assert_eq!(found, [hit(&fixture, DiffEnd::Head, (SHOP, 5, 4), only)]);
@@ -603,10 +685,37 @@ fn a_pr_whose_ty_doesnt_start_is_logged_and_its_lookup_says_why() {
     definitions.opened(repository(), at, &[diff_file(SHOP)]);
     let found = definitions.look_up(
         lookup(&fixture, DiffEnd::Head, 12, "eggs"),
+        Ticket(1),
         Box::new(|_| {}),
     );
 
     let message = found.unwrap_err().message;
     let start = "Tsugiki couldn't start ty at ";
     assert!(message.starts_with(start), "{message}");
+}
+
+#[test]
+fn the_thread_stops_once_the_last_handle_is_gone() {
+    let fixture = cpython("definitions-dropped");
+    // The thread holds the sources, so this channel closes once it has ended.
+    let (alive, ended) = mpsc::channel::<()>();
+    let definitions = Definitions::start(Sources {
+        checkout: Box::new(|_| None),
+        ty: Box::new(move || {
+            let _alive = &alive;
+            None
+        }),
+    });
+    let copy = definitions.clone();
+
+    drop(definitions);
+    let python = lookup(&fixture, DiffEnd::Head, 12, "eggs");
+    let answer = copy.look_up(python, Ticket(1), Box::new(|_| {}));
+    let still = ended.try_recv();
+    drop(copy);
+    let after = ended.recv_timeout(Duration::from_secs(10));
+
+    assert_eq!(answer, Ok(Answer::NotSetUp));
+    assert_eq!(still, Err(mpsc::TryRecvError::Empty));
+    assert_eq!(after, Err(mpsc::RecvTimeoutError::Disconnected));
 }

@@ -20,7 +20,7 @@ use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
 use tsugiki_core::build::Build;
 use tsugiki_core::definitions::{
-    Answer, Code, Definitions, DiffEnd, HitFile, Lookup, OnWaiting,
+    Answer, Code, Definitions, DiffEnd, HitFile, Lookup, OnWaiting, Ticket,
 };
 use tsugiki_core::diff::{DiffOf, DiffRow, Diffs, Found, HeadLine, Highlighter, PrAt};
 use tsugiki_core::error::{Error, ErrorKind};
@@ -671,14 +671,16 @@ pub(crate) struct DefinitionLookup {
     line: u32,
     /// Where the word starts in the line, in UTF-16 code units.
     column: u32,
+    /// The window's number for the lookup, which its cancel names.
+    ticket: Ticket,
 }
 
-/// Cancels the lookup running, if one is, as when the user closes the Definition peek while it waits
-/// (#440). The lookup then answers that it was cancelled.
+/// Cancels the lookup with `ticket`, as when the user closes the Definition peek while it waits (#440). The
+/// lookup then answers that it was cancelled, even if the core takes the cancel before the lookup.
 #[tauri::command]
 #[specta::specta]
-fn cancel_definitions(work: State<'_, DiffWork>) {
-    work.definitions.cancel();
+fn cancel_definitions(ticket: Ticket, work: State<'_, DiffWork>) {
+    work.definitions.cancel(ticket);
 }
 
 /// Where `lookup`'s word is defined. `waiting` hears what the lookup waits for, as the peek says (#440).
@@ -691,6 +693,7 @@ fn look_up_definition(
         base: commit(&lookup.base)?,
         head: commit(&lookup.head)?,
     };
+    let ticket = lookup.ticket;
     let lookup = Lookup {
         repository: RepositoryName::parse(&lookup.repository)?,
         at,
@@ -699,7 +702,7 @@ fn look_up_definition(
         line: lookup.line,
         column: lookup.column,
     };
-    work.definitions.look_up(lookup, waiting)
+    work.definitions.look_up(lookup, ticket, waiting)
 }
 
 /// The file a hit is in, as the window names it to read its code (#439).

@@ -111,6 +111,11 @@ const guessPlaces = (thread: DiffThread) => {
 /** The line past any file's last, to ask for a file to its end. */
 const END = 2 ** 32 - 1;
 
+/** The newest lookup's ticket (#440). The core matches a cancel to its lookup by ticket, so no two lookups
+ * share one while the window is open, whichever PR they are in. */
+let lastTicket = 0;
+const nextTicket = () => (lastTicket += 1);
+
 /** How long a chunk's rows wait for their spans before they show plain. The spans repaint the chunk when
  * they come. */
 export const SPANS_WAIT = 50;
@@ -275,7 +280,8 @@ export class PrFilesState {
   #pick = $state.raw<Pick>();
   /** The Definition peek, while it shows. */
   #peek = $state.raw<Peek>();
-  /** How many lookups have started, so only the newest one's answer shows. */
+  /** The ticket of the newest lookup, so only its answer shows. Closing the peek takes a new one, which no
+   * lookup answers to. */
   #lookups = 0;
   /** The chunks asked for. Nothing draws from it, and the effect that asks shouldn't rerun on it. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
@@ -423,8 +429,7 @@ export class PrFilesState {
       this.#matchRow = undefined;
       // So do the pick and the peek under its line.
       this.#pick = undefined;
-      this.#peek = undefined;
-      this.#lookups += 1;
+      this.#dropPeek();
     }
     // The threads the tab showed with the same diff, whose lines it has opened.
     const before = anew ? [] : this.threads;
@@ -886,7 +891,7 @@ export class PrFilesState {
     const ready = view?.state === "ready" && view;
     const file = ready && pick && ready.files[pick.file];
     if (pick === undefined || view?.state !== "ready" || !file) return;
-    this.#lookups += 1;
+    this.#lookups = nextTicket();
     const lookup = this.#lookups;
     const commit = pick.side === "base" ? view.base : view.head;
     const peek = { at: pick.at, symbol: pick.word, side: pick.side, commit };
@@ -899,11 +904,13 @@ export class PrFilesState {
       side: pick.side,
       line: pick.line,
       column: pick.start,
+      ticket: lookup,
     };
-    // The core says what the lookup waits for: ty to start, or to answer (#440).
+    // The core says what the lookup waits for: ty to start, or to answer (#440). A step may come after the
+    // answer, which it leaves be.
     const waiting = new Channel<Waiting>();
     waiting.onmessage = (step) => {
-      if (lookup !== this.#lookups) return;
+      if (lookup !== this.#lookups || this.#peek?.lookup.state !== "looking") return;
       this.#peek = { ...peek, lookup: { state: "looking", waiting: step, since: Date.now() } };
     };
     // The core cancels the lookup running, if one is.
@@ -927,11 +934,15 @@ export class PrFilesState {
 
   /** Closes the Definition peek, and hands the diff its focus back. */
   closePeek() {
-    // A lookup still running is cancelled, so ty stops working on it.
-    if (this.#peek?.lookup.state === "looking") void commands.cancelDefinitions();
-    this.#peek = undefined;
-    this.#lookups += 1;
+    this.#dropPeek();
     this.diffWantsFocus = true;
+  }
+
+  /** Drops the Definition peek. A lookup that still waits is cancelled, so ty stops working on it. */
+  #dropPeek() {
+    if (this.#peek?.lookup.state === "looking") void commands.cancelDefinitions(this.#lookups);
+    this.#peek = undefined;
+    this.#lookups = nextTicket();
   }
 
   /** The pick's place in the line `at` shows in `column`, if the pick is on that line. A pick made unified

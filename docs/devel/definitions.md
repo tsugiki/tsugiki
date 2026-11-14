@@ -56,8 +56,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   which on a channel the `definitions` command takes. A lookup has no time limit: clangd's first answer on
   CPython takes about 4 s, and ty may read for longer on its first lookup in a big Repository.
 - A new `F12` or `Alt+F12` while a lookup runs cancels it with `$/cancelRequest`, and the window drops
-  its answer. Esc while the peek waits cancels the lookup and closes the peek. A newer lookup or a cancel
-  that comes while ty starts means the core asks ty nothing for the older one. ty goes on reading the
+  its answer. Esc while the peek waits cancels the lookup and closes the peek, and so does a newer diff.
+  The window gives each lookup a ticket, and a cancel names it: a cancel the core takes before its lookup
+  still cancels it, and a late one for a lookup that has answered can't cancel the next. A newer lookup or
+  a cancel that comes while ty starts means the core asks ty nothing for the older one. ty goes on reading the
   Repository either way. The servers' thread sends ty each request and goes on, and a thread of the
   lookup's own waits for ty's answer and hands it back, so a cancel never waits behind a lookup.
 - Each hit names its commit: a file the PR changes, asked from a line at the head, is at the PR's head, and

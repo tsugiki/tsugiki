@@ -1718,17 +1718,17 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     let pr = json!({ "repository": CPYTHON, "number": 1 });
     let files = wired.ask("pull_request_files", pr).unwrap();
     let base = files["base"].as_str().unwrap_or_default().to_owned();
-    let look = |side: &str, path: &str| {
-        let lookup = json!({ "repository": CPYTHON, "base": base, "head": head, "path": path, "side": side, "line": 15, "column": 0 });
+    let look = |ticket: u32, side: &str, path: &str| {
+        let lookup = json!({ "repository": CPYTHON, "base": base, "head": head, "path": path, "side": side, "line": 15, "column": 0, "ticket": ticket });
         // The window hears what the lookup waits for on a channel of its own.
         wired.ask(
             "definitions",
             json!({ "lookup": lookup, "waiting": "__CHANNEL__:7" }),
         )
     };
-    let at_head = look("head", "Lib/spam.py");
-    let at_base = look("base", "Lib/spam.py");
-    let other = look("head", "Lib/spam.c");
+    let at_head = look(1, "head", "Lib/spam.py");
+    let at_base = look(2, "base", "Lib/spam.py");
+    let other = look(3, "head", "Lib/spam.c");
     // The peek shows the hit's code from the mirror, at the hit's commit.
     let code = |commit: &str| {
         let file = json!({ "kind": "repository", "path": "Lib/spam.py", "commit": commit });
@@ -1741,11 +1741,12 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     let outside = json!({ "kind": "outside", "path": "C:/elsewhere/secret.txt" });
     let unnamed = json!({ "repository": CPYTHON, "file": outside, "start": 1, "end": 2 });
     let unnamed = wired.ask("definition_code", json!({ "code": unnamed }));
-    // With no lookup running, a cancel does nothing.
-    let cancelled = wired.ask("cancel_definitions", json!({}));
+    // A cancel the core takes before its lookup still cancels it.
+    let cancel = wired.ask("cancel_definitions", json!({ "ticket": 4 }));
+    let cancelled = look(4, "head", "Lib/spam.py");
     let refused = wired.ask(
         "definitions",
-        json!({ "lookup": { "repository": CPYTHON, "base": "main", "head": head, "path": "Lib/spam.py", "side": "head", "line": 1, "column": 0 }, "waiting": "__CHANNEL__:8" }),
+        json!({ "lookup": { "repository": CPYTHON, "base": "main", "head": head, "path": "Lib/spam.py", "side": "head", "line": 1, "column": 0, "ticket": 5 }, "waiting": "__CHANNEL__:8" }),
     );
     drop(wired.stop());
     std::fs::remove_dir_all(root).unwrap();
@@ -1763,7 +1764,8 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     assert_eq!(code_at_base, Ok(lines("x15 = 15")));
     let unnamed = unnamed.unwrap_err()["message"].clone();
     assert_eq!(unnamed, "No language server named C:/elsewhere/secret.txt.");
-    assert_eq!(cancelled, Ok(Value::Null));
+    assert_eq!(cancel, Ok(Value::Null));
+    assert_eq!(cancelled, Ok(json!({ "state": "cancelled" })));
     assert_eq!(refused.unwrap_err()["message"], "\"main\" isn't a commit.");
 }
 

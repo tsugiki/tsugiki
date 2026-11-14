@@ -12,7 +12,8 @@
   /** The time the seconds of a lookup that waits count to. */
   let now = $state(Date.now());
   $effect(() => {
-    if (peek.lookup.state !== "looking" || peek.lookup.since === undefined) return;
+    // Only a lookup that asks says its seconds.
+    if (peek.lookup.state !== "looking" || peek.lookup.waiting?.step !== "asking") return;
     now = Date.now();
     const clock = setInterval(() => {
       now = Date.now();

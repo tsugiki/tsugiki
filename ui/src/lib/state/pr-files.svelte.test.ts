@@ -2085,7 +2085,12 @@ const lookupOf = (side: "base" | "head", path: string, line: number, column: num
   side,
   line,
   column,
+  // The window numbers its lookups across PRs, so the tests before this one took tickets too.
+  ticket: expect.any(Number) as number,
 });
+
+/** The ticket of the `index`th lookup the test asked. */
+const ticketOf = (index: number) => core.definitions.mock.calls[index]?.[0].ticket;
 
 /** A lookup that answers only when the test answers it. */
 const heldLookup = () => {
@@ -2217,7 +2222,48 @@ it("closes the peek and hands the diff its focus, and a lookup that answers late
   expect(files.diffWantsFocus).toBe(true);
   expect(files.layout.at(3)).toEqual({ kind: "row", row: 3 });
   // The lookup was still running, so the core cancels it.
-  expect(core.cancelDefinitions).toHaveBeenCalledTimes(1);
+  expect(core.cancelDefinitions.mock.calls).toEqual([[ticketOf(0)]]);
+});
+
+it("gives each lookup a ticket of its own, so a cancel names the lookup it means", async () => {
+  core.definitions.mockResolvedValue(ok(answerWith()));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+
+  await files.peekDefinition();
+  await files.peekDefinition();
+  const again = await pickable();
+  again.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await again.peekDefinition();
+
+  const tickets = [0, 1, 2].map(ticketOf);
+  expect(new Set(tickets).size).toBe(3);
+});
+
+it("cancels the lookup that waits when a newer diff closes its peek", async () => {
+  const answer = heldLookup();
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  const looking = files.peekDefinition();
+
+  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [file("a.py", 0)])));
+  await files.ask();
+  answer(ok({ state: "cancelled" }));
+  await looking;
+
+  expect(files.peek).toBeUndefined();
+  expect(core.cancelDefinitions.mock.calls).toEqual([[ticketOf(0)]]);
+});
+
+it("keeps the answer when a step of its lookup comes after it", async () => {
+  core.definitions.mockResolvedValue(ok(answerWith()));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.peekDefinition();
+
+  core.definitions.mock.calls[0]?.[1].onmessage({ step: "asking", server: "ty" });
+
+  expect(files.peek?.lookup).toEqual({ state: "answered", answer: answerWith() });
 });
 
 it("cancels nothing when it closes a peek whose lookup has answered", async () => {

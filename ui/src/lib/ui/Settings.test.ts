@@ -481,7 +481,8 @@ describe("Settings › Advanced", () => {
   it("saves a path typed or cleared on Apply, and stays open to show what the check finds", async () => {
     const onclose = vi.fn();
     await onAdvanced({ onclose });
-    await fireEvent.change(path("rust-analyzer"), { target: { value: "C:/rust/bin/rust-analyzer.exe" } });
+    // As Explorer's "Copy as path" gives it.
+    await fireEvent.change(path("rust-analyzer"), { target: { value: ' "C:/rust/bin/rust-analyzer.exe" ' } });
     await fireEvent.change(path("clangd"), { target: { value: "  " } });
     await fireEvent.click(button("Apply"));
 
@@ -491,6 +492,7 @@ describe("Settings › Advanced", () => {
     const servers = { ty: "tools/ty.exe", "rust-analyzer": "C:/rust/bin/rust-analyzer.exe", clangd: null };
     expect(core.applySettings).toHaveBeenCalledWith({ language_servers: { ...servers, idle_minutes: 30 } });
     expect(onclose).not.toHaveBeenCalled();
+    expect(path("rust-analyzer").value).toBe("C:/rust/bin/rust-analyzer.exe");
     expect(path("clangd").value).toBe("");
 
     rowsHeard.send([

@@ -5,7 +5,12 @@
      the check found. -->
 <script lang="ts">
   import { tick } from "svelte";
-  import { LanguageServerRows, openServerLog, pickProgram } from "$lib/state/language-servers.svelte";
+  import {
+    LanguageServerRows,
+    openServerLog,
+    pickProgram,
+    typedPath,
+  } from "$lib/state/language-servers.svelte";
   import {
     SERVER_ORDER,
     type ServerName,
@@ -47,11 +52,14 @@
     });
   };
 
-  /** Sets `server`'s path, or clears it when `path` is blank. */
-  function setPath(server: ServerName, path: string) {
+  /** Sets `server`'s path as `typedPath` reads `path`, or clears it when `path` is blank, and gives what it
+   * set. */
+  function setPath(server: ServerName, path: string): string | null {
+    const set = typedPath(path);
     dialog.changeServers((servers) => {
-      servers[server] = path.trim() === "" ? null : path;
+      servers[server] = set;
     });
+    return set;
   }
 
   async function browse(server: ServerName) {
@@ -100,7 +108,8 @@
         value={dialog.servers?.[server] ?? ""}
         disabled={dialog.servers === undefined}
         onchange={(e) => {
-          setPath(server, e.currentTarget.value);
+          // The input shows the path as it was set, though that is the path it showed before.
+          e.currentTarget.value = setPath(server, e.currentTarget.value) ?? "";
         }}
         {@attach reach(server)}
       />

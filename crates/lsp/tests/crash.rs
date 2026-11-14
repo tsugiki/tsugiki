@@ -100,7 +100,7 @@ fn parent() -> ! {
             (FOLDER.into(), folder().into()),
         ],
     };
-    let (_starting, _events) = Server::start(&launch).unwrap();
+    let (_starting, _events) = Server::start(&launch, None).unwrap();
     thread::sleep(LIFETIME);
     process::exit(0);
 }

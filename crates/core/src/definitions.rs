@@ -27,21 +27,26 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use tsugiki_lsp::{Canceller, Pending, RequestError, Uri};
+use tsugiki_lsp::{Canceller, Exit, Pending, RequestError, Uri};
 
 pub use crate::diff::{DiffEnd, HitFile, HitLines};
 use crate::diff::{DiffFile, Highlighter};
 use crate::error::{Error, ErrorKind};
+use crate::folders::servers_beside;
 use crate::github::CommitSha;
 use crate::highlight::Span;
+use crate::latest::{self, LatestReader, LatestWriter};
 use crate::mirror::{LookupAt, LookupCheckout};
 use crate::repository::RepositoryName;
 pub use code::Code;
 use code::HitFiles;
-use server::{Hits, IndexMoved, Indexing, LanguageServer, Request, Stopping};
+use health::{Health, Last, Presence};
+pub use health::{FoundVersion, ServerProblem, ServerRow, ServerStatus};
+use server::{Hits, Indexing, LanguageServer, News, OnNews, Request, Stopping};
 
 mod clangd;
 mod code;
+mod health;
 mod rust_analyzer;
 mod server;
 #[cfg(test)]
@@ -120,6 +125,12 @@ pub enum Answer {
     Found { hits: Vec<Hit> },
     /// The server for the file's language isn't set up.
     NotSetUp { server: ServerName },
+    /// The server for the file's language has a problem, which its row in Settings › Advanced says too.
+    /// The next lookup tries it again.
+    Problem {
+        server: ServerName,
+        problem: ServerProblem,
+    },
     /// Tsugiki has no server for the file's language yet.
     NoServer,
     /// A newer lookup, or the user, cancelled it before the server answered.
@@ -139,6 +150,18 @@ pub enum ServerName {
 }
 
 impl ServerName {
+    /// Each server, in the order Settings › Advanced lists them.
+    pub const ALL: [Self; 3] = [Self::Ty, Self::Clangd, Self::RustAnalyzer];
+
+    /// The versions we tested, which `scripts/test-servers.ts` fetches or `rust-toolchain.toml` pins.
+    fn tested(self) -> &'static [&'static str] {
+        match self {
+            Self::Ty => &["0.0.103"],
+            Self::RustAnalyzer => &["1.99.1"],
+            Self::Clangd => &["23.1.0"],
+        }
+    }
+
     /// The server that answers lookups in the file at `path`, by its extension.
     fn of(path: &str) -> Option<Self> {
         if path.ends_with(".py") || path.ends_with(".pyi") {
@@ -219,6 +242,20 @@ pub struct Sources {
     pub servers: Box<dyn Fn(ServerName) -> Option<PathBuf> + Send>,
     /// The idle time: a server that no lookup reaches for this long stops.
     pub idle: Box<dyn Fn() -> Duration + Send>,
+    /// Who hears the servers' rows in Settings › Advanced each time one changes.
+    pub changed: OnRows,
+}
+
+/// The listener to the servers' rows in Settings › Advanced.
+pub type OnRows = Box<dyn Fn(&[ServerRow]) + Send>;
+
+/// Where server `server` of the Repository whose Lookup checkout is at `lookup` writes its error output:
+/// `servers\<server>\<server>.log` beside the checkout. Each start keeps the last one as `<server>.old.log`.
+pub fn server_log(lookup: &Path, server: ServerName) -> PathBuf {
+    let name = server.as_str();
+    servers_beside(lookup)
+        .join(name)
+        .join(format!("{name}.log"))
 }
 
 /// The handle the rest of Tsugiki asks the servers' thread through. The thread stops once the last handle
@@ -228,6 +265,8 @@ pub struct Definitions {
     messages: Arc<Messages>,
     /// The files [`Definitions::code`] reads.
     files: Arc<HitFiles>,
+    /// The servers' rows in Settings › Advanced, as the thread last wrote them.
+    rows: LatestReader<Vec<ServerRow>>,
 }
 
 /// The way to the servers' thread, which stops it once the last handle drops it.
@@ -245,11 +284,28 @@ impl Definitions {
     /// Starts the thread that owns the servers. It starts none until a PR asks for one, and ends on
     /// [`Definitions::stop`].
     pub fn start(sources: Sources) -> Self {
-        let owner = Owner::new(sources);
+        let (owner, rows) = Owner::new(sources);
         let messages = Arc::new(Messages(owner.own.clone()));
         let files = Arc::clone(&owner.files);
         let _owner = thread::spawn(move || owner.run());
-        Self { messages, files }
+        Self {
+            messages,
+            files,
+            rows,
+        }
+    }
+
+    /// Each server's row in Settings › Advanced, as the servers' thread last wrote them. This never waits.
+    pub fn rows(&self) -> Vec<ServerRow> {
+        self.rows.get()
+    }
+
+    /// Tells the servers' thread that the settings may have changed, and returns at once. A server whose
+    /// path changed stops, so the next lookup starts the new one, and a new path is checked with
+    /// `--version` on a thread of its own. The idle time applies from the thread's next idle check, which
+    /// this brings on.
+    pub fn reconfigured(&self) {
+        self.send(Message::Reconfigured);
     }
 
     /// The lines of the file a hit is in that `wanted` names, which the Definition peek shows: of a file of
@@ -356,6 +412,12 @@ enum Message {
     Answered(u64, Result<Vec<Hit>, RequestError>),
     /// The index of the server the key names has moved on, perhaps a server stopped since.
     Indexing(Key),
+    /// A server the key names exited, perhaps on its own, perhaps one stopped since.
+    Exited(Key, Exit),
+    /// The settings may have changed: a server's path, or the idle time.
+    Reconfigured,
+    /// What `--version` of the program at the path said of the server, once its path was set.
+    Checked(ServerName, PathBuf, Result<Option<String>, ServerProblem>),
     /// The Repository was removed: its servers stop, and the reply comes once they have ended.
     Remove(RepositoryName, Sender<()>),
     Stop(Duration, Sender<()>),
@@ -376,6 +438,25 @@ impl Asker {
         let _unheard = self.reply.send(answer);
     }
 }
+
+/// Why a server isn't there to ask.
+#[derive(Debug)]
+enum NotReady {
+    /// The server has a problem, which its row says too.
+    Problem(ServerProblem),
+    /// Something else failed, such as the Lookup checkout not being at the PR.
+    Failed(Error),
+}
+
+impl From<Error> for NotReady {
+    fn from(failed: Error) -> Self {
+        Self::Failed(failed)
+    }
+}
+
+/// The longest a lookup whose server ended before it answered waits to hear how the server ended. The
+/// client hears it once the server's error output has closed, which it waits a second for.
+const EXIT_NEWS: Duration = Duration::from_secs(3);
 
 /// What became of a lookup the servers' thread took.
 enum Sent {
@@ -499,12 +580,24 @@ struct Owner {
     incoming: Receiver<Message>,
     /// Messages taken early, to see whether a newer lookup came while a server started, and not handled yet.
     queued: VecDeque<Message>,
+    /// Each server's path as the thread last knew it, which a change of settings compares with.
+    known: HashMap<ServerName, Option<PathBuf>>,
+    /// Each server's version and what last happened to it.
+    health: HashMap<ServerName, Health>,
+    /// The servers' rows as the thread last wrote them, and where it writes them.
+    told: Vec<ServerRow>,
+    rows: LatestWriter<Vec<ServerRow>>,
 }
 
 impl Owner {
-    fn new(sources: Sources) -> Self {
+    /// The servers' thread, which hasn't started a server yet, and the rows it writes.
+    fn new(sources: Sources) -> (Self, LatestReader<Vec<ServerRow>>) {
         let (own, incoming) = mpsc::channel();
-        Self {
+        let known = (ServerName::ALL.into_iter())
+            .map(|name| (name, (sources.servers)(name)))
+            .collect();
+        let (rows, reader) = latest::channel(Vec::new());
+        let mut owner = Self {
             sources,
             prs: HashMap::new(),
             servers: HashMap::new(),
@@ -516,7 +609,51 @@ impl Owner {
             own,
             incoming,
             queued: VecDeque::new(),
+            known,
+            health: HashMap::new(),
+            told: Vec::new(),
+            rows,
+        };
+        owner.publish();
+        (owner, reader)
+    }
+
+    /// Writes each server's row, and tells the listener, if one has changed since the last time.
+    fn publish(&mut self) {
+        let rows: Vec<ServerRow> = (ServerName::ALL.into_iter())
+            .map(|name| self.row(name))
+            .collect();
+        if rows != self.told {
+            self.rows.set(&rows);
+            (self.sources.changed)(&rows);
+            self.told = rows;
         }
+    }
+
+    /// The row of server `name` in Settings › Advanced.
+    fn row(&self, name: ServerName) -> ServerRow {
+        let presence = if (self.sources.servers)(name).is_none() {
+            Presence::NotSetUp
+        } else if self.servers.keys().any(|(_, running)| *running == name) {
+            Presence::Running
+        } else {
+            Presence::Stopped
+        };
+        let health = self.health.get(&name).cloned().unwrap_or_default();
+        health.row(name, presence)
+    }
+
+    /// What the thread knows of server `name`, to change.
+    fn health_of(&mut self, name: ServerName) -> &mut Health {
+        self.health.entry(name).or_default()
+    }
+
+    /// Notes that the server `key` names has problem `problem`, and logs it.
+    fn trouble(&mut self, key: &Key, problem: ServerProblem) {
+        let (repository, name) = key;
+        let named = name.as_str();
+        log::warn!("{named} for {repository} has a problem: {problem:?}");
+        self.health_of(*name).last = Last::Problem(problem);
     }
 
     fn run(mut self) {
@@ -536,6 +673,7 @@ impl Owner {
         loop {
             let (now, idle) = (Instant::now(), (self.sources.idle)());
             self.stop_idle(now, idle);
+            self.publish();
             let Some(wait) = self.until_idle(now, idle) else {
                 return self.incoming.recv().ok();
             };
@@ -546,7 +684,7 @@ impl Owner {
         }
     }
 
-    /// Handles `message`, and says whether the thread goes on.
+    /// Handles `message`, writes the servers' rows if they changed, and says whether the thread goes on.
     fn handle(&mut self, message: Message) -> bool {
         match message {
             Message::Opened(repository, pr) => self.opened(&repository, pr),
@@ -554,6 +692,9 @@ impl Owner {
             Message::Cancel(ticket) => self.cancel(ticket),
             Message::Answered(id, hits) => self.answered(id, hits),
             Message::Indexing(key) => self.indexing(&key),
+            Message::Exited(key, exit) => self.exited(&key, exit),
+            Message::Reconfigured => self.reconfigured(),
+            Message::Checked(name, path, outcome) => self.checked(name, &path, outcome),
             Message::Remove(repository, reply) => {
                 self.remove(&repository);
                 let _unheard = reply.send(());
@@ -566,7 +707,66 @@ impl Owner {
                 return false;
             }
         }
+        self.publish();
         true
+    }
+
+    /// Forgets the server `key` names if it is the one that exited, as it ended on its own, and notes how:
+    /// the next lookup starts it again. A lookup it was asked fails by itself. A server Tsugiki stopped is
+    /// forgotten already, and a newer one at the same key hasn't ended.
+    fn exited(&mut self, key: &Key, exit: Exit) {
+        let ended = (self.servers.get(key)).is_some_and(|server| server.indexing() == Indexing::Ended);
+        if !ended {
+            return;
+        }
+        let _ended = self.servers.remove(key);
+        self.unwatch(key);
+        self.trouble(key, ServerProblem::stopped(exit));
+    }
+
+    /// Stops each server whose path has changed since the thread last knew it, cancels a lookup that runs
+    /// on one, forgets what it knew of it, and checks the new path with `--version` on a thread of its own.
+    fn reconfigured(&mut self) {
+        for name in ServerName::ALL {
+            let path = (self.sources.servers)(name);
+            if self.known.get(&name) == Some(&path) {
+                continue;
+            }
+            let _old = self.known.insert(name, path.clone());
+            let theirs: Vec<Key> = (self.servers.keys())
+                .filter(|(_, running)| *running == name)
+                .cloned()
+                .collect();
+            let _stopping = self.stop_servers(&theirs);
+            let _forgotten = self.health.remove(&name);
+            if let Some(path) = path {
+                let own = self.own.clone();
+                let _checks = thread::spawn(move || {
+                    let outcome = health::check(name, &path);
+                    // The thread ends once it has stopped.
+                    let _unheard = own.send(Message::Checked(name, path, outcome));
+                });
+            }
+        }
+    }
+
+    /// Notes what `--version` of the program at `path` said of server `name`, unless its path has changed
+    /// since.
+    fn checked(
+        &mut self,
+        name: ServerName,
+        path: &Path,
+        outcome: Result<Option<String>, ServerProblem>,
+    ) {
+        if (self.known.get(&name)).is_none_or(|known| known.as_deref() != Some(path)) {
+            return;
+        }
+        let health = self.health_of(name);
+        match outcome {
+            Ok(Some(version)) => health.version = Some(version),
+            Ok(None) => {}
+            Err(problem) => health.last = Last::Problem(problem),
+        }
     }
 
     /// Stops `repository`'s servers and forgets its PR, cancels the lookup running on one of them, and waits
@@ -609,6 +809,7 @@ impl Owner {
             log::info!(
                 "Tsugiki stops {named} for {repository}, which no lookup has reached for {minutes} minutes"
             );
+            self.health_of(*name).last = Last::Idle;
         }
         let _stopping = self.stop_servers(&stale);
     }
@@ -666,10 +867,14 @@ impl Owner {
         let replaces = (self.servers.get(key)).is_some_and(|server| *server.at() != pr.at);
         let checkout = (&self.sources.checkout, &self.own);
         let started = ready(&mut self.servers, checkout, (key, pr), (&program, &|_| {}));
-        if let Err(problem) = started {
-            let named = name.as_str();
-            let why = problem.message;
-            log::warn!("Tsugiki couldn't start {named} for {repository}: {why}");
+        match started.map(|server| server.version()) {
+            Ok(version) => self.health_of(*name).started(version),
+            Err(NotReady::Problem(problem)) => self.trouble(key, problem),
+            Err(NotReady::Failed(problem)) => {
+                let named = name.as_str();
+                let why = problem.message;
+                log::warn!("Tsugiki couldn't start {named} for {repository}: {why}");
+            }
         }
         // The old server stopped, unless the checkout wasn't at `pr` yet, whether or not the new one started.
         let stopped = (self.servers.get(key)).is_none_or(|server| *server.at() == pr.at);
@@ -747,8 +952,17 @@ impl Owner {
         let checkout = (&self.sources.checkout, &self.own);
         let waiting: &dyn Fn(Waiting) = &asker.waiting;
         let start = (program.as_path(), waiting);
-        let server = ready(&mut self.servers, checkout, (key, &pr), start)?;
+        let server = match ready(&mut self.servers, checkout, (key, &pr), start) {
+            Ok(server) => server,
+            Err(NotReady::Problem(problem)) => {
+                self.trouble(key, problem.clone());
+                let server = *name;
+                return Ok(Sent::Answered(Answer::Problem { server, problem }));
+            }
+            Err(NotReady::Failed(failed)) => return Err(failed),
+        };
         if starts {
+            (self.health.entry(*name).or_default()).started(server.version());
             // The user may have asked again, or cancelled, while the server started.
             self.queued.extend(self.incoming.try_iter());
             let newer = |message: &Message| match message {
@@ -757,6 +971,9 @@ impl Owner {
                 Message::Opened(..)
                 | Message::Answered(..)
                 | Message::Indexing(..)
+                | Message::Exited(..)
+                | Message::Reconfigured
+                | Message::Checked(..)
                 | Message::Remove(..)
                 | Message::Stop(..) => false,
             };
@@ -801,6 +1018,10 @@ impl Owner {
         let name = server.1.as_str();
         let (hits, asked) = match (hits, asked) {
             (Ok(hits), asked) => (hits, asked),
+            (Err(RequestError::Exited), Asked::First { asker, .. }) => {
+                asker.answer(self.ended(&server));
+                return;
+            }
             (Err(cause), Asked::First { asker, .. }) => {
                 // A server that failed starts afresh on the next lookup.
                 let _failed = self.servers.remove(&server);
@@ -841,6 +1062,28 @@ impl Owner {
                     server,
                 };
                 self.watch(watch, indexing);
+            }
+        }
+    }
+
+    /// The answer to a lookup whose server `key` ended before it answered, which the next lookup starts
+    /// again: how it stopped, once the client has heard, or else why the lookup failed. The client hears
+    /// within moments, so this waits up to [`EXIT_NEWS`] for it, unless the thread has heard already.
+    fn ended(&mut self, key: &Key) -> Result<Answer, Error> {
+        let exit = (self.servers.remove(key)).and_then(|server| server.exit_within(EXIT_NEWS));
+        if let Some(exit) = exit {
+            self.trouble(key, ServerProblem::stopped(exit));
+        }
+        let (_, name) = key;
+        match self.health.get(name).map(|health| &health.last) {
+            Some(Last::Problem(problem @ ServerProblem::Stopped { .. })) => Ok(Answer::Problem {
+                server: *name,
+                problem: problem.clone(),
+            }),
+            _ => {
+                let named = name.as_str();
+                let cause = RequestError::Exited;
+                Err(failed(&format!("{named} couldn't answer: {cause}")))
             }
         }
     }
@@ -961,7 +1204,7 @@ fn ready<'a>(
     (checkout, own): (&FindCheckout, &Sender<Message>),
     (key, pr): (&Key, &Pr),
     (program, waiting): (&Path, &dyn Fn(Waiting)),
-) -> Result<&'a mut LanguageServer, Error> {
+) -> Result<&'a mut LanguageServer, NotReady> {
     let (repository, name) = key;
     let server = match servers.remove(key) {
         Some(running) if *running.at() == pr.at => running,
@@ -975,24 +1218,28 @@ fn ready<'a>(
                     "Tsugiki has no copy of this PR's files for {} to read yet.",
                     name.as_str()
                 );
-                return Err(Error::new(ErrorKind::NotFound, &elsewhere));
+                return Err(Error::new(ErrorKind::NotFound, &elsewhere).into());
             };
             waiting(Waiting::Starting { server: *name });
             // Asked first, the old server can end while the new one starts.
             let _stopping = old.map(LanguageServer::stop);
             let changed = pr.changed_for(*name);
-            LanguageServer::start(*name, program, (checkout, &changed), index_moved(own, key))?
+            LanguageServer::start(*name, program, (checkout, &changed), news(own, key))?
         }
     };
     Ok(servers.entry(key.clone()).insert_entry(server).into_mut())
 }
 
-/// Tells the thread at `own` that the index of the server `key` names has moved on.
-fn index_moved(own: &Sender<Message>, key: &Key) -> IndexMoved {
+/// Tells the thread at `own` the news of the server `key` names: its index has moved on, or it exited.
+fn news(own: &Sender<Message>, key: &Key) -> OnNews {
     let (own, key) = (own.clone(), key.clone());
-    Box::new(move || {
+    Box::new(move |news| {
+        let message = match news {
+            News::Indexing => Message::Indexing(key.clone()),
+            News::Exited(exit) => Message::Exited(key.clone(), exit),
+        };
         // The thread ends once it has stopped.
-        let _unheard = own.send(Message::Indexing(key.clone()));
+        let _unheard = own.send(message);
     })
 }
 

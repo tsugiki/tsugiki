@@ -41,6 +41,7 @@ const PANES: &str = "panes";
 const APPEARANCE: &str = "appearance";
 const DIFF: &str = "diff";
 const MIRRORS: &str = "mirrors";
+const LANGUAGE_SERVERS: &str = "language_servers";
 const STOPPED_SAVING: &str =
     "Tsugiki stopped saving its settings. Restart Tsugiki to save them again.";
 
@@ -129,18 +130,23 @@ impl Default for ReleaseSettings {
 pub struct SettingsChanges {
     pub status_bar: Option<StatusBarSettings>,
     pub releases: Option<ReleaseSettings>,
+    /// `[language_servers]` in `machine.toml`, which Settings › Advanced edits (#683).
+    pub language_servers: Option<LanguageServerSettings>,
 }
 
 impl SettingsChanges {
-    /// `settings` with these changes made to them.
-    fn made_to(self, mut settings: Settings) -> Settings {
-        if let Some(status_bar) = self.status_bar {
-            settings.status_bar = status_bar;
+    /// `settings` with the changes to `settings.toml` made to them, or nothing if none change it.
+    fn made_to(&self, mut settings: Settings) -> Option<Settings> {
+        if self.status_bar.is_none() && self.releases.is_none() {
+            return None;
         }
-        if let Some(releases) = self.releases {
-            settings.releases = releases;
+        if let Some(status_bar) = &self.status_bar {
+            settings.status_bar = status_bar.clone();
         }
-        settings
+        if let Some(releases) = &self.releases {
+            settings.releases = releases.clone();
+        }
+        Some(settings)
     }
 }
 
@@ -316,7 +322,32 @@ fn unread_problems(path: &Path, text: &str) -> Vec<String> {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Type)]
 pub struct LoadedSettings {
     pub settings: Settings,
+    /// `[language_servers]` from `machine.toml`, which Settings › Advanced shows (#683).
+    pub language_servers: LanguageServerSettings,
     pub problems: Vec<String>,
+}
+
+/// `[language_servers]` in `machine.toml` as Settings › Advanced shows and changes it (#683): each server's
+/// path as the file gives it, which may be relative to `machine.toml`'s folder, and the idle time.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct LanguageServerSettings {
+    pub ty: Option<PathBuf>,
+    #[serde(rename = "rust-analyzer")]
+    pub rust_analyzer: Option<PathBuf>,
+    pub clangd: Option<PathBuf>,
+    /// The minutes a server that no lookup reaches runs before it stops.
+    pub idle_minutes: NonZeroU32,
+}
+
+impl Default for LanguageServerSettings {
+    fn default() -> Self {
+        Self {
+            ty: None,
+            rust_analyzer: None,
+            clangd: None,
+            idle_minutes: IDLE_MINUTES,
+        }
+    }
 }
 
 /// What the rest of Tsugiki may hold a copy of, so it can answer without waiting on the files or their owner.
@@ -573,6 +604,19 @@ struct ServersFile {
     clangd: Option<ServerFile>,
 }
 
+impl ServersFile {
+    /// What the file says, as Settings › Advanced shows it.
+    fn settings(&self) -> LanguageServerSettings {
+        let path = |server: &Option<ServerFile>| server.as_ref().map(|file| file.path.clone());
+        LanguageServerSettings {
+            ty: path(&self.ty),
+            rust_analyzer: path(&self.rust_analyzer),
+            clangd: path(&self.clangd),
+            idle_minutes: self.idle_minutes.unwrap_or(IDLE_MINUTES),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct ServerFile {
     path: PathBuf,
@@ -649,20 +693,15 @@ impl SettingsFiles {
                 self.machine.as_ref().unwrap_or(&Machine::default()),
             )),
             language_servers: {
-                let path = |server: fn(&ServersFile) -> Option<&ServerFile>| {
-                    (self.machine.as_ref())
-                        .and_then(|machine| server(&machine.servers))
-                        .map(|file| self.folders.data.join(&file.path))
+                let given = &self.loaded.language_servers;
+                let path = |path: &Option<PathBuf>| {
+                    path.as_ref().map(|path| self.folders.data.join(path))
                 };
                 LanguageServers {
-                    ty: path(|servers| servers.ty.as_ref()),
-                    rust_analyzer: path(|servers| servers.rust_analyzer.as_ref()),
-                    clangd: path(|servers| servers.clangd.as_ref()),
-                    idle: minutes(
-                        (self.machine.as_ref())
-                            .and_then(|machine| machine.servers.idle_minutes)
-                            .unwrap_or(IDLE_MINUTES),
-                    ),
+                    ty: path(&given.ty),
+                    rust_analyzer: path(&given.rust_analyzer),
+                    clangd: path(&given.clangd),
+                    idle: minutes(given.idle_minutes),
                 }
             },
         }
@@ -676,6 +715,7 @@ impl SettingsFiles {
             Err(problem) => problems.push(problem),
         }
         if let Some(machine) = &self.machine {
+            self.loaded.language_servers = machine.servers.settings();
             match read_settings(&self.folders, machine, &self.loaded.settings) {
                 Ok((settings, unread)) => {
                     self.loaded.settings = settings;
@@ -717,10 +757,53 @@ impl SettingsFiles {
 
     /// Saves what the Settings dialog's Apply changed over what the files say now, and reads the files
     /// again. A hand edit made while the dialog was open stays, unless the dialog changed the same table.
+    /// Each file is saved only if the changes touch it, so a problem in one doesn't hold up the other.
     pub fn apply(&mut self, changes: SettingsChanges) -> Result<(), Error> {
         self.reload();
-        let settings = changes.made_to(self.loaded.settings.clone());
-        self.write(&settings)
+        if let Some(settings) = changes.made_to(self.loaded.settings.clone()) {
+            self.write(&settings)?;
+        }
+        match &changes.language_servers {
+            Some(servers) => self.save_language_servers(servers),
+            None => Ok(()),
+        }
+    }
+
+    /// Saves `[language_servers]` in `machine.toml` as Settings › Advanced left it, keeping everything else
+    /// in the file, and reads the files again. A server without a path loses its `path`, and an idle time
+    /// back at its default goes, unless the user commented on it. It refuses while `machine.toml` can't be
+    /// used.
+    fn save_language_servers(&mut self, servers: &LanguageServerSettings) -> Result<(), Error> {
+        let path = self.folders.machine_file();
+        let mut edit = TomlEdit::open_machine(&path)?;
+        edit_section(edit.document.as_table_mut(), LANGUAGE_SERVERS, |section| {
+            let minutes = |count: NonZeroU32| toml_edit::value(i64::from(count.get()));
+            let default = minutes(IDLE_MINUTES);
+            merge_value(
+                section,
+                "idle_minutes",
+                &minutes(servers.idle_minutes),
+                Some(&default),
+            );
+            for (key, path) in [
+                ("ty", &servers.ty),
+                ("rust-analyzer", &servers.rust_analyzer),
+                ("clangd", &servers.clangd),
+            ] {
+                edit_section(section, key, |server| match path {
+                    // The same path stays as the user quoted it.
+                    Some(path) if server.get("path").and_then(Item::as_str) == path.to_str() => {}
+                    Some(path) => {
+                        let path = toml_edit::value(path.to_string_lossy().into_owned());
+                        merge_value(server, "path", &path, None);
+                    }
+                    None => drop(server.remove("path")),
+                });
+            }
+        });
+        edit.save()?;
+        self.reload();
+        Ok(())
     }
 
     /// What the window opens on: the Repository opened most recently that the settings still hold, or else

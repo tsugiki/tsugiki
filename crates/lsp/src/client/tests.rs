@@ -1,11 +1,13 @@
+use std::io::{self, Write};
 use std::sync::mpsc::Receiver;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
 use crate::client::{Event, Exit, Init, Pending, RequestError, Server};
-use crate::testing::{Fake, PATIENCE, connect, initialize, initialized, uri};
+use crate::testing::{Fake, PATIENCE, connect, connect_logged, initialize, initialized, uri};
 use crate::types::{
     Definitions, Diagnostics, Language, Location, LocationLink, Position, Progress, ProgressToken,
     Range, ServerInfo, Status, WorkDone,
@@ -462,6 +464,58 @@ fn the_exit_keeps_only_the_end_of_a_long_error_output() {
     assert_eq!(exit.code, None);
     assert_eq!(exit.stderr_tail.len(), 8 * 1024);
     assert!(exit.stderr_tail.ends_with("xxthe last line\n"));
+}
+
+/// A log the test reads back, which fails each write once `full`.
+#[derive(Clone, Default)]
+struct Log {
+    written: Arc<Mutex<Vec<u8>>>,
+    full: bool,
+}
+
+impl Write for Log {
+    #[expect(clippy::unwrap_in_result, reason = "a poisoned lock ends the test")]
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if self.full {
+            return Err(io::Error::other("the disk is full"));
+        }
+        self.written.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn the_server_s_error_output_goes_to_its_log_as_it_comes() {
+    let log = Log::default();
+    let (_starting, events, mut fake) = connect_logged(Some(Box::new(log.clone())));
+    fake.write_errors("starting\n");
+    fake.write_errors("ready\n");
+    fake.exit(Some(0));
+    let _exited = next_event(&events);
+
+    assert_eq!(*log.written.lock().unwrap(), b"starting\nready\n");
+}
+
+#[test]
+fn a_log_that_fails_takes_nothing_more_and_the_exit_still_has_the_tail() {
+    let log = Log {
+        full: true,
+        ..Log::default()
+    };
+    let (_starting, events, mut fake) = connect_logged(Some(Box::new(log.clone())));
+    fake.write_errors("first\n");
+    fake.write_errors("second\n");
+    fake.exit(Some(1));
+    let Event::Exited(exit) = next_event(&events) else {
+        panic!("no exit")
+    };
+
+    assert!(log.written.lock().unwrap().is_empty());
+    assert_eq!(exit.stderr_tail, "first\nsecond\n");
 }
 
 #[test]

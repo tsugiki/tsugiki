@@ -3,7 +3,8 @@
 //! the side a lookup is from.
 
 use std::ffi::OsString;
-use std::fs;
+use std::fs::{self, File};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
@@ -12,13 +13,14 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use tsugiki_lsp::{
-    Definitions, Document, Event, Init, Language, Launch, Location, Pending, Position, Progress,
-    Server, Starting, Status, Uri,
+    Definitions, Document, Event, Exit, Init, Language, Launch, Location, Pending, Position,
+    Progress, RequestError, Server, Starting, Status, Uri,
 };
 
+use super::health::version_in;
 use super::{
-    DiffEnd, EXIT_PATIENCE, Hit, IndexedFiles, Lookup, PATIENCE, Place, ServerName, failed, plain,
-    slashed, uri,
+    DiffEnd, EXIT_NEWS, EXIT_PATIENCE, Hit, IndexedFiles, Lookup, NotReady, PATIENCE, Place,
+    ServerName, ServerProblem, plain, server_log, slashed, uri,
 };
 use crate::diff;
 use crate::error::Error;
@@ -74,8 +76,16 @@ impl Indexing {
 /// The shortest time between two counts of a server's indexed files that wake the servers' thread.
 pub(super) const NEWS_EVERY: Duration = Duration::from_secs(1);
 
-/// The listener to a server's index moving on: the servers' thread, which then reads how far.
-pub(super) type IndexMoved = Box<dyn Fn() + Send>;
+/// What a server's events tell the servers' thread.
+pub(super) enum News {
+    /// Its index has moved on, and the thread reads how far. Once the server has ended, it reads that.
+    Indexing,
+    /// It exited, as its process ended so.
+    Exited(Exit),
+}
+
+/// The listener to a server's news: the servers' thread.
+pub(super) type OnNews = Box<dyn Fn(News) + Send>;
 
 /// When a server can answer a lookup.
 pub(super) enum Ready {
@@ -100,9 +110,11 @@ impl Ready {
 /// it.
 pub(super) struct LanguageServer {
     server: Server,
-    /// The events the server sends unasked, past the thread that reads how far its index has got. A stop
-    /// waits on them, and they are emptied on each lookup.
+    /// The events the server sends unasked, past the thread that reads how far its index has got and
+    /// whether it exited. A stop waits on them, and they are emptied on each lookup.
     events: Receiver<Event>,
+    /// The version the server named answering `initialize`, if it did.
+    version: Option<String>,
     folder: PathBuf,
     at: LookupAt,
     open: Vec<Open>,
@@ -129,13 +141,19 @@ impl Stopping {
     /// Waits until the server's process has ended, or until `until`. The events end once the client has
     /// killed it.
     pub(super) fn wait(self, until: Instant) {
-        while let Ok(event) = (self.0).recv_timeout(until.saturating_duration_since(Instant::now()))
-        {
-            if matches!(event, Event::Exited(_)) {
-                return;
-            }
+        let _exit = exit_by(&self.0, until);
+    }
+}
+
+/// How the server whose `events` these are exited, once it has, waiting until `until` at most. Nothing if
+/// it hasn't by then, or its events ended without it, as when it was killed.
+fn exit_by(events: &Receiver<Event>, until: Instant) -> Option<Exit> {
+    while let Ok(event) = events.recv_timeout(until.saturating_duration_since(Instant::now())) {
+        if let Event::Exited(exit) = event {
+            return Some(exit);
         }
     }
+    None
 }
 
 /// A file the PR changes, open on the server, with its text at the head and at the base. A file the PR adds
@@ -226,54 +244,63 @@ impl Hits {
 
 impl LanguageServer {
     /// Starts server `name` at `program` on `checkout`, and opens each of the files at `changed` the head
-    /// holds with its text there. `moved` hears each time its index moves on.
+    /// holds with its text there. Its error output goes to its log beside the checkout, which keeps the
+    /// last one as the old log. `news` hears each time its index moves on, and when it exits.
     pub(super) fn start(
         name: ServerName,
         program: &Path,
         (checkout, changed): (LookupCheckout, &[String]),
-        moved: IndexMoved,
-    ) -> Result<Self, Error> {
+        news: OnNews,
+    ) -> Result<Self, NotReady> {
         let (folder, _root) = located(&checkout.folder)?;
+        let didnt_start = |problem: Error| {
+            NotReady::Problem(ServerProblem::DidNotStart {
+                cause: problem.message,
+            })
+        };
         let setup = match name {
             ServerName::Ty => super::ty::setup(&folder),
-            ServerName::RustAnalyzer => super::rust_analyzer::setup(program)?,
-            ServerName::Clangd => super::clangd::setup(&folder)?,
+            ServerName::RustAnalyzer => super::rust_analyzer::setup(program).map_err(didnt_start)?,
+            ServerName::Clangd => super::clangd::setup(&folder).map_err(didnt_start)?,
         };
+        let log = (new_log(&server_log(&folder, name)))
+            .map(|file| -> Box<dyn Write + Send> { Box::new(file) });
         let launch = Launch {
             program: program.to_owned(),
             args: setup.args.clone(),
             folder,
             env: setup.env.clone(),
         };
-        let started = Server::start(&launch).map_err(|cause| {
-            let (named, program) = (name.as_str(), program.display());
-            failed(&format!(
-                "Tsugiki couldn't start {named} at {program}: {cause}"
-            ))
+        let started = Server::start(&launch, log).map_err(|cause| {
+            NotReady::Problem(ServerProblem::DidNotStart {
+                cause: cause.to_string(),
+            })
         })?;
-        Self::initialize(name, (setup, started), (checkout, changed), moved)
+        Self::initialize((setup, started), (checkout, changed), news)
     }
 
-    /// Initializes server `name` with `setup`, through the client that talks to it and its events, on
+    /// Initializes a server with `setup`, through the client that talks to it and its events, on
     /// `checkout`, and opens each of the files at `changed` the head holds with its text there.
-    /// [`LanguageServer::start`] spawns the server, and tests talk to a fake one over in-memory pipes.
+    /// [`LanguageServer::start`] spawns the server, and tests talk to a fake one over in-memory pipes. A
+    /// server that ends before it is ready says how it stopped, if the client hears within moments.
     pub(super) fn initialize(
-        name: ServerName,
         (setup, (starting, events)): (Setup, (Starting, Receiver<Event>)),
         (checkout, changed): (LookupCheckout, &[String]),
-        moved: IndexMoved,
-    ) -> Result<Self, Error> {
+        news: OnNews,
+    ) -> Result<Self, NotReady> {
         let LookupCheckout { folder, at } = checkout;
         let (folder, root) = located(&folder)?;
-        let named = name.as_str();
         let init = Init {
             root,
             options: setup.options,
             settings: setup.settings,
             experimental: setup.ready.experimental(),
         };
-        let (server, _info) = (starting.initialize(init, PATIENCE))
-            .map_err(|cause| failed(&format!("{named} didn't start: {cause}")))?;
+        let (server, info) = match starting.initialize(init, PATIENCE) {
+            Ok(started) => started,
+            Err(cause) => return Err(not_started(&cause, &events)),
+        };
+        let version = (info.and_then(|info| info.version)).and_then(|text| version_in(&text));
         let names: Vec<String> = (changed.iter())
             .flat_map(|path| {
                 [&at.head, &at.base].map(|commit| format!("{}:{path}", commit.as_str()))
@@ -295,17 +322,17 @@ impl LanguageServer {
                 base: base.map(Arc::from),
             });
         }
-        if let Ready::Quiescent = setup.ready {
-            quiescent(&events);
+        if let Ready::Quiescent = setup.ready
+            && let Some(exit) = quiescent(&events)
+        {
+            return Err(NotReady::Problem(ServerProblem::stopped(exit)));
         }
         let (writer, indexing) = latest::channel(Indexing::Built);
-        let events = match setup.index {
-            Some(read) => watch_index(events, read, writer, moved),
-            None => events,
-        };
+        let events = watch(events, setup.index, writer, news);
         Ok(Self {
             server,
             events,
+            version,
             folder,
             at,
             open,
@@ -315,9 +342,20 @@ impl LanguageServer {
         })
     }
 
-    /// The server's progress with its index.
+    /// The server's progress with its index, which is [`Indexing::Ended`] once it has exited.
     pub(super) fn indexing(&self) -> Indexing {
         self.indexing.get()
+    }
+
+    /// The version the server named answering `initialize`, if it did.
+    pub(super) fn version(&self) -> Option<String> {
+        self.version.clone()
+    }
+
+    /// How the server exited, if it does within `patience`, as one whose answer failed as it ended. The
+    /// server is gone either way.
+    pub(super) fn exit_within(self, patience: Duration) -> Option<Exit> {
+        exit_by(&self.events, Instant::now() + patience)
     }
 
     /// The PR whose checkout this server reads.
@@ -400,22 +438,28 @@ fn located(folder: &Path) -> Result<(PathBuf, Uri), Error> {
     Ok((root.to_path().unwrap_or(folder), root))
 }
 
-/// Reads the server's `events` on a thread of their own as they come, writes how far its index has got
-/// into `indexing` as `read` finds it, starting from [`Indexing::Unreported`], and tells `moved` when that
-/// is news. A count it held back as too soon it tells once [`NEWS_EVERY`] has passed, though the server
-/// says nothing more. It hands each event on, through the receiver it gives. Once the server has exited, or
-/// its events end, it writes [`Indexing::Ended`] and tells `moved`.
-fn watch_index(
+/// Reads the server's `events` on a thread of their own as they come, and hands each on through the
+/// receiver it gives. For a server whose index Tsugiki reads, it writes how far the index has got into
+/// `indexing` as `read` finds it, starting from [`Indexing::Unreported`], and tells `news` when that is
+/// news. A count it held back as too soon it tells once [`NEWS_EVERY`] has passed, though the server says
+/// nothing more. When the server exits, it writes [`Indexing::Ended`] first, then tells `news` how. Once
+/// the server has exited, or its events end, it writes [`Indexing::Ended`] and tells `news` that.
+fn watch(
     events: Receiver<Event>,
-    read: fn(&Progress) -> Option<Indexing>,
+    read: Option<fn(&Progress) -> Option<Indexing>>,
     mut indexing: LatestWriter<Indexing>,
-    moved: IndexMoved,
+    news: OnNews,
 ) -> Receiver<Event> {
     let (passes, passed) = mpsc::channel();
-    indexing.set(&Indexing::Unreported);
+    let first = if read.is_some() {
+        Indexing::Unreported
+    } else {
+        Indexing::Built
+    };
+    indexing.set(&first);
     let _reads = thread::spawn(move || {
-        let mut told = (Indexing::Unreported, Instant::now());
-        let mut latest = Indexing::Unreported;
+        let mut told = (first, Instant::now());
+        let mut latest = first;
         loop {
             // A wait too long for a deadline waits for the next event.
             let wait = if latest == told.0 {
@@ -426,46 +470,87 @@ fn watch_index(
             let event = events.recv_timeout(wait);
             if let Err(RecvTimeoutError::Timeout) = event {
                 told = (latest, Instant::now());
-                moved();
+                news(News::Indexing);
                 continue;
             }
             let Ok(event) = event else { break };
             if let Event::Progress(progress) = &event
-                && let Some(now) = read(progress)
+                && let Some(now) = read.and_then(|read| read(progress))
             {
                 indexing.set(&now);
                 latest = now;
                 if now.news_since(told.0, told.1.elapsed()) {
                     told = (now, Instant::now());
-                    moved();
+                    news(News::Indexing);
                 }
             }
             let exited = matches!(event, Event::Exited(_));
+            if let Event::Exited(exit) = &event {
+                // First, so the servers' thread finds this server has ended when it hears.
+                indexing.set(&Indexing::Ended);
+                news(News::Exited(exit.clone()));
+            }
             // The server is gone once nothing reads its events.
             if passes.send(event).is_err() || exited {
                 break;
             }
         }
         indexing.set(&Indexing::Ended);
-        moved();
+        news(News::Indexing);
     });
     passed
 }
 
 /// Waits until the server says it is quiescent, or has ended, for at most [`PATIENCE`]. A server that is
-/// still loading then answers what it can, and one that has ended fails the lookup.
-fn quiescent(events: &Receiver<Event>) {
+/// still loading then answers what it can. One that has ended gives how.
+fn quiescent(events: &Receiver<Event>) -> Option<Exit> {
     let until = Instant::now() + PATIENCE;
     while let Ok(event) = events.recv_timeout(until.saturating_duration_since(Instant::now())) {
-        let ready = matches!(
-            event,
+        match event {
             Event::Status(Status {
-                quiescent: true,
-                ..
-            }) | Event::Exited(_)
-        );
-        if ready {
-            return;
+                quiescent: true, ..
+            }) => return None,
+            Event::Exited(exit) => return Some(exit),
+            Event::Status(_) | Event::Progress(_) | Event::Diagnostics(_) => {}
         }
+    }
+    None
+}
+
+/// Why a server whose `initialize` failed with `cause` didn't start: how it stopped, if it ended and the
+/// client hears within [`EXIT_NEWS`], or else the cause.
+fn not_started(cause: &RequestError, events: &Receiver<Event>) -> NotReady {
+    let ended = matches!(cause, RequestError::Exited);
+    let exit = ended.then(|| exit_by(events, Instant::now() + EXIT_NEWS));
+    NotReady::Problem(match exit.flatten() {
+        Some(exit) => ServerProblem::stopped(exit),
+        None => ServerProblem::DidNotStart {
+            cause: cause.to_string(),
+        },
+    })
+}
+
+/// A new log at `path` for a server that starts, once the last one is renamed to the old log beside it,
+/// which that replaces. Without one, as when its folder can't be made, the server runs all the same.
+fn new_log(path: &Path) -> Option<File> {
+    let old = path.with_extension("old.log");
+    let made = (path.parent().map_or(Ok(()), fs::create_dir_all))
+        .and_then(|()| unless_missing(fs::rename(path, &old)))
+        .and_then(|()| File::create(path));
+    match made {
+        Ok(file) => Some(file),
+        Err(cause) => {
+            let path = path.display();
+            log::warn!("Tsugiki can't write a language server's log at {path}: {cause}");
+            None
+        }
+    }
+}
+
+/// `result`, which counts a file that wasn't there as done.
+fn unless_missing(result: io::Result<()>) -> io::Result<()> {
+    match result {
+        Err(cause) if cause.kind() == io::ErrorKind::NotFound => Ok(()),
+        other => other,
     }
 }

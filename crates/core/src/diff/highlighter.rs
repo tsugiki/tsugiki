@@ -9,6 +9,12 @@
 //! The thread keeps the trees of the open PR and of the one before it, which `Alt+←` goes back to, up to
 //! `CAP` bytes. At the cap it stops parsing ahead, and a chunk that needs another tree drops the trees used
 //! longest ago.
+//!
+//! It also highlights a file whole, which the Definition peek and the file view show (#455): one of the
+//! Repository at a commit, or one outside it on disk. A version of a kept diff's file comes from the diff's
+//! tree. Any other file the thread parses apart from the diffs, and it keeps the ones used last, up to
+//! `WHOLES` of them in `WHOLES_CAP` bytes beside the cap, so the next chunk of the same file finds its tree
+//! on the shelf.
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
@@ -23,6 +29,7 @@ use serde::Serialize;
 use specta::Type;
 
 use super::{DiffRow, NewsEntry, OpenDiff, count};
+use crate::error::Error;
 use crate::github::{CommitSha, live};
 use crate::highlight::{Language, Parsed, Span};
 
@@ -55,6 +62,55 @@ const BATCH: usize = 16;
 /// The PRs whose trees the thread keeps: the open one, and the one before it.
 const PRS: usize = 2;
 
+/// The most files parsed whole apart from the diffs that the thread keeps: the hit on show, and a few the
+/// user picked before it.
+const WHOLES: usize = 4;
+
+/// The memory the files parsed whole may take, beside `CAP`: about 4 of CPython's largest C files.
+const WHOLES_CAP: usize = 50_000_000;
+
+/// A file the Definition peek or the file view shows whole (#439, #455).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HitFile {
+    /// A file of the Repository at a commit, read from its Mirror.
+    Repository { path: String, commit: CommitSha },
+    /// A file outside the Repository, read from disk.
+    Outside { path: PathBuf },
+}
+
+impl HitFile {
+    /// Its language, by its name, if Tsugiki highlights it.
+    fn language(&self) -> Option<Language> {
+        match self {
+            Self::Repository { path, .. } => Language::of(path),
+            Self::Outside { path } => Language::of(path.file_name()?.to_str()?),
+        }
+    }
+
+    /// The text a kept tree of it must have parsed to stand for `text`: none for a file at a commit, which
+    /// can't change, and `text` for one on disk, which can.
+    fn key<'a>(&self, text: &'a str) -> Option<&'a str> {
+        match self {
+            Self::Repository { .. } => None,
+            Self::Outside { .. } => Some(text),
+        }
+    }
+}
+
+/// Lines of a hit's file, counted from 1, as the window asks for them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HitLines {
+    pub file: HitFile,
+    pub lines: Range<u32>,
+}
+
+/// A file parsed whole that the thread keeps, and what it costs, as `Parsed::cost` counts it.
+struct Whole {
+    file: HitFile,
+    tree: Arc<Parsed>,
+    cost: usize,
+}
+
 /// `lines`, which are in order, as runs to highlight, each with no gap of more than `GAP` lines.
 fn runs(lines: &[u32]) -> Vec<Range<u32>> {
     let mut runs: Vec<Range<u32>> = Vec::new();
@@ -69,21 +125,38 @@ fn runs(lines: &[u32]) -> Vec<Range<u32>> {
 
 /// Starts the shelf: the thread that parses gets the writer, which can't be cloned, and each chunk reads.
 fn shelf() -> (ShelfWriter, ShelfReader) {
-    let shared = Arc::new(Mutex::new(Vec::new()));
+    let shared = Arc::new(Mutex::new(Shelves::default()));
     (ShelfWriter(Arc::clone(&shared)), ShelfReader(shared))
 }
 
-/// The trees the thread keeps, by diff. Each function takes the lock for one look or one change, and no
-/// guard leaves these types. A panic can't leave a change half made, so both sides read through a poisoned
-/// lock.
-type Shelves = Vec<(Arc<OpenDiff>, HashMap<Version, Tree>)>;
+/// The trees the thread keeps: by diff, and the files parsed whole, the one used last first. Each function
+/// takes the lock for one look or one change, and no guard leaves these types. A panic can't leave a change
+/// half made, so both sides read through a poisoned lock.
+#[derive(Default)]
+struct Shelves {
+    diffs: Vec<(Arc<OpenDiff>, HashMap<Version, Tree>)>,
+    wholes: VecDeque<Whole>,
+}
+
+impl Shelves {
+    /// `file`'s tree, if the thread has parsed it whole and keeps it, from the text `key` if it names one.
+    fn whole(&self, file: &HitFile, key: Option<&str>) -> Option<Arc<Parsed>> {
+        let parsed = |whole: &&Whole| key.is_none_or(|text| whole.tree.source() == text);
+        let kept = self
+            .wholes
+            .iter()
+            .filter(|whole| whole.file == *file)
+            .find(parsed)?;
+        Some(Arc::clone(&kept.tree))
+    }
+}
 
 /// The one side that changes the shelf.
 struct ShelfWriter(Arc<Mutex<Shelves>>);
 
 impl ShelfWriter {
     fn put(&mut self, diff: &Arc<OpenDiff>, version: Version, tree: Tree) {
-        let mut shelves = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let shelves = &mut self.0.lock().unwrap_or_else(PoisonError::into_inner).diffs;
         if !shelves.iter().any(|(kept, _)| kept.is(diff)) {
             shelves.push((Arc::clone(diff), HashMap::new()));
         }
@@ -93,7 +166,7 @@ impl ShelfWriter {
     }
 
     fn take(&mut self, diff: &OpenDiff, version: Version) {
-        let mut shelves = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let shelves = &mut self.0.lock().unwrap_or_else(PoisonError::into_inner).diffs;
         for (_, trees) in shelves.iter_mut().filter(|(kept, _)| kept.is(diff)) {
             drop(trees.remove(&version));
         }
@@ -101,8 +174,43 @@ impl ShelfWriter {
 
     /// Drops the trees of each diff but `diffs`.
     fn keep(&mut self, diffs: &[&OpenDiff]) {
-        let mut shelves = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let shelves = &mut self.0.lock().unwrap_or_else(PoisonError::into_inner).diffs;
         shelves.retain(|(kept, _)| diffs.iter().any(|diff| kept.is(diff)));
+    }
+
+    /// `file`'s tree, if the thread keeps it, as `Shelves::whole` finds it.
+    fn whole(&self, file: &HitFile, key: Option<&str>) -> Option<Arc<Parsed>> {
+        let shelves = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        shelves.whole(file, key)
+    }
+
+    /// Keeps `file`'s tree as the one used last, in place of any it kept for the file, and drops those used
+    /// longest ago past `WHOLES` of them or `cap` bytes. The newest stays, whatever it costs.
+    fn put_whole(&mut self, file: HitFile, tree: Arc<Parsed>, cap: usize) {
+        let wholes = &mut self.0.lock().unwrap_or_else(PoisonError::into_inner).wholes;
+        wholes.retain(|whole| whole.file != file);
+        let cost = tree.cost();
+        wholes.push_front(Whole { file, tree, cost });
+        let mut kept = 0;
+        let fits = wholes
+            .iter()
+            .take(WHOLES)
+            .take_while(|whole| {
+                kept += whole.cost;
+                kept <= cap
+            })
+            .count();
+        wholes.truncate(fits.max(1));
+    }
+
+    /// Makes `file`'s tree the one used last.
+    fn used_whole(&mut self, file: &HitFile) {
+        let wholes = &mut self.0.lock().unwrap_or_else(PoisonError::into_inner).wholes;
+        if let Some(at) = wholes.iter().position(|whole| whole.file == *file)
+            && let Some(used) = wholes.remove(at)
+        {
+            wholes.push_front(used);
+        }
     }
 }
 
@@ -114,8 +222,27 @@ impl ShelfReader {
     /// `diff`'s `version`, if the thread has parsed it and keeps it.
     fn get(&self, diff: &OpenDiff, version: Version) -> Option<Tree> {
         let shelves = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        let (_, trees) = shelves.iter().find(|(kept, _)| kept.is(diff))?;
+        let (_, trees) = shelves.diffs.iter().find(|(kept, _)| kept.is(diff))?;
         trees.get(&version).cloned()
+    }
+
+    /// `file`'s tree, if the thread keeps it, as `Shelves::whole` finds it.
+    fn whole(&self, file: &HitFile, key: Option<&str>) -> Option<Arc<Parsed>> {
+        let shelves = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        shelves.whole(file, key)
+    }
+
+    /// The kept diff and the version of its file that `file` is, if one is: a file the PR changes, at the
+    /// PR's head or its merge base.
+    fn version_of(&self, file: &HitFile) -> Option<(Arc<OpenDiff>, Version)> {
+        let HitFile::Repository { path, commit } = file else {
+            return None;
+        };
+        let shelves = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        shelves.diffs.iter().find_map(|(diff, _)| {
+            let version = diff.version_of(commit, path)?;
+            Some((Arc::clone(diff), version))
+        })
     }
 }
 
@@ -139,6 +266,16 @@ enum Job {
         from: Source,
         versions: Vec<Version>,
     },
+    /// The peek or the file view needs `file` parsed whole, and the shelf lacks it: parse `text` ahead of
+    /// the rest, unless the thread keeps the file by now, and answer with its tree.
+    Whole {
+        file: HitFile,
+        language: Language,
+        text: String,
+        reply: Sender<Option<Arc<Parsed>>>,
+    },
+    /// The peek or the file view took `file`'s tree from the shelf.
+    UsedWhole(HitFile),
 }
 
 /// A line of a file at the PR's head that a gap leaves out, which the window shows when the user expands
@@ -273,6 +410,89 @@ impl Highlighter {
             .collect()
     }
 
+    /// The spans of `lines` of `file`, counted from 1, from the file parsed whole, as the Definition peek
+    /// and the file view show it (#455). The tree comes from the shelf, or else from the thread, which
+    /// parses `text()` ahead of the rest, so only a file the thread doesn't keep is read. A file Tsugiki
+    /// doesn't highlight has no spans, and isn't read. One that can't be read says why.
+    pub fn whole_spans(
+        &self,
+        mirror: &Path,
+        wanted: &HitLines,
+        text: impl FnOnce() -> Result<String, Error>,
+    ) -> Result<Vec<Vec<Span>>, Error> {
+        let HitLines { file, lines } = wanted;
+        let Some(language) = file.language() else {
+            return Ok(Vec::new());
+        };
+        let tree = match self.diff_tree(mirror, file) {
+            Some(tree) => Some(tree),
+            None => self.whole_tree(file, language, text)?,
+        };
+        Ok(tree
+            .map(|parsed| parsed.spans(lines.clone()))
+            .unwrap_or_default())
+    }
+
+    /// The tree of the version of a kept diff's file that `file` is, so a file the PR changes looks as it
+    /// does in the diff and isn't parsed twice: from the shelf, or else from the thread, which parses it as
+    /// a chunk's version, read from `mirror`. Nothing if `file` is no such version or has no tree.
+    fn diff_tree(&self, mirror: &Path, file: &HitFile) -> Option<Arc<Parsed>> {
+        let (diff, version) = self.shelf.version_of(file)?;
+        let from = Source {
+            diff,
+            mirror: mirror.to_owned(),
+        };
+        self.trees(from, vec![version]).remove(&version).flatten()
+    }
+
+    /// `file`'s tree parsed whole: from the shelf, or else from the thread, which parses `text()`. A file at
+    /// a commit is read only when the shelf lacks its tree. One on disk is read each time, as it may have
+    /// changed since, and only a tree of the text it has now will do.
+    fn whole_tree(
+        &self,
+        file: &HitFile,
+        language: Language,
+        text: impl FnOnce() -> Result<String, Error>,
+    ) -> Result<Option<Arc<Parsed>>, Error> {
+        if let HitFile::Repository { .. } = file
+            && let Some(tree) = self.shelf.whole(file, None)
+        {
+            self.used_whole(file);
+            return Ok(Some(tree));
+        }
+        let text = text()?;
+        if let Some(tree) = self.shelf.whole(file, file.key(&text)) {
+            self.used_whole(file);
+            return Ok(Some(tree));
+        }
+        Ok(self.parse_whole(file.clone(), language, text))
+    }
+
+    /// Tells the thread that `file`'s tree was used, so it's the last the shelf drops.
+    fn used_whole(&self, file: &HitFile) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the peek has its tree, and only the order of the next drop is lost"
+        )]
+        let _ = self.jobs.send(Job::UsedWhole(file.clone()));
+    }
+
+    /// `file`'s tree, which the thread parses from `text`. A thread that has stopped gives none.
+    fn parse_whole(&self, file: HitFile, language: Language, text: String) -> Option<Arc<Parsed>> {
+        let (reply, answer) = mpsc::channel();
+        let job = Job::Whole {
+            file,
+            language,
+            text,
+            reply,
+        };
+        let tree = self.jobs.send(job).ok().and_then(|()| answer.recv().ok());
+        if tree.is_none() {
+            log::warn!("Tsugiki's highlighter has stopped, so the code shows plain");
+        }
+        tree.flatten()
+    }
+
     /// The trees of `versions`: from the shelf, or else from the thread, which parses those the shelf
     /// lacks ahead of the rest. A thread that has stopped gives none.
     fn trees(&self, from: Source, versions: Vec<Version>) -> HashMap<Version, Tree> {
@@ -329,6 +549,8 @@ struct Store {
     shelf: ShelfWriter,
     kept: usize,
     cap: usize,
+    /// What the files parsed whole may take, beside `cap`.
+    wholes_cap: usize,
 }
 
 /// A PR whose trees the thread keeps.
@@ -448,7 +670,8 @@ fn held_up(waiting: &VecDeque<Job>, diff: &OpenDiff, version: Version) -> bool {
             Job::Parse { from, versions, .. } => {
                 Some(from.diff.is(diff) && versions.contains(&version))
             }
-            Job::Used { .. } => None,
+            Job::Whole { .. } => Some(false),
+            Job::Used { .. } | Job::UsedWhole(_) => None,
         })
         .collect();
     !asks.is_empty() && !asks.contains(&true)
@@ -470,6 +693,7 @@ impl Worker {
                 shelf,
                 kept: 0,
                 cap,
+                wholes_cap: WHOLES_CAP,
             },
             prs: Vec::new(),
             chunks: 0,
@@ -525,6 +749,27 @@ impl Worker {
                 drop(opened.used(&versions, chunk));
                 self.open(opened);
             }
+            Job::Whole {
+                file,
+                language,
+                text,
+                reply,
+            } => {
+                let shelf = &mut self.store.shelf;
+                // Two chunks of a file can each find the shelf without it, and both ask.
+                let kept = shelf.whole(&file, file.key(&text));
+                let tree = kept.or_else(|| {
+                    let tree = Arc::new(Parsed::parse(language, text)?);
+                    shelf.put_whole(file, Arc::clone(&tree), self.store.wholes_cap);
+                    Some(tree)
+                });
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "this fails only if the peek has gone, and the tree stays on the shelf"
+                )]
+                let _ = reply.send(tree);
+            }
+            Job::UsedWhole(file) => self.store.shelf.used_whole(&file),
         }
     }
 
@@ -656,6 +901,21 @@ impl OpenDiff {
             })
             .partition(is_news);
         news.into_iter().chain(rest).collect()
+    }
+
+    /// The version of one of its files that is `path` at `commit`: the new path at the PR's head, or the
+    /// old path at the merge base.
+    fn version_of(&self, commit: &CommitSha, path: &str) -> Option<Version> {
+        self.diff.files.iter().enumerate().find_map(|(at, file)| {
+            let old = file.old_path.as_ref().unwrap_or(&file.path);
+            if *commit == self.pr.head && file.path == path {
+                Some((at, Side::Head))
+            } else if *commit == self.base && old == path {
+                Some((at, Side::Base))
+            } else {
+                None
+            }
+        })
     }
 
     /// The language of `version` and the name git knows it by, if Tsugiki highlights it.

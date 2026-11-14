@@ -17,7 +17,7 @@ use crate::error::{Error, ErrorKind};
 use crate::github::{CommitSha, live};
 use crate::repository::RepositoryName;
 
-pub use highlighter::{Chunk, FileLines, HeadLine, Highlighter};
+pub use highlighter::{Chunk, FileLines, HeadLine, Highlighter, HitFile, HitLines};
 pub(crate) use highlighter::{blobs, object_name};
 pub use news::{LinkTo, NewsBlock, NewsEntry, NewsLink, NewsPiece};
 pub use patch_ids::read_patch_ids;

@@ -1,18 +1,21 @@
-//! The code of a hit's file, which the Definition peek shows a few rows of at a time (#439). A file of the
-//! Repository comes from its Mirror at the hit's commit, and one outside it from disk, if a server named it.
+//! The code of a hit's file, which the Definition peek shows a few rows of at a time (#439), and its spans
+//! (#455). A file of the Repository comes from its Mirror at the hit's commit, and one outside it from disk,
+//! if a server named it.
 
 use std::collections::HashSet;
 use std::fs;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use serde::Serialize;
 use specta::Type;
 
-use crate::diff;
+use crate::diff::{self, Highlighter, HitFile, HitLines};
 use crate::error::{Error, ErrorKind};
-use crate::github::CommitSha;
+use crate::highlight::Span;
 
 #[cfg(test)]
 mod tests;
@@ -20,14 +23,8 @@ mod tests;
 /// The most lines one read hands the window.
 const MOST_LINES: u32 = 2000;
 
-/// A file a hit is in, as the window names it to read its code.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum HitFile {
-    /// A file of the Repository at a commit, read from its Mirror.
-    Repository { path: String, commit: CommitSha },
-    /// A file outside the Repository, read from disk.
-    Outside { path: PathBuf },
-}
+/// A read of a file's lines, which every caller that asks for the same file while it runs waits for.
+type Read = Arc<OnceLock<Result<Arc<[String]>, Error>>>;
 
 /// Some lines of a hit's file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -40,11 +37,14 @@ pub struct Code {
 
 /// The files the peek reads: the paths outside the Repository that a server has named in a hit, the only
 /// files outside it that the window can read, and the last file read, as the peek reads one file a chunk
-/// at a time.
+/// at a time. The window asks for a chunk's lines and its spans together, and the two share one read.
 #[derive(Debug, Default)]
 pub(super) struct HitFiles {
     named: Mutex<HashSet<PathBuf>>,
-    last: Mutex<Option<(HitFile, Arc<[String]>)>>,
+    last: Mutex<Option<(HitFile, Read)>>,
+    /// How many times a file was read, for the tests.
+    #[cfg(test)]
+    reads: AtomicUsize,
 }
 
 impl HitFiles {
@@ -52,30 +52,76 @@ impl HitFiles {
         let _new = lock(&self.named).insert(path);
     }
 
-    /// Lines `lines` of `file`, counted from 1: one of the Repository whose Mirror is at `mirror`, or one
-    /// outside it that a server has named.
-    pub(super) fn read(
+    /// The lines `wanted` names: of a file of the Repository whose Mirror is at `mirror`, or of one outside
+    /// it that a server has named.
+    pub(super) fn read(&self, mirror: &Path, wanted: &HitLines) -> Result<Code, Error> {
+        let HitLines { file, lines } = wanted;
+        self.check_named(file)?;
+        Ok(some_lines(&self.lines_of(mirror, file)?, lines.clone()))
+    }
+
+    /// The spans of the lines `wanted` names, which `highlighter` reads from the file's whole tree, as the
+    /// diff's rows read theirs. It reads the file as `read` does, and only when `highlighter` needs it.
+    pub(super) fn spans(
         &self,
+        highlighter: &Highlighter,
         mirror: &Path,
-        file: &HitFile,
-        lines: Range<u32>,
-    ) -> Result<Code, Error> {
+        wanted: &HitLines,
+    ) -> Result<Vec<Vec<Span>>, Error> {
+        let HitLines { file, lines } = wanted;
+        self.check_named(file)?;
+        // Joined with line feeds, a lone `\r` ends a line for tree-sitter too, so the spans of each line
+        // land on the line `read` gives.
+        let text = || Ok(self.lines_of(mirror, file)?.join("\n"));
+        let wanted = HitLines {
+            file: file.clone(),
+            lines: at_most(lines.clone()),
+        };
+        highlighter.whole_spans(mirror, &wanted, text)
+    }
+
+    /// Fails for a file outside the Repository that no server has named.
+    fn check_named(&self, file: &HitFile) -> Result<(), Error> {
         if let HitFile::Outside { path } = file
             && !lock(&self.named).contains(path)
         {
             let unnamed = format!("No language server named {}.", path.display());
             return Err(Error::new(ErrorKind::NotFound, &unnamed));
         }
-        let last = lock(&self.last).clone();
-        let text = match last {
-            Some((read, text)) if read == *file => text,
-            _ => {
-                let text: Arc<[String]> = split(&text_of(mirror, file)?).into();
-                *lock(&self.last) = Some((file.clone(), Arc::clone(&text)));
-                text
+        Ok(())
+    }
+
+    /// `file`'s lines, from the last file read if it's the same one, or from the read of it under way. A
+    /// read that fails is forgotten, so the next chunk reads again.
+    fn lines_of(&self, mirror: &Path, file: &HitFile) -> Result<Arc<[String]>, Error> {
+        let read = {
+            let mut last = lock(&self.last);
+            match &*last {
+                Some((kept, read)) if kept == file => Arc::clone(read),
+                _ => {
+                    let read = Read::default();
+                    *last = Some((file.clone(), Arc::clone(&read)));
+                    read
+                }
             }
         };
-        Ok(some_lines(&text, lines))
+        let lines = read
+            .get_or_init(|| {
+                #[cfg(test)]
+                let _before = self.reads.fetch_add(1, Ordering::Relaxed);
+                text_of(mirror, file).map(|text| split(&text).into())
+            })
+            .clone();
+        if lines.is_err() {
+            let mut last = lock(&self.last);
+            if last
+                .as_ref()
+                .is_some_and(|(_, kept)| Arc::ptr_eq(kept, &read))
+            {
+                *last = None;
+            }
+        }
+        lines
     }
 }
 
@@ -129,12 +175,17 @@ fn split(text: &str) -> Vec<String> {
 
 /// Lines `lines` of `text`, counted from 1, with how many it has.
 fn some_lines(text: &[String], lines: Range<u32>) -> Code {
-    let first = lines.start.max(1);
-    let end = lines.end.min(first.saturating_add(MOST_LINES));
+    let Range { start: first, end } = at_most(lines);
     let skip = usize::try_from(first - 1).unwrap_or(usize::MAX);
     let take = usize::try_from(end.saturating_sub(first)).unwrap_or(0);
     Code {
         count: u32::try_from(text.len()).unwrap_or(u32::MAX),
         lines: text.iter().skip(skip).take(take).cloned().collect(),
     }
+}
+
+/// The lines of `lines` one read hands the window: from line 1 at the earliest, and `MOST_LINES` at most.
+fn at_most(lines: Range<u32>) -> Range<u32> {
+    let first = lines.start.max(1);
+    first..lines.end.min(first.saturating_add(MOST_LINES))
 }

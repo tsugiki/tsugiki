@@ -1258,7 +1258,13 @@ it("goes to the definition with F12 on the Files tab, once for a held key", asyn
 /** A PR's Files tab with the file view over it, whose code holds 10 lines it asks the core for none of. */
 const onFileView = async () => {
   const place = { kind: "repository" as const, path: "Lib/eggs.py", side: "base" as const, commit: "base" };
-  const code = { count: 10, widest: 0, show: () => {}, line: () => "x = 1" } as unknown as HitCode;
+  const code = {
+    count: 10,
+    widest: 0,
+    show: () => {},
+    line: () => "x = 1",
+    spans: () => undefined,
+  } as unknown as HitCode;
   vi.spyOn(PrFilesState.prototype, "fileView", "get").mockReturnValue({ place, line: 4, code });
   const files = await onFiles();
   await fireEvent.click(files);

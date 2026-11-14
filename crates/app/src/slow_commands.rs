@@ -358,6 +358,18 @@ pub(crate) fn definition_code(
     crate::read_definition_code(code, &work)
 }
 
+/// The spans that highlight the lines `definition_code` reads, from the file parsed whole, which the
+/// Definition peek and the file view paint once they come (#455). A file the highlighter doesn't keep waits
+/// for its parse, so the window shows the lines first. It never waits for a lookup, nor for GitHub.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn definition_spans(
+    code: crate::DefinitionCode,
+    work: State<'_, crate::DiffWork>,
+) -> Result<Vec<Vec<Span>>, Error> {
+    crate::read_definition_spans(code, &work)
+}
+
 /// The lines a gap of a PR's diff leaves out, read from the file at the PR's head in its mirror with their
 /// spans, which the Files tab shows when the user expands the gap. It asks GitHub for nothing. Those past
 /// the file's end don't come.

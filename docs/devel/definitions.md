@@ -72,9 +72,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - Under the header the peek shows the hit's file, with line numbers in the gutter, scrolled so the hit's
   line sits 3 rows from the top, and marked. A file of the Repository comes from the **Mirror** at the hit's
   commit, so a hit in a file the PR changes, found at the head, shows the head's text. A file outside it
-  comes from disk, and only one a server named in a hit can be read. The lines are plain text until #455.
-  The peek takes 18 rows while it looks up or shows code, and 2 when it only has words to say. Its code
-  scrolls inside it, so the diff's rows after it stay where they are.
+  comes from disk, and only one a server named in a hit can be read. The code is highlighted as the diff
+  is, so a file the PR changes looks as it does in the diff (see "Highlighting a hit's file"). The peek
+  takes 18 rows while it looks up or shows code, and 2 when it only has words to say. Its code scrolls
+  inside it, so the diff's rows after it stay where they are.
 - The user drags the peek's bottom edge, a whole row at a time, between 5 rows and 60, or moves it with ↑
   and ↓ while it has the focus (#458). A double-click on it puts the 18 rows back, as on the pane edges.
   The height is saved with the pane sizes in `machine.toml` ([layout.md](layout.md)), so the next peek
@@ -95,6 +96,20 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   command's thread, never waiting for a lookup, and offline at any commit the Mirror holds. It keeps the
   last file it read, so the next chunk starts no git. A line ends at a lone `\r` too, as LSP counts lines.
   A chunk that fails once lines show leaves them, and the next scroll asks again.
+- Highlighting a hit's file: the window asks the core for each chunk's spans beside its lines, as the
+  Files tab asks for a chunk's rows and spans, and the two share one read of the file. A file the PR
+  changes, at the PR's head or its merge base, takes its tree from the diff's Highlighter, so it looks as
+  it does in the diff and isn't parsed twice. The Highlighter parses any other file whole, read from the
+  Mirror at the hit's commit, or from disk outside the Repository, with the languages and colours the diff
+  has, and reads each chunk's spans from that tree. It keeps the 4 files used last, in at most 50 MB beside
+  the diff's trees, so the next chunk and a hit picked again parse nothing. A file on disk keeps the tree of
+  the text its lines show, and one that changed is parsed again once its lines are read again. The lines
+  wait up to 50 ms for their spans, then show plain until the parse is done, and the spans paint them when
+  they come. So a file as big
+  as `Objects/unicodeobject.c` doesn't hold up its lines. Its 15,489 lines at `69ac138c06` took the core,
+  in an optimized build, 47 to 69 ms to read a chunk's lines, 110 to 135 ms more to parse the file for its
+  first spans, and under a millisecond for each chunk's spans after that. A file Tsugiki doesn't
+  highlight, or whose spans fail, shows plain.
 - LSP counts a line's columns in UTF-16 code units, and so does the webview, so the picked word's column
   goes to ty as it is, and a hit's column comes back the same way.
 - With no hit the peek says "No definition of X", and with no ty set up "Set up ty to go to definitions in
@@ -128,7 +143,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   and Read-only. The hit's line sits 3 rows from the top, and the view marks it.
 - The file view shows the peek's code: the window asks the core for 200 lines at a time near the rows that
   show, read from the **Mirror** at the hit's commit, so `Objects/unicodeobject.c` opens without waiting for
-  all of it, and it works offline at any commit the Mirror holds. The lines are plain text until #455.
+  all of it, and it works offline at any commit the Mirror holds. Its lines are highlighted as the peek's
+  are.
 - The file view takes the focus, so the keys scroll it, and a file it can't read says why inside it, where
   the focus stays. The diff stays drawn under it, inert, and its
   keys wait: Back returns to the Files tab scrolled where it was, with the focus in the diff. The Issue

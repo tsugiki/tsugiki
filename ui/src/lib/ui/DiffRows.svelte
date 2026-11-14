@@ -878,44 +878,4 @@
     border-left: 1px solid currentColor;
     vertical-align: -3px;
   }
-
-  /* The theme's syntax colours, in the rows and in the code of a thread. The classes come from the spans,
-     which Svelte can't see, so they're global within the scroller. */
-  .scroller :global(.hl-keyword) {
-    color: var(--hl-keyword);
-  }
-
-  .scroller :global(.hl-string) {
-    color: var(--hl-string);
-  }
-
-  .scroller :global(.hl-comment) {
-    color: var(--hl-comment);
-  }
-
-  .scroller :global(.hl-constant) {
-    color: var(--hl-constant);
-  }
-
-  .scroller :global(.hl-function),
-  .scroller :global(.hl-type) {
-    color: var(--hl-entity);
-  }
-
-  .scroller :global(.hl-tag) {
-    color: var(--hl-tag);
-  }
-
-  .scroller :global(.hl-heading) {
-    color: var(--hl-constant);
-    font-weight: 600;
-  }
-
-  .scroller :global(.hl-strong) {
-    font-weight: 600;
-  }
-
-  .scroller :global(.hl-emphasis) {
-    font-style: italic;
-  }
 </style>

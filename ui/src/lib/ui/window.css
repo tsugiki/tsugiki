@@ -108,3 +108,43 @@ kbd {
   border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
   border-radius: 999px;
 }
+
+/* The Theme's syntax colours, wherever code is highlighted: the diff's rows, a thread's code, and the
+   Definition peek's and the file view's lines. The classes come from the spans the core sends. */
+.hl-keyword {
+  color: var(--hl-keyword);
+}
+
+.hl-string {
+  color: var(--hl-string);
+}
+
+.hl-comment {
+  color: var(--hl-comment);
+}
+
+.hl-constant {
+  color: var(--hl-constant);
+}
+
+.hl-function,
+.hl-type {
+  color: var(--hl-entity);
+}
+
+.hl-tag {
+  color: var(--hl-tag);
+}
+
+.hl-heading {
+  color: var(--hl-constant);
+  font-weight: 600;
+}
+
+.hl-strong {
+  font-weight: 600;
+}
+
+.hl-emphasis {
+  font-style: italic;
+}

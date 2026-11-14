@@ -62,6 +62,7 @@ import { hud, type Jump, type JumpTimer } from "./hud.svelte";
 import type { PanesState } from "./panes.svelte";
 import { PEEK_ID, peekPlaces, withPeek, type IndexNews, type Peek } from "./peek";
 import { wordAt, type Column, type Pick, type Picked, type PickedLine, type Side } from "./pick";
+import { waitForSpans } from "./spans-wait";
 
 export type PrFiles = PrFiles_Serialize;
 export type DiffFile = DiffFile_Serialize;
@@ -151,9 +152,7 @@ type Goal = { kind: "diff"; landing: Landing } | { kind: "file"; view: FileView 
 /** How long Go to definition says it found nothing. */
 export const NOTICE_MS = 4000;
 
-/** How long a chunk's rows wait for their spans before they show plain. The spans repaint the chunk when
- * they come. */
-export const SPANS_WAIT = 50;
+export { SPANS_WAIT } from "./spans-wait";
 
 /** How a file's change stands against the user's Stale review (#387): changed since, changed only in
  * whitespace, or the same as when the user reviewed it. */
@@ -1389,14 +1388,14 @@ export class PrFilesState {
    * waited `SPANS_WAIT` since the ask, whichever is first. */
   async #fetch(diff: Ready, chunk: number, jump: Jump | undefined) {
     const spans = this.#fetchSpans(diff, chunk);
-    const waited = new Promise<undefined>((resolve) => setTimeout(resolve, SPANS_WAIT));
+    const waited = waitForSpans(spans);
     const rows = await this.#safely(() => commands.pullRequestRows(this.#chunk(diff, chunk)));
     if (rows === undefined) {
       // A chunk of an older diff that fails leaves the newer diff's ask for the same chunk alone.
       if (this.#wanted(diff, chunk)) this.#asked.delete(chunk);
       return;
     }
-    const early = await Promise.race([spans, waited]);
+    const early = await waited();
     if (!this.#wanted(diff, chunk)) return;
     if (early !== undefined) this.#spans.set(chunk, early);
     this.#chunks.set(chunk, rows);

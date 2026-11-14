@@ -1,6 +1,11 @@
 //! Highlighting a C file about as long as CPython's `Objects/typeobject.c` (ADR 0001, ADR 0017). A chunk
-//! should take about a millisecond, and a parse well under the 100 ms a jump into a file has.
+//! should take about a millisecond, and a parse well under the 100 ms a jump into a file has. The same goes
+//! for a file the Definition peek shows whole (#455).
 
+use std::path::Path;
+
+use tsugiki_core::diff::{Highlighter, HitFile, HitLines};
+use tsugiki_core::github::CommitSha;
 use tsugiki_core::highlight::{Language, Parsed};
 
 /// C, as Tsugiki highlights a `.c` file.
@@ -38,6 +43,41 @@ fn chunk(bencher: divan::Bencher<'_, '_>) {
     let spans = parsed.spans(start..start + CHUNK);
     assert!(spans.iter().filter(|line| !line.is_empty()).count() > 300);
     bencher.bench(|| parsed.spans(start..start + CHUNK));
+}
+
+/// The lines the Definition peek and the file view ask for at a time, as `CODE_CHUNK` in
+/// `hit-code.svelte.ts`.
+const CODE_CHUNK: u32 = 200;
+
+/// The spans of a chunk of the same file, as the Definition peek or the file view shows it whole once the
+/// highlighter keeps its tree (#455): each scroll of the peek asks this. `Objects/unicodeobject.c` has
+/// 15,500 lines.
+#[expect(
+    clippy::expect_used,
+    reason = "a benchmark that timed a file that wasn't highlighted would measure nothing the user waits for"
+)]
+#[divan::bench]
+fn whole_file_chunk(bencher: divan::Bencher<'_, '_>) {
+    let highlighter = Highlighter::start();
+    let commit = CommitSha::parse(&"a".repeat(40)).expect("40 hex digits are a commit");
+    let file = HitFile::Repository {
+        path: "Objects/unicodeobject.c".to_owned(),
+        commit,
+    };
+    let start = FUNCTIONS * 10;
+    let wanted = HitLines {
+        file,
+        lines: start..start + CODE_CHUNK,
+    };
+    let nowhere = Path::new("");
+    let first = highlighter.whole_spans(nowhere, &wanted, || Ok(c_file()));
+    let painted = first
+        .expect("the C parses")
+        .iter()
+        .filter(|line| !line.is_empty())
+        .count();
+    assert!(painted > 100);
+    bencher.bench(|| highlighter.whole_spans(nowhere, &wanted, || Ok(String::new())));
 }
 
 /// Macros in the header below: four times as many as `Modules/clinic/posixmodule.c.h`, CPython's file with

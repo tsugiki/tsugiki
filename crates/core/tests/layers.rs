@@ -219,6 +219,7 @@ const LAYERS: &[Layer] = &[
             "error",
             "folders",
             "github",
+            "highlight",
             "latest",
             "mirror",
             "repository",
@@ -226,7 +227,8 @@ const LAYERS: &[Layer] = &[
         why: "Asks a language server where a name is defined, in the Lookup checkout the Mirror worker keeps, \
               with the files the PR's diff changes open at its head, read from the Mirror through `diff`. \
               clangd's compile database goes in the servers' folder `folders` names beside the checkout, and \
-              how far its index has got goes through `latest`.",
+              how far its index has got goes through `latest`. A hit's code gets its `highlight` spans from \
+              the highlighter in `diff`.",
     },
     Layer {
         module: "search",

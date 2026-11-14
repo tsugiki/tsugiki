@@ -20,6 +20,8 @@ pub(crate) fn ty() -> PathBuf {
 
 /// A repository whose `main` is the PR's base, and whose PR's head changes, adds and deletes files.
 pub(crate) struct Fixture {
+    /// The repository the PR is in, which stands in for its Mirror.
+    pub(crate) mirror: PathBuf,
     pub(crate) checkout: LookupCheckout,
 }
 
@@ -69,6 +71,7 @@ impl Fixture {
             let _ = git(&folder, &args);
         }
         Self {
+            mirror,
             checkout: LookupCheckout {
                 folder,
                 at: LookupAt {

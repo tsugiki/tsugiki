@@ -11,7 +11,7 @@ import {
   type DiffThread,
   type PrFiles,
 } from "./pr-files.svelte";
-import { PEEK_ID, PEEK_PLACES } from "./peek";
+import { PEEK_ID, PEEK_ROWS } from "./peek";
 import type { YourReview } from "./workbench.svelte";
 
 type Heard = (event: { payload: unknown }) => void;
@@ -2100,7 +2100,7 @@ it("looks up the picked word at the head, and at the base for a removed line", a
     [lookupOf("head", "a.py", 8, 4)],
     [lookupOf("base", "a.py", 8, 11)],
   ]);
-  expect(files.peek).toEqual({
+  expect(files.peek).toMatchObject({
     at: { kind: "row", row: 3 },
     symbol: "width",
     side: "base",
@@ -2149,19 +2149,36 @@ it("opens the peek under the picked line while the lookup runs, and pushes the r
   const answer = heldLookup();
   const files = await pickable();
   files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  const peekAt = (rows: number) => [
+    { kind: "row", row: 2 },
+    { kind: "thread", id: PEEK_ID, into: 0 },
+    { kind: "thread", id: PEEK_ID, into: rows - 1 },
+    { kind: "row", row: 3 },
+  ];
+  const placesAt = (rows: number) => [2, 3, 2 + rows, 3 + rows].map((place) => files.layout.at(place));
 
   const looking = files.peekDefinition();
 
   expect(files.peek?.lookup).toEqual({ state: "looking" });
-  expect([2, 3, 4, 5].map((place) => files.layout.at(place))).toEqual([
-    { kind: "row", row: 2 },
+  expect(placesAt(PEEK_ROWS)).toEqual(peekAt(PEEK_ROWS));
+  answer(ok(answerWith("Lib/shapes.py", 3)));
+  await looking;
+  expect(files.peek?.lookup).toEqual({ state: "answered", answer: answerWith("Lib/shapes.py", 3) });
+  expect(placesAt(PEEK_ROWS)).toEqual(peekAt(PEEK_ROWS));
+});
+
+it("shrinks the peek to its header and a line when it has no code to show", async () => {
+  core.definitions.mockResolvedValue(ok(answerWith()));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+
+  await files.peekDefinition();
+
+  expect([3, 4, 5].map((place) => files.layout.at(place))).toEqual([
     { kind: "thread", id: PEEK_ID, into: 0 },
-    { kind: "thread", id: PEEK_ID, into: PEEK_PLACES - 1 },
+    { kind: "thread", id: PEEK_ID, into: 1 },
     { kind: "row", row: 3 },
   ]);
-  answer(ok(answerWith()));
-  await looking;
-  expect(files.peek?.lookup).toEqual({ state: "answered", answer: answerWith() });
 });
 
 it("opens no peek with no word picked", async () => {

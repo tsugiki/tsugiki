@@ -22,6 +22,7 @@ const core = vi.hoisted(() => ({
   pullRequestLines: vi.fn<(lines: { file: number; start: number; end: number }) => Promise<unknown>>(),
   pullRequestFind: vi.fn(),
   definitions: vi.fn(),
+  definitionCode: vi.fn<(code: { start: number; end: number }) => Promise<unknown>>(),
   cloning: vi.fn(),
   mirrorStates: vi.fn(),
   mirrorsHeld: vi.fn(),
@@ -36,6 +37,7 @@ vi.mock("$lib/data/bindings", () => ({
     pullRequestLines: core.pullRequestLines,
     pullRequestFind: core.pullRequestFind,
     definitions: core.definitions,
+    definitionCode: core.definitionCode,
     cloning: core.cloning,
     mirrorStates: core.mirrorStates,
     mirrorsHeld: core.mirrorsHeld,
@@ -1447,8 +1449,23 @@ const peekText = () =>
   [".header", ".body"].map((part) => peekBox()?.querySelector(part)?.textContent.replace(/\s+/g, " ").trim());
 const rowAt = (text: string) =>
   [...document.querySelectorAll<HTMLElement>(".row")].find((row) => row.textContent === text);
+/** The peek's code lines that show: each line's number and text, marked with `*` for the hit's. */
+const peekCode = () =>
+  [...(peekBox()?.querySelectorAll<HTMLElement>(".line") ?? [])].map(
+    (line) => `${line.classList.contains("hit") ? "*" : ""}${line.textContent}`,
+  );
 
-it("opens the Definition peek under the picked line, names the hit, and pushes the rows after it down", async () => {
+/** A file of `count` lines, line N of which reads `line N`, as the core reads a hit's file. */
+const fileOf = (count: number) => {
+  core.definitionCode.mockImplementation((code) => {
+    const lines = [];
+    for (let line = code.start; line < Math.min(code.end, count + 1); line++)
+      lines.push(`line ${String(line)}`);
+    return Promise.resolve(ok({ count, lines }));
+  });
+};
+
+it("opens the Definition peek under the picked line, names the hit, shows its code and pushes the rows after it down", async () => {
   const hit = (path: string, line: number, text: string) => ({
     place: { kind: "repository" as const, path, side: "head" as const, commit: "abc" },
     line,
@@ -1461,6 +1478,7 @@ it("opens the Definition peek under the picked line, names the hit, and pushes t
       hits: [hit("Lib/news.py", 12, "def new(text):"), hit("Lib/old.py", 3, "new = make()")],
     }),
   );
+  fileOf(30);
   const files = await shown(ready(rows.length));
   await vi.waitFor(() => {
     expect(lines()[4]).toBe("2+new line");
@@ -1471,18 +1489,58 @@ it("opens the Definition peek under the picked line, names the hit, and pushes t
   await tick();
   expect(peekText()).toEqual(["new at abc · the PR's head ✕", "Searching for the definition of new…"]);
   await looking;
-  await tick();
+  await vi.waitFor(() => {
+    expect(peekCode()).toContain("*12line 12");
+  });
 
-  expect(peekText()).toEqual(["new Lib/news.py:12 at abc · the PR's head 1 of 2 ✕", "def new(text):"]);
+  expect(peekText()[0]).toBe("new Lib/news.py:12 at abc · the PR's head 1 of 2 ✕");
+  expect(peekCode().slice(0, 3)).toEqual(["1line 1", "2line 2", "3line 3"]);
+  expect(core.definitionCode).toHaveBeenCalledWith({
+    repository: "python/cpython",
+    file: { kind: "repository", path: "Lib/news.py", commit: "abc" },
+    start: 1,
+    end: 201,
+  });
   expect(peekBox()?.style.top).toBe(`${String(5 * 20)}px`);
-  expect(rowAt("▾logo.pngbinary")?.style.top).toBe(`${String(7 * 20)}px`);
+  expect(peekBox()?.style.height).toBe(`${String(18 * 20)}px`);
+  expect(rowAt("▾logo.pngbinary")?.style.top).toBe(`${String(23 * 20)}px`);
 });
 
-it("names a hit outside the Repository by its path on disk", async () => {
-  const place = { kind: "outside" as const, path: "C:/ty/typeshed/stdlib/builtins.pyi" };
+it("scrolls the peek's code inside it, and the diff's rows after it stay where they are", async () => {
+  const place = { kind: "repository" as const, path: "Objects/big.c", side: "base" as const, commit: "abc" };
   core.definitions.mockResolvedValue(
-    ok({ state: "found", hits: [{ place, line: 7, column: 4, text: "def print(" }] }),
+    ok({ state: "found", hits: [{ place, line: 900, column: 0, text: "" }] }),
   );
+  fileOf(2000);
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[4]).toBe("2+new line");
+  });
+  await clickAt(codeOf(4), 2);
+  await files.peekDefinition();
+  const code = await vi.waitFor(() => screen.getByRole("region", { name: "Definition's code" }));
+
+  // The hit's line sits three rows from the top.
+  expect(code.scrollTop).toBe((900 - 1 - 3) * 20);
+  await vi.waitFor(() => {
+    expect(peekCode()).toContain("*900line 900");
+  });
+  code.scrollTop = 1500 * 20;
+  await fireEvent.scroll(code);
+  await vi.waitFor(() => {
+    expect(peekCode()).toContain("1500line 1500");
+  });
+
+  // Only the chunks near what shows are read, not the whole file.
+  expect(core.definitionCode.mock.calls.map(([asked]) => asked.start)).toEqual([801, 1401]);
+  expect(rowAt("▾logo.pngbinary")?.style.top).toBe(`${String(23 * 20)}px`);
+});
+
+it("says why it can't read the hit's file, and shrinks the peek to that line", async () => {
+  const place = { kind: "outside" as const, path: "C:/gone/builtins.pyi" };
+  core.definitions.mockResolvedValue(ok({ state: "found", hits: [{ place, line: 7, column: 4, text: "" }] }));
+  const problem = "Tsugiki can't read C:/gone/builtins.pyi: not found";
+  core.definitionCode.mockResolvedValue({ status: "error", error: { kind: "not_found", message: problem } });
   const files = await shown(ready(rows.length));
   await vi.waitFor(() => {
     expect(lines()[4]).toBe("2+new line");
@@ -1490,12 +1548,38 @@ it("names a hit outside the Repository by its path on disk", async () => {
   await clickAt(codeOf(4), 2);
 
   await files.peekDefinition();
-  await tick();
 
-  expect(peekText()).toEqual([
-    "new C:/ty/typeshed/stdlib/builtins.pyi:7 outside the Repository 1 of 1 ✕",
-    "def print(",
-  ]);
+  await vi.waitFor(() => {
+    expect(peekBox()?.style.height).toBe(`${String(2 * 20)}px`);
+  });
+  expect(peekBox()?.querySelector("[role=alert]")?.textContent).toBe(problem);
+  expect(rowAt("▾logo.pngbinary")?.style.top).toBe(`${String(7 * 20)}px`);
+});
+
+it("names a hit outside the Repository by its whole path on disk, in place of a commit", async () => {
+  const place = { kind: "outside" as const, path: "C:/ty/typeshed/stdlib/builtins.pyi" };
+  core.definitions.mockResolvedValue(
+    ok({ state: "found", hits: [{ place, line: 7, column: 4, text: "def print(" }] }),
+  );
+  fileOf(10);
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[4]).toBe("2+new line");
+  });
+  await clickAt(codeOf(4), 2);
+
+  await files.peekDefinition();
+  await vi.waitFor(() => {
+    expect(peekCode()).toContain("*7line 7");
+  });
+
+  expect(peekText()[0]).toBe("new C:/ty/typeshed/stdlib/builtins.pyi:7 1 of 1 ✕");
+  expect(core.definitionCode).toHaveBeenCalledWith({
+    repository: "python/cpython",
+    file: { kind: "outside", path: "C:/ty/typeshed/stdlib/builtins.pyi" },
+    start: 1,
+    end: 201,
+  });
 });
 
 it("says how to set ty up, and when no server knows the file's language", async () => {

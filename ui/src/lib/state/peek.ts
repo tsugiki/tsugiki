@@ -4,6 +4,7 @@
 
 import type { Answer, Hit } from "$lib/data/bindings";
 import type { LaidThread } from "./diff-layout";
+import type { HitCode } from "./hit-code.svelte";
 import type { PickedLine, Side } from "./pick";
 
 /** What a lookup found: nothing yet, ty's answer, or why it failed. */
@@ -16,8 +17,9 @@ export interface PeekWords {
   hit?: Hit;
   /** Where the hit is: its path and line. */
   where?: string;
-  /** The commit it is at, as "at abc1234 · the PR's head", or the lookup's while it has no hit. */
-  commit: string;
+  /** The commit it is at, as "at abc1234 · the PR's head", or the lookup's while it has no hit. A hit
+   * outside the Repository has none, and its path is the whole path on disk. */
+  commit?: string;
   /** "1 of N" while there are hits. */
   count?: string;
   /** The line under the header: the hit's text, or what the lookup is doing or found. */
@@ -46,28 +48,41 @@ export function peekWords(peek: Peek): PeekWords {
   return {
     hit,
     where: `${place.path}:${String(hit.line)}`,
-    commit: place.kind === "repository" ? at(place.commit, place.side) : "outside the Repository",
+    ...(place.kind === "repository" && { commit: at(place.commit, place.side) }),
     count: `1 of ${String(answer.hits.length)}`,
     body: hit.text,
   };
 }
 
 /** The peek: the line it opened under, the symbol it looks up, and the commit it looks at, which is the
- * PR's base for a removed line and its head for the rest. */
+ * PR's base for a removed line and its head for the rest. With a hit, it holds the hit's code. */
 export interface Peek {
   at: PickedLine;
   symbol: string;
   side: Side;
   commit: string;
   lookup: Lookup;
+  code?: HitCode;
 }
 
 /** The id that names the peek among the threads of the diff's layout. A thread's id is GitHub's, which
  * never has a space. */
 export const PEEK_ID = "definition peek";
 
-/** The places the peek takes: its header and a line under it. The hit's code comes in #439. */
-export const PEEK_PLACES = 2;
+/** The rows the peek takes while it looks a name up or shows a hit's code: its header and the code under
+ * it, which scrolls inside it (#439). */
+export const PEEK_ROWS = 18;
+
+/** The places `peek` takes in the diff's layout: [`PEEK_ROWS`] while it looks up or shows code, and its
+ * header with a line under it when it only has words to say, as when the hit's file can't be read. */
+export function peekPlaces(peek: Peek): number {
+  const lookup = peek.lookup;
+  const words =
+    lookup.state === "failed" ||
+    (lookup.state === "answered" && peekWords(peek).hit === undefined) ||
+    peek.code?.problem !== undefined;
+  return words ? 2 : PEEK_ROWS;
+}
 
 /** `threads`, in the order they show, with `peek` among them right under its line, above any thread there.
  * The layout places threads under rows and threads under lines apart, so only those of the peek's kind

@@ -122,6 +122,28 @@ impl Default for ReleaseSettings {
     }
 }
 
+/// What the Settings dialog's Apply changed: each table it edited, and nothing for the others, so a hand
+/// edit to anything else made while the dialog was open stays (#520).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Type)]
+#[serde(default)]
+pub struct SettingsChanges {
+    pub status_bar: Option<StatusBarSettings>,
+    pub releases: Option<ReleaseSettings>,
+}
+
+impl SettingsChanges {
+    /// `settings` with these changes made to them.
+    fn made_to(self, mut settings: Settings) -> Settings {
+        if let Some(status_bar) = self.status_bar {
+            settings.status_bar = status_bar;
+        }
+        if let Some(releases) = self.releases {
+            settings.releases = releases;
+        }
+        settings
+    }
+}
+
 /// The `[appearance]` table: whether the window follows the system to its light or dark side, and the theme
 /// of each side (#517). A key Tsugiki can't read takes its default, and `unread_problems` says why: a
 /// theme is too small a thing to lose the rest of `settings.toml` over. An `appearance` that isn't a table
@@ -693,6 +715,14 @@ impl SettingsFiles {
         Ok(())
     }
 
+    /// Saves what the Settings dialog's Apply changed over what the files say now, and reads the files
+    /// again. A hand edit made while the dialog was open stays, unless the dialog changed the same table.
+    pub fn apply(&mut self, changes: SettingsChanges) -> Result<(), Error> {
+        self.reload();
+        let settings = changes.made_to(self.loaded.settings.clone());
+        self.write(&settings)
+    }
+
     /// What the window opens on: the Repository opened most recently that the settings still hold, or else
     /// the first. The others follow in the Repository picker's order: those in `recent` as it lists them,
     /// then the rest in the settings' order, each name once.
@@ -907,6 +937,10 @@ enum Request {
     Reread {
         reply: Sender<Result<SettingsView, Error>>,
     },
+    Apply {
+        changes: SettingsChanges,
+        reply: Sender<Result<SettingsView, Error>>,
+    },
 }
 
 impl SettingsOwner {
@@ -959,6 +993,9 @@ impl SettingsOwner {
                         files.reload();
                         (Ok(files.view()), reply)
                     }
+                    (Ok(files), Request::Apply { changes, reply }) => {
+                        (files.apply(changes).map(|()| files.view()), reply)
+                    }
                     (
                         Err(problem),
                         Request::Add { reply, .. }
@@ -966,7 +1003,8 @@ impl SettingsOwner {
                         | Request::Panes { reply, .. }
                         | Request::Theme { reply, .. }
                         | Request::Open { reply, .. }
-                        | Request::Reread { reply },
+                        | Request::Reread { reply }
+                        | Request::Apply { reply, .. },
                     ) => (Err(problem.clone()), reply),
                 };
                 // Before the answer, so whoever asked finds the change in `view`. Changes come through here
@@ -1044,6 +1082,20 @@ impl SettingsOwner {
         self.ask(Request::Theme { kind, name, reply }, &answer)
     }
 
+    /// Reads both files again, as the Settings dialog opens, so a hand edit made since shows in it and takes
+    /// effect, and answers with what they say now (ADR 0014).
+    pub fn reread(&self) -> Result<SettingsView, Error> {
+        let (reply, answer) = mpsc::channel();
+        self.ask(Request::Reread { reply }, &answer)
+    }
+
+    /// Saves what the Settings dialog's Apply changed (`SettingsFiles::apply`), and answers with what the
+    /// settings say now.
+    pub fn apply(&self, changes: SettingsChanges) -> Result<SettingsView, Error> {
+        let (reply, answer) = mpsc::channel();
+        self.ask(Request::Apply { changes, reply }, &answer)
+    }
+
     /// Makes `name` the open Repository, and answers with what the settings say now.
     pub fn open_repository(&self, name: RepositoryName) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
@@ -1058,10 +1110,7 @@ impl SettingsOwner {
         name: RepositoryName,
         ask_github: &mut dyn FnMut(RepositoryName) -> Result<RepositoryCheck, Error>,
     ) -> Result<NameCheck, Error> {
-        let (reply, answer) = mpsc::channel();
-        let view = self
-            .ask(Request::Reread { reply }, &answer)
-            .unwrap_or_else(|_| self.view());
+        let view = self.reread().unwrap_or_else(|_| self.view());
         view.loaded.settings.check_name(name, ask_github)
     }
 

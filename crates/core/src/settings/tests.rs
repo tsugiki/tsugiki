@@ -441,6 +441,87 @@ fn the_owner_saves_a_picked_theme_and_answers_with_it() {
 }
 
 #[test]
+fn the_owner_reads_a_hand_edit_again_as_the_settings_dialog_opens() {
+    let (folders, root) = temp_folders("owner-reread");
+    let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+    fs::write(folders.settings_file(), "[status_bar]\nvisible = false\n").unwrap();
+
+    let before = owner.view();
+    let answer = owner.reread();
+    fs::remove_dir_all(root).unwrap();
+
+    assert!(before.loaded.settings.status_bar.visible);
+    let loaded = answer.unwrap().loaded;
+    assert_eq!(loaded.settings, hidden());
+    assert_eq!(owner.view().loaded, loaded);
+}
+
+#[test]
+fn the_owner_saves_what_apply_keeps_and_a_restart_reads_it() {
+    let (folders, root) = temp_folders("owner-apply");
+    let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+
+    let answer = owner.apply(SettingsChanges {
+        status_bar: Some(StatusBarSettings { visible: false }),
+        releases: None,
+    });
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+    let restarted = SettingsFiles::load(folders);
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(answer.unwrap().loaded.settings, hidden());
+    assert_eq!(owner.view().loaded.settings, hidden());
+    assert_eq!(after, "[status_bar]\nvisible = false\n");
+    assert_eq!(restarted.loaded().settings, hidden());
+}
+
+#[test]
+fn apply_keeps_a_hand_edit_made_while_the_dialog_was_open_to_what_it_didnt_change() {
+    let (folders, root) = temp_folders("apply-keeps-hand-edit");
+    let mut files = SettingsFiles::load(folders.clone());
+    // While the dialog is open, the user edits other tables by hand, and one the dialog changes too.
+    fs::write(
+        folders.settings_file(),
+        "[diff]\nfiles = \"one\"\n\n[releases]\ncheck = false\n\n[status_bar]\nvisible = false\n",
+    )
+    .unwrap();
+
+    let applied = files.apply(SettingsChanges {
+        status_bar: Some(StatusBarSettings { visible: true }),
+        releases: None,
+    });
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    applied.unwrap();
+    assert_eq!(
+        after,
+        "[diff]\nfiles = \"one\"\n\n[releases]\ncheck = false\n"
+    );
+    let settings = &files.loaded().settings;
+    assert_eq!(settings.diff.files, DiffFiles::One);
+    assert!(!settings.releases.check);
+    assert!(settings.status_bar.visible);
+}
+
+#[test]
+fn apply_over_a_settings_file_that_stopped_parsing_refuses_and_leaves_it_alone() {
+    let (folders, root) = temp_folders("apply-broken");
+    let mut files = SettingsFiles::load(folders.clone());
+    fs::write(folders.settings_file(), "[status_bar\n").unwrap();
+
+    let applied = files.apply(SettingsChanges {
+        status_bar: None,
+        releases: Some(ReleaseSettings { check: false }),
+    });
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    assert!(applied.is_err());
+    assert_eq!(after, "[status_bar\n");
+}
+
+#[test]
 fn a_file_that_doesnt_parse_is_left_alone_and_named_with_its_line() {
     for (name, text) in [
         ("broken", "# Mine.\n[status_bar]\nvisible = = false\n"),
@@ -1197,8 +1278,12 @@ fn without_folders_the_owner_says_what_went_wrong_with_them() {
     let resizing = owner.save_panes(WIDE);
     let opening = owner.open_repository(repository("a/b"));
     let picking = owner.save_theme(ThemeKind::Dark, named("Gruvbox Dark Hard"));
+    let rereading = owner.reread();
+    let applying = owner.apply(SettingsChanges::default());
 
     assert_eq!(picking.unwrap_err(), lost);
+    assert_eq!(rereading.unwrap_err(), lost);
+    assert_eq!(applying.unwrap_err(), lost);
     assert_eq!(adding.unwrap_err(), lost);
     assert_eq!(opening.unwrap_err(), lost);
     assert_eq!(answering.unwrap_err(), lost);

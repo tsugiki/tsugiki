@@ -488,6 +488,38 @@ fn a_theme_the_picker_saves_is_chosen_after_a_restart() {
     assert_eq!(file, "[appearance]\ndark_theme = \"Gruvbox Dark Hard\"\n");
 }
 
+/// The Settings dialog reads a hand edit as it opens (ADR 0014), and what its Apply keeps lasts through a
+/// restart (#520).
+#[test]
+fn settings_reads_a_hand_edit_as_it_opens_and_apply_lasts_through_a_restart() {
+    let (folders, root) = temp_folders("wired-settings-apply");
+    let wired = Wired::start(Ok(folders.clone()), no_network());
+    std::fs::write(folders.settings_file(), "[releases]\ncheck = false\n").unwrap();
+
+    let started = wired.ask("settings", json!({})).unwrap();
+    let reread = wired.ask("reread_settings", json!({})).unwrap();
+    let changes = json!({ "status_bar": { "visible": false } });
+    let applied = wired.ask("apply_settings", json!({ "changes": changes }));
+    drop(wired.stop());
+
+    let restarted = Wired::start(Ok(folders.clone()), no_network());
+    let after = restarted.ask("settings", json!({})).unwrap();
+    drop(restarted.stop());
+    let file = std::fs::read_to_string(folders.settings_file()).unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(started["settings"]["releases"]["check"], true);
+    assert_eq!(reread["settings"]["releases"]["check"], false);
+    assert_eq!(reread["problems"], json!([]));
+    assert_eq!(applied.unwrap()["settings"]["status_bar"]["visible"], false);
+    assert_eq!(after["settings"]["status_bar"]["visible"], false);
+    assert_eq!(after["settings"]["releases"]["check"], false);
+    assert_eq!(
+        file,
+        "[releases]\ncheck = false\n\n[status_bar]\nvisible = false\n"
+    );
+}
+
 #[test]
 fn the_add_dialogs_check_of_a_repository_tsugiki_has_answers_without_github() {
     let (folders, root) = temp_folders("wired-held");

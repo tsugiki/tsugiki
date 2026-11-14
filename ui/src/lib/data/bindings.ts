@@ -131,6 +131,17 @@ export const commands = {
 	 */
 	saveTheme: (kind: ThemeKind, name: string) => typedError<null, Error_Serialize>(__TAURI_INVOKE("save_theme", { kind, name })),
 	/**
+	 *  Reads both settings files again as the Settings dialog opens, so a hand edit made since start-up shows in
+	 *  it and takes effect (ADR 0014). This waits on small files.
+	 */
+	rereadSettings: () => typedError<LoadedSettings_Serialize, Error_Serialize>(__TAURI_INVOKE("reread_settings")),
+	/**
+	 *  Saves the tables the Settings dialog's Apply changed to `settings.toml`, over what the file says now and
+	 *  keeping the rest of it, and answers with the settings in force after. The window previews them already.
+	 *  This waits on small files.
+	 */
+	applySettings: (changes: SettingsChanges_Deserialize) => typedError<LoadedSettings_Serialize, Error_Serialize>(__TAURI_INVOKE("apply_settings", { changes })),
+	/**
 	 *  The rows of a view of a Repository's Workbench, with what its Sidebar shows, in the order `machine.toml`
 	 *  keeps for the list (#592). This waits on the database and never on GitHub (ADR 0018).
 	 */
@@ -2152,6 +2163,30 @@ export type ServerName =
 
 /**  What `settings.toml` holds. A value the file leaves out takes its default. */
 export type Settings = Settings_Serialize | Settings_Deserialize;
+
+/**
+ *  What the Settings dialog's Apply changed: each table it edited, and nothing for the others, so a hand
+ *  edit to anything else made while the dialog was open stays (#520).
+ */
+export type SettingsChanges = SettingsChanges_Serialize | SettingsChanges_Deserialize;
+
+/**
+ *  What the Settings dialog's Apply changed: each table it edited, and nothing for the others, so a hand
+ *  edit to anything else made while the dialog was open stays (#520).
+ */
+export type SettingsChanges_Deserialize = {
+	status_bar?: StatusBarSettings_Deserialize | null,
+	releases?: ReleaseSettings_Deserialize | null,
+};
+
+/**
+ *  What the Settings dialog's Apply changed: each table it edited, and nothing for the others, so a hand
+ *  edit to anything else made while the dialog was open stays (#520).
+ */
+export type SettingsChanges_Serialize = {
+	status_bar: StatusBarSettings_Serialize | null,
+	releases: ReleaseSettings_Serialize | null,
+};
 
 /**  What `settings.toml` holds. A value the file leaves out takes its default. */
 export type Settings_Deserialize = {

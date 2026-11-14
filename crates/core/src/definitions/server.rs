@@ -507,16 +507,20 @@ fn watch(
 /// still loading then answers what it can. One that has ended gives how.
 fn quiescent(events: &Receiver<Event>) -> Option<Exit> {
     let until = Instant::now() + PATIENCE;
+    let mut ended = None;
     while let Ok(event) = events.recv_timeout(until.saturating_duration_since(Instant::now())) {
         match event {
             Event::Status(Status {
                 quiescent: true, ..
-            }) => return None,
-            Event::Exited(exit) => return Some(exit),
+            }) => break,
+            Event::Exited(exit) => {
+                ended = Some(exit);
+                break;
+            }
             Event::Status(_) | Event::Progress(_) | Event::Diagnostics(_) => {}
         }
     }
-    None
+    ended
 }
 
 /// Why a server whose `initialize` failed with `cause` didn't start: how it stopped, if it ended and the

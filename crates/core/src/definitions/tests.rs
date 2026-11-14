@@ -6,7 +6,8 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::json;
 
-use super::testing::{FakeClangd, Fixture, ty};
+use super::server::Ready;
+use super::testing::{FakeClangd, Fixture, Initialize, ty};
 use super::*;
 use crate::diff::FileChange;
 
@@ -790,6 +791,82 @@ fn a_program_that_isnt_a_language_server_stops_and_says_how() {
         stderr_tail.contains("'server' is not a git command"),
         "{stderr_tail}"
     );
+}
+
+#[test]
+fn a_rust_analyzer_outside_a_toolchain_didnt_start_and_says_why() {
+    let fixture = crate_with_a_build_script("definitions-rust-outside");
+    // Its folder's parent holds no `lib/rustlib`, as rustup's proxy in `~/.cargo/bin` doesn't.
+    let program = fixture.checkout.folder.join("rust-analyzer.exe");
+    let checkout = fixture.checkout.clone();
+    let mut owner = owner_of(Sources {
+        servers: Box::new(move |server| {
+            (server == ServerName::RustAnalyzer).then(|| program.clone())
+        }),
+        ..sources(Some(checkout), None)
+    });
+
+    let found = look(&mut owner, &rust_lookup(&fixture, 10, "only_head"));
+
+    let Ok(Answer::Problem {
+        server: ServerName::RustAnalyzer,
+        problem: ServerProblem::DidNotStart { cause },
+    }) = found
+    else {
+        panic!("{found:?}")
+    };
+    assert!(cause.contains("isn't inside a Rust toolchain"), "{cause}");
+}
+
+/// What [`LanguageServer::initialize`] says of a fake clangd that does what `initialize` says with
+/// `initialize`, as a server that waits to be quiescent, as rust-analyzer does.
+fn not_ready(fixture: &Fixture, initialize: Initialize) -> Option<NotReady> {
+    let owner = owner_of(sources(Some(fixture.checkout.clone()), None));
+    let (_fake, client) = FakeClangd::starting(vec![json!(null)], initialize);
+    let mut setup = clangd::setup(&fixture.checkout.folder).unwrap();
+    setup.ready = Ready::Quiescent;
+    let key = (repository(), ServerName::Clangd);
+    let none: [String; 0] = [];
+    let checkout = (fixture.checkout.clone(), none.as_slice());
+    LanguageServer::initialize((setup, client), checkout, news(&owner.own, &key)).err()
+}
+
+#[test]
+fn a_server_that_refuses_initialize_didnt_start_and_one_that_ends_before_it_is_quiescent_stopped() {
+    let fixture = c_files("definitions-initialize");
+
+    let refused = not_ready(&fixture, Initialize::Refuse);
+    let left = not_ready(&fixture, Initialize::AnswerThenLeave);
+
+    let Some(NotReady::Problem(ServerProblem::DidNotStart { cause })) = refused else {
+        panic!("{refused:?}")
+    };
+    assert!(cause.contains("the workspace can't be read"), "{cause}");
+    let stopped = ServerProblem::Stopped {
+        code: Some(0),
+        stderr_tail: String::new(),
+    };
+    assert!(
+        matches!(&left, Some(NotReady::Problem(problem)) if *problem == stopped),
+        "{left:?}"
+    );
+}
+
+#[test]
+fn a_lookup_clangd_fails_says_why_and_the_core_forgets_that_clangd() {
+    let fixture = c_files("definitions-failed-first");
+    let failure = json!({"error": {"code": -32603, "message": "clangd broke"}});
+    let (mut owner, _fake) = fake_clangd_answering(&fixture, vec![failure]);
+
+    let found = look(
+        &mut owner,
+        &c_lookup(&fixture, DiffEnd::Head, 11, "spam_count"),
+    );
+
+    let message = found.unwrap_err().message;
+    assert!(message.starts_with("clangd couldn't answer: "), "{message}");
+    assert!(message.contains("clangd broke"), "{message}");
+    assert!(owner.servers.is_empty());
 }
 
 fn diff_file(path: &str) -> DiffFile {

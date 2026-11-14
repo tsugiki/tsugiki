@@ -720,8 +720,8 @@ impl Owner {
         if !ended {
             return;
         }
+        // The watch on its index ends with the news that its index ended, which comes next.
         let _ended = self.servers.remove(key);
-        self.unwatch(key);
         self.trouble(key, ServerProblem::stopped(exit));
     }
 

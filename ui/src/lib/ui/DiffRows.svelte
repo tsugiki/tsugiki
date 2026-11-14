@@ -542,14 +542,24 @@
           aria-label="Definition peek"
           style:top={`${String(placed.shown * ROW)}px`}
           style:height={`${String(placed.length * ROW)}px`}
+          {@attach (box) => {
+            // Go to definition with several hits hands the list the focus, for the user to pick one (#446).
+            if (!diff.peekWantsFocus) return;
+            diff.peekWantsFocus = false;
+            box.querySelector<HTMLElement>("[role=listbox]")?.focus({ preventScroll: true });
+          }}
         >
           <DefinitionPeek
             peek={block.peek}
+            open={diff.openable}
             onclose={() => {
               diff.closePeek();
             }}
             onhit={(index) => {
               diff.showHit(index);
+            }}
+            onopen={() => {
+              void diff.openHit();
             }}
           />
         </div>

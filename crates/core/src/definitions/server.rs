@@ -561,29 +561,26 @@ impl Watcher {
 
     /// Reads `event`: how far the server's index has got, a header clangd can't find, or how it exited.
     fn read(&mut self, event: &Event) {
-        match event {
-            Event::Progress(progress) => {
-                if let Some(now) = self.watched.index.and_then(|read| read(progress)) {
-                    self.indexing.set(&now);
-                    self.latest = now;
-                    if now.news_since(self.told.0, self.told.1.elapsed()) {
-                        self.told = (now, Instant::now());
-                        (self.news)(News::Indexing);
-                    }
-                }
+        if let Event::Progress(progress) = event
+            && let Some(now) = self.watched.index.and_then(|read| read(progress))
+        {
+            self.indexing.set(&now);
+            self.latest = now;
+            if now.news_since(self.told.0, self.told.1.elapsed()) {
+                self.told = (now, Instant::now());
+                (self.news)(News::Indexing);
             }
-            Event::Diagnostics(diagnostics) => {
-                let headers = self.watched.headers.as_mut();
-                if let Some(problem) = headers.and_then(|headers| headers.problem(diagnostics)) {
-                    (self.news)(News::Troubled(problem));
-                }
-            }
-            Event::Exited(exit) => {
-                // First, so the servers' thread finds this server has ended when it hears.
-                self.indexing.set(&Indexing::Ended);
-                (self.news)(News::Exited(exit.clone()));
-            }
-            Event::Status(_) => {}
+        }
+        if let Event::Diagnostics(diagnostics) = event
+            && let Some(headers) = self.watched.headers.as_mut()
+            && let Some(problem) = headers.problem(diagnostics)
+        {
+            (self.news)(News::Troubled(problem));
+        }
+        if let Event::Exited(exit) = event {
+            // First, so the servers' thread finds this server has ended when it hears.
+            self.indexing.set(&Indexing::Ended);
+            (self.news)(News::Exited(exit.clone()));
         }
     }
 

@@ -498,9 +498,8 @@ fn settings_reads_a_hand_edit_as_it_opens_and_apply_lasts_through_a_restart() {
 
     let started = wired.ask("settings", json!({})).unwrap();
     let reread = wired.ask("reread_settings", json!({})).unwrap();
-    let mut changed = reread["settings"].clone();
-    changed["status_bar"]["visible"] = json!(false);
-    let applied = wired.ask("apply_settings", json!({ "settings": changed }));
+    let changes = json!({ "status_bar": { "visible": false } });
+    let applied = wired.ask("apply_settings", json!({ "changes": changes }));
     drop(wired.stop());
 
     let restarted = Wired::start(Ok(folders.clone()), no_network());

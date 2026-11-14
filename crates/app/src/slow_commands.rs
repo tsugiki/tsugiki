@@ -23,7 +23,7 @@ use tsugiki_core::mirror::{CloneRefusal, MirrorSource};
 use tsugiki_core::repository_settings::{MirrorCost, NameCheck};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{
-    AppearanceSettings, Home, LoadedSettings, PaneLayout, Settings, SettingsOwner,
+    AppearanceSettings, Home, LoadedSettings, PaneLayout, SettingsChanges, SettingsOwner,
 };
 use tsugiki_core::store::StoreReader;
 use tsugiki_core::theme::{ThemeKind, ThemeLibrary, Themes};
@@ -196,15 +196,16 @@ pub(crate) fn reread_settings(owner: State<'_, SettingsOwner>) -> Result<LoadedS
     owner.reread().map(|view| view.loaded)
 }
 
-/// Saves what the Settings dialog's Apply keeps to `settings.toml`, keeping the rest of the file, and answers
-/// with the settings in force after. The window previews them already. This waits on small files.
+/// Saves the tables the Settings dialog's Apply changed to `settings.toml`, over what the file says now and
+/// keeping the rest of it, and answers with the settings in force after. The window previews them already.
+/// This waits on small files.
 #[tauri::command(async)]
 #[specta::specta]
 pub(crate) fn apply_settings(
-    settings: Settings,
+    changes: SettingsChanges,
     owner: State<'_, SettingsOwner>,
 ) -> Result<LoadedSettings, Error> {
-    owner.write(settings).map(|view| view.loaded)
+    owner.apply(changes).map(|view| view.loaded)
 }
 
 /// The rows of a view of a Repository's Workbench, with what its Sidebar shows, in the order `machine.toml`

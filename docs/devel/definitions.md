@@ -34,8 +34,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   The core asks ty where the word is defined, through `tsugiki-lsp`, off the window's thread. Esc or ✕
   closes the peek and gives the focus back to the diff.
 - Until Settings can pick it (#683), ty's binary comes from `[language_servers.ty] path` in `machine.toml`.
-  A relative path starts at `machine.toml`'s folder. We test with ty 0.0.103, which `just fetch-ty` fetches
-  for the tests.
+  A relative path starts at `machine.toml`'s folder. We test with ty 0.0.103, which `just fetch-ty` fetches.
+  The tests read its path from `TSUGIKI_TY`, which `just cargo-test` and `just rust-coverage` set.
 - Each Repository gets its own ty. It starts when a PR that changes a `.py` or `.pyi` file opens, once the
   Lookup checkout is at that PR, and never when Tsugiki starts. A lookup that comes first starts it too. A
   PR at other commits gets a new ty, as the checkout has moved, and Tsugiki stops each ty when it quits.

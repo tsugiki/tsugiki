@@ -134,7 +134,7 @@ The big ones, in the order data passes through them:
 | `patch_ids.rs` | Per-file patch-ids, and which files changed between the reviewed commit and the head, for the Stale review check. |
 | `mirror.rs`, `mirror/` | Cloning, fetching PR heads, keeping the commits the user's Reviews covered, reading patch-ids, upkeep, moving the Lookup checkout (`mirror/lookup.rs`). |
 | `diff.rs`, `diff/` | A PR's diff from its Mirror, its per-file patch-ids, NEWS entries, find in the diff, and the Highlighter. |
-| `definitions.rs`, `definitions/` | Where a name is defined, which it asks ty through `tsugiki-lsp`, in the Lookup checkout ([ADR 0020](adr/0020-go-to-definition-asks-a-language-server-which-reads-a-lookup-checkout.md)). |
+| `definitions.rs`, `definitions/` | Where a name is defined, which it asks a language server through `tsugiki-lsp`, in the Lookup checkout ([ADR 0020](adr/0020-go-to-definition-asks-a-language-server-which-reads-a-lookup-checkout.md)). Each server has a module of its own: `definitions/ty.rs` for Python. |
 | `highlight.rs`, `highlight/` | tree-sitter highlighting, one table row per language ([docs/highlighting.md](highlighting.md)). |
 | `session.rs` | The session thread and the messages it takes. |
 | `status.rs` | App-wide status and the `StatusBoard` that announces it. |

@@ -1707,7 +1707,9 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     let (folders, root) = temp_folders("wiring-offline-definitions");
     let head = mirror_with_pr_1(&folders, &root);
     someone_elses_pr_1(&folders, &head);
-    let ty = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tools/ty-0.0.103/ty");
+    // The ty that `just cargo-test` and `just rust-coverage` fetch.
+    let ty = Path::new(&std::env::var_os("TSUGIKI_TY").unwrap_or_default()).to_owned();
+    assert!(ty.is_file(), "TSUGIKI_TY={ty:?}: see just fetch-ty");
     let machine = format!("[language_servers.ty]\npath = '{}'\n", ty.display());
     std::fs::write(folders.machine_file(), machine).unwrap();
     let wired = Wired::start(Ok(folders), no_network());

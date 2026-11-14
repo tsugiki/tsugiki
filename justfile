@@ -103,7 +103,8 @@ vitest:
 cargo-test:
     npm run cargo-test
 
-# Fetch the ty that the Rust tests start into target/tools, unless it is there
+# Fetch the ty that the Rust tests start into target/tools, unless it is there, and print the path for
+# TSUGIKI_TY
 fetch-ty:
     npm run fetch-ty
 

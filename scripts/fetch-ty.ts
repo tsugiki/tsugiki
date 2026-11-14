@@ -1,15 +1,15 @@
 // Fetches the ty we test Go to definition with into target/tools, checks its archive's checksum, and
-// unpacks it there. The core's tests that start ty read it from that folder, and CI runs this before them.
-// Tsugiki itself downloads nothing: the user supplies each language server (ADR 0020).
+// unpacks it there, unless it is there already. Tsugiki itself downloads nothing: the user supplies each
+// language server (ADR 0020).
 //
-// It does nothing when that ty is there already.
+// The Rust tests that start ty read its path from `TSUGIKI_TY`. Given a command, this runs it with that set,
+// as `npm run cargo-test` and `npm run rust-coverage` do. Alone, it prints the path to set it to.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-/** The version the tests pin, which `crates/core/src/definitions/testing.rs` and the offline lookup test in
- * `crates/app/src/wiring/tests.rs` name too. */
+/** The version the tests pin. */
 const VERSION = "0.0.103";
 const FOLDER = resolve(`target/tools/ty-${VERSION}`);
 
@@ -81,3 +81,12 @@ async function main(): Promise<void> {
 }
 
 await main();
+const ty = join(FOLDER, program);
+const [command, ...args] = process.argv.slice(2);
+if (command === undefined) {
+  console.log(`Set TSUGIKI_TY=${ty} to run the Rust tests with cargo alone.`);
+} else {
+  const run = spawnSync(command, args, { stdio: "inherit", env: { ...process.env, TSUGIKI_TY: ty } });
+  if (run.error !== undefined) throw run.error;
+  process.exit(run.status ?? 1);
+}

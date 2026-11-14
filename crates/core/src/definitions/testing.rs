@@ -1,24 +1,20 @@
 //! A Repository with a PR, a Lookup checkout at its base as the Mirror worker leaves one, built with the
 //! real git (ADR 0009), and the ty the tests start.
 
-use std::fs;
 use std::path::{Path, PathBuf};
+use std::{env, fs};
 
 use tsugiki_test_git::git;
 
-use super::plain;
 use crate::github::CommitSha;
 use crate::mirror::{LookupAt, LookupCheckout};
 use crate::testing::temp_path;
 
-/// The ty that `scripts/fetch-ty.ts` fetches, the version the tests pin.
+/// The ty that `TSUGIKI_TY` names, which `just cargo-test` and `just rust-coverage` set to the one
+/// `scripts/fetch-ty.ts` fetches.
 pub(crate) fn ty() -> PathBuf {
-    let name = if cfg!(windows) { "ty.exe" } else { "ty" };
-    let ty = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/tools/ty-0.0.103")
-        .join(name);
-    let ty = plain(&ty);
-    assert!(ty.exists(), "{ty:?} isn't there: run `just fetch-ty`");
+    let ty = PathBuf::from(env::var_os("TSUGIKI_TY").unwrap_or_default());
+    assert!(ty.is_file(), "TSUGIKI_TY={ty:?}: see just fetch-ty");
     ty
 }
 

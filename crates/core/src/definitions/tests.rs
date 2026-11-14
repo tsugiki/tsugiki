@@ -255,7 +255,7 @@ fn a_pr_at_other_commits_gets_a_new_ty() {
     let fixture = cpython("definitions-moved");
     let other = another("definitions-moved-other");
     let mut owner = opened(&fixture);
-    let first = owner.servers.get(&repository()).map(|ty| ty.at.clone());
+    let first = owner.servers.get(&repository()).map(|ty| ty.at().clone());
     let source_of_other = other.checkout.clone();
     owner.sources.checkout = Box::new(move |_| Some(source_of_other.clone()));
 
@@ -265,7 +265,7 @@ fn a_pr_at_other_commits_gets_a_new_ty() {
     };
     owner.opened(&repository(), pr);
 
-    let now = owner.servers.get(&repository()).map(|ty| ty.at.clone());
+    let now = owner.servers.get(&repository()).map(|ty| ty.at().clone());
     assert_eq!(first, Some(fixture.checkout.at.clone()));
     assert_eq!(now, Some(other.checkout.at.clone()));
 }
@@ -292,7 +292,7 @@ fn a_lookup_at_commits_the_checkout_isn_t_at_leaves_the_running_ty_alone() {
     let answer = owner.look_up(&lookup(&other, DiffEnd::Head, 12, "eggs"));
 
     assert!(answer.is_err());
-    let running = owner.servers.get(&repository()).map(|ty| ty.at.clone());
+    let running = owner.servers.get(&repository()).map(|ty| ty.at().clone());
     assert_eq!(running, Some(fixture.checkout.at.clone()));
 }
 
@@ -341,7 +341,7 @@ fn a_ty_that_stopped_fails_its_lookup_and_the_next_one_starts_it_again() {
     let mut owner = opened(&fixture);
     let at_head = lookup(&fixture, DiffEnd::Head, 12, "only_head");
     let running = owner.servers.get(&repository()).unwrap();
-    running.server.shutdown().wait().unwrap();
+    running.shutdown().wait().unwrap();
 
     let failed = owner.look_up(&at_head);
     let again = hits(owner.look_up(&at_head));
@@ -439,33 +439,4 @@ fn a_pr_whose_ty_doesnt_start_is_logged_and_its_lookup_says_why() {
     let message = found.unwrap_err().message;
     let start = "Tsugiki couldn't start ty at ";
     assert!(message.starts_with(start), "{message}");
-}
-
-#[test]
-fn cpython_s_layout_gives_ty_lib_and_the_version_and_another_gives_it_nothing() {
-    let fixture = cpython("definitions-settings");
-    let other = Fixture::new("definitions-settings-other", &[("a.py", "")], &[]);
-
-    let environment = json!({"root": ["Lib"], "python-version": "3.14"});
-    assert_eq!(
-        settings(&fixture.checkout.folder),
-        json!({"ty": {"configuration": {"environment": environment}}})
-    );
-    assert_eq!(settings(&other.checkout.folder), json!({}));
-}
-
-#[test]
-fn a_patchlevel_without_its_version_gives_lib_alone() {
-    let fixture = Fixture::new(
-        "definitions-no-version",
-        &[("Include/patchlevel.h", "#define PY_MAJOR_VERSION 3\n")],
-        &[],
-    );
-
-    assert_eq!(
-        settings(&fixture.checkout.folder),
-        json!({"ty": {"configuration": {"environment": {"root": ["Lib"]}}}})
-    );
-    assert_eq!(python_version("#define PY_MINOR_VERSION 15\n"), None);
-    assert_eq!(python_version(PATCHLEVEL).as_deref(), Some("3.14"));
 }

@@ -203,7 +203,8 @@ it("goes to the hit it shows on Open, and on Enter or F12 while it has the focus
   const onopen = vi.fn();
   const diff = vi.fn<(e: KeyboardEvent) => void>();
   window.addEventListener("keydown", diff);
-  render(DefinitionPeek, { peek: showing(hits, 1), onclose: () => {}, onhit: () => {}, onopen });
+  const props = { onclose: () => {}, onhit: () => {}, onopen };
+  render(DefinitionPeek, { peek: showing(hits, 1), open: "ready", ...props });
 
   await fireEvent.click(screen.getByRole("button", { name: "Open" }));
   await fireEvent.keyDown(screen.getByRole("listbox"), { key: "Enter" });
@@ -217,19 +218,17 @@ it("goes to the hit it shows on Open, and on Enter or F12 while it has the focus
   expect(diff.mock.calls.map(([e]) => [e.key, e.altKey])).toEqual([["F12", true]]);
 });
 
-it("offers Open only on a hit in the Repository, as one outside it has nowhere to go", async () => {
-  const outside: Hit = {
-    place: { kind: "outside", path: "C:/ty/builtins.pyi" },
-    line: 1,
-    column: 0,
-    text: "",
-  };
+it("offers Open as the tab says, and waits while the tab finds the hit's row", async () => {
   const props = { onclose: () => {}, onhit: () => {}, onopen: () => {} };
-  const shown = render(DefinitionPeek, { peek: peekWith({ state: "looking" }), ...props });
-  const looking = screen.queryByRole("button", { name: "Open" });
-  await shown.rerender({ peek: showing([outside], 0) });
+  const shown = render(DefinitionPeek, { peek: showing(hits, 0), ...props });
+  const nowhere = screen.queryByRole("button", { name: "Open" });
+  await shown.rerender({ open: "ready" });
+  const open = screen.getByRole<HTMLButtonElement>("button", { name: "Open" });
+  const ready = open.disabled;
+  await shown.rerender({ open: "going" });
 
-  expect(looking).toBeNull();
-  expect(screen.getByText("1 of 1")).toBeDefined();
-  expect(screen.queryByRole("button", { name: "Open" })).toBeNull();
+  expect(nowhere).toBeNull();
+  expect(ready).toBe(false);
+  expect(open.disabled).toBe(true);
+  expect(open.title).toBe("Go to this definition (Enter, F12)");
 });

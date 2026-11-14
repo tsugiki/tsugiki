@@ -13,10 +13,19 @@
 
   let {
     peek,
+    open,
     onclose,
     onhit,
     onopen,
-  }: { peek: Peek; onclose: () => void; onhit: (index: number) => void; onopen: () => void } = $props();
+  }: {
+    peek: Peek;
+    /** What Open does for the hit shown, which the tab decides: go, or wait while it finds the hit's row.
+     * Nothing offers no Open, as for a hit with nowhere to go. */
+    open?: "ready" | "going" | undefined;
+    onclose: () => void;
+    onhit: (index: number) => void;
+    onopen: () => void;
+  } = $props();
 
   /** The time the seconds of a lookup that waits count to. */
   let now = $state(Date.now());
@@ -76,9 +85,14 @@
   {#if words.count !== undefined}
     <span class="muted">{words.count}</span>
   {/if}
-  <!-- A hit outside the Repository has nowhere to go. -->
-  {#if found?.hit.place.kind === "repository"}
-    <button type="button" class="open" title="Go to this definition (Enter)" onclick={onopen}>Open</button>
+  {#if open !== undefined}
+    <button
+      type="button"
+      class="open"
+      title="Go to this definition (Enter, F12)"
+      disabled={open === "going"}
+      onclick={onopen}>Open</button
+    >
   {/if}
   <button type="button" class="close" aria-label="Close" title="Close (Escape)" onclick={onclose}>✕</button>
 </div>
@@ -166,6 +180,12 @@
 
   .open + .close {
     margin-left: 0;
+  }
+
+  /* While the tab finds the hit's row. */
+  .open:disabled {
+    opacity: 0.5;
+    cursor: progress;
   }
 
   /* The rows under the header: the code, which scrolls inside them, and the list of hits on its right. */

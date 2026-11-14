@@ -1733,6 +1733,40 @@ it("lists the hits beside the code, and shows the one a click or ↑ ↓ picks",
   expect(screen.getByRole("region", { name: "Diff" }).scrollTop).toBe(0);
 });
 
+it("gives the list the focus when Go to definition opens the peek on several hits, and Enter goes", async () => {
+  const hit = (path: string, line: number) => ({
+    place: { kind: "repository" as const, path, side: "head" as const, commit: "head" },
+    line,
+    column: 0,
+    text: `new = ${String(line)}`,
+  });
+  core.definitions.mockResolvedValue(
+    ok({ state: "found", hits: [hit("Lib/odd.py", 5), hit("news.txt", 2)] }),
+  );
+  core.pullRequestRow.mockResolvedValue(ok(4));
+  fileOf(30);
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[2]).toBe("11 Notes");
+  });
+  await clickAt(codeOf(2), 2);
+
+  await files.goToDefinition();
+  const list = await vi.waitFor(() => screen.getByRole("listbox", { name: "Definitions" }));
+  await tick();
+  expect(document.activeElement).toBe(list);
+  expect(files.peekWantsFocus).toBe(false);
+  await fireEvent.keyDown(list, { key: "ArrowDown" });
+  await fireEvent.keyDown(list, { key: "Enter" });
+  await vi.waitFor(() => {
+    expect(mark()).not.toBeNull();
+  });
+
+  expect(core.pullRequestRow).toHaveBeenCalledWith(expect.objectContaining({ path: "news.txt", line: 2 }));
+  expect(peekBox()).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("region", { name: "Diff" }));
+});
+
 it("opens the peek on Go to definition with several hits, and Open goes to the hit picked", async () => {
   const hit = (path: string, line: number) => ({
     place: { kind: "repository" as const, path, side: "head" as const, commit: "head" },

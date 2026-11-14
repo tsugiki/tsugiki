@@ -12,7 +12,7 @@ import {
   type DiffThread,
   type PrFiles,
 } from "./pr-files.svelte";
-import { PEEK_ID, PEEK_ROWS, type IndexNews } from "./peek";
+import { PEEK_ID, PEEK_ROWS, type IndexNews, type Peek } from "./peek";
 import type { YourReview } from "./workbench.svelte";
 
 type Heard = (event: { payload: unknown }) => void;
@@ -2565,6 +2565,92 @@ it("shows what came of the index while Go to definition found the row, once it o
   expect(files.peek?.indexing).toBeUndefined();
 });
 
+/** The hits `peek` lists, once its lookup found them. */
+const hitsIn = (peek: Peek | undefined) =>
+  peek?.lookup.state === "answered" && peek.lookup.answer.state === "found"
+    ? peek.lookup.answer.hits
+    : undefined;
+
+it("counts the hits Go to definition goes to after what the core said of the index before the answer", async () => {
+  const answer = heldLookup();
+  core.definitions.mockResolvedValueOnce(hitsFound(hitAt("a.py", "head", 9)));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 3 }, null, 13, false);
+
+  // Two hits the index found, before the answer's one: the peek lists them.
+  const going = files.goToDefinition();
+  indexOf(0)?.onmessage({
+    state: "built",
+    hits: [hitAt("Lib/a.py", "base", 3), hitAt("Lib/b.py", "base", 5)],
+  });
+  answer(hitsFound(hitAt("Lib/shapes.py", "base", 3)));
+  await going;
+  const listed = hitsIn(files.peek);
+  files.closePeek();
+  // One hit the index found, before the answer's two: it goes there.
+  const twice = heldLookup();
+  const again = files.goToDefinition();
+  indexOf(1)?.onmessage({ state: "built", hits: [hitAt("Lib/shapes.py", "base", 3)] });
+  twice(hitsFound(hitAt("Lib/a.py", "base", 3), hitAt("Lib/b.py", "base", 5)));
+  await again;
+
+  expect(listed?.map((hit) => hit.place.path)).toEqual(["Lib/a.py", "Lib/b.py"]);
+  expect(files.peek).toBeUndefined();
+  expect(files.fileView?.place.path).toBe("Lib/shapes.py");
+});
+
+it("shows the places the index names while Go to definition finds the row, rather than go to the old hit", async () => {
+  core.definitions.mockResolvedValue(hitsFound(hitAt("a.py", "head", 9)));
+  let rowFound: (row: unknown) => void = () => {};
+  core.pullRequestRow.mockReturnValueOnce(
+    new Promise((resolve) => {
+      rowFound = resolve;
+    }),
+  );
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  const going = files.goToDefinition();
+  await vi.waitFor(() => {
+    expect(core.pullRequestRow).toHaveBeenCalled();
+  });
+
+  indexOf(0)?.onmessage({
+    state: "built",
+    hits: [hitAt("Objects/a.c", "base", 3), hitAt("a.py", "head", 9)],
+  });
+  rowFound(ok(4));
+  await going;
+
+  expect(hitsIn(files.peek)?.map((hit) => hit.place.path)).toEqual(["Objects/a.c", "a.py"]);
+  expect(files.peekWantsFocus).toBe(true);
+  expect(files.marked).toBeUndefined();
+  expect(files.jump).toBeUndefined();
+  expect(core.cancelDefinitions).not.toHaveBeenCalled();
+});
+
+it("goes to the hit while the index only says how far it has got", async () => {
+  core.definitions.mockResolvedValue(hitsFound(hitAt("a.py", "head", 9)));
+  let rowFound: (row: unknown) => void = () => {};
+  core.pullRequestRow.mockReturnValueOnce(
+    new Promise((resolve) => {
+      rowFound = resolve;
+    }),
+  );
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  const going = files.goToDefinition();
+  await vi.waitFor(() => {
+    expect(core.pullRequestRow).toHaveBeenCalled();
+  });
+
+  indexOf(0)?.onmessage(building(120));
+  rowFound(ok(4));
+  await going;
+
+  expect(files.marked).toEqual({ row: 4, side: "head" });
+  expect(files.peek).toBeUndefined();
+});
+
 it("cancels a lookup when its peek closes, and what the core says of the index then changes nothing", async () => {
   core.definitions.mockResolvedValue(ok(answerWith("Include/spam.h", 3)));
   const files = await pickable();
@@ -2699,6 +2785,9 @@ it("opens the peek with the list on several hits, and goes to none of them", asy
     lookup: { state: "answered", answer: { state: "found", hits } },
   });
   expect(files.peek?.code?.index).toBe(0);
+  expect(files.openable).toBe("ready");
+  // The list takes the focus, so ↑ ↓ pick a hit and Enter or F12 go to it.
+  expect(files.peekWantsFocus).toBe(true);
   expect(core.pullRequestRow).not.toHaveBeenCalled();
   expect(files.marked).toBeUndefined();
   expect(files.fileView).toBeUndefined();
@@ -2751,9 +2840,40 @@ it("opens the file view on the hit the peek shows, with the code the peek read f
   expect(core.cancelDefinitions.mock.calls).toEqual([[ticketOf(0)]]);
 });
 
-it("leaves the peek as it is on a hit with nowhere to go: outside the Repository, or on no row", async () => {
+it("offers no Open on a hit outside the Repository, and goes nowhere from it", async () => {
+  core.definitions.mockResolvedValue(hitsFound(outsideHit, hitAt("a.py", "head", 9)));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.goToDefinition();
+
+  const openable = files.openable;
+  await files.openHit();
+
+  expect(openable).toBeUndefined();
+  expect(files.peek?.code?.index).toBe(0);
+  expect(files.going).toBe(false);
+  expect(files.notice).toBeUndefined();
+  expect(core.pullRequestRow).not.toHaveBeenCalled();
+  expect(core.cancelDefinitions).not.toHaveBeenCalled();
+});
+
+it("opens the peek on a single hit outside the Repository, which has nowhere else to go", async () => {
+  core.definitions.mockResolvedValue(hitsFound(outsideHit));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+
+  await files.goToDefinition();
+
+  expect(hitsIn(files.peek)).toEqual([outsideHit]);
+  // A single hit has no list to pick from.
+  expect(files.peekWantsFocus).toBe(false);
+  expect(core.pullRequestRow).not.toHaveBeenCalled();
+  expect(files.fileView).toBeUndefined();
+});
+
+it("says over the diff for a moment that no line shows a hit whose row the core can't find", async () => {
   const hits = ["gone.py", "error.py", "thrown.py"].map((path) => hitAt(path, "head", 9));
-  core.definitions.mockResolvedValue(hitsFound(outsideHit, ...hits));
+  core.definitions.mockResolvedValue(hitsFound(...hits));
   core.pullRequestRow.mockResolvedValueOnce(ok(null));
   core.pullRequestRow.mockResolvedValueOnce({ status: "error", error: { kind: "internal", message: "no" } });
   core.pullRequestRow.mockRejectedValueOnce(new Error("The window lost the core."));
@@ -2761,24 +2881,50 @@ it("leaves the peek as it is on a hit with nowhere to go: outside the Repository
   const files = await pickable("abc", changed);
   files.pickWord({ kind: "row", row: 2 }, null, 6, false);
   await files.goToDefinition();
+  vi.useFakeTimers();
 
-  const shown = [];
-  for (const index of [0, 1, 2, 3]) {
+  const said = [];
+  for (const index of [0, 1, 2]) {
     files.showHit(index);
     await files.openHit();
-    shown.push(files.peek?.code?.index);
+    said.push([files.peek?.code?.index, files.notice]);
   }
+  vi.advanceTimersByTime(NOTICE_MS);
 
-  expect(shown).toEqual([0, 1, 2, 3]);
-  // A hit outside the Repository has no row to ask for.
-  expect(core.pullRequestRow.mock.calls.map(([line]) => line.path)).toEqual([
-    "gone.py",
-    "error.py",
-    "thrown.py",
+  expect(said).toEqual([
+    [0, "No line of the diff shows gone.py:9."],
+    [1, "No line of the diff shows error.py:9."],
+    [2, "No line of the diff shows thrown.py:9."],
   ]);
+  expect(files.notice).toBeUndefined();
+  expect(files.going).toBe(false);
   expect(files.marked).toBeUndefined();
   expect(files.fileView).toBeUndefined();
   expect(core.cancelDefinitions).not.toHaveBeenCalled();
+});
+
+it("goes while it finds the hit's row, and takes no other Open until it has", async () => {
+  core.definitions.mockResolvedValue(hitsFound(hitAt("a.py", "head", 9), hitAt("a.py", "head", 8)));
+  let row: (row: unknown) => void = () => {};
+  core.pullRequestRow.mockReturnValue(
+    new Promise((resolve) => {
+      row = resolve;
+    }),
+  );
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.goToDefinition();
+
+  const opening = files.openHit();
+  const whileGoing = [files.going, files.openable];
+  await files.openHit();
+  row(ok(4));
+  await opening;
+
+  expect(whileGoing).toEqual([true, "going"]);
+  expect(core.pullRequestRow).toHaveBeenCalledOnce();
+  expect(files.going).toBe(false);
+  expect(files.marked).toEqual({ row: 4, side: "head" });
 });
 
 it("goes to no hit while there is no peek, or no hit in it", async () => {

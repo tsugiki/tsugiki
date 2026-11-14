@@ -123,12 +123,18 @@ const nextTicket = () => (lastTicket += 1);
 /** The place `answer` names at `index`, counted from 0, if it found any there. */
 const hitAt = (answer: Answer, index: number) => (answer.state === "found" ? answer.hits[index] : undefined);
 
+/** The hits `peek` lists, once its lookup found them. */
+const hitsOf = (peek: Peek | undefined): Hit[] | undefined => {
+  const lookup = peek?.lookup;
+  return lookup?.state === "answered" && lookup.answer.state === "found" ? lookup.answer.hits : undefined;
+};
+
 /** The hit `peek` shows and its code, while it shows one. */
 function shownHit(peek: Peek | undefined): { hit: Hit; code: HitCode } | undefined {
   const code = peek?.code;
-  const answer = peek?.lookup.state === "answered" ? peek.lookup.answer : undefined;
-  const hit = code && answer && hitAt(answer, code.index);
-  return hit && code && { hit, code };
+  if (code === undefined) return undefined;
+  const hit = hitsOf(peek)?.[code.index];
+  return hit && { hit, code };
 }
 
 /** Whether two hits are at the same place and line. */
@@ -236,8 +242,12 @@ export class PrFilesState {
   /** The line Go to definition landed on, at the side of the diff its hit is at, which the diff marks for
    * a moment (#444). Each landing is a new one, so the mark shows again on the same line. */
   marked = $state.raw<Landing>();
-  /** Whether Go to definition looks a word up, which Escape stops. */
+  /** Whether Go to definition looks a word up, or Open in the peek finds its hit's row, which Escape
+   * stops. */
   going = $state(false);
+  /** Whether the peek's list should take the focus, as Go to definition opened it with several hits for the
+   * user to pick from (#446). */
+  peekWantsFocus = $state(false);
   /** A line over the diff while Go to definition looks a word up, or for a moment once it found nothing. */
   notice = $state<string>();
   /** Why the core couldn't search, which the search box says. */
@@ -937,7 +947,7 @@ export class PrFilesState {
     const looked = await this.#lookUp((looking) => {
       this.#peek = looking;
     });
-    if (looked !== undefined) this.#showPeek(looked.peek, looked.lookup);
+    if (looked !== undefined) this.#peek = this.#withHeld(looked.peek, looked.lookup);
   }
 
   /** Goes to where the picked word is defined (#444), with the lookup `Alt+F12` runs. A single hit on a
@@ -955,9 +965,10 @@ export class PrFilesState {
     });
     if (looked === undefined) return;
     this.going = false;
-    const { peek, lookup, view } = looked;
-    const answer = peek.lookup.state === "answered" ? peek.lookup.answer : undefined;
-    const hits = answer?.state === "found" ? answer.hits : undefined;
+    const { lookup, view } = looked;
+    // What the core said of the server's index before the answer may name other places (#680).
+    const peek = this.#withHeld(looked.peek, lookup);
+    const hits = hitsOf(peek);
     if (hits?.length === 0) {
       this.#say(`No definition of ${peek.symbol} at ${peek.commit.slice(0, 7)}.`, NOTICE_MS);
       this.#unwatch(lookup);
@@ -965,27 +976,48 @@ export class PrFilesState {
     }
     const only = hits?.length === 1 ? shownHit(peek) : undefined;
     const goal = only && (await this.#goal(only.hit, view, only.code));
-    if (lookup !== this.#lookups) return;
+    if (lookup !== this.#lookups || this.#diff(this.view) !== this.#diff(view)) return;
     this.#say(undefined);
-    if (goal === undefined) {
-      this.#showPeek(peek, lookup);
+    // The places the core names once the index is built, while it found the row, replace the hit, which
+    // the peek then shows rather than go to the old one.
+    const now = this.#withHeld(peek, lookup);
+    if (goal === undefined || hitsOf(now) !== hits) {
+      this.#peek = now;
+      this.peekWantsFocus = (hitsOf(now)?.length ?? 0) > 1;
       return;
     }
     this.#go(goal, view, lookup);
   }
 
+  /** What Open in the peek's header does for the hit the peek shows (#446): go, or wait while it finds the
+   * hit's row. A hit outside the Repository has nowhere to go, so the peek offers no Open. */
+  get openable(): "ready" | "going" | undefined {
+    const shown = shownHit(this.#peek);
+    if (shown === undefined || !inRepository(shown.hit)) return undefined;
+    return this.going ? "going" : "ready";
+  }
+
   /** Goes to the hit the peek shows, as Go to definition goes to a single hit, and closes the peek (#446).
-   * A landing in the diff hands the diff the focus the peek had. A hit with nowhere to go leaves the peek
-   * as it is: one outside the Repository, or on a line of a changed file that no hunk shows, until #445.
-   * So does a peek that shows another hit, or has closed, by the time the core found the hit's row. */
+   * A landing in the diff hands the diff the focus the peek had. While the core finds the hit's row it is
+   * `going`, and another Open waits for it. A row the core can't find, as on a line of a changed file that
+   * no hunk shows until #445, is said over the diff for a moment, and the peek stays. A peek that shows
+   * another hit by then, or a newer diff, leaves it be, and a hit outside the Repository goes nowhere. */
   async openHit() {
-    const peek = this.#peek;
     const view = this.view;
-    const shown = shownHit(peek);
-    if (shown === undefined || view?.state !== "ready") return;
+    const shown = shownHit(this.#peek);
+    if (this.going || shown === undefined || !inRepository(shown.hit) || view?.state !== "ready") return;
     const lookup = this.#lookups;
+    this.going = true;
     const goal = await this.#goal(shown.hit, view, shown.code);
-    if (goal === undefined || lookup !== this.#lookups || this.#peek?.code !== shown.code) return;
+    // Escape, a newer lookup or a newer diff stopped it.
+    if (lookup !== this.#lookups) return;
+    this.going = false;
+    if (this.#peek?.code !== shown.code || this.#diff(this.view) !== this.#diff(view)) return;
+    if (goal === undefined) {
+      const { place, line } = shown.hit;
+      this.#say(`No line of the diff shows ${place.path}:${String(line)}.`, NOTICE_MS);
+      return;
+    }
     this.#go(goal, view, lookup);
     if (goal.kind === "diff") this.diffWantsFocus = true;
   }
@@ -1057,6 +1089,8 @@ export class PrFilesState {
     const ready = view?.state === "ready" && view;
     const file = ready && pick && ready.files[pick.file];
     if (pick === undefined || view?.state !== "ready" || !file) return undefined;
+    // A peek a newer lookup opens is for that lookup to focus.
+    this.peekWantsFocus = false;
     this.#lookups = nextTicket();
     const lookup = this.#lookups;
     const commit = pick.side === "base" ? view.base : view.head;
@@ -1114,15 +1148,14 @@ export class PrFilesState {
     else this.#news = { lookup, news };
   }
 
-  /** Shows `peek`, the answer of lookup `lookup`, with what the core said of the server's index before it
-   * showed. */
-  #showPeek(peek: Peek, lookup: number) {
+  /** `peek`, the answer of lookup `lookup`, with what the core said of the server's index that no peek has
+   * shown yet, which it then lets go of. */
+  #withHeld(peek: Peek, lookup: number): Peek {
     const held = this.#news;
     this.#news = undefined;
-    this.#peek =
-      peek.lookup.state === "answered" && held?.lookup === lookup
-        ? this.#withNews(peek, peek.lookup.answer, held.news)
-        : peek;
+    return peek.lookup.state === "answered" && held?.lookup === lookup
+      ? this.#withNews(peek, peek.lookup.answer, held.news)
+      : peek;
   }
 
   /** Tells the core that no peek shows lookup `lookup`'s answer, so it stops watching the index of the
@@ -1158,8 +1191,7 @@ export class PrFilesState {
    * unless its file couldn't be read: that reads it again. */
   showHit(index: number) {
     const peek = this.#peek;
-    const answer = peek?.lookup.state === "answered" ? peek.lookup.answer : undefined;
-    const hit = answer?.state === "found" ? answer.hits[index] : undefined;
+    const hit = hitsOf(peek)?.[index];
     const shown = peek?.code?.index === index && peek.code.problem === undefined;
     if (peek === undefined || hit === undefined || shown) return;
     this.#peek = { ...peek, code: new HitCode(this.#repository, hit, index) };
@@ -1179,6 +1211,7 @@ export class PrFilesState {
     if (this.going || this.#peek !== undefined) void commands.cancelDefinitions(this.#lookups);
     this.#peek = undefined;
     this.#news = undefined;
+    this.peekWantsFocus = false;
     this.#lookups = nextTicket();
     this.#stopGoing();
   }

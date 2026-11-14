@@ -102,8 +102,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   runs, at the same commit. While it looks, the line over the diff says "Searching for the definition of
   X…", a peek on another word closes, and Esc stops it.
 - With several hits it opens the Definition peek with their list, as VS Code does, and goes nowhere until
-  the user picks one. In the peek, Enter or `F12` goes to the hit it shows, as a single hit would, and
-  closes the peek, and so does Open in its header. A landing in the diff gives the diff the focus.
+  the user picks one. The list takes the focus, so ↑ and ↓ pick a hit. In the peek, Enter or `F12` goes to
+  the hit it shows, as a single hit would, and closes the peek, and so does Open in its header. Open waits,
+  dimmed, while the core finds the hit's row, and takes no second press until then. A landing in the diff
+  gives the diff the focus.
+- The hits are counted once the window has applied what the core said of clangd's index before the
+  answer. If the index is built while the core finds a single hit's row and names other places, the peek
+  opens on those instead of going to the old hit.
 - A single hit on a line a hunk shows: the diff scrolls there, opening the file if it is collapsed, and
   marks the line for a moment. A hit at the head lands on the line's new side, and one at the base on its
   old side, which side by side marks only that half. The core finds the row in the diff on show, from the
@@ -123,8 +128,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   keys wait: Back returns to the Files tab scrolled where it was, with the focus in the diff. The Issue
   list's cursor stays on the PR's row. `Alt+←` and Esc come with #456.
 - Until #445 lands, a single hit on a line of a changed file that no hunk shows opens the peek on it. So do
-  a hit outside the Repository and an answer with no hit to go to, which says why. Open, Enter and `F12` in
-  the peek leave it as it is on such a hit.
+  a hit outside the Repository and an answer with no hit to go to, which says why. On a hit outside the
+  Repository the peek offers no Open, and Enter and `F12` leave it as it is. On a hit in the Repository
+  whose row the core can't find, Open, Enter and `F12` leave the peek and say "No line of the diff shows
+  path:line." over the diff for 4 seconds.
 - A development build gives `F12` to Go to definition too, and opens DevTools on `Ctrl+Shift+I` or from the
   palette.
 

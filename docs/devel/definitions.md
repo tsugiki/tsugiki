@@ -167,7 +167,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - clangd reports its index through `$/progress` on its `backgroundIndexProgress` token, each report counting
   the files as `120/452`. A thread of each clangd's own reads them into a `latest::channel`, and wakes the
   servers' thread when that is news: a new state, the first count, or a new count once a second has passed.
-  So CPython's 452 reports wake it about once a second, and the peek redraws as often.
+  So CPython's 452 reports wake it about once a second, and the peek redraws as often. A count it held back
+  goes out once the second has passed, though clangd says nothing more.
 - An answer that comes while clangd indexes shows a line under the peek's header: "clangd is indexing (120
   of 452 files): this may be a declaration", or without the counts before the first report. The core says
   how far clangd has got on a channel of the lookup's own. Once the index is built, the core asks clangd
@@ -178,18 +179,23 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   answer may come before. The core then watches without a line, and the line shows if clangd starts to
   index. Without a compile database clangd never reports one, and the watch comes to nothing.
 - The window keeps what the core says of the index until a peek shows the answer, as it may hear it before
-  the answer, or while Go to definition finds the hit's row. Closing the peek cancels the lookup, and a newer
-  lookup ends it too, so the core stops watching and asks clangd nothing more. If clangd stops first,
-  idle, crashed, for a removed Repository or a PR at other commits, or fails the lookup asked again, the core
-  says so and the line goes, leaving the answer. A peek opened once the index is built shows no line.
+  the answer, or while Go to definition finds the hit's row. Closing the peek cancels the lookup, and so
+  does Go to definition when it shows no peek, as it lands on a row or finds nothing. A newer lookup ends
+  it too. The core then stops watching and asks clangd nothing more. A clangd whose index a lookup watches
+  isn't idle. If clangd stops first, crashed, for a removed Repository or a PR at other commits, the core
+  says so and the line goes, leaving the answer. The same goes for a lookup asked again that clangd fails,
+  and clangd keeps the index it built. A peek opened once the index is built shows no line.
+- The window may cancel a lookup before the core takes it, as the two travel apart. The core keeps the
+  last 16 cancels that matched no lookup, as each closed peek sends one, and a lookup one of them names
+  answers that it was cancelled and leaves the lookup running and the watch be.
 
 ## When a server stops
 
 - A server that no lookup has reached for 30 minutes stops: Tsugiki sends `shutdown`, then `exit` once the
   server agrees. `[language_servers] idle_minutes` in `machine.toml` changes the time, and a value that
   isn't a whole number above 0 counts as unset. A lookup that runs keeps its server, and its answer counts
-  as a use. The next lookup starts the server again: clangd's index stays on disk, so it doesn't index from
-  scratch. Opening the same PR again starts nothing.
+  as a use. A lookup that watches clangd's index keeps clangd too. The next lookup starts the server again:
+  clangd's index stays on disk, so it doesn't index from scratch. Opening the same PR again starts nothing.
 - Quitting Tsugiki stops every server the same way, and waits for them within the second it gives all its
   threads to stop. A server that hasn't agreed 5 s after `shutdown`, or hasn't exited 5 s after `exit`, is
   killed.

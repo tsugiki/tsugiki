@@ -6,7 +6,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -112,6 +112,14 @@ pub(super) struct LanguageServer {
     used: Instant,
     /// Its progress with its index, which a thread that reads its events writes.
     indexing: LatestReader<Indexing>,
+}
+
+/// A lookup as one server reads it: the document, the place in it, and the side whose text the open files
+/// have. Asking a server it was made for again can't fail.
+pub(super) struct Request {
+    document: Uri,
+    at: Position,
+    side: DiffEnd,
 }
 
 /// A server asked to stop, whose end the caller may wait for.
@@ -334,22 +342,31 @@ impl LanguageServer {
         Stopping(self.events)
     }
 
-    /// Sends the server the request for `lookup`, with the open files at the lookup's side, and returns at
-    /// once with what turns its answer into hits.
-    pub(super) fn ask(&mut self, lookup: &Lookup) -> Result<(Pending<Definitions>, Hits), Error> {
-        self.used = Instant::now();
-        let _unread = self.events.try_iter().count();
+    /// The request for `lookup`, as this server reads it.
+    pub(super) fn request(&self, lookup: &Lookup) -> Result<Request, Error> {
         let document = uri(&self.folder.join(&lookup.path))?;
-        self.show(lookup.side);
         let at = Position {
             line: lookup.line.saturating_sub(1),
             character: lookup.column,
         };
-        let pending = self.server.definition(&document, at);
+        Ok(Request {
+            document,
+            at,
+            side: lookup.side,
+        })
+    }
+
+    /// Sends the server `request`, with the open files at the request's side, and returns at once with what
+    /// turns its answer into hits.
+    pub(super) fn ask(&mut self, request: &Request) -> (Pending<Definitions>, Hits) {
+        self.used = Instant::now();
+        let _unread = self.events.try_iter().count();
+        self.show(request.side);
+        let pending = self.server.definition(&request.document, request.at);
         let open = (self.open.iter())
             .map(|open| {
                 let text = Arc::clone(open.text(self.showing));
-                (open.path.clone(), open.side(lookup.side), text)
+                (open.path.clone(), open.side(request.side), text)
             })
             .collect();
         let hits = Hits {
@@ -357,7 +374,7 @@ impl LanguageServer {
             at: self.at.clone(),
             open,
         };
-        Ok((pending, hits))
+        (pending, hits)
     }
 
     /// Gives the open files their text at `side`, if they don't have it.
@@ -385,8 +402,9 @@ fn located(folder: &Path) -> Result<(PathBuf, Uri), Error> {
 
 /// Reads the server's `events` on a thread of their own as they come, writes how far its index has got
 /// into `indexing` as `read` finds it, starting from [`Indexing::Unreported`], and tells `moved` when that
-/// is news. It hands each event on, through the receiver it gives. Once the server has exited, or its
-/// events end, it writes [`Indexing::Ended`] and tells `moved`.
+/// is news. A count it held back as too soon it tells once [`NEWS_EVERY`] has passed, though the server
+/// says nothing more. It hands each event on, through the receiver it gives. Once the server has exited, or
+/// its events end, it writes [`Indexing::Ended`] and tells `moved`.
 fn watch_index(
     events: Receiver<Event>,
     read: fn(&Progress) -> Option<Indexing>,
@@ -397,11 +415,26 @@ fn watch_index(
     indexing.set(&Indexing::Unreported);
     let _reads = thread::spawn(move || {
         let mut told = (Indexing::Unreported, Instant::now());
-        for event in events {
+        let mut latest = Indexing::Unreported;
+        loop {
+            // A wait too long for a deadline waits for the next event.
+            let wait = if latest == told.0 {
+                Duration::MAX
+            } else {
+                NEWS_EVERY.saturating_sub(told.1.elapsed())
+            };
+            let event = events.recv_timeout(wait);
+            if let Err(RecvTimeoutError::Timeout) = event {
+                told = (latest, Instant::now());
+                moved();
+                continue;
+            }
+            let Ok(event) = event else { break };
             if let Event::Progress(progress) = &event
                 && let Some(now) = read(progress)
             {
                 indexing.set(&now);
+                latest = now;
                 if now.news_since(told.0, told.1.elapsed()) {
                     told = (now, Instant::now());
                     moved();

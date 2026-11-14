@@ -138,7 +138,7 @@ pub(crate) struct FakeClangd {
 impl FakeClangd {
     /// A fake clangd that answers the client's first `textDocument/definition` with the first of `answers`,
     /// the next with the next, and the rest with the last, and the client that talks to it, which has yet
-    /// to initialize it.
+    /// to initialize it. An answer with an `error` field fails its request with that error.
     pub(crate) fn start(answers: Vec<Value>) -> (Self, (Starting, Receiver<Event>)) {
         let (client_reads, server_writes) = pipe().unwrap();
         let (server_reads, client_writes) = pipe().unwrap();
@@ -219,9 +219,12 @@ fn serve(
             }
             _ => Value::Null,
         };
-        // A notification gets no answer.
+        // A notification gets no answer, and an answer with an `error` fails its request.
         if let Some(id) = id {
-            let reply = json!({"jsonrpc": "2.0", "id": id, "result": result});
+            let reply = match result.get("error") {
+                Some(error) => json!({"jsonrpc": "2.0", "id": id, "error": error}),
+                None => json!({"jsonrpc": "2.0", "id": id, "result": result}),
+            };
             let _gone = replies.send(Some(reply));
         }
     }
@@ -229,20 +232,16 @@ fn serve(
 
 /// The next message on `input`, or `None` once it has ended.
 fn read_message(input: &mut impl BufRead) -> Option<Value> {
-    let mut length = 0;
-    loop {
-        let mut line = String::new();
-        if input.read_line(&mut line).ok()? == 0 {
-            return None;
-        }
-        let line = line.trim_end();
-        if line.is_empty() {
-            break;
-        }
-        if let Some(value) = line.strip_prefix("Content-Length:") {
-            length = value.trim().parse().ok()?;
-        }
-    }
+    // The client writes one header, `Content-Length`, then a blank line.
+    let mut header = String::new();
+    let _read = input.read_line(&mut header).ok()?;
+    let length = header
+        .strip_prefix("Content-Length:")?
+        .trim()
+        .parse()
+        .ok()?;
+    let mut blank = String::new();
+    let _read = input.read_line(&mut blank).ok()?;
     let mut body = vec![0; length];
     input.read_exact(&mut body).ok()?;
     serde_json::from_slice(&body).ok()

@@ -2492,6 +2492,8 @@ it("goes to a hit on a line the diff shows, and marks the line on the hit's side
   expect(files.marked).toEqual({ row: 4, side: "head" });
   expect(files.peek).toBeUndefined();
   expect(files.notice).toBeUndefined();
+  // No peek shows the answer, so the core stops watching the server's index for it (#680).
+  expect(core.cancelDefinitions.mock.calls).toEqual([[ticketOf(0)]]);
 });
 
 it("lands a hit at the base on the line's old side, and closes the peek", async () => {
@@ -2527,6 +2529,7 @@ it("says it searches while it looks, and for a moment that it found no definitio
   expect(files.notice).toBeUndefined();
   expect(files.peek).toBeUndefined();
   expect(core.pullRequestRow).not.toHaveBeenCalled();
+  expect(core.cancelDefinitions.mock.calls).toEqual([[ticketOf(0)]]);
 });
 
 it("closes a peek on another word as it searches, and stops when the peek's Escape closes", async () => {

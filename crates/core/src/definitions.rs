@@ -38,7 +38,7 @@ use crate::mirror::{LookupAt, LookupCheckout};
 use crate::repository::RepositoryName;
 use code::HitFiles;
 pub use code::{Code, HitFile};
-use server::{Hits, IndexMoved, Indexing, LanguageServer, Stopping};
+use server::{Hits, IndexMoved, Indexing, LanguageServer, Request, Stopping};
 
 mod clangd;
 mod code;
@@ -370,13 +370,18 @@ impl Asker {
 enum Sent {
     /// It has its answer, and no server was asked.
     Answered(Answer),
-    /// A server was asked, and its answer comes back with this number. The canceller cancels it, and the
-    /// server's index was so far along when it was asked.
-    Asked(u64, Canceller, Indexing),
+    /// A server was asked the request, and its answer comes back with this number. The canceller cancels
+    /// it, and the server's index was so far along when it was asked.
+    Asked(Request, (u64, Canceller), Indexing),
 }
 
 /// A Repository's server for one language.
 type Key = (RepositoryName, ServerName);
+
+/// The number of cancels that matched no lookup the servers' thread keeps. The window cancels a lookup that
+/// has answered each time a peek closes, and a lookup it cancels before the core takes it comes within
+/// moments.
+const EARLY_CANCELS: usize = 16;
 
 /// The servers that start when a PR that changes a file in their language opens. rust-analyzer waits for the
 /// first lookup in Rust, as it reads the whole workspace as it starts.
@@ -386,8 +391,6 @@ const STARTED_BY_PR: [ServerName; 2] = [ServerName::Ty, ServerName::Clangd];
 struct Running {
     /// The number its answer comes back with.
     id: u64,
-    asker: Asker,
-    lookup: Lookup,
     /// The server it asked.
     server: Key,
     canceller: Canceller,
@@ -395,12 +398,25 @@ struct Running {
 }
 
 /// The time a server works on a lookup: the first, or once more with its index built.
-#[derive(Clone, Copy)]
 enum Asked {
-    /// The first, with the server's progress with its index then.
-    First(Indexing),
+    /// The first, by `asker`, with the request the server was sent and its progress with its index then.
+    First {
+        asker: Asker,
+        request: Request,
+        indexing: Indexing,
+    },
     /// Again, once the server has built its index, after the window has the first answer.
-    Again,
+    Again(Listener),
+}
+
+impl Asked {
+    /// The ticket of the lookup asked.
+    fn ticket(&self) -> Ticket {
+        match self {
+            Self::First { asker, .. } => asker.ticket,
+            Self::Again(listener) => listener.ticket,
+        }
+    }
 }
 
 impl Running {
@@ -409,17 +425,25 @@ impl Running {
     fn cancel(self) {
         self.canceller.cancel();
         match self.asked {
-            Asked::First(_) => self.asker.answer(Ok(Answer::Cancelled)),
-            Asked::Again => (self.asker.index)(Index::Stopped),
+            Asked::First { asker, .. } => asker.answer(Ok(Answer::Cancelled)),
+            Asked::Again(listener) => (listener.index)(Index::Stopped),
         }
     }
 }
 
+/// A lookup that has its answer, and hears how the index of the server that answered goes: its ticket,
+/// which a cancel names, and who hears.
+struct Listener {
+    ticket: Ticket,
+    index: OnIndex,
+}
+
 /// A lookup that answered while its server built its index, or before it reported one, which hears how the
-/// index goes until it is built and the core has asked again.
+/// index goes until it is built and the core has asked again: the request the server was sent, and the
+/// server.
 struct Watch {
-    asker: Asker,
-    lookup: Lookup,
+    listener: Listener,
+    request: Request,
     server: Key,
 }
 
@@ -453,8 +477,9 @@ struct Owner {
     running: Option<Running>,
     /// The last lookup to answer, while its server builds its index.
     watching: Option<Watch>,
-    /// The ticket of a cancel that came before its lookup, which cancels that lookup if it comes next.
-    cancelled: Option<Ticket>,
+    /// The tickets of the last cancels that matched no lookup, newest last. One may have come before its
+    /// lookup, which it cancels when it comes. Most are for lookups that have answered.
+    cancelled: VecDeque<Ticket>,
     /// How many lookups the servers have been asked.
     asked: u64,
     /// The thread's own messages: those it takes, and the way the threads that wait for a server hand back
@@ -475,7 +500,7 @@ impl Owner {
             files: Arc::default(),
             running: None,
             watching: None,
-            cancelled: None,
+            cancelled: VecDeque::new(),
             asked: 0,
             own,
             incoming,
@@ -561,10 +586,10 @@ impl Owner {
     }
 
     /// Stops each server that no lookup has reached for `idle` by `now`, but the one the lookup running
-    /// asked. The next lookup in its language starts it again.
+    /// asked, and one whose index a lookup watches. The next lookup in its language starts it again.
     fn stop_idle(&mut self, now: Instant, idle: Duration) {
         let stale: Vec<Key> = (self.servers.iter())
-            .filter(|(key, server)| !self.asks(key) && now.duration_since(server.used()) >= idle)
+            .filter(|(key, server)| !self.busy(key) && now.duration_since(server.used()) >= idle)
             .map(|(key, _)| key.clone())
             .collect();
         let minutes = idle.as_secs() / 60;
@@ -580,7 +605,7 @@ impl Owner {
     /// The wait from `now` until the next server has gone `idle` without a lookup, if a server can.
     fn until_idle(&self, now: Instant, idle: Duration) -> Option<Duration> {
         (self.servers.iter())
-            .filter(|(key, _)| !self.asks(key))
+            .filter(|(key, _)| !self.busy(key))
             .map(|(_, server)| {
                 (server.used().checked_add(idle))
                     .map_or(Duration::MAX, |at| at.saturating_duration_since(now))
@@ -649,35 +674,42 @@ impl Owner {
     /// stops telling it more.
     fn unwatch(&mut self, key: &Key) {
         if let Some(watch) = (self.watching).take_if(|watch| watch.server == *key) {
-            (watch.asker.index)(Index::Stopped);
+            (watch.listener.index)(Index::Stopped);
         }
     }
 
     /// Cancels the lookup running, if one is, and sends the server for the lookup's language the request for
     /// `lookup`, unless a cancel for it came first, or a newer lookup or its cancel came while the server
     /// started. Its answer comes back as [`Message::Answered`]. The lookup that heard how an index goes
-    /// hears nothing more.
+    /// hears nothing more. A lookup cancelled before it came leaves the others be, as it may come late.
     fn look_up(&mut self, lookup: Lookup, asker: Asker) {
-        self.cancel_running();
-        self.watching = None;
-        if self.cancelled.take() == Some(asker.ticket) {
+        if let Some(at) = self
+            .cancelled
+            .iter()
+            .position(|ticket| *ticket == asker.ticket)
+        {
+            let _taken = self.cancelled.remove(at);
             asker.answer(Ok(Answer::Cancelled));
             return;
         }
+        self.cancel_running();
+        self.watching = None;
         let Some(name) = ServerName::of(&lookup.path) else {
             asker.answer(Ok(Answer::NoServer));
             return;
         };
         let key = (lookup.repository.clone(), name);
         match self.send(&key, &lookup, &asker) {
-            Ok(Sent::Asked(id, canceller, indexing)) => {
+            Ok(Sent::Asked(request, (id, canceller), indexing)) => {
                 self.running = Some(Running {
                     id,
-                    asker,
-                    lookup,
                     server: key,
                     canceller,
-                    asked: Asked::First(indexing),
+                    asked: Asked::First {
+                        asker,
+                        request,
+                        indexing,
+                    },
                 });
             }
             Ok(Sent::Answered(answer)) => asker.answer(Ok(answer)),
@@ -722,10 +754,11 @@ impl Owner {
             }
         }
         (asker.waiting)(Waiting::Asking { server: *name });
-        let (pending, hits) = server.ask(lookup)?;
+        let request = server.request(lookup)?;
+        let (pending, hits) = server.ask(&request);
         let indexing = server.indexing();
-        let (id, canceller) = self.wait_for(pending, hits);
-        Ok(Sent::Asked(id, canceller, indexing))
+        let waits = self.wait_for(pending, hits);
+        Ok(Sent::Asked(request, waits, indexing))
     }
 
     /// Numbers the request `pending` waits on, and hands its answer back as [`Message::Answered`] with that
@@ -753,28 +786,20 @@ impl Owner {
         let Some(running) = self.running.take_if(|running| running.id == id) else {
             return;
         };
-        let Running {
-            asker,
-            lookup,
-            server,
-            asked,
-            ..
-        } = running;
-        let hits = match hits {
-            Ok(hits) => hits,
-            Err(cause) => {
+        let Running { server, asked, .. } = running;
+        let name = server.1.as_str();
+        let (hits, asked) = match (hits, asked) {
+            (Ok(hits), asked) => (hits, asked),
+            (Err(cause), Asked::First { asker, .. }) => {
                 // A server that failed starts afresh on the next lookup.
                 let _failed = self.servers.remove(&server);
-                let name = server.1.as_str();
-                match asked {
-                    Asked::First(_) => {
-                        asker.answer(Err(failed(&format!("{name} couldn't answer: {cause}"))));
-                    }
-                    Asked::Again => {
-                        log::warn!("{name} couldn't answer a lookup asked again: {cause}");
-                        (asker.index)(Index::Stopped);
-                    }
-                }
+                asker.answer(Err(failed(&format!("{name} couldn't answer: {cause}"))));
+                return;
+            }
+            (Err(cause), Asked::Again(listener)) => {
+                // The server keeps the index it has built for the next lookup.
+                log::warn!("{name} couldn't answer a lookup asked again: {cause}");
+                (listener.index)(Index::Stopped);
                 return;
             }
         };
@@ -787,17 +812,26 @@ impl Owner {
                 self.files.name(PathBuf::from(path));
             }
         }
-        let Asked::First(indexing) = asked else {
-            (asker.index)(Index::Built { hits });
-            return;
-        };
-        asker.answer(Ok(Answer::Found { hits }));
-        let watch = Watch {
-            asker,
-            lookup,
-            server,
-        };
-        self.watch(watch, indexing);
+        match asked {
+            Asked::Again(listener) => (listener.index)(Index::Built { hits }),
+            Asked::First {
+                asker,
+                request,
+                indexing,
+            } => {
+                asker.answer(Ok(Answer::Found { hits }));
+                let listener = Listener {
+                    ticket: asker.ticket,
+                    index: asker.index,
+                };
+                let watch = Watch {
+                    listener,
+                    request,
+                    server,
+                };
+                self.watch(watch, indexing);
+            }
+        }
     }
 
     /// Watches the index of the server that answered `watch`'s lookup, if the answer may miss what the index
@@ -806,15 +840,11 @@ impl Owner {
     /// lookup is asked again once the index is built, and at once if it was built since it was asked.
     fn watch(&mut self, watch: Watch, asked: Indexing) {
         match (asked, self.indexing_of(&watch.server)) {
-            (_, Indexing::Building(files)) => {
-                (watch.asker.index)(Index::Building {
-                    server: watch.server.1,
-                    files,
-                });
-                self.watching = Some(watch);
-            }
             // clangd without a compile database never reports an index, and then nothing comes of this.
-            (_, Indexing::Unreported) => self.watching = Some(watch),
+            (_, now @ (Indexing::Unreported | Indexing::Building(_))) => {
+                self.watching = Some(watch);
+                self.tell(now);
+            }
             (Indexing::Unreported | Indexing::Building(_), Indexing::Built) => {
                 self.ask_again(watch)
             }
@@ -825,15 +855,11 @@ impl Owner {
     /// Tells the lookup that watches the index of the server `key` names how far it has got. Once the index
     /// is built, it asks the lookup again, and once the server has ended, it says so.
     fn indexing(&mut self, key: &Key) {
-        let Some(watch) = (self.watching.as_ref()).filter(|watch| watch.server == *key) else {
+        if !(self.watching.as_ref()).is_some_and(|watch| watch.server == *key) {
             return;
-        };
+        }
         match self.indexing_of(key) {
-            Indexing::Unreported => {}
-            Indexing::Building(files) => (watch.asker.index)(Index::Building {
-                server: key.1,
-                files,
-            }),
+            now @ (Indexing::Unreported | Indexing::Building(_)) => self.tell(now),
             Indexing::Built => {
                 if let Some(watch) = self.watching.take() {
                     self.ask_again(watch);
@@ -843,32 +869,35 @@ impl Owner {
         }
     }
 
+    /// Tells the lookup that watches an index that it is `now`, if the server has begun to build it.
+    fn tell(&self, now: Indexing) {
+        if let (Some(watch), Indexing::Building(files)) = (&self.watching, now) {
+            (watch.listener.index)(Index::Building {
+                server: watch.server.1,
+                files,
+            });
+        }
+    }
+
     /// Asks the server again for `watch`'s lookup, now that it has built its index. Its answer goes to
     /// whoever hears how the index goes, as [`Index::Built`].
     fn ask_again(&mut self, watch: Watch) {
         let Watch {
-            asker,
-            lookup,
+            listener,
+            request,
             server: key,
         } = watch;
-        // A newer lookup would have ended the watch, so none runs.
-        let asked = (self.running.is_none())
-            .then(|| self.servers.get_mut(&key))
-            .flatten()
-            .map(|server| server.ask(&lookup));
-        let Some(Ok((pending, hits))) = asked else {
-            (asker.index)(Index::Stopped);
-            return;
-        };
-        let (id, canceller) = self.wait_for(pending, hits);
-        self.running = Some(Running {
-            id,
-            asker,
-            lookup,
-            server: key,
-            canceller,
-            asked: Asked::Again,
-        });
+        // The caller read the server's index, so the server runs.
+        let asked = (self.servers.get_mut(&key)).map(|server| server.ask(&request));
+        if let Some((pending, hits)) = asked {
+            let (id, canceller) = self.wait_for(pending, hits);
+            self.running = Some(Running {
+                id,
+                server: key,
+                canceller,
+                asked: Asked::Again(listener),
+            });
+        }
     }
 
     /// The progress of the index of the server `key` names. One that has stopped has ended.
@@ -876,13 +905,18 @@ impl Owner {
         (self.servers.get(key)).map_or(Indexing::Ended, LanguageServer::indexing)
     }
 
-    /// Cancels the lookup with `ticket`: the one running, or else the next one if it is that.
+    /// Cancels the lookup with `ticket`: the one running, or the one that watches an index, or else the
+    /// lookup with that ticket when it comes, if it hasn't come yet.
     fn cancel(&mut self, ticket: Ticket) {
-        let _unwatched = (self.watching).take_if(|watch| watch.asker.ticket == ticket);
-        if (self.running.as_ref()).is_some_and(|running| running.asker.ticket == ticket) {
+        let watched = (self.watching)
+            .take_if(|watch| watch.listener.ticket == ticket)
+            .is_some();
+        if (self.running.as_ref()).is_some_and(|running| running.asked.ticket() == ticket) {
             self.cancel_running();
-        } else {
-            self.cancelled = Some(ticket);
+        } else if !watched {
+            self.cancelled.push_back(ticket);
+            let older = self.cancelled.len().saturating_sub(EARLY_CANCELS);
+            self.cancelled.drain(..older).for_each(drop);
         }
     }
 
@@ -895,6 +929,11 @@ impl Owner {
     /// Whether the lookup running asked the server `key` names.
     fn asks(&self, key: &Key) -> bool {
         (self.running.as_ref()).is_some_and(|running| running.server == *key)
+    }
+
+    /// Whether a lookup needs the server `key` names: the one running asked it, or one watches its index.
+    fn busy(&self, key: &Key) -> bool {
+        self.asks(key) || (self.watching.as_ref()).is_some_and(|watch| watch.server == *key)
     }
 
     /// Whether the server `key` names reads `at`'s checkout.

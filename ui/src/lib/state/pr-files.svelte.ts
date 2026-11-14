@@ -119,6 +119,9 @@ const END = 2 ** 32 - 1;
 let lastTicket = 0;
 const nextTicket = () => (lastTicket += 1);
 
+/** The first place `answer` names, if it found any. */
+const firstHit = (answer: Answer) => (answer.state === "found" ? answer.hits[0] : undefined);
+
 /** Whether two hits are at the same place and line. */
 const sameHit = (one: Hit, other: Hit) =>
   one.line === other.line && JSON.stringify(one.place) === JSON.stringify(other.place);
@@ -936,6 +939,7 @@ export class PrFilesState {
     const hits = answer?.state === "found" ? answer.hits : undefined;
     if (hits?.length === 0) {
       this.#say(`No definition of ${peek.symbol} at ${peek.commit.slice(0, 7)}.`, NOTICE_MS);
+      this.#unwatch(lookup);
       return;
     }
     const landing = hits === undefined ? undefined : await this.#landing(hits, view);
@@ -945,6 +949,7 @@ export class PrFilesState {
       this.#showPeek(peek, lookup);
       return;
     }
+    this.#unwatch(lookup);
     this.#peek = undefined;
     this.#moveTo(view.files, landing.row);
     this.marked = landing;
@@ -1032,7 +1037,7 @@ export class PrFilesState {
       return { peek: { ...peek, lookup: { state: "failed", problem: answer.error.message } }, lookup, view };
     }
     // The hit's code lives with the peek, so the diff drawing the peek again doesn't read it again.
-    const hit = answer.data.state === "found" ? answer.data.hits[0] : undefined;
+    const hit = firstHit(answer.data);
     const answered: Peek = {
       ...peek,
       lookup: { state: "answered", answer: answer.data },
@@ -1047,7 +1052,7 @@ export class PrFilesState {
   #heard(lookup: number, news: IndexNews) {
     if (lookup !== this.#lookups) return;
     const peek = this.#peek;
-    if (peek?.lookup.state === "answered") this.#peek = this.#withNews(peek, news);
+    if (peek?.lookup.state === "answered") this.#peek = this.#withNews(peek, peek.lookup.answer, news);
     else this.#news = { lookup, news };
   }
 
@@ -1056,19 +1061,29 @@ export class PrFilesState {
   #showPeek(peek: Peek, lookup: number) {
     const held = this.#news;
     this.#news = undefined;
-    this.#peek = held?.lookup === lookup ? this.#withNews(peek, held.news) : peek;
+    this.#peek =
+      peek.lookup.state === "answered" && held?.lookup === lookup
+        ? this.#withNews(peek, peek.lookup.answer, held.news)
+        : peek;
   }
 
-  /** `peek` with `news` of the index of the server that answered: how far it has got, which a line under
-   * the header says, or the places it names once it has built its index, or that it stopped. A hit at the
-   * same place and line keeps its code, so the peek reads nothing again and keeps its scroll. */
-  #withNews(peek: Peek, news: IndexNews): Peek {
+  /** Tells the core that no peek shows lookup `lookup`'s answer, so it stops watching the index of the
+   * server that answered, and asks it nothing more (#680). */
+  #unwatch(lookup: number) {
+    this.#news = undefined;
+    void commands.cancelDefinitions(lookup);
+  }
+
+  /** `peek`, which shows `answer`, with `news` of the index of the server that answered: how far it has
+   * got, which a line under the header says, or the places it names once it has built its index, or that it
+   * stopped. A hit at the same place and line keeps its code, so the peek reads nothing again and keeps its
+   * scroll. */
+  #withNews(peek: Peek, answer: Answer, news: IndexNews): Peek {
     if (news.state === "building") return { ...peek, indexing: news };
     const shown = { ...peek };
     delete shown.indexing;
     if (news.state === "stopped") return shown;
-    const answer = peek.lookup.state === "answered" ? peek.lookup.answer : undefined;
-    const was = answer?.state === "found" ? answer.hits[0] : undefined;
+    const was = firstHit(answer);
     const hit = news.hits[0];
     delete shown.code;
     const kept = peek.code && was && hit && sameHit(was, hit) ? peek.code : undefined;

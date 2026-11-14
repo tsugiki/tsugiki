@@ -600,6 +600,9 @@
       // A held key would ask ty again and again.
       e.preventDefault();
       if (!e.repeat) void files.peekDefinition();
+    } else if (key === "f12" && files) {
+      e.preventDefault();
+      if (!e.repeat) void files.goToDefinition();
     } else if (key === "alt+arrowleft" || key === "alt+arrowright") {
       e.preventDefault();
       goThrough(key === "alt+arrowleft" ? -1 : 1);

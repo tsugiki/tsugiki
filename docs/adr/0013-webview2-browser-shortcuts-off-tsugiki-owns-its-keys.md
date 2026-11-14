@@ -30,9 +30,10 @@ That still matters on macOS and in the browser-based tests ([ADR 0009](0009-test
 
 ## Consequences
 
-- Debug builds keep the browser shortcuts, so DevTools opens there, F12 included. The page's guard leaves F12
-  alone in a development build for that reason. The palette's Open DevTools opens them too, and only a
-  development build lists it: the window asks the core which build it is, and a release refuses the command.
+- Debug builds keep the browser shortcuts, so DevTools opens there on `Ctrl+Shift+I`, which Tsugiki doesn't
+  own. The page's guard owns F12 in every build, as Go to definition (#444), so F12 no longer opens DevTools.
+  The palette's Open DevTools opens them too, and only a development build lists it: the window asks the
+  core which build it is, and a release refuses the command.
 - Zoom is Tsugiki's own: `Ctrl+=`, `Ctrl+-` and `Ctrl+0` (`Cmd` on macOS) and the palette's View: Zoom In,
   Zoom Out and Reset Zoom set the window's zoom through Tauri's `set_zoom`, in VS Code's steps. The level is
   kept per machine. Ctrl+wheel doesn't zoom, so a slip while scrolling a diff can't change it.

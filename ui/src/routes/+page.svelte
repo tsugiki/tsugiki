@@ -8,7 +8,7 @@
   import AboutLine from "$lib/ui/AboutLine.svelte";
   import AddRepository from "$lib/ui/AddRepository.svelte";
   import { ChordWait } from "$lib/ui/chord.svelte";
-  import { currentOs, keyGuard, keysForBrowser } from "$lib/ui/keys";
+  import { currentOs, keyGuard } from "$lib/ui/keys";
   import { mirrorNote } from "$lib/ui/mirror-note";
   import MirrorQuestionDialog from "$lib/ui/MirrorQuestionDialog.svelte";
   import Onboarding from "$lib/ui/Onboarding.svelte";
@@ -93,7 +93,6 @@
       },
     },
     os,
-    keysForBrowser(import.meta.env.DEV),
   );
   /** Reads each key before anything else, so the key that ends a chord's wait goes nowhere else. Chords
    * start where the list's keys work: on a Repository's screen, with no dialog or palette on top. The

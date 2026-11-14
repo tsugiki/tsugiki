@@ -149,7 +149,12 @@ fn placement(diff: &Diff, thread: &ThreadLine) -> (Order, Placement) {
 }
 
 /// The row among `rows` that shows line `line` of `side`, if one does.
-fn row_of(diff: &Diff, rows: std::ops::Range<u32>, side: Side, line: u32) -> Option<u32> {
+pub(super) fn row_of(
+    diff: &Diff,
+    rows: std::ops::Range<u32>,
+    side: Side,
+    line: u32,
+) -> Option<u32> {
     let start = rows.start;
     let found = diff.rows(rows).iter().position(|row| match row {
         DiffRow::Context { old, new, .. } => match side {

@@ -22,6 +22,7 @@ import {
   events,
   type Cloning,
   type CodeRow,
+  type DiffEnd,
   type DiffFile_Serialize,
   type DiffRow_Serialize,
   type DiffThread_Serialize,
@@ -30,6 +31,7 @@ import {
   type Gap,
   type HeadLine,
   type Highlight,
+  type Hit,
   type LinkTo,
   type MirrorState_Serialize as MirrorState,
   type RepositoryMirror_Serialize as RepositoryMirror,
@@ -115,6 +117,9 @@ const END = 2 ** 32 - 1;
  * share one while the window is open, whichever PR they are in. */
 let lastTicket = 0;
 const nextTicket = () => (lastTicket += 1);
+
+/** How long Go to definition says it found nothing. */
+export const NOTICE_MS = 4000;
 
 /** How long a chunk's rows wait for their spans before they show plain. The spans repaint the chunk when
  * they come. */
@@ -205,6 +210,11 @@ export class PrFilesState {
   searchWantsFocus = $state(false);
   /** Whether the search has closed and handed the diff its focus back, until the diff takes it. */
   diffWantsFocus = $state(false);
+  /** The line Go to definition landed on, at the side of the diff its hit is at, which the diff marks for
+   * a moment (#444). Each landing is a new one, so the mark shows again on the same line. */
+  marked = $state.raw<{ row: number; side: DiffEnd }>();
+  /** A line over the diff while Go to definition looks a word up, or for a moment once it found nothing. */
+  notice = $state<string>();
   /** Why the core couldn't search, which the search box says. */
   searchProblem = $state<string>();
   /** How many characters the longest expanded line has, so the tab makes room for it as for the diff's. */
@@ -283,6 +293,7 @@ export class PrFilesState {
   /** The ticket of the newest lookup, so only its answer shows. Closing the peek takes a new one, which no
    * lookup answers to. */
   #lookups = 0;
+  #noticeTimer: ReturnType<typeof setTimeout> | undefined;
   /** The chunks asked for. Nothing draws from it, and the effect that asks shouldn't rerun on it. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   #asked = new Set<number>();
@@ -427,9 +438,11 @@ export class PrFilesState {
       this.#found = undefined;
       this.#at = undefined;
       this.#matchRow = undefined;
-      // So do the pick and the peek under its line.
+      // So do the pick, the peek under its line and the line Go to definition marked.
       this.#pick = undefined;
       this.#dropPeek();
+      this.#say(undefined);
+      this.marked = undefined;
     }
     // The threads the tab showed with the same diff, whose lines it has opened.
     const before = anew ? [] : this.threads;
@@ -886,16 +899,90 @@ export class PrFilesState {
    * the peek cancels it too. A lookup that answers after a newer one started, or after the peek closed,
    * changes nothing. */
   async peekDefinition() {
+    const looked = await this.#lookUp((looking) => {
+      this.#peek = looking;
+    });
+    if (looked !== undefined) this.#peek = looked.peek;
+  }
+
+  /** Goes to where the picked word is defined (#444), with the lookup `Alt+F12` runs: to the first of ty's
+   * hits on a line a hunk shows, which the diff scrolls to and marks for a moment, on the line's old side
+   * for a hit at the base. With no hit it says so for a moment. A hit on no line of the diff, or an answer
+   * with no hit to go to, opens the peek, until the file view comes (#445, #453). */
+  async goToDefinition() {
+    const looked = await this.#lookUp((looking) => {
+      this.#say(`Searching for the definition of ${looking.symbol}…`);
+    });
+    if (looked === undefined) return;
+    const { peek, lookup, view } = looked;
+    const answer = peek.lookup.state === "answered" ? peek.lookup.answer : undefined;
+    const hits = answer?.state === "found" ? answer.hits : undefined;
+    if (hits?.length === 0) {
+      this.#say(`No definition of ${peek.symbol} at ${peek.commit.slice(0, 7)}.`, NOTICE_MS);
+      return;
+    }
+    const landing = hits === undefined ? undefined : await this.#landing(hits, view);
+    if (lookup !== this.#lookups) return;
+    this.#say(undefined);
+    if (landing === undefined) {
+      this.#peek = peek;
+      return;
+    }
+    this.#peek = undefined;
+    this.#moveTo(view.files, landing.row);
+    this.marked = landing;
+  }
+
+  /** The row of the first of `hits` on a line a hunk of the diff `view` shows, and the side its hit is at.
+   * A row the core can't find counts as none. */
+  async #landing(hits: Hit[], view: Ready): Promise<{ row: number; side: DiffEnd } | undefined> {
+    for (const hit of hits) {
+      const place = hit.place;
+      if (place.kind !== "repository") continue;
+      const line = {
+        repository: this.#repository,
+        number: this.#number,
+        head: view.head,
+        base: view.base,
+        path: place.path,
+        side: place.side,
+        line: hit.line,
+      };
+      const row = await commands.pullRequestRow(line).catch(() => undefined);
+      if (row?.status === "ok" && row.data !== null) return { row: row.data, side: place.side };
+    }
+    return undefined;
+  }
+
+  /** Shows `words` over the diff, for `forMs` if it is given, or takes the words away. */
+  #say(words: string | undefined, forMs?: number) {
+    clearTimeout(this.#noticeTimer);
+    this.notice = words;
+    if (words !== undefined && forMs !== undefined) {
+      this.#noticeTimer = setTimeout(() => {
+        this.notice = undefined;
+      }, forMs);
+    }
+  }
+
+  /** Asks ty where the picked word is defined, with the PR's files at the line's commit, and gives the peek
+   * that shows its answer, the lookup's number and the diff it asked in. `starting` hears the peek while it
+   * looks, as the lookup starts. It gives nothing with no word picked, or once a newer lookup has started or
+   * the peek has closed. */
+  async #lookUp(
+    starting: (looking: Peek) => void,
+  ): Promise<{ peek: Peek; lookup: number; view: Ready } | undefined> {
     const pick = this.#pick;
     const view = this.view;
     const ready = view?.state === "ready" && view;
     const file = ready && pick && ready.files[pick.file];
-    if (pick === undefined || view?.state !== "ready" || !file) return;
+    if (pick === undefined || view?.state !== "ready" || !file) return undefined;
     this.#lookups = nextTicket();
     const lookup = this.#lookups;
     const commit = pick.side === "base" ? view.base : view.head;
     const peek = { at: pick.at, symbol: pick.word, side: pick.side, commit };
-    this.#peek = { ...peek, lookup: { state: "looking" } };
+    this.#say(undefined);
+    starting({ ...peek, lookup: { state: "looking" } });
     const lookedUp = {
       repository: this.#repository,
       base: view.base,
@@ -918,23 +1005,25 @@ export class PrFilesState {
       status: "error" as const,
       error: { message: String(e) },
     }));
-    if (lookup !== this.#lookups) return;
+    if (lookup !== this.#lookups) return undefined;
     if (answer.status === "error") {
-      this.#peek = { ...peek, lookup: { state: "failed", problem: answer.error.message } };
-      return;
+      return { peek: { ...peek, lookup: { state: "failed", problem: answer.error.message } }, lookup, view };
     }
     // The hit's code lives with the peek, so the diff drawing the peek again doesn't read it again.
     const hit = answer.data.state === "found" ? answer.data.hits[0] : undefined;
-    this.#peek = {
+    const answered: Peek = {
       ...peek,
       lookup: { state: "answered", answer: answer.data },
       ...(hit && { code: new HitCode(this.#repository, hit) }),
     };
+    return { peek: answered, lookup, view };
   }
 
-  /** Closes the Definition peek, and hands the diff its focus back. */
+  /** Closes the Definition peek, and hands the diff its focus back. A Go to definition that still looks
+   * the word up goes nowhere. */
   closePeek() {
     this.#dropPeek();
+    this.#say(undefined);
     this.diffWantsFocus = true;
   }
 

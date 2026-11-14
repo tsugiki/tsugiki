@@ -6,7 +6,8 @@
      the head to the mirror again (#233, #213). While GitHub can't be reached, the mirror holds back git, and
      the tab says the PR's commits or the mirror's clone come once GitHub answers (#390). Ctrl+F opens a
      search over the diff's rows (#186). The header's toggle switches between all the files and one at a
-     time, and one at a time a bar says which file shows, "‹ 12 of 48 ›" and its path (#605). -->
+     time, and one at a time a bar says which file shows, "‹ 12 of 48 ›" and its path (#605). Beside the
+     toggle, Go to definition says it searches, or for a moment that it found nothing (#444). -->
 <script lang="ts">
   import type { Page, PrFilesState, Unfetched } from "$lib/state/pr-files.svelte";
   import DiffRows from "./DiffRows.svelte";
@@ -118,6 +119,9 @@
         <span class="path">{words.path}</span>
       </nav>
     {/if}
+    {#if files.notice !== undefined}
+      <span class="notice" role="status">{files.notice}</span>
+    {/if}
     <button
       type="button"
       class="mode"
@@ -184,6 +188,14 @@
   .mode {
     margin-left: auto;
     color: var(--fg-muted);
+  }
+
+  /* What Go to definition is doing, or that it found nothing. */
+  .notice {
+    overflow: hidden;
+    color: var(--fg-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .mode[aria-pressed="true"] {

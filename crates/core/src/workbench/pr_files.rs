@@ -10,14 +10,15 @@ use serde::Serialize;
 use specta::Type;
 
 use crate::diff::{
-    self, Against, Chunk, DiffFile, DiffOf, DiffRow, Diffs, FileLines, Found, HeadLine, Held,
-    Highlighter, NewsEntry, OpenDiff, PrAt, Start,
+    self, Against, Chunk, DiffEnd, DiffFile, DiffOf, DiffRow, Diffs, FileLines, Found, HeadLine,
+    Held, Highlighter, NewsEntry, OpenDiff, PrAt, Start,
 };
 use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
 use crate::github::CommitSha;
 pub use crate::github::pull_request_content::CodeRow;
 use crate::github::pull_request_content::PullRequestContent;
+use crate::github::pull_request_content::Side;
 use crate::github::pull_requests::{PrHead, PrState, PullRequestFacts};
 use crate::highlight::Span;
 use crate::mirror::{LookupAt, MirrorRequests};
@@ -51,6 +52,15 @@ pub enum PrFiles {
         news: Vec<NewsEntry>,
         threads: DiffThreads,
     },
+}
+
+/// A line of a file of a PR's diff: its path at `side`, which is a renamed file's old path at the base, and
+/// its number there, from 1.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileLine {
+    pub path: String,
+    pub side: DiffEnd,
+    pub line: u32,
 }
 
 /// The review threads the Files tab shows with a diff.
@@ -233,6 +243,31 @@ impl PrFiles {
         range: Range<u32>,
     ) -> Result<Vec<DiffRow>, Error> {
         Ok(Self::open(sources, of)?.diff.rows(range).to_vec())
+    }
+
+    /// The row of the diff `of` that shows `line`, if a hunk shows it: where Go to definition lands (#444).
+    pub fn row(
+        sources: &DiffSources<'_>,
+        of: &DiffOf,
+        line: &FileLine,
+    ) -> Result<Option<u32>, Error> {
+        let open = Self::open(sources, of)?;
+        let diff = &open.diff;
+        let files = diff.files();
+        let (side, named): (Side, fn(&DiffFile) -> &str) = match line.side {
+            DiffEnd::Base => (Side::Left, |file| {
+                file.old_path.as_deref().unwrap_or(&file.path)
+            }),
+            DiffEnd::Head => (Side::Right, |file| &file.path),
+        };
+        let Some(file) = files.iter().find(|file| named(file) == line.path) else {
+            return Ok(None);
+        };
+        let end = (files.iter())
+            .find(|next| next.row > file.row)
+            .map_or(diff.row_count(), |next| next.row);
+        let rows = file.row.saturating_add(1)..end;
+        Ok(threads::row_of(diff, rows, side, line.line))
     }
 
     /// Where the code of the rows of the diff `of` holds `query`, whatever the case: in every row, those the

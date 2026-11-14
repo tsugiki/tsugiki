@@ -1744,6 +1744,12 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     // A cancel the core takes before its lookup still cancels it.
     let cancel = wired.ask("cancel_definitions", json!({ "ticket": 4 }));
     let cancelled = look(4, "head", "Lib/spam.py");
+    // Go to definition lands on the row that shows the hit's line, at its side.
+    let row = |side: &str, line: u32| {
+        let line = json!({ "repository": CPYTHON, "number": 1, "head": head, "base": base, "path": "Lib/spam.py", "side": side, "line": line });
+        wired.ask("pull_request_row", json!({ "line": line }))
+    };
+    let (removed, added, unshown) = (row("base", 15), row("head", 15), row("head", 1));
     let refused = wired.ask(
         "definitions",
         json!({ "lookup": { "repository": CPYTHON, "base": "main", "head": head, "path": "Lib/spam.py", "side": "head", "line": 1, "column": 0, "ticket": 5 }, "waiting": "__CHANNEL__:8" }),
@@ -1766,6 +1772,11 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     assert_eq!(unnamed, "No language server named C:/elsewhere/secret.txt.");
     assert_eq!(cancel, Ok(Value::Null));
     assert_eq!(cancelled, Ok(json!({ "state": "cancelled" })));
+    // The file's header, the `@@` line and lines 12 to 14 come before the removed line 15.
+    assert_eq!(
+        (removed, added, unshown),
+        (Ok(json!(5)), Ok(json!(6)), Ok(Value::Null))
+    );
     assert_eq!(refused.unwrap_err()["message"], "\"main\" isn't a commit.");
 }
 

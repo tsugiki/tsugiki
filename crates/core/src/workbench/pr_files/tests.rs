@@ -521,6 +521,56 @@ fn rows_of_a_diff_no_longer_on_show_are_read_again_from_its_base() {
 }
 
 #[test]
+fn a_line_a_hunk_shows_has_its_row_at_either_end_and_another_has_none() {
+    let world = World::new("line-row");
+    let mirrored = Mirrored::new("pr-files-line-row");
+    let head = mirrored.head.clone();
+    let whole = mirrored.read();
+    world.mirrors(&mirrored);
+    world.has_pr(Some(head.clone()), "main");
+    let of = world.diff_of(&head, &whole.base);
+    let row = |path: &str, side, line| {
+        let line = FileLine {
+            path: path.to_owned(),
+            side,
+            line,
+        };
+        PrFiles::row(&world.sources(), &of, &line).unwrap()
+    };
+    let shown = |row: Option<u32>| row.map(|row| whole.diff.rows(row..row + 1).to_vec());
+
+    // The PR renames Doc/notes.txt to Doc/news.txt, and changes its line 20.
+    let removed = row("Doc/notes.txt", DiffEnd::Base, 20);
+    let added = row("Doc/news.txt", DiffEnd::Head, 20);
+    let context = row("Doc/news.txt", DiffEnd::Head, 18);
+    let unshown = row("Doc/news.txt", DiffEnd::Head, 5);
+    let old_name_at_head = row("Doc/notes.txt", DiffEnd::Head, 20);
+    let unchanged = row("README.rst", DiffEnd::Base, 1);
+
+    let removed_row = DiffRow::Removed {
+        old: 20,
+        text: "line 20".to_owned(),
+    };
+    assert_eq!(shown(removed), Some(vec![removed_row]));
+    let added_row = DiffRow::Added {
+        new: 20,
+        text: "line twenty".to_owned(),
+    };
+    assert_eq!(shown(added), Some(vec![added_row]));
+    let context_row = DiffRow::Context {
+        old: 18,
+        new: 18,
+        text: "line 18".to_owned(),
+    };
+    assert_eq!(shown(context), Some(vec![context_row]));
+    assert_eq!(unshown, None);
+    assert_eq!(old_name_at_head, None);
+    assert_eq!(unchanged, None);
+    mirrored.finish();
+    world.finish();
+}
+
+#[test]
 fn a_pr_moved_to_another_branch_shows_its_diff_against_that_branch() {
     let world = World::new("retargeted");
     let mirrored = Mirrored::new("pr-files-retargeted");

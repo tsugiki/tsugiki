@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { Answer, DefinitionLookup, Waiting } from "$lib/data/bindings";
+import type { Answer, DefinitionLookup, DiffLine, Hit, Waiting } from "$lib/data/bindings";
 import {
   CHUNK,
   DiffViewChoice,
   EXPAND,
+  NOTICE_MS,
   PrFilesState,
   SPANS_WAIT,
   type DiffFile,
@@ -36,6 +37,7 @@ const core = vi.hoisted(() => {
     pullRequestFind: vi.fn<(search: { query: string }) => Promise<unknown>>(),
     definitions: vi.fn<(lookup: DefinitionLookup, waiting: FakeChannel) => Promise<unknown>>(),
     cancelDefinitions: vi.fn(() => Promise.resolve()),
+    pullRequestRow: vi.fn<(line: DiffLine) => Promise<unknown>>(),
     cloning: vi.fn(),
     mirrorStates: vi.fn(),
     mirrorsHeld: vi.fn(),
@@ -61,6 +63,7 @@ vi.mock("$lib/data/bindings", () => ({
     pullRequestFind: core.pullRequestFind,
     definitions: core.definitions,
     cancelDefinitions: core.cancelDefinitions,
+    pullRequestRow: core.pullRequestRow,
     cloning: core.cloning,
     mirrorStates: core.mirrorStates,
     mirrorsHeld: core.mirrorsHeld,
@@ -2354,6 +2357,170 @@ it("says why when the core can't be asked, and stops searching", async () => {
   await files.peekDefinition();
 
   expect(files.peek?.lookup).toEqual({ state: "failed", problem: "Error: The window lost the core." });
+});
+
+/** ty's hit at line `line` of `path` in the Repository, at `side`. */
+const hitAt = (path: string, side: "base" | "head", line: number): Hit => ({
+  place: { kind: "repository", path, side, commit: side },
+  line,
+  column: 4,
+  text: "def area(width):",
+});
+const hitsFound = (...hits: Hit[]) => ok<Answer>({ state: "found", hits });
+/** A line of PR 11's diff in `picking`, as Go to definition asks for its row. */
+const lineOf = (path: string, side: "base" | "head", line: number): DiffLine => ({
+  repository: "python/cpython",
+  number: 11,
+  head: "abc",
+  base: "base",
+  path,
+  side,
+  line,
+});
+
+it("goes to a hit on a line the diff shows, and marks the line on the hit's side", async () => {
+  core.definitions.mockResolvedValue(hitsFound(hitAt("a.py", "head", 9)));
+  core.pullRequestRow.mockResolvedValue(ok(4));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+
+  await files.goToDefinition();
+
+  expect(core.definitions.mock.calls[0]?.[0]).toEqual(lookupOf("head", "a.py", 8, 4));
+  expect(core.pullRequestRow.mock.calls).toEqual([[lineOf("a.py", "head", 9)]]);
+  expect(files.jump).toEqual({ row: 4 });
+  expect(files.marked).toEqual({ row: 4, side: "head" });
+  expect(files.peek).toBeUndefined();
+  expect(files.notice).toBeUndefined();
+});
+
+it("lands a hit at the base on the line's old side, and closes the peek", async () => {
+  core.definitions.mockResolvedValueOnce(ok({ state: "not_set_up" }));
+  core.definitions.mockResolvedValueOnce(hitsFound(hitAt("a.py", "base", 8)));
+  core.pullRequestRow.mockResolvedValue(ok(3));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 3 }, null, 13, false);
+  await files.peekDefinition();
+
+  await files.goToDefinition();
+
+  expect(core.pullRequestRow.mock.calls).toEqual([[lineOf("a.py", "base", 8)]]);
+  expect(files.marked).toEqual({ row: 3, side: "base" });
+  expect(files.peek).toBeUndefined();
+});
+
+it("says it searches while it looks, and for a moment that it found no definition", async () => {
+  const answer = heldLookup();
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 3 }, null, 13, false);
+  vi.useFakeTimers();
+
+  const going = files.goToDefinition();
+  const searching = files.notice;
+  answer(hitsFound());
+  await going;
+  const nothing = files.notice;
+  vi.advanceTimersByTime(NOTICE_MS);
+
+  expect(searching).toBe("Searching for the definition of width…");
+  expect(nothing).toBe("No definition of width at base.");
+  expect(files.notice).toBeUndefined();
+  expect(files.peek).toBeUndefined();
+  expect(core.pullRequestRow).not.toHaveBeenCalled();
+});
+
+it("goes to the first hit the diff shows, past those outside it or whose row it can't find", async () => {
+  const outside: Hit = {
+    place: { kind: "outside", path: "C:/ty/builtins.pyi" },
+    line: 1,
+    column: 0,
+    text: "",
+  };
+  const hits = ["gone.py", "error.py", "thrown.py", "a.py"].map((path) => hitAt(path, "head", 9));
+  core.definitions.mockResolvedValue(hitsFound(outside, ...hits));
+  core.pullRequestRow.mockResolvedValueOnce(ok(null));
+  core.pullRequestRow.mockResolvedValueOnce({ status: "error", error: { kind: "internal", message: "no" } });
+  core.pullRequestRow.mockRejectedValueOnce(new Error("The window lost the core."));
+  core.pullRequestRow.mockResolvedValueOnce(ok(4));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+
+  await files.goToDefinition();
+
+  expect(core.pullRequestRow.mock.calls.map(([line]) => line.path)).toEqual([
+    "gone.py",
+    "error.py",
+    "thrown.py",
+    "a.py",
+  ]);
+  expect(files.marked).toEqual({ row: 4, side: "head" });
+});
+
+it("opens the peek on a hit on no line of the diff, or on an answer with no hit to go to", async () => {
+  core.definitions.mockResolvedValueOnce(hitsFound(hitAt("Lib/shapes.py", "base", 3)));
+  core.definitions.mockResolvedValueOnce({
+    status: "error",
+    error: { kind: "internal", message: "ty broke" },
+  });
+  core.pullRequestRow.mockResolvedValue(ok(null));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 3 }, null, 13, false);
+
+  await files.goToDefinition();
+  const nowhere = files.peek;
+  await files.goToDefinition();
+
+  expect(nowhere).toMatchObject({
+    symbol: "width",
+    lookup: { state: "answered", answer: { state: "found", hits: [hitAt("Lib/shapes.py", "base", 3)] } },
+  });
+  expect(nowhere?.code).toBeDefined();
+  expect(files.peek?.lookup).toEqual({ state: "failed", problem: "ty broke" });
+  expect(files.marked).toBeUndefined();
+  expect(files.notice).toBeUndefined();
+});
+
+it("goes nowhere once a newer lookup started, or the peek closed, while it found the row", async () => {
+  core.definitions.mockResolvedValue(hitsFound(hitAt("a.py", "head", 9)));
+  let row: (row: unknown) => void = () => {};
+  core.pullRequestRow.mockReturnValue(
+    new Promise((resolve) => {
+      row = resolve;
+    }),
+  );
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+
+  const going = files.goToDefinition();
+  await vi.waitFor(() => {
+    expect(core.pullRequestRow).toHaveBeenCalled();
+  });
+  files.closePeek();
+  row(ok(4));
+  await going;
+
+  expect(files.marked).toBeUndefined();
+  expect(files.jump).toBeUndefined();
+  expect(files.notice).toBeUndefined();
+});
+
+it("drops the search's words and the mark when a newer diff comes", async () => {
+  core.definitions.mockResolvedValueOnce(hitsFound(hitAt("a.py", "head", 9)));
+  core.pullRequestRow.mockResolvedValue(ok(4));
+  const answer = heldLookup();
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.goToDefinition();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  const going = files.goToDefinition();
+
+  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [file("a.py", 0)])));
+  await files.ask();
+  answer(hitsFound());
+  await going;
+
+  expect(files.marked).toBeUndefined();
+  expect(files.notice).toBeUndefined();
 });
 
 it("closes the peek when a newer diff comes, as its rows are other lines", async () => {

@@ -311,6 +311,17 @@ pub(crate) fn pull_request_find(
     crate::find_in_pull_request(search, &work)
 }
 
+/// The row of a PR's diff that shows a line of one of its files, if a hunk shows it, which Go to definition
+/// scrolls to (#444). It reads the diff on show, or reads it again from the mirror.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn pull_request_row(
+    line: crate::DiffLine,
+    work: State<'_, crate::DiffWork>,
+) -> Result<Option<u32>, Error> {
+    crate::read_pull_request_row(line, &work)
+}
+
 /// Where the picked word is defined, which the Definition peek shows (#438). It waits on ty, which reads the
 /// Lookup checkout, and on ty's start if it hasn't started, and never on GitHub, so it works offline at any
 /// commit the mirror holds. It cancels the lookup running, if one is. `waiting` hears what it waits for:

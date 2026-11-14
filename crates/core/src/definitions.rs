@@ -20,10 +20,11 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use specta::Type;
 use tsugiki_lsp::{Canceller, RequestError, Uri};
 
+pub use crate::diff::DiffEnd;
 use crate::diff::DiffFile;
 use crate::error::{Error, ErrorKind};
 use crate::github::CommitSha;
@@ -42,14 +43,6 @@ mod ty;
 
 /// The longest ty gets to start. A lookup has no time limit, as the user can cancel it.
 const PATIENCE: Duration = Duration::from_secs(30);
-
-/// The commit a line of the diff is at: the PR's base for a removed line, its head for the rest.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "snake_case")]
-pub enum DiffEnd {
-    Base,
-    Head,
-}
 
 /// A lookup the window asks for: where the name at `column` of line `line` of `path` is defined, with the
 /// PR's files at `side`.

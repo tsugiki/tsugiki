@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { chordLabel, chordName, currentOs, keyGuard, keyLabel, keyName, keysForBrowser } from "./keys";
+import { chordLabel, chordName, currentOs, keyGuard, keyLabel, keyName } from "./keys";
 
 function press(init: KeyboardEventInit): KeyboardEvent {
   return new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
@@ -249,16 +249,15 @@ describe("keyGuard", () => {
     });
   });
 
-  it("leaves F12 to DevTools in a development build, and owns it in a release", () => {
-    const f12 = () => press({ key: "F12", code: "F12" });
+  it("owns F12, and leaves WebView2 the Ctrl+Shift+I that opens DevTools in a development build", () => {
+    const f12 = press({ key: "F12", code: "F12" });
+    const devtools = press({ key: "I", code: "KeyI", ctrlKey: true, shiftKey: true });
 
-    const development = f12();
-    keyGuard({}, "other", keysForBrowser(true))(development);
-    expect(development.defaultPrevented).toBe(false);
+    keyGuard({}, "other")(f12);
+    keyGuard({}, "other")(devtools);
 
-    const release = f12();
-    keyGuard({}, "other", keysForBrowser(false))(release);
-    expect(release.defaultPrevented).toBe(true);
+    expect(f12.defaultPrevented).toBe(true);
+    expect(devtools.defaultPrevented).toBe(false);
   });
 
   it("doesn't run an action for a key it can't name", () => {

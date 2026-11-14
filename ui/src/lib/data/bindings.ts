@@ -168,6 +168,11 @@ export const commands = {
 	 */
 	pullRequestFind: (search: DiffSearch) => typedError<Found, Error_Serialize>(__TAURI_INVOKE("pull_request_find", { search })),
 	/**
+	 *  The row of a PR's diff that shows a line of one of its files, if a hunk shows it, which Go to definition
+	 *  scrolls to (#444). It reads the diff on show, or reads it again from the mirror.
+	 */
+	pullRequestRow: (line: DiffLine) => typedError<number | null, Error_Serialize>(__TAURI_INVOKE("pull_request_row", { line })),
+	/**
 	 *  Where the picked word is defined, which the Definition peek shows (#438). It waits on ty, which reads the
 	 *  Lookup checkout, and on ty's start if it hasn't started, and never on GitHub, so it works offline at any
 	 *  commit the mirror holds. It cancels the lookup running, if one is. `waiting` hears what it waits for:
@@ -536,6 +541,24 @@ export type DiffFile_Serialize = {
 
 /**  Whether a PR opens on all its files, one under the other, or on one file at a time: `[diff] files`. */
 export type DiffFiles = "all" | "one";
+
+/**
+ *  A line of a file of a PR's diff, as the window asks where it shows when Go to definition lands on it
+ *  (#444).
+ */
+export type DiffLine = {
+	repository: string,
+	number: number,
+	/**  The commit the diff ends at, as the Files tab was told. */
+	head: string,
+	/**  The merge base the diff starts from, as the Files tab was told. */
+	base: string,
+	/**  The file's path at `side`: a renamed file's old path at the base. */
+	path: string,
+	side: DiffEnd,
+	/**  The line's number at `side`, from 1. */
+	line: number,
+};
 
 /**  One row of the diff, as the window draws it. */
 export type DiffRow = DiffRow_Serialize | DiffRow_Deserialize;

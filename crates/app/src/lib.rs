@@ -913,6 +913,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::open_repository,
             slow_commands::save_pane_layout,
             slow_commands::save_theme,
+            slow_commands::reread_settings,
+            slow_commands::apply_settings,
             slow_commands::workbench,
             slow_commands::issue,
             slow_commands::pull_request,

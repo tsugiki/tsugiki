@@ -131,6 +131,16 @@ export const commands = {
 	 */
 	saveTheme: (kind: ThemeKind, name: string) => typedError<null, Error_Serialize>(__TAURI_INVOKE("save_theme", { kind, name })),
 	/**
+	 *  Reads both settings files again as the Settings dialog opens, so a hand edit made since start-up shows in
+	 *  it and takes effect (ADR 0014). This waits on small files.
+	 */
+	rereadSettings: () => typedError<LoadedSettings_Serialize, Error_Serialize>(__TAURI_INVOKE("reread_settings")),
+	/**
+	 *  Saves what the Settings dialog's Apply keeps to `settings.toml`, keeping the rest of the file, and answers
+	 *  with the settings in force after. The window previews them already. This waits on small files.
+	 */
+	applySettings: (settings: Settings_Deserialize) => typedError<LoadedSettings_Serialize, Error_Serialize>(__TAURI_INVOKE("apply_settings", { settings })),
+	/**
 	 *  The rows of a view of a Repository's Workbench, with what its Sidebar shows, in the order `machine.toml`
 	 *  keeps for the list (#592). This waits on the database and never on GitHub (ADR 0018).
 	 */

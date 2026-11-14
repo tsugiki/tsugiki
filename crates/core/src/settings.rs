@@ -907,6 +907,10 @@ enum Request {
     Reread {
         reply: Sender<Result<SettingsView, Error>>,
     },
+    Write {
+        settings: Box<Settings>,
+        reply: Sender<Result<SettingsView, Error>>,
+    },
 }
 
 impl SettingsOwner {
@@ -959,6 +963,9 @@ impl SettingsOwner {
                         files.reload();
                         (Ok(files.view()), reply)
                     }
+                    (Ok(files), Request::Write { settings, reply }) => {
+                        (files.write(&settings).map(|()| files.view()), reply)
+                    }
                     (
                         Err(problem),
                         Request::Add { reply, .. }
@@ -966,7 +973,8 @@ impl SettingsOwner {
                         | Request::Panes { reply, .. }
                         | Request::Theme { reply, .. }
                         | Request::Open { reply, .. }
-                        | Request::Reread { reply },
+                        | Request::Reread { reply }
+                        | Request::Write { reply, .. },
                     ) => (Err(problem.clone()), reply),
                 };
                 // Before the answer, so whoever asked finds the change in `view`. Changes come through here
@@ -1044,6 +1052,21 @@ impl SettingsOwner {
         self.ask(Request::Theme { kind, name, reply }, &answer)
     }
 
+    /// Reads both files again, as the Settings dialog opens, so a hand edit made since shows in it and takes
+    /// effect, and answers with what they say now (ADR 0014).
+    pub fn reread(&self) -> Result<SettingsView, Error> {
+        let (reply, answer) = mpsc::channel();
+        self.ask(Request::Reread { reply }, &answer)
+    }
+
+    /// Saves what the Settings dialog's Apply keeps (`SettingsFiles::write`), and answers with what the
+    /// settings say now.
+    pub fn write(&self, settings: Settings) -> Result<SettingsView, Error> {
+        let (reply, answer) = mpsc::channel();
+        let settings = Box::new(settings);
+        self.ask(Request::Write { settings, reply }, &answer)
+    }
+
     /// Makes `name` the open Repository, and answers with what the settings say now.
     pub fn open_repository(&self, name: RepositoryName) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
@@ -1058,10 +1081,7 @@ impl SettingsOwner {
         name: RepositoryName,
         ask_github: &mut dyn FnMut(RepositoryName) -> Result<RepositoryCheck, Error>,
     ) -> Result<NameCheck, Error> {
-        let (reply, answer) = mpsc::channel();
-        let view = self
-            .ask(Request::Reread { reply }, &answer)
-            .unwrap_or_else(|_| self.view());
+        let view = self.reread().unwrap_or_else(|_| self.view());
         view.loaded.settings.check_name(name, ask_github)
     }
 

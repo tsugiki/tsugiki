@@ -22,7 +22,9 @@ use tsugiki_core::highlight::Span;
 use tsugiki_core::mirror::{CloneRefusal, MirrorSource};
 use tsugiki_core::repository_settings::{MirrorCost, NameCheck};
 use tsugiki_core::session::SessionRequests;
-use tsugiki_core::settings::{AppearanceSettings, Home, PaneLayout, SettingsOwner};
+use tsugiki_core::settings::{
+    AppearanceSettings, Home, LoadedSettings, PaneLayout, Settings, SettingsOwner,
+};
 use tsugiki_core::store::StoreReader;
 use tsugiki_core::theme::{ThemeKind, ThemeLibrary, Themes};
 use tsugiki_core::web::{GitHubItem, WebAddress};
@@ -184,6 +186,25 @@ pub(crate) fn save_theme(
 ) -> Result<(), Error> {
     let library = ThemeLibrary::read(&owner.view().themes_folder)?;
     owner.save_theme(kind, library.named(kind, name)?).map(drop)
+}
+
+/// Reads both settings files again as the Settings dialog opens, so a hand edit made since start-up shows in
+/// it and takes effect (ADR 0014). This waits on small files.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn reread_settings(owner: State<'_, SettingsOwner>) -> Result<LoadedSettings, Error> {
+    owner.reread().map(|view| view.loaded)
+}
+
+/// Saves what the Settings dialog's Apply keeps to `settings.toml`, keeping the rest of the file, and answers
+/// with the settings in force after. The window previews them already. This waits on small files.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn apply_settings(
+    settings: Settings,
+    owner: State<'_, SettingsOwner>,
+) -> Result<LoadedSettings, Error> {
+    owner.write(settings).map(|view| view.loaded)
 }
 
 /// The rows of a view of a Repository's Workbench, with what its Sidebar shows, in the order `machine.toml`

@@ -441,6 +441,38 @@ fn the_owner_saves_a_picked_theme_and_answers_with_it() {
 }
 
 #[test]
+fn the_owner_reads_a_hand_edit_again_as_the_settings_dialog_opens() {
+    let (folders, root) = temp_folders("owner-reread");
+    let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+    fs::write(folders.settings_file(), "[status_bar]\nvisible = false\n").unwrap();
+
+    let before = owner.view();
+    let answer = owner.reread();
+    fs::remove_dir_all(root).unwrap();
+
+    assert!(before.loaded.settings.status_bar.visible);
+    let loaded = answer.unwrap().loaded;
+    assert_eq!(loaded.settings, hidden());
+    assert_eq!(owner.view().loaded, loaded);
+}
+
+#[test]
+fn the_owner_saves_what_apply_keeps_and_a_restart_reads_it() {
+    let (folders, root) = temp_folders("owner-apply");
+    let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+
+    let answer = owner.write(hidden());
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+    let restarted = SettingsFiles::load(folders);
+    fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(answer.unwrap().loaded.settings, hidden());
+    assert_eq!(owner.view().loaded.settings, hidden());
+    assert_eq!(after, "[status_bar]\nvisible = false\n");
+    assert_eq!(restarted.loaded().settings, hidden());
+}
+
+#[test]
 fn a_file_that_doesnt_parse_is_left_alone_and_named_with_its_line() {
     for (name, text) in [
         ("broken", "# Mine.\n[status_bar]\nvisible = = false\n"),
@@ -1197,8 +1229,12 @@ fn without_folders_the_owner_says_what_went_wrong_with_them() {
     let resizing = owner.save_panes(WIDE);
     let opening = owner.open_repository(repository("a/b"));
     let picking = owner.save_theme(ThemeKind::Dark, named("Gruvbox Dark Hard"));
+    let rereading = owner.reread();
+    let applying = owner.write(hidden());
 
     assert_eq!(picking.unwrap_err(), lost);
+    assert_eq!(rereading.unwrap_err(), lost);
+    assert_eq!(applying.unwrap_err(), lost);
     assert_eq!(adding.unwrap_err(), lost);
     assert_eq!(opening.unwrap_err(), lost);
     assert_eq!(answering.unwrap_err(), lost);

@@ -30,6 +30,14 @@ the PR. Leave `just check` and `just coverage` to CI: it runs the gates `just ch
 scope, and macOS as well, and you wait for its result before the merge. If CI fails, fix the gate that
 failed, rerun only that gate, and push again.
 
+Before a push, read the diff for what only macOS's CI catches: a `C:/` path isn't absolute there, and a
+closure behind `cfg!(windows)` leaves a line macOS's coverage never runs. Once a branch is pushed, fix it with
+new commits and bring main in with `git merge origin/main`. An amend or a rebase needs a force push, and each
+force push needs the user's say. The PR squash-merges anyway.
+
+To build several tickets of a milestone at once, one background agent per ticket, use the `wave` skill in
+`.claude/skills/wave/`.
+
 `just ship --check` runs `just check` before the push and stops on a failure, with the failed recipe and the
 log's tail. Use it for a release PR (`docs/releasing.md`) and for a PR that changes the gates themselves: the
 `justfile`, `scripts/` or `.github/workflows/`. `just next` lists the open tickets of the release being built.

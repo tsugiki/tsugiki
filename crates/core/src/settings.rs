@@ -694,9 +694,8 @@ impl SettingsFiles {
             )),
             language_servers: {
                 let given = &self.loaded.language_servers;
-                let path = |path: &Option<PathBuf>| {
-                    path.as_ref().map(|path| self.folders.data.join(path))
-                };
+                let path =
+                    |path: &Option<PathBuf>| path.as_ref().map(|path| self.folders.data.join(path));
                 LanguageServers {
                     ty: path(&given.ty),
                     rust_analyzer: path(&given.rust_analyzer),

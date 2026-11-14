@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { type CoreAnswers, mockCore } from "./mock-core.ts";
+import { type CoreAnswers, mockCore, noServers } from "./mock-core.ts";
 import { appearance } from "./themes.ts";
 
 const core: CoreAnswers = {
@@ -11,6 +11,7 @@ const core: CoreAnswers = {
       diff: { files: "all" },
       repositories: [],
     },
+    language_servers: noServers,
     problems: [],
   },
   status: { state: "online", login: "octocat" },

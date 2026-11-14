@@ -2419,7 +2419,10 @@ it("says how to set ty up, and when no server knows the file's language", async 
   await files.peekDefinition();
   await tick();
 
-  expect(notSetUp).toEqual(["new at abc · the PR's head ✕", "Set up ty to go to definitions in Python"]);
+  expect(notSetUp).toEqual([
+    "new at abc · the PR's head ✕",
+    "Set up ty to go to definitions in Python Open Settings › Advanced",
+  ]);
   expect(peekText()).toEqual([
     "new at abc · the PR's head ✕",
     "Tsugiki can't go to definitions in this file's language yet",

@@ -20,7 +20,8 @@ use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
 use tsugiki_core::build::Build;
 use tsugiki_core::definitions::{
-    Answer, Code, Definitions, DiffEnd, HitFile, HitLines, Lookup, OnIndex, OnWaiting, Ticket,
+    Answer, Code, Definitions, DiffEnd, HitFile, HitLines, Lookup, OnIndex, OnWaiting, ServerName,
+    ServerRow, Ticket, server_log,
 };
 use tsugiki_core::diff::{DiffOf, DiffRow, Diffs, Found, HeadLine, Highlighter, PrAt};
 use tsugiki_core::error::{Error, ErrorKind};
@@ -38,7 +39,9 @@ use tsugiki_core::releases::NewVersion;
 use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
 use tsugiki_core::repository_settings::{MirrorCost, NameCheck, RepositorySettings};
 use tsugiki_core::session::SessionRequests;
-use tsugiki_core::settings::{Home, LoadedSettings, PaneLayout, SettingsOwner, TokenSource};
+use tsugiki_core::settings::{
+    Home, LoadedSettings, PaneLayout, SettingsOwner, SettingsView, TokenSource,
+};
 use tsugiki_core::status::{Change, FailedRead, LastSync, Status, SyncActivity};
 use tsugiki_core::store::StoreReader;
 use tsugiki_core::theme::ThemeMode;
@@ -207,11 +210,48 @@ fn choose_named_source(
     Ok(())
 }
 
-/// Opens the system's folder picker and gives the folder the user picked, if they picked one.
-pub(crate) type PickFolder = Arc<dyn Fn() -> Option<PathBuf> + Send + Sync>;
+/// Opens the system's picker for a folder or a program, and gives the one the user picked, if they picked
+/// one.
+pub(crate) type PickPath = Arc<dyn Fn(Pick) -> Option<PathBuf> + Send + Sync>;
 
-/// The folder picker, which the commands share.
-pub(crate) struct FolderPicker(PickFolder);
+/// What the system's picker picks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Pick {
+    Folder,
+    /// A language server's program, for its row in Settings › Advanced.
+    Program,
+}
+
+/// The system's picker, which the commands share.
+pub(crate) struct Picker(PickPath);
+
+/// The settings in force once `settings` was read or applied. The language servers' thread hears they may
+/// have changed either way, as a failed read leaves the last settings in force.
+fn settings_in_force(
+    settings: Result<SettingsView, Error>,
+    work: &DiffWork,
+) -> Result<LoadedSettings, Error> {
+    work.definitions.reconfigured();
+    settings.map(|view| view.loaded)
+}
+
+/// Opens with `open` the log that language server `server` writes for `repository`, which lives beside its
+/// Lookup checkout.
+fn open_server_log(
+    repository: &str,
+    server: ServerName,
+    work: &DiffWork,
+    open: impl FnOnce(&Path) -> Result<(), Error>,
+) -> Result<(), Error> {
+    let name = RepositoryName::parse(repository)?;
+    let folders = work.folders.as_ref().map_err(Clone::clone)?;
+    let log = server_log(&folders.lookup(&name), server);
+    if !log.is_file() {
+        let message = format!("{} has written no log for {name} yet.", server.as_str());
+        return Err(Error::new(ErrorKind::NotFound, &message));
+    }
+    open(&log)
+}
 
 /// Looks at git and the disk again, and tries the clones that waited for them, and returns at once.
 #[tauri::command]
@@ -717,6 +757,14 @@ pub(crate) struct DefinitionLookup {
     ticket: Ticket,
 }
 
+/// Each language server's row in Settings › Advanced, as the servers' thread last wrote them. The
+/// `language-servers-changed` event brings each change after. This never waits.
+#[tauri::command]
+#[specta::specta]
+fn language_servers(work: State<'_, DiffWork>) -> Vec<ServerRow> {
+    work.definitions.rows()
+}
+
 /// Cancels the lookup with `ticket`, as when the user closes the Definition peek while it waits (#440). The
 /// lookup then answers that it was cancelled, even if the core takes the cancel before the lookup.
 #[tauri::command]
@@ -859,6 +907,11 @@ struct NewVersionFound(NewVersion);
 #[derive(Clone, Serialize, Type, Event)]
 struct HeadsFetched(Change);
 
+/// Sent when a language server's row in Settings › Advanced changes: a check of a new path ends, a server
+/// starts or stops, or one has a problem.
+#[derive(Clone, Serialize, Type, Event)]
+struct LanguageServersChanged(Vec<ServerRow>);
+
 /// The PR heads that aren't in a Repository's mirror once the worker stopped fetching them, and why.
 #[derive(Clone, Serialize, Type)]
 struct FailedHeads {
@@ -892,6 +945,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::check_clone,
             slow_commands::choose_mirror_source,
             slow_commands::pick_folder,
+            slow_commands::pick_program,
             refresh,
             open_issue,
             fetch_issue,
@@ -926,6 +980,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::pull_request_row,
             slow_commands::definitions,
             cancel_definitions,
+            language_servers,
+            slow_commands::open_server_log,
             slow_commands::definition_code,
             slow_commands::definition_spans,
             slow_commands::open_on_github,
@@ -944,7 +1000,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             MirrorsHeldChanged,
             NewVersionFound,
             HeadsFetched,
-            HeadsFetchFailed
+            HeadsFetchFailed,
+            LanguageServersChanged
         ])
 }
 

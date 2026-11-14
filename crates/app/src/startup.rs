@@ -15,12 +15,12 @@ use tsugiki_core::logfile;
 use tsugiki_core::mirror::Remotes;
 use tsugiki_token::{Https, run_gh};
 
-use crate::Started;
 use crate::first_frame;
 use crate::navigation;
 use crate::specta_builder;
 use crate::version;
 use crate::wiring::{Outside, connect_core};
+use crate::{Pick, Started};
 
 /// How often Tsugiki asks GitHub whether it is still there, at about one point of the hourly 5,000 each.
 const REFRESH: Duration = Duration::from_secs(60);
@@ -84,9 +84,9 @@ pub fn run() {
             Box::new(move |path| https.get_public(path))
         },
         remotes: Remotes::github(),
-        pick_folder: {
+        pick: {
             let app = app.handle().clone();
-            Arc::new(move || pick_folder(&app))
+            Arc::new(move |what| pick(&app, what))
         },
     };
     let core = connect_core(app.handle(), folders, outside, REFRESH);
@@ -214,13 +214,17 @@ fn log_panics() {
     }));
 }
 
-/// The folder the user picks in the system's picker, over the window, or nothing if they cancel. It waits
-/// for the user, so it runs off the main thread.
-fn pick_folder(app: &AppHandle) -> Option<PathBuf> {
+/// The folder or the program the user picks in the system's picker, over the window, or nothing if they
+/// cancel. It waits for the user, so it runs off the main thread.
+fn pick(app: &AppHandle, what: Pick) -> Option<PathBuf> {
     use tauri_plugin_dialog::DialogExt;
     let mut picker = app.dialog().file();
     if let Some(window) = app.get_webview_window("main") {
         picker = picker.set_parent(&window);
     }
-    picker.blocking_pick_folder()?.into_path().ok()
+    let picked = match what {
+        Pick::Folder => picker.blocking_pick_folder(),
+        Pick::Program => picker.blocking_pick_file(),
+    };
+    picked?.into_path().ok()
 }

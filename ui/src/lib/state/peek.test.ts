@@ -67,6 +67,24 @@ it("says how to set up the server for the file's language", () => {
   expect(notSetUp("ty")).toBe("Set up ty to go to definitions in Python");
   expect(notSetUp("rust-analyzer")).toBe("Set up rust-analyzer to go to definitions in Rust");
   expect(notSetUp("clangd")).toBe("Set up clangd to go to definitions in C");
+  expect(
+    peekWords(looking({ state: "answered", answer: { state: "not_set_up", server: "ty" } })),
+  ).toMatchObject({ settings: "ty" });
+});
+
+it("says what went wrong with a server, with a link to its row in Settings", () => {
+  const problem = {
+    kind: "did_not_start",
+    cause: "The system cannot find the file specified. (os error 2)",
+  } as const;
+  const words = peekWords(
+    looking({ state: "answered", answer: { state: "problem", server: "clangd", problem } }),
+  );
+
+  expect(words).toMatchObject({
+    body: "clangd didn't start: The system cannot find the file specified. (os error 2)",
+    settings: "clangd",
+  });
 });
 
 it("says a lookup was cancelled, in a peek with words only", () => {

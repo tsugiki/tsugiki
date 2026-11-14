@@ -154,14 +154,18 @@ pub(super) fn check(name: ServerName, program: &Path) -> Result<Option<String>, 
 
 /// What `printed`, the text a program printed for `--version` or why it didn't run, says of server `name`.
 /// The first line has to hold the server's name as a word, as `clangd version 23.1.0` does.
-fn read_check(name: ServerName, printed: io::Result<String>) -> Result<Option<String>, ServerProblem> {
+fn read_check(
+    name: ServerName,
+    printed: io::Result<String>,
+) -> Result<Option<String>, ServerProblem> {
     let printed = printed.map_err(|cause| ServerProblem::DidNotStart {
         cause: cause.to_string(),
     })?;
     let first_line = (printed.lines().map(str::trim))
         .find(|line| !line.is_empty())
         .unwrap_or_default();
-    let named = (first_line.split_whitespace()).any(|word| word.eq_ignore_ascii_case(name.as_str()));
+    let named =
+        (first_line.split_whitespace()).any(|word| word.eq_ignore_ascii_case(name.as_str()));
     if named {
         Ok(version_in(first_line))
     } else {
@@ -175,6 +179,10 @@ fn read_check(name: ServerName, printed: io::Result<String>) -> Result<Option<St
 /// word that starts with a digit, without what follows its last letter or digit. That is `0.0.103` in
 /// `ty 0.0.103 (f9672a390 2026-11-13)`, and `23.1.0` in `clangd version 23.1.0 (https://...)`.
 pub(super) fn version_in(text: &str) -> Option<String> {
-    let word = (text.split_whitespace()).find(|word| word.starts_with(|c: char| c.is_ascii_digit()))?;
-    Some(word.trim_end_matches(|c: char| !c.is_ascii_alphanumeric()).to_owned())
+    let word =
+        (text.split_whitespace()).find(|word| word.starts_with(|c: char| c.is_ascii_digit()))?;
+    Some(
+        word.trim_end_matches(|c: char| !c.is_ascii_alphanumeric())
+            .to_owned(),
+    )
 }

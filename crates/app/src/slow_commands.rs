@@ -9,13 +9,13 @@
     reason = "Tauri's macro writes it in a compile-time check on `async fn` commands, which never runs"
 )]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tauri::State;
 use tauri::async_runtime::spawn_blocking;
 use tauri::ipc::Channel;
-use tsugiki_core::definitions::{Answer, Index, Waiting};
+use tsugiki_core::definitions::{Answer, Index, ServerName, Waiting};
 use tsugiki_core::diff::{DiffRow, HeadLine};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::highlight::Span;
@@ -128,15 +128,27 @@ pub(crate) fn choose_mirror_source(
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn pick_folder(
-    picker: State<'_, crate::FolderPicker>,
+    picker: State<'_, crate::Picker>,
 ) -> Result<Option<PathBuf>, Error> {
+    pick(&picker, crate::Pick::Folder).await
+}
+
+/// Opens the system's file picker for a language server's program, as Browse… on its row in Settings ›
+/// Advanced does, and gives the file the user picked, or nothing if they cancelled.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn pick_program(
+    picker: State<'_, crate::Picker>,
+) -> Result<Option<PathBuf>, Error> {
+    pick(&picker, crate::Pick::Program).await
+}
+
+/// Waits for the user to pick `what`, on a thread meant for blocking.
+async fn pick(picker: &crate::Picker, what: crate::Pick) -> Result<Option<PathBuf>, Error> {
     let pick = Arc::clone(&picker.0);
-    spawn_blocking(move || pick()).await.map_err(|cause| {
-        log::error!("The folder picker stopped: {cause}");
-        Error::new(
-            ErrorKind::Internal,
-            "Tsugiki couldn't open the folder picker.",
-        )
+    spawn_blocking(move || pick(what)).await.map_err(|cause| {
+        log::error!("The picker stopped: {cause}");
+        Error::new(ErrorKind::Internal, "Tsugiki couldn't open the picker.")
     })
 }
 
@@ -192,20 +204,25 @@ pub(crate) fn save_theme(
 /// it and takes effect (ADR 0014). This waits on small files.
 #[tauri::command(async)]
 #[specta::specta]
-pub(crate) fn reread_settings(owner: State<'_, SettingsOwner>) -> Result<LoadedSettings, Error> {
-    owner.reread().map(|view| view.loaded)
+pub(crate) fn reread_settings(
+    owner: State<'_, SettingsOwner>,
+    work: State<'_, crate::DiffWork>,
+) -> Result<LoadedSettings, Error> {
+    crate::settings_in_force(owner.reread(), &work)
 }
 
-/// Saves the tables the Settings dialog's Apply changed to `settings.toml`, over what the file says now and
-/// keeping the rest of it, and answers with the settings in force after. The window previews them already.
-/// This waits on small files.
+/// Saves the tables the Settings dialog's Apply changed to `settings.toml`, and the language servers to
+/// `machine.toml`, over what the files say now and keeping the rest of them, and answers with the settings in
+/// force after. The window previews them already. A server whose path changed is checked after, and its row
+/// in Settings › Advanced says what the check found. This waits on small files.
 #[tauri::command(async)]
 #[specta::specta]
 pub(crate) fn apply_settings(
     changes: SettingsChanges,
     owner: State<'_, SettingsOwner>,
+    work: State<'_, crate::DiffWork>,
 ) -> Result<LoadedSettings, Error> {
-    owner.apply(changes).map(|view| view.loaded)
+    crate::settings_in_force(owner.apply(changes), &work)
 }
 
 /// The rows of a view of a Repository's Workbench, with what its Sidebar shows, in the order `machine.toml`
@@ -273,6 +290,27 @@ pub(crate) fn open_on_github(repository: &str, item: GitHubItem) -> Result<(), E
 #[specta::specta]
 pub(crate) fn open_link(address: &str) -> Result<(), Error> {
     show_in_browser(&WebAddress::parse(address)?)
+}
+
+/// Opens the log language server `server` writes for `repository` in the system's program for it, as Open
+/// log on the server's row in Settings › Advanced does.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn open_server_log(
+    repository: &str,
+    server: ServerName,
+    work: State<'_, crate::DiffWork>,
+) -> Result<(), Error> {
+    crate::open_server_log(repository, server, &work, open_file)
+}
+
+/// Starting a program can take a moment, so this runs on the commands that can wait. No test calls it: it
+/// would open a real window over the user's work.
+fn open_file(file: &Path) -> Result<(), Error> {
+    open::that_detached(file).map_err(|cause| {
+        log::error!("{} didn't open: {cause}", file.display());
+        Error::new(ErrorKind::Internal, "Tsugiki couldn't open the log.")
+    })
 }
 
 /// Starting a browser can take a moment, so this runs on the commands that can wait. No test calls it: it

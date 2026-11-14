@@ -5,8 +5,8 @@
 use std::io::{BufRead, BufReader, PipeReader, PipeWriter, Write, pipe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::{env, fs, thread};
 
 use serde_json::{Value, json};

@@ -3,6 +3,7 @@ import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HitCode } from "$lib/state/hit-code.svelte";
 import type { Crumb, Peek } from "$lib/state/peek";
+import { settingsAsk } from "$lib/state/settings-ask.svelte";
 import DefinitionPeek from "./DefinitionPeek.svelte";
 
 /** A hit of a lookup, as the core gives it. */
@@ -64,6 +65,31 @@ it("counts the seconds a lookup waits for ty's answer, and stops once it answers
   await tick();
   expect(body()).toBe("No definition of eggs");
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it("asks for the server's row in Settings › Advanced from a line that says to set it up", async () => {
+  render(DefinitionPeek, {
+    peek: peekWith({ state: "answered", answer: { state: "not_set_up", server: "ty" } }),
+    onclose: () => {},
+    onhit: () => {},
+    onopen: () => {},
+    ...following,
+  });
+  expect(screen.getByText("Set up ty to go to definitions in Python")).toBeDefined();
+
+  await fireEvent.click(screen.getByRole("button", { name: "Open Settings › Advanced" }));
+  expect(settingsAsk.take()).toBe("ty");
+});
+
+it("offers no link to Settings from a line that says it found nothing", () => {
+  render(DefinitionPeek, {
+    peek: peekWith({ state: "answered", answer: { state: "found", hits: [] } }),
+    onclose: () => {},
+    onhit: () => {},
+    onopen: () => {},
+    ...following,
+  });
+  expect(screen.queryByRole("button", { name: "Open Settings › Advanced" })).toBeNull();
 });
 
 it("counts no seconds while ty starts, as the words say none", () => {

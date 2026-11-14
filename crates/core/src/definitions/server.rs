@@ -260,7 +260,9 @@ impl LanguageServer {
         };
         let setup = match name {
             ServerName::Ty => super::ty::setup(&folder),
-            ServerName::RustAnalyzer => super::rust_analyzer::setup(program).map_err(didnt_start)?,
+            ServerName::RustAnalyzer => {
+                super::rust_analyzer::setup(program).map_err(didnt_start)?
+            }
             ServerName::Clangd => super::clangd::setup(&folder).map_err(didnt_start)?,
         };
         let log = (new_log(&server_log(&folder, name)))

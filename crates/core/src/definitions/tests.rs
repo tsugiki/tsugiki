@@ -786,7 +786,10 @@ fn a_program_that_isnt_a_language_server_stops_and_says_how() {
         panic!("{found:?}")
     };
     assert_eq!(code, Some(1));
-    assert!(stderr_tail.contains("'server' is not a git command"), "{stderr_tail}");
+    assert!(
+        stderr_tail.contains("'server' is not a git command"),
+        "{stderr_tail}"
+    );
 }
 
 fn diff_file(path: &str) -> DiffFile {
@@ -921,10 +924,7 @@ fn a_pr_whose_ty_doesnt_start_is_logged_and_its_lookup_says_why() {
         ),
         "{found:?}"
     );
-    assert!(matches!(
-        ty_row(&rows).status,
-        ServerStatus::Problem { .. }
-    ));
+    assert!(matches!(ty_row(&rows).status, ServerStatus::Problem { .. }));
 }
 
 #[test]

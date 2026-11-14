@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { mockCore } from "./mock-core.ts";
+import { mockCore, noServers } from "./mock-core.ts";
 import { serveUnderTauriCsp } from "./tauri-csp.ts";
 import { appearance } from "./themes.ts";
 
@@ -11,6 +11,7 @@ const settings = {
     diff: { files: "all" as const },
     repositories: [],
   },
+  language_servers: noServers,
   problems: [],
 };
 

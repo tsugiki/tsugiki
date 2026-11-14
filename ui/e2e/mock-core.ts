@@ -7,6 +7,10 @@ import type { commands } from "../src/lib/data/bindings.ts";
  * panes take their default layout, and the themes set no token, so the system's colours stand in. */
 export type CoreAnswers = { [C in keyof typeof commands]?: Awaited<ReturnType<(typeof commands)[C]>> };
 
+/** What `machine.toml` says of the language servers when it says nothing: none set up, and the idle time's
+ * default. */
+export const noServers = { ty: null, "rust-analyzer": null, clangd: null, idle_minutes: 30 };
+
 type Listener = (message: { event: string; id: number; payload: unknown }) => void;
 type MockWindow = { mockEventListeners: Record<string, Listener[]>; mockAnswers: Record<string, unknown> };
 

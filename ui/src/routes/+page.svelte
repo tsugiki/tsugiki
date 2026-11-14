@@ -1,7 +1,10 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { AboutState, openDevtools } from "$lib/state/about.svelte";
   import { HomeState } from "$lib/state/home.svelte";
   import { hud } from "$lib/state/hud.svelte";
+  import type { ServerName } from "$lib/state/server-words";
+  import { settingsAsk } from "$lib/state/settings-ask.svelte";
   import { SettingsState } from "$lib/state/settings.svelte";
   import { StatusState } from "$lib/state/status.svelte";
   import { applyTheme, ThemeState } from "$lib/state/theme.svelte";
@@ -65,10 +68,25 @@
   const openPicker = () => {
     if (home.current?.screen === "repository" && !dialogOpen) pickerOpen = true;
   };
+  /** The language server whose row in Settings › Advanced the dialog opens at, if it opened at one. */
+  let settingsAt = $state<ServerName>();
   /** Opens the Settings dialog on its General page, from `Ctrl+,`, ⚙ or the palette. */
   const openSettings = () => {
-    if (!dialogOpen) settingsOpen = true;
+    if (!dialogOpen) {
+      settingsAt = undefined;
+      settingsOpen = true;
+    }
   };
+  // The Definition peek's link asks for a server's row in Settings › Advanced (#683). With another dialog
+  // open the ask goes, as a press behind a dialog does nothing.
+  $effect(() => {
+    if (settingsAsk.server === undefined) return;
+    const server = settingsAsk.take();
+    if (!untrack(() => dialogOpen)) {
+      settingsAt = server;
+      settingsOpen = true;
+    }
+  });
   /** Opens the theme picker, from `Ctrl+K T` or the palette. Neither reaches it with a dialog open: a chord
    * starts only with none, and the palette has closed by then. It reads the themes folder again, so a file
    * saved since shows up as the list fills in. */
@@ -285,6 +303,8 @@
     onreread={() => void theme.load()}
     status={status.status}
     about={about.about}
+    repository={openName}
+    at={settingsAt}
     onclose={() => {
       settingsOpen = false;
     }}

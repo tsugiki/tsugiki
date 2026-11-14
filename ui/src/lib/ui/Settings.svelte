@@ -1,13 +1,21 @@
 <!-- The Settings dialog (docs/devel/settings.md), laid out as variant B of the Settings prototype on
      `prototype/app-shell`: the pages in a column on the left, each Repository's under Repositories, the open
-     one on the right, and Cancel and Apply under them. `SettingsDialog` decides what each does. -->
+     one on the right, and Cancel and Apply under them. `SettingsDialog` decides what each does. It opens on
+     General, or on Advanced at a language server's row, as the Definition peek's link asks (#683). -->
 <script lang="ts">
   import { untrack } from "svelte";
   import type { About } from "$lib/state/about.svelte";
+  import type { ServerName } from "$lib/state/server-words";
   import type { SettingsState } from "$lib/state/settings.svelte";
-  import { SETTINGS_PAGES, SettingsDialog, type SettingsPage } from "$lib/state/settings-dialog.svelte";
+  import {
+    SETTINGS_PAGES,
+    SettingsDialog,
+    type SettingsPage,
+    type Shown,
+  } from "$lib/state/settings-dialog.svelte";
   import type { Status } from "$lib/state/status.svelte";
   import AccountPage from "./AccountPage.svelte";
+  import AdvancedPage from "./AdvancedPage.svelte";
   import GeneralPage from "./GeneralPage.svelte";
   import { closeOnPress, keepFocusIn, takeFocus } from "./focus";
 
@@ -15,6 +23,8 @@
     settings,
     status,
     about,
+    repository,
+    at,
     onreread,
     onclose,
   }: {
@@ -24,13 +34,21 @@
     status: Status | undefined;
     /** What the core says about itself, which says where this build's source is. */
     about: About | undefined;
+    /** The open Repository, whose language servers' logs Settings › Advanced opens, if one is open. */
+    repository?: string | undefined;
+    /** The language server whose row in Settings › Advanced the dialog opens at, or nothing to open on
+     * General. */
+    at?: ServerName | undefined;
     /** Runs once the dialog has read the files again, so the rest of the window takes what they say now,
      * such as a theme edited by hand. */
     onreread: () => void;
     onclose: () => void;
   } = $props();
 
-  const dialog = new SettingsDialog(untrack(() => settings));
+  const dialog = new SettingsDialog(
+    untrack(() => settings),
+    untrack((): Shown => (at === undefined ? { page: "General" } : { page: "Advanced" })),
+  );
   void dialog.open().then((reread) => {
     if (reread) onreread();
   });
@@ -113,6 +131,8 @@
           <GeneralPage {dialog} />
         {:else if dialog.shown.page === "Account"}
           <AccountPage {status} {about} />
+        {:else if dialog.shown.page === "Advanced"}
+          <AdvancedPage {dialog} {repository} {at} />
         {:else}
           <p class="empty">Nothing to set here yet.</p>
         {/if}

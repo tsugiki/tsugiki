@@ -40,8 +40,8 @@ use crate::mirror::{LookupAt, LookupCheckout};
 use crate::repository::RepositoryName;
 pub use code::Code;
 use code::HitFiles;
-use health::{Health, Last, Presence};
 pub use health::{FoundVersion, ServerProblem, ServerRow, ServerStatus};
+use health::{Health, Last, Presence};
 use server::{Hits, Indexing, LanguageServer, News, OnNews, Request, Stopping};
 
 mod clangd;
@@ -138,7 +138,7 @@ pub enum Answer {
 }
 
 /// A language server Tsugiki talks to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum ServerName {
     /// ty, for Python.
@@ -176,7 +176,7 @@ impl ServerName {
     }
 
     /// The server's name, as Tsugiki's messages say it.
-    fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Ty => "ty",
             Self::RustAnalyzer => "rust-analyzer",
@@ -715,7 +715,8 @@ impl Owner {
     /// the next lookup starts it again. A lookup it was asked fails by itself. A server Tsugiki stopped is
     /// forgotten already, and a newer one at the same key hasn't ended.
     fn exited(&mut self, key: &Key, exit: Exit) {
-        let ended = (self.servers.get(key)).is_some_and(|server| server.indexing() == Indexing::Ended);
+        let ended =
+            (self.servers.get(key)).is_some_and(|server| server.indexing() == Indexing::Ended);
         if !ended {
             return;
         }

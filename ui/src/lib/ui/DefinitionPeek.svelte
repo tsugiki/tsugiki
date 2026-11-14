@@ -2,14 +2,16 @@
      path and line of the hit it shows, the commit it is at, which hit it is of how many, Open, which goes to
      that hit (#446), and ✕. Under it, the hit's code scrolled to its line (#439), with the hits listed on
      its right (#441), or else a line that says what the lookup waits for, with the seconds once they pass
-     one (#440), that it found nothing, or why it failed. A hit outside the Repository names its whole path
-     on disk in place of a commit, and has no Open. While the server that answered builds its index, a line
-     under the header says so (#680). A click picks a word in the code, which `Alt+F12` looks up in place of
-     what the peek showed (#447). A breadcrumb before the symbol then names that, and a click on a crumb
-     brings it back. -->
+     one (#440), that it found nothing, or why it failed. A line that says to set a server up, or what went
+     wrong with one, ends with a link to its row in Settings › Advanced (#683). A hit outside the Repository
+     names its whole path on disk in place of a commit, and has no Open. While the server that answered
+     builds its index, a line under the header says so (#680). A click picks a word in the code, which
+     `Alt+F12` looks up in place of what the peek showed (#447). A breadcrumb before the symbol then names
+     that, and a click on a crumb brings it back. -->
 
 <script lang="ts">
   import { peekWords, type Peek } from "$lib/state/peek";
+  import { settingsAsk } from "$lib/state/settings-ask.svelte";
   import { currentOs, keyName } from "./keys";
   import PeekCode from "./PeekCode.svelte";
 
@@ -161,7 +163,18 @@
     </ol>
   </div>
 {:else}
-  <div class="body">{words.body}</div>
+  <div class="body">
+    <span class="said">{words.body}</span>
+    {#if words.settings !== undefined}
+      {@const server = words.settings}
+      <button
+        class="settings"
+        onclick={() => {
+          settingsAsk.open(server);
+        }}>Open Settings › Advanced</button
+      >
+    {/if}
+  </div>
 {/if}
 
 <style>
@@ -228,6 +241,26 @@
 
   .open + .close {
     margin-left: 0;
+  }
+
+  /* The line's words give way to the link when the peek runs out of room. */
+  .said {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .settings {
+    flex: none;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--accent);
+    cursor: pointer;
+  }
+
+  .settings:hover {
+    text-decoration: underline;
   }
 
   /* While the tab finds the hit's row. */

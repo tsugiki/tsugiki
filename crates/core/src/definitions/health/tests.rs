@@ -85,7 +85,9 @@ fn a_version_we_didn_t_test_says_so_and_a_problem_outranks_whether_the_server_ru
     let mut started = idle;
     started.started(None);
     assert_eq!(
-        started.row(ServerName::RustAnalyzer, Presence::Stopped).status,
+        started
+            .row(ServerName::RustAnalyzer, Presence::Stopped)
+            .status,
         ServerStatus::Ready
     );
     assert_eq!(started.version.as_deref(), Some("1.99.1"));

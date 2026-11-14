@@ -1721,7 +1721,10 @@ fn settings_advanced_shows_each_server_s_path_as_machine_toml_writes_it() {
     let text = "[language_servers]\nidle_minutes = 5\n[language_servers.clangd]\npath = 'clangd/bin/clangd.exe'\n";
     fs::write(folders.machine_file(), text).unwrap();
 
-    let loaded = SettingsFiles::load(folders).loaded().language_servers.clone();
+    let loaded = SettingsFiles::load(folders)
+        .loaded()
+        .language_servers
+        .clone();
     fs::remove_dir_all(root).unwrap();
 
     let expected = LanguageServerSettings {
@@ -1733,7 +1736,8 @@ fn settings_advanced_shows_each_server_s_path_as_machine_toml_writes_it() {
 }
 
 #[test]
-fn apply_saves_each_server_s_path_and_the_idle_time_in_machine_toml_and_leaves_settings_toml_alone() {
+fn apply_saves_each_server_s_path_and_the_idle_time_in_machine_toml_and_leaves_settings_toml_alone()
+{
     let (folders, root) = temp_folders("language-servers-apply");
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
     let servers = LanguageServerSettings {

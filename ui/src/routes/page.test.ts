@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { settingsAsk } from "$lib/state/settings-ask.svelte";
 import Page from "./+page.svelte";
 
 const core = vi.hoisted(() => ({
@@ -34,6 +35,7 @@ const SETTINGS = {
     diff: { files: "all" },
     repositories: [],
   },
+  language_servers: { ty: null, "rust-analyzer": null, clangd: null, idle_minutes: 30 },
   problems: [] as string[],
 };
 
@@ -67,6 +69,7 @@ vi.mock("$lib/data/bindings", () => ({
     cloning: async () => null,
     newVersion: async () => null,
     refresh: async () => null,
+    languageServers: async () => [],
     ...core,
   },
   events: {
@@ -87,6 +90,7 @@ vi.mock("$lib/data/bindings", () => ({
     },
     changed: { listen: async () => () => {} },
     readFailed: { listen: async () => () => {} },
+    languageServersChanged: { listen: async () => () => {} },
   },
 }));
 
@@ -142,7 +146,11 @@ beforeEach(() => {
   core.rereadSettings.mockResolvedValue({ status: "ok", data: structuredClone(SETTINGS) });
   core.applySettings.mockImplementation(async (changes: object) => ({
     status: "ok",
-    data: { settings: { ...structuredClone(SETTINGS.settings), ...changes }, problems: [] },
+    data: {
+      settings: { ...structuredClone(SETTINGS.settings), ...changes },
+      language_servers: structuredClone(SETTINGS.language_servers),
+      problems: [],
+    },
   }));
 });
 
@@ -1133,6 +1141,30 @@ describe("the Settings dialog", () => {
     expect(screen.getByRole("button", { name: "OK" })).toBeTruthy();
     // The theme, which the window holds apart from the settings, takes a hand edit to it too.
     expect(core.themes).toHaveBeenCalledTimes(themeReads + 1);
+  });
+
+  it("opens on Advanced at the row the Definition peek's link asks for, and on General again from Ctrl+,", async () => {
+    const row = await onRow();
+    settingsAsk.open("clangd");
+    await vi.waitFor(() => {
+      expect(screen.getByRole("region", { name: "Advanced" })).toBeTruthy();
+    });
+    expect(screen.getByRole("group", { name: "clangd" }).classList.contains("asked")).toBe(true);
+    expect(settingsAsk.server).toBeUndefined();
+    await fireEvent.keyDown(window, { key: "Escape" });
+
+    await ctrlComma(row);
+    expect(screen.getByRole("region", { name: "General" })).toBeTruthy();
+  });
+
+  it("drops the peek's ask for Settings while another dialog is open", async () => {
+    await onRow();
+    await ctrlShiftP();
+    settingsAsk.open("ty");
+    await vi.waitFor(() => {
+      expect(settingsAsk.server).toBeUndefined();
+    });
+    expect(settings()).toBeNull();
   });
 
   it("opens from ⚙ in the Sidebar, and gives the focus back to it", async () => {

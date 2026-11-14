@@ -84,6 +84,19 @@ fn fake_at(number: u32) -> LookupAt {
     }
 }
 
+#[test]
+fn a_test_hears_where_a_checkout_is_asked_apart_from_its_moves() {
+    let (requests, heard) = HeardRequests::new();
+    let name = RepositoryName::parse("python/cpython").unwrap();
+    requests.look_up(name.clone(), fake_at(1));
+    let _answer = requests.ask_lookup_checkout(name.clone());
+    let asked: Vec<RepositoryName> = (heard.checkouts().into_iter())
+        .map(|(repository, _)| repository)
+        .collect();
+    assert_eq!(asked, std::slice::from_ref(&name));
+    assert_eq!(heard.look_ups(), [(name, fake_at(1))]);
+}
+
 /// The commit a checkout's HEAD is at.
 fn checked_out(folder: &Path) -> String {
     git(folder, &["rev-parse", "HEAD"]).trim().to_owned()

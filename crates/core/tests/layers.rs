@@ -213,6 +213,12 @@ const LAYERS: &[Layer] = &[
               read a copy of the clones that wait for an answer.",
     },
     Layer {
+        module: "search",
+        uses: &["error", "github", "latest", "mirror", "repository"],
+        why: "Searches the open PR's code as text, in the Lookup checkout `mirror` keeps and with the git \
+              `github` runs, and shares what it finds through `latest`.",
+    },
+    Layer {
         module: "settings",
         uses: &[
             "error",

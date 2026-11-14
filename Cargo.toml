@@ -35,6 +35,10 @@ process-wrap = { version = "10.0.1", default-features = false, features = ["std"
 fs4 = { version = "1.1.0", default-features = false, features = ["sync"] }
 # Compares the latest release's tag with the running version (#274). Tauri already brings it in.
 semver = { version = "1.0.28", default-features = false, features = ["std"] }
+# Text search over the open PR's code (#685): ripgrep's matcher, its trait, and its line searcher.
+grep-matcher = "0.1.9"
+grep-regex = "0.1.14"
+grep-searcher = "0.1.17"
 time = { version = "0.3.55", features = ["formatting", "parsing", "serde"] }
 toml_edit = { version = "0.25.17", features = ["serde"] }
 # The highlighter (#153): the parser, the type each grammar hands it, and the grammars.

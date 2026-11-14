@@ -8,7 +8,8 @@
      search over the diff's rows (#186). The header's toggle switches between all the files and one at a
      time, and one at a time a bar says which file shows, "‹ 12 of 48 ›" and its path (#605). Beside the
      toggle, Go to definition says it searches, or for a moment that it found nothing (#444). A definition in
-     a file the PR doesn't change opens the file view over the tab (#453). -->
+     a file the PR doesn't change opens the file view over the tab (#453). A split Definition peek shows
+     below the diff, which stays where it was (#459). -->
 <script lang="ts">
   import type { Page, PrFilesState, Unfetched } from "$lib/state/pr-files.svelte";
   import DiffRows from "./DiffRows.svelte";
@@ -16,6 +17,7 @@
   import FindBar from "./FindBar.svelte";
   import { chordLabel, currentOs, keyLabel } from "./keys";
   import MirrorQuestion from "./MirrorQuestion.svelte";
+  import SplitPeek from "./SplitPeek.svelte";
   import { cloningWords } from "./synced";
 
   let { files, now, onlink }: { files: PrFilesState; now: Date; onlink: (address: string) => void } =
@@ -140,9 +142,11 @@
     {#if files.searching}
       <FindBar {files} />
     {/if}
-    <div class="diff">
-      <DiffRows diff={files} files={files.view.files} news={files.view.news} {now} {onlink} />
-    </div>
+    <SplitPeek {files} peek={files.splitPeekOn(undefined)}>
+      <div class="diff">
+        <DiffRows diff={files} files={files.view.files} news={files.view.news} {now} {onlink} />
+      </div>
+    </SplitPeek>
   {/if}
 </div>
 {#if files.fileView}

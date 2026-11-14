@@ -198,6 +198,7 @@
       onsettings={openSettings}
       {keysActive}
       diffFiles={settings.diffFiles}
+      diffPeek={settings.diffPeek}
     />
   {:else if home.error}
     <!-- One expression: Svelte compiles `{a} {b}` with `?? ""` branches that no test can reach. -->

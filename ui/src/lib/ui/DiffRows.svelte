@@ -538,7 +538,11 @@
     {#each diff.layout.threadsIn(first, last) as placed (placed.laid.id)}
       {@const block = placed.laid.block}
       {#if block.kind === "peek"}
-        <PeekBox {diff} peek={block.peek} top={placed.shown * ROW} rows={placed.length} gutter={96} />
+        <PeekBox
+          {diff}
+          peek={block.peek}
+          place={{ kind: "inline", top: placed.shown * ROW, rows: placed.length, gutter: 96 }}
+        />
       {:else}
         <div
           class="thread sans"

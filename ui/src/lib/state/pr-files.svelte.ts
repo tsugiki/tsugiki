@@ -61,7 +61,15 @@ import { diffShows, FileView, inRepository, type RepositoryHit } from "./file-vi
 import { HitCode, type CodePick } from "./hit-code.svelte";
 import { hud, type Jump, type JumpTimer } from "./hud.svelte";
 import type { PanesState } from "./panes.svelte";
-import { PEEK_ID, peekPlaces, withPeek, type Crumb, type IndexNews, type Peek } from "./peek";
+import {
+  PEEK_ID,
+  peekPlaces,
+  withPeek,
+  type Crumb,
+  type IndexNews,
+  type Peek,
+  type PeekLayout,
+} from "./peek";
 import { wordAt, type Column, type Pick, type Picked, type PickedLine, type Side } from "./pick";
 import { waitForSpans } from "./spans-wait";
 
@@ -217,11 +225,12 @@ export class PrFilesState {
   mode = $state<FilesMode>("all");
   /** The panes' layout, which holds the Definition peek's height (#458). */
   readonly panes: PanesState;
-  /** The peek while it shows in the diff. One in the file view takes no place in the diff under it, and
-   * its steps don't lay the diff out again (#457). */
+  /** The peek while it shows under a line of the diff. One in the file view takes no place in the diff under
+   * it, and its steps don't lay the diff out again (#457). Nor does a split one, which shows below the diff
+   * (#459). */
   #diffPeek = $derived.by(() => {
     const peek = this.#peek;
-    return peek && inDiff(peek) ? peek : undefined;
+    return peek && inDiff(peek) && this.#peekLayout === "inline" ? peek : undefined;
   });
   /** The pages of the diff when it shows one file at a time: the NEWS entries, each file, and the threads
    * on files no longer in the diff. */
@@ -372,6 +381,10 @@ export class PrFilesState {
   #pick = $state.raw<Pick>();
   /** The Definition peek, while it shows. */
   #peek = $state.raw<Peek>();
+  /** The place the peek on show opened in (#459). */
+  #peekLayout = $state<PeekLayout>("inline");
+  /** The place `[diff] peek` names now, which each new peek asks for. */
+  readonly peekSetting: () => PeekLayout;
   /** The file view over the tab, while it shows (#453). */
   #fileView = $state.raw<FileView>();
   /** Tells the Detail pane's history that the user opened a file view, or closed it (#456). */
@@ -396,7 +409,8 @@ export class PrFilesState {
 
   /** `panes` is the layout of the panes the Repository's page read, which the peek's height is saved in, so
    * a drag never saves the default widths over the user's. `fileViewMoved` hears of each file view the user
-   * opens or closes, for the Detail pane's history. */
+   * opens or closes, for the Detail pane's history. `peekLayout` says what `[diff] peek` says at the time a
+   * peek opens (#459). */
   constructor(
     repository: string,
     number: number,
@@ -405,6 +419,7 @@ export class PrFilesState {
     choice: DiffViewChoice = new DiffViewChoice(),
     mode: FilesMode = "all",
     fileViewMoved: (view: FileView | undefined) => void = () => {},
+    peekLayout: () => PeekLayout = () => "inline",
   ) {
     this.#repository = repository;
     this.#number = number;
@@ -413,6 +428,7 @@ export class PrFilesState {
     this.#choice = choice;
     this.mode = mode;
     this.#fileViewMoved = fileViewMoved;
+    this.peekSetting = peekLayout;
   }
 
   /** Takes the user's Review of the PR as the PR view read it (#387). A new verdict can open files the
@@ -1006,6 +1022,28 @@ export class PrFilesState {
     return this.#peek;
   }
 
+  /** The place the peek on show opened in, as `[diff] peek` said then (#459): under its line, or split below
+   * the code. */
+  get peekLayout(): PeekLayout {
+    return this.#peekLayout;
+  }
+
+  /** The peek while it shows split below the code of `view`, or of the diff for none (#459). */
+  splitPeekOn(view: FileView | undefined): Peek | undefined {
+    const peek = this.#peek;
+    if (peek === undefined || this.#peekLayout !== "split") return undefined;
+    return (peek.at.kind === "view" ? peek.at.view : undefined) === view ? peek : undefined;
+  }
+
+  /** Shows `peek` as a new peek, where `[diff] peek` says now, so a change to the setting reaches the next
+   * peek and leaves the one on show where it is. An inline peek waits for the code to scroll it into view
+   * (#458), and a split one leaves the code where it was. */
+  #open(peek: Peek) {
+    this.#peekLayout = this.peekSetting();
+    this.#peek = peek;
+    this.peekOpened = this.#peekLayout === "inline";
+  }
+
   /** Opens the Definition peek under the picked word's line, and asks ty where the word is defined, with the
    * PR's files at the line's commit: the diff's base for a removed line, and its head for the rest, even
    * while the PR's newer head is fetched. The peek shows at once and says what the lookup waits for, and ty
@@ -1015,8 +1053,7 @@ export class PrFilesState {
    * asks at the view's commit (#457). */
   async peekDefinition() {
     const looked = await this.#lookUp((looking) => {
-      this.#peek = looking;
-      this.peekOpened = true;
+      this.#open(looking);
     });
     if (looked !== undefined) this.#peek = this.#withHeld(looked.peek, looked.lookup);
   }
@@ -1057,8 +1094,7 @@ export class PrFilesState {
     // the peek then shows rather than go to the old one.
     const now = this.#withHeld(peek, lookup);
     if (goal === undefined || hitsOf(now) !== hits) {
-      this.#peek = now;
-      this.peekOpened = true;
+      this.#open(now);
       this.peekFocus = (hitsOf(now)?.length ?? 0) > 1 ? "take" : undefined;
       return;
     }

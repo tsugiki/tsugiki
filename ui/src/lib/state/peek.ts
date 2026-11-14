@@ -1,8 +1,8 @@
 // The Definition peek (#438): under the line of the word the user picked, where that word is defined at
 // the line's commit. It takes places in the diff's layout as a review thread does, so the rows after it
-// move down.
+// move down. Split, it shows below the code instead, which stays where it was (#459).
 
-import type { Answer, Hit, Index_Deserialize, ServerName, Waiting } from "$lib/data/bindings";
+import type { Answer, DiffPeek, Hit, Index_Deserialize, ServerName, Waiting } from "$lib/data/bindings";
 import type { LaidThread } from "./diff-layout";
 import type { ViewLine } from "./file-view.svelte";
 import type { HitCode } from "./hit-code.svelte";
@@ -14,6 +14,10 @@ export type Lookup =
   | { state: "looking"; waiting?: Waiting; since?: number }
   | { state: "answered"; answer: Answer }
   | { state: "failed"; problem: string };
+
+/** A peek's place, as `[diff] peek` says (#459): under its line, among the rows of the code, or split below
+ * the code. */
+export type PeekLayout = DiffPeek;
 
 /** The news of the index of the server that answered, which the core says on a channel of the lookup's own
  * (#680). The bindings name the type for the window's side of the channel. */

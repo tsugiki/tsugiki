@@ -3,7 +3,7 @@ import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FileView } from "$lib/state/file-view.svelte";
 import type { HitCode } from "$lib/state/hit-code.svelte";
-import type { Peek } from "$lib/state/peek";
+import type { Peek, PeekLayout } from "$lib/state/peek";
 import { PrFilesState, type FilesMode } from "$lib/state/pr-files.svelte";
 import type { ChordBindings } from "./keys";
 import RepositoryHome from "./RepositoryHome.svelte";
@@ -112,6 +112,7 @@ const DEFAULT_LAYOUT = {
   sidebar: null,
   list: null,
   peek: null,
+  split_peek: null,
   sidebar_hidden: false,
   list_hidden: false,
   detail_only_hid: null,
@@ -590,7 +591,7 @@ const standalone = { kind: "standalone_pr", ...row, number: 5, title: "Alone", b
 
 /** A window on two items: the Issue, which it unfolds, and, in the quiet section it unfolds too, a
  * Standalone PR. */
-const listing = async (settings: { diffFiles?: FilesMode } = {}) => {
+const listing = async (settings: { diffFiles?: FilesMode; diffPeek?: PeekLayout } = {}) => {
   core.workbench.mockResolvedValue({
     status: "ok",
     data: {
@@ -602,7 +603,7 @@ const listing = async (settings: { diffFiles?: FilesMode } = {}) => {
       filters: [],
     },
   });
-  const { component } = render(RepositoryHome, {
+  const { component, rerender } = render(RepositoryHome, {
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
@@ -614,6 +615,7 @@ const listing = async (settings: { diffFiles?: FilesMode } = {}) => {
   await fireEvent.click(screen.getByRole("button", { name: "Show 1 quiet item" }));
   return {
     component,
+    rerender,
     issueRow,
     treeRow: screen.getByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" }),
     prRow: screen.getByRole("button", { name: "#5 Alone" }),
@@ -1259,6 +1261,36 @@ it("opens the Definition peek with Alt+F12 on the Files tab, once for a held key
   await press("F12", { altKey: true, repeat: true });
 
   expect(peekDefinition).toHaveBeenCalledTimes(1);
+});
+
+it("hands the Files tab what [diff] peek says at the time each Definition peek opens", async () => {
+  const opened: { files?: PrFilesState } = {};
+  vi.spyOn(PrFilesState.prototype, "peekDefinition").mockImplementation(function (this: PrFilesState) {
+    opened.files = this;
+    return Promise.resolve();
+  });
+  core.pullRequestFiles.mockResolvedValue({
+    status: "ok",
+    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
+  });
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const { treeRow, rerender } = await listing({ diffPeek: "split" });
+  await fireEvent.click(treeRow);
+  await fireEvent.click(await screen.findByRole("tab", { name: "Files" }));
+  await screen.findByRole("region", { name: "Diff" });
+
+  await press("F12", { altKey: true });
+  const split = opened.files?.peekSetting();
+  await rerender({ diffPeek: "inline" });
+
+  expect([split, opened.files?.peekSetting()]).toEqual(["split", "inline"]);
 });
 
 it("goes to the definition with F12 on the Files tab, once for a held key", async () => {

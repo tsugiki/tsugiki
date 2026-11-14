@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { commands, type PaneLayout_Serialize } from "$lib/data/bindings";
-import { PanesState } from "./panes.svelte";
+import { PanesState, splitPeekMost } from "./panes.svelte";
 
 vi.mock("$lib/data/bindings", () => ({ commands: { paneLayout: vi.fn(), savePaneLayout: vi.fn() } }));
 
@@ -9,6 +9,7 @@ const DEFAULTS = {
   sidebar: null,
   list: null,
   peek: null,
+  split_peek: null,
   sidebar_hidden: false,
   list_hidden: false,
   detail_only_hid: null,
@@ -38,17 +39,49 @@ it("takes the defaults until the core says how the user laid out the panes", asy
 
 it("keeps sizes written by hand within each one's limits", async () => {
   const panes = new PanesState();
-  core.paneLayout.mockResolvedValueOnce({ ...DEFAULTS, sidebar: 100_000, list: 3, peek: 1000 });
+  core.paneLayout.mockResolvedValueOnce({
+    ...DEFAULTS,
+    sidebar: 100_000,
+    list: 3,
+    peek: 1000,
+    split_peek: 9000,
+  });
   await panes.load();
-  const wide = [panes.sidebar, panes.list, panes.peek];
+  const wide = [panes.sidebar, panes.list, panes.peek, panes.splitPeek];
   const again = new PanesState();
-  core.paneLayout.mockResolvedValueOnce({ ...DEFAULTS, sidebar: 3, peek: 1 });
+  core.paneLayout.mockResolvedValueOnce({ ...DEFAULTS, sidebar: 3, peek: 1, split_peek: 20 });
 
   await again.load();
 
-  expect([wide, [again.sidebar, again.list, again.peek]]).toEqual([
-    [480, 280, 60],
-    [140, null, 5],
+  expect([wide, [again.sidebar, again.list, again.peek, again.splitPeek]]).toEqual([
+    [480, 280, 60, 9000],
+    [140, null, 5, 160],
+  ]);
+});
+
+it("keeps the split peek's height with the panes, and gives its 42% of the room back on a reset", async () => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULTS, split_peek: 300 });
+  core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
+  const panes = new PanesState();
+  const before = panes.splitPeekHeight(1000);
+  await panes.load();
+  const read = panes.splitPeekHeight(1000);
+
+  await panes.reset("splitPeek");
+
+  expect([before, read, panes.splitPeek, panes.splitPeekHeight(1000)]).toEqual([420, 300, null, 420]);
+  expect(core.savePaneLayout).toHaveBeenCalledExactlyOnceWith(DEFAULTS);
+});
+
+it("keeps the split peek at 160 px at least, and leaves the code above it as much while it has the room", () => {
+  const panes = new PanesState();
+  const small = panes.splitPeekHeight(300);
+  panes.splitPeek = 900;
+  const tall = panes.splitPeekHeight(1000);
+  panes.splitPeek = 100;
+
+  expect([small, tall, panes.splitPeekHeight(1000), splitPeekMost(1000), splitPeekMost(200)]).toEqual([
+    160, 840, 160, 840, 160,
   ]);
 });
 
@@ -139,7 +172,14 @@ it("hides each pane and shows it again, saving each time with its width", async 
   await panes.toggle("list");
 
   expect([hidden, panes.hidden("sidebar"), panes.hidden("list")]).toEqual([[true, true], false, false]);
-  const widths = { sidebar: 240, list: 500, peek: null, detail_only_hid: null, order: "attention" };
+  const widths = {
+    sidebar: 240,
+    list: 500,
+    peek: null,
+    split_peek: null,
+    detail_only_hid: null,
+    order: "attention",
+  };
   expect(core.savePaneLayout.mock.calls).toEqual([
     [{ ...widths, sidebar_hidden: true, list_hidden: false }],
     [{ ...widths, sidebar_hidden: true, list_hidden: true }],
@@ -227,6 +267,7 @@ it("puts the whole layout back to the defaults with one save, forgetting what Ct
     sidebar: 240,
     list: 500,
     peek: 30,
+    split_peek: 300,
     sidebar_hidden: true,
     list_hidden: true,
     detail_only_hid: "list",
@@ -238,13 +279,14 @@ it("puts the whole layout back to the defaults with one save, forgetting what Ct
 
   await panes.resetLayout();
 
-  expect([panes.sidebar, panes.list, panes.peek, panes.hidden("sidebar"), panes.hidden("list")]).toEqual([
-    null,
-    null,
-    null,
-    false,
-    false,
-  ]);
+  expect([
+    panes.sidebar,
+    panes.list,
+    panes.peek,
+    panes.splitPeek,
+    panes.hidden("sidebar"),
+    panes.hidden("list"),
+  ]).toEqual([null, null, null, null, false, false]);
   expect(core.savePaneLayout.mock.calls).toEqual([[DEFAULTS]]);
 });
 

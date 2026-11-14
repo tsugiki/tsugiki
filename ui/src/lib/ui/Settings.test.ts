@@ -20,7 +20,7 @@ const settingsWith = (change: (settings: Values) => void = () => {}): Values => 
     status_bar: { visible: true },
     releases: { check: true },
     appearance: { theme: "system", light_theme: "VS Code Light Modern", dark_theme: "VS Code Dark Modern" },
-    diff: { files: "all" },
+    diff: { files: "all", peek: "inline" },
     repositories: [
       { name: "some-maintainer/gcmon", conventions: "github", filters: [] },
       { name: "python/cpython", conventions: "cpython", filters: [] },

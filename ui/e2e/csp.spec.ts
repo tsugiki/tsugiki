@@ -8,7 +8,7 @@ const settings = {
     status_bar: { visible: true },
     releases: { check: true },
     appearance,
-    diff: { files: "all" as const },
+    diff: { files: "all" as const, peek: "inline" as const },
     repositories: [],
   },
   problems: [],

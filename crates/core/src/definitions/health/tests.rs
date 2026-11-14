@@ -94,6 +94,42 @@ fn a_version_we_didn_t_test_says_so_and_a_problem_outranks_whether_the_server_ru
 }
 
 #[test]
+fn a_launcher_that_leaves_a_process_holding_its_output_gives_its_version_all_the_same() {
+    let folder = crate::testing::temp_path("launcher");
+    std::fs::create_dir_all(&folder).unwrap();
+    let launcher = launcher_in(&folder);
+
+    let started = std::time::Instant::now();
+    let checked = check(ServerName::Ty, &launcher);
+    let took = started.elapsed();
+    std::fs::remove_dir_all(&folder).unwrap();
+
+    assert_eq!(checked, Ok(Some("0.0.1".to_owned())));
+    assert!(took < CHECK_PATIENCE, "{took:?}");
+}
+
+/// A program in `folder` that prints ty's version and leaves a process behind that holds its output for
+/// half a minute.
+#[cfg(windows)]
+fn launcher_in(folder: &Path) -> std::path::PathBuf {
+    let path = folder.join("ty.cmd");
+    let script = "@echo off\r\necho ty 0.0.1\r\nstart /b cmd /c \"ping -n 30 127.0.0.1 >nul\"\r\n";
+    std::fs::write(&path, script).unwrap();
+    path
+}
+
+/// A program in `folder` that prints ty's version and leaves a process behind that holds its output for
+/// half a minute.
+#[cfg(not(windows))]
+fn launcher_in(folder: &Path) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let path = folder.join("ty");
+    std::fs::write(&path, "#!/bin/sh\necho ty 0.0.1\nsleep 30 &\n").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    path
+}
+
+#[test]
 fn version_names_the_server_on_a_real_program() {
     let ty = super::super::testing::ty();
 

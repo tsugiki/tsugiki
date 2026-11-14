@@ -2,9 +2,11 @@
 
 ### 1. List the tickets and their blockers
 
-`just tree <n>...` draws the open tickets below each ticket as a tree of blockers, with each one's depth.
-Until it exists, `just next` lists the earliest open milestone's tickets under their blockers.
-Note each ticket blocked from outside the milestone: no wave can start it, so it stays out of the plan.
+List the milestone's open tickets with `gh issue list --milestone <title> --state open`. `just tree <n>...`
+draws the open tickets below each one as a tree of blockers, with each one's depth. Until it exists, list
+each ticket's open blockers with the `gh api .../dependencies/blocked_by` command in [SKILL.md](SKILL.md)'s
+step 1. Note each ticket blocked from outside the milestone: no wave can start it, so it stays out of the
+plan.
 
 ### 2. List the files each ticket edits
 
@@ -53,5 +55,4 @@ built at the same time.
 ## Wave log
 ```
 
-Write it with `gh api -X PATCH repos/tsugiki/tsugiki/milestones/<number> -F description=@<file>`, from a file
-in `.temp/scratchpad/`.
+Write it as [SKILL.md](SKILL.md) says.

@@ -50,7 +50,22 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 
 ### Settings ([settings.md](devel/settings.md))
 
-- The Settings dialog and its pages.
+- The Settings dialog, with six pages in its left column: General, Account, Repositories with a page for
+  each Repository under it, Sync, Keyboard and Advanced.
+  - General: Appearance, Diff, Issue list, Alerts, Status bar with a switch for each of its parts, and
+    Updates.
+  - Account: who is signed in and where the token comes from.
+  - Repositories: each one on a line, and Add repository. A Repository's page holds its Conventions, its
+    first sync, its Filters, its Muted authors, and its mirror on this machine.
+  - Sync: how often the Workbench and the open Issue or PR refresh, the GitHub API sizes, and the points
+    used this hour.
+  - Keyboard: every action's key, which the user can record anew, clear or reset.
+  - Advanced: the editor command, the settings file, the data folder and the log, and Export and Import
+    database.
+- Each change in the dialog shows at once. Apply keeps the changes, and Cancel, Esc or ✕ puts them all back;
+  with nothing changed the button reads OK. The few actions Cancel can't undo, such as Remove repository,
+  confirm and act at once. Each setting says where it is stored, and the rare setting that waits for a
+  restart says so.
 - Two TOML files, one that travels between machines and one that stays, and a portable mode.
 - `[appearance]` in `settings.toml`: `theme` (System, Light or Dark), and `light_theme` and `dark_theme`,
   the **Theme** of each side.

@@ -7,12 +7,24 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   with each Repository under Repositories as a page of its own. Repositories itself is an overview with Add
   repository. A Repository's page holds its conventions, first sync, the clone to borrow objects from, Filters
   and Muted authors; Pinned issues are not there, since the list can be long: they are managed from the
-  Sidebar's Pinned issues (★ on an item, `Ctrl+K P`). Changes preview live; Apply keeps them, and Cancel or
-  Esc puts them back. The dialog moves by its title bar, resizes from any edge or corner, and can be
-  maximized; its size and place are kept per machine. Each setting is labelled with where it is stored
-  (settings file, this machine, database, or keychain). The Account page is in [token.md](token.md). This was
-  chosen out of three variants prototyped on branch `prototype/app-shell`: a searchable list like VS Code's,
-  this dialog, and editing the config files as text.
+  Sidebar's Pinned issues (★ on an item, `Ctrl+K P`). The dialog moves by its title bar, resizes from any
+  edge or corner, and can be maximized; its size and place are kept per machine. The Account page is in
+  [token.md](token.md). This was chosen out of three variants prototyped on branch `prototype/app-shell`: a
+  searchable list like VS Code's, this dialog, and editing the config files as text.
+- The dialog opens on General, until it reopens on the page showing when it last closed. As it opens it
+  reads both files again, so a hand edit made since start-up shows in it and takes effect on the window.
+  Each change shows on the window at once: clearing Show the status bar hides the status bar behind the
+  dialog. Apply saves the changes and closes; with nothing changed the button reads OK and closes without
+  saving. Cancel, Esc, ✕ or a press outside the dialog puts every change back. While Apply saves, Cancel and
+  Esc wait for it, and a save the core refuses keeps the dialog open with the reason under the pages, where
+  Cancel still puts the changes back. The controls wait until the files have been read again.
+- Each setting carries a label for where it is stored: settings file, this machine, database or keychain,
+  with the file's name or "on this machine only" in its tooltip.
+- General groups its settings; each group is a heading with its rows under it. Status bar has Show the
+  status bar, and says that problems and being offline still show when it's off. Updates has Check for new
+  versions (`[releases] check`), the one setting that still needs a restart, so it says "Takes effect at the
+  next start" under its row. Both live in `settings.toml`. Repositories, each Repository's page, Sync,
+  Keyboard and Advanced say "Nothing to set here yet." for now.
 - Settings are kept in two TOML files, which Tsugiki reads when it starts and when the Settings dialog opens,
   so a hand edit takes effect at the next of those ([ADR
   0014](../adr/0014-settings-in-toml-files-user-state-in-the-database-and-a-portable-mode.md)).

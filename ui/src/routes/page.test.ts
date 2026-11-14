@@ -21,7 +21,21 @@ const core = vi.hoisted(() => ({
   saveTheme: vi.fn(),
   themes: vi.fn(),
   tokenSource: vi.fn(),
+  rereadSettings: vi.fn(),
+  applySettings: vi.fn(),
 }));
+
+/** What `settings.toml` says unless a test says otherwise: the defaults. */
+const SETTINGS = {
+  settings: {
+    status_bar: { visible: true },
+    releases: { check: true },
+    appearance: { theme: "system", light_theme: "VS Code Light Modern", dark_theme: "VS Code Dark Modern" },
+    diff: { files: "all" },
+    repositories: [],
+  },
+  problems: [] as string[],
+};
 
 /** The themes the core sends unless a test says otherwise. */
 const THEMES = {
@@ -124,16 +138,12 @@ beforeEach(() => {
     status: "ok",
     data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
   });
-  core.settings.mockResolvedValue({
-    settings: {
-      status_bar: { visible: true },
-      releases: { check: true },
-      appearance: { theme: "system", light_theme: "VS Code Light Modern", dark_theme: "VS Code Dark Modern" },
-      diff: { files: "all" },
-      repositories: [],
-    },
-    problems: [],
-  });
+  core.settings.mockResolvedValue(structuredClone(SETTINGS));
+  core.rereadSettings.mockResolvedValue({ status: "ok", data: structuredClone(SETTINGS) });
+  core.applySettings.mockImplementation(async (settings: unknown) => ({
+    status: "ok",
+    data: { settings, problems: [] },
+  }));
 });
 
 afterEach(() => {
@@ -1060,10 +1070,13 @@ describe("the Settings dialog", () => {
     return row;
   };
 
-  it("opens on Ctrl+, on its Account page, which names who is signed in, and Esc gives the focus back", async () => {
+  it("opens on Ctrl+, on its General page; its Account page names who is signed in; Esc gives the focus back", async () => {
     const row = await onRow();
     await ctrlComma(row);
     expect(document.activeElement).toBe(settings());
+    expect(screen.getByRole("region", { name: "General" })).toBeTruthy();
+    const pages = screen.getByRole("navigation", { name: "Settings pages" });
+    await fireEvent.click(within(pages).getByRole("button", { name: "Account" }));
     expect(screen.getByRole("region", { name: "Account" })).toBeTruthy();
     // The status comes when the core has answered each of the window's first questions.
     await vi.waitFor(() => {
@@ -1074,6 +1087,49 @@ describe("the Settings dialog", () => {
     await fireEvent.keyDown(window, { key: "Escape" });
     expect(settings()).toBeNull();
     expect(document.activeElement).toBe(row);
+  });
+
+  it("hides the status bar at once when its box is cleared, Cancel brings it back, and Apply keeps it hidden", async () => {
+    const row = await onRow();
+    await screen.findByRole("button", { name: "Not synced yet" });
+    const statusBarBox = () => screen.getByRole("checkbox", { name: "Show the status bar" });
+    const clearBox = async () => {
+      await ctrlComma(row);
+      await vi.waitFor(() => {
+        expect(statusBarBox().hasAttribute("disabled")).toBe(false);
+      });
+      await fireEvent.click(statusBarBox());
+      expect(screen.queryByRole("button", { name: "Not synced yet" })).toBeNull();
+    };
+
+    await clearBox();
+    await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(settings()).toBeNull();
+    expect(screen.getByRole("button", { name: "Not synced yet" })).toBeTruthy();
+
+    await clearBox();
+    await fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await vi.waitFor(() => {
+      expect(settings()).toBeNull();
+    });
+    expect(screen.queryByRole("button", { name: "Not synced yet" })).toBeNull();
+    expect(core.applySettings).toHaveBeenCalledOnce();
+    expect(core.applySettings.mock.calls[0]?.[0]).toMatchObject({ status_bar: { visible: false } });
+  });
+
+  it("shows a hand edit made since start-up as it opens, and the window takes it", async () => {
+    const hidden = structuredClone(SETTINGS);
+    hidden.settings.status_bar.visible = false;
+    core.rereadSettings.mockResolvedValue({ status: "ok", data: hidden });
+    const row = await onRow();
+    await screen.findByRole("button", { name: "Not synced yet" });
+
+    await ctrlComma(row);
+    await vi.waitFor(() => {
+      expect(screen.getByRole("checkbox", { name: "Show the status bar" })).toHaveProperty("checked", false);
+    });
+    expect(screen.queryByRole("button", { name: "Not synced yet" })).toBeNull();
+    expect(screen.getByRole("button", { name: "OK" })).toBeTruthy();
   });
 
   it("opens from ⚙ in the Sidebar, and gives the focus back to it", async () => {

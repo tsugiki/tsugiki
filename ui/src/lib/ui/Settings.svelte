@@ -1,17 +1,24 @@
 <!-- The Settings dialog (docs/devel/settings.md), laid out as variant B of the Settings prototype on
-     `prototype/app-shell`: the pages in a column on the left, and the open one on the right. It lists only
-     Account for now: #520 adds the other pages, switching between them, and Apply and Cancel. -->
+     `prototype/app-shell`: the pages in a column on the left, each Repository's under Repositories, the open
+     one on the right, and Cancel and Apply under them. `SettingsDialog` decides what each does. -->
 <script lang="ts">
+  import { untrack } from "svelte";
   import type { About } from "$lib/state/about.svelte";
+  import type { SettingsState } from "$lib/state/settings.svelte";
+  import { SETTINGS_PAGES, SettingsDialog, type Shown } from "$lib/state/settings-dialog.svelte";
   import type { Status } from "$lib/state/status.svelte";
   import AccountPage from "./AccountPage.svelte";
+  import GeneralPage from "./GeneralPage.svelte";
   import { closeOnPress, keepFocusIn, takeFocus } from "./focus";
 
   let {
+    settings,
     status,
     about,
     onclose,
   }: {
+    /** The settings in force, which the dialog previews its changes on. */
+    settings: SettingsState;
     /** The app-wide status, which says who is signed in. */
     status: Status | undefined;
     /** What the core says about itself, which says where this build's source is. */
@@ -19,16 +26,34 @@
     onclose: () => void;
   } = $props();
 
-  function closeOnEscape(e: KeyboardEvent) {
-    if (e.key === "Escape") onclose();
+  const dialog = new SettingsDialog(untrack(() => settings));
+  void dialog.open();
+
+  /** The name of what the right side shows, for its region. */
+  const title = $derived("repository" in dialog.shown ? dialog.shown.repository : dialog.shown.page);
+  /** Whether the left column's entry for `shown` is the one open, for its `aria-current`. */
+  const current = (shown: Shown) =>
+    JSON.stringify(shown) === JSON.stringify(dialog.shown) ? "page" : undefined;
+  /** A Repository's name without its owner, which its title gives in full. */
+  const short = (repository: string) => repository.slice(repository.indexOf("/") + 1);
+
+  /** Cancel, Esc, ✕ and a press outside put the settings back and close, unless Apply is saving. */
+  function cancel() {
+    if (dialog.cancel()) onclose();
+  }
+  async function apply() {
+    if (await dialog.apply()) onclose();
+  }
+  function cancelOnEscape(e: KeyboardEvent) {
+    if (e.key === "Escape") cancel();
   }
 </script>
 
-<svelte:window onkeydown={closeOnEscape} />
+<svelte:window onkeydown={cancelOnEscape} />
 
 <!-- The keyboard's way out is Esc, on the window above. This is the mouse's, beside ✕. -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="scrim" data-testid="settings-scrim" onmousedown={closeOnPress(onclose)}>
+<div class="scrim" data-testid="settings-scrim" onmousedown={closeOnPress(cancel)}>
   <div
     class="dialog"
     role="dialog"
@@ -43,16 +68,55 @@
   >
     <header>
       <h2>Settings</h2>
-      <button class="close" aria-label="Close" title="Close (Esc)" onclick={onclose}>✕</button>
+      <button class="close" aria-label="Close" title="Close without applying (Esc)" onclick={cancel}>✕</button
+      >
     </header>
     <div class="body">
       <nav aria-label="Settings pages">
-        <button aria-current="page">Account</button>
+        {#each SETTINGS_PAGES as page (page)}
+          <button
+            aria-current={current({ page })}
+            onclick={() => {
+              dialog.show({ page });
+            }}>{page}</button
+          >
+          {#if page === "Repositories"}
+            {#each dialog.repositories as repository (repository)}
+              <button
+                class="repository"
+                aria-label={repository}
+                title={repository}
+                aria-current={current({ repository })}
+                onclick={() => {
+                  dialog.show({ repository });
+                }}>{short(repository)}</button
+              >
+            {/each}
+          {/if}
+        {/each}
       </nav>
-      <section aria-label="Account">
-        <AccountPage {status} {about} />
+      <section aria-label={title}>
+        {#if "repository" in dialog.shown}
+          <h3 class="repository">{dialog.shown.repository}</h3>
+          <p class="empty">Nothing to set here yet.</p>
+        {:else if dialog.shown.page === "General"}
+          <GeneralPage {dialog} />
+        {:else if dialog.shown.page === "Account"}
+          <AccountPage {status} {about} />
+        {:else}
+          <p class="empty">Nothing to set here yet.</p>
+        {/if}
       </section>
     </div>
+    <footer>
+      {#if dialog.problem !== undefined}
+        <p role="alert">{dialog.problem}</p>
+      {/if}
+      <button disabled={dialog.applying} onclick={cancel}>Cancel</button>
+      <button class="primary" disabled={dialog.applying} onclick={() => void apply()}
+        >{dialog.changed ? "Apply" : "OK"}</button
+      >
+    </footer>
   </div>
 </div>
 
@@ -118,6 +182,7 @@
     flex-direction: column;
     gap: 2px;
     padding: 8px;
+    overflow: auto;
     color: var(--fg-chrome);
     background: var(--bg-chrome);
     border-right: 1px solid var(--border);
@@ -139,9 +204,47 @@
     background: var(--selected);
   }
 
+  nav .repository {
+    padding: 4px 10px 4px 22px;
+    overflow: hidden;
+    font-family: var(--mono);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   section {
     min-height: 0;
     padding: 6px 20px 20px;
     overflow: auto;
+  }
+
+  h3.repository {
+    margin: 4px 0 8px;
+    padding-bottom: 4px;
+    font-family: var(--mono);
+    font-size: 13px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .empty {
+    color: var(--fg-muted);
+  }
+
+  footer {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 10px 14px;
+    color: var(--fg-chrome);
+    background: var(--bg-chrome);
+    border-top: 1px solid var(--border);
+  }
+
+  footer p {
+    flex: 1;
+    margin: 0;
+    color: var(--danger);
   }
 </style>

@@ -38,6 +38,29 @@ describe("SettingsState", () => {
     expect(state.problems).toEqual(["settings.toml, line 3: expected a value"]);
   });
 
+  it("keeps what it last read when it can't ask again", async () => {
+    vi.mocked(commands.settings).mockRejectedValue(new Error("the core has gone"));
+    const state = new SettingsState();
+    state.take({
+      settings: {
+        status_bar: { visible: false },
+        releases: { check: true },
+        appearance: {
+          theme: "system",
+          light_theme: "VS Code Light Modern",
+          dark_theme: "VS Code Dark Modern",
+        },
+        diff: { files: "one" },
+        repositories: [],
+      },
+      problems: [],
+    });
+    await state.load();
+    expect(state.statusBarVisible).toBe(false);
+    expect(state.diffFiles).toBe("one");
+    expect(state.problems).toEqual(["Tsugiki can't read its settings: Error: the core has gone"]);
+  });
+
   it("says so when it can't ask, and keeps the status bar", async () => {
     vi.mocked(commands.settings).mockRejectedValue(new Error("the core has gone"));
     const state = new SettingsState();

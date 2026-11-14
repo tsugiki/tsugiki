@@ -65,7 +65,7 @@
   const openPicker = () => {
     if (home.current?.screen === "repository" && !dialogOpen) pickerOpen = true;
   };
-  /** Opens the Settings dialog on its Account page, from `Ctrl+,`, ⚙ or the palette. */
+  /** Opens the Settings dialog on its General page, from `Ctrl+,`, ⚙ or the palette. */
   const openSettings = () => {
     if (!dialogOpen) settingsOpen = true;
   };
@@ -281,6 +281,7 @@
 {/if}
 {#if settingsOpen}
   <Settings
+    {settings}
     status={status.status}
     about={about.about}
     onclose={() => {

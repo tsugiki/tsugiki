@@ -8,7 +8,7 @@ const involved = { name: "Involved", query: "is:open involves:@me", count: 9, pr
 const whole = { kind: "whole" } as const;
 const button = (name: string) => screen.getByRole("button", { name });
 /** The open Repository, for the tests that don't look at it. */
-const cpython = { repository: "python/cpython", onpick: () => {} };
+const cpython = { repository: "python/cpython", onpick: () => {}, onsettings: () => {} };
 
 it("starts with the open Repository's name, and a click on it asks for the Repository picker", async () => {
   const onpick = vi.fn();
@@ -29,6 +29,46 @@ it("starts with the open Repository's name, and a click on it asks for the Repos
   expect(onpick).toHaveBeenCalledOnce();
 });
 
+it("has ⚙ beside the Repository's name, and a click on it asks for the Settings dialog", async () => {
+  const onsettings = vi.fn();
+  render(Sidebar, {
+    count: 12,
+    reviewRequests: 4,
+    staleReviews: 2,
+    filters: [],
+    selected: whole,
+    onselect: () => {},
+    ...cpython,
+    onsettings,
+  });
+  const settings = button("Settings");
+  expect(screen.getAllByRole("button")[1]).toBe(settings);
+  expect(settings.textContent).toBe("⚙");
+  expect(settings.getAttribute("aria-haspopup")).toBe("dialog");
+  await fireEvent.click(settings);
+  expect(onsettings).toHaveBeenCalledOnce();
+});
+
+it("names ⚙'s key in its tooltip as the OS calls it", () => {
+  const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+  const props = {
+    count: 0,
+    reviewRequests: 0,
+    staleReviews: 0,
+    filters: [],
+    selected: whole,
+    onselect: () => {},
+  };
+  const { unmount } = render(Sidebar, { ...props, ...cpython });
+  expect(button("Settings").title).toBe("Settings (Cmd+,)");
+  unmount();
+
+  platform.mockReturnValue("Win32");
+  render(Sidebar, { ...props, ...cpython });
+  expect(button("Settings").title).toBe("Settings (Ctrl+,)");
+  platform.mockRestore();
+});
+
 it("lists the Workbench and each Filter with its count", () => {
   render(Sidebar, {
     ...cpython,
@@ -41,6 +81,7 @@ it("lists the Workbench and each Filter with its count", () => {
   });
   expect(screen.getAllByRole("button").map((line) => line.textContent.replace(/\s+/g, " ").trim())).toEqual([
     "python/cpython",
+    "⚙",
     "Workbench 12",
     "Review requests 4",
     "Stale reviews 2",

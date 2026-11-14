@@ -279,6 +279,16 @@ fn a_development_build_opens_devtools_for_the_window_that_asks() {
 }
 
 #[test]
+fn the_account_page_hears_the_token_comes_from_gh() {
+    let wired = Wired::start(Err(no_folders()), no_network());
+
+    let source = wired.ask("token_source", json!({}));
+    drop(wired.stop());
+
+    assert_eq!(source, Ok(json!("gh")));
+}
+
+#[test]
 fn a_name_that_isnt_one_is_refused_before_the_missing_folders_matter() {
     let wired = Wired::start(Err(no_folders()), no_network());
     let nonsense =

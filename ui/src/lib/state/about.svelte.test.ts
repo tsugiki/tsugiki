@@ -6,11 +6,21 @@ vi.mock("$lib/data/bindings", () => ({ commands: { about: vi.fn() } }));
 
 describe("AboutState", () => {
   it("holds what the core says about itself once loaded", async () => {
-    vi.mocked(commands.about).mockResolvedValue({ name: "Tsugiki", version: "1.2.3", build: "release" });
+    vi.mocked(commands.about).mockResolvedValue({
+      name: "Tsugiki",
+      version: "1.2.3",
+      build: "release",
+      source_ref: "v1.2.3",
+    });
     const state = new AboutState();
     expect(state.about).toBeUndefined();
     await state.load();
-    expect(state.about).toEqual({ name: "Tsugiki", version: "1.2.3", build: "release" });
+    expect(state.about).toEqual({
+      name: "Tsugiki",
+      version: "1.2.3",
+      build: "release",
+      source_ref: "v1.2.3",
+    });
     expect(state.error).toBeUndefined();
   });
 
@@ -26,9 +36,19 @@ describe("AboutState", () => {
     const state = new AboutState();
     vi.mocked(commands.about).mockRejectedValueOnce(new Error("not yet"));
     await state.load();
-    vi.mocked(commands.about).mockResolvedValueOnce({ name: "Tsugiki", version: "1.2.3", build: "release" });
+    vi.mocked(commands.about).mockResolvedValueOnce({
+      name: "Tsugiki",
+      version: "1.2.3",
+      build: "release",
+      source_ref: "v1.2.3",
+    });
     await state.load();
-    expect(state.about).toEqual({ name: "Tsugiki", version: "1.2.3", build: "release" });
+    expect(state.about).toEqual({
+      name: "Tsugiki",
+      version: "1.2.3",
+      build: "release",
+      source_ref: "v1.2.3",
+    });
     expect(state.error).toBeUndefined();
   });
 });

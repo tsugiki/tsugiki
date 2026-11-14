@@ -20,6 +20,7 @@ const core = vi.hoisted(() => ({
   mirrorCost: vi.fn(),
   saveTheme: vi.fn(),
   themes: vi.fn(),
+  tokenSource: vi.fn(),
 }));
 
 /** The themes the core sends unless a test says otherwise. */
@@ -109,7 +110,7 @@ const oneIssue = {
 beforeEach(() => {
   // The tests share one document, so each starts with no title of its own.
   document.title = "";
-  core.about.mockResolvedValue({ name: "Tsugiki", version: "1.2.3", build: "release" });
+  core.about.mockResolvedValue({ name: "Tsugiki", version: "1.2.3", build: "release", source_ref: "v1.2.3" });
   core.openDevtools.mockResolvedValue({ status: "ok", data: null });
   core.home.mockResolvedValue(onboarding);
   core.mirrorProblem.mockResolvedValue(null);
@@ -118,6 +119,7 @@ beforeEach(() => {
   core.chooseMirrorSource.mockResolvedValue({ status: "ok", data: null });
   core.saveTheme.mockResolvedValue({ status: "ok", data: null });
   core.themes.mockResolvedValue({ status: "ok", data: structuredClone(THEMES) });
+  core.tokenSource.mockResolvedValue("gh");
   core.workbench.mockResolvedValue({
     status: "ok",
     data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
@@ -500,7 +502,12 @@ describe("Open DevTools", () => {
 
   it("is in a development build's palette, and asks the core to open DevTools", async () => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
-    core.about.mockResolvedValue({ name: "Tsugiki", version: "1.2.3", build: "development" });
+    core.about.mockResolvedValue({
+      name: "Tsugiki",
+      version: "1.2.3",
+      build: "development",
+      source_ref: "main",
+    });
     render(Page);
     expect(await screen.findByText("Tsugiki 1.2.3")).toBeTruthy();
     expect(await paletteTitles()).toContain("Open DevTools");
@@ -1025,5 +1032,125 @@ describe("the theme picker", () => {
     expect(screen.queryByRole("dialog", { name: "Repository picker" })).toBeNull();
     expect(screen.queryByText("Ctrl+K")).toBeNull();
     expect(themePicker()).toBeTruthy();
+  });
+});
+
+describe("the Settings dialog", () => {
+  const ctrlComma = (target: Element = document.body) =>
+    fireEvent.keyDown(target, { key: ",", code: "Comma", ctrlKey: true });
+  const ctrlShiftP = () =>
+    fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+  const settings = () => screen.queryByRole("dialog", { name: "Settings" });
+  /** The Account page's value beside "Signed in as". */
+  const signedInAs = () =>
+    screen.getByText("Signed in as", { selector: "dt" }).nextElementSibling?.textContent.trim();
+
+  beforeEach(() => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    core.home.mockResolvedValue(gcmonHome);
+    core.workbench.mockResolvedValue(oneIssue);
+  });
+
+  /** The page on gcmon, with the focus on its one row. */
+  const onRow = async () => {
+    render(Page);
+    const row = await screen.findByRole("button", { name: "#7 It crashes" });
+    await fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(row);
+    return row;
+  };
+
+  it("opens on Ctrl+, on its Account page, which names who is signed in, and Esc gives the focus back", async () => {
+    const row = await onRow();
+    await ctrlComma(row);
+    expect(document.activeElement).toBe(settings());
+    expect(screen.getByRole("region", { name: "Account" })).toBeTruthy();
+    // The status comes when the core has answered each of the window's first questions.
+    await vi.waitFor(() => {
+      expect(signedInAs()).toBe("octocat");
+    });
+    expect(await screen.findByText("gh", { selector: "b" })).toBeTruthy();
+
+    await fireEvent.keyDown(window, { key: "Escape" });
+    expect(settings()).toBeNull();
+    expect(document.activeElement).toBe(row);
+  });
+
+  it("opens from ⚙ in the Sidebar, and gives the focus back to it", async () => {
+    render(Page);
+    const gear = await screen.findByRole("button", { name: "Settings" });
+    // jsdom doesn't focus a button it clicks, as a browser does.
+    gear.focus();
+    await fireEvent.click(gear);
+    expect(settings()).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(settings()).toBeNull();
+    expect(document.activeElement).toBe(gear);
+  });
+
+  it("opens from ⚙ Settings on onboarding", async () => {
+    core.home.mockResolvedValue(onboarding);
+    render(Page);
+    await fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    expect(settings()).toBeTruthy();
+  });
+
+  it("opens on Ctrl+, on onboarding", async () => {
+    core.home.mockResolvedValue(onboarding);
+    render(Page);
+    await screen.findByRole("button", { name: "Add repository" });
+    await ctrlComma();
+    expect(settings()).toBeTruthy();
+  });
+
+  it("opens from the palette, and gives the focus back to what had it before the palette", async () => {
+    const row = await onRow();
+    await ctrlShiftP();
+    await fireEvent.click(screen.getByRole("option", { name: "Open Settings" }));
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(settings());
+    });
+
+    await fireEvent.keyDown(window, { key: "Escape" });
+    expect(document.activeElement).toBe(row);
+  });
+
+  it("keeps the list's keys, the palette, the Repository picker and the chords from working under it", async () => {
+    const row = await onRow();
+    await ctrlComma(row);
+    await fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    await ctrlShiftP();
+    await fireEvent.keyDown(document.body, { key: "r", code: "KeyR", ctrlKey: true });
+    await fireEvent.keyDown(document.body, { key: "k", code: "KeyK", ctrlKey: true });
+
+    expect(document.activeElement).toBe(settings());
+    expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Repository picker" })).toBeNull();
+    expect(screen.queryByText("Ctrl+K")).toBeNull();
+  });
+
+  it("doesn't open over another dialog", async () => {
+    await onRow();
+    await ctrlShiftP();
+    await ctrlComma(screen.getByRole("combobox", { name: "Command" }));
+    expect(settings()).toBeNull();
+  });
+
+  it("keeps a button behind it from opening another dialog, so one Esc closes only it", async () => {
+    core.home.mockResolvedValue(onboarding);
+    core.mirrorQuestion.mockResolvedValue("python/cpython");
+    render(Page);
+    const add = await screen.findByRole("button", { name: "Add repository" });
+    const question = await screen.findByRole("button", {
+      name: "python/cpython's mirror waits for your answer",
+    });
+    await ctrlComma();
+
+    await fireEvent.click(add);
+    await fireEvent.click(question);
+    expect(screen.queryByRole("dialog", { name: "Add repository" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Mirror of python/cpython" })).toBeNull();
+    expect(settings()).toBeTruthy();
   });
 });

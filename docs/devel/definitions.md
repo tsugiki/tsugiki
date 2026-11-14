@@ -338,10 +338,10 @@ explains more, in this order.
 Built-in headers missing from the program's folder belong to the program and show for every Repository,
 until a start finds them or the path changes. A problem a running clangd reports, missing built-in headers
 included, belongs to that Repository's clangd: a start clears it, and clangd reports the missing header
-again once a file opens. An idle stop replaces it with Stopped (idle). A problem that comes from a clangd stopped since
-is dropped. The tests play each problem with a fake clangd: a folder without `lib\clang`, a fake that
-reports `'stdlib.h' file not found`, and one that doesn't report its index within a limit the test sets to
-300 ms.
+again once a file opens. An idle stop replaces it with Stopped (idle). A problem that comes from a clangd
+stopped since is dropped. The tests play each problem with a fake clangd: a folder without `lib\clang`, a
+fake that reports `'stdlib.h' file not found`, and one that doesn't report its index within a limit the test
+sets to 300 ms.
 
 ## Setting up a server
 

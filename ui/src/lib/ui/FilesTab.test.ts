@@ -70,6 +70,16 @@ vi.mock("$lib/state/mirror-source", () => ({
 
 const ok = <T>(data: T) => ({ status: "ok" as const, data });
 
+// jsdom has no `inert`, which a browser reflects to the attribute, as Svelte sets the property.
+Object.defineProperty(HTMLElement.prototype, "inert", {
+  get(this: HTMLElement) {
+    return this.hasAttribute("inert");
+  },
+  set(this: HTMLElement, inert: boolean) {
+    this.toggleAttribute("inert", inert);
+  },
+});
+
 /** A diff of three files: a rename with an edit, a binary file, and a file that lost its last newline. */
 const rows: DiffRow[] = [
   { kind: "file", path: "news.txt", old_path: "notes.txt", change: { kind: "lines", added: 1, removed: 1 } },
@@ -1428,13 +1438,14 @@ it("selects the word on a double-click, however far the browser's own word runs"
 });
 
 /** ty's one hit, at line `line` of news.txt at `side`. */
-const oneHit = (side: "base" | "head", line: number) =>
-  ok({
+/** A hit in the renamed file at `side`, which names it by its old path at the base. */
+const oneHit = (side: "base" | "head", line: number) => {
+  const path = side === "base" ? "notes.txt" : "news.txt";
+  return ok({
     state: "found",
-    hits: [
-      { place: { kind: "repository", path: "news.txt", side, commit: side }, line, column: 0, text: "" },
-    ],
+    hits: [{ place: { kind: "repository", path, side, commit: side }, line, column: 0, text: "" }],
   });
+};
 const mark = () => document.querySelector<HTMLElement>(".mark");
 
 it("goes to the definition on a Ctrl+click, and marks the whole line it lands on", async () => {
@@ -1509,6 +1520,84 @@ it("says Go to definition found nothing beside the toggle", async () => {
   await tick();
 
   expect(screen.getByText("No definition of Notes at abc.").getAttribute("role")).toBe("status");
+});
+
+it("opens a file the PR doesn't change read-only at the hit's commit, and Back returns to the diff where it was", async () => {
+  const place = { kind: "repository", path: "Objects/unicodeobject.c", side: "base", commit: "fedcba987654" };
+  core.definitions.mockResolvedValue(
+    ok({ state: "found", hits: [{ place, line: 900, column: 4, text: "" }] }),
+  );
+  core.definitionCode.mockImplementation((code) => {
+    const lines = [];
+    for (let line = code.start; line < Math.min(code.end, 2001); line++) lines.push(`line ${String(line)}`);
+    return Promise.resolve(ok({ count: 2000, lines }));
+  });
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[2]).toBe("11 Notes");
+  });
+  const diff = screen.getByRole("region", { name: "Diff" });
+  diff.scrollTop = 40;
+  await clickAt(codeOf(2), 2);
+
+  await files.goToDefinition();
+  const view = await vi.waitFor(() => screen.getByRole("region", { name: "File view" }));
+  const code = screen.getByRole("region", { name: "Definition's code" });
+  await vi.waitFor(() => {
+    expect(view.querySelector(".hit")?.textContent).toBe("900line 900");
+  });
+
+  expect(view.querySelector(".header")?.textContent.replace(/\s+/g, " ").trim()).toBe(
+    "← Back to PR #11's diff Objects/unicodeobject.c at fedcba9 · the PR's base of PR #11 Read-only",
+  );
+  // The hit's line sits three rows from the top, and the keys scroll the file, not the diff under it.
+  expect(code.scrollTop).toBe((900 - 1 - 3) * 20);
+  expect(document.activeElement).toBe(code);
+  // Only the chunks near what shows are read, at the hit's commit.
+  expect(core.definitionCode.mock.calls.map(([asked]) => asked)).toEqual([
+    {
+      repository: "python/cpython",
+      file: { kind: "repository", path: "Objects/unicodeobject.c", commit: "fedcba987654" },
+      start: 801,
+      end: 1001,
+    },
+  ]);
+  expect(core.pullRequestRow).not.toHaveBeenCalled();
+  expect(screen.queryByRole("group", { name: "Definition peek" })).toBeNull();
+  // What the view covers takes no focus and no keys, and leaves the tree a screen reader reads.
+  const toggle = screen.getByRole("button", { name: "One file at a time", hidden: true });
+  expect([diff.closest("[inert]"), toggle.closest("[inert]")]).toEqual([
+    expect.any(HTMLElement),
+    expect.any(HTMLElement),
+  ]);
+  expect(view.closest("[inert]")).toBeNull();
+
+  await fireEvent.click(screen.getByRole("button", { name: "← Back to PR #11's diff" }));
+
+  expect(screen.queryByRole("region", { name: "File view" })).toBeNull();
+  expect(diff.closest("[inert]")).toBeNull();
+  expect(screen.getByRole("region", { name: "Diff" })).toBe(diff);
+  expect(diff.scrollTop).toBe(40);
+  expect(document.activeElement).toBe(diff);
+});
+
+it("keeps the focus in the file view when its file can't be read, and says why there", async () => {
+  const place = { kind: "repository", path: "Lib/gone.py", side: "base", commit: "fedcba987654" };
+  core.definitions.mockResolvedValue(ok({ state: "found", hits: [{ place, line: 7, column: 4, text: "" }] }));
+  const problem = "Tsugiki can't read Lib/gone.py at fedcba9: not in the mirror";
+  core.definitionCode.mockResolvedValue({ status: "error", error: { kind: "not_found", message: problem } });
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[2]).toBe("11 Notes");
+  });
+  await clickAt(codeOf(2), 2);
+
+  await files.goToDefinition();
+  const view = await vi.waitFor(() => screen.getByRole("region", { name: "File view" }));
+  const alert = await vi.waitFor(() => within(view).getByRole("alert"));
+
+  expect(alert.textContent).toBe(problem);
+  expect(document.activeElement).toBe(within(view).getByRole("region", { name: "Definition's code" }));
 });
 
 it("picks a word side by side on the half it was clicked on, and on the lines a gap left out", async () => {

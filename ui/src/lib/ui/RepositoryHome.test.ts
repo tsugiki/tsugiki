@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { HitCode } from "$lib/state/hit-code.svelte";
 import type { Peek } from "$lib/state/peek";
 import { PrFilesState, type FilesMode } from "$lib/state/pr-files.svelte";
 import type { ChordBindings } from "./keys";
@@ -29,6 +30,16 @@ const core = vi.hoisted(() => ({
   listen: vi.fn(),
   stopListening: vi.fn(),
 }));
+
+// jsdom has no `inert`, which a browser reflects to the attribute, as Svelte sets the property.
+Object.defineProperty(HTMLElement.prototype, "inert", {
+  get(this: HTMLElement) {
+    return this.hasAttribute("inert");
+  },
+  set(this: HTMLElement, inert: boolean) {
+    this.toggleAttribute("inert", inert);
+  },
+});
 
 vi.mock("$lib/data/bindings", () => ({
   commands: {
@@ -1241,6 +1252,30 @@ it("goes to the definition with F12 on the Files tab, once for a held key", asyn
   await press("F12", { repeat: true });
 
   expect(goToDefinition).toHaveBeenCalledTimes(1);
+});
+
+/** A PR's Files tab with the file view over it, whose code holds 10 lines it asks the core for none of. */
+const onFileView = async () => {
+  const place = { kind: "repository" as const, path: "Lib/eggs.py", side: "base" as const, commit: "base" };
+  const code = { count: 10, widest: 0, show: () => {}, line: () => "x = 1" } as unknown as HitCode;
+  vi.spyOn(PrFilesState.prototype, "fileView", "get").mockReturnValue({ place, line: 4, code });
+  const files = await onFiles();
+  await fireEvent.click(files);
+  return screen.findByRole("region", { name: "File view" });
+};
+
+it("leaves the diff's keys alone while the file view covers it, and the cursor on the PR's row", async () => {
+  const goToDefinition = vi.spyOn(PrFilesState.prototype, "goToDefinition").mockResolvedValue();
+  const nextChange = vi.spyOn(PrFilesState.prototype, "nextChange");
+  await onFileView();
+  const row = document.querySelector('[data-item="112564#160662"]');
+
+  await press("F12");
+  await press("F7");
+
+  expect(goToDefinition).not.toHaveBeenCalled();
+  expect(nextChange).not.toHaveBeenCalled();
+  expect(row?.getAttribute("aria-current")).toBe("true");
 });
 
 it("closes the Definition peek with Escape before the search, and the search before the PR", async () => {
@@ -2747,6 +2782,21 @@ it("opens nothing on Enter while the list is hidden, as the cursor's row doesn't
 
   expect(screen.getByRole("region", { name: "Detail pane" })).toBeTruthy();
   expect(core.openIssue).not.toHaveBeenCalled();
+});
+
+it("scrolls the file view's code with ↑ and ↓ while the list is hidden, and not the diff under it", async () => {
+  await onFileView();
+  const diff = await screen.findByRole("region", { name: "Diff", hidden: true });
+  const code = screen.getByRole("region", { name: "Definition's code" });
+  const [onDiff, onCode] = [vi.fn(), vi.fn()];
+  Object.defineProperty(diff, "scrollBy", { value: onDiff });
+  Object.defineProperty(code, "scrollBy", { value: onCode });
+  await toggleList();
+
+  await press("ArrowDown");
+
+  expect(onCode.mock.calls).toEqual([[{ top: 40 }]]);
+  expect(onDiff).not.toHaveBeenCalled();
 });
 
 it("scrolls the diff with ↑ and ↓ on a PR's Files tab while the list is hidden", async () => {

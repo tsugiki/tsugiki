@@ -2558,6 +2558,25 @@ it("reads the first hit's code once, whether the peek or the file view shows it"
   expect(files.fileView?.code).toBe(codes[0]);
 });
 
+it("reads the code of a later hit the file view shows, past a first hit outside the Repository", async () => {
+  const outside: Hit = {
+    place: { kind: "outside", path: "C:/ty/builtins.pyi" },
+    line: 1,
+    column: 0,
+    text: "",
+  };
+  core.definitions.mockResolvedValue(hitsFound(outside, hitAt("Lib/shapes.py", "base", 3)));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 3 }, null, 13, false);
+
+  await files.goToDefinition();
+
+  // The peek's code for the first hit, then the file view's for the second.
+  expect(codes).toHaveLength(2);
+  expect(files.fileView?.code).toBe(codes[1]);
+  expect(files.fileView?.place.path).toBe("Lib/shapes.py");
+});
+
 it("opens the file view on a hit in a file the PR only renames, as the diff shows none of its lines", async () => {
   core.definitions.mockResolvedValueOnce(hitsFound(hitAt("Lib/shapes.py", "base", 3)));
   core.definitions.mockResolvedValueOnce(hitsFound(hitAt("Lib/forms.py", "head", 3)));

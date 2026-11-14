@@ -518,8 +518,7 @@
   function scrollDetail(step: 1 | -1) {
     const pane = detailPane();
     // A region something covers, such as the diff under the file view, is inert and keeps still.
-    const scrollers = [...(pane?.querySelectorAll<HTMLElement>("[data-scrolls]") ?? [])];
-    const scroller = scrollers.find((region) => region.closest("[inert]") === null) ?? pane;
+    const scroller = pane?.querySelector<HTMLElement>("[data-scrolls]:not([inert] *)") ?? pane;
     scroller?.scrollBy({ top: step * LINE });
   }
 

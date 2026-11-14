@@ -977,7 +977,7 @@ export class PrFilesState {
     if (landing !== undefined) return { kind: "diff", landing };
     const elsewhere = hits.filter(inRepository).find((hit) => !diffShows(view.files, hit.place));
     if (elsewhere === undefined) return undefined;
-    const code = elsewhere === hits[0] && first ? first : new HitCode(this.#repository, elsewhere);
+    const code = (elsewhere === hits[0] ? first : undefined) ?? new HitCode(this.#repository, elsewhere);
     return { kind: "file", view: { place: elsewhere.place, line: elsewhere.line, code } };
   }
 

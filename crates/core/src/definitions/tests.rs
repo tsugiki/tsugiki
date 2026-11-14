@@ -1441,6 +1441,27 @@ fn a_lookup_cancelled_after_it_answered_hears_nothing_more_and_isn_t_asked_again
 }
 
 #[test]
+fn a_lookup_cancelled_while_clangd_is_asked_again_hears_that_the_index_brings_nothing_more() {
+    let fixture = c_files("definitions-indexing-cancelled-again");
+    let (mut owner, fake) = fake_clangd(&fixture);
+    let lookup = c_lookup(&fixture, DiffEnd::Head, 11, "spam_count");
+    fake.progress(json!({"kind": "begin", "title": "indexing", "percentage": 0}));
+    index_moved_on(&mut owner, 1);
+    let asked = ask(&mut owner, &lookup, Ticket(1));
+    let _found = hits(answer_of(&mut owner, &asked));
+    fake.progress(json!({"kind": "end"}));
+    index_moved_on(&mut owner, 1);
+    let asking_again = owner.running.is_some();
+
+    let _goes_on = owner.handle(Message::Cancel(Ticket(1)));
+
+    assert!(asking_again);
+    assert!(owner.running.is_none());
+    let heard: Vec<Index> = asked.indexed.try_iter().collect();
+    assert_eq!(heard, [uncounted(), Index::Stopped]);
+}
+
+#[test]
 fn an_index_built_after_clangd_was_asked_and_before_it_answered_asks_it_again_at_once() {
     let fixture = c_files("definitions-indexing-built");
     let (mut owner, fake) = fake_clangd(&fixture);

@@ -2494,6 +2494,19 @@ it("keeps the hit the user picked once the index is built, if the new places nam
   expect(files.peek?.code).not.toBe(code);
 });
 
+it("shows the code of a hit the index finds where the answer before it found none", async () => {
+  core.definitions.mockResolvedValue(hitsFound());
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.peekDefinition();
+  const before = files.peek?.code;
+
+  indexOf(0)?.onmessage({ state: "built", hits: [hitAt("Objects/other.c", "base", 3)] });
+
+  expect(before).toBeUndefined();
+  expect(files.peek?.code?.index).toBe(0);
+});
+
 it("takes the line away and keeps the answer when the server stops before it builds its index", async () => {
   core.definitions.mockResolvedValue(ok(answerWith("Include/spam.h", 3)));
   const files = await pickable();

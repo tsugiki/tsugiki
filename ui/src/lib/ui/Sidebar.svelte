@@ -4,6 +4,7 @@
   let {
     repository,
     onpick,
+    onsettings,
     count,
     reviewRequests,
     staleReviews,
@@ -15,6 +16,8 @@
     repository: string;
     /** Opens the Repository picker. */
     onpick: () => void;
+    /** Opens the Settings dialog. */
+    onsettings: () => void;
     count: number;
     reviewRequests: number;
     staleReviews: number;
@@ -27,7 +30,16 @@
 </script>
 
 <nav aria-label="Sidebar">
-  <button class="repository" aria-haspopup="dialog" onclick={onpick}>{repository}</button>
+  <div class="top">
+    <button class="repository" aria-haspopup="dialog" onclick={onpick}>{repository}</button>
+    <button
+      class="settings"
+      aria-haspopup="dialog"
+      aria-label="Settings"
+      title="Settings (Ctrl+,)"
+      onclick={onsettings}>⚙</button
+    >
+  </div>
   <button aria-current={shown(selected.kind === "whole")} onclick={() => onselect({ kind: "whole" })}>
     <span>Workbench</span>
     <span>{count}</span>
@@ -117,14 +129,27 @@
     font-weight: 400;
   }
 
+  /* The Repository's name, and ⚙ at the right. */
+  .top {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 4px;
+  }
+
   .repository {
     /* Not flex like the other lines: the ellipsis shows only on a block's own text. */
     display: block;
-    margin-bottom: 4px;
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     font-weight: 700;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .settings {
+    flex: none;
+    color: var(--fg-muted);
   }
 
   h2 {

@@ -89,6 +89,8 @@ export const commands = {
 	themes: () => typedError<Themes, Error_Serialize>(__TAURI_INVOKE("themes")),
 	/**  What the window opens on. */
 	home: () => __TAURI_INVOKE<Home_Serialize>("home"),
+	/**  Where the token comes from, for the Settings dialog's Account page (#429). */
+	tokenSource: () => __TAURI_INVOKE<TokenSource>("token_source"),
 	/**
 	 *  How the user laid out the panes on this machine: the Sidebar's and the Workbench list's widths (#187), and
 	 *  whether the Sidebar (#234) and the list (#242) show.

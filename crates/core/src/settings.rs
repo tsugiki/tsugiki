@@ -350,6 +350,12 @@ pub enum TokenSource {
     Gh,
 }
 
+impl TokenSource {
+    /// Where this run's token comes from: gh, the only source until Tsugiki reads a personal access token
+    /// from the keychain (#430).
+    pub const IN_USE: Self = Self::Gh;
+}
+
 /// What the window opens on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "screen", rename_all = "snake_case")]
@@ -369,7 +375,7 @@ pub enum Home {
 impl Default for Home {
     fn default() -> Self {
         Self::Onboarding {
-            token: TokenSource::Gh,
+            token: TokenSource::IN_USE,
         }
     }
 }

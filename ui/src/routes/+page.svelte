@@ -15,6 +15,7 @@
   import Palette, { type PaletteCommand, type PaletteWords } from "$lib/ui/Palette.svelte";
   import PerformanceHud from "$lib/ui/PerformanceHud.svelte";
   import RepositoryHome from "$lib/ui/RepositoryHome.svelte";
+  import Settings from "$lib/ui/Settings.svelte";
   import StatusBar from "$lib/ui/StatusBar.svelte";
   import ThemePicker from "$lib/ui/ThemePicker.svelte";
   import "$lib/ui/window.css";
@@ -51,6 +52,7 @@
   let paletteOpen = $state(false);
   let pickerOpen = $state(false);
   let themePickerOpen = $state(false);
+  let settingsOpen = $state(false);
   /** The Repository whose mirror's question the dialog asks, while it's open. */
   let questionFor = $state<string>();
   /** Opens the Repository picker, which only a Repository's screen has. */
@@ -61,9 +63,16 @@
       !addOpen &&
       !paletteOpen &&
       !themePickerOpen &&
+      !settingsOpen &&
       questionFor === undefined
     )
       pickerOpen = true;
+  };
+  /** Opens the Settings dialog on its Account page, from `Ctrl+,`, ⚙ or the palette, which has closed by
+   * then. */
+  const openSettings = () => {
+    if (!addOpen && !paletteOpen && !pickerOpen && !themePickerOpen && questionFor === undefined)
+      settingsOpen = true;
   };
   /** Opens the theme picker, from `Ctrl+K T` or the palette, which has closed by then. It reads the themes
    * folder again, so a file saved since shows up as the list fills in. */
@@ -78,16 +87,18 @@
   };
   /** Whether the list's keys and the chords work: a dialog, the palette or a picker on top keeps them. */
   const keysActive = $derived(
-    !addOpen && !paletteOpen && !pickerOpen && !themePickerOpen && questionFor === undefined,
+    !addOpen && !paletteOpen && !pickerOpen && !themePickerOpen && !settingsOpen && questionFor === undefined,
   );
   const os = currentOs();
   const chord = new ChordWait(os);
   const guard = keyGuard(
     {
       "ctrl+shift+p": () => {
-        paletteOpen = !addOpen && !pickerOpen && !themePickerOpen && questionFor === undefined;
+        paletteOpen =
+          !addOpen && !pickerOpen && !themePickerOpen && !settingsOpen && questionFor === undefined;
       },
       "ctrl+r": openPicker,
+      "ctrl+,": openSettings,
       "ctrl+shift+h": () => {
         hud.toggle();
       },
@@ -160,6 +171,7 @@
   const commands: PaletteCommand[] = $derived([
     ...(repositoryHome?.paletteCommands() ?? []),
     ...switchRows("Repository: "),
+    { title: "Open Settings", run: openSettings },
     { title: "Pick a Theme", run: openThemePicker },
     { title: "Reload Themes", run: reloadThemes },
     {
@@ -180,7 +192,7 @@
 <main>
   <AboutLine about={about.about} error={about.error} />
   {#if home.current?.screen === "onboarding"}
-    <Onboarding token={home.current.token} onadd={openAdd} />
+    <Onboarding token={home.current.token} onadd={openAdd} onsettings={openSettings} />
   {:else if home.current?.screen === "repository"}
     {#if home.switchProblem}
       <p role="alert">{home.switchProblem}</p>
@@ -190,6 +202,7 @@
       name={home.current.repository.name}
       onadd={openAdd}
       onpick={openPicker}
+      onsettings={openSettings}
       {keysActive}
       diffFiles={settings.diffFiles}
     />
@@ -271,6 +284,14 @@
       themePickerOpen = false;
     }}
     onsaved={() => void settings.load()}
+  />
+{/if}
+{#if settingsOpen}
+  <Settings
+    status={status.status}
+    onclose={() => {
+      settingsOpen = false;
+    }}
   />
 {/if}
 {#if hud.visible}

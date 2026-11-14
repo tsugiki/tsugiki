@@ -9,9 +9,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   0005](../adr/0005-token-stays-in-the-rust-core.md)).
 - The **Account** page shows who is signed in, where the token comes from, and what it lets Tsugiki do in
   plain words ("read public repositories", "write reviews and comments", "push to any repository you can
-  push to"), with gh's or a classic token's scopes. It says what Tsugiki does with the token (ADR 0005). A
-  guide makes a narrower token: read-only, reviews on one owner's repositories, or classic `public_repo`,
-  each with steps, what it can and can't do, and a link to GitHub's form already filled in. A pasted token
+  push to"), with gh's or a classic token's scopes. It says what Tsugiki does with the token (ADR 0005):
+  only the Rust core holds it, it goes only to `api.github.com`, and it is never written to the settings
+  files, the database or the log. It links the [README](../../crates/token/README.md) of `tsugiki-token`
+  for readers who want to check. A guide makes a narrower token: read-only, reviews on one owner's
+  repositories, or classic `public_repo`, each with steps, what it can and can't do, and a link to GitHub's
+  form already filled in. A pasted token
   is checked before it is stored, and the page shows its kind, source and expiry, never the token itself;
   within 7 days of expiry the status bar warns and opens the guide. Replace and Remove act on the keychain
   entry, and Remove falls back to gh when gh is signed in. If the keychain refuses the token or is locked,

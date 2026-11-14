@@ -66,6 +66,7 @@
     name,
     onadd,
     onpick,
+    onsettings,
     keysActive = true,
     diffFiles = "all",
   }: {
@@ -73,6 +74,8 @@
     onadd: () => void;
     /** Opens the Repository picker, from the Repository's name atop the Sidebar. */
     onpick: () => void;
+    /** Opens the Settings dialog, from ⚙ atop the Sidebar. */
+    onsettings: () => void;
     keysActive?: boolean;
     /** Whether each PR's Files tab opens on all its files or one at a time, as `[diff] files` says. */
     diffFiles?: FilesMode;
@@ -783,6 +786,7 @@
     <Sidebar
       repository={name}
       {onpick}
+      {onsettings}
       count={workbench.count}
       reviewRequests={workbench.reviewRequests}
       staleReviews={workbench.staleReviews}

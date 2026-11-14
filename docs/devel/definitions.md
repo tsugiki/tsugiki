@@ -148,6 +148,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   marks the line for a moment. A hit at the head lands on the line's new side, and one at the base on its
   old side, which side by side marks only that half. The core finds the row in the diff on show, from the
   hit's path and line at its side, the old path for a renamed file at the base.
+- A single hit on a line of a changed file that no hunk shows: the diff opens the lines around it as it
+  does for a thread on such a line, 3 either side with buttons above and below for the rest of the gap,
+  then scrolls there and marks the line as above. The core finds the line's number at the head, which a
+  hit at the base maps to through the gap or the end of the file that hides it. The lines come from
+  the **Mirror** at the PR's head, as expanding a gap does, so this works offline at any commit the Mirror
+  holds. The line over the diff says it searches until they come, and Esc stops it then too. If they don't
+  come, as the read failed or the file ends before the line, it opens the peek on the hit instead, and
+  Open there says "No line of the diff shows path:line." for 4 seconds.
 - With no hit, the line over the diff says "No definition of X at abc1234." for 4 seconds.
 - A single hit in a file the PR doesn't change opens the file view: that
   file, read-only, over the Files tab, at the hit's commit. So does a file the PR only renames, or whose
@@ -181,7 +189,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   - A single hit in another file the PR doesn't change opens a new file view, one more place in the
     history, so `Alt+←` comes back to the view it was found from.
   - A single hit in a file the PR changes closes the file view, as Back does, and lands on its line in the
-    diff, as `F12` there does.
+    diff as `F12` there does, and opens the lines around it if no hunk shows it.
   - Several hits open the peek with their list under the picked line of the file view. Open, Enter and
     `F12` there go to the hit the peek shows, as a single hit goes.
 - `Alt+F12` in the file view opens the Definition peek under the picked word's line, and the lines after it
@@ -193,11 +201,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   another view close the view's.
 - The lookups read the Lookup checkout and the **Mirror**, so the file view follows symbols offline at any
   commit the Mirror holds.
-- Until #445 lands, a single hit on a line of a changed file that no hunk shows opens the peek on it. So do
-  a hit outside the Repository and an answer with no hit to go to, which says why. On a hit outside the
-  Repository the peek offers no Open, and Enter and `F12` leave it as it is. On a hit in the Repository
-  whose row the core can't find, Open, Enter and `F12` leave the peek and say "No line of the diff shows
-  path:line." over the diff for 4 seconds.
+- A hit outside the Repository opens the peek on it, and so does an answer with no hit to go to, which says
+  why. On a hit outside the Repository the peek offers no Open, and Enter and `F12` leave it as it is. A hit
+  in the Repository whose line the core can't find in the diff opens the peek too, and there Open, Enter and
+  `F12` leave the peek and say "No line of the diff shows path:line." over the diff for 4 seconds.
 - A development build gives `F12` to Go to definition too, and opens DevTools on `Ctrl+Shift+I` or from the
   palette.
 

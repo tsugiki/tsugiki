@@ -45,7 +45,7 @@ use tsugiki_core::theme::ThemeMode;
 use tsugiki_core::version::Version;
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
-use tsugiki_core::workbench::pr_files::{DiffSources, FileLine, PrFiles};
+use tsugiki_core::workbench::pr_files::{DiffSources, FileLine, LineInDiff, PrFiles};
 use tsugiki_core::workbench::pr_view::PrView;
 use tsugiki_core::workbench::{SeenMark, Workbench, WorkbenchView};
 
@@ -668,7 +668,7 @@ fn read_pull_request_files(
     Ok(read)
 }
 
-fn read_pull_request_row(line: DiffLine, work: &DiffWork) -> Result<Option<u32>, Error> {
+fn read_pull_request_row(line: DiffLine, work: &DiffWork) -> Result<Option<LineInDiff>, Error> {
     let (of, line) = line.parse()?;
     PrFiles::row(&work.sources()?, &of, &line)
 }
@@ -913,6 +913,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::open_repository,
             slow_commands::save_pane_layout,
             slow_commands::save_theme,
+            slow_commands::reread_settings,
+            slow_commands::apply_settings,
             slow_commands::workbench,
             slow_commands::issue,
             slow_commands::pull_request,

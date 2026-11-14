@@ -165,10 +165,10 @@ pub(super) fn row_of(
     start.checked_add(u32::try_from(found).ok()?)
 }
 
-/// The gap or the end of `file` that holds line `line` of `side`, which no hunk shows: the row the thread
-/// comes before or after, its rank there, and the line at the head. A gap's lines show above its hunk's
-/// rows, and the end of a file after its last row, whose rows end at `end`.
-fn outside(file: &DiffFile, end: u32, side: Side, line: u32) -> Option<(u32, u8, u32)> {
+/// The gap or the end of `file` that holds line `line` of `side`, which no hunk shows: the row a thread
+/// there comes before or after, its rank there, and the line at the head. A gap's lines show above its
+/// hunk's rows, and the end of a file after its last row, whose rows end at `end`.
+pub(super) fn outside(file: &DiffFile, end: u32, side: Side, line: u32) -> Option<(u32, u8, u32)> {
     let on_side = |old: u32, new: u32| match side {
         Side::Left => old,
         Side::Right => new,

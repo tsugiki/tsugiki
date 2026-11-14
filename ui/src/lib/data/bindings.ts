@@ -131,6 +131,17 @@ export const commands = {
 	 */
 	saveTheme: (kind: ThemeKind, name: string) => typedError<null, Error_Serialize>(__TAURI_INVOKE("save_theme", { kind, name })),
 	/**
+	 *  Reads both settings files again as the Settings dialog opens, so a hand edit made since start-up shows in
+	 *  it and takes effect (ADR 0014). This waits on small files.
+	 */
+	rereadSettings: () => typedError<LoadedSettings_Serialize, Error_Serialize>(__TAURI_INVOKE("reread_settings")),
+	/**
+	 *  Saves the tables the Settings dialog's Apply changed to `settings.toml`, over what the file says now and
+	 *  keeping the rest of it, and answers with the settings in force after. The window previews them already.
+	 *  This waits on small files.
+	 */
+	applySettings: (changes: SettingsChanges_Deserialize) => typedError<LoadedSettings_Serialize, Error_Serialize>(__TAURI_INVOKE("apply_settings", { changes })),
+	/**
 	 *  The rows of a view of a Repository's Workbench, with what its Sidebar shows, in the order `machine.toml`
 	 *  keeps for the list (#592). This waits on the database and never on GitHub (ADR 0018).
 	 */
@@ -170,10 +181,11 @@ export const commands = {
 	 */
 	pullRequestFind: (search: DiffSearch) => typedError<Found, Error_Serialize>(__TAURI_INVOKE("pull_request_find", { search })),
 	/**
-	 *  The row of a PR's diff that shows a line of one of its files, if a hunk shows it, which Go to definition
-	 *  scrolls to (#444). It reads the diff on show, or reads it again from the mirror.
+	 *  The row of a PR's diff that shows a line of one of its files (#444), or else the line at the head, which
+	 *  a gap or the end of the file hides and the window opens (#445). Go to definition scrolls there. It reads
+	 *  the diff on show, or reads it again from the mirror.
 	 */
-	pullRequestRow: (line: DiffLine) => typedError<number | null, Error_Serialize>(__TAURI_INVOKE("pull_request_row", { line })),
+	pullRequestRow: (line: DiffLine) => typedError<LineInDiff | null, Error_Serialize>(__TAURI_INVOKE("pull_request_row", { line })),
 	/**
 	 *  Where the picked word is defined, which the Definition peek shows (#438). It waits on ty, which reads the
 	 *  Lookup checkout, and on ty's start if it hasn't started, and never on GitHub, so it works offline at any
@@ -1128,6 +1140,18 @@ export type LastSync_Serialize = {
 	/**  Nothing, until its first sync finishes. */
 	at: string | null,
 };
+
+/**  A line of one of the diff's files as the diff on show has it, which Go to definition goes to. */
+export type LineInDiff = 
+/**  Row `row` of the diff shows it (#444). */
+{ kind: "row"; row: number } | 
+/**
+ *  No hunk shows it: it is line `head_line` at the head of file `file`, by its place among the diff's
+ *  files, in a gap or after the file's last hunk, which the window opens around it, as around a thread
+ *  on a line no hunk shows (#445). The diff doesn't know where a file ends at the head, so a line past
+ *  its end comes out here too, and the window, which reads the lines, finds it missing.
+ */
+{ kind: "hidden"; file: number; head_line: number };
 
 /**
  *  What a link goes to. The window knows the address of each kind, as CPython's docs build does, so the core
@@ -2139,6 +2163,30 @@ export type ServerName =
 
 /**  What `settings.toml` holds. A value the file leaves out takes its default. */
 export type Settings = Settings_Serialize | Settings_Deserialize;
+
+/**
+ *  What the Settings dialog's Apply changed: each table it edited, and nothing for the others, so a hand
+ *  edit to anything else made while the dialog was open stays (#520).
+ */
+export type SettingsChanges = SettingsChanges_Serialize | SettingsChanges_Deserialize;
+
+/**
+ *  What the Settings dialog's Apply changed: each table it edited, and nothing for the others, so a hand
+ *  edit to anything else made while the dialog was open stays (#520).
+ */
+export type SettingsChanges_Deserialize = {
+	status_bar?: StatusBarSettings_Deserialize | null,
+	releases?: ReleaseSettings_Deserialize | null,
+};
+
+/**
+ *  What the Settings dialog's Apply changed: each table it edited, and nothing for the others, so a hand
+ *  edit to anything else made while the dialog was open stays (#520).
+ */
+export type SettingsChanges_Serialize = {
+	status_bar: StatusBarSettings_Serialize | null,
+	releases: ReleaseSettings_Serialize | null,
+};
 
 /**  What `settings.toml` holds. A value the file leaves out takes its default. */
 export type Settings_Deserialize = {

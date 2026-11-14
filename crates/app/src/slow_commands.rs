@@ -22,7 +22,9 @@ use tsugiki_core::highlight::Span;
 use tsugiki_core::mirror::{CloneRefusal, MirrorSource};
 use tsugiki_core::repository_settings::{MirrorCost, NameCheck};
 use tsugiki_core::session::SessionRequests;
-use tsugiki_core::settings::{AppearanceSettings, Home, PaneLayout, SettingsOwner};
+use tsugiki_core::settings::{
+    AppearanceSettings, Home, LoadedSettings, PaneLayout, SettingsChanges, SettingsOwner,
+};
 use tsugiki_core::store::StoreReader;
 use tsugiki_core::theme::{ThemeKind, ThemeLibrary, Themes};
 use tsugiki_core::web::{GitHubItem, WebAddress};
@@ -186,6 +188,26 @@ pub(crate) fn save_theme(
     owner.save_theme(kind, library.named(kind, name)?).map(drop)
 }
 
+/// Reads both settings files again as the Settings dialog opens, so a hand edit made since start-up shows in
+/// it and takes effect (ADR 0014). This waits on small files.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn reread_settings(owner: State<'_, SettingsOwner>) -> Result<LoadedSettings, Error> {
+    owner.reread().map(|view| view.loaded)
+}
+
+/// Saves the tables the Settings dialog's Apply changed to `settings.toml`, over what the file says now and
+/// keeping the rest of it, and answers with the settings in force after. The window previews them already.
+/// This waits on small files.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn apply_settings(
+    changes: SettingsChanges,
+    owner: State<'_, SettingsOwner>,
+) -> Result<LoadedSettings, Error> {
+    owner.apply(changes).map(|view| view.loaded)
+}
+
 /// The rows of a view of a Repository's Workbench, with what its Sidebar shows, in the order `machine.toml`
 /// keeps for the list (#592). This waits on the database and never on GitHub (ADR 0018).
 #[tauri::command(async)]
@@ -311,14 +333,15 @@ pub(crate) fn pull_request_find(
     crate::find_in_pull_request(search, &work)
 }
 
-/// The row of a PR's diff that shows a line of one of its files, if a hunk shows it, which Go to definition
-/// scrolls to (#444). It reads the diff on show, or reads it again from the mirror.
+/// The row of a PR's diff that shows a line of one of its files (#444), or else the line at the head, which
+/// a gap or the end of the file hides and the window opens (#445). Go to definition scrolls there. It reads
+/// the diff on show, or reads it again from the mirror.
 #[tauri::command(async)]
 #[specta::specta]
 pub(crate) fn pull_request_row(
     line: crate::DiffLine,
     work: State<'_, crate::DiffWork>,
-) -> Result<Option<u32>, Error> {
+) -> Result<Option<tsugiki_core::workbench::pr_files::LineInDiff>, Error> {
     crate::read_pull_request_row(line, &work)
 }
 

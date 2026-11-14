@@ -488,6 +488,38 @@ fn a_theme_the_picker_saves_is_chosen_after_a_restart() {
     assert_eq!(file, "[appearance]\ndark_theme = \"Gruvbox Dark Hard\"\n");
 }
 
+/// The Settings dialog reads a hand edit as it opens (ADR 0014), and what its Apply keeps lasts through a
+/// restart (#520).
+#[test]
+fn settings_reads_a_hand_edit_as_it_opens_and_apply_lasts_through_a_restart() {
+    let (folders, root) = temp_folders("wired-settings-apply");
+    let wired = Wired::start(Ok(folders.clone()), no_network());
+    std::fs::write(folders.settings_file(), "[releases]\ncheck = false\n").unwrap();
+
+    let started = wired.ask("settings", json!({})).unwrap();
+    let reread = wired.ask("reread_settings", json!({})).unwrap();
+    let changes = json!({ "status_bar": { "visible": false } });
+    let applied = wired.ask("apply_settings", json!({ "changes": changes }));
+    drop(wired.stop());
+
+    let restarted = Wired::start(Ok(folders.clone()), no_network());
+    let after = restarted.ask("settings", json!({})).unwrap();
+    drop(restarted.stop());
+    let file = std::fs::read_to_string(folders.settings_file()).unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(started["settings"]["releases"]["check"], true);
+    assert_eq!(reread["settings"]["releases"]["check"], false);
+    assert_eq!(reread["problems"], json!([]));
+    assert_eq!(applied.unwrap()["settings"]["status_bar"]["visible"], false);
+    assert_eq!(after["settings"]["status_bar"]["visible"], false);
+    assert_eq!(after["settings"]["releases"]["check"], false);
+    assert_eq!(
+        file,
+        "[releases]\ncheck = false\n\n[status_bar]\nvisible = false\n"
+    );
+}
+
 #[test]
 fn the_add_dialogs_check_of_a_repository_tsugiki_has_answers_without_github() {
     let (folders, root) = temp_folders("wired-held");
@@ -1760,12 +1792,13 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     // A cancel the core takes before its lookup still cancels it.
     let cancel = wired.ask("cancel_definitions", json!({ "ticket": 4 }));
     let cancelled = look(4, "head", "Lib/spam.py");
-    // Go to definition lands on the row that shows the hit's line, at its side.
+    // Go to definition lands on the row that shows the hit's line, at its side, or on the line at the head
+    // that a gap hides.
     let row = |side: &str, line: u32| {
         let line = json!({ "repository": CPYTHON, "number": 1, "head": head, "base": base, "path": "Lib/spam.py", "side": side, "line": line });
         wired.ask("pull_request_row", json!({ "line": line }))
     };
-    let (removed, added, unshown) = (row("base", 15), row("head", 15), row("head", 1));
+    let (removed, added, hidden) = (row("base", 15), row("head", 15), row("base", 2));
     let refused = wired.ask(
         "definitions",
         json!({ "lookup": { "repository": CPYTHON, "base": "main", "head": head, "path": "Lib/spam.py", "side": "head", "line": 1, "column": 0, "ticket": 5 }, "waiting": "__CHANNEL__:8", "index": "__CHANNEL__:10" }),
@@ -1795,9 +1828,11 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     assert_eq!(cancel, Ok(Value::Null));
     assert_eq!(cancelled, Ok(json!({ "state": "cancelled" })));
     // The file's header, the `@@` line and lines 12 to 14 come before the removed line 15.
+    let at_row = |row: u32| Ok(json!({ "kind": "row", "row": row }));
+    let hidden_line = json!({ "kind": "hidden", "file": 0, "head_line": 2 });
     assert_eq!(
-        (removed, added, unshown),
-        (Ok(json!(5)), Ok(json!(6)), Ok(Value::Null))
+        (removed, added, hidden),
+        (at_row(5), at_row(6), Ok(hidden_line))
     );
     assert_eq!(refused.unwrap_err()["message"], "\"main\" isn't a commit.");
 }

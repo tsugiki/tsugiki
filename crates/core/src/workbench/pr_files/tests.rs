@@ -521,7 +521,7 @@ fn rows_of_a_diff_no_longer_on_show_are_read_again_from_its_base() {
 }
 
 #[test]
-fn a_line_a_hunk_shows_has_its_row_at_either_end_and_another_has_none() {
+fn a_line_has_its_row_or_its_line_at_the_head_where_no_hunk_shows_it() {
     let world = World::new("line-row");
     let mirrored = Mirrored::new("pr-files-line-row");
     let head = mirrored.head.clone();
@@ -537,13 +537,23 @@ fn a_line_a_hunk_shows_has_its_row_at_either_end_and_another_has_none() {
         };
         PrFiles::row(&world.sources(), &of, &line).unwrap()
     };
-    let shown = |row: Option<u32>| row.map(|row| whole.diff.rows(row..row + 1).to_vec());
+    // The row of the diff that shows `wanted`.
+    let showing = |wanted: DiffRow| {
+        (0..whole.diff.row_count())
+            .find(|&row| whole.diff.rows(row..row + 1).first() == Some(&wanted))
+            .map(|row| LineInDiff::Row { row })
+    };
+    let news = (0_u32..)
+        .zip(whole.diff.files())
+        .find_map(|(index, file)| (file.path == "Doc/news.txt").then_some(index))
+        .unwrap();
 
     // The PR renames Doc/notes.txt to Doc/news.txt, and changes its line 20.
     let removed = row("Doc/notes.txt", DiffEnd::Base, 20);
     let added = row("Doc/news.txt", DiffEnd::Head, 20);
     let context = row("Doc/news.txt", DiffEnd::Head, 18);
-    let unshown = row("Doc/news.txt", DiffEnd::Head, 5);
+    let hidden_at_head = row("Doc/news.txt", DiffEnd::Head, 5);
+    let hidden_at_base = row("Doc/notes.txt", DiffEnd::Base, 4);
     let old_name_at_head = row("Doc/notes.txt", DiffEnd::Head, 20);
     let unchanged = row("README.rst", DiffEnd::Base, 1);
 
@@ -551,19 +561,25 @@ fn a_line_a_hunk_shows_has_its_row_at_either_end_and_another_has_none() {
         old: 20,
         text: "line 20".to_owned(),
     };
-    assert_eq!(shown(removed), Some(vec![removed_row]));
+    assert_eq!(removed, showing(removed_row));
     let added_row = DiffRow::Added {
         new: 20,
         text: "line twenty".to_owned(),
     };
-    assert_eq!(shown(added), Some(vec![added_row]));
+    assert_eq!(added, showing(added_row));
     let context_row = DiffRow::Context {
         old: 18,
         new: 18,
         text: "line 18".to_owned(),
     };
-    assert_eq!(shown(context), Some(vec![context_row]));
-    assert_eq!(unshown, None);
+    assert_eq!(context, showing(context_row));
+    // The gap above the hunk hides lines 1 to 16, the same at either end.
+    let hidden = |head_line| LineInDiff::Hidden {
+        file: news,
+        head_line,
+    };
+    assert_eq!(hidden_at_head, Some(hidden(5)));
+    assert_eq!(hidden_at_base, Some(hidden(4)));
     assert_eq!(old_name_at_head, None);
     assert_eq!(unchanged, None);
     mirrored.finish();

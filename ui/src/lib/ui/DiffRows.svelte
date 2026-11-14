@@ -12,7 +12,8 @@
      caret on it and highlights it, and a double-click selects it, for Go to definition (#437). The
      Definition peek takes places under the picked word's line as a thread does (#438). Ctrl+click, Cmd+click
      on macOS, goes to the word's definition, and the line Go to definition lands on is marked for a moment:
-     side by side, only on the side of its hit (#444). -->
+     side by side, only on the side of its hit (#444). A line no hunk shows opens with the lines around it
+     first, as a thread's does (#445). -->
 <script lang="ts">
   import { untrack } from "svelte";
   import type { Column, Pick, PickedLine } from "$lib/state/pick";
@@ -71,10 +72,14 @@
   /** Room for the longest line, so the scroll width doesn't change as rows come and go. */
   const columns = $derived(files.reduce((widest, file) => Math.max(widest, file.columns), diff.columns));
   const sideBySide = $derived(diff.shownAs === "side-by-side");
-  /** Where the line Go to definition landed on shows. */
-  const markedPlace = $derived(
-    diff.marked === undefined ? undefined : diff.layout.placeOfRow(diff.marked.row),
-  );
+  /** Where the line Go to definition landed on shows: a row, or a line a gap opened to show (#445). */
+  const markedPlace = $derived.by(() => {
+    const at = diff.marked?.at;
+    if (at === undefined) return undefined;
+    return at.kind === "row"
+      ? diff.layout.placeOfRow(at.row)
+      : diff.layout.placeOfLine(at.file, at.head_line);
+  });
   /** The NEWS entries, which show above all the files, or on a page of their own one file at a time. */
   const newsShown = $derived(diff.shown === undefined || diff.shown.kind === "news" ? news : []);
 
@@ -152,8 +157,13 @@
         const header = layout.headerOf(jump.page);
         return header === undefined ? undefined : { place: header, into: 0 };
       }
-      const place = "id" in jump ? layout.threadAt(jump.id) : layout.placeOfRow(jump.row);
-      if (place === undefined || ("row" in jump && inView(place))) return undefined;
+      const place =
+        "id" in jump
+          ? layout.threadAt(jump.id)
+          : "row" in jump
+            ? layout.placeOfRow(jump.row)
+            : layout.placeOfLine(jump.file, jump.line);
+      if (place === undefined || (!("id" in jump) && inView(place))) return undefined;
       return { place: Math.max(0, place - LEAD), into: 0 };
     }
     // `newsHeight` is still the height of the NEWS entries above the rows last drawn.

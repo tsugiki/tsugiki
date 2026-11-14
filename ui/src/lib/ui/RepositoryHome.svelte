@@ -350,9 +350,11 @@
     };
   }
 
-  /** The Files tab of the PR on show, while it shows. */
+  /** The Files tab of the PR on show, while it shows its diff. The file view covers the diff, so the diff's
+   * keys and commands wait until Back (#453). */
   function shownFiles(): PrFilesState | undefined {
-    return detail instanceof PrViewState && detail.tab === "files" ? detail.files : undefined;
+    const files = detail instanceof PrViewState && detail.tab === "files" ? detail.files : undefined;
+    return files?.fileView === undefined ? files : undefined;
   }
 
   /** The palette's commands for the Files tab on show: the one that switches it to one file at a time, or
@@ -511,10 +513,13 @@
 
   const detailPane = () => home?.querySelector<HTMLElement>('[data-pane="detail"]');
 
-  /** Scrolls the Detail pane by a line, or the diff on a PR's Files tab, which scrolls by itself. */
+  /** Scrolls the Detail pane by a line, or the diff on a PR's Files tab, or the file view over it, each of
+   * which scrolls by itself. */
   function scrollDetail(step: 1 | -1) {
     const pane = detailPane();
-    const scroller = pane?.querySelector<HTMLElement>("[data-scrolls]") ?? pane;
+    // A region something covers, such as the diff under the file view, is inert and keeps still.
+    const scrollers = [...(pane?.querySelectorAll<HTMLElement>("[data-scrolls]") ?? [])];
+    const scroller = scrollers.find((region) => region.closest("[inert]") === null) ?? pane;
     scroller?.scrollBy({ top: step * LINE });
   }
 

@@ -1789,6 +1789,68 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     assert_eq!(refused.unwrap_err()["message"], "\"main\" isn't a commit.");
 }
 
+/// A mirror of cpython in `folders` whose PR #1, on the branch `pr`, calls `ham` in `spam.py`, which
+/// `eggs.py` defines and the PR doesn't change. Gives the PR's commit.
+fn mirror_with_a_call_into_an_unchanged_file(folders: &Folders, root: &Path) -> String {
+    let work = root.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    let _ = git(&work, &["init", "-q", "-b", "main"]);
+    let eggs = "x = 1\n\n\ndef ham():\n    return 2\n";
+    std::fs::write(work.join("eggs.py"), eggs).unwrap();
+    std::fs::write(work.join("spam.py"), "from eggs import ham\n").unwrap();
+    let _ = git(&work, &["add", "."]);
+    let _ = git(&work, &["commit", "-qm", "One"]);
+    let _ = git(&work, &["switch", "-qc", "pr"]);
+    std::fs::write(work.join("spam.py"), "from eggs import ham\n\nham()\n").unwrap();
+    let _ = git(&work, &["commit", "-qam", "PR 1"]);
+    let commit = git(&work, &["rev-parse", "HEAD"]).trim().to_owned();
+    let mirror = folders.mirror(&RepositoryName::parse(CPYTHON).unwrap());
+    std::fs::create_dir_all(mirror.parent().unwrap()).unwrap();
+    let (work, mirror) = (work.to_string_lossy(), mirror.to_string_lossy());
+    let _ = git(root, &["clone", "-q", "--bare", &work, &mirror]);
+    commit
+}
+
+#[test]
+fn offline_go_to_definition_into_an_unchanged_file_reads_it_from_the_mirror_at_the_base() {
+    let (folders, root) = temp_folders("wiring-offline-file-view");
+    let head = mirror_with_a_call_into_an_unchanged_file(&folders, &root);
+    someone_elses_pr_1(&folders, &head);
+    // The ty that `just cargo-test` and `just rust-coverage` fetch.
+    let ty = Path::new(&std::env::var_os("TSUGIKI_TY").unwrap_or_default()).to_owned();
+    assert!(ty.is_file(), "TSUGIKI_TY={ty:?}: see just test-servers");
+    let machine = format!("[language_servers.ty]\npath = '{}'\n", ty.display());
+    std::fs::write(folders.machine_file(), machine).unwrap();
+    let wired = Wired::start(Ok(folders), no_network());
+
+    let _held = wired.held.recv_timeout(PLENTY).unwrap();
+    let pr = json!({ "repository": CPYTHON, "number": 1 });
+    let files = wired.ask("pull_request_files", pr).unwrap();
+    let base = files["base"].as_str().unwrap_or_default().to_owned();
+    // F12 on `ham` in `ham()`, which the PR adds.
+    let lookup = json!({ "repository": CPYTHON, "base": base, "head": head, "path": "spam.py", "side": "head", "line": 3, "column": 0, "ticket": 1 });
+    let found = wired.ask(
+        "definitions",
+        json!({ "lookup": lookup, "waiting": "__CHANNEL__:7" }),
+    );
+    // The diff has no row for the hit's line, so the window opens the file view, which reads the file a
+    // chunk at a time from the mirror at the hit's commit.
+    let line = json!({ "repository": CPYTHON, "number": 1, "head": head, "base": base, "path": "eggs.py", "side": "base", "line": 4 });
+    let row = wired.ask("pull_request_row", json!({ "line": line }));
+    let file = json!({ "kind": "repository", "path": "eggs.py", "commit": base });
+    let code = json!({ "repository": CPYTHON, "file": file, "start": 1, "end": 201 });
+    let code = wired.ask("definition_code", json!({ "code": code }));
+    drop(wired.stop());
+    std::fs::remove_dir_all(root).unwrap();
+
+    let place = json!({ "kind": "repository", "path": "eggs.py", "side": "base", "commit": base });
+    let hit = json!({ "place": place, "line": 4, "column": 4, "text": "def ham():" });
+    assert_eq!(found, Ok(json!({ "state": "found", "hits": [hit] })));
+    assert_eq!(row, Ok(Value::Null));
+    let lines = ["x = 1", "", "", "def ham():", "    return 2"];
+    assert_eq!(code, Ok(json!({ "count": 5, "lines": lines })));
+}
+
 /// What PR #1 says as GitHub had it at `head`: a Review with a thread on line 15, which the diff shows, one
 /// on line 25, which it doesn't, and an Outdated one.
 fn conversation_of_pr_1(head: &str) -> PullRequestContent {

@@ -170,7 +170,10 @@
     overflow: hidden;
   }
 
+  /* The file view covers the tab, and stacks over nothing outside it. */
   .detail.files [role="tabpanel"] {
+    position: relative;
+    isolation: isolate;
     display: flex;
     flex: 1;
     flex-direction: column;

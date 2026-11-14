@@ -96,9 +96,21 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   the base on its old side, which side by side marks only that half. The core finds the row in the diff on
   show, from the hit's path and line at its side, the old path for a renamed file at the base.
 - With no hit, the line over the diff says "No definition of X at abc1234." for 4 seconds.
-- Until the later tickets land, a hit on no line of the diff opens the peek on it: a line no hunk shows
-  (#445), or a file the PR doesn't change (#453). So does an answer with no hit to go to, which says why. With
-  several hits it goes to the first that lands, until #446 opens the peek with the list.
+- With no hit on a line a hunk shows, the first hit in a file the PR doesn't change opens the file view: that
+  file, read-only, over the Files tab, at the hit's commit. So does a file the PR only renames, or whose
+  mode alone changes, as the diff shows none of its lines. The window tells these files from the diff's
+  list of files, by the new path at the head and the old path at the base, and asks the core for no row in
+  them. The header says "← Back to PR #N's diff", the path, "at abc1234 · the PR's base of PR #N" (or head),
+  and Read-only. The hit's line sits 3 rows from the top, and the view marks it.
+- The file view shows the peek's code: the window asks the core for 200 lines at a time near the rows that
+  show, read from the **Mirror** at the hit's commit, so `Objects/unicodeobject.c` opens without waiting for
+  all of it, and it works offline at any commit the Mirror holds. The lines are plain text until #455.
+- The file view takes the focus, so the keys scroll it. The diff stays drawn under it, inert, and its
+  keys wait: Back returns to the Files tab scrolled where it was, with the focus in the diff. The Issue
+  list's cursor stays on the PR's row. `Alt+←` and Esc come with #456.
+- Until #445 lands, a hit on a line of a changed file that no hunk shows opens the peek on it. So do a hit
+  outside the Repository and an answer with no hit to go to, which says why. With several hits it goes to
+  the first that lands, until #446 opens the peek with the list.
 - A development build gives `F12` to Go to definition too, and opens DevTools on `Ctrl+Shift+I` or from the
   palette.
 

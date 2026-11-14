@@ -1,7 +1,8 @@
 <!-- The hit's code in the Definition peek (#439): its file with line numbers in the gutter, scrolled so the
      hit's line sits a few rows from the top, and marked. It scrolls inside the peek, and draws only the rows
      near what shows, asking the core for their lines as they come into view. The lines are plain text until
-     #455 highlights files outside the diff. -->
+     #455 highlights files outside the diff. The file view shows its file the same way (#453), and
+     `data-scrolls` lets the Detail pane's ↑ and ↓ scroll it there. -->
 <script lang="ts">
   import { untrack } from "svelte";
   import type { HitCode } from "$lib/state/hit-code.svelte";
@@ -47,6 +48,7 @@
     role="region"
     aria-label="Definition's code"
     tabindex="0"
+    data-scrolls
     bind:this={scroller}
     bind:clientHeight={height}
     onscroll={(e) => {

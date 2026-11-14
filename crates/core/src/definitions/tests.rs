@@ -121,8 +121,44 @@ fn lookup(fixture: &Fixture, side: DiffEnd, line: u32, word: &str) -> Lookup {
 fn hits(answer: Result<Answer, Error>) -> Vec<Hit> {
     match answer.unwrap() {
         Answer::Found { hits } => hits,
-        other @ (Answer::NotSetUp | Answer::NoServer) => panic!("found nothing: {other:?}"),
+        other @ (Answer::NotSetUp | Answer::NoServer | Answer::Cancelled) => {
+            panic!("found nothing: {other:?}")
+        }
     }
+}
+
+/// Where a lookup's answer goes, and what it heard it waits for.
+struct Asked {
+    answer: Receiver<Result<Answer, Error>>,
+    waited: Receiver<Waiting>,
+}
+
+/// Asks the owner `lookup`, as the handle does, without waiting for the answer.
+fn ask(owner: &mut Owner, lookup: &Lookup) -> Asked {
+    let (reply, answer) = mpsc::channel();
+    let (heard, waited) = mpsc::channel();
+    let waiting = Box::new(move |waiting| {
+        let _unheard = heard.send(waiting);
+    });
+    let _goes_on = owner.handle(Message::LookUp(lookup.clone(), Asker { reply, waiting }));
+    Asked { answer, waited }
+}
+
+/// The answer of `asked`, once the owner has handled the messages up to it.
+fn answer_of(owner: &mut Owner, asked: &Asked) -> Result<Answer, Error> {
+    loop {
+        if let Ok(answer) = asked.answer.try_recv() {
+            return answer;
+        }
+        let message = owner.next().unwrap();
+        let _goes_on = owner.handle(message);
+    }
+}
+
+/// Where `lookup`'s name is defined, as the owner answers it.
+fn look(owner: &mut Owner, lookup: &Lookup) -> Result<Answer, Error> {
+    let asked = ask(owner, lookup);
+    answer_of(owner, &asked)
 }
 
 /// A hit at line `line`, column `column` of `path` in the fixture's Repository at `side`.
@@ -155,10 +191,10 @@ fn a_name_at_the_head_is_found_where_the_head_defines_it() {
     let mut owner = opened(&fixture);
     let at_head = |line, word| lookup(&fixture, DiffEnd::Head, line, word);
 
-    let parameter = hits(owner.look_up(&at_head(11, "self")));
-    let only_head = hits(owner.look_up(&at_head(12, "only_head")));
-    let standard = hits(owner.look_up(&at_head(12, "eggs")));
-    let added = hits(owner.look_up(&at_head(12, "more")));
+    let parameter = hits(look(&mut owner, &at_head(11, "self")));
+    let only_head = hits(look(&mut owner, &at_head(12, "only_head")));
+    let standard = hits(look(&mut owner, &at_head(12, "eggs")));
+    let added = hits(look(&mut owner, &at_head(12, "more")));
 
     let sell = "    def sell(self, count):";
     assert_eq!(
@@ -187,8 +223,8 @@ fn a_name_on_a_removed_line_is_found_at_the_base_and_the_next_lookup_is_at_the_h
     let removed = lookup(&fixture, DiffEnd::Base, 10, "old_name");
     let added = lookup(&fixture, DiffEnd::Head, 12, "only_head");
 
-    let at_base = hits(owner.look_up(&removed));
-    let at_head = hits(owner.look_up(&added));
+    let at_base = hits(look(&mut owner, &removed));
+    let at_head = hits(look(&mut owner, &added));
 
     let old = "def old_name():";
     assert_eq!(at_base, [hit(&fixture, DiffEnd::Base, (SHOP, 4, 4), old)]);
@@ -201,7 +237,10 @@ fn a_builtin_is_found_outside_the_repository() {
     let fixture = cpython("definitions-outside");
     let mut owner = opened(&fixture);
 
-    let found = hits(owner.look_up(&lookup(&fixture, DiffEnd::Head, 15, "print")));
+    let found = hits(look(
+        &mut owner,
+        &lookup(&fixture, DiffEnd::Head, 15, "print"),
+    ));
 
     // typeshed declares `print` twice, as overloads.
     assert!(!found.is_empty());
@@ -231,7 +270,7 @@ fn a_name_defined_nowhere_finds_nothing() {
     // The `return` keyword names nothing.
     let keyword = lookup(&fixture, DiffEnd::Head, 6, "return");
 
-    assert_eq!(hits(owner.look_up(&keyword)), []);
+    assert_eq!(hits(look(&mut owner, &keyword)), []);
 }
 
 #[test]
@@ -244,8 +283,15 @@ fn without_ty_a_python_lookup_says_to_set_it_up_and_another_language_has_no_serv
         ..python.clone()
     };
 
-    assert_eq!(owner.look_up(&python), Ok(Answer::NotSetUp));
-    assert_eq!(owner.look_up(&header), Ok(Answer::NoServer));
+    let pr = Pr {
+        at: fixture.checkout.at.clone(),
+        changed: changed(),
+    };
+    owner.opened(&repository(), pr);
+
+    assert!(owner.servers.is_empty());
+    assert_eq!(look(&mut owner, &python), Ok(Answer::NotSetUp));
+    assert_eq!(look(&mut owner, &header), Ok(Answer::NoServer));
 }
 
 #[test]
@@ -253,7 +299,10 @@ fn a_lookup_before_its_pr_opened_starts_ty_with_no_file_open() {
     let fixture = cpython("definitions-unopened");
     let mut owner = Owner::new(sources(Some(fixture.checkout.clone()), Some(ty())));
 
-    let found = hits(owner.look_up(&lookup(&fixture, DiffEnd::Base, 10, "eggs")));
+    let found = hits(look(
+        &mut owner,
+        &lookup(&fixture, DiffEnd::Base, 10, "eggs"),
+    ));
 
     let eggs = "def eggs(count):";
     let spam = ("Lib/spam.py", 1, 4);
@@ -286,7 +335,7 @@ fn a_lookup_while_the_checkout_is_elsewhere_fails_and_starts_nothing() {
     let other = another("definitions-elsewhere-other");
     let mut owner = Owner::new(sources(Some(other.checkout.clone()), Some(ty())));
 
-    let answer = owner.look_up(&lookup(&fixture, DiffEnd::Head, 12, "eggs"));
+    let answer = look(&mut owner, &lookup(&fixture, DiffEnd::Head, 12, "eggs"));
 
     let message = "Tsugiki has no copy of this PR's files for ty to read yet.";
     assert_eq!(answer, Err(Error::new(ErrorKind::NotFound, message)));
@@ -299,7 +348,7 @@ fn a_lookup_at_commits_the_checkout_isn_t_at_leaves_the_running_ty_alone() {
     let other = another("definitions-stale-other");
     let mut owner = opened(&fixture);
 
-    let answer = owner.look_up(&lookup(&other, DiffEnd::Head, 12, "eggs"));
+    let answer = look(&mut owner, &lookup(&other, DiffEnd::Head, 12, "eggs"));
 
     assert!(answer.is_err());
     let running = owner.servers.get(&repository()).map(|ty| ty.at().clone());
@@ -330,19 +379,80 @@ fn the_files_tab_reading_its_pr_again_starts_nothing_again() {
 }
 
 #[test]
-fn a_lookup_ty_is_slow_to_answer_is_cancelled_and_ty_goes_on() {
-    let fixture = cpython("definitions-slow");
+fn a_new_lookup_cancels_the_one_running_whose_late_answer_goes_nowhere() {
+    let fixture = cpython("definitions-cancel-newer");
+    let mut owner = opened(&fixture);
+    let first = lookup(&fixture, DiffEnd::Head, 12, "eggs");
+    let second = lookup(&fixture, DiffEnd::Head, 12, "only_head");
+
+    let asked = ask(&mut owner, &first);
+    let found = hits(look(&mut owner, &second));
+
+    assert_eq!(
+        asked.answer.try_iter().collect::<Vec<_>>(),
+        [Ok(Answer::Cancelled)]
+    );
+    let only = "def only_head():";
+    assert_eq!(found, [hit(&fixture, DiffEnd::Head, (SHOP, 5, 4), only)]);
+    assert!(owner.running.is_none());
+}
+
+#[test]
+fn a_cancel_cancels_the_lookup_running_and_ty_goes_on() {
+    let fixture = cpython("definitions-cancel");
     let mut owner = opened(&fixture);
     let at_head = lookup(&fixture, DiffEnd::Head, 12, "only_head");
 
-    owner.patience = Duration::ZERO;
-    let slow = owner.look_up(&at_head);
-    owner.patience = PATIENCE;
-    let again = hits(owner.look_up(&at_head));
+    let asked = ask(&mut owner, &at_head);
+    let _goes_on = owner.handle(Message::Cancel);
+    let cancelled = answer_of(&mut owner, &asked);
+    // A cancel with no lookup running does nothing.
+    let _goes_on = owner.handle(Message::Cancel);
+    let again = hits(look(&mut owner, &at_head));
 
-    let message = "ty is still reading the PR's files. Ask again in a moment.";
-    assert_eq!(slow, Err(Error::new(ErrorKind::Internal, message)));
+    assert_eq!(cancelled, Ok(Answer::Cancelled));
     assert_eq!(again.len(), 1);
+}
+
+#[test]
+fn a_lookup_says_ty_starts_then_that_it_asks_and_a_running_ty_is_only_asked() {
+    let fixture = cpython("definitions-waiting");
+    let mut owner = Owner::new(sources(Some(fixture.checkout.clone()), Some(ty())));
+    let at_head = lookup(&fixture, DiffEnd::Head, 12, "eggs");
+
+    let first = ask(&mut owner, &at_head);
+    let _found = hits(answer_of(&mut owner, &first));
+    let second = ask(&mut owner, &at_head);
+    let _found = hits(answer_of(&mut owner, &second));
+
+    let server = ServerName::Ty;
+    let starting = Waiting::Starting { server };
+    let asking = Waiting::Asking { server };
+    assert_eq!(
+        first.waited.try_iter().collect::<Vec<_>>(),
+        [starting, asking]
+    );
+    assert_eq!(second.waited.try_iter().collect::<Vec<_>>(), [asking]);
+}
+
+#[test]
+fn a_lookup_asked_again_or_cancelled_while_ty_starts_asks_ty_nothing() {
+    let fixture = cpython("definitions-cancel-starting");
+    let mut owner = Owner::new(sources(Some(fixture.checkout.clone()), Some(ty())));
+    let at_head = lookup(&fixture, DiffEnd::Head, 12, "eggs");
+    // The cancel waits in the thread's messages while ty starts.
+    owner.own.send(Message::Cancel).unwrap();
+
+    let asked = ask(&mut owner, &at_head);
+
+    assert_eq!(asked.answer.try_recv(), Ok(Ok(Answer::Cancelled)));
+    let server = ServerName::Ty;
+    assert_eq!(
+        asked.waited.try_iter().collect::<Vec<_>>(),
+        [Waiting::Starting { server }]
+    );
+    assert!(owner.running.is_none());
+    assert_eq!(owner.queued.len(), 1);
 }
 
 #[test]
@@ -353,8 +463,8 @@ fn a_ty_that_stopped_fails_its_lookup_and_the_next_one_starts_it_again() {
     let running = owner.servers.get(&repository()).unwrap();
     running.shutdown().wait().unwrap();
 
-    let failed = owner.look_up(&at_head);
-    let again = hits(owner.look_up(&at_head));
+    let failed = look(&mut owner, &at_head);
+    let again = hits(look(&mut owner, &at_head));
 
     let message = failed.unwrap_err().message;
     assert!(message.starts_with("ty couldn't answer: "), "{message}");
@@ -367,7 +477,7 @@ fn a_ty_that_doesnt_start_says_why() {
     let missing = fixture.checkout.folder.join("no-ty.exe");
     let mut owner = Owner::new(sources(Some(fixture.checkout.clone()), Some(missing)));
 
-    let found = owner.look_up(&lookup(&fixture, DiffEnd::Head, 12, "eggs"));
+    let found = look(&mut owner, &lookup(&fixture, DiffEnd::Head, 12, "eggs"));
 
     let message = found.unwrap_err().message;
     let start = "Tsugiki couldn't start ty at ";
@@ -383,7 +493,7 @@ fn a_program_that_isnt_a_language_server_doesnt_start() {
     let git = PathBuf::from(exec_path.trim()).join(name);
     let mut owner = Owner::new(sources(Some(fixture.checkout.clone()), Some(git)));
 
-    let found = owner.look_up(&lookup(&fixture, DiffEnd::Head, 12, "eggs"));
+    let found = look(&mut owner, &lookup(&fixture, DiffEnd::Head, 12, "eggs"));
 
     let message = found.unwrap_err().message;
     assert!(message.starts_with("ty didn't start: "), "{message}");
@@ -406,6 +516,40 @@ fn diff_file(path: &str) -> DiffFile {
     }
 }
 
+/// A path on another drive, but not from its root, stays relative when joined to the checkout's.
+#[cfg(windows)]
+#[test]
+fn a_lookup_at_a_path_that_isn_t_a_file_of_the_checkout_fails_and_ty_goes_on() {
+    let fixture = cpython("definitions-odd-path");
+    let mut owner = opened(&fixture);
+    let odd = Lookup {
+        path: "D:odd.py".to_owned(),
+        ..lookup(&fixture, DiffEnd::Head, 12, "eggs")
+    };
+
+    let failed = look(&mut owner, &odd);
+    let again = hits(look(
+        &mut owner,
+        &lookup(&fixture, DiffEnd::Head, 12, "eggs"),
+    ));
+
+    let message = "The Lookup checkout isn't at a full path.";
+    assert_eq!(failed, Err(Error::new(ErrorKind::Internal, message)));
+    assert_eq!(again.len(), 1);
+}
+
+#[test]
+fn a_plain_path_drops_its_dot_and_dot_dot_parts() {
+    // A path keeps a `.` only at its start.
+    let path = Path::new(".")
+        .join("work")
+        .join("lookup")
+        .join("..")
+        .join("a.py");
+
+    assert_eq!(plain(&path), Path::new("work").join("a.py"));
+}
+
 #[test]
 fn the_python_files_a_pr_changes_are_its_py_and_pyi_files() {
     let files = ["a.py", "b.pyi", "c.c", "d.pyc", "odd\nname.py"].map(diff_file);
@@ -423,14 +567,27 @@ fn the_handle_starts_ty_for_a_python_pr_and_looks_up_on_its_thread() {
 
     definitions.opened(repository(), at.clone(), &files);
     definitions.opened(repository(), at, &[diff_file("c.c")]);
-    let found = hits(definitions.look_up(at_head.clone()));
+    let (heard, waited) = mpsc::channel();
+    let found = hits(definitions.look_up(
+        at_head.clone(),
+        Box::new(move |waiting| {
+            let _unheard = heard.send(waiting);
+        }),
+    ));
+    // Nothing runs, so nothing is cancelled.
+    definitions.cancel();
     definitions.stop(Duration::from_secs(10));
     // ty's process works in the checkout, so on Windows the folder goes only once it has ended.
     let removed = std::fs::remove_dir_all(fixture.checkout.folder.parent().unwrap());
-    let after = definitions.look_up(at_head);
+    let after = definitions.look_up(at_head, Box::new(|_| {}));
 
     let only = "def only_head():";
     assert_eq!(found, [hit(&fixture, DiffEnd::Head, (SHOP, 5, 4), only)]);
+    // ty started when the PR opened.
+    let asking = Waiting::Asking {
+        server: ServerName::Ty,
+    };
+    assert_eq!(waited.try_iter().collect::<Vec<_>>(), [asking]);
     removed.unwrap();
     let stopped = Error::new(ErrorKind::Internal, "Tsugiki's lookups have stopped.");
     assert_eq!(after, Err(stopped));
@@ -444,7 +601,10 @@ fn a_pr_whose_ty_doesnt_start_is_logged_and_its_lookup_says_why() {
     let at = fixture.checkout.at.clone();
 
     definitions.opened(repository(), at, &[diff_file(SHOP)]);
-    let found = definitions.look_up(lookup(&fixture, DiffEnd::Head, 12, "eggs"));
+    let found = definitions.look_up(
+        lookup(&fixture, DiffEnd::Head, 12, "eggs"),
+        Box::new(|_| {}),
+    );
 
     let message = found.unwrap_err().message;
     let start = "Tsugiki couldn't start ty at ";

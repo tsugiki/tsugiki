@@ -16,6 +16,7 @@
 // changed since, and those it left unchanged start collapsed too (#387). A click or a double-click picks a
 // word on a line of code, for Go to definition (#437).
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
+import { Channel } from "$lib/data/channel";
 import {
   commands,
   events,
@@ -39,6 +40,7 @@ import {
   type PrFiles_Serialize,
   type Span,
   type Unfetched,
+  type Waiting,
   type YourReview,
 } from "$lib/data/bindings";
 import {
@@ -874,9 +876,10 @@ export class PrFilesState {
 
   /** Opens the Definition peek under the picked word's line, and asks ty where the word is defined, with the
    * PR's files at the line's commit: the diff's base for a removed line, and its head for the rest, even
-   * while the PR's newer head is fetched. The peek shows at once, and ty answers in the core while the
-   * window goes on. A lookup that answers after a newer one started, or after the peek closed, changes
-   * nothing. */
+   * while the PR's newer head is fetched. The peek shows at once and says what the lookup waits for, and ty
+   * answers in the core while the window goes on. A newer lookup cancels this one in the core, and closing
+   * the peek cancels it too. A lookup that answers after a newer one started, or after the peek closed,
+   * changes nothing. */
   async peekDefinition() {
     const pick = this.#pick;
     const view = this.view;
@@ -897,7 +900,14 @@ export class PrFilesState {
       line: pick.line,
       column: pick.start,
     };
-    const answer = await commands.definitions(lookedUp).catch((e: unknown) => ({
+    // The core says what the lookup waits for: ty to start, or to answer (#440).
+    const waiting = new Channel<Waiting>();
+    waiting.onmessage = (step) => {
+      if (lookup !== this.#lookups) return;
+      this.#peek = { ...peek, lookup: { state: "looking", waiting: step, since: Date.now() } };
+    };
+    // The core cancels the lookup running, if one is.
+    const answer = await commands.definitions(lookedUp, waiting).catch((e: unknown) => ({
       status: "error" as const,
       error: { message: String(e) },
     }));
@@ -917,6 +927,8 @@ export class PrFilesState {
 
   /** Closes the Definition peek, and hands the diff its focus back. */
   closePeek() {
+    // A lookup still running is cancelled, so ty stops working on it.
+    if (this.#peek?.lookup.state === "looking") void commands.cancelDefinitions();
     this.#peek = undefined;
     this.#lookups += 1;
     this.diffWantsFocus = true;

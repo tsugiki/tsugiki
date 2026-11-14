@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { Answer, DefinitionLookup } from "$lib/data/bindings";
+import type { Answer, DefinitionLookup, Waiting } from "$lib/data/bindings";
 import {
   CHUNK,
   DiffViewChoice,
@@ -16,6 +16,17 @@ import type { YourReview } from "./workbench.svelte";
 
 type Heard = (event: { payload: unknown }) => void;
 
+/** The channel a lookup hears what it waits for on, which a test speaks into as the core would. */
+interface FakeChannel {
+  onmessage: (message: Waiting) => void;
+}
+
+vi.mock("@tauri-apps/api/core", () => ({
+  Channel: class {
+    onmessage: (message: Waiting) => void = () => {};
+  },
+}));
+
 const core = vi.hoisted(() => {
   const core = {
     pullRequestFiles: vi.fn(),
@@ -23,7 +34,8 @@ const core = vi.hoisted(() => {
     pullRequestSpans: vi.fn<(chunk: { start: number }, opened?: number[]) => Promise<unknown>>(),
     pullRequestLines: vi.fn<(lines: { file: number; start: number; end: number }) => Promise<unknown>>(),
     pullRequestFind: vi.fn<(search: { query: string }) => Promise<unknown>>(),
-    definitions: vi.fn<(lookup: DefinitionLookup) => Promise<unknown>>(),
+    definitions: vi.fn<(lookup: DefinitionLookup, waiting: FakeChannel) => Promise<unknown>>(),
+    cancelDefinitions: vi.fn(() => Promise.resolve()),
     cloning: vi.fn(),
     mirrorStates: vi.fn(),
     mirrorsHeld: vi.fn(),
@@ -48,6 +60,7 @@ vi.mock("$lib/data/bindings", () => ({
     pullRequestLines: core.pullRequestLines,
     pullRequestFind: core.pullRequestFind,
     definitions: core.definitions,
+    cancelDefinitions: core.cancelDefinitions,
     cloning: core.cloning,
     mirrorStates: core.mirrorStates,
     mirrorsHeld: core.mirrorsHeld,
@@ -2096,9 +2109,9 @@ it("looks up the picked word at the head, and at the base for a removed line", a
   files.pickWord({ kind: "row", row: 3 }, null, 13, false);
   await files.peekDefinition();
 
-  expect(core.definitions.mock.calls).toEqual([
-    [lookupOf("head", "a.py", 8, 4)],
-    [lookupOf("base", "a.py", 8, 11)],
+  expect(core.definitions.mock.calls.map(([lookup]) => lookup)).toEqual([
+    lookupOf("head", "a.py", 8, 4),
+    lookupOf("base", "a.py", 8, 11),
   ]);
   expect(files.peek).toMatchObject({
     at: { kind: "row", row: 3 },
@@ -2123,9 +2136,9 @@ it("looks up a removed line of a renamed file at its old path", async () => {
   files.pickWord({ kind: "row", row: 4 }, null, 13, false);
   await files.peekDefinition();
 
-  expect(core.definitions.mock.calls).toEqual([
-    [lookupOf("base", "a.py", 8, 11)],
-    [lookupOf("head", "b.py", 9, 11)],
+  expect(core.definitions.mock.calls.map(([lookup]) => lookup)).toEqual([
+    lookupOf("base", "a.py", 8, 11),
+    lookupOf("head", "b.py", 9, 11),
   ]);
 });
 
@@ -2142,7 +2155,7 @@ it("looks up at the commit the diff shows while a newer head is fetched", async 
   files.pickWord({ kind: "row", row: 4 }, null, 12, false);
   await files.peekDefinition();
 
-  expect(core.definitions).toHaveBeenCalledWith(lookupOf("head", "a.py", 9, 11, "older"));
+  expect(core.definitions.mock.calls[0]?.[0]).toEqual(lookupOf("head", "a.py", 9, 11, "older"));
 });
 
 it("opens the peek under the picked line while the lookup runs, and pushes the rows after it down", async () => {
@@ -2203,6 +2216,59 @@ it("closes the peek and hands the diff its focus, and a lookup that answers late
   expect(files.peek).toBeUndefined();
   expect(files.diffWantsFocus).toBe(true);
   expect(files.layout.at(3)).toEqual({ kind: "row", row: 3 });
+  // The lookup was still running, so the core cancels it.
+  expect(core.cancelDefinitions).toHaveBeenCalledTimes(1);
+});
+
+it("cancels nothing when it closes a peek whose lookup has answered", async () => {
+  core.definitions.mockResolvedValue(ok(answerWith()));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.peekDefinition();
+
+  files.closePeek();
+
+  expect(core.cancelDefinitions).not.toHaveBeenCalled();
+});
+
+it("says what the lookup waits for as the core says it, and when it started to", async () => {
+  const answer = heldLookup();
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  const clock = vi.spyOn(Date, "now").mockReturnValue(5000);
+  const looking = files.peekDefinition();
+  const waiting = core.definitions.mock.calls[0]?.[1];
+
+  waiting?.onmessage({ step: "starting", server: "ty" });
+  const starting = files.peek?.lookup;
+  waiting?.onmessage({ step: "asking", server: "ty" });
+  clock.mockRestore();
+
+  expect(starting).toEqual({ state: "looking", waiting: { step: "starting", server: "ty" }, since: 5000 });
+  expect(files.peek?.lookup).toEqual({
+    state: "looking",
+    waiting: { step: "asking", server: "ty" },
+    since: 5000,
+  });
+  answer(ok(answerWith()));
+  await looking;
+  expect(files.peek?.lookup).toEqual({ state: "answered", answer: answerWith() });
+});
+
+it("leaves the peek alone when a lookup a newer one replaced says what it waits for", async () => {
+  const older = heldLookup();
+  core.definitions.mockResolvedValueOnce(ok(answerWith("Lib/b.py", 9)));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  const first = files.peekDefinition();
+  files.pickWord({ kind: "row", row: 4 }, null, 12, false);
+  await files.peekDefinition();
+
+  core.definitions.mock.calls[0]?.[1].onmessage({ step: "asking", server: "ty" });
+  older(ok({ state: "cancelled" }));
+  await first;
+
+  expect(files.peek?.lookup).toEqual({ state: "answered", answer: answerWith("Lib/b.py", 9) });
 });
 
 it("shows the newest lookup when an older one answers after it", async () => {

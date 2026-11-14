@@ -4,11 +4,14 @@
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::mpsc::Receiver;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use serde_json::{Value, json};
-use tsugiki_lsp::{Document, Event, Init, Language, Launch, Location, Pending, Position, Server};
+use tsugiki_lsp::{
+    Definitions, Document, Event, Init, Language, Launch, Location, Pending, Position, Server,
+};
 
 use super::{DiffEnd, Hit, Lookup, PATIENCE, Place, failed, plain, slashed, uri};
 use crate::diff;
@@ -17,14 +20,6 @@ use crate::mirror::{LookupAt, LookupCheckout};
 
 #[cfg(test)]
 mod tests;
-
-/// Why ty gave no answer to a lookup.
-pub(super) enum Failure {
-    /// It is still working on it, as on its first lookup in a big Repository, and goes on running.
-    Slow(Error),
-    /// It answered with an error, or ended, and starts afresh on the next lookup.
-    Broken(Error),
-}
 
 /// One ty, which reads a Lookup checkout, with the PR's changed Python files open on it.
 pub(super) struct Ty {
@@ -43,8 +38,8 @@ pub(super) struct Ty {
 struct Open {
     path: String,
     document: Document,
-    head: String,
-    base: Option<String>,
+    head: Arc<str>,
+    base: Option<Arc<str>>,
 }
 
 impl Open {
@@ -59,10 +54,66 @@ impl Open {
     }
 
     /// The text ty reads while the files show `side`.
-    fn text(&self, side: DiffEnd) -> &str {
+    fn text(&self, side: DiffEnd) -> &Arc<str> {
         match (side, &self.base) {
             (DiffEnd::Base, Some(base)) => base,
             (DiffEnd::Base, None) | (DiffEnd::Head, _) => &self.head,
+        }
+    }
+}
+
+/// What turning ty's answer to a lookup into hits needs: a copy of the ty's checkout and open files as the
+/// lookup found them, so a thread of the lookup's own reads ty's answer while ty goes on.
+pub(super) struct Hits {
+    folder: PathBuf,
+    at: LookupAt,
+    /// Each open file's path, the commit a hit in it is at, and the text ty read.
+    open: Vec<(String, DiffEnd, Arc<str>)>,
+}
+
+impl Hits {
+    /// The places ty names in `definitions`, in its order.
+    pub(super) fn of(&self, definitions: Definitions) -> Vec<Hit> {
+        (definitions.into_locations().iter())
+            .map(|location| self.hit(location))
+            .collect()
+    }
+
+    /// `location` as a hit, with the line's text as ty read it.
+    fn hit(&self, location: &Location) -> Hit {
+        let start = location.range.start;
+        let path = location.uri.to_path().unwrap_or_default();
+        let (place, text) = match path.strip_prefix(&self.folder) {
+            Ok(relative) => {
+                let relative = slashed(relative);
+                let open = self.open.iter().find(|(path, ..)| *path == relative);
+                let text = open.map(|(.., text)| text.to_string());
+                let side = open.map_or(DiffEnd::Base, |(_, side, _)| *side);
+                let commit = match side {
+                    DiffEnd::Base => self.at.base.clone(),
+                    DiffEnd::Head => self.at.head.clone(),
+                };
+                let place = Place::Repository {
+                    path: relative,
+                    side,
+                    commit,
+                };
+                (place, text)
+            }
+            Err(_outside) => {
+                let place = Place::Outside {
+                    path: path.display().to_string(),
+                };
+                (place, None)
+            }
+        };
+        let text = text.unwrap_or_else(|| fs::read_to_string(&path).unwrap_or_default());
+        let line = usize::try_from(start.line).unwrap_or(usize::MAX);
+        Hit {
+            place,
+            line: start.line.saturating_add(1),
+            column: start.character,
+            text: text.lines().nth(line).unwrap_or_default().to_owned(),
         }
     }
 }
@@ -113,8 +164,8 @@ impl Ty {
             open.push(Open {
                 path: path.clone(),
                 document,
-                head,
-                base,
+                head: head.into(),
+                base: base.map(Arc::from),
             });
         }
         Ok(Self {
@@ -138,32 +189,29 @@ impl Ty {
         self.server.shutdown()
     }
 
-    /// Asks ty, and waits up to `patience` for the places it names. A lookup ty hasn't answered by then is
-    /// cancelled.
-    pub(super) fn look_up(
-        &mut self,
-        lookup: &Lookup,
-        patience: Duration,
-    ) -> Result<Vec<Hit>, Failure> {
+    /// Sends ty the request for `lookup`, with the open files at the lookup's side, and returns at once with
+    /// what turns ty's answer into hits.
+    pub(super) fn ask(&mut self, lookup: &Lookup) -> Result<(Pending<Definitions>, Hits), Error> {
         let _unread = self.events.try_iter().count();
+        let document = uri(&self.folder.join(&lookup.path))?;
         self.show(lookup.side);
         let at = Position {
             line: lookup.line.saturating_sub(1),
             character: lookup.column,
         };
-        let document = uri(&self.folder.join(&lookup.path)).map_err(Failure::Broken)?;
         let pending = self.server.definition(&document, at);
-        let Some(answer) = pending.wait_timeout(patience) else {
-            pending.cancel();
-            let slow = "ty is still reading the PR's files. Ask again in a moment.";
-            return Err(Failure::Slow(failed(slow)));
-        };
-        let definitions = answer
-            .map_err(|cause| Failure::Broken(failed(&format!("ty couldn't answer: {cause}"))))?;
-        let hits = (definitions.into_locations().iter())
-            .map(|location| self.hit(lookup.side, location))
+        let open = (self.open.iter())
+            .map(|open| {
+                let text = Arc::clone(open.text(self.showing));
+                (open.path.clone(), open.side(lookup.side), text)
+            })
             .collect();
-        Ok(hits)
+        let hits = Hits {
+            folder: self.folder.clone(),
+            at: self.at.clone(),
+            open,
+        };
+        Ok((pending, hits))
     }
 
     /// Waits until ty's process has ended, or until `until`.
@@ -184,49 +232,11 @@ impl Ty {
         }
         for open in &mut self.open {
             if open.base.is_some() {
-                let text = open.text(side).to_owned();
+                let text = Arc::clone(open.text(side));
                 open.document.change(&text);
             }
         }
         self.showing = side;
-    }
-
-    /// `location` as a hit of a lookup at `side`, with the line's text as ty read it.
-    fn hit(&self, side: DiffEnd, location: &Location) -> Hit {
-        let start = location.range.start;
-        let path = location.uri.to_path().unwrap_or_default();
-        let (place, text) = match path.strip_prefix(&self.folder) {
-            Ok(relative) => {
-                let relative = slashed(relative);
-                let open = self.open.iter().find(|open| open.path == relative);
-                let text = open.map(|open| open.text(self.showing).to_owned());
-                let side = open.map_or(DiffEnd::Base, |open| open.side(side));
-                let commit = match side {
-                    DiffEnd::Base => self.at.base.clone(),
-                    DiffEnd::Head => self.at.head.clone(),
-                };
-                let place = Place::Repository {
-                    path: relative,
-                    side,
-                    commit,
-                };
-                (place, text)
-            }
-            Err(_outside) => {
-                let place = Place::Outside {
-                    path: path.display().to_string(),
-                };
-                (place, None)
-            }
-        };
-        let text = text.unwrap_or_else(|| fs::read_to_string(&path).unwrap_or_default());
-        let line = usize::try_from(start.line).unwrap_or(usize::MAX);
-        Hit {
-            place,
-            line: start.line.saturating_add(1),
-            column: start.character,
-            text: text.lines().nth(line).unwrap_or_default().to_owned(),
-        }
     }
 }
 

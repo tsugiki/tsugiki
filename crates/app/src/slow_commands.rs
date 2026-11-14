@@ -14,7 +14,8 @@ use std::sync::Arc;
 
 use tauri::State;
 use tauri::async_runtime::spawn_blocking;
-use tsugiki_core::definitions::Answer;
+use tauri::ipc::Channel;
+use tsugiki_core::definitions::{Answer, Waiting};
 use tsugiki_core::diff::{DiffRow, HeadLine};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::highlight::Span;
@@ -312,14 +313,20 @@ pub(crate) fn pull_request_find(
 
 /// Where the picked word is defined, which the Definition peek shows (#438). It waits on ty, which reads the
 /// Lookup checkout, and on ty's start if it hasn't started, and never on GitHub, so it works offline at any
-/// commit the mirror holds.
+/// commit the mirror holds. It cancels the lookup running, if one is. `waiting` hears what it waits for:
+/// ty to start, or to answer (#440).
 #[tauri::command(async)]
 #[specta::specta]
 pub(crate) fn definitions(
     lookup: crate::DefinitionLookup,
+    waiting: Channel<Waiting>,
     work: State<'_, crate::DiffWork>,
 ) -> Result<Answer, Error> {
-    crate::look_up_definition(lookup, &work)
+    let heard = Box::new(move |step| {
+        // The window may have stopped listening.
+        let _unheard = waiting.send(step);
+    });
+    crate::look_up_definition(lookup, &work, heard)
 }
 
 /// Some lines of the file a hit is in, which the Definition peek shows (#439): a file of the Repository at

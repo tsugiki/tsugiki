@@ -50,8 +50,16 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   renamed file asks at its old path, which the checkout holds at the base, and its new path keeps its head
   text either way.
 - The Files tab reads its PR again on each change, and only a PR at other commits starts ty again. A ty
-  that failed to start, or a checkout that failed to move, waits for the next lookup to try again. A lookup
-  ty hasn't answered in 30 seconds is cancelled, and ty goes on reading the Repository.
+  that failed to start, or a checkout that failed to move, waits for the next lookup to try again.
+- The peek opens as soon as the user asks and says what the lookup waits for: "Starting ty…" while ty
+  starts, then "Asking ty for the definition of X…", with the seconds once they pass one. The core says
+  which on a channel the `definitions` command takes. A lookup has no time limit: clangd's first answer on
+  CPython takes about 4 s, and ty may read for longer on its first lookup in a big Repository.
+- A new `F12` or `Alt+F12` while a lookup runs cancels it with `$/cancelRequest`, and the window drops
+  its answer. Esc while the peek waits cancels the lookup and closes the peek. A newer lookup or a cancel
+  that comes while ty starts means the core asks ty nothing for the older one. ty goes on reading the
+  Repository either way. The servers' thread sends ty each request and goes on, and a thread of the
+  lookup's own waits for ty's answer and hands it back, so a cancel never waits behind a lookup.
 - Each hit names its commit: a file the PR changes, asked from a line at the head, is at the PR's head, and
   so is a file the PR adds or renames, whichever line asked. Any other file of the Repository is at the
   base. A hit outside the Repository, such as a stub of the

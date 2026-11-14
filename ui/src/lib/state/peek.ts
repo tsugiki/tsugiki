@@ -2,14 +2,32 @@
 // the line's commit. It takes places in the diff's layout as a review thread does, so the rows after it
 // move down.
 
-import type { Answer, Hit } from "$lib/data/bindings";
+import type { Answer, Hit, ServerName, Waiting } from "$lib/data/bindings";
 import type { LaidThread } from "./diff-layout";
 import type { HitCode } from "./hit-code.svelte";
 import type { PickedLine, Side } from "./pick";
 
-/** What a lookup found: nothing yet, ty's answer, or why it failed. */
+/** What a lookup found: nothing yet, ty's answer, or why it failed. While it looks, the core says what it
+ * waits for (#440), and `since` is when it started to. */
 export type Lookup =
-  { state: "looking" } | { state: "answered"; answer: Answer } | { state: "failed"; problem: string };
+  | { state: "looking"; waiting?: Waiting; since?: number }
+  | { state: "answered"; answer: Answer }
+  | { state: "failed"; problem: string };
+
+/** How the peek names each server. */
+const SERVER_NAMES: Record<ServerName, string> = { ty: "ty" };
+
+/** What a lookup that waits says: the server starts, or works out the answer, with the seconds it has
+ * waited at `now` once they pass one. */
+function waitingWords(symbol: string, lookup: { waiting?: Waiting; since?: number }, now: number): string {
+  const waiting = lookup.waiting;
+  if (waiting === undefined) return `Searching for the definition of ${symbol}…`;
+  const server = SERVER_NAMES[waiting.server];
+  if (waiting.step === "starting") return `Starting ${server}…`;
+  const seconds = Math.floor((now - (lookup.since ?? now)) / 1000);
+  const waited = seconds >= 1 ? ` ${String(seconds)} s` : "";
+  return `Asking ${server} for the definition of ${symbol}…${waited}`;
+}
 
 /** What the peek's header and the line under it say. */
 export interface PeekWords {
@@ -26,15 +44,13 @@ export interface PeekWords {
   body: string;
 }
 
-/** The words `peek` shows. */
-export function peekWords(peek: Peek): PeekWords {
+/** The words `peek` shows at `now`, which counts a lookup's seconds. */
+export function peekWords(peek: Peek, now = Date.now()): PeekWords {
   const at = (commit: string, side: Side) =>
     `at ${commit.slice(0, 7)} · ${side === "base" ? "the PR's base" : "the PR's head"}`;
   const asked = at(peek.commit, peek.side);
   const lookup = peek.lookup;
-  if (lookup.state === "looking") {
-    return { commit: asked, body: `Searching for the definition of ${peek.symbol}…` };
-  }
+  if (lookup.state === "looking") return { commit: asked, body: waitingWords(peek.symbol, lookup, now) };
   if (lookup.state === "failed") return { commit: asked, body: lookup.problem };
   const answer = lookup.answer;
   if (answer.state === "not_set_up")
@@ -42,6 +58,8 @@ export function peekWords(peek: Peek): PeekWords {
   if (answer.state === "no_server") {
     return { commit: asked, body: "Tsugiki can't go to definitions in this file's language yet" };
   }
+  // The window drops the answer of each lookup it cancels, so this shows only for one it didn't.
+  if (answer.state === "cancelled") return { commit: asked, body: "The lookup was cancelled" };
   const hit = answer.hits[0];
   if (hit === undefined) return { commit: asked, body: `No definition of ${peek.symbol}` };
   const place = hit.place;

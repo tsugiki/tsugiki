@@ -1720,7 +1720,11 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     let base = files["base"].as_str().unwrap_or_default().to_owned();
     let look = |side: &str, path: &str| {
         let lookup = json!({ "repository": CPYTHON, "base": base, "head": head, "path": path, "side": side, "line": 15, "column": 0 });
-        wired.ask("definitions", json!({ "lookup": lookup }))
+        // The window hears what the lookup waits for on a channel of its own.
+        wired.ask(
+            "definitions",
+            json!({ "lookup": lookup, "waiting": "__CHANNEL__:7" }),
+        )
     };
     let at_head = look("head", "Lib/spam.py");
     let at_base = look("base", "Lib/spam.py");
@@ -1737,9 +1741,11 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     let outside = json!({ "kind": "outside", "path": "C:/elsewhere/secret.txt" });
     let unnamed = json!({ "repository": CPYTHON, "file": outside, "start": 1, "end": 2 });
     let unnamed = wired.ask("definition_code", json!({ "code": unnamed }));
+    // With no lookup running, a cancel does nothing.
+    let cancelled = wired.ask("cancel_definitions", json!({}));
     let refused = wired.ask(
         "definitions",
-        json!({ "lookup": { "repository": CPYTHON, "base": "main", "head": head, "path": "Lib/spam.py", "side": "head", "line": 1, "column": 0 } }),
+        json!({ "lookup": { "repository": CPYTHON, "base": "main", "head": head, "path": "Lib/spam.py", "side": "head", "line": 1, "column": 0 }, "waiting": "__CHANNEL__:8" }),
     );
     drop(wired.stop());
     std::fs::remove_dir_all(root).unwrap();
@@ -1757,6 +1763,7 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     assert_eq!(code_at_base, Ok(lines("x15 = 15")));
     let unnamed = unnamed.unwrap_err()["message"].clone();
     assert_eq!(unnamed, "No language server named C:/elsewhere/secret.txt.");
+    assert_eq!(cancelled, Ok(Value::Null));
     assert_eq!(refused.unwrap_err()["message"], "\"main\" isn't a commit.");
 }
 

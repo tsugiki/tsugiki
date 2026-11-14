@@ -19,7 +19,9 @@ pub use startup::run;
 use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
 use tsugiki_core::build::Build;
-use tsugiki_core::definitions::{Answer, Code, Definitions, DiffEnd, HitFile, Lookup};
+use tsugiki_core::definitions::{
+    Answer, Code, Definitions, DiffEnd, HitFile, Lookup, OnWaiting,
+};
 use tsugiki_core::diff::{DiffOf, DiffRow, Diffs, Found, HeadLine, Highlighter, PrAt};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::folders::Folders;
@@ -671,19 +673,33 @@ pub(crate) struct DefinitionLookup {
     column: u32,
 }
 
-fn look_up_definition(lookup: DefinitionLookup, work: &DiffWork) -> Result<Answer, Error> {
+/// Cancels the lookup running, if one is, as when the user closes the Definition peek while it waits
+/// (#440). The lookup then answers that it was cancelled.
+#[tauri::command]
+#[specta::specta]
+fn cancel_definitions(work: State<'_, DiffWork>) {
+    work.definitions.cancel();
+}
+
+/// Where `lookup`'s word is defined. `waiting` hears what the lookup waits for, as the peek says (#440).
+fn look_up_definition(
+    lookup: DefinitionLookup,
+    work: &DiffWork,
+    waiting: OnWaiting,
+) -> Result<Answer, Error> {
     let at = LookupAt {
         base: commit(&lookup.base)?,
         head: commit(&lookup.head)?,
     };
-    work.definitions.look_up(Lookup {
+    let lookup = Lookup {
         repository: RepositoryName::parse(&lookup.repository)?,
         at,
         path: lookup.path,
         side: lookup.side,
         line: lookup.line,
         column: lookup.column,
-    })
+    };
+    work.definitions.look_up(lookup, waiting)
 }
 
 /// The file a hit is in, as the window names it to read its code (#439).
@@ -845,6 +861,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::pull_request_lines,
             slow_commands::pull_request_find,
             slow_commands::definitions,
+            cancel_definitions,
             slow_commands::definition_code,
             slow_commands::open_on_github,
             slow_commands::open_link

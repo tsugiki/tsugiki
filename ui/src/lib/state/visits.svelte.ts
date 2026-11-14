@@ -20,11 +20,6 @@ export class Visits<T> {
     this.#at += 1;
   }
 
-  /** The place the user is at, if they have visited one. */
-  get here(): T | undefined {
-    return this.#places[this.#at];
-  }
-
   /** The place before, if there is one, which the user is now at. */
   back(): T | undefined {
     return this.go(-1);

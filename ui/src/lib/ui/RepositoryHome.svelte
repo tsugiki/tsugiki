@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { tick, untrack } from "svelte";
+  import { tick } from "svelte";
   import { openOnGitHub, type GitHubItem } from "$lib/state/browser";
-  import { lineOf, samePlace, type HistoryPlace } from "$lib/state/file-view";
+  import { lineOf, samePlace, type FileView, type HistoryPlace } from "$lib/state/file-view";
   import { hud } from "$lib/state/hud.svelte";
   import { IssueViewState } from "$lib/state/issue-view.svelte";
   import {
@@ -158,28 +158,26 @@
   /** How many items back the history's lists go, newest first. */
   const RECENT = 12;
 
-  // A file view is a place of its own in the history (#456). One that opens is a visit, and one that Back or
-  // Esc closes hands the place back to its PR's line. Going through the history has moved to the place it
-  // shows by then, so neither adds a visit there.
-  $effect(() => {
-    const pr = detail instanceof PrViewState ? detail : undefined;
-    const view = pr?.files.fileView;
-    if (pr === undefined) return;
-    untrack(() => {
-      if (view) visits.visit({ kind: "file", line: pr.line, view });
-      else if (visits.here?.kind === "file") visits.visit(pr.line);
-    });
-  });
-
-  /** Goes `steps` places through the history, back for a negative number, as Alt+← and Alt+→ do. A PR's
-   * line shows its diff, and a file view shows over its PR's Files tab, each where it was scrolled. */
+  /** Goes `steps` places through the history, back for a negative number, as Alt+← and Alt+→ do. */
   function goThrough(steps: number) {
     const place = visits.go(steps);
-    if (place === undefined) return;
-    open(lineOf(place), "through");
-    if (!(detail instanceof PrViewState)) return;
-    if (place.kind === "file") detail.tab = "files";
-    detail.files.showFileView(place.kind === "file" ? place.view : undefined);
+    if (place) open(place, "through");
+  }
+
+  /** What hears of each file view the user opens over PR `line`'s Files tab, or closes with Back or Esc,
+   * and records it in this Repository's history (#456): an opened view is a place of its own, and closing
+   * it goes back to the PR's line. */
+  function fileViewMoved(line: Stop) {
+    const history = visits;
+    return (view: FileView | undefined) => {
+      history.visit(view ? { kind: "file", line, view } : line);
+    };
+  }
+
+  /** Shows `view` over `pr`'s Files tab, or that PR with none, where it was scrolled. */
+  function showFileView(pr: PrViewState, view: FileView | undefined) {
+    if (view) pr.tab = "files";
+    pr.files.showFileView(view);
   }
 
   /** The mouse's back and forward buttons go through the history, unless a dialog takes the keys. WebView2
@@ -197,13 +195,20 @@
    * visits to it, shows its view as it was and counts as no new opening. Both move the focus with the
    * cursor, so the row the user left doesn't look selected too, and Enter doesn't open it again. A pick
    * from the history's list can land on the item on show, which then only takes the cursor.
+   *
+   * The history can go through to a file view too (#456): it shows its PR, on the Files tab, with the view
+   * over it, which takes the focus, and the cursor goes to the PR's row. Any other place shows its PR with no
+   * file view, and so does a click on the row of the PR on show, which the history records as the PR's line.
    */
-  function open(stop: Stop, how: "open" | "back" | "through" = "open") {
-    if (how !== "through") visits.visit(stop);
+  function open(place: HistoryPlace, how: "open" | "back" | "through" = "open") {
+    const stop = lineOf(place);
+    const fileView = place.kind === "file" ? place.view : undefined;
+    if (how !== "through") visits.visit(place);
     workbench.moveTo(stop);
-    if (how !== "open") focusCursor();
+    if (how !== "open" && fileView === undefined) focusCursor();
     if (stop.kind === "pull_request" && detail instanceof PrViewState && sameStop(detail.line, stop)) {
       if (how !== "through") detail.switchTab();
+      showFileView(detail, fileView);
       return;
     }
     if (stop.kind === "issue" && kept?.number === stop.number) {
@@ -231,9 +236,10 @@
     const next =
       stop.kind === "issue"
         ? new IssueViewState(name, stop.number)
-        : new PrViewState(name, stop.number, stop.issue, panes, diffView, diffFiles);
+        : new PrViewState(name, stop.number, stop.issue, panes, diffView, diffFiles, fileViewMoved(stop));
     swap(next);
     void next.load();
+    if (next instanceof PrViewState) showFileView(next, fileView);
   }
 
   /** Puts `next` in the Detail pane. The Issue view a PR in its tree came from stays, hidden, while that PR

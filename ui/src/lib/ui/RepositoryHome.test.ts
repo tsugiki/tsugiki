@@ -1264,6 +1264,7 @@ const eggsView = () => {
     show: () => {},
     line: () => "x = 1",
     spans: () => undefined,
+    retry: () => {},
   } as unknown as HitCode;
   return { place, line: 4, code };
 };
@@ -1283,7 +1284,7 @@ const goIntoFileView = async () => {
   const opened: { files?: PrFilesState } = {};
   vi.spyOn(PrFilesState.prototype, "goToDefinition").mockImplementation(function (this: PrFilesState) {
     opened.files = this;
-    this.showFileView(view);
+    this.openFileView(view);
     return Promise.resolve();
   });
   await fireEvent.click(await onFiles());
@@ -1291,6 +1292,12 @@ const goIntoFileView = async () => {
   await press("F12");
   await screen.findByRole("region", { name: "File view" });
   return { diff, view, opened };
+};
+
+/** Waits for the page's updates and what waits on them, such as a focus that moves once the page is drawn. */
+const settled = async () => {
+  await tick();
+  await tick();
 };
 
 /** The tooltip of the history's arrow back, or forward for `way` 1. */
@@ -1322,6 +1329,25 @@ it("goes back to the diff with Alt+← from the file view, and forward to the fi
     expect.stringMatching(/^Back to #160662 /),
     "Forward (Alt+→): nothing there",
   ]);
+  await settled();
+  expect(document.activeElement).toBe(screen.getByRole("region", { name: "Definition's code" }));
+});
+
+it("closes the file view on a click on its PR's row, which switches tabs, and Alt+← brings it back", async () => {
+  await goIntoFileView();
+  const files = screen.getByRole("tab", { name: "Files" });
+
+  await fireEvent.click(
+    screen.getByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" }),
+  );
+  expect(files.getAttribute("aria-selected")).toBe("false");
+  await press("PageDown", { ctrlKey: true });
+
+  expect(files.getAttribute("aria-selected")).toBe("true");
+  expect(screen.queryByRole("region", { name: "File view" })).toBeNull();
+  expect(arrowTitle()).toMatch(/^Back to Lib\/eggs\.py · #160662 /);
+  await press("ArrowLeft", { altKey: true });
+  expect(await screen.findByRole("region", { name: "File view" })).toBeTruthy();
 });
 
 it("goes back to the diff on Esc in the file view, and on to the Issue on the next Esc", async () => {
@@ -1356,6 +1382,8 @@ it("shows the file view again over its PR's Files tab when Alt+← comes back to
   expect(await screen.findByRole("region", { name: "File view" })).toBeTruthy();
   expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("true");
   expect(treeRow?.getAttribute("aria-current")).toBe("true");
+  await settled();
+  expect(document.activeElement).toBe(screen.getByRole("region", { name: "Definition's code" }));
 });
 
 it("leaves the diff's keys alone while the file view covers it, and the cursor on the PR's row", async () => {

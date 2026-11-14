@@ -9,10 +9,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     shows ‹ and › (greyed out when there's nothing that way, the target in the tooltip) and the title of the
     item shown. Right-clicking an arrow lists the recent items that way; there is no other history manager.
     The mouse's back and forward buttons and the command palette (Go Back / Go Forward) do the same. History
-    records only items opened in the Detail pane, and the file view over a PR's Files tab
-    ([definitions.md](definitions.md)): switching views in the Sidebar adds nothing, and re-opening the item
-    already shown adds nothing. Each Repository has its own history, which starts fresh when you
-    switch to it.
+    records the items opened in the Detail pane and the file views over a PR's Files tab
+    ([definitions.md](definitions.md)), and nothing else: switching views in the Sidebar adds nothing, and
+    re-opening the item already shown adds nothing. Each Repository has its own history, which starts fresh
+    when you switch to it.
   - An Issue or PR anywhere else on GitHub opens in a **Peek** popup that Tsugiki renders from the API: title,
     state, author, description, the last few comments, with Open in browser and, for an added Repository, Open
     in Tsugiki. GitHub can't be embedded in a frame.

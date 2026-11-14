@@ -1787,6 +1787,103 @@ it("gives the list the focus when Go to definition opens the peek on several hit
   expect(document.activeElement).toBe(screen.getByRole("region", { name: "Diff" }));
 });
 
+it("looks up a word picked in the peek's code on Alt+F12, and a click on the crumb brings the peek back", async () => {
+  const hit = (path: string, line: number) => ({
+    place: { kind: "repository" as const, path, side: "head" as const, commit: "abc" },
+    line,
+    column: 4,
+    text: `line ${String(line)}`,
+  });
+  core.definitions.mockResolvedValueOnce(ok({ state: "found", hits: [hit("Lib/news.py", 12)] }));
+  fileOf(30);
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[4]).toBe("2+new line");
+  });
+  await clickAt(codeOf(4), 2);
+  await files.peekDefinition();
+  const twelve = await vi.waitFor(() => {
+    const code = peekBox()?.querySelector('[data-code-line="12"] .text');
+    expect(code?.textContent).toBe("line 12");
+    return code as Element;
+  });
+  let answer: (answer: unknown) => void = () => {};
+  core.definitions.mockReturnValueOnce(
+    new Promise((resolve) => {
+      answer = resolve;
+    }),
+  );
+
+  await clickAt(twelve, 2);
+  const region = screen.getByRole("region", { name: "Definition's code" });
+  region.focus();
+  await fireEvent.keyDown(region, { key: "F12", altKey: true });
+  await tick();
+  const looking = [peekText(), document.activeElement === peekBox()];
+  answer(ok({ state: "found", hits: [hit("Lib/lines.py", 4)] }));
+  const list = await vi.waitFor(() => {
+    expect(peekText()[0]).toBe("new › line Lib/lines.py:4 at abc · the PR's head 1 of 1 Open ✕");
+    return screen.getByRole("listbox", { name: "Definitions" });
+  });
+  await tick();
+  const focused = document.activeElement === list;
+  await fireEvent.click(screen.getByRole("button", { name: "new" }));
+
+  expect(core.definitions.mock.calls[1]?.[0]).toMatchObject({ path: "Lib/news.py", side: "head", line: 12 });
+  expect(core.definitions.mock.calls[1]?.[0]).toMatchObject({ column: 0 });
+  const words = ["new › line at abc · the PR's head ✕", "Searching for the definition of line…"];
+  expect(looking).toEqual([words, true]);
+  expect(focused).toBe(true);
+  await vi.waitFor(() => {
+    expect(peekText()[0]).toBe("new Lib/news.py:12 at abc · the PR's head 1 of 1 Open ✕");
+  });
+  expect(peekCode()).toContain("*12line 12");
+  // A click in the peek leaves the diff's word picked.
+  expect(files.picked?.word).toBe("new");
+});
+
+it("leaves the focus where the user moved it while a lookup from inside the peek ran", async () => {
+  const hit = (path: string, line: number) => ({
+    place: { kind: "repository" as const, path, side: "head" as const, commit: "abc" },
+    line,
+    column: 4,
+    text: `line ${String(line)}`,
+  });
+  core.definitions.mockResolvedValueOnce(ok({ state: "found", hits: [hit("Lib/news.py", 12)] }));
+  fileOf(30);
+  const files = await shown(ready(rows.length));
+  await vi.waitFor(() => {
+    expect(lines()[4]).toBe("2+new line");
+  });
+  await clickAt(codeOf(4), 2);
+  await files.peekDefinition();
+  const twelve = await vi.waitFor(() => {
+    const code = peekBox()?.querySelector('[data-code-line="12"] .text');
+    expect(code?.textContent).toBe("line 12");
+    return code as Element;
+  });
+  let answer: (answer: unknown) => void = () => {};
+  core.definitions.mockReturnValueOnce(
+    new Promise((resolve) => {
+      answer = resolve;
+    }),
+  );
+  await clickAt(twelve, 2);
+
+  await fireEvent.keyDown(screen.getByRole("listbox", { name: "Definitions" }), { key: "F12", altKey: true });
+  await tick();
+  const diff = screen.getByRole("region", { name: "Diff" });
+  diff.focus();
+  answer(ok({ state: "found", hits: [hit("Lib/lines.py", 4)] }));
+  await vi.waitFor(() => {
+    expect(peekText()[0]).toBe("new › line Lib/lines.py:4 at abc · the PR's head 1 of 1 Open ✕");
+  });
+  await tick();
+
+  expect(document.activeElement).toBe(diff);
+  expect(files.peekKeepsFocus).toBe(false);
+});
+
 it("opens the peek on Go to definition with several hits, and Open goes to the hit picked", async () => {
   const hit = (path: string, line: number) => ({
     place: { kind: "repository" as const, path, side: "head" as const, commit: "head" },

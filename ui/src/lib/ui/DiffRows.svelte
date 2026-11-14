@@ -31,6 +31,7 @@
   import NewsEntries from "./NewsEntries.svelte";
   import PaneEdge from "./PaneEdge.svelte";
   import { currentOs } from "./keys";
+  import { caretIn, selectPicked } from "./picking";
   import ReviewThread from "./ReviewThread.svelte";
   import { pieces, type Match } from "./spans";
 
@@ -203,26 +204,11 @@
         ? { kind: "line", file: Number(data["file"]), line: Number(data["line"]) }
         : { kind: "row", row: Number(data["row"]) };
     const column = data["column"] === "left" || data["column"] === "right" ? data["column"] : null;
-    const before = document.createRange();
-    before.setStart(element, 0);
-    before.setEnd(node, offset);
-    return diff.pickWord(at, column, before.toString().length - 1, false);
+    return diff.pickWord(at, column, caretIn(element, node, offset) - 1, false);
   };
 
   /** The pick the last single click made, which a double-click selects. */
   let clicked: Pick | undefined;
-
-  /** Selects the word the user picked, once it is drawn picked. */
-  const selectPicked = (region: HTMLElement) => {
-    const picked = [...region.querySelectorAll(".picked")];
-    // From before the word's first piece to after its last: the end moves forward over the pieces, and
-    // then the start moves back over them.
-    const range = document.createRange();
-    for (const piece of picked) range.setEndAfter(piece);
-    for (const piece of picked.reverse()) range.setStartBefore(piece);
-    getSelection()?.removeAllRanges();
-    getSelection()?.addRange(range);
-  };
 
   const counted = (change: FileChange) =>
     change.kind === "binary" ? "binary" : `+${String(change.added)} −${String(change.removed)}`;
@@ -389,9 +375,10 @@
     // A double-click's second click leaves the word to the double-click.
     if (event.detail > 1) return;
     clicked = undefined;
-    // A button, a link, a field or the peek's edge keeps the pick.
+    // A button, a link, a field, the peek's edge or the peek, whose code takes picks of its own (#447),
+    // keeps the pick.
     const target = event.target;
-    const keeps = "button, a, input, textarea, select, summary, [role=separator]";
+    const keeps = "button, a, input, textarea, select, summary, [role=separator], .peek";
     if (target instanceof Element && target.closest(keeps)) return;
     const selection = getSelection();
     // A drag selects text to copy, and leaves the pick where it was.
@@ -563,17 +550,30 @@
     {#each diff.layout.threadsIn(first, last) as placed (placed.laid.id)}
       {@const block = placed.laid.block}
       {#if block.kind === "peek"}
+        <!-- The peek holds the focus itself while it has no list, as while a lookup from inside it runs. -->
         <div
           class="thread peek sans"
           role="group"
           aria-label="Definition peek"
+          tabindex="-1"
           style:top={`${String(placed.shown * ROW)}px`}
           style:height={`${String(placed.length * ROW)}px`}
           {@attach (box) => {
             // Go to definition with several hits hands the list the focus, for the user to pick one (#446).
+            // A lookup from inside the peek has the peek hold it while it looks, and a crumb's peek that
+            // comes back takes it too (#447).
             if (!diff.peekWantsFocus) return;
             diff.peekWantsFocus = false;
-            box.querySelector<HTMLElement>("[role=listbox]")?.focus({ preventScroll: true });
+            (box.querySelector<HTMLElement>("[role=listbox]") ?? box).focus({ preventScroll: true });
+          }}
+          {@attach (box) => {
+            // A lookup from inside the peek hands the list the focus the peek held while it looked, unless
+            // the user moved it elsewhere (#447).
+            if (!diff.peekKeepsFocus) return;
+            diff.peekKeepsFocus = false;
+            if (box.contains(document.activeElement)) {
+              box.querySelector<HTMLElement>("[role=listbox]")?.focus({ preventScroll: true });
+            }
           }}
         >
           <DefinitionPeek
@@ -587,6 +587,12 @@
             }}
             onopen={() => {
               void diff.openHit();
+            }}
+            onfollow={() => {
+              void diff.followPick();
+            }}
+            oncrumb={(index) => {
+              diff.backTo(index);
             }}
           />
         </div>
@@ -704,6 +710,11 @@
     box-shadow:
       inset 0 1px color-mix(in srgb, currentColor 15%, transparent),
       inset 0 -1px color-mix(in srgb, currentColor 15%, transparent);
+  }
+
+  /* The peek holds the focus only while a lookup from inside it runs, and draws no outline for it. */
+  .peek:focus {
+    outline: none;
   }
 
   /* The strip the peek's bottom edge takes: 4 px of the peek and 4 px of the row under it, above a review

@@ -4,7 +4,9 @@
      its right (#441), or else a line that says what the lookup waits for, with the seconds once they pass
      one (#440), that it found nothing, or why it failed. A hit outside the Repository names its whole path
      on disk in place of a commit, and has no Open. While the server that answered builds its index, a line
-     under the header says so (#680). -->
+     under the header says so (#680). A click picks a word in the code, and `Alt+F12` on it looks it up in
+     place of what the peek showed, which a breadcrumb before the symbol then names, and a click on a crumb
+     brings that back (#447). -->
 
 <script lang="ts">
   import { peekWords, type Peek } from "$lib/state/peek";
@@ -17,6 +19,8 @@
     onclose,
     onhit,
     onopen,
+    onfollow,
+    oncrumb,
   }: {
     peek: Peek;
     /** What Open does for the hit shown, which the tab decides: go, or wait while it finds the hit's row.
@@ -25,6 +29,10 @@
     onclose: () => void;
     onhit: (index: number) => void;
     onopen: () => void;
+    /** Looks up the word picked in the code, in place of what the peek shows. */
+    onfollow: () => void;
+    /** Brings back the peek that crumb `index` of the breadcrumb names, counted from the first. */
+    oncrumb: (index: number) => void;
   } = $props();
 
   /** The time the seconds of a lookup that waits count to. */
@@ -58,14 +66,20 @@
     else list.scrollTop = Math.max(list.scrollTop, top + HIT_ROW - list.clientHeight);
   }
 
-  /** While the peek shows hit `shown` and has the focus, ↑ and ↓ move through its hits, and Enter and `F12`
-   * go to the hit shown (#446). The diff's keys never hear them. */
+  /** While the peek shows hit `shown` and has the focus, ↑ and ↓ move through its hits, Enter and `F12` go
+   * to the hit shown (#446), and `Alt+F12` looks up the word picked in its code (#447). The diff's keys never
+   * hear them, but for an `Alt+F12` with no word picked here, which looks up the diff's. */
   function moveByKey(e: KeyboardEvent, shown: number) {
     const key = keyName(e, currentOs());
-    if (key !== "arrowdown" && key !== "arrowup" && key !== "enter" && key !== "f12") return;
+    const follows = key === "alt+f12" && code?.pick !== undefined;
+    if (key !== "arrowdown" && key !== "arrowup" && key !== "enter" && key !== "f12" && !follows) return;
     e.preventDefault();
     e.stopPropagation();
-    // A held key would go again and again.
+    // A held key would go again and again, and ask the server again and again.
+    if (follows) {
+      if (!e.repeat) onfollow();
+      return;
+    }
     if (key === "enter" || key === "f12") {
       if (!e.repeat) onopen();
       return;
@@ -75,6 +89,21 @@
 </script>
 
 <div class="header">
+  {#if peek.trail?.length}
+    <span class="trail">
+      {#each peek.trail as crumb, index (index)}
+        <button
+          type="button"
+          class="crumb"
+          title={`Back to the definition of ${crumb.symbol}`}
+          onclick={() => {
+            oncrumb(index);
+          }}><code>{crumb.symbol}</code></button
+        >
+        <span class="muted" aria-hidden="true">›</span>
+      {/each}
+    </span>
+  {/if}
   <code class="symbol">{peek.symbol}</code>
   {#if words.where !== undefined}
     <span class="path">{words.where}</span>
@@ -110,7 +139,7 @@
     }}
   >
     <div class="code">
-      <PeekCode {code} line={found.hit.line} />
+      <PeekCode {code} line={found.hit.line} pickable />
     </div>
     <!-- Beside a file that can't be read too: the focus may be on it, and in 2 rows its first line shows. -->
     <ol
@@ -168,8 +197,36 @@
     opacity: 0.7;
   }
 
+  /* The breadcrumb gives way first when the header runs out of room, and keeps its last crumbs in sight. */
+  .trail {
+    display: flex;
+    flex: 0 1 auto;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  /* Each crumb reads as the symbol it names, dimmed until the pointer is on it. */
+  .crumb {
+    flex: none;
+    padding: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    opacity: 0.7;
+  }
+
+  .crumb:hover {
+    opacity: 1;
+    text-decoration: underline;
+  }
+
   .open,
   .close {
+    flex: none;
     margin-left: auto;
     padding: 0 4px;
     border: none;

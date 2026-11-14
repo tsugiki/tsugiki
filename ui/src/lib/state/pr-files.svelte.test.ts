@@ -2242,6 +2242,15 @@ it("opens no peek with no word picked", async () => {
   expect(core.definitions).not.toHaveBeenCalled();
 });
 
+it("opens no peek before the diff comes", async () => {
+  const files = await loaded();
+
+  await files.peekDefinition();
+
+  expect(files.peek).toBeUndefined();
+  expect(core.definitions).not.toHaveBeenCalled();
+});
+
 it("closes the peek and hands the diff its focus, and a lookup that answers later opens nothing", async () => {
   const answer = heldLookup();
   const files = await pickable();
@@ -2877,6 +2886,148 @@ it("opens the peek on a single hit outside the Repository, which has nowhere els
   expect(files.peekWantsFocus).toBe(false);
   expect(core.pullRequestRow).not.toHaveBeenCalled();
   expect(files.fileView).toBeUndefined();
+});
+
+/** Picks the word `word` at `start` of line `line` in the code the peek of `files` shows, as a click does
+ * once the line has come. */
+const pickInPeek = (files: PrFilesState, line: number, word: string, start: number) => {
+  const code = files.peek?.code;
+  if (code === undefined) throw new Error("the peek shows no code");
+  code.pick = { line, word, start, end: start + word.length, caret: start };
+};
+
+it("looks up a word picked in the peek's code at the hit's commit, and names the peek it replaced", async () => {
+  core.definitions.mockResolvedValueOnce(
+    hitsFound(hitAt("a.py", "head", 9), hitAt("Lib/shapes.py", "base", 3)),
+  );
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.peekDefinition();
+  files.showHit(1);
+  const first = files.peek;
+  pickInPeek(files, 3, "width", 9);
+  const answer = heldLookup();
+
+  const looking = files.followPick();
+  const whileLooking = [files.peek, files.peekWantsFocus];
+  files.peekWantsFocus = false;
+  answer(hitsFound(hitAt("Lib/sizes.py", "base", 12)));
+  await looking;
+
+  expect(core.definitions.mock.calls[1]?.[0]).toEqual(lookupOf("base", "Lib/shapes.py", 3, 9));
+  // The peek it opened first, which has no crumbs of its own.
+  const followed = {
+    at: { kind: "row", row: 2 },
+    symbol: "width",
+    side: "base",
+    commit: "base",
+    trail: [first],
+  };
+  expect(whileLooking).toEqual([{ ...followed, lookup: { state: "looking" } }, true]);
+  expect(files.peek).toMatchObject({
+    ...followed,
+    lookup: { state: "answered", answer: { state: "found", hits: [hitAt("Lib/sizes.py", "base", 12)] } },
+  });
+  expect(files.peek?.trail?.[0]?.code).toBe(first?.code);
+  expect(files.peek?.code?.index).toBe(0);
+  // The list takes the focus the peek held while it looked, if the peek still holds it.
+  expect([files.peekWantsFocus, files.peekKeepsFocus]).toEqual([false, true]);
+  // The peek stays under its line.
+  expect(files.layout.at(3)).toEqual({ kind: "thread", id: PEEK_ID, into: 0 });
+});
+
+it("brings back an earlier peek as the user left it on a click on its crumb, and drops the crumbs after it", async () => {
+  core.definitions
+    .mockResolvedValueOnce(hitsFound(hitAt("Lib/shapes.py", "base", 3)))
+    .mockResolvedValueOnce(hitsFound(hitAt("Lib/sizes.py", "base", 12)))
+    .mockResolvedValueOnce(hitsFound(hitAt("Lib/units.py", "base", 1)));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.peekDefinition();
+  indexOf(0)?.onmessage(building(120));
+  const first = files.peek;
+  pickInPeek(files, 3, "width", 9);
+  await files.followPick();
+  pickInPeek(files, 12, "unit", 4);
+  await files.followPick();
+  const symbols = (peek = files.peek) => [...(peek?.trail ?? []).map((crumb) => crumb.symbol), peek?.symbol];
+  const followed = symbols();
+
+  files.backTo(1);
+  const second = symbols();
+  files.backTo(0);
+
+  expect(followed).toEqual(["area", "width", "unit"]);
+  expect(second).toEqual(["area", "width"]);
+  expect(symbols()).toEqual(["area"]);
+  expect(files.peek?.code).toBe(first?.code);
+  expect(files.peek?.code?.pick?.word).toBe("width");
+  // Nothing would take the line that said clangd indexed away, as the core no longer watches it.
+  expect([first?.indexing?.state, files.peek?.indexing]).toEqual(["building", undefined]);
+  expect(files.peekWantsFocus).toBe(true);
+  // The core stops watching the index for the peek each crumb replaced.
+  expect(core.cancelDefinitions.mock.calls).toEqual([[ticketOf(2)], [expect.any(Number)]]);
+});
+
+it("cancels a lookup from inside the peek when a crumb brings an earlier peek back, or the peek closes", async () => {
+  core.definitions.mockResolvedValueOnce(hitsFound(hitAt("Lib/shapes.py", "base", 3)));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.peekDefinition();
+  const first = files.peek;
+  pickInPeek(files, 3, "width", 9);
+  const answer = heldLookup();
+  const looking = files.followPick();
+
+  files.backTo(0);
+  answer(hitsFound(hitAt("Lib/sizes.py", "base", 12)));
+  await looking;
+  const back = files.peek;
+  heldLookup();
+  void files.followPick();
+  files.closePeek();
+
+  expect(back).toEqual({ ...first, trail: [] });
+  expect(core.cancelDefinitions.mock.calls).toEqual([[ticketOf(1)], [ticketOf(2)]]);
+  // Escape closes the peek, crumbs and all, and hands the diff its focus.
+  expect(files.peek).toBeUndefined();
+  expect(files.diffWantsFocus).toBe(true);
+});
+
+it("looks nothing up from inside a peek with no word picked in its code, and no crumb is there to go back to", async () => {
+  core.definitions.mockResolvedValueOnce(hitsFound(hitAt("Lib/shapes.py", "base", 3)));
+  const files = await pickable();
+  await files.followPick();
+  files.backTo(0);
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.peekDefinition();
+  const shown = files.peek;
+
+  await files.followPick();
+  files.backTo(0);
+
+  expect(files.peek).toBe(shown);
+  expect(core.definitions).toHaveBeenCalledOnce();
+  expect(core.cancelDefinitions).not.toHaveBeenCalled();
+});
+
+it("says over the diff for a moment that it can't look up a word in a file outside the Repository", async () => {
+  core.definitions.mockResolvedValueOnce(hitsFound(outsideHit));
+  const files = await pickable();
+  files.pickWord({ kind: "row", row: 2 }, null, 6, false);
+  await files.peekDefinition();
+  const shown = files.peek;
+  pickInPeek(files, 1, "str", 6);
+  vi.useFakeTimers();
+
+  await files.followPick();
+  const said = files.notice;
+  vi.advanceTimersByTime(NOTICE_MS);
+
+  expect(said).toBe("Tsugiki can't go to definitions from a file outside the Repository yet.");
+  expect(files.notice).toBeUndefined();
+  expect(files.peek).toBe(shown);
+  expect(core.definitions).toHaveBeenCalledOnce();
 });
 
 it("says over the diff for a moment that no line shows a hit whose row the core can't find", async () => {

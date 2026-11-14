@@ -6,6 +6,7 @@
 
 import { SvelteMap } from "svelte/reactivity";
 import { commands, type CodeFile, type DefinitionCode, type Hit, type Span } from "$lib/data/bindings";
+import { wordAt, type Picked } from "./pick";
 import { waitForSpans } from "./spans-wait";
 
 /** How many lines the window asks the core for at a time. */
@@ -19,6 +20,9 @@ export function codeFile(hit: Hit): CodeFile {
     : { kind: "outside", path: place.path };
 }
 
+/** The word the user picked in a hit's code (#447): its line, counted from 1, and its place in that line. */
+export type CodePick = Picked & { line: number; word: string };
+
 /** The lines of one hit's file that the window has read, and asks for more of as the peek scrolls. */
 export class HitCode {
   /** How many lines the file has, once the first chunk has come. */
@@ -30,6 +34,9 @@ export class HitCode {
   /** Where the user scrolled the code to, which the peek goes back to when the diff draws it again after
    * it scrolled out of sight. Until then the peek scrolls to the hit. */
   scrollTop: number | undefined;
+  /** The word the user picked in the code, which `Alt+F12` looks up from inside the peek (#447). It goes
+   * with the code, so the peek shows it again when it goes back to this hit. */
+  pick = $state.raw<CodePick>();
   #chunks = new SvelteMap<number, readonly string[]>();
   /** The spans of each chunk's lines, which may come after its lines. */
   #spans = new SvelteMap<number, Span[][]>();
@@ -57,6 +64,21 @@ export class HitCode {
   spans(line: number): Span[] | undefined {
     const index = line - 1;
     return this.#spans.get(Math.floor(index / CODE_CHUNK))?.[index % CODE_CHUNK];
+  }
+
+  /** Picks the word at offset `offset` of line `line`, selected for a double-click, as the diff picks one
+   * (#437), and returns the pick. With no word there, or a line not read yet, it drops the pick. */
+  pickWord(line: number, offset: number, selected: boolean): CodePick | undefined {
+    const text = this.line(line) ?? "";
+    const word = wordAt(text, offset);
+    this.pick = word && {
+      line,
+      word: text.slice(word.start, word.end),
+      start: word.start,
+      end: word.end,
+      caret: selected ? null : offset,
+    };
+    return this.pick;
   }
 
   /** Asks for the chunks that hold lines `first` to `last`, counted from 1, unless asked before. */

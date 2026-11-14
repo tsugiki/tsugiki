@@ -187,6 +187,26 @@ it("keeps the lines it has when a later chunk fails, and asks for that chunk aga
   expect(code.line(1)).toBe("line 1");
 });
 
+it("picks the word at a click on a line it has read, and drops the pick on no word", async () => {
+  core.definitionCode.mockResolvedValue(ok({ count: 2, lines: ["x = 1", "def area(width):"] }));
+  const code = new HitCode("python/cpython", atBase, 0);
+  code.show(1, 2);
+  await vi.waitFor(() => {
+    expect(code.line(2)).toBe("def area(width):");
+  });
+
+  const clicked = code.pickWord(2, 6, false);
+  const selected = code.pickWord(2, 10, true);
+  // On the `=` of `x = 1`.
+  const space = code.pickWord(1, 2, false);
+  code.pickWord(2, 6, false);
+  const unread = code.pickWord(3, 0, false);
+
+  expect(clicked).toEqual({ line: 2, word: "area", start: 4, end: 8, caret: 6 });
+  expect(selected).toEqual({ line: 2, word: "width", start: 9, end: 14, caret: null });
+  expect([space, unread, code.pick]).toEqual([undefined, undefined, undefined]);
+});
+
 it("says why the file can't be read", async () => {
   core.definitionCode.mockResolvedValue({
     status: "error",

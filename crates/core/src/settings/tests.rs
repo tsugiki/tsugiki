@@ -1471,6 +1471,7 @@ fn without_folders_the_owner_says_what_went_wrong_with_them() {
     );
     let answering = owner.save_mirror_source(repository("a/b"), MirrorSource::Download);
     let resizing = owner.save_panes(WIDE);
+    let running = owner.remember_command(CommandId::new("Reset Layout"));
     let opening = owner.open_repository(repository("a/b"));
     let picking = owner.save_theme(ThemeKind::Dark, named("Gruvbox Dark Hard"));
     let rereading = owner.reread();
@@ -1483,6 +1484,7 @@ fn without_folders_the_owner_says_what_went_wrong_with_them() {
     assert_eq!(opening.unwrap_err(), lost);
     assert_eq!(answering.unwrap_err(), lost);
     assert_eq!(resizing.unwrap_err(), lost);
+    assert_eq!(running.unwrap_err(), lost);
 }
 
 #[test]
@@ -1533,6 +1535,7 @@ fn an_owner_whose_thread_has_gone_says_so() {
     let owner = SettingsOwner {
         requests: mpsc::channel().0,
         view: latest::channel(SettingsView::default()).1,
+        commands: latest::channel(Vec::new()).1,
     };
 
     let refused = owner
@@ -2943,4 +2946,213 @@ fn a_file_gone_from_settings_path_on_a_reload_keeps_the_last_good_values() {
     let problem = only_problem(&files);
     assert!(problem.contains("dotfiles.toml"), "{problem}");
     assert!(problem.contains("last values"), "{problem}");
+}
+
+fn commands(names: &[&str]) -> Vec<CommandId> {
+    names.iter().map(|name| CommandId::new(name)).collect()
+}
+
+#[test]
+fn a_command_run_comes_first_in_recent_commands_and_a_restart_reads_them() {
+    let (folders, _root) = temp_folders("commands");
+    let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+
+    let before = owner.recent_commands();
+    let answers: Vec<_> = ["Reset Layout", "Pick a Theme", "Reset Layout"]
+        .into_iter()
+        .map(|name| owner.remember_command(CommandId::new(name)).unwrap())
+        .collect();
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    let restarted = SettingsOwner::start(Ok(SettingsFiles::load(folders))).recent_commands();
+
+    assert_eq!(before, Vec::new());
+    assert_eq!(
+        machine,
+        "recent_commands = [\n    \"Reset Layout\",\n    \"Pick a Theme\",\n]\n"
+    );
+    assert_eq!(
+        answers,
+        [
+            commands(&["Reset Layout"]),
+            commands(&["Pick a Theme", "Reset Layout"]),
+            commands(&["Reset Layout", "Pick a Theme"]),
+        ]
+    );
+    assert_eq!(owner.recent_commands(), restarted);
+    assert_eq!(restarted, commands(&["Reset Layout", "Pick a Theme"]));
+}
+
+#[test]
+fn a_command_run_reads_neither_file_again() {
+    let (folders, _root) = temp_folders("commands-no-reread");
+    let mut files = SettingsFiles::load(folders.clone());
+    fs::write(folders.settings_file(), "[status_bar]\nvisible = false\n").unwrap();
+
+    let saved = files
+        .remember_command(&CommandId::new("Reset Layout"))
+        .unwrap();
+
+    // The hand edit waits for the next read (ADR 0014).
+    assert_eq!(files.loaded().settings, Settings::default());
+    assert_eq!(saved, commands(&["Reset Layout"]));
+    assert_eq!(files.recent_commands(), saved);
+}
+
+#[test]
+fn a_command_run_after_a_broken_machine_toml_was_mended_answers_with_the_list_it_saved() {
+    let (folders, _root) = temp_folders("commands-mended");
+    fs::write(folders.machine_file(), "recent_commands = [\n").unwrap();
+    let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+    fs::write(folders.machine_file(), "recent_commands = []\n").unwrap();
+
+    let saved = owner
+        .remember_command(CommandId::new("Reset Layout"))
+        .unwrap();
+
+    assert_eq!(saved, commands(&["Reset Layout"]));
+    assert_eq!(owner.recent_commands(), saved);
+}
+
+#[test]
+fn a_reread_takes_in_a_hand_edit_to_recent_commands() {
+    let (folders, _root) = temp_folders("commands-reread");
+    let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+    drop(
+        owner
+            .remember_command(CommandId::new("Reset Layout"))
+            .unwrap(),
+    );
+    fs::write(
+        folders.machine_file(),
+        "recent_commands = [\"Open Settings\", \"Reset Layout\"]\n",
+    )
+    .unwrap();
+
+    drop(owner.save_panes(WIDE).unwrap());
+    let after_panes = owner.recent_commands();
+    fs::write(
+        folders.machine_file(),
+        "recent_commands = [\"Pick a Theme\"]\n",
+    )
+    .unwrap();
+    drop(owner.reread().unwrap());
+
+    assert_eq!(after_panes, commands(&["Open Settings", "Reset Layout"]));
+    assert_eq!(owner.recent_commands(), commands(&["Pick a Theme"]));
+}
+
+#[test]
+fn recent_commands_skip_what_isnt_text_and_twice_written_ones_and_keep_the_users_comments() {
+    let (folders, _root) = temp_folders("commands-hand");
+    let mine = "recent_commands = [
+    \"Pick a Theme\",
+    7,
+    # The one I want.
+    \"Open Settings\",
+    \"Pick a Theme\",
+    \"Open Settings\",
+]
+";
+    fs::write(folders.machine_file(), mine).unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+    let read = files.recent_commands();
+    let problems = files.loaded().problems.clone();
+
+    let saved = files
+        .remember_command(&CommandId::new("Open Settings"))
+        .unwrap();
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+
+    assert_eq!(
+        (read, problems),
+        (commands(&["Pick a Theme", "Open Settings"]), Vec::new())
+    );
+    assert_eq!(saved, commands(&["Open Settings", "Pick a Theme"]));
+    assert_eq!(files.recent_commands(), saved);
+    assert_eq!(
+        machine,
+        "recent_commands = [
+    # The one I want.
+    \"Open Settings\",
+    \"Pick a Theme\",
+    7,
+]
+"
+    );
+}
+
+#[test]
+fn recent_commands_that_arent_a_list_count_as_none_and_a_run_puts_a_list_in_their_place() {
+    let (folders, _root) = temp_folders("commands-not-list");
+    fs::write(
+        folders.machine_file(),
+        "# Mine.\nrecent_commands = \"Reset Layout\"\n",
+    )
+    .unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+    let read = files.recent_commands();
+
+    let saved = files
+        .remember_command(&CommandId::new("Open Settings"))
+        .unwrap();
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+
+    assert_eq!((read, saved), (Vec::new(), commands(&["Open Settings"])));
+    assert_eq!(
+        machine,
+        "# Mine.\nrecent_commands = [\n    \"Open Settings\",\n]\n"
+    );
+}
+
+#[test]
+fn recent_commands_keep_the_50_run_last_and_an_entry_that_isnt_text_doesnt_count() {
+    let (folders, _root) = temp_folders("commands-kept");
+    fs::write(folders.machine_file(), "recent_commands = [\n    7,\n]\n").unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+
+    let mut run = |count: usize| {
+        drop(
+            files
+                .remember_command(&CommandId::new(&format!("Command {count}")))
+                .unwrap(),
+        );
+    };
+    for count in 0..COMMANDS_KEPT - 1 {
+        run(count);
+    }
+    let one_short = fs::read_to_string(folders.machine_file()).unwrap();
+    run(COMMANDS_KEPT - 1);
+    run(COMMANDS_KEPT);
+    let kept = files.recent_commands();
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    let restarted = SettingsFiles::load(folders).recent_commands();
+
+    // The 7 stays while fewer than 50 commands come before it.
+    assert!(
+        one_short.ends_with("\"Command 0\",\n    7,\n]\n"),
+        "{one_short}"
+    );
+    assert_eq!(kept.len(), COMMANDS_KEPT);
+    assert_eq!(kept.first(), Some(&CommandId::new("Command 50")));
+    assert_eq!(kept.last(), Some(&CommandId::new("Command 1")));
+    assert!(machine.ends_with("\"Command 1\",\n]\n"), "{machine}");
+    assert_eq!(restarted, kept);
+}
+
+#[test]
+fn a_hand_written_list_of_more_than_50_reads_as_its_first_50() {
+    let (folders, _root) = temp_folders("commands-long");
+    let written: Vec<String> = (0..=COMMANDS_KEPT)
+        .map(|count| format!("\"Command {count}\""))
+        .collect();
+    fs::write(
+        folders.machine_file(),
+        format!("recent_commands = [{}]\n", written.join(", ")),
+    )
+    .unwrap();
+
+    let read = SettingsFiles::load(folders).recent_commands();
+
+    assert_eq!(read.len(), COMMANDS_KEPT);
+    assert_eq!(read.last(), Some(&CommandId::new("Command 49")));
 }

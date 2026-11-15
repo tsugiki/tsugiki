@@ -1,4 +1,6 @@
 <script lang="ts" module>
+  import type { PaletteId } from "$lib/state/recent-commands.svelte";
+
   /** A row: one that runs, or one that shows greyed and runs nothing, such as a theme file that can't be
    * used, whose note says why. */
   export type PaletteCommand = PaletteAction | (PaletteRow & { disabled: true; run?: never });
@@ -8,6 +10,11 @@
 
   interface PaletteRow {
     title: string;
+    /** What the command palette's history knows the row by where its title changes with what it does.
+     * Without one it goes by its title. */
+    id?: PaletteId;
+    /** Keeps the row out of the command palette's history, as a switch to a Repository. */
+    history?: false;
     /** Marks the row that stands for what is open now, such as the open Repository in the picker. */
     current?: boolean;
     /** Words after the title, such as why a Repository's diffs aren't there yet. Typing doesn't match
@@ -40,9 +47,9 @@
 </script>
 
 <script lang="ts">
-  // The command palette: it lists the commands that hold what the user typed, and runs the one they pick.
-  // Each feature brings its own commands, and the ranking comes with the whole palette (docs/build-order.md).
-  // The Repository picker is the same quick pick with other words and rows.
+  // The command palette: it lists the commands that hold what the user typed, in the order it was given them,
+  // and runs the one they pick. Each feature brings its own commands, and the page puts those the user ran
+  // last first (#556). The Repository picker is the same quick pick with other words and rows.
   import { tick, untrack } from "svelte";
   import { closeOnPress, takeFocus } from "./focus";
 
@@ -50,22 +57,27 @@
     commands,
     onclose,
     oncancel = () => {},
+    onrun = () => {},
     words = COMMAND_WORDS,
-    start = 0,
+    start,
   }: {
     commands: readonly PaletteCommand[];
     onclose: () => void;
     /** Runs before `onclose` when it closes without running a row: on Esc or a press outside it. */
     oncancel?: () => void;
+    /** Runs as a row runs, before the row does, such as the command palette's note that the user ran it. */
+    onrun?: (command: PaletteAction) => void;
     words?: PaletteWords;
-    /** The row picked when it opens. Typing picks the first. */
+    /** The row picked when it opens. Without it the pick is on the first row, and stays on whichever row
+     * is first until the user moves it: the command palette's order can change while it's open, as the
+     * history arrives. Typing picks the first. */
     start?: number;
   } = $props();
 
   let typed = $state("");
   // The picked row goes by its title, so a list that changes while open, as Reload themes does, keeps the
   // pick on the same row. No title, or one the list no longer holds, picks the first.
-  let pickedTitle = $state(untrack(() => commands[start]?.title));
+  let pickedTitle = $state(untrack(() => (start === undefined ? undefined : commands[start]?.title)));
   const matching = $derived(
     commands.filter((command) => command.title.toLowerCase().includes(typed.trim().toLowerCase())),
   );
@@ -87,6 +99,7 @@
    * open runs at once. */
   function run(command: PaletteCommand) {
     if (command.disabled) return;
+    onrun(command);
     if (command.keepsOpen) {
       command.run();
       return;

@@ -632,6 +632,28 @@ fn the_panes_layout_stays_on_this_machine_across_a_restart() {
 }
 
 #[test]
+fn the_palettes_recent_commands_stay_on_this_machine_across_a_restart() {
+    let (folders, _root) = temp_folders("wired-commands");
+    let wired = Wired::start(Ok(folders.clone()), no_network());
+    let before = wired.ask("recent_commands", json!({})).unwrap();
+    drop(wired.ask("remember_command", json!({ "command": "Open Settings" })));
+    let saved = wired.ask("remember_command", json!({ "command": "Reset Layout" }));
+    drop(wired.stop());
+
+    let restarted = Wired::start(Ok(folders.clone()), no_network());
+    let reopened = restarted.ask("recent_commands", json!({})).unwrap();
+    drop(restarted.stop());
+    let synced = folders.settings_file().exists();
+
+    assert_eq!(before, json!([]));
+    let recent = json!(["Reset Layout", "Open Settings"]);
+    assert_eq!(
+        (saved.unwrap(), reopened, synced),
+        (recent.clone(), recent, false)
+    );
+}
+
+#[test]
 fn a_repository_added_reaches_both_files_and_opens_after_a_restart() {
     let (folders, _root) = temp_folders("wired-restart");
     let wired = Wired::start(Ok(folders.clone()), no_network());

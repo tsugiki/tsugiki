@@ -26,6 +26,8 @@ const core = vi.hoisted(() => ({
   tokenSource: vi.fn(),
   rereadSettings: vi.fn(),
   applySettings: vi.fn(),
+  recentCommands: vi.fn(),
+  rememberCommand: vi.fn(),
 }));
 
 /** What `settings.toml` says unless a test says otherwise: the defaults. */
@@ -147,6 +149,13 @@ beforeEach(() => {
     data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
   });
   core.settings.mockResolvedValue(structuredClone(SETTINGS));
+  core.recentCommands.mockResolvedValue([]);
+  // The core answers with the list it keeps, the command run first.
+  let kept: string[] = [];
+  core.rememberCommand.mockImplementation(async (id: string) => {
+    kept = [id, ...kept.filter((one) => one !== id)];
+    return { status: "ok", data: kept };
+  });
   core.rereadSettings.mockResolvedValue({ status: "ok", data: structuredClone(SETTINGS) });
   core.applySettings.mockImplementation(async (changes: object) => ({
     status: "ok",
@@ -583,6 +592,8 @@ describe("a switch from the palette", () => {
     expect(core.openRepository).toHaveBeenCalledWith("python/peps");
     expect(core.workbench).toHaveBeenLastCalledWith("python/peps", { kind: "whole" });
     expect(document.title).toBe("python/peps · Tsugiki");
+    // A switch keeps out of the palette's history: these rows come most recently opened first.
+    expect(core.rememberCommand).not.toHaveBeenCalled();
     // The core read the files again to switch, so a problem the user has since fixed can go.
     await vi.waitFor(() => {
       expect(core.settings).toHaveBeenCalledTimes(2);
@@ -611,6 +622,101 @@ describe("a switch from the palette", () => {
     ).toBeTruthy();
     expect(screen.getByRole("heading", { name: gcmon.name })).toBeTruthy();
     expect(document.title).toBe("some-maintainer/gcmon · Tsugiki");
+  });
+});
+
+describe("the palette's order", () => {
+  const palette = async () => {
+    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+  };
+  const titles = () => screen.getAllByRole("option").map((option) => option.textContent);
+
+  beforeEach(() => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    core.home.mockResolvedValue(gcmonAfterPeps);
+  });
+
+  it("puts the command run last at the top, and typing keeps the matches in that order", async () => {
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await palette();
+    const before = titles();
+    await fireEvent.click(screen.getByRole("option", { name: "Reload Themes" }));
+    await palette();
+    await fireEvent.click(screen.getByRole("option", { name: "Reset Layout" }));
+
+    await palette();
+    const after = titles();
+    await fireEvent.input(screen.getByRole("combobox", { name: "Command" }), { target: { value: "re" } });
+
+    expect(before.slice(0, 2)).toEqual(["Hide Sidebar", "Hide Issue List"]);
+    expect(after.slice(0, 3)).toEqual(["Reset Layout", "Reload Themes", "Hide Sidebar"]);
+    expect(titles()).toEqual([
+      "Reset Layout",
+      "Reload Themes",
+      "View: Stale Reviews",
+      "Repository: python/peps",
+    ]);
+    expect(core.rememberCommand.mock.calls).toEqual([["Reload Themes"], ["Reset Layout"]]);
+  });
+
+  it("opens with the commands the core kept first, as after a restart, each known by its id", async () => {
+    core.recentCommands.mockResolvedValue(["Open Settings", "toggle_hud"]);
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+
+    await palette();
+
+    expect(titles().slice(0, 3)).toEqual(["Open Settings", "Show performance HUD", "Hide Sidebar"]);
+  });
+
+  it("says in the status bar why a command run can't be saved", async () => {
+    core.rememberCommand.mockResolvedValue({
+      status: "error",
+      error: { kind: "internal", message: "machine.toml:1: expected `]`" },
+    });
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await palette();
+
+    await fireEvent.click(screen.getByRole("option", { name: "Reset Layout" }));
+
+    expect(
+      await screen.findByText(
+        "Tsugiki can't save the palette's recent commands: machine.toml:1: expected `]`",
+        { exact: false },
+      ),
+    ).toBeTruthy();
+  });
+
+  it("takes a hand edit to the list once the Settings dialog has read the files again", async () => {
+    core.recentCommands.mockResolvedValueOnce([]).mockResolvedValueOnce(["Open Settings"]);
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+
+    await fireEvent.keyDown(document.body, { key: ",", code: "Comma", ctrlKey: true });
+    await vi.waitFor(() => {
+      expect(core.recentCommands).toHaveBeenCalledTimes(2);
+    });
+    await fireEvent.keyDown(window, { key: "Escape" });
+    await palette();
+
+    expect(titles()[0]).toBe("Open Settings");
+  });
+
+  it("leaves the Repository picker in its own order, and a switch there out of the history", async () => {
+    core.recentCommands.mockResolvedValue(["Add repository…", "python/peps"]);
+    core.openRepository.mockResolvedValue({ status: "ok", data: pepsHome });
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+
+    await fireEvent.keyDown(window, { key: "r", code: "KeyR", ctrlKey: true });
+    const listed = options();
+    await fireEvent.click(screen.getByRole("option", { name: "python/peps" }));
+
+    expect(listed).toEqual(["some-maintainer/gcmon open", "python/peps", "Add repository…"]);
+    expect(await screen.findByRole("heading", { name: peps.name })).toBeTruthy();
+    expect(core.rememberCommand).not.toHaveBeenCalled();
   });
 });
 

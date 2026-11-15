@@ -23,7 +23,7 @@ use tsugiki_core::mirror::{CloneRefusal, MirrorSource};
 use tsugiki_core::repository_settings::{MirrorCost, NameCheck};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{
-    AppearanceSettings, Home, LoadedSettings, PaneLayout, SettingsChanges, SettingsOwner,
+    AppearanceSettings, CommandId, Home, LoadedSettings, PaneLayout, SettingsChanges, SettingsOwner,
 };
 use tsugiki_core::store::StoreReader;
 use tsugiki_core::theme::{GivenTheme, ThemeKind, ThemeLibrary, Themes};
@@ -159,6 +159,18 @@ pub(crate) fn save_pane_layout(
     owner: State<'_, SettingsOwner>,
 ) -> Result<PaneLayout, Error> {
     Ok(owner.save_panes(layout)?.panes)
+}
+
+/// Notes in `machine.toml` that the user ran `command` from the command palette, so the palette lists it
+/// first, and says the palette's recent commands now, most recently run first (#556). This waits on a small
+/// file.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn remember_command(
+    command: CommandId,
+    owner: State<'_, SettingsOwner>,
+) -> Result<Vec<CommandId>, Error> {
+    owner.remember_command(command)
 }
 
 /// Every theme of each side, light and dark, as CSS variables (#515), with the theme the settings choose for

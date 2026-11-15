@@ -37,6 +37,9 @@ const RECENT: &str = "recent";
 /// The keys of an entry in `recent`.
 const NAME: &str = "name";
 const OPENED_AT: &str = "opened_at";
+const RECENT_COMMANDS: &str = "recent_commands";
+/// How many commands `recent_commands` keeps, as VS Code's palette keeps 50 by default.
+const COMMANDS_KEPT: usize = 50;
 const LAST_REPOSITORY: &str = "last_repository";
 const PANES: &str = "panes";
 const APPEARANCE: &str = "appearance";
@@ -484,6 +487,22 @@ pub struct SettingsView {
     pub language_servers: LanguageServers,
 }
 
+/// A command of the command palette, by the id the window gives it. The window names its commands, so the
+/// core keeps the id as it comes and checks nothing in it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(transparent)]
+pub struct CommandId(String);
+
+impl CommandId {
+    pub fn new(id: &str) -> Self {
+        Self(id.to_owned())
+    }
+
+    fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// Where the language servers the user supplies are on this machine (ADR 0020), each from its
 /// `[language_servers.NAME] path` in `machine.toml`. A relative path starts at `machine.toml`'s folder.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -692,6 +711,40 @@ fn recent_or_skip<'de, D: Deserializer<'de>>(
     }))
 }
 
+/// The commands in `recent_commands`, leaving out an entry that isn't text, for the reason `sources_or_skip`
+/// gives, as `KeptCommands` keeps them. A `recent_commands` that isn't a list counts as none.
+fn commands_or_skip<'de, D: Deserializer<'de>>(given: D) -> Result<Vec<CommandId>, D::Error> {
+    let entries = Read::<Vec<Read<CommandId>>>::deserialize(given)?.given();
+    let mut kept = KeptCommands::default();
+    for command in entries.into_iter().flatten().filter_map(Read::given) {
+        if !kept.keep(command) && kept.full() {
+            break;
+        }
+    }
+    Ok(kept.0)
+}
+
+/// The commands `recent_commands` keeps, in its order: each once, where it first comes, and only the first
+/// `COMMANDS_KEPT`. A hand edit may have written one twice, or more than that. Reading the file and writing
+/// it both go through `keep`, so what a run saves is what the next read finds.
+#[derive(Default)]
+struct KeptCommands(Vec<CommandId>);
+
+impl KeptCommands {
+    /// Whether the list keeps `command`, which it then holds.
+    fn keep(&mut self, command: CommandId) -> bool {
+        let keeps = !self.full() && !self.0.contains(&command);
+        if keeps {
+            self.0.push(command);
+        }
+        keeps
+    }
+
+    fn full(&self) -> bool {
+        self.0.len() == COMMANDS_KEPT
+    }
+}
+
 /// Each Repository's answer of where its mirror gets its objects, leaving out an entry Tsugiki can't read:
 /// one answer is too small a thing to lose the rest of `machine.toml` over. Its Repository asks again.
 fn sources_or_skip<'de, D: Deserializer<'de>>(given: D) -> Result<MirrorSources, D::Error> {
@@ -713,6 +766,8 @@ struct MachineFile {
     /// The Repository to reopen, as 0.2.0 kept it. It counts while the file has no `recent`, and the next
     /// write of `machine.toml` puts `recent` in its place.
     last_repository: Option<RepositoryName>,
+    #[serde(deserialize_with = "commands_or_skip")]
+    recent_commands: Vec<CommandId>,
     panes: PaneLayout,
     #[serde(deserialize_with = "sources_or_skip")]
     mirrors: MirrorSources,
@@ -764,6 +819,8 @@ struct Machine {
     /// The Repositories opened most recently on this machine, newest first. They stay on this machine and
     /// are read with the settings, so a normal launch knows what to reopen before the window exists.
     recent: Vec<RepositoryName>,
+    /// The command palette's commands run on this machine, most recently run first.
+    recent_commands: Vec<CommandId>,
     panes: PaneLayout,
     mirrors: MirrorSources,
     /// Each language server's path as the file gives it, which may be relative.
@@ -777,6 +834,7 @@ impl From<MachineFile> for Machine {
             recent: file
                 .recent
                 .unwrap_or_else(|| file.last_repository.into_iter().collect()),
+            recent_commands: file.recent_commands,
             panes: file.panes,
             mirrors: file.mirrors,
             servers: file.language_servers,
@@ -840,6 +898,14 @@ impl SettingsFiles {
                 }
             },
         }
+    }
+
+    /// The command palette's commands the user ran on this machine, most recently run first (#556). Apart
+    /// from `view`, as only the palette asks for them.
+    pub fn recent_commands(&self) -> Vec<CommandId> {
+        self.machine
+            .as_ref()
+            .map_or_else(Vec::new, |machine| machine.recent_commands.clone())
     }
 
     /// Reads both files again, for the Settings window to call as it opens.
@@ -1085,6 +1151,24 @@ impl SettingsFiles {
         Ok(())
     }
 
+    /// Puts `command` at the head of `recent_commands` in `machine.toml`, keeping everything else in it. It
+    /// refuses while `machine.toml` can't be used.
+    ///
+    /// It answers with the list it saved, and takes in that list and nothing else: a palette run is no
+    /// moment to read the files again (ADR 0014), and `settings.toml` may sit on a slow drive. Until a good
+    /// `machine.toml` has been read, only the answer holds the list, and `recent_commands` waits for the next
+    /// read.
+    pub fn remember_command(&mut self, command: &CommandId) -> Result<Vec<CommandId>, Error> {
+        let path = self.folders.machine_file();
+        let mut edit = TomlEdit::open_machine(&path)?;
+        let saved = put_first_in_recent_commands(edit.document.as_table_mut(), command);
+        edit.save()?;
+        if let Some(machine) = &mut self.machine {
+            machine.recent_commands.clone_from(&saved);
+        }
+        Ok(saved)
+    }
+
     /// Saves the theme the picker chose for its side to `light_theme` or `dark_theme`, keeping everything
     /// else in `settings.toml`, and reads the files again (#518). Like `write`, it works from what the files
     /// say now and refuses while either can't be used.
@@ -1142,10 +1226,28 @@ impl SettingsFiles {
 pub struct SettingsOwner {
     requests: Sender<Request>,
     view: LatestReader<SettingsView>,
+    /// The palette's recent commands, apart from `view`, which every command that reads the settings copies.
+    commands: LatestReader<Vec<CommandId>>,
+}
+
+/// What the owner's thread is asked.
+enum Request {
+    Change(Change),
+    /// The palette ran `command`. The answer is the list saved, as no one needs the view after a run.
+    Command {
+        command: CommandId,
+        reply: Sender<Result<Vec<CommandId>, Error>>,
+    },
+}
+
+impl From<Change> for Request {
+    fn from(change: Change) -> Self {
+        Self::Change(change)
+    }
 }
 
 /// What the owner's thread saves, and where it answers with what the settings say after.
-enum Request {
+enum Change {
     Add {
         name: RepositoryName,
         access: RepositoryAccess,
@@ -1184,13 +1286,39 @@ impl SettingsOwner {
     pub fn start(mut files: Result<SettingsFiles, Error>) -> Self {
         let first = files.as_ref().map(SettingsFiles::view).unwrap_or_default();
         let (mut writer, view) = latest::channel(first);
+        let mut published = files
+            .as_ref()
+            .map(SettingsFiles::recent_commands)
+            .unwrap_or_default();
+        let (mut commands_writer, commands) = latest::channel(published.clone());
         let (requests, incoming) = mpsc::channel::<Request>();
         let _ = thread::spawn(move || {
+            // Sends readers the palette's recent commands, unless they hold this list already.
+            let mut publish_if_changed = |commands: &Vec<CommandId>| {
+                if *commands != published {
+                    commands_writer.set(commands);
+                    published.clone_from(commands);
+                }
+            };
             for request in incoming {
-                let (saved, reply) = match (&mut files, request) {
+                let change = match request {
+                    Request::Change(change) => change,
+                    Request::Command { command, reply } => {
+                        let saved = match &mut files {
+                            Ok(files) => files.remember_command(&command),
+                            Err(problem) => Err(problem.clone()),
+                        };
+                        if let Ok(saved) = &saved {
+                            publish_if_changed(saved);
+                        }
+                        answer(&reply, saved);
+                        continue;
+                    }
+                };
+                let (saved, reply) = match (&mut files, change) {
                     (
                         Ok(files),
-                        Request::Add {
+                        Change::Add {
                             name,
                             access,
                             source,
@@ -1206,7 +1334,7 @@ impl SettingsOwner {
                     }
                     (
                         Ok(files),
-                        Request::MirrorSource {
+                        Change::MirrorSource {
                             name,
                             source,
                             reply,
@@ -1215,52 +1343,60 @@ impl SettingsOwner {
                         let saved = files.save_mirror_source(&name, &source);
                         (saved.map(|()| files.view()), reply)
                     }
-                    (Ok(files), Request::Panes { layout, reply }) => {
+                    (Ok(files), Change::Panes { layout, reply }) => {
                         (files.save_panes(layout).map(|()| files.view()), reply)
                     }
-                    (Ok(files), Request::Theme { kind, name, reply }) => {
+                    (Ok(files), Change::Theme { kind, name, reply }) => {
                         (files.save_theme(kind, &name).map(|()| files.view()), reply)
                     }
-                    (Ok(files), Request::Open { name, reply }) => {
+                    (Ok(files), Change::Open { name, reply }) => {
                         let opened = files.open_repository(&name, OffsetDateTime::now_utc());
                         (opened.map(|_| files.view()), reply)
                     }
-                    (Ok(files), Request::Reread { reply }) => {
+                    (Ok(files), Change::Reread { reply }) => {
                         files.reload();
                         (Ok(files.view()), reply)
                     }
-                    (Ok(files), Request::Apply { changes, reply }) => {
+                    (Ok(files), Change::Apply { changes, reply }) => {
                         (files.apply(changes).map(|()| files.view()), reply)
                     }
                     (
                         Err(problem),
-                        Request::Add { reply, .. }
-                        | Request::MirrorSource { reply, .. }
-                        | Request::Panes { reply, .. }
-                        | Request::Theme { reply, .. }
-                        | Request::Open { reply, .. }
-                        | Request::Reread { reply }
-                        | Request::Apply { reply, .. },
+                        Change::Add { reply, .. }
+                        | Change::MirrorSource { reply, .. }
+                        | Change::Panes { reply, .. }
+                        | Change::Theme { reply, .. }
+                        | Change::Open { reply, .. }
+                        | Change::Reread { reply }
+                        | Change::Apply { reply, .. },
                     ) => (Err(problem.clone()), reply),
                 };
                 // Before the answer, so whoever asked finds the change in `view`. Changes come through here
                 // one at a time, so an older one can't replace a newer one.
-                if let Ok(saved) = &saved {
+                if let (Ok(saved), Ok(files)) = (&saved, &files) {
                     writer.set(saved);
+                    // Each change reads `machine.toml` again, which may hold a hand edit to the list.
+                    publish_if_changed(&files.recent_commands());
                 }
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "this fails only if the caller has gone, and it waits for this answer"
-                )]
-                let _ = reply.send(saved);
+                answer(&reply, saved);
             }
         });
-        Self { requests, view }
+        Self {
+            requests,
+            view,
+            commands,
+        }
     }
 
     /// What the settings said after the last change saved. This never waits on a file.
     pub fn view(&self) -> SettingsView {
         self.view.get()
+    }
+
+    /// The command palette's commands the user ran on this machine, most recently run first, as the owner
+    /// last read or saved them. This never waits on a file.
+    pub fn recent_commands(&self) -> Vec<CommandId> {
+        self.commands.get()
     }
 
     /// A copy of what the settings say, for a thread that reads them later.
@@ -1277,7 +1413,7 @@ impl SettingsOwner {
     ) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
         self.ask(
-            Request::Add {
+            Change::Add {
                 name,
                 access,
                 source,
@@ -1296,7 +1432,7 @@ impl SettingsOwner {
     ) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
         self.ask(
-            Request::MirrorSource {
+            Change::MirrorSource {
                 name,
                 source,
                 reply,
@@ -1308,34 +1444,41 @@ impl SettingsOwner {
     /// Saves the panes' layout in `machine.toml`, and answers with what the settings say now.
     pub fn save_panes(&self, layout: PaneLayout) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
-        self.ask(Request::Panes { layout, reply }, &answer)
+        self.ask(Change::Panes { layout, reply }, &answer)
+    }
+
+    /// Puts `command` at the head of the palette's recent commands in `machine.toml`, and answers with the
+    /// list saved, most recently run first.
+    pub fn remember_command(&self, command: CommandId) -> Result<Vec<CommandId>, Error> {
+        let (reply, answer) = mpsc::channel();
+        self.ask(Request::Command { command, reply }, &answer)
     }
 
     /// Saves the theme the picker chose for its side in `settings.toml`, and answers with what the settings
     /// say now.
     pub fn save_theme(&self, kind: ThemeKind, name: ThemeName) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
-        self.ask(Request::Theme { kind, name, reply }, &answer)
+        self.ask(Change::Theme { kind, name, reply }, &answer)
     }
 
     /// Reads both files again, as the Settings dialog opens, so a hand edit made since shows in it and takes
     /// effect, and answers with what they say now (ADR 0014).
     pub fn reread(&self) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
-        self.ask(Request::Reread { reply }, &answer)
+        self.ask(Change::Reread { reply }, &answer)
     }
 
     /// Saves what the Settings dialog's Apply changed (`SettingsFiles::apply`), and answers with what the
     /// settings say now.
     pub fn apply(&self, changes: SettingsChanges) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
-        self.ask(Request::Apply { changes, reply }, &answer)
+        self.ask(Change::Apply { changes, reply }, &answer)
     }
 
     /// Makes `name` the open Repository, and answers with what the settings say now.
     pub fn open_repository(&self, name: RepositoryName) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
-        self.ask(Request::Open { name, reply }, &answer)
+        self.ask(Change::Open { name, reply }, &answer)
     }
 
     /// What Add repository says about `name` (`Settings::check_name`), from what the files say now: a
@@ -1350,17 +1493,26 @@ impl SettingsOwner {
         view.loaded.settings.check_name(name, ask_github)
     }
 
-    fn ask(
+    fn ask<T>(
         &self,
-        request: Request,
-        answer: &Receiver<Result<SettingsView, Error>>,
-    ) -> Result<SettingsView, Error> {
+        request: impl Into<Request>,
+        answer: &Receiver<Result<T, Error>>,
+    ) -> Result<T, Error> {
         self.requests
-            .send(request)
+            .send(request.into())
             .ok()
             .and_then(|()| answer.recv().ok())
             .unwrap_or_else(|| Err(Error::new(ErrorKind::Internal, STOPPED_SAVING)))
     }
+}
+
+/// Hands `saved` to whoever asked the owner's thread.
+fn answer<T>(reply: &Sender<T>, saved: T) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "this fails only if the caller has gone, and it waits for this answer"
+    )]
+    let _ = reply.send(saved);
 }
 
 /// A settings file as it says now, open for changes that keep the user's comments and order.
@@ -1528,6 +1680,40 @@ fn put_first_in_recent(file: &mut Table, name: &RepositoryName, opened_at: Offse
     recent.insert_formatted(0, head);
     one_per_line(&mut recent);
     merge_value(file, RECENT, &Item::Value(Value::Array(recent)), None);
+}
+
+/// Puts `command` at the head of `file`'s `recent_commands`, with the comments the user wrote on its entry,
+/// and gives the commands the list holds now, as `kept_commands` reads them. Any other entry for `command`
+/// goes, as does any other command written twice. Past `COMMANDS_KEPT` commands the oldest go, and so does an
+/// entry that isn't text among them; one before them stays. A `recent_commands` that isn't a list gives the
+/// list its place and its comments.
+fn put_first_in_recent_commands(file: &mut Table, command: &CommandId) -> Vec<CommandId> {
+    let mut commands = file
+        .get(RECENT_COMMANDS)
+        .and_then(Item::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut head = Value::from(command.as_str());
+    let held = commands
+        .iter()
+        .position(|entry| entry.as_str() == Some(command.as_str()));
+    if let Some(index) = held {
+        *head.decor_mut() = commands.remove(index).decor().clone();
+    }
+    commands.insert_formatted(0, head);
+    let mut kept = KeptCommands::default();
+    commands.retain(|entry| match entry.as_str() {
+        Some(text) => kept.keep(CommandId::new(text)),
+        None => !kept.full(),
+    });
+    one_per_line(&mut commands);
+    merge_value(
+        file,
+        RECENT_COMMANDS,
+        &Item::Value(Value::Array(commands)),
+        None,
+    );
+    kept.0
 }
 
 /// An entry of `recent`: `name`, and when it was opened, to the second, in UTC.

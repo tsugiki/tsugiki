@@ -432,6 +432,7 @@
     return [
       {
         title: files.mode === "one" ? "View: All Files" : "View: One File at a Time",
+        id: "toggle_files_mode",
         note: actionLabel("toggle_files_mode", currentOs()),
         run: () => {
           files.toggleMode();
@@ -442,19 +443,24 @@
   }
 
   /** What this screen adds to the command palette while it shows. Each command runs what its key runs. The
-   * palette runs it once it has handed the focus back, so the focus goes where the key would put it. */
+   * palette runs it once it has handed the focus back, so the focus goes where the key would put it. A
+   * command whose title changes with what it does has an id, so the palette's history keeps one place for
+   * both titles. */
   export function paletteCommands(): PaletteAction[] {
     return [
       {
         title: panes.hidden("sidebar") ? "Show Sidebar" : "Hide Sidebar",
+        id: "toggle_sidebar",
         run: () => void toggleSidebarByKey(),
       },
       {
         title: panes.hidden("list") ? "Show Issue List" : "Hide Issue List",
+        id: "toggle_issue_list",
         run: () => void toggleListByKey(),
       },
       {
         title: panes.detailOnly ? "Show the Panes" : "Show Only the Detail Pane",
+        id: "toggle_detail_only",
         run: () => void toggleDetailOnly(),
       },
       { title: "Reset Layout", run: () => void resetLayout() },
@@ -487,10 +493,16 @@
           ]
         : []),
       panes.order === "attention"
-        ? { title: "Sort by Last Update", run: () => void sortBy("last_update") }
-        : { title: "Sort by Attention", run: () => void sortBy("attention") },
+        ? { title: "Sort by Last Update", id: "sort_list", run: () => void sortBy("last_update") }
+        : { title: "Sort by Attention", id: "sort_list", run: () => void sortBy("attention") },
       ...(workbench.quiet.length > 0
-        ? [{ title: workbench.quietShown ? "Hide Quiet Items" : "Show Quiet Items", run: toggleQuiet }]
+        ? [
+            {
+              title: workbench.quietShown ? "Hide Quiet Items" : "Show Quiet Items",
+              id: "toggle_quiet" as const,
+              run: toggleQuiet,
+            },
+          ]
         : []),
       { title: "View: Stale Reviews", run: () => showView({ kind: "stale_reviews" }) },
       ...(showsPr()

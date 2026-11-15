@@ -31,8 +31,8 @@ or `npm run`, and CI calls the same npm scripts.
 | `token-deps.ts`       | `just lint`                             | Fails when `crates/token` gains a dependency off its list (ADR 0019)                 |
 | `token-crate.ts`      | `token-deps.ts`                         | That list, and how the check reads a Cargo manifest                                  |
 | `bindings.ts`         | `just bindings`                         | Regenerates the UI's TypeScript bindings from the Rust commands                      |
-| `release-check.ts`    | `just release-check`, CI                | Checks a version against CHANGELOG.md and prints its release notes                   |
-| `release-notes.ts`    | `release-check.ts`, the release scripts | The rules a version has to meet before a release builds                              |
+| `release-check.ts`    | `just release-check`, CI                | Checks a version against CHANGELOG.md and prints its release page                    |
+| `release-notes.ts`    | `release-check.ts`, the release scripts | The rules a version has to meet before a release builds, and the release page's text |
 | `prepare-release.ts`  | `just prepare-release`                  | Starts a release's branch: sets the version, renames CHANGELOG.md's WIP              |
 | `tag-release.ts`      | `just release`                          | Tags the merged release on main and pushes the tag; ask before you run it            |
 | `releasing.ts`        | the release scripts, `ship.ts`          | Their refusals, and how they rewrite Cargo.toml and CHANGELOG.md                     |

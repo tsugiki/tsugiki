@@ -30,7 +30,8 @@ published.
   3. The release's files are built, and the workflow starts the zip's `tsg.exe` and checks the `.dmg`'s
      signature.
   4. Each file is attested with `actions/attest-build-provenance` and uploaded to a draft release. Its body is
-     the version's section of `CHANGELOG.md`, and the workflow fails if that section is missing.
+     the version's section of `CHANGELOG.md`, then which file is for which system and the command that checks
+     a download. The workflow fails if that section is missing.
   5. A last job downloads every asset of the draft and runs `gh attestation verify <file> --repo
      tsugiki/tsugiki --signer-workflow tsugiki/tsugiki/.github/workflows/release.yml` ([Verify release
      attestations in the release workflow before publishing](https://github.com/tsugiki/tsugiki/issues/6)).

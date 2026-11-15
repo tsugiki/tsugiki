@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
-import { notesFor, notesOfWorkspace, versionOfTag } from "./release-notes.ts";
+import { notesFor, notesOfWorkspace, releasePage, versionOfTag } from "./release-notes.ts";
 
 const CARGO_TOML = `[workspace]
 members = ["crates/core"]
@@ -132,5 +134,25 @@ describe("notesOfWorkspace", () => {
         'CHANGELOG.md has no section "## WIP".',
       );
     });
+  });
+});
+
+describe("releasePage", () => {
+  const page = releasePage("### Added\n\n- The first thing.");
+
+  /** The lines of `text` that run `gh attestation verify`. */
+  const verifyCommands = (text: string): string[] =>
+    text.split(/\r?\n/).filter((line) => line.startsWith("gh attestation verify "));
+
+  it("starts with the notes, then says which file is for which system", () => {
+    expect(page).toMatch(/^### Added\n\n- The first thing\.\n\n### Download\n/);
+    expect(page).toContain("- Windows: the `.zip`");
+    expect(page).toContain("- Apple silicon Macs: the `.dmg`");
+  });
+
+  it("checks a download with the README's command, so the two can't drift apart", () => {
+    const readme = readFileSync("../README.md", "utf8");
+    expect(verifyCommands(page)).toHaveLength(1);
+    expect(verifyCommands(page)).toEqual(verifyCommands(readme));
   });
 });

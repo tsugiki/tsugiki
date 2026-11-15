@@ -1,6 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
-import { mockCore } from "./mock-core.ts";
-import { themes } from "./themes.ts";
+import type { LoadedSettings_Serialize } from "../src/lib/data/bindings.ts";
+import { mockCore, noServers } from "./mock-core.ts";
+import { appearance, themes } from "./themes.ts";
 
 const colours = (page: Page) =>
   page.evaluate(() => {
@@ -60,4 +61,42 @@ test("A light theme the settings name shows while the system is dark", async ({ 
   await expect
     .poll(() => colours(page))
     .toEqual({ background: "rgb(255, 255, 255)", text: "rgb(59, 59, 59)", scheme: "light" });
+});
+
+test("Settings › General shows a dark Theme on the window before Apply, and Cancel puts the light one back", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  const loaded: LoadedSettings_Serialize = {
+    settings: {
+      status_bar: { visible: true },
+      releases: { check: true },
+      appearance,
+      diff: { files: "all", peek: "inline" },
+      keys: {},
+      repositories: [],
+    },
+    language_servers: noServers,
+    problems: [],
+  };
+  await mockCore(page, {
+    themes: { status: "ok", data: themes },
+    settings: loaded,
+    rereadSettings: { status: "ok", data: loaded },
+  });
+  await page.goto("/");
+  const lightModern = { background: "rgb(255, 255, 255)", text: "rgb(59, 59, 59)", scheme: "light" };
+  await expect.poll(() => colours(page)).toEqual(lightModern);
+
+  await page.keyboard.press("ControlOrMeta+,");
+  const theme = page.getByRole("combobox", { name: "Theme", exact: true });
+  await expect(theme).toBeEnabled();
+  await theme.selectOption("Gruvbox Dark Hard");
+  await expect
+    .poll(() => colours(page))
+    .toEqual({ background: "rgb(29, 32, 33)", text: "rgb(235, 219, 178)", scheme: "dark" });
+
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("dialog", { name: "Settings" })).toBeHidden();
+  await expect.poll(() => colours(page)).toEqual(lightModern);
 });

@@ -29,7 +29,7 @@ use crate::latest::{self, LatestReader};
 use crate::mirror::{MirrorSource, MirrorSources};
 use crate::repository::{RepositoryAccess, RepositoryName};
 use crate::repository_settings::{NameCheck, RepositoryCheck, RepositorySettings};
-use crate::theme::{ThemeChoice, ThemeKind, ThemeName};
+use crate::theme::{ThemeChoice, ThemeKind, ThemeName, ThemePick};
 
 const REPOSITORIES: &str = "repositories";
 const FILTERS: &str = "filters";
@@ -139,6 +139,8 @@ impl Default for ReleaseSettings {
 pub struct SettingsChanges {
     pub status_bar: Option<StatusBarSettings>,
     pub releases: Option<ReleaseSettings>,
+    /// The keys of `[appearance]` Settings › General changed (#757).
+    pub appearance: Option<AppearanceChanges>,
     /// `[language_servers]` in `machine.toml`, which Settings › Advanced edits (#683).
     pub language_servers: Option<LanguageServerSettings>,
 }
@@ -146,7 +148,7 @@ pub struct SettingsChanges {
 impl SettingsChanges {
     /// `settings` with the changes to `settings.toml` made to them, or nothing if none change it.
     fn made_to(&self, mut settings: Settings) -> Option<Settings> {
-        if self.status_bar.is_none() && self.releases.is_none() {
+        if self.status_bar.is_none() && self.releases.is_none() && self.appearance.is_none() {
             return None;
         }
         if let Some(status_bar) = &self.status_bar {
@@ -155,7 +157,43 @@ impl SettingsChanges {
         if let Some(releases) = &self.releases {
             settings.releases = releases.clone();
         }
+        if let Some(appearance) = &self.appearance {
+            appearance.made_to(&mut settings.appearance);
+        }
         Some(settings)
+    }
+}
+
+/// What the Settings dialog's Apply changed in `[appearance]`: each key it changed, and nothing for the
+/// others, so a key it left keeps what the file says then (#757). That keeps a mode from before (#755) and a
+/// name no Theme has, which the dialog shows but can't pick.
+///
+/// The dialog lists only the Themes the window holds, so Apply doesn't read the `themes` folder again to
+/// check a name. One whose file has gone since then shows as a hand edit's would: a `theme` follows the
+/// system, a side shows its default, and the status bar says so.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Type)]
+#[serde(default)]
+pub struct AppearanceChanges {
+    /// Follow the system, or show the Theme named.
+    pub theme: Option<ThemePick>,
+    pub light_theme: Option<ThemeName>,
+    pub dark_theme: Option<ThemeName>,
+}
+
+impl AppearanceChanges {
+    fn made_to(&self, appearance: &mut AppearanceSettings) {
+        if let Some(pick) = &self.theme {
+            appearance.theme = match pick {
+                ThemePick::System => ThemeChoice::System,
+                ThemePick::Named { name } => ThemeChoice::Theme(name.clone()),
+            };
+        }
+        if let Some(name) = &self.light_theme {
+            appearance.light_theme = name.clone();
+        }
+        if let Some(name) = &self.dark_theme {
+            appearance.dark_theme = name.clone();
+        }
     }
 }
 

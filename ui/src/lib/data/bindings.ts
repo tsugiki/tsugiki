@@ -357,6 +357,49 @@ export type Answer_Serialize =
 { state: "cancelled" };
 
 /**
+ *  What the Settings dialog's Apply changed in `[appearance]`: each key it changed, and nothing for the
+ *  others, so a key it left keeps what the file says then (#757). That keeps a mode from before (#755) and a
+ *  name no Theme has, which the dialog shows but can't pick.
+ * 
+ *  The dialog lists only the Themes the window holds, so Apply doesn't read the `themes` folder again to
+ *  check a name. One whose file has gone since then shows as a hand edit's would: a `theme` follows the
+ *  system, a side shows its default, and the status bar says so.
+ */
+export type AppearanceChanges = AppearanceChanges_Serialize | AppearanceChanges_Deserialize;
+
+/**
+ *  What the Settings dialog's Apply changed in `[appearance]`: each key it changed, and nothing for the
+ *  others, so a key it left keeps what the file says then (#757). That keeps a mode from before (#755) and a
+ *  name no Theme has, which the dialog shows but can't pick.
+ * 
+ *  The dialog lists only the Themes the window holds, so Apply doesn't read the `themes` folder again to
+ *  check a name. One whose file has gone since then shows as a hand edit's would: a `theme` follows the
+ *  system, a side shows its default, and the status bar says so.
+ */
+export type AppearanceChanges_Deserialize = {
+	/**  Follow the system, or show the Theme named. */
+	theme?: ThemePick | null,
+	light_theme?: ThemeName | null,
+	dark_theme?: ThemeName | null,
+};
+
+/**
+ *  What the Settings dialog's Apply changed in `[appearance]`: each key it changed, and nothing for the
+ *  others, so a key it left keeps what the file says then (#757). That keeps a mode from before (#755) and a
+ *  name no Theme has, which the dialog shows but can't pick.
+ * 
+ *  The dialog lists only the Themes the window holds, so Apply doesn't read the `themes` folder again to
+ *  check a name. One whose file has gone since then shows as a hand edit's would: a `theme` follows the
+ *  system, a side shows its default, and the status bar says so.
+ */
+export type AppearanceChanges_Serialize = {
+	/**  Follow the system, or show the Theme named. */
+	theme: ThemePick | null,
+	light_theme: ThemeName | null,
+	dark_theme: ThemeName | null,
+};
+
+/**
  *  The `[appearance]` table: the theme the window shows, or "system" to follow the system to its light or
  *  dark side, and the theme of each side, which following the system shows (#517, #755). A key Tsugiki
  *  can't read takes its default, and `unread_problems` says why: a theme is too small a thing to lose the
@@ -2675,6 +2718,8 @@ export type SettingsChanges = SettingsChanges_Serialize | SettingsChanges_Deseri
 export type SettingsChanges_Deserialize = {
 	status_bar?: StatusBarSettings_Deserialize | null,
 	releases?: ReleaseSettings_Deserialize | null,
+	/**  The keys of `[appearance]` Settings › General changed (#757). */
+	appearance?: AppearanceChanges_Deserialize | null,
 	/**  `[language_servers]` in `machine.toml`, which Settings › Advanced edits (#683). */
 	language_servers?: LanguageServerSettings_Deserialize | null,
 };
@@ -2686,6 +2731,8 @@ export type SettingsChanges_Deserialize = {
 export type SettingsChanges_Serialize = {
 	status_bar: StatusBarSettings_Serialize | null,
 	releases: ReleaseSettings_Serialize | null,
+	/**  The keys of `[appearance]` Settings › General changed (#757). */
+	appearance: AppearanceChanges_Serialize | null,
 	/**  `[language_servers]` in `machine.toml`, which Settings › Advanced edits (#683). */
 	language_servers: LanguageServerSettings_Serialize | null,
 };
@@ -2924,7 +2971,8 @@ export type ThemeName = string;
 
 /**
  *  The theme picker's pick for `[appearance] theme` (#756): follow the system, or show the Theme named, which
- *  `ThemeLibrary::choice` checks against the `themes` folder before it's saved.
+ *  `ThemeLibrary::choice` checks against the `themes` folder before it's saved. Settings › General's Theme
+ *  picks one too (#757).
  */
 export type ThemePick = { kind: "system" } | { kind: "named"; name: ThemeName };
 

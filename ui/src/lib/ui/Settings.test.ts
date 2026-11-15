@@ -9,6 +9,7 @@ import {
   SettingsState,
   type Settings as Values,
 } from "$lib/state/settings.svelte";
+import { type DarkQuery, ThemeState, type Themes, type ThemeView } from "$lib/state/theme.svelte";
 import Settings from "./Settings.svelte";
 
 const core = vi.hoisted(() => ({
@@ -18,6 +19,8 @@ const core = vi.hoisted(() => ({
   languageServers: vi.fn(),
   pickProgram: vi.fn(),
   openServerLog: vi.fn(),
+  themes: vi.fn(),
+  turnWindow: vi.fn(),
 }));
 /** The listener for the servers' rows, so a test can send it what the core would, and its stop. */
 const rowsHeard = vi.hoisted(() => ({
@@ -101,12 +104,41 @@ const ROWS: ServerRow[] = [
 const ok = <T>(data: T) => ({ status: "ok", data }) as const;
 const refused = (message: string) => ({ status: "error", error: { kind: "internal", message } }) as const;
 
+/** A theme of side `kind` named `name`, with one token. */
+const themeView = (name: string, kind: "light" | "dark"): ThemeView => ({
+  name,
+  kind,
+  tokens: [{ property: "--bg", value: kind === "light" ? "#ffffff" : "#1f1f1f" }],
+});
+/** The built-in themes, following the system, with a light theme file that can't be used. */
+const THEMES: Themes = {
+  theme: { kind: "system" },
+  light: {
+    chosen: "VS Code Light Modern",
+    all: [themeView("VS Code Light Modern", "light"), themeView("Gruvbox Light Hard", "light")],
+    failed: [
+      { name: "Broken Light", file: "broken.toml", reason: "it extends Nothing, which no theme is named" },
+    ],
+  },
+  dark: {
+    chosen: "VS Code Dark Modern",
+    all: [themeView("VS Code Dark Modern", "dark"), themeView("Gruvbox Dark Hard", "dark")],
+    failed: [],
+  },
+  problems: [],
+};
+/** Windows on its light side, which says nothing when it changes. */
+const LIGHT_SIDE = { matches: false, addEventListener: () => {} } as unknown as DarkQuery;
+
 /** The settings in force: the defaults, as the core read them at start. */
 let state: SettingsState;
+/** The window's themes, as the core sent them at start. */
+let theme: ThemeState;
 /** The dialog's props, with the status online and this release's About. */
 const onreread = vi.fn();
 const props = (onclose = () => {}): ComponentProps<typeof Settings> => ({
   settings: state,
+  theme,
   status: online,
   about,
   onreread,
@@ -128,7 +160,7 @@ const opened = async (onclose = () => {}) => {
   return rendered;
 };
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks();
   core.tokenSource.mockResolvedValue("gh");
   core.rereadSettings.mockResolvedValue(ok(loaded(settingsWith())));
@@ -140,8 +172,12 @@ beforeEach(() => {
       ok(loaded({ ...settingsWith(), ...changes }, [], language_servers)),
   );
   core.languageServers.mockResolvedValue(ROWS);
+  core.themes.mockImplementation(async () => ok(structuredClone(THEMES)));
+  core.turnWindow.mockResolvedValue(null);
   state = new SettingsState();
   state.take(loaded(settingsWith()));
+  theme = new ThemeState(LIGHT_SIDE);
+  await theme.load();
 });
 
 describe("the Settings dialog", () => {
@@ -421,10 +457,8 @@ describe("Settings › General", () => {
       label.textContent,
       label.title,
     ]);
-    expect(stored).toEqual([
-      ["settings file", "Saved in settings.toml, which can travel between machines"],
-      ["settings file", "Saved in settings.toml, which can travel between machines"],
-    ]);
+    const file = ["settings file", "Saved in settings.toml, which can travel between machines"];
+    expect(stored).toEqual([file, file, file, file, file]);
   });
 
   it("says Check for new versions takes effect at the next start", async () => {
@@ -433,6 +467,174 @@ describe("Settings › General", () => {
     expect(within(row).getByText("Takes effect at the next start")).toBeTruthy();
     const statusRow = statusBarBox().closest(".row") as HTMLElement;
     expect(within(statusRow).queryByText("Takes effect at the next start")).toBeNull();
+  });
+});
+
+describe("Settings › General's Appearance", () => {
+  const select = (name: string) => screen.getByRole("combobox", { name }) as HTMLSelectElement;
+  const chosen = (name: string) => select(name).selectedOptions[0]?.textContent;
+  const choose = (name: string, value: string) => fireEvent.change(select(name), { target: { value } });
+  /** The dialog, opened on a file whose `[appearance]` `change` makes. */
+  const openedOn = (change: (settings: Values) => void) => {
+    core.rereadSettings.mockResolvedValue(ok(loaded(settingsWith(change))));
+    return opened();
+  };
+
+  it("comes first, and lists Follow system, then the light themes, then the dark ones, without the files that failed", async () => {
+    await opened();
+    const page = screen.getByRole("region", { name: "General" });
+    expect(page.querySelector("h3")?.textContent).toBe("Appearance");
+    const groups = Array.from(select("Theme").children).map((child) =>
+      child instanceof HTMLOptGroupElement
+        ? [child.label, Array.from(child.children).map((option) => option.textContent)]
+        : child.textContent,
+    );
+    expect(groups).toEqual([
+      "Follow system",
+      ["Light", ["VS Code Light Modern", "Gruvbox Light Hard"]],
+      ["Dark", ["VS Code Dark Modern", "Gruvbox Dark Hard"]],
+    ]);
+    const names = (row: string) => Array.from(select(row).options).map((option) => option.textContent);
+    expect(names("Light theme")).toEqual(["VS Code Light Modern", "Gruvbox Light Hard"]);
+    expect(names("Dark theme")).toEqual(["VS Code Dark Modern", "Gruvbox Dark Hard"]);
+    expect(chosen("Theme")).toBe("Follow system");
+    expect(chosen("Light theme")).toBe("VS Code Light Modern");
+  });
+
+  it("says under each side's row that Follow system shows it", async () => {
+    await opened();
+    const help = (name: string) =>
+      (select(name).closest(".row") as HTMLElement).querySelector(".help")?.textContent;
+    expect(help("Light theme")).toBe("Follow system shows it while the system is light.");
+    expect(help("Dark theme")).toBe("Follow system shows it while the system is dark.");
+    expect(help("Theme")).toBeUndefined();
+  });
+
+  it("shows a dark Theme on the window before Apply, and Cancel puts the Theme in force back", async () => {
+    const onclose = vi.fn();
+    await opened(onclose);
+    expect(theme.shown?.name).toBe("VS Code Light Modern");
+
+    await choose("Theme", "Gruvbox Dark Hard");
+    expect(theme.shown?.name).toBe("Gruvbox Dark Hard");
+    expect(button("Apply")).toBeTruthy();
+
+    await fireEvent.click(button("Cancel"));
+    expect(onclose).toHaveBeenCalledOnce();
+    expect(theme.shown?.name).toBe("VS Code Light Modern");
+    expect(state.settings?.appearance.theme).toBe("system");
+    expect(core.applySettings).not.toHaveBeenCalled();
+  });
+
+  it("shows a side's theme on the window at once while Follow system shows that side", async () => {
+    await opened();
+    await choose("Dark theme", "Gruvbox Dark Hard");
+    expect(theme.shown?.name).toBe("VS Code Light Modern");
+
+    await choose("Light theme", "Gruvbox Light Hard");
+    expect(theme.shown?.name).toBe("Gruvbox Light Hard");
+  });
+
+  it("saves a changed Light theme on Apply and leaves theme alone, then shows the themes the file gives", async () => {
+    core.applySettings.mockResolvedValue(
+      ok(loaded(settingsWith((settings) => (settings.appearance.light_theme = "Gruvbox Light Hard")))),
+    );
+    const onclose = vi.fn();
+    await opened(onclose);
+    const asked = core.themes.mock.calls.length;
+    await choose("Light theme", "Gruvbox Light Hard");
+    await fireEvent.click(button("Apply"));
+
+    await vi.waitFor(() => {
+      expect(onclose).toHaveBeenCalledOnce();
+    });
+    expect(core.applySettings).toHaveBeenCalledWith({ appearance: { light_theme: "Gruvbox Light Hard" } });
+    expect(core.themes.mock.calls.length).toBeGreaterThan(asked);
+    expect(theme.previewAppearance).toBeUndefined();
+  });
+
+  it("waits for the window's themes before Apply closes, and shows the dialog's pick until then", async () => {
+    core.applySettings.mockResolvedValue(
+      ok(loaded(settingsWith((settings) => (settings.appearance.theme = "Gruvbox Dark Hard")))),
+    );
+    const onclose = vi.fn();
+    await opened(onclose);
+    const themes = Promise.withResolvers<ReturnType<typeof ok<Themes>>>();
+    core.themes.mockReturnValue(themes.promise);
+    await choose("Theme", "Gruvbox Dark Hard");
+    await fireEvent.click(button("Apply"));
+    await vi.waitFor(() => {
+      expect(core.themes).toHaveBeenCalled();
+    });
+    expect(onclose).not.toHaveBeenCalled();
+    expect(theme.shown?.name).toBe("Gruvbox Dark Hard");
+
+    const named = { kind: "named", name: "Gruvbox Dark Hard", side: "dark" } as const;
+    themes.resolve(ok({ ...structuredClone(THEMES), theme: named }));
+    await vi.waitFor(() => {
+      expect(onclose).toHaveBeenCalledOnce();
+    });
+    expect(theme.previewAppearance).toBeUndefined();
+    expect(theme.shown?.name).toBe("Gruvbox Dark Hard");
+  });
+
+  it("saves Follow system and a Theme as the theme picker's picks", async () => {
+    const first = await openedOn((settings) => (settings.appearance.theme = "Gruvbox Light Hard"));
+    await choose("Theme", "system");
+    await fireEvent.click(button("Apply"));
+    expect(core.applySettings).toHaveBeenLastCalledWith({ appearance: { theme: { kind: "system" } } });
+    first.unmount();
+
+    await openedOn(() => {});
+    await choose("Theme", "Gruvbox Dark Hard");
+    await fireEvent.click(button("Apply"));
+    expect(core.applySettings).toHaveBeenLastCalledWith({
+      appearance: { theme: { kind: "named", name: "Gruvbox Dark Hard" } },
+    });
+  });
+
+  it("shows a dark_theme no Theme has as not found, and Apply of another change keeps it", async () => {
+    await openedOn((settings) => (settings.appearance.dark_theme = "Solarized Dark"));
+    expect(chosen("Dark theme")).toBe("Solarized Dark (not found)");
+    expect(Array.from(select("Dark theme").options).map((option) => option.textContent)).toEqual([
+      "Solarized Dark (not found)",
+      "VS Code Dark Modern",
+      "Gruvbox Dark Hard",
+    ]);
+
+    await fireEvent.click(statusBarBox());
+    await fireEvent.click(button("Apply"));
+    expect(core.applySettings).toHaveBeenCalledWith({ status_bar: { visible: false } });
+  });
+
+  it("shows a theme no Theme has as not found, and a mode from before as its side", async () => {
+    for (const [held, words] of [
+      ["Solarized Dark", "Solarized Dark (not found)"],
+      ["dark", "Always the Dark theme"],
+    ] as const) {
+      const rendered = await openedOn((settings) => (settings.appearance.theme = held));
+      expect(chosen("Theme")).toBe(words);
+      rendered.unmount();
+    }
+
+    await openedOn((settings) => (settings.appearance.theme = "light"));
+    expect(chosen("Theme")).toBe("Always the Light theme");
+  });
+
+  it("waits for the window's themes before it offers any", async () => {
+    theme = new ThemeState(LIGHT_SIDE);
+    await opened();
+    expect(select("Theme").disabled).toBe(true);
+    expect(select("Light theme").disabled).toBe(true);
+    expect(Array.from(select("Dark theme").options).map((option) => option.textContent)).toEqual([
+      "VS Code Dark Modern",
+    ]);
+
+    await theme.load();
+    await vi.waitFor(() => {
+      expect(select("Theme").disabled).toBe(false);
+    });
+    expect(chosen("Dark theme")).toBe("VS Code Dark Modern");
   });
 });
 

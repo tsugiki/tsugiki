@@ -14,6 +14,7 @@
     type Shown,
   } from "$lib/state/settings-dialog.svelte";
   import type { Status } from "$lib/state/status.svelte";
+  import type { ThemeState } from "$lib/state/theme.svelte";
   import AccountPage from "./AccountPage.svelte";
   import AdvancedPage from "./AdvancedPage.svelte";
   import GeneralPage from "./GeneralPage.svelte";
@@ -22,6 +23,7 @@
 
   let {
     settings,
+    theme,
     status,
     about,
     repository,
@@ -31,6 +33,8 @@
   }: {
     /** The settings in force, which the dialog previews its changes on. */
     settings: SettingsState;
+    /** The window's themes, which Settings › General lists and previews `[appearance]` on. */
+    theme: ThemeState;
     /** The app-wide status, which says who is signed in. */
     status: Status | undefined;
     /** What the core says about itself, which says where this build's source is. */
@@ -48,6 +52,7 @@
 
   const dialog = new SettingsDialog(
     untrack(() => settings),
+    untrack(() => theme),
     untrack((): Shown => (at === undefined ? { page: "General" } : { page: "Advanced" })),
   );
   void dialog.open().then((reread) => {

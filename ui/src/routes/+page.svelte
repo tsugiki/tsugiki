@@ -508,6 +508,7 @@
 {#if settingsOpen}
   <Settings
     {settings}
+    {theme}
     onreread={() => {
       void theme.load();
       void recentCommands.load();

@@ -22,7 +22,17 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   pages, where Cancel still puts the changes back.
 - Each setting carries a label for where it is stored: settings file, this machine, database or keychain,
   with the file's name or "on this machine only" in its tooltip.
-- General groups its settings; each group is a heading with its rows under it. Status bar has Show the
+- General groups its settings; each group is a heading with its rows under it. Appearance comes first,
+  with three rows ([#757](https://github.com/tsugiki/tsugiki/issues/757)), as VS Code keeps
+  `workbench.preferredLightColorTheme` and `workbench.preferredDarkColorTheme` in its settings. Theme lists
+  Follow system, then the light Themes, then the dark ones, as the theme picker lists them, and saves
+  `theme`. Light theme and Dark theme list the Themes of their side, save `light_theme` and `dark_theme`,
+  and say under the row that Follow system shows them. The files that can't be used aren't listed. A name
+  the file holds that no Theme has shows in its row as "<name> (not found)", and a mode from a file written
+  before as "Always the Light theme" or "Always the Dark theme". Apply sends only the keys of `[appearance]`
+  that changed, so another change leaves such a value in the file, and so does a hand edit to another key.
+  A change shows on the window at once, as the theme picker's preview does, and Apply waits for the window
+  to take the Themes the file gives, which turns its title bar to their side. Status bar has Show the
   status bar, and says that problems and being offline still show when it's off. Updates has Check for new
   versions (`[releases] check`), the one setting that still needs a restart, so it says "Takes effect at the
   next start" under its row. Both live in `settings.toml`. Repositories, each Repository's page and Sync say
@@ -50,9 +60,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   A `"light"` or `"dark"` from a file written before shows the Theme in `light_theme` or `dark_theme`. A pick
   for that side in the theme picker writes the name picked in its place, and an Apply keeps it, as only the
   `themes` folder can say which Theme the side's name gives. A value that isn't text keeps its
-  key's default and shows in the status bar, and an Apply refuses until it is mended, as for `[diff]`. For
-  now only a hand edit sets `theme`, and the theme picker sets a side's key: General gets the three rows later
-  (#757).
+  key's default and shows in the status bar, and an Apply refuses until it is mended, as for `[diff]`.
+  General's Appearance rows set all three keys, and the theme picker sets `theme`.
 - `[diff] peek` in `settings.toml` says where the Definition peek opens: `"inline"`, the default, under the
   line of the word looked up, or `"split"`, below the diff or the file view's code, which stays where it
   was ([definitions.md](definitions.md)). A change applies to the next peek. A value Tsugiki can't read

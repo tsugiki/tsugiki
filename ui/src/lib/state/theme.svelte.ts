@@ -2,8 +2,10 @@
 // for each side and the theme in force (#755). Following the system, the window shows the chosen theme for
 // the side Windows is on, jumping to the other when Windows changes sides. A theme the settings name shows
 // whatever Windows says, and so does the chosen theme of the side a mode from a file written before keeps.
-// The theme picker previews a theme over the one in force, and saves the theme in force (#518, #756).
+// The theme picker previews a theme over the one in force, and saves the theme in force (#518, #756). The
+// Settings dialog previews the `[appearance]` it shows, and its Apply saves it (#757).
 import {
+  type AppearanceSettings,
   commands,
   type FailedThemeView,
   type ThemeInForce,
@@ -14,7 +16,7 @@ import {
 } from "$lib/data/bindings";
 import { ask } from "./answer";
 
-export type { FailedThemeView, ThemeKind, Themes, ThemeView };
+export type { AppearanceSettings, FailedThemeView, ThemeKind, Themes, ThemeView };
 
 /** Says which side Windows is on: `matchMedia("(prefers-color-scheme: dark)")` in the window. */
 export type DarkQuery = Pick<MediaQueryList, "matches" | "addEventListener">;
@@ -27,6 +29,9 @@ export class ThemeState {
   dark = $state(false);
   /** A theme the picker shows on the window for now, over the one in force. */
   preview = $state<ThemeView>();
+  /** The `[appearance]` the Settings dialog shows on the window while it's open, under the picker's preview
+   * and over the theme in force (#757). */
+  previewAppearance = $state.raw<AppearanceSettings>();
   /** Why the last pick couldn't be saved, until one is. */
   problem = $state<string>();
   /** Why the window's title bar couldn't turn to the side of the theme in force, until a turn works. */
@@ -72,8 +77,13 @@ export class ThemeState {
    * knows. While a theme keeps the window on one side, the page hears that side, and learns Windows' own
    * only as the window turns back to it. */
   following = $derived(this.#chosenOf(this.dark ? "dark" : "light"));
-  /** What the window shows: the preview, or else the theme in force. */
-  shown = $derived(this.preview ?? this.current);
+  /** What the window shows: the picker's preview, or else the Settings dialog's, or else the theme in
+   * force. */
+  shown = $derived(
+    this.preview ??
+      (this.previewAppearance === undefined ? undefined : this.#showing(this.previewAppearance)) ??
+      this.current,
+  );
 
   constructor(query: DarkQuery) {
     this.dark = query.matches;
@@ -163,6 +173,19 @@ export class ThemeState {
   /** The theme files of side `kind` that can't be used, in name order. */
   failedOf(kind: ThemeKind): readonly FailedThemeView[] {
     return this.themes?.[kind].failed ?? [];
+  }
+
+  /** The theme `appearance` shows, worked out as the core works out the theme in force from the file: a
+   * `theme` no theme has follows the system, and a side's name no theme of the side has gives what the core
+   * chose for the side, its default. A mode from before shows its side's chosen theme. */
+  #showing({ theme, light_theme, dark_theme }: AppearanceSettings): ThemeView | undefined {
+    const chosen = (side: ThemeKind) => {
+      const name = side === "light" ? light_theme : dark_theme;
+      return this.themesOf(side).find((one) => one.name === name) ?? this.#chosenOf(side);
+    };
+    if (theme === "light" || theme === "dark") return chosen(theme);
+    const named = [...this.themesOf("light"), ...this.themesOf("dark")].find((one) => one.name === theme);
+    return named ?? chosen(this.dark ? "dark" : "light");
   }
 
   /** The theme chosen for side `kind`, which following the system shows on that side. */

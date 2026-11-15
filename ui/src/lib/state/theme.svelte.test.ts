@@ -388,6 +388,51 @@ describe("ThemeState", () => {
     expect(state.shown?.name).toBe("VS Code Dark Modern");
   });
 
+  it("shows the Settings dialog's appearance over the theme in force, under the picker's preview", async () => {
+    const { query, turn } = sides(true);
+    vi.mocked(commands.themes).mockResolvedValue({ status: "ok", data: structuredClone(THEMES) });
+    const state = new ThemeState(query);
+    await state.load();
+    const appearance = (theme: string, light = "VS Code Light Modern", dark = "VS Code Dark Modern") => ({
+      theme,
+      light_theme: light,
+      dark_theme: dark,
+    });
+
+    state.previewAppearance = appearance("Gruvbox Light Hard");
+    expect(state.shown?.name).toBe("Gruvbox Light Hard");
+    expect(state.current?.name).toBe("VS Code Dark Modern");
+    state.preview = DARK_MODERN;
+    expect(state.shown?.name).toBe("VS Code Dark Modern");
+    state.preview = undefined;
+
+    state.previewAppearance = appearance("system", "Gruvbox Light Hard", "Gruvbox Dark Hard");
+    expect(state.shown?.name).toBe("Gruvbox Dark Hard");
+    turn(false);
+    expect(state.shown?.name).toBe("Gruvbox Light Hard");
+
+    state.previewAppearance = undefined;
+    expect(state.shown?.name).toBe("VS Code Light Modern");
+  });
+
+  it("shows the dialog's appearance as the core works out the file's", async () => {
+    const themes = { ...THEMES, dark: { ...THEMES.dark, chosen: "Gruvbox Dark Hard" } };
+    const state = await loaded(themes, false);
+    const shown = (theme: string, dark_theme: string) => {
+      state.previewAppearance = { theme, light_theme: "Gruvbox Light Hard", dark_theme };
+      return state.shown?.name;
+    };
+
+    // A mode from before shows its side's theme, whichever side Windows is on.
+    expect(shown("dark", "VS Code Dark Modern")).toBe("VS Code Dark Modern");
+    // A theme no theme has follows the system.
+    expect(shown("Solarized Dark", "VS Code Dark Modern")).toBe("Gruvbox Light Hard");
+    // A side's name no theme of the side has shows what the core chose for the side: the dialog holds such a
+    // name only as the file held it, and the core chose the side's default for it.
+    expect(shown("dark", "Solarized Dark")).toBe("Gruvbox Dark Hard");
+    expect(shown("dark", "Gruvbox Light Hard")).toBe("Gruvbox Dark Hard");
+  });
+
   it("follows the system with the chosen theme of the side Windows is on", async () => {
     const { query, turn } = sides(true);
     vi.mocked(commands.themes).mockResolvedValue({ status: "ok", data: structuredClone(THEMES) });

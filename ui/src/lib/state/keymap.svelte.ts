@@ -12,6 +12,13 @@ export type Action = Default["action"];
  * A key is named as `keyName` and `chordName` name them: "ctrl+shift+p", "ctrl+k m". */
 export type Row = Omit<Default, "key"> & { readonly key: string | null };
 
+/** A row whose action has a key in force. */
+export type KeyedRow = Row & { readonly key: string };
+
+/** Where an action's key works, as the core's table says: anywhere, or in the Issue list, the diff or the
+ * composer. */
+export type Context = Default["context"];
+
 /** The keys `[keys]` gives the actions it names in place of their defaults, as the core read them: a key, or
  * `""` for none. */
 export type Remaps = Partial<Record<Action, string>>;
@@ -27,6 +34,11 @@ const LEFT_ALONE: ReadonlySet<string> = new Set(["arrowleft", "arrowright", "ctr
 /** Whether `key`, named as `keyName` or `chordName` names it, is a chord: "ctrl+k z". */
 export function isChord(key: string): boolean {
   return key.includes(" ");
+}
+
+/** The first press of `chord`, named as `keyName` names it: "ctrl+k" for "ctrl+k z". */
+export function chordFirst(chord: string): string {
+  return chord.slice(0, chord.indexOf(" "));
 }
 
 class Keymap {
@@ -57,11 +69,7 @@ class Keymap {
 
   /** The first press of each chord. */
   readonly #starts: ReadonlySet<string> = $derived(
-    new Set(
-      this.rows.flatMap((row) =>
-        row.key !== null && isChord(row.key) ? [row.key.slice(0, row.key.indexOf(" "))] : [],
-      ),
-    ),
+    new Set(this.rows.flatMap((row) => (row.key !== null && isChord(row.key) ? [chordFirst(row.key)] : []))),
   );
 
   /** The keys of one press that the guard owns, and the chords' first presses. Most have no action until
@@ -104,6 +112,15 @@ export function keyTable(): readonly Row[] {
   return keymap.rows;
 }
 
+/** The rows of the actions whose key works in `context` and runs them, in the table's order: of two remapped
+ * actions on one key, only the one `actionOn` finds there. The `?` list shows them. */
+export function keysIn(context: Context): readonly KeyedRow[] {
+  return keymap.rows.filter(
+    (row): row is KeyedRow =>
+      row.context === context && row.key !== null && keymap.actionOn(row.key) === row.action,
+  );
+}
+
 /** Puts the keys `[keys]` gives in force, in place of those it gave before. */
 export function remapKeys(remaps: Remaps): void {
   keymap.remap(remaps);
@@ -134,7 +151,10 @@ export function shiftedOnUsKeyboard(key: string): string | undefined {
 
 /** Whether `first`, a press as `keyName` names it, starts the chord of one of `actions`. */
 export function startsChordOf(first: string, actions: Iterable<Action>): boolean {
-  return [...actions].some((action) => keyOf(action)?.startsWith(`${first} `) === true);
+  return [...actions].some((action) => {
+    const key = keyOf(action);
+    return key !== null && isChord(key) && chordFirst(key) === first;
+  });
 }
 
 /** Whether the window's guard owns `name`, a press as `keyName` names it, and stops the browser for it. */

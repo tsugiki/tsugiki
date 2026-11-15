@@ -2,7 +2,15 @@
   import { untrack } from "svelte";
   import { AboutState, openDevtools } from "$lib/state/about.svelte";
   import { HomeState } from "$lib/state/home.svelte";
-  import { type Action, startsChordOf } from "$lib/state/keymap.svelte";
+  import {
+    type Action,
+    chordFirst,
+    isChord,
+    isChordStart,
+    keyTable,
+    type Row,
+    startsChordOf,
+  } from "$lib/state/keymap.svelte";
   import { hud } from "$lib/state/hud.svelte";
   import { RecentCommands } from "$lib/state/recent-commands.svelte";
   import type { ServerName } from "$lib/state/server-words";
@@ -13,7 +21,8 @@
   import AboutLine from "$lib/ui/AboutLine.svelte";
   import AddRepository from "$lib/ui/AddRepository.svelte";
   import { type ChordRun, ChordWait } from "$lib/ui/chord.svelte";
-  import { type Bindings, currentOs, isTextBox, keyGuard, typesInTextBox } from "$lib/ui/keys";
+  import KeyList, { type KeysHere } from "$lib/ui/KeyList.svelte";
+  import { type Bindings, currentOs, isTextBox, keptByTextBox, keyGuard } from "$lib/ui/keys";
   import { mirrorNote } from "$lib/ui/mirror-note";
   import MirrorQuestionDialog from "$lib/ui/MirrorQuestionDialog.svelte";
   import Onboarding from "$lib/ui/Onboarding.svelte";
@@ -57,20 +66,31 @@
   let pickerOpen = $state(false);
   let themePickerOpen = $state(false);
   let settingsOpen = $state(false);
+  /** Which keys the `?` list shows, while it's open. */
+  let keysHere = $state<KeysHere>();
   /** The Repository whose mirror's question the dialog asks, while it's open. */
   let questionFor = $state<string>();
   /** Whether a dialog, the palette or a picker is open. Each closes on Esc, so one on top of another would
    * lose what the user typed below, and none opens over another: a control behind one, which a press or Tab
    * can still reach, does nothing. A command run from the palette runs once it has closed. */
   const dialogOpen = $derived(
-    addOpen || paletteOpen || pickerOpen || themePickerOpen || settingsOpen || questionFor !== undefined,
+    addOpen ||
+      paletteOpen ||
+      pickerOpen ||
+      themePickerOpen ||
+      settingsOpen ||
+      keysHere !== undefined ||
+      questionFor !== undefined,
   );
   const openAdd = () => {
     if (!dialogOpen) addOpen = true;
   };
-  /** Opens the Repository picker, which only a Repository's screen has. */
+  /** Whether a Repository's screen shows. */
+  const onRepository = () => home.current?.screen === "repository";
+  /** Opens the Repository picker, which only a Repository's screen has: its button is the screen's, and its
+   * key's `when` is `onRepository`. */
   const openPicker = () => {
-    if (home.current?.screen === "repository" && !dialogOpen) pickerOpen = true;
+    if (!dialogOpen) pickerOpen = true;
   };
   /** The language server whose row in Settings › Advanced the dialog opens at, if it opened at one. */
   let settingsAt = $state<ServerName>();
@@ -107,23 +127,94 @@
   const keysActive = $derived(!dialogOpen);
   const os = currentOs();
   const chord = new ChordWait(os);
+  /** One of the page's actions: what its key runs, and `when` it can run at all, if not always, which the
+   * keys and the `?` list both ask. A dialog on top stops most of them too, as each says. */
+  interface PageAction {
+    when?: () => boolean;
+    run: (e: KeyboardEvent) => void;
+  }
   /** The actions the page runs, on a key of one press or a chord, as `[keys]` may give either (#549). */
-  const pageBindings: Bindings = {
-    command_palette: () => {
-      if (!dialogOpen) paletteOpen = true;
-    },
-    switch_repository: openPicker,
-    open_settings: openSettings,
-    toggle_hud: () => {
-      hud.toggle();
-    },
-    pick_theme: () => {
-      if (!dialogOpen) openThemePicker();
-    },
-    reload_themes: reloadThemes,
-  };
+  const PAGE_ACTIONS = new Map<Action, PageAction>([
+    [
+      "command_palette",
+      {
+        run: () => {
+          if (!dialogOpen) paletteOpen = true;
+        },
+      },
+    ],
+    ["switch_repository", { when: onRepository, run: openPicker }],
+    ["open_settings", { run: openSettings }],
+    [
+      "toggle_hud",
+      {
+        run: () => {
+          hud.toggle();
+        },
+      },
+    ],
+    [
+      "pick_theme",
+      {
+        run: () => {
+          if (!dialogOpen) openThemePicker();
+        },
+      },
+    ],
+    ["reload_themes", { run: reloadThemes }],
+    // The list shows the keys that work where the press went, so it asks before it takes the focus.
+    [
+      "show_keys",
+      {
+        run: (e) => {
+          if (!dialogOpen) keysHere = keysAt(e.target);
+        },
+      },
+    ],
+  ]);
+  /** Whether `action` can run now, as far as the page says: its `when`, if it is the page's and has one. */
+  const pageCanRun = (action: Action) => PAGE_ACTIONS.get(action)?.when?.() !== false;
+  const pageBindings: Bindings = Object.fromEntries(
+    [...PAGE_ACTIONS].map(([action, { run }]) => [
+      action,
+      (e: KeyboardEvent) => {
+        if (pageCanRun(action)) run(e);
+      },
+    ]),
+  );
   const guard = keyGuard(pageBindings, os);
-  const pageActions = Object.keys(pageBindings) as Action[];
+  const pageActions = [...PAGE_ACTIONS.keys()];
+  /**
+   * Which keys work for a press on `target`, for the `?` list, worked out now, as the press would run them.
+   * The screen says which of its actions would run, and the page which of its own. Off a Repository's screen
+   * only the page's own work, and Open DevTools, which the webview opens itself, in a development build
+   * only. A press reaches its action as `chordStartAt` and the guard let it: a chord only where it starts,
+   * and a key of one press only where no chord's wait takes it and no text box keeps it.
+   */
+  function keysAt(target: EventTarget | null): KeysHere {
+    const onScreen = repositoryHome?.keysHere(target) ?? {
+      views: [],
+      works: (action: Action) => PAGE_ACTIONS.has(action) || action === "open_devtools",
+    };
+    const development = about.about?.build === "development";
+    const reaches = (key: string, action: Action) => {
+      if (!isChord(key)) {
+        return !keptByTextBox(key, target) && (!isChordStart(key) || chordStartAt(key, target) === null);
+      }
+      const run = chordStartAt(chordFirst(key), target);
+      return run === runAll || (run === runPage && PAGE_ACTIONS.has(action));
+    };
+    const works = (row: Row) =>
+      row.key !== null &&
+      reaches(row.key, row.action) &&
+      onScreen.works(row.action) &&
+      pageCanRun(row.action) &&
+      (development || row.action !== "open_devtools");
+    return {
+      views: onScreen.views,
+      actions: new Set(keyTable().flatMap((row) => (works(row) ? [row.action] : []))),
+    };
+  }
   const runPage: ChordRun = (action, e) => {
     pageBindings[action]?.(e);
   };
@@ -133,20 +224,20 @@
     else repositoryHome?.runChord(action, e);
   };
   /**
-   * What a chord that `first` starts on press `e` runs, or null where none starts. No chord starts under a
-   * dialog or the palette, which keep their keys, nor on a press that types in a text box. A chord of the
-   * page's own works on every screen and in a text box, as a key of one press does. The screen's chords
-   * work where the list's keys do, on a Repository's screen outside a text box, and run what the screen runs
-   * on the action's key.
+   * What a chord that `first` starts on a press on `target` runs, or null where none starts. No chord starts
+   * under a dialog or the palette, which keep their keys, nor on a press that types in a text box. A chord
+   * of the page's own works on every screen and in a text box, as a key of one press does. The screen's
+   * chords work where the list's keys do, on a Repository's screen outside a text box, and run what the
+   * screen runs on the action's key.
    */
-  const chordStart = (first: string, e: KeyboardEvent): ChordRun | null => {
-    if (!keysActive || (isTextBox(e.target) && typesInTextBox(first))) return null;
-    if (home.current?.screen === "repository" && !isTextBox(e.target)) return runAll;
+  const chordStartAt = (first: string, target: EventTarget | null): ChordRun | null => {
+    if (!keysActive || keptByTextBox(first, target)) return null;
+    if (onRepository() && !isTextBox(target)) return runAll;
     return startsChordOf(first, pageActions) ? runPage : null;
   };
   /** Reads each key before anything else, so the key that ends a chord's wait goes nowhere else. */
   const readKey = (e: KeyboardEvent) => {
-    if (!chord.read(e, chordStart)) guard(e);
+    if (!chord.read(e, (first) => chordStartAt(first, e.target))) guard(e);
   };
   const endChord = () => {
     chord.end();
@@ -340,6 +431,14 @@
     at={settingsAt}
     onclose={() => {
       settingsOpen = false;
+    }}
+  />
+{/if}
+{#if keysHere !== undefined}
+  <KeyList
+    here={keysHere}
+    onclose={() => {
+      keysHere = undefined;
     }}
   />
 {/if}

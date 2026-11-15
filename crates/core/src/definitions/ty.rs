@@ -4,8 +4,8 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
 
-use serde_json::{Map, Value, json};
-use tsugiki_lsp::Language;
+use serde_json::{Value, json};
+use tsugiki_lsp::{Fallback, Language};
 
 use super::server::{Ready, Setup, Unopened};
 
@@ -14,11 +14,13 @@ mod tests;
 
 /// ty's setup for the checkout at `folder`, which ty reads its settings for.
 pub(super) fn setup(folder: &Path) -> Setup {
+    let (settings, fallback) = settings(folder);
     Setup {
         args: vec![OsString::from("server")],
         env: Vec::new(),
         options: json!({}),
-        settings: settings(folder),
+        settings,
+        fallback,
         language: Language::Python,
         ready: Ready::Initialized,
         unopened: Unopened::FromDisk,
@@ -31,22 +33,24 @@ pub(super) fn setup(folder: &Path) -> Setup {
 /// in `Lib` and the version `Include/patchlevel.h` names, as CPython has no `pyproject.toml` that says so.
 /// Elsewhere none, and ty uses its own defaults and the Repository's files.
 ///
-/// The checkout is ty's Python there too, or ty takes the `python` on PATH, and Go to definition maps a
-/// standard library stub to that Python's source. On Windows ty finds the checkout's stdlib in `Lib`. On
-/// macOS ty looks in `lib/pythonX.Y`, which the checkout lacks.
-fn settings(folder: &Path) -> Value {
+/// ty drops all of its configuration over a version it doesn't know, as ty 0.0.103 does over 3.16, and
+/// shows serde's error for it: "unknown variant `3.16`". The fallback then sends `Lib` alone.
+fn settings(folder: &Path) -> (Value, Option<Fallback>) {
     let Ok(header) = fs::read_to_string(folder.join(super::CPYTHON_MARK)) else {
-        return json!({});
+        return (json!({}), None);
     };
-    // A path that isn't UTF-8 would reach ty changed, naming a folder that isn't there.
-    let python = folder.to_str().map(|python| ("python", json!(python)));
-    let version = python_version(&header).map(|version| ("python-version", json!(version)));
-    let environment: Map<String, Value> = [Some(("root", json!(["Lib"]))), python, version]
-        .into_iter()
-        .flatten()
-        .map(|(key, value)| (key.to_owned(), value))
-        .collect();
-    json!({"ty": {"configuration": {"environment": environment}}})
+    let configured =
+        |environment: Value| json!({"ty": {"configuration": {"environment": environment}}});
+    let lib = configured(json!({"root": ["Lib"]}));
+    let Some(version) = python_version(&header) else {
+        return (lib, None);
+    };
+    let fallback = Fallback {
+        refusal: format!("unknown variant `{version}`"),
+        settings: lib,
+    };
+    let settings = configured(json!({"root": ["Lib"], "python-version": version}));
+    (settings, Some(fallback))
 }
 
 /// The `3.15` in a `patchlevel.h` that defines `PY_MAJOR_VERSION` 3 and `PY_MINOR_VERSION` 15.

@@ -47,13 +47,17 @@ class Shop:
 ";
 
 /// A PR in a Repository with CPython's layout: it changes `Tools/shop.py`, adds `Lib/added.py` and deletes
-/// `Lib/gone.py`. A lookup in `Lib` needs ty's `environment.root`, so on macOS, where ty finds no stdlib in
-/// the checkout it gets as its Python, these tests show that ty keeps the rest of its settings.
+/// `Lib/gone.py`.
 fn cpython(name: &str) -> Fixture {
+    cpython_at(name, PATCHLEVEL)
+}
+
+/// [`cpython`], whose `Include/patchlevel.h` is `patchlevel`.
+fn cpython_at(name: &str, patchlevel: &str) -> Fixture {
     Fixture::new(
         name,
         &[
-            ("Include/patchlevel.h", PATCHLEVEL),
+            ("Include/patchlevel.h", patchlevel),
             ("Lib/spam.py", "def eggs(count):\n    return count\n"),
             ("Lib/gone.py", "def bye():\n    pass\n"),
             (SHOP, SHOP_AT_BASE),
@@ -110,16 +114,10 @@ fn owner_of(sources: Sources) -> Owner {
 
 /// The servers' thread, run here, with the fixture's PR opened.
 fn opened(fixture: &Fixture) -> Owner {
-    opened_with(fixture, changed())
-}
-
-/// The servers' thread, run here, with the fixture's PR opened as one that changes the Python files at
-/// `changed`.
-fn opened_with(fixture: &Fixture, changed: Vec<String>) -> Owner {
     let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty())));
     let pr = Pr {
         at: fixture.checkout.at.clone(),
-        changed,
+        changed: changed(),
     };
     owner.opened(&repository(), pr);
     owner
@@ -267,6 +265,31 @@ fn a_name_at_the_head_is_found_where_the_head_defines_it() {
 }
 
 #[test]
+fn a_python_version_ty_doesn_t_know_is_sent_again_without_it_and_lib_holds() {
+    // A CPython newer than the ty in use: ty 0.0.103 knows up to 3.15, and drops all of its settings over
+    // a version past them, `Lib` with the rest.
+    let patchlevel = "#define PY_MAJOR_VERSION 3\n#define PY_MINOR_VERSION 99\n";
+    let fixture = cpython_at("definitions-unknown-version", patchlevel);
+    let mut owner = opened(&fixture);
+    let eggs = lookup(&fixture, DiffEnd::Head, 12, "eggs");
+    let spam = [hit(
+        &fixture,
+        DiffEnd::Base,
+        ("Lib/spam.py", 1, 4),
+        "def eggs(count):",
+    )];
+
+    // ty asks for its settings again once it has refused them, which a lookup at once can beat.
+    let until = Instant::now() + Duration::from_secs(5);
+    let found = (0..)
+        .map(|_| hits(look(&mut owner, &eggs)))
+        .find(|found| *found == spam || Instant::now() > until)
+        .unwrap();
+
+    assert_eq!(found, spam);
+}
+
+#[test]
 fn a_name_on_a_removed_line_is_found_at_the_base_and_the_next_lookup_is_at_the_head_again() {
     let fixture = cpython("definitions-base");
     let mut owner = opened(&fixture);
@@ -311,63 +334,6 @@ fn a_builtin_is_found_outside_the_repository() {
             .unwrap();
         assert_eq!(code.lines, ["def print("]);
     }
-}
-
-// ty maps a stub to its source in the real stdlib of the checkout, its Python. It looks for that stdlib in
-// `Lib` on Windows, and in `lib/pythonX.Y` on macOS, which the checkout lacks.
-#[cfg(windows)]
-#[test]
-fn a_standard_library_name_lands_in_the_checkout_and_not_in_another_python() {
-    let test_spam = "Lib/test/test_spam.py";
-    let line = "        self.assertFalse(0)";
-    let at_head = format!(
-        "import unittest\n\n\nclass SpamTest(unittest.TestCase):\n    def test_spam(self):\n{line}\n"
-    );
-    let case = "class TestCase:\n    def assertFalse(self, expr, msg=None):\n        pass\n";
-    let fixture = Fixture::new(
-        "definitions-stdlib",
-        &[
-            ("Include/patchlevel.h", PATCHLEVEL),
-            ("Lib/unittest/__init__.py", "from .case import TestCase\n"),
-            ("Lib/unittest/case.py", case),
-            (test_spam, "import unittest\n"),
-        ],
-        &[(test_spam, Some(&at_head))],
-    );
-    // Another Python, which a `.venv` in the checkout names. Left to itself ty takes it before the one on
-    // PATH, so the test fails without the checkout as ty's Python on any machine.
-    let other = fixture.checkout.folder.parent().unwrap().join("python");
-    let venv = fixture.checkout.folder.join(".venv");
-    let home = format!("home = {}\n", other.display());
-    for (path, text) in [
-        (other.join("python.exe"), ""),
-        (other.join("Lib/site-packages/README.txt"), ""),
-        (
-            other.join("Lib/unittest/__init__.py"),
-            "from .case import TestCase\n",
-        ),
-        (other.join("Lib/unittest/case.py"), case),
-        (venv.join("Lib/site-packages/README.txt"), ""),
-        (venv.join("pyvenv.cfg"), &home),
-    ] {
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(path, text).unwrap();
-    }
-    let mut owner = opened_with(&fixture, vec![test_spam.to_owned()]);
-    let lookup = Lookup {
-        repository: repository(),
-        at: fixture.checkout.at.clone(),
-        path: test_spam.to_owned(),
-        side: DiffEnd::Head,
-        line: 6,
-        column: tsugiki_lsp::utf16::column_of(line, line.find("assertFalse").unwrap()),
-    };
-
-    let found = hits(look(&mut owner, &lookup));
-
-    let assert_false = "    def assertFalse(self, expr, msg=None):";
-    let case = ("Lib/unittest/case.py", 2, 8);
-    assert_eq!(found, [hit(&fixture, DiffEnd::Base, case, assert_false)]);
 }
 
 #[test]

@@ -35,6 +35,7 @@ pub(super) fn setup(program: &Path) -> Result<Setup, Error> {
         env: env(&sysroot),
         options: config.clone(),
         settings: json!({"rust-analyzer": config}),
+        fallback: None,
         language: Language::Rust,
         ready: Ready::Quiescent,
         unopened: Unopened::FromDisk,

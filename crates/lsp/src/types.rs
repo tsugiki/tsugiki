@@ -230,6 +230,39 @@ impl TryFrom<u8> for Severity {
     }
 }
 
+/// A message the server asks the client to show the user, with `window/showMessage`.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub(crate) struct ShowMessage {
+    #[serde(rename = "type")]
+    pub(crate) kind: MessageKind,
+    pub(crate) message: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "u8")]
+pub(crate) enum MessageKind {
+    Error,
+    Warning,
+    Info,
+    Log,
+    Debug,
+}
+
+impl TryFrom<u8> for MessageKind {
+    type Error = String;
+
+    fn try_from(number: u8) -> Result<Self, String> {
+        match number {
+            1 => Ok(Self::Error),
+            2 => Ok(Self::Warning),
+            3 => Ok(Self::Info),
+            4 => Ok(Self::Log),
+            5 => Ok(Self::Debug),
+            other => Err(format!("{other} isn't a message's type")),
+        }
+    }
+}
+
 /// How rust-analyzer stands, from its `experimental/serverStatus`.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct Status {

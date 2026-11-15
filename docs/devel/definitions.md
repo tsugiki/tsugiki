@@ -45,12 +45,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - In a Repository with CPython's layout, recognised by `Include/patchlevel.h`, ty gets `environment.root =
   ["Lib"]` and the Python version that file defines, through `workspace/configuration`. Elsewhere ty gets
   no settings, and reads the Repository's own.
-- There ty also gets the checkout's folder as `environment.python`. ty maps a standard library stub to its
-  source in that Python's real stdlib, and without it ty takes the `python` on PATH, so the peek would land
-  in the installed Python's `Lib`. We know this fixes Windows, where ty finds an installation's stdlib in
-  `Lib`. On macOS ty looks in `lib/pythonX.Y`, which the checkout lacks. The tests that need
-  `environment.root` pass there, so ty keeps the other settings, but where a standard library name lands on
-  macOS is unchecked.
+- ty drops its whole configuration over a version it doesn't know: ty 0.0.103 knows up to 3.15, and
+  CPython's main branch says 3.16. Without `Lib`, a standard library name lands on typeshed's stub, and
+  from there in the Python on PATH. ty says so with an error in `window/showMessage`, and its text holds
+  serde's "unknown variant `3.16`". Tsugiki then answers `workspace/configuration` with `Lib` alone, and
+  has ty ask again by taking its workspace folder away and giving it back, as ty 0.0.103 ignores
+  `workspace/didChangeConfiguration`. It does this once for each ty it starts. A lookup in the moment
+  between the refusal and ty's second ask still gets the answer without `Lib`.
 - The PR's changed Python files open on ty with their text at the head, read from the **Mirror**, and stay
   open while ty runs. A lookup from a removed line first gives them their text at the base through
   `didChange`, and the next lookup from another line puts the head's back. A file the PR adds keeps its

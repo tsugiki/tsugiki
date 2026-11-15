@@ -1,14 +1,5 @@
-import { actionOn } from "$lib/state/keymap";
-import {
-  type Bindings,
-  type ChordStart,
-  chordName,
-  isChordStart,
-  isModifier,
-  isTextBox,
-  keyName,
-  type Os,
-} from "./keys";
+import { actionOn } from "$lib/state/keymap.svelte";
+import { type Bindings, chordName, isChordStart, isModifier, isTextBox, keyName, type Os } from "./keys";
 
 /**
  * The wait for a chord's second key. `Ctrl+K` starts it, and the next key ends it: a bound one runs its
@@ -18,14 +9,14 @@ import {
  */
 export class ChordWait {
   readonly #os: Os;
-  #first = $state<ChordStart | null>(null);
+  #first = $state<string | null>(null);
 
   constructor(os: Os) {
     this.#os = os;
   }
 
   /** The first key of the chord whose second key Tsugiki waits for, or null while it waits for none. */
-  get first(): ChordStart | null {
+  get first(): string | null {
     return this.#first;
   }
 
@@ -43,7 +34,7 @@ export class ChordWait {
     } else if (!e.repeat && !(name === null && isModifier(e))) {
       const action = actionOn(name === null ? null : chordName(this.#first, name));
       this.#first = null;
-      if (action !== undefined) bindings[action]?.();
+      if (action !== undefined) bindings[action]?.(e);
     }
     e.preventDefault();
     e.stopPropagation();

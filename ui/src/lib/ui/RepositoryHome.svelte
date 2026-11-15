@@ -30,7 +30,7 @@
   } from "$lib/state/workbench.svelte";
   import HistoryBar from "./HistoryBar.svelte";
   import IssueDetail from "./IssueDetail.svelte";
-  import { actionOn } from "$lib/state/keymap";
+  import { type Action, actionOn, keyTable } from "$lib/state/keymap.svelte";
   import { actionLabel, type Bindings, currentOs, isTextBox, keyName } from "./keys";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
   import type { PaletteAction } from "./Palette.svelte";
@@ -384,17 +384,17 @@
     if (!panes.hidden("list") || detailPane()?.contains(document.activeElement) !== true) focusCursor();
   }
 
-  /** The chords this screen binds, each with the action the page runs once the chord's wait ends. */
+  /** The screen's bindings for a chord's wait: for each action, what the action's key runs here, as
+   * `[keys]` can give any action a chord or a key of one press (#549). */
   export function chordBindings(): Bindings {
-    return {
-      unfold_unchanged: () => {
-        shownFiles()?.unfoldUnchanged();
-      },
-      toggle_files_mode: () => {
-        shownFiles()?.toggleMode();
-      },
-      toggle_detail_only: () => void toggleDetailOnly(),
-    };
+    return Object.fromEntries(
+      keyTable().map((row) => [
+        row.action,
+        (e: KeyboardEvent) => {
+          runKey(null, row.action, e);
+        },
+      ]),
+    );
   }
 
   /** The Files tab of the PR on show, while it shows its diff. The file view covers the diff, so the diff's
@@ -584,7 +584,11 @@
   function onkeydown(e: KeyboardEvent) {
     if (!keysActive) return;
     const key = keyName(e, currentOs());
-    const action = actionOn(key);
+    runKey(key, actionOn(key), e);
+  }
+
+  /** Runs what press `e` asks: the press `key`, null for a chord's, and its `action`. */
+  function runKey(key: string | null, action: Action | undefined, e: KeyboardEvent) {
     const files = shownFiles();
     const tab = filesTab();
     if (action === "toggle_sidebar") {
@@ -600,6 +604,12 @@
       files.openSearch();
     } else if (isTextBox(e.target)) {
       return;
+    } else if (action === "toggle_detail_only") {
+      void toggleDetailOnly();
+    } else if (action === "toggle_files_mode") {
+      files?.toggleMode();
+    } else if (action === "unfold_unchanged") {
+      files?.unfoldUnchanged();
     } else if (action === "mark_seen" || action === "mark_unseen") {
       // A held key would ask the core again and again.
       if (e.repeat) return;
@@ -953,11 +963,12 @@
       </PrDetail>
     {/key}
   {:else if panes.hidden("list")}
+    {@const key = actionLabel("toggle_issue_list", currentOs())}
     <section class="empty" aria-label="Detail pane" tabindex="-1" data-pane="detail">
       <p>
         Nothing open. <button class="link" onclick={() => void toggleListByKey()}
-          ><kbd>{actionLabel("toggle_issue_list", currentOs())}</kbd></button
-        > shows the Issue list.
+          >{#if key === null}Show the Issue list{:else}<kbd>{key}</kbd>{/if}</button
+        >{key === null ? "" : " shows the Issue list."}
       </p>
     </section>
   {/if}

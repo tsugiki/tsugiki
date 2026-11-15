@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
-import { actionLabel, chordName, currentOs, keyGuard, keyLabel, keyName } from "./keys";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { remapKeys } from "$lib/state/keymap.svelte";
+import { actionLabel, chordName, currentOs, keyGuard, keyLabel, keyName, withKey } from "./keys";
 
 function press(init: KeyboardEventInit): KeyboardEvent {
   return new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
@@ -138,6 +139,24 @@ describe("keyLabel", () => {
       "Cmd+PageUp",
     ]);
   });
+
+  it("names a remapped key, and no key for an action left with none", () => {
+    remapKeys({ toggle_files_mode: "ctrl+j shift+o", open_settings: "" });
+    expect([actionLabel("toggle_files_mode", "other"), actionLabel("open_settings", "other")]).toEqual([
+      "Ctrl+J Shift+O",
+      null,
+    ]);
+    remapKeys({});
+  });
+});
+
+describe("withKey", () => {
+  it("puts the action's key after the text, or nothing while it has none", () => {
+    expect(withKey("Settings", "open_settings", "other")).toBe("Settings (Ctrl+,)");
+    remapKeys({ open_settings: "" });
+    expect(withKey("Settings", "open_settings", "other")).toBe("Settings");
+    remapKeys({});
+  });
 });
 
 describe("currentOs", () => {
@@ -265,6 +284,59 @@ describe("keyGuard", () => {
 
     expect(f12.defaultPrevented).toBe(true);
     expect(devtools.defaultPrevented).toBe(false);
+  });
+
+  describe("with keys remapped", () => {
+    afterEach(() => {
+      remapKeys({});
+    });
+
+    it("runs a remapped action on its new key, and nothing on its old one", () => {
+      remapKeys({ archive: "a" });
+      const archive = vi.fn();
+      const a = press({ key: "a", code: "KeyA" });
+      const e = press({ key: "e", code: "KeyE" });
+
+      keyGuard({ archive }, "other")(a);
+      keyGuard({ archive }, "other")(e);
+
+      expect(archive).toHaveBeenCalledOnce();
+      expect([a.defaultPrevented, e.defaultPrevented]).toEqual([true, false]);
+    });
+
+    it("leaves the key of an action remapped to nothing to the browser", () => {
+      remapKeys({ toggle_sidebar: "" });
+      const ctrlB = press({ key: "b", code: "KeyB", ctrlKey: true });
+      keyGuard({}, "other")(ctrlB);
+      expect(ctrlB.defaultPrevented).toBe(false);
+    });
+
+    it("lets a plain key, Backspace and Delete type in a text box", () => {
+      remapKeys({ archive: "a", mark_seen: "backspace", mark_unseen: "shift+delete" });
+      const guard = keyGuard({}, "other");
+      const box = document.createElement("input");
+      document.body.append(box);
+      const typed = [
+        { key: "a", code: "KeyA" },
+        { key: "Backspace", code: "Backspace" },
+        { key: "Delete", code: "Delete", shiftKey: true },
+      ].map((init) => {
+        const event = press(init);
+        box.addEventListener("keydown", guard, { once: true });
+        box.dispatchEvent(event);
+        return event.defaultPrevented;
+      });
+      box.remove();
+      expect(typed).toEqual([false, false, false]);
+    });
+
+    it("hands the bound action the press that ran it", () => {
+      remapKeys({ archive: "a" });
+      const archive = vi.fn();
+      const a = press({ key: "a", code: "KeyA" });
+      keyGuard({ archive }, "other")(a);
+      expect(archive).toHaveBeenCalledWith(a);
+    });
   });
 
   it("doesn't run an action for a key it can't name", () => {

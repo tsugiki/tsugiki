@@ -1,67 +1,29 @@
 // Tsugiki's keys (ADR 0013). The window's guard runs before anything else sees a key, and stops the browser
 // for every key Tsugiki owns, so a key with no action yet can't print or reload instead. Only the wait for a
 // chord's second key comes first: the key that ends it goes to neither. The keys come from the core's key
-// table, and screens bind actions, not keys (#548).
-import { type Action, actionOn, KEY_TABLE, type Key, type KeyedAction, keyOf } from "$lib/state/keymap";
+// table, with the user's remaps (#549), and screens bind actions, not keys (#548).
+import { type Action, actionOn, isChord, keyOf, ownsKey } from "$lib/state/keymap.svelte";
+
+export { isChordStart } from "$lib/state/keymap.svelte";
 
 export type Os = "mac" | "other";
 
-/** A chord of the key table, named as `chordName` names it: "ctrl+k z". */
-type OwnedChord = Extract<Key, `${string} ${string}`>;
-
-/** The first key of each chord. */
-export type ChordStart = OwnedChord extends `${infer First} ${string}` ? First : never;
-
-/** A key of one press, as the table and the chords' first keys have them. */
-type OwnedKey = Exclude<Key, OwnedChord> | ChordStart;
-
-/** What each bound action does. The guard runs the action of a key, and the wait for a chord's second key
- * the action of a chord. */
-export type Bindings = Readonly<Partial<Record<Action, () => void>>>;
-
-function isChord(key: Key): key is OwnedChord {
-  return key.includes(" ");
-}
-
-/**
- * The actions whose keys the guard leaves alone. The bare ← and → that fold the Issue list: the guard would
- * take them from every text box, diff and pane edge, and the list acts on them only while it has the focus.
- * And Ctrl+Shift+I, on which WebView2 opens DevTools in a development build (ADR 0013).
- */
-const LEFT_ALONE: ReadonlySet<Action> = new Set(["unfold", "fold", "open_devtools"]);
-
-const CHORDS: readonly OwnedChord[] = KEY_TABLE.flatMap((row) =>
-  row.key !== null && isChord(row.key) ? [row.key] : [],
-);
-
-const STARTS: ReadonlySet<string> = new Set(CHORDS.map((chord) => chord.slice(0, chord.indexOf(" "))));
-
-export function isChordStart(name: string): name is ChordStart {
-  return STARTS.has(name);
-}
-
-/** The keys of one press that the guard owns, named as `keyName` names them, and the chords' first keys.
- * Most have no action until their stage arrives. */
-const OWNED: ReadonlySet<string> = new Set([
-  ...KEY_TABLE.flatMap((row) =>
-    row.key === null || isChord(row.key) || LEFT_ALONE.has(row.action) ? [] : [row.key],
-  ),
-  ...STARTS,
-]);
+/** What each bound action does, handed the key press that ran it. The guard runs the action of a key, and
+ * the wait for a chord's second key the action of a chord. */
+export type Bindings = Readonly<Partial<Record<Action, (e: KeyboardEvent) => void>>>;
 
 /**
  * A chord as a binding: its two presses, each named by `keyName`, joined by a space, such as "ctrl+k z". The
  * Settings Keyboard page shows and remaps a chord by this name.
  */
-export function chordName(first: ChordStart, second: string): string {
+export function chordName(first: string, second: string): string {
   return `${first} ${second}`;
 }
 
-/** Whether `name` types in a text box: a plain key, a capital letter such as Shift+Q, or the key of Hide or
- * Show the Issue List, which doesn't work in one, as its default Ctrl+Alt+B is a key AltGr sends to type on
- * Windows. */
+/** Whether `name` types in a text box: a plain key, Backspace and Delete, a capital letter such as Shift+Q,
+ * or Ctrl+Alt+B, a key AltGr sends to type on Windows, which Hide or Show the Issue List has by default. */
 function typesInTextBox(name: string): boolean {
-  return /^(?:shift\+)?.$/.test(name) || actionOn(name) === "toggle_issue_list";
+  return /^(?:shift\+)?(?:.|backspace|delete)$/.test(name) || name === "ctrl+alt+b";
 }
 
 const MODIFIERS = new Set(["control", "shift", "alt", "meta", "altgraph", "capslock", "numlock", "fn"]);
@@ -136,7 +98,7 @@ const KEY_NAMES: Readonly<Record<string, string>> = {
 
 /** A binding as the user reads it: "ctrl+alt+b" is "Ctrl+Alt+B", or "Cmd+Option+B" on macOS,
  * "alt+arrowleft" is "Alt+←", and "alt+pagedown" is "Alt+PageDown". */
-export function keyLabel(name: OwnedKey, os: Os): string {
+export function keyLabel(name: string, os: Os): string {
   return name
     .split("+")
     .map(
@@ -149,15 +111,23 @@ export function keyLabel(name: OwnedKey, os: Os): string {
 }
 
 /** A chord as the user reads it: "ctrl+k o" is "Ctrl+K O", or "Cmd+K O" on macOS. */
-function chordLabel(chord: OwnedChord, os: Os): string {
-  const [first, second] = chord.split(" ") as [ChordStart, string];
-  return `${keyLabel(first, os)} ${second.toUpperCase()}`;
+function chordLabel(chord: string, os: Os): string {
+  const [first, second] = chord.split(" ") as [string, string];
+  return `${keyLabel(first, os)} ${keyLabel(second, os)}`;
 }
 
-/** The key of `action` as the user reads it, such as "Ctrl+K O" for All Files or One File at a Time. */
-export function actionLabel(action: KeyedAction, os: Os): string {
+/** The key of `action` as the user reads it, such as "Ctrl+K O" for All Files or One File at a Time, or null
+ * while the user has left it with no key. */
+export function actionLabel(action: Action, os: Os): string | null {
   const key = keyOf(action);
+  if (key === null) return null;
   return isChord(key) ? chordLabel(key, os) : keyLabel(key, os);
+}
+
+/** `text` with the key of `action` after it, "Settings (Ctrl+,)", or alone while the action has no key. */
+export function withKey(text: string, action: Action, os: Os): string {
+  const label = actionLabel(action, os);
+  return label === null ? text : `${text} (${label})`;
 }
 
 /** Which OS this is, for `keyName`. */
@@ -187,9 +157,9 @@ export function isTextBox(target: EventTarget | null): boolean {
 export function keyGuard(bindings: Bindings, os: Os): (e: KeyboardEvent) => void {
   return (e) => {
     const name = keyName(e, os);
-    if (name === null || !OWNED.has(name) || (typesInTextBox(name) && isTextBox(e.target))) return;
+    if (name === null || !ownsKey(name) || (typesInTextBox(name) && isTextBox(e.target))) return;
     e.preventDefault();
     const action = actionOn(name);
-    if (action !== undefined) bindings[action]?.();
+    if (action !== undefined) bindings[action]?.(e);
   };
 }

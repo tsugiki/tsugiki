@@ -13,7 +13,7 @@
 </script>
 
 <script lang="ts">
-  import { actionOn } from "$lib/state/keymap";
+  import { actionOn } from "$lib/state/keymap.svelte";
   import { PEEK_LEAST, PEEK_MOST } from "$lib/state/panes.svelte";
   import { peekSized, ROW, type Peek } from "$lib/state/peek";
   import type { PrFilesState } from "$lib/state/pr-files.svelte";

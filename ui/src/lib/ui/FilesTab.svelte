@@ -15,7 +15,7 @@
   import DiffRows from "./DiffRows.svelte";
   import FileView from "./FileView.svelte";
   import FindBar from "./FindBar.svelte";
-  import { actionLabel, currentOs } from "./keys";
+  import { currentOs, withKey } from "./keys";
   import MirrorQuestion from "./MirrorQuestion.svelte";
   import SplitPeek from "./SplitPeek.svelte";
   import { cloningWords } from "./synced";
@@ -61,7 +61,7 @@
   <button
     type="button"
     aria-label={name}
-    title={`${name} (${actionLabel(action, os)})`}
+    title={withKey(name, action, os)}
     disabled={files.pages.step(page, by) === undefined}
     onclick={() => {
       files.nextFile(by);
@@ -133,7 +133,7 @@
         type="button"
         class="mode"
         aria-pressed={files.mode === "one"}
-        title={`One file at a time (${actionLabel("toggle_files_mode", os)})`}
+        title={withKey("One file at a time", "toggle_files_mode", os)}
         onclick={() => {
           files.toggleMode();
         }}>One file at a time</button

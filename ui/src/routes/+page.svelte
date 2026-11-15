@@ -11,7 +11,7 @@
   import AboutLine from "$lib/ui/AboutLine.svelte";
   import AddRepository from "$lib/ui/AddRepository.svelte";
   import { ChordWait } from "$lib/ui/chord.svelte";
-  import { currentOs, keyGuard } from "$lib/ui/keys";
+  import { type Bindings, currentOs, keyGuard } from "$lib/ui/keys";
   import { mirrorNote } from "$lib/ui/mirror-note";
   import MirrorQuestionDialog from "$lib/ui/MirrorQuestionDialog.svelte";
   import Onboarding from "$lib/ui/Onboarding.svelte";
@@ -103,31 +103,28 @@
   const keysActive = $derived(!dialogOpen);
   const os = currentOs();
   const chord = new ChordWait(os);
-  const guard = keyGuard(
-    {
-      command_palette: () => {
-        if (!dialogOpen) paletteOpen = true;
-      },
-      switch_repository: openPicker,
-      open_settings: openSettings,
-      toggle_hud: () => {
-        hud.toggle();
-      },
+  /** The actions the page runs, on a key of one press or a chord, as `[keys]` may give either (#549). */
+  const pageBindings: Bindings = {
+    command_palette: () => {
+      if (!dialogOpen) paletteOpen = true;
     },
-    os,
-  );
+    switch_repository: openPicker,
+    open_settings: openSettings,
+    toggle_hud: () => {
+      hud.toggle();
+    },
+    pick_theme: () => {
+      if (!dialogOpen) openThemePicker();
+    },
+    reload_themes: reloadThemes,
+  };
+  const guard = keyGuard(pageBindings, os);
   /** Reads each key before anything else, so the key that ends a chord's wait goes nowhere else. Chords
-   * start where the list's keys work: on a Repository's screen, with no dialog or palette on top. The
-   * screen says what most do, Pick a Theme opens the theme picker and Reload Themes reads the themes
-   * again. */
+   * start where the list's keys work: on a Repository's screen, with no dialog or palette on top. A chord
+   * runs the page's action, or what the screen runs on the action's key. */
   const readKey = (e: KeyboardEvent) => {
     const canStart = home.current?.screen === "repository" && keysActive;
-    const bindings = {
-      ...repositoryHome?.chordBindings(),
-      pick_theme: openThemePicker,
-      reload_themes: reloadThemes,
-    };
-    if (!chord.read(e, canStart, bindings)) guard(e);
+    if (!chord.read(e, canStart, { ...repositoryHome?.chordBindings(), ...pageBindings })) guard(e);
   };
   const endChord = () => {
     chord.end();

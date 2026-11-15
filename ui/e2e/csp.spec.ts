@@ -9,6 +9,7 @@ const settings = {
     releases: { check: true },
     appearance,
     diff: { files: "all" as const, peek: "inline" as const },
+    keys: {},
     repositories: [],
   },
   language_servers: noServers,

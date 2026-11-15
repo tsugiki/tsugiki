@@ -107,10 +107,12 @@ A diff takes a third path, because it is too big to send whole
 and keeps the rows. The Files tab asks for the rows near what it shows, and for their highlighting from the
 Highlighter.
 
-Keys take a fourth path, fixed when the app is built. `core/src/keys.rs` lists each action the user can
-bind, with its default key and where it works, and `npm run bindings` writes that table to
-`ui/src/lib/data/keymap.ts`, a file apart from `bindings.ts`, which the UI's tests mock whole. Screens bind
-actions, and `ui/src/lib/state/keymap.ts` finds the action on a key.
+Keys take a fourth path, its defaults fixed when the app is built. `core/src/keys.rs` lists each action the
+user can bind, with its default key and where it works, and `npm run bindings` writes that table to
+`ui/src/lib/data/keymap.ts`, a file apart from `bindings.ts`, which the UI's tests mock whole. The user's
+remaps come with the settings: `core/src/keys.rs` reads each line of `[keys]` into a typed key, and the
+window's settings hand them to `ui/src/lib/state/keymap.svelte.ts`, which lays them over the defaults.
+Screens bind actions, and that module finds the action on a key.
 
 ## Where the data lives
 

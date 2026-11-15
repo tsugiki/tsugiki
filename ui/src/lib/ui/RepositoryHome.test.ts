@@ -3,6 +3,7 @@ import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FileView } from "$lib/state/file-view.svelte";
 import type { HitCode } from "$lib/state/hit-code.svelte";
+import { remapKeys } from "$lib/state/keymap.svelte";
 import type { Peek, PeekLayout } from "$lib/state/peek";
 import { PrFilesState, type FilesMode } from "$lib/state/pr-files.svelte";
 import type { Bindings } from "./keys";
@@ -1169,7 +1170,7 @@ it("opens a PR's Files tab one file at a time as the settings say, and switches 
   const pressed = () =>
     screen.getByRole("button", { name: "One file at a time" }).getAttribute("aria-pressed");
   // The Conversation tab shows no files to switch.
-  component.chordBindings().toggle_files_mode?.();
+  component.chordBindings().toggle_files_mode?.(chordEnd());
   expect([command("View: All Files"), command("View: One File at a Time")]).toEqual([undefined, undefined]);
   await fireEvent.click(tab);
   // The tab reads the diff the first time it shows.
@@ -1183,7 +1184,7 @@ it("opens a PR's Files tab one file at a time as the settings say, and switches 
     "false",
     "View: One File at a Time",
   ]);
-  component.chordBindings().toggle_files_mode?.();
+  component.chordBindings().toggle_files_mode?.(chordEnd());
   await tick();
   expect(pressed()).toBe("true");
 });
@@ -1210,14 +1211,14 @@ it("unfolds the files unchanged since a Stale review with Ctrl+K J and the palet
   const command = () =>
     component.paletteCommands().find((found) => found.title === "View: Unfold Unchanged Files");
   // The Conversation tab shows no files to unfold.
-  component.chordBindings().unfold_unchanged?.();
+  component.chordBindings().unfold_unchanged?.(chordEnd());
   expect(command()).toBeUndefined();
   await fireEvent.click(tab);
   await screen.findByRole("region", { name: "Diff" });
 
   expect(command()?.note).toBe("Ctrl+K J");
   command()?.run();
-  component.chordBindings().unfold_unchanged?.();
+  component.chordBindings().unfold_unchanged?.(chordEnd());
   expect(unfold).toHaveBeenCalledTimes(2);
   // Once no unchanged file is folded, the palette has nothing to offer.
   folded.mockReturnValue(0);
@@ -2659,6 +2660,9 @@ it("moves the focus to the cursor's row when Ctrl+B hides the Sidebar it was in"
 });
 
 /** Presses Ctrl+Alt+B, which hides the Issue list or brings it back. */
+/** The press that ends a chord's wait, which the page hands the chord's action. */
+const chordEnd = () => new KeyboardEvent("keydown", { key: "z", code: "KeyZ" });
+
 const toggleList = (target: Element = document.body, init: KeyboardEventInit = {}) =>
   fireEvent.keyDown(target, { key: "b", code: "KeyB", ctrlKey: true, altKey: true, ...init });
 
@@ -2827,7 +2831,7 @@ it("names the view over the list, and switches its order, which the list asks fo
 
 /** Presses Ctrl+K Z, which the page hands the screen once the chord ends. */
 const detailOnly = async (component: { chordBindings: () => Bindings }) => {
-  component.chordBindings().toggle_detail_only?.();
+  component.chordBindings().toggle_detail_only?.(chordEnd());
   await tick();
 };
 
@@ -2858,6 +2862,23 @@ it("shows only the Detail pane on Ctrl+K Z, with the focus in it, and brings bac
     [{ ...DEFAULT_LAYOUT, sidebar_hidden: true, list_hidden: true, detail_only_hid: "both" }],
     [DEFAULT_LAYOUT],
   ]);
+});
+
+it("runs a chord's action on a key of one press, and a key's action on a chord, as [keys] gives them", async () => {
+  remapKeys({ toggle_detail_only: "ctrl+d", toggle_issue_list: "ctrl+k l" });
+  const { component } = await listing();
+
+  await press("d", { code: "KeyD", ctrlKey: true });
+  await tick();
+  expect([sidebar(), repositoryName()]).toEqual([null, null]);
+  await press("d", { code: "KeyD", ctrlKey: true });
+  await tick();
+  component.chordBindings().toggle_issue_list?.(chordEnd());
+  await tick();
+
+  expect(sidebar()).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Detail pane" })).toBeTruthy();
+  remapKeys({});
 });
 
 it("brings back only the Sidebar on Ctrl+K Z when the list was hidden, with the focus left in the Detail pane", async () => {
@@ -3191,6 +3212,21 @@ it("says how to bring the list back when nothing is open, and does so on a click
   await vi.waitFor(() => {
     expect(document.activeElement).toBe(rowNamed("#112564 GIL drop during collection"));
   });
+});
+
+it("offers a button to bring the list back once [keys] leaves its key with none", async () => {
+  await listing();
+  await press("ArrowDown");
+  await toggleList();
+  remapKeys({ toggle_issue_list: "" });
+  await tick();
+  const empty = screen.getByRole("region", { name: "Detail pane" });
+
+  expect(empty.textContent).toBe("Nothing open. Show the Issue list");
+  await fireEvent.click(within(empty).getByRole("button", { name: "Show the Issue list" }));
+
+  expect(screen.queryByRole("region", { name: "Detail pane" })).toBeNull();
+  remapKeys({});
 });
 
 it("marks each Issue and PR in the list with the icon of its state", async () => {

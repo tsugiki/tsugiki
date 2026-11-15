@@ -3,7 +3,7 @@
      that way, the nearest first. -->
 <script lang="ts">
   import { tick } from "svelte";
-  import { actionLabel, currentOs } from "./keys";
+  import { currentOs, withKey } from "./keys";
 
   let {
     back,
@@ -31,8 +31,10 @@
   const tooltip = (way: -1 | 1) => {
     const target = titles(way)[0];
     const word = way < 0 ? "Back" : "Forward";
-    const key = actionLabel(way < 0 ? "go_back" : "go_forward", os);
-    return target === undefined ? `${word} (${key}): nothing there` : `${word} to ${target} (${key})`;
+    const action = way < 0 ? "go_back" : "go_forward";
+    return target === undefined
+      ? `${withKey(word, action, os)}: nothing there`
+      : withKey(`${word} to ${target}`, action, os);
   };
   const go = (steps: number) => {
     menu = undefined;

@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HitCode } from "$lib/state/hit-code.svelte";
+import { remapKeys } from "$lib/state/keymap.svelte";
 import type { Crumb, Peek } from "$lib/state/peek";
 import { settingsAsk } from "$lib/state/settings-ask.svelte";
 import DefinitionPeek from "./DefinitionPeek.svelte";
@@ -285,6 +286,28 @@ it("offers Open as the tab says, and waits while the tab finds the hit's row", a
   expect(ready).toBe(false);
   expect(open.disabled).toBe(true);
   expect(open.title).toBe("Go to this definition (Enter, F12)");
+});
+
+it("names Go to Definition's key on Open as [keys] gives it, or only Enter while it has none", async () => {
+  const props = {
+    onclose: () => {},
+    onhit: () => {},
+    onopen: () => {},
+    open: "ready" as const,
+    ...following,
+  };
+  remapKeys({ go_to_definition: "ctrl+f12" });
+  render(DefinitionPeek, { peek: showing(hits, 0), ...props });
+  const open = screen.getByRole<HTMLButtonElement>("button", { name: "Open" });
+  const remapped = open.title;
+  remapKeys({ go_to_definition: "" });
+  await tick();
+
+  expect([remapped, open.title]).toEqual([
+    "Go to this definition (Enter, Ctrl+F12)",
+    "Go to this definition (Enter)",
+  ]);
+  remapKeys({});
 });
 
 it("names the peeks it followed from in a breadcrumb, and brings back the one a click on its crumb names", async () => {

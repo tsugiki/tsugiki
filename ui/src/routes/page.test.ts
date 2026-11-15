@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { actionOn, remapKeys } from "$lib/state/keymap.svelte";
 import { settingsAsk } from "$lib/state/settings-ask.svelte";
 import Page from "./+page.svelte";
 
@@ -34,6 +35,7 @@ const SETTINGS = {
     releases: { check: true },
     appearance: { theme: "system", light_theme: "VS Code Light Modern", dark_theme: "VS Code Dark Modern" },
     diff: { files: "all", peek: "inline" },
+    keys: {},
     repositories: [],
   },
   language_servers: { ty: null, "rust-analyzer": null, clangd: null, idle_minutes: 30 },
@@ -1256,5 +1258,40 @@ describe("the Settings dialog", () => {
     expect(screen.queryByRole("dialog", { name: "Add repository" })).toBeNull();
     expect(screen.queryByRole("dialog", { name: "Mirror of python/cpython" })).toBeNull();
     expect(settings()).toBeTruthy();
+  });
+});
+
+describe("keys remapped in [keys]", () => {
+  beforeEach(() => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    core.home.mockResolvedValue(gcmonHome);
+    const remapped = structuredClone(SETTINGS);
+    remapped.settings.keys = { pick_theme: "ctrl+t", command_palette: "ctrl+k c" };
+    core.settings.mockResolvedValue(remapped);
+  });
+
+  afterEach(() => {
+    remapKeys({});
+  });
+
+  it("runs a chord's action on a key of one press, and a key of one press's action on a chord", async () => {
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await vi.waitFor(() => {
+      expect(actionOn("ctrl+t")).toBe("pick_theme");
+    });
+
+    await fireEvent.keyDown(document.body, { key: "k", code: "KeyK", ctrlKey: true });
+    await fireEvent.keyDown(document.body, { key: "c", code: "KeyC" });
+    const palette = screen.queryByRole("dialog", { name: "Command palette" });
+    // Behind the palette, Pick a Theme does nothing, as a chord can't start there.
+    await fireEvent.keyDown(document.body, { key: "t", code: "KeyT", ctrlKey: true });
+    const behind = screen.queryByRole("dialog", { name: "Theme picker" });
+    await fireEvent.keyDown(window, { key: "Escape" });
+    await fireEvent.keyDown(document.body, { key: "t", code: "KeyT", ctrlKey: true });
+
+    expect([palette !== null, behind]).toEqual([true, null]);
+    expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Theme picker" })).toBeTruthy();
   });
 });

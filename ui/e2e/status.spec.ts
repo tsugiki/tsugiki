@@ -7,12 +7,12 @@ const offline = { state: "offline" } as const;
 const releases = { check: true };
 const diff = { files: "all", peek: "inline" } as const;
 const defaults = {
-  settings: { status_bar: { visible: true }, releases, appearance, diff, repositories: [] },
+  settings: { status_bar: { visible: true }, releases, appearance, diff, keys: {}, repositories: [] },
   language_servers: noServers,
   problems: [],
 };
 const hidden = {
-  settings: { status_bar: { visible: false }, releases, appearance, diff, repositories: [] },
+  settings: { status_bar: { visible: false }, releases, appearance, diff, keys: {}, repositories: [] },
   language_servers: noServers,
   problems: [],
 };

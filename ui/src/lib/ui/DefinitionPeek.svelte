@@ -10,10 +10,10 @@
      (#447). A breadcrumb before the symbol then names that, and a click on a crumb brings it back. -->
 
 <script lang="ts">
-  import { actionOn } from "$lib/state/keymap";
+  import { actionOn } from "$lib/state/keymap.svelte";
   import { peekWords, type Peek, type PeekWords } from "$lib/state/peek";
   import { settingsAsk } from "$lib/state/settings-ask.svelte";
-  import { currentOs, keyName } from "./keys";
+  import { actionLabel, currentOs, keyName } from "./keys";
   import PeekCode from "./PeekCode.svelte";
 
   let {
@@ -119,7 +119,7 @@
     <button
       type="button"
       class="open"
-      title="Go to this definition (Enter, F12)"
+      title={`Go to this definition (${["Enter", actionLabel("go_to_definition", currentOs())].filter(Boolean).join(", ")})`}
       disabled={open === "going"}
       onclick={onopen}>Open</button
     >

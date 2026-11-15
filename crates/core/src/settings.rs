@@ -24,6 +24,7 @@ use toml_edit::{
 
 use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
+use crate::keys::{Action, Remaps};
 use crate::latest::{self, LatestReader};
 use crate::mirror::{MirrorSource, MirrorSources};
 use crate::repository::{RepositoryAccess, RepositoryName};
@@ -40,6 +41,7 @@ const LAST_REPOSITORY: &str = "last_repository";
 const PANES: &str = "panes";
 const APPEARANCE: &str = "appearance";
 const DIFF: &str = "diff";
+const KEYS: &str = "keys";
 const MIRRORS: &str = "mirrors";
 const LANGUAGE_SERVERS: &str = "language_servers";
 const STOPPED_SAVING: &str =
@@ -53,6 +55,10 @@ pub struct Settings {
     pub releases: ReleaseSettings,
     pub appearance: AppearanceSettings,
     pub diff: DiffSettings,
+    /// `[keys]`: each action the user gave another key, or none, in the file's order (#549).
+    #[serde(deserialize_with = "remaps")]
+    #[specta(type = BTreeMap<Action, String>)]
+    pub keys: Remaps,
     pub repositories: Vec<RepositorySettings>,
 }
 
@@ -199,9 +205,9 @@ struct AppearanceRead {
     dark_theme: Option<Read<ThemeName>>,
 }
 
-/// A key of `[appearance]` given a value Tsugiki can't read, and what Tsugiki does instead, in words for the
-/// status bar.
-type Unread = (&'static str, String);
+/// A key of a table given a value Tsugiki can't read, and what Tsugiki does instead, in words for the status
+/// bar.
+type Unread = (String, String);
 
 impl AppearanceRead {
     /// The values, with each one Tsugiki can't read at its default, and the keys that held those.
@@ -212,7 +218,7 @@ impl AppearanceRead {
             Some(Read::Given(text)) => ThemeChoice::read(&text),
             Some(Read::Other(_)) => {
                 let problem = r#"isn't "system" or a theme's name, so Tsugiki follows the system."#;
-                unread.push(("theme", problem.to_owned()));
+                unread.push(("theme".to_owned(), problem.to_owned()));
                 ThemeChoice::System
             }
         };
@@ -224,7 +230,7 @@ impl AppearanceRead {
                 Some(Read::Other(_)) => {
                     let instead = default.as_str();
                     let problem = format!("isn't a theme's name, so Tsugiki uses {instead}.");
-                    unread.push((side_key(kind), problem));
+                    unread.push((side_key(kind).to_owned(), problem));
                     default
                 }
             }
@@ -251,7 +257,7 @@ fn given_or_default<T: Default>(
         None => T::default(),
         Some(Read::Given(value)) => value,
         Some(Read::Other(_)) => {
-            unread.push((key, instead()));
+            unread.push((key.to_owned(), instead()));
             T::default()
         }
     }
@@ -315,6 +321,45 @@ impl DiffRead {
     }
 }
 
+/// `[keys]` as the file gives it: each line's action name and value, in the file's order, with no value for
+/// one that isn't text.
+struct KeysRead(Vec<(String, Option<String>)>);
+
+impl<'de> Deserialize<'de> for KeysRead {
+    fn deserialize<D: Deserializer<'de>>(given: D) -> Result<Self, D::Error> {
+        /// Reads the lines one by one, as a map would lose their order.
+        struct Lines;
+
+        impl<'de> serde::de::Visitor<'de> for Lines {
+            type Value = KeysRead;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a table of actions and their keys")
+            }
+
+            fn visit_map<M: serde::de::MapAccess<'de>>(
+                self,
+                mut map: M,
+            ) -> Result<KeysRead, M::Error> {
+                let mut lines = Vec::new();
+                while let Some((name, value)) = map.next_entry::<String, Read<String>>()? {
+                    lines.push((name, value.given()));
+                }
+                Ok(KeysRead(lines))
+            }
+        }
+
+        given.deserialize_map(Lines)
+    }
+}
+
+/// `[keys]` as `Settings` holds it: the lines Tsugiki can read, and the problems with the others, which
+/// `SettingsText::key_problems` puts in the status bar's words. A line Tsugiki can't read leaves its action
+/// at its default key, as a value of `[appearance]` does.
+fn remaps<'de, D: Deserializer<'de>>(given: D) -> Result<Remaps, D::Error> {
+    Ok(Remaps::read(KeysRead::deserialize(given)?.0))
+}
+
 /// The problems with the `[appearance]` and `[diff]` of the settings file `text`, from `path`, in words for
 /// the status bar. Each names its line, when the parser knows it.
 fn unread_problems(path: &Path, text: &str) -> Vec<String> {
@@ -353,12 +398,22 @@ impl<'a> SettingsText<'a> {
             (DIFF, file.diff.settle().1),
         ]
         .into_iter()
-        .flat_map(|(table, unread)| {
-            unread
-                .into_iter()
-                .map(move |(key, problem)| format!("{}: {key} {problem}", self.place(table, key)))
-        })
+        .flat_map(|(table, unread)| self.described(table, unread))
         .collect()
+    }
+
+    /// The problems with the lines of the file's `[keys]`, read as `keys`, in words for the status bar.
+    /// Unlike those of `unread_problems`, they don't refuse a save, which leaves `[keys]` as the user wrote
+    /// it.
+    fn key_problems(&self, keys: &Remaps) -> Vec<String> {
+        self.described(KEYS, keys.unread().to_vec()).collect()
+    }
+
+    /// The problems `unread` with keys of the table `table`, each after its place.
+    fn described(&self, table: &'static str, unread: Vec<Unread>) -> impl Iterator<Item = String> {
+        unread
+            .into_iter()
+            .map(move |(key, problem)| format!("{}: {key} {problem}", self.place(table, &key)))
     }
 
     /// The file and, when the parser knows it, the line of `key` in the table `table`.
@@ -822,8 +877,8 @@ impl SettingsFiles {
         }
         merge(
             edit.document.as_table_mut(),
-            without_repositories(as_document(settings)).as_table(),
-            without_repositories(as_document(&Settings::default())).as_table(),
+            without_hand_edits(as_document(settings)).as_table(),
+            without_hand_edits(as_document(&Settings::default())).as_table(),
         );
         edit.save()?;
         self.reload();
@@ -1375,10 +1430,12 @@ fn with_filters_as_tables(mut repository: Table) -> Table {
     repository
 }
 
-/// `write` saves what the Settings window changes, and that window doesn't edit the Repository list. Merging
-/// the list would replace the file's tables, and the user's comments on them.
-fn without_repositories(mut document: DocumentMut) -> DocumentMut {
+/// `write` saves what the Settings window changes, and that window edits neither the Repository list nor
+/// `[keys]`. Merging the list would replace the file's tables, and the user's comments on them, and merging
+/// `[keys]` would write each key in Tsugiki's words over the user's: `"ctrl+k m"` over `"Ctrl+K M"`.
+fn without_hand_edits(mut document: DocumentMut) -> DocumentMut {
     drop(document.remove(REPOSITORIES));
+    drop(document.remove(KEYS));
     document
 }
 
@@ -1694,7 +1751,9 @@ fn read_settings(
                 toml_edit::de::from_str(&text).map_err(|cause| located(&path, &text, &cause))?;
             let parsed = SettingsText::parse(&path, &text);
             let place = parsed.place(APPEARANCE, "theme");
-            Ok((settings, parsed.unread_problems(), place))
+            let mut problems = parsed.unread_problems();
+            problems.extend(parsed.key_problems(&settings.keys));
+            Ok((settings, problems, place))
         }
         None if machine.settings_path.is_none() => {
             let place = path.display().to_string();

@@ -8,6 +8,7 @@ import {
   type LoadedSettings_Serialize,
   type Settings_Serialize,
 } from "$lib/data/bindings";
+import { remapKeys } from "./keymap.svelte";
 
 /** What `settings.toml` holds, as the core read it. */
 export type Settings = Settings_Serialize;
@@ -49,10 +50,12 @@ export class SettingsState {
     }
   }
 
-  /** Holds what the core read, and what was wrong with the files it read them from. */
+  /** Holds what the core read, and what was wrong with the files it read them from, and puts the keys of
+   * `[keys]` in force. */
   take({ settings, language_servers, problems }: LoadedSettings) {
     this.#takes += 1;
     this.settings = settings;
+    remapKeys(settings.keys);
     this.languageServers = language_servers;
     this.problems = problems;
   }

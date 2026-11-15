@@ -135,9 +135,12 @@
   );
   /** Whether the palette lists quick open's rows: it has quick open, and the text doesn't start with `>`. */
   const quick = $derived(find !== undefined && !typed.startsWith(">"));
-  /** Whether quick open's answer to the text in the box hasn't come yet, or not all of it. The last answer
-   * shows meanwhile. */
-  const waiting = $derived(quick && (found?.typed !== typed || found.pending === true));
+  /** Whether quick open's answer to the text in the box hasn't come yet, or not all of it while the rows
+   * still on their way could change which row is first. A row the user picked stays picked as they come.
+   * The last answer shows meanwhile. */
+  const waiting = $derived(
+    quick && (found?.typed !== typed || (found.pending === true && pickedKey === undefined)),
+  );
   /** What the commands are filtered by: the text, after the `>` that marks the commands, if it has quick
    * open. */
   const filter = $derived(

@@ -175,7 +175,7 @@ beforeEach(() => {
   });
   core.settings.mockResolvedValue(structuredClone(SETTINGS));
   core.recentCommands.mockResolvedValue([]);
-  core.quickOpen.mockResolvedValue({ status: "ok", data: [] });
+  core.quickOpen.mockResolvedValue({ status: "ok", data: { named: null, others: [] } });
   // The core answers with the list it keeps, the command run first.
   let kept: string[] = [];
   core.rememberCommand.mockImplementation(async (id: string) => {
@@ -603,7 +603,7 @@ describe("quick open", () => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
     core.home.mockResolvedValue(gcmonHome);
     core.workbench.mockResolvedValue(oneIssue);
-    core.quickOpen.mockResolvedValue({ status: "ok", data: found });
+    core.quickOpen.mockResolvedValue({ status: "ok", data: { named: null, others: found } });
     core.openIssue.mockResolvedValue({ status: "ok", data: null });
     core.issue.mockResolvedValue({ status: "ok", data: null });
   });
@@ -764,6 +764,11 @@ describe("quick open", () => {
     });
 
     it("puts the item the text names by its number before the files", async () => {
+      const [seven, seventy, sevenHundred] = found;
+      core.quickOpen.mockResolvedValue({
+        status: "ok",
+        data: { named: seventy, others: [seven, sevenHundred] },
+      });
       await openOverPr();
       await fireEvent.input(box(), { target: { value: "70" } });
       await screen.findByRole("option", { name: /^Lib\/test/ });
@@ -811,6 +816,25 @@ describe("quick open", () => {
       expect(await screen.findByRole("tab", { name: "Files", selected: true })).toBeTruthy();
       expect(quickOpen()).toBeNull();
       expect(core.openIssue).not.toHaveBeenCalled();
+    });
+
+    it("opens the item the text names by its number on Enter at once, with no wait for the diff", async () => {
+      core.pullRequestFiles.mockReturnValue(new Promise(() => {}));
+      const [seven, ...others] = found;
+      core.quickOpen.mockResolvedValue({ status: "ok", data: { named: seven, others } });
+      await openOverPr();
+      await fireEvent.input(box(), { target: { value: "7" } });
+      await vi.waitFor(() => {
+        expect(core.pullRequestFiles).toHaveBeenCalled();
+      });
+      await screen.findByRole("option", { name: /^#7 / });
+
+      await fireEvent.keyDown(box(), { key: "Enter" });
+
+      await vi.waitFor(() => {
+        expect(core.openIssue).toHaveBeenCalledWith("some-maintainer/gcmon", 7);
+      });
+      expect(quickOpen()).toBeNull();
     });
   });
 

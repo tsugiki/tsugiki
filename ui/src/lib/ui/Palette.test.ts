@@ -484,6 +484,19 @@ describe("with quick open", () => {
     expect(ran).toEqual(["item"]);
   });
 
+  it("runs the row the user picked on Enter while other rows are still on their way", async () => {
+    const { ran, rerender } = withQuickOpen();
+    const input = screen.getByRole("combobox");
+    const row = (title: string) => ({ title, run: () => ran.push(title) });
+    await rerender({ found: { typed: "", rows: [row("#7 Older"), row("#9 Newest")], pending: true } });
+
+    await fireEvent.keyDown(input, { key: "ArrowDown" });
+    await fireEvent.keyDown(input, { key: "Enter" });
+    await tick();
+
+    expect(ran).toEqual(["#9 Newest"]);
+  });
+
   it("holds an Enter while some rows of the answer are still on their way, then runs the first row", async () => {
     const { ran, rerender, answer } = withQuickOpen();
     const input = screen.getByRole("combobox");

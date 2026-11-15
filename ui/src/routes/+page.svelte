@@ -15,7 +15,6 @@
   import {
     type ChangedFiles,
     filesFound,
-    numberNamed,
     type QuickOpenItem,
     QuickOpenState,
   } from "$lib/state/quick-open.svelte";
@@ -359,20 +358,19 @@
   };
   /** Quick open's latest answer, as the palette's rows: the Issue or PR the text names by its number, the
    * files of the PR on show that the text finds, then the other Issues and PRs (#558). Files need no search
-   * of the core's, so they show when it fails too. */
+   * of the core's, so they show when it fails too. The item the number names heads the rows whatever files
+   * come, so an Enter waits for no diff to open it. */
   const foundRows = $derived.by((): QuickOpenRows | undefined => {
     const search = quickOpen;
     const answer = search?.answer;
     if (search === undefined || answer === undefined) return undefined;
     const files = fileRows(search.files, answer.typed);
     if ("problem" in answer) return { typed: answer.typed, ...files, problem: answer.problem };
-    const number = numberNamed(answer.typed);
-    const named = answer.found.filter((item) => item.number === number);
-    const others = answer.found.filter((item) => item.number !== number);
+    const { named, others } = answer.found;
     return {
       typed: answer.typed,
-      rows: [...named.map(foundRow), ...files.rows, ...others.map(foundRow)],
-      pending: files.pending,
+      rows: [...(named ? [foundRow(named)] : []), ...files.rows, ...others.map(foundRow)],
+      pending: named === null && files.pending,
     };
   });
   /** The palette's commands: those the user ran, most recently run first, then the others in this order. */

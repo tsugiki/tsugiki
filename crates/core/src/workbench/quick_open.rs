@@ -6,6 +6,8 @@
 
 use std::cmp::Reverse;
 
+use serde::Serialize;
+use specta::Type;
 use time::OffsetDateTime;
 
 use crate::error::Error;
@@ -17,14 +19,30 @@ use crate::store::{StoreReader, TitledItem, TitledKind};
 /// How many items quick open lists at most: enough to pick from, and few enough to fit the window.
 pub const LISTED: usize = 20;
 
-/// The Issues and PRs of `repository` in the cache that `typed` finds, best first, `LISTED` at most. This
-/// reads the database and never asks GitHub.
+/// What quick open finds for a text: the item the text names by its number, apart, so the window can put it
+/// ahead of the files of the PR on show (#558), and the other items.
+#[derive(Debug, PartialEq, Eq, Serialize, Type)]
+pub struct QuickOpenFound {
+    /// The Issue or PR whose number the whole text names, if the cache holds it.
+    pub named: Option<TitledItem>,
+    /// The items whose titles hold every word typed: the open first, then the newest.
+    pub others: Vec<TitledItem>,
+}
+
+/// The Issues and PRs of `repository` in the cache that `typed` finds, best first, `LISTED` at most in all.
+/// This reads the database and never asks GitHub.
 pub fn find(
     reader: &StoreReader,
     repository: &RepositoryName,
     typed: &str,
-) -> Result<Vec<TitledItem>, Error> {
-    Ok(best(reader.titled_items(repository)?, &Typed::parse(typed)))
+) -> Result<QuickOpenFound, Error> {
+    let typed = Typed::parse(typed);
+    let mut others = best(reader.titled_items(repository)?, &typed);
+    let named = match others.first() {
+        Some(first) if typed.number == Some(first.number) => Some(others.remove(0)),
+        _ => None,
+    };
+    Ok(QuickOpenFound { named, others })
 }
 
 /// What the user typed, read for the search.

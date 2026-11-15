@@ -869,7 +869,7 @@ fn started_with_no_network_on_a_synced_database_tsugiki_shows_what_it_holds_and_
     drop(offline.stop());
 
     assert_eq!(
-        (&found[0]["kind"], &found[0]["number"]),
+        (&found["named"]["kind"], &found["named"]["number"]),
         (&json!("pull_request"), &json!(154_019)),
         "quick open finds the PR the database holds: {found}"
     );

@@ -751,10 +751,12 @@ export class PrFilesState {
   /** Opens the file at `path` from its top, as quick open does (#558): one file at a time it shows that
    * file, and with all the files it scrolls to its header, opening the file if it is collapsed. The file
    * view over the tab closes, as Back does, and the diff takes the focus. A path the diff on show doesn't
-   * change, as after a sync moved the PR's head, is said over the diff for a moment. */
+   * change, as after a sync moved the PR's head, is said over the diff for a moment. With no diff on show,
+   * as while a newer head is fetched, the tab says why itself. */
   openPath(path: string) {
     const view = this.view;
-    const file = view?.state === "ready" ? view.files.findIndex((shown) => shown.path === path) : -1;
+    if (view?.state !== "ready") return;
+    const file = view.files.findIndex((shown) => shown.path === path);
     if (file === -1) {
       this.#say(`The diff on show doesn't change ${path}.`, NOTICE_MS);
       return;

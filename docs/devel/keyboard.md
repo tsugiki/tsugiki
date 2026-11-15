@@ -72,7 +72,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   with the number typed: the files whose paths hold every word typed, in any case, in the order the Files tab
   shows them, 20 at most. Nothing typed, or a text that starts with `#`, lists no files, and reads no diff.
   Other text reads the PR's diff if the Files tab hasn't yet, and an Enter pressed before the core first
-  answers that read waits for it, as it waits for the Issues and PRs. A diff that doesn't come at once, as
+  answers that read waits for it, as it waits for the Issues and PRs, unless the item with the number typed
+  heads the list or the user picked a row with the arrows. A diff that doesn't come at once, as
   while its head is fetched, lists no files. The files show when the search of the Issues and PRs fails too,
   above why it failed. Enter opens the file in the Files tab from its top, opening it if it is collapsed:
   with all the files the tab scrolls to its header, and one file at a time it shows that file. The file view

@@ -24,7 +24,7 @@ fn titled_pr(number: u32, title: &str, state: PrState, seconds: i64) -> PullRequ
 }
 
 /// What quick open finds for each of `typed` in a store that holds `pull_requests` and `issues`, as the
-/// numbers it lists.
+/// numbers it lists, the one the text names first.
 fn numbers_found(
     name: &str,
     pull_requests: Vec<PullRequestFacts>,
@@ -37,7 +37,12 @@ fn numbers_found(
         .iter()
         .map(|typed| {
             let found = find(&world.reader, &cpython().name, typed).unwrap();
-            found.iter().map(|item| item.number).collect()
+            found
+                .named
+                .iter()
+                .chain(&found.others)
+                .map(|item| item.number)
+                .collect()
         })
         .collect();
     world.finish();
@@ -140,20 +145,21 @@ fn it_tells_an_issue_from_a_pr_with_its_state() {
     world.has(vec![draft], vec![titled_issue(8, "It broke", 1)]);
 
     let found = find(&world.reader, &cpython().name, "8").unwrap();
+    let words = find(&world.reader, &cpython().name, "it").unwrap();
     world.finish();
 
     assert_eq!(
         found,
-        [
-            TitledItem {
+        QuickOpenFound {
+            named: Some(TitledItem {
                 number: 8,
                 title: "It broke".to_owned(),
                 updated_at: at(1),
                 kind: TitledKind::Issue {
                     state: Some(IssueState::Open),
                 },
-            },
-            TitledItem {
+            }),
+            others: vec![TitledItem {
                 number: 7,
                 title: "gh-8: Fix it".to_owned(),
                 updated_at: at(5),
@@ -161,23 +167,25 @@ fn it_tells_an_issue_from_a_pr_with_its_state() {
                     state: PrState::Open,
                     is_draft: true,
                 },
-            },
-        ]
+            }],
+        }
     );
-    // The window gets each item's kind beside its number and title, and no time it doesn't show.
+    // The window gets the item the number names apart, and each item's kind beside its number and title,
+    // and no time it doesn't show. Words name no item.
     assert_eq!(
         serde_json::to_value(&found).unwrap(),
-        serde_json::json!([
-            { "kind": "issue", "number": 8, "title": "It broke", "state": "OPEN" },
-            {
+        serde_json::json!({
+            "named": { "kind": "issue", "number": 8, "title": "It broke", "state": "OPEN" },
+            "others": [{
                 "kind": "pull_request",
                 "number": 7,
                 "title": "gh-8: Fix it",
                 "state": "OPEN",
                 "is_draft": true
-            },
-        ])
+            }],
+        })
     );
+    assert_eq!((words.named, words.others.len()), (None, 2));
 }
 
 #[test]

@@ -1,15 +1,16 @@
 // Quick open's search of the open Repository's Issues and PRs in the cache (#557). The core does the search
 // and puts the best first, and the window holds its answer to the latest text typed. With a PR on show,
 // quick open finds the files it changes too, which the window holds in its Files tab's diff (#558).
-import { commands, type TitledItem_Serialize } from "$lib/data/bindings";
+import { commands, type QuickOpenFound_Serialize, type TitledItem_Serialize } from "$lib/data/bindings";
 import { ask } from "./answer";
 
 /** An Issue or a PR that quick open lists, named here for the page, which the UI's layers keep from the
  * bindings (`ui/eslint/layers.ts`). */
 export type QuickOpenItem = TitledItem_Serialize;
 
-/** The core's answer to one text typed: what it found, or why it couldn't search. */
-export type QuickOpenAnswer = { typed: string } & ({ found: QuickOpenItem[] } | { problem: string });
+/** The core's answer to one text typed: what it found, with the item the text names by its number apart,
+ * or why it couldn't search. */
+export type QuickOpenAnswer = { typed: string } & ({ found: QuickOpenFound_Serialize } | { problem: string });
 
 /** The files the PR on show as quick open opened changes, which quick open finds (#558). */
 export interface ChangedFiles {
@@ -32,13 +33,6 @@ export const FILES_LISTED = 20;
 export function looksForFiles(typed: string): boolean {
   const text = typed.trim();
   return text !== "" && !text.startsWith("#");
-}
-
-/** The number `typed` names as a whole, as `123`, `#123` or `gh-123`, as the core reads it: the Issue or PR
- * with that number comes first. */
-export function numberNamed(typed: string): number | undefined {
-  const digits = /^(?:#|gh-)?(\d+)$/i.exec(typed.trim())?.[1];
-  return digits === undefined ? undefined : Number(digits);
 }
 
 /** The paths of `files` that hold every word of `typed`, in any case, in the order the Files tab shows them,

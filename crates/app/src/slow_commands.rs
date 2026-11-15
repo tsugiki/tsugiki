@@ -26,7 +26,7 @@ use tsugiki_core::settings::{
     AppearanceSettings, CommandId, Home, LoadedSettings, PaneLayout, SettingsChanges, SettingsOwner,
 };
 use tsugiki_core::store::{StoreReader, TitledItem};
-use tsugiki_core::theme::{GivenTheme, ThemeKind, ThemeLibrary, Themes};
+use tsugiki_core::theme::{GivenTheme, ThemeLibrary, ThemePick, Themes};
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_files::PrFiles;
@@ -197,18 +197,14 @@ pub(crate) fn themes(owner: State<'_, SettingsOwner>) -> Result<Themes, Error> {
     Ok(library.themes(given, light_theme, dark_theme))
 }
 
-/// Saves the theme the picker chose for side `kind` to `light_theme` or `dark_theme` in `settings.toml`,
-/// without Settings' Apply (#518). The window shows it already. It may be a file of the `themes` folder
-/// (#519). This waits on small files.
+/// Saves the theme picker's choice to `[appearance] theme` in `settings.toml`, without Settings' Apply (#518,
+/// #756): follow the system, or a Theme, which may be a file of the `themes` folder (#519). The window shows
+/// it already. This waits on small files.
 #[tauri::command(async)]
 #[specta::specta]
-pub(crate) fn save_theme(
-    kind: ThemeKind,
-    name: &str,
-    owner: State<'_, SettingsOwner>,
-) -> Result<(), Error> {
+pub(crate) fn save_theme(pick: ThemePick, owner: State<'_, SettingsOwner>) -> Result<(), Error> {
     let library = ThemeLibrary::read(&owner.view().themes_folder)?;
-    owner.save_theme(kind, library.named(kind, name)?).map(drop)
+    owner.save_theme(library.choice(pick)?).map(drop)
 }
 
 /// Reads both settings files again as the Settings dialog opens, so a hand edit made since start-up shows in

@@ -103,15 +103,16 @@ describe("ThemeState", () => {
     }
   });
 
-  it("shows a pick for the side a mode from before keeps at once", async () => {
+  it("shows a pick over a mode from before at once", async () => {
     vi.mocked(commands.saveTheme).mockResolvedValue({ status: "ok", data: null });
     const state = await loaded({ ...THEMES, theme: { kind: "side", side: "dark" } }, false);
     expect(state.side).toBe("dark");
     expect(state.current?.name).toBe("VS Code Dark Modern");
 
-    await state.choose("dark", "Gruvbox Dark Hard");
+    await state.pick(GRUVBOX_LIGHT);
 
-    expect(state.current?.name).toBe("Gruvbox Dark Hard");
+    expect(state.current?.name).toBe("Gruvbox Light Hard");
+    expect(state.side).toBe("light");
   });
 
   it("turns the window to the side of the theme in force after each answer", async () => {
@@ -343,9 +344,9 @@ describe("ThemeState", () => {
     expect(state.themesOf("light")).toEqual([]);
     expect(state.failedOf("light")).toEqual([]);
     expect(state.problems).toEqual([]);
-    expect(state.chosen("light")).toBeUndefined();
+    expect(state.following).toBeUndefined();
     expect(state.error).toBe("A built-in theme can't be read");
-    await state.choose("light", "Gruvbox Light Hard");
+    await state.pick(GRUVBOX_LIGHT);
     expect(commands.saveTheme).not.toHaveBeenCalled();
     expect(commands.turnWindow).not.toHaveBeenCalled();
   });
@@ -386,24 +387,46 @@ describe("ThemeState", () => {
     expect(state.shown?.name).toBe("VS Code Dark Modern");
   });
 
-  it("saves a side's choice, which the window then shows if that side is in use", async () => {
+  it("follows the system with the chosen theme of the side Windows is on", async () => {
+    const { query, turn } = sides(true);
+    vi.mocked(commands.themes).mockResolvedValue({ status: "ok", data: structuredClone(THEMES) });
+    const state = new ThemeState(query);
+    await state.load();
+    expect(state.following?.name).toBe("VS Code Dark Modern");
+    turn(false);
+    expect(state.following?.name).toBe("VS Code Light Modern");
+  });
+
+  it("saves a pick of the other side's theme as the theme in force, and turns the window to its side", async () => {
     vi.mocked(commands.saveTheme).mockResolvedValue({ status: "ok", data: null });
-    const state = await loaded(THEMES, true);
+    const state = await loaded(THEMES, false);
 
-    await state.choose("dark", "Gruvbox Dark Hard");
-    await state.choose("light", "Gruvbox Light Hard");
+    await state.pick(GRUVBOX_DARK);
 
-    expect(vi.mocked(commands.saveTheme).mock.calls).toEqual([
-      ["dark", "Gruvbox Dark Hard"],
-      ["light", "Gruvbox Light Hard"],
-    ]);
+    expect(commands.saveTheme).toHaveBeenCalledExactlyOnceWith({ kind: "named", name: "Gruvbox Dark Hard" });
+    expect(state.themes?.theme).toEqual(NAMED_DARK);
     expect(state.current?.name).toBe("Gruvbox Dark Hard");
-    expect(state.chosen("light")).toBe("Gruvbox Light Hard");
-    expect(state.themes?.theme).toEqual({ kind: "system" });
+    expect(state.side).toBe("dark");
+    expect(state.themes?.light.chosen).toBe("VS Code Light Modern");
+    expect(state.themes?.dark.chosen).toBe("VS Code Dark Modern");
+    expect(vi.mocked(commands.turnWindow).mock.calls).toEqual([[null], ["dark"]]);
     expect(state.problem).toBeUndefined();
   });
 
-  it("puts the old choice back and says why when it can't be saved, until a save works", async () => {
+  it("saves Follow system, turns the window back to Windows, and takes the side it says", async () => {
+    vi.mocked(commands.saveTheme).mockResolvedValue({ status: "ok", data: null });
+    const state = await loaded({ ...THEMES, theme: NAMED_DARK }, false);
+    vi.mocked(commands.turnWindow).mockResolvedValueOnce("light");
+
+    await state.pick("system");
+
+    expect(commands.saveTheme).toHaveBeenCalledExactlyOnceWith({ kind: "system" });
+    expect(state.themes?.theme).toEqual({ kind: "system" });
+    expect(vi.mocked(commands.turnWindow).mock.calls).toEqual([["dark"], [null]]);
+    expect(state.current?.name).toBe("VS Code Light Modern");
+  });
+
+  it("puts the old theme back and says why when it can't be saved, until a save works", async () => {
     const state = await loaded(THEMES, true);
     vi.mocked(commands.saveTheme).mockResolvedValueOnce({
       status: "error",
@@ -411,21 +434,23 @@ describe("ThemeState", () => {
     });
     vi.mocked(commands.saveTheme).mockRejectedValueOnce(new Error("the core has gone"));
 
-    await state.choose("dark", "Gruvbox Dark Hard");
+    await state.pick(GRUVBOX_LIGHT);
     expect(state.current?.name).toBe("VS Code Dark Modern");
+    expect(state.themes?.theme).toEqual({ kind: "system" });
+    expect(vi.mocked(commands.turnWindow).mock.calls).toEqual([[null], ["light"], [null]]);
     expect(state.problem).toBe("Tsugiki can't save the theme: settings.toml, line 2: expected `]`");
-    await state.choose("dark", "Gruvbox Dark Hard");
+    await state.pick(GRUVBOX_LIGHT);
     expect(state.problem).toBe("Tsugiki can't save the theme: Error: the core has gone");
 
     vi.mocked(commands.saveTheme).mockResolvedValue({ status: "ok", data: null });
-    await state.choose("dark", "Gruvbox Dark Hard");
-    expect(state.current?.name).toBe("Gruvbox Dark Hard");
+    await state.pick(GRUVBOX_LIGHT);
+    expect(state.current?.name).toBe("Gruvbox Light Hard");
     expect(state.problem).toBeUndefined();
   });
 });
 
 describe("ThemeState's saves", () => {
-  it("leave a newer choice in place when an older save fails after it", async () => {
+  it("leave a newer pick in place when an older save fails after it", async () => {
     const third = view("Solarized Dark", "dark", "#002b36");
     const state = await loaded(
       { ...THEMES, dark: { ...THEMES.dark, all: [...THEMES.dark.all, third] } },
@@ -443,8 +468,8 @@ describe("ThemeState's saves", () => {
       )
       .mockResolvedValueOnce({ status: "ok", data: null });
 
-    const first = state.choose("dark", "Gruvbox Dark Hard");
-    await state.choose("dark", "Solarized Dark");
+    const first = state.pick(GRUVBOX_DARK);
+    await state.pick(third);
     failFirst({ status: "error", error: { kind: "internal", message: "the drive went away" } });
     await first;
 
@@ -452,8 +477,8 @@ describe("ThemeState's saves", () => {
     expect(state.problem).toBe("Tsugiki can't save the theme: the drive went away");
   });
 
-  it("keep a choice made while a load was on its way, which read the settings before it", async () => {
-    const state = await loaded(THEMES, true);
+  it("keep a pick made while a load was on its way, which read the settings before it", async () => {
+    const state = await loaded(THEMES, false);
     let answer: (themes: { status: "ok"; data: Themes }) => void = () => {};
     vi.mocked(commands.themes).mockReturnValueOnce(
       new Promise((resolve) => {
@@ -463,15 +488,38 @@ describe("ThemeState's saves", () => {
     vi.mocked(commands.saveTheme).mockResolvedValueOnce({ status: "ok", data: null });
 
     const reload = state.load();
-    await state.choose("dark", "Gruvbox Dark Hard");
+    await state.pick(GRUVBOX_DARK);
     answer({ status: "ok", data: structuredClone(THEMES) });
     await reload;
 
     expect(state.current?.name).toBe("Gruvbox Dark Hard");
-    expect(state.chosen("light")).toBe("VS Code Light Modern");
+    expect(vi.mocked(commands.turnWindow).mock.calls).toEqual([[null], ["dark"]]);
   });
 
-  it("put the old choice back on the themes a load brought while the save was on its way", async () => {
+  it("keep a pick made while a load's turn was on its way", async () => {
+    const state = await loaded({ ...THEMES, theme: NAMED_DARK }, false);
+    let turned: (side: null) => void = () => {};
+    vi.mocked(commands.turnWindow).mockReturnValueOnce(
+      new Promise((resolve) => {
+        turned = resolve;
+      }),
+    );
+    vi.mocked(commands.themes).mockResolvedValueOnce({ status: "ok", data: structuredClone(THEMES) });
+    vi.mocked(commands.saveTheme).mockResolvedValueOnce({ status: "ok", data: null });
+
+    const reload = state.load();
+    await vi.waitFor(() => {
+      expect(commands.turnWindow).toHaveBeenCalledTimes(2);
+    });
+    const picked = state.pick(GRUVBOX_DARK);
+    turned(null);
+    await Promise.all([reload, picked]);
+
+    expect(state.themes?.theme).toEqual(NAMED_DARK);
+    expect(vi.mocked(commands.turnWindow).mock.calls).toEqual([["dark"], [null], ["dark"]]);
+  });
+
+  it("put the old theme back on the themes a load brought while the save was on its way", async () => {
     const state = await loaded(THEMES, true);
     let fail: (answer: { status: "error"; error: { kind: "internal"; message: string } }) => void = () => {};
     vi.mocked(commands.saveTheme).mockReturnValueOnce(
@@ -480,7 +528,7 @@ describe("ThemeState's saves", () => {
       }),
     );
 
-    const choice = state.choose("dark", "Gruvbox Dark Hard");
+    const choice = state.pick(GRUVBOX_DARK);
     await state.load();
     expect(state.current?.name).toBe("Gruvbox Dark Hard");
     fail({ status: "error", error: { kind: "internal", message: "the drive went away" } });

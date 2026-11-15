@@ -442,37 +442,37 @@ fn extends_names_a_theme_with_text_or_its_line_is_skipped() {
 }
 
 #[test]
-fn the_library_finds_a_theme_by_its_side_and_its_name() {
+fn the_library_turns_a_pick_into_the_choice_it_saves_once_the_theme_can_be_used() {
     let (library, _) = library_of(
         "themes-named",
-        &[("mine.toml", "name = \"Mine\"\nkind = \"dark\"\n")],
+        &[
+            ("mine.toml", "name = \"Mine\"\nkind = \"dark\"\n"),
+            (
+                "night.toml",
+                "name = \"Night\"\nkind = \"dark\"\nextends = \"Dusk\"\n",
+            ),
+        ],
     );
+    let named = |name: &str| ThemePick::Named {
+        name: name.to_owned(),
+    };
 
     assert_eq!(
-        library.named(ThemeKind::Dark, "Mine").unwrap(),
-        ThemeName::new("Mine")
+        library.choice(ThemePick::System).unwrap(),
+        ThemeChoice::System
     );
     assert_eq!(
-        library
-            .named(ThemeKind::Light, "Gruvbox Light Hard")
-            .unwrap(),
-        ThemeName::new("Gruvbox Light Hard")
+        library.choice(named("Mine")).unwrap(),
+        ThemeChoice::Theme(ThemeName::new("Mine"))
     );
-    for (kind, name, message) in [
-        (
-            ThemeKind::Light,
-            "Mine",
-            r#"No light theme is named "Mine"."#,
-        ),
-        (
-            ThemeKind::Dark,
-            "gruvbox dark hard",
-            r#"No dark theme is named "gruvbox dark hard"."#,
-        ),
-    ] {
-        let error = library.named(kind, name).unwrap_err();
+    assert_eq!(
+        library.choice(named("Gruvbox Light Hard")).unwrap(),
+        ThemeChoice::Theme(ThemeName::new("Gruvbox Light Hard"))
+    );
+    for name in ["Night", "gruvbox dark hard"] {
+        let error = library.choice(named(name)).unwrap_err();
         assert_eq!(error.kind, ErrorKind::NotFound);
-        assert_eq!(error.message, message);
+        assert_eq!(error.message, format!("No theme is named {name:?}."));
     }
 }
 

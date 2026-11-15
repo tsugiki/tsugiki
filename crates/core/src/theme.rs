@@ -35,8 +35,8 @@ pub enum ThemeChoice {
     #[default]
     System,
     /// `"light"` or `"dark"`, a mode from a file written before (#517): the Theme `light_theme` or
-    /// `dark_theme` names. A pick for that side writes the name picked in its place. Any other save keeps
-    /// the mode, as only the `themes` folder can say which Theme the side's name gives.
+    /// `dark_theme` names. A pick in the theme picker writes its own choice in its place (#756). Any other
+    /// save keeps the mode, as only the `themes` folder can say which Theme the side's name gives.
     Side(ThemeKind),
     Theme(ThemeName),
 }
@@ -674,6 +674,15 @@ pub struct GivenTheme<'a> {
     pub place: &'a str,
 }
 
+/// The theme picker's pick for `[appearance] theme` (#756): follow the system, or show the Theme named, which
+/// `ThemeLibrary::choice` checks against the `themes` folder before it's saved.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ThemePick {
+    System,
+    Named { name: String },
+}
+
 /// The theme the window shows, from `[appearance] theme` (#755).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -681,7 +690,7 @@ pub enum ThemeInForce {
     /// The chosen theme of the side the system is on. A `theme` that names no usable theme gives this too.
     System,
     /// The chosen theme of `side`, whatever the system says, from a mode a file written before held. A pick
-    /// for that side shows at once, as the file then names the theme picked.
+    /// in the theme picker replaces the mode.
     Side { side: ThemeKind },
     /// The theme named, whatever the system says.
     Named { name: ThemeName, side: ThemeKind },
@@ -830,16 +839,18 @@ impl ThemeLibrary {
         })
     }
 
-    /// The name of the usable theme of side `kind` named `name`, as the theme picker saves it.
-    pub fn named(&self, kind: ThemeKind, name: &str) -> Result<ThemeName, Error> {
-        let found = self
-            .usable
-            .iter()
-            .find(|theme| theme.kind == kind && theme.name == name);
+    /// The choice the theme picker's `pick` saves to `[appearance] theme`, once the Theme it names is one
+    /// that can be used. A name is unique across both sides, so the name alone finds it.
+    pub fn choice(&self, pick: ThemePick) -> Result<ThemeChoice, Error> {
+        let name = match pick {
+            ThemePick::System => return Ok(ThemeChoice::System),
+            ThemePick::Named { name } => name,
+        };
+        let found = self.usable.iter().find(|theme| theme.name == name);
         found
-            .map(|theme| ThemeName::new(&theme.name))
+            .map(|theme| ThemeChoice::Theme(ThemeName::new(&theme.name)))
             .ok_or_else(|| {
-                let message = format!("No {} theme is named {name:?}.", kind.name());
+                let message = format!("No theme is named {name:?}.");
                 Error::new(ErrorKind::NotFound, &message)
             })
     }

@@ -1169,29 +1169,22 @@ impl SettingsFiles {
         Ok(saved)
     }
 
-    /// Saves the theme the picker chose for its side to `light_theme` or `dark_theme`, keeping everything
-    /// else in `settings.toml`, and reads the files again (#518). Like `write`, it works from what the files
-    /// say now and refuses while either can't be used.
-    ///
-    /// A `theme = "light"` or `"dark"` from before (#755) of the side picked gives way to the name picked,
-    /// which the window then shows as it would have. A mode of the other side stays.
-    pub fn save_theme(&mut self, kind: ThemeKind, name: &ThemeName) -> Result<(), Error> {
+    /// Saves the theme picker's choice to `[appearance] theme`, keeping everything else in `settings.toml`,
+    /// and reads the files again (#518, #756). Like `write`, it works from what the files say now and refuses
+    /// while either can't be used. `light_theme` and `dark_theme` stay: only Settings and a hand edit change
+    /// them. A mode from before (#755) gives way to the choice. Following the system is the default, so it
+    /// leaves the file, unless the user wrote a comment on the key.
+    pub fn save_theme(&mut self, choice: &ThemeChoice) -> Result<(), Error> {
         let machine = self.machine_to_edit()?;
         let path = settings_file(&self.folders, &machine);
         let mut edit = TomlEdit::<Settings>::open(&path)?;
-        let default = ThemeName::default_of(kind);
-        let appearance = &edit.values.appearance;
         edit_section(edit.document.as_table_mut(), APPEARANCE, |section| {
             merge_value(
                 section,
-                side_key(kind),
-                &toml_edit::value(name.as_str()),
-                Some(&toml_edit::value(default.as_str())),
+                "theme",
+                &toml_edit::value(String::from(choice.clone())),
+                Some(&toml_edit::value(ThemeChoice::SYSTEM)),
             );
-            // The picker checked the name against the folder, so it is the theme the window shows next.
-            if appearance.theme == ThemeChoice::Side(kind) {
-                merge_value(section, "theme", &toml_edit::value(name.as_str()), None);
-            }
         });
         edit.save()?;
         self.reload();
@@ -1264,8 +1257,7 @@ enum Change {
         reply: Sender<Result<SettingsView, Error>>,
     },
     Theme {
-        kind: ThemeKind,
-        name: ThemeName,
+        choice: ThemeChoice,
         reply: Sender<Result<SettingsView, Error>>,
     },
     Open {
@@ -1346,8 +1338,8 @@ impl SettingsOwner {
                     (Ok(files), Change::Panes { layout, reply }) => {
                         (files.save_panes(layout).map(|()| files.view()), reply)
                     }
-                    (Ok(files), Change::Theme { kind, name, reply }) => {
-                        (files.save_theme(kind, &name).map(|()| files.view()), reply)
+                    (Ok(files), Change::Theme { choice, reply }) => {
+                        (files.save_theme(&choice).map(|()| files.view()), reply)
                     }
                     (Ok(files), Change::Open { name, reply }) => {
                         let opened = files.open_repository(&name, OffsetDateTime::now_utc());
@@ -1454,11 +1446,11 @@ impl SettingsOwner {
         self.ask(Request::Command { command, reply }, &answer)
     }
 
-    /// Saves the theme the picker chose for its side in `settings.toml`, and answers with what the settings
-    /// say now.
-    pub fn save_theme(&self, kind: ThemeKind, name: ThemeName) -> Result<SettingsView, Error> {
+    /// Saves the theme picker's choice to `[appearance] theme` in `settings.toml`, and answers with what the
+    /// settings say now.
+    pub fn save_theme(&self, choice: ThemeChoice) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
-        self.ask(Change::Theme { kind, name, reply }, &answer)
+        self.ask(Change::Theme { choice, reply }, &answer)
     }
 
     /// Reads both files again, as the Settings dialog opens, so a hand edit made since shows in it and takes

@@ -22,8 +22,11 @@
     note?: string | null;
     /** Runs while the row is the one picked, such as a theme that shows on the window before it's chosen. */
     preview?: () => void;
-    /** Runs without closing, such as the theme picker's row that lists the other side. */
+    /** Runs without closing, such as the theme picker's Reload themes. */
     keepsOpen?: boolean;
+    /** The heading the row lists under, such as a theme's side in the theme picker. Rows next to each other
+     * with the same heading list under one. */
+    group?: string | undefined;
   }
 
   /** What a quick pick calls itself, its text box, its list, a list with nothing in it, and the current
@@ -114,6 +117,19 @@
   );
   const matching = $derived(
     quick ? (found?.rows ?? []) : commands.filter((command) => command.title.toLowerCase().includes(filter)),
+  );
+  /** The rows listed, in runs from `start`, their index in `matching`: rows next to each other with the same
+   * `group` list under one heading, and rows without one under none. */
+  const sections = $derived(
+    matching.reduce<{ group: string | undefined; start: number; rows: PaletteCommand[] }[]>(
+      (all, command, index) => {
+        const last = all.at(-1);
+        if (last && last.group === command.group) last.rows.push(command);
+        else all.push({ group: command.group, start: index, rows: [command] });
+        return all;
+      },
+      [],
+    ),
   );
   const shownWords = $derived(quick ? QUICK_OPEN_WORDS : words);
   // Each text quick open shows asks it once.
@@ -220,24 +236,41 @@
       aria-label={shownWords.input}
       placeholder={shownWords.placeholder}
     />
+    {#snippet option(command: PaletteCommand, i: number)}
+      <!-- The keys pick from the text box, which keeps the focus, so a click is the mouse's way. -->
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <li
+        id={`palette-command-${String(i)}`}
+        role="option"
+        aria-selected={i === picked}
+        aria-current={command.current ? "true" : undefined}
+        aria-disabled={command.disabled ? "true" : undefined}
+        onclick={() => {
+          run(command);
+        }}
+      >
+        {command.title}{#if command.note}<span class="note">{` · ${command.note}`}</span
+          >{/if}{#if command.current}&nbsp;<span class="note open">{words.mark ?? "open"}</span>{/if}
+      </li>
+    {/snippet}
     {#if matching.length > 0}
       <ul id="palette-commands" role="listbox" aria-label={shownWords.list}>
-        {#each matching as command, i (command.title)}
-          <!-- The keys pick from the text box, which keeps the focus, so a click is the mouse's way. -->
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <li
-            id={`palette-command-${String(i)}`}
-            role="option"
-            aria-selected={i === picked}
-            aria-current={command.current ? "true" : undefined}
-            aria-disabled={command.disabled ? "true" : undefined}
-            onclick={() => {
-              run(command);
-            }}
-          >
-            {command.title}{#if command.note}<span class="note">{` · ${command.note}`}</span
-              >{/if}{#if command.current}&nbsp;<span class="note open">{words.mark ?? "open"}</span>{/if}
-          </li>
+        {#each sections as section (section.start)}
+          {#if section.group === undefined}
+            {#each section.rows as command, i (command.title)}
+              {@render option(command, section.start + i)}
+            {/each}
+          {:else}
+            <!-- The group's label names it to a screen reader, so the heading is only for the eye. -->
+            <li class="group" role="group" aria-label={section.group}>
+              <div class="heading" aria-hidden="true">{section.group}</div>
+              <ul role="none">
+                {#each section.rows as command, i (command.title)}
+                  {@render option(command, section.start + i)}
+                {/each}
+              </ul>
+            </li>
+          {/if}
         {/each}
       </ul>
     {:else if quick && found?.problem !== undefined}
@@ -289,6 +322,27 @@
 
   li[aria-selected="true"] {
     background: var(--selected);
+  }
+
+  /* A heading over its rows, with a line between it and the rows above. */
+  .group {
+    padding: 0;
+  }
+
+  .group > ul {
+    padding: 0;
+  }
+
+  .group:not(:first-child),
+  .group + li {
+    margin-top: 4px;
+    border-top: 1px solid var(--border);
+  }
+
+  .heading {
+    padding: 6px 10px 2px;
+    font-size: 11px;
+    color: var(--fg-muted);
   }
 
   /* Greyed text, as muted text is: its note says why it can't run. */

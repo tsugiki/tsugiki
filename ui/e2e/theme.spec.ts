@@ -36,6 +36,12 @@ test("the theme picker previews a theme on the window, and Esc puts the old one 
   await page.keyboard.press("ControlOrMeta+Shift+P");
   await page.getByRole("option", { name: "Pick a Theme" }).click();
   const box = page.getByRole("combobox", { name: "Theme" });
+  await expect(page.getByRole("option", { selected: true })).toHaveText(/Follow system/);
+  await box.press("ArrowDown");
+  await expect
+    .poll(() => colours(page))
+    .toEqual({ background: "rgb(255, 255, 255)", text: "rgb(59, 59, 59)", scheme: "light" });
+  await box.press("ArrowDown");
   await box.press("ArrowDown");
   await expect
     .poll(() => colours(page))

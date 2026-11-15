@@ -151,11 +151,11 @@ export const commands = {
 	 */
 	rememberCommand: (command: CommandId) => typedError<CommandId[], Error_Serialize>(__TAURI_INVOKE("remember_command", { command })),
 	/**
-	 *  Saves the theme the picker chose for side `kind` to `light_theme` or `dark_theme` in `settings.toml`,
-	 *  without Settings' Apply (#518). The window shows it already. It may be a file of the `themes` folder
-	 *  (#519). This waits on small files.
+	 *  Saves the theme picker's choice to `[appearance] theme` in `settings.toml`, without Settings' Apply (#518,
+	 *  #756): follow the system, or a Theme, which may be a file of the `themes` folder (#519). The window shows
+	 *  it already. This waits on small files.
 	 */
-	saveTheme: (kind: ThemeKind, name: string) => typedError<null, Error_Serialize>(__TAURI_INVOKE("save_theme", { kind, name })),
+	saveTheme: (pick: ThemePick) => typedError<null, Error_Serialize>(__TAURI_INVOKE("save_theme", { pick })),
 	/**
 	 *  Reads both settings files again as the Settings dialog opens, so a hand edit made since start-up shows in
 	 *  it and takes effect (ADR 0014). This waits on small files.
@@ -2879,7 +2879,7 @@ export type ThemeInForce =
 { kind: "system" } | 
 /**
  *  The chosen theme of `side`, whatever the system says, from a mode a file written before held. A pick
- *  for that side shows at once, as the file then names the theme picked.
+ *  in the theme picker replaces the mode.
  */
 { kind: "side"; side: ThemeKind } | 
 /**  The theme named, whatever the system says. */
@@ -2893,6 +2893,12 @@ export type ThemeKind = "light" | "dark";
  *  one from the user's `themes` folder. It reaches the UI as a plain string.
  */
 export type ThemeName = string;
+
+/**
+ *  The theme picker's pick for `[appearance] theme` (#756): follow the system, or show the Theme named, which
+ *  `ThemeLibrary::choice` checks against the `themes` folder before it's saved.
+ */
+export type ThemePick = { kind: "system" } | { kind: "named"; name: string };
 
 /**
  *  A theme ready for the window: each token as a CSS variable, and the kind, which the root's

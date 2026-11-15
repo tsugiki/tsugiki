@@ -56,6 +56,5 @@ holds, until a pick writes a name in its place.
   media query hears of the change. A media event during that turn that reports the other side from the one
   kept can't be the webview catching up, so the system changed sides and the page keeps the event's side
   instead. A window that can't say gives nothing, and the page goes on with its query.
-- The theme picker still saves to the side's key: #756 makes it list every Theme and Follow system, and save
-  `theme`. Until then, a pick while `theme` names a Theme saves the side's choice and leaves the window on the
-  named Theme.
+- The theme picker lists Follow system and every Theme, and saves `theme` (#756). `light_theme` and
+  `dark_theme` change only in Settings or by hand.

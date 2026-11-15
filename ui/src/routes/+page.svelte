@@ -12,6 +12,7 @@
   import AboutLine from "$lib/ui/AboutLine.svelte";
   import AddRepository from "$lib/ui/AddRepository.svelte";
   import { type ChordRun, ChordWait } from "$lib/ui/chord.svelte";
+  import KeyList, { type View } from "$lib/ui/KeyList.svelte";
   import { type Bindings, currentOs, isTextBox, keyGuard, typesInTextBox } from "$lib/ui/keys";
   import { mirrorNote } from "$lib/ui/mirror-note";
   import MirrorQuestionDialog from "$lib/ui/MirrorQuestionDialog.svelte";
@@ -54,13 +55,21 @@
   let pickerOpen = $state(false);
   let themePickerOpen = $state(false);
   let settingsOpen = $state(false);
+  /** The views whose keys the `?` list shows, while it's open. */
+  let keyViews = $state<readonly View[]>();
   /** The Repository whose mirror's question the dialog asks, while it's open. */
   let questionFor = $state<string>();
   /** Whether a dialog, the palette or a picker is open. Each closes on Esc, so one on top of another would
    * lose what the user typed below, and none opens over another: a control behind one, which a press or Tab
    * can still reach, does nothing. A command run from the palette runs once it has closed. */
   const dialogOpen = $derived(
-    addOpen || paletteOpen || pickerOpen || themePickerOpen || settingsOpen || questionFor !== undefined,
+    addOpen ||
+      paletteOpen ||
+      pickerOpen ||
+      themePickerOpen ||
+      settingsOpen ||
+      keyViews !== undefined ||
+      questionFor !== undefined,
   );
   const openAdd = () => {
     if (!dialogOpen) addOpen = true;
@@ -118,6 +127,10 @@
       if (!dialogOpen) openThemePicker();
     },
     reload_themes: reloadThemes,
+    // The list shows the keys that work where the press was, so it asks the screen before it takes the focus.
+    show_keys: (e) => {
+      if (!dialogOpen) keyViews = repositoryHome?.keyViews(e.target) ?? [];
+    },
   };
   const guard = keyGuard(pageBindings, os);
   const pageActions = Object.keys(pageBindings) as Action[];
@@ -326,6 +339,15 @@
     at={settingsAt}
     onclose={() => {
       settingsOpen = false;
+    }}
+  />
+{/if}
+{#if keyViews !== undefined}
+  <KeyList
+    views={keyViews}
+    development={about.about?.build === "development"}
+    onclose={() => {
+      keyViews = undefined;
     }}
   />
 {/if}

@@ -12,6 +12,10 @@ export type Action = Default["action"];
  * A key is named as `keyName` and `chordName` name them: "ctrl+shift+p", "ctrl+k m". */
 export type Row = Omit<Default, "key"> & { readonly key: string | null };
 
+/** Where an action's key works, as the core's table says: anywhere, or in the Issue list, the diff or the
+ * composer. */
+export type Context = Default["context"];
+
 /** The keys `[keys]` gives the actions it names in place of their defaults, as the core read them: a key, or
  * `""` for none. */
 export type Remaps = Partial<Record<Action, string>>;
@@ -102,6 +106,12 @@ const keymap = new Keymap();
 /** Every row of the table, with the keys in force, in the order the Keyboard page lists them. */
 export function keyTable(): readonly Row[] {
   return keymap.rows;
+}
+
+/** The rows of the actions whose key works in `context` and that have a key in force, in the table's order.
+ * The `?` list shows them. */
+export function keysIn(context: Context): readonly Row[] {
+  return keymap.rows.filter((row) => row.context === context && row.key !== null);
 }
 
 /** Puts the keys `[keys]` gives in force, in place of those it gave before. */

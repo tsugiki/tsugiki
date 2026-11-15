@@ -1136,6 +1136,38 @@ it("moves through a PR's changes with F7 and Shift+F7 on its Files tab", async (
   expect(next.mock.calls).toEqual([[1], [-1]]);
 });
 
+it("names the views whose keys work where a press goes, for the `?` list", async () => {
+  core.pullRequestFiles.mockResolvedValue({
+    status: "ok",
+    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
+  });
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const { component, treeRow } = await listing();
+  const box = document.createElement("input");
+  treeRow.closest(".list")?.append(box);
+  const onList = [component.keyViews(document.body), component.keyViews(treeRow), component.keyViews(box)];
+  await fireEvent.click(treeRow);
+  const detail = document.querySelector('[data-pane="detail"]');
+  // The Conversation tab has no keys of its own.
+  const onConversation = component.keyViews(detail);
+  await fireEvent.click(await screen.findByRole("tab", { name: "Files" }));
+  await screen.findByRole("region", { name: "Diff" });
+
+  expect([...onList, onConversation]).toEqual([["issue_list"], ["issue_list"], [], []]);
+  // The diff's keys work from the list too, while the Files tab shows.
+  expect([component.keyViews(detail), component.keyViews(treeRow)]).toEqual([
+    ["diff"],
+    ["issue_list", "diff"],
+  ]);
+});
+
 it("moves between a PR's files with Alt+PageDown and Alt+PageUp on its Files tab", async () => {
   const next = vi.spyOn(PrFilesState.prototype, "nextFile");
   const files = await onFiles();

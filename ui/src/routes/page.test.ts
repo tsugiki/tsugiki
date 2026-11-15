@@ -1262,6 +1262,98 @@ describe("the Settings dialog", () => {
   });
 });
 
+describe("the key list", () => {
+  const question = (target: Element = document.body) =>
+    fireEvent.keyDown(target, { key: "?", code: "Slash", shiftKey: true });
+  const keyList = () => screen.queryByRole("dialog", { name: "Keys" });
+  const sections = () =>
+    screen.getAllByRole("region").flatMap((section) => section.getAttribute("aria-label") ?? []);
+
+  beforeEach(() => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  });
+
+  afterEach(() => {
+    remapKeys({});
+  });
+
+  it("opens on ? with the Issue list's keys, and closes on Esc with the focus back", async () => {
+    core.home.mockResolvedValue(gcmonHome);
+    core.workbench.mockResolvedValue(oneIssue);
+    render(Page);
+    const row = await screen.findByRole("button", { name: "#7 It crashes" });
+    await fireEvent.keyDown(document.body, { key: "ArrowDown" });
+
+    await question(row);
+    const list = keyList();
+    expect(list).toBeTruthy();
+    expect(document.activeElement).toBe(list);
+    expect(sections()).toEqual(["Issue list", "Anywhere"]);
+    const issueList = within(screen.getByRole("region", { name: "Issue list" }));
+    expect(issueList.getByText("Archive").previousElementSibling?.textContent).toBe("E");
+    expect(issueList.getByText("Mute").previousElementSibling?.textContent).toBe("M");
+    // The list's keys stay under it.
+    await fireEvent.keyDown(window, { key: "ArrowDown" });
+
+    await fireEvent.keyDown(window, { key: "Escape" });
+    expect(keyList()).toBeNull();
+    expect(document.activeElement).toBe(row);
+  });
+
+  it("shows a key remapped in [keys] by its new binding", async () => {
+    core.home.mockResolvedValue(gcmonHome);
+    const remapped = structuredClone(SETTINGS);
+    remapped.settings.keys = { archive: "a" };
+    core.settings.mockResolvedValue(remapped);
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await vi.waitFor(() => {
+      expect(actionOn("a")).toBe("archive");
+    });
+
+    await question();
+    const issueList = within(screen.getByRole("region", { name: "Issue list" }));
+    expect(issueList.getByText("Archive").previousElementSibling?.textContent).toBe("A");
+  });
+
+  it("lists only the keys that work anywhere on onboarding", async () => {
+    render(Page);
+    await screen.findByText(/Your token comes from/);
+    await question();
+    expect(sections()).toEqual(["Anywhere"]);
+  });
+
+  it("types ? in a text box", async () => {
+    render(Page);
+    await screen.findByText(/Your token comes from/);
+    const box = document.createElement("input");
+    document.body.append(box);
+    const typed = await question(box);
+    box.remove();
+
+    expect([typed, keyList()]).toEqual([true, null]);
+  });
+
+  it("doesn't open over another dialog", async () => {
+    const remapped = structuredClone(SETTINGS);
+    remapped.settings.keys = { show_keys: "ctrl+/" };
+    core.settings.mockResolvedValue(remapped);
+    render(Page);
+    await screen.findByText(/Your token comes from/);
+    await vi.waitFor(() => {
+      expect(actionOn("ctrl+/")).toBe("show_keys");
+    });
+    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    // Ctrl+/ types nothing, so the palette's text box doesn't keep it.
+    await fireEvent.keyDown(screen.getByRole("combobox", { name: "Command" }), {
+      key: "/",
+      code: "Slash",
+      ctrlKey: true,
+    });
+    expect(keyList()).toBeNull();
+  });
+});
+
 describe("keys remapped in [keys]", () => {
   beforeEach(() => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");

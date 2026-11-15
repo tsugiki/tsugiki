@@ -31,6 +31,7 @@
   import { scrollerIn } from "./focus";
   import HistoryBar from "./HistoryBar.svelte";
   import IssueDetail from "./IssueDetail.svelte";
+  import type { View } from "./KeyList.svelte";
   import { type Action, actionOn } from "$lib/state/keymap.svelte";
   import { actionLabel, currentOs, isTextBox, keyName, typesInTextBox } from "./keys";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
@@ -564,6 +565,17 @@
       workbench.moveTo({ number: line.issue, kind: "issue", issue: undefined });
       focusCursor();
     }
+  }
+
+  /** The views whose keys work for a press on `target`, which the `?` list shows: the list's while the press
+   * goes to the list, as `inList` says, and the diff's while the Files tab shows its diff, wherever the focus
+   * is. A text box keeps the keys of both. */
+  export function keyViews(target: EventTarget | null): View[] {
+    const views: View[] = [];
+    if (isTextBox(target)) return views;
+    if (inList(target)) views.push("issue_list");
+    if (shownFiles()) views.push("diff");
+    return views;
   }
 
   /** Focuses the row under the cursor, so it scrolls into view, and Enter presses its button. While the list

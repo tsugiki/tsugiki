@@ -417,7 +417,8 @@ test("Ctrl+B and the palette hide the Sidebar, and the Issue list takes its room
     await page.keyboard.press("ControlOrMeta+Shift+P");
     // The box opens with `>` typed, which marks the commands, and `fill` replaces it.
     await page.getByRole("combobox", { name: "Command" }).fill(`>${title}`);
-    await expect(page.getByRole("option")).toHaveText([title]);
+    // One row, named for what it does: its key describes it, and stays out of its name.
+    await expect(page.getByRole("option")).toHaveAccessibleName(title);
     await page.keyboard.press("Enter");
   };
 

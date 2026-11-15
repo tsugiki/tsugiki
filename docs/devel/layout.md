@@ -128,7 +128,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     Pane sizes, the width of the PR view's rail ([review.md](review.md)), the Definition peek's height,
     inline and split ([definitions.md](definitions.md)), the Sidebar's state, whether the Issue list shows
     and what `Ctrl+K Z` remembers belong to the machine, like the window's position, and are not synced.
-    Whether the rail is open lasts only until Tsugiki quits.
+    Whether the rail is open, and on which tab, lasts only until Tsugiki quits.
 
     "Reset Layout" in the command palette puts all of that back to the defaults at once, without asking: both
     pane sizes, the rail's 280 px, the peek's 18 rows and the split peek's 42%, the Sidebar full and on show,

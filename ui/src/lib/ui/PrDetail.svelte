@@ -10,6 +10,13 @@
     RAIL_WIDTH,
   } from "$lib/state/panes.svelte";
   import type { PrTab, PrViewState } from "$lib/state/pr-view.svelte";
+  import {
+    RAIL_TABS,
+    type RailTab,
+    railTabLabel,
+    type RailTabId,
+    type RailTabSpec,
+  } from "$lib/state/rail.svelte";
   import Conversation from "./Conversation.svelte";
   import FilesTab from "./FilesTab.svelte";
   import { focusBesideRail } from "./focus";
@@ -66,11 +73,23 @@
   // Svelte sets each to null as its element goes.
   let section = $state<HTMLElement | null>(null);
   let panel = $state<HTMLElement | null>(null);
-  /** The rail's key, which its button and × name. */
-  // The rail's key as `[keys]` gives it, or null while it has none (#549).
-  const railKey = $derived(actionLabel("toggle_rail_files", currentOs()));
+  /** The pane each of the rail's tabs draws. */
+  const RAIL_PANES: Record<RailTabId, Snippet> = { files: filesPane };
+  /** The rail's tabs, each with its key as `[keys]` gives it, or null while it has none (#549), which its
+   * button and the rail's × name. */
+  const railTab = ({ id, name, action }: RailTabSpec & { id: RailTabId }): RailTab<RailTabId> => ({
+    id,
+    name,
+    key: actionLabel(action, currentOs()),
+    pane: RAIL_PANES[id],
+  });
+  const [firstRailTab, ...moreRailTabs] = RAIL_TABS;
+  const railTabs: readonly [RailTab<RailTabId>, ...RailTab<RailTabId>[]] = $derived([
+    railTab(firstRailTab),
+    ...moreRailTabs.map(railTab),
+  ]);
   /** Whether the rail shows: it opens beside the tabs, which come with the PR's view. */
-  const railed = $derived(panes.railOpen && Boolean(pr.view));
+  const railed = $derived(panes.railState.open && Boolean(pr.view));
   /** Whether the Conversation scrolls by itself, as it does beside the rail. Without the rail the whole pane
    * scrolls it, under the header. */
   const conversationScrolls = $derived(railed && pr.tab === "conversation");
@@ -134,6 +153,9 @@
   };
 </script>
 
+<!-- The rail's Files tab, which the tree of the PR's changed files fills (#604). -->
+{#snippet filesPane()}{/snippet}
+
 <section
   bind:this={section}
   class="detail"
@@ -183,7 +205,8 @@
     <p class="by"><b>{view.author ?? "deleted user"}</b> <StateWords row={view} /></p>
     <MarkButton seen={view.seen} {onmark} />
 
-    <!-- The tabs, and at the right the button that opens the rail beside them, or closes it. -->
+    <!-- The tabs, and at the right a button for each of the rail's tabs, which opens the rail beside them on
+         that tab, or closes it there. -->
     <div class="tab-row">
       <div class="tabs" role="tablist">
         {#each TABS as { tab, name } (tab)}
@@ -200,17 +223,20 @@
           </button>
         {/each}
       </div>
-      <button
-        type="button"
-        class="rail-button"
-        data-opens-rail
-        aria-label="Files in the rail"
-        aria-pressed={panes.railOpen}
-        title={railKey === null ? "Files in the rail" : `Files in the rail (${railKey})`}
-        onclick={() => {
-          panes.toggleRail();
-        }}>Files</button
-      >
+      {#each railTabs as tab (tab.id)}
+        {@const label = railTabLabel(tab.name, tab.count)}
+        <button
+          type="button"
+          class="rail-button"
+          data-opens-rail
+          aria-label={`${label} in the rail`}
+          aria-pressed={panes.railState.open && panes.railState.tab === tab.id}
+          title={tab.key === null ? `${label} in the rail` : `${label} in the rail (${tab.key})`}
+          onclick={() => {
+            panes.railState.toggle(tab.id);
+          }}>{label}</button
+        >
+      {/each}
     </div>
     {#if stale !== undefined}
       <p class="stale">
@@ -261,10 +287,8 @@
       </div>
       {#if railed}
         <Rail
-          closeKey={railKey}
-          onclose={() => {
-            panes.toggleRail();
-          }}
+          tabs={railTabs}
+          rail={panes.railState}
           onleave={() => {
             focusBesideRail(section);
           }}

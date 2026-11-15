@@ -26,6 +26,18 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   cover the whole PR, and show the file of the change, the thread or the match they move to. So does
   anything that opens a file: a thread opened from the Conversation, and a NEWS entry's Show file. After a
   move to a page, `F7` and `F8` go on from there.
+- A rail on the right of the PR view sits beside the Conversation and the Files tab
+  ([#603](https://github.com/tsugiki/tsugiki/issues/603)). It holds one pane, Files, for the tree of the
+  PR's changed files ([#604](https://github.com/tsugiki/tsugiki/issues/604)). The Files button at the
+  right of the tab row, `Ctrl+K F` and "View: Files in the Rail" in the command palette open it, and close
+  it when it is open, and so does × in its corner. It stays open, at its width, from one tab to the other
+  and from PR to PR, until the user closes it or Tsugiki quits. Its left edge drags its width, from 200 to
+  640 px, while the tab beside it keeps 240; a double-click puts back its 280. The pane layout keeps the
+  width in `machine.toml` ([layout.md](layout.md)). Beside the rail the Conversation scrolls by itself under
+  the tab row, as the diff does.
+  - Esc in the rail gives the focus to the diff, or the file view over it, or the Conversation, and leaves
+    the rail open. Closing the rail with the focus in it does the same, and from the Conversation, which the
+    whole pane scrolls again, gives the focus to the Files button.
 - Hidden lines around each change can be shown, as on GitHub: 20 more above or below a hunk, the rest of a
   short gap, or the whole file. They are read from the file at the PR’s head in the mirror, so expanding costs
   no API call. New line comments stay on lines of the diff, because GitHub's API accepts them only there; the

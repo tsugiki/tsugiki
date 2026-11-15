@@ -28,6 +28,7 @@
     type WorkbenchRow,
     type WorkbenchView,
   } from "$lib/state/workbench.svelte";
+  import { focusBesideRail } from "./focus";
   import HistoryBar from "./HistoryBar.svelte";
   import IssueDetail from "./IssueDetail.svelte";
   import { actionOn } from "$lib/state/keymap";
@@ -394,7 +395,19 @@
         shownFiles()?.toggleMode();
       },
       toggle_detail_only: () => void toggleDetailOnly(),
+      toggle_rail_files: () => void toggleRail(),
     };
+  }
+
+  /** `Ctrl+K F`: opens the rail beside the tabs of the PR on show, or closes it (#603). Focus in a rail it
+   * closes goes to what the rail sat beside, so it doesn't fall out of the window with the rail. */
+  async function toggleRail() {
+    if (!(detail instanceof PrViewState)) return;
+    const inRail = document.activeElement?.closest("[data-rail]") instanceof HTMLElement;
+    panes.railOpen = !panes.railOpen;
+    if (!inRail) return;
+    await tick();
+    focusBesideRail(detailPane());
   }
 
   /** The Files tab of the PR on show, while it shows its diff. The file view covers the diff, so the diff's
@@ -486,6 +499,15 @@
         ? [{ title: workbench.quietShown ? "Hide Quiet Items" : "Show Quiet Items", run: toggleQuiet }]
         : []),
       { title: "View: Stale Reviews", run: () => showView({ kind: "stale_reviews" }) },
+      ...(detail instanceof PrViewState
+        ? [
+            {
+              title: "View: Files in the Rail",
+              note: actionLabel("toggle_rail_files", currentOs()),
+              run: () => void toggleRail(),
+            },
+          ]
+        : []),
       ...filesCommands(),
     ];
   }
@@ -944,6 +966,7 @@
       <PrDetail
         repository={name}
         {pr}
+        {panes}
         {now}
         onback={back}
         onmark={markByButton}

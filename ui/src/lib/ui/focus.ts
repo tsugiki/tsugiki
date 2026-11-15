@@ -10,6 +10,19 @@ export function takeFocus(element: HTMLElement) {
   };
 }
 
+/** Gives the focus to what the PR view's rail sits beside, in the PR view `pane` (#603): the diff on the
+ * Files tab, or the file view over it, which leaves the diff under it inert, or the Conversation while it
+ * scrolls by itself beside the rail. With neither, as once the rail has closed over the Conversation, which
+ * the whole pane scrolls again, or before the diff has come, the focus goes to the button that opens the
+ * rail. */
+export function focusBesideRail(pane: Element | null | undefined) {
+  const panel = pane?.querySelector<HTMLElement>('[role="tabpanel"]');
+  const scroller =
+    panel?.querySelector<HTMLElement>("[data-scrolls]:not([inert] *)") ??
+    (panel?.hasAttribute("data-scrolls") === true ? panel : undefined);
+  (scroller ?? pane?.querySelector<HTMLElement>("[data-opens-rail]"))?.focus({ preventScroll: true });
+}
+
 const CONTROLS = [
   "a[href]",
   "button:not(:disabled)",

@@ -181,6 +181,7 @@ const DOCUMENTED: &[(&str, &[Action])] = &[
         "Open the files unchanged since a Stale review",
         &[Action::UnfoldUnchanged],
     ),
+    ("Show or hide the rail's Files", &[Action::ToggleRailFiles]),
     (
         "Next / previous tab in the PR view",
         &[Action::NextTab, Action::PreviousTab],

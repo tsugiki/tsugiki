@@ -193,6 +193,7 @@ table! {
     ToggleDiffView: "Unified or Side by Side", (CtrlAlt "u"), Diff;
     ToggleFilesMode: "All Files or One File at a Time", (Ctrl "k", Plain "o"), Diff;
     UnfoldUnchanged: "Unfold Unchanged Files", (Ctrl "k", Plain "j"), Diff;
+    ToggleRailFiles: "Files in the Rail", (Ctrl "k", Plain "f"), Anywhere;
     NextTab: "Next Tab", (Ctrl "pagedown"), Anywhere;
     PreviousTab: "Previous Tab", (Ctrl "pageup"), Anywhere;
     NextFile: "Next File", (Alt "pagedown"), Diff;

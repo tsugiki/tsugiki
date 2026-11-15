@@ -122,6 +122,7 @@ const DEFAULT_LAYOUT = {
   list: null,
   peek: null,
   split_peek: null,
+  rail: null,
   sidebar_hidden: false,
   list_hidden: false,
   detail_only_hid: null,
@@ -1186,6 +1187,68 @@ it("opens a PR's Files tab one file at a time as the settings say, and switches 
   component.chordBindings().toggle_files_mode?.();
   await tick();
   expect(pressed()).toBe("true");
+});
+
+it("opens the rail with Ctrl+K F and the palette while a PR shows, and closes it on either", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const { component, treeRow } = await listing();
+  const command = () =>
+    component.paletteCommands().find((found) => found.title === "View: Files in the Rail");
+  const rail = () => screen.queryByRole("complementary", { name: "Rail" });
+  // With no PR on show there is no rail to open.
+  component.chordBindings().toggle_rail_files?.();
+  const before = command();
+  await fireEvent.click(treeRow);
+  await screen.findByRole("tab", { name: "Conversation" });
+  const closed = rail();
+
+  component.chordBindings().toggle_rail_files?.();
+  await tick();
+  const opened = rail() !== null;
+  command()?.run();
+  await tick();
+
+  expect([before, closed, opened, rail(), command()?.note]).toEqual([
+    undefined,
+    null,
+    true,
+    null,
+    "Ctrl+K F",
+  ]);
+});
+
+it("keeps the PR on show on Esc in the rail, gives the diff the focus, and gives it the focus as Ctrl+K F closes the rail from inside", async () => {
+  core.pullRequestFiles.mockResolvedValue({
+    status: "ok",
+    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
+  });
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const { component, treeRow } = await listing();
+  await fireEvent.click(treeRow);
+  await fireEvent.click(await screen.findByRole("tab", { name: "Files" }));
+  const diff = await screen.findByRole("region", { name: "Diff" });
+  component.chordBindings().toggle_rail_files?.();
+  await tick();
+  const close = () => screen.getByRole("button", { name: "Close the rail" });
+  close().focus();
+
+  await fireEvent.keyDown(close(), { key: "Escape" });
+  const left = [document.activeElement === diff, screen.queryByRole("region", { name: "PR view" }) !== null];
+  close().focus();
+  component.chordBindings().toggle_rail_files?.();
+
+  expect(left).toEqual([true, true]);
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(diff);
+  });
+  expect(screen.queryByRole("complementary", { name: "Rail" })).toBeNull();
 });
 
 it("unfolds the files unchanged since a Stale review with Ctrl+K J and the palette, on the Files tab", async () => {

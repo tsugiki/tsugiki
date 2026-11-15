@@ -385,6 +385,50 @@ test("an Outdated thread sits at the top of its file with the last lines of its 
   expect((await gaps())[1]).toBeLessThan(20);
 });
 
+test("the Files button, Ctrl+K F and × open and close the rail, its left edge sizes it, and Esc in it goes back to the diff", async ({
+  page,
+}) => {
+  // Wide enough for the Detail pane to keep 240 px of the diff beside the widened rail.
+  await page.setViewportSize({ width: 1800, height: 700 });
+  const pane = await threaded(page, { kind: "row", row: 2 }, "Say what it fixes.");
+  const rail = pane.getByRole("complementary", { name: "Rail" });
+  const button = pane.getByRole("button", { name: "Files", exact: true });
+  const width = async () => (await rail.boundingBox())?.width ?? 0;
+
+  await button.click();
+  await expect(rail).toBeVisible();
+  await expect(button).toHaveAttribute("aria-pressed", "true");
+  const opened = await width();
+  const edge = (await pane.getByRole("separator", { name: "Rail width" }).boundingBox()) ?? { x: 0, y: 0 };
+  // A drag to the left widens the rail.
+  await page.mouse.move(edge.x + 8, edge.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(edge.x + 8 - 100, edge.y + 20, { steps: 4 });
+  await page.mouse.up();
+  const dragged = await width();
+  // It stays open, at its width, on the Files tab.
+  await pane.getByRole("tab", { name: "Files" }).click();
+  const diff = pane.getByRole("region", { name: "Diff" });
+  await expect(diff).toContainText("And more");
+  const onFiles = await width();
+  await rail.getByRole("button", { name: "Close the rail" }).focus();
+  await page.keyboard.press("Escape");
+  await expect(diff).toBeFocused();
+  await expect(rail).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+k");
+  await page.keyboard.press("f");
+  await expect(rail).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+k");
+  await page.keyboard.press("f");
+  await expect(rail).toBeVisible();
+  await rail.getByRole("button", { name: "Close the rail" }).click();
+
+  await expect(rail).toHaveCount(0);
+  await expect(button).toHaveAttribute("aria-pressed", "false");
+  await expect(diff).toBeFocused();
+  expect([opened, dragged, onFiles]).toEqual([280, 380, 380]);
+});
+
 test("Ctrl+F searches the diff, marks the match it moves to, and Escape gives the diff its focus back", async ({
   page,
 }) => {

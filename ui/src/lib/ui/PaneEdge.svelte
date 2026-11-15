@@ -1,18 +1,22 @@
 <!--
-  The edge between two panes, which sizes the pane before it (#187), the edge under the Definition peek,
-  which sizes it in diff rows (#458), or the edge atop the split one, which sizes it in pixels (#459). A drag
-  or an arrow key moves it, between the size's own minimum and maximum and the minimums of the panes after
-  it, and a double-click asks for the default size back.
+  The edge between two panes, which sizes the pane before it (#187), the edge on the PR view's rail's left,
+  which sizes the rail after it (#603), the edge under the Definition peek, which sizes it in diff rows
+  (#458), or the edge atop the split one, which sizes it in pixels (#459). A drag or an arrow key moves it,
+  between the size's own minimum and maximum and the minimums of the panes beside it, and a double-click
+  asks for the default size back.
 -->
 <script lang="ts" module>
   /** What an edge sizes. A pane's edge stands between panes side by side and sizes the pane on its left, in
    * CSS pixels, while the panes after it keep `nextLeast` between them. Its `value` is the pane's width, for
-   * a screen reader, unless the pane takes half the room. A box's edge lies under a box, such as the
+   * a screen reader, unless the pane takes half the room. An edge before a pane, such as the rail's, sizes
+   * the pane after it, `value` CSS pixels wide now, while the pane before it keeps `previousLeast`, so a drag
+   * left makes it wider. A box's edge lies under a box, such as the
    * Definition peek, and sizes it in steps `unit` pixels tall, of which it is `value` now. An edge above a
    * box, such as the split Definition peek, sizes the box under it, `value` CSS pixels tall now, so a drag
    * up makes it taller. */
   export type Sizes =
     | { kind: "pane"; value: number | undefined; nextLeast: number }
+    | { kind: "before"; value: number; previousLeast: number }
     | { kind: "box"; value: number; unit: number }
     | { kind: "above"; value: number };
 </script>
@@ -45,14 +49,14 @@
     onreset: () => void;
   } = $props();
 
-  const vertical = $derived(sizes.kind === "pane");
+  const vertical = $derived(sizes.kind === "pane" || sizes.kind === "before");
   const orientation = $derived(vertical ? "vertical" : "horizontal");
   /** The CSS pixels in one step of the size. */
   const unit = $derived(sizes.kind === "box" ? sizes.unit : 1);
   const ceiling = $derived(most ?? Infinity);
-  /** The sign of the size's change as the edge moves down: an edge above its box gives it more room as it
-   * moves up. */
-  const grows = $derived(sizes.kind === "above" ? -1 : 1);
+  /** The sign of the size's change as the edge moves down or right: an edge above its box gives it more room
+   * as it moves up, and an edge before its pane as it moves left. */
+  const grows = $derived(sizes.kind === "above" || sizes.kind === "before" ? -1 : 1);
 
   let edge = $state<HTMLElement>();
   /** Where the pointer was as the drag started, and the sizes that bounded it then. */
@@ -63,11 +67,19 @@
   /** The size the edge gives now, and the most it may take. Between panes, that's the width of the pane
    * before the edge, while the panes after keep their minimums: a pane after it with room to spare, such as
    * the Detail pane beyond the list, gives it up too. The other edges keep their widths, so they don't
-   * count. A box's edge has `value` say its size. */
+   * count. Before a pane, that's the width of the pane after the edge, which the pane before it gives up
+   * down to its minimum. A box's edge has `value` say its size. */
   function measure() {
-    if (sizes.kind !== "pane") return { size: sizes.value, most: Math.max(least, ceiling) };
-    const nextLeast = sizes.nextLeast;
+    if (sizes.kind === "box" || sizes.kind === "above") {
+      return { size: sizes.value, most: Math.max(least, ceiling) };
+    }
     const here = edge as HTMLElement;
+    if (sizes.kind === "before") {
+      const width = (here.nextElementSibling as Element).getBoundingClientRect().width;
+      const room = (here.previousElementSibling as Element).getBoundingClientRect().width;
+      return { size: width, most: Math.max(least, Math.min(ceiling, width + room - sizes.previousLeast)) };
+    }
+    const nextLeast = sizes.nextLeast;
     const width = (here.previousElementSibling as Element).getBoundingClientRect().width;
     let after = 0;
     for (let next = here.nextElementSibling; next !== null; next = next.nextElementSibling) {
@@ -118,11 +130,8 @@
    * peek or move the list's cursor too. */
   function onkeydown(e: KeyboardEvent) {
     const key = keyName(e, currentOs());
-    const [less, more] = vertical
-      ? ["arrowleft", "arrowright"]
-      : grows === 1
-        ? ["arrowup", "arrowdown"]
-        : ["arrowdown", "arrowup"];
+    const [back, forth] = vertical ? ["arrowleft", "arrowright"] : ["arrowup", "arrowdown"];
+    const [less, more] = grows === 1 ? [back, forth] : [forth, back];
     if (key !== less && key !== more) return;
     e.preventDefault();
     e.stopPropagation();

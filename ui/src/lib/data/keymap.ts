@@ -105,6 +105,12 @@ export const KEYMAP = [
     "context": "diff"
   },
   {
+    "action": "toggle_rail_files",
+    "title": "Files in the Rail",
+    "key": "ctrl+k f",
+    "context": "anywhere"
+  },
+  {
     "action": "next_tab",
     "title": "Next Tab",
     "key": "ctrl+pagedown",

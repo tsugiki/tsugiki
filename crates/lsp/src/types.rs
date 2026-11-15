@@ -5,6 +5,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use url::Url;
 
 #[cfg(test)]
@@ -165,50 +166,19 @@ pub struct ServerInfo {
     pub version: Option<String>,
 }
 
-/// The parts of the answer to `initialize` the client reads.
-#[derive(Default, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
+/// The parts of the answer to `initialize` a caller reads.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct InitializeResult {
     pub(crate) server_info: Option<ServerInfo>,
-    capabilities: ServerCapabilities,
 }
 
-impl InitializeResult {
-    /// Whether the server says it hears `workspace/didChangeWorkspaceFolders`.
-    pub(crate) fn hears_folder_changes(&self) -> bool {
-        let folders = &self.capabilities.workspace.workspace_folders;
-        match &folders.change_notifications {
-            Some(ChangeNotifications::Flag(hears)) => *hears,
-            Some(ChangeNotifications::Registration(id)) => !id.is_empty(),
-            None => false,
-        }
-    }
-}
-
-#[derive(Default, Deserialize)]
-#[serde(default)]
-struct ServerCapabilities {
-    workspace: WorkspaceCapabilities,
-}
-
-#[derive(Default, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-struct WorkspaceCapabilities {
-    workspace_folders: FolderCapabilities,
-}
-
-#[derive(Default, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-struct FolderCapabilities {
-    change_notifications: Option<ChangeNotifications>,
-}
-
-/// LSP's `changeNotifications`: a flag, or the id the server registers for the notification under.
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum ChangeNotifications {
-    Flag(bool),
-    Registration(String),
+/// Whether a server's answer to `initialize` says it hears `workspace/didChangeWorkspaceFolders`. Only
+/// `true` counts: a registration id holds until the server unregisters it, which the client doesn't
+/// follow. Any other shape, `null` or a number, means it doesn't, and fails nothing.
+pub(crate) fn hears_folder_changes(initialized: &Value) -> bool {
+    let notifications = "/capabilities/workspace/workspaceFolders/changeNotifications";
+    initialized.pointer(notifications) == Some(&Value::Bool(true))
 }
 
 /// A language, by its LSP identifier, which a document is opened with.

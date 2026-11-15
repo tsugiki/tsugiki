@@ -280,11 +280,12 @@ fn a_python_version_ty_doesn_t_know_is_sent_again_without_it_and_lib_holds() {
     )];
 
     // ty asks for its settings again once it has refused them, which a lookup at once can beat, and a
-    // lookup while its workspace comes back may fail.
+    // lookup while its workspace comes back may fail. Each miss waits a moment before the next try. The
+    // 5 s cap is approximate: a lookup that starts at 4.9 s runs to its own end.
     let until = Instant::now() + Duration::from_secs(5);
     let found = (0..)
-        .map(|_| {
-            thread::sleep(Duration::from_millis(50));
+        .map(|tries: u32| {
+            thread::sleep(Duration::from_millis(50) * tries.min(1));
             look(&mut owner, &eggs)
         })
         .find(|answer| {

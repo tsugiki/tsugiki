@@ -24,15 +24,18 @@ fn cpython_s_layout_gives_ty_lib_and_the_version_with_lib_alone_to_fall_back_on(
     let environment = json!({"root": ["Lib"], "python-version": "3.14"});
     assert_eq!(given, configured(environment));
     assert_eq!(fallback.settings, configured(json!({"root": ["Lib"]})));
-    // ty 0.0.103's error over this version holds the refusal, and its error over another version doesn't.
-    let shown = |version: &str| {
-        format!(
-            "Invalid `ty.configuration` options: unknown variant `{version}`, expected one of `3.7`"
-        )
-    };
-    let refused = |message: String| (fallback.refusal.iter()).all(|text| message.contains(text));
-    assert!(refused(shown("3.14")));
-    assert!(!refused(shown("3.16")));
+    // ty 0.0.103's error over this version would hold the refusal. Its real error over 3.16, whose list of
+    // the versions it knows names 3.14, doesn't.
+    let known = "`3.7`, `3.8`, `3.9`, `3.10`, `3.11`, `3.12`, `3.13`";
+    let over_3_14 = format!(
+        "Invalid `ty.configuration` options: unknown variant `3.14`, expected one of {known}"
+    );
+    let over_3_16 = format!(
+        "Invalid `ty.configuration` options: unknown variant `3.16`, expected one of {known}, `3.14`, `3.15`"
+    );
+    let refused = |message: &str| (fallback.refusal.iter()).all(|text| message.contains(text));
+    assert!(refused(&over_3_14));
+    assert!(!refused(&over_3_16));
     assert_eq!(elsewhere, json!({}));
     assert!(none.is_none());
 }

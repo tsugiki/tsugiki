@@ -48,7 +48,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - ty drops its whole configuration over a version it doesn't know: ty 0.0.103 knows up to 3.15, and
   CPython's main branch says 3.16. Without `Lib`, a standard library name lands on typeshed's stub, and
   from there in the Python on PATH. ty says so with an error in `window/showMessage` that names
-  `ty.configuration` and the version, and Tsugiki looks for those two names alone. It then answers
+  `ty.configuration` and, in serde's words, "unknown variant `3.16`", and Tsugiki looks for those two
+  parts. The rest of the error lists the versions ty knows, so the version alone wouldn't do. It then answers
   `workspace/configuration` with `Lib` alone, and has ty ask again by taking its workspace folder away and
   giving it back, as ty 0.0.103 ignores `workspace/didChangeConfiguration` and says it hears folder
   changes. It does this once each time ty starts, and a new start meets the refusal again. A lookup in the

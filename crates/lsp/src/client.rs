@@ -23,7 +23,7 @@ use crate::rpc::{
 };
 use crate::types::{
     ConfigurationParams, Definitions, Diagnostics, InitializeResult, Language, MessageKind,
-    Position, Progress, ServerInfo, ShowMessage, Status, Uri,
+    Position, Progress, ServerInfo, ShowMessage, Status, Uri, hears_folder_changes,
 };
 
 #[cfg(test)]
@@ -332,7 +332,7 @@ impl Server {
             root: None,
             settings: Value::Null,
             fallback: None,
-            hears_folder_changes: false,
+            folders: Folders::Unknown { owed: false },
             tail: Vec::new(),
             life: Life::Running,
         };
@@ -546,11 +546,22 @@ struct Owner {
     settings: Value,
     /// The settings to give the server if it refuses `settings`, until it has.
     fallback: Option<Fallback>,
-    /// Whether the server, initialized, said it hears `workspace/didChangeWorkspaceFolders`.
-    hears_folder_changes: bool,
+    folders: Folders,
     /// The end of the server's error output, at most [`TAIL_BYTES`].
     tail: Vec<u8>,
     life: Life,
+}
+
+/// Whether the client can have the server ask for its settings again, by taking its workspace folder away
+/// and giving it back.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Folders {
+    /// The server hasn't answered `initialize`, which says. `owed` once it has refused its settings.
+    Unknown { owed: bool },
+    /// It said it hears `workspace/didChangeWorkspaceFolders`.
+    Heard,
+    /// It didn't.
+    Unheard,
 }
 
 impl Owner {
@@ -684,10 +695,15 @@ impl Owner {
                 match then {
                     Some(Then::Initialized) => {
                         self.write(rpc::notification(Method::Initialized.name(), json!({})));
-                        let initialized =
-                            serde_json::from_value::<InitializeResult>(result.clone());
-                        self.hears_folder_changes =
-                            initialized.is_ok_and(|result| result.hears_folder_changes());
+                        let owed = self.folders == Folders::Unknown { owed: true };
+                        self.folders = if hears_folder_changes(&result) {
+                            Folders::Heard
+                        } else {
+                            Folders::Unheard
+                        };
+                        if owed {
+                            self.ask_again();
+                        }
                     }
                     Some(Then::Exit) => {
                         self.write(rpc::notification(Method::Exit.name(), Value::Null));
@@ -786,13 +802,24 @@ impl Owner {
             return;
         };
         self.settings = fallback.settings;
-        if self.life != Life::Running || !self.hears_folder_changes {
-            log::warn!(
+        self.ask_again();
+    }
+
+    /// Has the server ask for its settings again, by taking its workspace folder away and giving it back,
+    /// once it has said it hears that: after its answer to `initialize`, if that comes later.
+    fn ask_again(&mut self) {
+        match self.folders {
+            Folders::Unknown { .. } => self.folders = Folders::Unknown { owed: true },
+            Folders::Heard if self.life == Life::Running => self.push_folders(),
+            Folders::Heard | Folders::Unheard => log::warn!(
                 "A language server refused its settings, and can't be told to ask for others: it gets them \
                  only if it asks again"
-            );
-            return;
+            ),
         }
+    }
+
+    /// Takes the server's workspace folder away and gives it back.
+    fn push_folders(&self) {
         let folders = folders(&self.root);
         let changes = [
             json!({"added": [], "removed": folders}),

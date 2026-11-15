@@ -250,8 +250,10 @@ fn a_server_that_refuses_the_settings_gets_the_fallback_once_and_asks_for_it_aga
 
 /// A fallback for a server that refuses Python 3.99 in `ty.configuration`.
 fn fallback() -> Fallback {
+    // The texts the core's ty setup gives for 3.99.
+    let refusal = ["`ty.configuration`", "unknown variant `3.99`"];
     Fallback {
-        refusal: vec!["ty.configuration".to_owned(), "`3.99`".to_owned()],
+        refusal: refusal.map(str::to_owned).to_vec(),
         settings: json!({"ty": {"root": ["Lib"]}}),
     }
 }
@@ -259,7 +261,9 @@ fn fallback() -> Fallback {
 #[test]
 fn a_server_that_doesn_t_hear_folder_changes_gets_the_fallback_when_it_next_asks_and_no_push() {
     let settings = json!({"ty": {"root": ["Lib"], "python-version": "3.99"}});
-    let (_server, _events, mut fake) = initialized_with(settings, Some(fallback()), json!({}));
+    // A capability of a shape LSP doesn't have fails nothing, and means it doesn't hear.
+    let odd = json!({"workspace": null});
+    let (_server, _events, mut fake) = initialized_with(settings, Some(fallback()), odd);
 
     show(
         &mut fake,
@@ -268,6 +272,36 @@ fn a_server_that_doesn_t_hear_folder_changes_gets_the_fallback_when_it_next_asks
     );
 
     // The next message the client writes is its answer, with nothing pushed before it.
+    assert_eq!(ty_settings(&mut fake), json!({"root": ["Lib"]}));
+}
+
+#[test]
+fn a_refusal_before_the_answer_to_initialize_is_pushed_once_the_answer_says_the_server_hears() {
+    let (starting, _events, mut fake) = connect();
+    let init = Init {
+        root: uri("file:///work/lookup"),
+        options: json!({}),
+        settings: json!({"ty": {"root": ["Lib"], "python-version": "3.99"}}),
+        experimental: json!({}),
+        fallback: Some(fallback()),
+    };
+    let initializing = initialize(starting, init, PATIENCE);
+    let asked = fake.expect("initialize");
+
+    show(
+        &mut fake,
+        1,
+        "Invalid `ty.configuration` options: unknown variant `3.99`",
+    );
+    let capabilities = json!({"workspace": {"workspaceFolders": {"changeNotifications": true}}});
+    fake.reply(&asked, json!({"capabilities": capabilities}));
+
+    let _initialized = initializing.join().unwrap().unwrap();
+    let _sent = fake.expect("initialized");
+    let removed = fake.expect("workspace/didChangeWorkspaceFolders");
+    assert_eq!(removed["params"]["event"]["added"], json!([]));
+    let added = fake.expect("workspace/didChangeWorkspaceFolders");
+    assert_eq!(added["params"]["event"]["removed"], json!([]));
     assert_eq!(ty_settings(&mut fake), json!({"root": ["Lib"]}));
 }
 

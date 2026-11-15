@@ -34,10 +34,11 @@ pub(super) fn setup(folder: &Path) -> Setup {
 /// Elsewhere none, and ty uses its own defaults and the Repository's files.
 ///
 /// ty drops all of its configuration over a version it doesn't know, as ty 0.0.103 does over 3.16, and
-/// shows an error that names `ty.configuration` and the version: "Invalid `ty.configuration` options:
-/// unknown variant `3.16`, expected one of …". The fallback then sends `Lib` alone. It looks for those two
-/// names alone, and the test of a version ty doesn't know, on the ty `just test-servers` pins, catches a
-/// new ty whose error drops either.
+/// shows an error that names `ty.configuration` and, in serde's words, the version as the unknown
+/// variant: "Invalid `ty.configuration` options: unknown variant `3.16`, expected one of `3.7`, …". The
+/// fallback then sends `Lib` alone. The list of known versions names others, so the version alone
+/// wouldn't do. The test of a version ty doesn't know, on the ty `just test-servers` pins, catches a new
+/// ty whose error words either part otherwise.
 fn settings(folder: &Path) -> (Value, Option<Fallback>) {
     let Ok(header) = fs::read_to_string(folder.join(super::CPYTHON_MARK)) else {
         return (json!({}), None);
@@ -49,7 +50,10 @@ fn settings(folder: &Path) -> (Value, Option<Fallback>) {
         return (lib, None);
     };
     let fallback = Fallback {
-        refusal: vec!["`ty.configuration`".to_owned(), format!("`{version}`")],
+        refusal: vec![
+            "`ty.configuration`".to_owned(),
+            format!("unknown variant `{version}`"),
+        ],
         settings: lib,
     };
     let settings = configured(json!({"root": ["Lib"], "python-version": version}));

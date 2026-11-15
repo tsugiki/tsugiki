@@ -3,8 +3,8 @@ use std::path::Path;
 use serde_json::{Value, json};
 
 use super::{
-    Definitions, Diagnostic, Diagnostics, InitializeResult, Language, Location, LocationLink,
-    MessageKind, Position, Progress, ProgressToken, Range, Severity, ShowMessage, Uri, WorkDone,
+    Definitions, Diagnostic, Diagnostics, Language, Location, LocationLink, MessageKind, Position,
+    Progress, ProgressToken, Range, Severity, ShowMessage, Uri, WorkDone, hears_folder_changes,
 };
 
 fn uri(text: &str) -> Uri {
@@ -214,22 +214,22 @@ fn each_severity_reads_from_its_number_and_no_other_does() {
 }
 
 #[test]
-fn a_server_hears_folder_changes_when_it_says_so_with_true_or_a_registration_id() {
+fn a_server_hears_folder_changes_only_when_it_says_true() {
     let hears = |folders: Value| {
-        let result = json!({"capabilities": {"workspace": {"workspaceFolders": folders}}});
-        serde_json::from_value::<InitializeResult>(result)
-            .unwrap()
-            .hears_folder_changes()
+        hears_folder_changes(&json!({"capabilities": {"workspace": {"workspaceFolders": folders}}}))
     };
 
     assert!(hears(
         json!({"supported": true, "changeNotifications": true})
     ));
-    assert!(hears(json!({"changeNotifications": "folders"})));
-    assert!(!hears(
-        json!({"supported": true, "changeNotifications": false})
-    ));
+    assert!(!hears(json!({"changeNotifications": "folders"})));
+    assert!(!hears(json!({"changeNotifications": false})));
+    assert!(!hears(json!({"changeNotifications": 1})));
     assert!(!hears(json!({"supported": true})));
+    assert!(!hears(json!(null)));
+    assert!(!hears_folder_changes(
+        &json!({"capabilities": {"workspace": null}})
+    ));
 }
 
 #[test]

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { TokenSource } from "$lib/state/home.svelte";
-  import { currentOs, keyLabel } from "./keys";
+  import { actionLabel, currentOs } from "./keys";
   import { TOKEN_SOURCE_WORDS } from "./token-words";
 
   let {
@@ -20,7 +20,7 @@
     class="settings"
     aria-haspopup="dialog"
     aria-label="Settings"
-    title={`Settings (${keyLabel("ctrl+,", currentOs())})`}
+    title={`Settings (${actionLabel("open_settings", currentOs())})`}
     onclick={onsettings}>⚙ Settings</button
   >
   <p>{TOKEN_SOURCE_WORDS[token]}</p>

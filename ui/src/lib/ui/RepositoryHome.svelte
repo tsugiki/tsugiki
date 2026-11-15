@@ -30,7 +30,8 @@
   } from "$lib/state/workbench.svelte";
   import HistoryBar from "./HistoryBar.svelte";
   import IssueDetail from "./IssueDetail.svelte";
-  import { type ChordBindings, chordLabel, currentOs, isTextBox, keyLabel, keyName } from "./keys";
+  import { actionOn } from "$lib/state/keymap";
+  import { actionLabel, type Bindings, currentOs, isTextBox, keyName } from "./keys";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
   import type { PaletteAction } from "./Palette.svelte";
   import PaneEdge from "./PaneEdge.svelte";
@@ -384,15 +385,15 @@
   }
 
   /** The chords this screen binds, each with the action the page runs once the chord's wait ends. */
-  export function chordBindings(): ChordBindings {
+  export function chordBindings(): Bindings {
     return {
-      "ctrl+k j": () => {
+      unfold_unchanged: () => {
         shownFiles()?.unfoldUnchanged();
       },
-      "ctrl+k o": () => {
+      toggle_files_mode: () => {
         shownFiles()?.toggleMode();
       },
-      "ctrl+k z": () => void toggleDetailOnly(),
+      toggle_detail_only: () => void toggleDetailOnly(),
     };
   }
 
@@ -416,7 +417,7 @@
     if (files === undefined) return [];
     const unfold = {
       title: "View: Unfold Unchanged Files",
-      note: chordLabel("ctrl+k j", currentOs()),
+      note: actionLabel("unfold_unchanged", currentOs()),
       run: () => {
         files.unfoldUnchanged();
       },
@@ -424,7 +425,7 @@
     return [
       {
         title: files.mode === "one" ? "View: All Files" : "View: One File at a Time",
-        note: chordLabel("ctrl+k o", currentOs()),
+        note: actionLabel("toggle_files_mode", currentOs()),
         run: () => {
           files.toggleMode();
         },
@@ -452,14 +453,14 @@
       { title: "Reset Layout", run: () => void resetLayout() },
       {
         title: "Go Back",
-        note: keyLabel("alt+arrowleft", currentOs()),
+        note: actionLabel("go_back", currentOs()),
         run: () => {
           goThrough(-1);
         },
       },
       {
         title: "Go Forward",
-        note: keyLabel("alt+arrowright", currentOs()),
+        note: actionLabel("go_forward", currentOs()),
         run: () => {
           goThrough(1);
         },
@@ -468,12 +469,12 @@
         ? [
             {
               title: "Mark Seen",
-              note: keyLabel("q", currentOs()),
+              note: actionLabel("mark_seen", currentOs()),
               run: () => void markSeen(detailMarked()),
             },
             {
               title: "Mark Unseen",
-              note: keyLabel("shift+q", currentOs()),
+              note: actionLabel("mark_unseen", currentOs()),
               run: () => void markUnseen(detailMarked()),
             },
           ]
@@ -541,12 +542,12 @@
 
   /** → unfolds the Issue under the cursor, and ← folds it. ← on a PR in an Issue's tree moves the cursor to
    * the Issue, as in VS Code's trees (#593). A PR outside any Issue has nothing to fold. */
-  function foldByKey(key: "arrowright" | "arrowleft") {
+  function foldByKey(action: "unfold" | "fold") {
     const line = workbench.underCursor;
     if (line?.kind === "issue") {
-      if (key === "arrowright") workbench.unfold(line.number);
+      if (action === "unfold") workbench.unfold(line.number);
       else workbench.fold(line.number);
-    } else if (line?.issue !== undefined && key === "arrowleft") {
+    } else if (line?.issue !== undefined && action === "fold") {
       workbench.moveTo({ number: line.issue, kind: "issue", issue: undefined });
       focusCursor();
     }
@@ -583,28 +584,29 @@
   function onkeydown(e: KeyboardEvent) {
     if (!keysActive) return;
     const key = keyName(e, currentOs());
+    const action = actionOn(key);
     const files = shownFiles();
     const tab = filesTab();
-    if (key === "ctrl+b") {
+    if (action === "toggle_sidebar") {
       // A held key would flicker the Sidebar and save the file each time.
       if (!e.repeat) void toggleSidebarByKey();
-    } else if (key === "ctrl+shift+g") {
+    } else if (action === "open_on_github") {
       const current = currentOnGitHub();
       if (current) void onGitHub(current);
-    } else if (key === "ctrl+alt+u" && files) {
+    } else if (action === "toggle_diff_view" && files) {
       e.preventDefault();
       diffView.toggle();
-    } else if (key === "ctrl+f" && files) {
+    } else if (action === "find_in_diff" && files) {
       files.openSearch();
     } else if (isTextBox(e.target)) {
       return;
-    } else if (key === "q" || key === "shift+q") {
+    } else if (action === "mark_seen" || action === "mark_unseen") {
       // A held key would ask the core again and again.
       if (e.repeat) return;
       const marked = keyMarked(e.target);
-      if (key === "q") void markSeen(marked, !forDetail(e.target));
+      if (action === "mark_seen") void markSeen(marked, !forDetail(e.target));
       else void markUnseen(marked);
-    } else if (key === "ctrl+alt+b") {
+    } else if (action === "toggle_issue_list") {
       // A held key would flicker the list and save the file each time.
       if (!e.repeat) void toggleListByKey();
     } else if (key === "enter" && e.repeat) {
@@ -616,10 +618,10 @@
     } else if (key === "arrowdown" || key === "arrowup") {
       e.preventDefault();
       moveCursor(key === "arrowdown" ? 1 : -1);
-    } else if ((key === "arrowright" || key === "arrowleft") && inList(e.target)) {
+    } else if ((action === "unfold" || action === "fold") && inList(e.target)) {
       // Elsewhere the bare arrows are a pane edge's, or scroll a diff or a code block sideways.
       e.preventDefault();
-      foldByKey(key);
+      foldByKey(action);
     } else if (
       key === "enter" &&
       e.target === document.body &&
@@ -645,28 +647,28 @@
       // A PR opened from a row of its own has nothing under it, so it stays on show.
       e.preventDefault();
       back(detail.issue);
-    } else if ((key === "ctrl+pagedown" || key === "ctrl+pageup") && detail instanceof PrViewState) {
+    } else if ((action === "next_tab" || action === "previous_tab") && detail instanceof PrViewState) {
       e.preventDefault();
       detail.switchTab();
-    } else if ((key === "alt+pagedown" || key === "alt+pageup") && files) {
+    } else if ((action === "next_file" || action === "previous_file") && files) {
       e.preventDefault();
-      files.nextFile(key === "alt+pagedown" ? 1 : -1);
-    } else if ((key === "f8" || key === "shift+f8") && files) {
+      files.nextFile(action === "next_file" ? 1 : -1);
+    } else if ((action === "next_thread" || action === "previous_thread") && files) {
       e.preventDefault();
-      files.nextThread(key === "f8" ? 1 : -1);
-    } else if ((key === "f7" || key === "shift+f7") && files) {
+      files.nextThread(action === "next_thread" ? 1 : -1);
+    } else if ((action === "next_change" || action === "previous_change") && files) {
       e.preventDefault();
-      files.nextChange(key === "f7" ? 1 : -1);
-    } else if (key === "alt+f12" && tab) {
+      files.nextChange(action === "next_change" ? 1 : -1);
+    } else if (action === "peek_definition" && tab) {
       // A held key would ask ty again and again. The file view looks up the word picked in it (#457).
       e.preventDefault();
       if (!e.repeat) void tab.peekDefinition();
-    } else if (key === "f12" && tab) {
+    } else if (action === "go_to_definition" && tab) {
       e.preventDefault();
       if (!e.repeat) void tab.goToDefinition();
-    } else if (key === "alt+arrowleft" || key === "alt+arrowright") {
+    } else if (action === "go_back" || action === "go_forward") {
       e.preventDefault();
-      goThrough(key === "alt+arrowleft" ? -1 : 1);
+      goThrough(action === "go_back" ? -1 : 1);
     }
   }
 
@@ -954,7 +956,7 @@
     <section class="empty" aria-label="Detail pane" tabindex="-1" data-pane="detail">
       <p>
         Nothing open. <button class="link" onclick={() => void toggleListByKey()}
-          ><kbd>{keyLabel("ctrl+alt+b", currentOs())}</kbd></button
+          ><kbd>{actionLabel("toggle_issue_list", currentOs())}</kbd></button
         > shows the Issue list.
       </p>
     </section>

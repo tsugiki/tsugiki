@@ -1,95 +1,53 @@
 // Tsugiki's keys (ADR 0013). The window's guard runs before anything else sees a key, and stops the browser
 // for every key Tsugiki owns, so a key with no action yet can't print or reload instead. Only the wait for a
-// chord's second key comes first: the key that ends it goes to neither.
+// chord's second key comes first: the key that ends it goes to neither. The keys come from the core's key
+// table, and screens bind actions, not keys (#548).
+import { type Action, actionOn, KEY_TABLE, type Key, type KeyedAction, keyOf } from "$lib/state/keymap";
 
 export type Os = "mac" | "other";
 
-/**
- * The keys from `docs/devel/keyboard.md`, named as `keyName` names them. `ctrl+k` starts the chords in
- * `OWNED_CHORDS`, and most of these have no action until their stage arrives. The bare ← and → that fold
- * the Issue list stay out: the guard would take them from every text box, diff and pane edge, and the list
- * acts on them only while it has the focus.
- */
-const OWNED_KEYS = [
-  "ctrl+shift+p",
-  "ctrl+shift+h",
-  "ctrl+p",
-  "f12",
-  "alt+f12",
-  "f7",
-  "shift+f7",
-  "f8",
-  "shift+f8",
-  "ctrl+f",
-  "ctrl+b",
-  "ctrl+alt+b",
-  "ctrl+alt+u",
-  "ctrl+pagedown",
-  "ctrl+pageup",
-  "alt+pagedown",
-  "alt+pageup",
-  "ctrl+enter",
-  "ctrl+shift+e",
-  "ctrl+k",
-  "alt+arrowleft",
-  "alt+arrowright",
-  "ctrl+shift+g",
-  "ctrl+r",
-  "e",
-  "m",
-  "q",
-  "shift+q",
-  "ctrl+,",
-  "ctrl+=",
-  "ctrl+-",
-  "ctrl+0",
-  "?",
-] as const;
-
-export type OwnedKey = (typeof OWNED_KEYS)[number];
-
-/** What a bound key does. */
-export type Bindings = Readonly<Partial<Record<OwnedKey, () => void>>>;
-
-const OWNED: ReadonlySet<string> = new Set(OWNED_KEYS);
-
-function isOwned(name: string): name is OwnedKey {
-  return OWNED.has(name);
-}
+/** A chord of the key table, named as `chordName` names it: "ctrl+k z". */
+type OwnedChord = Extract<Key, `${string} ${string}`>;
 
 /** The first key of each chord. */
-const CHORD_STARTS = ["ctrl+k"] as const satisfies readonly OwnedKey[];
+export type ChordStart = OwnedChord extends `${infer First} ${string}` ? First : never;
 
-export type ChordStart = (typeof CHORD_STARTS)[number];
+/** A key of one press, as the table and the chords' first keys have them. */
+type OwnedKey = Exclude<Key, OwnedChord> | ChordStart;
 
-const STARTS: ReadonlySet<string> = new Set(CHORD_STARTS);
+/** What each bound action does. The guard runs the action of a key, and the wait for a chord's second key
+ * the action of a chord. */
+export type Bindings = Readonly<Partial<Record<Action, () => void>>>;
+
+function isChord(key: Key): key is OwnedChord {
+  return key.includes(" ");
+}
+
+/**
+ * The actions whose keys the guard leaves alone. The bare ← and → that fold the Issue list: the guard would
+ * take them from every text box, diff and pane edge, and the list acts on them only while it has the focus.
+ * And Ctrl+Shift+I, on which WebView2 opens DevTools in a development build (ADR 0013).
+ */
+const LEFT_ALONE: ReadonlySet<Action> = new Set(["unfold", "fold", "open_devtools"]);
+
+const CHORDS: readonly OwnedChord[] = KEY_TABLE.flatMap((row) =>
+  row.key !== null && isChord(row.key) ? [row.key] : [],
+);
+
+const STARTS: ReadonlySet<string> = new Set(CHORDS.map((chord) => chord.slice(0, chord.indexOf(" "))));
 
 export function isChordStart(name: string): name is ChordStart {
   return STARTS.has(name);
 }
 
-/** The chords from `docs/devel/keyboard.md`, named as `chordName` names them. Each has no action until its
- * stage: the screen that owns one binds it, as `RepositoryHome` binds `ctrl+k z` and the page `ctrl+k t`. */
-const OWNED_CHORDS = [
-  "ctrl+k j",
-  "ctrl+k m",
-  "ctrl+k o",
-  "ctrl+k p",
-  "ctrl+k r",
-  "ctrl+k t",
-  "ctrl+k z",
-] as const satisfies readonly `${ChordStart} ${string}`[];
-
-export type OwnedChord = (typeof OWNED_CHORDS)[number];
-
-/** What a bound chord does. */
-export type ChordBindings = Readonly<Partial<Record<OwnedChord, () => void>>>;
-
-const CHORDS: ReadonlySet<string> = new Set(OWNED_CHORDS);
-
-export function isOwnedChord(name: string): name is OwnedChord {
-  return CHORDS.has(name);
-}
+/** The keys of one press that the guard owns, named as `keyName` names them, and the chords' first keys.
+ * Most have no action until their stage arrives. */
+const OWNED: ReadonlySet<string> = new Set([
+  ...KEY_TABLE.flatMap((row) =>
+    row.key === null || isChord(row.key) || LEFT_ALONE.has(row.action) ? [] : [row.key],
+  ),
+  ...STARTS,
+]);
 
 /**
  * A chord as a binding: its two presses, each named by `keyName`, joined by a space, such as "ctrl+k z". The
@@ -99,10 +57,11 @@ export function chordName(first: ChordStart, second: string): string {
   return `${first} ${second}`;
 }
 
-/** Whether `name` types in a text box: a plain key, a capital letter such as Shift+Q, or Ctrl+Alt+B, which
- * AltGr sends too on Windows. */
-function typesInTextBox(name: OwnedKey): boolean {
-  return /^(?:shift\+)?.$/.test(name) || name === "ctrl+alt+b";
+/** Whether `name` types in a text box: a plain key, a capital letter such as Shift+Q, or the key of Hide or
+ * Show the Issue List, which doesn't work in one, as its default Ctrl+Alt+B is a key AltGr sends to type on
+ * Windows. */
+function typesInTextBox(name: string): boolean {
+  return /^(?:shift\+)?.$/.test(name) || actionOn(name) === "toggle_issue_list";
 }
 
 const MODIFIERS = new Set(["control", "shift", "alt", "meta", "altgraph", "capslock", "numlock", "fn"]);
@@ -190,9 +149,15 @@ export function keyLabel(name: OwnedKey, os: Os): string {
 }
 
 /** A chord as the user reads it: "ctrl+k o" is "Ctrl+K O", or "Cmd+K O" on macOS. */
-export function chordLabel(chord: OwnedChord, os: Os): string {
+function chordLabel(chord: OwnedChord, os: Os): string {
   const [first, second] = chord.split(" ") as [ChordStart, string];
   return `${keyLabel(first, os)} ${second.toUpperCase()}`;
+}
+
+/** The key of `action` as the user reads it, such as "Ctrl+K O" for All Files or One File at a Time. */
+export function actionLabel(action: KeyedAction, os: Os): string {
+  const key = keyOf(action);
+  return isChord(key) ? chordLabel(key, os) : keyLabel(key, os);
 }
 
 /** Which OS this is, for `keyName`. */
@@ -222,8 +187,9 @@ export function isTextBox(target: EventTarget | null): boolean {
 export function keyGuard(bindings: Bindings, os: Os): (e: KeyboardEvent) => void {
   return (e) => {
     const name = keyName(e, os);
-    if (name === null || !isOwned(name) || (typesInTextBox(name) && isTextBox(e.target))) return;
+    if (name === null || !OWNED.has(name) || (typesInTextBox(name) && isTextBox(e.target))) return;
     e.preventDefault();
-    bindings[name]?.();
+    const action = actionOn(name);
+    if (action !== undefined) bindings[action]?.();
   };
 }

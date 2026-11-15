@@ -1,11 +1,30 @@
-//! Fails when the committed TypeScript bindings differ from what the commands generate (ADR 0008).
-//! `TSUGIKI_UPDATE_BINDINGS=1` rewrites them instead; `npm run bindings` does that.
+//! Fails when the committed TypeScript bindings differ from what the commands generate (ADR 0008), or the
+//! committed key table from the core's (#548). `TSUGIKI_UPDATE_BINDINGS=1` rewrites them instead; `npm run
+//! bindings` does that. `npm run cargo-test` skips both tests by the `bindings_are_up_to_date` in their
+//! names, and `npm run stale-bindings` runs them.
 
 use std::path::Path;
 
 use specta_typescript::Typescript;
 
 const HEADER: &str = "// Generated from tsugiki-app's commands by `npm run bindings`. Do not edit.";
+
+/// Writes `fresh` to `path`, from the top of the repo, under `TSUGIKI_UPDATE_BINDINGS=1`, and otherwise fails
+/// unless the committed file says the same.
+fn compare_or_update(path: &str, fresh: &str) {
+    let committed = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(path);
+    if std::env::var("TSUGIKI_UPDATE_BINDINGS").as_deref() == Ok("1") {
+        let written = std::fs::write(committed, fresh);
+        assert!(written.is_ok(), "write {path}: {written:?}");
+        return;
+    }
+    assert!(
+        std::fs::read_to_string(committed).unwrap_or_default() == fresh,
+        "{path} is out of date: run `npm run bindings` and commit the result"
+    );
+}
 
 #[test]
 fn bindings_are_up_to_date() {
@@ -16,14 +35,19 @@ fn bindings_are_up_to_date() {
         .export(Typescript::default().header(HEADER), &fresh_path)
         .expect("export bindings");
     let fresh = std::fs::read_to_string(&fresh_path).expect("read fresh bindings");
+    compare_or_update("ui/src/lib/data/bindings.ts", &fresh);
+}
 
-    let committed = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ui/src/lib/data/bindings.ts");
-    if std::env::var("TSUGIKI_UPDATE_BINDINGS").as_deref() == Ok("1") {
-        std::fs::write(committed, &fresh).expect("write bindings");
-        return;
-    }
-    assert!(
-        std::fs::read_to_string(committed).unwrap_or_default() == fresh,
-        "the TypeScript bindings are out of date: run `npm run bindings` and commit the result"
+/// The key table goes in a file of its own, apart from `bindings.ts`, which the UI's tests mock whole: each
+/// screen that shows or reads a key would find no table there.
+#[test]
+fn key_table_bindings_are_up_to_date() {
+    let table =
+        serde_json::to_string_pretty(tsugiki_core::keys::TABLE).expect("serialize the key table");
+    let fresh = format!(
+        "// Generated from tsugiki-core's key table by `npm run bindings`. Do not edit.\n\n\
+         /** Each action the user can bind, with its title, default key and where it works. */\n\
+         export const KEYMAP = {table} as const;\n"
     );
+    compare_or_update("ui/src/lib/data/keymap.ts", &fresh);
 }

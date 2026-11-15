@@ -44,6 +44,7 @@ use tsugiki_core::settings::{
 };
 use tsugiki_core::status::{Change, FailedRead, LastSync, Status, SyncActivity};
 use tsugiki_core::store::StoreReader;
+use tsugiki_core::theme::ThemeKind;
 use tsugiki_core::version::Version;
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
@@ -63,6 +64,25 @@ fn about() -> tsugiki_core::About {
 #[specta::specta]
 fn open_devtools<R: tauri::Runtime>(window: tauri::WebviewWindow<R>) -> Result<(), Error> {
     open_devtools_in(Build::CURRENT, &window)
+}
+
+/// Turns the window that asks to `side`, its title bar and native controls with it, or back to following
+/// the system with none (#755). The page asks after each `themes` answer it takes, for the side of the theme
+/// it then shows, so the window and the page agree whichever answer came last. Back to the system, it says
+/// the side the window is on, or none if the window can't say.
+///
+/// It doesn't wait, so Tauri runs it on the main thread, in the order the page asks.
+#[tauri::command]
+#[specta::specta]
+fn turn_window<R: tauri::Runtime>(
+    side: Option<ThemeKind>,
+    window: tauri::WebviewWindow<R>,
+) -> Option<ThemeKind> {
+    let themed = first_frame::ThemedWindow {
+        set_theme: &|theme| window.set_theme(theme),
+        theme: &|| window.theme(),
+    };
+    first_frame::turn_window(side, &themed)
 }
 
 fn open_devtools_in<R: tauri::Runtime>(
@@ -945,7 +965,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             mark_seen,
             mark_unseen,
             settings,
-            slow_commands::themes::<tauri::Wry>,
+            slow_commands::themes,
+            turn_window::<tauri::Wry>,
             home,
             token_source,
             pane_layout,

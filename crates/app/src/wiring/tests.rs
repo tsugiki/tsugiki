@@ -409,7 +409,6 @@ fn themes_answers_with_the_theme_in_force_and_the_theme_of_each_side_the_setting
 
     let answer = answer.unwrap();
     assert_eq!(answer["theme"], json!({ "kind": "side", "side": "light" }));
-    assert_eq!(answer["system"], Value::Null);
     assert_eq!(answer["light"]["chosen"], "VS Code Light Modern");
     assert_eq!(answer["dark"]["chosen"], "Gruvbox Dark Hard");
     assert_eq!(answer["dark"]["all"][1]["name"], "Gruvbox Dark Hard");
@@ -435,6 +434,20 @@ fn a_theme_no_theme_has_follows_the_system_and_names_the_file_and_the_line() {
         file.display()
     );
     assert_eq!(answer["problems"], json!([problem]));
+}
+
+/// The page turns the window after each `themes` answer it takes. Kept on a side, the window says nothing of
+/// the system, and back to following it, the side it is on, which Tauri's mock window gives as light.
+#[test]
+fn turn_window_turns_the_window_that_asks_and_says_the_side_it_turned_back_to() {
+    let wired = Wired::start(Err(no_folders()), no_network());
+
+    let kept = wired.ask("turn_window", json!({ "side": "dark" }));
+    let back = wired.ask("turn_window", json!({ "side": null }));
+    drop(wired.stop());
+
+    assert_eq!(kept, Ok(Value::Null));
+    assert_eq!(back, Ok(json!("light")));
 }
 
 /// The themes come from the folder beside the settings file in use, read again on each ask, so an edited

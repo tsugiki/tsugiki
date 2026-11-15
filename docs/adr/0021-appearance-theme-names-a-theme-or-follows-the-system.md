@@ -42,13 +42,17 @@ holds, until a pick writes a name in its place.
 - A name no Theme has stays in the file, as its Theme file may be mended. The window follows the system until
   then, and the status bar names the file and the line.
 - At start the app turns the window to the side of a mode or a built-in Theme, which it knows without the
-  `themes` folder, before the page loads. A Theme from the folder waits for the `themes` command, which
-  reads the folder, decides the Theme in force from the settings it reads after the folder, and turns the
-  window that asked to that Theme's side through Tauri's `set_theme`. Of two asks that cross, the one that
-  finishes last read the settings last, so the title bar and the page end on the same answer.
+  `themes` folder, before the page loads. A Theme from the folder waits for the page: after each `themes`
+  answer it takes, the page asks the `turn_window` command to turn the window to the side of the Theme in
+  force through Tauri's `set_theme`, or back to following the system. The `themes` command only reads. Since
+  the page turns the window for the answer it shows, the title bar and the page end on the same answer when
+  two asks cross, and a failed ask leaves both as they were. `turn_window` doesn't wait, so Tauri runs it on
+  the main thread in the order the page asks. A first build had the `themes` command turn the window as it
+  answered, from a worker thread, and each race between the asks and the page needed a patch of its own.
 - On Windows `set_theme` also keeps the webview's `prefers-color-scheme` on the side kept. So when the window
-  follows the system again, the `themes` command says which side the window is on, and the page takes it
-  before its media query hears of the change.
+  follows the system again, `turn_window` says which side the window is on, and the page takes it before its
+  media query hears of the change, unless the query has heard of a change since the page asked. A window
+  that can't say gives nothing, and the page goes on with its query.
 - The theme picker still saves to the side's key: #756 makes it list every Theme and Follow system, and save
   `theme`. Until then, a pick while `theme` names a Theme saves the side's choice and leaves the window on the
   named Theme.

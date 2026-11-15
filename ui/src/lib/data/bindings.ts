@@ -89,12 +89,19 @@ export const commands = {
 	 *  side the system is on. The theme picker lists the others, and a theme it saved is the chosen one from
 	 *  then on (#518). The user's theme files come after the built-in ones, read again from the `themes` folder
 	 *  on each ask, so the window asks when it starts, when the picker opens and on Reload themes (#519). This
-	 *  waits on the folder, which may sit on a synced drive.
-	 * 
-	 *  The window that asks turns to the side of the theme in force, its title bar and native controls with
-	 *  it, so they match the page each time it takes its themes.
+	 *  waits on the folder, which may sit on a synced drive. The page then asks `turn_window` to turn the
+	 *  window to the side of the theme it shows.
 	 */
-	themes: () => typedError<Themes_Serialize, Error_Serialize>(__TAURI_INVOKE("themes")),
+	themes: () => typedError<Themes, Error_Serialize>(__TAURI_INVOKE("themes")),
+	/**
+	 *  Turns the window that asks to `side`, its title bar and native controls with it, or back to following
+	 *  the system with none (#755). The page asks after each `themes` answer it takes, for the side of the theme
+	 *  it then shows, so the window and the page agree whichever answer came last. Back to the system, it says
+	 *  the side the window is on, or none if the window can't say.
+	 * 
+	 *  It doesn't wait, so Tauri runs it on the main thread, in the order the page asks.
+	 */
+	turnWindow: (side: ThemeKind | null) => __TAURI_INVOKE<ThemeKind | null>("turn_window", { side }),
 	/**  What the window opens on. */
 	home: () => __TAURI_INVOKE<Home_Serialize>("home"),
 	/**  Where the token comes from, for the Settings dialog's Account page (#429). */
@@ -2677,43 +2684,8 @@ export type ThemeView = {
  *  of the side the system is on, and turns to the other when the system does. The theme picker lists the
  *  rest (#518).
  */
-export type Themes = Themes_Serialize | Themes_Deserialize;
-
-/**
- *  The themes of each side, and the theme in force. Following the system, the window shows the chosen theme
- *  of the side the system is on, and turns to the other when the system does. The theme picker lists the
- *  rest (#518).
- */
-export type Themes_Deserialize = {
+export type Themes = {
 	theme: ThemeInForce,
-	/**
-	 *  While the window follows the system, the side the system is on, as the window says once it has turned
-	 *  back to it. A theme that kept the window on one side kept the page's `prefers-color-scheme` there too,
-	 *  and the page hears of the change a moment later. The app sets it, as only the window can say.
-	 */
-	system?: ThemeKind | null,
-	light: SideThemes,
-	dark: SideThemes,
-	/**
-	 *  What is wrong with the files of the `themes` folder, in words for the status bar, each naming its file
-	 *  and, when the parser knows it, its line (#519).
-	 */
-	problems: string[],
-};
-
-/**
- *  The themes of each side, and the theme in force. Following the system, the window shows the chosen theme
- *  of the side the system is on, and turns to the other when the system does. The theme picker lists the
- *  rest (#518).
- */
-export type Themes_Serialize = {
-	theme: ThemeInForce,
-	/**
-	 *  While the window follows the system, the side the system is on, as the window says once it has turned
-	 *  back to it. A theme that kept the window on one side kept the page's `prefers-color-scheme` there too,
-	 *  and the page hears of the change a moment later. The app sets it, as only the window can say.
-	 */
-	system: ThemeKind | null,
 	light: SideThemes,
 	dark: SideThemes,
 	/**

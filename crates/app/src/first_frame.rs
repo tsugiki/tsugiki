@@ -6,9 +6,7 @@
 
 use tauri::Theme;
 use tauri::window::Color;
-use tsugiki_core::error::Error;
-use tsugiki_core::settings::{AppearanceSettings, SettingsOwner};
-use tsugiki_core::theme::{GivenTheme, ThemeKind, ThemeLibrary, Themes};
+use tsugiki_core::theme::{ThemeKind, Themes};
 
 /// The side the system is on, as `theme` gives it. One it can't tell reads as light, the side Windows
 /// starts on.
@@ -72,36 +70,29 @@ pub fn turn(side: Option<ThemeKind>, set_theme: &dyn Fn(Option<Theme>) -> tauri:
     }
 }
 
-/// The window, as the `themes` command reaches it: `set_theme` turns it, and `theme` says the side it is on.
+/// The window, as `turn_window` reaches it: `set_theme` turns it, and `theme` says the side it is on.
 pub struct ThemedWindow<'a> {
     pub set_theme: &'a dyn Fn(Option<Theme>) -> tauri::Result<()>,
     pub theme: &'a dyn Fn() -> tauri::Result<Theme>,
 }
 
-/// Every theme for the window, with the theme in force, from the `themes` folder and the settings `owner`
-/// holds, and turns `window` to the side of the theme in force (#755).
-///
-/// While the window follows the system, it says the side the window is on once it has turned back, which the
-/// page's media query reports only a moment later.
-pub fn themes(owner: &SettingsOwner, window: &ThemedWindow<'_>) -> Result<Themes, Error> {
-    let view = owner.view();
-    let library = ThemeLibrary::read(&view.themes_folder)?;
-    let AppearanceSettings {
-        theme,
-        light_theme,
-        dark_theme,
-    } = &view.loaded.settings.appearance;
-    let given = GivenTheme {
-        choice: theme,
-        place: &view.theme_place,
-    };
-    let mut themes = library.themes(given, light_theme, dark_theme);
-    let keep = themes.theme.side();
-    turn(keep, window.set_theme);
-    if keep.is_none() {
-        themes.system = Some(side((window.theme)()));
+/// Turns `window` to `side`, as `turn` does, for the page that shows a theme of that side (#755). Back to
+/// following the system, it says the side the window is on then, which the page's media query reports only
+/// a moment later: a theme that kept the window on one side kept the query there too. A window that can't
+/// say gives none, which the log says, and the page goes on with what its query reports.
+pub fn turn_window(side: Option<ThemeKind>, window: &ThemedWindow<'_>) -> Option<ThemeKind> {
+    turn(side, window.set_theme);
+    if side.is_some() {
+        return None;
     }
-    Ok(themes)
+    match (window.theme)() {
+        Ok(Theme::Dark) => Some(ThemeKind::Dark),
+        Ok(_) => Some(ThemeKind::Light),
+        Err(cause) => {
+            log::warn!("Tsugiki can't tell which side its window turned back to: {cause}");
+            None
+        }
+    }
 }
 
 #[cfg(test)]

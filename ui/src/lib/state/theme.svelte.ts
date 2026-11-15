@@ -6,14 +6,14 @@
 import {
   commands,
   type FailedThemeView,
+  type ThemeInForce,
   type ThemeKind,
-  type Themes_Serialize,
+  type Themes,
   type ThemeView,
 } from "$lib/data/bindings";
 import { ask } from "./answer";
 
-export type { FailedThemeView, ThemeKind, ThemeView };
-export type Themes = Themes_Serialize;
+export type { FailedThemeView, ThemeKind, Themes, ThemeView };
 
 /** Says which side Windows is on: `matchMedia("(prefers-color-scheme: dark)")` in the window. */
 export type DarkQuery = Pick<MediaQueryList, "matches" | "addEventListener">;
@@ -32,6 +32,9 @@ export class ThemeState {
   #choices = 0;
   /** How many saves are on their way, which a load may have read the settings before. */
   #saving = 0;
+  /** The count of side changes the media query has heard, so a side the window said before one doesn't undo
+   * it. */
+  #heard = 0;
   /** The side in use: the one the settings keep, or else the one Windows is on. */
   side: ThemeKind = $derived.by(() => {
     const theme = this.themes?.theme;
@@ -51,6 +54,7 @@ export class ThemeState {
   constructor(query: DarkQuery) {
     this.dark = query.matches;
     query.addEventListener("change", (e) => {
+      this.#heard += 1;
       this.dark = e.matches;
     });
   }
@@ -58,8 +62,9 @@ export class ThemeState {
   /** What is wrong with the user's theme files, in words for the status bar (#519). */
   problems: readonly string[] = $derived(this.themes?.problems ?? []);
 
-  /** Asks the core for the themes. It reads the `themes` folder each time, so this is also Reload themes
-   * (#519). */
+  /** Asks the core for the themes, then turns the window to the side of the theme in force. The core reads
+   * the `themes` folder each time, so this is also Reload themes (#519). Themes that don't come keep the
+   * window on the side it was on, as the page keeps the themes it had. */
   async load() {
     const choices = this.#choices;
     const answer = await ask(commands.themes());
@@ -71,12 +76,24 @@ export class ThemeState {
         answer.data.dark.chosen = this.themes.dark.chosen;
       }
       this.themes = answer.data;
-      // A theme that kept the window on one side kept the media query there too, and the query hears that
-      // the window follows Windows again only after this answer.
-      if (answer.data.system) this.dark = answer.data.system === "dark";
       this.error = undefined;
+      await this.#turn(answer.data.theme);
     } else {
       this.error = answer.error.message;
+    }
+  }
+
+  /** Turns the window to the side `theme` keeps, its title bar with it, or back to following Windows. The
+   * page asks after each answer it takes, so the window ends on the side of the last, as the page does.
+   * Back to Windows, the window says the side it is on, which the media query hears of only a moment later:
+   * a theme that kept the window on one side kept the query there too. */
+  async #turn(theme: ThemeInForce) {
+    const heard = this.#heard;
+    try {
+      const side = await commands.turnWindow(theme.kind === "system" ? null : theme.side);
+      if (side && this.#heard === heard) this.dark = side === "dark";
+    } catch {
+      // A window that can't be reached keeps its side, and the page goes on with its media query.
     }
   }
 

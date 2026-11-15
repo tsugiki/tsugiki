@@ -12,9 +12,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use tauri::State;
 use tauri::async_runtime::spawn_blocking;
 use tauri::ipc::Channel;
-use tauri::{Runtime, State, WebviewWindow};
 use tsugiki_core::definitions::{Answer, Index, ServerName, Waiting};
 use tsugiki_core::diff::{DiffRow, HeadLine};
 use tsugiki_core::error::{Error, ErrorKind};
@@ -22,16 +22,16 @@ use tsugiki_core::highlight::Span;
 use tsugiki_core::mirror::{CloneRefusal, MirrorSource};
 use tsugiki_core::repository_settings::{MirrorCost, NameCheck};
 use tsugiki_core::session::SessionRequests;
-use tsugiki_core::settings::{Home, LoadedSettings, PaneLayout, SettingsChanges, SettingsOwner};
+use tsugiki_core::settings::{
+    AppearanceSettings, Home, LoadedSettings, PaneLayout, SettingsChanges, SettingsOwner,
+};
 use tsugiki_core::store::StoreReader;
-use tsugiki_core::theme::{ThemeKind, ThemeLibrary, Themes};
+use tsugiki_core::theme::{GivenTheme, ThemeKind, ThemeLibrary, Themes};
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_files::PrFiles;
 use tsugiki_core::workbench::pr_view::PrView;
 use tsugiki_core::workbench::{Workbench, WorkbenchView};
-
-use crate::first_frame;
 
 /// Whether Tsugiki has the Repository the user typed, and if not, what adding it would load.
 #[tauri::command]
@@ -166,21 +166,23 @@ pub(crate) fn save_pane_layout(
 /// side the system is on. The theme picker lists the others, and a theme it saved is the chosen one from
 /// then on (#518). The user's theme files come after the built-in ones, read again from the `themes` folder
 /// on each ask, so the window asks when it starts, when the picker opens and on Reload themes (#519). This
-/// waits on the folder, which may sit on a synced drive.
-///
-/// The window that asks turns to the side of the theme in force, its title bar and native controls with
-/// it, so they match the page each time it takes its themes.
+/// waits on the folder, which may sit on a synced drive. The page then asks `turn_window` to turn the
+/// window to the side of the theme it shows.
 #[tauri::command(async)]
 #[specta::specta]
-pub(crate) fn themes<R: Runtime>(
-    window: WebviewWindow<R>,
-    owner: State<'_, SettingsOwner>,
-) -> Result<Themes, Error> {
-    let themed = first_frame::ThemedWindow {
-        set_theme: &|theme| window.set_theme(theme),
-        theme: &|| window.theme(),
+pub(crate) fn themes(owner: State<'_, SettingsOwner>) -> Result<Themes, Error> {
+    let view = owner.view();
+    let AppearanceSettings {
+        theme,
+        light_theme,
+        dark_theme,
+    } = &view.loaded.settings.appearance;
+    let library = ThemeLibrary::read(&view.themes_folder)?;
+    let given = GivenTheme {
+        choice: theme,
+        place: &view.theme_place,
     };
-    first_frame::themes(&owner, &themed)
+    Ok(library.themes(given, light_theme, dark_theme))
 }
 
 /// Saves the theme the picker chose for side `kind` to `light_theme` or `dark_theme` in `settings.toml`,

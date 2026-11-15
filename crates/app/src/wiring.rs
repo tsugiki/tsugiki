@@ -212,7 +212,7 @@ pub(crate) fn connect_core<R: Runtime>(
 /// Turns each window to the side the settings keep, when Tsugiki can tell it without the `themes` folder: a
 /// built-in Theme's, or a mode's from a file written before (#755). `startup.rs` opened the window on the
 /// system's side, and this turns it before the page loads, so its title bar doesn't flip once the page has
-/// read the folder. The `themes` command turns it for a Theme from the folder.
+/// read the folder. The page asks `turn_window` to turn it for a Theme from the folder.
 fn turn_to_start_theme<R: Runtime>(app: &AppHandle<R>, settings: &SettingsOwner) {
     let Some(side) = settings
         .view()

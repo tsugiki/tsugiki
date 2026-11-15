@@ -1,8 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands } from "$lib/data/bindings";
 import { applyTheme, type DarkQuery, ThemeState, type Themes, type ThemeView } from "./theme.svelte";
 
-vi.mock("$lib/data/bindings", () => ({ commands: { themes: vi.fn(), saveTheme: vi.fn() } }));
+vi.mock("$lib/data/bindings", () => ({
+  commands: { themes: vi.fn(), saveTheme: vi.fn(), turnWindow: vi.fn() },
+}));
+
+// The window turns without saying a side, unless a test says otherwise.
+beforeEach(() => {
+  vi.mocked(commands.turnWindow).mockReset().mockResolvedValue(null);
+});
 
 /** A theme of side `kind` named `name`, with background `bg`. */
 const view = (name: string, kind: "light" | "dark", bg: string): ThemeView => ({
@@ -21,7 +28,6 @@ const GRUVBOX_DARK = view("Gruvbox Dark Hard", "dark", "#1d2021");
 
 const THEMES: Themes = {
   theme: { kind: "system" },
-  system: null,
   light: { chosen: "VS Code Light Modern", all: [LIGHT_MODERN, GRUVBOX_LIGHT], failed: [] },
   dark: { chosen: "VS Code Dark Modern", all: [DARK_MODERN, GRUVBOX_DARK], failed: [] },
   problems: [],
@@ -106,17 +112,108 @@ describe("ThemeState", () => {
     expect(state.current?.name).toBe("Gruvbox Dark Hard");
   });
 
-  it("takes the side the core says Windows is on, which the media query hears of later", async () => {
+  it("turns the window to the side of the theme in force after each answer", async () => {
+    const state = await loaded(
+      { ...THEMES, theme: { kind: "named", name: "Gruvbox Dark Hard", side: "dark" } },
+      false,
+    );
+    vi.mocked(commands.themes).mockResolvedValue({
+      status: "ok",
+      data: { ...THEMES, theme: { kind: "side", side: "light" } },
+    });
+    await state.load();
+    vi.mocked(commands.themes).mockResolvedValue({ status: "ok", data: structuredClone(THEMES) });
+    await state.load();
+
+    expect(vi.mocked(commands.turnWindow).mock.calls).toEqual([["dark"], ["light"], [null]]);
+  });
+
+  it("takes the side the window turned back to, which the media query hears of later", async () => {
     const state = await loaded(
       { ...THEMES, theme: { kind: "named", name: "Gruvbox Dark Hard", side: "dark" } },
       true,
     );
-    vi.mocked(commands.themes).mockResolvedValue({ status: "ok", data: { ...THEMES, system: "light" } });
+    vi.mocked(commands.themes).mockResolvedValue({ status: "ok", data: structuredClone(THEMES) });
+    vi.mocked(commands.turnWindow).mockResolvedValueOnce("light");
 
     await state.load();
 
     expect(state.dark).toBe(false);
     expect(state.current?.name).toBe("VS Code Light Modern");
+  });
+
+  it("keeps a side Windows changed to while the window turned back", async () => {
+    vi.mocked(commands.themes).mockResolvedValue({
+      status: "ok",
+      data: { ...THEMES, theme: { kind: "named", name: "Gruvbox Light Hard", side: "light" } },
+    });
+    const { query, turn } = sides(false);
+    const state = new ThemeState(query);
+    await state.load();
+    vi.mocked(commands.themes).mockResolvedValue({ status: "ok", data: structuredClone(THEMES) });
+    let said: (side: "light") => void = () => {};
+    vi.mocked(commands.turnWindow).mockReturnValueOnce(
+      new Promise((resolve) => {
+        said = resolve;
+      }),
+    );
+
+    const reload = state.load();
+    await vi.waitFor(() => expect(commands.turnWindow).toHaveBeenLastCalledWith(null));
+    turn(true);
+    said("light");
+    await reload;
+
+    expect(state.dark).toBe(true);
+    expect(state.current?.name).toBe("VS Code Dark Modern");
+  });
+
+  it("leaves the window and the page on the theme of the answer that came last when two cross", async () => {
+    const state = await loaded(THEMES, false);
+    let first: (themes: { status: "ok"; data: Themes }) => void = () => {};
+    vi.mocked(commands.themes)
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          first = resolve;
+        }),
+      )
+      .mockResolvedValueOnce({
+        status: "ok",
+        data: { ...THEMES, theme: { kind: "named", name: "Gruvbox Dark Hard", side: "dark" } },
+      });
+
+    const older = state.load();
+    await state.load();
+    expect(commands.turnWindow).toHaveBeenLastCalledWith("dark");
+    first({ status: "ok", data: structuredClone(THEMES) });
+    await older;
+
+    expect(state.themes?.theme).toEqual({ kind: "system" });
+    expect(state.current?.name).toBe("VS Code Light Modern");
+    expect(commands.turnWindow).toHaveBeenLastCalledWith(null);
+  });
+
+  it("keeps the window on its side when the themes don't come, as the page keeps its theme", async () => {
+    const named = { kind: "named", name: "Gruvbox Dark Hard", side: "dark" } as const;
+    const state = await loaded({ ...THEMES, theme: named }, false);
+    vi.mocked(commands.themes).mockResolvedValue({
+      status: "error",
+      error: { kind: "internal", message: "The themes folder can't be read" },
+    });
+
+    await state.load();
+
+    expect(state.error).toBe("The themes folder can't be read");
+    expect(state.current?.name).toBe("Gruvbox Dark Hard");
+    expect(vi.mocked(commands.turnWindow).mock.calls).toEqual([["dark"]]);
+  });
+
+  it("goes on with the media query when the window can't be reached", async () => {
+    vi.mocked(commands.turnWindow).mockRejectedValueOnce(new Error("the window has gone"));
+    const state = await loaded(THEMES, true);
+
+    expect(state.dark).toBe(true);
+    expect(state.current?.name).toBe("VS Code Dark Modern");
   });
 
   it("holds the core's refusal and shows no theme", async () => {
@@ -135,6 +232,7 @@ describe("ThemeState", () => {
     expect(state.error).toBe("A built-in theme can't be read");
     await state.choose("light", "Gruvbox Light Hard");
     expect(commands.saveTheme).not.toHaveBeenCalled();
+    expect(commands.turnWindow).not.toHaveBeenCalled();
   });
 
   it("reads the themes again on each load, with the files' problems and those that failed", async () => {

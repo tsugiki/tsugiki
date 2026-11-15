@@ -24,15 +24,20 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
   VS Code spreads it over `workbench.colorTheme` and `window.autoDetectColorScheme`, so the file can't follow
   the system and name a Theme as well. `"light"` and `"dark"`, from files written before
   ([#755](https://github.com/tsugiki/tsugiki/issues/755)), show the Theme in `light_theme` or `dark_theme`,
-  and a pick for that side writes the name picked in their place. A key left out takes its default:
+  and a pick for that side writes the name picked in their place. Any other save keeps the mode, since the
+  side's name may be one no Theme has, and writing it would turn the window to the system's side. A key left
+  out takes its default:
   `"system"`, VS Code Light Modern and VS Code Dark Modern. A value that isn't text keeps that key's default,
   and the status bar names the file and the line. A name no Theme has stays in the settings, as its file may
   be mended: until
   then a `theme` follows the system, and a side shows its default, and the status bar says so, with the file
   and the line for `theme`. Tsugiki reads `settings.toml` at start and as the Settings dialog opens, and the
   window takes the Theme when it asks for its themes: at start, when the picker opens, and on Reload themes.
-  `set_theme` keeps the page's `prefers-color-scheme` on the side kept too, so when the window follows the
-  system again, the answer says which side the system is on.
+  After each answer it takes, the page asks `turn_window` to turn the window to the side of the Theme it
+  shows, so the title bar and the page end on the same answer even when two asks cross, and a failed ask
+  leaves both as they were. `set_theme` keeps the page's `prefers-color-scheme` on the side kept too, so
+  when the window follows the system again, `turn_window` says which side the window is on. The page takes
+  it unless its media query has heard of a change since it asked.
 - `Ctrl+K T`, or Pick a Theme in the command palette, opens the theme picker in the palette, as VS Code's
   `Ctrl+K Ctrl+T` does ([#518](https://github.com/tsugiki/tsugiki/issues/518)). It lists the Themes of the
   side in use, opens on the one in force and marks it "chosen". Each Theme the list moves to shows on the
@@ -56,7 +61,7 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
   - On macOS Tauri can't colour the webview, so WKWebView paints white until the page loads.
   - The window opens before the core reads the settings, so it opens on the side Windows is on. A built-in
     Theme of the other side, or a mode from a file written before, turns its title bar before the page
-    loads, and a Theme from the `themes` folder turns it once the page takes its themes.
+    loads, and a Theme from the `themes` folder turns it once the page has taken its themes.
   - The window's own background is the `bg` of VS Code's Theme for its side, whichever Theme the settings
     pick. The page covers it, and it shows only at the edge of a resize.
 - Four Themes are built in. VS Code Light Modern and Gruvbox Light Hard are for the light side, and VS Code

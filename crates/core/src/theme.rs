@@ -658,10 +658,6 @@ pub struct TokenView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct Themes {
     pub theme: ThemeInForce,
-    /// While the window follows the system, the side the system is on, as the window says once it has turned
-    /// back to it. A theme that kept the window on one side kept the page's `prefers-color-scheme` there too,
-    /// and the page hears of the change a moment later. The app sets it, as only the window can say.
-    pub system: Option<ThemeKind>,
     pub light: SideThemes,
     pub dark: SideThemes,
     /// What is wrong with the files of the `themes` folder, in words for the status bar, each naming its file
@@ -879,7 +875,6 @@ impl ThemeLibrary {
         let dark = self.side(ThemeKind::Dark, dark, &mut problems);
         Themes {
             theme,
-            system: None,
             light,
             dark,
             problems,

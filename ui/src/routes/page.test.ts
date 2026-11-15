@@ -21,6 +21,7 @@ const core = vi.hoisted(() => ({
   mirrorCost: vi.fn(),
   saveTheme: vi.fn(),
   themes: vi.fn(),
+  turnWindow: vi.fn(),
   tokenSource: vi.fn(),
   rereadSettings: vi.fn(),
   applySettings: vi.fn(),
@@ -42,7 +43,6 @@ const SETTINGS = {
 /** The themes the core sends unless a test says otherwise. */
 const THEMES = {
   theme: { kind: "system" },
-  system: null,
   light: {
     chosen: "Light",
     all: [{ name: "Light", kind: "light", tokens: [{ property: "--bg", value: "#ffffff" }] }],
@@ -138,6 +138,7 @@ beforeEach(() => {
   core.chooseMirrorSource.mockResolvedValue({ status: "ok", data: null });
   core.saveTheme.mockResolvedValue({ status: "ok", data: null });
   core.themes.mockResolvedValue({ status: "ok", data: structuredClone(THEMES) });
+  core.turnWindow.mockResolvedValue(null);
   core.tokenSource.mockResolvedValue("gh");
   core.workbench.mockResolvedValue({
     status: "ok",

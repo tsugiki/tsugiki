@@ -4,14 +4,17 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { type DarkQuery, ThemeState, type Themes, type ThemeView } from "$lib/state/theme.svelte";
 import ThemePicker from "./ThemePicker.svelte";
 
-const commands = vi.hoisted(() => ({ themes: vi.fn(), saveTheme: vi.fn() }));
+const commands = vi.hoisted(() => ({
+  themes: vi.fn(),
+  saveTheme: vi.fn(),
+  turnWindow: vi.fn(async () => null),
+}));
 vi.mock("$lib/data/bindings", () => ({ commands }));
 
 const view = (name: string, kind: "light" | "dark"): ThemeView => ({ name, kind, tokens: [] });
 
 const THEMES: Themes = {
   theme: { kind: "system" },
-  system: null,
   light: {
     chosen: "VS Code Light Modern",
     all: [view("VS Code Light Modern", "light"), view("Gruvbox Light Hard", "light")],

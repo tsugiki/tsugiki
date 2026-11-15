@@ -3,13 +3,13 @@
 // at one place in that tree, the ones ready for an agent come first, and the ones with an open blocker
 // outside the milestone come last, since no session can start them yet.
 
-/** An open ticket of the milestone. */
-export interface Ticket {
+import type { OpenBlockers } from "./blockers.ts";
+
+/** An open ticket of the milestone. Its `openBlockers` can be in the milestone or outside it. */
+export interface Ticket extends OpenBlockers {
   number: number;
   title: string;
   labels: string[];
-  /** The numbers of its open blockers, in the milestone or outside it. */
-  openBlockers: number[];
 }
 
 const READY = "ready-for-agent";
@@ -27,7 +27,7 @@ export function ticketLines(tickets: Ticket[]): string[] {
   const lines: string[] = [];
 
   const blockedOutside = (ticket: Ticket): boolean =>
-    ticket.openBlockers.some((number) => !inMilestone.has(number));
+    ticket.blockersElsewhere.length > 0 || ticket.openBlockers.some((number) => !inMilestone.has(number));
   const rank = (ticket: Ticket): number =>
     (blockedOutside(ticket) ? 2 : 0) + (ticket.labels.includes(READY) ? 0 : 1);
   // `sort` keeps the order GitHub gave among tickets of the same rank.
@@ -35,9 +35,11 @@ export function ticketLines(tickets: Ticket[]): string[] {
 
   const line = (ticket: Ticket, depth: number): string => {
     // Blockers outside the milestone, and inside ones only when a cycle kept them from printing first.
-    const pending = ticket.openBlockers.filter((number) => !printed.has(number));
-    const blockedBy =
-      pending.length === 0 ? "" : ` blocked by ${pending.map((n) => `#${String(n)}`).join(", ")}`;
+    const pending = [
+      ...ticket.openBlockers.filter((number) => !printed.has(number)).map((n) => `#${String(n)}`),
+      ...ticket.blockersElsewhere,
+    ];
+    const blockedBy = pending.length === 0 ? "" : ` blocked by ${pending.join(", ")}`;
     const indent = "  ".repeat(depth);
     return `${indent}#${String(ticket.number)} ${ticket.title} [${ticket.labels.join(", ")}]${blockedBy}`;
   };

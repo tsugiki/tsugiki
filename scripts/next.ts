@@ -3,6 +3,7 @@
 // milestone, and the ones ready for an agent come first: `tickets.ts` holds that order.
 import { execFileSync } from "node:child_process";
 
+import { BLOCKED_BY, type BlockedBy, cutWarning, openBlockers } from "./blockers.ts";
 import { byVersion } from "./pr.ts";
 import { type Ticket, ticketLines } from "./tickets.ts";
 
@@ -20,15 +21,15 @@ interface Issues {
     number: number;
     title: string;
     labels: { nodes: { name: string }[] };
-    blockedBy: { nodes: { number: number; state: "OPEN" | "CLOSED" }[] };
+    blockedBy: BlockedBy;
   }[];
 }
 
 // A milestone's `issues` holds no PRs, unlike its `open_issues` count. GitHub caps each page at 100, and the
-// newest issues come first, as `gh issue list` gives them. `blockedBy` can't filter by state, so closed
-// blockers count toward its 100 too.
+// newest issues come first, as `gh issue list` gives them.
 const QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
+    nameWithOwner
     milestone(number: $number) {
       issues(states: OPEN, first: 100, orderBy: {field: CREATED_AT, direction: DESC}) {
         totalCount
@@ -36,14 +37,19 @@ const QUERY = `query($owner: String!, $name: String!, $number: Int!) {
           number
           title
           labels(first: 100) { nodes { name } }
-          blockedBy(first: 100) { nodes { number state } }
+          ${BLOCKED_BY}
         }
       }
     }
   }
 }`;
 
-function openIssues(milestone: Milestone): Issues {
+interface Repository {
+  nameWithOwner: string;
+  milestone: { issues: Issues };
+}
+
+function openIssues(milestone: Milestone): Repository {
   const reply = gh(
     "api",
     "graphql",
@@ -56,15 +62,15 @@ function openIssues(milestone: Milestone): Issues {
     "-f",
     `query=${QUERY}`,
   );
-  return (JSON.parse(reply) as { data: { repository: { milestone: { issues: Issues } } } }).data.repository
-    .milestone.issues;
+  return (JSON.parse(reply) as { data: { repository: Repository } }).data.repository;
 }
 
 const milestones = JSON.parse(
   gh("api", "repos/{owner}/{repo}/milestones?state=open&per_page=100"),
 ) as Milestone[];
 for (const milestone of milestones.sort((a, b) => byVersion(a.title, b.title))) {
-  const issues = openIssues(milestone);
+  const repository = openIssues(milestone);
+  const issues = repository.milestone.issues;
   if (issues.totalCount === 0) {
     continue;
   }
@@ -72,8 +78,12 @@ for (const milestone of milestones.sort((a, b) => byVersion(a.title, b.title))) 
     number: issue.number,
     title: issue.title,
     labels: issue.labels.nodes.map((label) => label.name),
-    openBlockers: issue.blockedBy.nodes.filter((blocker) => blocker.state === "OPEN").map((b) => b.number),
+    ...openBlockers(issue.blockedBy, repository.nameWithOwner),
   }));
+  const warning = cutWarning(issues.nodes);
+  if (warning !== undefined) {
+    console.error(warning);
+  }
   const shown =
     issues.nodes.length < issues.totalCount ? `, the newest ${String(issues.nodes.length)} shown` : "";
   console.log(

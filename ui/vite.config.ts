@@ -46,6 +46,8 @@ export default defineConfig({
         "../scripts/test-servers.ts",
         // coverage: lists a real milestone's tickets on GitHub, with its logic in pr.ts and tickets.ts.
         "../scripts/next.ts",
+        // coverage: reads the real open issues on GitHub, with its logic in tree.ts.
+        "../scripts/print-tree.ts",
         // coverage: reads Claude Code's call from stdin, with its logic in shell-edits.ts.
         "../scripts/shell-edits-hook.ts",
         // coverage: checks the real window with real keys, which no unit test can do.

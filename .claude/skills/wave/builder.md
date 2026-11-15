@@ -23,9 +23,12 @@ Once the build is done, report what you changed, the files you touched and the t
 sends you `/code-review` findings. Fix each, or decline it with the reason it doesn't hold.
 
 Put each round of fixes in a new commit, and leave the first one alone, so the session can review a round's
-fixes on their own. When a fix makes the first commit's message wrong, reword only the message, before the
-first push: `git commit --fixup=reword:<first>`, then `GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash
-<base>`, and check that the tree hasn't changed.
+fixes on their own. `just ship` takes the PR's body from the first commit, so reread its message after each
+round. When a fix makes it wrong, reword only the message, before the first push. `--fixup=reword` refuses
+`-m` and `-F`, so write the message to a file with `amend! <title>` as its first line, then run
+`GIT_EDITOR="cp <file>" git commit --fixup=reword:<first>` and `GIT_SEQUENCE_EDITOR=: git rebase -i
+--autosquash <base>`. Check that the tree hasn't changed and that the message lost no line: git drops each
+line that begins with `#` as a comment, so wrap the text so that no line starts with a ticket number.
 
 CodeQL runs on CI and no local gate runs it, so don't strip tags or other markup with `replace`, even in a
 test that reads our own sources: CodeQL fails it as `js/incomplete-multi-character-sanitization`.

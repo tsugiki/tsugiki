@@ -193,11 +193,8 @@ fn remove(path: &Path) {
         HELD_FOR.as_secs()
     );
     let why = if held { still_held } else { String::new() };
-    assert!(
-        removed.is_ok(),
-        "can't remove {}{why}: {removed:?}",
-        path.display()
-    );
+    let path = path.display();
+    assert!(removed.is_ok(), "can't remove {path}{why}: {removed:?}");
 }
 
 /// Removes the folder or file at `path`. Nothing there counts as removed.

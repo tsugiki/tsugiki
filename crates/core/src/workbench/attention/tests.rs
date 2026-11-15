@@ -1,7 +1,6 @@
 //! Each rule of Needs attention as a scenario in the glossary's words, read the way the window reads it.
 
 use std::fs;
-use std::path::PathBuf;
 
 use time::{Duration, OffsetDateTime};
 
@@ -20,6 +19,7 @@ use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
 use crate::store::{ChangeCheck, OpenReader, Store, StoreReader, SyncState, reader};
+use crate::testing::TempPath;
 use crate::workbench::{
     ListedItem, Seen, SeenMark, SeenState, TreeEntry, Workbench, WorkbenchItem, WorkbenchView,
     YourReview,
@@ -131,8 +131,9 @@ struct World {
     store: Store,
     reader: StoreReader,
     open_reader: OpenReader,
-    folder: PathBuf,
     settings: RepositorySettings,
+    /// Dropped last, once `finish` has closed the database in it.
+    _folder: TempPath,
 }
 
 impl World {
@@ -156,8 +157,8 @@ impl World {
             store,
             reader,
             open_reader,
-            folder,
             settings: RepositorySettings::new(cpython()),
+            _folder: folder,
         }
     }
 
@@ -230,7 +231,6 @@ impl World {
     fn finish(self) {
         self.open_reader.close();
         self.store.close();
-        fs::remove_dir_all(self.folder).unwrap();
     }
 }
 

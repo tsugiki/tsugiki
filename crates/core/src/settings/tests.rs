@@ -3,6 +3,7 @@ use crate::conventions::Conventions;
 use crate::filters::Filter;
 use crate::mirror::MirrorSource;
 use crate::repository::{FoundRepository, RepositoryCounts};
+use crate::testing::TempPath;
 use crate::theme::{ThemeKind, ThemeMode, ThemeName};
 use time::format_description::well_known::Rfc3339;
 
@@ -78,7 +79,7 @@ fn opened(names: &[&str], conventions: Conventions) -> Home {
 
 /// Separate data and settings folders, as an installed Tsugiki on Windows has, and the folder around
 /// them.
-fn temp_folders(name: &str) -> (Folders, PathBuf) {
+fn temp_folders(name: &str) -> (Folders, TempPath) {
     let root = crate::testing::temp_path(&format!("settings-{name}"));
     let folders = Folders {
         data: root.join("data"),
@@ -92,15 +93,13 @@ fn temp_folders(name: &str) -> (Folders, PathBuf) {
 
 /// What `settings.toml` says after Tsugiki saves `settings` over `before`.
 fn saved_over(name: &str, before: &str, settings: &Settings) -> String {
-    let (folders, root) = temp_folders(name);
+    let (folders, _root) = temp_folders(name);
     fs::write(folders.settings_file(), before).unwrap();
 
     SettingsFiles::load(folders.clone())
         .write(settings)
         .unwrap();
-    let after = fs::read_to_string(folders.settings_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
-    after
+    fs::read_to_string(folders.settings_file()).unwrap()
 }
 
 /// Writes `settings_path` into `machine.toml`.
@@ -121,11 +120,10 @@ fn only_problem(files: &SettingsFiles) -> String {
 
 #[test]
 fn with_no_files_tsugiki_starts_from_the_defaults_and_creates_nothing() {
-    let (folders, root) = temp_folders("no-files");
+    let (folders, _root) = temp_folders("no-files");
 
     let files = SettingsFiles::load(folders.clone());
     let created = folders.settings_file().exists() || folders.machine_file().exists();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(files.loaded(), &LoadedSettings::default());
     assert!(files.loaded().settings.status_bar.visible);
@@ -135,11 +133,10 @@ fn with_no_files_tsugiki_starts_from_the_defaults_and_creates_nothing() {
 
 #[test]
 fn the_check_for_a_new_version_turns_off_in_settings_toml() {
-    let (folders, root) = temp_folders("releases");
+    let (folders, _root) = temp_folders("releases");
     fs::write(folders.settings_file(), "[releases]\ncheck = false\n").unwrap();
 
     let files = SettingsFiles::load(folders);
-    fs::remove_dir_all(root).unwrap();
 
     assert!(!files.loaded().settings.releases.check);
     assert!(files.loaded().problems.is_empty());
@@ -147,11 +144,10 @@ fn the_check_for_a_new_version_turns_off_in_settings_toml() {
 
 #[test]
 fn a_value_in_settings_toml_is_read_at_start() {
-    let (folders, root) = temp_folders("read");
+    let (folders, _root) = temp_folders("read");
     fs::write(folders.settings_file(), "[status_bar]\nvisible = false\n").unwrap();
 
     let files = SettingsFiles::load(folders);
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(files.loaded().settings, hidden());
     assert!(files.loaded().problems.is_empty());
@@ -159,22 +155,20 @@ fn a_value_in_settings_toml_is_read_at_start() {
 
 #[test]
 fn values_a_file_leaves_out_or_this_version_doesnt_know_change_nothing() {
-    let (folders, root) = temp_folders("unknown");
+    let (folders, _root) = temp_folders("unknown");
     let text = "from_a_newer_tsugiki = 1\n[status_bar]\nanother = 2\n";
     fs::write(folders.settings_file(), text).unwrap();
 
     let files = SettingsFiles::load(folders);
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(files.loaded(), &LoadedSettings::default());
 }
 
 /// What `settings.toml` holding `text` loads as.
 fn loaded_from(name: &str, text: &str) -> LoadedSettings {
-    let (folders, root) = temp_folders(name);
+    let (folders, _root) = temp_folders(name);
     fs::write(folders.settings_file(), text).unwrap();
     let files = SettingsFiles::load(folders);
-    fs::remove_dir_all(root).unwrap();
     files.loaded().clone()
 }
 
@@ -249,13 +243,12 @@ dark_theme = 3
 /// Saving would write the default over the value Tsugiki couldn't read, and the user's text would go.
 #[test]
 fn a_save_refuses_while_appearance_holds_a_value_tsugiki_cant_read() {
-    let (folders, root) = temp_folders("appearance-unread-save");
+    let (folders, _root) = temp_folders("appearance-unread-save");
     let before = "[appearance]\ntheme = \"Dark\"\n";
     fs::write(folders.settings_file(), before).unwrap();
 
     let refusal = SettingsFiles::load(folders.clone()).write(&hidden());
     let after = fs::read_to_string(folders.settings_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     let message = refusal.unwrap_err().message;
     assert!(
@@ -305,13 +298,12 @@ fn a_diff_files_tsugiki_cant_read_keeps_all_files_and_is_reported() {
 /// As with `[appearance]`, saving would write the default over what the user wrote.
 #[test]
 fn a_save_refuses_while_diff_holds_a_value_tsugiki_cant_read() {
-    let (folders, root) = temp_folders("diff-unread-save");
+    let (folders, _root) = temp_folders("diff-unread-save");
     let before = "[diff]\nfiles = \"One\"\n";
     fs::write(folders.settings_file(), before).unwrap();
 
     let refusal = SettingsFiles::load(folders.clone()).write(&hidden());
     let after = fs::read_to_string(folders.settings_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     let message = refusal.unwrap_err().message;
     assert!(
@@ -429,7 +421,7 @@ fn appearance_is_saved_by_name_and_only_where_it_differs_from_the_default() {
 /// were.
 #[test]
 fn a_picked_theme_is_saved_to_its_sides_key_alone() {
-    let (folders, root) = temp_folders("appearance-picked");
+    let (folders, _root) = temp_folders("appearance-picked");
     let before = "# Mine\n[releases]\ncheck = true\n\n[appearance]\ntheme = \"light\" # by day\n";
     fs::write(folders.settings_file(), before).unwrap();
     let mut files = SettingsFiles::load(folders.clone());
@@ -446,7 +438,6 @@ fn a_picked_theme_is_saved_to_its_sides_key_alone() {
         .save_theme(ThemeKind::Dark, &named("VS Code Dark Modern"))
         .unwrap();
     let after = fs::read_to_string(folders.settings_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(
         dark,
@@ -470,14 +461,13 @@ fn a_picked_theme_is_saved_to_its_sides_key_alone() {
 
 #[test]
 fn a_picked_theme_isnt_saved_over_a_settings_file_that_doesnt_parse() {
-    let (folders, root) = temp_folders("appearance-picked-broken");
+    let (folders, _root) = temp_folders("appearance-picked-broken");
     let before = "[appearance\n";
     fs::write(folders.settings_file(), before).unwrap();
 
     let refusal = SettingsFiles::load(folders.clone())
         .save_theme(ThemeKind::Light, &named("Gruvbox Light Hard"));
     let after = fs::read_to_string(folders.settings_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert!(
         refusal.unwrap_err().message.contains("settings.toml"),
@@ -488,12 +478,11 @@ fn a_picked_theme_isnt_saved_over_a_settings_file_that_doesnt_parse() {
 
 #[test]
 fn the_owner_saves_a_picked_theme_and_answers_with_it() {
-    let (folders, root) = temp_folders("owner-theme");
+    let (folders, _root) = temp_folders("owner-theme");
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
 
     let answer = owner.save_theme(ThemeKind::Light, named("Gruvbox Light Hard"));
     let after = fs::read_to_string(folders.settings_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     let appearance = answer.unwrap().loaded.settings.appearance;
     assert_eq!(appearance.light_theme, named("Gruvbox Light Hard"));
@@ -506,13 +495,12 @@ fn the_owner_saves_a_picked_theme_and_answers_with_it() {
 
 #[test]
 fn the_owner_reads_a_hand_edit_again_as_the_settings_dialog_opens() {
-    let (folders, root) = temp_folders("owner-reread");
+    let (folders, _root) = temp_folders("owner-reread");
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
     fs::write(folders.settings_file(), "[status_bar]\nvisible = false\n").unwrap();
 
     let before = owner.view();
     let answer = owner.reread();
-    fs::remove_dir_all(root).unwrap();
 
     assert!(before.loaded.settings.status_bar.visible);
     let loaded = answer.unwrap().loaded;
@@ -522,7 +510,7 @@ fn the_owner_reads_a_hand_edit_again_as_the_settings_dialog_opens() {
 
 #[test]
 fn the_owner_saves_what_apply_keeps_and_a_restart_reads_it() {
-    let (folders, root) = temp_folders("owner-apply");
+    let (folders, _root) = temp_folders("owner-apply");
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
 
     let answer = owner.apply(SettingsChanges {
@@ -531,7 +519,6 @@ fn the_owner_saves_what_apply_keeps_and_a_restart_reads_it() {
     });
     let after = fs::read_to_string(folders.settings_file()).unwrap();
     let restarted = SettingsFiles::load(folders);
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(answer.unwrap().loaded.settings, hidden());
     assert_eq!(owner.view().loaded.settings, hidden());
@@ -541,7 +528,7 @@ fn the_owner_saves_what_apply_keeps_and_a_restart_reads_it() {
 
 #[test]
 fn apply_keeps_a_hand_edit_made_while_the_dialog_was_open_to_what_it_didnt_change() {
-    let (folders, root) = temp_folders("apply-keeps-hand-edit");
+    let (folders, _root) = temp_folders("apply-keeps-hand-edit");
     let mut files = SettingsFiles::load(folders.clone());
     // While the dialog is open, the user edits other tables by hand, and one the dialog changes too.
     fs::write(
@@ -555,7 +542,6 @@ fn apply_keeps_a_hand_edit_made_while_the_dialog_was_open_to_what_it_didnt_chang
         ..SettingsChanges::default()
     });
     let after = fs::read_to_string(folders.settings_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     applied.unwrap();
     assert_eq!(
@@ -570,7 +556,7 @@ fn apply_keeps_a_hand_edit_made_while_the_dialog_was_open_to_what_it_didnt_chang
 
 #[test]
 fn apply_over_a_settings_file_that_stopped_parsing_refuses_and_leaves_it_alone() {
-    let (folders, root) = temp_folders("apply-broken");
+    let (folders, _root) = temp_folders("apply-broken");
     let mut files = SettingsFiles::load(folders.clone());
     fs::write(folders.settings_file(), "[status_bar\n").unwrap();
 
@@ -579,7 +565,6 @@ fn apply_over_a_settings_file_that_stopped_parsing_refuses_and_leaves_it_alone()
         ..SettingsChanges::default()
     });
     let after = fs::read_to_string(folders.settings_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert!(applied.is_err());
     assert_eq!(after, "[status_bar\n");
@@ -591,12 +576,11 @@ fn a_file_that_doesnt_parse_is_left_alone_and_named_with_its_line() {
         ("broken", "# Mine.\n[status_bar]\nvisible = = false\n"),
         ("wrong-type", "\n[status_bar]\nvisible = \"no\"\n"),
     ] {
-        let (folders, root) = temp_folders(name);
+        let (folders, _root) = temp_folders(name);
         fs::write(folders.settings_file(), text).unwrap();
 
         let files = SettingsFiles::load(folders.clone());
         let after = fs::read_to_string(folders.settings_file()).unwrap();
-        fs::remove_dir_all(root).unwrap();
 
         assert_eq!(after, text, "{name}");
         assert_eq!(files.loaded().settings, Settings::default(), "{name}");
@@ -610,11 +594,10 @@ fn a_file_that_doesnt_parse_is_left_alone_and_named_with_its_line() {
 
 #[test]
 fn a_file_it_cant_read_is_a_problem_that_names_it() {
-    let (folders, root) = temp_folders("unreadable");
+    let (folders, _root) = temp_folders("unreadable");
     fs::create_dir(folders.settings_file()).unwrap();
 
     let files = SettingsFiles::load(folders);
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(files.loaded().settings, Settings::default());
     let problem = only_problem(&files);
@@ -623,7 +606,7 @@ fn a_file_it_cant_read_is_a_problem_that_names_it() {
 
 #[test]
 fn a_reload_of_a_broken_file_keeps_the_last_good_values_until_it_is_fixed() {
-    let (folders, root) = temp_folders("last-good");
+    let (folders, _root) = temp_folders("last-good");
     let file = folders.settings_file();
     fs::write(&file, "[status_bar]\nvisible = false\n").unwrap();
     let mut files = SettingsFiles::load(folders);
@@ -634,7 +617,6 @@ fn a_reload_of_a_broken_file_keeps_the_last_good_values_until_it_is_fixed() {
 
     fs::write(&file, "[status_bar]\nvisible = true\n").unwrap();
     files.reload();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(while_broken.settings, hidden());
     assert_eq!(while_broken.problems.len(), 1);
@@ -643,13 +625,12 @@ fn a_reload_of_a_broken_file_keeps_the_last_good_values_until_it_is_fixed() {
 
 #[test]
 fn a_settings_toml_removed_from_its_usual_folder_means_the_defaults_again() {
-    let (folders, root) = temp_folders("removed");
+    let (folders, _root) = temp_folders("removed");
     fs::write(folders.settings_file(), "[status_bar]\nvisible = false\n").unwrap();
     let mut files = SettingsFiles::load(folders.clone());
 
     fs::remove_file(folders.settings_file()).unwrap();
     files.reload();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(files.loaded(), &LoadedSettings::default());
 }
@@ -672,10 +653,9 @@ fn a_repositorys_table_with_no_filters_gains_none() {
 
 /// The one Repository `text` holds, as a read of the file gives it.
 fn the_repository_in(name: &str, text: &str) -> RepositorySettings {
-    let (folders, root) = temp_folders(name);
+    let (folders, _root) = temp_folders(name);
     fs::write(folders.settings_file(), text).unwrap();
     let files = SettingsFiles::load(folders);
-    fs::remove_dir_all(root).unwrap();
     assert_eq!(files.loaded().problems, Vec::<String>::new());
     files.loaded().settings.repositories[0].clone()
 }
@@ -689,7 +669,7 @@ fn filter(name: &str, query: &str) -> Filter {
 
 #[test]
 fn adding_a_repository_writes_its_starter_filters_where_the_user_can_edit_them() {
-    let (folders, root) = temp_folders("starter-filters");
+    let (folders, _root) = temp_folders("starter-filters");
     let mut files = SettingsFiles::load(folders.clone());
 
     drop(
@@ -703,7 +683,6 @@ fn adding_a_repository_writes_its_starter_filters_where_the_user_can_edit_them()
     );
     let written = fs::read_to_string(folders.settings_file()).unwrap();
     let read = files.loaded().settings.repositories[0].clone();
-    fs::remove_dir_all(root).unwrap();
 
     assert!(written.contains("[[repositories.filters]]"), "{written}");
     assert!(written.contains(r#"name = "Open Issues""#), "{written}");
@@ -741,7 +720,7 @@ fn a_filter_edited_by_hand_is_what_the_next_read_finds() {
 
 #[test]
 fn a_blank_filter_query_is_a_problem_with_the_file_and_the_last_values_stay() {
-    let (folders, root) = temp_folders("blank-filter");
+    let (folders, _root) = temp_folders("blank-filter");
     fs::write(
         folders.settings_file(),
         "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\n\
@@ -749,7 +728,6 @@ fn a_blank_filter_query_is_a_problem_with_the_file_and_the_last_values_stay() {
     )
     .unwrap();
     let files = SettingsFiles::load(folders);
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(files.loaded().settings, Settings::default());
     assert!(files.loaded().problems[0].contains("A Filter's query can't be blank."));
@@ -877,7 +855,6 @@ fn settings_path_moves_settings_toml() {
     point_at(&folders, &moved);
 
     let files = SettingsFiles::load(folders);
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(files.loaded().settings, hidden());
     assert!(files.loaded().problems.is_empty());
@@ -885,7 +862,7 @@ fn settings_path_moves_settings_toml() {
 
 #[test]
 fn a_relative_settings_path_starts_at_machine_toml() {
-    let (folders, root) = temp_folders("relative");
+    let (folders, _root) = temp_folders("relative");
     fs::write(
         folders.data.join("beside.toml"),
         "[status_bar]\nvisible = false\n",
@@ -894,7 +871,6 @@ fn a_relative_settings_path_starts_at_machine_toml() {
     fs::write(folders.machine_file(), "settings_path = \"beside.toml\"\n").unwrap();
 
     let files = SettingsFiles::load(folders);
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(files.loaded().settings, hidden());
 }
@@ -913,7 +889,6 @@ fn a_theme_name_stays_as_written_and_the_themes_folder_is_beside_the_settings_fi
     point_at(&folders, &dotfiles.join("tsugiki.toml"));
 
     let files = SettingsFiles::load(folders);
-    fs::remove_dir_all(root).unwrap();
 
     let loaded = files.loaded();
     assert_eq!(loaded.settings.appearance.dark_theme, named("Night"));
@@ -932,7 +907,6 @@ fn a_missing_file_at_settings_path_starts_from_the_defaults_and_says_so() {
     point_at(&folders, &root.join("not-there.toml"));
 
     let files = SettingsFiles::load(folders);
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(files.loaded().settings, Settings::default());
     let problem = only_problem(&files);
@@ -950,7 +924,6 @@ fn a_broken_machine_toml_is_named_with_its_line_and_keeps_the_last_good_path() {
 
     fs::write(folders.machine_file(), "\nsettings_path =\n").unwrap();
     files.reload();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(files.loaded().settings, hidden());
     let problem = only_problem(&files);
@@ -959,12 +932,11 @@ fn a_broken_machine_toml_is_named_with_its_line_and_keeps_the_last_good_path() {
 
 #[test]
 fn saving_writes_only_what_differs_from_the_defaults() {
-    let (folders, root) = temp_folders("save-new");
+    let (folders, _root) = temp_folders("save-new");
     let mut files = SettingsFiles::load(folders.clone());
 
     files.write(&hidden()).unwrap();
     let after = fs::read_to_string(folders.settings_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(after, "[status_bar]\nvisible = false\n");
     assert_eq!(files.loaded().settings, hidden());
@@ -972,27 +944,25 @@ fn saving_writes_only_what_differs_from_the_defaults() {
 
 #[test]
 fn saving_the_defaults_over_no_file_creates_no_file() {
-    let (folders, root) = temp_folders("save-defaults");
+    let (folders, _root) = temp_folders("save-defaults");
 
     SettingsFiles::load(folders.clone())
         .write(&Settings::default())
         .unwrap();
     let created = folders.settings_file().exists();
-    fs::remove_dir_all(root).unwrap();
 
     assert!(!created);
 }
 
 #[test]
 fn saving_creates_the_folder_it_needs() {
-    let (folders, root) = temp_folders("save-folder");
+    let (folders, _root) = temp_folders("save-folder");
     fs::remove_dir(&folders.settings).unwrap();
 
     SettingsFiles::load(folders.clone())
         .write(&hidden())
         .unwrap();
     let created = folders.settings_file().exists();
-    fs::remove_dir_all(root).unwrap();
 
     assert!(created);
 }
@@ -1079,13 +1049,12 @@ fn a_section_written_inline_or_dotted_is_changed_where_it_is() {
 
 #[test]
 fn saving_keeps_an_edit_made_since_the_last_read() {
-    let (folders, root) = temp_folders("save-edit");
+    let (folders, _root) = temp_folders("save-edit");
     let mut files = SettingsFiles::load(folders.clone());
 
     fs::write(folders.settings_file(), "# Added by hand.\nmine = 1\n").unwrap();
     files.write(&hidden()).unwrap();
     let after = fs::read_to_string(folders.settings_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(
         after,
@@ -1104,7 +1073,6 @@ fn saving_follows_settings_path() {
     let after = fs::read_to_string(&moved).unwrap();
     let usual_folder_used = folders.settings_file().exists();
     let loaded = files.loaded().clone();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(after, "[status_bar]\nvisible = false\n");
     assert!(!usual_folder_used);
@@ -1118,13 +1086,12 @@ fn saving_over_a_file_that_doesnt_parse_refuses_and_leaves_it_alone() {
         ("save-broken", "\n[status_bar\n"),
         ("save-wrong-type", "\n[status_bar]\nvisible = \"no\"\n"),
     ] {
-        let (folders, root) = temp_folders(name);
+        let (folders, _root) = temp_folders(name);
         fs::write(folders.settings_file(), text).unwrap();
         let mut files = SettingsFiles::load(folders.clone());
 
         let refused = files.write(&hidden()).unwrap_err();
         let after = fs::read_to_string(folders.settings_file()).unwrap();
-        fs::remove_dir_all(root).unwrap();
 
         assert_eq!(after, text);
         assert!(
@@ -1138,13 +1105,12 @@ fn saving_over_a_file_that_doesnt_parse_refuses_and_leaves_it_alone() {
 
 #[test]
 fn a_broken_machine_toml_refuses_rather_than_saving_to_the_wrong_place() {
-    let (folders, root) = temp_folders("save-machine");
+    let (folders, _root) = temp_folders("save-machine");
     fs::write(folders.machine_file(), "settings_path =\n").unwrap();
     let mut files = SettingsFiles::load(folders.clone());
 
     let refused = files.write(&hidden()).unwrap_err();
     let created = folders.settings_file().exists();
-    fs::remove_dir_all(root).unwrap();
 
     assert!(!created);
     assert_eq!(refused.kind, ErrorKind::Internal);
@@ -1157,12 +1123,11 @@ fn a_broken_machine_toml_refuses_rather_than_saving_to_the_wrong_place() {
 
 #[test]
 fn a_settings_file_it_cant_read_refuses() {
-    let (folders, root) = temp_folders("save-unreadable");
+    let (folders, _root) = temp_folders("save-unreadable");
     fs::create_dir(folders.settings_file()).unwrap();
     let mut files = SettingsFiles::load(folders.clone());
 
     let refused = files.write(&hidden()).unwrap_err();
-    fs::remove_dir_all(root).unwrap();
 
     assert!(
         refused.message.contains("settings.toml"),
@@ -1177,7 +1142,7 @@ fn a_settings_file_it_cant_read_refuses() {
     reason = "the test's own file, made writable again only so it can be removed"
 )]
 fn a_save_that_fails_says_so_and_leaves_the_file_alone() {
-    let (folders, root) = temp_folders("save-fails");
+    let (folders, _root) = temp_folders("save-fails");
     let text = "mine = 1\n";
     let file = folders.settings_file();
     fs::write(&file, text).unwrap();
@@ -1190,7 +1155,6 @@ fn a_save_that_fails_says_so_and_leaves_the_file_alone() {
     let after = fs::read_to_string(&file).unwrap();
     permissions.set_readonly(false);
     fs::set_permissions(&file, permissions).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(after, text);
     assert!(
@@ -1250,7 +1214,7 @@ fn saving_what_a_file_already_says_changes_nothing() {
 
 #[test]
 fn a_settings_path_starting_with_a_tilde_is_a_problem_not_a_folder() {
-    let (folders, root) = temp_folders("tilde");
+    let (folders, _root) = temp_folders("tilde");
     fs::write(folders.settings_file(), "[status_bar]\nvisible = false\n").unwrap();
     let machine = "settings_path = \"~/dotfiles/settings.toml\"\n";
     fs::write(folders.machine_file(), machine).unwrap();
@@ -1258,7 +1222,6 @@ fn a_settings_path_starting_with_a_tilde_is_a_problem_not_a_folder() {
     let mut files = SettingsFiles::load(folders.clone());
     let refused = files.write(&hidden()).unwrap_err();
     let tilde_folder = folders.data.join("~").exists();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(files.loaded().settings, Settings::default());
     let problem = only_problem(&files);
@@ -1270,12 +1233,11 @@ fn a_settings_path_starting_with_a_tilde_is_a_problem_not_a_folder() {
 
 #[test]
 fn a_machine_toml_broken_from_the_start_doesnt_read_a_settings_file_it_might_not_mean() {
-    let (folders, root) = temp_folders("machine-broken-start");
+    let (folders, _root) = temp_folders("machine-broken-start");
     fs::write(folders.settings_file(), "[status_bar]\nvisible = false\n").unwrap();
     fs::write(folders.machine_file(), "settings_path =\n").unwrap();
 
     let files = SettingsFiles::load(folders);
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(files.loaded().settings, Settings::default());
     assert_eq!(files.loaded().problems.len(), 1);
@@ -1283,7 +1245,7 @@ fn a_machine_toml_broken_from_the_start_doesnt_read_a_settings_file_it_might_not
 
 #[test]
 fn the_owner_saves_an_addition_and_answers_with_what_the_files_say() {
-    let (folders, root) = temp_folders("owner");
+    let (folders, _root) = temp_folders("owner");
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
 
     let saved = owner
@@ -1294,7 +1256,6 @@ fn the_owner_saves_an_addition_and_answers_with_what_the_files_say() {
         )
         .unwrap();
     let text = fs::read_to_string(folders.settings_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert!(text.contains("python/cpython"), "{text}");
     assert_eq!(
@@ -1308,7 +1269,7 @@ fn the_owner_saves_an_addition_and_answers_with_what_the_files_say() {
 
 #[test]
 fn the_owner_passes_on_why_a_file_refused_an_addition() {
-    let (folders, root) = temp_folders("owner-refused");
+    let (folders, _root) = temp_folders("owner-refused");
     fs::write(folders.settings_file(), "[status_bar\n").unwrap();
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
 
@@ -1319,7 +1280,6 @@ fn the_owner_passes_on_why_a_file_refused_an_addition() {
             MirrorSource::Download,
         )
         .unwrap_err();
-    fs::remove_dir_all(root).unwrap();
 
     assert!(
         refused.message.contains("settings.toml"),
@@ -1356,11 +1316,10 @@ fn without_folders_the_owner_says_what_went_wrong_with_them() {
 
 #[test]
 fn the_owner_answers_with_what_the_files_said_when_it_started() {
-    let (folders, root) = temp_folders("owner-started");
+    let (folders, _root) = temp_folders("owner-started");
     fs::write(folders.settings_file(), "[status_bar\n").unwrap();
 
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(owner.view().loaded.problems.len(), 1);
     assert_eq!(owner.view().home, Home::default());
@@ -1377,7 +1336,7 @@ fn without_folders_the_owner_answers_with_the_defaults() {
 
 #[test]
 fn additions_that_overlap_all_reach_the_view() {
-    let (folders, root) = temp_folders("owner-overlap");
+    let (folders, _root) = temp_folders("owner-overlap");
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
 
     thread::scope(|scope| {
@@ -1394,7 +1353,6 @@ fn additions_that_overlap_all_reach_the_view() {
             });
         }
     });
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(owner.view().loaded.settings.repositories.len(), 4);
 }
@@ -1430,7 +1388,7 @@ const WIDE: PaneLayout = PaneLayout {
 
 #[test]
 fn the_peeks_height_stays_on_this_machine_until_it_goes_back_to_its_default() {
-    let (folders, root) = temp_folders("panes-peek");
+    let (folders, _root) = temp_folders("panes-peek");
     let mut files = SettingsFiles::load(folders.clone());
     let taller = PaneLayout {
         peek: Some(24),
@@ -1442,7 +1400,6 @@ fn the_peeks_height_stays_on_this_machine_until_it_goes_back_to_its_default() {
     let read_again = SettingsFiles::load(folders.clone()).view().panes;
     files.save_panes(WIDE).unwrap();
     let back = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(saved, "[panes]\nsidebar = 240\nlist = 500\npeek = 24\n");
     assert_eq!(read_again, taller);
@@ -1451,7 +1408,7 @@ fn the_peeks_height_stays_on_this_machine_until_it_goes_back_to_its_default() {
 
 #[test]
 fn the_split_peeks_height_stays_on_this_machine_until_it_goes_back_to_its_default() {
-    let (folders, root) = temp_folders("panes-split-peek");
+    let (folders, _root) = temp_folders("panes-split-peek");
     let mut files = SettingsFiles::load(folders.clone());
     let taller = PaneLayout {
         split_peek: Some(320),
@@ -1463,7 +1420,6 @@ fn the_split_peeks_height_stays_on_this_machine_until_it_goes_back_to_its_defaul
     let read_again = SettingsFiles::load(folders.clone()).view().panes;
     files.save_panes(WIDE).unwrap();
     let back = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(
         saved,
@@ -1485,7 +1441,7 @@ fn machine_toml_names_each_order_and_pane_as_serde_reads_them() {
 
 #[test]
 fn the_lists_order_stays_on_this_machine_until_it_goes_back_to_attention() {
-    let (folders, root) = temp_folders("panes-order");
+    let (folders, _root) = temp_folders("panes-order");
     let mut files = SettingsFiles::load(folders.clone());
     let by_update = PaneLayout {
         order: ListOrder::LastUpdate,
@@ -1497,7 +1453,6 @@ fn the_lists_order_stays_on_this_machine_until_it_goes_back_to_attention() {
     let read_again = SettingsFiles::load(folders.clone()).view().panes;
     files.save_panes(WIDE).unwrap();
     let back = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(
         saved,
@@ -1509,7 +1464,7 @@ fn the_lists_order_stays_on_this_machine_until_it_goes_back_to_attention() {
 
 #[test]
 fn a_hidden_sidebar_stays_hidden_on_this_machine_until_it_shows_again() {
-    let (folders, root) = temp_folders("panes-sidebar-hidden");
+    let (folders, _root) = temp_folders("panes-sidebar-hidden");
     let mine = "editor = \"code\"\n";
     fs::write(folders.machine_file(), mine).unwrap();
     let mut files = SettingsFiles::load(folders.clone());
@@ -1523,7 +1478,6 @@ fn a_hidden_sidebar_stays_hidden_on_this_machine_until_it_shows_again() {
     let read_again = SettingsFiles::load(folders.clone()).view().panes;
     files.save_panes(WIDE).unwrap();
     let shown = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(
         saved,
@@ -1538,7 +1492,7 @@ fn a_hidden_sidebar_stays_hidden_on_this_machine_until_it_shows_again() {
 
 #[test]
 fn a_hidden_list_stays_hidden_on_this_machine_beside_the_sidebar() {
-    let (folders, root) = temp_folders("panes-list-hidden");
+    let (folders, _root) = temp_folders("panes-list-hidden");
     let mut files = SettingsFiles::load(folders.clone());
     let hidden = PaneLayout {
         list_hidden: true,
@@ -1550,7 +1504,6 @@ fn a_hidden_list_stays_hidden_on_this_machine_beside_the_sidebar() {
     let read_again = SettingsFiles::load(folders.clone()).view().panes;
     files.save_panes(WIDE).unwrap();
     let shown = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(
         saved,
@@ -1562,7 +1515,7 @@ fn a_hidden_list_stays_hidden_on_this_machine_beside_the_sidebar() {
 
 #[test]
 fn what_ctrl_k_z_hid_stays_on_this_machine_until_it_forgets() {
-    let (folders, root) = temp_folders("panes-detail-only");
+    let (folders, _root) = temp_folders("panes-detail-only");
     let mut files = SettingsFiles::load(folders.clone());
     let detail_only = |hid| PaneLayout {
         sidebar_hidden: true,
@@ -1580,7 +1533,6 @@ fn what_ctrl_k_z_hid_stays_on_this_machine_until_it_forgets() {
     }
     files.save_panes(WIDE).unwrap();
     let forgotten = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     let both_hidden =
         "[panes]\nsidebar = 240\nlist = 500\nsidebar_hidden = true\nlist_hidden = true\n";
@@ -1598,21 +1550,20 @@ fn what_ctrl_k_z_hid_stays_on_this_machine_until_it_forgets() {
 
 #[test]
 fn a_shown_sidebar_keeps_the_users_comment_on_it() {
-    let (folders, root) = temp_folders("panes-sidebar-comment");
+    let (folders, _root) = temp_folders("panes-sidebar-comment");
     let mine = "[panes]\nsidebar_hidden = true # Small screen.\n";
     fs::write(folders.machine_file(), mine).unwrap();
     let mut files = SettingsFiles::load(folders.clone());
 
     files.save_panes(PaneLayout::default()).unwrap();
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(machine, "[panes]\nsidebar_hidden = false # Small screen.\n");
 }
 
 #[test]
 fn the_panes_layout_stays_on_this_machine_beside_what_the_user_wrote() {
-    let (folders, root) = temp_folders("panes");
+    let (folders, _root) = temp_folders("panes");
     let mine = "# This laptop.\neditor = \"code\" # Mine.\n";
     fs::write(folders.machine_file(), mine).unwrap();
     let mut files = SettingsFiles::load(folders.clone());
@@ -1621,7 +1572,6 @@ fn the_panes_layout_stays_on_this_machine_beside_what_the_user_wrote() {
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
     let synced = folders.settings_file().exists();
     let read_again = SettingsFiles::load(folders).view().panes;
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(
         machine,
@@ -1635,7 +1585,7 @@ fn the_panes_layout_stays_on_this_machine_beside_what_the_user_wrote() {
 
 #[test]
 fn a_pane_back_at_its_default_leaves_machine_toml() {
-    let (folders, root) = temp_folders("panes-default");
+    let (folders, _root) = temp_folders("panes-default");
     let mine = "editor = \"code\"\n";
     fs::write(folders.machine_file(), mine).unwrap();
     let mut files = SettingsFiles::load(folders.clone());
@@ -1646,7 +1596,6 @@ fn a_pane_back_at_its_default_leaves_machine_toml() {
     let one = fs::read_to_string(folders.machine_file()).unwrap();
     files.save_panes(PaneLayout::default()).unwrap();
     let none = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(one, format!("{mine}\n[panes]\nsidebar = 240\n"));
     assert_eq!(
@@ -1657,7 +1606,7 @@ fn a_pane_back_at_its_default_leaves_machine_toml() {
 
 #[test]
 fn a_pane_value_it_cant_read_takes_the_default_and_keeps_the_rest_of_machine_toml() {
-    let (folders, root) = temp_folders("panes-unreadable");
+    let (folders, _root) = temp_folders("panes-unreadable");
     let text = "last_repository = \"a/b\"
 
 [panes]
@@ -1672,7 +1621,6 @@ order = \"by_mood\"
     fs::write(folders.machine_file(), text).unwrap();
 
     let files = SettingsFiles::load(folders);
-    fs::remove_dir_all(root).unwrap();
 
     let list = PaneLayout {
         sidebar: None,
@@ -1692,13 +1640,12 @@ order = \"by_mood\"
 
 #[test]
 fn a_broken_machine_toml_keeps_the_panes_layout() {
-    let (folders, root) = temp_folders("panes-broken");
+    let (folders, _root) = temp_folders("panes-broken");
     fs::write(folders.machine_file(), "settings_path =\n").unwrap();
     let mut files = SettingsFiles::load(folders.clone());
 
     let refused = files.save_panes(WIDE).unwrap_err();
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(machine, "settings_path =\n");
     assert!(
@@ -1710,11 +1657,10 @@ fn a_broken_machine_toml_keeps_the_panes_layout() {
 
 #[test]
 fn the_owner_saves_the_panes_layout_and_shows_it_in_the_view() {
-    let (folders, root) = temp_folders("owner-panes");
+    let (folders, _root) = temp_folders("owner-panes");
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
 
     let saved = owner.save_panes(WIDE).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!((saved.panes, owner.view().panes), (WIDE, WIDE));
 }
@@ -1722,10 +1668,9 @@ fn the_owner_saves_the_panes_layout_and_shows_it_in_the_view() {
 #[test]
 fn machine_toml_says_where_ty_is_from_its_own_folder() {
     let ty = |text: &str| {
-        let (folders, root) = temp_folders("language-servers");
+        let (folders, _root) = temp_folders("language-servers");
         fs::write(folders.machine_file(), text).unwrap();
         let files = SettingsFiles::load(folders.clone());
-        fs::remove_dir_all(root).unwrap();
         assert_eq!(files.loaded().problems, Vec::<String>::new());
         let ty = files.view().language_servers.ty;
         ty.map(|path| path.strip_prefix(&folders.data).unwrap().to_path_buf())
@@ -1743,12 +1688,11 @@ fn machine_toml_says_where_ty_is_from_its_own_folder() {
 
 #[test]
 fn machine_toml_says_where_rust_analyzer_is_beside_ty() {
-    let (folders, root) = temp_folders("language-servers-rust");
+    let (folders, _root) = temp_folders("language-servers-rust");
     let text = "[language_servers.ty]\npath = 'ty.exe'\n[language_servers.rust-analyzer]\npath = 'ra/rust-analyzer.exe'\n";
     fs::write(folders.machine_file(), text).unwrap();
 
     let servers = SettingsFiles::load(folders.clone()).view().language_servers;
-    fs::remove_dir_all(root).unwrap();
 
     let expected = LanguageServers {
         ty: Some(folders.data.join("ty.exe")),
@@ -1761,12 +1705,11 @@ fn machine_toml_says_where_rust_analyzer_is_beside_ty() {
 
 #[test]
 fn machine_toml_says_where_clangd_is() {
-    let (folders, root) = temp_folders("language-servers-clangd");
+    let (folders, _root) = temp_folders("language-servers-clangd");
     let text = "[language_servers.clangd]\npath = 'clangd/bin/clangd.exe'\n";
     fs::write(folders.machine_file(), text).unwrap();
 
     let servers = SettingsFiles::load(folders.clone()).view().language_servers;
-    fs::remove_dir_all(root).unwrap();
 
     let expected = LanguageServers {
         ty: None,
@@ -1780,10 +1723,9 @@ fn machine_toml_says_where_clangd_is() {
 #[test]
 fn machine_toml_says_how_long_an_idle_server_runs_and_30_minutes_stands_for_what_it_cant_read() {
     let idle = |text: &str| {
-        let (folders, root) = temp_folders("language-servers-idle");
+        let (folders, _root) = temp_folders("language-servers-idle");
         fs::write(folders.machine_file(), text).unwrap();
         let files = SettingsFiles::load(folders);
-        fs::remove_dir_all(root).unwrap();
         assert_eq!(files.loaded().problems, Vec::<String>::new());
         files.view().language_servers.idle.as_secs() / 60
     };
@@ -1807,7 +1749,7 @@ fn minutes(count: u32) -> NonZeroU32 {
 
 #[test]
 fn settings_advanced_shows_each_server_s_path_as_machine_toml_writes_it() {
-    let (folders, root) = temp_folders("language-servers-loaded");
+    let (folders, _root) = temp_folders("language-servers-loaded");
     let text = "[language_servers]\nidle_minutes = 5\n[language_servers.clangd]\npath = 'clangd/bin/clangd.exe'\n";
     fs::write(folders.machine_file(), text).unwrap();
 
@@ -1815,7 +1757,6 @@ fn settings_advanced_shows_each_server_s_path_as_machine_toml_writes_it() {
         .loaded()
         .language_servers
         .clone();
-    fs::remove_dir_all(root).unwrap();
 
     let expected = LanguageServerSettings {
         clangd: Some(PathBuf::from("clangd/bin/clangd.exe")),
@@ -1828,7 +1769,7 @@ fn settings_advanced_shows_each_server_s_path_as_machine_toml_writes_it() {
 #[test]
 fn apply_saves_each_server_s_path_and_the_idle_time_in_machine_toml_and_leaves_settings_toml_alone()
 {
-    let (folders, root) = temp_folders("language-servers-apply");
+    let (folders, _root) = temp_folders("language-servers-apply");
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
     let servers = LanguageServerSettings {
         ty: Some(PathBuf::from("tools/ty.exe")),
@@ -1844,7 +1785,6 @@ fn apply_saves_each_server_s_path_and_the_idle_time_in_machine_toml_and_leaves_s
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
     let settings_saved = folders.settings_file().exists();
     let restarted = SettingsFiles::load(folders.clone()).view().language_servers;
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(answer.unwrap().loaded.language_servers, servers);
     assert_eq!(
@@ -1858,7 +1798,7 @@ fn apply_saves_each_server_s_path_and_the_idle_time_in_machine_toml_and_leaves_s
 
 #[test]
 fn a_server_cleared_in_settings_loses_its_path_and_the_default_idle_time_goes() {
-    let (folders, root) = temp_folders("language-servers-clear");
+    let (folders, _root) = temp_folders("language-servers-clear");
     let text = "# Mine.\npanes.sidebar = 200\n\n[language_servers]\nidle_minutes = 10\n\n[language_servers.ty]\npath = 'ty.exe'\n\n[language_servers.clangd]\n# Where I unpacked it.\npath = 'clangd.exe'\n";
     fs::write(folders.machine_file(), text).unwrap();
     let mut files = SettingsFiles::load(folders.clone());
@@ -1871,7 +1811,6 @@ fn a_server_cleared_in_settings_loses_its_path_and_the_default_idle_time_goes() 
         ..SettingsChanges::default()
     });
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     applied.unwrap();
     assert_eq!(
@@ -1883,7 +1822,7 @@ fn a_server_cleared_in_settings_loses_its_path_and_the_default_idle_time_goes() 
 
 #[test]
 fn apply_over_a_machine_toml_that_stopped_parsing_refuses_and_saves_neither_file() {
-    let (folders, root) = temp_folders("language-servers-broken");
+    let (folders, _root) = temp_folders("language-servers-broken");
     let mut files = SettingsFiles::load(folders.clone());
     fs::write(folders.machine_file(), "[language_servers\n").unwrap();
 
@@ -1894,7 +1833,6 @@ fn apply_over_a_machine_toml_that_stopped_parsing_refuses_and_saves_neither_file
     });
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
     let settings_saved = folders.settings_file().exists();
-    fs::remove_dir_all(root).unwrap();
 
     assert!(applied.is_err());
     assert_eq!(machine, "[language_servers\n");
@@ -1903,7 +1841,7 @@ fn apply_over_a_machine_toml_that_stopped_parsing_refuses_and_saves_neither_file
 
 #[test]
 fn apply_writes_a_server_s_path_over_a_hand_written_path_that_isn_t_a_table() {
-    let (folders, root) = temp_folders("language-servers-not-a-table");
+    let (folders, _root) = temp_folders("language-servers-not-a-table");
     fs::write(
         folders.machine_file(),
         "[language_servers]\nty = \"tools/ty.exe\"\n",
@@ -1919,7 +1857,6 @@ fn apply_writes_a_server_s_path_over_a_hand_written_path_that_isn_t_a_table() {
         ..SettingsChanges::default()
     });
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     applied.unwrap();
     assert_eq!(
@@ -1935,7 +1872,7 @@ fn apply_writes_a_server_s_path_over_a_hand_written_path_that_isn_t_a_table() {
 
 #[test]
 fn machine_toml_says_where_each_mirror_gets_its_objects_and_skips_what_it_cant_read() {
-    let (folders, root) = temp_folders("mirror-sources");
+    let (folders, _root) = temp_folders("mirror-sources");
     let mine = r#"[mirrors]
 "python/cpython" = 'D:\cpython'
 "octo-org/hello" = "download"
@@ -1946,7 +1883,6 @@ fn machine_toml_says_where_each_mirror_gets_its_objects_and_skips_what_it_cant_r
 
     let files = SettingsFiles::load(folders);
     let sources = files.view().mirror_sources;
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(files.loaded().problems, Vec::<String>::new());
     assert_eq!(
@@ -1964,7 +1900,7 @@ fn machine_toml_says_where_each_mirror_gets_its_objects_and_skips_what_it_cant_r
 
 #[test]
 fn a_mirrors_answer_saves_under_one_key_beside_what_the_user_wrote() {
-    let (folders, root) = temp_folders("mirror-source-saved");
+    let (folders, _root) = temp_folders("mirror-source-saved");
     let mine = r#"# This laptop.
 
 [mirrors]
@@ -1981,7 +1917,6 @@ fn a_mirrors_answer_saves_under_one_key_beside_what_the_user_wrote() {
         .save_mirror_source(&repository("python/cpython"), &lender)
         .unwrap();
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     let wanted = r#"# This laptop.
 
@@ -2001,7 +1936,7 @@ fn a_mirrors_answer_saves_under_one_key_beside_what_the_user_wrote() {
 
 #[test]
 fn a_broken_machine_toml_keeps_a_mirrors_answer_out() {
-    let (folders, root) = temp_folders("mirror-source-broken");
+    let (folders, _root) = temp_folders("mirror-source-broken");
     fs::write(folders.machine_file(), "settings_path =\n").unwrap();
     let mut files = SettingsFiles::load(folders.clone());
 
@@ -2009,7 +1944,6 @@ fn a_broken_machine_toml_keeps_a_mirrors_answer_out() {
         .save_mirror_source(&repository("a/b"), &MirrorSource::Download)
         .unwrap_err();
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(machine, "settings_path =\n");
     assert!(
@@ -2021,14 +1955,13 @@ fn a_broken_machine_toml_keeps_a_mirrors_answer_out() {
 
 #[test]
 fn the_owner_saves_a_mirrors_answer_and_shows_it_in_the_view() {
-    let (folders, root) = temp_folders("owner-mirror-source");
+    let (folders, _root) = temp_folders("owner-mirror-source");
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
     let cpython = repository("python/cpython");
 
     let saved = owner
         .save_mirror_source(cpython.clone(), MirrorSource::Download)
         .unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(
         saved.mirror_sources.get(&cpython),
@@ -2039,15 +1972,14 @@ fn the_owner_saves_a_mirrors_answer_and_shows_it_in_the_view() {
 
 #[test]
 fn with_no_repositories_the_window_opens_on_onboarding() {
-    let (folders, root) = temp_folders("home-none");
+    let (folders, _root) = temp_folders("home-none");
     let files = SettingsFiles::load(folders);
-    fs::remove_dir_all(root).unwrap();
     assert_eq!(files.home(), Home::default());
 }
 
 #[test]
 fn adding_a_repository_saves_it_with_its_conventions() {
-    let (folders, root) = temp_folders("add");
+    let (folders, _root) = temp_folders("add");
     let mut files = SettingsFiles::load(folders.clone());
 
     let home = files
@@ -2058,7 +1990,6 @@ fn adding_a_repository_saves_it_with_its_conventions() {
         )
         .unwrap();
     let text = fs::read_to_string(folders.settings_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(home, opened(&["python/cpython"], Conventions::Cpython));
     assert_eq!(
@@ -2072,7 +2003,7 @@ fn adding_a_repository_saves_it_with_its_conventions() {
 
 #[test]
 fn another_repository_goes_after_the_others_and_keeps_the_users_words() {
-    let (folders, root) = temp_folders("add-second");
+    let (folders, _root) = temp_folders("add-second");
     let before = "\
 # Mine.
 [[repositories]]
@@ -2097,7 +2028,6 @@ visible = false
         )
         .unwrap();
     let after = fs::read_to_string(folders.settings_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(
         home,
@@ -2135,7 +2065,7 @@ visible = false
 
 #[test]
 fn a_list_written_inline_stays_inline() {
-    let (folders, root) = temp_folders("add-inline");
+    let (folders, _root) = temp_folders("add-inline");
     fs::write(
         folders.settings_file(),
         "repositories = [{ name = \"a/b\" }]\n",
@@ -2154,7 +2084,6 @@ fn a_list_written_inline_stays_inline() {
     );
     let loaded = files.loaded().clone();
     let after = fs::read_to_string(folders.settings_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     let names: Vec<_> = loaded
         .settings
@@ -2175,7 +2104,7 @@ fn a_list_written_inline_stays_inline() {
 
 #[test]
 fn adding_a_repository_twice_keeps_one_and_opens_it() {
-    let (folders, root) = temp_folders("add-twice");
+    let (folders, _root) = temp_folders("add-twice");
     let mut files = SettingsFiles::load(folders.clone());
     drop(
         files
@@ -2205,7 +2134,6 @@ fn adding_a_repository_twice_keeps_one_and_opens_it() {
         )
         .unwrap();
     let after = fs::read_to_string(folders.settings_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(after, before);
     assert_eq!(
@@ -2216,7 +2144,7 @@ fn adding_a_repository_twice_keeps_one_and_opens_it() {
 
 #[test]
 fn adding_puts_the_repository_first_in_recent_with_the_time() {
-    let (folders, root) = temp_folders("recent");
+    let (folders, _root) = temp_folders("recent");
     let mut files = SettingsFiles::load(folders.clone());
 
     add_all(
@@ -2227,7 +2155,6 @@ fn adding_puts_the_repository_first_in_recent_with_the_time() {
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
     let settings = fs::read_to_string(folders.settings_file()).unwrap();
     let home = files.home();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(
         machine,
@@ -2247,12 +2174,11 @@ fn adding_puts_the_repository_first_in_recent_with_the_time() {
 
 #[test]
 fn a_normal_launch_reopens_the_head_of_recent() {
-    let (folders, root) = temp_folders("reopen");
+    let (folders, _root) = temp_folders("reopen");
     let mut files = SettingsFiles::load(folders.clone());
     add_all(&mut files, &["a/first", "a/second"], WHENEVER);
 
     let reopened = SettingsFiles::load(folders).home();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(
         reopened,
@@ -2262,20 +2188,19 @@ fn a_normal_launch_reopens_the_head_of_recent() {
 
 #[test]
 fn a_launch_skips_a_name_the_settings_no_longer_hold() {
-    let (folders, root) = temp_folders("reopen-skip");
+    let (folders, _root) = temp_folders("reopen-skip");
     let mut files = SettingsFiles::load(folders.clone());
     add_all(&mut files, &["a/first", "a/second", "a/gone"], WHENEVER);
     hold_only(&folders, &["a/first", "a/second"]);
 
     let home = SettingsFiles::load(folders).home();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(home, opened(&["a/second", "a/first"], Conventions::Github));
 }
 
 #[test]
 fn the_home_lists_the_repositories_most_recently_opened_first_then_the_others() {
-    let (folders, root) = temp_folders("recent-order");
+    let (folders, _root) = temp_folders("recent-order");
     let mut files = SettingsFiles::load(folders.clone());
     add_all(
         &mut files,
@@ -2293,7 +2218,6 @@ fn the_home_lists_the_repositories_most_recently_opened_first_then_the_others() 
     );
 
     let home = SettingsFiles::load(folders).home();
-    fs::remove_dir_all(root).unwrap();
 
     // The settings no longer hold a/gone, and a/never and a/later were never opened on this machine.
     assert_eq!(
@@ -2307,20 +2231,19 @@ fn the_home_lists_the_repositories_most_recently_opened_first_then_the_others() 
 
 #[test]
 fn with_no_name_in_recent_left_a_launch_opens_the_first_repository() {
-    let (folders, root) = temp_folders("reopen-gone");
+    let (folders, _root) = temp_folders("reopen-gone");
     let mut files = SettingsFiles::load(folders.clone());
     add_all(&mut files, &["a/gone"], WHENEVER);
     hold_only(&folders, &["a/first", "a/second"]);
 
     let home = SettingsFiles::load(folders).home();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(home, opened(&["a/first", "a/second"], Conventions::Github));
 }
 
 #[test]
 fn an_entry_in_recent_it_cant_read_is_passed_over_and_kept() {
-    let (folders, root) = temp_folders("recent-unreadable");
+    let (folders, _root) = temp_folders("recent-unreadable");
     hold_only(&folders, &["a/first", "a/second"]);
     let mine = "recent = [
     { name = \"nonsense\" },
@@ -2335,7 +2258,6 @@ fn an_entry_in_recent_it_cant_read_is_passed_over_and_kept() {
 
     add_all(&mut files, &["a/second"], at("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(
         (home, problems),
@@ -2359,7 +2281,7 @@ fn an_entry_in_recent_it_cant_read_is_passed_over_and_kept() {
 
 #[test]
 fn a_last_repository_from_0_2_0_reopens_and_the_next_add_turns_it_into_recent() {
-    let (folders, root) = temp_folders("recent-from-last");
+    let (folders, _root) = temp_folders("recent-from-last");
     hold_only(&folders, &["a/first", "a/old"]);
     fs::write(
         folders.machine_file(),
@@ -2371,7 +2293,6 @@ fn a_last_repository_from_0_2_0_reopens_and_the_next_add_turns_it_into_recent() 
 
     add_all(&mut files, &["a/new"], at("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(reopened, opened(&["a/old", "a/first"], Conventions::Github));
     assert_eq!(
@@ -2391,13 +2312,12 @@ editor = \"code\"
 
 #[test]
 fn adding_the_last_repository_from_0_2_0_again_leaves_one_entry_for_it() {
-    let (folders, root) = temp_folders("recent-from-last-again");
+    let (folders, _root) = temp_folders("recent-from-last-again");
     fs::write(folders.machine_file(), "last_repository = \"a/old\"\n").unwrap();
     let mut files = SettingsFiles::load(folders.clone());
 
     add_all(&mut files, &["a/Old"], at("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert!(
         machine.starts_with(
@@ -2409,7 +2329,7 @@ fn adding_the_last_repository_from_0_2_0_again_leaves_one_entry_for_it() {
 
 #[test]
 fn any_write_of_machine_toml_turns_a_last_repository_from_0_2_0_into_recent() {
-    let (folders, root) = temp_folders("recent-from-last-panes");
+    let (folders, _root) = temp_folders("recent-from-last-panes");
     hold_only(&folders, &["a/first", "a/old"]);
     let mine = "# This laptop.\nlast_repository = \"a/old\" # Mine.\neditor = \"code\"\n";
     fs::write(folders.machine_file(), mine).unwrap();
@@ -2418,7 +2338,6 @@ fn any_write_of_machine_toml_turns_a_last_repository_from_0_2_0_into_recent() {
     files.save_panes(WIDE).unwrap();
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
     let reopened = SettingsFiles::load(folders).home();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(
         machine,
@@ -2438,7 +2357,7 @@ list = 500
 
 #[test]
 fn a_last_repository_written_by_0_2_0_after_recent_gives_way_to_the_list() {
-    let (folders, root) = temp_folders("recent-and-last");
+    let (folders, _root) = temp_folders("recent-and-last");
     hold_only(&folders, &["a/one", "a/old"]);
     let mine = "recent = [\n    { name = \"a/one\" },\n]\nlast_repository = \"a/old\"\n";
     fs::write(folders.machine_file(), mine).unwrap();
@@ -2447,7 +2366,6 @@ fn a_last_repository_written_by_0_2_0_after_recent_gives_way_to_the_list() {
 
     files.save_panes(PaneLayout::default()).unwrap();
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(reopened, opened(&["a/one", "a/old"], Conventions::Github));
     assert_eq!(machine, "recent = [\n    { name = \"a/one\" },\n]\n");
@@ -2455,7 +2373,7 @@ fn a_last_repository_written_by_0_2_0_after_recent_gives_way_to_the_list() {
 
 #[test]
 fn a_recent_that_isnt_a_list_gives_way_to_a_last_repository() {
-    let (folders, root) = temp_folders("recent-not-a-list");
+    let (folders, _root) = temp_folders("recent-not-a-list");
     hold_only(&folders, &["a/first", "a/old"]);
     let mine = "recent = \"a/first\" # Wrong.\nlast_repository = \"a/old\"\neditor = \"code\"\n";
     fs::write(folders.machine_file(), mine).unwrap();
@@ -2464,7 +2382,6 @@ fn a_recent_that_isnt_a_list_gives_way_to_a_last_repository() {
 
     add_all(&mut files, &["a/new"], at("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(reopened, opened(&["a/old", "a/first"], Conventions::Github));
     assert!(
@@ -2482,7 +2399,7 @@ editor = \"code\"
 
 #[test]
 fn a_recent_written_as_tables_keeps_its_entries() {
-    let (folders, root) = temp_folders("recent-tables");
+    let (folders, _root) = temp_folders("recent-tables");
     hold_only(&folders, &["a/one", "a/two"]);
     let mine = "[[recent]]\nname = \"a/one\"\n\n[[recent]]\nname = \"a/two\"\n";
     fs::write(folders.machine_file(), mine).unwrap();
@@ -2491,7 +2408,6 @@ fn a_recent_written_as_tables_keeps_its_entries() {
 
     add_all(&mut files, &["a/three"], at("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(reopened, opened(&["a/one", "a/two"], Conventions::Github));
     assert!(
@@ -2509,7 +2425,7 @@ fn a_recent_written_as_tables_keeps_its_entries() {
 
 #[test]
 fn a_repository_added_again_keeps_the_comment_on_its_entry() {
-    let (folders, root) = temp_folders("recent-comment");
+    let (folders, _root) = temp_folders("recent-comment");
     let mine = "recent = [
     { name = \"a/one\" },
     # Work.
@@ -2521,7 +2437,6 @@ fn a_repository_added_again_keeps_the_comment_on_its_entry() {
 
     add_all(&mut files, &["a/two"], at("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert!(
         machine.starts_with(
@@ -2554,7 +2469,6 @@ fn adding_follows_settings_path() {
     );
     let text = fs::read_to_string(&moved).unwrap();
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert!(text.contains("a/b"), "{text}");
     assert!(machine.contains("settings_path"), "{machine}");
@@ -2572,7 +2486,7 @@ fn adding_refuses_while_either_file_cant_be_used() {
             "machine.toml, line 1",
         ),
     ] {
-        let (folders, root) = temp_folders(name);
+        let (folders, _root) = temp_folders(name);
         fs::write(folders.settings_file(), settings).unwrap();
         fs::write(folders.machine_file(), machine).unwrap();
         let mut files = SettingsFiles::load(folders.clone());
@@ -2585,7 +2499,6 @@ fn adding_refuses_while_either_file_cant_be_used() {
             )
             .unwrap_err();
         let after = fs::read_to_string(folders.settings_file()).unwrap();
-        fs::remove_dir_all(root).unwrap();
 
         assert_eq!(after, settings);
         assert!(refused.message.contains(named), "{}", refused.message);
@@ -2598,7 +2511,7 @@ fn adding_refuses_while_either_file_cant_be_used() {
     reason = "the test's own file, made writable again only so it can be removed"
 )]
 fn an_add_that_cant_save_machine_toml_says_so_and_adds_nothing() {
-    let (folders, root) = temp_folders("add-machine-readonly");
+    let (folders, _root) = temp_folders("add-machine-readonly");
     let file = folders.machine_file();
     fs::write(&file, "mine = 1\n").unwrap();
     let mut permissions = fs::metadata(&file).unwrap().permissions();
@@ -2616,7 +2529,6 @@ fn an_add_that_cant_save_machine_toml_says_so_and_adds_nothing() {
     let added = folders.settings_file().exists();
     permissions.set_readonly(false);
     fs::set_permissions(&file, permissions).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert!(
         refused.message.contains("machine.toml"),
@@ -2629,7 +2541,7 @@ fn an_add_that_cant_save_machine_toml_says_so_and_adds_nothing() {
 
 #[test]
 fn opening_a_repository_puts_it_first_in_recent_and_the_next_launch_opens_it() {
-    let (folders, root) = temp_folders("open");
+    let (folders, _root) = temp_folders("open");
     let mut files = SettingsFiles::load(folders.clone());
     add_all(
         &mut files,
@@ -2644,7 +2556,6 @@ fn opening_a_repository_puts_it_first_in_recent_and_the_next_launch_opens_it() {
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
     let after = fs::read_to_string(folders.settings_file()).unwrap();
     let relaunched = SettingsFiles::load(folders).home();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(home, opened(&["a/first", "a/second"], Conventions::Github));
     assert_eq!(relaunched, home);
@@ -2666,7 +2577,7 @@ fn opening_a_repository_puts_it_first_in_recent_and_the_next_launch_opens_it() {
 
 #[test]
 fn opening_a_repository_the_settings_dont_hold_is_refused_and_changes_nothing() {
-    let (folders, root) = temp_folders("open-unknown");
+    let (folders, _root) = temp_folders("open-unknown");
     let mut files = SettingsFiles::load(folders.clone());
     add_all(&mut files, &["a/first", "a/second"], WHENEVER);
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
@@ -2675,7 +2586,6 @@ fn opening_a_repository_the_settings_dont_hold_is_refused_and_changes_nothing() 
         .open_repository(&repository("a/gone"), WHENEVER)
         .unwrap_err();
     let after = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(refused.kind, ErrorKind::NotFound);
     assert_eq!(refused.message, "Tsugiki doesn't have a/gone.");
@@ -2688,7 +2598,7 @@ fn opening_a_repository_the_settings_dont_hold_is_refused_and_changes_nothing() 
 
 #[test]
 fn opening_a_repository_the_user_took_out_of_settings_toml_since_is_refused() {
-    let (folders, root) = temp_folders("open-removed");
+    let (folders, _root) = temp_folders("open-removed");
     let mut files = SettingsFiles::load(folders.clone());
     add_all(&mut files, &["a/first", "a/second"], WHENEVER);
     hold_only(&folders, &["a/second"]);
@@ -2698,7 +2608,6 @@ fn opening_a_repository_the_user_took_out_of_settings_toml_since_is_refused() {
         .open_repository(&repository("a/first"), WHENEVER)
         .unwrap_err();
     let after = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(refused.message, "Tsugiki doesn't have a/first.");
     assert_eq!(after, machine);
@@ -2706,7 +2615,7 @@ fn opening_a_repository_the_user_took_out_of_settings_toml_since_is_refused() {
 
 #[test]
 fn opening_refuses_while_machine_toml_cant_be_used() {
-    let (folders, root) = temp_folders("open-machine-broken");
+    let (folders, _root) = temp_folders("open-machine-broken");
     let mut files = SettingsFiles::load(folders.clone());
     add_all(&mut files, &["a/first", "a/second"], WHENEVER);
     fs::write(folders.machine_file(), "settings_path =\n").unwrap();
@@ -2715,7 +2624,6 @@ fn opening_refuses_while_machine_toml_cant_be_used() {
         .open_repository(&repository("a/first"), WHENEVER)
         .unwrap_err();
     let after = fs::read_to_string(folders.machine_file()).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert!(
         refused.message.contains("machine.toml, line 1"),
@@ -2727,13 +2635,12 @@ fn opening_refuses_while_machine_toml_cant_be_used() {
 
 #[test]
 fn the_owner_opens_a_repository_and_answers_with_what_the_files_say() {
-    let (folders, root) = temp_folders("owner-open");
+    let (folders, _root) = temp_folders("owner-open");
     let mut files = SettingsFiles::load(folders);
     add_all(&mut files, &["a/first", "a/second"], WHENEVER);
     let owner = SettingsOwner::start(Ok(files));
 
     let saved = owner.open_repository(repository("a/first")).unwrap();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(
         saved.home,
@@ -2745,7 +2652,7 @@ fn the_owner_opens_a_repository_and_answers_with_what_the_files_say() {
 
 #[test]
 fn the_owners_check_reads_the_files_again_so_a_repository_taken_out_by_hand_isnt_held() {
-    let (folders, root) = temp_folders("owner-check");
+    let (folders, _root) = temp_folders("owner-check");
     let mut files = SettingsFiles::load(folders.clone());
     add_all(&mut files, &["a/first", "a/second"], WHENEVER);
     let owner = SettingsOwner::start(Ok(files));
@@ -2755,7 +2662,6 @@ fn the_owners_check_reads_the_files_again_so_a_repository_taken_out_by_hand_isnt
     let first = owner.check_name(repository("A/First"), &mut |_| {
         panic!("GitHub was asked about a Repository Tsugiki has")
     });
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(
         second.unwrap(),
@@ -2789,7 +2695,7 @@ fn without_folders_the_owners_check_asks_github() {
 
 #[test]
 fn a_name_that_isnt_one_is_a_problem_named_with_its_line() {
-    let (folders, root) = temp_folders("bad-name");
+    let (folders, _root) = temp_folders("bad-name");
     fs::write(
         folders.settings_file(),
         "\n[[repositories]]\nname = \"nonsense\"\n",
@@ -2801,7 +2707,6 @@ fn a_name_that_isnt_one_is_a_problem_named_with_its_line() {
     fs::write(folders.machine_file(), "\nlast_repository = \"nonsense\"\n").unwrap();
     let files = SettingsFiles::load(folders);
     let in_machine = only_problem(&files);
-    fs::remove_dir_all(root).unwrap();
 
     assert!(
         in_settings.contains("settings.toml, line 3"),
@@ -2817,14 +2722,13 @@ fn saving_settings_leaves_the_repositories_and_the_comments_on_them() {
 [[repositories]]
 name = \"python/cpython\" # The big one.
 ";
-    let (folders, root) = temp_folders("save-repositories");
+    let (folders, _root) = temp_folders("save-repositories");
     fs::write(folders.settings_file(), before).unwrap();
     let mut files = SettingsFiles::load(folders.clone());
 
     files.write(&hidden()).unwrap();
     let after = fs::read_to_string(folders.settings_file()).unwrap();
     let held = files.loaded().settings.repositories.len();
-    fs::remove_dir_all(root).unwrap();
 
     assert!(after.starts_with(before), "{after}");
     assert!(after.ends_with("visible = false\n"), "{after}");
@@ -2841,7 +2745,6 @@ fn a_file_gone_from_settings_path_on_a_reload_keeps_the_last_good_values() {
 
     fs::remove_file(&moved).unwrap();
     files.reload();
-    fs::remove_dir_all(root).unwrap();
 
     assert_eq!(files.loaded().settings, hidden());
     let problem = only_problem(&files);

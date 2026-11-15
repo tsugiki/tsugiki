@@ -42,7 +42,6 @@ fn in_a_cpython_checkout_clangd_reads_a_database_of_its_core_c_files() {
     let setup = setup(&folder, Path::new("clangd")).unwrap();
     let database = root.join("servers").join("clangd");
     let text = fs::read_to_string(database.join("compile_commands.json"));
-    let _removed = fs::remove_dir_all(&root);
 
     let entries: Vec<Value> = serde_json::from_str(&text.unwrap()).unwrap();
     let files: Vec<&str> = (entries.iter())
@@ -77,7 +76,6 @@ fn elsewhere_clangd_uses_its_own_defaults() {
 
     let setup = setup(&folder, Path::new("clangd")).unwrap();
     let written = root.join("servers").exists();
-    let _removed = fs::remove_dir_all(&root);
 
     let args: Vec<&OsString> = setup.args.iter().collect();
     assert_eq!(
@@ -99,7 +97,6 @@ fn a_database_it_can_t_write_stops_clangd_starting() {
     fs::write(root.join("servers"), "").unwrap();
 
     let refused = setup(&folder, Path::new("clangd")).map(|_setup| ());
-    let _removed = fs::remove_dir_all(&root);
 
     let Err(error) = refused else {
         panic!("clangd started without its database");
@@ -178,7 +175,6 @@ fn built_in_headers_are_a_stddef_h_in_the_folder_above_clangd_s_own() {
 
     let found = ["whole", "lone", "empty"]
         .map(|folder| has_built_ins(&root.join(folder).join("bin").join("clangd.exe")));
-    let _removed = fs::remove_dir_all(&root);
 
     assert_eq!(found, [true, false, false]);
 }
@@ -215,7 +211,8 @@ fn an_include_in_angle_brackets_names_its_header_between_them() {
 #[test]
 fn a_header_in_angle_brackets_says_nothing_while_git_can_t_list_the_repository_s_files() {
     // A URI keeps no `..`, as the server names files.
-    let root = super::super::plain(&temp_path("clangd-headers-no-git"));
+    let folder = temp_path("clangd-headers-no-git");
+    let root = super::super::plain(&folder);
     touch(&root, &["bin/clangd.exe", "lookup/eggs.c"]);
     let uri = Uri::from_path(&root.join("lookup").join("eggs.c")).unwrap();
     // No such commit: git fails each time it is asked.
@@ -230,7 +227,6 @@ fn a_header_in_angle_brackets_says_nothing_while_git_can_t_list_the_repository_s
     let stdlib = headers.problem(&diagnosed(&uri, "'stdlib.h' file not found"));
     let again = headers.problem(&diagnosed(&uri, "'stdlib.h' file not found"));
     let stddef = headers.problem(&diagnosed(&uri, "'stddef.h' file not found"));
-    let _removed = fs::remove_dir_all(&root);
 
     assert_eq!((stdlib, again), (None, None));
     assert_eq!(stddef, Some(ServerProblem::BuiltInHeadersMissing));
@@ -283,7 +279,6 @@ fn any_system_header_missing_beside_a_clangd_without_its_built_in_headers_is_the
     let own = lone.problem(&diagnosed(&uri, "'spam.h' file not found"));
     let system = whole.problem(&diagnosed(&uri, "'stdint.h' file not found"));
     let not_open = whole.problem(&diagnosed(&other, "'stdint.h' file not found"));
-    let _removed = fs::remove_dir_all(&root);
 
     assert_eq!(stdint, Some(ServerProblem::BuiltInHeadersMissing));
     assert_eq!((quoted, own, not_open), (None, None, None));
@@ -310,7 +305,6 @@ fn a_bare_name_is_found_in_the_first_folder_of_path_that_holds_it() {
     let unknown = on_path(Path::new("ty"), Some(path.clone()));
     let given = on_path(&root.join("first").join("clangd"), Some(path));
     let without_path = on_path(Path::new("clangd"), None);
-    let _removed = fs::remove_dir_all(&root);
 
     assert_eq!(bare, root.join("second").join(name));
     assert_eq!(unknown, Path::new("ty"));

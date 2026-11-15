@@ -4865,6 +4865,7 @@ dependencies = [
  "process-wrap",
  "serde",
  "serde_json",
+ "tsugiki-test-git",
  "url",
  "win32job",
  "windows",

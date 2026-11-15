@@ -150,7 +150,6 @@ fn a_file_outside_the_repository_is_read_from_disk_once_a_server_named_it() {
     let unnamed = files.read(&folder, &of(&file, 1..2));
     files.name(path.clone());
     let read = files.read(&folder, &of(&file, 1..2));
-    fs::remove_dir_all(&folder).unwrap();
 
     let message = format!("No language server named {}.", path.display());
     assert_eq!(unnamed, Err(Error::new(ErrorKind::NotFound, &message)));
@@ -247,7 +246,6 @@ fn a_file_outside_the_repository_is_highlighted_once_a_server_named_it() {
     let unnamed = files.spans(&highlighter, &folder, &of(&file, 1..2));
     files.name(path.clone());
     let spans = files.spans(&highlighter, &folder, &of(&file, 1..2));
-    fs::remove_dir_all(&folder).unwrap();
 
     let message = format!("No language server named {}.", path.display());
     assert_eq!(unnamed, Err(Error::new(ErrorKind::NotFound, &message)));
@@ -278,7 +276,6 @@ fn a_file_outside_the_repository_that_changes_on_disk_is_highlighted_as_its_line
     drop(files.read(&folder, &of(&HitFile::Outside { path: other }, 1..2)));
     let lines = files.read(&folder, &file);
     let after = files.spans(&highlighter, &folder, &file);
-    fs::remove_dir_all(&folder).unwrap();
 
     let def = vec![
         span(0, 3, Highlight::Keyword),

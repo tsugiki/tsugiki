@@ -22,7 +22,6 @@ fn a_newer_database_is_refused_and_left_untouched() {
         "no -wal or -shm files either"
     );
     assert_eq!(backups(&folder), [""; 0]);
-    fs::remove_dir_all(folder).unwrap();
 }
 
 /// What the folder holds, in name order, so a test can see that SQLite never touched the file. The order
@@ -53,24 +52,22 @@ fn a_file_that_isnt_a_database_is_refused_and_left_untouched() {
         ["tsugiki.db", "tsugiki.db.lock"],
         "SQLite never opened it"
     );
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
 fn a_file_too_short_to_hold_a_header_is_refused_on_every_os() {
-    let (path, folder) = temp_database("short");
+    let (path, _folder) = temp_database("short");
     for length in [1, 2, 20, 99] {
         fs::write(&path, "x".repeat(length)).unwrap();
         let problem = Store::open(&path).err().unwrap();
         assert_eq!(problem.message, NOT_A_DATABASE, "{length} bytes");
         assert_eq!(fs::read(&path).unwrap().len(), length);
     }
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
 fn a_signature_without_a_whole_header_doesnt_make_a_database() {
-    let (path, folder) = temp_database("signature-only");
+    let (path, _folder) = temp_database("signature-only");
     // Long enough to hold the user version, and one byte short of a header.
     let mut short = SIGNATURE.to_vec();
     short.resize(usize::from(HEADER_LENGTH) - 1, 0);
@@ -79,28 +76,25 @@ fn a_signature_without_a_whole_header_doesnt_make_a_database() {
     let problem = Store::open(&path).err().unwrap();
 
     assert_eq!(problem.message, NOT_A_DATABASE);
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
 fn an_empty_file_counts_as_a_new_database() {
-    let (path, folder) = temp_database("empty");
+    let (path, _folder) = temp_database("empty");
     fs::write(&path, "").unwrap();
     assert_eq!(contents(&path), Contents::Nothing);
 
     open_with(&path, &[V1]).unwrap().close();
 
     assert_eq!(contents(&path), Contents::Database { version: 1 });
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
 fn a_folder_in_the_files_place_is_left_for_sqlite_to_refuse() {
-    let (path, folder) = temp_database("folder-in-place");
+    let (path, _folder) = temp_database("folder-in-place");
     fs::create_dir(&path).unwrap();
 
     let problem = Store::open(&path).err().unwrap();
 
     assert_eq!(problem.message, CANT_OPEN);
-    fs::remove_dir_all(folder).unwrap();
 }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::testing::TempPath;
 use std::path::PathBuf;
 
 pub(super) const V1: Migration = Migration {
@@ -19,8 +20,8 @@ pub(super) const V3_BROKEN: Migration = Migration {
     sql: "CREATE TABLE half_done (id INTEGER PRIMARY KEY); THIS IS NOT SQL;",
 };
 
-/// The path of a database in a new temp folder, and that folder.
-pub(super) fn temp_database(name: &str) -> (PathBuf, PathBuf) {
+/// The path of a database in a new temp folder, and that folder. Close the database before the folder drops.
+pub(super) fn temp_database(name: &str) -> (PathBuf, TempPath) {
     let folder = crate::testing::temp_path(&format!("store-{name}"));
     fs::create_dir_all(&folder).unwrap();
     (folder.join("tsugiki.db"), folder)

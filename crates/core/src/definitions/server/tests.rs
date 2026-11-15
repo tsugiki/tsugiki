@@ -27,7 +27,6 @@ fn a_log_whose_folder_cant_be_made_is_none_and_the_server_runs_without_it() {
     fs::write(&blocked, "").unwrap();
 
     let log = new_log(&blocked.join("ty").join("ty.log"));
-    fs::remove_dir_all(&root).unwrap();
 
     assert!(log.is_none());
 }

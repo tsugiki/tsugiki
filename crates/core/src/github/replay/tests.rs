@@ -2,7 +2,7 @@ use super::*;
 use crate::github::{Request, Transport};
 use crate::token::{GhOutput, Token, read_token};
 
-fn fixture(name: &str, contents: &str) -> std::path::PathBuf {
+fn fixture(name: &str, contents: &str) -> crate::testing::TempPath {
     let dir = crate::testing::temp_path(&format!("replay-{name}"));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("Op.json"), contents).unwrap();
@@ -50,13 +50,11 @@ fn replayed(
         query: query.into(),
         variables: serde_json::Value::Null,
     };
-    let replayer = Replayer::new(dir.clone());
+    let replayer = Replayer::new(dir.to_path_buf());
     let token = token();
-    let answer = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         replayer.post(&token, &request).unwrap()
-    }));
-    std::fs::remove_dir_all(dir).unwrap();
-    answer
+    }))
 }
 
 #[test]
@@ -93,14 +91,13 @@ fn a_changed_query_needs_a_new_recording() {
         query: "new".into(),
         variables: serde_json::Value::Null,
     };
-    let replayer = Replayer::new(dir.clone());
+    let replayer = Replayer::new(dir.to_path_buf());
     let token = token();
-    // Caught rather than `should_panic`, so the test can still remove its folder.
+    // Caught rather than `should_panic`, so the test passes with its folder removed.
     let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         replayer.post(&token, &request)
     }))
     .unwrap_err();
-    std::fs::remove_dir_all(dir).unwrap();
     let message = panic.downcast_ref::<String>().unwrap();
     assert!(message.contains("record it again"), "{message}");
 }

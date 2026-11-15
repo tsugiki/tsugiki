@@ -21,5 +21,8 @@ url.workspace = true
 win32job.workspace = true
 windows.workspace = true
 
+[dev-dependencies]
+tsugiki-test-git.workspace = true
+
 [lints]
 workspace = true

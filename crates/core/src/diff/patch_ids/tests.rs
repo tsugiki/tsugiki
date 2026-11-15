@@ -5,10 +5,11 @@ use tsugiki_test_git::git;
 
 use super::*;
 use crate::patch_ids::{ChangedFile, changed_files};
+use crate::testing::TempPath;
 
 /// A repository with a branch `main` and a PR on it, whose commits a test makes and reads as a mirror would.
 struct Place {
-    root: PathBuf,
+    root: TempPath,
     work: PathBuf,
 }
 
@@ -63,10 +64,6 @@ impl Place {
     fn patches(&self, commit: &CommitSha) -> Vec<FilePatch> {
         read_patch_ids(&self.mirror(), "main", commit).unwrap()
     }
-
-    fn finish(self) {
-        fs::remove_dir_all(self.root).unwrap();
-    }
 }
 
 fn lines(numbers: std::ops::RangeInclusive<u32>) -> String {
@@ -100,7 +97,6 @@ fn each_file_the_diff_changes_gets_a_patch_id_by_its_path() {
     let reviewed = reviewed_pr(&place);
 
     let patches = place.patches(&reviewed);
-    place.finish();
 
     assert_eq!(
         patches
@@ -121,7 +117,6 @@ fn a_merge_from_the_target_branch_leaves_each_files_patch_id_alone() {
     let merged = place.at("HEAD");
 
     let (before, now) = (place.patches(&reviewed), place.patches(&merged));
-    place.finish();
 
     assert_eq!(changed_files(&before, &now), []);
 }
@@ -136,7 +131,6 @@ fn a_rebase_that_leaves_each_files_diff_the_same_leaves_its_patch_id_alone() {
     let rebased = place.at("HEAD");
 
     let (before, now) = (place.patches(&reviewed), place.patches(&rebased));
-    place.finish();
 
     assert_ne!(reviewed, rebased);
     assert_eq!(changed_files(&before, &now), []);
@@ -154,7 +148,6 @@ fn a_new_change_to_a_file_changes_its_patch_id() {
     let pushed = place.commit("More");
 
     let (before, now) = (place.patches(&reviewed), place.patches(&pushed));
-    place.finish();
 
     assert_eq!(
         changed_files(&before, &now),
@@ -182,7 +175,6 @@ fn trailing_spaces_change_the_verbatim_patch_id_only() {
     let pushed = place.commit("Spaces");
 
     let (before, now) = (place.patches(&reviewed), place.patches(&pushed));
-    place.finish();
 
     assert_eq!(
         changed_files(&before, &now),
@@ -203,7 +195,6 @@ fn a_binary_files_patch_id_follows_its_content() {
     let pushed = place.commit("Another logo");
 
     let (before, now) = (place.patches(&reviewed), place.patches(&pushed));
-    place.finish();
 
     assert_eq!(
         changed_files(&before, &now),
@@ -223,7 +214,6 @@ fn the_attributes_on_the_target_branch_say_which_files_are_generated() {
     let _ = place.commit("Generated");
 
     let patches = place.patches(&reviewed);
-    place.finish();
 
     assert_eq!(
         patches
@@ -268,7 +258,6 @@ fn a_file_turned_into_a_symlink_or_a_submodule_a_rename_and_a_mode_change_each_g
     let pr = place.at("HEAD");
 
     let read = read_patch_ids(&place.mirror(), "main", &pr);
-    place.finish();
 
     let paths: Vec<String> = read.unwrap().into_iter().map(|file| file.path).collect();
     assert_eq!(
@@ -311,7 +300,6 @@ fn the_users_diff_settings_leave_the_patch_ids_alone() {
         let _ = git(&mirror, &["config", name, value]);
     }
     let configured = place.patches(&pr);
-    place.finish();
 
     assert_eq!(configured, plain);
 }
@@ -324,7 +312,6 @@ fn a_commit_already_on_the_target_branch_gives_no_patch_ids_to_keep() {
     // A commit on the Target branch that no merge commit brought in has an empty diff from there, which
     // would read as every file changed for good.
     let read = read_patch_ids(&place.mirror(), "main", &main);
-    place.finish();
 
     assert!(read.is_err());
 }
@@ -351,7 +338,6 @@ fn a_pr_merged_with_a_merge_commit_keeps_the_patch_ids_it_had_while_open() {
 
     // Both commits are on main now, and their merge base with it is themselves.
     let merged = [place.patches(&reviewed), place.patches(&head)];
-    place.finish();
 
     assert_eq!(merged, open);
 }
@@ -389,7 +375,6 @@ fn a_mirror_without_the_target_branch_has_no_patch_ids_to_give() {
     let reviewed = reviewed_pr(&place);
 
     let read = read_patch_ids(&place.mirror(), "3.14", &reviewed);
-    place.finish();
 
     assert!(read.is_err());
 }

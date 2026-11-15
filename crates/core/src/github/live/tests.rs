@@ -57,6 +57,7 @@ fn stopping_git_ends_what_it_started_though_it_left_gits_tree() {
             .unwrap();
     });
     let closed = closed.recv_timeout(Duration::from_secs(30));
+    // Once, at once: the guard would wait for an orphan that outlives the output by a few seconds.
     let removed = std::fs::remove_dir_all(&folder);
 
     assert_eq!(line.trim_end(), "started");

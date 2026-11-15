@@ -2,16 +2,17 @@ use super::*;
 use crate::error::ErrorKind;
 use crate::store::testing::temp_database;
 use crate::store::{OpenReader, Store, StoreReader, reader};
-use std::fs;
+use crate::testing::TempPath;
 use std::path::PathBuf;
 
-/// A store and a reader of the same file.
-fn opened(name: &str) -> (Store, OpenReader, StoreReader, PathBuf, PathBuf) {
+/// The folder of a database, and a store and a reader of it. The folder comes first, so a pattern that binds
+/// them all drops it last.
+fn opened(name: &str) -> (TempPath, Store, OpenReader, StoreReader, PathBuf) {
     let (path, folder) = temp_database(name);
     let store = Store::open(&path).unwrap();
     let (to_open, reader) = reader();
     let open = to_open.open(&path).unwrap();
-    (store, open, reader, path, folder)
+    (folder, store, open, reader, path)
 }
 
 fn cpython() -> RepositoryName {
@@ -31,7 +32,7 @@ fn found(numbers: &[u32]) -> FilterResults {
 
 #[test]
 fn a_new_search_replaces_what_the_last_one_found() {
-    let (store, open, reader, _path, folder) = opened("filter-replace");
+    let (_folder, store, open, reader, _path) = opened("filter-replace");
     store
         .save_filter_results(&cpython(), &query("a"), found(&[1, 2]))
         .unwrap();
@@ -45,7 +46,6 @@ fn a_new_search_replaces_what_the_last_one_found() {
     let read = reader.work_facts(&cpython()).unwrap().filters;
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(read[&query("a")], found(&[2, 3]));
     assert_eq!(read[&query("b")], found(&[9]));
@@ -53,7 +53,7 @@ fn a_new_search_replaces_what_the_last_one_found() {
 
 #[test]
 fn each_repository_has_its_own_results_whatever_the_case_of_its_name() {
-    let (store, open, reader, _path, folder) = opened("filter-repositories");
+    let (_folder, store, open, reader, _path) = opened("filter-repositories");
     let other = RepositoryName::parse("python/peps").unwrap();
     let shouted = RepositoryName::parse("Python/CPython").unwrap();
     store
@@ -66,14 +66,13 @@ fn each_repository_has_its_own_results_whatever_the_case_of_its_name() {
     let read = reader.work_facts(&shouted).unwrap().filters;
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(read[&query("a")], found(&[1]));
 }
 
 #[test]
 fn a_problem_leaves_what_the_last_search_found_until_a_search_succeeds() {
-    let (store, open, reader, _path, folder) = opened("filter-problem");
+    let (_folder, store, open, reader, _path) = opened("filter-problem");
     store
         .save_filter_results(&cpython(), &query("a"), found(&[1]))
         .unwrap();
@@ -90,7 +89,6 @@ fn a_problem_leaves_what_the_last_search_found_until_a_search_succeeds() {
     let after = reader.work_facts(&cpython()).unwrap().filters;
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(
         during[&query("a")],
@@ -104,7 +102,7 @@ fn a_problem_leaves_what_the_last_search_found_until_a_search_succeeds() {
 
 #[test]
 fn results_can_come_with_a_problem() {
-    let (store, open, reader, _path, folder) = opened("filter-cut-off");
+    let (_folder, store, open, reader, _path) = opened("filter-cut-off");
     let cut_off = FilterResults {
         numbers: BTreeSet::from([1]),
         problem: Some(FilterProblem::Refused("It was cut off".to_owned())),
@@ -116,14 +114,13 @@ fn results_can_come_with_a_problem() {
     let read = reader.work_facts(&cpython()).unwrap().filters;
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(read[&query("a")], cut_off);
 }
 
 #[test]
 fn a_search_no_filter_holds_any_more_goes_with_its_problem() {
-    let (store, open, reader, _path, folder) = opened("filter-edited");
+    let (_folder, store, open, reader, _path) = opened("filter-edited");
     store
         .save_filter_results(&cpython(), &query("old"), found(&[1]))
         .unwrap();
@@ -140,14 +137,13 @@ fn a_search_no_filter_holds_any_more_goes_with_its_problem() {
     let read = reader.work_facts(&cpython()).unwrap().filters;
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(read, BTreeMap::from([(query("kept"), found(&[2]))]));
 }
 
 #[test]
 fn a_search_that_found_nothing_counts_as_searched() {
-    let (store, open, reader, _path, folder) = opened("filter-found-nothing");
+    let (_folder, store, open, reader, _path) = opened("filter-found-nothing");
     store
         .save_filter_results(&cpython(), &query("a"), found(&[]))
         .unwrap();
@@ -155,14 +151,13 @@ fn a_search_that_found_nothing_counts_as_searched() {
     let read = reader.work_facts(&cpython()).unwrap().filters;
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(read, BTreeMap::from([(query("a"), found(&[]))]));
 }
 
 #[test]
 fn a_search_the_user_edited_away_stops_counting_as_searched() {
-    let (store, open, reader, _path, folder) = opened("filter-edited-empty");
+    let (_folder, store, open, reader, _path) = opened("filter-edited-empty");
     store
         .save_filter_results(&cpython(), &query("a"), found(&[]))
         .unwrap();
@@ -171,7 +166,6 @@ fn a_search_the_user_edited_away_stops_counting_as_searched() {
     let read = reader.work_facts(&cpython()).unwrap().filters;
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(read, BTreeMap::new());
 }
@@ -186,7 +180,7 @@ fn narrowed(changed: &[u32], found: &[u32]) -> NarrowedResults {
 
 #[test]
 fn a_narrowed_search_keeps_what_didnt_change_and_says_what_moved() {
-    let (store, open, reader, _path, folder) = opened("filter-merge");
+    let (_folder, store, open, reader, _path) = opened("filter-merge");
     store
         .save_filter_results(&cpython(), &query("a"), found(&[1, 2, 3]))
         .unwrap();
@@ -198,7 +192,6 @@ fn a_narrowed_search_keeps_what_didnt_change_and_says_what_moved() {
     let read = reader.work_facts(&cpython()).unwrap().filters;
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(moved, BTreeSet::from([1, 4, 5]));
     assert_eq!(read[&query("a")], found(&[2, 3, 4, 5]));
@@ -206,7 +199,7 @@ fn a_narrowed_search_keeps_what_didnt_change_and_says_what_moved() {
 
 #[test]
 fn a_narrowed_search_keeps_a_problem_it_has_nothing_to_say_about() {
-    let (store, open, reader, _path, folder) = opened("filter-merge-problem");
+    let (_folder, store, open, reader, _path) = opened("filter-merge-problem");
     let cut_off_before = FilterResults {
         numbers: BTreeSet::from([1]),
         problem: Some(FilterProblem::Refused("Cut off".to_owned())),
@@ -233,7 +226,6 @@ fn a_narrowed_search_keeps_a_problem_it_has_nothing_to_say_about() {
     let read = reader.work_facts(&cpython()).unwrap().filters;
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(quiet, BTreeSet::new());
     assert_eq!(joined, BTreeSet::from([2]));
@@ -250,7 +242,7 @@ fn a_narrowed_search_keeps_a_problem_it_has_nothing_to_say_about() {
 
 #[test]
 fn a_stored_search_tsugiki_cant_understand_is_a_read_error() {
-    let (store, open, reader, _path, folder) = opened("filter-bad-row");
+    let (_folder, store, open, reader, _path) = opened("filter-bad-row");
     store
         .save_filter_results(&cpython(), &query("a"), found(&[1]))
         .unwrap();
@@ -262,7 +254,6 @@ fn a_stored_search_tsugiki_cant_understand_is_a_read_error() {
     let refused = reader.work_facts(&cpython()).unwrap_err();
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(refused.kind, ErrorKind::Internal);
 }

@@ -9,15 +9,16 @@ use tsugiki_core::filters::Filter;
 use tsugiki_core::folders::Folders;
 use tsugiki_core::repository_settings::RepositorySettings;
 use tsugiki_core::settings::SettingsFiles;
+use tsugiki_test_git::TempPath;
 
-pub(crate) fn temp_folders(name: &str) -> (Folders, std::path::PathBuf) {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../.temp/app-{name}"));
-    drop(std::fs::remove_dir_all(&root));
+/// Folders that are all one new folder under `.temp`, and that folder, which goes when the test passes.
+pub(crate) fn temp_folders(name: &str) -> (Folders, TempPath) {
+    let root = tsugiki_test_git::temp_path(&format!("app-{name}"));
     std::fs::create_dir_all(&root).unwrap();
     let folders = Folders {
-        data: root.clone(),
-        settings: root.clone(),
-        logs: root.clone(),
+        data: root.to_path_buf(),
+        settings: root.to_path_buf(),
+        logs: root.to_path_buf(),
     };
     (folders, root)
 }
@@ -94,7 +95,7 @@ fn a_miss_answers_with_the_line_it_wrote() {
 
 #[test]
 fn settings_says_what_was_wrong_with_the_files() {
-    let (folders, root) = temp_folders("problems");
+    let (folders, _root) = temp_folders("problems");
     std::fs::write(
         folders.settings_file(),
         "[status_bar
@@ -103,7 +104,6 @@ fn settings_says_what_was_wrong_with_the_files() {
     .unwrap();
     let app = mock_app();
     assert!(app.manage(SettingsOwner::start(Ok(SettingsFiles::load(folders)))));
-    std::fs::remove_dir_all(root).unwrap();
 
     assert_eq!(settings(app.state()).problems.len(), 1);
 }

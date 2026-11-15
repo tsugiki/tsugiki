@@ -36,6 +36,35 @@ fn a_folder_a_failed_run_left_at_a_test_path_is_gone() {
 }
 
 #[test]
+fn a_test_path_goes_when_the_test_is_done_with_it() {
+    let folder = testing::temp_path("done-folder");
+    std::fs::create_dir_all(folder.join("below")).unwrap();
+    let file = testing::temp_path("done-file");
+    std::fs::write(&file, "what the test wrote").unwrap();
+    let paths = [folder.to_path_buf(), file.to_path_buf()];
+
+    drop((folder, file));
+
+    assert!(paths.iter().all(|path| !path.exists()), "{paths:?}");
+}
+
+#[test]
+fn a_test_that_fails_leaves_its_path_for_reading() {
+    let mut left = None;
+    let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let folder = testing::temp_path("failed");
+        std::fs::create_dir_all(folder.join("below")).unwrap();
+        left = Some(folder.to_path_buf());
+        panic!("the test failed");
+    }));
+
+    assert!(failed.is_err());
+    let left = left.unwrap();
+    assert!(left.join("below").exists(), "{left:?}");
+    drop(testing::temp_path("failed"));
+}
+
+#[test]
 fn a_backtrace_keeps_the_file_and_line() {
     // `[profile.dev]` keeps only line tables, and this is what they're for. Only this test's own frame
     // counts: the line after its name says where it stands, and libtest's frames keep their lines too.

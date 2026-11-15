@@ -16,6 +16,9 @@ label it carries. Follow `AGENTS.md`, with these changes for a wave:
 - Skip `just smoke` and the full Playwright suite. Run the spec files in `ui/e2e/` that drive what you
   changed, in both projects: `npx playwright test e2e/<file>.spec.ts` in `ui`. Grep them for the keys,
   commands and components your branch touches.
+- To show that a test catches the bug, make it fail by taking out the fix itself, then put the fix back.
+  Don't break the setup around the fix: in wave 6 of 0.3.2 a builder renamed a settings key to stand for
+  the setting being left out, ty then dropped all its settings, and the test failed for that reason alone.
 - Commit to your branch. The session that started you runs the review and ships the PR, so don't push.
 - `just ship` takes the PR's title and body from your branch's first commit. Write that commit's message as
   the PR: a title that says what the ticket delivers, and a body that says why and how, with

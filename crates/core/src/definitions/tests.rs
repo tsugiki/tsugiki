@@ -306,6 +306,51 @@ fn a_builtin_is_found_outside_the_repository() {
     }
 }
 
+// ty maps a stub to its source in the real stdlib of the checkout, its Python. It looks for that stdlib in
+// `Lib` on Windows, and in `lib/pythonX.Y` on Unix, which the checkout lacks.
+#[cfg(windows)]
+#[test]
+fn a_standard_library_name_lands_in_the_checkout_and_not_in_the_python_on_path() {
+    let test_spam = "Lib/test/test_spam.py";
+    let line = "        self.assertFalse(0)";
+    let at_head = format!(
+        "import unittest\n\n\nclass SpamTest(unittest.TestCase):\n    def test_spam(self):\n{line}\n"
+    );
+    let case = "class TestCase:\n    def assertFalse(self, expr, msg=None):\n        pass\n";
+    let fixture = Fixture::new(
+        "definitions-stdlib",
+        &[
+            ("Include/patchlevel.h", PATCHLEVEL),
+            // As in CPython, where ty finds the installation's `site-packages`.
+            ("Lib/site-packages/README.txt", ""),
+            ("Lib/unittest/__init__.py", "from .case import TestCase\n"),
+            ("Lib/unittest/case.py", case),
+            (test_spam, "import unittest\n"),
+        ],
+        &[(test_spam, Some(&at_head))],
+    );
+    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty())));
+    let pr = Pr {
+        at: fixture.checkout.at.clone(),
+        changed: vec![test_spam.to_owned()],
+    };
+    owner.opened(&repository(), pr);
+    let lookup = Lookup {
+        repository: repository(),
+        at: fixture.checkout.at.clone(),
+        path: test_spam.to_owned(),
+        side: DiffEnd::Head,
+        line: 6,
+        column: tsugiki_lsp::utf16::column_of(line, line.find("assertFalse").unwrap()),
+    };
+
+    let found = hits(look(&mut owner, &lookup));
+
+    let assert_false = "    def assertFalse(self, expr, msg=None):";
+    let case = ("Lib/unittest/case.py", 2, 8);
+    assert_eq!(found, [hit(&fixture, DiffEnd::Base, case, assert_false)]);
+}
+
 #[test]
 fn a_name_defined_nowhere_finds_nothing() {
     let fixture = cpython("definitions-nowhere");

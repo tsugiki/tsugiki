@@ -31,7 +31,7 @@ both use clangd and rust-analyzer.
 
 | Language | Server | Setup Tsugiki gives it |
 |---|---|---|
-| Python | ty | `environment.root = ["Lib"]` and the Python version, over LSP |
+| Python | ty | `environment.root = ["Lib"]`, the Python version, and the checkout as `environment.python`, over LSP |
 | C | clangd | A `compile_commands.json` with one entry for each core C file of the commit, all with the same flags, written to `repos\<owner>__<name>\servers\clangd\` beside the checkout, where clangd keeps its index too. Started with `--background-index --background-index-priority=low -j=4` |
 | Rust | rust-analyzer | Build scripts, proc macros and `cargo check` off, cargo offline, and the toolchain rust-analyzer is in, whatever `rust-toolchain.toml` says |
 
@@ -63,7 +63,11 @@ On CPython main at `ce4ac8c045`, on Windows, with ty 0.0.103 and clangd 24.0.0gi
 - The first checkout took 1.7 s for 5,971 files, and a move 0.4–0.7 s.
 - ty answered `initialize` in 11–22 ms and its first lookup in about 0.1 s, then in milliseconds, using
   about 65 MB. Locals, parameters and `self` were right, and standard library names landed in the PR's
-  `Lib`, even modules that exist only on main. Names written in C land on typeshed's stubs.
+  `Lib`, even modules that exist only on main. Names written in C land on typeshed's stubs. That held only
+  because the spike's PATH had no Python: ty answers a standard library name from typeshed's stub and maps
+  it to the source in the real stdlib of the Python it finds, and with no `environment.python` it takes the
+  `python` on PATH. Tsugiki now gives it the checkout as its Python, and on Windows the names land in `Lib`
+  again ([#751](https://github.com/tsugiki/tsugiki/issues/751)).
 - clangd answered `initialize` in about 55 ms and its first lookup in about 4 s. It indexed 452 files in
   4 min 9 s, after which 13 of 13 lookups were right, and caught up after a move in 11 s. It held
   0.4–0.5 GB, and 0.67 GB at the peak of its first index build.
